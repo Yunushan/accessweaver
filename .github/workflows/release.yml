@@ -1,0 +1,106 @@
+name: Release artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: '1.27.3'
+
+jobs:
+  verify:
+    name: Verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - run: go vet ./...
+      - run: go test ./... -count=1
+      - if: runner.os == 'Linux'
+        run: go test -race ./... -count=1
+      - if: runner.os == 'Linux'
+        run: node --check web/app.js
+      - if: runner.os == 'Linux'
+        run: node --test web/app.test.cjs
+  package:
+    name: Package unsigned core
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Build and package
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          label="$RELEASE_TAG"
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then label="preview-${GITHUB_SHA:0:12}"; fi
+          bash scripts/package-release.sh "$label"
+      - name: Upload archives and checksums
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: accessweaver-unsigned
+          path: dist/*/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+  publish:
+    name: Publish prerelease assets
+    needs: package
+    if: github.event_name != 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: accessweaver-unsigned
+          path: release-assets
+      - name: Create prerelease or attach to the published release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
+        run: |
+          mapfile -d '' assets < <(find release-assets -type f -print0)
+          if ((${#assets[@]} != 12)); then
+            echo "Expected ten archives, a manifest and checksums." >&2
+            exit 1
+          fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" --verify-tag --prerelease \
+              --title "AccessWeaver $RELEASE_TAG (unsigned alpha)" \
+              --notes "Unsigned alpha core builds. External engines, drivers and native mobile VPN apps are not included. See README, THIRD_PARTY.md and docs/TESTING.md for setup and validation limits."
+          fi

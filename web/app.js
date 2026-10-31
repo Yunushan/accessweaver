@@ -1,0 +1,675 @@
+/* AccessWeaver dashboard · no external libraries, analytics, CDNs or accounts. */
+'use strict';
+const $=id=>document.getElementById(id);
+const $$=selector=>Array.from(document.querySelectorAll(selector));
+const icon=(name)=>`<svg aria-hidden="true"><use href="#i-${name}"></use></svg>`;
+const escapeHTML=(s)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const splitLines=s=>String(s||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+const uniqueId=(base,existing)=>{let p=base.replace(/[^a-z0-9-]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,55)||'profile';if(!/^[a-z]/.test(p)||p.length<2)p='my-'+p;let n=p,i=2;while(existing.some(x=>x.id===n))n=`${p}-${i++}`;return n};
+const exampleEngines=[
+ {id:'byedpi',name:'ByeDPI',kind:'proxy',platforms:['windows','linux','darwin','freebsd','openbsd'],includes:true,excludes:true,applications:false,source:'https://github.com/hufrea/byedpi',notes:'Local SOCKS proxy; configure apps separately.'},
+ {id:'zapret2',name:'Zapret2',kind:'packet',platforms:['windows','linux','freebsd','openbsd'],includes:true,excludes:true,applications:false,source:'https://github.com/bol-van/zapret2',notes:'Requires platform-specific packet interception configuration.'},
+ {id:'zapret',name:'Zapret',kind:'packet',platforms:['windows','linux','darwin','freebsd','openbsd'],includes:true,excludes:true,applications:false,source:'https://github.com/bol-van/zapret',notes:'Upstream EOL; macOS support is partial.'},
+ {id:'goodbyedpi',name:'GoodbyeDPI',kind:'packet',platforms:['windows'],includes:true,excludes:false,applications:false,source:'https://github.com/ValdikSS/GoodbyeDPI',notes:'Windows only; uses WinDivert.'},
+ {id:'wiresock',name:'WireSock SDK',kind:'vpn',platforms:['windows'],includes:false,excludes:false,applications:false,source:'https://wiresock.net/wiresock-sdk/',license:'Proprietary SDK EULA; evaluation and commercial terms differ',notes:'Windows SDK foreground client; vendor installation and existing configuration required. Vendor telemetry and license terms apply.'},
+ {id:'wireguard',name:'WireGuard',kind:'vpn',platforms:['windows','linux','darwin','freebsd','openbsd'],includes:false,excludes:false,applications:false,source:'https://www.wireguard.com/',integration:'external',notes:'Reference integration. Manage tunnels with the official OS client.'},
+ {id:'spoofdpi',name:'SpoofDPI',kind:'proxy',platforms:['windows','linux','darwin'],includes:false,excludes:false,applications:false,source:'https://github.com/xvzc/SpoofDPI',notes:'Optional external proxy engine.'},
+ {id:'sing-box',name:'sing-box',kind:'proxy',platforms:['windows','linux','darwin','freebsd','openbsd'],includes:false,excludes:false,applications:false,source:'https://sing-box.sagernet.org/',notes:'External configured proxy core.'},
+ {id:'xray',name:'Xray-core',kind:'proxy',platforms:['windows','linux','darwin','freebsd'],includes:false,excludes:false,applications:false,source:'https://github.com/XTLS/Xray-core',notes:'External configured proxy core.'}
+];
+const en={workspace:'PERSONAL WORKSPACE',workspaceLabel:'WORKSPACE',navDashboard:'Overview',navProfiles:'Profiles & rules',navEngines:'Engine library',navDiagnostics:'Diagnostics',navSettings:'Settings',preferences:'PREFERENCES',privacy:'Built for your privacy',privacyText:'AccessWeaver has no accounts or telemetry. Optional engines have their own privacy and licensing terms.',upstream:'Explore upstream engines ↗',console:'Console',localOnly:'LOCAL ONLY',networkWorkspace:'NETWORK WORKSPACE',welcome:'Your connection, your rules.',welcomeText:'One thoughtful place to manage access, routing tools and diagnostics.',runDiagnostic:'Run diagnostics',connectionOverview:'CONNECTION OVERVIEW',currentStatus:'CURRENT STATUS',selectProfile:'Select profile',manageProfiles:'Manage profiles',noSilentChanges:'No silent DNS or route changes',yourProfiles:'YOUR PROFILES',profilesDesc:'Fully editable, portable configurations',savedLocally:'Saved locally',engineSupport:'ENGINE LIBRARY',engineDesc:'Optional, independently installed tools',quickProfiles:'Quick access profiles',quickProfilesText:'Your saved configurations, ready to inspect and customize.',viewAll:'View all profiles',controlTitle:'You stay in control',controlText:'AccessWeaver does not download unknown binaries, change your DNS, or configure the whole system without an explicit action. Engine availability depends on your platform.',advancedTools:'Advanced tools',advancedText:'CLI commands, JSON profiles and diagnosis reports',profilesTitle:'Profiles & rules',profilesSubtitle:'Customize every strategy, domain list and executable with clarity.',import:'Import JSON',createProfile:'Create profile',enginesTitle:'Engine library',enginesSubtitle:'One interface for independently maintained open networking tools.',externalTools:'External tools, deliberately separate',externalNote:'Engines are never downloaded or installed silently. Add an official executable path in each profile. Support for domain lists varies by adapter.',diagnosticsTitle:'Connection diagnostics',diagnosticsSubtitle:'Understand DNS resolution, TCP reachability and verified TLS behavior.',newTest:'New connectivity test',diagnosticNote:'Read-only tests. No route, DNS, or system settings are changed.',hostname:'Hostname',timeout:'Timeout (seconds)',verifyTLS:'Verify TLS certificate and handshake',startTest:'Start test',testResults:'Test results',noResults:'No tests yet',noResultsText:'Run a connectivity test to see individual network stages.',settingsTitle:'Settings',settingsSubtitle:'A few deliberate choices, with powerful customization where it matters.',language:'Language',languageDesc:'Choose the interface language. README defaults to English.',appearance:'Appearance',appearanceDesc:'Switch between midnight and daylight surfaces.',environment:'Runtime environment',environmentDesc:'Platform-aware engine rules, with no automatic elevated privileges.',repository:'Project & licensing',repositoryDesc:'Original AccessWeaver source code is 0BSD. External engines retain their own licenses.',runtimeLogs:'Runtime activity',runtimeLogsDesc:'View recent local engine output. Logs are held only in process memory.',viewLogs:'View logs',footerText:'Built for transparency. Powered by your choices.',profileStudio:'PROFILE STUDIO',guidedEditor:'Guided editor',jsonEditor:'Advanced JSON',profileId:'Profile ID',displayName:'Display name',description:'Description',engine:'Engine',category:'Category',binaryPath:'External executable (absolute path or PATH name)',arguments:'Arguments (one argument per line, no shell)',domainRules:'Domain rules',includedDomains:'Include domains (one per line)',excludedDomains:'Exclude domains (one per line)',rulesWarning:'Domain lists are only mapped for compatible engines. Unsupported rules are rejected when starting.',moreOptions:'Advanced settings, app paths & integrity',apps:'Application paths (one per line; not yet applied by engines)',probeHost:'Probe hostname',probePort:'Probe port',probeTLS:'Verify probe TLS certificate',notes:'Notes',jsonHelp:'Full schema editing. Unknown fields and invalid values are rejected before saving.',cancel:'Cancel',saveChanges:'Save changes',recentLogs:'Recent engine logs',logsVolatile:'Only recent in-memory logs are displayed.',copyLogs:'Copy logs',ready:'Ready when you are',readyDesc:'Choose a profile to start a compatible local engine. Nothing runs automatically.',running:'Process running',runningDesc:'The engine process is active. Connectivity and routing must be independently verified.',offline:'Offline profile studio',offlineDesc:'Editing and exporting profiles work here; running engines requires the installed local core.',notRunning:'NOT RUNNING',runningBadge:'PROCESS RUNNING',offlineBadge:'EDITOR ONLY',edit:'Edit',start:'Start',stop:'Stop',duplicate:'Duplicate',export:'Export',delete:'Delete',allEngines:'All engines',searchProfiles:'Search profiles, engines, notes...',profilesShown:'profiles',saved:'Profile saved',imported:'Profile imported',deleted:'Profile deleted',created:'Profile created',confirmDelete:'Delete this profile? This cannot be undone.',confirmStart:'Start this external engine process? Verify the binary and options first. It may require administrator privileges or change connectivity.',startFailed:'Could not start',stopped:'Engine stopped',startOk:'Engine process launched; verify connectivity.',engineUnsupported:'Not supported here',engineSupported:'Platform listed',readDocs:'Source & docs ↗',noProfiles:'No matching profiles. Create one to get started.',missingServer:'Local core unavailable: offline editing mode. No networking engine can be started.',editorTitleNew:'Create profile',editorTitleEdit:'Edit profile',savedOffline:'Saved in this browser only',testRunning:'Testing...',testDone:'Test completed',testFailed:'Test failed',jsonError:'Invalid JSON',importInvalid:'Unable to import JSON profile',settingsLogsEmpty:'No runtime output has been captured.',copySuccess:'Copied',unsupportedRules:'This adapter does not automatically apply domain/app rules.'};
+const tr={workspace:'KİŞİSEL ÇALIŞMA ALANI',workspaceLabel:'ÇALIŞMA ALANI',navDashboard:'Genel bakış',navProfiles:'Profiller ve kurallar',navEngines:'Motor kütüphanesi',navDiagnostics:'Tanılama',navSettings:'Ayarlar',preferences:'TERCİHLER',privacy:'Gizliliğiniz için tasarlandı',privacyText:'AccessWeaver hesap veya telemetri kullanmaz. İsteğe bağlı motorların gizlilik ve lisans koşulları ayrıdır.',upstream:'Kaynak motorları incele ↗',console:'Panel',localOnly:'YALNIZCA YEREL',networkWorkspace:'AĞ ÇALIŞMA ALANI',welcome:'Bağlantınız, kurallarınız.',welcomeText:'Erişim, ağ araçları ve tanılamayı tek bir yerden yönetin.',runDiagnostic:'Tanılamayı çalıştır',connectionOverview:'BAĞLANTI ÖZETİ',currentStatus:'GÜNCEL DURUM',selectProfile:'Profil seç',manageProfiles:'Profilleri yönet',noSilentChanges:'Gizlice DNS veya rota değiştirmez',yourProfiles:'PROFİLLERİNİZ',profilesDesc:'Tamamen düzenlenebilir, taşınabilir ayarlar',savedLocally:'Yerel kaydedildi',engineSupport:'MOTOR KÜTÜPHANESİ',engineDesc:'İsteğe bağlı, bağımsız kurulan araçlar',quickProfiles:'Hızlı erişim profilleri',quickProfilesText:'İncelemeye ve özelleştirmeye hazır kayıtlı profiller.',viewAll:'Tüm profilleri gör',controlTitle:'Kontrol sizde',controlText:'AccessWeaver bilinmeyen dosyaları indirmez, DNS değiştirmez veya açık bir işlem olmadan sistem yapılandırmasını değiştirmez. Motorlar işletim sistemine bağlıdır.',advancedTools:'Gelişmiş araçlar',advancedText:'CLI komutları, JSON profilleri ve tanılama raporları',profilesTitle:'Profiller ve kurallar',profilesSubtitle:'Her stratejiyi, alan adı listesini ve uygulama dosyasını düzenleyin.',import:'JSON içe aktar',createProfile:'Profil oluştur',enginesTitle:'Motor kütüphanesi',enginesSubtitle:'Bağımsız sürdürülen ağ araçları için tek bir arayüz.',externalTools:'Harici araçlar bilinçli olarak ayrıdır',externalNote:'Motorlar otomatik indirilmez veya kurulmaz. Profilinize resmi uygulama yolunu yazın. Alan adı listesi desteği motorlara göre değişir.',diagnosticsTitle:'Bağlantı tanılaması',diagnosticsSubtitle:'DNS, TCP erişilebilirliği ve doğrulanmış TLS davranışını inceleyin.',newTest:'Yeni bağlantı testi',diagnosticNote:'Yalnızca okuma testi. Sistem, DNS veya rota ayarları değişmez.',hostname:'Sunucu adı',timeout:'Zaman aşımı (saniye)',verifyTLS:'TLS sertifikasını ve el sıkışmasını doğrula',startTest:'Testi başlat',testResults:'Test sonuçları',noResults:'Henüz test yok',noResultsText:'Ağ aşamalarını görmek için bağlantı testi yapın.',settingsTitle:'Ayarlar',settingsSubtitle:'Önemli alanlarda kapsamlı özelleştirme, diğerlerinde sadelik.',language:'Dil',languageDesc:'Arayüz dilinizi seçin. Varsayılan README İngilizcedir.',appearance:'Görünüm',appearanceDesc:'Koyu ve açık görünüm arasında geçiş yapın.',environment:'Çalışma ortamı',environmentDesc:'İşletim sistemine uygun motor kuralları ve açık yetki yönetimi.',repository:'Proje ve lisans',repositoryDesc:'Özgün AccessWeaver kodu 0BSD lisanslıdır. Harici motorların lisansları ayrıdır.',runtimeLogs:'Çalışma günlükleri',runtimeLogsDesc:'Son motor çıktısını inceleyin. Günlükler yalnızca bellekte tutulur.',viewLogs:'Günlükleri gör',footerText:'Şeffaflık için tasarlandı. Karar sizin.',profileStudio:'PROFİL STÜDYOSU',guidedEditor:'Kolay düzenleme',jsonEditor:'Gelişmiş JSON',profileId:'Profil kimliği',displayName:'Görünen ad',description:'Açıklama',engine:'Motor',category:'Kategori',binaryPath:'Harici program dosyası (tam yol veya PATH)',arguments:'Parametreler (her satırda bir adet, kabuk kullanılmaz)',domainRules:'Alan adı kuralları',includedDomains:'Dahil edilen alan adları (her satırda bir)',excludedDomains:'Hariç tutulan alan adları (her satırda bir)',rulesWarning:'Alan adı listeleri yalnızca destekleyen motorlara aktarılır. Desteklenmeyen kurallar çalıştırmayı engeller.',moreOptions:'Gelişmiş ayarlar, uygulama yolları ve bütünlük',apps:'Uygulama yolları (her satırda bir; henüz uygulanmıyor)',probeHost:'Test sunucusu',probePort:'Test portu',probeTLS:'Test TLS sertifikasını doğrula',notes:'Notlar',jsonHelp:'Tam şema düzenleme. Geçersiz veya bilinmeyen alanlar reddedilir.',cancel:'Vazgeç',saveChanges:'Kaydet',recentLogs:'Son motor günlükleri',logsVolatile:'Yalnızca bellekteki son günlükler gösterilir.',copyLogs:'Günlükleri kopyala',ready:'Bağlanmaya hazır',readyDesc:'Uyumlu bir yerel motoru çalıştırmak için profil seçin. Otomatik başlatma yoktur.',running:'İşlem çalışıyor',runningDesc:'Motor işlemi çalışıyor. Bağlantı ve yönlendirme ayrıca doğrulanmalıdır.',offline:'Çevrimdışı profil stüdyosu',offlineDesc:'Profil düzenleme/dışa aktarma çalışır; motor çalıştırmak için yerel çekirdek gerekir.',notRunning:'ÇALIŞMIYOR',runningBadge:'İŞLEM ÇALIŞIYOR',offlineBadge:'YALNIZCA DÜZENLEME',edit:'Düzenle',start:'Başlat',stop:'Durdur',duplicate:'Çoğalt',export:'Dışa aktar',delete:'Sil',allEngines:'Tüm motorlar',searchProfiles:'Profil, motor ve not ara...',profilesShown:'profil',saved:'Profil kaydedildi',imported:'Profil içe aktarıldı',deleted:'Profil silindi',created:'Profil oluşturuldu',confirmDelete:'Bu profil silinsin mi? Geri alınamaz.',confirmStart:'Harici motor başlatılsın mı? Önce dosyayı ve parametreleri doğrulayın. Yönetici yetkisi gerekebilir veya bağlantı etkilenebilir.',startFailed:'Başlatılamadı',stopped:'Motor durduruldu',startOk:'Motor işlemi başlatıldı; bağlantıyı doğrulayın.',engineUnsupported:'Burada desteklenmiyor',engineSupported:'Platform listede',readDocs:'Kaynak ve belgeler ↗',noProfiles:'Eşleşen profil yok. Başlamak için oluşturun.',missingServer:'Yerel çekirdek yok: çevrimdışı düzenleme. Ağ motoru çalıştırılamaz.',editorTitleNew:'Profil oluştur',editorTitleEdit:'Profili düzenle',savedOffline:'Yalnızca tarayıcıda kaydedildi',testRunning:'Test yapılıyor...',testDone:'Test tamamlandı',testFailed:'Test başarısız',jsonError:'Geçersiz JSON',importInvalid:'JSON profili içe aktarılamadı',settingsLogsEmpty:'Henüz motor çıktısı bulunmuyor.',copySuccess:'Kopyalandı',unsupportedRules:'Bu adaptör alan adı/uygulama kurallarını otomatik uygulamaz.'};
+
+Object.assign(en, {
+  skipContent:'Skip to content', configurationStudio:'CONFIGURATION STUDIO', integrationCatalog:'INTEGRATION CATALOG', networkIntelligence:'NETWORK INTELLIGENCE', yourEnvironment:'YOUR ENVIRONMENT', runtimeLabel:'RUNTIME', filterEngine:'Filter by engine', tcpPort:'TCP port', midnight:'Midnight', daylight:'Daylight', toggleNavigation:'Toggle navigation', toggleTheme:'Toggle theme', close:'Close', profileJSON:'Profile JSON', checksum:'SHA-256 executable checksum (optional)',
+  profileStorage:'Profile storage', coreStorage:'Profiles are saved by the local core. Browser preferences stay in this browser.', browserStorage:'Profiles are saved in this browser only. Export them before clearing browser data or moving to another device.', coreStorageBadge:'LOCAL CORE', browserStorageBadge:'THIS BROWSER', reconnect:'Reconnect', disconnected:'Core disconnected', disconnectedDesc:'The last runtime state is no longer current. Reconnect to check the process and continue.', disconnectedNotice:'Connection to the local core was lost. Runtime state is unknown; your unsaved work is still here.', offlineNotice:'Browser editor mode. Profiles can be saved and exported here; engine launch and diagnostics need the local core.', connecting:'Connecting to the local core…', connectedAgain:'Connected to the local core', switchStore:'The local core is available. Export browser profiles before switching if you need them. Switch to core profiles now?', storageFailed:'Browser storage is unavailable or full. Your changes have not been saved. Export the profile to keep a copy.',
+  platformCoverage:'A clear view of platform support', platformCoverageDesc:'The local core and an engine have separate requirements.', desktopCore:'Local core', partialCore:'Selected engines', mobileEditor:'Browser editor', windowsSupport:'Local engine management. Packet tools may need WinDivert and administrator rights.', linuxSupport:'Local engine management. Packet tools require separately configured firewall or queue hooks.', macSupport:'Local core with selected proxies. Packet interception and tunnel setup are limited or external.', bsdSupport:'Selected upstream engines and builds. Check the exact BSD variant and packet hooks.', androidSupport:'This interface edits profiles in a browser. Native VPN or proxy integration needs a separate Android client; it is not bundled.', iosSupport:'This interface edits profiles in a browser. iOS does not run these desktop engine processes; use a separate authorized native client.',
+  managedIntegration:'MANAGED PROCESS', externalIntegration:'EXTERNAL SETUP', includesLabel:'Includes', excludesLabel:'Excludes', appRules:'App rules', supportedRule:'Mapped', unsupportedRule:'External / unsupported', createForEngine:'Create profile', setupRequired:'Setup required', engineAvailable:'Compatible platform', engineExternal:'External manager', platformUnknown:'Check platform', engineSource:'Official source', engineDocs:'Read setup docs', noArguments:'No additional arguments',
+  configPath:'External configuration file (optional absolute path)', configPathHelp:'Required for WireSock, sing-box and Xray. Existing files are used without modification.', exclusionExamples:'Add exclusion examples:', windowsUpdate:'Windows Update', rulesWarning:'Examples are a starting point, not complete OS or game exclusions. Domain rules cannot isolate all application traffic. Unsupported rules prevent launch.', supportedIncludes:'Include domains are mapped by this adapter.', unsupportedIncludes:'Include domains are not mapped by this adapter.', supportedExcludes:'Exclude domains are mapped by this adapter.', unsupportedExcludes:'Exclude domains are not mapped by this adapter.', appRulesNote:'Application paths are stored for planning; no adapter applies them automatically.', addedExclusions:'Example exclusions added. Review their scope before use.', includeCount:'included', excludeCount:'excluded',
+  preview:'Check setup', launchReview:'LAUNCH REVIEW', reviewSetup:'Review engine setup', editProfile:'Edit profile', startEngine:'Start engine', launchConsent:'Starting runs this external executable with your current permissions. Inspect the file, arguments and any external configuration first.', launchNotConnectivity:'Readiness does not verify connectivity.', checkingSetup:'Checking executable and profile…', setupReady:'Launch prerequisites found', setupBlocked:'Resolve before launch', executable:'Executable', launchArguments:'Argument vector · no shell', workingDirectory:'Working directory', warnings:'Review notes', issues:'Setup issues', previewUnavailable:'Setup checks require the local core.', readyToConfigure:'Configure and check setup',
+  guideSpoof:'Use a compatible HTTP proxy build. Inspect its system-proxy options; some macOS releases change proxy settings automatically.', guideByedpi:'A local SOCKS proxy. Set the app’s proxy separately; launch does not route the whole device.', guideZapret:'Packet processing needs compatible interception hooks or drivers. Supply a tested strategy for your network.', guideGoodbye:'Windows packet processing with WinDivert. Domain includes are mapped; exclusions are unsupported.', guideWiresock:'Use the official WireSock SDK foreground client and an existing configuration. Per-app routing belongs in that file. The SDK has vendor telemetry and separate evaluation/commercial license terms.', guideWireguard:'Manage the tunnel with the platform’s official tools. AccessWeaver stores this profile but does not launch a tunnel manager.', guideProxy:'Supply your installed executable and matching configuration. Configure proxy or tunnel routing separately.',
+  discardChanges:'Discard your unsaved profile changes?', duplicateId:'This ID already exists. Choose a different ID or edit the existing profile.', immutableId:'A saved profile ID cannot change. Duplicate the profile instead.', invalidProfile:'The file must contain a single profile object.', unknownField:'Unknown field', invalidField:'Invalid value for', requiredField:'Required field', invalidVersion:'Profile version must be 1.', invalidId:'Use 2–63 lowercase letters, digits and hyphens; start with a letter.', invalidEngine:'Choose an engine from the library.', invalidDomain:'Use an ASCII/IDNA domain name, without a URL or spaces.', duplicateDomain:'Duplicate domain', conflictingDomain:'A domain cannot be both included and excluded', invalidSHA:'SHA-256 must contain exactly 64 hexadecimal characters.', fileTooLarge:'File exceeds 1 MiB.', importReview:'Review the imported profile, then save. Existing profiles are preserved.', importRenamed:'This ID already exists. A new ID was assigned; review and save the copy.', saving:'Saving…', unsavedChanges:'Unsaved changes', newProfileName:'My custom profile', customCategory:'Custom', copySuffix:'copy', defaultDescription:'An editable engine configuration',
+  activeEdit:'Stop the active profile before editing it.', otherRunning:'Stop the running profile before launching another.', coreRequired:'This action needs a connected local core.', failedState:'Engine exited', failedDesc:'The engine is no longer running. Check its output and setup before restarting.', exitError:'Engine output', exportReport:'Export report', reportHost:'Tested host', testPassed:'All requested checks passed', testIncomplete:'One or more checks failed', noProbe:'No diagnostic report to export', argsPrecision:'One literal argument per line. Whitespace and empty arguments from JSON are preserved.', profileSaved:'Profile saved', loading:'Loading…', refreshLogs:'Refresh logs', storageRecovery:'Some browser profile data could not be read. It is preserved in storage. Export a backup from Settings before repairing it.', exportBrowserBackup:'Export browser backup', storageUnreadable:'Stored profile JSON is unreadable. It has been preserved; export its backup in Settings before repairing browser storage.'
+});
+Object.assign(tr, {
+  skipContent:'İçeriğe geç', configurationStudio:'YAPILANDIRMA STÜDYOSU', integrationCatalog:'ENTEGRASYON KATALOĞU', networkIntelligence:'AĞ TANILAMA', yourEnvironment:'ÇALIŞMA ORTAMINIZ', runtimeLabel:'ÇALIŞMA ZAMANI', filterEngine:'Motora göre filtrele', tcpPort:'TCP portu', midnight:'Koyu', daylight:'Açık', toggleNavigation:'Gezinmeyi aç/kapat', toggleTheme:'Görünümü değiştir', close:'Kapat', profileJSON:'Profil JSON verisi', checksum:'SHA-256 program sağlama toplamı (isteğe bağlı)',
+  profileStorage:'Profil depolama', coreStorage:'Profilleri yerel çekirdek kaydeder. Arayüz tercihleri bu tarayıcıda kalır.', browserStorage:'Profiller yalnızca bu tarayıcıya kaydedilir. Tarayıcı verilerini silmeden veya cihaz değiştirmeden önce dışa aktarın.', coreStorageBadge:'YEREL ÇEKİRDEK', browserStorageBadge:'BU TARAYICI', reconnect:'Yeniden bağlan', disconnected:'Çekirdek bağlantısı kesildi', disconnectedDesc:'Son çalışma durumu güncel değil. İşlemi kontrol etmek ve devam etmek için yeniden bağlanın.', disconnectedNotice:'Yerel çekirdekle bağlantı kesildi. İşlem durumu bilinmiyor; kaydedilmemiş çalışmanız burada duruyor.', offlineNotice:'Tarayıcı düzenleme modu. Profilleri kaydedip dışa aktarabilirsiniz; motor ve tanılama için yerel çekirdek gerekir.', connecting:'Yerel çekirdeğe bağlanılıyor…', connectedAgain:'Yerel çekirdeğe bağlanıldı', switchStore:'Yerel çekirdek kullanılabilir. Gerekiyorsa geçmeden önce tarayıcı profillerini dışa aktarın. Şimdi çekirdek profillerine geçilsin mi?', storageFailed:'Tarayıcı depolaması kullanılamıyor veya dolu. Değişiklikler kaydedilmedi. Kopyasını korumak için profili dışa aktarın.',
+  platformCoverage:'Platform desteğine açık bir bakış', platformCoverageDesc:'Yerel çekirdek ve motor ayrı gereksinimlere sahiptir.', desktopCore:'Yerel çekirdek', partialCore:'Seçili motorlar', mobileEditor:'Tarayıcı düzenleyicisi', windowsSupport:'Yerel motor yönetimi. Paket araçları WinDivert ve yönetici yetkisi gerektirebilir.', linuxSupport:'Yerel motor yönetimi. Paket araçları ayrıca yapılandırılan güvenlik duvarı veya kuyruk kuralları gerektirir.', macSupport:'Seçili vekil sunucularla yerel çekirdek. Paket yakalama ve tünel kurulumu sınırlıdır veya haricidir.', bsdSupport:'Seçili motorlar ve derlemeler. BSD sürümünü ve paket yakalama gereksinimlerini kontrol edin.', androidSupport:'Bu arayüz tarayıcıda profil düzenler. Yerel VPN veya vekil sunucu entegrasyonu ayrı bir Android istemcisi gerektirir; pakete dahil değildir.', iosSupport:'Bu arayüz tarayıcıda profil düzenler. iOS bu masaüstü motor işlemlerini çalıştırmaz; ayrı ve yetkili bir yerel istemci kullanın.',
+  managedIntegration:'YÖNETİLEN İŞLEM', externalIntegration:'HARİCİ KURULUM', includesLabel:'Dahil', excludesLabel:'Hariç', appRules:'Uygulama kuralları', supportedRule:'Uygulanır', unsupportedRule:'Harici / desteklenmiyor', createForEngine:'Profil oluştur', setupRequired:'Kurulum gerekli', engineAvailable:'Uyumlu platform', engineExternal:'Harici yönetim', platformUnknown:'Platformu kontrol et', engineSource:'Resmi kaynak', engineDocs:'Kurulum belgeleri', noArguments:'Ek parametre yok',
+  configPath:'Harici yapılandırma dosyası (isteğe bağlı tam yol)', configPathHelp:'WireSock, sing-box ve Xray için gereklidir. Mevcut dosyalar değiştirilmeden kullanılır.', exclusionExamples:'Hariç tutma örneği ekle:', windowsUpdate:'Windows Update', rulesWarning:'Örnekler tüm sistem veya oyun trafiğini kapsamaz. Alan adı kuralları uygulama trafiğini tam olarak ayıramaz. Desteklenmeyen kurallar başlatmayı engeller.', supportedIncludes:'Bu adaptör dahil edilen alan adlarını uygular.', unsupportedIncludes:'Bu adaptör dahil edilen alan adlarını uygulamaz.', supportedExcludes:'Bu adaptör hariç tutulan alan adlarını uygular.', unsupportedExcludes:'Bu adaptör hariç tutulan alan adlarını uygulamaz.', appRulesNote:'Uygulama yolları planlama için saklanır; hiçbir adaptör bunları otomatik uygulamaz.', addedExclusions:'Hariç tutma örnekleri eklendi. Kullanmadan önce kapsamlarını inceleyin.', includeCount:'dahil', excludeCount:'hariç',
+  preview:'Kurulumu kontrol et', launchReview:'BAŞLATMA İNCELEMESİ', reviewSetup:'Motor kurulumunu incele', editProfile:'Profili düzenle', startEngine:'Motoru başlat', launchConsent:'Başlatma, bu harici programı mevcut yetkilerinizle çalıştırır. Önce dosyayı, parametreleri ve harici yapılandırmayı inceleyin.', launchNotConnectivity:'Hazır olması bağlantıyı doğrulamaz.', checkingSetup:'Program ve profil kontrol ediliyor…', setupReady:'Başlatma önkoşulları bulundu', setupBlocked:'Başlatmadan önce çözün', executable:'Program dosyası', launchArguments:'Parametre listesi · kabuk yok', workingDirectory:'Çalışma dizini', warnings:'İnceleme notları', issues:'Kurulum sorunları', previewUnavailable:'Kurulum kontrolü için yerel çekirdek gerekir.', readyToConfigure:'Yapılandırın ve kurulumu kontrol edin',
+  guideSpoof:'Uyumlu bir HTTP vekil sunucu derlemesi kullanın. Sistem vekil sunucu seçeneklerini inceleyin; bazı macOS sürümleri bu ayarları otomatik değiştirir.', guideByedpi:'Yerel SOCKS vekil sunucusu. Uygulamanın vekil sunucusunu ayrıca ayarlayın; başlatmak tüm cihazı yönlendirmez.', guideZapret:'Paket işleme için uyumlu yakalama kuralları veya sürücüler gerekir. Ağınızda test edilmiş bir strateji kullanın.', guideGoodbye:'WinDivert ile Windows paket işleme. Dahil listeleri uygulanır; hariç listeleri desteklenmez.', guideWiresock:'Resmi WireSock SDK istemcisini ve mevcut yapılandırmayı kullanın. Uygulama yönlendirmesi o dosyada ayarlanır. SDK üretici telemetrisi ve ayrı değerlendirme/ticari lisans koşulları içerir.', guideWireguard:'Tüneli platformun resmi araçlarıyla yönetin. AccessWeaver bu profili saklar ancak tünel yöneticisini çalıştırmaz.', guideProxy:'Kurulu program dosyanızı ve uygun yapılandırmayı belirtin. Vekil sunucu veya tünel yönlendirmesini ayrıca ayarlayın.',
+  discardChanges:'Kaydedilmemiş profil değişiklikleri atılsın mı?', duplicateId:'Bu kimlik zaten var. Başka bir kimlik seçin veya mevcut profili düzenleyin.', immutableId:'Kayıtlı profil kimliği değiştirilemez. Bunun yerine profili çoğaltın.', invalidProfile:'Dosya tek bir profil nesnesi içermelidir.', unknownField:'Bilinmeyen alan', invalidField:'Geçersiz alan değeri', requiredField:'Gerekli alan', invalidVersion:'Profil sürümü 1 olmalıdır.', invalidId:'Harfle başlayan 2–63 küçük harf, rakam veya tire kullanın.', invalidEngine:'Kütüphaneden bir motor seçin.', invalidDomain:'URL veya boşluk olmadan ASCII/IDNA alan adı kullanın.', duplicateDomain:'Yinelenen alan adı', conflictingDomain:'Bir alan adı hem dahil hem hariç olamaz', invalidSHA:'SHA-256 tam olarak 64 onaltılık karakter içermelidir.', fileTooLarge:'Dosya 1 MiB sınırını aşıyor.', importReview:'İçe aktarılan profili inceleyip kaydedin. Mevcut profiller korunur.', importRenamed:'Bu kimlik zaten var. Yeni bir kimlik atandı; kopyayı inceleyip kaydedin.', saving:'Kaydediliyor…', unsavedChanges:'Kaydedilmemiş değişiklikler', newProfileName:'Özel profilim', customCategory:'Özel', copySuffix:'kopya', defaultDescription:'Düzenlenebilir motor yapılandırması',
+  activeEdit:'Düzenlemeden önce etkin profili durdurun.', otherRunning:'Başka profil başlatmadan önce çalışan profili durdurun.', coreRequired:'Bu işlem bağlı bir yerel çekirdek gerektirir.', failedState:'Motor sonlandı', failedDesc:'Motor artık çalışmıyor. Yeniden başlatmadan önce çıktıyı ve kurulumu inceleyin.', exitError:'Motor çıktısı', exportReport:'Raporu dışa aktar', reportHost:'Test edilen sunucu', testPassed:'İstenen kontroller başarılı', testIncomplete:'Bir veya daha fazla kontrol başarısız', noProbe:'Dışa aktarılacak tanılama raporu yok', argsPrecision:'Her satır bir gerçek parametredir. JSON boş parametreleri ve boşlukları korunur.', profileSaved:'Profil kaydedildi', loading:'Yükleniyor…', refreshLogs:'Günlükleri yenile', storageRecovery:'Bazı tarayıcı profilleri okunamadı. Depolamada korundular. Onarmadan önce Ayarlar bölümünden yedeği dışa aktarın.', exportBrowserBackup:'Tarayıcı yedeğini dışa aktar', storageUnreadable:'Kayıtlı profil JSON verisi okunamıyor ve korundu. Tarayıcı depolamasını onarmadan önce Ayarlar bölümünden yedeği dışa aktarın.'
+});
+
+const storage = {
+  get(key) { try { return localStorage.getItem(key); } catch { return null; } },
+  set(key, value) { localStorage.setItem(key, value); },
+  preference(key, value) { try { this.set(key, value); } catch { /* Preferences remain usable for this session. */ } }
+};
+const state = {
+  lang: storage.get('aw.lang') === 'tr' ? 'tr' : 'en',
+  theme: storage.get('aw.theme') === 'light' ? 'light' : 'dark',
+  offline: false, disconnected: false, loading: true, platform: 'unknown',
+  engines: [], profiles: [], runtime: {state:'stopped', log:[]}, token:'',
+  view:'dashboard', editing:null, editorTab:'simple', lastProbe:null,
+  launch:null, busy:false, polling:false, reconnecting:false, preservedProfiles:[], storageBlocked:false
+};
+const t = key => (state.lang === 'tr' ? tr : en)[key] || en[key] || key;
+const clone = value => JSON.parse(JSON.stringify(value));
+function copyName(name) {
+  const suffix = ' (' + t('copySuffix') + ')';
+  let shortened = name;
+  while (new TextEncoder().encode(shortened + suffix).length > 100) shortened = Array.from(shortened).slice(0,-1).join('');
+  return shortened + suffix;
+}
+const platformName = value => ({windows:'Windows',linux:'Linux',darwin:'macOS',freebsd:'FreeBSD',openbsd:'OpenBSD',android:'Android',ios:'iOS',browser:t('mobileEditor'),unknown:'—'})[value] || value;
+const coreAvailable = () => !state.offline && !state.disconnected && !state.loading;
+const safeSource = source => /^https?:\/\//i.test(source || '') ? escapeHTML(source) : '#';
+const engineGuide = id => t(({spoofdpi:'guideSpoof',byedpi:'guideByedpi',zapret:'guideZapret',zapret2:'guideZapret',goodbyedpi:'guideGoodbye',wiresock:'guideWiresock',wireguard:'guideWireguard'})[id] || 'guideProxy');
+
+function toast(message, bad=false) {
+  const target = $('toast');
+  target.textContent = message;
+  target.className = bad ? 'visible error' : 'visible';
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { target.className = ''; }, bad ? 6500 : 4000);
+}
+function updateTranslations() {
+  document.documentElement.lang = state.lang;
+  $$('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  $$('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label',t(el.dataset.i18nAria)); });
+  $('lang-toggle').innerHTML = (state.lang === 'en' ? 'EN' : 'TR') + ' <span aria-hidden="true">⌄</span>';
+  $('settings-language').value = state.lang;
+  $('profile-search').placeholder = t('searchProfiles');
+  const filter = $('profile-filter').value || 'all';
+  $('profile-filter').innerHTML = `<option value="all">${escapeHTML(t('allEngines'))}</option>` + engineOptions();
+  $('profile-filter').value = state.engines.some(e => e.id === filter) ? filter : 'all';
+  if (state.editing) {
+    $('editor-title').textContent = t(state.editing.isNew ? 'editorTitleNew' : 'editorTitleEdit');
+    updateEditorGuidance();
+  }
+  if (state.lastProbe) renderProbe(state.lastProbe);
+  updateBreadcrumb();
+}
+function changeLanguage(lang) {
+  state.lang = lang === 'tr' ? 'tr' : 'en';
+  storage.preference('aw.lang',state.lang);
+  updateTranslations();
+  renderAll();
+}
+function setTheme(theme) {
+  state.theme = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = state.theme;
+  document.querySelector('meta[name="theme-color"]').content = state.theme === 'dark' ? '#0b1020' : '#f5f7fb';
+  storage.preference('aw.theme',state.theme);
+  $('settings-theme').value = state.theme;
+  $('theme-toggle').innerHTML = icon(state.theme === 'dark' ? 'sun' : 'moon');
+}
+function updateBreadcrumb() {
+  const label = {dashboard:'navDashboard',profiles:'navProfiles',engines:'navEngines',diagnostics:'navDiagnostics',settings:'navSettings'};
+  $('crumb-name').textContent = t(label[state.view]);
+}
+function navigate(view, focus=false) {
+  if (!['dashboard','profiles','engines','diagnostics','settings'].includes(view)) return;
+  state.view = view;
+  $$('.view').forEach(el => { el.classList.toggle('active',el.id === 'view-' + view); });
+  $$('.nav-item').forEach(el => {
+    const active = el.dataset.view === view;
+    el.classList.toggle('active',active);
+    if (active) el.setAttribute('aria-current','page'); else el.removeAttribute('aria-current');
+  });
+  updateBreadcrumb();
+  $('sidebar').classList.remove('open');
+  $('menu-toggle').setAttribute('aria-expanded','false');
+  if (location.hash !== '#' + view) location.hash = view;
+  window.scrollTo(0,0);
+  if (focus) $('content').focus({preventScroll:true});
+}
+async function apiRequest(path, method='GET', data, timeout=12000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(),timeout);
+  try {
+    const response = await fetch(path, {
+      method, headers:{...(data !== undefined ? {'Content-Type':'application/json'} : {}),'X-AccessWeaver-Token':state.token},
+      body:data === undefined ? undefined : JSON.stringify(data), cache:'no-store', signal:controller.signal
+    });
+    let json;
+    try { json = await response.json(); } catch { throw new Error(t('disconnectedDesc')); }
+    if (!response.ok) throw new Error(json.error || `HTTP ${response.status}`);
+    return json;
+  } finally { clearTimeout(timer); }
+}
+function engineOptions() {
+  return state.engines.map(e => `<option value="${escapeHTML(e.id)}">${escapeHTML(e.name)}</option>`).join('');
+}
+async function readCore() {
+  const boot = await apiRequest('/api/bootstrap');
+  if (!boot.token || !boot.platform) throw new Error(t('coreRequired'));
+  state.token = boot.token;
+  const [engines,profiles,runtime] = await Promise.all([
+    apiRequest('/api/v1/engines'),apiRequest('/api/v1/profiles'),apiRequest('/api/v1/runtime')
+  ]);
+  if (!Array.isArray(engines) || !Array.isArray(profiles)) throw new Error(t('invalidProfile'));
+  return {platform:boot.platform,engines,profiles,runtime};
+}
+async function initialize() {
+  setTheme(state.theme);
+  updateTranslations();
+  navigate(location.hash.slice(1) || 'dashboard');
+  try { Object.assign(state,await readCore()); }
+  catch {
+    state.offline = true;
+    state.platform = /Android/i.test(navigator.userAgent) ? 'android' : /iPhone|iPad/i.test(navigator.userAgent) ? 'ios' : 'browser';
+    state.engines = exampleEngines;
+    try {
+      const saved = JSON.parse(storage.get('aw.profiles') || '[]');
+      if (!Array.isArray(saved)) throw new Error(t('invalidProfile'));
+      state.profiles = [];
+      for (const profile of saved) {
+        try { state.profiles.push(validateProfile(profile)); }
+        catch { state.preservedProfiles.push(profile); }
+      }
+      if (state.preservedProfiles.length) toast(t('storageRecovery'),true);
+    } catch (err) { state.profiles = []; state.storageBlocked = true; toast(t('storageUnreadable'),true); }
+  }
+  state.loading = false;
+  $('p-engine').innerHTML = engineOptions();
+  updateTranslations();
+  renderAll();
+  setInterval(pollStatus,2000);
+}
+async function reconnect() {
+  if (state.reconnecting || state.editing) { if (state.editing) toast(t('discardChanges')); return; }
+  state.reconnecting = true;
+  $('reconnect-button').disabled = true;
+  try {
+    const core = await readCore();
+    if (state.offline && state.profiles.length && !confirm(t('switchStore'))) return;
+    Object.assign(state,core,{offline:false,disconnected:false});
+    $('p-engine').innerHTML = engineOptions();
+    updateTranslations();
+    renderAll();
+    toast(t('connectedAgain'));
+  } catch (err) { toast(t('missingServer'),true); }
+  finally { state.reconnecting = false; $('reconnect-button').disabled = false; }
+}
+async function pollStatus() {
+  if (state.offline || state.loading || state.polling || state.disconnected || document.hidden) return;
+  state.polling = true;
+  try {
+    const old = [state.runtime.state,state.runtime.profileId,state.runtime.pid].join(':');
+    state.runtime = await apiRequest('/api/v1/runtime','GET',undefined,6000);
+    renderHero();
+    if (old !== [state.runtime.state,state.runtime.profileId,state.runtime.pid].join(':')) renderProfiles();
+    if (!$('logs-modal').hidden) renderLogs();
+  } catch { state.disconnected = true; renderAll(); }
+  finally { state.polling = false; }
+}
+function renderHero() {
+  const running = state.runtime.state === 'running';
+  const failed = ['failed','exited','error'].includes(state.runtime.state);
+  const status = state.disconnected ? 'disconnected' : state.offline ? 'offline' : running ? 'running' : failed ? 'failedState' : 'ready';
+  $('hero-status').textContent = state.loading ? t('connecting') : t(status);
+  $('hero-description').textContent = t(state.disconnected ? 'disconnectedDesc' : state.offline ? 'offlineDesc' : running ? 'runningDesc' : failed ? 'failedDesc' : 'readyDesc');
+  $('status-badge').textContent = t(state.disconnected ? 'disconnected' : state.offline ? 'offlineBadge' : running ? 'runningBadge' : 'notRunning');
+  $('status-badge').className = 'tag ' + (state.disconnected ? 'tag-red' : running && coreAvailable() ? 'tag-teal' : state.offline ? 'tag-purple' : 'tag-neutral');
+  $('running-engine').textContent = running ? state.runtime.engine + ' · PID ' + state.runtime.pid : '—';
+  $('stats-profiles').textContent = state.profiles.length;
+  $('stats-engines').textContent = state.engines.length;
+  $('nav-profile-count').textContent = state.profiles.length;
+  $('stats-platform').textContent = platformName(state.platform);
+  $('settings-platform').textContent = platformName(state.platform);
+  $('hero-primary').innerHTML = icon(running && coreAvailable() ? 'stop' : 'layers') + `<span>${t(running && coreAvailable() ? 'stop' : 'selectProfile')}</span>`;
+  $('hero-primary').disabled = state.loading || state.busy;
+  $('connection-notice').hidden = !state.offline && !state.disconnected;
+  $('connection-notice-text').textContent = t(state.disconnected ? 'disconnectedNotice' : 'offlineNotice');
+  $('storage-description').textContent = t(state.storageBlocked || state.preservedProfiles.length ? 'storageRecovery' : state.offline ? 'browserStorage' : 'coreStorage');
+  $('export-browser-backup').hidden = !state.offline;
+  $('storage-badge').textContent = t(state.offline ? 'browserStorageBadge' : 'coreStorageBadge');
+  $('preview-profile').disabled = !coreAvailable();
+  $('probe-submit').disabled = !coreAvailable() || !!state.probing;
+  $('show-logs').disabled = state.offline || state.loading;
+  $('launch-confirm').disabled = !coreAvailable() || !state.launch?.ready || state.busy;
+}
+function profileCard(p, full=false) {
+  const active = coreAvailable() && state.runtime.state === 'running' && state.runtime.profileId === p.id;
+  const e = state.engines.find(x => x.id === p.engine);
+  const external = e?.integration === 'external' || p.engine === 'wireguard';
+  const capable = e?.platforms?.includes(state.platform) && !external;
+  const desc = p.description || p.notes || t('defaultDescription');
+  const includes = p.routing?.includeDomains?.length || 0;
+  const excludes = p.routing?.excludeDomains?.length || 0;
+  const profileAction = (action, symbol, label, disabled=false) => `<button data-profile-action="${action}" data-profile-id="${escapeHTML(p.id)}" aria-label="${escapeHTML(t(label))}: ${escapeHTML(p.name)}" title="${escapeHTML(t(label))}" ${disabled ? 'disabled' : ''}>${icon(symbol)}</button>`;
+  return `<article class="profile-card ${active ? 'profile-active' : ''}"><div class="profile-top"><div class="profile-symbol ${p.engine === 'byedpi' ? 'teal' : ''}">${icon(['wiresock','wireguard'].includes(p.engine) ? 'shield' : p.engine === 'byedpi' ? 'globe' : 'layers')}</div><span class="tag ${active ? 'tag-teal' : 'tag-neutral'}">${active ? t('runningBadge') : escapeHTML(p.category || t('customCategory'))}</span></div><button class="profile-title" data-profile-action="edit" data-profile-id="${escapeHTML(p.id)}"><h3>${escapeHTML(p.name)}</h3></button><p title="${escapeHTML(desc)}">${escapeHTML(desc)}</p><div class="profile-rules"><span>${icon('globe')}${includes} ${t('includeCount')}</span><span>${icon('shield')}${excludes} ${t('excludeCount')}</span></div><div class="profile-card-foot"><span class="engine-label">${escapeHTML(e?.name || p.engine)}</span><div class="profile-card-actions">${profileAction(active ? 'stop' : 'run',active ? 'stop' : 'play',active ? 'stop' : 'reviewSetup',!coreAvailable() || state.busy || external)}${profileAction('edit','pen','edit',active)}${profileAction('duplicate','copy','duplicate',state.busy)}${profileAction('export','download','export')}${full ? profileAction('delete','trash','delete',active || state.busy) : ''}</div></div>${full ? `<div class="profile-availability"><span class="availability-dot ${capable ? 'available' : ''}"></span>${escapeHTML(t(external ? 'engineExternal' : capable ? 'engineAvailable' : state.offline ? 'platformUnknown' : 'engineUnsupported'))}</div>` : ''}</article>`;
+}
+function renderProfiles() {
+  const term = $('profile-search').value.toLocaleLowerCase(state.lang).trim();
+  const filter = $('profile-filter').value || 'all';
+  const selected = state.profiles.filter(p => (filter === 'all' || p.engine === filter) && [p.name,p.engine,p.id,p.description,p.notes].join(' ').toLocaleLowerCase(state.lang).includes(term));
+  const empty = `<div class="empty-card">${icon('layers')}<p>${escapeHTML(t('noProfiles'))}</p><button class="btn btn-outline" data-create-profile>${escapeHTML(t('createProfile'))}</button></div>`;
+  $('quick-profiles').innerHTML = state.profiles.length ? state.profiles.slice(0,3).map(p => profileCard(p)).join('') : empty;
+  $('all-profiles').innerHTML = selected.length ? selected.map(p => profileCard(p,true)).join('') : empty;
+  $('profile-result-count').textContent = selected.length + ' / ' + state.profiles.length + ' ' + t('profilesShown');
+}
+function renderEngines() {
+  $('engines-grid').innerHTML = state.engines.map(e => {
+    const external = e.integration === 'external' || e.id === 'wireguard';
+    const supported = e.platforms.includes(state.platform) && !external;
+    const rule = (label,enabled) => `<span class="capability ${enabled ? 'supported' : ''}">${icon(enabled ? 'check' : 'x')}${escapeHTML(t(label))}</span>`;
+    return `<article class="engine-card"><div class="engine-card-header"><div><h3>${escapeHTML(e.name)}</h3><span class="engine-kind">${escapeHTML(t(external ? 'externalIntegration' : 'managedIntegration'))}</span></div><span class="engine-type">${icon(e.kind === 'vpn' ? 'shield' : e.kind === 'packet' ? 'layers' : 'globe')}</span></div><p>${escapeHTML(state.lang === 'tr' ? engineGuide(e.id) : e.notes)}</p><div class="platform-pills">${e.platforms.map(p => `<span class="${p === state.platform ? 'current-platform' : ''}">${escapeHTML(platformName(p))}</span>`).join('')}</div><div class="engine-capabilities">${rule('includesLabel',e.includes)}${rule('excludesLabel',e.excludes)}${e.license ? `<span class="license-label">${escapeHTML(e.license)}</span>` : ''}</div><div class="engine-card-foot"><a href="${safeSource(e.source)}" target="_blank" rel="noopener noreferrer">${escapeHTML(t('readDocs'))}</a><button class="text-button" data-engine-create="${escapeHTML(e.id)}">${escapeHTML(t('createForEngine'))} ${icon('plus')}</button></div><span class="engine-platform-status">${escapeHTML(t(external ? 'engineExternal' : supported ? 'engineAvailable' : state.offline ? 'platformUnknown' : 'engineUnsupported'))}</span></article>`;
+  }).join('');
+  const platforms = [ ['Windows','desktopCore','windowsSupport'],['Linux','desktopCore','linuxSupport'],['macOS','partialCore','macSupport'],['BSD','partialCore','bsdSupport'],['Android','mobileEditor','androidSupport'],['iOS','mobileEditor','iosSupport'] ];
+  $('platform-matrix').innerHTML = platforms.map(([name,badge,desc]) => `<article><div><h3>${name}</h3><span class="tag tag-neutral">${escapeHTML(t(badge))}</span></div><p>${escapeHTML(t(desc))}</p></article>`).join('');
+}
+function renderAll() { renderHero(); renderProfiles(); renderEngines(); }
+
+// Validate before any write, including offline saves. Keep the schema aligned with profile.Profile.
+function validateProfile(p) {
+  const object = (value,keys,path) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(t('invalidField') + ': ' + path);
+    for (const key of Object.keys(value)) if (!keys.includes(key)) throw new Error(t('unknownField') + ': ' + (path ? path + '.' : '') + key);
+  };
+  if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error(t('invalidProfile'));
+  object(p,['version','id','name','description','category','engine','binary','configPath','sha256','args','routing','probe','notes','updatedAt'],'');
+  const string = (key,max,required=false) => {
+    if (p[key] === undefined && !required) return;
+    if (typeof p[key] !== 'string' || new TextEncoder().encode(p[key]).length > max || p[key].includes('\0') || (required && !p[key].trim())) throw new Error(t('invalidField') + ': ' + key);
+  };
+  if (p.version !== 1) throw new Error(t('invalidVersion'));
+  if (typeof p.id !== 'string' || !/^[a-z][a-z0-9-]{1,62}$/.test(p.id)) throw new Error(t('invalidId'));
+  string('name',100,true); string('description',4000); string('notes',10000); string('category',1048576); string('binary',2048); string('configPath',4096); string('sha256',64); string('engine',50,true);
+  if (state.engines.length && !state.engines.some(e => e.id === p.engine)) throw new Error(t('invalidEngine'));
+  if (/[\r\n]/.test((p.binary || '') + (p.configPath || ''))) throw new Error(t('invalidField') + ': binary / configPath');
+  if (p.sha256 && !/^[a-f\d]{64}$/i.test(p.sha256)) throw new Error(t('invalidSHA'));
+  if (p.updatedAt !== undefined && (typeof p.updatedAt !== 'string' || Number.isNaN(Date.parse(p.updatedAt)))) throw new Error(t('invalidField') + ': updatedAt');
+  const strings = (value,max,count,path) => {
+    if (value === null || value === undefined) return [];
+    if (!Array.isArray(value) || value.length > count || value.some(v => typeof v !== 'string' || new TextEncoder().encode(v).length > max || v.includes('\0'))) throw new Error(t('invalidField') + ': ' + path);
+    return value;
+  };
+  strings(p.args,4096,128,'args');
+  object(p.routing,['includeDomains','excludeDomains','applications'],'routing');
+  const validDomain = value => value.length > 0 && value.length <= 253 && /^(\^)?([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(value);
+  const domains = field => {
+    const values = strings(p.routing[field],253,4096,'routing.' + field);
+    const seen = new Set();
+    for (const value of values) {
+      if (!validDomain(value)) throw new Error(t('invalidDomain') + ' ' + value);
+      const normalized = value.toLowerCase();
+      if (seen.has(normalized)) throw new Error(t('duplicateDomain') + ': ' + value);
+      seen.add(normalized);
+    }
+    return seen;
+  };
+  const includes = domains('includeDomains'), excludes = domains('excludeDomains');
+  for (const value of includes) if (excludes.has(value)) throw new Error(t('conflictingDomain') + ': ' + value);
+  const apps = strings(p.routing.applications,2048,100,'routing.applications');
+  if (apps.some(v => !v.trim())) throw new Error(t('invalidField') + ': routing.applications');
+  object(p.probe,['host','port','tls','timeoutSeconds'],'probe');
+  const validIPv6 = value => {
+    if (!value.includes(':') || value.includes(':::') || !/^[a-f\d:.]+$/i.test(value)) return false;
+    const halves = value.split('::');
+    if (halves.length > 2 || (halves.length === 1 && (value.startsWith(':') || value.endsWith(':')))) return false;
+    const parts = value.split(':').filter(Boolean);
+    let count = 0;
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i].includes('.')) { if (i !== parts.length - 1 || !/^\d{1,3}(\.\d{1,3}){3}$/.test(parts[i]) || parts[i].split('.').some(n => Number(n) > 255)) return false; count += 2; }
+      else { if (!/^[a-f\d]{1,4}$/i.test(parts[i])) return false; count++; }
+    }
+    return halves.length === 2 ? count < 8 : count === 8;
+  };
+  if (typeof p.probe.host !== 'string' || (p.probe.host && (p.probe.host.startsWith('^') || (!validDomain(p.probe.host) && !validIPv6(p.probe.host))))) throw new Error(t('invalidDomain') + ' (probe.host)');
+  if (!Number.isInteger(p.probe.port) || p.probe.port < 1 || p.probe.port > 65535) throw new Error(t('invalidField') + ': probe.port');
+  if (typeof p.probe.tls !== 'boolean') throw new Error(t('invalidField') + ': probe.tls');
+  if (!Number.isInteger(p.probe.timeoutSeconds) || p.probe.timeoutSeconds < 1 || p.probe.timeoutSeconds > 60) throw new Error(t('invalidField') + ': probe.timeoutSeconds');
+  return p;
+}
+function newProfile(engine='byedpi') {
+  showEditor({version:1,id:uniqueId('my-' + (engine === 'byedpi' ? 'profile' : engine),state.profiles),name:t('newProfileName'),description:'',category:t('customCategory'),engine,binary:'',configPath:'',sha256:'',args:[],routing:{includeDomains:[],excludeDomains:[],applications:[]},probe:{host:'discord.com',port:443,tls:true,timeoutSeconds:5},notes:''},true);
+}
+function setModal(id,open) {
+  const modal = $(id);
+  if (open) modal.returnFocus = document.activeElement;
+  modal.hidden = !open;
+  const modalOpen = $$('.modal-backdrop').some(el => !el.hidden);
+  document.querySelector('.app-shell').inert = modalOpen;
+  document.body.classList.toggle('modal-open',modalOpen);
+  if (!open) {
+    if (modal.returnFocus?.isConnected) modal.returnFocus.focus();
+    else if (!modalOpen) $('content').focus({preventScroll:true});
+  }
+}
+function showEditor(p,isNew=false) {
+  if (coreAvailable() && state.runtime.state === 'running' && state.runtime.profileId === p.id && !isNew) { toast(t('activeEdit'),true); return; }
+  state.editing = {original:p.id,isNew,profile:clone(p),dirty:false,saving:false};
+  fillSimple(state.editing.profile);
+  $('editor-title').textContent = t(isNew ? 'editorTitleNew' : 'editorTitleEdit');
+  $('p-id').disabled = !isNew;
+  state.editorTab = 'simple';
+  switchEditor('simple',false);
+  $('editor-feedback').textContent = '';
+  $('editor-feedback').className = '';
+  $('editor-preview').hidden = true;
+  setModal('editor-modal',true);
+  $('p-name').focus();
+}
+function fillSimple(p) {
+  const val = (id,value) => { $(id).value = value ?? ''; };
+  val('p-id',p.id); val('p-name',p.name); val('p-description',p.description); val('p-category',p.category); val('p-engine',p.engine); val('p-binary',p.binary); val('p-config',p.configPath); val('p-sha',p.sha256);
+  val('p-args',(p.args || []).join('\n'));
+  if (state.editing) state.editing.argsDisplay = $('p-args').value;
+  val('p-includes',(p.routing?.includeDomains || []).join('\n')); val('p-excludes',(p.routing?.excludeDomains || []).join('\n')); val('p-apps',(p.routing?.applications || []).join('\n'));
+  val('p-probe-host',p.probe?.host ?? 'discord.com'); val('p-probe-port',p.probe?.port ?? 443); val('p-probe-timeout',p.probe?.timeoutSeconds ?? 5); $('p-probe-tls').checked = p.probe?.tls ?? true; val('p-notes',p.notes);
+  updateEditorGuidance();
+}
+function fromSimple() {
+  const p = state.editing.profile, val = id => $(id).value.trim();
+  const rawArgs = $('p-args').value;
+  // An unchanged textarea round-trips even an empty argument or embedded newline from advanced JSON.
+  const args = rawArgs === (state.editing.argsDisplay ?? (p.args || []).join('\n')) ? clone(p.args || []) : rawArgs === '' ? [] : rawArgs.split(/\r?\n/);
+  return {...p,id:val('p-id'),name:val('p-name'),description:val('p-description'),category:val('p-category'),engine:val('p-engine'),binary:val('p-binary'),configPath:val('p-config'),sha256:val('p-sha'),args,routing:{includeDomains:splitLines($('p-includes').value),excludeDomains:splitLines($('p-excludes').value),applications:splitLines($('p-apps').value)},probe:{host:val('p-probe-host'),port:Number(val('p-probe-port')),tls:$('p-probe-tls').checked,timeoutSeconds:Number(val('p-probe-timeout'))},notes:val('p-notes')};
+}
+function currentEditorProfile() {
+  return validateProfile(state.editorTab === 'advanced' ? JSON.parse($('p-json').value) : fromSimple());
+}
+function switchEditor(tab,transfer=true) {
+  if (!state.editing || state.editing.saving) return;
+  if (transfer && tab !== state.editorTab) {
+    try {
+      const p = currentEditorProfile();
+      state.editing.profile = clone(p);
+      if (tab === 'advanced') $('p-json').value = JSON.stringify(p,null,2);
+      else fillSimple(p);
+    } catch (err) { editorError(err); return; }
+  }
+  state.editorTab = tab;
+  $$('.modal-tab').forEach(el => {
+    const active = el.dataset.editorTab === tab;
+    el.classList.toggle('active',active); el.setAttribute('aria-selected',String(active)); el.tabIndex = active ? 0 : -1;
+  });
+  $('editor-simple').hidden = tab !== 'simple';
+  $('editor-advanced').hidden = tab !== 'advanced';
+  if (tab === 'advanced' && !transfer) $('p-json').value = JSON.stringify(state.editing.profile,null,2);
+  $('editor-feedback').textContent = state.editing.dirty ? t('unsavedChanges') : '';
+  $('editor-feedback').className = '';
+}
+function editorError(err) {
+  $('editor-feedback').textContent = err.message;
+  $('editor-feedback').className = 'error';
+  toast(err.message,true);
+}
+function markDirty() {
+  if (!state.editing) return;
+  state.editing.dirty = true;
+  $('editor-feedback').textContent = t('unsavedChanges');
+  $('editor-feedback').className = '';
+  $('editor-preview').hidden = true;
+  updateEditorGuidance();
+}
+function closeEditor(force=false) {
+  if (state.editing?.saving) return;
+  if (!force && state.editing?.dirty && !confirm(t('discardChanges'))) return;
+  setModal('editor-modal',false);
+  state.editing = null;
+}
+function updateEditorGuidance() {
+  const e = state.engines.find(x => x.id === $('p-engine').value);
+  if (!e) return;
+  $('engine-guidance').innerHTML = `<div>${icon('info')}<strong>${escapeHTML(e.name)}</strong><a href="${safeSource(e.source)}" target="_blank" rel="noopener noreferrer">${escapeHTML(t('engineDocs'))} ↗</a></div><p>${escapeHTML(engineGuide(e.id))}</p>`;
+  $('p-binary').placeholder = e.executables?.[0] || ({byedpi:'ciadpi',zapret2:'nfqws2',zapret:'nfqws',goodbyedpi:'goodbyedpi.exe',wiresock:'wiresock-client.exe'})[e.id] || e.id;
+  $('rule-capability').textContent = t(e.includes ? 'supportedIncludes' : 'unsupportedIncludes') + ' ' + t(e.excludes ? 'supportedExcludes' : 'unsupportedExcludes');
+  $('domain-count').textContent = splitLines($('p-includes').value).length + ' ' + t('includeCount') + ' · ' + splitLines($('p-excludes').value).length + ' ' + t('excludeCount');
+  $('p-includes').setAttribute('aria-describedby','rule-capability');
+  $('p-excludes').setAttribute('aria-describedby','rule-capability');
+}
+function commitOffline(profiles) {
+  if (state.storageBlocked) throw new Error(t('storageUnreadable'));
+  try { storage.set('aw.profiles',JSON.stringify([...profiles,...state.preservedProfiles])); }
+  catch { throw new Error(t('storageFailed')); }
+  state.profiles = profiles;
+}
+async function persist(p) {
+  validateProfile(p);
+  if (new TextEncoder().encode(JSON.stringify(p,null,2)).length > (1 << 20)) throw new Error(t('fileTooLarge'));
+  if (state.disconnected) throw new Error(t('coreRequired'));
+  if (state.offline) {
+    const next = state.profiles.map(existing => existing.id === p.id ? clone(p) : existing);
+    if (!next.some(existing => existing.id === p.id)) next.push(clone(p));
+    commitOffline(next);
+    return p;
+  }
+  const saved = await apiRequest('/api/v1/profiles/' + encodeURIComponent(p.id),'PUT',p);
+  const i = state.profiles.findIndex(existing => existing.id === saved.id);
+  if (i >= 0) state.profiles[i] = saved; else state.profiles.push(saved);
+  return saved;
+}
+function setEditorBusy(busy) {
+  const controls = Array.from($('editor-modal').querySelectorAll('input,textarea,select,button'));
+  for (const control of controls) {
+    if (busy) { control.wasDisabled = control.disabled; control.disabled = true; }
+    else if (control.wasDisabled !== undefined) { control.disabled = control.wasDisabled; delete control.wasDisabled; }
+  }
+}
+async function saveEditor() {
+  if (!state.editing || state.editing.saving) return;
+  try {
+    if (state.editorTab === 'simple' && !$('profile-form').reportValidity()) return;
+    const p = currentEditorProfile();
+    if (!state.editing.isNew && p.id !== state.editing.original) throw new Error(t('immutableId'));
+    if (state.editing.isNew && state.profiles.some(existing => existing.id === p.id)) throw new Error(t('duplicateId'));
+    state.editing.saving = true;
+    setEditorBusy(true);
+    $('editor-feedback').textContent = t('saving');
+    await persist(p);
+    state.editing.saving = false;
+    renderAll();
+    closeEditor(true);
+    toast(t(state.offline ? 'savedOffline' : 'saved'));
+  } catch (err) { if (state.editing) state.editing.saving = false; editorError(err); }
+  finally { setEditorBusy(false); $('save-profile').disabled = false; }
+}
+function downloadFile(data,name) {
+  const url = URL.createObjectURL(new Blob([data],{type:'application/json'}));
+  const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url),1500);
+}
+async function importProfile(file) {
+  try {
+    if (file.size > 1 << 20) throw new Error(t('fileTooLarge'));
+    const p = clone(validateProfile(JSON.parse(await file.text())));
+    const collision = state.profiles.some(existing => existing.id === p.id);
+    if (collision) { p.id = uniqueId(p.id + '-import',state.profiles); p.name = copyName(p.name); }
+    delete p.updatedAt;
+    showEditor(p,true);
+    state.editing.dirty = true;
+    $('editor-feedback').textContent = t(collision ? 'importRenamed' : 'importReview');
+  } catch (err) { toast(t('importInvalid') + ': ' + err.message,true); }
+}
+async function handleProfileAction(action,id) {
+  let acquiredBusy = false;
+  const p = state.profiles.find(profile => profile.id === id);
+  if (!p && action !== 'stop') return;
+  try {
+    if (action === 'edit') { showEditor(p); return; }
+    if (action === 'export') { downloadFile(JSON.stringify(p,null,2) + '\n',p.id + '.json'); return; }
+    if (state.busy) return;
+    if (action === 'duplicate') {
+      const copied = clone(p); copied.id = uniqueId(p.id + '-copy',state.profiles); copied.name = copyName(p.name); delete copied.updatedAt;
+      showEditor(copied,true); state.editing.dirty = true; return;
+    }
+    if (action === 'delete') {
+      if (!confirm(t('confirmDelete') + '\n\n' + p.name)) return;
+      acquiredBusy = true; state.busy = true;
+      if (state.offline) commitOffline(state.profiles.filter(profile => profile.id !== id));
+      else { if (!coreAvailable()) throw new Error(t('coreRequired')); await apiRequest('/api/v1/profiles/' + encodeURIComponent(id),'DELETE'); state.profiles = state.profiles.filter(profile => profile.id !== id); }
+      renderAll(); toast(t('deleted')); return;
+    }
+    if (action === 'run') { await reviewLaunch(p); return; }
+    if (action === 'stop') {
+      if (!coreAvailable()) throw new Error(t('coreRequired'));
+      acquiredBusy = true; state.busy = true; renderHero();
+      state.runtime = await apiRequest('/api/v1/stop','POST',{});
+      toast(t('stopped'));
+    }
+  } catch (err) { toast(err.message,true); }
+  finally { if (acquiredBusy) state.busy = false; renderAll(); }
+}
+
+function renderPlan(plan,target) {
+  const list = (values,kind) => (values || []).length ? `<div class="plan-${kind}"><strong>${escapeHTML(t(kind === 'issues' ? 'issues' : 'warnings'))}</strong><ul>${values.map(value => `<li>${escapeHTML(value)}</li>`).join('')}</ul></div>` : '';
+  target.innerHTML = `<div class="plan-status ${plan.ready ? 'ready' : 'blocked'}">${icon(plan.ready ? 'check' : 'alert')}<strong>${escapeHTML(t(plan.ready ? 'setupReady' : 'setupBlocked'))}</strong></div>${list(plan.issues,'issues')}<dl><dt>${escapeHTML(t('executable'))}</dt><dd><code>${escapeHTML(plan.binary || '—')}</code></dd><dt>${escapeHTML(t('launchArguments'))}</dt><dd class="plan-args">${(plan.args || []).length ? plan.args.map((arg,i) => `<code><span>${i + 1}</span>${escapeHTML(JSON.stringify(arg))}</code>`).join('') : escapeHTML(t('noArguments'))}</dd>${plan.workingDirectory ? `<dt>${escapeHTML(t('workingDirectory'))}</dt><dd><code>${escapeHTML(plan.workingDirectory)}</code></dd>` : ''}</dl>${list(plan.warnings,'warnings')}`;
+}
+async function previewEditor() {
+  if (!coreAvailable()) { toast(t('previewUnavailable'),true); return; }
+  const editor = state.editing;
+  try {
+    const p = currentEditorProfile(), target = $('editor-preview');
+    $('preview-profile').disabled = true;
+    target.hidden = false; target.textContent = t('checkingSetup');
+    const plan = await apiRequest('/api/v1/preview','POST',p);
+    if (state.editing !== editor) return;
+    renderPlan(plan,target);
+    target.scrollIntoView({behavior:'smooth',block:'nearest'});
+  } catch (err) { editorError(err); $('editor-preview').hidden = true; }
+  finally { $('preview-profile').disabled = !coreAvailable(); }
+}
+async function reviewLaunch(p) {
+  if (!coreAvailable()) throw new Error(t('coreRequired'));
+  if (state.runtime.state === 'running') throw new Error(t('otherRunning'));
+  const launch = {profile:p,ready:false};
+  state.launch = launch;
+  $('launch-profile-name').textContent = p.name;
+  $('launch-plan').textContent = t('checkingSetup');
+  $('launch-confirm').disabled = true;
+  setModal('launch-modal',true);
+  $('close-launch').focus();
+  try {
+    const current = await apiRequest('/api/v1/profiles/' + encodeURIComponent(p.id));
+    if (state.launch !== launch) return;
+    launch.profile = current;
+    $('launch-profile-name').textContent = current.name;
+    const index = state.profiles.findIndex(profile => profile.id === current.id);
+    if (index >= 0) state.profiles[index] = current;
+    const plan = await apiRequest('/api/v1/preview','POST',current);
+    if (state.launch !== launch) return;
+    launch.ready = !!plan.ready;
+    renderPlan(plan,$('launch-plan'));
+    $('launch-confirm').disabled = !plan.ready || !coreAvailable();
+  } catch (err) { if (state.launch === launch) $('launch-plan').textContent = err.message; }
+}
+function closeLaunch() {
+  if (state.busy) return;
+  setModal('launch-modal',false); state.launch = null;
+}
+async function confirmLaunch() {
+  if (!state.launch?.ready || state.busy || !coreAvailable()) return;
+  const launch = state.launch, id = launch.profile.id;
+  state.busy = true; $('launch-confirm').disabled = true; $('launch-edit').disabled = true;
+  try {
+    state.runtime = await apiRequest('/api/v1/start','POST',{id,confirm:true,expectedUpdatedAt:launch.profile.updatedAt},20000);
+    state.busy = false;
+    closeLaunch(); renderAll(); toast(t('startOk'));
+  } catch (err) { toast(err.message,true); if (state.launch === launch) { launch.ready = false; $('launch-plan').insertAdjacentHTML('afterbegin',`<p class="plan-error">${escapeHTML(err.message)}</p>`); } }
+  finally { state.busy = false; $('launch-edit').disabled = false; renderHero(); }
+}
+function addExclusions(group) {
+  const groups = {updates:['windowsupdate.com','update.microsoft.com','delivery.mp.microsoft.com'],steam:['steampowered.com','steamcontent.com','steamstatic.com'],riot:['riotgames.com']};
+  const values = splitLines($('p-excludes').value);
+  const includes = new Set(splitLines($('p-includes').value).map(s => s.toLowerCase()));
+  const seen = new Set(values.map(s => s.toLowerCase()));
+  for (const domain of groups[group] || []) if (!seen.has(domain) && !includes.has(domain)) { values.push(domain); seen.add(domain); }
+  $('p-excludes').value = values.join('\n'); markDirty(); toast(t('addedExclusions'));
+}
+async function runProbe() {
+  if (!coreAvailable()) { toast(t('coreRequired'),true); return; }
+  if (state.probing) return;
+  const p = {host:$('probe-host').value.trim(),port:Number($('probe-port').value),timeoutSeconds:Number($('probe-timeout').value),tls:$('probe-tls').checked};
+  state.probing = true;
+  const button = $('probe-submit'); button.disabled = true; button.innerHTML = icon('pulse') + `<span>${t('testRunning')}</span>`;
+  try {
+    const report = await apiRequest('/api/v1/diagnose','POST',p,(p.timeoutSeconds + 10) * 1000);
+    state.lastProbe = report; renderProbe(report); toast(t('testDone'));
+  } catch (err) { toast(t('testFailed') + ': ' + err.message,true); }
+  finally { state.probing = false; button.disabled = !coreAvailable(); button.innerHTML = icon('play') + `<span>${t('startTest')}</span>`; }
+}
+function renderProbe(report) {
+  const checks = report.checks || [], passed = checks.length > 0 && checks.every(c => c.status === 'ok');
+  $('diagnostic-meta').hidden = false;
+  $('diagnostic-meta').innerHTML = `<strong>${escapeHTML(report.host)}:${Number(report.port)}</strong><span>${escapeHTML(new Date(report.at).toLocaleString(state.lang === 'tr' ? 'tr-TR' : 'en-US'))}</span><p class="${passed ? 'success-text' : 'error-text'}">${escapeHTML(t(passed ? 'testPassed' : 'testIncomplete'))}</p>`;
+  $('diagnostic-results').className = 'result-list';
+  $('diagnostic-results').innerHTML = checks.map(c => `<div class="result-item"><span class="result-icon ${c.status === 'ok' ? '' : 'error'}">${icon(c.status === 'ok' ? 'check' : 'alert')}</span><div class="result-content"><h3>${escapeHTML(c.name)} · ${escapeHTML(c.status === 'ok' ? state.lang === 'tr' ? 'BAŞARILI' : 'PASSED' : state.lang === 'tr' ? 'BAŞARISIZ' : 'FAILED')}</h3><p>${escapeHTML(c.detail)}</p></div><span class="result-duration">${Number(c.durationMs) || 0} ms</span></div>`).join('');
+  $('export-report').hidden = false;
+}
+function renderLogs() { $('log-output').textContent = (state.runtime.log || []).join('\n') || t('settingsLogsEmpty'); }
+async function showLogs() {
+  if (coreAvailable()) await pollStatus();
+  renderLogs(); setModal('logs-modal',true); $('close-logs').focus();
+}
+function trapModalKeys(event) {
+  const open = $$('.modal-backdrop').filter(el => !el.hidden);
+  const modal = open[open.length - 1];
+  if (!modal) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    if (modal.id === 'editor-modal') closeEditor();
+    else if (modal.id === 'launch-modal') closeLaunch();
+    else setModal(modal.id,false);
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && modal.id === 'editor-modal') { event.preventDefault(); saveEditor(); }
+  if (event.key !== 'Tab') return;
+  const focusable = Array.from(modal.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href],[tabindex="0"]')).filter(el => !el.closest('[hidden]') && el.tabIndex !== -1);
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  if (!first) return;
+  if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
+}
+function bindEvents() {
+  $$('.nav-item').forEach(el => el.addEventListener('click',() => navigate(el.dataset.view,true)));
+  $$('[data-action]').forEach(el => el.addEventListener('click',() => navigate(el.dataset.action === 'diagnose' ? 'diagnostics' : el.dataset.action,true)));
+  window.addEventListener('hashchange',() => navigate(location.hash.slice(1) || 'dashboard'));
+  window.addEventListener('beforeunload',event => { if (state.editing?.dirty) { event.preventDefault(); event.returnValue = ''; } });
+  $('menu-toggle').addEventListener('click',() => { const open = $('sidebar').classList.toggle('open'); $('menu-toggle').setAttribute('aria-expanded',String(open)); });
+  $('theme-toggle').addEventListener('click',() => setTheme(state.theme === 'dark' ? 'light' : 'dark'));
+  $('lang-toggle').addEventListener('click',() => changeLanguage(state.lang === 'en' ? 'tr' : 'en'));
+  $('settings-language').addEventListener('change',event => changeLanguage(event.target.value));
+  $('settings-theme').addEventListener('change',event => setTheme(event.target.value));
+  $('new-profile').addEventListener('click',() => newProfile());
+  $('hero-primary').addEventListener('click',() => { if (coreAvailable() && state.runtime.state === 'running') handleProfileAction('stop',state.runtime.profileId); else navigate('profiles',true); });
+  $('import-button').addEventListener('click',() => $('import-file').click());
+  $('import-file').addEventListener('change',event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) importProfile(file); });
+  $('profile-search').addEventListener('input',renderProfiles);
+  $('profile-filter').addEventListener('change',renderProfiles);
+  $('reconnect-button').addEventListener('click',reconnect);
+  $('export-browser-backup').addEventListener('click',() => downloadFile(storage.get('aw.profiles') || '[]','accessweaver-browser-backup.json'));
+  document.addEventListener('click',event => {
+    const action = event.target.closest('[data-profile-action]');
+    if (action && !action.disabled) handleProfileAction(action.dataset.profileAction,action.dataset.profileId);
+    const engine = event.target.closest('[data-engine-create]'); if (engine) newProfile(engine.dataset.engineCreate);
+    if (event.target.closest('[data-create-profile]')) newProfile();
+    const exclusion = event.target.closest('[data-exclusion]'); if (exclusion) addExclusions(exclusion.dataset.exclusion);
+  });
+  $('close-editor').addEventListener('click',() => closeEditor());
+  $('cancel-editor').addEventListener('click',() => closeEditor());
+  $('save-profile').addEventListener('click',saveEditor);
+  $('preview-profile').addEventListener('click',previewEditor);
+  $$('.modal-tab').forEach(el => {
+    el.addEventListener('click',() => switchEditor(el.dataset.editorTab));
+    el.addEventListener('keydown',event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const next = state.editorTab === 'simple' ? 'advanced' : 'simple'; switchEditor(next); $('tab-' + state.editorTab).focus(); } });
+  });
+  $('profile-form').addEventListener('submit',event => { event.preventDefault(); saveEditor(); });
+  $('profile-form').addEventListener('input',markDirty);
+  $('profile-form').addEventListener('change',markDirty);
+  $('p-json').addEventListener('input',markDirty);
+  $('diagnostic-form').addEventListener('submit',event => { event.preventDefault(); runProbe(); });
+  $('export-report').addEventListener('click',() => { if (state.lastProbe) downloadFile(JSON.stringify(state.lastProbe,null,2) + '\n','accessweaver-diagnostics-' + state.lastProbe.host + '.json'); });
+  $('show-logs').addEventListener('click',showLogs);
+  $('close-logs').addEventListener('click',() => setModal('logs-modal',false));
+  $('logs-copy').addEventListener('click',async () => { try { await navigator.clipboard.writeText($('log-output').textContent); toast(t('copySuccess')); } catch (err) { toast(err.message,true); } });
+  $('close-launch').addEventListener('click',closeLaunch);
+  $('launch-confirm').addEventListener('click',confirmLaunch);
+  $('launch-edit').addEventListener('click',() => { if (state.busy) return; const p = state.launch?.profile; closeLaunch(); if (p) showEditor(p); });
+  document.addEventListener('keydown',trapModalKeys);
+}
+bindEvents();initialize();

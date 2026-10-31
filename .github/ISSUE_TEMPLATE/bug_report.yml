@@ -1,0 +1,32 @@
+name: Bug report
+description: Report a reproducible AccessWeaver problem.
+body:
+  - type: markdown
+    attributes:
+      value: "For sensitive vulnerabilities, follow SECURITY.md. Remove credentials and private addresses from examples."
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include the expected behavior and what you observed.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal, sanitized profile if relevant.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS, architecture and AccessWeaver version
+      placeholder: Windows 11 arm64, AccessWeaver 0.1.0-alpha
+    validations:
+      required: true
+  - type: textarea
+    id: engine
+    attributes:
+      label: External engine and evidence
+      description: Exact engine version, invocation mode, privilege level, and whether routing was independently checked. Leave blank for UI-only issues.

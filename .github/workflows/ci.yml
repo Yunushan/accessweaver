@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.27.3'
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Static analysis
+        run: go vet ./...
+      - name: Unit tests
+        run: go test ./... -count=1
+      - name: Build core
+        run: go build ./cmd/accessweaver
+      - name: JavaScript syntax
+        if: runner.os == 'Linux'
+        run: node --check web/app.js
+      - name: Browser logic tests
+        if: runner.os == 'Linux'
+        run: node --test web/app.test.cjs
+      - name: Go formatting
+        if: runner.os == 'Linux'
+        shell: bash
+        run: test -z "$(gofmt -l cmd internal web)"
+  race:
+    name: Race detector (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - run: go test -race ./... -count=1
+  cross-compile:
+    name: Cross-build (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [linux/amd64, linux/arm64, windows/amd64, windows/arm64, darwin/amd64, darwin/arm64, freebsd/amd64, freebsd/arm64, openbsd/amd64, openbsd/arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Cross-build core (does not run the target)
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: bash scripts/build-all.sh "$TARGET"

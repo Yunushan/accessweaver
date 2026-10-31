@@ -1,0 +1,21 @@
+# binaries / artifacts
+/bin/
+/dist/
+/build/
+*.exe
+*.app
+*.dmg
+*.deb
+*.rpm
+*.test
+*.out
+coverage.txt
+# private local state
+.data/
+*.local.json
+.env
+.env.*
+!.env.example
+.DS_Store
+.idea/
+.vscode/
