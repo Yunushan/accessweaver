@@ -9,15 +9,19 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/Yunushan/accessweaver/internal/filelock"
 	"github.com/Yunushan/accessweaver/internal/managed"
 )
 
+// Store coordinates one profile root. Do not copy a Store after its first use.
 type Store struct {
-	Root  string
-	guard *managed.Guard
+	Root    string
+	guard   *managed.Guard
+	listMu  sync.Mutex
+	listing *listRead
 }
 
 // ErrConflict means the caller's reviewed revision no longer names the saved
@@ -112,12 +116,7 @@ func (s *Store) List() ([]Profile, error) {
 	return s.ListContext(context.Background())
 }
 
-func (s *Store) ListContext(ctx context.Context) ([]Profile, error) {
-	lock, err := s.lock(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer lock.Close()
+func (s *Store) listLocked(ctx context.Context) ([]Profile, error) {
 	dir := filepath.Join(s.Root, "profiles")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -125,6 +124,9 @@ func (s *Store) ListContext(ctx context.Context) ([]Profile, error) {
 	}
 	out := make([]Profile, 0, len(entries))
 	for _, f := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if f.IsDir() || filepath.Ext(f.Name()) != ".json" {
 			continue
 		}
@@ -136,6 +138,9 @@ func (s *Store) ListContext(ctx context.Context) ([]Profile, error) {
 		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 func (s *Store) Save(p Profile) error {

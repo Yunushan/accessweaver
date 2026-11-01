@@ -126,12 +126,22 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - name: Check native identity rejection cases
         run: |
-          node --test scripts/check-native-environment.test.cjs scripts/check-packaged-evidence.test.cjs
+          node --test scripts/check-native-environment.test.cjs scripts/check-packaged-evidence.test.cjs scripts/check-profile-benchmark.test.cjs
           node --check scripts/test-packaged-diagnostics.cjs
       - name: Static analysis
         run: go vet ./...
       - name: Unit tests
         run: go test ./... -count=1
+      - name: Measure native concurrent profile inventory
+        run: node scripts/check-profile-benchmark.cjs
+      - name: Retain source-bound profile benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: profile-benchmark-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: build/profile-benchmarks/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Build core
         run: go build ./cmd/accessweaver
       - name: Verify executed native CLI identity
