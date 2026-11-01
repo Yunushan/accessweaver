@@ -29,7 +29,9 @@ func TestMain(m *testing.M) {
 			Args []string
 			Cwd  string
 		}{os.Args[1:], cwd})
-		if err := os.WriteFile(os.Getenv("ACCESSWEAVER_FIXTURE_RECORD"), b, 0600); err != nil {
+		// The parent treats record existence as readiness. Publish complete JSON
+		// atomically so a scheduled reader cannot observe the newly empty file.
+		if err := profile.AtomicWrite(os.Getenv("ACCESSWEAVER_FIXTURE_RECORD"), b); err != nil {
 			os.Exit(24)
 		}
 		fmt.Println("fixture process ready")
