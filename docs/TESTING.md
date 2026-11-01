@@ -41,6 +41,8 @@ Use a disposable `ACCESSWEAVER_HOME` directory.
 6. Run a diagnostic against a controlled target. Confirm DNS/TCP/TLS stages and certificate verification. Disconnect networking and confirm failure is distinguishable from success.
 7. Close the application, restart, and check profile persistence. Offline/browser-only profiles require explicit export/import to reach this store.
 
+Windows private-launcher ACL regression tests also parse real native security descriptors and inspect a temporary directory with an `OWNER RIGHTS` access-control entry. That SID represents the current object owner; it is accepted as an ACE principal only after the actual owner has independently passed validation. A foreign owner, `OWNER RIGHTS` used as an owner SID, and unrelated principals with replacement/permission-changing rights remain rejected. The tests change only their temporary directory, not machine/user-profile ACLs. [Microsoft defines these SID semantics](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-identifiers).
+
 ## Real browser acceptance
 
 Development-only Playwright dependencies are pinned in `scripts/browser-tests/package-lock.json`; downloaded application users do not need Node.js. Build the controller as `build/browser-tests/accessweaver` on Unix or `build/browser-tests/accessweaver.exe` on Windows, then run:

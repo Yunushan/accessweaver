@@ -122,7 +122,10 @@ func checkDescriptor(owner, acl unsafe.Pointer, user string) error {
 			continue
 		}
 		principal, err := (*syscall.SID)(unsafe.Add(ace, 8)).String()
-		if err != nil || !trustedSID(principal, user) {
+		// OWNER RIGHTS denotes this object's owner, which was independently
+		// validated above. It does not grant rights to an unrelated account.
+		// Keep it out of trustedSID: it must never be accepted as an owner SID.
+		if err != nil || (!trustedSID(principal, user) && principal != "S-1-3-4") {
 			return errors.New("another principal can replace directory contents or change permissions")
 		}
 	}
