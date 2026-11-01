@@ -26,5 +26,16 @@ try{
     Copy-Item -LiteralPath (Join-Path $goRoot 'LICENSE') -Destination (Join-Path $notices 'Go-runtime-LICENSE') -Force
     Copy-Item -LiteralPath (Join-Path $project 'LICENSE') -Destination (Join-Path $notices 'AccessWeaver-0BSD.txt') -Force
     foreach($name in @('go.mod','go.sum','README.md')){Copy-Item -LiteralPath $name -Destination (Join-Path $notices $name) -Force}
+    $validator=Join-Path $project 'build\tools\sbom-schema.exe'
+    & $compiler -C (Join-Path $project 'scripts\sbom-tools') build -mod=readonly -trimpath -o $validator .
+    if($LASTEXITCODE -ne 0){throw 'SBOM validator build failed'}
+    foreach($entry in @(@('wgpeer.exe','.'),@('probe-selected.exe','./cmd/probe'),@('probe-direct.exe','./cmd/probe'))){
+        $binary=Join-Path $destination $entry[0]
+        $sbom=$binary+'.cdx.json'
+        & python (Join-Path $project 'scripts\sbom.py') --binary $binary --module-root $PWD.Path --main $entry[1] --fixture --notices $notices --out $sbom --go $compiler
+        if($LASTEXITCODE -ne 0){throw 'Fixture SBOM generation failed'}
+        & $validator --schemas (Join-Path $project 'scripts\sbom\schema') $sbom
+        if($LASTEXITCODE -ne 0){throw 'Fixture SBOM schema validation failed'}
+    }
     Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $destination 'wgpeer.exe'),(Join-Path $destination 'probe-selected.exe')
 }finally{$env:GOOS=$oldOS;$env:GOARCH=$oldArch;$env:CGO_ENABLED=$oldCGO;Pop-Location}

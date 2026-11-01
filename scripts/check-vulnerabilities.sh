@@ -31,3 +31,7 @@ done
 for target in linux/amd64 windows/amd64; do
   scan fixture "${target%/*}" "${target#*/}" scripts/fixtures/wgpeer accessweaver.test/wgpeer
 done
+
+for target in linux/amd64 windows/amd64; do
+  scan sbom-tools "${target%/*}" "${target#*/}" scripts/sbom-tools accessweaver.tools/sbom
+done

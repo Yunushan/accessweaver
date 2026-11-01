@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/CycloneDX/specification",
+  "commit": "6470e34ef83f915868ece48934cff52e10c9eb49",
+  "schemaVersion": "1.6",
+  "license": "Apache-2.0",
+  "note": "Validation loads only these vendored resources; no remote schema fetches."
+}

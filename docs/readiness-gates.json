@@ -215,7 +215,12 @@
           "evidence": [
             "THIRD_PARTY.md",
             "scripts/package-release.sh",
-            "scripts/build-windows-fixtures.ps1"
+            "scripts/build-windows-fixtures.ps1",
+            "scripts/sbom.py",
+            "scripts/test_sbom.py",
+            "scripts/sbom-tools/main.go",
+            "scripts/sbom-tools/main_test.go",
+            "docs/SBOM.md"
           ]
         },
         {

@@ -49,6 +49,24 @@ jobs:
           go -C scripts/fixtures/wgpeer test ./... -count=1
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go -C scripts/fixtures/wgpeer build -trimpath -buildvcs=false -o "$RUNNER_TEMP/wgpeer.exe" .
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go -C scripts/fixtures/wgpeer build -trimpath -buildvcs=false -o "$RUNNER_TEMP/probe.exe" ./cmd/probe
+      - name: Build fixture SBOMs and validate pinned CycloneDX schemas
+        run: |
+          go -C scripts/sbom-tools mod download
+          go -C scripts/sbom-tools mod verify
+          go -C scripts/sbom-tools test ./... -count=1
+          go -C scripts/sbom-tools build -mod=readonly -trimpath -o "$RUNNER_TEMP/sbom-schema" .
+          mkdir -p build/sbom-checks
+          python3 scripts/sbom.py --binary "$RUNNER_TEMP/wgpeer.exe" --module-root scripts/fixtures/wgpeer --main . --fixture --notices build/sbom-checks/licenses --out build/sbom-checks/wgpeer.cdx.json
+          python3 scripts/sbom.py --binary "$RUNNER_TEMP/probe.exe" --module-root scripts/fixtures/wgpeer --main ./cmd/probe --fixture --notices build/sbom-checks/licenses --out build/sbom-checks/probe.cdx.json
+          "$RUNNER_TEMP/sbom-schema" --schemas scripts/sbom/schema build/sbom-checks/wgpeer.cdx.json build/sbom-checks/probe.cdx.json
+      - name: Retain fixture SBOM evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fixture-sbom-check
+          path: build/sbom-checks/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Check known vulnerabilities for all core targets and fixture environments
         run: GOVULNCHECK="$GOBIN/govulncheck" bash scripts/check-vulnerabilities.sh
       - name: Retain scanner evidence, including failed reports
@@ -109,6 +127,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p test_release_archive.py -v
           python3 -m unittest discover -s scripts -p test_release_provenance.py -v
+          python3 -m unittest discover -s scripts -p test_sbom.py -v
       - name: Windows workflow contracts (no system changes)
         if: runner.os == 'Windows'
         shell: powershell
@@ -125,6 +144,7 @@ jobs:
           path: |
             build/installer-checks/
             build/accessweaver-*-windows-amd64-setup.exe
+            build/accessweaver-*-windows-amd64-setup.exe.cdx.json
           if-no-files-found: ignore
           retention-days: 14
       - name: Disposable Linux managed-policy acceptance

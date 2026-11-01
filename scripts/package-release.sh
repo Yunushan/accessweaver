@@ -13,6 +13,8 @@ command -v python3 >/dev/null 2>&1 || { echo "Python 3 is required for packaging
 # Build in a fresh private temporary directory, so old files never enter a release.
 stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/accessweaver-release.XXXXXXXX")"
 trap 'rm -rf "$stage_dir"' EXIT
+GOOS="$(go env GOHOSTOS)" GOARCH="$(go env GOHOSTARCH)" CGO_ENABLED=0 \
+  go -C scripts/sbom-tools build -mod=readonly -trimpath -o "$stage_dir/sbom-schema" .
 OUTPUT_DIR="$stage_dir/bin" bash scripts/build-all.sh
 
 python3 - "$release_label" "$stage_dir/bin" <<'PY'
@@ -26,6 +28,7 @@ import sys
 import zlib
 sys.path.insert(0, "scripts")
 from release_archive import epoch_from_timestamp, write_archive
+from sbom import generate
 
 label, binaries = sys.argv[1], Path(sys.argv[2])
 build_info = json.loads((binaries / "BUILD-INFO.json").read_text(encoding="utf-8"))
@@ -67,6 +70,20 @@ for binary in sorted(binaries.iterdir()):
     target_info_file = binaries.parent / (directory + "-BUILD-INFO.json")
     target_info_file.write_text(json.dumps(target_info, indent=2) + "\n", encoding="utf-8")
     pairs += [(target_info_file, f"{directory}/BUILD-INFO.json")]
+    sbom_notices = binaries.parent / (directory + "-notices")
+    sbom_file = binaries.parent / (directory + "-SBOM.cdx.json")
+    bom = generate(binary, Path.cwd(), "./cmd/accessweaver", target_info, sbom_notices)
+    sbom_file.write_text(json.dumps(bom, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+    subprocess.run([str(binaries.parent / "sbom-schema"), "--schemas", str(Path("scripts/sbom/schema").resolve()), str(sbom_file)], check=True)
+    pairs += [(sbom_file, f"{directory}/SBOM.cdx.json")]
+    for notice in sorted(sbom_notices.iterdir()):
+        name = f"{directory}/licenses/{notice.name}"
+        existing = [source for source, target in pairs if target == name]
+        if existing:
+            if existing[0].read_bytes() != notice.read_bytes():
+                raise SystemExit("Conflicting SBOM notice: " + notice.name)
+        else:
+            pairs.append((notice, name))
     archive = out / (directory + (".zip" if target_os == "windows" else ".tar.gz"))
     write_archive(archive, pairs, epoch, executable=f"{directory}/accessweaver{extension or ''}")
     checksum = hashlib.sha256(archive.read_bytes()).hexdigest()

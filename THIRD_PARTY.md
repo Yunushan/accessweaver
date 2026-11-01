@@ -34,3 +34,7 @@ The [SDK vendor page](https://wiresock.net/wiresock-sdk) describes a free evalua
 Before adding bundled code, packages, installers or drivers, document the exact version, source, license, notices, transitive dependencies, redistribution permissions and verification procedure. Running a user-installed executable through an adapter is not evidence that the executable is trustworthy or legally redistributable.
 
 The preset collections identified above are the included SplitWire-Turkey assets. AccessWeaver's workflow implementation is original code. Project names and trademarks belong to their respective owners.
+
+## Generated software inventories
+
+Portable archives include a binary-bound CycloneDX SBOM and checksum-bound license evidence. VM fixture bundles and unsigned Windows installer compilation have separate inventories; they do not add runtime dependencies to the core. [SBOM procedures and boundaries](docs/SBOM.md) describe schema validation, copied notices and unfinished native/redistribution review. Inno Setup-generated installers retain their compiler distribution's custom license notice; no SPDX identifier or complete native dependency closure is invented for that runtime.

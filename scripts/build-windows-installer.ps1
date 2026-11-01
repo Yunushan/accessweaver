@@ -34,8 +34,30 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Could not locate Go runtime license'}
     Copy-Item -LiteralPath (Join-Path $goRoot 'LICENSE') -Destination (Join-Path $stage 'licenses\Go-runtime-LICENSE')
     [IO.File]::WriteAllText((Join-Path $stage 'uninstall-system.json'),'{"action":"remove-all"}')
-    & $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) (Join-Path $PSScriptRoot 'windows-installer.iss')
+    $compilerLicense=Join-Path (Split-Path -Parent $Compiler) 'License.txt'
+    if(-not (Test-Path -LiteralPath $compilerLicense -PathType Leaf)){throw 'Inno Setup license evidence is missing'}
+    Copy-Item -LiteralPath $compilerLicense -Destination (Join-Path $stage 'licenses\Inno-Setup-License.txt')
+    $validator=Join-Path $project 'build\tools\sbom-schema.exe'
+    & $Go -C (Join-Path $project 'scripts\sbom-tools') build -mod=readonly -trimpath -o $validator .
+    if($LASTEXITCODE -ne 0){throw 'SBOM validator build failed'}
+    $payloadSBOM=Join-Path $stage 'SBOM.cdx.json'
+    & python (Join-Path $project 'scripts\sbom.py') --binary (Join-Path $stage 'accessweaver.exe') --module-root $project --main ./cmd/accessweaver --identity (Join-Path $stage 'BUILD-INFO.json') --notices (Join-Path $stage 'licenses') --out $payloadSBOM --go $Go
+    if($LASTEXITCODE -ne 0){throw 'Installer payload SBOM generation failed'}
+    & $validator --schemas (Join-Path $project 'scripts\sbom\schema') $payloadSBOM
+    if($LASTEXITCODE -ne 0){throw 'Installer payload SBOM validation failed'}
+    $compilerOutput=@(& $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) (Join-Path $PSScriptRoot 'windows-installer.iss'))
     if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
+    $compilerOutput | Write-Output
+    $actualVersion=[regex]::Match(($compilerOutput -join "`n"),'(?im)^Compiler engine version:\s*Inno Setup\s+(\d+\.\d+\.\d+)\b')
+    if(-not $actualVersion.Success){throw 'Could not identify installer compiler version'}
     $artifact=Join-Path $project ('build\accessweaver-'+$Version+'-windows-amd64-setup.exe')
+    & python (Join-Path $project 'scripts\sbom.py') --binary $artifact --payload-sbom $payloadSBOM --compiler $Compiler --compiler-version $actualVersion.Groups[1].Value --compiler-license $compilerLicense --notices (Join-Path $stage 'licenses') --out ($artifact+'.cdx.json')
+    if($LASTEXITCODE -ne 0){throw 'Installer SBOM generation failed'}
+    & $validator --schemas (Join-Path $project 'scripts\sbom\schema') ($artifact+'.cdx.json')
+    if($LASTEXITCODE -ne 0){throw 'Installer SBOM validation failed'}
+    $evidence=Join-Path $project 'build\installer-checks'
+    [void](New-Item -ItemType Directory -Force -Path $evidence)
+    Copy-Item -LiteralPath $payloadSBOM -Destination (Join-Path $evidence 'payload-SBOM.cdx.json') -Force
+    Copy-Item -LiteralPath (Join-Path $stage 'licenses') -Destination $evidence -Recurse -Force
     Get-FileHash -LiteralPath $artifact -Algorithm SHA256
 } finally { $env:GOOS=$previousOS;$env:GOARCH=$previousArch;$env:CGO_ENABLED=$previousCGO;Pop-Location }

@@ -18,6 +18,8 @@ import tarfile
 import tempfile
 import zipfile
 
+from sbom import validate as validate_sbom
+
 TARGETS = {(os_name, arch) for os_name in ("windows", "linux", "darwin", "freebsd", "openbsd") for arch in ("amd64", "arm64")}
 
 
@@ -48,10 +50,22 @@ def inspect_archive(path, root, binary_name):
             names.add(name)
             total += size
         require(total <= 256 << 20, "Archive uncompressed size exceeds limit")
-        for name in (binary_name, "BUILD-INFO.json", "LICENSE", "THIRD_PARTY.md", "SECURITY.md", "licenses/Go-runtime-LICENSE", "licenses/SplitWire-Turkey-MIT.txt"):
+        for name in (binary_name, "BUILD-INFO.json", "SBOM.cdx.json", "LICENSE", "THIRD_PARTY.md", "SECURITY.md", "licenses/Go-runtime-LICENSE", "licenses/SplitWire-Turkey-MIT.txt"):
             require(f"{root}/{name}" in names, f"Missing release file: {name}")
         info = json.loads(read(f"{root}/BUILD-INFO.json"))
-        return info, read(f"{root}/{binary_name}")
+        binary = read(f"{root}/{binary_name}")
+        bom = json.loads(read(f"{root}/SBOM.cdx.json"))
+        validate_sbom(bom, binary, info)
+        components = [bom["metadata"]["component"]] + bom.get("components", [])
+        for component in components:
+            for prop in component.get("properties", []):
+                if prop["name"] != "accessweaver:license-evidence":
+                    continue
+                for evidence in json.loads(prop["value"]):
+                    name = evidence["path"]
+                    require(re.fullmatch(r"licenses/[A-Za-z0-9._-]+", name), "Unexpected SBOM notice path")
+                    require(f"{root}/{name}" in names and hashlib.sha256(read(f"{root}/{name}")).hexdigest() == evidence["sha256"], "Missing or changed SBOM license evidence")
+        return info, binary
 
 
 def verify(directory, execute_native=False):
