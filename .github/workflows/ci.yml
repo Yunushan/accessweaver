@@ -125,7 +125,9 @@ jobs:
       - name: Verify native host and SDK identity
         run: node scripts/check-native-environment.cjs
       - name: Check native identity rejection cases
-        run: node --test scripts/check-native-environment.test.cjs
+        run: |
+          node --test scripts/check-native-environment.test.cjs scripts/check-packaged-evidence.test.cjs
+          node --check scripts/test-packaged-diagnostics.cjs
       - name: Static analysis
         run: go vet ./...
       - name: Unit tests
@@ -184,6 +186,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p test_release_archive.py -v
           python3 -m unittest discover -s scripts -p test_release_provenance.py -v
+          python3 -m unittest discover -s scripts -p test_stage_packaged_native.py -v
           python3 -m unittest discover -s scripts -p test_sbom.py -v
       - name: Windows workflow contracts (no system changes)
         if: runner.os == 'Windows'

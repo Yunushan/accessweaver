@@ -40,6 +40,16 @@ Manual **Release artifacts** runs create preview artifacts and attestations with
 
 `test_release_provenance.py` checks command constraints, authenticate-before-parse ordering, all-subject coverage and failure/no-fallback behavior. Those mocked calls do not prove cryptographic verification. The packaging job also runs `check_provenance_rejections.py` against its real signed bundle: changed subject bytes and wrong source digest/ref/workflow/repository must return failure, while the correct manifest verifies before and after those probes. Public results are retained in the `release-provenance-check` artifact; source-bound run results determine whether this procedure actually passed.
 
+## Execute the authenticated portable candidate
+
+After packaging, `packaged-native` runs on native amd64 and arm64 Windows, Linux and macOS hosts. It downloads the same thirteen-file artifact set that publication consumes. `stage_packaged_native.py` copies bounded inputs into a private snapshot, authenticates all twelve subjects against the independently supplied workflow commit/ref, and validates archive contents before staging only the matching native executable. Authentication never executes candidate code. Its GitHub credential is scoped to that step; candidate execution runs in subsequent steps.
+
+The jobs compare the executed version, source state, build time, compiler, platform, architecture and executable SHA-256 with the authenticated `BUILD-INFO.json` and staging receipt. They run independent backup/recovery interoperability and nine loopback diagnostic cases: direct TCP, untrusted TLS rejection, SOCKS5 and HTTP CONNECT tunnels, proxy refusal, direct STUN, wrong transaction rejection, timeout and SOCKS5 UDP. Unix jobs additionally exercise controller ownership, private bootstrap and shutdown; Linux checks cross-user session denial. The public `packaged-native-OS-ARCH` artifacts retain receipts and source/binary-bound results. Temporary profiles, passphrases and launcher credentials are excluded.
+
+Publication depends on all six packaged jobs as well as packaging. A manual preview still creates no release. Inspect the exact run outcomes before claiming acceptance; configured steps alone are not passing evidence. The public TLS fixture key is intentionally nonsecret and used only to test rejection of an untrusted loopback server. It is never installed in a trust store.
+
+These checks execute the actual stripped, trimpath, CGO-disabled portable cores, rather than substituting a separate test build. They do not qualify BSD execution, OS publisher signatures, native installers, vendor network changes or managed deployment. The manifest's aggregate `targetExecutionTested: false` remains accurate because the ten-target set includes four unexecuted BSD targets. Individual records retain `productionQualificationComplete: false`.
+
 ## Remaining signing and trust requirements
 
 The manifest's `unsigned: true` and the unsigned-alpha artifact labels still describe the OS binaries. Build provenance identifies a GitHub workflow and source; it does not provide Windows Authenticode, macOS Developer ID/notarization, an installer signature or authenticated in-product update selection. Publisher certificates, signing-key ownership, deployment application control and those native distribution checks remain required.

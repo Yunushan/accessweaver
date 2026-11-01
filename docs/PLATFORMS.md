@@ -27,6 +27,8 @@ CI/release verification is configured for native execution on six hosted targets
 
 The [hosted-runner labels](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) identify the provider's OS/architecture images; `-latest` labels can change OS releases. Native checks compare OS machine type, runner architecture, Go host/target/version and the executed CLI identity. A cross SDK, different target, wrong source or dirty hosted build fails validation. Public per-target records contain actual image/OS/toolchain and binary hashes; artifact names include both OS and architecture so one target cannot replace another's evidence. Test outcomes must be checked against the exact source-bound run, not inferred from this configured matrix.
 
+Release previews also authenticate and execute the actual packaged portable cores on those six hosts. Publication requires every packaged check to pass. Separate `packaged-native-OS-ARCH` artifacts bind the archive/executable hashes to runtime identity, backup/recovery, loopback diagnostics and Unix controller checks; see [release provenance](RELEASE_PROVENANCE.md#execute-the-authenticated-portable-candidate). The source-built native policy tests above remain separate from packaged-candidate acceptance.
+
 The ten packaging targets remain cross-compiled with `CGO_ENABLED=0`. BSD builds are not native BSD execution. Hosted core acceptance does not establish vendor driver/routing behavior, every OS version/distribution, domain/MDM enrollment, signed distribution, native arm64 installer support or complete desktop qualification. Current run results belong in GitHub Actions; [TESTING.md](TESTING.md) defines what additional integration evidence is needed.
 
 ## Windows
