@@ -3,6 +3,7 @@
 package managed
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"errors"
 	"fmt"
@@ -48,6 +49,7 @@ type nativeInstallationTransaction struct {
 	commit      *syscall.Proc
 	transaction syscall.Handle
 	keys        []syscall.Handle
+	initial     bool
 	newKey      bool
 }
 
@@ -78,7 +80,7 @@ func beginMachineInstallation(initial bool) (*nativeInstallationTransaction, err
 		library.Release()
 		return nil, fmt.Errorf("cannot begin registry transaction: %w", callErr)
 	}
-	tx := &nativeInstallationTransaction{library: library, commit: commit, transaction: syscall.Handle(handle)}
+	tx := &nativeInstallationTransaction{library: library, commit: commit, transaction: syscall.Handle(handle), initial: initial}
 	fail := func(err error) (*nativeInstallationTransaction, error) { return nil, errors.Join(err, tx.Close()) }
 	parent := syscall.Handle(syscall.HKEY_LOCAL_MACHINE)
 	parts := strings.Split(machinePolicyKey, `\`)
@@ -122,8 +124,29 @@ func (tx *nativeInstallationTransaction) Read() ([]byte, bool, error) {
 		return nil, false, nil
 	}
 	data, err := readInstallationValue(tx.keys[len(tx.keys)-1])
+	if err == nil && !tx.initial {
+		err = tx.reservePrior(data)
+	}
 	return data, true, err
 }
+
+// Reserve the value for this writer, then compare with the committed native
+// source. A reader that observed an older revision before another commit must
+// abort, even if its later transacted write is otherwise permitted by the OS.
+func (tx *nativeInstallationTransaction) reservePrior(data []byte) error {
+	if err := tx.Stage(data); err != nil {
+		return err
+	}
+	committed, present, err := readMachineInstallation()
+	if err != nil {
+		return err
+	}
+	if !present || !bytes.Equal(committed, data) {
+		return errors.New("enrolled policy changed during update; inspect managed status and retry")
+	}
+	return nil
+}
+
 func (tx *nativeInstallationTransaction) Stage(data []byte) error {
 	if len(data) == 0 || len(data) > MaxInstallationBytes {
 		return errors.New("invalid installation size")

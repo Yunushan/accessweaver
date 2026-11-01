@@ -167,7 +167,42 @@ func TestDisposablePolicyTransactionRollback(t *testing.T) {
 	if err != nil || result.PreviousRevision != 1 || result.Revision != 2 {
 		t.Fatal("aborted transaction prevented next valid update", result, err)
 	}
-	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "goVersion": runtime.Version(), "platform": runtime.GOOS, "arch": runtime.GOARCH, "abandonedBootstrapInvisible": true, "pendingUpdateInvisible": true, "closedTransactionRolledBack": true, "processExitRolledBack": true, "validUpdateAfterAbort": true, "registryCleanupScheduled": true, "productionQualificationComplete": false}
+	// Capture revision 2 before another writer commits revision 3, then
+	// exercise reservation explicitly with the stale bytes. This does not
+	// depend on whether a particular Windows build retains read locks.
+	staleBytes, present, err := readMachineInstallation()
+	if err != nil || !present {
+		t.Fatal("cannot capture stale source", err)
+	}
+	policy.Revision = 3
+	payload, err = json.Marshal(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err = Sign(payload, private, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = Update(envelope)
+	if err != nil || result.Revision != 3 {
+		t.Fatal("newer writer could not commit before stale reservation", result, err)
+	}
+	stale, err := beginMachineInstallation(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stale.Close()
+	if err := stale.reservePrior(staleBytes); err == nil {
+		t.Fatal("stale reader acquired permission to overwrite newer committed state")
+	}
+	if err := stale.Close(); err != nil {
+		t.Fatal(err)
+	}
+	status, err = MachineStatus()
+	if err != nil || status.Revision != 3 {
+		t.Fatal("stale reservation changed committed revision", status, err)
+	}
+	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "goVersion": runtime.Version(), "platform": runtime.GOOS, "arch": runtime.GOARCH, "abandonedBootstrapInvisible": true, "pendingUpdateInvisible": true, "closedTransactionRolledBack": true, "processExitRolledBack": true, "validUpdateAfterAbort": true, "staleReaderCannotOverwriteNewRevision": true, "registryCleanupScheduled": true, "productionQualificationComplete": false}
 	data, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		t.Fatal(err)
