@@ -14,6 +14,38 @@ $testRoot=Join-Path $projectRoot ('build\workflow-tests-'+[guid]::NewGuid().ToSt
 $root=$testRoot;$script:undo=[Collections.Generic.List[object]]::new();$script:events=[Collections.Generic.List[string]]::new();$script:journalPath=$null
 [void](New-Item -ItemType Directory -Force -Path (Join-Path $testRoot 'backups'))
 function Assert([bool]$condition,[string]$message){if(-not $condition){throw $message};Write-Output ('PASS '+$message)}
+# Exercise both direct helper calls and the dispatcher before any real OS work.
+$desktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
+$machineInitializer=(Get-Command Initialize-Changes).ScriptBlock
+try{
+    function Require-DesktopUser {throw 'blocked desktop token fixture'}
+    foreach($helper in @('Install-App','Remove-App','Start-App')){
+        $rejected=$false;try{& $helper 'discord'}catch{$rejected=$_.Exception.Message -eq 'blocked desktop token fixture'}
+        Assert $rejected ($helper+' rejects an unsafe token before discovery or execution')
+    }
+    $script:machineInitializationCount=0
+    function Initialize-Changes {$script:machineInitializationCount++}
+    $r=[pscustomobject]@{action='app-repair'}
+    $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -match 'privilege-separated'}
+    Assert ($rejected -and $script:machineInitializationCount -eq 0) 'Combined repair blocked before privileged initialization'
+    $inputData=[pscustomobject]@{resultPath=(Join-Path $testRoot 'user-job\result.json')}
+    foreach($action in @('app-install','app-remove','app-start')){
+        $r=[pscustomobject]@{action=$action;dns='unchanged'}
+        $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -eq 'blocked desktop token fixture'}
+        Assert ($rejected -and -not (Test-Path (Join-Path $testRoot 'user-job'))) ($action+' checks the token before staging files')
+    }
+    function Require-DesktopUser {}
+    $r=[pscustomobject]@{action='app-install';dns='doh'}
+    $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -match 'DNS separately'}
+    Assert ($rejected -and -not (Test-Path (Join-Path $testRoot 'user-job'))) 'User application dispatch rejects system DNS changes before staging'
+    $r=[pscustomobject]@{action='app-install';dns='unchanged'}
+    Initialize-Operation
+    Assert ($root -eq (Join-Path $testRoot 'user-job\application') -and $script:machineInitializationCount -eq 0 -and (Test-Path -LiteralPath $script:journalPath)) 'User application staging and journal avoid machine storage'
+}finally{
+    Set-Item Function:Require-DesktopUser $desktopGuard
+    Set-Item Function:Initialize-Changes $machineInitializer
+    $root=$testRoot;$script:journalPath=$null
+}
 $descriptor=Private-DirectorySecurity
 Assert (Trusted-SecurityDescriptor $descriptor) 'Administrator-owned private storage descriptor accepted'
 $descriptor.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-545'))

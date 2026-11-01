@@ -96,7 +96,7 @@ func Catalog() []Operation {
 		{"app-install", "Install Discord, PTB or SplitCord", []string{"Obtain an official installer", "Run it for the interactive user and verify installation"}},
 		{"app-start", "Start an installed Discord variant", []string{"Find and start the selected application in the interactive user session"}},
 		{"app-remove", "Uninstall a Discord variant", []string{"Close only the selected application's processes", "Run its registered or Squirrel uninstaller and verify removal"}},
-		{"app-repair", "Repair Discord", []string{"Close Discord, restore managed DLLs, uninstall and preserve the old cache", "Start or reuse the managed ByeDPI proxy", "Download and reinstall official Discord through that proxy", "Deploy the Discord drover files with original-file backups"}},
+		{"app-repair", "Repair Discord", []string{"Unavailable until user application maintenance and administrative proxy/DLL changes use a privilege-separated broker"}},
 		{"updates", "Check for a newer AccessWeaver release", []string{"Read the official project's GitHub release metadata; do not install anything"}},
 		{"uninstall", "Undo AccessWeaver system changes", []string{"Remove AccessWeaver-owned services, tasks and firewall rules", "Restore DNS and application-file backups", "Remove the registered AccessWeaver installation when present"}},
 		{"recover", "Recover an interrupted operation", []string{"Read the selected protected recovery journal", "Validate ownership and file hashes before restoring backed-up files and removing newly created resources"}},
@@ -141,6 +141,12 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 	}
 	if m.platform != "windows" {
 		p.Issues = append(p.Issues, "Windows system workflows require a Windows host")
+	}
+	if r.Action == "app-repair" {
+		p.Issues = append(p.Issues, "Combined Discord repair requires a privilege-separated broker and is unavailable. Run application install/remove as your normal desktop user and manage the proxy separately.")
+	}
+	if r.Action == "app-install" || r.Action == "app-remove" {
+		p.Warnings = append(p.Warnings, "Run this application operation as the signed-in desktop user without administrator rights. Application installers and uninstallers must never inherit an elevated token.")
 	}
 	if (r.Action == "config" || (r.Action == "install" && r.Engine == "wiresock")) && r.ConfigPath == "" && !r.AcceptCloudflareTerms {
 		p.Issues = append(p.Issues, "Generating a new WARP account requires accepting Cloudflare's terms; otherwise provide an existing configPath")
@@ -188,6 +194,9 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 }
 
 func (r Request) Validate() error {
+	if (r.Action == "app-install" || r.Action == "app-remove" || r.Action == "app-start") && r.DNS != "" && r.DNS != "unchanged" {
+		return errors.New("configure system DNS separately from user application operations")
+	}
 	if len(r.Args) > 128 || len(r.Applications) > 100 || len(r.Domains) > 4096 || len(r.Targets) > 32 {
 		return errors.New("workflow list limit exceeded")
 	}

@@ -4,7 +4,7 @@ $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $inputData = Get-Content -LiteralPath $RequestPath -Raw | ConvertFrom-Json
 $r = $inputData.request
-$root = Join-Path $env:ProgramData 'AccessWeaver'
+$script:root = Join-Path $env:ProgramData 'AccessWeaver'
 $script:undo = [Collections.Generic.List[object]]::new()
 $script:events = [Collections.Generic.List[string]]::new()
 $script:journalPath = $null
@@ -26,7 +26,26 @@ function No-Reparse([string]$path) {
 }
 function Require-Admin {
     $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
-    if (-not ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Start AccessWeaver as Administrator to apply system changes. Preview and inspection do not require elevation.' }
+    if (-not ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Use a separately elevated system apply CLI for machine changes. Keep the dashboard and user application operations unelevated.' }
+}
+function Require-DesktopUser {
+    $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+    if($identity.IsSystem -or ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) -or [Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0){throw 'Application operations require the signed-in desktop user without administrator rights'}
+}
+function Initialize-Operation {
+    # Check before machine-storage initialization, DNS changes, discovery or
+    # process execution. A combined repair cannot cross this boundary safely.
+    if($r.action -eq 'app-repair'){throw 'Combined Discord repair is unavailable until a privilege-separated broker is implemented'}
+    if($r.action -in @('app-install','app-remove','app-start')){
+        Require-DesktopUser
+        if($r.dns -and $r.dns -ne 'unchanged'){throw 'Configure system DNS separately from user application operations'}
+        if($r.action -ne 'app-start'){
+            $script:root=Join-Path (Split-Path -Parent $inputData.resultPath) 'application'
+            No-Reparse $root
+            foreach($dir in @('downloads','backups','logs')){[void](New-Item -ItemType Directory -Force -Path (Join-Path $root $dir))}
+            $script:journalPath=Join-Path $root 'logs\application.json';Save-Journal
+        }
+    }elseif($r.action -notin @('discover','updates','choose-folder')){Initialize-Changes}
 }
 function Quote-Arg([string]$text) { return '"'+[regex]::Replace([regex]::Replace($text,'(\\*)"','$1$1\"'),'(\\+)$','$1$1')+'"' }
 function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600) {
@@ -511,6 +530,7 @@ function Wait-App([string]$variant,[bool]$installed,[int]$seconds=120) {
     throw 'Application installation state did not reach the expected result; inspect installer logs'
 }
 function Install-App([string]$variant) {
+    Require-DesktopUser
     if($variant -notin @('discord','discord-ptb','splitcord')){throw 'Choose Discord, Discord PTB or SplitCord'}
     if($r.clean -and $variant -eq 'discord-ptb' -and (Find-App 'discord')){Remove-App 'discord'}
     if($variant -eq 'splitcord'){$release=Invoke-RestMethod -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/cagritaskn/SplitCord-Turkey/releases/latest';$asset=$release.assets | Where-Object {$_.name -match '(Setup|Install).*exe'}|Select-Object -First 1;if(-not $asset){throw 'Official SplitCord installer not found'};$url=$asset.browser_download_url;$hash=([string]$asset.digest)-replace '^sha256:','';if(-not $hash){$hash=$r.sha256};$file=Join-Path $root 'downloads\splitcord-setup.exe';Download $url $hash $file}
@@ -521,6 +541,7 @@ function Install-App([string]$variant) {
     Event ('Application installed: '+$variant)
 }
 function Remove-App([string]$variant) {
+    Require-DesktopUser
     $app=Find-App $variant;if(-not $app){return}
     Stop-AppProcesses $variant
     if($variant -in @('discord','discord-ptb')){$folder=if($variant -eq 'discord'){'Discord'}else{'DiscordPTB'};$update=Join-Path $env:LOCALAPPDATA ($folder+'\Update.exe');No-Reparse $update;[void](Native $update @('--uninstall','-s') -Timeout 300)}
@@ -538,10 +559,10 @@ function Stop-AppProcesses([string]$variant) {
     }catch{}}
 }
 function Start-App([string]$variant) {
+    Require-DesktopUser
     $app=Find-App $variant;if(-not $app){throw 'Application is not installed'};No-Reparse $app
     if([Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0){throw 'Start user applications from the signed-in Windows desktop, not the SYSTEM session'}
-    # Explorer brokers the launch in the desktop user's normal context rather
-    # than passing the Administrator core's elevated token to Discord/Electron.
+    # Explorer brokers the launch in the signed-in desktop user's context.
     Start-Process -FilePath (Join-Path $env:SystemRoot 'explorer.exe') -ArgumentList @((Quote-Arg $app)) -WindowStyle Hidden
     $deadline=[DateTime]::UtcNow.AddSeconds(10)
     do{foreach($process in Get-Process -ErrorAction SilentlyContinue){try{if($process.Path -eq $app){Event 'Application process is running in the desktop session';return}}catch{}};Start-Sleep -Milliseconds 500}while([DateTime]::UtcNow -lt $deadline)
@@ -638,8 +659,8 @@ function Recover-Operation {
 }
 $result=@{ok=$false;events=@();data=$null;rebootRequired=$false;journal=$null}
 try {
-    if($r.action -notin @('discover','updates','choose-folder','app-start')){Initialize-Changes}
-    if($r.action -in @('scan','app-install','app-repair') -and $r.dns -and $r.dns -ne 'unchanged'){Configure-DNS $r.dns}
+    Initialize-Operation
+    if($r.action -eq 'scan' -and $r.dns -and $r.dns -ne 'unchanged'){Configure-DNS $r.dns}
     $data=switch($r.action) {
         'discover' {Discover}
         'choose-folder' {Add-Type -AssemblyName System.Windows.Forms;$dialog=[Windows.Forms.FolderBrowserDialog]::new();try{$dialog.Description='Select an application folder for AccessWeaver';$selection=$dialog.ShowDialog();@{folder=$(if($selection -eq 'OK'){$dialog.SelectedPath}else{''})}}finally{$dialog.Dispose()}}

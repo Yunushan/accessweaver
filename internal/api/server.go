@@ -90,8 +90,12 @@ func (s *Server) Handler() http.Handler {
 			fail(w, 409, "stop active profile before editing")
 			return
 		}
-		if err := s.Store.Save(p); err != nil {
-			fail(w, 400, err.Error())
+		if err := s.Store.SaveIfUnchanged(p); err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, profile.ErrConflict) {
+				status = http.StatusConflict
+			}
+			fail(w, status, err.Error())
 			return
 		}
 		got, _ := s.Store.Get(p.ID)
@@ -99,12 +103,27 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("DELETE /api/v1/profiles/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
+		var input struct {
+			ExpectedUpdatedAt time.Time `json:"expectedUpdatedAt"`
+		}
+		if err := readJSON(w, r, &input); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		if input.ExpectedUpdatedAt.IsZero() {
+			fail(w, 400, "send the reviewed profile's expectedUpdatedAt revision before deleting")
+			return
+		}
 		if state := s.Manager.Snapshot(); state.State == "running" && state.ProfileID == id {
 			fail(w, 409, "stop active profile before deleting")
 			return
 		}
-		if err := s.Store.Delete(id); err != nil {
-			fail(w, 404, err.Error())
+		if err := s.Store.DeleteIfUnchanged(id, input.ExpectedUpdatedAt); err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, profile.ErrConflict) {
+				status = http.StatusConflict
+			}
+			fail(w, status, err.Error())
 			return
 		}
 		JSON(w, 200, map[string]bool{"deleted": true})

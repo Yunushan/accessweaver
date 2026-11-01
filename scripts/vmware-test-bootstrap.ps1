@@ -49,7 +49,7 @@ try{
             Copy-TestInputs $executable;$binary=Join-Path $local $executable
             switch($request.stage){
                 'system' {& (Join-Path $local 'test-windows-integration.ps1') -Executable $executable -Extended}
-                'apps' {& (Join-Path $local 'test-windows-apps.ps1') -Executable $binary -DisposableVM}
+                'apps' {throw 'Application tests require an unelevated desktop window. Run test-windows-apps.ps1 -DisposableVM there and collect its LocalAppData\AccessWeaver-App-Test-Results separately.'}
                 'wiresock' {& (Join-Path $local 'test-windows-wiresock.ps1') -Executable $binary -DisposableVM -RemoveVendor}
                 'reboot-prepare' {
                     & (Join-Path $local 'test-windows-reboot.ps1') -Phase Prepare -Executable $binary

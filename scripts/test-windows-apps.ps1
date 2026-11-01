@@ -1,9 +1,13 @@
 # Destructive application tests: disposable guest and its test account only.
-param([string]$Executable='C:\AccessWeaver-Test\accessweaver.exe',[switch]$SkipSplitCord,[switch]$DisposableVM)
+param([string]$Executable='C:\AccessWeaver-Test\accessweaver.exe',[switch]$SkipSplitCord,[switch]$DisposableVM,[string]$ResultsDirectory='')
 $ErrorActionPreference='Stop'
 if($env:USERNAME -ne 'WDAGUtilityAccount' -and (-not $DisposableVM -or (Get-CimInstance Win32_ComputerSystem).Model -notmatch 'Virtual|VMware')){throw 'Explicitly disposable Windows guest required'}
-$env:ACCESSWEAVER_HOME='C:\AccessWeaver-Test-State'
-$results='C:\AccessWeaver-Results';$checks=[Collections.Generic.List[object]]::new()
+$identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+if($identity.IsSystem -or ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) -or [Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0){throw 'Run application tests in an unelevated PowerShell window in the disposable desktop account'}
+$env:ACCESSWEAVER_HOME=Join-Path $env:LOCALAPPDATA 'AccessWeaver-App-Test-State'
+$results=if($ResultsDirectory){[IO.Path]::GetFullPath($ResultsDirectory)}else{Join-Path $env:LOCALAPPDATA 'AccessWeaver-App-Test-Results'}
+[void](New-Item -ItemType Directory -Force -Path $results)
+$checks=[Collections.Generic.List[object]]::new()
 function Check([string]$name,[scriptblock]$body){try{& $body;$checks.Add(@{name=$name;passed=$true})}catch{$checks.Add(@{name=$name;passed=$false;error=$_.Exception.Message;stack=$_.ScriptStackTrace})};[IO.File]::WriteAllText((Join-Path $results 'applications.json'),(ConvertTo-Json -InputObject @($checks.ToArray()) -Depth 8))}
 function Invoke-AppWorkflow([hashtable]$request){
     $id=$request.action+'-'+$request.engine+'-'+[guid]::NewGuid().ToString('N');$path=Join-Path $results ($id+'.json');[IO.File]::WriteAllText($path,($request|ConvertTo-Json -Depth 5))
@@ -15,17 +19,10 @@ function Inspect-Apps {$output=& $Executable system discover;if($LASTEXITCODE -n
 try{
     Check 'official stable Discord installation and discovery' {[void](Invoke-AppWorkflow @{action='app-install';engine='discord'});if(-not (Inspect-Apps).discord){throw 'Stable Discord missing'}}
     Check 'start installed Discord' {[void](Invoke-AppWorkflow @{action='app-start';engine='discord'});Start-Sleep -Seconds 3;if(-not (Get-Process Discord -ErrorAction SilentlyContinue)){throw 'Discord process missing'}}
-    Check 'drover install and original-file restoration' {
-        $app=(Inspect-Apps).discord;if(-not $app){throw 'Discord missing'};$dll=Join-Path (Split-Path -Parent $app) 'version.dll';$original=if(Test-Path $dll){(Get-FileHash $dll).Hash}else{''}
-        [void](Invoke-AppWorkflow @{action='install';engine='byedpi';mode='dll';bundlePath='C:\AccessWeaver-Test\components'})
-        if(-not (Test-Path $dll)){throw 'drover DLL missing'}
-        [void](Invoke-AppWorkflow @{action='remove';engine='byedpi'})
-        $restored=if(Test-Path $dll){(Get-FileHash $dll).Hash}else{''};if($original -ne $restored){throw 'Original Discord DLL differs after restoration'}
-    }
-    Check 'stable Discord cache-preserving repair' {
-        [void](Invoke-AppWorkflow @{action='app-repair';engine='discord';bundlePath='C:\AccessWeaver-Test\components'})
-        if(-not (Inspect-Apps).discord){throw 'Repaired Discord missing'}
-        [void](Invoke-AppWorkflow @{action='remove';engine='byedpi'})
+    Check 'combined repair blocked without touching stable Discord' {
+        $before=(Inspect-Apps).discord
+        $rejected=$false;try{[void](Invoke-AppWorkflow @{action='app-repair';engine='discord'})}catch{$rejected=$_.Exception.Message -match 'privilege-separated'}
+        if(-not $rejected -or (Inspect-Apps).discord -ne $before){throw 'Combined repair was not safely rejected'}
     }
     Check 'clean PTB installation removes stable Discord' {
         [void](Invoke-AppWorkflow @{action='app-install';engine='discord-ptb';clean=$true});$apps=Inspect-Apps
@@ -38,6 +35,7 @@ try{
         if((Inspect-Apps).splitcord){throw 'SplitCord remains installed'}
     }}
 }finally{
-    Check 'application-test cleanup' {foreach($variant in @('discord','discord-ptb','splitcord')){[void](Invoke-AppWorkflow @{action='app-remove';engine=$variant})};[void](Invoke-AppWorkflow @{action='remove-all'})}
+    Check 'application-test cleanup' {foreach($variant in @('discord','discord-ptb','splitcord')){[void](Invoke-AppWorkflow @{action='app-remove';engine=$variant})}}
     [IO.File]::WriteAllText((Join-Path $results 'applications-completed.txt'),[DateTime]::UtcNow.ToString('o'))
 }
+if(@($checks | Where-Object {-not $_.passed}).Count){throw 'Application acceptance failed; inspect applications.json'}

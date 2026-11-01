@@ -43,6 +43,27 @@ func TestOperationComponentCompatibility(t *testing.T) {
 	}
 }
 
+func TestApplicationPrivilegeReview(t *testing.T) {
+	m := New(t.TempDir())
+	m.platform = "windows"
+	p, err := m.Preview(Request{Action: "app-repair", Engine: "discord"})
+	if err != nil || p.Ready || len(p.Issues) == 0 {
+		t.Fatalf("combined repair must be blocked: %+v %v", p, err)
+	}
+	if _, err = m.Start(p.ID); err == nil {
+		t.Fatal("combined repair started without a privilege-separated broker")
+	}
+	for _, action := range []string{"app-install", "app-remove", "app-start"} {
+		if _, err = m.Preview(Request{Action: action, Engine: "discord", DNS: "doh"}); err == nil {
+			t.Fatalf("%s accepted machine DNS mutation", action)
+		}
+		p, err = m.Preview(Request{Action: action, Engine: "discord", DNS: "unchanged"})
+		if err != nil || !p.Ready {
+			t.Fatalf("user application operation: %+v %v", p, err)
+		}
+	}
+}
+
 func TestAccountConsentAndModeSpecificReview(t *testing.T) {
 	m := New(t.TempDir())
 	m.platform = "windows"

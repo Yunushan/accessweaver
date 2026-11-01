@@ -17,6 +17,10 @@ type Store struct {
 	mu   sync.Mutex
 }
 
+// ErrConflict means the caller's reviewed revision no longer names the saved
+// profile. A zero revision denotes creation, never an unconditional overwrite.
+var ErrConflict = errors.New("profile changed, was removed, or its ID already exists; reload the saved profile before retrying and export any unsaved edits you need to keep")
+
 func DefaultRoot() (string, error) {
 	p, err := os.UserConfigDir()
 	if err != nil {
@@ -90,6 +94,32 @@ func (s *Store) Save(p Profile) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.saveLocked(p)
+}
+
+// SaveIfUnchanged atomically compares and replaces within this Store. CLI import
+// intentionally uses Save for explicit replacement. Separate processes must not
+// share a store without external coordination.
+func (s *Store) SaveIfUnchanged(p Profile) error {
+	if err := p.Validate(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, err := s.Get(p.ID)
+	if errors.Is(err, fs.ErrNotExist) {
+		if !p.UpdatedAt.IsZero() {
+			return ErrConflict
+		}
+	} else if err != nil {
+		return err
+	} else if p.UpdatedAt.IsZero() || !p.UpdatedAt.Equal(current.UpdatedAt) {
+		return ErrConflict
+	}
+	return s.saveLocked(p)
+}
+
+func (s *Store) saveLocked(p Profile) error {
 	p.UpdatedAt = time.Now().UTC()
 	b, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
@@ -108,6 +138,27 @@ func (s *Store) Save(p Profile) error {
 func (s *Store) Delete(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	file, err := s.filename(id)
+	if err != nil {
+		return err
+	}
+	return os.Remove(file)
+}
+
+// DeleteIfUnchanged prevents a stale browser from deleting a newer revision.
+func (s *Store) DeleteIfUnchanged(id string, expected time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, err := s.Get(id)
+	if errors.Is(err, fs.ErrNotExist) {
+		return ErrConflict
+	}
+	if err != nil {
+		return err
+	}
+	if expected.IsZero() || !expected.Equal(current.UpdatedAt) {
+		return ErrConflict
+	}
 	file, err := s.filename(id)
 	if err != nil {
 		return err

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Reject stale dashboard profile saves/deletions and duplicate creation using the reviewed revision, preserving unsaved drafts on conflicts.
+- Require unelevated desktop tokens for Discord/PTB/SplitCord installation, removal and launch. Keep their staging and journals in the user workflow directory and configure machine DNS separately.
+- Block combined Discord repair until a privilege-separated broker can safely coordinate user application and administrator tasks. Application acceptance tests now run separately from the elevated VM controller.
+
 ## 0.1.0-alpha — 2026-10-31
 
 Initial independent AccessWeaver application core.

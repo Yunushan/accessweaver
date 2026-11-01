@@ -67,7 +67,9 @@ The default root is `os.UserConfigDir()` plus `AccessWeaver`:
 
 `profiles/ID.json` holds saved profiles. `generated/` contains generated domain files. Use `ACCESSWEAVER_HOME` to select another root. The store requests private directory/file modes where supported and replaces profile files atomically. Windows ACLs follow the user environment; profiles are not encrypted.
 
-Starter profiles are seeded once per configuration root, preserving existing files. A seed marker prevents deleted starter profiles from reappearing on later startups. Importing a profile with an existing ID replaces that saved profile; export a backup or change the imported ID first if you need both copies.
+Starter profiles are seeded once per configuration root, preserving existing files. A seed marker prevents deleted starter profiles from reappearing on later startups. CLI `import` explicitly replaces an existing ID; export a backup or change the imported ID first if you need both copies. Dashboard import opens a new draft and renames a known collision.
+
+Connected dashboard saves compare the `updatedAt` revision originally loaded by the editor. A stale save, duplicate creation or save of a deleted profile returns HTTP 409 without replacing saved data. Deletion requires a JSON body containing the reviewed `expectedUpdatedAt` value and also rejects stale revisions. A conflict leaves the draft available: copy or export any edits you need, close the editor, reload the dashboard and reopen the current profile before merging changes. Revision checks coordinate callers sharing one store/controller; separate processes and manual file writes still require external coordination. Offline browser storage does not provide these server revision checks.
 
 Offline mode uses browser local storage and cannot launch engines or run diagnostics. Browser storage can be cleared by the browser and is separate from Go profile files. Export JSON before switching devices or clearing site data. The desktop backend performs authoritative validation on import.
 

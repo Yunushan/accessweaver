@@ -530,7 +530,7 @@ async function handleProfileAction(action,id) {
       if (!confirm(t('confirmDelete') + '\n\n' + p.name)) return;
       acquiredBusy = true; state.busy = true;
       if (state.offline) commitOffline(state.profiles.filter(profile => profile.id !== id));
-      else { if (!coreAvailable()) throw new Error(t('coreRequired')); await apiRequest('/api/v1/profiles/' + encodeURIComponent(id),'DELETE'); state.profiles = state.profiles.filter(profile => profile.id !== id); }
+      else { if (!coreAvailable()) throw new Error(t('coreRequired')); await apiRequest('/api/v1/profiles/' + encodeURIComponent(id),'DELETE',{expectedUpdatedAt:p.updatedAt}); state.profiles = state.profiles.filter(profile => profile.id !== id); }
       renderAll(); toast(t('deleted')); return;
     }
     if (action === 'run') { await reviewLaunch(p); return; }

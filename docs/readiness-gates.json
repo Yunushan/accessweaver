@@ -95,6 +95,8 @@
           "status": "partial",
           "evidence": [
             "internal/profile/store.go",
+            "internal/profile/revision_test.go",
+            "internal/api/server_test.go",
             "internal/profile/model_test.go"
           ]
         },
@@ -136,6 +138,9 @@
           "status": "partial",
           "evidence": [
             "internal/workflow/windows.ps1",
+            "internal/workflow/manager_test.go",
+            "internal/workflow/application_windows_test.go",
+            "scripts/test-windows-workflow.ps1",
             "internal/servicehost/host_windows.go"
           ]
         },

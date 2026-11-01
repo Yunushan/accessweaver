@@ -86,7 +86,11 @@ func TestProfileAPICRUD(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("get: %d %s", w.Code, w.Body.String())
 	}
-	w = request(t, s, "DELETE", "/api/v1/profiles/my-profile", nil, s.Token, "127.0.0.1:54321")
+	var saved profile.Profile
+	if err := json.Unmarshal(w.Body.Bytes(), &saved); err != nil {
+		t.Fatal(err)
+	}
+	w = request(t, s, "DELETE", "/api/v1/profiles/my-profile", map[string]any{"expectedUpdatedAt": saved.UpdatedAt}, s.Token, "127.0.0.1:54321")
 	if w.Code != 200 {
 		t.Fatalf("delete: %d %s", w.Code, w.Body.String())
 	}
@@ -98,6 +102,53 @@ func TestCannotStartWithoutConfirmation(t *testing.T) {
 	w := request(t, s, "POST", "/api/v1/start", map[string]any{"id": "my-profile", "confirm": false}, s.Token, "127.0.0.1:54321")
 	if w.Code != 400 {
 		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestProfileAPIRejectsStaleSavesAndDeletes(t *testing.T) {
+	s := makeServer(t)
+	p := profile.New("shared-edit", "Original", "byedpi")
+	path := "/api/v1/profiles/" + p.ID
+	put := func(p profile.Profile) *httptest.ResponseRecorder {
+		return request(t, s, "PUT", path, p, s.Token, "127.0.0.1:54321")
+	}
+	w := put(p)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if w = put(p); w.Code != 409 {
+		t.Fatalf("duplicate creation: %d %s", w.Code, w.Body.String())
+	}
+	first, err := s.Store.Get(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit := first.Copy()
+	edit.Name = "Saved from another tab"
+	if w = put(edit); w.Code != 200 {
+		t.Fatalf("current revision edit: %d %s", w.Code, w.Body.String())
+	}
+	if w = put(first); w.Code != 409 {
+		t.Fatalf("stale edit: %d %s", w.Code, w.Body.String())
+	}
+	w = request(t, s, "DELETE", path, map[string]any{}, s.Token, "127.0.0.1:54321")
+	if w.Code != 400 {
+		t.Fatalf("unreviewed deletion: %d", w.Code)
+	}
+	w = request(t, s, "DELETE", path, map[string]any{"expectedUpdatedAt": first.UpdatedAt}, s.Token, "127.0.0.1:54321")
+	if w.Code != 409 {
+		t.Fatalf("stale deletion: %d", w.Code)
+	}
+	latest, err := s.Store.Get(p.ID)
+	if err != nil || latest.Name != edit.Name {
+		t.Fatalf("newer edit lost: %+v %v", latest, err)
+	}
+	w = request(t, s, "DELETE", path, map[string]any{"expectedUpdatedAt": latest.UpdatedAt}, s.Token, "127.0.0.1:54321")
+	if w.Code != 200 {
+		t.Fatalf("current revision deletion: %d %s", w.Code, w.Body.String())
+	}
+	if w = put(latest); w.Code != 409 {
+		t.Fatalf("stale resurrection: %d", w.Code)
 	}
 }
 
