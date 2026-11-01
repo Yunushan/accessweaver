@@ -381,7 +381,8 @@
           "status": "partial",
           "evidence": [
             "internal/diagnostics/doctor.go",
-            "docs/TESTING.md"
+            "docs/TESTING.md",
+            "internal/api/support.go"
           ]
         }
       ]
@@ -511,8 +512,16 @@
         {
           "id": "data.exports",
           "acceptance": "Provide redacted support/export bundles and test that secrets, keys, session data and unrelated user files cannot be included.",
-          "status": "missing",
-          "evidence": []
+          "status": "partial",
+          "evidence": [
+            "internal/api/support.go",
+            "internal/api/support_test.go",
+            "internal/api/session_test.go",
+            "internal/engine/runner_test.go",
+            "internal/workflow/result_test.go",
+            "scripts/browser-tests/desktop.spec.cjs",
+            "docs/TESTING.md"
+          ]
         },
         {
           "id": "data.isolation",

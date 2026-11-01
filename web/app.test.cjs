@@ -156,3 +156,29 @@ test('a blocked machine preview enables only request export',async()=>{
   assert.equal(env.get('system-apply').disabled,true);
   env.run('invalidateSystemPlan()');assert.equal(env.get('system-export').disabled,true);
 });
+
+test('support export uses the authenticated core summary without changing another busy action',async()=>{
+  const env=environment();env.run('state.offline=false;state.loading=false;state.disconnected=false;state.busy=true;state.coreAuthenticated=true;state.token="fixture"');
+  const report={schemaVersion:1,scope:'metadata-only',profiles:{total:2},runtime:{state:'stopped'}};
+  env.put('supportFixture',report);env.run('apiRequest=async(path)=>{if(path!=="/api/v1/support")throw new Error("wrong summary route");return supportFixture}');
+  let download;env.context.downloadFile=(data,name)=>{download={data,name}};
+  await env.run('exportSupportSummary()');
+  assert.deepEqual(JSON.parse(download.data),report);assert.equal(download.name,'accessweaver-support-summary.json');
+  assert.equal(env.run('state.busy'),true);assert.equal(env.get('export-support').disabled,false);
+});
+
+test('failed or offline support export never downloads a partial report',async()=>{
+  const env=environment();let downloads=0;env.context.downloadFile=()=>downloads++;
+  env.run('apiRequest=async()=>{throw new Error("fixture core unavailable")}');
+  await env.run('exportSupportSummary()');assert.equal(downloads,0);
+  env.run('state.offline=false;state.loading=false;state.disconnected=false;state.coreAuthenticated=true;state.token="fixture"');
+  await env.run('exportSupportSummary()');assert.equal(downloads,0);assert.equal(env.run('state.supportExporting'),false);
+});
+
+test('support metadata stays accessible when authenticated profile loading fails',async()=>{
+  const env=environment();env.run('state.token="fixture"');
+  env.context.fetch=async path=>path==='/api/bootstrap'?{ok:true,json:async()=>({platform:'windows'})}:{ok:false,status:500,json:async()=>({error:'private store failure'})};
+  await assert.rejects(env.run('readCore()'));
+  env.run('state.loading=false;state.offline=true');
+  assert.equal(env.run('supportAvailable()'),true);assert.equal(env.run('coreAvailable()'),false);
+});

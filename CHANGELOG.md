@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add a local metadata-only support summary with build identity, counts and status flags. Omit private profile/log/result/session contents and report unavailable profile counts honestly, including when authenticated profile loading fails.
+
 - Wait for workflow outcome recording on CLI cancellation, report incomplete shutdown honestly, and preserve tool/output errors.
 - Block machine apply previews without administrator authority and recheck before job creation. Export reviewed requests for a separate elevated CLI without carrying session credentials or approval.
 

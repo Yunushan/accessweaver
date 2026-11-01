@@ -24,6 +24,20 @@ type Snapshot struct {
 	Log       []string  `json:"log"`
 }
 
+// Summary excludes user identifiers, paths and child output from support metadata.
+type Summary struct {
+	State        string `json:"state"`
+	Engine       string `json:"engine,omitempty"`
+	ErrorPresent bool   `json:"errorPresent"`
+	LogLines     int    `json:"logLines"`
+}
+
+func (m *Manager) Summary() Summary {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return Summary{State: m.state.State, Engine: m.state.Engine, ErrorPresent: m.state.LastError != "", LogLines: len(m.log)}
+}
+
 type Manager struct {
 	opMu     sync.Mutex // Serializes prepare/start/stop, including generated files.
 	mu       sync.Mutex

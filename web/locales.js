@@ -269,6 +269,9 @@ refreshLogs|Обновить журнал|Actualizar registros
 storageRecovery|Некоторые профили не читаются, но сохранены. Экспортируйте резервную копию в настройках.|Algunos perfiles no se pueden leer, pero se conservan. Exporta una copia desde Ajustes.
 exportBrowserBackup|Экспорт резервной копии браузера|Exportar copia del navegador
 storageUnreadable|JSON в хранилище повреждён и сохранён. Экспортируйте копию перед восстановлением.|El JSON almacenado no se puede leer y se ha conservado. Exporta una copia antes de repararlo.
+supportSummary|Сводка для поддержки|Resumen de soporte
+exportSupportSummary|Экспорт сводки для поддержки|Exportar resumen de soporte
+supportSummaryDesc|Экспорт версии сборки, количества профилей и меток состояния. Содержимое и идентификаторы профилей, пути, журналы и учётные данные не включаются. Ничего не отправляется.|Exporta la identidad de compilación, recuentos y estados. Excluye contenidos e identificadores de perfiles, rutas, registros y credenciales. No se sube nada.
 systemTools|Установка и восстановление|Instalación y reparación
 systemSubtitle|Методы доступа, правила приложений и восстановление системы.|Métodos de acceso, reglas de aplicaciones y recuperación del sistema.
 inspectSystem|Проверить систему|Inspeccionar sistema

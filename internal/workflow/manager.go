@@ -72,6 +72,20 @@ type Job struct {
 	Error      string          `json:"error,omitempty"`
 }
 
+// Summary reads only status metadata, without copying a potentially large result.
+type Summary struct {
+	Action        string `json:"action,omitempty"`
+	State         string `json:"state"`
+	ErrorPresent  bool   `json:"errorPresent"`
+	ResultPresent bool   `json:"resultPresent"`
+}
+
+func (m *Manager) Summary() Summary {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return Summary{Action: m.job.Action, State: m.job.State, ErrorPresent: m.job.Error != "", ResultPresent: len(m.job.Result) > 0}
+}
+
 type Operation struct {
 	ID    string   `json:"id"`
 	Label string   `json:"label"`

@@ -175,3 +175,27 @@ test('machine review exports the exact request while unavailable apply stays dis
   await page.locator('#system-dns').selectOption('dnscrypt');
   await expect(page.locator('#system-export')).toBeDisabled();
 });
+
+test('support export excludes private profile contents and leaves the runtime stopped',async({page,core})=>{
+  await open(page,core);await create(page,'private-support-profile');
+  await page.locator('.nav-item[data-view="settings"]').click();
+  await expect(page.locator('#export-support')).toBeEnabled();
+  const downloading=page.waitForEvent('download');await page.locator('#export-support').click();
+  const download=await downloading;
+  expect(download.suggestedFilename()).toBe('accessweaver-support-summary.json');
+  const text=await fs.readFile(await download.path(),'utf8'),report=JSON.parse(text);
+  expect(report.scope).toBe('metadata-only');expect(report.runtime.state).toBe('stopped');
+  expect(report.profiles.total).toBeGreaterThan(0);expect(report.build.platform).toBeTruthy();
+  expect(text).not.toContain('private-support-profile');expect(text).not.toContain('Browser fixture');
+  expect(text).not.toContain('absent-browser-fixture-engine');expect(text).not.toContain(core.home);
+  await fs.writeFile(core.profilePath('private-support-profile'),'{private-corrupt-fixture');
+  await page.reload();
+  await expect(page.locator('#connection-notice')).toBeVisible();
+  await expect(page.locator('#export-support')).toBeEnabled();
+  const recovering=page.waitForEvent('download');await page.locator('#export-support').click();
+  const recovery=await recovering,recoveryText=await fs.readFile(await recovery.path(),'utf8');
+  const unavailable=JSON.parse(recoveryText);
+  expect(unavailable.profiles.status).toBe('unavailable');expect(unavailable.profiles.total).toBeNull();
+  expect(recoveryText).not.toContain('private-support-profile');expect(recoveryText).not.toContain('private-corrupt-fixture');
+
+});

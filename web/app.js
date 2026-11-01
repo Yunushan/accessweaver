@@ -58,6 +58,8 @@ Object.assign(tr,{updateAvailable:'Güncelleme mevcut'});
 Object.assign(en,{exportSystemRequest:'Export reviewed request',exportSystemRequestNote:'Request files can contain private paths or arguments. Store them privately, review them again in the CLI, and confirm separately.'});
 Object.assign(tr,{exportSystemRequest:'İncelenen isteği dışa aktar',exportSystemRequestNote:'İstek dosyaları özel yollar veya parametreler içerebilir. Güvenli bir yerde saklayın, komut satırında yeniden inceleyin ve ayrıca onaylayın.'});
 
+Object.assign(en,{supportSummary:'Support summary',exportSupportSummary:'Export support summary',supportSummaryDesc:'Export build identity, counts and status labels. Profile contents, identifiers, paths, logs and credentials are excluded. Nothing is uploaded.'});
+Object.assign(tr,{supportSummary:'Destek özeti',exportSupportSummary:'Destek özetini dışa aktar',supportSummaryDesc:'Derleme kimliğini, sayıları ve durum etiketlerini dışa aktarır. Profil içerikleri, kimlikleri, yollar, günlükler ve kimlik bilgileri dahil edilmez. Hiçbir yere yüklenmez.'});
 const storage = {
   get(key) { try { return localStorage.getItem(key); } catch { return null; } },
   set(key, value) { localStorage.setItem(key, value); },
@@ -66,7 +68,7 @@ const storage = {
 const state = {
   lang: ['en','tr','ru','es'].includes(storage.get('aw.lang')) ? storage.get('aw.lang') : 'en',
   theme: storage.get('aw.theme') === 'light' ? 'light' : 'dark',
-  offline: false, disconnected: false, loading: true, platform: 'unknown',
+  offline: false, disconnected: false, loading: true, coreAuthenticated: false, platform: 'unknown',
   engines: [], profiles: [], runtime: {state:'stopped', log:[]}, token:'',
   view:'dashboard', editing:null, editorTab:'simple', lastProbe:null,
   launch:null, busy:false, polling:false, reconnecting:false, preservedProfiles:[], storageBlocked:false
@@ -82,6 +84,7 @@ function copyName(name) {
 }
 const platformName = value => ({windows:'Windows',linux:'Linux',darwin:'macOS',freebsd:'FreeBSD',openbsd:'OpenBSD',android:'Android',ios:'iOS',browser:t('mobileEditor'),unknown:'—'})[value] || value;
 const coreAvailable = () => !state.offline && !state.disconnected && !state.loading;
+const supportAvailable = () => !!state.coreAuthenticated && !!state.token && !state.loading;
 const safeSource = source => /^https?:\/\//i.test(source || '') ? escapeHTML(source) : '#';
 function readSession(){
   const credential=new URLSearchParams(location.hash.slice(1)).get('accessweaver-session');
@@ -176,6 +179,7 @@ async function readCore() {
   if(!state.token)throw new Error(t('coreRequired'));
   const boot = await apiRequest('/api/bootstrap');
   if (!boot.platform) throw new Error(t('coreRequired'));
+  state.coreAuthenticated = true;
   const [engines,profiles,runtime] = await Promise.all([
     apiRequest('/api/v1/engines'),apiRequest('/api/v1/profiles'),apiRequest('/api/v1/runtime')
   ]);
@@ -262,6 +266,7 @@ function renderHero() {
   $('preview-profile').disabled = !coreAvailable();
   $('probe-submit').disabled = !coreAvailable() || !!state.probing;
   $('show-logs').disabled = state.offline || state.loading;
+  $('export-support').disabled = !supportAvailable() || !!state.supportExporting;
   $('launch-confirm').disabled = !coreAvailable() || !state.launch?.ready || state.busy;
 }
 function profileCard(p, full=false) {
@@ -501,6 +506,16 @@ async function saveEditor() {
   } catch (err) { if (state.editing) state.editing.saving = false; editorError(err); }
   finally { setEditorBusy(false); $('save-profile').disabled = false; }
 }
+async function exportSupportSummary(){
+  if(!supportAvailable()){toast(t('coreRequired'),true);return}
+  if(state.supportExporting)return;
+  state.supportExporting=true;$('export-support').disabled=true;
+  try{
+    const report=await apiRequest('/api/v1/support');
+    downloadFile(JSON.stringify(report,null,2)+'\n','accessweaver-support-summary.json');
+  }catch(error){toast(error.message,true)}
+  finally{state.supportExporting=false;$('export-support').disabled=!supportAvailable()}
+}
 function downloadFile(data,name) {
   const url = URL.createObjectURL(new Blob([data],{type:'application/json'}));
   const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
@@ -696,6 +711,7 @@ function bindEvents() {
   $('diagnostic-form').addEventListener('submit',event => { event.preventDefault(); runProbe(); });
   $('export-report').addEventListener('click',() => { if (state.lastProbe) downloadFile(JSON.stringify(state.lastProbe,null,2) + '\n','accessweaver-diagnostics-' + state.lastProbe.host + '.json'); });
   $('show-logs').addEventListener('click',showLogs);
+  $('export-support').addEventListener('click',exportSupportSummary);
   $('close-logs').addEventListener('click',() => setModal('logs-modal',false));
   $('logs-copy').addEventListener('click',async () => { try { await navigator.clipboard.writeText($('log-output').textContent); toast(t('copySuccess')); } catch (err) { toast(err.message,true); } });
   $('close-launch').addEventListener('click',closeLaunch);

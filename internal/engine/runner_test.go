@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"github.com/Yunushan/accessweaver/internal/profile"
 	"os"
 	"path/filepath"
@@ -95,5 +97,21 @@ func TestPrepareHostListAndChecksum(t *testing.T) {
 	_, _, err = Prepare(p, root)
 	if err == nil || !strings.Contains(err.Error(), "SHA-256") {
 		t.Fatalf("wanted checksum error: %v", err)
+	}
+}
+
+func TestSupportSummaryDoesNotExposeChildOutputOrProfileIdentity(t *testing.T) {
+	m := NewManager(t.TempDir())
+	m.state = Snapshot{State: "error", Engine: "byedpi", ProfileID: "PRIVATE_SUPPORT_FIXTURE", LastError: "PRIVATE_SUPPORT_FIXTURE"}
+	m.log = []string{"PRIVATE_SUPPORT_FIXTURE"}
+	b, err := json.Marshal(m.Summary())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(b, []byte("PRIVATE_SUPPORT_FIXTURE")) {
+		t.Fatal("private runtime data entered support summary")
+	}
+	if !m.Summary().ErrorPresent || m.Summary().LogLines != 1 {
+		t.Fatal("summary lost status information")
 	}
 }

@@ -8,7 +8,7 @@ import (
 
 func TestPrivateReadsAndBootstrapRequireSessionCredential(t *testing.T) {
 	s := makeServer(t)
-	for _, path := range []string{"/api/bootstrap", "/api/v1/profiles", "/api/v1/runtime", "/api/v1/engines", "/api/v1/system", "/api/v1/system/history", "/api/v1/system/presets"} {
+	for _, path := range []string{"/api/bootstrap", "/api/v1/profiles", "/api/v1/runtime", "/api/v1/engines", "/api/v1/system", "/api/v1/system/history", "/api/v1/system/presets", "/api/v1/support"} {
 		for _, method := range []string{"GET", "HEAD"} {
 			for _, token := range []string{"", "unrelated-local-account"} {
 				response := request(t, s, method, path, nil, token, "127.0.0.1:54321")

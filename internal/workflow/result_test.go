@@ -99,3 +99,18 @@ func TestRejectedResultsRemainDurableAndSerializable(t *testing.T) {
 		})
 	}
 }
+
+func TestSupportSummaryDoesNotExposeResultOrJobIdentity(t *testing.T) {
+	m := New(t.TempDir())
+	m.job = Job{ID: "PRIVATE_SUPPORT_FIXTURE", Action: "dns", State: "failed", Error: "PRIVATE_SUPPORT_FIXTURE", Result: json.RawMessage(`{"key":"PRIVATE_SUPPORT_FIXTURE"}`)}
+	b, err := json.Marshal(m.Summary())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "PRIVATE_SUPPORT_FIXTURE") {
+		t.Fatal("private workflow data entered support summary")
+	}
+	if !m.Summary().ErrorPresent || !m.Summary().ResultPresent {
+		t.Fatal("summary lost status information")
+	}
+}

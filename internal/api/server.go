@@ -67,6 +67,7 @@ func failProfile(w http.ResponseWriter, err error, fallback int) {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/support", s.support)
 	s.workflowRoutes(mux)
 	mux.HandleFunc("GET /api/bootstrap", func(w http.ResponseWriter, r *http.Request) {
 		JSON(w, 200, map[string]any{"version": buildinfo.Version, "platform": runtime.GOOS, "arch": runtime.GOARCH, "build": buildinfo.Current()})
