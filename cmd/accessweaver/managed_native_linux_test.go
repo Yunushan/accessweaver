@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/ed25519"
@@ -236,19 +237,56 @@ func TestDisposableLinuxManagedPolicyNative(t *testing.T) {
 	if status, err := managed.MachineStatus(); err != nil || !status.Valid {
 		t.Fatal("masked named ACL write incorrectly treated as effective", status, err)
 	}
-	runProbe := func(mode string) {
+	runProbe := func(mode string, afterReady ...func()) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		child := exec.CommandContext(ctx, probePath, "-test.run=^TestDisposableLinuxManagedPolicyNative$", "-test.v")
 		child.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 65534, Gid: 65534, Groups: []uint32{}}}
 		child.Env = []string{"PATH=/usr/bin:/bin", "TMPDIR=/tmp", "GITHUB_ACTIONS=true", "RUNNER_ENVIRONMENT=github-hosted", "RUNNER_OS=Linux", "ACCESSWEAVER_DISPOSABLE_LINUX_POLICY_TEST=1", "ACCESSWEAVER_LINUX_POLICY_PROBE=1", "ACCESSWEAVER_LINUX_POLICY_PROFILE=" + profilePath, "ACCESSWEAVER_LINUX_POLICY_EXPECT=" + mode}
-		output, err := child.CombinedOutput()
-		if err != nil || ctx.Err() != nil || !bytes.Contains(output, []byte("ordinary-user policy and launch checks passed")) {
-			t.Fatalf("ordinary-user probe: %s %v", output, err)
+		if len(afterReady) == 0 {
+			output, err := child.CombinedOutput()
+			if err != nil || ctx.Err() != nil || !bytes.Contains(output, []byte("ordinary-user policy and launch checks passed")) {
+				t.Fatalf("ordinary-user probe: %s %v", output, err)
+			}
+			return
+		}
+		pipe, err := child.StdoutPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var stderr bytes.Buffer
+		child.Stderr = &stderr
+		if err := child.Start(); err != nil {
+			t.Fatal(err)
+		}
+		ready, passed := false, false
+		scanner := bufio.NewScanner(pipe)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == "ready for active policy revocation" && !ready {
+				ready = true
+				afterReady[0]()
+			}
+			if line == "ordinary-user policy and launch checks passed" {
+				passed = true
+			}
+		}
+		if err := child.Wait(); err != nil || scanner.Err() != nil || ctx.Err() != nil || !ready || !passed {
+			t.Fatal("active ordinary-user probe failed", err, scanner.Err(), stderr.String(), ready, passed)
 		}
 	}
 	runProbe("approved")
+	manager := engine.NewManager(t.TempDir())
+	t.Cleanup(func() {
+		if err := manager.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := manager.Start(p); err != nil {
+		t.Fatal(err)
+	}
 	setLinuxFixtureACL(t, policyPath, 6)
+	assertNativePolicyStopped(t, manager, "policy is unavailable")
 	if _, err := managed.Current(); !errors.Is(err, managed.ErrUnavailable) {
 		t.Fatal("effective named ACL write accepted", err)
 	}
@@ -258,6 +296,26 @@ func TestDisposableLinuxManagedPolicyNative(t *testing.T) {
 	if err := os.Chmod(policyPath, 0644); err != nil {
 		t.Fatal(err)
 	}
+	// A real atomic update must revoke a running ordinary-user child even
+	// when the new revision keeps the same launch approval.
+	runProbe("revocation", func() {
+		policy.Revision = 2
+		data, err := json.Marshal(policy)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next, err := managed.Sign(data, private, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := managed.Update(next); err != nil {
+			t.Fatal(err)
+		}
+		installed, err = managed.PrepareInstallation(next, public, time.Now(), 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
 	file, err := os.OpenFile(enginePath, os.O_WRONLY|os.O_APPEND, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -288,7 +346,7 @@ func TestDisposableLinuxManagedPolicyNative(t *testing.T) {
 	if err := os.WriteFile(policyPath, installed, 0644); err != nil {
 		t.Fatal(err)
 	}
-	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "platform": "linux", "arch": runtime.GOARCH, "goVersion": runtime.Version(), "rootOwnedMachineSource": true, "initialReplacementDenied": true, "ordinaryUserCannotWritePolicyOrEngine": true, "ordinaryUserProfileChangesDenied": true, "approvedOrdinaryUserFixtureStarted": true, "callerEnvironmentNotInherited": true, "namedACLWriteMaskedByMode": true, "effectiveNamedACLWriteFailsClosed": true, "changedEngineHashDenied": true, "writableDirectoryFailsClosed": true, "invalidValueFailsClosed": true, "cleanupScheduled": true, "productionQualificationComplete": false}
+	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "platform": "linux", "arch": runtime.GOARCH, "goVersion": runtime.Version(), "rootOwnedMachineSource": true, "activeOrdinaryUserUpdateStopsEngine": true, "unsafeSourceStopsEngine": true, "initialReplacementDenied": true, "ordinaryUserCannotWritePolicyOrEngine": true, "ordinaryUserProfileChangesDenied": true, "approvedOrdinaryUserFixtureStarted": true, "callerEnvironmentNotInherited": true, "namedACLWriteMaskedByMode": true, "effectiveNamedACLWriteFailsClosed": true, "changedEngineHashDenied": true, "writableDirectoryFailsClosed": true, "invalidValueFailsClosed": true, "cleanupScheduled": true, "productionQualificationComplete": false}
 	data, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -389,7 +447,10 @@ func linuxOrdinaryPolicyProbe(t *testing.T) {
 		if !seen {
 			t.Fatal("approved ELF fixture did not report sanitized environment", manager.Snapshot())
 		}
-		if err := manager.Stop(); err != nil {
+		if os.Getenv("ACCESSWEAVER_LINUX_POLICY_EXPECT") == "revocation" {
+			fmt.Println("ready for active policy revocation")
+			assertNativePolicyStopped(t, manager, "machine policy changed")
+		} else if err := manager.Stop(); err != nil {
 			t.Fatal(err)
 		}
 	}

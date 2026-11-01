@@ -401,6 +401,11 @@
           "status": "partial",
           "evidence": [
             "internal/managed/guard.go",
+            "internal/managed/authorization.go",
+            "internal/managed/authorization_test.go",
+            "internal/engine/policy_test.go",
+            "internal/workflow/policy_test.go",
+            "cmd/accessweaver/managed_live_test.go",
             "internal/managed/machine_windows.go",
             "internal/managed/machine_linux.go",
             "internal/managed/install_linux.go",

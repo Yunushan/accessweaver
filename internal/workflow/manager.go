@@ -436,7 +436,26 @@ func (m *Manager) Start(id string) (Job, error) {
 	}
 	// Native provenance checks must not hold the status mutex while doing I/O.
 	m.mu.Unlock()
-	_, policyErr := workflowPermission(m.guard, p.Request)
+	permission, policyErr := workflowPermission(m.guard, p.Request)
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if policyErr == nil {
+		base, baseCancel := context.WithTimeout(context.Background(), 90*time.Minute)
+		var monitorCancel context.CancelFunc
+		ctx, monitorCancel, policyErr = permission.Authorization.Context(base)
+		cancel = func() {
+			baseCancel()
+			if monitorCancel != nil {
+				monitorCancel()
+			}
+		}
+	}
+	started := false
+	defer func() {
+		if !started && cancel != nil {
+			cancel()
+		}
+	}()
 	m.mu.Lock()
 	if policyErr != nil {
 		return Job{}, policyErr
@@ -459,7 +478,6 @@ func (m *Manager) Start(id string) (Job, error) {
 	if err := os.MkdirAll(m.root, 0700); err != nil {
 		return Job{}, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Minute)
 	m.cancel = cancel
 	m.job = Job{ID: id, Action: p.Request.Action, State: "running", StartedAt: time.Now().UTC()}
 	if err := m.saveLocked(); err != nil {
@@ -469,9 +487,13 @@ func (m *Manager) Start(id string) (Job, error) {
 	}
 	done := make(chan struct{})
 	m.done = done
+	started = true
 	go func() {
 		defer close(done)
 		result, err := m.execute(ctx, filepath.Join(m.root, id), p.Request)
+		if cause := context.Cause(ctx); managed.IsPolicyError(cause) {
+			err = errors.Join(cause, err)
+		}
 		if resultErr := validateResult(result); resultErr != nil {
 			result = nil
 			err = errors.Join(err, resultErr)

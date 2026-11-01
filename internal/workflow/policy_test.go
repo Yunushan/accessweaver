@@ -7,6 +7,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -132,5 +134,66 @@ func TestWorkflowShutdownRemainsResponsiveDuringPolicyCheck(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "workflows")); !os.IsNotExist(err) {
 		t.Fatal("shutdown allowed late job storage", err)
+	}
+}
+
+func TestActiveWorkflowRevocationCancelsWorkerAndPersistsFailure(t *testing.T) {
+	request := Request{Action: "discover"}
+	digest, err := request.PolicyDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved := workflowPolicy(t, managed.Policy{Workflows: []managed.WorkflowRule{{Action: request.Action, InputSHA256: digest}}})
+	changed := workflowPolicy(t, managed.Policy{})
+	var current atomic.Pointer[managed.Authority]
+	current.Store(approved)
+	guard := managed.NewGuard(func() (*managed.Authority, error) { return current.Load(), nil })
+	manager := NewWithGuard(t.TempDir(), guard)
+	manager.platform = "windows"
+	entered := make(chan struct{})
+	manager.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		close(entered)
+		<-ctx.Done()
+		// A stale or misbehaving worker cannot turn cancellation into success.
+		return json.RawMessage(`{"ok":true}`), nil
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = manager.Shutdown(ctx)
+	})
+	plan, err := manager.Preview(request)
+	if err != nil || !plan.Ready {
+		t.Fatal(err, plan.Issues)
+	}
+	job, err := manager.Start(plan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("worker did not start")
+	}
+	current.Store(changed)
+	select {
+	case <-manager.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("revoked worker did not finish")
+	}
+	state := manager.Snapshot()
+	if state.State != "failed" || !strings.Contains(state.Error, "machine policy changed") || state.FinishedAt.IsZero() {
+		t.Fatal(state)
+	}
+	record, err := os.ReadFile(filepath.Join(manager.root, job.ID+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved Job
+	if err := json.Unmarshal(record, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.State != "failed" || saved.Error != state.Error {
+		t.Fatal("policy failure was not durably recorded", saved)
 	}
 }

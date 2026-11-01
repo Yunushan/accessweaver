@@ -5,10 +5,13 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -120,5 +123,73 @@ func TestShutdownPreventsLateStartAfterAuthorizationWait(t *testing.T) {
 	}
 	if manager.Snapshot().PID != 0 {
 		t.Fatal("shutdown left a late child")
+	}
+}
+
+func TestRunningEngineStopsAfterEnrollmentOrSourceFailure(t *testing.T) {
+	for _, sourceFailure := range []bool{false, true} {
+		t.Run(fmt.Sprint(sourceFailure), func(t *testing.T) {
+			root := t.TempDir()
+			executable, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			contents, err := os.ReadFile(executable)
+			if err != nil {
+				t.Fatal(err)
+			}
+			name := "ciadpi"
+			if runtime.GOOS == "windows" {
+				name += ".exe"
+			}
+			binary := filepath.Join(root, name)
+			if err := os.WriteFile(binary, contents, 0700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("ACCESSWEAVER_FIXTURE", "1")
+			t.Setenv("ACCESSWEAVER_FIXTURE_RECORD", filepath.Join(root, "record.json"))
+			denied := enginePolicy(t, managed.Policy{})
+			var changed atomic.Bool
+			guard := managed.NewGuard(func() (*managed.Authority, error) {
+				if changed.Load() {
+					if sourceFailure {
+						return nil, managed.ErrUnavailable
+					}
+					return denied, nil
+				}
+				return nil, nil
+			})
+			manager := NewManagerWithGuard(root, guard)
+			t.Cleanup(func() { _ = manager.Stop() })
+			p := profile.New("active-revocation", "Active revocation", "byedpi")
+			p.Binary = binary
+			if err := manager.Start(p); err != nil {
+				t.Fatal(err)
+			}
+			if manager.Snapshot().PID == 0 {
+				t.Fatal("fixture never started")
+			}
+			changed.Store(true)
+			deadline := time.Now().Add(5 * time.Second)
+			for time.Now().Before(deadline) && manager.Snapshot().PID != 0 {
+				time.Sleep(10 * time.Millisecond)
+			}
+			state := manager.Snapshot()
+			if state.PID != 0 || state.State != "error" || (!strings.Contains(state.LastError, "machine policy changed") && !strings.Contains(state.LastError, "policy is unavailable")) {
+				t.Fatalf("active revocation lost child or policy outcome: %+v", state)
+			}
+			// Starting again requires fresh approval. A terminated monitor must
+			// not cancel a later generation after explicit administrator repair.
+			changed.Store(false)
+			if err := manager.Start(p); err != nil {
+				t.Fatal(err)
+			}
+			if err := manager.Stop(); err != nil {
+				t.Fatal(err)
+			}
+			if state := manager.Snapshot(); state.PID != 0 || state.LastError != "" {
+				t.Fatal(state)
+			}
+		})
 	}
 }

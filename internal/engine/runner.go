@@ -118,17 +118,29 @@ func (m *Manager) Start(p profile.Profile) error {
 	if err != nil {
 		return err
 	}
-	// External executables are only started following an explicit user action.
-	cmd := exec.Command(bin, args...)
-	cmd.Dir = filepath.Dir(bin)
-	cmd.WaitDelay = 2 * time.Second
-	configureProcess(cmd)
-	cmd.Stdout = logWriter{m}
-	cmd.Stderr = logWriter{m}
-	environment, err := launchPolicyEnvironment(m.guard, p, bin)
+	environment, authorization, err := launchPolicyAuthorization(m.guard, p, bin)
 	if err != nil {
 		return err
 	}
+	ctx, cancel, err := authorization.Context(context.Background())
+	if err != nil {
+		return err
+	}
+	started := false
+	defer func() {
+		if !started {
+			cancel()
+		}
+	}()
+	// External executables are only started following an explicit user action.
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Dir = filepath.Dir(bin)
+	cmd.WaitDelay = 2 * time.Second
+	configureProcess(cmd)
+	// Revoke the same owned foreground process/group as normal termination.
+	cmd.Cancel = func() error { return killProcess(cmd.Process) }
+	cmd.Stdout = logWriter{m}
+	cmd.Stderr = logWriter{m}
 	cmd.Env = environment
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -139,8 +151,12 @@ func (m *Manager) Start(p profile.Profile) error {
 		return errors.New("another engine started concurrently")
 	}
 	if err := cmd.Start(); err != nil {
+		if cause := context.Cause(ctx); managed.IsPolicyError(cause) {
+			err = errors.Join(cause, err)
+		}
 		return fmt.Errorf("engine start failed: %w", err)
 	}
+	started = true
 	m.cmd = cmd
 	m.stopping = false
 	m.done = make(chan struct{})
@@ -150,17 +166,23 @@ func (m *Manager) Start(p profile.Profile) error {
 	done := m.done
 	go func() {
 		err := cmd.Wait()
+		cause := context.Cause(ctx)
+		policyFailure := managed.IsPolicyError(cause)
+		if policyFailure {
+			err = errors.Join(cause, err)
+		}
+		cancel()
 		m.mu.Lock()
 		if m.cmd == cmd {
 			m.cmd = nil
 			m.state.State = "stopped"
 			m.state.PID = 0
-			if err != nil && !m.stopping {
+			if err != nil && (!m.stopping || policyFailure) {
 				m.state.State = "error"
 				m.state.LastError = err.Error()
 			}
 		}
-		if err != nil && !m.stopping {
+		if err != nil && (!m.stopping || policyFailure) {
 			m.addLogLocked("Engine process exited: " + err.Error())
 		} else {
 			m.addLogLocked("Engine process exited normally")

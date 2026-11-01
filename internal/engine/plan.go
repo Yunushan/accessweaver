@@ -577,10 +577,10 @@ func checkLaunchPolicy(guard *managed.Guard, p profile.Profile, binary string) e
 	}
 	return guard.Launch(input)
 }
-func launchPolicyEnvironment(guard *managed.Guard, p profile.Profile, binary string) ([]string, error) {
+func launchPolicyAuthorization(guard *managed.Guard, p profile.Profile, binary string) ([]string, *managed.Authorization, error) {
 	input, err := launchPolicyInput(p, binary)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return guard.LaunchEnvironment(input)
+	return guard.AuthorizeLaunch(input)
 }

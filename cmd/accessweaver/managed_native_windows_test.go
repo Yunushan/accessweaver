@@ -290,6 +290,14 @@ func TestDisposableManagedPolicyNative(t *testing.T) {
 	if err := manager.Start(p); !errors.Is(err, managed.ErrDenied) {
 		t.Fatal("changed executable contents accepted", err)
 	}
+	// Restore the inert fixture after the tamper rejection, then keep it active
+	// while two real native update callers contend for the next revision.
+	if err := os.WriteFile(enginePath, binary, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Start(p); err != nil {
+		t.Fatal(err)
+	}
 	policy.Revision = 2
 	updatedBytes, err := json.Marshal(policy)
 	if err != nil {
@@ -314,6 +322,7 @@ func TestDisposableManagedPolicyNative(t *testing.T) {
 			accepted++
 		}
 	}
+	assertNativePolicyStopped(t, manager, "machine policy changed")
 	if accepted != 1 {
 		t.Fatalf("concurrent update accepted %d copies of one revision", accepted)
 	}
@@ -399,7 +408,11 @@ func TestDisposableManagedPolicyNative(t *testing.T) {
 		t.Fatal("degenerate native trust key allowed mutation", err)
 	}
 	nativeTestSetInstallation(t, key, installed)
+	if err := manager.Start(p); err != nil {
+		t.Fatal(err)
+	}
 	nativeTestSetInstallation(t, key, []byte(`{"schemaVersion":1,"publicKey":"invalid","minimumRevision":0,"envelope":{}}`))
+	assertNativePolicyStopped(t, manager, "policy is unavailable")
 	if _, err := managed.Current(); !errors.Is(err, managed.ErrUnavailable) {
 		t.Fatal("invalid installed policy fell back to unmanaged", err)
 	}
@@ -410,7 +423,7 @@ func TestDisposableManagedPolicyNative(t *testing.T) {
 		t.Fatal("invalid prior policy was silently repaired with untrusted state")
 	}
 	nativeTestSetInstallation(t, key, installed)
-	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "goVersion": runtime.Version(), "platform": runtime.GOOS, "arch": runtime.GOARCH, "protectedRegistryRead": true, "approvedFixtureStarted": true, "initialInstallRefusesReplacement": true, "concurrentRevisionReplayDenied": true, "signingKeySubstitutionDenied": true, "expiredPolicyRenewed": true, "readOnlyProfilesEnforced": true, "unapprovedWorkflowDenied": true, "diagnosticsDenied": true, "serviceHostDenied": true, "limitedTokenCannotMutatePolicyOrEngine": true, "changedEngineHashDenied": true, "invalidPolicyFailsClosed": true, "degenerateTrustKeyFailsClosed": true, "registryCleanupScheduled": true, "productionQualificationComplete": false}
+	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "goVersion": runtime.Version(), "platform": runtime.GOOS, "arch": runtime.GOARCH, "protectedRegistryRead": true, "activeUpdateStopsEngine": true, "invalidSourceStopsEngine": true, "approvedFixtureStarted": true, "initialInstallRefusesReplacement": true, "concurrentRevisionReplayDenied": true, "signingKeySubstitutionDenied": true, "expiredPolicyRenewed": true, "readOnlyProfilesEnforced": true, "unapprovedWorkflowDenied": true, "diagnosticsDenied": true, "serviceHostDenied": true, "limitedTokenCannotMutatePolicyOrEngine": true, "changedEngineHashDenied": true, "invalidPolicyFailsClosed": true, "degenerateTrustKeyFailsClosed": true, "registryCleanupScheduled": true, "productionQualificationComplete": false}
 	bytes, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		t.Fatal(err)

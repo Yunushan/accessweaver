@@ -58,17 +58,24 @@ func (g *Guard) Launch(input LaunchRequest) error {
 	return g.launchAuthority(a, input)
 }
 func (g *Guard) LaunchEnvironment(input LaunchRequest) ([]string, error) {
+	environment, _, err := g.AuthorizeLaunch(input)
+	return environment, err
+}
+
+// AuthorizeLaunch binds the launch environment and lifetime to the same policy.
+func (g *Guard) AuthorizeLaunch(input LaunchRequest) ([]string, *Authorization, error) {
 	a, err := g.authority()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := g.launchAuthority(a, input); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if a == nil {
-		return nil, nil
+		return nil, newAuthorization(g, a), nil
 	}
-	return nativepath.ProcessEnvironment()
+	environment, err := nativepath.ProcessEnvironment()
+	return environment, newAuthorization(g, a), err
 }
 func (g *Guard) launchAuthority(a *Authority, input LaunchRequest) error {
 	if a == nil {
@@ -117,6 +124,7 @@ func (g *Guard) protected(path, digest string, directory bool) error {
 }
 
 type WorkflowPermission struct {
+	Authorization           *Authorization `json:"-"`
 	Managed, AllowDownloads bool
 	Downloads               []DownloadRule
 }
@@ -131,7 +139,7 @@ func (g *Guard) Workflow(action, digest string, paths []InputPath) (WorkflowPerm
 		return WorkflowPermission{}, err
 	}
 	if a == nil {
-		return WorkflowPermission{AllowDownloads: true}, nil
+		return WorkflowPermission{Authorization: newAuthorization(g, a), AllowDownloads: true}, nil
 	}
 	for _, rule := range a.verified.Policy.Workflows {
 		if rule.Action != action || rule.InputSHA256 != digest {
@@ -144,7 +152,7 @@ func (g *Guard) Workflow(action, digest string, paths []InputPath) (WorkflowPerm
 				}
 			}
 		}
-		return WorkflowPermission{Managed: true, AllowDownloads: a.verified.Policy.AllowDownloads, Downloads: append([]DownloadRule{}, a.verified.Policy.Downloads...)}, nil
+		return WorkflowPermission{Authorization: newAuthorization(g, a), Managed: true, AllowDownloads: a.verified.Policy.AllowDownloads, Downloads: append([]DownloadRule{}, a.verified.Policy.Downloads...)}, nil
 	}
 	return WorkflowPermission{}, fmt.Errorf("%w: workflow request is not approved", ErrDenied)
 }
