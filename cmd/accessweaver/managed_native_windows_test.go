@@ -468,6 +468,9 @@ func nativeLimitedPolicyProbe(enginePath string) error {
 	if _, err := managed.Update([]byte(`{}`)); !errors.Is(err, managed.ErrDenied) {
 		return fmt.Errorf("limited token bypassed update administrator check: %v", err)
 	}
+	if _, err := managed.Rotate([]byte(`{}`)); !errors.Is(err, managed.ErrDenied) {
+		return fmt.Errorf("limited token bypassed rotation administrator check: %v", err)
+	}
 	if err := managed.NewGuard(nil).ProfileChanges(); !errors.Is(err, managed.ErrDenied) {
 		return fmt.Errorf("limited token bypassed profile restriction: %v", err)
 	}

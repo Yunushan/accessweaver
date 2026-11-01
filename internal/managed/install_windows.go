@@ -33,15 +33,15 @@ func requirePolicyAdministrator() error {
 	return nil
 }
 
-func applyMachineInstallation(data []byte, key ed25519.PublicKey, initial bool) (InstallResult, error) {
+func applyMachinePolicy(data []byte, key ed25519.PublicKey, change policyChange) (InstallResult, error) {
 	if err := requirePolicyAdministrator(); err != nil {
 		return InstallResult{}, err
 	}
-	tx, err := beginMachineInstallation(initial)
+	tx, err := beginMachineInstallation(change == changeInstall)
 	if err != nil {
 		return InstallResult{}, err
 	}
-	return commitInstallation(tx, data, key, initial, time.Now)
+	return commitInstallation(tx, data, key, change, time.Now)
 }
 
 type nativeInstallationTransaction struct {

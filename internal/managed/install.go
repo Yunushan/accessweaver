@@ -9,10 +9,19 @@ import (
 	"time"
 )
 
+type policyChange uint8
+
+const (
+	changeInstall policyChange = iota
+	changeUpdate
+	changeRotate
+)
+
 var ErrUnsupported = errors.New("managed policy installation is unsupported on this platform")
 
 // InstallResult describes a committed local policy update, not full product qualification.
 type InstallResult struct {
+	PreviousKeyID    string `json:"previousKeyId,omitempty"`
 	Operation        string `json:"operation"`
 	PreviousRevision uint64 `json:"previousRevision"`
 	Revision         uint64 `json:"revision"`
@@ -28,7 +37,7 @@ func Install(data []byte, expectedKey ed25519.PublicKey) (InstallResult, error) 
 	if _, _, err := installationTransition(nil, data, expectedKey, true, time.Now()); err != nil {
 		return InstallResult{}, err
 	}
-	return applyMachineInstallation(data, expectedKey, true)
+	return applyMachinePolicy(data, expectedKey, changeInstall)
 }
 
 // Update uses only the key and last accepted revision from protected native
@@ -37,7 +46,7 @@ func Update(envelope []byte) (InstallResult, error) {
 	if len(envelope) == 0 || len(envelope) > MaxEnvelopeBytes {
 		return InstallResult{}, errors.New("managed update envelope exceeds size limit or is empty")
 	}
-	return applyMachineInstallation(envelope, nil, false)
+	return applyMachinePolicy(envelope, nil, changeUpdate)
 }
 
 // Transactions publish the entire document on commit. No exported constructor
@@ -49,8 +58,9 @@ type installationTransaction interface {
 	Close() error
 }
 
-func commitInstallation(tx installationTransaction, next []byte, key ed25519.PublicKey, initial bool, clock func() time.Time) (result InstallResult, err error) {
+func commitInstallation(tx installationTransaction, next []byte, key ed25519.PublicKey, change policyChange, clock func() time.Time) (result InstallResult, err error) {
 	defer func() { err = errors.Join(err, tx.Close()) }()
+	initial := change == changeInstall
 	prior, present, err := tx.Read()
 	if err != nil {
 		return result, err
@@ -61,7 +71,15 @@ func commitInstallation(tx installationTransaction, next []byte, key ed25519.Pub
 	if !initial && !present {
 		return result, errors.New("no enrolled machine policy; initial installation requires an independent public key")
 	}
-	candidate, result, err := installationTransition(prior, next, key, initial, clock())
+	var candidate []byte
+	switch change {
+	case changeInstall, changeUpdate:
+		candidate, result, err = installationTransition(prior, next, key, initial, clock())
+	case changeRotate:
+		candidate, result, err = rotationTransition(prior, next, clock())
+	default:
+		return InstallResult{}, errors.New("unknown managed policy operation")
+	}
 	if err != nil {
 		return InstallResult{}, err
 	}
@@ -95,32 +113,9 @@ func installationTransition(prior, next []byte, expectedKey ed25519.PublicKey, i
 		}
 	} else {
 		result.Operation = "update"
-		installed, err := parseInstallation(prior)
-		if err != nil {
-			return nil, result, fmt.Errorf("cannot read prior enrolled policy: %w", err)
-		}
-		public, err := PublicKey(installed.PublicKey)
+		public, verified, err := authenticateInstallationHistory(prior)
 		if err != nil {
 			return nil, result, err
-		}
-		envelope, err := json.Marshal(installed.Envelope)
-		if err != nil {
-			return nil, result, err
-		}
-		// Expiry must block runtime operations, but must not prevent renewal.
-		// Authenticate the prior policy at its own issuance solely to recover
-		// its key/revision metadata. This never constructs a runtime Authority.
-		payload, err := canonicalBase64(installed.Envelope.Payload, 1, MaxPolicyBytes)
-		if err != nil {
-			return nil, result, err
-		}
-		var metadata Policy
-		if err := strictJSON(payload, MaxPolicyBytes, &metadata); err != nil {
-			return nil, result, err
-		}
-		verified, err := Verify(envelope, public, metadata.IssuedAt, installed.MinimumRevision)
-		if err != nil {
-			return nil, result, fmt.Errorf("cannot authenticate prior enrolled policy: %w", err)
 		}
 		result.PreviousRevision = verified.Policy.Revision
 		candidate, err = PrepareInstallation(next, public, now, verified.Policy.Revision)
@@ -137,4 +132,53 @@ func installationTransition(prior, next []byte, expectedKey ed25519.PublicKey, i
 	result.PayloadSHA256 = authority.verified.PayloadSHA256
 	result.Enforcement = "partial"
 	return candidate, result, nil
+}
+
+func authenticateInstallationHistory(data []byte) (ed25519.PublicKey, Verified, error) {
+	installed, err := parseInstallation(data)
+	if err != nil {
+		return nil, Verified{}, fmt.Errorf("cannot read prior enrolled policy: %w", err)
+	}
+	public, err := PublicKey(installed.PublicKey)
+	if err != nil {
+		return nil, Verified{}, err
+	}
+	envelope, err := json.Marshal(installed.Envelope)
+	if err != nil {
+		return nil, Verified{}, err
+	}
+	payload, err := canonicalBase64(installed.Envelope.Payload, 1, MaxPolicyBytes)
+	if err != nil {
+		return nil, Verified{}, err
+	}
+	var metadata Policy
+	if err := strictJSON(payload, MaxPolicyBytes, &metadata); err != nil {
+		return nil, Verified{}, err
+	}
+	// Use issuance only to authenticate historical key/revision metadata. This
+	// function does not create Authority or make expired permissions usable.
+	verified, err := Verify(envelope, public, metadata.IssuedAt, installed.MinimumRevision)
+	if err != nil {
+		return nil, Verified{}, fmt.Errorf("cannot authenticate prior enrolled policy: %w", err)
+	}
+	return public, verified, nil
+}
+
+// ExportInstallation returns public, authenticated deployment data for an
+// administrator to review offline. Expiry does not hide historical metadata.
+func ExportInstallation() ([]byte, error) {
+	if !machinePolicySupported() {
+		return nil, ErrUnsupported
+	}
+	data, present, err := readMachineInstallation()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+	if !present {
+		return nil, fmt.Errorf("%w: no enrolled policy", ErrUnavailable)
+	}
+	if _, _, err := authenticateInstallationHistory(data); err != nil {
+		return nil, err
+	}
+	return data, nil
 }

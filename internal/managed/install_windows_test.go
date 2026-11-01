@@ -202,7 +202,95 @@ func TestDisposablePolicyTransactionRollback(t *testing.T) {
 	if err != nil || status.Revision != 3 {
 		t.Fatal("stale reservation changed committed revision", status, err)
 	}
-	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "goVersion": runtime.Version(), "platform": runtime.GOOS, "arch": runtime.GOARCH, "abandonedBootstrapInvisible": true, "pendingUpdateInvisible": true, "closedTransactionRolledBack": true, "processExitRolledBack": true, "validUpdateAfterAbort": true, "staleReaderCannotOverwriteNewRevision": true, "registryCleanupScheduled": true, "productionQualificationComplete": false}
+	// Rotate through the public administrative path, including an abandoned
+	// staged replacement. The old key must remain authoritative until commit.
+	prior, err := ExportInstallation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	newPublic, newPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy.Revision = 4
+	policy.AllowDiagnostics = true
+	payload, err = json.Marshal(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextEnvelope, err := Sign(payload, newPrivate, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotation, err := SignRotation(prior, nextEnvelope, newPublic, private, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotatedCandidate, _, err := rotationTransition(prior, rotation, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotationPath := filepath.Join(t.TempDir(), "rotated-candidate.json")
+	if err := os.WriteFile(rotationPath, rotatedCandidate, 0600); err != nil {
+		t.Fatal(err)
+	}
+	rotationContext, stopRotationChild := context.WithTimeout(context.Background(), 10*time.Second)
+	defer stopRotationChild()
+	rotationChild := exec.CommandContext(rotationContext, os.Args[0], "-test.run=^TestDisposablePolicyTransactionRollback$", "-test.v")
+	rotationChild.Env = append(os.Environ(), "ACCESSWEAVER_POLICY_TX_ABORT_CANDIDATE="+rotationPath)
+	output, err = rotationChild.CombinedOutput()
+	if rotationContext.Err() != nil || !errors.As(err, &exit) || exit.ExitCode() != 79 || !bytes.Contains(output, []byte("candidate staged; abandoning process transaction")) {
+		t.Fatalf("rotation crash fixture failed: %s %v", output, err)
+	}
+	status, err = MachineStatus()
+	if err != nil || status.Revision != 3 || status.KeyID != KeyID(public) {
+		t.Fatal("abandoned rotation replaced enrolled key", status, err)
+	}
+	if err := NewGuard(nil).Diagnostics(); !errors.Is(err, ErrDenied) {
+		t.Fatal("abandoned rotation changed runtime permission", err)
+	}
+	result, err = Rotate(rotation)
+	if err != nil || !result.Committed || result.Operation != "rotate" || result.PreviousRevision != 3 || result.Revision != 4 || result.PreviousKeyID != KeyID(public) || result.KeyID != KeyID(newPublic) {
+		t.Fatal("native key rotation failed", result, err)
+	}
+	status, err = MachineStatus()
+	if err != nil || status.Revision != 4 || status.KeyID != KeyID(newPublic) {
+		t.Fatal("rotation did not publish new policy and key together", status, err)
+	}
+	if err := NewGuard(nil).Diagnostics(); err != nil {
+		t.Fatal("committed rotation did not activate signed runtime permission", err)
+	}
+	rotatedExport, err := ExportInstallation()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, verified, err := authenticateInstallationHistory(rotatedExport); err != nil || verified.KeyID != KeyID(newPublic) {
+		t.Fatal("export did not retain rotated trust", err)
+	}
+	if _, err := Rotate(rotation); err == nil {
+		t.Fatal("rotation replay accepted")
+	}
+	policy.Revision = 5
+	payload, err = json.Marshal(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retiredEnvelope, err := Sign(payload, private, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Update(retiredEnvelope); err == nil {
+		t.Fatal("retired native key authorized update")
+	}
+	newEnvelope, err := Sign(payload, newPrivate, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err = Update(newEnvelope)
+	if err != nil || result.Revision != 5 || result.KeyID != KeyID(newPublic) {
+		t.Fatal("rotated native key could not update", result, err)
+	}
+	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "goVersion": runtime.Version(), "platform": runtime.GOOS, "arch": runtime.GOARCH, "abandonedBootstrapInvisible": true, "pendingUpdateInvisible": true, "closedTransactionRolledBack": true, "processExitRolledBack": true, "validUpdateAfterAbort": true, "staleReaderCannotOverwriteNewRevision": true, "abandonedRotationKeepsOldKey": true, "nativeKeyRotationCommitted": true, "keyRotationReplayDenied": true, "retiredKeyUpdateDenied": true, "newKeyUpdateAccepted": true, "registryCleanupScheduled": true, "productionQualificationComplete": false}
 	data, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		t.Fatal(err)

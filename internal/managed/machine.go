@@ -103,6 +103,7 @@ type Status struct {
 	Supported   bool       `json:"supported"`
 	Configured  bool       `json:"configured"`
 	Valid       bool       `json:"valid"`
+	KeyID       string     `json:"keyId,omitempty"`
 	Revision    uint64     `json:"revision,omitempty"`
 	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
 	Enforcement string     `json:"enforcement"`
@@ -126,6 +127,7 @@ func MachineStatus() (Status, error) {
 	}
 	result.Valid = true
 	result.Enforcement = "partial"
+	result.KeyID = authority.verified.KeyID
 	result.Revision = authority.verified.Policy.Revision
 	expires := authority.verified.Policy.ExpiresAt
 	result.ExpiresAt = &expires

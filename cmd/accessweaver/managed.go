@@ -21,7 +21,7 @@ import (
 
 func managedCommand(args []string) error {
 	if len(args) == 0 {
-		fmt.Print("Managed configuration tools (native runtime enforcement is partial):\n  managed status\n  managed install INSTALLATION.json --public-key BASE64\n  managed update ENVELOPE.json\n  managed prepare ENVELOPE.json --public-key BASE64 --minimum-revision N --out INSTALLATION.json\n  managed validate POLICY.json\n  managed digest-profile PROFILE.json\n  managed digest-workflow REQUEST.json\n  managed sign POLICY.json --private-key PRIVATE-KEY.pem [--out ENVELOPE.json]\n  managed public-key --private-key PRIVATE-KEY.pem\n  managed verify ENVELOPE.json --public-key BASE64 [--minimum-revision N]\nSigning requires an offline Ed25519 PKCS#8 PEM key. Never deploy the private key.\n")
+		fmt.Print("Managed configuration tools (native runtime enforcement is partial):\n  managed status\n  managed install INSTALLATION.json --public-key BASE64\n  managed update ENVELOPE.json\n  managed export-installation --out INSTALLATION.json\n  managed sign-rotation NEXT-ENVELOPE.json --previous-installation PREVIOUS.json --next-public-key BASE64 --private-key OLD.pem --out ROTATION.json\n  managed verify-rotation ROTATION.json --previous-installation PREVIOUS.json --public-key BASE64\n  managed rotate ROTATION.json\n  managed prepare ENVELOPE.json --public-key BASE64 --minimum-revision N --out INSTALLATION.json\n  managed validate POLICY.json\n  managed digest-profile PROFILE.json\n  managed digest-workflow REQUEST.json\n  managed sign POLICY.json --private-key PRIVATE-KEY.pem [--out ENVELOPE.json]\n  managed public-key --private-key PRIVATE-KEY.pem\n  managed verify ENVELOPE.json --public-key BASE64 [--minimum-revision N]\nSigning requires an offline Ed25519 PKCS#8 PEM key. Never deploy the private key.\n")
 		return nil
 	}
 	switch args[0] {
@@ -31,6 +31,74 @@ func managedCommand(args []string) error {
 		}
 		status, err := managed.MachineStatus()
 		return errors.Join(err, printJSON(status))
+	case "export-installation":
+		if len(args) != 3 || args[1] != "--out" {
+			return errors.New("usage: managed export-installation --out INSTALLATION.json")
+		}
+		data, err := managed.ExportInstallation()
+		if err != nil {
+			return err
+		}
+		return writeManagedOutput(args[2], data)
+	case "sign-rotation":
+		if len(args) != 10 || args[2] != "--previous-installation" || args[4] != "--next-public-key" || args[6] != "--private-key" || args[8] != "--out" {
+			return errors.New("usage: managed sign-rotation NEXT-ENVELOPE.json --previous-installation PREVIOUS.json --next-public-key BASE64 --private-key OLD.pem --out ROTATION.json")
+		}
+		next, err := readManagedFile(args[1], managed.MaxEnvelopeBytes)
+		if err != nil {
+			return err
+		}
+		previous, err := readManagedFile(args[3], managed.MaxInstallationBytes)
+		if err != nil {
+			return err
+		}
+		public, err := managed.PublicKey(args[5])
+		if err != nil {
+			return err
+		}
+		private, err := readSigningKey(args[7])
+		if err != nil {
+			return err
+		}
+		data, err := managed.SignRotation(previous, next, public, private, time.Now())
+		if err != nil {
+			return err
+		}
+		return writeManagedOutput(args[9], data)
+	case "verify-rotation":
+		if len(args) != 6 || args[2] != "--previous-installation" || args[4] != "--public-key" {
+			return errors.New("usage: managed verify-rotation ROTATION.json --previous-installation PREVIOUS.json --public-key BASE64")
+		}
+		data, err := readManagedFile(args[1], managed.MaxRotationBytes)
+		if err != nil {
+			return err
+		}
+		previous, err := readManagedFile(args[3], managed.MaxInstallationBytes)
+		if err != nil {
+			return err
+		}
+		public, err := managed.PublicKey(args[5])
+		if err != nil {
+			return err
+		}
+		review, err := managed.VerifyRotation(previous, data, public, time.Now())
+		if err != nil {
+			return err
+		}
+		return printJSON(review)
+	case "rotate":
+		if len(args) != 2 {
+			return errors.New("usage: managed rotate ROTATION.json")
+		}
+		data, err := readManagedFile(args[1], managed.MaxRotationBytes)
+		if err != nil {
+			return err
+		}
+		result, err := managed.Rotate(data)
+		if err != nil {
+			return err
+		}
+		return printJSON(result)
 	case "install":
 		if len(args) != 4 || args[2] != "--public-key" {
 			return errors.New("usage: managed install INSTALLATION.json --public-key BASE64")

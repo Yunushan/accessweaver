@@ -236,3 +236,100 @@ func TestManagedDigestCommandsMatchTypedExecutionInputs(t *testing.T) {
 		t.Fatal("unknown operation received an approval digest")
 	}
 }
+
+func TestManagedRotationCommandsSignAndReviewWithoutMachineChanges(t *testing.T) {
+	folder := t.TempDir()
+	state := filepath.Join(folder, "must-not-create")
+	t.Setenv("ACCESSWEAVER_HOME", state)
+	oldPublic, oldPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newPublic, newPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyBytes, err := x509.MarshalPKCS8PrivateKey(oldPrivate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyBytes = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyBytes})
+	keyPath := filepath.Join(folder, "old.pem")
+	if err := os.WriteFile(keyPath, keyBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	p := managed.Policy{SchemaVersion: 1, Revision: 7, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}
+	payload, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldEnvelope, err := managed.Sign(payload, oldPrivate, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prior, err := managed.PrepareInstallation(oldEnvelope, oldPublic, now, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	priorPath := filepath.Join(folder, "prior.json")
+	if err := os.WriteFile(priorPath, prior, 0600); err != nil {
+		t.Fatal(err)
+	}
+	p.Revision = 8
+	payload, err = json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := managed.Sign(payload, newPrivate, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextPath := filepath.Join(folder, "next.json")
+	if err := os.WriteFile(nextPath, next, 0600); err != nil {
+		t.Fatal(err)
+	}
+	rotationPath := filepath.Join(folder, "rotation.json")
+	args := []string{"sign-rotation", nextPath, "--previous-installation", priorPath, "--next-public-key", base64.StdEncoding.EncodeToString(newPublic), "--private-key", keyPath, "--out", rotationPath}
+	out, err := captureManagedCommand(t, args)
+	if err != nil || len(out) != 0 {
+		t.Fatal("rotation signing command failed", string(out), err)
+	}
+	out, err = captureManagedCommand(t, []string{"verify-rotation", rotationPath, "--previous-installation", priorPath, "--public-key", base64.StdEncoding.EncodeToString(oldPublic)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var review managed.RotationReview
+	if err := json.Unmarshal(out, &review); err != nil {
+		t.Fatal(err)
+	}
+	if !review.SignatureValid || review.RuntimeEnforced || review.Next.RuntimeEnforced || review.PreviousRevision != 7 || review.Next.Policy.Revision != 8 || review.Next.KeyID != managed.KeyID(newPublic) {
+		t.Fatal("misleading CLI rotation review", review)
+	}
+	out, err = captureManagedCommand(t, []string{"verify-rotation", rotationPath, "--previous-installation", priorPath, "--public-key", base64.StdEncoding.EncodeToString(newPublic)})
+	if err == nil || len(out) != 0 {
+		t.Fatal("review accepted unpinned previous key", err)
+	}
+	args[len(args)-1] = keyPath
+	out, err = captureManagedCommand(t, args)
+	if err == nil || len(out) != 0 {
+		t.Fatal("rotation output overwrote a signer key")
+	}
+	after, err := os.ReadFile(keyPath)
+	if err != nil || string(after) != string(keyBytes) {
+		t.Fatal("rotation commands changed private key", err)
+	}
+	after, err = os.ReadFile(priorPath)
+	if err != nil || string(after) != string(prior) {
+		t.Fatal("rotation commands changed prior installation", err)
+	}
+	if _, err := os.Stat(state); !os.IsNotExist(err) {
+		t.Fatal("offline rotation created user state", err)
+	}
+	for _, args := range [][]string{{"export-installation"}, {"export-installation", "--out"}, {"sign-rotation"}, {"verify-rotation"}, {"rotate"}, {"rotate", rotationPath, "--public-key", "ignored"}} {
+		out, err := captureManagedCommand(t, args)
+		if err == nil || len(out) != 0 {
+			t.Fatal("ambiguous rotation command accepted", args, err)
+		}
+	}
+}

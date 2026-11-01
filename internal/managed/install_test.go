@@ -173,7 +173,7 @@ func TestPolicyTransactionFailureDoesNotPublishCandidate(t *testing.T) {
 	for _, fault := range []string{"read", "stage", "commit", "existing-install", "absent-update", "invalid-candidate", "expired-after-stage"} {
 		t.Run(fault, func(t *testing.T) {
 			tx := &fakeInstallationTransaction{prior: prior, present: true}
-			initial := false
+			change := changeUpdate
 			input := next
 			clockCalls := 0
 			clock := func() time.Time {
@@ -191,7 +191,7 @@ func TestPolicyTransactionFailureDoesNotPublishCandidate(t *testing.T) {
 			case "commit":
 				tx.commitErr = failure
 			case "existing-install":
-				initial = true
+				change = changeInstall
 				input = prior
 			case "absent-update":
 				tx.present = false
@@ -199,7 +199,7 @@ func TestPolicyTransactionFailureDoesNotPublishCandidate(t *testing.T) {
 			case "invalid-candidate":
 				input = []byte(`{}`)
 			}
-			result, err := commitInstallation(tx, input, public, initial, clock)
+			result, err := commitInstallation(tx, input, public, change, clock)
 			if err == nil || result.Committed || tx.closeCalls != 1 || tx.published != nil {
 				t.Fatalf("failed update published state: %+v %v", result, err)
 			}
@@ -222,7 +222,7 @@ func TestInitialPolicyInstallRequiresIndependentPinAndAbsentSource(t *testing.T)
 		}
 	}
 	tx := &fakeInstallationTransaction{}
-	result, err := commitInstallation(tx, prior, public, true, func() time.Time { return now })
+	result, err := commitInstallation(tx, prior, public, changeInstall, func() time.Time { return now })
 	if err != nil || !result.Committed || result.Revision != 2 || result.PreviousRevision != 0 || tx.closeCalls != 1 || tx.commitCalls != 1 {
 		t.Fatal("valid initial install did not commit", result, err)
 	}
@@ -235,7 +235,7 @@ func TestPolicyCommitIsReportedWhenHandleCleanupFails(t *testing.T) {
 	prior, next, public, _, now := renewalFixture(t)
 	cleanupFailure := errors.New("injected handle close failure")
 	tx := &fakeInstallationTransaction{prior: prior, present: true, closeErr: cleanupFailure}
-	result, err := commitInstallation(tx, next, public, false, func() time.Time { return now })
+	result, err := commitInstallation(tx, next, public, changeUpdate, func() time.Time { return now })
 	if !errors.Is(err, cleanupFailure) || !result.Committed || tx.published == nil || tx.closeCalls != 1 {
 		t.Fatal("post-commit cleanup failure concealed the committed outcome", result, err)
 	}
