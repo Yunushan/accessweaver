@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/Yunushan/accessweaver/internal/nativeargs"
 	"github.com/Yunushan/accessweaver/internal/profile"
 )
 
@@ -298,33 +299,17 @@ func adapterArgs(p profile.Profile, base, include, exclude string) ([]string, []
 		protected = append(protected, "--new", "--hostlist", "--hostlist-exclude", "--hostlist-auto", "--bind-addr", "--bind-iface", "--bind-iface4", "--bind-iface6")
 	}
 	for _, arg := range args {
-		name, _, _ := strings.Cut(arg, "=")
-		if !strings.HasPrefix(name, "--") {
-			continue
-		}
-		exact := false
-		for _, option := range protected {
-			if name == option {
-				exact = true
-				break
-			}
-		}
-		if exact {
-			continue
-		}
-		for _, option := range protected {
-			if name != option && strings.HasPrefix(option, name) {
-				issues = append(issues, "spell managed option names in full; abbreviated options are not supported")
-				break
-			}
+		if nativeargs.Abbreviates(arg, protected...) {
+			issues = append(issues, "spell managed option names in full; abbreviated options are not supported")
 		}
 	}
+
 	switch p.Engine {
 	case "byedpi":
 		for _, a := range args {
 			// For example -Ui0.0.0.0 and -UD are valid getopt clusters. A
 			// restricted syntax keeps loopback and process ownership auditable.
-			if len(a) > 2 && a[0] == '-' && ((a[1] >= 'a' && a[1] <= 'z') || (a[1] >= 'A' && a[1] <= 'Z')) {
+			if nativeargs.ShortCluster(a) {
 				issues = append(issues, "ByeDPI short options must be separate arguments; use full long options instead of clusters or attached values")
 			}
 		}

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Yunushan/accessweaver/internal/logfile"
+	"github.com/Yunushan/accessweaver/internal/nativeargs"
 	"github.com/Yunushan/accessweaver/internal/profile"
 )
 
@@ -264,6 +265,11 @@ func (r Request) Validate() error {
 			if !allowed(r.Mode, "service", "once") {
 				return errors.New("packet engine setup mode must be service or once")
 			}
+		}
+	}
+	if r.Action == "install" && r.Engine == "byedpi" {
+		if err := nativeargs.ValidateByeDPIInstall(r.Args); err != nil {
+			return err
 		}
 	}
 	if r.Action == "install" && (r.Engine == "zapret" || r.Engine == "zapret2" || r.Engine == "goodbyedpi") {

@@ -18,14 +18,14 @@ flowchart TD
 
 | Component | Responsibility | Does not establish |
 |---|---|---|
-| Static UI | Editing, bilingual presentation, preview and explicit commands | Native mobile networking or privileged OS access |
+| Static UI | Editing, four-language presentation, preview and explicit commands | Native mobile networking or privileged OS access |
 | Loopback API | Local request validation and dispatch | Authentication against other processes running as the user |
 | Profile store | Versioned JSON, validation, atomic replacement and OS-locked revision checks across cooperating local processes | Secret encryption or safe semantics for arbitrary engine arguments |
 | Launch planner | Platform/executable checks, optional hash, configuration checks and supported rule translation | Trusted publisher identity, a valid engine strategy or working traffic interception |
 | Process manager | One foreground child, bounded output, stop/shutdown | A service manager, installer or rollback of third-party OS changes |
 | Diagnostics | Direct DNS resolution, TCP connect and certificate-verified TLS handshake | Selected SOCKS route, UDP/voice, QUIC, hostlist correctness or anonymity |
 
-The control listener binds to `127.0.0.1` on an ephemeral port. Host and browser-origin checks protect the API from typical cross-origin/rebinding access, and state-changing requests need a random per-process token. The static UI uses same-origin assets and a restrictive content security policy. The API is a local implementation interface, not a supported remote administration protocol.
+The control listener binds to `127.0.0.1` on an ephemeral port. Host and browser-origin checks protect the API from typical cross-origin/rebinding access, and every API request, including reads and bootstrap, needs a random per-process token delivered through the OS-private launcher. The dashboard refuses elevated/root execution; Windows machine changes require separately elevated CLI requests. The static UI uses same-origin assets and a restrictive content security policy. The API is a local implementation interface, not a supported remote administration protocol.
 
 `POST /api/v1/preview` accepts a full profile and returns a read-only plan. A ready plan may still carry warnings. Starting a saved profile validates prerequisites again, creates generated hostlists and launches the executable directly with an argument array, without a shell. The child runs from its executable directory with the controller's privileges.
 
@@ -33,7 +33,7 @@ The control listener binds to `127.0.0.1` on an ephemeral port. Host and browser
 
 Profiles belong to the AccessWeaver store. External configuration files, VPN credentials, Lua assets, drivers and OS networking belong to their respective tools and users. An export includes a `configPath` reference, not the referenced file. Shell-hook rejection for WireSock and adapter checks reduce particular hazards; they do not sandbox engine code or external configuration.
 
-POSIX lifecycle uses a process group and bounded termination. Windows lifecycle currently terminates the foreground process; graceful console control, service ownership and network-state rollback need platform-specific implementation. Multiple AccessWeaver instances have separate managers; there is no machine-wide singleton lock.
+POSIX lifecycle uses a process group and bounded termination. Windows lifecycle currently terminates the foreground process; graceful console control, service ownership and network-state rollback need platform-specific implementation. Each configuration root has a controller lock for UI/foreground execution and CLI import, with a separate profile-operation lock. Windows administrative workflows use a machine-wide mutex; user application operations do not share that mutex. These controls do not form a universal singleton across all roots and modes.
 
 Offline browser mode stores profiles in local storage. It shares the editor presentation, but has no core API and cannot provide engine process management or network diagnostics. Import/export is the explicit bridge to the desktop store.
 

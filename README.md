@@ -103,7 +103,7 @@ Use `./bin/accessweaver` or `.\bin\accessweaver.exe` if the binary is not on `PA
 | [sing-box](https://github.com/SagerNet/sing-box) / [Xray-core](https://github.com/XTLS/Xray-core) | Selected desktop/BSD targets | External config only | Existing configuration and any required endpoint are external |
 | [WireGuard](https://www.wireguard.com/) | Reference catalog entry | External configuration | Native tunnel lifecycle is not managed in this alpha |
 
-These are adapter targets, **not a real-device certification matrix**. Application paths are reserved metadata; populated application rules are rejected at launch. Domain exclusions affect the selected engine's processing and do not constitute a system-wide firewall or per-app split tunnel. See [engine behavior and setup](docs/ENGINES.md).
+These are adapter targets, **not a real-device certification matrix**. Guided WireSock application rules generate a private configuration copy; other foreground adapters reject populated application rules. Domain exclusions affect the selected engine's processing and do not constitute a system-wide firewall or per-app split tunnel. See [engine behavior and setup](docs/ENGINES.md).
 
 ## Platform status
 

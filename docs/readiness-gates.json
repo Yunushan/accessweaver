@@ -124,7 +124,7 @@
         {
           "id": "security.assessment",
           "acceptance": "Maintain a threat model and complete independent source/runtime security review with no unresolved release-blocking findings.",
-          "status": "missing",
+          "status": "partial",
           "evidence": [
             "SECURITY.md"
           ]

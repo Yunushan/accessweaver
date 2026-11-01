@@ -272,7 +272,7 @@ storageUnreadable|JSON в хранилище повреждён и сохран�
 systemTools|Установка и восстановление|Instalación y reparación
 systemSubtitle|Методы доступа, правила приложений и восстановление системы.|Métodos de acceso, reglas de aplicaciones y recuperación del sistema.
 inspectSystem|Проверить систему|Inspeccionar sistema
-systemBoundary|Для изменений нужен сервер с правами администратора. Проверьте операцию. Установленные службы работают после закрытия панели.|Los cambios requieren un núcleo con privilegios de administrador. Revisa la operación. Los servicios siguen activos al cerrar el panel.
+systemBoundary|Не запускайте панель с правами администратора. Проверьте изменения здесь и примените запрос отдельно командой system apply с повышенными правами. Службы продолжают работать после закрытия панели.|Mantén el panel sin privilegios elevados. Revisa los cambios aquí y aplica la solicitud con system apply en una consola elevada por separado. Los servicios siguen activos al cerrar el panel.
 operation|Операция|Operación
 component|Компонент или приложение|Componente o aplicación
 setupMode|Режим установки|Modo de instalación

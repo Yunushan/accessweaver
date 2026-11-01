@@ -21,7 +21,7 @@ Please include the affected commit/version, OS/architecture, impact, and minimal
 - Engine output is held in a bounded in-memory buffer rather than automatically persisted.
 - CI and release packaging check known Go vulnerabilities across release targets with a pinned scanner. The gate rejects incomplete reports and affected imported packages; module-only advisories for unused packages remain visible. External engines and drivers require separate assessment.
 
-These controls reduce particular attack paths; they are not a sandbox. A source review completed on 2026-11-01 identified three local privilege-boundary findings. Session and machine-storage remediation has regression evidence, but complete remediation and native qualification remain unfinished.
+These controls reduce particular attack paths; they are not a sandbox. An earlier 2026-11-01 review identified three local privilege-boundary findings; their remediation and native qualification remain subject to the recorded limits. A later Standard source audit of commit `fc778d60b688c0471fe3fca3d7045ffb3f39b9dd` completed on the same day with zero confirmed reportable findings under this policy's trust assumptions (scan `fe3b476c-682b-4fdd-b0d6-4cd59e28833c`). It covered 134 tracked text/source/configuration/test/documentation files, with two reference images visually inspected. No application execution or vendor/native behavior was validated by that static audit. A managed ByeDPI option-validation discrepancy and stale privilege guidance were retained for hardening; the audit does not certify later commits or production readiness.
 
 ## Known limits
 

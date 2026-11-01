@@ -211,3 +211,19 @@ func TestShutdownWaitsForDurableOutcomeAndRejectsNewJobs(t *testing.T) {
 		t.Fatalf("outcome not durable: %+v %v", history, err)
 	}
 }
+
+func TestByeDPIInstallRejectsReservedOptionsBeforeRetainingPlan(t *testing.T) {
+	m := New(t.TempDir())
+	m.platform = "windows"
+	for _, arg := range []string{"--i=0.0.0.0", "--po=9999", "--dae", "--service", "--trans", "-Ui0.0.0.0", "--", "@options.txt"} {
+		if _, err := m.Preview(Request{Action: "install", Engine: "byedpi", Mode: "service", Args: []string{arg}}); err == nil {
+			t.Errorf("unsafe preview accepted: %q", arg)
+		}
+	}
+	if len(m.plans) != 0 {
+		t.Fatal("invalid request retained as reviewed plan")
+	}
+	if p, err := m.Preview(Request{Action: "install", Engine: "byedpi", Mode: "service", Args: []string{"--split", "2"}}); err != nil || !p.Ready {
+		t.Fatalf("normal strategy: %+v %v", p, err)
+	}
+}

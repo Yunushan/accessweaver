@@ -82,6 +82,21 @@ $rejected=$false;try{Native $node @('-e','setTimeout(()=>{},60000)') -Timeout 1 
 Assert $rejected 'A silent native tool still observes its timeout'
 $rejected=$false;try{Native $node @('-e','process.exit(23)') -Secret|Out-Null}catch{$rejected=$_.Exception.Message -match 'exit 23'}
 Assert $rejected 'Native failure exit codes are preserved'
+[void](Native $node @('-e','process.exit(0)') -Timeout 86400 -Secret)
+Assert $true 'One-shot tool timeout remains accepted without waiting for the deadline'
+foreach($arg in @('--i=0.0.0.0','--po=9999','--dae','--service','--trans','-Ui0.0.0.0','-D','--','@options.txt')){
+    $rejected=$false;try{Assert-ByeDPIArguments @($arg)}catch{$rejected=$_.Exception.Message -match 'reserves listener/process'}
+    Assert $rejected ('Reserved installer argument rejected: '+$arg)
+}
+Assert-ByeDPIArguments @('--split','2','--disorder','--comment','ordinary text','','--comment','')
+Assert $true 'Full strategy options and values remain accepted'
+$originalConfigureDNS=(Get-Command Configure-DNS).ScriptBlock
+try{
+    function Configure-DNS {throw 'DNS must not run before argument validation'}
+    $r=[pscustomobject]@{engine='byedpi';args=@('--i=0.0.0.0');dns='doh'}
+    $rejected=$false;try{Install-Method}catch{$rejected=$_.Exception.Message -match 'reserves listener/process'}
+    Assert $rejected 'Direct installer rejects reserved arguments before DNS or component changes'
+}finally{Set-Item Function:Configure-DNS $originalConfigureDNS}
 $r=[pscustomobject]@{applications=@('custom.exe','C:\Apps\Custom');browsers=$true}
 $apps=@(Application-Names)
 Assert ($apps -contains 'custom.exe' -and $apps -contains 'chrome.exe' -and $apps -contains 'Discord.exe') 'Default, custom and browser application rules compiled'

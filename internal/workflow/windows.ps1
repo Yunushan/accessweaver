@@ -68,7 +68,7 @@ function Wait-ToolCapture($stdout,$stderr) {
     if($pending.Length){[void][Threading.Tasks.Task]::WaitAny($pending,10)}else{Start-Sleep -Milliseconds 10}
 }
 function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600) {
-    if($Timeout -lt 1 -or $Timeout -gt 5400){throw 'Tool timeout must be between 1 and 5400 seconds'}
+    if($Timeout -lt 1 -or $Timeout -gt 86400){throw 'Tool timeout must be between 1 and 86400 seconds'}
     $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$program;$start.Arguments=(@($arguments | ForEach-Object {Quote-Arg $_}) -join ' ')
     $start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true;$start.RedirectStandardInput=$true
     $start.WorkingDirectory=Split-Path -Parent $program
@@ -536,12 +536,23 @@ function Packet-Arguments([string]$engine,[string[]]$arguments) {
     }
     return @($arguments)
 }
+function Assert-ByeDPIArguments([string[]]$arguments) {
+    $reserved=@('--ip','--port','--daemon','--daemonize','--service','--transparent')
+    foreach($arg in $arguments){
+        $arg=[string]$arg
+        $name=($arg -split '=',2)[0]
+        $blocked=$arg -eq '--' -or $arg.StartsWith('@',[StringComparison]::Ordinal) -or $arg -cmatch '^-[a-zA-Z].+' -or $name -cin @('-i','-p','-D','-E')
+        foreach($option in $reserved){if($name.StartsWith('--',[StringComparison]::Ordinal) -and $option.StartsWith($name,[StringComparison]::Ordinal)){$blocked=$true}}
+        if($blocked){throw 'Managed ByeDPI installation reserves listener/process options; use full strategy option names without option terminators or argument files'}
+    }
+}
 function Install-Method {
+    if($r.engine -eq 'byedpi'){Assert-ByeDPIArguments @($r.args)}
     if(($r.engine -eq 'wiresock' -and $r.mode -eq 'standard') -or ($r.engine -eq 'byedpi' -and $r.mode -eq 'dll')){if(-not @(Discord-Directories).Count){throw 'Install stable Discord before selecting the Discord DLL setup mode'}}
     if($r.engine -ne 'dnscrypt' -and $r.dns -and $r.dns -ne 'unchanged' -and -not $script:dnsConfigured){Configure-DNS $r.dns}
     switch($r.engine) {
         'wiresock' {$config=Make-Config;$status=Connect-WireSock $config;if($r.mode -eq 'standard'){$byedpi=Ensure-Asset 'byedpi';Install-EngineService 'byedpi' $byedpi @('--ip','127.0.0.1','--port','1080','--split','2');Firewall 'byedpi' $byedpi;Install-Drover};if($r.refresh){$r | Add-Member -NotePropertyName enabled -NotePropertyValue $true -Force;Refresh-Task};return @{configPath=$config;status=$status}}
-        'byedpi' {$binary=Ensure-Asset 'byedpi';foreach($arg in @($r.args)){if($arg -match '^(-i|-p|-D|-E|--ip|--port|--daemon|--transparent)(=|$)' -or $arg -match '^-[a-zA-Z].+'){throw 'Managed ByeDPI installation reserves listener and process options; use full strategy option names'}};$arguments=@('--ip','127.0.0.1','--port','1080');if($r.args){$arguments+=@($r.args)}else{$arguments+=@('--split','2')};if($r.mode -eq 'once'){Event 'One-shot ByeDPI running; cancel this workflow to stop it';[void](Native $binary $arguments -Timeout 86400)}else{Install-EngineService 'byedpi' $binary $arguments;Firewall 'byedpi' $binary;if($r.mode -eq 'dll'){Install-Drover}elseif($r.mode -ne 'service'){Setup-ProxiFyre '127.0.0.1:1080'}}}
+        'byedpi' {$binary=Ensure-Asset 'byedpi';$arguments=@('--ip','127.0.0.1','--port','1080');if($r.args){$arguments+=@($r.args)}else{$arguments+=@('--split','2')};if($r.mode -eq 'once'){Event 'One-shot ByeDPI running; cancel this workflow to stop it';[void](Native $binary $arguments -Timeout 86400)}else{Install-EngineService 'byedpi' $binary $arguments;Firewall 'byedpi' $binary;if($r.mode -eq 'dll'){Install-Drover}elseif($r.mode -ne 'service'){Setup-ProxiFyre '127.0.0.1:1080'}}}
         {$_ -in @('zapret','zapret2','goodbyedpi')} {
             foreach($name in @('zapret','zapret2','goodbyedpi')){if($name -ne $r.engine -and (Get-Service ('AccessWeaver-'+$name) -ErrorAction SilentlyContinue).Status -eq 'Running'){throw 'Stop other packet engines before installing this method'}}
             $binary=Ensure-Asset $r.engine;$arguments=@($r.args)

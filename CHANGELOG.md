@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject reserved/abbreviated ByeDPI installer options before preview or system changes, share prefix parsing with foreground adapters, retain one-shot timeout support, and correct dashboard privilege guidance in all four languages.
+
 - Add real browser acceptance against isolated Go controllers, including concurrent tabs, private launch, editing/import/export, focus and four-language mobile layouts. Wrap maintenance review actions so they remain reachable on narrow screens.
 
 - Bound Windows maintenance tool output and result/history record reads. Stop tools that exceed capture limits, report incomplete inherited-pipe capture, and persist malformed/oversized results as failures without breaking API JSON.

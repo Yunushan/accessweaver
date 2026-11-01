@@ -100,7 +100,7 @@ Program `PATH` üzerinde değilse `./bin/accessweaver` veya `.\bin\accessweaver.
 | sing-box / Xray-core | Belirli masaüstü/BSD hedefleri | Harici yapılandırma | Geçerli yapılandırma ve gerekiyorsa uç nokta gerekir |
 | WireGuard | Bilgi amaçlı katalog kaydı | Harici yapılandırma | Bu alpha sürümünde tünel yaşam döngüsü yönetilmez |
 
-Bunlar adaptör hedefleridir; **gerçek cihaz sertifikasyonu değildir**. Uygulama yolu kuralları geleceğe ayrılmıştır; doluysa başlatma reddedilir. Alan adı istisnaları motorun işlemesini sınırlar; sistem genelinde firewall veya uygulama bazlı split tunnel sağlamaz. [Motor rehberi](docs/ENGINES.md).
+Bunlar adaptör hedefleridir; **gerçek cihaz sertifikasyonu değildir**. WireSock uygulama kuralları özel bir yapılandırma kopyasına yazılır; diğer ön plan adaptörlerinde dolu uygulama kuralları başlatmayı engeller. Alan adı istisnaları motorun işlemesini sınırlar; sistem genelinde firewall veya uygulama bazlı split tunnel sağlamaz. [Motor rehberi](docs/ENGINES.md).
 
 ## Platform durumu
 
