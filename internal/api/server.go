@@ -18,14 +18,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Yunushan/accessweaver/internal/buildinfo"
 	"github.com/Yunushan/accessweaver/internal/diagnostics"
 	"github.com/Yunushan/accessweaver/internal/engine"
 	"github.com/Yunushan/accessweaver/internal/profile"
+	"github.com/Yunushan/accessweaver/internal/uiaccess"
+	"github.com/Yunushan/accessweaver/internal/workflow"
 )
 
 type Server struct {
 	Store     *profile.Store
 	Manager   *engine.Manager
+	Workflows *workflow.Manager
 	UI        fs.FS
 	Token     string
 	mutations sync.Mutex
@@ -37,7 +41,7 @@ func New(store *profile.Store, manager *engine.Manager, static fs.FS) (*Server, 
 	if _, err := rand.Read(b); err != nil {
 		return nil, err
 	}
-	return &Server{Store: store, Manager: manager, UI: static, Token: base64.RawURLEncoding.EncodeToString(b)}, nil
+	return &Server{Store: store, Manager: manager, Workflows: workflow.New(store.Root), UI: static, Token: base64.RawURLEncoding.EncodeToString(b)}, nil
 }
 func JSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -51,8 +55,9 @@ func fail(w http.ResponseWriter, status int, message string) {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	s.workflowRoutes(mux)
 	mux.HandleFunc("GET /api/bootstrap", func(w http.ResponseWriter, r *http.Request) {
-		JSON(w, 200, map[string]any{"token": s.Token, "version": "0.1.0-alpha", "platform": runtime.GOOS, "arch": runtime.GOARCH})
+		JSON(w, 200, map[string]any{"version": buildinfo.Version, "platform": runtime.GOOS, "arch": runtime.GOARCH, "build": buildinfo.Current()})
 	})
 	mux.HandleFunc("GET /api/v1/engines", func(w http.ResponseWriter, r *http.Request) { JSON(w, 200, engine.Catalog()) })
 	mux.HandleFunc("GET /api/v1/profiles", func(w http.ResponseWriter, r *http.Request) {
@@ -198,11 +203,13 @@ func (s *Server) Handler() http.Handler {
 					return
 				}
 			}
+			// Reads contain private profiles/history too. Bootstrap cannot disclose
+			// the credential: the OS-private browser launcher delivers it instead.
+			if s.Token == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-AccessWeaver-Token")), []byte(s.Token)) != 1 {
+				fail(w, 403, "missing or invalid session token; open the private browser launch file")
+				return
+			}
 			if r.Method != "GET" && r.Method != "HEAD" {
-				if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-AccessWeaver-Token")), []byte(s.Token)) != 1 {
-					fail(w, 403, "missing or invalid session token")
-					return
-				}
 				if r.Header.Get("Content-Type") != "" && !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 					fail(w, 415, "JSON content type required")
 					return
@@ -237,6 +244,9 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
 	return nil
 }
 func (s *Server) Serve(ctx context.Context) (string, error) {
+	if err := uiaccess.RequireUnelevated(); err != nil {
+		return "", err
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", err
@@ -247,11 +257,15 @@ func (s *Server) Serve(ctx context.Context) (string, error) {
 	go func() {
 		defer close(s.done)
 		<-ctx.Done()
+		s.Workflows.Cancel()
 		c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := server.Shutdown(c); err != nil {
 			_ = server.Close()
 		}
 		cancel()
+		workflowContext, cancelWorkflow := context.WithTimeout(context.Background(), 8*time.Second)
+		_ = s.Workflows.Shutdown(workflowContext)
+		cancelWorkflow()
 		engineContext, cancelEngine := context.WithTimeout(context.Background(), 6*time.Second)
 		defer cancelEngine()
 		_ = s.Manager.Shutdown(engineContext)

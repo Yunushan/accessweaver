@@ -9,6 +9,8 @@ go vet ./...
 go test ./... -count=1
 go test -race ./...
 node --check web/app.js
+node --check web/system.js
+node --check web/locales.js
 node --test web/app.test.cjs
 bash scripts/build-all.sh
 ```
@@ -19,7 +21,7 @@ CI runs native unit tests on hosted Linux/Windows/macOS and race checks on Linux
 
 Use a disposable `ACCESSWEAVER_HOME` directory.
 
-1. Start `accessweaver ui`. Confirm the printed listener is `127.0.0.1` and no external engine has started.
+1. Start `accessweaver ui` as the normal desktop user and use its private launch-file URL. Confirm the printed listener is `127.0.0.1` and no external engine has started. Direct unauthenticated API requests, including bootstrap, must return 403.
 2. Switch English/Turkish and dark/light themes. Check keyboard focus, narrow layouts and editor scrolling.
 3. Create, save, duplicate and export a profile. Import it with a different ID and verify its arguments and domains round-trip.
 4. Try invalid JSON, an unknown field and the same domain in both include/exclude lists. The core must reject invalid saves.
@@ -47,6 +49,7 @@ For a SOCKS engine, test through the target application's configured proxy and i
 
 ```bash
 bash scripts/package-release.sh preview
+python3 scripts/verify-release.py dist/preview --execute-native
 cd dist/preview
 sha256sum -c SHA256SUMS.txt
 ```
@@ -54,6 +57,16 @@ sha256sum -c SHA256SUMS.txt
 On macOS, `shasum -a 256 -c SHA256SUMS.txt` can verify the checksum file. On Windows, compare `Get-FileHash -Algorithm SHA256 PATH` to the matching entry. Checksums are integrity metadata, not publisher signatures.
 
 Inspect one Windows ZIP and one Unix tarball: the executable, LICENSE, third-party notice, security policy and docs should be present, with no third-party engines or credentials. On each intended platform, extract and run `accessweaver version`, then perform the UI smoke test. Test installation-free startup and shutdown before calling the target usable.
+
+The release verifier checks all ten archives, their checksums, required notices and per-target `BUILD-INFO.json`. With `--execute-native`, it also runs metadata commands from the matching host archive, compares runtime identity and rejects unexpected user-state writes. This does not execute other architectures or validate their networking. Release builders stamp a common version, commit, source modification state and build time; `accessweaver version --json` and API bootstrap expose that identity. Modified-source builds remain explicitly labeled.
+
+## Production, premium and enterprise acceptance
+
+The active target includes every documented desktop platform and enterprise fleet management. [readiness-gates.json](readiness-gates.json) records 50 acceptance gates across functional parity, reliability, security, supply chain, platforms, validation, product quality, enterprise capabilities, operations and data/privacy. Each gate contributes two points only after its full acceptance requirement has source-bound evidence. Partial implementation does not count as a passed release gate. The assessment is in progress; this is not a certification or a claim of a completed score.
+
+Evidence must identify the actual source/artifact, environment, procedure and result. Compilation, mocked commands and userspace fixture success cannot certify native routing. Do not change a failed/partial gate to passed merely because its implementation exists. Fleet enrollment, roles/policy, signed rollout, tenant isolation and enterprise audit export require implementation and adversarial integration tests; local-only API controls do not satisfy those requirements.
+
+Current reliability additions include service log rotation (8 MiB plus two backups), per-workflow process log rotation (4 MiB plus two backups), and bounded shutdown that waits for a workflow's terminal history record. Contract tests cover concurrent logging, oversized output, rotation failures and shutdown timeout/history recording. They do not establish long-duration resource budgets or complete failure recovery. Workflow directories and recovery histories still require a retention policy; per-file rotation alone does not bound lifetime disk use.
 
 ## Evidence vocabulary
 

@@ -16,6 +16,24 @@ for target in "${targets[@]}"; do
   esac
 done
 
+commit="unknown"
+source_state="unknown"
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  commit="$(git rev-parse HEAD)"
+  source_state="clean"
+  if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then source_state="modified"; fi
+fi
+build_time="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+link_flags="-s -w -X github.com/Yunushan/accessweaver/internal/buildinfo.Commit=$commit -X github.com/Yunushan/accessweaver/internal/buildinfo.SourceState=$source_state -X github.com/Yunushan/accessweaver/internal/buildinfo.BuiltAt=$build_time"
+if [[ -n "${BUILD_VERSION:-}" ]]; then
+  if [[ ! "$BUILD_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$ ]]; then
+    echo "BUILD_VERSION must be a semantic version." >&2; exit 1
+  fi
+  link_flags+=" -X github.com/Yunushan/accessweaver/internal/buildinfo.Version=$BUILD_VERSION"
+fi
+GOOS="$(go env GOHOSTOS)" GOARCH="$(go env GOHOSTARCH)" CGO_ENABLED=0 \
+  go run -buildvcs=false -ldflags="$link_flags" ./cmd/accessweaver version --json > "$output_dir/BUILD-INFO.json"
+
 for target in "${targets[@]}"; do
   target_os="${target%/*}"
   target_arch="${target#*/}"
@@ -23,7 +41,7 @@ for target in "${targets[@]}"; do
   if [[ "$target_os" == windows ]]; then extension=".exe"; fi
   echo "Building $target"
   GOOS="$target_os" GOARCH="$target_arch" CGO_ENABLED=0 \
-    go build -trimpath -buildvcs=false -ldflags='-s -w' \
+    go build -trimpath -buildvcs=false -ldflags="$link_flags" \
     -o "$output_dir/accessweaver-$target_os-$target_arch$extension" ./cmd/accessweaver
 done
 

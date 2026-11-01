@@ -11,7 +11,7 @@ const exampleEngines=[
  {id:'zapret2',name:'Zapret2',kind:'packet',platforms:['windows','linux','freebsd','openbsd'],includes:true,excludes:true,applications:false,source:'https://github.com/bol-van/zapret2',notes:'Requires platform-specific packet interception configuration.'},
  {id:'zapret',name:'Zapret',kind:'packet',platforms:['windows','linux','darwin','freebsd','openbsd'],includes:true,excludes:true,applications:false,source:'https://github.com/bol-van/zapret',notes:'Upstream EOL; macOS support is partial.'},
  {id:'goodbyedpi',name:'GoodbyeDPI',kind:'packet',platforms:['windows'],includes:true,excludes:false,applications:false,source:'https://github.com/ValdikSS/GoodbyeDPI',notes:'Windows only; uses WinDivert.'},
- {id:'wiresock',name:'WireSock SDK',kind:'vpn',platforms:['windows'],includes:false,excludes:false,applications:false,source:'https://wiresock.net/wiresock-sdk/',license:'Proprietary SDK EULA; evaluation and commercial terms differ',notes:'Windows SDK foreground client; vendor installation and existing configuration required. Vendor telemetry and license terms apply.'},
+ {id:'wiresock',name:'WireSock SDK',kind:'vpn',platforms:['windows'],includes:false,excludes:false,applications:true,source:'https://wiresock.net/wiresock-sdk/',license:'Proprietary SDK EULA; evaluation and commercial terms differ',notes:'Windows SDK foreground client; vendor installation and existing configuration required. Vendor telemetry and license terms apply.'},
  {id:'wireguard',name:'WireGuard',kind:'vpn',platforms:['windows','linux','darwin','freebsd','openbsd'],includes:false,excludes:false,applications:false,source:'https://www.wireguard.com/',integration:'external',notes:'Reference integration. Manage tunnels with the official OS client.'},
  {id:'spoofdpi',name:'SpoofDPI',kind:'proxy',platforms:['windows','linux','darwin'],includes:false,excludes:false,applications:false,source:'https://github.com/xvzc/SpoofDPI',notes:'Optional external proxy engine.'},
  {id:'sing-box',name:'sing-box',kind:'proxy',platforms:['windows','linux','darwin','freebsd','openbsd'],includes:false,excludes:false,applications:false,source:'https://sing-box.sagernet.org/',notes:'External configured proxy core.'},
@@ -43,20 +43,32 @@ Object.assign(tr, {
   activeEdit:'Düzenlemeden önce etkin profili durdurun.', otherRunning:'Başka profil başlatmadan önce çalışan profili durdurun.', coreRequired:'Bu işlem bağlı bir yerel çekirdek gerektirir.', failedState:'Motor sonlandı', failedDesc:'Motor artık çalışmıyor. Yeniden başlatmadan önce çıktıyı ve kurulumu inceleyin.', exitError:'Motor çıktısı', exportReport:'Raporu dışa aktar', reportHost:'Test edilen sunucu', testPassed:'İstenen kontroller başarılı', testIncomplete:'Bir veya daha fazla kontrol başarısız', noProbe:'Dışa aktarılacak tanılama raporu yok', argsPrecision:'Her satır bir gerçek parametredir. JSON boş parametreleri ve boşlukları korunur.', profileSaved:'Profil kaydedildi', loading:'Yükleniyor…', refreshLogs:'Günlükleri yenile', storageRecovery:'Bazı tarayıcı profilleri okunamadı. Depolamada korundular. Onarmadan önce Ayarlar bölümünden yedeği dışa aktarın.', exportBrowserBackup:'Tarayıcı yedeğini dışa aktar', storageUnreadable:'Kayıtlı profil JSON verisi okunamıyor ve korundu. Tarayıcı depolamasını onarmadan önce Ayarlar bölümünden yedeği dışa aktarın.'
 });
 
+Object.assign(en,{systemTools:'Installation & repair',systemSubtitle:'Manage access methods, application routing and recovery.',inspectSystem:'Inspect system',systemBoundary:'System changes require an Administrator core. Review the operation first. Installed services remain active after closing the dashboard.',operation:'Operation',component:'Component or application',setupMode:'Setup mode',pureTunnel:'Alternative: WireSock only',combinedTunnel:'Standard: WireSock + ByeDPI DLL',customSetup:'Custom applications',splitSetup:'ByeDPI + ProxiFyre',dllSetup:'ByeDPI DLL for Discord',persistentService:'Persistent service',presetCollection:'Strategy preset',customArguments:'Custom arguments',applicationSelection:'Additional application names or folders (one per line)',includeBrowsers:'Include browsers',periodicReconnect:'Periodic WireSock reconnect',dnsMethod:'DNS method',leaveDNS:'Keep current DNS',scanLevel:'Strategy scan level',quickScan:'Quick',standardScan:'Standard',fullScan:'Full',enableListTask:'Enable hostlist / refresh task',cleanPTB:'Remove stable Discord when installing PTB',componentPaths:'Component paths and downloads',componentBundle:'Existing component bundle folder (optional)',privateConfig:'Existing private WireGuard configuration (optional)',managedProfile:'Managed profile name',officialDownload:'Official download URL (optional)',reviewOperation:'Review operation',operationReview:'Operation review',confirmSystemChanges:'I reviewed the operation and its system changes',applyOperation:'Apply reviewed operation',cancelOperation:'Cancel running operation',operationHistory:'History',operationResult:'Result & recovery'});
+Object.assign(tr,{systemTools:'Kurulum ve onarım',systemSubtitle:'Erişim yöntemlerini, uygulama yönlendirmesini ve kurtarmayı yönetin.',inspectSystem:'Sistemi incele',systemBoundary:'Sistem değişiklikleri için çekirdeği yönetici olarak başlatın. Önce işlemi inceleyin. Kurulan hizmetler panel kapandıktan sonra da çalışır.',operation:'İşlem',component:'Bileşen veya uygulama',setupMode:'Kurulum yöntemi',pureTunnel:'Alternatif: yalnızca WireSock',combinedTunnel:'Standart: WireSock + ByeDPI DLL',customSetup:'Özel uygulamalar',splitSetup:'ByeDPI + ProxiFyre',dllSetup:'Discord için ByeDPI DLL',persistentService:'Kalıcı hizmet',presetCollection:'Strateji hazır ayarı',customArguments:'Özel parametreler',applicationSelection:'Ek uygulama adları veya klasörler (satır başına bir)',includeBrowsers:'Tarayıcıları dahil et',periodicReconnect:'WireSock bağlantısını düzenli yenile',dnsMethod:'DNS yöntemi',leaveDNS:'Mevcut DNS ayarını koru',scanLevel:'Strateji tarama seviyesi',quickScan:'Hızlı',standardScan:'Standart',fullScan:'Tam',enableListTask:'Alan adı listesini / yenileme görevini etkinleştir',cleanPTB:'PTB kurarken standart Discord sürümünü kaldır',componentPaths:'Bileşen yolları ve indirmeler',componentBundle:'Mevcut bileşen paketi klasörü (isteğe bağlı)',privateConfig:'Mevcut özel WireGuard yapılandırması (isteğe bağlı)',managedProfile:'Yönetilen profil adı',officialDownload:'Resmi indirme adresi (isteğe bağlı)',reviewOperation:'İşlemi incele',operationReview:'İşlem incelemesi',confirmSystemChanges:'İşlemi ve sistem değişikliklerini inceledim',applyOperation:'İncelenen işlemi uygula',cancelOperation:'Çalışan işlemi iptal et',operationHistory:'Geçmiş',operationResult:'Sonuç ve kurtarma'});
+
+Object.assign(en,{apps:'Application names or folders (WireSock)',appRulesNote:'WireSock application rules are generated into a private configuration. Use Installation & repair for ProxiFyre and Secure Connect 3.x.'});
+Object.assign(tr,{apps:'Uygulama adları veya klasörler (WireSock)',appRulesNote:'WireSock uygulama kuralları özel yapılandırmaya yazılır. ProxiFyre ve Secure Connect 3.x için Kurulum ve onarım bölümünü kullanın.'});
+Object.assign(en,{cloudflareTerms:'I accept Cloudflare terms for new WARP account registration'});
+Object.assign(tr,{cloudflareTerms:'Yeni WARP hesabı kaydı için Cloudflare koşullarını kabul ediyorum'});
+Object.assign(en,{chooseFolder:'Add folder',clearApplications:'Clear application list',scanTargets:'Scan targets (one hostname per line)',recoveryJournal:'Recovery journal filename',onceMode:'One-shot run'});
+Object.assign(tr,{chooseFolder:'Klasör ekle',clearApplications:'Uygulama listesini temizle',scanTargets:'Tarama hedefleri (her satırda bir sunucu adı)',recoveryJournal:'Kurtarma günlüğü dosya adı',onceMode:'Tek seferlik çalıştır'});
+Object.assign(en,{updateAvailable:'Update available'});
+Object.assign(tr,{updateAvailable:'Güncelleme mevcut'});
 const storage = {
   get(key) { try { return localStorage.getItem(key); } catch { return null; } },
   set(key, value) { localStorage.setItem(key, value); },
   preference(key, value) { try { this.set(key, value); } catch { /* Preferences remain usable for this session. */ } }
 };
 const state = {
-  lang: storage.get('aw.lang') === 'tr' ? 'tr' : 'en',
+  lang: ['en','tr','ru','es'].includes(storage.get('aw.lang')) ? storage.get('aw.lang') : 'en',
   theme: storage.get('aw.theme') === 'light' ? 'light' : 'dark',
   offline: false, disconnected: false, loading: true, platform: 'unknown',
   engines: [], profiles: [], runtime: {state:'stopped', log:[]}, token:'',
   view:'dashboard', editing:null, editorTab:'simple', lastProbe:null,
   launch:null, busy:false, polling:false, reconnecting:false, preservedProfiles:[], storageBlocked:false
 };
-const t = key => (state.lang === 'tr' ? tr : en)[key] || en[key] || key;
+const translations = {en,tr,...(typeof extraLocales==='object'?extraLocales:{})};
+const t = key => (translations[state.lang] || en)[key] || en[key] || key;
 const clone = value => JSON.parse(JSON.stringify(value));
 function copyName(name) {
   const suffix = ' (' + t('copySuffix') + ')';
@@ -67,6 +79,16 @@ function copyName(name) {
 const platformName = value => ({windows:'Windows',linux:'Linux',darwin:'macOS',freebsd:'FreeBSD',openbsd:'OpenBSD',android:'Android',ios:'iOS',browser:t('mobileEditor'),unknown:'—'})[value] || value;
 const coreAvailable = () => !state.offline && !state.disconnected && !state.loading;
 const safeSource = source => /^https?:\/\//i.test(source || '') ? escapeHTML(source) : '#';
+function readSession(){
+  const credential=new URLSearchParams(location.hash.slice(1)).get('accessweaver-session');
+  if(credential&&/^[A-Za-z0-9_-]{43}$/.test(credential)){
+    state.token=credential;
+    try{sessionStorage.setItem('aw.session',credential)}catch{}
+    history.replaceState(null,'',(location.pathname||'/')+(location.search||'')+'#dashboard');
+    return;
+  }
+  try{const saved=sessionStorage.getItem('aw.session');if(/^[A-Za-z0-9_-]{43}$/.test(saved||''))state.token=saved}catch{}
+}
 const engineGuide = id => t(({spoofdpi:'guideSpoof',byedpi:'guideByedpi',zapret:'guideZapret',zapret2:'guideZapret',goodbyedpi:'guideGoodbye',wiresock:'guideWiresock',wireguard:'guideWireguard'})[id] || 'guideProxy');
 
 function toast(message, bad=false) {
@@ -80,7 +102,7 @@ function updateTranslations() {
   document.documentElement.lang = state.lang;
   $$('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
   $$('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label',t(el.dataset.i18nAria)); });
-  $('lang-toggle').innerHTML = (state.lang === 'en' ? 'EN' : 'TR') + ' <span aria-hidden="true">⌄</span>';
+  $('lang-toggle').innerHTML = state.lang.toUpperCase() + ' <span aria-hidden="true">⌄</span>';
   $('settings-language').value = state.lang;
   $('profile-search').placeholder = t('searchProfiles');
   const filter = $('profile-filter').value || 'all';
@@ -94,10 +116,11 @@ function updateTranslations() {
   updateBreadcrumb();
 }
 function changeLanguage(lang) {
-  state.lang = lang === 'tr' ? 'tr' : 'en';
+  state.lang = ['en','tr','ru','es'].includes(lang) ? lang : 'en';
   storage.preference('aw.lang',state.lang);
   updateTranslations();
   renderAll();
+  if(typeof refreshSystemLanguage==='function')refreshSystemLanguage();
 }
 function setTheme(theme) {
   state.theme = theme === 'light' ? 'light' : 'dark';
@@ -108,11 +131,11 @@ function setTheme(theme) {
   $('theme-toggle').innerHTML = icon(state.theme === 'dark' ? 'sun' : 'moon');
 }
 function updateBreadcrumb() {
-  const label = {dashboard:'navDashboard',profiles:'navProfiles',engines:'navEngines',diagnostics:'navDiagnostics',settings:'navSettings'};
+  const label = {dashboard:'navDashboard',profiles:'navProfiles',engines:'navEngines',diagnostics:'navDiagnostics',settings:'navSettings',system:'systemTools'};
   $('crumb-name').textContent = t(label[state.view]);
 }
 function navigate(view, focus=false) {
-  if (!['dashboard','profiles','engines','diagnostics','settings'].includes(view)) return;
+  if (!['dashboard','profiles','engines','diagnostics','settings','system'].includes(view)) return;
   state.view = view;
   $$('.view').forEach(el => { el.classList.toggle('active',el.id === 'view-' + view); });
   $$('.nav-item').forEach(el => {
@@ -126,6 +149,7 @@ function navigate(view, focus=false) {
   if (location.hash !== '#' + view) location.hash = view;
   window.scrollTo(0,0);
   if (focus) $('content').focus({preventScroll:true});
+  if(view==='system'&&coreAvailable()&&typeof loadSystemTools==='function')loadSystemTools().catch(error=>{$('system-output').textContent=error.message});
 }
 async function apiRequest(path, method='GET', data, timeout=12000) {
   const controller = new AbortController();
@@ -145,16 +169,18 @@ function engineOptions() {
   return state.engines.map(e => `<option value="${escapeHTML(e.id)}">${escapeHTML(e.name)}</option>`).join('');
 }
 async function readCore() {
+  if(!state.token)throw new Error(t('coreRequired'));
   const boot = await apiRequest('/api/bootstrap');
-  if (!boot.token || !boot.platform) throw new Error(t('coreRequired'));
-  state.token = boot.token;
+  if (!boot.platform) throw new Error(t('coreRequired'));
   const [engines,profiles,runtime] = await Promise.all([
     apiRequest('/api/v1/engines'),apiRequest('/api/v1/profiles'),apiRequest('/api/v1/runtime')
   ]);
   if (!Array.isArray(engines) || !Array.isArray(profiles)) throw new Error(t('invalidProfile'));
+  document.querySelectorAll('[data-app-version]').forEach(node => { node.textContent = boot.version || 'unknown'; });
   return {platform:boot.platform,engines,profiles,runtime};
 }
 async function initialize() {
+  readSession();
   setTheme(state.theme);
   updateTranslations();
   navigate(location.hash.slice(1) || 'dashboard');
@@ -179,6 +205,7 @@ async function initialize() {
   updateTranslations();
   renderAll();
   setInterval(pollStatus,2000);
+  if(state.view==='system'&&typeof loadSystemTools==='function')loadSystemTools().catch(error=>{$('system-output').textContent=error.message});
 }
 async function reconnect() {
   if (state.reconnecting || state.editing) { if (state.editing) toast(t('discardChanges')); return; }
@@ -258,7 +285,7 @@ function renderEngines() {
     const external = e.integration === 'external' || e.id === 'wireguard';
     const supported = e.platforms.includes(state.platform) && !external;
     const rule = (label,enabled) => `<span class="capability ${enabled ? 'supported' : ''}">${icon(enabled ? 'check' : 'x')}${escapeHTML(t(label))}</span>`;
-    return `<article class="engine-card"><div class="engine-card-header"><div><h3>${escapeHTML(e.name)}</h3><span class="engine-kind">${escapeHTML(t(external ? 'externalIntegration' : 'managedIntegration'))}</span></div><span class="engine-type">${icon(e.kind === 'vpn' ? 'shield' : e.kind === 'packet' ? 'layers' : 'globe')}</span></div><p>${escapeHTML(state.lang === 'tr' ? engineGuide(e.id) : e.notes)}</p><div class="platform-pills">${e.platforms.map(p => `<span class="${p === state.platform ? 'current-platform' : ''}">${escapeHTML(platformName(p))}</span>`).join('')}</div><div class="engine-capabilities">${rule('includesLabel',e.includes)}${rule('excludesLabel',e.excludes)}${e.license ? `<span class="license-label">${escapeHTML(e.license)}</span>` : ''}</div><div class="engine-card-foot"><a href="${safeSource(e.source)}" target="_blank" rel="noopener noreferrer">${escapeHTML(t('readDocs'))}</a><button class="text-button" data-engine-create="${escapeHTML(e.id)}">${escapeHTML(t('createForEngine'))} ${icon('plus')}</button></div><span class="engine-platform-status">${escapeHTML(t(external ? 'engineExternal' : supported ? 'engineAvailable' : state.offline ? 'platformUnknown' : 'engineUnsupported'))}</span></article>`;
+    return `<article class="engine-card"><div class="engine-card-header"><div><h3>${escapeHTML(e.name)}</h3><span class="engine-kind">${escapeHTML(t(external ? 'externalIntegration' : 'managedIntegration'))}</span></div><span class="engine-type">${icon(e.kind === 'vpn' ? 'shield' : e.kind === 'packet' ? 'layers' : 'globe')}</span></div><p>${escapeHTML(state.lang !== 'en' ? engineGuide(e.id) : e.notes)}</p><div class="platform-pills">${e.platforms.map(p => `<span class="${p === state.platform ? 'current-platform' : ''}">${escapeHTML(platformName(p))}</span>`).join('')}</div><div class="engine-capabilities">${rule('includesLabel',e.includes)}${rule('excludesLabel',e.excludes)}${e.license ? `<span class="license-label">${escapeHTML(e.license)}</span>` : ''}</div><div class="engine-card-foot"><a href="${safeSource(e.source)}" target="_blank" rel="noopener noreferrer">${escapeHTML(t('readDocs'))}</a><button class="text-button" data-engine-create="${escapeHTML(e.id)}">${escapeHTML(t('createForEngine'))} ${icon('plus')}</button></div><span class="engine-platform-status">${escapeHTML(t(external ? 'engineExternal' : supported ? 'engineAvailable' : state.offline ? 'platformUnknown' : 'engineUnsupported'))}</span></article>`;
   }).join('');
   const platforms = [ ['Windows','desktopCore','windowsSupport'],['Linux','desktopCore','linuxSupport'],['macOS','partialCore','macSupport'],['BSD','partialCore','bsdSupport'],['Android','mobileEditor','androidSupport'],['iOS','mobileEditor','iosSupport'] ];
   $('platform-matrix').innerHTML = platforms.map(([name,badge,desc]) => `<article><div><h3>${name}</h3><span class="tag tag-neutral">${escapeHTML(t(badge))}</span></div><p>${escapeHTML(t(desc))}</p></article>`).join('');
@@ -597,9 +624,9 @@ async function runProbe() {
 function renderProbe(report) {
   const checks = report.checks || [], passed = checks.length > 0 && checks.every(c => c.status === 'ok');
   $('diagnostic-meta').hidden = false;
-  $('diagnostic-meta').innerHTML = `<strong>${escapeHTML(report.host)}:${Number(report.port)}</strong><span>${escapeHTML(new Date(report.at).toLocaleString(state.lang === 'tr' ? 'tr-TR' : 'en-US'))}</span><p class="${passed ? 'success-text' : 'error-text'}">${escapeHTML(t(passed ? 'testPassed' : 'testIncomplete'))}</p>`;
+  $('diagnostic-meta').innerHTML = `<strong>${escapeHTML(report.host)}:${Number(report.port)}</strong><span>${escapeHTML(new Date(report.at).toLocaleString(state.lang))}</span><p class="${passed ? 'success-text' : 'error-text'}">${escapeHTML(t(passed ? 'testPassed' : 'testIncomplete'))}</p>`;
   $('diagnostic-results').className = 'result-list';
-  $('diagnostic-results').innerHTML = checks.map(c => `<div class="result-item"><span class="result-icon ${c.status === 'ok' ? '' : 'error'}">${icon(c.status === 'ok' ? 'check' : 'alert')}</span><div class="result-content"><h3>${escapeHTML(c.name)} · ${escapeHTML(c.status === 'ok' ? state.lang === 'tr' ? 'BAŞARILI' : 'PASSED' : state.lang === 'tr' ? 'BAŞARISIZ' : 'FAILED')}</h3><p>${escapeHTML(c.detail)}</p></div><span class="result-duration">${Number(c.durationMs) || 0} ms</span></div>`).join('');
+  $('diagnostic-results').innerHTML = checks.map(c => `<div class="result-item"><span class="result-icon ${c.status === 'ok' ? '' : 'error'}">${icon(c.status === 'ok' ? 'check' : 'alert')}</span><div class="result-content"><h3>${escapeHTML(c.name)} · ${escapeHTML(({en:['PASSED','FAILED'],tr:['BAŞARILI','BAŞARISIZ'],ru:['УСПЕШНО','ОШИБКА'],es:['CORRECTO','FALLIDO']})[state.lang][c.status === 'ok' ? 0 : 1])}</h3><p>${escapeHTML(c.detail)}</p></div><span class="result-duration">${Number(c.durationMs) || 0} ms</span></div>`).join('');
   $('export-report').hidden = false;
 }
 function renderLogs() { $('log-output').textContent = (state.runtime.log || []).join('\n') || t('settingsLogsEmpty'); }
@@ -632,7 +659,7 @@ function bindEvents() {
   window.addEventListener('beforeunload',event => { if (state.editing?.dirty) { event.preventDefault(); event.returnValue = ''; } });
   $('menu-toggle').addEventListener('click',() => { const open = $('sidebar').classList.toggle('open'); $('menu-toggle').setAttribute('aria-expanded',String(open)); });
   $('theme-toggle').addEventListener('click',() => setTheme(state.theme === 'dark' ? 'light' : 'dark'));
-  $('lang-toggle').addEventListener('click',() => changeLanguage(state.lang === 'en' ? 'tr' : 'en'));
+  $('lang-toggle').addEventListener('click',() => {const languages=['en','tr','ru','es'];changeLanguage(languages[(languages.indexOf(state.lang)+1)%languages.length]);});
   $('settings-language').addEventListener('change',event => changeLanguage(event.target.value));
   $('settings-theme').addEventListener('change',event => setTheme(event.target.value));
   $('new-profile').addEventListener('click',() => newProfile());

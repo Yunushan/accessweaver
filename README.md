@@ -14,12 +14,12 @@ A local workspace for editable network profiles, external DPI/proxy engines and 
 
 ![AccessWeaver dashboard](docs/assets/dashboard.png)
 
-AccessWeaver brings profiles, domain rules, command previews and diagnostics into one English/Turkish dashboard. The interface is bundled with a small Go application: no account, Node.js installation or remote application service is needed to run it.
+AccessWeaver brings profiles, domain rules, command previews and diagnostics into an English/Turkish/Russian/Spanish dashboard. The interface is bundled with a small Go application: no account, Node.js installation or remote application service is needed to run it.
 
 Inspired by the workflow of SplitWire-Turkey, independently implemented. AccessWeaver is not affiliated with that project or the engine authors.
 
 > [!IMPORTANT]
-> **This is an alpha.** Desktop engine launch and profile editing are implemented. Engine installation, operating-system routing, native mobile VPN clients and reliable automatic failover are not. A running process does not prove that traffic is using it. Bundled presets are editable starting points, not tested ISP bypass guarantees.
+> **This is an alpha.** Windows installation, application routing, DNS and repair workflows are experimental. See [Windows workflows](docs/WINDOWS_WORKFLOWS.md) and [verification status](docs/SPLITWIRE_IMPLEMENTATION.md). Full SplitWire-Turkey behavioral parity is not yet certified. A running process does not prove that traffic is using it. Native mobile VPN clients and reliable automatic failover remain outside the implemented scope.
 
 ## What you can do
 
@@ -28,7 +28,8 @@ Inspired by the workflow of SplitWire-Turkey, independently implemented. AccessW
 - Apply include/exclude domains through compatible adapters; unsupported routing rules block launch with an explanation.
 - Review a launch plan and manage one foreground engine process at a time.
 - Run direct DNS, TCP and certificate-verified TLS diagnostics, with stage timings.
-- Work in English or Turkish, with dark/light themes and a responsive interface.
+- Review and apply Windows component installation, services, app routing, hostlists, DNS, application repair and recovery through **Installation & repair**.
+- Work in English, Turkish, Russian or Spanish, with dark/light themes and a responsive interface.
 - Keep profile data on your device. AccessWeaver itself has no telemetry, ads, subscription or cloud sync; external engines have their own policies.
 
 ## Quick start
@@ -52,7 +53,7 @@ cd accessweaver
 go run ./cmd/accessweaver ui
 ```
 
-The command prints an `http://127.0.0.1:...` address and opens your browser when possible. Keep the terminal running; press **Ctrl+C** to shut down the local application and its managed child process. No engine starts automatically.
+Run the dashboard as your normal desktop user. The command prints its `http://127.0.0.1:...` listener and a private launch-file URL, which it opens in your browser when possible. Use that launch file to connect; the listener alone does not authorize API access. Keep the terminal running; press **Ctrl+C** to shut down the local application and its managed child process. No engine starts automatically.
 
 To build a local executable:
 

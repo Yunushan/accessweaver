@@ -171,3 +171,65 @@ func TestLoopbackCannotBeHiddenInsideOptionValue(t *testing.T) {
 		t.Fatal("later option-like comment hid a public bind")
 	}
 }
+
+func TestWireSockApplicationConfigurationIsPrivateCopy(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows WireSock adapter")
+	}
+	root := t.TempDir()
+	p := profile.New("app-policy", "App policy", "wiresock")
+	p.Binary = fixtureBinary(t, t.TempDir(), "wiresock-client")
+	p.ConfigPath = filepath.Join(t.TempDir(), "private.conf")
+	original := "[Interface]\nPrivateKey = fixture-only\n[Peer]\nAllowedApps = old.exe\nEndpoint = example.invalid:2408\n"
+	if err := os.WriteFile(p.ConfigPath, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p.Routing.Applications = []string{"Discord.exe", `C:\Apps\Example`}
+	plan, err := Preview(p, root)
+	if err != nil || !plan.Ready {
+		t.Fatalf("application preview: %+v %v", plan, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "generated")); !os.IsNotExist(err) {
+		t.Fatal("preview wrote private config")
+	}
+	_, args, err := Prepare(p, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(args[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "AllowedApps = Discord.exe, C:\\Apps\\Example") || strings.Contains(string(data), "old.exe") {
+		t.Fatal("application rules were not compiled")
+	}
+	data, _ = os.ReadFile(p.ConfigPath)
+	if string(data) != original {
+		t.Fatal("original credentials/config modified")
+	}
+	p.Routing.Applications = []string{"bad.exe,other.exe"}
+	plan, err = Preview(p, root)
+	if err != nil || plan.Ready {
+		t.Fatal("ambiguous application list accepted")
+	}
+}
+
+func TestWindowsInstalledComponentDiscovery(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows component locations")
+	}
+	data := t.TempDir()
+	t.Setenv("ProgramData", data)
+	t.Setenv("ProgramFiles", t.TempDir())
+	t.Setenv("PATH", t.TempDir())
+	dir := filepath.Join(data, "AccessWeaver", "components", "byedpi")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	bin := fixtureBinary(t, dir, "ciadpi")
+	p := profile.New("discovered", "Discovered", "byedpi")
+	plan, err := Preview(p, t.TempDir())
+	if err != nil || !plan.Ready || plan.Binary != bin {
+		t.Fatalf("component not discovered: %+v %v", plan, err)
+	}
+}

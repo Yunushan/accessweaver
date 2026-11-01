@@ -19,7 +19,7 @@ AccessWeaver; profilleri, alan adı kurallarını, çalıştırma ön izlemesini
 SplitWire-Turkey'in iş akışından esinlenen bağımsız bir uygulamadır. Bu projeyle veya motor geliştiricileriyle resmi bağlantısı yoktur.
 
 > [!IMPORTANT]
-> **Bu bir alpha sürümüdür.** Masaüstünde profil düzenleme ve harici motor başlatma uygulanmıştır. Otomatik motor kurulumu, işletim sistemi yönlendirmesi, yerel mobil VPN uygulamaları ve güvenilir otomatik geçiş henüz uygulanmamıştır. Bir işlemin çalışması, trafiğin o işlemden geçtiğini kanıtlamaz. Hazır profiller düzenlenebilir başlangıç örnekleridir; belirli bir servis sağlayıcıda erişim garantisi değildir.
+> **Bu bir alpha sürümüdür.** Windows kurulum, uygulama yönlendirme, DNS ve onarım iş akışları deneyseldir. [Windows rehberine](docs/WINDOWS_WORKFLOWS.md) ve [doğrulama durumuna](docs/SPLITWIRE_IMPLEMENTATION.md) bakın. Tam SplitWire-Turkey davranış eşitliği henüz doğrulanmamıştır. Bir işlemin çalışması, trafiğin o işlemden geçtiğini kanıtlamaz. Yerel mobil VPN istemcileri ve güvenilir otomatik geçiş uygulanmış değildir. Arayüz İngilizce, Türkçe, Rusça ve İspanyolca seçenekleri sunar.
 
 ## Yapabilecekleriniz
 

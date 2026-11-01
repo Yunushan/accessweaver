@@ -1,0 +1,115 @@
+# Local filesystem and pure-function contract tests. No services, drivers,
+# application installs or network settings are changed by this test script.
+[CmdletBinding()]
+param()
+$ErrorActionPreference='Stop'
+$projectRoot=Split-Path -Parent $PSScriptRoot
+foreach($file in @('test-windows-integration.ps1','build-windows-installer.ps1','build-windows-fixtures.ps1','test-windows-apps.ps1','test-windows-wiresock.ps1','test-windows-reboot.ps1','test-windows-storage.ps1','test-windows-uiaccess.ps1','vmware-test-bootstrap.ps1','vmware-reboot-resume.ps1')){$tokens=$null;$issues=$null;[void][Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $file),[ref]$tokens,[ref]$issues);if($issues.Count){throw ($issues|Out-String)}}
+$tokens=$null;$parseErrors=$null
+$ast=[System.Management.Automation.Language.Parser]::ParseFile((Join-Path $projectRoot 'internal\workflow\windows.ps1'),[ref]$tokens,[ref]$parseErrors)
+if($parseErrors.Count){throw ($parseErrors|Out-String)}
+foreach($node in $ast.EndBlock.Statements){if($node -is [System.Management.Automation.Language.FunctionDefinitionAst]){. ([scriptblock]::Create($node.Extent.Text))}}
+$testRoot=Join-Path $projectRoot ('build\workflow-tests-'+[guid]::NewGuid().ToString('N'))
+[void](New-Item -ItemType Directory -Force -Path $testRoot)
+$root=$testRoot;$script:undo=[Collections.Generic.List[object]]::new();$script:events=[Collections.Generic.List[string]]::new();$script:journalPath=$null
+[void](New-Item -ItemType Directory -Force -Path (Join-Path $testRoot 'backups'))
+function Assert([bool]$condition,[string]$message){if(-not $condition){throw $message};Write-Output ('PASS '+$message)}
+$descriptor=Private-DirectorySecurity
+Assert (Trusted-SecurityDescriptor $descriptor) 'Administrator-owned private storage descriptor accepted'
+$descriptor.SetOwner([Security.Principal.SecurityIdentifier]::new('S-1-5-32-545'))
+Assert (-not (Trusted-SecurityDescriptor $descriptor)) 'Unprivileged owner rejected even with a private DACL'
+$descriptor=Private-DirectorySecurity
+$descriptor.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-5-32-545'),'Read','Allow'))
+Assert (-not (Trusted-SecurityDescriptor $descriptor)) 'Explicit nonprivileged descendant access rejected'
+Assert (Under (Join-Path $root 'components\file') $root) 'Contained paths accepted'
+Assert (-not (Under (Join-Path $root '..\escape') $root)) 'Parent path escape rejected'
+Assert (-not (Under ($root+'-sibling\file') $root)) 'Sibling prefix rejected'
+Assert ((Quote-Arg 'with spaces') -eq '"with spaces"') 'Windows argument quoting preserves spaces'
+Assert ((Quote-Arg '') -eq '""') 'Empty Windows argument preserved'
+$node=(Get-Command node -ErrorAction Stop).Source
+$native=Native $node @('-e','process.stdout.write(JSON.stringify(process.argv.slice(1)))','with spaces','','trailing\','quote"inside')
+$nativeArgs=$native.stdout|ConvertFrom-Json
+Assert ($nativeArgs.Count -eq 4 -and $nativeArgs[0] -eq 'with spaces' -and $nativeArgs[1] -eq '' -and $nativeArgs[2] -eq 'trailing\' -and $nativeArgs[3] -eq 'quote"inside') 'Native processes receive literal Windows arguments without shell evaluation'
+$clock=[Diagnostics.Stopwatch]::StartNew()
+[void](Native $node @('-e','require("child_process").spawn(process.execPath,["-e","setTimeout(()=>{},12000)"],{stdio:"inherit"});process.exit(0)'))
+Assert ($clock.Elapsed.TotalSeconds -lt 10) 'Exited installer does not wait for a GUI child holding inherited output pipes'
+$r=[pscustomobject]@{applications=@('custom.exe','C:\Apps\Custom');browsers=$true}
+$apps=@(Application-Names)
+Assert ($apps -contains 'custom.exe' -and $apps -contains 'chrome.exe' -and $apps -contains 'Discord.exe') 'Default, custom and browser application rules compiled'
+$packet=@(Packet-Arguments 'zapret2' @('--payload=tls_client_hello','--lua-desync=multidisorder:pos=2'))
+Assert ($packet -contains '--wf-tcp-out=80,443') 'Strategy-only ISP presets receive a Windows packet capture filter'
+$packet=@(Packet-Arguments 'zapret2' @('--wf-tcp-out=80','--lua-desync=oob:urp=0'))
+Assert (@($packet|Where-Object {$_ -like '--wf-tcp*'}).Count -eq 1 -and $packet[0] -eq '--wf-tcp-out=80') 'An explicitly selected capture filter is preserved'
+foreach($url in @('http://github.com/hufrea/byedpi/releases/download/v1/file.zip','https://evil.invalid/tool.exe','https://github.com/attacker/byedpi/releases/download/v1/file.zip','https://github.com/hufrea/byedpi/blob/main/tool.exe')){$rejected=$false;try{Allowed-Download $url}catch{$rejected=$true};Assert $rejected ('Unapproved URL rejected: '+$url)}
+Allowed-Download 'https://github.com/hufrea/byedpi/releases/download/v0.17.3/byedpi.zip'
+Assert $true 'Official release URL accepted'
+$file=Join-Path $root 'managed.txt';[IO.File]::WriteAllText($file,'original')
+Write-Atomic $file 'replacement';Write-Atomic $file 'replacement again'
+Assert ((Get-Content -LiteralPath $file -Raw) -eq 'replacement again') 'Atomic replacement works for an existing file'
+Assert ($script:undo.Count -eq 1) 'Original file backed up only once per transaction'
+$newFile=Join-Path $root 'new.txt';Write-Atomic $newFile 'new'
+$errors=@(Rollback)
+Assert ($errors.Count -eq 0) 'Rollback completed without errors'
+Assert ((Get-Content -LiteralPath $file -Raw) -eq 'original') 'Rollback restores original bytes'
+Assert (-not (Test-Path -LiteralPath $newFile)) 'Rollback removes newly created files'
+$script:undo.Clear();Write-Atomic $file 'installed';[IO.File]::WriteAllText($file,'changed outside operation')
+$conflicts=@(Rollback)
+Assert ($conflicts.Count -eq 1 -and (Get-Content -LiteralPath $file -Raw) -eq 'changed outside operation') 'Recovery refuses to overwrite independently changed files'
+$script:undo.Clear();Write-Atomic $file 'installed with backup'
+$backup=$script:undo[0].backup;[IO.File]::WriteAllText($backup,'corrupted recovery data')
+$conflicts=@(Rollback)
+Assert ($conflicts.Count -eq 1 -and (Get-Content -LiteralPath $file -Raw) -eq 'installed with backup') 'Recovery refuses a backup whose bytes differ from the recorded original digest'
+$script:undo.Clear()
+$source=Join-Path $root 'source.conf';[IO.File]::WriteAllText($source,"[Interface]`nPrivateKey = fixture-only`n[Peer]`nPublicKey = fixture-only`nEndpoint = example.invalid:2408`nAllowedApps = old.exe`n")
+[void](New-Item -ItemType Directory -Force -Path (Join-Path $root 'profiles'))
+$r=[pscustomobject]@{profileId='test-profile';configPath=$source;applications=@('custom.exe');browsers=$false}
+$config=Make-Config;$text=Get-Content -LiteralPath $config -Raw
+Assert ($text -match 'custom.exe' -and $text -notmatch 'old.exe') 'WireSock application policy replaces original selection in a private generated copy'
+Assert ((Get-Content -LiteralPath $source -Raw) -match 'old.exe') 'Original WireGuard config remains unchanged'
+[IO.File]::AppendAllText($source,"PostUp = arbitrary-command`n")
+$rejected=$false;try{Make-Config|Out-Null}catch{$rejected=$true}
+Assert $rejected 'WireGuard command hooks rejected'
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive=Join-Path $root 'traversal.zip';$zip=[IO.Compression.ZipFile]::Open($archive,[IO.Compression.ZipArchiveMode]::Create)
+$entry=$zip.CreateEntry('../escape.txt');$writer=[IO.StreamWriter]::new($entry.Open());$writer.Write('bad');$writer.Dispose();$zip.Dispose()
+$rejected=$false;try{Expand-Safe $archive (Join-Path $root 'extracted')}catch{$rejected=$true}
+Assert $rejected 'Archive traversal rejected before extraction'
+$previousAppData=$env:APPDATA
+try{
+    $env:APPDATA=Join-Path $testRoot 'fake-appdata';$cache=Join-Path $env:APPDATA 'discord';[void](New-Item -ItemType Directory -Force -Path $cache)
+    [IO.File]::WriteAllText((Join-Path $cache 'cache.txt'),'original session fixture')
+    $script:undo.Clear();Preserve-DiscordCache;$recovery=@(Rollback)
+    Assert ($recovery.Count -eq 0 -and [IO.File]::ReadAllText((Join-Path $cache 'cache.txt')) -eq 'original session fixture') 'Failed repair can restore the preserved original cache'
+    $script:undo.Clear();Preserve-DiscordCache;[void](New-Item -ItemType Directory -Path $cache);[IO.File]::WriteAllText((Join-Path $cache 'cache.txt'),'new session fixture')
+    $recovery=@(Rollback)
+    Assert ($recovery.Count -eq 1 -and [IO.File]::ReadAllText((Join-Path $cache 'cache.txt')) -eq 'new session fixture') 'Repair recovery preserves newly created cache and retains the original backup'
+}finally{$env:APPDATA=$previousAppData;$script:undo.Clear()}
+Write-Output 'Windows workflow contract tests completed. Test artifacts are under build/.'
+
+# Mock OS cmdlets to exercise DNS snapshot/restore semantics without changing
+# the host's real DNS, services, registry or network adapters.
+$script:dnsCalls=[Collections.Generic.List[object]]::new()
+$script:dohCalls=[Collections.Generic.List[object]]::new()
+function Get-NetAdapter { [pscustomobject]@{Status='Up';InterfaceDescription='Fixture adapter';InterfaceGuid='{00000000-0000-0000-0000-000000000001}';ifIndex=77} }
+function Get-ItemProperty {param($LiteralPath,$Name,$ErrorAction);[pscustomobject]@{NameServer=$(if($LiteralPath -match 'Tcpip6') {''}else{'192.0.2.53'})} }
+function Get-DnsClientServerAddress {param($InterfaceIndex,$AddressFamily);[pscustomobject]@{InterfaceIndex=$InterfaceIndex;AddressFamily=$AddressFamily;ServerAddresses=@($(if($AddressFamily -eq 'IPv4'){'192.0.2.53'}else{'2001:db8::53'}))} }
+function Set-DnsClientServerAddress { [CmdletBinding()]param([Parameter(ValueFromPipeline)]$InputObject,$InterfaceIndex,[string[]]$ServerAddresses,[switch]$ResetServerAddresses);process{$script:dnsCalls.Add(@{family=$InputObject.AddressFamily;index=$InterfaceIndex;servers=@($ServerAddresses);reset=[bool]$ResetServerAddresses})} }
+function Get-DnsClientDohServerAddress {param($ServerAddress,$ErrorAction);if(-not $ServerAddress){[pscustomobject]@{ServerAddress='8.8.8.8';DohTemplate='https://original.invalid/dns-query';AllowFallbackToUdp=$true;AutoUpgrade=$false}} }
+function Add-DnsClientDohServerAddress {param($ServerAddress,$DohTemplate,$AllowFallbackToUdp,$AutoUpgrade);$script:dohCalls.Add(@{action='add';address=$ServerAddress;template=$DohTemplate;fallback=$AllowFallbackToUdp})}
+function Set-DnsClientDohServerAddress {param($ServerAddress,$DohTemplate,$AllowFallbackToUdp,$AutoUpgrade);$script:dohCalls.Add(@{action='set';address=$ServerAddress;template=$DohTemplate;fallback=$AllowFallbackToUdp})}
+function Remove-DnsClientDohServerAddress {param($ServerAddress,$ErrorAction);$script:dohCalls.Add(@{action='remove';address=$ServerAddress})}
+function Get-Service {param($Name,$ErrorAction);return $null}
+function Clear-DnsClientCache {}
+function Resolve-DnsName {param($Name,[switch]$DnsOnly,[switch]$QuickTimeout,$ErrorAction);return [pscustomobject]@{Name='example.com'}}
+Configure-DNS 'doh'
+$dnsSnapshot=Join-Path $root 'profiles\dns-original.json'
+Assert (Test-Path -LiteralPath $dnsSnapshot) 'DNS snapshot persisted before changes'
+Assert ($script:dnsCalls[0].servers.Count -eq 4) 'DNS configuration covers IPv4 and IPv6 providers'
+Assert (@($script:dohCalls | Where-Object {$_.action -eq 'add' -and $_.fallback -eq $false}).Count -eq 4) 'Native DoH configuration disables plaintext fallback'
+Restore-DNS
+Assert (@($script:dnsCalls|Where-Object {$_.family -eq 'IPv4' -and $_.servers -contains '192.0.2.53'}).Count -eq 1) 'Original static IPv4 DNS is restored'
+Assert (@($script:dnsCalls|Where-Object {$_.family -eq 'IPv6' -and $_.reset}).Count -eq 1) 'Original DHCP IPv6 DNS is restored independently'
+Assert (@($script:dohCalls|Where-Object {$_.action -eq 'set' -and $_.template -eq 'https://original.invalid/dns-query'}).Count -eq 1) 'Original DoH metadata is restored'
+Assert (-not (Test-Path -LiteralPath $dnsSnapshot)) 'DNS snapshot removed only after successful recovery'
+Write-Output 'DNS workflow contracts completed using mock OS cmdlets.'

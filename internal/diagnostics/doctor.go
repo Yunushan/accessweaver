@@ -27,7 +27,10 @@ type Report struct {
 
 func Run(ctx context.Context, p profile.Probe) Report {
 	r := Report{Host: p.Host, Port: p.Port, At: time.Now().UTC(), Checks: []Check{}}
-	if err := profile.ValidateDomain(p.Host); err != nil {
+	if err := profile.ValidateHost(p.Host); err != nil || p.Host == "" {
+		if err == nil {
+			err = errors.New("probe host is required")
+		}
 		r.Checks = append(r.Checks, Check{Name: "input", Status: "failed", Detail: err.Error()})
 		return r
 	}

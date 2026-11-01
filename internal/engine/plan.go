@@ -46,6 +46,14 @@ func binaryFor(p profile.Profile, d Descriptor) (string, error) {
 			}
 		}
 		if bin == "" {
+			for _, candidate := range installedCandidates(p.Engine) {
+				if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
+					bin = candidate
+					break
+				}
+			}
+		}
+		if bin == "" {
 			return "", fmt.Errorf("%s is not installed: set the official executable path", d.Name)
 		}
 	} else if !filepath.IsAbs(bin) {
@@ -71,6 +79,9 @@ func binaryFor(p profile.Profile, d Descriptor) (string, error) {
 		}
 	}
 	if !matched {
+		if p.Engine == "wiresock" && base == "wiresock-connect-cli" {
+			return "", errors.New("WireSock Secure Connect 3.x uses the Installation & repair connect/install workflows; this profile adapter targets the SDK foreground client")
+		}
 		return "", fmt.Errorf("%q is not a %s executable for %s; expected %s", base, d.Name, runtime.GOOS, strings.Join(names, ", "))
 	}
 	info, err := os.Stat(bin)
@@ -145,8 +156,15 @@ func Preview(p profile.Profile, root string) (LaunchPlan, error) {
 	if d.Integration != "managed" {
 		issue("This engine has an external reference integration; manage its tunnel with the official OS client")
 	}
-	if len(p.Routing.Applications) > 0 {
+	if len(p.Routing.Applications) > 0 && p.Engine != "wiresock" {
 		issue("application routing fields are not implemented by this adapter; configure WireSock applications in its .conf file or use upstream configuration")
+	}
+	if p.Engine == "wiresock" {
+		for _, app := range p.Routing.Applications {
+			if strings.ContainsAny(app, ",;\"\r\n") {
+				issue("WireSock application names cannot contain commas, semicolons, quotes or newlines")
+			}
+		}
 	}
 	if len(p.Routing.IncludeDomains) > 0 && !d.Includes {
 		issue("this engine adapter does not support include-domain rules")
@@ -186,7 +204,13 @@ func Preview(p profile.Profile, root string) (LaunchPlan, error) {
 	if len(p.Routing.ExcludeDomains) > 0 && d.Excludes && usesDomainFiles(p.Engine) {
 		plan.GeneratedFiles = append(plan.GeneratedFiles, exclude)
 	}
-	args, warnings, argumentIssues := adapterArgs(p, executableBase(plan.Binary), include, exclude)
+	adapterProfile := p
+	if p.Engine == "wiresock" && len(p.Routing.Applications) > 0 {
+		adapterProfile.ConfigPath = filepath.Join(root, "generated", p.ID+"-wiresock.conf")
+		plan.GeneratedFiles = append(plan.GeneratedFiles, adapterProfile.ConfigPath)
+		plan.Warnings = append(plan.Warnings, "Guided application rules replace AllowedApps/DisallowedApps in a private generated copy. The original tunnel configuration is unchanged.")
+	}
+	args, warnings, argumentIssues := adapterArgs(adapterProfile, executableBase(plan.Binary), include, exclude)
 	plan.Args = args
 	plan.Warnings = append(plan.Warnings, warnings...)
 	plan.Issues = append(plan.Issues, argumentIssues...)
@@ -498,6 +522,24 @@ func Prepare(p profile.Profile, root string) (string, []string, error) {
 	}
 	if !plan.Ready {
 		return "", nil, errors.New(strings.Join(plan.Issues, "; "))
+	}
+	if p.Engine == "wiresock" && len(p.Routing.Applications) > 0 {
+		data, err := os.ReadFile(p.ConfigPath)
+		if err != nil {
+			return "", nil, err
+		}
+		var lines []string
+		for _, line := range strings.Split(string(data), "\n") {
+			key, _, has := strings.Cut(line, "=")
+			if has && (strings.EqualFold(strings.TrimSpace(key), "AllowedApps") || strings.EqualFold(strings.TrimSpace(key), "DisallowedApps")) {
+				continue
+			}
+			lines = append(lines, line)
+		}
+		text := strings.TrimRight(strings.Join(lines, "\n"), "\r\n") + "\nAllowedApps = " + strings.Join(p.Routing.Applications, ", ") + "\n"
+		if err := profile.AtomicWrite(filepath.Join(root, "generated", p.ID+"-wiresock.conf"), []byte(text)); err != nil {
+			return "", nil, err
+		}
 	}
 	if !usesDomainFiles(p.Engine) {
 		return plan.Binary, plan.Args, nil

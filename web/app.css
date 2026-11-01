@@ -75,6 +75,10 @@ body.modal-open{overflow:hidden}
 .plan-args code>span{display:inline-block;width:23px;color:var(--subtle);font-size:9px;margin-right:6px;user-select:none}
 .plan-issues,.plan-warnings{margin:15px 17px;color:var(--muted);font-size:11px;line-height:1.65}
 .plan-issues{color:var(--danger)}
+.system-output{white-space:pre-wrap;overflow-wrap:anywhere;max-height:65vh;overflow:auto;font:12px/1.65 ui-monospace,monospace;color:var(--text)}
+#system-form{display:flex;flex-direction:column;gap:16px}
+#system-form details label{display:flex;flex-direction:column;gap:7px;margin:14px 0}
+#view-system .diagnostic-box{min-width:0}
 .launch-plan ul{padding-left:18px;margin:7px 0 0}
 .launch-plan li+li{margin-top:5px}
 .plan-error{color:var(--danger);padding:14px 17px;margin:0;border-bottom:1px solid var(--border)}

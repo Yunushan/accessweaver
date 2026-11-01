@@ -1,6 +1,6 @@
 # Engine adapters
 
-AccessWeaver launches separately installed tools and translates a small set of profile fields. It does not install drivers, prepare firewall rules, provision VPN credentials, or certify a strategy against an ISP. The source of truth for adapter behavior is `internal/engine/catalog.go` and `internal/engine/plan.go`.
+The foreground profile runner launches separately installed tools and translates a small set of profile fields. Windows installation, drivers, firewall rules and credential provisioning are separate experimental [system workflows](WINDOWS_WORKFLOWS.md). Neither path certifies a strategy against an ISP. Foreground adapter behavior is defined in `internal/engine/catalog.go` and `internal/engine/plan.go`.
 
 Use the upstream documentation for the **exact binary version you install**. No engine version is bundled or end-to-end certified in this alpha. The references below were reviewed on 2026-10-31.
 

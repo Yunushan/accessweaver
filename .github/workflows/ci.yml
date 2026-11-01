@@ -39,9 +39,19 @@ jobs:
         run: go test ./... -count=1
       - name: Build core
         run: go build ./cmd/accessweaver
+      - name: Native Linux cross-user session isolation
+        if: runner.os == 'Linux'
+        run: bash scripts/test-linux-session.sh ./accessweaver
       - name: JavaScript syntax
         if: runner.os == 'Linux'
-        run: node --check web/app.js
+        run: |
+          node --check web/app.js
+          node --check web/system.js
+          node --check web/locales.js
+      - name: Windows workflow contracts (no system changes)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/test-windows-workflow.ps1
       - name: Browser logic tests
         if: runner.os == 'Linux'
         run: node --test web/app.test.cjs

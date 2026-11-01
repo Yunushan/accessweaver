@@ -1,0 +1,92 @@
+# Windows installation and repair
+
+The **Installation & repair** dashboard and `system` CLI manage Windows components separately from foreground profiles. They require Windows PowerShell 5.1. The dashboard must run as the normal desktop user. Its administrative handoff is unfinished, so applying privileged changes currently requires a separately elevated `system apply` CLI invocation. Inspection and preview work without elevation. See the unresolved application-maintenance boundary in [SECURITY.md](../SECURITY.md) before testing per-user application operations.
+
+These workflows are experimental. See [implementation and verification status](SPLITWIRE_IMPLEMENTATION.md) before deployment. Native results apply to the recorded Windows build and component versions, not every network or vendor release.
+
+## Review and run
+
+Select an operation and component. The form shows the relevant options. Review the generated plan, check the confirmation box, then apply. Changing an input invalidates the plan. Plans expire after ten minutes and can be consumed once. Only one system operation runs at a time across AccessWeaver instances.
+
+The CLI accepts the same JSON request:
+
+```powershell
+accessweaver.exe system operations
+accessweaver.exe system discover
+accessweaver.exe system presets
+accessweaver.exe system preview request.json
+accessweaver.exe system apply request.json --confirm
+accessweaver.exe system history
+```
+
+For example, install an automatic ByeDPI proxy service without app interception:
+
+```json
+{"action":"install","engine":"byedpi","mode":"service","dns":"unchanged"}
+```
+
+ByeDPI listens on `127.0.0.1:1080`. Applications must use this proxy, or select `split` mode to install ProxiFyre and its Windows Packet Filter prerequisite. `dll` mode deploys drover to an installed stable Discord. `once` runs until cancellation. Optional `applications` and `browsers` compile the interception selection; default selections include Discord and Roblox.
+
+An optional `bundlePath` supplies a local official Windows component bundle. Otherwise supported components download from allowlisted upstream releases. Unsigned assets require a SHA-256 digest; signed vendor installers also require successful Authenticode verification. Downloads and dependencies remain governed by their own licenses. A hash identifies an artifact; it does not establish its trustworthiness.
+
+## WireSock
+
+`install` with `engine: "wiresock"` supports `alternative` (WireSock only), `standard` (WireSock plus ByeDPI/drover) and `custom` (selected apps). `config` generates only a private configuration. `connect`, `disconnect`, `refresh` and `remove` manage its lifecycle. Modern Secure Connect uses its vendor CLI; the legacy SDK client retains its different service commands.
+
+Supply `configPath` to avoid registering an account. A new wgcf/WARP account requires explicitly setting `acceptCloudflareTerms: true` after reviewing [Cloudflare's terms](https://www.cloudflare.com/application/terms/). AccessWeaver does not reuse another application's wgcf account or private keys. Command hooks in supplied tunnel configurations are rejected. Application rules replace existing `AllowedApps`/`DisallowedApps` in a private copy; the original file is preserved.
+
+Managed imports use unique `AccessWeaver-...` vendor profile names. Remove a managed WireSock method before replacing it. An independently installed legacy SDK service blocks managed setup to avoid replacing its configuration. Vendor products are retained when removing AccessWeaver's method.
+
+An explicit `vendor-uninstall` operation with `engine: "wiresock"` also invokes the registered Secure Connect/legacy vendor uninstaller after removing the managed profile. Review its plan: vendor removal can affect independently created vendor profiles. `remove-all` does not invoke this operation.
+
+Configuration paths, application names/folders, `browsers`, `profileId` and `refresh` are optional inputs. `refresh` installs a five-minute reconnect task. A completed connect command or running service does not prove a tunnel handshake or working application traffic.
+
+## Packet engines and hostlists
+
+Zapret, Zapret2 and GoodbyeDPI support `install` with `mode: "service"` or `"once"`. Choose an included preset or supply `args` as a JSON string array. Every argument is passed literally, without a shell. Zapret2 needs matching Lua assets. System installation owns its hostlist arguments; use the foreground profile runner for independently managed native list options.
+
+Use `hostlist` with `domains` and `enabled` to save or toggle the list. Zapret/Zapret2 lists are exclusions; GoodbyeDPI lists are inclusions. Disabling preserves the saved list. GoodbyeDPI restarts to update its blacklist argument. Zapret reload behavior depends on the upstream version. A service/list test does not establish filtering effectiveness.
+
+`scan` and `auto-install` run upstream blockcheck with `scan: "quick"`, `"standard"` or `"full"`. Provide its Windows bundle, including Cygwin, through `bundlePath`. `targets` are the hosts to test; `domains` are unrelated hostlist entries. Zapret2 tries the included ISP strategies before its broader scan. Full mode maps to upstream's force scan.
+
+Auto-install selects only a completed reported common strategy, preferring HTTPS. It refuses incomplete output, shell commands and incompatible native strategies. Reports are retained. A scan for HTTPS is not a UDP voice or ISP reliability test.
+
+## DNS and application maintenance
+
+`dns` selects `doh` (native Windows DoH with Google/Quad9 and no UDP fallback) or `dnscrypt`. Installation optionally applies the selected DNS method first. `dns-restore` restores the saved original per-adapter IPv4/IPv6 DHCP/static state and native DoH metadata. Keep the snapshot until restoration completes. DNSCrypt can bootstrap its upstream resolver list using its own configured bootstrap resolvers.
+
+`app-install`, `app-start` and `app-remove` support `discord`, `discord-ptb` and `splitcord`. PTB's `clean` option first removes stable Discord. Run user-app operations in the intended interactive Windows account. `app-repair` reinstalls stable Discord, preserves its cache in a protected backup and installs the ByeDPI DLL method. It can sign you out. Existing account sessions are not test fixtures.
+
+`updates` checks AccessWeaver's official GitHub release metadata. It does not install an update.
+
+## Ownership, cancellation and recovery
+
+Components, private profiles, service configuration, backups and persistent logs live under `%ProgramData%\AccessWeaver`, with administrator/SYSTEM access. Foreground profiles and workflow history use the ordinary AccessWeaver data directory. Keep private configurations and logs out of public issue reports.
+
+`remove` removes a selected managed method; `remove-all` removes owned methods in dependency order and restores DNS/drover files. Independent services, vendor installations and private recovery evidence are retained. Explicit WinDivert removal verifies that the driver's path belongs to the managed component store; shared external drivers are refused.
+
+The Windows installer registers a normal uninstaller. It restores owned system changes before deleting the application and aborts deletion when restoration fails. Portable users can run `uninstall`, stop the core, then remove the portable directory. Protected recovery data is retained for review.
+
+Cancelling kills the job's process tree. Sudden termination can bypass PowerShell cleanup, so inspect the journal before retrying. The recovery action accepts only a protected journal filename:
+
+```json
+{"action":"recover","journalId":"workflow-0123456789abcdef0123456789abcdef.json"}
+```
+
+Recovery validates resource ownership and expected file hashes. It refuses to overwrite files changed independently since installation. DNS changes and imported managed WireSock profiles have explicit recovery entries. Vendor installers can make changes outside the journal; restore the disposable VM checkpoint when validating them.
+
+## Building and testing
+
+The unsigned x64 installer is built with an explicitly supplied official Inno Setup compiler:
+
+```powershell
+./scripts/build-windows-installer.ps1 -Compiler 'C:\Tools\Inno Setup\ISCC.exe' -Version 0.1.0
+```
+
+`scripts/test-windows-workflow.ps1` runs filesystem/pure-function contracts and mocked DNS cmdlets without changing host services or networking. `scripts/test-windows-integration.ps1` deliberately changes a disposable guest; it checks for a virtual machine and an administrator token. It requires a test-only binary/component bundle and writable results directory. Run it only in an explicitly disposable guest, never a production VM.
+
+`scripts/build-windows-fixtures.ps1` builds the optional WireGuard userspace peer and selected/unselected traffic probes from separately pinned modules. The core remains standard-library-only. The fixture generates temporary private keys inside the guest and does not register a WARP account. `scripts/test-windows-wiresock.ps1 -DisposableVM` uses it to check actual handshake, TCP/UDP, IPv4/IPv6, application selection, refresh and disconnect. Build the fixtures before running this suite.
+
+For the dedicated VMware guest, finish Windows setup and install VMware Tools, then take a Windows-ready snapshot. Share the test bundle read-only as `AccessWeaver-Test`, and only its results directory writable as `AccessWeaver-Results`. The host sets the exact VM identity in the `accessweaverParity` guest variable. Inside that guest, double-click `Start-Parity-Tests.cmd` in the test share and accept UAC. The controller accepts only fixed test stages (`system`, `apps`, `wiresock`, `reboot-prepare`, `exit`) from `control.json`; it does not accept shell commands or passwords. A completed stage means the script finished; inspect its per-check JSON results for pass/fail. Reboot verification runs once at startup and publishes its result separately.
+
+See [implementation status](SPLITWIRE_IMPLEMENTATION.md) for recorded results and remaining gaps. Full parity is not yet certified.

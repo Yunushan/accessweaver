@@ -16,9 +16,12 @@ import (
 	"time"
 
 	"github.com/Yunushan/accessweaver/internal/api"
+	"github.com/Yunushan/accessweaver/internal/buildinfo"
 	"github.com/Yunushan/accessweaver/internal/diagnostics"
 	"github.com/Yunushan/accessweaver/internal/engine"
 	"github.com/Yunushan/accessweaver/internal/profile"
+	"github.com/Yunushan/accessweaver/internal/servicehost"
+	"github.com/Yunushan/accessweaver/internal/uiaccess"
 	"github.com/Yunushan/accessweaver/web"
 )
 
@@ -29,6 +32,9 @@ func main() {
 	}
 }
 func execute(args []string) error {
+	if len(args) == 2 && args[0] == "service-host" {
+		return servicehost.Run(args[1])
+	}
 	if len(args) == 0 {
 		args = []string{"ui"}
 	}
@@ -37,8 +43,19 @@ func execute(args []string) error {
 		return nil
 	}
 	if args[0] == "version" {
-		fmt.Println("AccessWeaver 0.1.0-alpha (", runtime.GOOS, runtime.GOARCH, ")")
+		if len(args) == 2 && args[1] == "--json" {
+			return printJSON(buildinfo.Current())
+		}
+		if len(args) != 1 {
+			return errors.New("usage: accessweaver version [--json]")
+		}
+		fmt.Printf("AccessWeaver %s (%s %s)\n", buildinfo.Version, runtime.GOOS, runtime.GOARCH)
 		return nil
+	}
+	if args[0] == "ui" {
+		if err := uiaccess.RequireUnelevated(); err != nil {
+			return err
+		}
 	}
 	root, err := profile.DefaultRoot()
 	if err != nil {
@@ -47,14 +64,22 @@ func execute(args []string) error {
 	if env := os.Getenv("ACCESSWEAVER_HOME"); env != "" {
 		root = env
 	}
-	store, err := profile.NewStore(root)
-	if err != nil {
-		return err
-	}
-	if err = store.Seed(profile.Builtins()); err != nil {
-		return err
+	// Catalog, validation, diagnostics and workflow metadata must also work in
+	// read-only environments without creating or seeding a profile store.
+	var store *profile.Store
+	switch args[0] {
+	case "ui", "profiles", "show", "preview", "import", "run":
+		store, err = profile.NewStore(root)
+		if err != nil {
+			return err
+		}
+		if err = store.Seed(profile.Builtins()); err != nil {
+			return err
+		}
 	}
 	switch args[0] {
+	case "system":
+		return systemCommand(args[1:], root)
 	case "ui":
 		manager := engine.NewManager(root)
 		apiServer, err := api.New(store, manager, web.Assets)
@@ -67,10 +92,18 @@ func execute(args []string) error {
 		if err != nil {
 			return err
 		}
+		launcher, err := uiaccess.New(addr, apiServer.Token)
+		if err != nil {
+			stop()
+			apiServer.Wait()
+			return err
+		}
+		defer launcher.Close()
 		fmt.Println("AccessWeaver is running at", addr)
+		fmt.Println("Open this private launch file in your browser:", launcher.URL)
 		fmt.Println("Local interface only. Press Ctrl+C to exit. No external engines started automatically.")
 		if os.Getenv("ACCESSWEAVER_NO_BROWSER") != "1" {
-			openBrowser(addr)
+			openBrowser(launcher.URL)
 		}
 		<-ctx.Done()
 		apiServer.Wait()
@@ -187,7 +220,7 @@ func execute(args []string) error {
 	return nil
 }
 func usage() {
-	fmt.Print(`AccessWeaver 0.1.0-alpha — local-first network access manager
+	fmt.Printf(`AccessWeaver %s — local-first network access manager
 
   accessweaver ui                  Start responsive local dashboard
   accessweaver engines             Show supported engine adapters
@@ -198,11 +231,12 @@ func usage() {
   accessweaver import FILE.json    Import profile into local store
   accessweaver doctor [HOST]       Run DNS/TCP/TLS checks
   accessweaver run ID              Explicitly start one engine in foreground
-  accessweaver version
+  accessweaver system              Show Windows installation/repair commands
+  accessweaver version [--json]    Print runtime and source build identity
 
 Optional environment: ACCESSWEAVER_HOME=<private directory>
                       ACCESSWEAVER_NO_BROWSER=1
-`)
+`, buildinfo.Version)
 }
 func printJSON(v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")

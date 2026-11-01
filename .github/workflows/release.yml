@@ -37,9 +37,19 @@ jobs:
       - run: go vet ./...
       - run: go test ./... -count=1
       - if: runner.os == 'Linux'
+        run: |
+          go build ./cmd/accessweaver
+          bash scripts/test-linux-session.sh ./accessweaver
+      - if: runner.os == 'Linux'
         run: go test -race ./... -count=1
       - if: runner.os == 'Linux'
-        run: node --check web/app.js
+        run: |
+          node --check web/app.js
+          node --check web/system.js
+          node --check web/locales.js
+      - if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/test-windows-workflow.ps1
       - if: runner.os == 'Linux'
         run: node --test web/app.test.cjs
   package:
@@ -63,7 +73,9 @@ jobs:
         run: |
           label="$RELEASE_TAG"
           if [[ "$EVENT_NAME" == workflow_dispatch ]]; then label="preview-${GITHUB_SHA:0:12}"; fi
+          if [[ "$EVENT_NAME" != workflow_dispatch ]]; then export BUILD_VERSION="${RELEASE_TAG#v}"; fi
           bash scripts/package-release.sh "$label"
+          python3 scripts/verify-release.py "dist/$label" --execute-native
       - name: Upload archives and checksums
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

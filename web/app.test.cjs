@@ -6,6 +6,8 @@ const assert = require('node:assert/strict');
 const sourcePath = require('node:path').join(__dirname, 'app.js');
 const htmlPath = sourcePath.replace(/app\.js$/, 'index.html');
 const source = fs.readFileSync(sourcePath, 'utf8').replace(/\bbindEvents\(\);\s*initialize\(\);\s*$/, '');
+const localeSource = fs.readFileSync(require('node:path').join(__dirname,'locales.js'),'utf8');
+const systemSource = fs.readFileSync(require('node:path').join(__dirname,'system.js'),'utf8').split('const systemNavigation')[0];
 const html = fs.readFileSync(htmlPath, 'utf8');
 const plain = value => JSON.parse(JSON.stringify(value));
 const baseProfile = () => ({version:1,id:'test-profile',name:'Original name',description:'',category:'Custom',engine:'byedpi',binary:'',sha256:'',args:[],routing:{includeDomains:[],excludeDomains:[],applications:[]},probe:{host:'discord.com',port:443,tls:true,timeoutSeconds:5},notes:''});
@@ -45,7 +47,8 @@ function environment() {
     el.checked=/\bchecked\b/.test(match[2]);el.hidden=/\bhidden\b/.test(match[2]);
   }
   get('profile-filter').value='all';
-  context={console,URL,Blob,TextEncoder,TextDecoder,AbortController,DOMException,structuredClone,performance,Date,Intl,Math,JSON,Number,String,Boolean,Array,Object,Set,Map,Error,TypeError,Promise,
+  context={console,URL,URLSearchParams,Blob,TextEncoder,TextDecoder,AbortController,DOMException,structuredClone,performance,Date,Intl,Math,JSON,Number,String,Boolean,Array,Object,Set,Map,Error,TypeError,Promise,
+    sessionStorage:{getItem(k){return data.get('session:'+k)??null},setItem(k,v){data.set('session:'+k,String(v))}},
     localStorage:{getItem(k){return data.get(k)??null},setItem(k,v){if(failStorage)throw new Error('quota exceeded');data.set(k,String(v));},removeItem(k){if(failStorage)throw new Error('quota exceeded');data.delete(k);}},
     document:{getElementById:get,querySelectorAll:()=>[],querySelector:selector=>selector==='.app-shell'?get('app-shell'):null,createElement:()=>new Element(),addEventListener(){},documentElement:new Element(),body:new Element(),activeElement:new Element()},
     navigator:{userAgent:'test',clipboard:{writeText:async()=>{}}},location:{hash:'',origin:'http://localhost'},history:{replaceState(){},pushState(){}},
@@ -54,12 +57,33 @@ function environment() {
     confirm:()=>false,setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},requestAnimationFrame:cb=>cb(),cancelAnimationFrame(){},
   };
   context.window.document=context.document;context.window.location=context.location;
-  vm.createContext(context);vm.runInContext(source,context,{filename:sourcePath});
+  vm.createContext(context);vm.runInContext(localeSource,context);vm.runInContext(source,context,{filename:sourcePath});
   vm.runInContext('state.engines = exampleEngines; state.offline = true; renderAll = () => {}; toast = () => {};',context);
   return {context,get,data,setStorageFailure(v){failStorage=v},run(code){return vm.runInContext(code,context)},put(name,value){context[name]=plain(value)}};
 }
 const test = require('node:test');
+test('connected UI displays the core build version without interpreting HTML',async()=>{
+  const env=environment();
+  env.run('state.token="fixture"');
+  const versionNodes=[env.get('sidebar-version'),env.get('footer-version')];
+  env.context.document.querySelectorAll=selector=>selector==='[data-app-version]'?versionNodes:[];
+  env.context.fetch=async path=>({ok:true,json:async()=>path==='/api/bootstrap'?{token:'fixture',platform:'windows',version:'2.3.4-rc.1 <source>'}:path==='/api/v1/runtime'?{state:'stopped'}:[]});
+  await env.run('readCore()');
+  for(const node of versionNodes){assert.equal(node.textContent,'2.3.4-rc.1 <source>');assert.equal(node.innerHTML,'');}
+});
 function valid(env,profile=baseProfile()) {env.put('fixture',profile);return env.run('validateProfile(fixture)');}
+test('private launcher session is consumed without retaining it in the address',()=>{
+  const env=environment(),credential='s'.repeat(43);let cleanAddress;
+  env.context.location.hash='#accessweaver-session='+credential;
+  env.context.history.replaceState=(_state,_title,address)=>{cleanAddress=address};
+  env.run('readSession()');
+  assert.equal(env.run('state.token'),credential);assert.equal(cleanAddress,'/#dashboard');
+  assert.equal(env.data.get('session:aw.session'),credential);assert.equal(env.data.get('aw.session'),undefined);
+});
+test('browser cannot obtain a session credential from public bootstrap',async()=>{
+  const env=environment();let called=false;env.context.fetch=async()=>{called=true;throw new Error('unexpected')};
+  await assert.rejects(env.run('readCore()'));assert.equal(called,false);
+});
 function rejectsProfile(profile) {const env=environment();assert.throws(()=>valid(env,profile));}
 test('valid version-1 profile is accepted',()=>{valid(environment());});
 test('unknown top-level fields are rejected',()=>{rejectsProfile({...baseProfile(),surprise:true});});
@@ -85,6 +109,16 @@ test('disconnected core blocks writes without changing cached profiles',async()=
 test('failed poll marks connection unknown without falsely stopping cached process',async()=>{const env=environment();env.run('state.loading=false;state.offline=false;state.runtime={state:"running",profileId:"test-profile",pid:123};apiRequest=async()=>{throw new Error("network down")};');await env.run('pollStatus()');assert.equal(env.run('state.disconnected'),true);assert.equal(env.run('state.runtime.state'),'running');assert.equal(env.run('coreAvailable()'),false);});
 test('process exit refreshes profile actions',async()=>{const env=environment();env.context.profileRenderCalls=0;env.run('state.loading=false;state.offline=false;state.runtime={state:"running",profileId:"test-profile",pid:123};renderProfiles=()=>{profileRenderCalls++};apiRequest=async()=>({state:"exited",profileId:"test-profile"});');await env.run('pollStatus()');assert.equal(env.context.profileRenderCalls,1);});
 test('all HTML translation keys exist in both languages',()=>{const env=environment();const keys=[...html.matchAll(/data-i18n(?:-aria)?="([^"]+)"/g)].map(m=>m[1]);env.context.translationKeys=keys;assert.deepEqual(plain(env.run('translationKeys.filter(key=>!en[key]||!tr[key])')),[]);});
+test('Russian and Spanish cover every UI translation key',()=>{const env=environment();assert.deepEqual(plain(env.run('Object.keys(en).filter(key=>!extraLocales.ru[key]||!extraLocales.es[key])')),[]);});
+test('all four languages can be selected and persisted',()=>{const env=environment();for(const lang of ['en','tr','ru','es']){env.context.languageFixture=lang;env.run('changeLanguage(languageFixture)');assert.equal(env.run('state.lang'),lang);assert.equal(env.data.get('aw.lang'),lang);}});
+test('system operation consent is invalidated by input changes',()=>{const env=environment();env.run(systemSource);env.run('systemUI.plan={id:"reviewed",ready:true};$("system-consent").checked=true;invalidateSystemPlan()');assert.equal(env.run('systemUI.plan'),null);assert.equal(env.get('system-apply').disabled,true);assert.equal(env.get('system-consent').checked,false);});
+
+test('switching operations excludes hidden stale system fields',()=>{const env=environment();env.run(systemSource);env.get('system-action').value='dns-restore';env.get('system-engine').value='byedpi';env.get('system-args').value='stale argument';env.get('system-config').value='C:\\stale.conf';env.get('system-cloudflare-terms').checked=true;assert.deepEqual(plain(env.run('systemRequest()')),{action:'dns-restore'});});
+test('system operations expose only compatible component choices',()=>{const env=environment();env.run(systemSource);assert.deepEqual(plain(env.run('systemEnginesFor("scan")')),['zapret','zapret2']);assert.deepEqual(plain(env.run('systemEnginesFor("app-install")')),['discord','discord-ptb','splitcord']);assert.equal(env.run('systemEnginesFor("install").includes("discord")'),false);});
+test('every system operation label has all four languages',()=>{const env=environment();const labels=plain(env.run('systemOperationText'));assert.equal(Object.keys(labels).length,22);for(const row of Object.values(labels))for(const lang of ['en','tr','ru','es'])assert.ok(row[lang]);});
+test('new-release notification is shown once for a completed update check',()=>{const env=environment();env.run(systemSource);env.run('toast=message=>{globalThis.updateNotice=message;globalThis.noticeCount=(globalThis.noticeCount||0)+1};const updateFixture={id:"update-1",action:"updates",state:"succeeded",result:{data:{version:"v1.0.0",updateAvailable:true}}};notifySystemUpdate(updateFixture);notifySystemUpdate(updateFixture)');assert.equal(env.context.noticeCount,1);assert.match(env.context.updateNotice,/v1\.0\.0/);});
+test('a late system preview cannot restore a plan invalidated during the request',async()=>{const env=environment();env.run(systemSource);env.run('state.offline=false;state.loading=false;apiRequest=()=>new Promise(resolve=>{globalThis.resolvePlan=resolve})');const pending=env.run('previewSystem({action:"discover"})');env.run('invalidateSystemPlan()');env.context.resolvePlan({id:'stale',ready:true});await pending;assert.equal(env.run('systemUI.plan'),null);assert.equal(env.get('system-consent').disabled,true);});
+test('applying a system operation submits only the reviewed plan ID',async()=>{const env=environment();env.run(systemSource);env.run('systemUI.plan={id:"reviewed",ready:true};$("system-consent").checked=true;apiRequest=async(path,method,payload)=>{globalThis.submittedSystem=payload;return {id:"reviewed",state:"succeeded"}};pollSystemJob=()=>{}');await env.run('applySystem()');assert.deepEqual(plain(env.context.submittedSystem),{planId:'reviewed',confirm:true});assert.equal(env.run('systemUI.plan'),null);});
 
 test('invalid browser entries survive unrelated offline saves',async()=>{const env=environment();env.put('fixture',baseProfile());env.put('invalid',{id:'broken-profile',custom:'keep this data'});env.run('state.preservedProfiles=[invalid]');await env.run('persist(fixture)');assert.deepEqual(JSON.parse(env.data.get('aw.profiles')),[baseProfile(),{id:'broken-profile',custom:'keep this data'}]);});
 test('unreadable browser storage cannot be replaced by a new save',async()=>{const env=environment();env.put('fixture',baseProfile());env.data.set('aw.profiles','broken JSON');env.run('state.storageBlocked=true');await assert.rejects(env.run('persist(fixture)'));assert.equal(env.data.get('aw.profiles'),'broken JSON');assert.equal(env.run('state.profiles.length'),0);});

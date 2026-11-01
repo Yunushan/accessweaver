@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/Yunushan/accessweaver/internal/buildinfo"
 	"github.com/Yunushan/accessweaver/internal/engine"
 	"github.com/Yunushan/accessweaver/internal/profile"
 	"net/http"
@@ -22,6 +23,24 @@ func makeServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	return s
+}
+
+func TestBootstrapUsesRuntimeBuildIdentity(t *testing.T) {
+	s := makeServer(t)
+	previous := buildinfo.Version
+	buildinfo.Version = "2.3.4-rc.1"
+	defer func() { buildinfo.Version = previous }()
+	w := request(t, s, "GET", "/api/bootstrap", nil, s.Token, "127.0.0.1:54321")
+	var response struct {
+		Version string         `json:"version"`
+		Build   buildinfo.Info `json:"build"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil || w.Code != 200 {
+		t.Fatalf("bootstrap: %d %v", w.Code, err)
+	}
+	if response.Version != buildinfo.Version || response.Build.Version != response.Version || response.Build.Platform == "" || response.Build.SourceState == "" {
+		t.Fatalf("inconsistent bootstrap: %+v", response)
+	}
 }
 func request(t *testing.T, s *Server, method, path string, body any, token string, host string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -63,7 +82,7 @@ func TestProfileAPICRUD(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("save: %d %s", w.Code, w.Body.String())
 	}
-	w = request(t, s, "GET", "/api/v1/profiles/my-profile", nil, "", "127.0.0.1:54321")
+	w = request(t, s, "GET", "/api/v1/profiles/my-profile", nil, s.Token, "127.0.0.1:54321")
 	if w.Code != 200 {
 		t.Fatalf("get: %d %s", w.Code, w.Body.String())
 	}
@@ -89,6 +108,7 @@ func TestCrossOriginBootstrapDenied(t *testing.T) {
 	} {
 		r := httptest.NewRequest("GET", "http://127.0.0.1:54321/api/bootstrap", nil)
 		r.Header.Set(header.name, header.value)
+		r.Header.Set("X-AccessWeaver-Token", s.Token)
 		w := httptest.NewRecorder()
 		s.Handler().ServeHTTP(w, r)
 		if w.Code != http.StatusForbidden {

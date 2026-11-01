@@ -1,5 +1,12 @@
 # Third-party engines and licenses
 
+The native Zapret/Zapret2/GoodbyeDPI parameter collections in
+`internal/workflow/presets/` are adapted from SplitWire-Turkey commit
+`766422ed8ca9cb5360e8d9d540e80722a0508efc` under its MIT license.
+The copyright and permission notice is retained alongside those files in
+`LICENSE.SplitWire-Turkey`. These collections are version-dependent inputs,
+not evidence that a strategy works on a particular network.
+
 AccessWeaver's original source is licensed under [0BSD](LICENSE). Its Go runtime dependencies are from the Go standard library; the browser application does not load third-party JavaScript or remote fonts. The repository and release packaging do not bundle external engines or their drivers.
 
 The following tools are independent projects. Catalog entries and links do not grant redistribution rights, change their licenses, or imply endorsement. License references below were reviewed on 2026-10-31; check the exact release you install and all of its dependencies.
@@ -18,7 +25,7 @@ The following tools are independent projects. Catalog entries and links do not g
 
 ## WireSock product distinction
 
-AccessWeaver's command adapter targets the Windows SDK foreground client, `wiresock-client.exe`. The WireSock Secure Connect desktop application is a separate vendor product. Their CLI behavior and licensing are not interchangeable.
+AccessWeaver's foreground adapter targets the Windows SDK client, `wiresock-client.exe`. Windows system workflows separately support the modern Secure Connect CLI and vendor services. Their CLI behavior and licensing are not interchangeable.
 
 The [SDK vendor page](https://wiresock.net/wiresock-sdk) describes a free evaluation tier with limited permitted use and telemetry, and separate commercial/OEM arrangements. Read the applicable agreement for your deployment. AccessWeaver's own no-telemetry design and 0BSD license do not extend to an engine launched by it.
 
@@ -26,4 +33,4 @@ The [SDK vendor page](https://wiresock.net/wiresock-sdk) describes a free evalua
 
 Before adding bundled code, packages, installers or drivers, document the exact version, source, license, notices, transitive dependencies, redistribution permissions and verification procedure. Running a user-installed executable through an adapter is not evidence that the executable is trustworthy or legally redistributable.
 
-AccessWeaver is inspired by a profile-oriented workflow; it does not include SplitWire-Turkey source code or assets. Project names and trademarks belong to their respective owners.
+The preset collections identified above are the included SplitWire-Turkey assets. AccessWeaver's workflow implementation is original code. Project names and trademarks belong to their respective owners.

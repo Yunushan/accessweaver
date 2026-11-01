@@ -1,0 +1,505 @@
+{
+  "schemaVersion": 1,
+  "objective": "100% production, premium and enterprise readiness across every documented desktop platform and managed fleets",
+  "assessmentState": "in-progress",
+  "scoring": {
+    "total": 100,
+    "gateWeight": 2,
+    "rule": "Only a passed gate earns credit. Partial implementation, missing evidence, failed tests and compilation alone do not satisfy native acceptance. A numerical report is a verified lower bound during assessment, not an external certification.",
+    "passRequires": "All acceptance requirements met for the actual candidate with source/artifact identity, environment, procedure and result evidence. Every gate must pass before completion."
+  },
+  "areas": [
+    {
+      "id": "functional",
+      "title": "Functional parity",
+      "gates": [
+        {
+          "id": "functional.splitwire",
+          "acceptance": "Every referenced SplitWire option has a mapped implementation and positive/negative native acceptance tests.",
+          "status": "partial",
+          "evidence": [
+            "docs/SPLITWIRE_IMPLEMENTATION.md"
+          ]
+        },
+        {
+          "id": "functional.routing",
+          "acceptance": "Selected and unselected applications have independently verified TCP, UDP, DNS and IPv4/IPv6 paths for each supported routing mode.",
+          "status": "partial",
+          "evidence": [
+            "scripts/test-windows-wiresock.ps1",
+            "build/vm-tests/sandbox/results/wgpeer-self-test/self-test.json"
+          ]
+        },
+        {
+          "id": "functional.dns",
+          "acceptance": "DoH and DNSCrypt work through the ordinary OS resolver and restore DHCP/static state after failure and reboot.",
+          "status": "failed",
+          "evidence": [
+            "build/vm-tests/sandbox/results/reboot-results.json",
+            "docs/SPLITWIRE_IMPLEMENTATION.md"
+          ]
+        },
+        {
+          "id": "functional.scans",
+          "acceptance": "Quick/standard/full scans and auto-install work on representative intended ISPs with safe failure for incomplete results.",
+          "status": "partial",
+          "evidence": [
+            "internal/workflow/scan_test.go",
+            "scripts/test-windows-workflow.ps1"
+          ]
+        },
+        {
+          "id": "functional.applications",
+          "acceptance": "Discord/PTB/SplitCord install, start, removal, clean mode and repair pass interactive tests, including text/voice and cleanup.",
+          "status": "failed",
+          "evidence": [
+            "build/vm-tests/sandbox/applications-v1-results.json"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reliability",
+      "title": "Reliability and recovery",
+      "gates": [
+        {
+          "id": "reliability.shutdown",
+          "acceptance": "Normal exit, cancellation and forced termination leave accurate outcomes and owned processes/resources accounted for.",
+          "status": "partial",
+          "evidence": [
+            "internal/workflow/manager_test.go",
+            "internal/engine/lifecycle_test.go"
+          ]
+        },
+        {
+          "id": "reliability.transactions",
+          "acceptance": "Inject failures after each OS mutation; rollback is repeatable and preserves unrelated resources and changed files.",
+          "status": "partial",
+          "evidence": [
+            "scripts/test-windows-workflow.ps1",
+            "internal/workflow/windows.ps1"
+          ]
+        },
+        {
+          "id": "reliability.resources",
+          "acceptance": "Sustained load, huge child output, log retention, handles, memory, disk exhaustion and installer timeouts stay bounded and observable.",
+          "status": "partial",
+          "evidence": [
+            "internal/logfile/writer_test.go",
+            "scripts/test-windows-workflow.ps1"
+          ]
+        },
+        {
+          "id": "reliability.storage",
+          "acceptance": "Concurrent controllers, crash-safe persistence, corruption handling and backup/restore preserve data without silent lost updates.",
+          "status": "partial",
+          "evidence": [
+            "internal/profile/store.go",
+            "internal/profile/model_test.go"
+          ]
+        },
+        {
+          "id": "reliability.lifecycle",
+          "acceptance": "Install, upgrade, reboot, downgrade and uninstall pass from clean and previously installed states on the supported matrix.",
+          "status": "failed",
+          "evidence": [
+            "build/vm-tests/sandbox/results/reboot-results.json",
+            "scripts/test-windows-integration.ps1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "security",
+      "title": "Security engineering",
+      "gates": [
+        {
+          "id": "security.assessment",
+          "acceptance": "Maintain a threat model and complete independent source/runtime security review with no unresolved release-blocking findings.",
+          "status": "missing",
+          "evidence": [
+            "SECURITY.md"
+          ]
+        },
+        {
+          "id": "security.boundary",
+          "acceptance": "Fuzz and adversarially test loopback API, origins, content types, parsers, imports, paths and launch/review boundaries.",
+          "status": "partial",
+          "evidence": [
+            "internal/api/server_test.go",
+            "internal/profile/model_test.go"
+          ]
+        },
+        {
+          "id": "security.privilege",
+          "acceptance": "Separate ordinary UI from privileged operations; verify protected ACLs, ownership, reparse resistance and executable provenance under hostile local inputs.",
+          "status": "partial",
+          "evidence": [
+            "internal/workflow/windows.ps1",
+            "internal/servicehost/host_windows.go"
+          ]
+        },
+        {
+          "id": "security.secrets",
+          "acceptance": "Prove keys, tokens and sessions do not leak through logs, API responses, crash/support bundles or permissions.",
+          "status": "partial",
+          "evidence": [
+            "internal/engine/plan_test.go",
+            "SECURITY.md"
+          ]
+        },
+        {
+          "id": "security.vulnerabilities",
+          "acceptance": "Run current dependency/toolchain vulnerability analysis and patch supported releases under an owned disclosure process.",
+          "status": "missing",
+          "evidence": [
+            ".github/dependabot.yml",
+            "SECURITY.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "supply",
+      "title": "Release and supply chain",
+      "gates": [
+        {
+          "id": "supply.identity",
+          "acceptance": "CLI, UI, update comparison, installer, manifests and support evidence report the same immutable version/commit and dirty-source state.",
+          "status": "partial",
+          "evidence": [
+            "cmd/accessweaver/main.go",
+            "internal/workflow/release.go",
+            "scripts/build-windows-installer.ps1",
+            "internal/buildinfo/info_test.go",
+            "scripts/verify-release.py",
+            "dist/readiness-preview/BUILD-MANIFEST.json"
+          ]
+        },
+        {
+          "id": "supply.signing",
+          "acceptance": "Release binaries, Windows/macOS installers and update metadata have verified publisher signatures and provenance.",
+          "status": "missing",
+          "evidence": [
+            ".github/workflows/release.yml"
+          ]
+        },
+        {
+          "id": "supply.sbom",
+          "acceptance": "Ship validated SBOMs for core, fixtures, distributed presets and installer dependencies with complete license notices.",
+          "status": "partial",
+          "evidence": [
+            "THIRD_PARTY.md",
+            "scripts/package-release.sh",
+            "scripts/build-windows-fixtures.ps1"
+          ]
+        },
+        {
+          "id": "supply.reproducibility",
+          "acceptance": "Rebuild the release from pinned trusted inputs independently and compare artifacts or document verified signing-only differences.",
+          "status": "partial",
+          "evidence": [
+            "scripts/build-all.sh",
+            ".github/workflows/release.yml"
+          ]
+        },
+        {
+          "id": "supply.updates",
+          "acceptance": "Authenticate update origin and content; test channel selection, compatibility, interrupted upgrade and rollback without losing user state.",
+          "status": "partial",
+          "evidence": [
+            "internal/workflow/release_test.go",
+            "internal/workflow/windows.ps1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "platform",
+      "title": "Supported desktop platforms",
+      "gates": [
+        {
+          "id": "platform.windows",
+          "acceptance": "Run acceptance, lifecycle, security and traffic suites on supported Windows versions, amd64 and arm64, including standard-user/admin behavior.",
+          "status": "partial",
+          "evidence": [
+            "docs/PLATFORMS.md",
+            "scripts/test-windows-integration.ps1"
+          ]
+        },
+        {
+          "id": "platform.linux",
+          "acceptance": "Run acceptance, packaging, permissions, engine routing and lifecycle suites on documented Linux distributions, amd64 and arm64.",
+          "status": "partial",
+          "evidence": [
+            "docs/PLATFORMS.md",
+            ".github/workflows/ci.yml"
+          ]
+        },
+        {
+          "id": "platform.macos",
+          "acceptance": "Run native acceptance and signed distribution on supported macOS versions, Intel and Apple Silicon.",
+          "status": "partial",
+          "evidence": [
+            "docs/PLATFORMS.md",
+            ".github/workflows/ci.yml"
+          ]
+        },
+        {
+          "id": "platform.freebsd",
+          "acceptance": "Run native acceptance, packet-engine prerequisites, routing and lifecycle checks on supported FreeBSD amd64/arm64.",
+          "status": "partial",
+          "evidence": [
+            "docs/PLATFORMS.md"
+          ]
+        },
+        {
+          "id": "platform.openbsd",
+          "acceptance": "Run native acceptance, packet-engine prerequisites, routing and lifecycle checks on supported OpenBSD amd64/arm64.",
+          "status": "partial",
+          "evidence": [
+            "docs/PLATFORMS.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "validation",
+      "title": "Verification quality",
+      "gates": [
+        {
+          "id": "validation.core",
+          "acceptance": "Run unit, integration, static analysis and race tests on the actual candidate; validate regression coverage against requirements.",
+          "status": "partial",
+          "evidence": [
+            ".github/workflows/ci.yml",
+            "internal/logfile/writer_test.go"
+          ]
+        },
+        {
+          "id": "validation.browser",
+          "acceptance": "Run real browser end-to-end tests for editing, navigation, recovery, concurrent tabs and installation review on supported browsers.",
+          "status": "partial",
+          "evidence": [
+            "web/app.test.cjs",
+            "docs/TESTING.md"
+          ]
+        },
+        {
+          "id": "validation.faults",
+          "acceptance": "Exercise malformed inputs, fuzzing, crash/reboot, offline operation, slow dependencies, access denied, full disk and cancellation.",
+          "status": "partial",
+          "evidence": [
+            "scripts/test-windows-workflow.ps1",
+            "internal/workflow/manager_test.go"
+          ]
+        },
+        {
+          "id": "validation.performance",
+          "acceptance": "Measure startup, UI responsiveness, CPU/RAM/handles, throughput, latency and long-duration stability against published budgets.",
+          "status": "missing",
+          "evidence": []
+        },
+        {
+          "id": "validation.qualification",
+          "acceptance": "Produce source-bound reproducible test reports, reviewed release criteria and a complete successful candidate qualification run.",
+          "status": "partial",
+          "evidence": [
+            "docs/TESTING.md",
+            "docs/SPLITWIRE_IMPLEMENTATION.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "product",
+      "title": "Premium product quality",
+      "gates": [
+        {
+          "id": "product.accessibility",
+          "acceptance": "Verify keyboard-only use, focus management, screen readers, contrast, zoom and reduced motion across every screen and modal.",
+          "status": "unverified",
+          "evidence": [
+            "web/index.html",
+            "web/app.css",
+            "web/app.js"
+          ]
+        },
+        {
+          "id": "product.localization",
+          "acceptance": "Review all four languages for complete dynamic content, errors, dates, overflow and correct technical meaning in real UI flows.",
+          "status": "partial",
+          "evidence": [
+            "web/locales.js",
+            "web/app.test.cjs"
+          ]
+        },
+        {
+          "id": "product.onboarding",
+          "acceptance": "A new nontechnical user can select a supported engine, understand privileges/traffic scope, install, verify and recover without developer assistance.",
+          "status": "partial",
+          "evidence": [
+            "README.md",
+            "docs/ENGINES.md"
+          ]
+        },
+        {
+          "id": "product.experience",
+          "acceptance": "Validate coherent responsive layouts, loading/empty/error states, destructive-action review and preserved edits across browser/OS matrix.",
+          "status": "partial",
+          "evidence": [
+            "web/app.test.cjs",
+            "web/system.js"
+          ]
+        },
+        {
+          "id": "product.diagnostics",
+          "acceptance": "Provide actionable health/error reports and independently verified proxy/tunnel/UDP diagnostics, without overstating connectivity.",
+          "status": "partial",
+          "evidence": [
+            "internal/diagnostics/doctor.go",
+            "docs/TESTING.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "enterprise",
+      "title": "Enterprise fleet capabilities",
+      "gates": [
+        {
+          "id": "enterprise.policy",
+          "acceptance": "Implement administrator-enforced policy, roles and least-privilege authorization for permitted engines, inputs, downloads and operations.",
+          "status": "missing",
+          "evidence": []
+        },
+        {
+          "id": "enterprise.enrollment",
+          "acceptance": "Implement authenticated fleet enrollment, device identity, inventory, revocation and tenant separation with negative tests.",
+          "status": "missing",
+          "evidence": []
+        },
+        {
+          "id": "enterprise.rollout",
+          "acceptance": "Implement signed desired-state distribution, staged rollout, drift detection, maintenance windows and safe fleet rollback.",
+          "status": "missing",
+          "evidence": []
+        },
+        {
+          "id": "enterprise.audit",
+          "acceptance": "Provide attributable, redacted, tamper-evident audit events with documented retention and authenticated enterprise export.",
+          "status": "missing",
+          "evidence": []
+        },
+        {
+          "id": "enterprise.management",
+          "acceptance": "Test managed deployment, upgrades, policy import/export and remote support across domain/MDM-managed target systems.",
+          "status": "missing",
+          "evidence": []
+        }
+      ]
+    },
+    {
+      "id": "operations",
+      "title": "Operational readiness",
+      "gates": [
+        {
+          "id": "operations.support",
+          "acceptance": "Publish owned support channels, severity handling, escalation and supported-version/end-of-life commitments that maintainers can meet.",
+          "status": "missing",
+          "evidence": [
+            "SECURITY.md"
+          ]
+        },
+        {
+          "id": "operations.incidents",
+          "acceptance": "Exercise incident response, compromised dependency/update response, release revocation and recovery runbooks.",
+          "status": "missing",
+          "evidence": []
+        },
+        {
+          "id": "operations.observability",
+          "acceptance": "Expose useful local/fleet health, version and failure evidence with privacy-safe collection and tested alert behavior.",
+          "status": "partial",
+          "evidence": [
+            "internal/workflow/manager.go",
+            "internal/engine/runner.go"
+          ]
+        },
+        {
+          "id": "operations.documentation",
+          "acceptance": "Validate user, administrator and developer documentation against current behavior, supported platforms and known limits.",
+          "status": "partial",
+          "evidence": [
+            "README.md",
+            "docs/WINDOWS_WORKFLOWS.md",
+            "CONTRIBUTING.md"
+          ]
+        },
+        {
+          "id": "operations.delivery",
+          "acceptance": "Protect release changes with review, required checks, trusted signing, separation of duties and tested restoration of build/release infrastructure.",
+          "status": "partial",
+          "evidence": [
+            ".github/workflows/ci.yml",
+            ".github/workflows/release.yml"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "data",
+      "title": "Data and privacy",
+      "gates": [
+        {
+          "id": "data.retention",
+          "acceptance": "Document and enforce bounded histories/logs, user-directed deletion and recovery-backup lifecycle without destroying needed evidence.",
+          "status": "partial",
+          "evidence": [
+            "internal/logfile/writer.go",
+            "internal/workflow/manager.go"
+          ]
+        },
+        {
+          "id": "data.backup",
+          "acceptance": "Test encrypted/private backup, restore, migration, disaster recovery and schema compatibility on each supported platform.",
+          "status": "missing",
+          "evidence": [
+            "internal/profile/model.go"
+          ]
+        },
+        {
+          "id": "data.privacy",
+          "acceptance": "Document every outbound destination and third-party behavior; verify no unintended telemetry or credential transmission.",
+          "status": "partial",
+          "evidence": [
+            "THIRD_PARTY.md",
+            "SECURITY.md"
+          ]
+        },
+        {
+          "id": "data.exports",
+          "acceptance": "Provide redacted support/export bundles and test that secrets, keys, session data and unrelated user files cannot be included.",
+          "status": "missing",
+          "evidence": []
+        },
+        {
+          "id": "data.isolation",
+          "acceptance": "Verify standard-user storage isolation, admin/user boundaries and fleet tenant separation under hostile cross-user access.",
+          "status": "partial",
+          "evidence": [
+            "internal/profile/store.go",
+            "internal/workflow/windows.ps1"
+          ]
+        }
+      ]
+    }
+  ],
+  "nextActions": [
+    "Complete native regression validation for bounded logs and durable workflow shutdown.",
+    "Unify version/source identity across runtime and release artifacts.",
+    "Resolve DNSCrypt and interactive Windows app failures in the full disposable VM.",
+    "Implement privileged-operation policy and fleet architecture with tested authentication boundaries.",
+    "Complete independent security review, platform-native qualification, signing and operational ownership."
+  ]
+}

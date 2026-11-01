@@ -26,29 +26,29 @@ import tarfile
 import zipfile
 
 label, binaries = sys.argv[1], Path(sys.argv[2])
+build_info = json.loads((binaries / "BUILD-INFO.json").read_text(encoding="utf-8"))
 out = Path("dist") / label
 out.mkdir(parents=True, exist_ok=True)
 manifest = {
     "project": "AccessWeaver",
     "releaseLabel": label,
     "goVersion": subprocess.check_output(["go", "version"], text=True).strip(),
-    "sourceCommit": "unknown",
+    "sourceCommit": build_info["commit"],
+    "sourceState": build_info["sourceState"],
+    "version": build_info["version"],
+    "builtAt": build_info["builtAt"],
     "unsigned": True,
     "externalEnginesIncluded": False,
     "targetExecutionTested": False,
     "artifacts": [],
 }
-try:
-    manifest["sourceCommit"] = subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
-    ).strip()
-except (OSError, subprocess.CalledProcessError):
-    pass
-
 notices = [Path("LICENSE"), Path("README.md"), Path("README.tr.md"), Path("THIRD_PARTY.md"), Path("SECURITY.md")]
+go_license = Path(subprocess.check_output(["go", "env", "GOROOT"], text=True).strip()) / "LICENSE"
 documents = sorted(path for path in Path("docs").rglob("*") if path.is_file())
 artifacts = []
 for binary in sorted(binaries.iterdir()):
+    if binary.name == "BUILD-INFO.json":
+        continue
     match = re.fullmatch(r"accessweaver-([a-z]+)-([a-z0-9]+)(\.exe)?", binary.name)
     if not match:
         raise SystemExit(f"Unexpected binary: {binary.name}")
@@ -56,6 +56,12 @@ for binary in sorted(binaries.iterdir()):
     directory = f"accessweaver-{label}-{target_os}-{target_arch}"
     pairs = [(binary, f"{directory}/accessweaver{extension or ''}")]
     pairs += [(path, f"{directory}/{path.as_posix()}") for path in notices + documents]
+    pairs += [(Path("internal/workflow/presets/LICENSE.SplitWire-Turkey"), f"{directory}/licenses/SplitWire-Turkey-MIT.txt")]
+    pairs += [(go_license, f"{directory}/licenses/Go-runtime-LICENSE")]
+    target_info = dict(build_info, platform=target_os, arch=target_arch)
+    target_info_file = binaries.parent / (directory + "-BUILD-INFO.json")
+    target_info_file.write_text(json.dumps(target_info, indent=2) + "\n", encoding="utf-8")
+    pairs += [(target_info_file, f"{directory}/BUILD-INFO.json")]
     archive = out / (directory + (".zip" if target_os == "windows" else ".tar.gz"))
     if target_os == "windows":
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zipped:

@@ -10,6 +10,8 @@
 *.test
 *.out
 coverage.txt
+__pycache__/
+*.pyc
 # private local state
 .data/
 *.local.json
