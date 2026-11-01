@@ -21,7 +21,9 @@ import (
 	"time"
 
 	"github.com/Yunushan/accessweaver/internal/logfile"
+	"github.com/Yunushan/accessweaver/internal/managed"
 	"github.com/Yunushan/accessweaver/internal/nativeargs"
+	"github.com/Yunushan/accessweaver/internal/nativepath"
 	"github.com/Yunushan/accessweaver/internal/profile"
 )
 
@@ -121,6 +123,8 @@ func Catalog() []Operation {
 }
 
 type Manager struct {
+	startMu      sync.Mutex
+	guard        *managed.Guard
 	mu           sync.Mutex
 	root         string
 	plans        map[string]Plan
@@ -133,8 +137,9 @@ type Manager struct {
 	requireAdmin func() error
 }
 
-func New(root string) *Manager {
-	return &Manager{root: filepath.Join(root, "workflows"), plans: map[string]Plan{}, execute: execute, platform: runtime.GOOS, requireAdmin: requireAdministrator}
+func New(root string) *Manager { return NewWithGuard(root, managed.NewGuard(nil)) }
+func NewWithGuard(root string, guard *managed.Guard) *Manager {
+	return &Manager{guard: guard, root: filepath.Join(root, "workflows"), plans: map[string]Plan{}, execute: execute, platform: runtime.GOOS, requireAdmin: requireAdministrator}
 }
 
 func (m *Manager) Preview(r Request) (Plan, error) {
@@ -152,6 +157,9 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 	}
 	if err := r.Validate(); err != nil {
 		return p, err
+	}
+	if _, err := workflowPermission(m.guard, r); err != nil {
+		p.Issues = append(p.Issues, err.Error())
 	}
 	if r.Action == "install" {
 		p.Steps = installationSteps(r)
@@ -409,6 +417,8 @@ func profileID(id string) bool {
 }
 
 func (m *Manager) Start(id string) (Job, error) {
+	m.startMu.Lock()
+	defer m.startMu.Unlock()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closing {
@@ -423,6 +433,22 @@ func (m *Manager) Start(id string) (Job, error) {
 	}
 	if !p.Ready {
 		return Job{}, errors.New(strings.Join(p.Issues, "; "))
+	}
+	// Native provenance checks must not hold the status mutex while doing I/O.
+	m.mu.Unlock()
+	_, policyErr := workflowPermission(m.guard, p.Request)
+	m.mu.Lock()
+	if policyErr != nil {
+		return Job{}, policyErr
+	}
+	if m.closing {
+		return Job{}, errors.New("system workflow manager is shutting down")
+	}
+	if m.job.State == "running" {
+		return Job{}, errors.New("a system workflow is already running")
+	}
+	if _, ok := m.plans[id]; !ok || time.Now().After(p.ExpiresAt) {
+		return Job{}, errors.New("workflow plan expired; preview again")
 	}
 	if p.RequiresAdministrator {
 		if err := m.checkAdministrativeAccess(); err != nil {
@@ -542,6 +568,10 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	if runtime.GOOS != "windows" {
 		return nil, errors.New("Windows required")
 	}
+	permission, err := workflowPermission(managed.NewGuard(nil), r)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
@@ -556,11 +586,14 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	}
 	hook, _ := presetFiles.ReadFile("presets/00-accessweaver-isp.sh")
 	input := struct {
-		Request    Request `json:"request"`
-		Controller string  `json:"controller"`
-		ResultPath string  `json:"resultPath"`
-		ISPHook    string  `json:"ispHook"`
-	}{r, executable, filepath.Join(dir, "result.json"), string(hook)}
+		Request        Request                `json:"request"`
+		Controller     string                 `json:"controller"`
+		ResultPath     string                 `json:"resultPath"`
+		ISPHook        string                 `json:"ispHook"`
+		ManagedPolicy  bool                   `json:"managedPolicy"`
+		AllowDownloads bool                   `json:"allowDownloads"`
+		Downloads      []managed.DownloadRule `json:"downloads"`
+	}{r, executable, filepath.Join(dir, "result.json"), string(hook), permission.Managed, permission.AllowDownloads, permission.Downloads}
 	b, _ := json.Marshal(input)
 	requestPath := filepath.Join(dir, "request.json")
 	if err := profile.AtomicWrite(requestPath, b); err != nil {
@@ -571,8 +604,18 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	// reread as privileged code or as a different request after launch review.
 	program := strings.Replace(string(script), "param([Parameter(Mandatory=$true)][string]$RequestPath)", "param()", 1)
 	program = strings.Replace(program, "$inputData = Get-Content -LiteralPath $RequestPath -Raw | ConvertFrom-Json", "$inputData = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+base64.StdEncoding.EncodeToString(b)+"')) | ConvertFrom-Json", 1)
-	powershell := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+	systemDirectory, err := nativepath.SystemDirectory()
+	if err != nil {
+		return nil, err
+	}
+	powershell := filepath.Join(systemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")
+	environment, err := nativepath.ProcessEnvironment()
+	if err != nil {
+		return nil, err
+	}
 	cmd := exec.CommandContext(ctx, powershell, "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", "$source=[Console]::In.ReadToEnd(); & ([scriptblock]::Create($source))")
+	cmd.Env = environment
+	cmd.Dir = systemDirectory
 	cmd.Stdin = strings.NewReader(program)
 	cmd.WaitDelay = 2 * time.Second
 	configureCommand(cmd)

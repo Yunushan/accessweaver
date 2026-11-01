@@ -207,3 +207,29 @@ func FuzzVerifyEnvelope(f *testing.F) {
 		_, _ = Verify(data, public, time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC), 0)
 	})
 }
+
+func TestPinnedDownloadRulesRejectAmbiguousSources(t *testing.T) {
+	data, _, _, now := fixture(t)
+	var p Policy
+	if err := json.Unmarshal(data, &p); err != nil {
+		t.Fatal(err)
+	}
+	pin := DownloadRule{URL: "https://github.com/hufrea/byedpi/releases/download/v-test/component.zip", SHA256: strings.Repeat("a", 64)}
+	p.Downloads = []DownloadRule{pin}
+	data, _ = json.Marshal(p)
+	if _, err := DecodePolicy(data, now, 0); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"http://example.org/file", "https://user:password@example.org/file", "https://example.org/file#fragment", "relative.zip"} {
+		p.Downloads = []DownloadRule{{URL: bad, SHA256: pin.SHA256}}
+		data, _ = json.Marshal(p)
+		if _, err := DecodePolicy(data, now, 0); err == nil {
+			t.Fatal("invalid download source accepted", bad)
+		}
+	}
+	p.Downloads = []DownloadRule{pin, pin}
+	data, _ = json.Marshal(p)
+	if _, err := DecodePolicy(data, now, 0); err == nil {
+		t.Fatal("duplicate download authority accepted")
+	}
+}

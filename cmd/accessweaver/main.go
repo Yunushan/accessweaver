@@ -21,6 +21,7 @@ import (
 	"github.com/Yunushan/accessweaver/internal/diagnostics"
 	"github.com/Yunushan/accessweaver/internal/engine"
 	"github.com/Yunushan/accessweaver/internal/filelock"
+	"github.com/Yunushan/accessweaver/internal/managed"
 	"github.com/Yunushan/accessweaver/internal/profile"
 	"github.com/Yunushan/accessweaver/internal/servicehost"
 	"github.com/Yunushan/accessweaver/internal/uiaccess"
@@ -190,6 +191,9 @@ func execute(args []string) error {
 		}
 		fmt.Println("Imported:", p.ID)
 	case "doctor":
+		if err := managed.NewGuard(nil).Diagnostics(); err != nil {
+			return err
+		}
 		host := "discord.com"
 		if len(args) > 1 {
 			host = args[1]

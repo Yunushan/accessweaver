@@ -17,3 +17,10 @@ func TestPolicyDigestBindsWorkflowAndRejectsInvalidRequest(t *testing.T) {
 		t.Fatal("invalid workflow received approval digest")
 	}
 }
+
+func TestWorkflowDigestVersionOneCompatibility(t *testing.T) {
+	digest, err := (Request{Action: "dns", DNS: "doh"}).PolicyDigest()
+	if err != nil || digest != "e269846228db05c31677239f253b48798b5fa1220aa9b9c4f6f6185d364c6b12" {
+		t.Fatal("version-one workflow approval digest changed", digest, err)
+	}
+}

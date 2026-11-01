@@ -16,6 +16,8 @@ import (
 	"unsafe"
 
 	"github.com/Yunushan/accessweaver/internal/logfile"
+	"github.com/Yunushan/accessweaver/internal/managed"
+	"github.com/Yunushan/accessweaver/internal/nativepath"
 )
 
 var advapi = syscall.NewLazyDLL("advapi32.dll")
@@ -30,7 +32,14 @@ type tableEntry struct {
 }
 
 func Run(file string) error {
-	root := filepath.Join(os.Getenv("ProgramData"), "AccessWeaver")
+	if err := managed.NewGuard(nil).ServiceHost(); err != nil {
+		return err
+	}
+	programData, err := nativepath.ProgramData()
+	if err != nil {
+		return err
+	}
+	root := filepath.Join(programData, "AccessWeaver")
 	absolute, err := filepath.Abs(file)
 	if err != nil {
 		return err

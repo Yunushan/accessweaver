@@ -177,3 +177,34 @@ Assert (@($script:dnsCalls|Where-Object {$_.family -eq 'IPv6' -and $_.reset}).Co
 Assert (@($script:dohCalls|Where-Object {$_.action -eq 'set' -and $_.template -eq 'https://original.invalid/dns-query'}).Count -eq 1) 'Original DoH metadata is restored'
 Assert (-not (Test-Path -LiteralPath $dnsSnapshot)) 'DNS snapshot removed only after successful recovery'
 Write-Output 'DNS workflow contracts completed using mock OS cmdlets.'
+
+$oldInputData=$inputData
+$inputData=[pscustomobject]@{managedPolicy=$true;allowDownloads=$false}
+foreach($operation in @('release','download')){
+    $rejected=$false
+    try{if($operation -eq 'release'){Read-RemoteJSON -Uri 'https://invalid.invalid/not-called' -Headers @{}}else{Download 'https://invalid.invalid/not-called' '' 'not-written'}}catch{$rejected=$_.Exception.Message -match 'Administrator policy'}
+    Assert $rejected ('Managed '+$operation+' blocked before any network or file operation')
+}
+$inputData=[pscustomobject]@{managedPolicy=$true;allowDownloads=$true}
+Require-DownloadPermission
+Assert $true 'Explicit managed download permission accepted without performing a request'
+$inputData=[pscustomobject]@{managedPolicy=$false;allowDownloads=$false}
+Require-DownloadPermission
+Assert $true 'Unmanaged download behavior preserved'
+$inputData=$oldInputData
+
+$pinURL='https://github.com/hufrea/byedpi/releases/download/v-test/fixture.zip'
+$pinHash=('a'*64)
+$inputData=[pscustomobject]@{managedPolicy=$true;allowDownloads=$true;downloads=@(@{url=$pinURL;sha256=$pinHash})}
+Assert ((Approved-DownloadHash $pinURL '') -eq $pinHash) 'Managed download uses administrator hash even when release metadata omits it'
+$rejected=$false;try{Approved-DownloadHash $pinURL ('b'*64)|Out-Null}catch{$rejected=$_.Exception.Message -match 'conflicts with administrator policy'}
+Assert $rejected 'Remote release metadata cannot replace the administrator artifact hash'
+$rejected=$false;try{Download ($pinURL+'-unapproved') $pinHash 'not-written'}catch{$rejected=$_.Exception.Message -match 'Administrator policy does not pin'}
+Assert $rejected 'An unpinned component is blocked before a network request'
+$inputData=$oldInputData
+
+$archiveRoot=Join-Path $root 'archive-fixture'
+foreach($url in @('https://github.com/hufrea/byedpi/releases/download/v-test/component.zip','https://github.com/hufrea/byedpi/releases/download/v-test/..%2F..%2Foutside.zip')){
+    $target=Component-ArchivePath $archiveRoot $url
+    Assert ((Under $target $archiveRoot) -and [IO.Path]::GetFileName($target) -match '^asset-[a-f0-9]{32}\.zip$') 'Component metadata cannot select the staging filename or escape its directory'
+}

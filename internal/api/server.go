@@ -21,12 +21,14 @@ import (
 	"github.com/Yunushan/accessweaver/internal/buildinfo"
 	"github.com/Yunushan/accessweaver/internal/diagnostics"
 	"github.com/Yunushan/accessweaver/internal/engine"
+	"github.com/Yunushan/accessweaver/internal/managed"
 	"github.com/Yunushan/accessweaver/internal/profile"
 	"github.com/Yunushan/accessweaver/internal/uiaccess"
 	"github.com/Yunushan/accessweaver/internal/workflow"
 )
 
 type Server struct {
+	Policy    *managed.Guard
 	Store     *profile.Store
 	Manager   *engine.Manager
 	Workflows *workflow.Manager
@@ -41,7 +43,7 @@ func New(store *profile.Store, manager *engine.Manager, static fs.FS) (*Server, 
 	if _, err := rand.Read(b); err != nil {
 		return nil, err
 	}
-	return &Server{Store: store, Manager: manager, Workflows: workflow.New(store.Root), UI: static, Token: base64.RawURLEncoding.EncodeToString(b)}, nil
+	return &Server{Policy: managed.NewGuard(nil), Store: store, Manager: manager, Workflows: workflow.New(store.Root), UI: static, Token: base64.RawURLEncoding.EncodeToString(b)}, nil
 }
 func JSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -57,6 +59,12 @@ func failProfile(w http.ResponseWriter, err error, fallback int) {
 	status := fallback
 	if errors.Is(err, profile.ErrConflict) {
 		status = http.StatusConflict
+	}
+	if errors.Is(err, managed.ErrDenied) {
+		status = http.StatusForbidden
+	}
+	if errors.Is(err, managed.ErrUnavailable) {
+		status = http.StatusServiceUnavailable
 	}
 	if errors.Is(err, profile.ErrStoreBusy) {
 		status = http.StatusServiceUnavailable
@@ -144,7 +152,7 @@ func (s *Server) Handler() http.Handler {
 			fail(w, 400, err.Error())
 			return
 		}
-		plan, err := engine.Preview(p, s.Store.Root)
+		plan, err := s.Manager.Preview(p)
 		if err != nil {
 			fail(w, 400, err.Error())
 			return
@@ -179,7 +187,7 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		if err := s.Manager.Start(p); err != nil {
-			fail(w, 400, err.Error())
+			failProfile(w, err, http.StatusBadRequest)
 			return
 		}
 		JSON(w, 200, s.Manager.Snapshot())
@@ -192,6 +200,10 @@ func (s *Server) Handler() http.Handler {
 		JSON(w, 200, s.Manager.Snapshot())
 	})
 	mux.HandleFunc("POST /api/v1/diagnose", func(w http.ResponseWriter, r *http.Request) {
+		if err := s.Policy.Diagnostics(); err != nil {
+			fail(w, http.StatusForbidden, err.Error())
+			return
+		}
 		var p profile.Probe
 		if err := readJSON(w, r, &p); err != nil {
 			fail(w, 400, err.Error())

@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"reflect"
 	"regexp"
 	"strings"
@@ -28,14 +29,21 @@ var enginePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,49}$`)
 // Empty allowlists and false permissions are deny-by-default policy intent.
 // Execution guards and a protected machine trust store must consume this intent.
 type Policy struct {
+	Downloads           []DownloadRule `json:"downloads,omitempty"`
 	SchemaVersion       int            `json:"schemaVersion"`
 	Revision            uint64         `json:"revision"`
 	IssuedAt            time.Time      `json:"issuedAt"`
 	ExpiresAt           time.Time      `json:"expiresAt"`
+	AllowDownloads      bool           `json:"allowDownloads"`
 	AllowDiagnostics    bool           `json:"allowDiagnostics"`
 	AllowProfileChanges bool           `json:"allowProfileChanges"`
 	Launches            []LaunchRule   `json:"launches"`
 	Workflows           []WorkflowRule `json:"workflows"`
+}
+
+type DownloadRule struct {
+	URL    string `json:"url"`
+	SHA256 string `json:"sha256"`
 }
 
 type LaunchRule struct {
@@ -99,8 +107,19 @@ func DecodePolicy(data []byte, now time.Time, minimumRevision uint64) (Policy, e
 	if !p.ExpiresAt.After(now) {
 		return p, errors.New("policy has expired")
 	}
-	if len(p.Launches) > 128 || len(p.Workflows) > 128 {
+	if len(p.Launches) > 128 || len(p.Workflows) > 128 || len(p.Downloads) > 128 {
 		return p, errors.New("policy allowlist exceeds 128 entries")
+	}
+	urls := map[string]bool{}
+	for _, download := range p.Downloads {
+		parsed, err := url.Parse(download.URL)
+		if err != nil || len(download.URL) > 4096 || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" || !digestPattern.MatchString(download.SHA256) {
+			return p, errors.New("invalid pinned download URL or SHA-256")
+		}
+		if urls[download.URL] {
+			return p, errors.New("duplicate pinned download URL")
+		}
+		urls[download.URL] = true
 	}
 	seen := map[string]bool{}
 	for _, rule := range p.Launches {

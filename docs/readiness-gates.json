@@ -398,8 +398,20 @@
         {
           "id": "enterprise.policy",
           "acceptance": "Administrator-enforced local policy controls permitted engines, executable provenance, inputs, downloads and privileged operations; ordinary users cannot alter policy or bypass it within the managed installation.",
-          "status": "missing",
-          "evidence": []
+          "status": "partial",
+          "evidence": [
+            "internal/managed/guard.go",
+            "internal/managed/machine_windows.go",
+            "internal/managed/provenance_windows.go",
+            "internal/managed/guard_test.go",
+            "internal/profile/policy_test.go",
+            "internal/engine/policy_test.go",
+            "internal/workflow/policy_test.go",
+            "internal/api/policy_test.go",
+            "internal/nativepath/paths_windows_test.go",
+            "docs/MANAGED_CONFIGURATION.md",
+            "cmd/accessweaver/managed_native_windows_test.go"
+          ]
         },
         {
           "id": "enterprise.configuration",
@@ -410,7 +422,10 @@
             "internal/managed/policy_test.go",
             "cmd/accessweaver/managed.go",
             "cmd/accessweaver/managed_test.go",
-            "docs/MANAGED_CONFIGURATION.md"
+            "docs/MANAGED_CONFIGURATION.md",
+            "internal/managed/machine.go",
+            "internal/managed/machine_test.go",
+            "internal/managed/machine_windows_test.go"
           ]
         },
         {

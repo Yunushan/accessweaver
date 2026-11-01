@@ -1,16 +1,16 @@
 # Signed managed configuration
 
-Current status: administrator tooling for review, signing and signature verification. Machine enrollment, protected trust/revision storage and runtime policy enforcement are still required. Verification returns `runtimeEnforced: false`; it does not authorize or apply any operation. The policy readiness gate remains missing, and configuration readiness remains partial.
+Current status: signed administrator documents and partial Windows runtime enforcement through protected machine configuration. The production/enterprise readiness gates remain partial. Verification alone returns `runtimeEnforced: false`; offline tools do not enroll or authorize a machine. Non-Windows machine policy, transactional enrollment/recovery, protected input staging, service authorization and managed-endpoint qualification remain work.
 
 ## Document and trust contract
 
-A policy contains `schemaVersion: 1`, a monotonically increasing `revision`, `issuedAt`, `expiresAt`, permission booleans and launch/workflow approval rules. An empty allowlist and false permissions express denial. The verifier checks the supplied clock, rejects expiry at or before that clock, and allows issuance at most five minutes ahead for clock skew. Revisions must be positive JSON-safe integers (at most 9007199254740991). Changing any policy byte, including whitespace, invalidates its signature.
+A policy contains `schemaVersion: 1`, a monotonically increasing `revision`, `issuedAt`, `expiresAt`, permission booleans (`allowDiagnostics`, `allowProfileChanges`, `allowDownloads`), launch/workflow approvals and optional pinned `downloads` rules. An empty allowlist and false permissions express denial. The verifier checks the supplied clock, rejects expiry at or before that clock, and allows issuance at most five minutes ahead for clock skew. Revisions must be positive JSON-safe integers (at most 9007199254740991). Changing any policy byte, including whitespace, invalidates its signature.
 
 The envelope has four fields: `schemaVersion`, `keyId`, `payload` and `signature`. `payload` is standard padded base64 of the exact UTF-8 policy bytes. `keyId` is lowercase SHA-256 of the raw 32-byte Ed25519 public key. `signature` is standard padded base64 of an Ed25519 signature over the bytes `AccessWeaver managed policy v1` followed by a NUL byte and then the exact payload. No algorithm negotiation or envelope-supplied public key is accepted. The verifier uses only the public key selected independently by the operator. The implementation uses [Go's Ed25519 package](https://pkg.go.dev/crypto/ed25519).
 
-Policy input is limited to 64 KiB, envelopes to 128 KiB, and each allowlist to 128 rules. Unknown fields, case aliases, duplicate keys at any level, trailing documents, noncanonical base64, malformed hashes and inconsistent private keys are rejected. Use UTF-8 without a BOM for signed policy documents. The original payload remains embedded in the envelope; decoding and re-encoding it before verification is invalid.
+Policy input is limited to 64 KiB, envelopes to 128 KiB, and each launch/workflow/download allowlist to 128 rules. Unknown fields, case aliases, duplicate keys at any level, trailing documents, noncanonical base64, malformed hashes and inconsistent private keys are rejected. Use UTF-8 without a BOM for signed policy documents. The original payload remains embedded in the envelope; decoding and re-encoding it before verification is invalid.
 
-`--minimum-revision N` requires a policy revision strictly greater than N. N must come from trusted prior deployment state. The review command does not save it, enroll a key, rotate trust, import policy, prevent local state rollback or change profiles. Passing a command-line number alone is not persistent rollback protection.
+`--minimum-revision N` requires a policy revision strictly greater than N. N must come from trusted prior deployment state. The review command does not save it, enroll a key, rotate trust, import policy, prevent local state rollback or change profiles. Windows runtime verifies the revision floor in the protected installation value, but administrator-controlled import must still preserve/increase that floor atomically. Passing a command-line number alone is not persistent rollback protection.
 
 ## Offline administrator workflow
 
@@ -24,7 +24,7 @@ accessweaver managed public-key --private-key signer.private.pem
 
 Transfer only the printed public key to the review/deployment environment through your trusted administrative channel. The output is base64 of the raw public key, not a PEM block or base64 of an entire SubjectPublicKeyInfo document. Never distribute the private signing key with the envelope, logs or support artifacts.
 
-Author a policy with current UTC validity timestamps. This example expresses denial of all operations; it is a document example, not an enforced lockdown:
+Author a policy with current UTC validity timestamps. This example expresses denial of all governed operations when deployed as protected Windows installation data. The signing command alone does not activate it:
 
 ```json
 {
@@ -32,6 +32,7 @@ Author a policy with current UTC validity timestamps. This example expresses den
   "revision": 1,
   "issuedAt": "2026-11-01T00:00:00Z",
   "expiresAt": "2026-11-02T00:00:00Z",
+  "allowDownloads": false,
   "allowDiagnostics": false,
   "allowProfileChanges": false,
   "launches": [],
@@ -58,16 +59,53 @@ accessweaver managed digest-profile profile.json
 accessweaver managed digest-workflow request.json
 ```
 
-These commands print `inputSHA256` and `runtimeEnforced: false`. A digest grants no authority. It is a review artifact for a future protected-policy compiler and runtime guard.
+These commands print `inputSHA256` and `runtimeEnforced: false`. A digest grants no authority by itself. It must match an approval in the signed, protected machine policy.
 
 A launch input digest binds version, engine, binary/configuration references, the profile's expected executable hash, arguments and all routing lists. Display identity, names, descriptions, notes, update timestamps and diagnostic probes are excluded because they do not control engine launch. Empty and absent lists normalize consistently; the profile SHA-256 spelling normalizes to lowercase. Other list ordering and spelling remain significant. Separate `binarySHA256` and optional `configSHA256` rule fields are required to identify file contents rather than only their references. Approval must also cover executable dependencies and referenced assets through future provenance checks.
 
-A workflow digest binds every field of the validated typed `workflow.Request`, including its action, engine, paths, selected applications, domain/target lists, flags, URL/hash and journal ID. JSON formatting and omitted zero values normalize through that typed representation. Unknown actions receive no digest. Input digests use SHA-256 of `AccessWeaver managed launch input v1` or `AccessWeaver managed workflow input v1`, followed by a NUL byte and the respective typed JSON bytes. CLI and runtime code must use the same helpers.
+A workflow digest binds every field of the validated typed `workflow.Request`, including its action, engine, paths, selected applications, domain/target lists, flags, URL/hash and journal ID. JSON formatting and omitted zero values normalize through that typed representation. Unknown actions receive no digest. Input digests use SHA-256 of `AccessWeaver managed launch input v1` or `AccessWeaver managed workflow input v1`, followed by a NUL byte and the respective typed JSON bytes. CLI and runtime use the same helpers. Compatibility vectors retain the version-one digests produced by commit `0178f99`.
 
-Launch rules contain `engine`, `inputSHA256`, `binarySHA256` and optional `configSHA256`. Workflow rules contain `action` and `inputSHA256`. Duplicate engine/action plus input-hash approvals are rejected. These rules currently record signed administrative intent only.
+Launch rules contain `engine`, `inputSHA256`, `binarySHA256` and optional `configSHA256`. Workflow rules contain `action` and `inputSHA256`. Duplicate engine/action plus input-hash approvals are rejected. The Windows runtime compares these approvals before execution and checks permission again at mutation/start boundaries. Separate input-provenance limits below still apply. Installation data is user-readable approval data, so manifest URLs must not carry credentials or private tokens.
+
+## Protected Windows source and runtime behavior
+
+Windows reads only the 64-bit registry view at `HKLM\SOFTWARE\Policies\AccessWeaver`, value `Installation` of type `REG_BINARY`. It contains a single UTF-8 JSON object with `schemaVersion: 1`, `publicKey`, `minimumRevision` and the signed `envelope`. One value prevents readers mixing a new key, old revision floor and different envelope. The key and fixed ancestors must be owned by SYSTEM, Administrators or TrustedInstaller, with no ordinary-principal rights to mutate values, subkeys, ownership or DACLs. Ordinary deny ACEs, inherit-only ACEs and Windows owner placeholders are handled explicitly; unsupported ACE forms fail closed. [Windows documents registry access rights](https://learn.microsoft.com/en-us/windows/win32/sysinfo/registry-key-security-and-access-rights).
+
+An absent protected key means unmanaged. A present key with a missing/empty value, weak ACL, inaccessible data, invalid signature, stale revision or expired policy blocks governed actions; it never silently falls back to unmanaged mode. `ACCESSWEAVER_HOME`, user profiles, browser storage and environment variables cannot choose the authority. There is no user-facing bypass switch.
+
+Prepare a candidate file locally with the existing pinned public key and trusted prior revision:
+
+```bash
+accessweaver managed prepare envelope.json --public-key BASE64_PUBLIC_KEY --minimum-revision 0 --out installation.json
+accessweaver managed status
+```
+
+Preparation validates the envelope and exclusively creates a UTF-8 file. It does not write the registry. Existing endpoint-management tooling must deploy that complete file as one `REG_BINARY` value, with administrator-only write/ownership permissions and ordinary-user read access. A suitable leaf descriptor is `O:BAG:BAD:P(A;;KA;;;SY)(A;;KA;;;BA)(A;;KR;;;BU)`. Validate deployment only on disposable managed test endpoints first. No test in the ordinary unit suite creates, modifies or deletes HKLM keys on its host.
+
+`managed status` reports `supported`, `configured`, `valid`, revision/expiry and `enforcement` (`none`, `partial` or `blocked`). Invalid/unreadable state returns a nonzero exit status and structured blocked status; configured includes state that cannot safely be excluded because source protection failed. Unix targets currently report unsupported machine enforcement and retain ordinary behavior. Offline `managed verify` still reports `runtimeEnforced: false` because a reviewed file is not machine enrollment.
+
+Current guarded paths are:
+
+- Profile save, revision-based save, delete and first-run seeding. Read-only policy skips seeding. Saves/deletes check permission again after acquiring the storage lock; reads remain available.
+- CLI and authenticated API diagnostics before probing a network.
+- Foreground launch preview, preparation and final process start. Approval binds the version-one input digest and expected binary/configuration hashes. Generated routing files and raw native-argument assets fail closed until protected staging/validation exists. Files require trusted administrator ownership and non-user-writable ancestor/sibling protection on fixed local drives. Reparse points and alternate data streams are refused; directory inspection is streamed and bounded to 4096 entries/32 levels, and individual hashing to 512 MiB. This conservatively excludes locations such as ordinary user directories and default broadly writable ProgramData ancestors. Use qualified immutable application storage; native location/alias compatibility remains to be tested.
+- Reviewed Windows workflow requests, rechecked after preview and again by the actual worker. Supplied configuration/bundle paths must pass native provenance checks; raw native-argument assets are blocked pending protected compilation. `allowDownloads: false` blocks release lookups and component retrieval before network activity. With downloads enabled, `downloads` entries pin each implicit dependency's exact HTTPS URL and SHA-256; remote release metadata cannot replace a pin. A directly approved `download` request already binds its own URL/hash through the signed request digest. Publisher verification remains an additional check for signed installers. Network activity intrinsic to an approved vendor program, including explicitly approved WARP registration, still needs vendor/native qualification.
+- The `service-host` entry point. Enrolled machines currently reject these service starts until signed service-specific authorization and protected broker integration exist. Existing running jobs/services are not automatically revoked or terminated by policy changes. Pending starts cannot outlive manager shutdown while waiting for policy/provenance I/O.
+
+Native workers resolve system tools through `GetSystemDirectoryW`. Shared storage is derived from the ACL-checked machine `ProfileList\ProgramData` setting, expanding only OS-derived SystemDrive/SystemRoot/WINDIR values. Program Files and common-program roots likewise come from protected machine registration rather than caller environment values. This avoids caller-environment expansion in the ordinary common-directory API. Tests compare the result with that API in the normal environment and repeat lookup in a fresh process with poisoned environment values. PowerShell workers use a trusted working directory and module path, remove CLR/module/runtime injection variables, and use protected temporary storage for machine changes. Managed foreground engines receive a sanitized environment tied to the same authority read as final launch authorization. These controls do not sandbox an approved vendor executable.
 
 ## Remaining integration and acceptance
 
-The managed installation needs a protected machine trust anchor, authenticated enrollment/key rotation, monotonic revision storage and atomic import/recovery before these documents can control behavior. Ordinary-user environment variables, profile JSON and browser storage must not select or replace that authority. CLI, loopback API, workflow workers and service-host entry points must enforce the same effective policy and recheck authority at execution time. Executable/configuration provenance, mutable generated files, DLL/assets, download restrictions, privilege separation, running-job revocation, policy expiry and uninstall recovery need explicit integration and adversarial tests on managed endpoints.
+Transactional enrollment, trusted key rotation, monotonic import and last-known-good recovery must still be implemented and exercised; manual endpoint-management writes can misconfigure state, and a trusted administrator can replace it. Complete non-Windows authority storage/enforcement, protected generated/native-argument inputs, signed service authorization and privilege separation. Test supported Windows versions/architectures, relocated/native path aliases, dependency/configuration behavior, policy expiry/revocation while jobs run, reboot, upgrade/downgrade and uninstall recovery. Policy can deliberately block recovery or uninstall requests too, so deployment must include a separately reviewed administrator recovery procedure. Do not deploy an empty allowlist over active production services as an experiment.
 
-Test document handling with `go test ./internal/managed ./internal/workflow ./cmd/accessweaver -count=1`. Tests cover signed payload tampering, key substitution, protocol separation, external signers supplying malformed JSON, revision/time boundaries, input digests, exclusive output creation and absence of application-state mutation. Fuzz targets exercise the policy and envelope parsers. This evidence does not certify managed deployment or grant readiness credit for enforcement.
+All controllers and service copies must use the qualified build. Publisher signing and OS application-control/deployment rules are still needed to prevent older or modified binaries, arbitrary same-user code injection and execution outside this installation from bypassing an application-level check. The current implementation is not an isolation boundary against arbitrary code with the controller's permissions.
+
+Tests cover signatures and strict parsing, revision/time boundaries, native descriptor validation, read-only registry access, approval/provenance decisions, profile-lock and workflow/start revocation races, API denial, pinned download contracts and a real read-only PowerShell discovery process under an untrusted environment. Native install/routing/managed-domain acceptance remains a disposable-VM qualification requirement. No compilation, mocked provenance decision or ordinary CI pass grants full enterprise readiness credit.
+
+## Disposable hosted Windows acceptance
+
+The dedicated CI/release step runs `TestDisposableManagedPolicyNative` on a fresh GitHub-hosted Windows VM after ordinary tests. It requires the explicit `ACCESSWEAVER_DISPOSABLE_POLICY_TEST=1` opt-in, the hosted Windows runner context, an administrative non-SYSTEM account and absence of any existing AccessWeaver policy. Never set this flag on a desktop or self-hosted runner. [GitHub documents per-job hosted VM isolation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job).
+
+The test creates one volatile, protected policy key and one uniquely named protected Program Files fixture directory. It approves and starts an inert test-only executable, checks read-only profiles and denied diagnostics/workflows/service starts, probes registry/file write denial with an impersonated token whose administrator SID and privileges are disabled, rejects changed executable bytes and verifies that invalid installed policy cannot become unmanaged. Cleanup removes only its newly created key and validates the exact fixture directory before recursive deletion. It does not install vendor software, change services/DNS/firewall settings or send network probes. The fixture branch exists only in a Go test binary and is absent from production builds.
+
+Public result metadata is retained under `build/managed-policy-checks/`; check the exact source-bound CI run for its outcome. Hosted Windows Server coverage is not domain/MDM enrollment, Windows desktop/ARM acceptance, interactive browser qualification or real driver/network lifecycle acceptance. Failed cleanup fails the test; an evidence field indicating scheduled cleanup alone does not prove completion.

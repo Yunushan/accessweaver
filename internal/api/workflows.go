@@ -16,7 +16,7 @@ func (s *Server) workflowRoutes(mux *http.ServeMux) {
 		}
 		job, err := s.Workflows.Start(plan.ID)
 		if err != nil {
-			fail(w, 409, err.Error())
+			failProfile(w, err, http.StatusConflict)
 			return
 		}
 		JSON(w, 202, job)
@@ -68,7 +68,7 @@ func (s *Server) workflowRoutes(mux *http.ServeMux) {
 		}
 		job, err := s.Workflows.Start(input.PlanID)
 		if err != nil {
-			fail(w, 409, err.Error())
+			failProfile(w, err, http.StatusConflict)
 			return
 		}
 		JSON(w, 202, job)

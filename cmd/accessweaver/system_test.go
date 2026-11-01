@@ -10,7 +10,7 @@ import (
 func TestMetadataCommandsDoNotCreateUserState(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "not-created")
 	t.Setenv("ACCESSWEAVER_HOME", root)
-	for _, args := range [][]string{{"version", "--json"}, {"system", "check-version", "v0.1.0-alpha"}, {"system", "operations"}, {"help"}} {
+	for _, args := range [][]string{{"version", "--json"}, {"managed", "status"}, {"managed"}, {"system", "check-version", "v0.1.0-alpha"}, {"system", "operations"}, {"help"}} {
 		if err := execute(args); err != nil {
 			t.Fatalf("%v: %v", args, err)
 		}

@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"unsafe"
+
+	"github.com/Yunushan/accessweaver/internal/nativepath"
 )
 
 func configureCommand(cmd *exec.Cmd) {
@@ -17,7 +20,17 @@ func configureCommand(cmd *exec.Cmd) {
 		if cmd.Process == nil {
 			return nil
 		}
-		return exec.Command("taskkill.exe", "/PID", strconv.Itoa(cmd.Process.Pid), "/T", "/F").Run()
+		systemDirectory, err := nativepath.SystemDirectory()
+		if err != nil {
+			return err
+		}
+		kill := exec.Command(filepath.Join(systemDirectory, "taskkill.exe"), "/PID", strconv.Itoa(cmd.Process.Pid), "/T", "/F")
+		kill.Env, err = nativepath.UtilityEnvironment()
+		if err != nil {
+			return err
+		}
+		kill.Dir = systemDirectory
+		return kill.Run()
 	}
 }
 

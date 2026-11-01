@@ -12,10 +12,12 @@ import (
 	"time"
 
 	"github.com/Yunushan/accessweaver/internal/filelock"
+	"github.com/Yunushan/accessweaver/internal/managed"
 )
 
 type Store struct {
-	Root string
+	Root  string
+	guard *managed.Guard
 }
 
 // ErrConflict means the caller's reviewed revision no longer names the saved
@@ -29,11 +31,13 @@ func DefaultRoot() (string, error) {
 	}
 	return filepath.Join(p, "AccessWeaver"), nil
 }
-func NewStore(root string) (*Store, error) {
+func NewStore(root string) (*Store, error) { return NewStoreWithGuard(root, managed.NewGuard(nil)) }
+
+func NewStoreWithGuard(root string, guard *managed.Guard) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(root, "profiles"), 0700); err != nil {
 		return nil, err
 	}
-	return &Store{Root: root}, nil
+	return &Store{Root: root, guard: guard}, nil
 }
 func (s *Store) filename(id string) (string, error) {
 	if !idPattern.MatchString(id) {
@@ -126,6 +130,9 @@ func (s *Store) ListContext(ctx context.Context) ([]Profile, error) {
 	return out, nil
 }
 func (s *Store) Save(p Profile) error {
+	if err := s.guard.ProfileChanges(); err != nil {
+		return err
+	}
 	if err := p.Validate(); err != nil {
 		return err
 	}
@@ -145,6 +152,9 @@ func (s *Store) SaveIfUnchanged(p Profile) error {
 }
 
 func (s *Store) SaveIfUnchangedContext(ctx context.Context, p Profile) error {
+	if err := s.guard.ProfileChanges(); err != nil {
+		return err
+	}
 	if err := p.Validate(); err != nil {
 		return err
 	}
@@ -167,6 +177,9 @@ func (s *Store) SaveIfUnchangedContext(ctx context.Context, p Profile) error {
 }
 
 func (s *Store) saveLocked(p Profile) error {
+	if err := s.guard.ProfileChanges(); err != nil {
+		return err
+	}
 	p.UpdatedAt = time.Now().UTC()
 	b, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
@@ -183,6 +196,9 @@ func (s *Store) saveLocked(p Profile) error {
 	return AtomicWrite(path, b)
 }
 func (s *Store) Delete(id string) error {
+	if err := s.guard.ProfileChanges(); err != nil {
+		return err
+	}
 	lock, err := s.lock(context.Background())
 	if err != nil {
 		return err
@@ -190,6 +206,9 @@ func (s *Store) Delete(id string) error {
 	defer lock.Close()
 	file, err := s.filename(id)
 	if err != nil {
+		return err
+	}
+	if err := s.guard.ProfileChanges(); err != nil {
 		return err
 	}
 	return os.Remove(file)
@@ -201,6 +220,9 @@ func (s *Store) DeleteIfUnchanged(id string, expected time.Time) error {
 }
 
 func (s *Store) DeleteIfUnchangedContext(ctx context.Context, id string, expected time.Time) error {
+	if err := s.guard.ProfileChanges(); err != nil {
+		return err
+	}
 	lock, err := s.lock(ctx)
 	if err != nil {
 		return err
@@ -218,6 +240,9 @@ func (s *Store) DeleteIfUnchangedContext(ctx context.Context, id string, expecte
 	}
 	file, err := s.filename(id)
 	if err != nil {
+		return err
+	}
+	if err := s.guard.ProfileChanges(); err != nil {
 		return err
 	}
 	return os.Remove(file)
@@ -256,6 +281,12 @@ func AtomicWrite(file string, data []byte) error {
 	return nil
 }
 func (s *Store) Seed(samples []Profile) error {
+	if err := s.guard.ProfileChanges(); err != nil {
+		if errors.Is(err, managed.ErrDenied) {
+			return nil
+		}
+		return err
+	}
 	lock, err := s.lock(context.Background())
 	if err != nil {
 		return err
@@ -290,6 +321,9 @@ func (s *Store) Seed(samples []Profile) error {
 		if err := s.saveLocked(p); err != nil {
 			return err
 		}
+	}
+	if err := s.guard.ProfileChanges(); err != nil {
+		return err
 	}
 	return AtomicWrite(marker, []byte("1\n"))
 }

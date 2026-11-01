@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Yunushan/accessweaver/internal/managed"
 	"github.com/Yunushan/accessweaver/internal/profile"
 )
 
@@ -39,6 +40,7 @@ func (m *Manager) Summary() Summary {
 }
 
 type Manager struct {
+	guard    *managed.Guard
 	opMu     sync.Mutex // Serializes prepare/start/stop, including generated files.
 	mu       sync.Mutex
 	cmd      *exec.Cmd
@@ -47,10 +49,12 @@ type Manager struct {
 	log      []string
 	root     string
 	stopping bool
+	closing  bool
 }
 
-func NewManager(root string) *Manager {
-	return &Manager{root: root, state: Snapshot{State: "stopped", Log: []string{}}, log: make([]string, 0, 150)}
+func NewManager(root string) *Manager { return NewManagerWithGuard(root, managed.NewGuard(nil)) }
+func NewManagerWithGuard(root string, guard *managed.Guard) *Manager {
+	return &Manager{guard: guard, root: root, state: Snapshot{State: "stopped", Log: []string{}}, log: make([]string, 0, 150)}
 }
 func (m *Manager) Snapshot() Snapshot {
 	m.mu.Lock()
@@ -101,12 +105,16 @@ func (m *Manager) Start(p profile.Profile) error {
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
 	m.mu.Lock()
+	if m.closing {
+		m.mu.Unlock()
+		return errors.New("engine manager is shutting down")
+	}
 	if m.cmd != nil {
 		m.mu.Unlock()
 		return errors.New("another engine is running; stop it before starting a new one")
 	}
 	m.mu.Unlock()
-	bin, args, err := Prepare(p, m.root)
+	bin, args, err := prepareWithGuard(p, m.root, m.guard)
 	if err != nil {
 		return err
 	}
@@ -117,8 +125,16 @@ func (m *Manager) Start(p profile.Profile) error {
 	configureProcess(cmd)
 	cmd.Stdout = logWriter{m}
 	cmd.Stderr = logWriter{m}
+	environment, err := launchPolicyEnvironment(m.guard, p, bin)
+	if err != nil {
+		return err
+	}
+	cmd.Env = environment
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closing {
+		return errors.New("engine manager is shutting down")
+	}
 	if m.cmd != nil {
 		return errors.New("another engine started concurrently")
 	}
@@ -187,6 +203,9 @@ func (m *Manager) Stop() error {
 	}
 }
 func (m *Manager) Shutdown(ctx context.Context) error {
+	m.mu.Lock()
+	m.closing = true
+	m.mu.Unlock()
 	done := make(chan error, 1)
 	go func() { done <- m.Stop() }()
 	select {
@@ -195,4 +214,8 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (m *Manager) Preview(p profile.Profile) (LaunchPlan, error) {
+	return previewWithGuard(p, m.root, m.guard)
 }

@@ -168,7 +168,8 @@ function Initialize-Changes {
     if(-not $script:ownsMutex){throw 'Another AccessWeaver system workflow is already running'}
     Protect-Dir $root
     Assert-TrustedTree $root
-    foreach ($dir in @('components','services','logs','backups','profiles','downloads')) {Protect-Dir (Join-Path $root $dir)}
+    foreach ($dir in @('components','services','logs','backups','profiles','downloads','temp')) {Protect-Dir (Join-Path $root $dir)}
+    $env:TEMP=Join-Path $root 'temp';$env:TMP=$env:TEMP
     $script:journalPath=Join-Path $root ('logs\workflow-'+[guid]::NewGuid().ToString('N')+'.json');Save-Journal
 }
 function Backup-File([string]$path) {
@@ -193,6 +194,21 @@ function Copy-Tree([string]$source,[string]$destination) {
     No-Reparse $source
     foreach ($item in Get-ChildItem -LiteralPath $source -Recurse -Force) {if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Component contains a reparse point'};if (-not $item.PSIsContainer) {$relative=$item.FullName.Substring($source.TrimEnd('\').Length).TrimStart('\');$target=Join-Path $destination $relative;if (-not (Under $target $destination)){throw 'Invalid component path'};Copy-Checked $item.FullName $target}}
 }
+function Require-DownloadPermission {
+    if ($inputData.managedPolicy -and $inputData.allowDownloads -ne $true) {throw 'Administrator policy disables remote component and release requests'}
+}
+function Approved-DownloadHash([string]$url,[string]$hash) {
+    Require-DownloadPermission
+    if (-not $inputData.managedPolicy) {return $hash}
+    $approved=@($inputData.downloads | Where-Object {[string]::Equals($_.url,$url,[StringComparison]::Ordinal)})
+    if($approved.Count -ne 1 -or $approved[0].sha256 -notmatch '^[a-f0-9]{64}$'){throw 'Administrator policy does not pin this component URL and SHA-256'}
+    if($hash -and $hash -ne $approved[0].sha256){throw 'Remote metadata SHA-256 conflicts with administrator policy'}
+    return ([string]$approved[0].sha256).ToLowerInvariant()
+}
+function Read-RemoteJSON([string]$Uri,[hashtable]$Headers) {
+    Require-DownloadPermission
+    Invoke-RestMethod -Uri $Uri -Headers $Headers
+}
 function Allowed-Download([string]$url) {
     $uri=[uri]$url
     if ($uri.Scheme -ne 'https' -or $uri.UserInfo -or $uri.Fragment) {throw 'Downloads must use an official HTTPS URL'}
@@ -202,6 +218,7 @@ function Allowed-Download([string]$url) {
     throw 'URL is not an allowlisted component download source'
 }
 function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signed) {
+    $hash=Approved-DownloadHash $url $hash
     Allowed-Download $url
     if (-not $Signed -and $hash -notmatch '^[a-fA-F0-9]{64}$'){throw 'A SHA-256 from the release asset digest or an independently verified source is required'}
     $extension=if($Signed){'.exe'}else{[IO.Path]::GetExtension(([uri]$url).AbsolutePath)}
@@ -236,18 +253,25 @@ function Find-Source([string]$engine) {
     foreach ($base in $roots) {if(Test-Path -LiteralPath $base){No-Reparse $base;if($engine -in @('zapret','zapret2')){$folder=if($engine -eq 'zapret2'){'zapret-winws2'}else{'zapret-winws'};$preferred=Get-ChildItem -LiteralPath $base -Directory -Recurse -Filter $folder|Select-Object -First 1;if($preferred -and (Test-Path -LiteralPath (Join-Path $preferred.FullName 'winws.exe'))){return (Join-Path $preferred.FullName 'winws.exe')}};$match=Get-ChildItem -LiteralPath $base -Recurse -Filter $name -File | Where-Object {$_.FullName -notmatch '\\x86\\|\\32\\|\\arm64\\|\\win7\\'} | Select-Object -First 1;if ($match){return $match.FullName}}}
     return $null
 }
+function Component-ArchivePath([string]$directory,[string]$url) {
+    $extension=[IO.Path]::GetExtension(([uri]$url).AbsolutePath).ToLowerInvariant()
+    if($extension -notin @('.zip','.exe')){throw 'Unsupported component archive extension'}
+    $target=Join-Path $directory ('asset-'+[guid]::NewGuid().ToString('N')+$extension)
+    if(-not (Under $target $directory)){throw 'Invalid component archive destination'}
+    return $target
+}
 function Ensure-Asset([string]$engine) {
     $source=Find-Source $engine
     if (-not $source) {
         $repos=@{byedpi='hufrea/byedpi';proxifyre='wiresock/proxifyre';wgcf='ViRb3/wgcf';zapret='cagritaskn/SplitWire-Turkey';zapret2='cagritaskn/SplitWire-Turkey';goodbyedpi='ValdikSS/GoodbyeDPI';dnscrypt='DNSCrypt/dnscrypt-proxy';drover='hdrover/discord-drover'}
         $patterns=@{byedpi='x86_64-w64.*zip$';proxifyre='x64\.zip$';wgcf='windows_amd64.exe$';zapret='ZIP.*Windows.*zip$';zapret2='ZIP.*Windows.*zip$';goodbyedpi='goodbyedpi.*zip$';dnscrypt='win64.*zip$';drover='drover.*zip$'}
         if(-not $repos[$engine]){throw ('Supply an official component bundle for '+$engine)}
-        $release=Invoke-RestMethod -Headers @{'User-Agent'='AccessWeaver'} -Uri ('https://api.github.com/repos/'+$repos[$engine]+'/releases/latest')
+        $release=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri ('https://api.github.com/repos/'+$repos[$engine]+'/releases/latest')
         $asset=$release.assets | Where-Object {$_.name -match $patterns[$engine]} | Select-Object -First 1
         if(-not $asset){throw ('No compatible Windows asset found for '+$engine)}
         $hash=([string]$asset.digest) -replace '^sha256:',''
         if(-not $hash -and $r.sha256){$hash=$r.sha256}
-        $dir=Join-Path $root ('components\'+$engine);Protect-Dir $dir;$archive=Join-Path $dir $asset.name
+        $dir=Join-Path $root ('components\'+$engine);Protect-Dir $dir;$archive=Component-ArchivePath $dir $asset.browser_download_url
         Download $asset.browser_download_url $hash $archive
         if($archive.EndsWith('.zip')){Expand-Safe $archive $dir}elseif($engine -eq 'wgcf'){Copy-Checked $archive (Join-Path $dir 'wgcf.exe')}
         $source=Find-Source $engine
@@ -376,7 +400,7 @@ function Install-Prerequisite([string]$component) {
     $installer=$null
     foreach($base in @($r.bundlePath,(Join-Path $env:ProgramFiles 'SplitWire-Turkey\Prerequisites'))) {if($base -and (Test-Path -LiteralPath $base)){$installer=Get-ChildItem -LiteralPath $base -Recurse -Filter $pattern -File | Select-Object -First 1;if($installer){break}}}
     if(-not $installer){
-        if($component -eq 'ndisapi'){$release=Invoke-RestMethod -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/wiresock/ndisapi/releases/latest';$asset=$release.assets|Where-Object {$_.name -match '\.x64\.msi$'}|Select-Object -First 1;if(-not $asset){throw 'Official Windows Packet Filter x64 installer not found'};$destination=Join-Path $root 'downloads\packet-filter.msi';Download $asset.browser_download_url (([string]$asset.digest)-replace '^sha256:','') $destination;$installer=Get-Item -LiteralPath $destination}
+        if($component -eq 'ndisapi'){$release=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/wiresock/ndisapi/releases/latest';$asset=$release.assets|Where-Object {$_.name -match '\.x64\.msi$'}|Select-Object -First 1;if(-not $asset){throw 'Official Windows Packet Filter x64 installer not found'};$destination=Join-Path $root 'downloads\packet-filter.msi';Download $asset.browser_download_url (([string]$asset.digest)-replace '^sha256:','') $destination;$installer=Get-Item -LiteralPath $destination}
         else{$destination=Join-Path $root 'downloads\VC_redist.x64.exe';Download 'https://aka.ms/vs/17/release/vc_redist.x64.exe' '' $destination -Signed;$installer=Get-Item -LiteralPath $destination}
     }
     if((Get-AuthenticodeSignature -LiteralPath $installer.FullName).Status -ne 'Valid'){throw 'Prerequisite signature is invalid'}
@@ -586,7 +610,7 @@ function Install-App([string]$variant) {
     Require-DesktopUser
     if($variant -notin @('discord','discord-ptb','splitcord')){throw 'Choose Discord, Discord PTB or SplitCord'}
     if($r.clean -and $variant -eq 'discord-ptb' -and (Find-App 'discord')){Remove-App 'discord'}
-    if($variant -eq 'splitcord'){$release=Invoke-RestMethod -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/cagritaskn/SplitCord-Turkey/releases/latest';$asset=$release.assets | Where-Object {$_.name -match '(Setup|Install).*exe'}|Select-Object -First 1;if(-not $asset){throw 'Official SplitCord installer not found'};$url=$asset.browser_download_url;$hash=([string]$asset.digest)-replace '^sha256:','';if(-not $hash){$hash=$r.sha256};$file=Join-Path $root 'downloads\splitcord-setup.exe';Download $url $hash $file}
+    if($variant -eq 'splitcord'){$release=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/cagritaskn/SplitCord-Turkey/releases/latest';$asset=$release.assets | Where-Object {$_.name -match '(Setup|Install).*exe'}|Select-Object -First 1;if(-not $asset){throw 'Official SplitCord installer not found'};$url=$asset.browser_download_url;$hash=([string]$asset.digest)-replace '^sha256:','';if(-not $hash){$hash=$r.sha256};$file=Join-Path $root 'downloads\splitcord-setup.exe';Download $url $hash $file}
     else{$url='https://discord.com/api/downloads/distributions/app/installers/latest?channel='+$(if($variant -eq 'discord-ptb'){'ptb'}else{'stable'})+'&platform=win&arch=x64';$file=Join-Path $root ('downloads\'+$variant+'-setup.exe');Download $url '' $file -Signed}
     $installerArgs=if($variant -eq 'splitcord'){@('/S')}else{@('-s')}
     [void](Native $file $installerArgs -Timeout 900)
@@ -717,7 +741,7 @@ try {
     $data=switch($r.action) {
         'discover' {Discover}
         'choose-folder' {Add-Type -AssemblyName System.Windows.Forms;$dialog=[Windows.Forms.FolderBrowserDialog]::new();try{$dialog.Description='Select an application folder for AccessWeaver';$selection=$dialog.ShowDialog();@{folder=$(if($selection -eq 'OK'){$dialog.SelectedPath}else{''})}}finally{$dialog.Dispose()}}
-        'updates' {$allReleases=Invoke-RestMethod -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/Yunushan/accessweaver/releases?per_page=30';$releases=@($allReleases | Where-Object {-not $_.draft});if(-not $releases.Count){throw 'No published AccessWeaver releases found'};$comparison=Native $inputData.controller (@('system','check-version')+@($releases|ForEach-Object {$_.tag_name}));$check=$comparison.stdout|ConvertFrom-Json;$release=$releases|Where-Object {$_.tag_name -eq $check.version}|Select-Object -First 1;@{version=$check.version;currentVersion=$check.currentVersion;updateAvailable=$check.updateAvailable;url=$release.html_url;publishedAt=$release.published_at}}
+        'updates' {$allReleases=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/Yunushan/accessweaver/releases?per_page=30';$releases=@($allReleases | Where-Object {-not $_.draft});if(-not $releases.Count){throw 'No published AccessWeaver releases found'};$comparison=Native $inputData.controller (@('system','check-version')+@($releases|ForEach-Object {$_.tag_name}));$check=$comparison.stdout|ConvertFrom-Json;$release=$releases|Where-Object {$_.tag_name -eq $check.version}|Select-Object -First 1;@{version=$check.version;currentVersion=$check.currentVersion;updateAvailable=$check.updateAvailable;url=$release.html_url;publishedAt=$release.published_at}}
         'download' {if(-not $r.engine -or -not $r.downloadUrl){throw 'Choose a component, official URL and SHA-256'};$dir=Join-Path $root ('components\'+$r.engine);Protect-Dir $dir;$destination=Join-Path $dir ([IO.Path]::GetFileName(([uri]$r.downloadUrl).AbsolutePath));Download $r.downloadUrl $r.sha256 $destination;if($destination.EndsWith('.zip')){Expand-Safe $destination $dir};@{path=$destination}}
         'install' {Install-Method}
         'config' {@{configPath=(Make-Config)}}

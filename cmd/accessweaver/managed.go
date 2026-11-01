@@ -21,10 +21,37 @@ import (
 
 func managedCommand(args []string) error {
 	if len(args) == 0 {
-		fmt.Print("Managed configuration tools (review only; runtime enforcement is not yet implemented):\n  managed validate POLICY.json\n  managed digest-profile PROFILE.json\n  managed digest-workflow REQUEST.json\n  managed sign POLICY.json --private-key PRIVATE-KEY.pem [--out ENVELOPE.json]\n  managed public-key --private-key PRIVATE-KEY.pem\n  managed verify ENVELOPE.json --public-key BASE64 [--minimum-revision N]\nSigning requires an offline Ed25519 PKCS#8 PEM key. Never deploy the private key.\n")
+		fmt.Print("Managed configuration tools (native runtime enforcement is partial):\n  managed status\n  managed prepare ENVELOPE.json --public-key BASE64 --minimum-revision N --out INSTALLATION.json\n  managed validate POLICY.json\n  managed digest-profile PROFILE.json\n  managed digest-workflow REQUEST.json\n  managed sign POLICY.json --private-key PRIVATE-KEY.pem [--out ENVELOPE.json]\n  managed public-key --private-key PRIVATE-KEY.pem\n  managed verify ENVELOPE.json --public-key BASE64 [--minimum-revision N]\nSigning requires an offline Ed25519 PKCS#8 PEM key. Never deploy the private key.\n")
 		return nil
 	}
 	switch args[0] {
+	case "status":
+		if len(args) != 1 {
+			return errors.New("usage: managed status")
+		}
+		status, err := managed.MachineStatus()
+		return errors.Join(err, printJSON(status))
+	case "prepare":
+		if len(args) != 8 || args[2] != "--public-key" || args[4] != "--minimum-revision" || args[6] != "--out" {
+			return errors.New("usage: managed prepare ENVELOPE.json --public-key BASE64 --minimum-revision N --out INSTALLATION.json")
+		}
+		public, err := managed.PublicKey(args[3])
+		if err != nil {
+			return err
+		}
+		minimum, err := strconv.ParseUint(args[5], 10, 64)
+		if err != nil {
+			return errors.New("minimum revision must be a nonnegative integer")
+		}
+		data, err := readManagedFile(args[1], managed.MaxEnvelopeBytes)
+		if err != nil {
+			return err
+		}
+		installed, err := managed.PrepareInstallation(data, public, time.Now(), minimum)
+		if err != nil {
+			return err
+		}
+		return writeManagedOutput(args[7], installed)
 	case "digest-profile", "digest-workflow":
 		if len(args) != 2 {
 			return errors.New("usage: managed digest-profile PROFILE.json | managed digest-workflow REQUEST.json")
@@ -39,7 +66,7 @@ func managedCommand(args []string) error {
 			if decodeErr != nil {
 				return decodeErr
 			}
-			digest, err = managed.LaunchDigest(p)
+			digest, err = p.ExecutionDigest()
 		} else {
 			decoder := json.NewDecoder(bytes.NewReader(bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})))
 			decoder.DisallowUnknownFields()
@@ -99,13 +126,7 @@ func managedCommand(args []string) error {
 		if len(args) == 6 {
 			// Exclusive creation prevents accidentally replacing a signing key,
 			// policy source, or an existing reviewed envelope.
-			f, err := os.OpenFile(args[5], os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-			if err != nil {
-				return err
-			}
-			_, writeErr := f.Write(signed)
-			syncErr := f.Sync()
-			return errors.Join(writeErr, syncErr, f.Close())
+			return writeManagedOutput(args[5], signed)
 		}
 		_, err = os.Stdout.Write(signed)
 		return err
@@ -184,4 +205,14 @@ func readSigningKey(path string) (ed25519.PrivateKey, error) {
 		return nil, errors.New("signing key must be Ed25519")
 	}
 	return private, nil
+}
+
+func writeManagedOutput(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	_, writeErr := f.Write(data)
+	syncErr := f.Sync()
+	return errors.Join(writeErr, syncErr, f.Close())
 }

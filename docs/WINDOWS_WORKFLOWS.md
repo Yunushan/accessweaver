@@ -96,3 +96,7 @@ For the dedicated VMware guest, finish Windows setup and install VMware Tools, t
 See [implementation status](SPLITWIRE_IMPLEMENTATION.md) for recorded results and remaining gaps. Full parity is not yet certified.
 
 Managed ByeDPI system installation owns its listener, port and process mode. Native strategy arguments must use full option names; protected-option abbreviations, short clusters, option terminators and argument files are rejected before a plan is retained or a direct installer changes DNS/components. One-shot child tools allow a day-long timeout, while the workflow manager still caps a job at 90 minutes and cancellation remains available.
+
+## Administrator machine policy
+
+A protected signed Windows policy can restrict workflow requests and remote component retrieval, independently of the caller's user data root. Requests must match their signed input approval; downloads also require permission and pinned artifact hashes. The actual worker rechecks authority and receives permissions with its retained in-memory request. System utilities, shared storage and PowerShell modules use trusted OS/machine settings rather than inherited path/module variables. Current policy support is partial: managed native-argument assets and service-host authorization are blocked, and enrollment/recovery/revocation still need implementation and disposable-endpoint qualification. [Managed configuration](MANAGED_CONFIGURATION.md) documents the format, source protection and deployment limits. Existing running jobs are not automatically revoked.

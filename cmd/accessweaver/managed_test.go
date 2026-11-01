@@ -104,6 +104,28 @@ func TestManagedCommandsSignReviewWithoutMutatingUserState(t *testing.T) {
 		t.Fatal("public key export failed", err)
 	}
 	encodedPublic := base64.StdEncoding.EncodeToString(public)
+	installationPath := filepath.Join(folder, "installation.json")
+	if out, err := captureManagedCommand(t, []string{"prepare", envelopePath, "--public-key", encodedPublic, "--minimum-revision", "6", "--out", installationPath}); err != nil || len(out) != 0 {
+		t.Fatal("installation preparation failed", err)
+	}
+	installed, err := os.ReadFile(installationPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := managed.DecodeInstallation(installed, time.Now()); err != nil {
+		t.Fatal("prepared installation is not verifiable", err)
+	}
+	if _, err := captureManagedCommand(t, []string{"prepare", envelopePath, "--public-key", encodedPublic, "--minimum-revision", "6", "--out", installationPath}); err == nil {
+		t.Fatal("prepared installation overwritten")
+	}
+	rejectedPath := filepath.Join(folder, "must-not-write.json")
+	if _, err := captureManagedCommand(t, []string{"prepare", envelopePath, "--public-key", encodedPublic, "--minimum-revision", "7", "--out", rejectedPath}); err == nil {
+		t.Fatal("stale installation exported")
+	}
+	if _, err := os.Stat(rejectedPath); !os.IsNotExist(err) {
+		t.Fatal("failed preparation created output", err)
+	}
+
 	reviewed, err := captureManagedCommand(t, []string{"verify", envelopePath, "--public-key", encodedPublic, "--minimum-revision", "6"})
 	if err != nil {
 		t.Fatal(err)
@@ -186,7 +208,7 @@ func TestManagedDigestCommandsMatchTypedExecutionInputs(t *testing.T) {
 	if err := json.Unmarshal(out, &result); err != nil {
 		t.Fatal(err)
 	}
-	expected, err := managed.LaunchDigest(p)
+	expected, err := p.ExecutionDigest()
 	if err != nil || result.InputSHA256 != expected || result.RuntimeEnforced {
 		t.Fatal("CLI profile approval does not match typed launch inputs", err)
 	}

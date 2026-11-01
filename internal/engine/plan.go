@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/Yunushan/accessweaver/internal/managed"
 	"github.com/Yunushan/accessweaver/internal/nativeargs"
 	"github.com/Yunushan/accessweaver/internal/profile"
 )
@@ -21,6 +22,7 @@ import (
 // LaunchPlan is a read-only explanation. Ready means local prerequisites passed,
 // not that a strategy is effective or that packet interception is installed.
 type LaunchPlan struct {
+	policyError      error
 	Engine           string   `json:"engine"`
 	Platform         string   `json:"platform"`
 	Binary           string   `json:"binary"`
@@ -142,6 +144,9 @@ func usesDomainFiles(engine string) bool {
 // Preview does not execute external code, write generated files, or probe the network.
 // Bad schema is an error; missing engine prerequisites are returned as actionable issues.
 func Preview(p profile.Profile, root string) (LaunchPlan, error) {
+	return previewWithGuard(p, root, managed.NewGuard(nil))
+}
+func previewWithGuard(p profile.Profile, root string, guard *managed.Guard) (LaunchPlan, error) {
 	plan := LaunchPlan{Engine: p.Engine, Platform: runtime.GOOS, Binary: p.Binary, Args: []string{}, Warnings: []string{}, Issues: []string{}, GeneratedFiles: []string{}}
 	if err := p.Validate(); err != nil {
 		return plan, err
@@ -237,6 +242,10 @@ func Preview(p profile.Profile, root string) (LaunchPlan, error) {
 		plan.Warnings = append(plan.Warnings, "Executable identity is not pinned. An expected SHA-256 can be set in this profile; a filename alone does not establish trust.")
 	}
 	plan.Warnings = append(plan.Warnings, "External engines and their configuration run with this controller's privileges. A launched process does not prove working connectivity.")
+	if err := checkLaunchPolicy(guard, p, plan.Binary); err != nil {
+		plan.policyError = err
+		issue(err.Error())
+	}
 	plan.Ready = len(plan.Issues) == 0
 	return plan, nil
 }
@@ -501,9 +510,15 @@ func adapterArgs(p profile.Profile, base, include, exclude string) ([]string, []
 // Prepare verifies all prerequisites again, then materializes only generated data
 // files. It never evaluates a shell command or changes a system proxy/firewall.
 func Prepare(p profile.Profile, root string) (string, []string, error) {
-	plan, err := Preview(p, root)
+	return prepareWithGuard(p, root, managed.NewGuard(nil))
+}
+func prepareWithGuard(p profile.Profile, root string, guard *managed.Guard) (string, []string, error) {
+	plan, err := previewWithGuard(p, root, guard)
 	if err != nil {
 		return "", nil, err
+	}
+	if plan.policyError != nil {
+		return "", nil, plan.policyError
 	}
 	if !plan.Ready {
 		return "", nil, errors.New(strings.Join(plan.Issues, "; "))
@@ -545,4 +560,27 @@ func Prepare(p profile.Profile, root string) (string, []string, error) {
 		}
 	}
 	return plan.Binary, plan.Args, nil
+}
+
+func launchPolicyInput(p profile.Profile, binary string) (managed.LaunchRequest, error) {
+	digest, err := p.ExecutionDigest()
+	if err != nil {
+		return managed.LaunchRequest{}, err
+	}
+	return managed.LaunchRequest{Engine: p.Engine, InputSHA256: digest, Binary: binary, ConfigPath: p.ConfigPath,
+		GeneratedInputs: len(p.Routing.IncludeDomains) > 0 || len(p.Routing.ExcludeDomains) > 0 || len(p.Routing.Applications) > 0, RawArguments: len(p.Args) > 0}, nil
+}
+func checkLaunchPolicy(guard *managed.Guard, p profile.Profile, binary string) error {
+	input, err := launchPolicyInput(p, binary)
+	if err != nil {
+		return err
+	}
+	return guard.Launch(input)
+}
+func launchPolicyEnvironment(guard *managed.Guard, p profile.Profile, binary string) ([]string, error) {
+	input, err := launchPolicyInput(p, binary)
+	if err != nil {
+		return nil, err
+	}
+	return guard.LaunchEnvironment(input)
 }
