@@ -34,14 +34,20 @@ func (g *Guard) ProfileChanges() error {
 	return nil
 }
 func (g *Guard) Diagnostics() error {
+	_, err := g.AuthorizeDiagnostics()
+	return err
+}
+
+// AuthorizeDiagnostics binds all stages of one probe to the approved policy.
+func (g *Guard) AuthorizeDiagnostics() (*Authorization, error) {
 	a, err := g.authority()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if a != nil && !a.verified.Policy.AllowDiagnostics {
-		return fmt.Errorf("%w: network diagnostics are disabled", ErrDenied)
+		return nil, fmt.Errorf("%w: network diagnostics are disabled", ErrDenied)
 	}
-	return nil
+	return newAuthorization(g, a), nil
 }
 
 type LaunchRequest struct {

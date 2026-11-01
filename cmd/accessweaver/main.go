@@ -18,10 +18,8 @@ import (
 
 	"github.com/Yunushan/accessweaver/internal/api"
 	"github.com/Yunushan/accessweaver/internal/buildinfo"
-	"github.com/Yunushan/accessweaver/internal/diagnostics"
 	"github.com/Yunushan/accessweaver/internal/engine"
 	"github.com/Yunushan/accessweaver/internal/filelock"
-	"github.com/Yunushan/accessweaver/internal/managed"
 	"github.com/Yunushan/accessweaver/internal/profile"
 	"github.com/Yunushan/accessweaver/internal/servicehost"
 	"github.com/Yunushan/accessweaver/internal/uiaccess"
@@ -194,17 +192,7 @@ func execute(args []string) error {
 		}
 		fmt.Println("Imported:", p.ID)
 	case "doctor":
-		if err := managed.NewGuard(nil).Diagnostics(); err != nil {
-			return err
-		}
-		host := "discord.com"
-		if len(args) > 1 {
-			host = args[1]
-		}
-		probe := profile.Probe{Host: host, Port: 443, TLS: true, TimeoutSeconds: 5}
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		defer cancel()
-		return printJSON(diagnostics.Run(ctx, probe))
+		return doctorCommand(args[1:])
 	case "run":
 		if len(args) < 2 {
 			return errors.New("usage: accessweaver run PROFILE_ID")
@@ -253,7 +241,8 @@ func usage() {
   accessweaver import FILE.json    Import profile into local store
   accessweaver backup create|inspect|restore [options]
                                   Encrypted profile backup and new-directory restore
-  accessweaver doctor [HOST]       Run DNS/TCP/TLS checks
+  accessweaver doctor [options] [HOST]
+                                  Direct/proxy TCP/TLS or explicit UDP/STUN checks
   accessweaver run ID              Explicitly start one engine in foreground
   accessweaver managed             Review/sign/verify administrator policy documents
   accessweaver system              Show Windows installation/repair commands

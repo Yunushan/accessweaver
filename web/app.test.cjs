@@ -182,3 +182,24 @@ test('support metadata stays accessible when authenticated profile loading fails
   env.run('state.loading=false;state.offline=true');
   assert.equal(env.run('supportAvailable()'),true);assert.equal(env.run('coreAvailable()'),false);
 });
+
+
+test('diagnostic modes require an explicit STUN target and isolate proxy fields',()=>{
+ const env=environment();env.get('probe-path').value='socks5';env.get('probe-transport').value='stun';env.get('probe-proxy').value='127.0.0.1:1080';
+ env.run('updateProbeMode(true)');
+ assert.equal(env.get('probe-host').value,'');assert.equal(env.get('probe-port').value,'3478');assert.equal(env.get('probe-tls').disabled,true);assert.equal(env.get('probe-tls').checked,false);
+ assert.equal(env.get('probe-proxy-field').hidden,false);assert.equal(env.get('probe-proxy').required,true);assert.equal(env.get('probe-http-option').disabled,true);
+ env.get('probe-host').value='stun.example.com';assert.deepEqual(plain(env.run('probeRequest()')),{host:'stun.example.com',port:3478,timeoutSeconds:5,tls:false,path:'socks5',transport:'stun',proxy:'127.0.0.1:1080'});
+ env.get('probe-path').value='direct';env.run('updateProbeMode()');assert.equal(env.get('probe-proxy').disabled,true);assert.equal('proxy' in env.run('probeRequest()'),false);
+ env.get('probe-transport').value='tcp';env.run('updateProbeMode(true)');assert.equal(env.get('probe-host').value,'discord.com');assert.equal(env.get('probe-tls').checked,true);
+});
+test('diagnostic report identifies and escapes the tested path and endpoint',()=>{
+ const env=environment();env.put('report',{host:'example.com',port:443,path:'socks5',transport:'tcp',proxy:'<img src=x onerror=alert(1)>',checks:[{name:'Proxy',status:'failed',detail:'refused'}],at:new Date().toISOString()});env.run('renderProbe(report)');
+ assert.match(env.get('diagnostic-meta').innerHTML,/socks5 \/ tcp/);assert.match(env.get('diagnostic-meta').innerHTML,/&lt;img/);assert.doesNotMatch(env.get('diagnostic-meta').innerHTML,/<img/);assert.match(env.get('diagnostic-meta').innerHTML,/One or more checks failed/);
+});
+
+test('a rejected diagnostic clears the previous report and export instead of showing stale success',async()=>{
+ const env=environment();env.run('state.offline=false;state.loading=false;state.token="fixture";state.lastProbe={checks:[{status:"ok"}]}');
+ env.get('probe-path').value='direct';env.get('probe-transport').value='tcp';env.context.fetch=async()=>({ok:false,status:403,json:async()=>({error:'policy denied'})});
+ await env.run('runProbe()');assert.equal(env.run('state.lastProbe'),null);assert.equal(env.get('export-report').hidden,true);assert.equal(env.get('diagnostic-meta').hidden,true);assert.match(env.get('diagnostic-results').textContent,/Test failed: policy denied/);
+});

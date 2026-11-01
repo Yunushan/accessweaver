@@ -74,6 +74,8 @@ const state = {
   launch:null, busy:false, polling:false, reconnecting:false, preservedProfiles:[], storageBlocked:false
 };
 const translations = {en,tr,...(typeof extraLocales==='object'?extraLocales:{})};
+const diagnosticCopy = {"en": {"diagnosticsSubtitle": "Check an explicit direct or proxy path using TCP/TLS or UDP/STUN.", "probePath": "Network path", "probeTransport": "Protocol", "pathDirect": "Direct", "probeProxy": "Proxy host:port (no credentials)", "probeScope": "The selected path only. No direct fallback. This does not prove engine routing, voice or QUIC connectivity.", "probeSTUN": "Enter a STUN server you trust. One UDP binding exchange; the server and reported address are unauthenticated.", "reportPath": "Tested path"}, "tr": {"diagnosticsSubtitle": "TCP/TLS veya UDP/STUN ile do\u011frudan ya da vekil sunucu yolunu test edin.", "probePath": "A\u011f yolu", "probeTransport": "Protokol", "pathDirect": "Do\u011frudan", "probeProxy": "Vekil sunucu:port (kimlik bilgisi yok)", "probeScope": "Yaln\u0131zca se\u00e7ilen yol test edilir. Do\u011frudan ba\u011flant\u0131ya ge\u00e7ilmez. Motor y\u00f6nlendirmesi, ses veya QUIC ba\u011flant\u0131s\u0131n\u0131 kan\u0131tlamaz.", "probeSTUN": "G\u00fcvendi\u011finiz bir STUN sunucusu girin. Tek UDP iste\u011fi; sunucu ve bildirdi\u011fi adres do\u011frulanmaz.", "reportPath": "Test edilen yol"}, "es": {"diagnosticsSubtitle": "Comprueba una ruta directa o por proxy con TCP/TLS o UDP/STUN.", "probePath": "Ruta de red", "probeTransport": "Protocolo", "pathDirect": "Directa", "probeProxy": "Proxy host:puerto (sin credenciales)", "probeScope": "Solo la ruta elegida. Sin alternativa directa. No demuestra el enrutamiento del motor ni la conectividad de voz o QUIC.", "probeSTUN": "Introduce un servidor STUN de confianza. Un intercambio UDP; el servidor y la direcci\u00f3n indicada no se autentican.", "reportPath": "Ruta comprobada"}, "ru": {"diagnosticsSubtitle": "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u043f\u0440\u044f\u043c\u043e\u0433\u043e \u043f\u0443\u0442\u0438 \u0438\u043b\u0438 \u043f\u0440\u043e\u043a\u0441\u0438: TCP/TLS \u0438\u043b\u0438 UDP/STUN.", "probePath": "\u0421\u0435\u0442\u0435\u0432\u043e\u0439 \u043f\u0443\u0442\u044c", "probeTransport": "\u041f\u0440\u043e\u0442\u043e\u043a\u043e\u043b", "pathDirect": "\u041d\u0430\u043f\u0440\u044f\u043c\u0443\u044e", "probeProxy": "\u041f\u0440\u043e\u043a\u0441\u0438 host:port (\u0431\u0435\u0437 \u0443\u0447\u0451\u0442\u043d\u044b\u0445 \u0434\u0430\u043d\u043d\u044b\u0445)", "probeScope": "\u0422\u043e\u043b\u044c\u043a\u043e \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u044b\u0439 \u043f\u0443\u0442\u044c, \u0431\u0435\u0437 \u043f\u0435\u0440\u0435\u0445\u043e\u0434\u0430 \u043d\u0430\u043f\u0440\u044f\u043c\u0443\u044e. \u041d\u0435 \u0434\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u0442 \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u0438\u0437\u0430\u0446\u0438\u044e \u0434\u0432\u0438\u0436\u043a\u0430, \u0441\u0432\u044f\u0437\u044c \u0434\u043b\u044f \u0433\u043e\u043b\u043e\u0441\u0430 \u0438\u043b\u0438 QUIC.", "probeSTUN": "\u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u0434\u043e\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 STUN-\u0441\u0435\u0440\u0432\u0435\u0440. \u041e\u0434\u0438\u043d UDP-\u043e\u0431\u043c\u0435\u043d; \u0441\u0435\u0440\u0432\u0435\u0440 \u0438 \u0441\u043e\u043e\u0431\u0449\u0451\u043d\u043d\u044b\u0439 \u0430\u0434\u0440\u0435\u0441 \u043d\u0435 \u0430\u0443\u0442\u0435\u043d\u0442\u0438\u0444\u0438\u0446\u0438\u0440\u0443\u044e\u0442\u0441\u044f.", "reportPath": "\u041f\u0440\u043e\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u043f\u0443\u0442\u044c"}};
+for (const [lang,words] of Object.entries(diagnosticCopy)) Object.assign(translations[lang],words);
 const t = key => (translations[state.lang] || en)[key] || en[key] || key;
 const clone = value => JSON.parse(JSON.stringify(value));
 function copyName(name) {
@@ -628,22 +630,46 @@ function addExclusions(group) {
   for (const domain of groups[group] || []) if (!seen.has(domain) && !includes.has(domain)) { values.push(domain); seen.add(domain); }
   $('p-excludes').value = values.join('\n'); markDirty(); toast(t('addedExclusions'));
 }
+function updateProbeMode(reset = false) {
+ const stun = $('probe-transport').value === 'stun';
+ $('probe-http-option').disabled = stun;
+ if (stun && $('probe-path').value === 'http-connect') $('probe-path').value = 'direct';
+ const proxied = $('probe-path').value !== 'direct';
+ $('probe-proxy-field').hidden = !proxied;
+ $('probe-proxy').disabled = !proxied;
+ $('probe-proxy').required = proxied;
+ $('probe-tls').disabled = stun;
+ if (reset) {
+  $('probe-host').value = stun ? '' : 'discord.com';
+  $('probe-port').value = stun ? 3478 : 443;
+  $('probe-tls').checked = !stun;
+ }
+ $('probe-stun-note').hidden = !stun;
+}
+function probeRequest() {
+ const path = $('probe-path').value || 'direct', transport = $('probe-transport').value || 'tcp';
+ return {host:$('probe-host').value.trim(),port:Number($('probe-port').value),timeoutSeconds:Number($('probe-timeout').value),tls:transport === 'tcp' && $('probe-tls').checked,path,transport,...(path === 'direct' ? {} : {proxy:$('probe-proxy').value.trim()})};
+}
 async function runProbe() {
   if (!coreAvailable()) { toast(t('coreRequired'),true); return; }
   if (state.probing) return;
-  const p = {host:$('probe-host').value.trim(),port:Number($('probe-port').value),timeoutSeconds:Number($('probe-timeout').value),tls:$('probe-tls').checked};
+  const p = probeRequest();
+  state.lastProbe = null; $('export-report').hidden = true; $('diagnostic-meta').hidden = true;
+  $('diagnostic-results').className = 'empty-results'; $('diagnostic-results').textContent = t('testRunning');
   state.probing = true;
   const button = $('probe-submit'); button.disabled = true; button.innerHTML = icon('pulse') + `<span>${t('testRunning')}</span>`;
   try {
     const report = await apiRequest('/api/v1/diagnose','POST',p,(p.timeoutSeconds + 10) * 1000);
-    state.lastProbe = report; renderProbe(report); toast(t('testDone'));
-  } catch (err) { toast(t('testFailed') + ': ' + err.message,true); }
+    state.lastProbe = report; renderProbe(report);
+    const passed = report.checks?.length && report.checks.every(c => c.status === 'ok');
+    toast(t(passed ? 'testDone' : 'testIncomplete'),!passed);
+  } catch (err) { $('diagnostic-results').textContent = t('testFailed') + ': ' + err.message; toast(t('testFailed') + ': ' + err.message,true); }
   finally { state.probing = false; button.disabled = !coreAvailable(); button.innerHTML = icon('play') + `<span>${t('startTest')}</span>`; }
 }
 function renderProbe(report) {
   const checks = report.checks || [], passed = checks.length > 0 && checks.every(c => c.status === 'ok');
   $('diagnostic-meta').hidden = false;
-  $('diagnostic-meta').innerHTML = `<strong>${escapeHTML(report.host)}:${Number(report.port)}</strong><span>${escapeHTML(new Date(report.at).toLocaleString(state.lang))}</span><p class="${passed ? 'success-text' : 'error-text'}">${escapeHTML(t(passed ? 'testPassed' : 'testIncomplete'))}</p>`;
+  $('diagnostic-meta').innerHTML = `<strong>${escapeHTML(report.host)}:${Number(report.port)}</strong><p>${escapeHTML(t('reportPath'))}: ${escapeHTML(report.path || 'direct')} / ${escapeHTML(report.transport || 'tcp')}${report.proxy ? ' / ' + escapeHTML(report.proxy) : ''}</p><span>${escapeHTML(new Date(report.at).toLocaleString(state.lang))}</span><p class="${passed ? 'success-text' : 'error-text'}">${escapeHTML(t(passed ? 'testPassed' : 'testIncomplete'))}</p>`;
   $('diagnostic-results').className = 'result-list';
   $('diagnostic-results').innerHTML = checks.map(c => `<div class="result-item"><span class="result-icon ${c.status === 'ok' ? '' : 'error'}">${icon(c.status === 'ok' ? 'check' : 'alert')}</span><div class="result-content"><h3>${escapeHTML(c.name)} · ${escapeHTML(({en:['PASSED','FAILED'],tr:['BAŞARILI','BAŞARISIZ'],ru:['УСПЕШНО','ОШИБКА'],es:['CORRECTO','FALLIDO']})[state.lang][c.status === 'ok' ? 0 : 1])}</h3><p>${escapeHTML(c.detail)}</p></div><span class="result-duration">${Number(c.durationMs) || 0} ms</span></div>`).join('');
   $('export-report').hidden = false;
@@ -708,6 +734,9 @@ function bindEvents() {
   $('profile-form').addEventListener('input',markDirty);
   $('profile-form').addEventListener('change',markDirty);
   $('p-json').addEventListener('input',markDirty);
+  $('probe-path').addEventListener('change',() => updateProbeMode());
+  $('probe-transport').addEventListener('change',() => updateProbeMode(true));
+  updateProbeMode();
   $('diagnostic-form').addEventListener('submit',event => { event.preventDefault(); runProbe(); });
   $('export-report').addEventListener('click',() => { if (state.lastProbe) downloadFile(JSON.stringify(state.lastProbe,null,2) + '\n','accessweaver-diagnostics-' + state.lastProbe.host + '.json'); });
   $('show-logs').addEventListener('click',showLogs);

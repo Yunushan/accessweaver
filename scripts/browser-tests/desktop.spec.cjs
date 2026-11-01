@@ -207,3 +207,19 @@ test('support export excludes private profile contents and leaves the runtime st
   expect(recoveryText).not.toContain('private-support-profile');expect(recoveryText).not.toContain('private-corrupt-fixture');
 
 });
+
+
+test('diagnostics selects an explicit proxy path and STUN target without sending probe traffic',async({page,core})=>{
+ await open(page,core);await page.locator('.nav-item[data-view="diagnostics"]').click();
+ await page.locator('#probe-path').selectOption('socks5');await expect(page.locator('#probe-proxy')).toBeVisible();
+ await page.locator('#probe-proxy').fill('127.0.0.1:1080');await page.locator('#probe-transport').selectOption('stun');
+ await expect(page.locator('#probe-host')).toHaveValue('');await expect(page.locator('#probe-port')).toHaveValue('3478');await expect(page.locator('#probe-tls')).toBeDisabled();
+ await page.locator('#probe-host').fill('stun.example.com');let submitted;
+ await page.route('**/api/v1/diagnose',async route=>{
+  submitted=route.request().postDataJSON();await route.fulfill({json:{host:submitted.host,port:submitted.port,path:submitted.path,transport:submitted.transport,proxy:submitted.proxy,at:new Date().toISOString(),checks:[{name:'UDP/STUN',status:'failed',durationMs:1,detail:'Controlled browser fixture: no probe traffic sent'}]}});
+ });
+ await page.locator('#probe-submit').click();await expect(page.locator('#diagnostic-meta')).toContainText('One or more checks failed');
+ expect(submitted).toEqual({host:'stun.example.com',port:3478,timeoutSeconds:5,tls:false,path:'socks5',transport:'stun',proxy:'127.0.0.1:1080'});
+ await expect(page.locator('#diagnostic-meta')).toContainText('socks5 / stun / 127.0.0.1:1080');
+ await page.locator('#probe-path').selectOption('direct');await expect(page.locator('#probe-proxy-field')).toBeHidden();
+});

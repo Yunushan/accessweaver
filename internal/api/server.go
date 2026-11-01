@@ -204,12 +204,21 @@ func (s *Server) Handler() http.Handler {
 			fail(w, http.StatusForbidden, err.Error())
 			return
 		}
-		var p profile.Probe
-		if err := readJSON(w, r, &p); err != nil {
+		var input diagnostics.Request
+		if err := readJSON(w, r, &input); err != nil {
 			fail(w, 400, err.Error())
 			return
 		}
-		JSON(w, 200, diagnostics.Run(r.Context(), p))
+		report, err := diagnostics.Diagnose(r.Context(), input, s.Policy)
+		if err != nil {
+			status := http.StatusRequestTimeout
+			if managed.IsPolicyError(err) {
+				status = http.StatusForbidden
+			}
+			fail(w, status, err.Error())
+			return
+		}
+		JSON(w, 200, report)
 	})
 	fileServer := http.FileServer(http.FS(s.UI))
 	mux.Handle("/", fileServer)

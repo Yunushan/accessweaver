@@ -27,7 +27,7 @@ Inspired by the workflow of SplitWire-Turkey, independently implemented. AccessW
 - Use the guided editor or change the full JSON, including executable paths, argument arrays, external configuration paths and optional SHA-256 pins.
 - Apply include/exclude domains through compatible adapters; unsupported routing rules block launch with an explanation.
 - Review a launch plan and manage one foreground engine process at a time.
-- Run direct DNS, TCP and certificate-verified TLS diagnostics, with stage timings.
+- Run direct or explicit SOCKS5/HTTP CONNECT TCP/TLS diagnostics, plus bounded direct/SOCKS5 UDP/STUN checks.
 - Review and apply Windows component installation, services, app routing, hostlists, DNS, application repair and recovery through **Installation & repair**.
 - Work in English, Turkish, Russian or Spanish, with dark/light themes and a responsive interface.
 - Keep profile data on your device. AccessWeaver itself has no telemetry, ads, subscription or cloud sync; external engines have their own policies.
@@ -73,7 +73,7 @@ The setup scripts compile into `bin/`; they do not install third-party engines o
 4. Inspect the command preview and resolve readiness errors. Start explicitly when ready.
 5. Configure the application proxy or OS interception separately, following the engine guide. Verify the intended traffic path through that application.
 
-For a ByeDPI local proxy, the starter listener is `127.0.0.1:1080`. Applications must use that SOCKS endpoint before traffic will pass through it. For packet engines, required drivers and firewall rules remain your responsibility. The built-in diagnostics use the host's normal network stack; they do not explicitly test a selected SOCKS proxy.
+For a ByeDPI local proxy, the starter listener is `127.0.0.1:1080`. Applications must use that SOCKS endpoint before traffic will pass through it. For packet engines, required drivers and firewall rules remain your responsibility. Diagnostics default to the normal network stack. Select SOCKS5 and its endpoint explicitly to test that proxy; there is no direct fallback. See [diagnostic scope and examples](docs/DIAGNOSTICS.md).
 
 ### CLI
 

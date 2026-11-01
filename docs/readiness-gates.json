@@ -394,6 +394,10 @@
           "status": "partial",
           "evidence": [
             "internal/diagnostics/doctor.go",
+            "internal/diagnostics/proxy_test.go",
+            "internal/diagnostics/stun_test.go",
+            "internal/api/diagnostics_test.go",
+            "docs/DIAGNOSTICS.md",
             "docs/TESTING.md",
             "internal/api/support.go"
           ]
