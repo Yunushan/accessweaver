@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -21,8 +22,14 @@ func Check(file *os.File, directory bool, owner uint32) (os.FileInfo, error) {
 		return nil, err
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || stat.Uid != owner || info.Mode().Perm()&0022 != 0 || info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
-		return nil, errors.New("managed object requires trusted ownership and no group/other write or set-ID permissions")
+	if !ok {
+		return nil, errors.New("native ownership metadata is unavailable")
+	}
+	if stat.Uid != owner {
+		return nil, fmt.Errorf("managed object %q has owner %d; require %d", file.Name(), stat.Uid, owner)
+	}
+	if info.Mode().Perm()&0022 != 0 || info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
+		return nil, fmt.Errorf("managed object %q has unsafe permission mode %s", file.Name(), info.Mode())
 	}
 	if directory && !info.IsDir() || !directory && !info.Mode().IsRegular() {
 		return nil, errors.New("managed object has the wrong file type")
@@ -54,7 +61,7 @@ func OpenDirectoryAt(parent *os.File, name string, owner uint32) (*os.File, erro
 	if err != nil {
 		return nil, err
 	}
-	file := os.NewFile(uintptr(fd), name)
+	file := os.NewFile(uintptr(fd), filepath.Join(parent.Name(), name))
 	if _, err := Check(file, true, owner); err != nil {
 		file.Close()
 		return nil, err
@@ -106,7 +113,7 @@ func OpenRegularAt(parent *os.File, name string, owner uint32) (*os.File, error)
 	if err != nil {
 		return nil, err
 	}
-	file := os.NewFile(uintptr(fd), name)
+	file := os.NewFile(uintptr(fd), filepath.Join(parent.Name(), name))
 	after, err := Check(file, false, owner)
 	if err != nil || !os.SameFile(before, after) {
 		file.Close()

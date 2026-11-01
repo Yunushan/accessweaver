@@ -92,7 +92,7 @@ func TestDisposableLinuxManagedPolicyNative(t *testing.T) {
 	if _, err := rand.Read(nonce); err != nil {
 		t.Fatal(err)
 	}
-	fixtureRoot := filepath.Join("/opt", "accessweaver-policy-test-"+hex.EncodeToString(nonce))
+	fixtureRoot := filepath.Join("/etc", "accessweaver-policy-test-"+hex.EncodeToString(nonce))
 	if err := os.Mkdir(fixtureRoot, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestDisposableLinuxManagedPolicyNative(t *testing.T) {
 	t.Cleanup(func() {
 		absolute, err := filepath.Abs(fixtureRoot)
 		current, statErr := os.Lstat(fixtureRoot)
-		if err != nil || statErr != nil || filepath.Dir(absolute) != "/opt" || !strings.HasPrefix(filepath.Base(absolute), "accessweaver-policy-test-") || !os.SameFile(fixtureInfo, current) || !current.IsDir() {
+		if err != nil || statErr != nil || filepath.Dir(absolute) != "/etc" || !strings.HasPrefix(filepath.Base(absolute), "accessweaver-policy-test-") || !os.SameFile(fixtureInfo, current) || !current.IsDir() {
 			t.Error("refusing unsafe fixture cleanup", err, statErr)
 			return
 		}

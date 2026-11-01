@@ -16,6 +16,7 @@ if ((${#existing_stages[@]})); then
   echo 'Refusing preexisting bootstrap stages.' >&2
   exit 1
 fi
+stat -c '%u %g %a %n' / /etc /opt
 mkdir -p build/managed-policy-checks
 CGO_ENABLED=0 go test -c -o build/linux-managed-policy.test ./cmd/accessweaver
 CGO_ENABLED=0 go test -c -o build/linux-policy-transactions.test ./internal/managed
