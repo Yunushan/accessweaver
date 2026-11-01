@@ -78,17 +78,19 @@ These are local filesystem/process checks, not engine traffic tests. Run them na
 
 ## Known Go vulnerability checks
 
-The separate `scripts/security-tools` module pins govulncheck and its checksums. With the release Go toolchain installed (currently Go 1.27.3), run:
+The separate `scripts/security-tools` module pins govulncheck, actionlint and their checksums. With the release Go toolchain installed (currently Go 1.27.3), run:
 
 ```bash
 go -C scripts/security-tools mod download
 go -C scripts/security-tools mod verify
 go -C scripts/security-tools install golang.org/x/vuln/cmd/govulncheck
+go -C scripts/security-tools install github.com/rhysd/actionlint/cmd/actionlint
+"$(go env GOPATH)/bin/actionlint" -shellcheck= -pyflakes=
 python3 -m unittest discover -s scripts -p test_vulnerability_report.py -v
 GOVULNCHECK="$(go env GOPATH)/bin/govulncheck" bash scripts/check-vulnerabilities.sh
 ```
 
-The runner checks the core's ten desktop OS/architecture configurations with CGO disabled, plus the optional fixture's Linux/amd64 and Windows/amd64 configurations. Each report records its SDK/scanner version, database timestamp, module inventory and target. CI repeats these checks; release packaging depends on their success. The scanner tool and fixture dependencies remain separate from the standard-library-only core. Dependabot monitors both optional modules weekly. The security job uses `GOTOOLCHAIN=local` so a dependency cannot silently substitute another SDK.
+The runner checks the core's ten desktop OS/architecture configurations with CGO disabled, plus the optional fixture's Linux/amd64 and Windows/amd64 configurations. Each report records its SDK/scanner version, database timestamp, module inventory and target. CI repeats these checks and validates workflow expressions with actionlint; release packaging depends on their success. The scanner tool and fixture dependencies remain separate from the standard-library-only core. Dependabot monitors both optional modules weekly. The security job uses `GOTOOLCHAIN=local` so a dependency cannot silently substitute another SDK.
 
 Govulncheck's JSON mode returns exit status zero even when it reports vulnerabilities. The report checker therefore validates the protocol, tool/SDK versions, official database, expected module and populated source inventory before assessing findings. Invalid/truncated reports, scanner errors, affected imported packages and reachable vulnerable symbols fail the gate. Raw JSON and summaries are retained as CI artifacts for 14 days, including on failure. See the [official govulncheck documentation](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) for output semantics and analysis limitations.
 

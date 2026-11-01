@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      GOBIN: ${{ runner.temp }}/accessweaver-security-tools
+      GOBIN: ${{ github.workspace }}/build/security-tools-bin
       GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -32,11 +32,13 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
-      - name: Verify and install pinned scanner
+      - name: Verify pinned scanner and workflow validator
         run: |
           go -C scripts/security-tools mod download
           go -C scripts/security-tools mod verify
           go -C scripts/security-tools install golang.org/x/vuln/cmd/govulncheck
+          go -C scripts/security-tools install github.com/rhysd/actionlint/cmd/actionlint
+          "$GOBIN/actionlint" -shellcheck= -pyflakes=
           python3 -m unittest discover -s scripts -p test_vulnerability_report.py -v
       - name: Verify optional fixture dependencies and compile (no guest execution)
         run: |
