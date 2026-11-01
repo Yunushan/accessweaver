@@ -21,7 +21,7 @@ import (
 
 func managedCommand(args []string) error {
 	if len(args) == 0 {
-		fmt.Print("Managed configuration tools (native runtime enforcement is partial):\n  managed status\n  managed prepare ENVELOPE.json --public-key BASE64 --minimum-revision N --out INSTALLATION.json\n  managed validate POLICY.json\n  managed digest-profile PROFILE.json\n  managed digest-workflow REQUEST.json\n  managed sign POLICY.json --private-key PRIVATE-KEY.pem [--out ENVELOPE.json]\n  managed public-key --private-key PRIVATE-KEY.pem\n  managed verify ENVELOPE.json --public-key BASE64 [--minimum-revision N]\nSigning requires an offline Ed25519 PKCS#8 PEM key. Never deploy the private key.\n")
+		fmt.Print("Managed configuration tools (native runtime enforcement is partial):\n  managed status\n  managed install INSTALLATION.json --public-key BASE64\n  managed update ENVELOPE.json\n  managed prepare ENVELOPE.json --public-key BASE64 --minimum-revision N --out INSTALLATION.json\n  managed validate POLICY.json\n  managed digest-profile PROFILE.json\n  managed digest-workflow REQUEST.json\n  managed sign POLICY.json --private-key PRIVATE-KEY.pem [--out ENVELOPE.json]\n  managed public-key --private-key PRIVATE-KEY.pem\n  managed verify ENVELOPE.json --public-key BASE64 [--minimum-revision N]\nSigning requires an offline Ed25519 PKCS#8 PEM key. Never deploy the private key.\n")
 		return nil
 	}
 	switch args[0] {
@@ -31,6 +31,36 @@ func managedCommand(args []string) error {
 		}
 		status, err := managed.MachineStatus()
 		return errors.Join(err, printJSON(status))
+	case "install":
+		if len(args) != 4 || args[2] != "--public-key" {
+			return errors.New("usage: managed install INSTALLATION.json --public-key BASE64")
+		}
+		public, err := managed.PublicKey(args[3])
+		if err != nil {
+			return err
+		}
+		data, err := readManagedFile(args[1], managed.MaxInstallationBytes)
+		if err != nil {
+			return err
+		}
+		result, err := managed.Install(data, public)
+		if err != nil {
+			return err
+		}
+		return printJSON(result)
+	case "update":
+		if len(args) != 2 {
+			return errors.New("usage: managed update ENVELOPE.json")
+		}
+		data, err := readManagedFile(args[1], managed.MaxEnvelopeBytes)
+		if err != nil {
+			return err
+		}
+		result, err := managed.Update(data)
+		if err != nil {
+			return err
+		}
+		return printJSON(result)
 	case "prepare":
 		if len(args) != 8 || args[2] != "--public-key" || args[4] != "--minimum-revision" || args[6] != "--out" {
 			return errors.New("usage: managed prepare ENVELOPE.json --public-key BASE64 --minimum-revision N --out INSTALLATION.json")

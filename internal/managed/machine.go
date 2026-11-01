@@ -24,7 +24,7 @@ type Installation struct {
 // the signature and validity window; native source protection is a separate check.
 type Authority struct{ verified Verified }
 
-func DecodeInstallation(data []byte, now time.Time) (*Authority, error) {
+func parseInstallation(data []byte) (Installation, error) {
 	// The revision floor must be explicit; omission/null must not reset it to 0.
 	var installed struct {
 		SchemaVersion   int      `json:"schemaVersion"`
@@ -33,13 +33,21 @@ func DecodeInstallation(data []byte, now time.Time) (*Authority, error) {
 		Envelope        Envelope `json:"envelope"`
 	}
 	if err := strictJSON(data, MaxInstallationBytes, &installed); err != nil {
-		return nil, err
+		return Installation{}, err
 	}
 	if installed.SchemaVersion != 1 {
-		return nil, errors.New("unsupported managed installation schema")
+		return Installation{}, errors.New("unsupported managed installation schema")
 	}
 	if installed.MinimumRevision == nil {
-		return nil, errors.New("managed installation requires an explicit revision floor")
+		return Installation{}, errors.New("managed installation requires an explicit revision floor")
+	}
+	return Installation{installed.SchemaVersion, installed.PublicKey, *installed.MinimumRevision, installed.Envelope}, nil
+}
+
+func DecodeInstallation(data []byte, now time.Time) (*Authority, error) {
+	installed, err := parseInstallation(data)
+	if err != nil {
+		return nil, err
 	}
 	public, err := PublicKey(installed.PublicKey)
 	if err != nil {
@@ -49,7 +57,7 @@ func DecodeInstallation(data []byte, now time.Time) (*Authority, error) {
 	if err != nil {
 		return nil, err
 	}
-	verified, err := Verify(envelope, public, now, *installed.MinimumRevision)
+	verified, err := Verify(envelope, public, now, installed.MinimumRevision)
 	if err != nil {
 		return nil, err
 	}

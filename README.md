@@ -132,7 +132,7 @@ bash scripts/package-release.sh preview
 
 Cross-build and packaging scripts require Go, Bash and Python 3.
 
-Windows has partial signed administrator-policy enforcement; [managed configuration](docs/MANAGED_CONFIGURATION.md) documents its protected source, current limits and unfinished enrollment/qualification.
+Windows has partial signed administrator-policy enforcement; [managed configuration](docs/MANAGED_CONFIGURATION.md) documents its protected source, transactional Windows install/update commands, current limits and unfinished recovery/qualification.
 
 CI is configured to run unit tests on Linux, Windows and macOS, a Linux race check, and ten cross-build targets. A workflow configuration is not evidence that a run passed: see [Actions](https://github.com/Yunushan/accessweaver/actions) for results. BSD cross-compilation does not execute tests on BSD.
 

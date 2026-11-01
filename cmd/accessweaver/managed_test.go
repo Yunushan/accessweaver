@@ -158,7 +158,7 @@ func TestManagedCommandsSignReviewWithoutMutatingUserState(t *testing.T) {
 }
 
 func TestManagedCommandsRejectAmbiguousInputsAndKeys(t *testing.T) {
-	for _, args := range [][]string{{"validate"}, {"sign", "policy"}, {"verify", "envelope", "--private-key", "key"}, {"verify", "envelope", "--public-key", "key", "--minimum-revision", "-1"}, {"unknown"}} {
+	for _, args := range [][]string{{"validate"}, {"sign", "policy"}, {"verify", "envelope", "--private-key", "key"}, {"verify", "envelope", "--public-key", "key", "--minimum-revision", "-1"}, {"unknown"}, {"install"}, {"install", "file", "--public-key", "invalid"}, {"install", "file", "--minimum-revision", "0"}, {"update"}, {"update", "file", "--public-key", "invalid"}} {
 		out, err := captureManagedCommand(t, args)
 		if err == nil || len(out) != 0 {
 			t.Fatalf("invalid command produced review: %v %v", args, err)

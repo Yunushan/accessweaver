@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -209,26 +210,26 @@ func TestDisposableManagedPolicyNative(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registrySD := nativeTestDescriptor(t, "O:BAG:BAD:P(A;;KA;;;SY)(A;;KA;;;BA)(A;;KR;;;BU)")
-	registryAttributes := syscall.SecurityAttributes{Length: uint32(unsafe.Sizeof(syscall.SecurityAttributes{})), SecurityDescriptor: uintptr(registrySD)}
+	installResult, err := managed.Install(installed, public)
+	if err != nil || !installResult.Committed || installResult.Revision != 1 {
+		t.Fatal("initial protected installation failed", installResult, err)
+	}
 	var key syscall.Handle
-	var disposition uint32
-	code, _, _ := nativePolicyDLL.NewProc("RegCreateKeyExW").Call(uintptr(syscall.HKEY_LOCAL_MACHINE), uintptr(unsafe.Pointer(name)), 0, 0, 1, syscall.KEY_ALL_ACCESS|syscall.KEY_WOW64_64KEY, uintptr(unsafe.Pointer(&registryAttributes)), uintptr(unsafe.Pointer(&key)), uintptr(unsafe.Pointer(&disposition)))
-	if code != 0 {
-		t.Fatal(syscall.Errno(code))
-	}
-	if disposition != 1 {
-		syscall.RegCloseKey(key)
-		t.Fatal("policy key appeared concurrently; refusing to alter it")
-	}
 	t.Cleanup(func() {
-		syscall.RegCloseKey(key)
+		if key != 0 {
+			syscall.RegCloseKey(key)
+		}
 		code, _, _ := nativePolicyDLL.NewProc("RegDeleteKeyExW").Call(uintptr(syscall.HKEY_LOCAL_MACHINE), uintptr(unsafe.Pointer(name)), syscall.KEY_WOW64_64KEY, 0)
 		if code != 0 {
 			t.Error("policy cleanup", syscall.Errno(code))
 		}
 	})
-	nativeTestSetInstallation(t, key, installed)
+	if err := syscall.RegOpenKeyEx(syscall.HKEY_LOCAL_MACHINE, name, 0, syscall.KEY_READ|syscall.KEY_SET_VALUE|syscall.KEY_WOW64_64KEY, &key); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := managed.Install(installed, public); err == nil {
+		t.Fatal("initial install overwrote existing enrollment")
+	}
 	status, err := managed.MachineStatus()
 	if err != nil || !status.Valid || status.Revision != 1 || status.Enforcement != "partial" {
 		t.Fatal("native source did not accept protected policy", status, err)
@@ -288,6 +289,96 @@ func TestDisposableManagedPolicyNative(t *testing.T) {
 	if err := manager.Start(p); !errors.Is(err, managed.ErrDenied) {
 		t.Fatal("changed executable contents accepted", err)
 	}
+	policy.Revision = 2
+	updatedBytes, err := json.Marshal(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedEnvelope, err := managed.Sign(updatedBytes, private, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two independent callers must not both accept the same revision.
+	var updating sync.WaitGroup
+	outcomes := make(chan error, 2)
+	for index := 0; index < 2; index++ {
+		updating.Add(1)
+		go func() { defer updating.Done(); _, err := managed.Update(updatedEnvelope); outcomes <- err }()
+	}
+	updating.Wait()
+	close(outcomes)
+	accepted := 0
+	for err := range outcomes {
+		if err == nil {
+			accepted++
+		}
+	}
+	if accepted != 1 {
+		t.Fatalf("concurrent update accepted %d copies of one revision", accepted)
+	}
+	status, err = managed.MachineStatus()
+	if err != nil || status.Revision != 2 {
+		t.Fatal("monotonic update lost state", status, err)
+	}
+	if _, err := managed.Update(envelope); err == nil {
+		t.Fatal("older signed policy replayed")
+	}
+	_, otherPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherPolicy := policy
+	otherPolicy.Revision = 3
+	otherBytes, err := json.Marshal(otherPolicy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherEnvelope, err := managed.Sign(otherBytes, otherPrivate, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := managed.Update(otherEnvelope); err == nil {
+		t.Fatal("update replaced the enrolled signing key")
+	}
+	// Administratively stage an expired fixture to prove supported renewal;
+	// it must remain blocked for ordinary runtime operations before renewal.
+	policy.IssuedAt = now.Add(-2 * time.Hour)
+	policy.ExpiresAt = now.Add(-time.Hour)
+	expiredBytes, err := json.Marshal(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredEnvelope, err := managed.Sign(expiredBytes, private, now.Add(-90*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiredInstallation, err := managed.PrepareInstallation(expiredEnvelope, public, now.Add(-90*time.Minute), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeTestSetInstallation(t, key, expiredInstallation)
+	if _, err := managed.Current(); !errors.Is(err, managed.ErrUnavailable) {
+		t.Fatal("expired fixture authorized runtime", err)
+	}
+	policy.Revision = 3
+	policy.IssuedAt = now.Add(-time.Minute)
+	policy.ExpiresAt = now.Add(time.Hour)
+	renewedBytes, err := json.Marshal(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewedEnvelope, err := managed.Sign(renewedBytes, private, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewed, err := managed.Update(renewedEnvelope)
+	if err != nil || renewed.PreviousRevision != 2 || renewed.Revision != 3 {
+		t.Fatal("expired native policy could not renew", renewed, err)
+	}
+	installed, err = managed.PrepareInstallation(renewedEnvelope, public, now, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
 	nativeTestSetInstallation(t, key, []byte(`{"schemaVersion":1,"publicKey":"invalid","minimumRevision":0,"envelope":{}}`))
 	if _, err := managed.Current(); !errors.Is(err, managed.ErrUnavailable) {
 		t.Fatal("invalid installed policy fell back to unmanaged", err)
@@ -295,8 +386,11 @@ func TestDisposableManagedPolicyNative(t *testing.T) {
 	if err := store.Save(current); !errors.Is(err, managed.ErrUnavailable) {
 		t.Fatal("invalid policy allowed a mutation", err)
 	}
+	if _, err := managed.Update(renewedEnvelope); err == nil {
+		t.Fatal("invalid prior policy was silently repaired with untrusted state")
+	}
 	nativeTestSetInstallation(t, key, installed)
-	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "goVersion": runtime.Version(), "platform": runtime.GOOS, "arch": runtime.GOARCH, "protectedRegistryRead": true, "approvedFixtureStarted": true, "readOnlyProfilesEnforced": true, "unapprovedWorkflowDenied": true, "diagnosticsDenied": true, "serviceHostDenied": true, "limitedTokenCannotMutatePolicyOrEngine": true, "changedEngineHashDenied": true, "invalidPolicyFailsClosed": true, "registryCleanupScheduled": true, "productionQualificationComplete": false}
+	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "goVersion": runtime.Version(), "platform": runtime.GOOS, "arch": runtime.GOARCH, "protectedRegistryRead": true, "approvedFixtureStarted": true, "initialInstallRefusesReplacement": true, "concurrentRevisionReplayDenied": true, "signingKeySubstitutionDenied": true, "expiredPolicyRenewed": true, "readOnlyProfilesEnforced": true, "unapprovedWorkflowDenied": true, "diagnosticsDenied": true, "serviceHostDenied": true, "limitedTokenCannotMutatePolicyOrEngine": true, "changedEngineHashDenied": true, "invalidPolicyFailsClosed": true, "registryCleanupScheduled": true, "productionQualificationComplete": false}
 	bytes, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -370,6 +464,9 @@ func nativeLimitedPolicyProbe(enginePath string) error {
 	}
 	if !os.IsPermission(err) {
 		return err
+	}
+	if _, err := managed.Update([]byte(`{}`)); !errors.Is(err, managed.ErrDenied) {
+		return fmt.Errorf("limited token bypassed update administrator check: %v", err)
 	}
 	if err := managed.NewGuard(nil).ProfileChanges(); !errors.Is(err, managed.ErrDenied) {
 		return fmt.Errorf("limited token bypassed profile restriction: %v", err)

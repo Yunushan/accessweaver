@@ -118,7 +118,10 @@ jobs:
         shell: powershell
         env:
           ACCESSWEAVER_DISPOSABLE_POLICY_TEST: '1'
-        run: go test ./cmd/accessweaver -run '^TestDisposableManagedPolicyNative$' -count=1 -v
+        run: |
+          go test ./cmd/accessweaver -run '^TestDisposableManagedPolicyNative$' -count=1 -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test ./internal/managed -run '^TestDisposablePolicyTransactionRollback$' -count=1 -v
       - name: Retain managed-policy acceptance evidence
         if: runner.os == 'Windows' && always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

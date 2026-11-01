@@ -425,6 +425,10 @@
             "docs/MANAGED_CONFIGURATION.md",
             "internal/managed/machine.go",
             "internal/managed/machine_test.go",
+            "internal/managed/install.go",
+            "internal/managed/install_windows.go",
+            "internal/managed/install_test.go",
+            "internal/managed/install_windows_test.go",
             "internal/managed/machine_windows_test.go"
           ]
         },

@@ -59,23 +59,27 @@ func readMachineInstallation() ([]byte, bool, error) {
 		defer syscall.RegCloseKey(key)
 		parent = key
 	}
-	key := parent
+	data, err := readInstallationValue(parent)
+	return data, true, err
+}
+
+func readInstallationValue(key syscall.Handle) ([]byte, error) {
 	name, _ := syscall.UTF16PtrFromString(machinePolicyValue)
 	var kind, size uint32
 	err := syscall.RegQueryValueEx(key, name, nil, &kind, nil, &size)
 	if err != nil {
-		return nil, true, err
+		return nil, err
 	}
 	if kind != syscall.REG_BINARY || size == 0 || size > MaxInstallationBytes {
-		return nil, true, errors.New("machine installation must be bounded nonempty REG_BINARY JSON")
+		return nil, errors.New("machine installation must be bounded nonempty REG_BINARY JSON")
 	}
 	data := make([]byte, int(size))
 	err = syscall.RegQueryValueEx(key, name, nil, &kind, &data[0], &size)
 	if err != nil {
-		return nil, true, err
+		return nil, err
 	}
 	if kind != syscall.REG_BINARY || size == 0 || size > uint32(len(data)) {
-		return nil, true, errors.New("machine installation changed during reading")
+		return nil, errors.New("machine installation changed during reading")
 	}
-	return data[:size], true, nil
+	return data[:size], nil
 }
