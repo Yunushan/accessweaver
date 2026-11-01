@@ -130,11 +130,13 @@ func (d runner) diagnose(ctx context.Context, input Request, guard *managed.Guar
 		return r, err
 	}
 	defer stop()
-	if err := input.normalize(); err != nil {
-		r.Checks = append(r.Checks, Check{Name: "input", Status: "failed", Detail: err.Error()})
+	validationErr := input.normalize()
+	r.Path, r.Transport = input.Path, input.Transport
+	if validationErr != nil {
+		r.Checks = append(r.Checks, Check{Name: "input", Status: "failed", Detail: validationErr.Error()})
 		return r, nil
 	}
-	r.Path, r.Transport, r.Proxy = input.Path, input.Transport, input.Proxy
+	r.Proxy = input.Proxy
 	deadline, cancel := context.WithTimeout(monitored, time.Duration(input.TimeoutSeconds)*time.Second)
 	defer cancel()
 	if input.Transport == "stun" {

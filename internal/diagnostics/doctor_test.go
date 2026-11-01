@@ -58,3 +58,12 @@ func TestTLSRejectsUntrustedCertificate(t *testing.T) {
 		t.Fatalf("untrusted certificate accepted: %+v", r)
 	}
 }
+
+func TestInvalidProxyReportRetainsRequestedPath(t *testing.T) {
+	for _, proxy := range []string{"invalid proxy", "user:password@127.0.0.1:1080"} {
+		r, err := Diagnose(context.Background(), Request{Probe: profile.Probe{Host: "example.com", Port: 443, TimeoutSeconds: 2}, Path: "socks5", Proxy: proxy}, nil)
+		if err != nil || r.Passed() || r.Path != "socks5" || r.Transport != "tcp" || r.Proxy != "" || len(r.Checks) != 1 || r.Checks[0].Name != "input" {
+			t.Fatalf("invalid proxy report lost requested path or repeated unvalidated proxy: %+v %v", r, err)
+		}
+	}
+}
