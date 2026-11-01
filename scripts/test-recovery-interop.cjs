@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {createHash, webcrypto} = require('node:crypto');
 const {spawnSync} = require('node:child_process');
+const {validateBuild}=require('./check-native-environment.cjs');
 const executable = path.resolve(process.argv[2] || (process.platform === 'win32' ? 'accessweaver.exe' : 'accessweaver'));
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'accessweaver-recovery-check-'));
 const userState = path.join(workspace, 'must-not-create-state');
@@ -31,6 +32,7 @@ function cli(args, success=true) {
    assert.equal(build.commit,process.env.GITHUB_SHA,'native CLI does not identify the expected source commit');
    assert.equal(build.sourceState,'clean','native CLI was built from a modified source tree');
   }
+  if(process.env.ACCESSWEAVER_EXPECT_GOOS || process.env.ACCESSWEAVER_EXPECT_GOARCH)validateBuild(build,{goos:process.env.ACCESSWEAVER_EXPECT_GOOS,goarch:process.env.ACCESSWEAVER_EXPECT_GOARCH,goVersion:process.env.GO_VERSION,commit:process.env.GITHUB_SHA||''});
   const keys=await webcrypto.subtle.generateKey('Ed25519',true,['sign','verify']);
   const publicBytes=Buffer.from(await webcrypto.subtle.exportKey('raw',keys.publicKey));
   const publicKey=publicBytes.toString('base64'),keyID=sha(publicBytes);

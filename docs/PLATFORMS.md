@@ -14,7 +14,20 @@ Compilation, native execution, driver integration and successful traffic routing
 
 Use an operating-system version supported by both the compiler used for the binary and the installed engine. Release metadata records the compiler; consult [Go's minimum requirements](https://go.dev/wiki/MinimumRequirements) when choosing a build. An older source language minimum does not guarantee that a binary built with a newer compiler runs on an older OS.
 
-CI is configured for native unit tests on GitHub-hosted Linux, Windows and macOS. The ten packaging targets are cross-compiled with `CGO_ENABLED=0`. Cross-building BSD and arm64 binaries does not run them on devices. Current run results belong in GitHub Actions; [TESTING.md](TESTING.md) defines what additional integration evidence is needed.
+CI/release verification is configured for native execution on six hosted targets:
+
+| Target | Hosted runner | Intended native checks |
+|---|---|---|
+| Linux amd64 | `ubuntu-latest` | Unit/static/race, Unix controller/session isolation, backup/recovery interoperability, protected policy/rotation/recovery |
+| Linux arm64 | `ubuntu-24.04-arm` | The same native Linux checks, including ordinary-user/root separation |
+| Windows amd64 | `windows-latest` | Unit/static, workflow contracts, backup/recovery interoperability and protected policy/rotation/recovery with restricted-token checks |
+| Windows arm64 | `windows-11-arm` | The same native core/policy checks on Windows 11 ARM64; installer compilation still targets the existing amd64 payload |
+| macOS arm64 | `macos-latest` | Unit/static, Unix controller ownership/shutdown and backup/recovery interoperability |
+| macOS amd64 | `macos-15-intel` | The same native core checks on an Intel Mac |
+
+The [hosted-runner labels](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) identify the provider's OS/architecture images; `-latest` labels can change OS releases. Native checks compare OS machine type, runner architecture, Go host/target/version and the executed CLI identity. A cross SDK, different target, wrong source or dirty hosted build fails validation. Public per-target records contain actual image/OS/toolchain and binary hashes; artifact names include both OS and architecture so one target cannot replace another's evidence. Test outcomes must be checked against the exact source-bound run, not inferred from this configured matrix.
+
+The ten packaging targets remain cross-compiled with `CGO_ENABLED=0`. BSD builds are not native BSD execution. Hosted core acceptance does not establish vendor driver/routing behavior, every OS version/distribution, domain/MDM enrollment, signed distribution, native arm64 installer support or complete desktop qualification. Current run results belong in GitHub Actions; [TESTING.md](TESTING.md) defines what additional integration evidence is needed.
 
 ## Windows
 

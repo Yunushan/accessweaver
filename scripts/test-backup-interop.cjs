@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { createHash, randomBytes, webcrypto } = require('node:crypto');
 const { spawnSync } = require('node:child_process');
+const {validateBuild}=require('./check-native-environment.cjs');
 
 const executable = path.resolve(process.argv[2] || (process.platform === 'win32' ? 'accessweaver.exe' : 'accessweaver'));
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'accessweaver-backup-check-'));
@@ -33,6 +34,8 @@ async function derive(salt, usages) {
 }
 (async () => {
   try {
+    const build=cli(['version','--json']);
+    if(process.env.ACCESSWEAVER_EXPECT_GOOS || process.env.ACCESSWEAVER_EXPECT_GOARCH)validateBuild(build,{goos:process.env.ACCESSWEAVER_EXPECT_GOOS,goarch:process.env.ACCESSWEAVER_EXPECT_GOARCH,goVersion:process.env.GO_VERSION,commit:process.env.GITHUB_SHA||''});
     fs.mkdirSync(path.join(source, 'profiles'), { recursive: true, mode: 0o700 });
     fs.writeFileSync(path.join(source, 'profiles', fixture.id + '.json'), JSON.stringify(fixture), { mode: 0o600 });
     fs.writeFileSync(passwordFile, password + '\n', { mode: 0o600 });
@@ -64,7 +67,7 @@ async function derive(salt, usages) {
     fs.writeFileSync(passwordFile, 'a wrong independent passphrase');
     assert.match(cli(['backup', 'inspect', '--archive', archive, '--passphrase-file', passwordFile], false).stderr, /authentication failed/);
     const evidence = { sourceCommit: process.env.GITHUB_SHA || 'unknown', platform: process.platform, arch: process.arch,
-      nodeVersion: process.version, binarySha256: createHash('sha256').update(fs.readFileSync(executable)).digest('hex'),
+      nodeVersion: process.version, build, binarySha256: createHash('sha256').update(fs.readFileSync(executable)).digest('hex'),
       goToWebCrypto: true, webCryptoToGo: true, restoredRevisionPreserved: true,
       tamperRejected: true, wrongPassphraseRejected: true, productionQualificationComplete: false };
     const evidenceDir = path.resolve('build', 'backup-checks');

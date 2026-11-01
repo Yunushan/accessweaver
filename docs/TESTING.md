@@ -15,7 +15,19 @@ node --test web/app.test.cjs
 bash scripts/build-all.sh
 ```
 
-CI runs native unit tests on hosted Linux/Windows/macOS and race checks on Linux. Command-generation tests check the arguments AccessWeaver produces; they do not execute upstream engines or confirm DPI effectiveness. Cross-builds check compilation only. Check [GitHub Actions](https://github.com/Yunushan/accessweaver/actions) for the actual run outcome.
+CI runs native core tests on amd64 and arm64 Linux/Windows/macOS, with race checks on both Linux architectures. The [platform matrix](PLATFORMS.md) lists the actual runner labels, architecture/source assertions and remaining scope limits. Per-target native identity, backup, recovery and managed-policy records use architecture-specific artifact names. `scripts/check-native-environment.cjs` rejects cross SDKs, target mismatches and dirty/mismatched hosted build identities; its adversarial identity tests run in every native job. Command-generation tests check the arguments AccessWeaver produces; they do not execute upstream engines or confirm DPI effectiveness. Cross-builds check compilation only. Check [GitHub Actions](https://github.com/Yunushan/accessweaver/actions) for the actual run outcome.
+
+## Native identity evidence
+
+Native jobs assert the intended host and SDK before tests, then execute `version --json` from the built CLI and record its source, compiler, OS, architecture and SHA-256. For a local Linux amd64 check with a trusted built executable:
+
+```sh
+ACCESSWEAVER_EXPECT_GOOS=linux ACCESSWEAVER_EXPECT_GOARCH=amd64 GO_VERSION=1.27.3 GOTOOLCHAIN=local node scripts/check-native-environment.cjs --binary ./accessweaver
+```
+
+Use `windows`/`darwin` and `arm64` only for the actual intended native target; the checker rejects SDK/target mismatches. Local records with unknown source or a modified tree do not become clean hosted qualification. Hosted checks additionally require the expected commit, clean source and provider architecture. OS machine type, Node interpreter architecture and Go host/target are recorded separately; a helper interpreter is not used as a substitute for the tested Go executable's identity.
+
+Native Windows installer compilation continues to build the documented amd64 installer payload on both Windows runner architectures. That is an installer build check, not a native arm64 installer or native vendor-driver acceptance. The architecture label on the artifact describes its runner; inspect the enclosed compiler/payload records for the produced installer target.
 
 ## Desktop UI smoke test
 
