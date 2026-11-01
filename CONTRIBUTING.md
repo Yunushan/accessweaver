@@ -4,7 +4,7 @@ AccessWeaver welcomes focused contributions in English or Turkish. Start with [t
 
 ## Local development
 
-Use a current supported Go release (source minimum: Go 1.23). Node.js is used only for browser JavaScript checks and tests. The application has no npm build or third-party Go module dependencies.
+Use a current supported Go release (source minimum: Go 1.24). Node.js is used only for browser JavaScript checks and tests. The application has no npm build or third-party Go module dependencies.
 
 ```bash
 go run ./cmd/accessweaver ui

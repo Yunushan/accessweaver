@@ -34,6 +34,9 @@ func DefaultRoot() (string, error) {
 func NewStore(root string) (*Store, error) { return NewStoreWithGuard(root, managed.NewGuard(nil)) }
 
 func NewStoreWithGuard(root string, guard *managed.Guard) (*Store, error) {
+	if err := checkRestoreState(root); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Join(root, "profiles"), 0700); err != nil {
 		return nil, err
 	}
@@ -54,6 +57,12 @@ func (s *Store) lock(ctx context.Context) (*filelock.Lock, error) {
 	lock, err := filelock.Acquire(ctx, filepath.Join(s.Root, ".profiles.lock"))
 	if errors.Is(err, filelock.ErrBusy) {
 		return nil, fmt.Errorf("%w: %w", ErrStoreBusy, err)
+	}
+	if err == nil {
+		if restoreErr := checkRestoreState(s.Root); restoreErr != nil {
+			_ = lock.Close()
+			return nil, restoreErr
+		}
 	}
 	return lock, err
 }

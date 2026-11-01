@@ -70,6 +70,9 @@ func execute(args []string) error {
 	if env := os.Getenv("ACCESSWEAVER_HOME"); env != "" {
 		root = env
 	}
+	if args[0] == "backup" {
+		return backupCommand(args[1:], root)
+	}
 	// Catalog, validation, diagnostics and workflow metadata must also work in
 	// read-only environments without creating or seeding a profile store.
 	var store *profile.Store
@@ -248,6 +251,8 @@ func usage() {
   accessweaver preview ID          Review launch plan without starting an engine
   accessweaver validate FILE.json  Validate a profile
   accessweaver import FILE.json    Import profile into local store
+  accessweaver backup create|inspect|restore [options]
+                                  Encrypted profile backup and new-directory restore
   accessweaver doctor [HOST]       Run DNS/TCP/TLS checks
   accessweaver run ID              Explicitly start one engine in foreground
   accessweaver managed             Review/sign/verify administrator policy documents

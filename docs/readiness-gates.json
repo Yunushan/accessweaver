@@ -543,9 +543,16 @@
         {
           "id": "data.backup",
           "acceptance": "Test encrypted/private backup, restore, migration, disaster recovery and schema compatibility on each supported platform.",
-          "status": "missing",
+          "status": "partial",
           "evidence": [
-            "internal/profile/model.go"
+            "internal/backup/archive.go",
+            "internal/backup/archive_test.go",
+            "internal/profile/snapshot.go",
+            "internal/profile/snapshot_test.go",
+            "cmd/accessweaver/backup.go",
+            "cmd/accessweaver/backup_test.go",
+            "scripts/test-backup-interop.cjs",
+            "docs/BACKUP_RESTORE.md"
           ]
         },
         {

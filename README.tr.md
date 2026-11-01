@@ -44,7 +44,7 @@ Tarayıcı paneli otomatik açılır; konsol işlemini açık bırakın. **Hazı
 
 ### Kaynak koddan derleyin
 
-Güncel ve desteklenen bir [Go sürümü](https://go.dev/dl/) kurun (kaynak kod en az Go 1.23 gerektirir):
+Güncel ve desteklenen bir [Go sürümü](https://go.dev/dl/) kurun (kaynak kod en az Go 1.24 gerektirir):
 
 ```bash
 git clone https://github.com/Yunushan/accessweaver.git

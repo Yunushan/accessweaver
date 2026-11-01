@@ -45,7 +45,7 @@ The browser dashboard opens automatically; keep the console process running. **G
 
 ### Build from source
 
-Install a current supported [Go release](https://go.dev/dl/) (the source requires Go 1.23 or later), then:
+Install a current supported [Go release](https://go.dev/dl/) (the source requires Go 1.24 or later), then:
 
 ```bash
 git clone https://github.com/Yunushan/accessweaver.git
@@ -131,6 +131,8 @@ bash scripts/package-release.sh preview
 ```
 
 Cross-build and packaging scripts require Go, Bash and Python 3.
+
+Saved profiles can be exported as authenticated, password-encrypted archives and restored into a new data directory through the [backup CLI](docs/BACKUP_RESTORE.md). External files, machine policy and OS state require separate recovery.
 
 Windows and Linux have partial signed administrator-policy enforcement; [managed configuration](docs/MANAGED_CONFIGURATION.md) documents its protected source, platform-specific install/update/rotation commands, current limits and unfinished recovery/qualification.
 

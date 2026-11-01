@@ -93,6 +93,18 @@ jobs:
           node --check web/app.js
           node --check web/system.js
           node --check web/locales.js
+      - name: Native encrypted backup interoperability
+        run: |
+          go build ./cmd/accessweaver
+          node scripts/test-backup-interop.cjs
+      - name: Retain native backup evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: backup-check-${{ runner.os }}
+          path: build/backup-checks/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Portable archive metadata regression checks
         run: python3 -m unittest discover -s scripts -p test_release_archive.py -v
       - name: Windows workflow contracts (no system changes)
