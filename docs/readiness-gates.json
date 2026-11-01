@@ -220,7 +220,11 @@
           "status": "partial",
           "evidence": [
             "scripts/build-all.sh",
-            ".github/workflows/release.yml"
+            ".github/workflows/release.yml",
+            "scripts/release_archive.py",
+            "scripts/test_release_archive.py",
+            ".gitattributes",
+            "docs/TESTING.md"
           ]
         },
         {

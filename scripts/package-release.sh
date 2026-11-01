@@ -19,19 +19,24 @@ python3 - "$release_label" "$stage_dir/bin" <<'PY'
 from pathlib import Path
 import hashlib
 import json
+import platform
 import re
 import subprocess
 import sys
-import tarfile
-import zipfile
+import zlib
+sys.path.insert(0, "scripts")
+from release_archive import epoch_from_timestamp, write_archive
 
 label, binaries = sys.argv[1], Path(sys.argv[2])
 build_info = json.loads((binaries / "BUILD-INFO.json").read_text(encoding="utf-8"))
+epoch = epoch_from_timestamp(build_info["builtAt"])
 out = Path("dist") / label
 out.mkdir(parents=True, exist_ok=True)
 manifest = {
     "project": "AccessWeaver",
     "releaseLabel": label,
+    "packaging": {"pythonVersion": platform.python_version(), "zlibVersion": zlib.ZLIB_VERSION,
+                  "zlibRuntimeVersion": zlib.ZLIB_RUNTIME_VERSION, "archiveEpoch": epoch},
     "goVersion": subprocess.check_output(["go", "version"], text=True).strip(),
     "sourceCommit": build_info["commit"],
     "sourceState": build_info["sourceState"],
@@ -63,14 +68,7 @@ for binary in sorted(binaries.iterdir()):
     target_info_file.write_text(json.dumps(target_info, indent=2) + "\n", encoding="utf-8")
     pairs += [(target_info_file, f"{directory}/BUILD-INFO.json")]
     archive = out / (directory + (".zip" if target_os == "windows" else ".tar.gz"))
-    if target_os == "windows":
-        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zipped:
-            for source, name in pairs:
-                zipped.write(source, name)
-    else:
-        with tarfile.open(archive, "w:gz") as tar:
-            for source, name in pairs:
-                tar.add(source, arcname=name, recursive=False)
+    write_archive(archive, pairs, epoch, executable=f"{directory}/accessweaver{extension or ''}")
     checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
     artifacts.append(archive)
     manifest["artifacts"].append({

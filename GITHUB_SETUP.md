@@ -29,7 +29,7 @@ bash scripts/package-release.sh preview
 
 This requires Go, Bash and Python 3. It creates `dist/preview/` with ten target archives, `BUILD-MANIFEST.json` and `SHA256SUMS.txt`. Windows uses ZIP; other systems use gzip-compressed tar so executable modes survive extraction. The archives include the core executable, readme files, documentation and license notices. They do not include engines, credentials, drivers or an installer.
 
-The manifest records the compiler, source commit when available, target architectures, hashes and explicit unsigned/untested flags. Builds use `CGO_ENABLED=0`; this is a portable core build, not a claim of reproducible or signed releases. The packaging script does not run a real engine.
+The manifest records the compiler, source commit when available, target architectures, hashes and explicit unsigned/untested flags. Builds use `CGO_ENABLED=0`. Portable packaging uses a fixed source epoch and normalized archive metadata; the workflow compares two complete package runs before upload. Use a fresh checkout and identical source/toolchain inputs for comparisons (see [rebuild checks](docs/TESTING.md#repeated-portable-builds)). Independent trusted rebuild qualification and signed releases remain outstanding. The packaging script does not run a real engine.
 
 ## Publishing a prerelease
 

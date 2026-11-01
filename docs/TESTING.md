@@ -77,6 +77,16 @@ Inspect one Windows ZIP and one Unix tarball: the executable, LICENSE, third-par
 
 The release verifier checks all ten archives, their checksums, required notices and per-target `BUILD-INFO.json`. With `--execute-native`, it also runs metadata commands from the matching host archive, compares runtime identity and rejects unexpected user-state writes. This does not execute other architectures or validate their networking. Release builders stamp a common version, commit, source modification state and build time; `accessweaver version --json` and API bootstrap expose that identity. Modified-source builds remain explicitly labeled.
 
+### Repeated portable builds
+
+Cross-builds require Go, Bash and Python 3. `build-all.sh` uses the source commit timestamp for `builtAt` by default. Set `SOURCE_DATE_EPOCH` to a nonnegative integer up to 4294967295 to select a fixed UTC epoch explicitly; an empty, malformed or out-of-range value fails the build. Source trees without Git metadata use the current time unless an epoch is supplied.
+
+Portable archives use sorted member names, fixed owner/permission metadata, UTC member timestamps and a gzip header without the random staging/output filename. ZIP timestamps clamp to 1980 and have two-second precision; runtime build metadata retains the actual selected epoch. The manifest records Python and zlib versions along with Go and source identity. The release workflow builds/packages twice and compares the complete checksum lists before upload.
+
+Use a fresh checkout so `.gitattributes` supplies canonical LF source bytes, including embedded web and PowerShell files (`.cmd` stays CRLF). Existing working trees can still contain old checkout line endings. Rebuild with identical source bytes, build version, epoch, Go/Python/zlib versions and release label, retain the first `SHA256SUMS.txt` outside `dist`, then repeat the package command and compare it with the second checksum file. `python3 -m unittest discover -s scripts -p test_release_archive.py -v` checks metadata, ordering, timezone, content sensitivity and invalid epochs.
+
+A repeated build on one machine does not satisfy independent trusted rebuild qualification. Windows installer reproducibility, signing, toolchain provenance and cross-host comparisons remain separate requirements; the reproducibility readiness gate stays partial.
+
 ## Production, premium and enterprise acceptance
 
 The confirmed target is desktop quality and managed deployment across every documented desktop platform. A fleet-management backend, application-owned device enrollment and multi-tenant cloud service are outside this goal. [readiness-gates.json](readiness-gates.json) records 50 acceptance gates across functional parity, reliability, security, supply chain, platforms, validation, product quality, enterprise capabilities, operations and data/privacy. Each gate contributes two points only after its full acceptance requirement has source-bound evidence. Partial implementation does not count as a passed release gate. The assessment is in progress; this is not a certification or a claim of a completed score.

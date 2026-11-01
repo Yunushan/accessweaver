@@ -1,2 +1,5 @@
+# Canonical source bytes for fresh checkouts, including embedded web/PowerShell.
+* text=auto eol=lf
+*.png -text
 *.sh text eol=lf
 *.cmd text eol=crlf

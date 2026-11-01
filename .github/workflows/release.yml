@@ -91,6 +91,8 @@ jobs:
           node --check web/app.js
           node --check web/system.js
           node --check web/locales.js
+      - name: Portable archive metadata regression checks
+        run: python3 -m unittest discover -s scripts -p test_release_archive.py -v
       - if: runner.os == 'Windows'
         shell: powershell
         run: ./scripts/test-windows-workflow.ps1
@@ -134,6 +136,10 @@ jobs:
           if [[ "$EVENT_NAME" != workflow_dispatch ]]; then export BUILD_VERSION="${RELEASE_TAG#v}"; fi
           bash scripts/package-release.sh "$label"
           python3 scripts/verify-release.py "dist/$label" --execute-native
+          cp "dist/$label/SHA256SUMS.txt" "$RUNNER_TEMP/first-package-checksums.txt"
+          bash scripts/package-release.sh "$label"
+          python3 scripts/verify-release.py "dist/$label" --execute-native
+          cmp "$RUNNER_TEMP/first-package-checksums.txt" "dist/$label/SHA256SUMS.txt"
       - name: Upload archives and checksums
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
