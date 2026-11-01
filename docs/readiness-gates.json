@@ -431,6 +431,8 @@
             "internal/managed/install_windows_test.go",
             "internal/managed/rotation.go",
             "internal/managed/rotation_test.go",
+            "internal/managed/key.go",
+            "internal/managed/key_test.go",
             "internal/managed/machine_windows_test.go"
           ]
         },

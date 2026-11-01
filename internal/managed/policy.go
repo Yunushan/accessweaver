@@ -83,7 +83,11 @@ func PublicKey(encoded string) (ed25519.PublicKey, error) {
 	if err != nil {
 		return nil, errors.New("expected a canonical base64 Ed25519 public key (32 bytes)")
 	}
-	return ed25519.PublicKey(b), nil
+	key := ed25519.PublicKey(b)
+	if err := validatePublicKey(key); err != nil {
+		return nil, err
+	}
+	return key, nil
 }
 
 func DecodePolicy(data []byte, now time.Time, minimumRevision uint64) (Policy, error) {
@@ -170,8 +174,8 @@ func Sign(payload []byte, key ed25519.PrivateKey, now time.Time) ([]byte, error)
 // envelope. minimumRevision must come from trusted state to prevent rollback.
 func Verify(data []byte, public ed25519.PublicKey, now time.Time, minimumRevision uint64) (Verified, error) {
 	var result Verified
-	if len(public) != ed25519.PublicKeySize {
-		return result, errors.New("invalid Ed25519 public key")
+	if err := validatePublicKey(public); err != nil {
+		return result, err
 	}
 	var envelope Envelope
 	if err := strictJSON(data, MaxEnvelopeBytes, &envelope); err != nil {
