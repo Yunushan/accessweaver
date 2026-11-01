@@ -54,6 +54,9 @@ func execute(args []string) error {
 		fmt.Printf("AccessWeaver %s (%s %s)\n", buildinfo.Version, runtime.GOOS, runtime.GOARCH)
 		return nil
 	}
+	if args[0] == "managed" {
+		return managedCommand(args[1:])
+	}
 	if args[0] == "ui" {
 		if err := uiaccess.RequireUnelevated(); err != nil {
 			return err
@@ -243,6 +246,7 @@ func usage() {
   accessweaver import FILE.json    Import profile into local store
   accessweaver doctor [HOST]       Run DNS/TCP/TLS checks
   accessweaver run ID              Explicitly start one engine in foreground
+  accessweaver managed             Review/sign/verify administrator policy documents
   accessweaver system              Show Windows installation/repair commands
   accessweaver version [--json]    Print runtime and source build identity
 

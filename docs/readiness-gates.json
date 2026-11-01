@@ -404,8 +404,14 @@
         {
           "id": "enterprise.configuration",
           "acceptance": "Versioned administrator configuration can be signed, reviewed, imported/exported and applied with deterministic precedence; invalid, unsigned, stale or tampered configuration is rejected while preserving the last known state.",
-          "status": "missing",
-          "evidence": []
+          "status": "partial",
+          "evidence": [
+            "internal/managed/policy.go",
+            "internal/managed/policy_test.go",
+            "cmd/accessweaver/managed.go",
+            "cmd/accessweaver/managed_test.go",
+            "docs/MANAGED_CONFIGURATION.md"
+          ]
         },
         {
           "id": "enterprise.rollout",
