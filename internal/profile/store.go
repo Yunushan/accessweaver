@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,13 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 	"time"
+
+	"github.com/Yunushan/accessweaver/internal/filelock"
 )
 
 type Store struct {
 	Root string
-	mu   sync.Mutex
 }
 
 // ErrConflict means the caller's reviewed revision no longer names the saved
@@ -41,7 +42,34 @@ func (s *Store) filename(id string) (string, error) {
 	return filepath.Join(s.Root, "profiles", id+".json"), nil
 }
 
+// lock coordinates all profile reads and mutations across Store instances and
+// processes. Keep the file in place even after a crash; OS handles own the lock.
+func (s *Store) lock(ctx context.Context) (*filelock.Lock, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	lock, err := filelock.Acquire(ctx, filepath.Join(s.Root, ".profiles.lock"))
+	if errors.Is(err, filelock.ErrBusy) {
+		return nil, fmt.Errorf("%w: %w", ErrStoreBusy, err)
+	}
+	return lock, err
+}
+
+var ErrStoreBusy = errors.New("profile store busy; wait for the other operation and retry")
+
 func (s *Store) Get(id string) (Profile, error) {
+	return s.GetContext(context.Background(), id)
+}
+
+func (s *Store) GetContext(ctx context.Context, id string) (Profile, error) {
+	lock, err := s.lock(ctx)
+	if err != nil {
+		return Profile{}, err
+	}
+	defer lock.Close()
+	return s.getLocked(id)
+}
+
+func (s *Store) getLocked(id string) (Profile, error) {
 	file, err := s.filename(id)
 	if err != nil {
 		return Profile{}, err
@@ -68,6 +96,15 @@ func (s *Store) Get(id string) (Profile, error) {
 	return p, nil
 }
 func (s *Store) List() ([]Profile, error) {
+	return s.ListContext(context.Background())
+}
+
+func (s *Store) ListContext(ctx context.Context) ([]Profile, error) {
+	lock, err := s.lock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Close()
 	dir := filepath.Join(s.Root, "profiles")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -79,7 +116,7 @@ func (s *Store) List() ([]Profile, error) {
 			continue
 		}
 		id := f.Name()[:len(f.Name())-5]
-		p, err := s.Get(id)
+		p, err := s.getLocked(id)
 		if err != nil {
 			return nil, err
 		}
@@ -92,21 +129,31 @@ func (s *Store) Save(p Profile) error {
 	if err := p.Validate(); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	lock, err := s.lock(context.Background())
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
 	return s.saveLocked(p)
 }
 
-// SaveIfUnchanged atomically compares and replaces within this Store. CLI import
-// intentionally uses Save for explicit replacement. Separate processes must not
-// share a store without external coordination.
+// SaveIfUnchanged compares and replaces under the shared OS lock. CLI import
+// intentionally uses Save for explicit replacement. Manual file writes and
+// filesystems without working OS locks remain outside this coordination.
 func (s *Store) SaveIfUnchanged(p Profile) error {
+	return s.SaveIfUnchangedContext(context.Background(), p)
+}
+
+func (s *Store) SaveIfUnchangedContext(ctx context.Context, p Profile) error {
 	if err := p.Validate(); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	current, err := s.Get(p.ID)
+	lock, err := s.lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	current, err := s.getLocked(p.ID)
 	if errors.Is(err, fs.ErrNotExist) {
 		if !p.UpdatedAt.IsZero() {
 			return ErrConflict
@@ -136,8 +183,11 @@ func (s *Store) saveLocked(p Profile) error {
 	return AtomicWrite(path, b)
 }
 func (s *Store) Delete(id string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	lock, err := s.lock(context.Background())
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
 	file, err := s.filename(id)
 	if err != nil {
 		return err
@@ -147,9 +197,16 @@ func (s *Store) Delete(id string) error {
 
 // DeleteIfUnchanged prevents a stale browser from deleting a newer revision.
 func (s *Store) DeleteIfUnchanged(id string, expected time.Time) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	current, err := s.Get(id)
+	return s.DeleteIfUnchangedContext(context.Background(), id, expected)
+}
+
+func (s *Store) DeleteIfUnchangedContext(ctx context.Context, id string, expected time.Time) error {
+	lock, err := s.lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	current, err := s.getLocked(id)
 	if errors.Is(err, fs.ErrNotExist) {
 		return ErrConflict
 	}
@@ -199,6 +256,11 @@ func AtomicWrite(file string, data []byte) error {
 	return nil
 }
 func (s *Store) Seed(samples []Profile) error {
+	lock, err := s.lock(context.Background())
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
 	// Seeding is first-run initialization, not synchronization. Once the user
 	// deletes a bundled profile it must stay deleted on subsequent launches.
 	marker := filepath.Join(s.Root, "presets-initialized")
@@ -222,7 +284,10 @@ func (s *Store) Seed(samples []Profile) error {
 		if !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
-		if err := s.Save(p); err != nil {
+		if err := p.Validate(); err != nil {
+			return err
+		}
+		if err := s.saveLocked(p); err != nil {
 			return err
 		}
 	}

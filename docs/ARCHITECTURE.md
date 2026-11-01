@@ -20,7 +20,7 @@ flowchart TD
 |---|---|---|
 | Static UI | Editing, bilingual presentation, preview and explicit commands | Native mobile networking or privileged OS access |
 | Loopback API | Local request validation and dispatch | Authentication against other processes running as the user |
-| Profile store | Versioned JSON, validation and atomic replacement | Secret encryption or safe semantics for arbitrary engine arguments |
+| Profile store | Versioned JSON, validation, atomic replacement and OS-locked revision checks across cooperating local processes | Secret encryption or safe semantics for arbitrary engine arguments |
 | Launch planner | Platform/executable checks, optional hash, configuration checks and supported rule translation | Trusted publisher identity, a valid engine strategy or working traffic interception |
 | Process manager | One foreground child, bounded output, stop/shutdown | A service manager, installer or rollback of third-party OS changes |
 | Diagnostics | Direct DNS resolution, TCP connect and certificate-verified TLS handshake | Selected SOCKS route, UDP/voice, QUIC, hostlist correctness or anonymity |
@@ -40,3 +40,9 @@ Offline browser mode stores profiles in local storage. It shares the editor pres
 ## Next architectural work
 
 Planned work includes a privilege-separated broker, engine provenance/version metadata, transactional OS changes and rollback, native tunnel lifecycle, and meaningful end-to-end traffic tests. Android needs a real app and VPN service; iOS needs a signed native tunnel extension. These are separate implementations, not capabilities conferred by the responsive web UI. See [ROADMAP.md](ROADMAP.md).
+
+## Local process coordination
+
+`.profiles.lock` serializes profile reads, mutations and initial seeding on a local data root. Windows uses an exclusive `LockFileEx` byte-range lock; Linux/macOS/BSD use `flock`. Acquisition waits at most five seconds before reporting a retryable busy condition. Lock files are persistent coordination objects, while OS handles own their lifetime: they are never unlinked on release. A handle/path identity check rejects a replaced lock path during acquisition. Manual writes, deletion of a live lock file and older binaries remain outside the protocol.
+
+The CLI also holds `.controller.lock` throughout `ui`, `run` and `import`, before seeding, to prevent two foreground owners or a CLI import from racing an active controller. This root lock is distinct from profile-operation locks and the Windows machine-workflow mutex. Different roots and Windows system workflow jobs retain their existing ownership boundaries.

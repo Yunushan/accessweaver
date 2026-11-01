@@ -53,6 +53,18 @@ func fail(w http.ResponseWriter, status int, message string) {
 	JSON(w, status, map[string]string{"error": message})
 }
 
+func failProfile(w http.ResponseWriter, err error, fallback int) {
+	status := fallback
+	if errors.Is(err, profile.ErrConflict) {
+		status = http.StatusConflict
+	}
+	if errors.Is(err, profile.ErrStoreBusy) {
+		status = http.StatusServiceUnavailable
+		w.Header().Set("Retry-After", "1")
+	}
+	fail(w, status, err.Error())
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	s.workflowRoutes(mux)
@@ -61,17 +73,17 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /api/v1/engines", func(w http.ResponseWriter, r *http.Request) { JSON(w, 200, engine.Catalog()) })
 	mux.HandleFunc("GET /api/v1/profiles", func(w http.ResponseWriter, r *http.Request) {
-		p, err := s.Store.List()
+		p, err := s.Store.ListContext(r.Context())
 		if err != nil {
-			fail(w, 500, err.Error())
+			failProfile(w, err, 500)
 			return
 		}
 		JSON(w, 200, p)
 	})
 	mux.HandleFunc("GET /api/v1/profiles/{id}", func(w http.ResponseWriter, r *http.Request) {
-		p, err := s.Store.Get(r.PathValue("id"))
+		p, err := s.Store.GetContext(r.Context(), r.PathValue("id"))
 		if err != nil {
-			fail(w, 404, err.Error())
+			failProfile(w, err, 404)
 			return
 		}
 		JSON(w, 200, p)
@@ -90,15 +102,15 @@ func (s *Server) Handler() http.Handler {
 			fail(w, 409, "stop active profile before editing")
 			return
 		}
-		if err := s.Store.SaveIfUnchanged(p); err != nil {
-			status := http.StatusBadRequest
-			if errors.Is(err, profile.ErrConflict) {
-				status = http.StatusConflict
-			}
-			fail(w, status, err.Error())
+		if err := s.Store.SaveIfUnchangedContext(r.Context(), p); err != nil {
+			failProfile(w, err, http.StatusBadRequest)
 			return
 		}
-		got, _ := s.Store.Get(p.ID)
+		got, err := s.Store.GetContext(r.Context(), p.ID)
+		if err != nil {
+			failProfile(w, err, 500)
+			return
+		}
 		JSON(w, 200, got)
 	})
 	mux.HandleFunc("DELETE /api/v1/profiles/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -118,12 +130,8 @@ func (s *Server) Handler() http.Handler {
 			fail(w, 409, "stop active profile before deleting")
 			return
 		}
-		if err := s.Store.DeleteIfUnchanged(id, input.ExpectedUpdatedAt); err != nil {
-			status := http.StatusBadRequest
-			if errors.Is(err, profile.ErrConflict) {
-				status = http.StatusConflict
-			}
-			fail(w, status, err.Error())
+		if err := s.Store.DeleteIfUnchangedContext(r.Context(), id, input.ExpectedUpdatedAt); err != nil {
+			failProfile(w, err, http.StatusBadRequest)
 			return
 		}
 		JSON(w, 200, map[string]bool{"deleted": true})
@@ -156,9 +164,9 @@ func (s *Server) Handler() http.Handler {
 			fail(w, 400, "explicit confirmation required")
 			return
 		}
-		p, err := s.Store.Get(req.ID)
+		p, err := s.Store.GetContext(r.Context(), req.ID)
 		if err != nil {
-			fail(w, 404, err.Error())
+			failProfile(w, err, 404)
 			return
 		}
 		if req.ExpectedUpdatedAt == "" {

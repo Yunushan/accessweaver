@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -19,6 +20,7 @@ import (
 	"github.com/Yunushan/accessweaver/internal/buildinfo"
 	"github.com/Yunushan/accessweaver/internal/diagnostics"
 	"github.com/Yunushan/accessweaver/internal/engine"
+	"github.com/Yunushan/accessweaver/internal/filelock"
 	"github.com/Yunushan/accessweaver/internal/profile"
 	"github.com/Yunushan/accessweaver/internal/servicehost"
 	"github.com/Yunushan/accessweaver/internal/uiaccess"
@@ -72,6 +74,16 @@ func execute(args []string) error {
 		store, err = profile.NewStore(root)
 		if err != nil {
 			return err
+		}
+		if args[0] == "ui" || args[0] == "run" || args[0] == "import" {
+			controller, lockErr := filelock.TryAcquire(filepath.Join(root, ".controller.lock"))
+			if errors.Is(lockErr, filelock.ErrBusy) {
+				return errors.New("another AccessWeaver controller is using this data directory; close it before starting a controller or importing through the CLI")
+			}
+			if lockErr != nil {
+				return fmt.Errorf("lock controller data directory: %w", lockErr)
+			}
+			defer controller.Close()
 		}
 		if err = store.Seed(profile.Builtins()); err != nil {
 			return err

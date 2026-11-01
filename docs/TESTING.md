@@ -68,6 +68,14 @@ Evidence must identify the actual source/artifact, environment, procedure and re
 
 Current reliability additions include service log rotation (8 MiB plus two backups), per-workflow process log rotation (4 MiB plus two backups), and bounded shutdown that waits for a workflow's terminal history record. Contract tests cover concurrent logging, oversized output, rotation failures and shutdown timeout/history recording. They do not establish long-duration resource budgets or complete failure recovery. Workflow directories and recovery histories still require a retention policy; per-file rotation alone does not bound lifetime disk use.
 
+## Cross-process storage and controller checks
+
+`go test ./internal/filelock ./internal/profile ./internal/api ./cmd/accessweaver -count=1` includes native subprocess tests. They verify exclusive ownership, ordinary and forced process exit, cancellation, persistent lock files, and six independent processes attempting to save the same reviewed profile revision. Exactly one save must succeed; stale deletion from another store must preserve that winner. CLI tests reject an import or foreground launch while a controller owns the root and verify release on failure. An API contention test requires HTTP 503 and `Retry-After: 1` without deleting the saved profile.
+
+On Linux/macOS, build the core and run `python3 scripts/test-unix-controller.py ./accessweaver`. This starts an isolated real dashboard, rejects a second UI and CLI import, allows read-only CLI access, verifies authenticated owner bootstrap despite an unusable proxy setting, and checks graceful shutdown removes the private launcher before an import can succeed. It launches no engine and changes no account/service/driver/network settings. CI and release verification require this test on Unix runners.
+
+These are local filesystem/process checks, not engine traffic tests. Run them natively on each supported OS and include `go test -race ./... -count=1` where a C compiler is available. Cross-building alone cannot validate `flock` or `LockFileEx` behavior. Do not infer Windows/WSL shared-store interoperability from separate Windows and Linux test success. Power-loss durability, filesystem corruption and backup/restore remain separate acceptance requirements.
+
 ## Evidence vocabulary
 
 - **Compiled:** compiler accepted the source for that target.

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"github.com/Yunushan/accessweaver/internal/buildinfo"
 	"github.com/Yunushan/accessweaver/internal/engine"
+	"github.com/Yunushan/accessweaver/internal/filelock"
 	"github.com/Yunushan/accessweaver/internal/profile"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -235,5 +237,31 @@ func TestLaunchRequiresReviewedProfileRevision(t *testing.T) {
 		if s.Manager.Snapshot().State != "stopped" {
 			t.Fatal("stale review launched engine")
 		}
+	}
+}
+
+func TestBusyProfileStoreReturnsRetryableResponse(t *testing.T) {
+	s := makeServer(t)
+	p := profile.New("busy-store", "Retain this profile", "byedpi")
+	if err := s.Store.Save(p); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := s.Store.Get(p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := filelock.TryAcquire(filepath.Join(s.Store.Root, ".profiles.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close()
+	w := request(t, s, "DELETE", "/api/v1/profiles/"+p.ID, map[string]any{"expectedUpdatedAt": saved.UpdatedAt}, s.Token, "127.0.0.1:54321")
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") != "1" {
+		t.Fatalf("store contention: %d %s", w.Code, w.Body.String())
+	}
+	owner.Close()
+	retained, err := s.Store.Get(p.ID)
+	if err != nil || !retained.UpdatedAt.Equal(saved.UpdatedAt) {
+		t.Fatal("contended deletion changed the profile", err)
 	}
 }

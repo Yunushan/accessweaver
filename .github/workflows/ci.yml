@@ -39,6 +39,9 @@ jobs:
         run: go test ./... -count=1
       - name: Build core
         run: go build ./cmd/accessweaver
+      - name: Native Unix controller ownership and shutdown
+        if: runner.os != 'Windows'
+        run: python3 scripts/test-unix-controller.py ./accessweaver
       - name: Native Linux cross-user session isolation
         if: runner.os == 'Linux'
         run: bash scripts/test-linux-session.sh ./accessweaver

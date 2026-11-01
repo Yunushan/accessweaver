@@ -36,10 +36,12 @@ jobs:
           cache: false
       - run: go vet ./...
       - run: go test ./... -count=1
-      - if: runner.os == 'Linux'
+      - if: runner.os != 'Windows'
         run: |
           go build ./cmd/accessweaver
-          bash scripts/test-linux-session.sh ./accessweaver
+          python3 scripts/test-unix-controller.py ./accessweaver
+      - if: runner.os == 'Linux'
+        run: bash scripts/test-linux-session.sh ./accessweaver
       - if: runner.os == 'Linux'
         run: go test -race ./... -count=1
       - if: runner.os == 'Linux'

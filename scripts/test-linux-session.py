@@ -12,7 +12,7 @@ import re
 import sys
 from urllib.error import HTTPError
 from urllib.parse import unquote, urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--mode", choices=("owner", "foreign"), required=True)
@@ -36,13 +36,16 @@ try:
 except PermissionError:
     readable = False
 
+# Private loopback credentials must never traverse environment/system proxies.
+loopback = build_opener(ProxyHandler({}))
+
 def probe(method, path, payload=None):
     headers = {"Content-Type": "application/json"}
     if credential:
         headers["X-AccessWeaver-Token"] = credential
     data = None if payload is None else json.dumps(payload).encode()
     try:
-        with urlopen(Request(address + path, data=data, method=method, headers=headers), timeout=5) as response:
+        with loopback.open(Request(address + path, data=data, method=method, headers=headers), timeout=5) as response:
             return response.status, json.loads(response.read((1 << 20) + 1))
     except HTTPError as error:
         return error.code, None

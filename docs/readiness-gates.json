@@ -68,7 +68,8 @@
           "status": "partial",
           "evidence": [
             "internal/workflow/manager_test.go",
-            "internal/engine/lifecycle_test.go"
+            "internal/engine/lifecycle_test.go",
+            "scripts/test-unix-controller.py"
           ]
         },
         {
@@ -97,7 +98,11 @@
             "internal/profile/store.go",
             "internal/profile/revision_test.go",
             "internal/api/server_test.go",
-            "internal/profile/model_test.go"
+            "internal/profile/model_test.go",
+            "internal/filelock/lock_test.go",
+            "internal/profile/process_test.go",
+            "cmd/accessweaver/controller_test.go",
+            "scripts/test-unix-controller.py"
           ]
         },
         {
@@ -278,7 +283,8 @@
           "status": "partial",
           "evidence": [
             ".github/workflows/ci.yml",
-            "internal/logfile/writer_test.go"
+            "internal/logfile/writer_test.go",
+            "scripts/test-unix-controller.py"
           ]
         },
         {
