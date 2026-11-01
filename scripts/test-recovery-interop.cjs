@@ -25,6 +25,12 @@ function cli(args, success=true) {
 }
 (async()=>{
  try {
+  const build=cli(['version','--json']);
+  if(process.env.GITHUB_ACTIONS==='true'){
+   assert.match(process.env.GITHUB_SHA||'',/^[0-9a-f]{40,64}$/);
+   assert.equal(build.commit,process.env.GITHUB_SHA,'native CLI does not identify the expected source commit');
+   assert.equal(build.sourceState,'clean','native CLI was built from a modified source tree');
+  }
   const keys=await webcrypto.subtle.generateKey('Ed25519',true,['sign','verify']);
   const publicBytes=Buffer.from(await webcrypto.subtle.exportKey('raw',keys.publicKey));
   const publicKey=publicBytes.toString('base64'),keyID=sha(publicBytes);
@@ -61,7 +67,7 @@ function cli(args, success=true) {
   await writeForeign();const damaged=JSON.parse(fs.readFileSync(foreign,'utf8'));const sig=Buffer.from(damaged.signature,'base64');sig[0]^=1;damaged.signature=sig.toString('base64');fs.writeFileSync(foreign,JSON.stringify(damaged));verify(false);
   await writeForeign();assert.equal(verify().next.policy.revision,9);
   assert(!fs.existsSync(userState),'offline commands unexpectedly created user state');
-  const evidence={sourceCommit:process.env.GITHUB_SHA||'unknown',platform:process.platform,arch:process.arch,nodeVersion:process.version,binarySha256:sha(fs.readFileSync(executable)),build:cli(['version','--json']),goToWebCrypto:true,webCryptoToGo:true,replacementPolicySignatureVerified:true,binarySourceBytesPreserved:true,wrongKeyAndFloorRejected:true,changedSourceRejected:true,expiryRejected:true,crossProtocolSignatureRejected:true,changedSignatureRejected:true,validReviewBeforeAndAfterRejections:true,machinePolicyMutationAttempted:false,productionQualificationComplete:false};
+  const evidence={sourceCommit:process.env.GITHUB_SHA||'unknown',platform:process.platform,arch:process.arch,nodeVersion:process.version,binarySha256:sha(fs.readFileSync(executable)),build,goToWebCrypto:true,webCryptoToGo:true,replacementPolicySignatureVerified:true,binarySourceBytesPreserved:true,wrongKeyAndFloorRejected:true,changedSourceRejected:true,expiryRejected:true,crossProtocolSignatureRejected:true,changedSignatureRejected:true,validReviewBeforeAndAfterRejections:true,machinePolicyMutationAttempted:false,productionQualificationComplete:false};
   const directory=path.resolve('build','managed-policy-checks');fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,'recovery-interop-'+process.platform+'.json'),JSON.stringify(evidence,null,2)+'\n');
   console.log(JSON.stringify(evidence));
  } finally {
