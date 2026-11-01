@@ -48,22 +48,64 @@ function Initialize-Operation {
     }elseif($r.action -notin @('discover','updates','choose-folder')){Initialize-Changes}
 }
 function Quote-Arg([string]$text) { return '"'+[regex]::Replace([regex]::Replace($text,'(\\*)"','$1$1\"'),'(\\+)$','$1$1')+'"' }
+function New-ToolCapture([IO.StreamReader]$reader) {
+    $buffer=[char[]]::new(4096)
+    return @{reader=$reader;buffer=$buffer;text=[Text.StringBuilder]::new();done=$false;task=$reader.ReadAsync($buffer,0,$buffer.Length)}
+}
+function Receive-ToolCapture($capture) {
+    # Service both pipes fairly. Completed reads never retain more than four
+    # million UTF-16 characters per pipe; overflow fails rather than truncates.
+    for($reads=0;$reads -lt 64 -and -not $capture.done -and $capture.task.IsCompleted;$reads++) {
+        $count=$capture.task.GetAwaiter().GetResult()
+        if($count -eq 0){$capture.done=$true;break}
+        if($capture.text.Length+$count -gt 4MB){throw 'Tool output exceeded the 4 Mi-character per-stream capture limit; inspect the recovery journal'}
+        [void]$capture.text.Append($capture.buffer,0,$count)
+        $capture.task=$capture.reader.ReadAsync($capture.buffer,0,$capture.buffer.Length)
+    }
+}
+function Wait-ToolCapture($stdout,$stderr) {
+    $pending=[Threading.Tasks.Task[]]@(@($stdout,$stderr)|Where-Object {-not $_.done}|ForEach-Object {$_.task})
+    if($pending.Length){[void][Threading.Tasks.Task]::WaitAny($pending,10)}else{Start-Sleep -Milliseconds 10}
+}
 function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600) {
+    if($Timeout -lt 1 -or $Timeout -gt 5400){throw 'Tool timeout must be between 1 and 5400 seconds'}
     $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$program;$start.Arguments=(@($arguments | ForEach-Object {Quote-Arg $_}) -join ' ')
     $start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true;$start.RedirectStandardInput=$true
     $start.WorkingDirectory=Split-Path -Parent $program
     if (-not [IO.Path]::IsPathRooted($program)) {$start.WorkingDirectory=$root}
-    $p=[Diagnostics.Process]::new();$p.StartInfo=$start;[void]$p.Start();$p.StandardInput.Close();$stdout=$p.StandardOutput.ReadToEndAsync();$stderr=$p.StandardError.ReadToEndAsync()
-    if (-not $p.WaitForExit($Timeout*1000)) { & taskkill.exe /PID $p.Id /T /F | Out-Null;throw ('Timed out: '+[IO.Path]::GetFileName($program)) }
-    # Installers may launch GUI children that inherit stdout/stderr handles.
-    # Their lifetime must not keep an already-exited installer job waiting.
-    $out='';$errorText=''
-    if($stdout.Wait(2000)){$out=$stdout.Result}else{$p.StandardOutput.Close()}
-    if($stderr.Wait(2000)){$errorText=$stderr.Result}else{$p.StandardError.Close()}
-    if (-not $Secret) {if ($out) {[Console]::WriteLine($out)};if($errorText){[Console]::WriteLine($errorText)}}
-    if ($codes -notcontains $p.ExitCode) {throw ('Tool failed: '+[IO.Path]::GetFileName($program)+' (exit '+$p.ExitCode+')')}
-    if ($p.ExitCode -eq 3010 -or $p.ExitCode -eq 1641) {$script:rebootRequired=$true}
-    return @{stdout=$out;stderr=$errorText;exitCode=$p.ExitCode}
+    $p=[Diagnostics.Process]::new();$p.StartInfo=$start;$started=$false
+    try {
+        [void]$p.Start();$started=$true;$p.StandardInput.Close()
+        $stdout=New-ToolCapture $p.StandardOutput;$stderr=New-ToolCapture $p.StandardError
+        $clock=[Diagnostics.Stopwatch]::StartNew()
+        while($true){
+            Receive-ToolCapture $stdout;Receive-ToolCapture $stderr
+            if($p.HasExited){break}
+            if($clock.Elapsed.TotalSeconds -ge $Timeout){throw ('Timed out: '+[IO.Path]::GetFileName($program))}
+            Wait-ToolCapture $stdout $stderr
+        }
+        # GUI children can inherit output handles. Drain for at most two seconds
+        # after the original tool exits, then report incomplete capture explicitly.
+        $drain=[Diagnostics.Stopwatch]::StartNew()
+        while(-not ($stdout.done -and $stderr.done) -and $drain.Elapsed.TotalSeconds -lt 2){
+            Receive-ToolCapture $stdout;Receive-ToolCapture $stderr
+            if(-not ($stdout.done -and $stderr.done)){Wait-ToolCapture $stdout $stderr}
+        }
+        $out=$stdout.text.ToString();$errorText=$stderr.text.ToString()
+        $complete=$stdout.done -and $stderr.done
+        if (-not $Secret) {if ($out) {[Console]::WriteLine($out)};if($errorText){[Console]::WriteLine($errorText)}}
+        if(-not $complete){[Console]::WriteLine('Tool exited with inherited output pipes still open; capture is incomplete')}
+        if ($codes -notcontains $p.ExitCode) {throw ('Tool failed: '+[IO.Path]::GetFileName($program)+' (exit '+$p.ExitCode+')')}
+        if ($p.ExitCode -eq 3010 -or $p.ExitCode -eq 1641) {$script:rebootRequired=$true}
+        return @{stdout=$out;stderr=$errorText;exitCode=$p.ExitCode;outputComplete=$complete}
+    } finally {
+        try {
+            if($started -and -not $p.HasExited){
+                & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /PID $p.Id /T /F | Out-Null
+                if(-not $p.WaitForExit(2000)){throw ('Tool process '+$p.Id+' could not be stopped; inspect the recovery journal')}
+            }
+        } finally {$p.Dispose()}
+    }
 }
 function Native([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600) {
     # Keep native output separate from the returned record, even for multi-line tools.

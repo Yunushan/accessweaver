@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Bound Windows maintenance tool output and result/history record reads. Stop tools that exceed capture limits, report incomplete inherited-pipe capture, and persist malformed/oversized results as failures without breaking API JSON.
+
 - Add pinned, fail-closed Go vulnerability checks to CI and release packaging. Update the separate WireGuard fixture to patched networking/crypto dependencies and Go 1.26 minimum; preserve unused-package advisories in reports.
 
 - Coordinate profile operations across local processes with OS locks, reject competing foreground controllers/CLI imports, honor canceled waiters, and report store contention as retryable HTTP 503. Native Unix controller checks now run in CI and release verification; loopback probes bypass proxies.

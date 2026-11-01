@@ -87,6 +87,7 @@
           "status": "partial",
           "evidence": [
             "internal/logfile/writer_test.go",
+            "internal/workflow/result_test.go",
             "scripts/test-windows-workflow.ps1"
           ]
         },
@@ -445,7 +446,7 @@
         },
         {
           "id": "operations.observability",
-          "acceptance": "Expose useful local/fleet health, version and failure evidence with privacy-safe collection and tested alert behavior.",
+          "acceptance": "Expose useful local health, version and failure evidence with privacy-safe export and tested alert behavior.",
           "status": "partial",
           "evidence": [
             "internal/workflow/manager.go",
@@ -511,7 +512,7 @@
         },
         {
           "id": "data.isolation",
-          "acceptance": "Verify standard-user storage isolation, admin/user boundaries and fleet tenant separation under hostile cross-user access.",
+          "acceptance": "Verify standard-user storage isolation and administrator/user boundaries under hostile cross-user access in managed desktop installations.",
           "status": "partial",
           "evidence": [
             "internal/profile/store.go",
@@ -525,7 +526,7 @@
     "Complete native regression validation for bounded logs and durable workflow shutdown.",
     "Unify version/source identity across runtime and release artifacts.",
     "Resolve DNSCrypt and interactive Windows app failures in the full disposable VM.",
-    "Implement privileged-operation policy and fleet architecture with tested authentication boundaries.",
+    "Implement administrator-enforced local policy, signed configuration and managed deployment with tested privilege boundaries.",
     "Complete independent security review, platform-native qualification, signing and operational ownership."
   ],
   "scope": {

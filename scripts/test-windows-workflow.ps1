@@ -62,9 +62,26 @@ $node=(Get-Command node -ErrorAction Stop).Source
 $native=Native $node @('-e','process.stdout.write(JSON.stringify(process.argv.slice(1)))','with spaces','','trailing\','quote"inside')
 $nativeArgs=$native.stdout|ConvertFrom-Json
 Assert ($nativeArgs.Count -eq 4 -and $nativeArgs[0] -eq 'with spaces' -and $nativeArgs[1] -eq '' -and $nativeArgs[2] -eq 'trailing\' -and $nativeArgs[3] -eq 'quote"inside') 'Native processes receive literal Windows arguments without shell evaluation'
+Assert $native.outputComplete 'Ordinary native output reaches EOF'
 $clock=[Diagnostics.Stopwatch]::StartNew()
 [void](Native $node @('-e','require("child_process").spawn(process.execPath,["-e","setTimeout(()=>{},12000)"],{stdio:"inherit"});process.exit(0)'))
 Assert ($clock.Elapsed.TotalSeconds -lt 10) 'Exited installer does not wait for a GUI child holding inherited output pipes'
+$native=Native $node @('-e','process.stdout.write("out");process.stderr.write("err")') -Secret
+Assert ($native.stdout -eq 'out' -and $native.stderr -eq 'err' -and $native.outputComplete) 'Both native output streams are drained completely'
+foreach($stream in @('stdout','stderr')){
+    $clock=[Diagnostics.Stopwatch]::StartNew();$rejected=$false
+    $pidFile=Join-Path $testRoot ($stream+'-overflow.pid')
+    try{Native $node @('-e',('require("fs").writeFileSync(process.argv[1],String(process.pid));process.'+$stream+'.write("x".repeat(5*1024*1024));setTimeout(()=>{},60000)'),$pidFile) -Timeout 15 -Secret|Out-Null}catch{$rejected=$_.Exception.Message -match 'capture limit'}
+    Assert ($rejected -and $clock.Elapsed.TotalSeconds -lt 12) ($stream+' overflow stops the tool promptly and fails without retaining truncated success')
+    $toolPid=[int][IO.File]::ReadAllText($pidFile)
+    Assert (-not (Get-Process -Id $toolPid -ErrorAction SilentlyContinue)) ($stream+' overflow leaves no running fixture tool')
+}
+$native=Native $node @('-e','process.stdout.write("x".repeat(4*1024*1024));process.stderr.write("y".repeat(4*1024*1024))') -Secret
+Assert ($native.stdout.Length -eq 4MB -and $native.stderr.Length -eq 4MB -and $native.outputComplete) 'Both streams accept their exact capture limit without truncation or deadlock'
+$rejected=$false;try{Native $node @('-e','setTimeout(()=>{},60000)') -Timeout 1 -Secret|Out-Null}catch{$rejected=$_.Exception.Message -match 'Timed out'}
+Assert $rejected 'A silent native tool still observes its timeout'
+$rejected=$false;try{Native $node @('-e','process.exit(23)') -Secret|Out-Null}catch{$rejected=$_.Exception.Message -match 'exit 23'}
+Assert $rejected 'Native failure exit codes are preserved'
 $r=[pscustomobject]@{applications=@('custom.exe','C:\Apps\Custom');browsers=$true}
 $apps=@(Application-Names)
 Assert ($apps -contains 'custom.exe' -and $apps -contains 'chrome.exe' -and $apps -contains 'Discord.exe') 'Default, custom and browser application rules compiled'

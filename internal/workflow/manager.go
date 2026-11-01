@@ -414,6 +414,10 @@ func (m *Manager) Start(id string) (Job, error) {
 	go func() {
 		defer close(done)
 		result, err := m.execute(ctx, filepath.Join(m.root, id), p.Request)
+		if resultErr := validateResult(result); resultErr != nil {
+			result = nil
+			err = errors.Join(err, resultErr)
+		}
 		cancel()
 		m.mu.Lock()
 		defer m.mu.Unlock()
@@ -486,7 +490,7 @@ func (m *Manager) History() ([]Job, error) {
 		if f.IsDir() || filepath.Ext(f.Name()) != ".json" {
 			continue
 		}
-		b, e := os.ReadFile(filepath.Join(m.root, f.Name()))
+		b, e := readWorkflowFile(filepath.Join(m.root, f.Name()), maxHistoryRecordBytes)
 		if e != nil {
 			return nil, e
 		}
@@ -548,9 +552,12 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	cmd.Stdout = log
 	cmd.Stderr = log
 	err = cmd.Run()
-	result, readErr := os.ReadFile(input.ResultPath)
-	if readErr == nil && !json.Valid(result) {
-		return nil, errors.New("workflow returned invalid result JSON")
+	result, readErr := readWorkflowFile(input.ResultPath, maxResultBytes)
+	if readErr != nil {
+		return nil, errors.Join(err, fmt.Errorf("read workflow result: %w", readErr))
+	}
+	if resultErr := validateResult(result); resultErr != nil {
+		return nil, errors.Join(err, resultErr)
 	}
 	if err != nil {
 		var outcome struct {
@@ -560,9 +567,6 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 			return result, fmt.Errorf("Windows workflow failed: %s", outcome.Error)
 		}
 		return result, fmt.Errorf("Windows workflow failed (%v); inspect process.log and the protected recovery journal", err)
-	}
-	if readErr != nil {
-		return nil, fmt.Errorf("workflow produced no result: %w", readErr)
 	}
 	var outcome struct {
 		OK    bool   `json:"ok"`
