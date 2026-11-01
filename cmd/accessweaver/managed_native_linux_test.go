@@ -387,6 +387,10 @@ func linuxOrdinaryPolicyProbe(t *testing.T) {
 	if _, err := managed.Update([]byte(`{}`)); !errors.Is(err, managed.ErrDenied) {
 		t.Fatal("ordinary user can update machine policy", err)
 	}
+	recoveryKey := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize)).Public().(ed25519.PublicKey)
+	if _, err := managed.Recover([]byte(`{}`), recoveryKey, 1); !errors.Is(err, managed.ErrDenied) {
+		t.Fatalf("ordinary user bypassed recovery administrator check: %v", err)
+	}
 	if _, err := managed.Rotate([]byte(`{}`)); !errors.Is(err, managed.ErrDenied) {
 		t.Fatal("ordinary user can rotate machine policy", err)
 	}

@@ -21,7 +21,7 @@ import (
 
 func managedCommand(args []string) error {
 	if len(args) == 0 {
-		fmt.Print("Managed configuration tools (native runtime enforcement is partial):\n  managed status\n  managed install INSTALLATION.json --public-key BASE64\n  managed update ENVELOPE.json\n  managed export-installation --out INSTALLATION.json\n  managed sign-rotation NEXT-ENVELOPE.json --previous-installation PREVIOUS.json --next-public-key BASE64 --private-key OLD.pem --out ROTATION.json\n  managed verify-rotation ROTATION.json --previous-installation PREVIOUS.json --public-key BASE64\n  managed rotate ROTATION.json\n  managed prepare ENVELOPE.json --public-key BASE64 --minimum-revision N --out INSTALLATION.json\n  managed validate POLICY.json\n  managed digest-profile PROFILE.json\n  managed digest-workflow REQUEST.json\n  managed sign POLICY.json --private-key PRIVATE-KEY.pem [--out ENVELOPE.json]\n  managed public-key --private-key PRIVATE-KEY.pem\n  managed verify ENVELOPE.json --public-key BASE64 [--minimum-revision N]\nSigning requires an offline Ed25519 PKCS#8 PEM key. Never deploy the private key.\n")
+		fmt.Print("Managed configuration tools (native runtime enforcement is partial):\n  managed status\n  managed install INSTALLATION.json --public-key BASE64\n  managed export-source --out SOURCE.bin\n  managed sign-recovery NEXT-ENVELOPE.json --previous-source SOURCE.bin --minimum-revision N --private-key NEW.pem --valid-for 1h --out RECOVERY.json\n  managed verify-recovery RECOVERY.json --previous-source SOURCE.bin --public-key BASE64 --minimum-revision N\n  managed recover RECOVERY.json --public-key BASE64 --minimum-revision N\n  managed update ENVELOPE.json\n  managed export-installation --out INSTALLATION.json\n  managed sign-rotation NEXT-ENVELOPE.json --previous-installation PREVIOUS.json --next-public-key BASE64 --private-key OLD.pem --out ROTATION.json\n  managed verify-rotation ROTATION.json --previous-installation PREVIOUS.json --public-key BASE64\n  managed rotate ROTATION.json\n  managed prepare ENVELOPE.json --public-key BASE64 --minimum-revision N --out INSTALLATION.json\n  managed validate POLICY.json\n  managed digest-profile PROFILE.json\n  managed digest-workflow REQUEST.json\n  managed sign POLICY.json --private-key PRIVATE-KEY.pem [--out ENVELOPE.json]\n  managed public-key --private-key PRIVATE-KEY.pem\n  managed verify ENVELOPE.json --public-key BASE64 [--minimum-revision N]\nSigning requires an offline Ed25519 PKCS#8 PEM key. Never deploy the private key.\n")
 		return nil
 	}
 	switch args[0] {
@@ -40,6 +40,88 @@ func managedCommand(args []string) error {
 			return err
 		}
 		return writeManagedOutput(args[2], data)
+	case "export-source":
+		if len(args) != 3 || args[1] != "--out" {
+			return errors.New("usage: managed export-source --out SOURCE.bin")
+		}
+		data, err := managed.ExportMachineSource()
+		if err != nil {
+			return err
+		}
+		return writeManagedOutput(args[2], data)
+	case "sign-recovery":
+		if len(args) != 12 || args[2] != "--previous-source" || args[4] != "--minimum-revision" || args[6] != "--private-key" || args[8] != "--valid-for" || args[10] != "--out" {
+			return errors.New("usage: managed sign-recovery NEXT-ENVELOPE.json --previous-source SOURCE.bin --minimum-revision N --private-key NEW.pem --valid-for 1h --out RECOVERY.json")
+		}
+		next, err := readManagedFile(args[1], managed.MaxEnvelopeBytes)
+		if err != nil {
+			return err
+		}
+		prior, err := readManagedFile(args[3], managed.MaxInstallationBytes)
+		if err != nil {
+			return err
+		}
+		minimum, err := strconv.ParseUint(args[5], 10, 64)
+		if err != nil {
+			return errors.New("recovery minimum revision must be a positive safe integer")
+		}
+		private, err := readSigningKey(args[7])
+		if err != nil {
+			return err
+		}
+		lifetime, err := time.ParseDuration(args[9])
+		if err != nil {
+			return errors.New("recovery lifetime must be a positive duration of at most 24h")
+		}
+		data, err := managed.SignRecovery(prior, next, private, minimum, time.Now(), lifetime)
+		if err != nil {
+			return err
+		}
+		return writeManagedOutput(args[11], data)
+	case "verify-recovery":
+		if len(args) != 8 || args[2] != "--previous-source" || args[4] != "--public-key" || args[6] != "--minimum-revision" {
+			return errors.New("usage: managed verify-recovery RECOVERY.json --previous-source SOURCE.bin --public-key BASE64 --minimum-revision N")
+		}
+		data, err := readManagedFile(args[1], managed.MaxRecoveryBytes)
+		if err != nil {
+			return err
+		}
+		prior, err := readManagedFile(args[3], managed.MaxInstallationBytes)
+		if err != nil {
+			return err
+		}
+		public, err := managed.PublicKey(args[5])
+		if err != nil {
+			return err
+		}
+		minimum, err := strconv.ParseUint(args[7], 10, 64)
+		if err != nil {
+			return errors.New("recovery minimum revision must be a positive safe integer")
+		}
+		review, err := managed.VerifyRecovery(prior, data, public, minimum, time.Now())
+		if err != nil {
+			return err
+		}
+		return printJSON(review)
+	case "recover":
+		if len(args) != 6 || args[2] != "--public-key" || args[4] != "--minimum-revision" {
+			return errors.New("usage: managed recover RECOVERY.json --public-key BASE64 --minimum-revision N")
+		}
+		data, err := readManagedFile(args[1], managed.MaxRecoveryBytes)
+		if err != nil {
+			return err
+		}
+		public, err := managed.PublicKey(args[3])
+		if err != nil {
+			return err
+		}
+		minimum, err := strconv.ParseUint(args[5], 10, 64)
+		if err != nil {
+			return errors.New("recovery minimum revision must be a positive safe integer")
+		}
+		result, err := managed.Recover(data, public, minimum)
+		return printManagedMutation(result, err)
+
 	case "sign-rotation":
 		if len(args) != 10 || args[2] != "--previous-installation" || args[4] != "--next-public-key" || args[6] != "--private-key" || args[8] != "--out" {
 			return errors.New("usage: managed sign-rotation NEXT-ENVELOPE.json --previous-installation PREVIOUS.json --next-public-key BASE64 --private-key OLD.pem --out ROTATION.json")
@@ -95,10 +177,7 @@ func managedCommand(args []string) error {
 			return err
 		}
 		result, err := managed.Rotate(data)
-		if err != nil {
-			return err
-		}
-		return printJSON(result)
+		return printManagedMutation(result, err)
 	case "install":
 		if len(args) != 4 || args[2] != "--public-key" {
 			return errors.New("usage: managed install INSTALLATION.json --public-key BASE64")
@@ -112,10 +191,7 @@ func managedCommand(args []string) error {
 			return err
 		}
 		result, err := managed.Install(data, public)
-		if err != nil {
-			return err
-		}
-		return printJSON(result)
+		return printManagedMutation(result, err)
 	case "update":
 		if len(args) != 2 {
 			return errors.New("usage: managed update ENVELOPE.json")
@@ -125,10 +201,7 @@ func managedCommand(args []string) error {
 			return err
 		}
 		result, err := managed.Update(data)
-		if err != nil {
-			return err
-		}
-		return printJSON(result)
+		return printManagedMutation(result, err)
 	case "prepare":
 		if len(args) != 8 || args[2] != "--public-key" || args[4] != "--minimum-revision" || args[6] != "--out" {
 			return errors.New("usage: managed prepare ENVELOPE.json --public-key BASE64 --minimum-revision N --out INSTALLATION.json")
@@ -313,4 +386,11 @@ func writeManagedOutput(path string, data []byte) error {
 	_, writeErr := f.Write(data)
 	syncErr := f.Sync()
 	return errors.Join(writeErr, syncErr, f.Close())
+}
+
+func printManagedMutation(result managed.InstallResult, err error) error {
+	if err == nil || result.Committed {
+		return errors.Join(err, printJSON(result))
+	}
+	return err
 }

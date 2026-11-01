@@ -21,14 +21,16 @@ var ErrUnsupported = errors.New("managed policy installation is unsupported on t
 
 // InstallResult describes a committed local policy update, not full product qualification.
 type InstallResult struct {
-	PreviousKeyID    string `json:"previousKeyId,omitempty"`
-	Operation        string `json:"operation"`
-	PreviousRevision uint64 `json:"previousRevision"`
-	Revision         uint64 `json:"revision"`
-	KeyID            string `json:"keyId"`
-	PayloadSHA256    string `json:"payloadSHA256"`
-	Committed        bool   `json:"committed"`
-	Enforcement      string `json:"enforcement"`
+	PreviousSourceSHA256  string `json:"previousSourceSHA256,omitempty"`
+	RecoveryPayloadSHA256 string `json:"recoveryPayloadSHA256,omitempty"`
+	PreviousKeyID         string `json:"previousKeyId,omitempty"`
+	Operation             string `json:"operation"`
+	PreviousRevision      uint64 `json:"previousRevision"`
+	Revision              uint64 `json:"revision"`
+	KeyID                 string `json:"keyId"`
+	PayloadSHA256         string `json:"payloadSHA256"`
+	Committed             bool   `json:"committed"`
+	Enforcement           string `json:"enforcement"`
 }
 
 // Install enrolls only an absent fixed machine source. The administrator must
@@ -91,10 +93,11 @@ func commitInstallation(tx installationTransaction, next []byte, key ed25519.Pub
 	if _, err := DecodeInstallation(candidate, clock()); err != nil {
 		return InstallResult{}, err
 	}
-	if err := tx.Commit(); err != nil {
-		return InstallResult{}, fmt.Errorf("policy commit failed; inspect managed status before retrying: %w", err)
+	committed, commitErr := commitPolicyTransaction(tx)
+	result.Committed = committed
+	if commitErr != nil {
+		return result, fmt.Errorf("policy commit failed; inspect managed status before retrying: %w", commitErr)
 	}
-	result.Committed = true
 	return result, nil
 }
 
@@ -181,4 +184,17 @@ func ExportInstallation() ([]byte, error) {
 		return nil, err
 	}
 	return data, nil
+}
+
+// Linux can publish by rename and then fail the directory durability sync. Keep
+// that known publication visible to the operator even when Commit returns error.
+func commitPolicyTransaction(tx installationTransaction) (bool, error) {
+	err := tx.Commit()
+	if err == nil {
+		return true, nil
+	}
+	if outcome, ok := tx.(interface{ Published() bool }); ok {
+		return outcome.Published(), err
+	}
+	return false, err
 }

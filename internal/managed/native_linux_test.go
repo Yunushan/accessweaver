@@ -270,7 +270,13 @@ func TestDisposableLinuxPolicyTransactions(t *testing.T) {
 	if err != nil || result.Revision != 4 {
 		t.Fatal("new key could not update", result, err)
 	}
-	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "platform": "linux", "arch": runtime.GOARCH, "goVersion": runtime.Version(), "initialStagingInvisible": true, "abandonedBootstrapStageReclaimed": true, "pendingUpdateInvisible": true, "processExitDoesNotPublish": true, "abandonedUpdateStageReclaimed": true, "lockReleasedAfterProcessExit": true, "abandonedRotationKeepsOldKey": true, "nativeRotationCommitted": true, "retiredKeyDenied": true, "newKeyUpdateAccepted": true, "rotationReplayDenied": true, "fileAndDirectorySyncCompleted": true, "cleanupScheduled": true, "powerLossQualified": false, "productionQualificationComplete": false}
+
+	exerciseNativeRecovery(t, 4, func(damaged []byte) {
+		if err := os.WriteFile(filepath.Join(source, linuxPolicyFile), damaged, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}, func(candidate []byte) { abandon(candidate, false) })
+	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "platform": "linux", "arch": runtime.GOARCH, "goVersion": runtime.Version(), "initialStagingInvisible": true, "abandonedBootstrapStageReclaimed": true, "pendingUpdateInvisible": true, "processExitDoesNotPublish": true, "abandonedUpdateStageReclaimed": true, "lockReleasedAfterProcessExit": true, "abandonedRotationKeepsOldKey": true, "nativeRotationCommitted": true, "retiredKeyDenied": true, "newKeyUpdateAccepted": true, "rotationReplayDenied": true, "damagedSourceRemainsBlocked": true, "abandonedRecoveryKeepsDamagedSource": true, "nativeSignedRecoveryCommitted": true, "recoveryReplayDenied": true, "recoveryKeyAndFloorMismatchDenied": true, "fileAndDirectorySyncCompleted": true, "cleanupScheduled": true, "powerLossQualified": false, "productionQualificationComplete": false}
 	data, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		t.Fatal(err)

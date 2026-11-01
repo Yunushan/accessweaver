@@ -501,6 +501,10 @@ func nativeLimitedPolicyProbe(enginePath string) error {
 	if _, err := managed.Update([]byte(`{}`)); !errors.Is(err, managed.ErrDenied) {
 		return fmt.Errorf("limited token bypassed update administrator check: %v", err)
 	}
+	recoveryKey := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize)).Public().(ed25519.PublicKey)
+	if _, err := managed.Recover([]byte(`{}`), recoveryKey, 1); !errors.Is(err, managed.ErrDenied) {
+		return fmt.Errorf("ordinary user bypassed recovery administrator check: %v", err)
+	}
 	if _, err := managed.Rotate([]byte(`{}`)); !errors.Is(err, managed.ErrDenied) {
 		return fmt.Errorf("limited token bypassed rotation administrator check: %v", err)
 	}

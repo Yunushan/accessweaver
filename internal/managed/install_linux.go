@@ -235,6 +235,8 @@ func (tx *linuxInstallationTransaction) Commit() error {
 	tx.committed = true
 	return tx.dir.Sync()
 }
+func (tx *linuxInstallationTransaction) Published() bool { return tx.committed }
+
 func (tx *linuxInstallationTransaction) Close() error {
 	var result error
 	if tx.dir != nil && !tx.committed {

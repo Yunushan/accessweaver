@@ -5,6 +5,7 @@ package managed
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -358,5 +359,63 @@ func TestLinuxStagingCleanupLeavesUnexpectedObjectsUntouched(t *testing.T) {
 	}
 	if info, err := os.Lstat(malicious); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatal("unexpected staging object was removed", err)
+	}
+}
+
+func TestLinuxRecoveryUsesAtomicPublicationAndRejectsSourceReplacement(t *testing.T) {
+	prior, _, _, _, now := renewalFixture(t)
+	for _, replace := range []bool{false, true} {
+		t.Run(fmt.Sprint(replace), func(t *testing.T) {
+			parent := t.TempDir()
+			linuxFixtureInstall(t, parent, prior, now)
+			path := filepath.Join(parent, linuxPolicyDirectory, linuxPolicyFile)
+			damaged := []byte("damaged protected source")
+			if err := os.WriteFile(path, damaged, 0644); err != nil {
+				t.Fatal(err)
+			}
+			recovery, public, _, now := recoveryFixture(t, damaged, time.Hour)
+			tx := linuxFixtureTransaction(t, parent, false)
+			if replace {
+				current, present, err := tx.Read()
+				if err != nil || !present {
+					t.Fatal(err)
+				}
+				_, candidate, err := recoveryTransition(current, recovery, public, 2, now)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := tx.Stage(candidate); err != nil {
+					t.Fatal(err)
+				}
+				replacement := []byte("new administrator source")
+				if err := os.WriteFile(path, replacement, 0644); err != nil {
+					t.Fatal(err)
+				}
+				if err := tx.Commit(); err == nil {
+					t.Fatal("stale recovery overwrote source replacement")
+				}
+				got, err := os.ReadFile(path)
+				if err != nil || !bytes.Equal(got, replacement) {
+					t.Fatal("source replacement lost", err)
+				}
+				return
+			}
+			result, err := commitRecovery(tx, recovery, public, 2, func() time.Time { return now })
+			if err != nil || !result.Committed || result.Operation != "recover" {
+				t.Fatal(result, err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			authority, err := DecodeInstallation(data, now)
+			if err != nil || authority.verified.KeyID != KeyID(public) {
+				t.Fatal("repair did not become valid authority", err)
+			}
+			retry := linuxFixtureTransaction(t, parent, false)
+			if _, err := commitRecovery(retry, recovery, public, 2, func() time.Time { return now }); err == nil {
+				t.Fatal("repair replay published")
+			}
+		})
 	}
 }

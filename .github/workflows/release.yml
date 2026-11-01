@@ -109,6 +109,18 @@ jobs:
           node --check web/app.js
           node --check web/system.js
           node --check web/locales.js
+      - name: Native signed recovery interoperability
+        run: |
+          go build ./cmd/accessweaver
+          node scripts/test-recovery-interop.cjs
+      - name: Retain recovery interoperability evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: recovery-interop-${{ runner.os }}
+          path: build/managed-policy-checks/recovery-interop-*.json
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Native encrypted backup interoperability
         run: |
           go build ./cmd/accessweaver

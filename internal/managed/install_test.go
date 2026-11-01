@@ -240,3 +240,28 @@ func TestPolicyCommitIsReportedWhenHandleCleanupFails(t *testing.T) {
 		t.Fatal("post-commit cleanup failure concealed the committed outcome", result, err)
 	}
 }
+
+type publishedErrorTransaction struct{ *fakeInstallationTransaction }
+
+func (tx *publishedErrorTransaction) Commit() error {
+	tx.commitCalls++
+	tx.published = bytes.Clone(tx.staged)
+	return tx.commitErr
+}
+func (tx *publishedErrorTransaction) Published() bool { return tx.published != nil }
+func TestPublishedPolicyIsReportedWhenDurabilitySyncFails(t *testing.T) {
+	prior, next, public, _, now := renewalFixture(t)
+	failure := errors.New("injected post-publication sync failure")
+	tx := &publishedErrorTransaction{&fakeInstallationTransaction{prior: prior, present: true, commitErr: failure}}
+	result, err := commitInstallation(tx, next, public, changeUpdate, func() time.Time { return now })
+	if !errors.Is(err, failure) || !result.Committed || result.Revision != 3 || tx.published == nil {
+		t.Fatal("known publication concealed by sync error", result, err)
+	}
+	damaged := []byte("damaged source")
+	data, public, _, now := recoveryFixture(t, damaged, time.Hour)
+	tx = &publishedErrorTransaction{&fakeInstallationTransaction{prior: damaged, present: true, commitErr: failure}}
+	result, err = commitRecovery(tx, data, public, 2, func() time.Time { return now })
+	if !errors.Is(err, failure) || !result.Committed || result.Operation != "recover" || tx.published == nil {
+		t.Fatal("known recovery publication concealed by sync error", result, err)
+	}
+}
