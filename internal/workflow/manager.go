@@ -557,34 +557,6 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 		return ctx.Err()
 	}
 }
-func (m *Manager) History() ([]Job, error) {
-	files, err := os.ReadDir(m.root)
-	if os.IsNotExist(err) {
-		return []Job{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	out := []Job{}
-	for _, f := range files {
-		if f.IsDir() || filepath.Ext(f.Name()) != ".json" {
-			continue
-		}
-		b, e := readWorkflowFile(filepath.Join(m.root, f.Name()), maxHistoryRecordBytes)
-		if e != nil {
-			return nil, e
-		}
-		var j Job
-		if json.Unmarshal(b, &j) == nil {
-			if j.State == "running" && j.ID != m.Snapshot().ID {
-				j.State = "interrupted"
-				j.Error = "Controller stopped before outcome was recorded; inspect the Windows recovery journal"
-			}
-			out = append(out, j)
-		}
-	}
-	return out, nil
-}
 
 func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error) {
 	if runtime.GOOS != "windows" {
