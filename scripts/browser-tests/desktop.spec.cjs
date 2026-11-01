@@ -148,10 +148,10 @@ for(const language of ['en','tr','ru','es']) {
   test(`narrow navigation preserves layout and drawer state in ${language}`, async ({page,core}) => {
     await open(page,core);
     await page.locator('.nav-item[data-view="settings"]').click();
+    await page.setViewportSize({width:390,height:844});
     await page.locator('#settings-language').selectOption(language);
     await expect(page.locator('html')).toHaveAttribute('lang',language);
     await page.locator('#settings-theme').selectOption('light');
-    await page.setViewportSize({width:390,height:844});
     for(const view of ['dashboard','profiles','engines','diagnostics','settings','system']) {
       await page.locator('#menu-toggle').click();await page.locator(`.nav-item[data-view="${view}"]`).click();
       await expect(page.locator('#view-'+view)).toBeVisible();
