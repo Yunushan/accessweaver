@@ -301,6 +301,8 @@
           "status": "partial",
           "evidence": [
             "web/app.test.cjs",
+            "scripts/browser-tests/desktop.spec.cjs",
+            ".github/workflows/browser.yml",
             "docs/TESTING.md"
           ]
         },

@@ -17,6 +17,8 @@ env:
   GO_VERSION: '1.27.3'
 
 jobs:
+  browser:
+    uses: ./.github/workflows/browser.yml
   vulnerabilities:
     name: Go vulnerability checks
     runs-on: ubuntu-latest

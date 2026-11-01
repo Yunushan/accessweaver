@@ -29,6 +29,23 @@ Use a disposable `ACCESSWEAVER_HOME` directory.
 6. Run a diagnostic against a controlled target. Confirm DNS/TCP/TLS stages and certificate verification. Disconnect networking and confirm failure is distinguishable from success.
 7. Close the application, restart, and check profile persistence. Offline/browser-only profiles require explicit export/import to reach this store.
 
+## Real browser acceptance
+
+Development-only Playwright dependencies are pinned in `scripts/browser-tests/package-lock.json`; downloaded application users do not need Node.js. Build the controller as `build/browser-tests/accessweaver` on Unix or `build/browser-tests/accessweaver.exe` on Windows, then run:
+
+```bash
+npm ci --prefix scripts/browser-tests --ignore-scripts
+cd scripts/browser-tests
+npx playwright install chromium firefox webkit
+npm test
+```
+
+The [Playwright browser documentation](https://playwright.dev/docs/browsers) explains host prerequisites. To use an already installed Microsoft Edge on Windows instead, set `$env:PW_BROWSER_CHANNEL='msedge'` in PowerShell and run `npm test -- --project=chromium`. `ACCESSWEAVER_BINARY` can select another candidate explicitly. Run as the ordinary desktop user, because the real controller refuses an elevated dashboard.
+
+Each test starts a separate real Go controller with disposable state/cache under ignored `build/browser-state/`. It exercises the actual private launcher, authenticated UI and unauthenticated API rejection, save/reload/export/import collision, concurrent-tab revision rejection, preserved invalid JSON, unavailable-engine launch review, keyboard focus, preferences and narrow layouts across all six screens in all four languages. No engine, diagnostic traffic or Windows maintenance operation is started. These tests do not certify screen-reader behavior or engine routing.
+
+CI and release verification run the same suite on Chromium, Firefox and WebKit on Linux. Windows Edge is also locally testable; Linux WebKit does not certify native Safari/macOS. Results and failure screenshots under `build/browser-results/` identify the binary hash, runtime build metadata, OS/architecture, Node, Playwright and browser versions. Traces are disabled because they can retain session headers. Never upload `build/browser-state/`: it contains private launcher credentials and fixture profiles. Local fixture directories are retained for investigation; the harness stops each controller after use.
+
 ## External engine integration
 
 Run on a disposable VM/device first. Obtain engines from their official upstreams, document the exact version and install only the required platform components.

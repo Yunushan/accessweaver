@@ -1,0 +1,58 @@
+name: Desktop browser acceptance
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.27.3'
+
+jobs:
+  browser:
+    name: Real browser (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '26.8.2'
+          package-manager-cache: false
+      - name: Build the real controller
+        run: go build -trimpath -o build/browser-tests/accessweaver ./cmd/accessweaver
+      - name: Install locked test dependencies and check known advisories
+        working-directory: scripts/browser-tests
+        run: |
+          npm ci --ignore-scripts
+          npm audit --audit-level=moderate
+      - name: Install the pinned browser and Linux prerequisites
+        working-directory: scripts/browser-tests
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: ./node_modules/.bin/playwright install --with-deps "$BROWSER"
+      - name: Exercise the dashboard with an isolated local controller
+        working-directory: scripts/browser-tests
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: npm test -- --project="$BROWSER"
+      - name: Retain test results without private controller state
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-browser-${{ matrix.browser }}
+          path: build/browser-results/
+          if-no-files-found: ignore
+          retention-days: 14

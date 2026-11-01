@@ -18,6 +18,8 @@ env:
   GO_VERSION: '1.27.3'
 
 jobs:
+  browser:
+    uses: ./.github/workflows/browser.yml
   vulnerabilities:
     name: Go vulnerability checks
     runs-on: ubuntu-latest
@@ -96,7 +98,7 @@ jobs:
         run: node --test web/app.test.cjs
   package:
     name: Package unsigned core
-    needs: [verify, vulnerabilities]
+    needs: [verify, vulnerabilities, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

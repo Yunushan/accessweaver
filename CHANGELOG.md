@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add real browser acceptance against isolated Go controllers, including concurrent tabs, private launch, editing/import/export, focus and four-language mobile layouts. Wrap maintenance review actions so they remain reachable on narrow screens.
+
 - Bound Windows maintenance tool output and result/history record reads. Stop tools that exceed capture limits, report incomplete inherited-pipe capture, and persist malformed/oversized results as failures without breaking API JSON.
 
 - Add pinned, fail-closed Go vulnerability checks to CI and release packaging. Update the separate WireGuard fixture to patched networking/crypto dependencies and Go 1.26 minimum; preserve unused-package advisories in reports.

@@ -99,3 +99,6 @@ body.modal-open{overflow:hidden}
 .engine-card p,.settings-card p{font-size:12px}
 .diagnostic-box form label,.modal-card form label{font-size:11.5px}
 .modal-card input,.modal-card select,.modal-card textarea{font-size:13px}
+
+/* Keep maintenance review actions reachable on narrow screens in every locale. */
+#view-system .heading-actions{flex-wrap:wrap}

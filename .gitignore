@@ -21,3 +21,6 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+
+# Development-only browser test dependencies
+/scripts/browser-tests/node_modules/
