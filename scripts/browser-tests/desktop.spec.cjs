@@ -126,7 +126,7 @@ test('invalid JSON stays editable and an unavailable engine cannot be launched',
   expect(JSON.parse(await fs.readFile(core.profilePath('browser-fixture'),'utf8')).name).toBe('Browser fixture');
 });
 
-test('modal keyboard focus, preferences and narrow navigation work in the real DOM', async ({page,core}) => {
+test('modal keyboard focus and persisted preferences work in the real DOM', async ({page,core}) => {
   await open(page,core);await profiles(page);await page.locator('#new-profile').click();
   await expect(page.locator('#p-name')).toBeFocused();
   await page.locator('#close-editor').focus();await page.keyboard.press('Shift+Tab');
@@ -140,10 +140,18 @@ test('modal keyboard focus, preferences and narrow navigation work in the real D
   }
   await page.locator('#settings-theme').selectOption('light');await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme','light');
-  await page.setViewportSize({width:390,height:844});
-  for(const language of ['en','tr','ru','es']) {
-    await page.locator('#menu-toggle').click();await page.locator('.nav-item[data-view="settings"]').click();
+});
+
+// Keep locale navigation independently bounded: one combined flow previously
+// exhausted WebKit's test budget despite no failed individual assertion.
+for(const language of ['en','tr','ru','es']) {
+  test(`narrow navigation preserves layout and drawer state in ${language}`, async ({page,core}) => {
+    await open(page,core);
+    await page.locator('.nav-item[data-view="settings"]').click();
     await page.locator('#settings-language').selectOption(language);
+    await expect(page.locator('html')).toHaveAttribute('lang',language);
+    await page.locator('#settings-theme').selectOption('light');
+    await page.setViewportSize({width:390,height:844});
     for(const view of ['dashboard','profiles','engines','diagnostics','settings','system']) {
       await page.locator('#menu-toggle').click();await page.locator(`.nav-item[data-view="${view}"]`).click();
       await expect(page.locator('#view-'+view)).toBeVisible();
@@ -152,8 +160,8 @@ test('modal keyboard focus, preferences and narrow navigation work in the real D
         overflow:Array.from(document.querySelectorAll('body *')).filter(el=>el.getBoundingClientRect().right>innerWidth+1).slice(0,15).map(el=>({tag:el.tagName,id:el.id,class:el.className,right:el.getBoundingClientRect().right}))}));
       expect(layout.scroll,language+'/'+view+': '+JSON.stringify(layout)).toBeLessThanOrEqual(layout.width+1);
     }
-  }
-});
+  });
+}
 
 test('machine review exports the exact request while unavailable apply stays disabled',async({page,core})=>{
   await open(page,core);
