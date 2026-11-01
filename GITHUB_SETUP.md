@@ -19,7 +19,7 @@ On Windows, use `./scripts/setup.ps1`. Run the checks in [CONTRIBUTING.md](CONTR
 
 The workflow uses a read-only default token and pins third-party actions to full commit hashes. Keep these pins current through reviewed dependency updates. There are no project dependencies to cache with `go.sum` in this standard-library-only application.
 
-## Unsigned preview artifacts
+## Preview artifacts and build provenance
 
 Run **Release artifacts** from Actions, or run locally:
 
@@ -31,16 +31,18 @@ This requires Go, Bash and Python 3. It creates `dist/preview/` with ten target 
 
 The manifest records the compiler, source commit when available, target architectures, hashes and explicit unsigned/untested flags. Builds use `CGO_ENABLED=0`. Portable packaging uses a fixed source epoch and normalized archive metadata; the workflow compares two complete package runs before upload. Use a fresh checkout and identical source/toolchain inputs for comparisons (see [rebuild checks](docs/TESTING.md#repeated-portable-builds)). Independent trusted rebuild qualification and signed releases remain outstanding. The packaging script does not run a real engine.
 
+Hosted packaging additionally signs build provenance for the ten archives, manifest and checksum file, retains `BUILD-PROVENANCE.sigstore.json`, verifies all twelve subjects and exercises rejection cases before uploading. This makes thirteen distribution files. Local packaging produces the original twelve files and cannot impersonate a hosted workflow identity. [Provenance verification](docs/RELEASE_PROVENANCE.md) requires an independently approved commit/ref and trusted GitHub CLI. OS binaries remain unsigned; publisher signing/notarization is still outstanding.
+
 ## Publishing a prerelease
 
 1. Review CI results for the exact commit and the manual evidence in [docs/TESTING.md](docs/TESTING.md).
 2. Update the changelog and the application's version constants together.
 3. Create and push the intended version tag, for example `v0.1.0-alpha`.
 4. The release workflow reruns checks, packages artifacts and publishes a GitHub **prerelease** for a `v*` tag. Publishing a release in the GitHub UI also triggers packaging and attaches assets to that existing release. Manual workflow runs upload artifacts only.
-5. Inspect the release, check downloaded checksums and state the tested OS/engine versions in release notes. All packages remain unsigned unless a separate signing process is actually implemented.
+5. Inspect the release and verify the signed provenance against the independently approved commit/ref before extracting or running artifacts. The publisher job repeats this check after artifact download. State the tested OS/engine versions in release notes. OS binaries remain unsigned until publisher signing/notarization is implemented.
 
 Do not present a checksum as a digital signature, a cross-build as a device test, or a successful process launch as working interception. Never attach third-party binaries without separately satisfying their licensing and provenance requirements.
 
 ## Repository settings
 
-Maintainers should enable private vulnerability reporting and branch protections appropriate to the project. Require passing CI for changes to the primary branch. Security settings, branch protections, code signing and release attestations are account/repository settings and are not automatically enabled by these source files.
+Maintainers should enable private vulnerability reporting and branch protections appropriate to the project. Require passing CI for changes to the primary branch. Security settings, branch protections and publisher code signing require account/repository ownership and are not automatically enabled by these source files. Hosted release provenance uses scoped OIDC/attestation permissions and depends on GitHub plan/service availability; a failed attestation blocks distribution rather than silently dropping verification.

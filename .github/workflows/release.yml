@@ -104,7 +104,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       - name: Portable archive metadata regression checks
-        run: python3 -m unittest discover -s scripts -p test_release_archive.py -v
+        run: |
+          python3 -m unittest discover -s scripts -p test_release_archive.py -v
+          python3 -m unittest discover -s scripts -p test_release_provenance.py -v
       - if: runner.os == 'Windows'
         shell: powershell
         run: ./scripts/test-windows-workflow.ps1
@@ -155,7 +157,13 @@ jobs:
       - if: runner.os == 'Linux'
         run: node --test web/app.test.cjs
   package:
-    name: Package unsigned core
+    name: Package core and attest build provenance
+    outputs:
+      directory: ${{ steps.build_portable.outputs.directory }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     needs: [verify, vulnerabilities, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -168,6 +176,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: false
       - name: Build and package
+        id: build_portable
         shell: bash
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
@@ -182,6 +191,32 @@ jobs:
           bash scripts/package-release.sh "$label"
           python3 scripts/verify-release.py "dist/$label" --execute-native
           cmp "$RUNNER_TEMP/first-package-checksums.txt" "dist/$label/SHA256SUMS.txt"
+          echo "directory=dist/$label" >> "$GITHUB_OUTPUT"
+      - name: Attest every archive, manifest and checksum file
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.build_portable.outputs.directory }}/*
+          create-storage-record: false
+      - name: Retain and verify the signed provenance bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_DIRECTORY: ${{ steps.build_portable.outputs.directory }}
+          ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          cp "$ATTESTATION_BUNDLE" "$PACKAGE_DIRECTORY/BUILD-PROVENANCE.sigstore.json"
+          mkdir -p build/provenance-checks
+          gh version > build/provenance-checks/gh-version.txt
+          python3 scripts/verify_release_provenance.py "$PACKAGE_DIRECTORY" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" > build/provenance-checks/verified-subjects.txt
+          python3 scripts/check_provenance_rejections.py "$PACKAGE_DIRECTORY" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" > build/provenance-checks/rejections.json
+      - name: Retain provenance verification evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-provenance-check
+          path: build/provenance-checks/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Upload archives and checksums
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -199,6 +234,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: accessweaver-unsigned
@@ -209,10 +247,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
+          PACKAGE_DIRECTORY: ${{ needs.package.outputs.directory }}
         run: |
+          verified_directory="release-assets/${PACKAGE_DIRECTORY#dist/}"
+          python3 scripts/verify_release_provenance.py "$verified_directory" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF"
           mapfile -d '' assets < <(find release-assets -type f -print0)
-          if ((${#assets[@]} != 12)); then
-            echo "Expected ten archives, a manifest and checksums." >&2
+          if ((${#assets[@]} != 13)); then
+            echo "Expected ten archives, a manifest, checksums and a provenance bundle." >&2
             exit 1
           fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then

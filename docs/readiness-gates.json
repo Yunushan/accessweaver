@@ -199,9 +199,13 @@
         {
           "id": "supply.signing",
           "acceptance": "Release binaries, Windows/macOS installers and update metadata have verified publisher signatures and provenance.",
-          "status": "missing",
+          "status": "partial",
           "evidence": [
-            ".github/workflows/release.yml"
+            ".github/workflows/release.yml",
+            "scripts/verify_release_provenance.py",
+            "scripts/test_release_provenance.py",
+            "scripts/check_provenance_rejections.py",
+            "docs/RELEASE_PROVENANCE.md"
           ]
         },
         {

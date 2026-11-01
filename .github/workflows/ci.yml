@@ -106,7 +106,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       - name: Portable archive metadata regression checks
-        run: python3 -m unittest discover -s scripts -p test_release_archive.py -v
+        run: |
+          python3 -m unittest discover -s scripts -p test_release_archive.py -v
+          python3 -m unittest discover -s scripts -p test_release_provenance.py -v
       - name: Windows workflow contracts (no system changes)
         if: runner.os == 'Windows'
         shell: powershell
