@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Avoid interactive restoration-failure dialogs during silent uninstall, and compile the unsigned Windows installer in CI/release checks with compiler-version drift detection and retained artifact hashes.
+
 - Add a local metadata-only support summary with build identity, counts and status flags. Omit private profile/log/result/session contents and report unavailable profile counts honestly, including when authenticated profile loading fails.
 
 - Wait for workflow outcome recording on CLI cancellation, report incomplete shutdown honestly, and preserve tool/output errors.

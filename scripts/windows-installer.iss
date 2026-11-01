@@ -41,5 +41,10 @@ begin
     ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := Result and (ResultCode = 0);
   if not Result then
-    MsgBox('AccessWeaver could not restore its system changes. Review the recovery journal in ProgramData\AccessWeaver\logs, then retry uninstalling.', mbError, MB_OK);
+  begin
+    Log('AccessWeaver system restoration failed; process result/error code: ' + IntToStr(ResultCode));
+    { Unattended deployment must fail without waiting on an interactive dialog. }
+    if not UninstallSilent then
+      MsgBox('AccessWeaver could not restore its system changes. Review the recovery journal in ProgramData\AccessWeaver\logs, then retry uninstalling.', mbError, MB_OK);
+  end;
 end;

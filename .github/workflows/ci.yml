@@ -97,6 +97,20 @@ jobs:
         if: runner.os == 'Windows'
         shell: powershell
         run: ./scripts/test-windows-workflow.ps1
+      - name: Compile unsigned Windows installer (no installation)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/test-windows-installer.ps1 -ExpectedCompilerVersion '6.7.1'
+      - name: Retain Windows installer compilation evidence
+        if: runner.os == 'Windows' && always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-installer-compile-check
+          path: |
+            build/installer-checks/
+            build/accessweaver-*-windows-amd64-setup.exe
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Browser logic tests
         if: runner.os == 'Linux'
         run: node --test web/app.test.cjs
