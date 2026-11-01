@@ -17,6 +17,44 @@ env:
   GO_VERSION: '1.27.3'
 
 jobs:
+  vulnerabilities:
+    name: Go vulnerability checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOBIN: ${{ runner.temp }}/accessweaver-security-tools
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Verify and install pinned scanner
+        run: |
+          go -C scripts/security-tools mod download
+          go -C scripts/security-tools mod verify
+          go -C scripts/security-tools install golang.org/x/vuln/cmd/govulncheck
+          python3 -m unittest discover -s scripts -p test_vulnerability_report.py -v
+      - name: Verify optional fixture dependencies and compile (no guest execution)
+        run: |
+          go -C scripts/fixtures/wgpeer mod download
+          go -C scripts/fixtures/wgpeer mod verify
+          go -C scripts/fixtures/wgpeer test ./... -count=1
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go -C scripts/fixtures/wgpeer build -trimpath -buildvcs=false -o "$RUNNER_TEMP/wgpeer.exe" .
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go -C scripts/fixtures/wgpeer build -trimpath -buildvcs=false -o "$RUNNER_TEMP/probe.exe" ./cmd/probe
+      - name: Check known vulnerabilities for all core targets and fixture environments
+        run: GOVULNCHECK="$GOBIN/govulncheck" bash scripts/check-vulnerabilities.sh
+      - name: Retain scanner evidence, including failed reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: go-vulnerability-reports
+          path: build/security-checks/
+          if-no-files-found: ignore
+          retention-days: 14
   test:
     name: Test (${{ matrix.os }})
     strategy:

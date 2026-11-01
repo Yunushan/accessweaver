@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add pinned, fail-closed Go vulnerability checks to CI and release packaging. Update the separate WireGuard fixture to patched networking/crypto dependencies and Go 1.26 minimum; preserve unused-package advisories in reports.
+
 - Coordinate profile operations across local processes with OS locks, reject competing foreground controllers/CLI imports, honor canceled waiters, and report store contention as retryable HTTP 503. Native Unix controller checks now run in CI and release verification; loopback probes bypass proxies.
 
 - Reject stale dashboard profile saves/deletions and duplicate creation using the reviewed revision, preserving unsaved drafts on conflicts.

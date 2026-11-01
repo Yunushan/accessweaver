@@ -19,6 +19,7 @@ Please include the affected commit/version, OS/architecture, impact, and minimal
 - Preview explains the command and local readiness issues. Unsupported managed routing and known service/daemon options are rejected.
 - Managed ByeDPI binds to loopback. WireSock command hooks are rejected, and supported external configuration paths must reference local regular files.
 - Engine output is held in a bounded in-memory buffer rather than automatically persisted.
+- CI and release packaging check known Go vulnerabilities across release targets with a pinned scanner. The gate rejects incomplete reports and affected imported packages; module-only advisories for unused packages remain visible. External engines and drivers require separate assessment.
 
 These controls reduce particular attack paths; they are not a sandbox. A source review completed on 2026-11-01 identified three local privilege-boundary findings. Session and machine-storage remediation has regression evidence, but complete remediation and native qualification remain unfinished.
 

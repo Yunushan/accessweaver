@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "objective": "100% production, premium and enterprise readiness across every documented desktop platform and managed fleets",
+  "objective": "100% production and premium/enterprise-quality desktop readiness with managed deployment across every documented desktop platform",
   "assessmentState": "in-progress",
   "scoring": {
     "total": 100,
@@ -161,10 +161,17 @@
         {
           "id": "security.vulnerabilities",
           "acceptance": "Run current dependency/toolchain vulnerability analysis and patch supported releases under an owned disclosure process.",
-          "status": "missing",
+          "status": "partial",
           "evidence": [
             ".github/dependabot.yml",
-            "SECURITY.md"
+            "SECURITY.md",
+            "scripts/check-vulnerabilities.sh",
+            "scripts/check-vulnerability-report.py",
+            "scripts/test_vulnerability_report.py",
+            "scripts/security-tools/go.mod",
+            ".github/workflows/ci.yml",
+            ".github/workflows/release.yml",
+            "scripts/fixtures/wgpeer/go.mod"
           ]
         }
       ]
@@ -376,37 +383,45 @@
     },
     {
       "id": "enterprise",
-      "title": "Enterprise fleet capabilities",
+      "title": "Managed desktop deployment",
       "gates": [
         {
           "id": "enterprise.policy",
-          "acceptance": "Implement administrator-enforced policy, roles and least-privilege authorization for permitted engines, inputs, downloads and operations.",
+          "acceptance": "Administrator-enforced local policy controls permitted engines, executable provenance, inputs, downloads and privileged operations; ordinary users cannot alter policy or bypass it within the managed installation.",
           "status": "missing",
           "evidence": []
         },
         {
-          "id": "enterprise.enrollment",
-          "acceptance": "Implement authenticated fleet enrollment, device identity, inventory, revocation and tenant separation with negative tests.",
+          "id": "enterprise.configuration",
+          "acceptance": "Versioned administrator configuration can be signed, reviewed, imported/exported and applied with deterministic precedence; invalid, unsigned, stale or tampered configuration is rejected while preserving the last known state.",
           "status": "missing",
           "evidence": []
         },
         {
           "id": "enterprise.rollout",
-          "acceptance": "Implement signed desired-state distribution, staged rollout, drift detection, maintenance windows and safe fleet rollback.",
-          "status": "missing",
-          "evidence": []
+          "acceptance": "Signed silent installation, upgrade, rollback and uninstall have documented detection, exit/reboot semantics and preserve policy/profiles; staged deployment through existing endpoint-management tools is tested.",
+          "status": "partial",
+          "evidence": [
+            "scripts/build-windows-installer.ps1",
+            "scripts/windows-installer.iss",
+            "scripts/test-windows-integration.ps1"
+          ]
         },
         {
           "id": "enterprise.audit",
-          "acceptance": "Provide attributable, redacted, tamper-evident audit events with documented retention and authenticated enterprise export.",
+          "acceptance": "Local administrative/user action events are attributable, redacted, bounded, tamper-evident and exportable to existing log collectors; support exports enforce documented consent and secret-handling rules.",
           "status": "missing",
           "evidence": []
         },
         {
           "id": "enterprise.management",
-          "acceptance": "Test managed deployment, upgrades, policy import/export and remote support across domain/MDM-managed target systems.",
-          "status": "missing",
-          "evidence": []
+          "acceptance": "Documented managed-package deployment, detection/remediation, policy import/export and privacy-safe support procedures are validated against intended domain/MDM-managed desktop test endpoints.",
+          "status": "partial",
+          "evidence": [
+            "scripts/windows-installer.iss",
+            "scripts/test-windows-integration.ps1",
+            "docs/WINDOWS_WORKFLOWS.md"
+          ]
         }
       ]
     },
@@ -512,5 +527,22 @@
     "Resolve DNSCrypt and interactive Windows app failures in the full disposable VM.",
     "Implement privileged-operation policy and fleet architecture with tested authentication boundaries.",
     "Complete independent security review, platform-native qualification, signing and operational ownership."
-  ]
+  ],
+  "scope": {
+    "confirmedByUser": "Desktop quality + managed deployment",
+    "confirmedOn": "2026-11-01",
+    "included": [
+      "desktop reliability and recovery",
+      "security and signed distribution",
+      "administrator-enforced local policy and configuration",
+      "deployment through existing endpoint-management systems",
+      "local diagnostics and audit/support export"
+    ],
+    "excluded": [
+      "fleet-management backend",
+      "application-owned device enrollment",
+      "multi-tenant cloud service and centralized role administration"
+    ],
+    "scoringNote": "The five former fleet-backend gates are replaced with five managed-desktop gates; this scope change awards no passed gates or score credit."
+  }
 }

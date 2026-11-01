@@ -62,9 +62,9 @@ The release verifier checks all ten archives, their checksums, required notices 
 
 ## Production, premium and enterprise acceptance
 
-The active target includes every documented desktop platform and enterprise fleet management. [readiness-gates.json](readiness-gates.json) records 50 acceptance gates across functional parity, reliability, security, supply chain, platforms, validation, product quality, enterprise capabilities, operations and data/privacy. Each gate contributes two points only after its full acceptance requirement has source-bound evidence. Partial implementation does not count as a passed release gate. The assessment is in progress; this is not a certification or a claim of a completed score.
+The confirmed target is desktop quality and managed deployment across every documented desktop platform. A fleet-management backend, application-owned device enrollment and multi-tenant cloud service are outside this goal. [readiness-gates.json](readiness-gates.json) records 50 acceptance gates across functional parity, reliability, security, supply chain, platforms, validation, product quality, enterprise capabilities, operations and data/privacy. Each gate contributes two points only after its full acceptance requirement has source-bound evidence. Partial implementation does not count as a passed release gate. The assessment is in progress; this is not a certification or a claim of a completed score.
 
-Evidence must identify the actual source/artifact, environment, procedure and result. Compilation, mocked commands and userspace fixture success cannot certify native routing. Do not change a failed/partial gate to passed merely because its implementation exists. Fleet enrollment, roles/policy, signed rollout, tenant isolation and enterprise audit export require implementation and adversarial integration tests; local-only API controls do not satisfy those requirements.
+Evidence must identify the actual source/artifact, environment, procedure and result. Compilation, mocked commands and userspace fixture success cannot certify native routing. Do not change a failed/partial gate to passed merely because its implementation exists. Administrator-enforced local policy, signed configuration, managed installation/upgrade/rollback, local audit/support export and endpoint-management integration require implementation and adversarial integration tests. Local loopback authentication and portable archives alone do not satisfy those requirements. The five former fleet-backend gates were replaced by five managed-desktop gates after the user confirmed scope; no passed status or numerical credit was awarded for that change.
 
 Current reliability additions include service log rotation (8 MiB plus two backups), per-workflow process log rotation (4 MiB plus two backups), and bounded shutdown that waits for a workflow's terminal history record. Contract tests cover concurrent logging, oversized output, rotation failures and shutdown timeout/history recording. They do not establish long-duration resource budgets or complete failure recovery. Workflow directories and recovery histories still require a retention policy; per-file rotation alone does not bound lifetime disk use.
 
@@ -75,6 +75,24 @@ Current reliability additions include service log rotation (8 MiB plus two backu
 On Linux/macOS, build the core and run `python3 scripts/test-unix-controller.py ./accessweaver`. This starts an isolated real dashboard, rejects a second UI and CLI import, allows read-only CLI access, verifies authenticated owner bootstrap despite an unusable proxy setting, and checks graceful shutdown removes the private launcher before an import can succeed. It launches no engine and changes no account/service/driver/network settings. CI and release verification require this test on Unix runners.
 
 These are local filesystem/process checks, not engine traffic tests. Run them natively on each supported OS and include `go test -race ./... -count=1` where a C compiler is available. Cross-building alone cannot validate `flock` or `LockFileEx` behavior. Do not infer Windows/WSL shared-store interoperability from separate Windows and Linux test success. Power-loss durability, filesystem corruption and backup/restore remain separate acceptance requirements.
+
+## Known Go vulnerability checks
+
+The separate `scripts/security-tools` module pins govulncheck and its checksums. With the release Go toolchain installed (currently Go 1.27.3), run:
+
+```bash
+go -C scripts/security-tools mod download
+go -C scripts/security-tools mod verify
+go -C scripts/security-tools install golang.org/x/vuln/cmd/govulncheck
+python3 -m unittest discover -s scripts -p test_vulnerability_report.py -v
+GOVULNCHECK="$(go env GOPATH)/bin/govulncheck" bash scripts/check-vulnerabilities.sh
+```
+
+The runner checks the core's ten desktop OS/architecture configurations with CGO disabled, plus the optional fixture's Linux/amd64 and Windows/amd64 configurations. Each report records its SDK/scanner version, database timestamp, module inventory and target. CI repeats these checks; release packaging depends on their success. The scanner tool and fixture dependencies remain separate from the standard-library-only core. Dependabot monitors both optional modules weekly. The security job uses `GOTOOLCHAIN=local` so a dependency cannot silently substitute another SDK.
+
+Govulncheck's JSON mode returns exit status zero even when it reports vulnerabilities. The report checker therefore validates the protocol, tool/SDK versions, official database, expected module and populated source inventory before assessing findings. Invalid/truncated reports, scanner errors, affected imported packages and reachable vulnerable symbols fail the gate. Raw JSON and summaries are retained as CI artifacts for 14 days, including on failure. See the [official govulncheck documentation](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) for output semantics and analysis limitations.
+
+Module-only advisories stay visible when their affected packages are outside the compiled import graph. There is no per-ID suppression list. The fixture currently retains `GO-2026-5932` for the unused, unmaintained OpenPGP packages in `golang.org/x/crypto`; importing an affected package in a later change would fail the gate. Zero affected findings in these source configurations do not establish a complete security assessment or cover JavaScript, vendor engines/drivers, installer content or other SDK/build configurations. Source scanning and compilation do not replace the fixture's disposable-guest handshake/traffic qualification.
 
 ## Evidence vocabulary
 
