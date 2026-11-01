@@ -68,6 +68,7 @@
           "status": "partial",
           "evidence": [
             "internal/workflow/manager_test.go",
+            "cmd/accessweaver/system_wait_test.go",
             "internal/engine/lifecycle_test.go",
             "scripts/test-unix-controller.py"
           ]
@@ -146,6 +147,7 @@
             "internal/workflow/windows.ps1",
             "internal/workflow/manager_test.go",
             "internal/workflow/application_windows_test.go",
+            "internal/workflow/privileges_test.go",
             "scripts/test-windows-workflow.ps1",
             "internal/servicehost/host_windows.go"
           ]

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Wait for workflow outcome recording on CLI cancellation, report incomplete shutdown honestly, and preserve tool/output errors.
+- Block machine apply previews without administrator authority and recheck before job creation. Export reviewed requests for a separate elevated CLI without carrying session credentials or approval.
+
 - Reject reserved/abbreviated ByeDPI installer options before preview or system changes, share prefix parsing with foreground adapters, retain one-shot timeout support, and correct dashboard privilege guidance in all four languages.
 
 - Add real browser acceptance against isolated Go controllers, including concurrent tabs, private launch, editing/import/export, focus and four-language mobile layouts. Wrap maintenance review actions so they remain reachable on narrow screens.

@@ -6,7 +6,7 @@ These workflows are experimental. See [implementation and verification status](S
 
 ## Review and run
 
-Select an operation and component. The form shows the relevant options. Review the generated plan, check the confirmation box, then apply. Changing an input invalidates the plan. Plans expire after ten minutes and can be consumed once. Only one operation runs per controller. Machine operations also use an administrator-only mutex across instances; user application operations do not share that machine mutex.
+Select an operation and component, then review the generated plan. Machine plans identify their administrator requirement and remain unavailable to apply from the unelevated dashboard. **Export reviewed request** downloads only the reviewed JSON request, without a session token, plan ID or approval. Keep the file private: native arguments and paths may be sensitive. Review it again with `system preview` and explicitly apply it in a separately elevated CLI. Eligible user operations can be confirmed and applied in the dashboard. Changing an input invalidates the plan. Plans expire after ten minutes and can be consumed once. Only one operation runs per controller. Machine operations also use an administrator-only mutex across instances; user application operations do not share that machine mutex.
 
 The CLI accepts the same JSON request:
 
@@ -18,6 +18,8 @@ accessweaver.exe system preview request.json
 accessweaver.exe system apply request.json --confirm
 accessweaver.exe system history
 ```
+
+Pressing Ctrl+C during `system apply` requests cancellation and waits up to eight seconds for shutdown and outcome recording before returning a nonzero exit status. The CLI prints the actual final job snapshot. If shutdown times out, it reports that cancellation did not finish and preserves the actual running state rather than inventing a terminal result. Inspect the recovery journal before retrying. A vendor cleanup or rollback is not certified by the controller merely exiting.
 
 For example, install an automatic ByeDPI proxy service without app interception:
 

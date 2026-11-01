@@ -46,6 +46,7 @@ func TestOperationComponentCompatibility(t *testing.T) {
 func TestApplicationPrivilegeReview(t *testing.T) {
 	m := New(t.TempDir())
 	m.platform = "windows"
+	m.requireAdmin = func() error { return nil }
 	p, err := m.Preview(Request{Action: "app-repair", Engine: "discord"})
 	if err != nil || p.Ready || len(p.Issues) == 0 {
 		t.Fatalf("combined repair must be blocked: %+v %v", p, err)
@@ -67,6 +68,7 @@ func TestApplicationPrivilegeReview(t *testing.T) {
 func TestAccountConsentAndModeSpecificReview(t *testing.T) {
 	m := New(t.TempDir())
 	m.platform = "windows"
+	m.requireAdmin = func() error { return nil }
 	account, err := m.Preview(Request{Action: "config"})
 	if err != nil || account.Ready {
 		t.Fatalf("new account without consent: %+v %v", account, err)
@@ -94,6 +96,7 @@ func TestAccountConsentAndModeSpecificReview(t *testing.T) {
 func TestPlansAreImmutableExpiringAndSingleUse(t *testing.T) {
 	m := New(t.TempDir())
 	m.platform = "windows"
+	m.requireAdmin = func() error { return nil }
 	input := Request{Action: "config", ConfigPath: "fixture.conf", Applications: []string{"original.exe"}}
 	p, e := m.Preview(input)
 	if e != nil {
@@ -135,6 +138,7 @@ func TestPlansAreImmutableExpiringAndSingleUse(t *testing.T) {
 func TestConcurrentJobAndCancellationPersistFailure(t *testing.T) {
 	m := New(t.TempDir())
 	m.platform = "windows"
+	m.requireAdmin = func() error { return nil }
 	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
@@ -172,6 +176,7 @@ func waitJob(t *testing.T, m *Manager) {
 func TestShutdownWaitsForDurableOutcomeAndRejectsNewJobs(t *testing.T) {
 	m := New(t.TempDir())
 	m.platform = "windows"
+	m.requireAdmin = func() error { return nil }
 	finishing := make(chan struct{})
 	release := make(chan struct{})
 	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
@@ -215,6 +220,7 @@ func TestShutdownWaitsForDurableOutcomeAndRejectsNewJobs(t *testing.T) {
 func TestByeDPIInstallRejectsReservedOptionsBeforeRetainingPlan(t *testing.T) {
 	m := New(t.TempDir())
 	m.platform = "windows"
+	m.requireAdmin = func() error { return nil }
 	for _, arg := range []string{"--i=0.0.0.0", "--po=9999", "--dae", "--service", "--trans", "-Ui0.0.0.0", "--", "@options.txt"} {
 		if _, err := m.Preview(Request{Action: "install", Engine: "byedpi", Mode: "service", Args: []string{arg}}); err == nil {
 			t.Errorf("unsafe preview accepted: %q", arg)

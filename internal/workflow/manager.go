@@ -52,13 +52,14 @@ type Request struct {
 }
 
 type Plan struct {
-	ID        string    `json:"id"`
-	Request   Request   `json:"request"`
-	Steps     []string  `json:"steps"`
-	Issues    []string  `json:"issues"`
-	Warnings  []string  `json:"warnings"`
-	Ready     bool      `json:"ready"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	RequiresAdministrator bool      `json:"requiresAdministrator"`
+	ID                    string    `json:"id"`
+	Request               Request   `json:"request"`
+	Steps                 []string  `json:"steps"`
+	Issues                []string  `json:"issues"`
+	Warnings              []string  `json:"warnings"`
+	Ready                 bool      `json:"ready"`
+	ExpiresAt             time.Time `json:"expiresAt"`
 }
 
 type Job struct {
@@ -106,23 +107,24 @@ func Catalog() []Operation {
 }
 
 type Manager struct {
-	mu       sync.Mutex
-	root     string
-	plans    map[string]Plan
-	job      Job
-	cancel   context.CancelFunc
-	done     chan struct{}
-	closing  bool
-	execute  func(context.Context, string, Request) (json.RawMessage, error)
-	platform string
+	mu           sync.Mutex
+	root         string
+	plans        map[string]Plan
+	job          Job
+	cancel       context.CancelFunc
+	done         chan struct{}
+	closing      bool
+	execute      func(context.Context, string, Request) (json.RawMessage, error)
+	platform     string
+	requireAdmin func() error
 }
 
 func New(root string) *Manager {
-	return &Manager{root: filepath.Join(root, "workflows"), plans: map[string]Plan{}, execute: execute, platform: runtime.GOOS}
+	return &Manager{root: filepath.Join(root, "workflows"), plans: map[string]Plan{}, execute: execute, platform: runtime.GOOS, requireAdmin: requireAdministrator}
 }
 
 func (m *Manager) Preview(r Request) (Plan, error) {
-	p := Plan{Request: r, Steps: []string{}, Issues: []string{}, Warnings: []string{}, ExpiresAt: time.Now().Add(10 * time.Minute).UTC()}
+	p := Plan{RequiresAdministrator: requiresAdministrator(r.Action), Request: r, Steps: []string{}, Issues: []string{}, Warnings: []string{}, ExpiresAt: time.Now().Add(10 * time.Minute).UTC()}
 	found := false
 	for _, op := range Catalog() {
 		if op.ID == r.Action {
@@ -142,6 +144,11 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 	}
 	if m.platform != "windows" {
 		p.Issues = append(p.Issues, "Windows system workflows require a Windows host")
+	}
+	if m.platform == "windows" && p.RequiresAdministrator {
+		if err := m.checkAdministrativeAccess(); err != nil {
+			p.Issues = append(p.Issues, err.Error())
+		}
 	}
 	if r.Action == "app-repair" {
 		p.Issues = append(p.Issues, "Combined Discord repair requires a privilege-separated broker and is unavailable. Run application install/remove as your normal desktop user and manage the proxy separately.")
@@ -403,6 +410,11 @@ func (m *Manager) Start(id string) (Job, error) {
 	if !p.Ready {
 		return Job{}, errors.New(strings.Join(p.Issues, "; "))
 	}
+	if p.RequiresAdministrator {
+		if err := m.checkAdministrativeAccess(); err != nil {
+			return Job{}, err
+		}
+	}
 	delete(m.plans, id)
 	if err := os.MkdirAll(m.root, 0700); err != nil {
 		return Job{}, err
@@ -585,4 +597,21 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 		return result, errors.New(outcome.Error)
 	}
 	return result, nil
+}
+
+// Keep the few non-administrative operations explicit. New machine operations
+// default to requiring an administrative process, independently of UI consent.
+func requiresAdministrator(action string) bool {
+	switch action {
+	case "discover", "updates", "choose-folder", "app-install", "app-start", "app-remove":
+		return false
+	default:
+		return true
+	}
+}
+func (m *Manager) checkAdministrativeAccess() error {
+	if m.requireAdmin == nil {
+		return errors.New("cannot determine administrator access; use a separately elevated system apply CLI")
+	}
+	return m.requireAdmin()
 }

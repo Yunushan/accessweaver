@@ -120,7 +120,7 @@ test('system operations expose only compatible component choices',()=>{const env
 test('user application operations exclude stale machine DNS and bundle inputs',()=>{const env=environment();env.run(systemSource);env.get('system-engine').value='discord';env.get('system-dns').value='doh';env.get('system-bundle').value='C:\\machine-components';for(const action of ['app-install','app-remove','app-start']){env.get('system-action').value=action;const request=plain(env.run('systemRequest()'));assert.equal(request.dns,undefined);assert.equal(request.bundlePath,undefined);}});
 test('every system operation label has all four languages',()=>{const env=environment();const labels=plain(env.run('systemOperationText'));assert.equal(Object.keys(labels).length,22);for(const row of Object.values(labels))for(const lang of ['en','tr','ru','es'])assert.ok(row[lang]);});
 test('new-release notification is shown once for a completed update check',()=>{const env=environment();env.run(systemSource);env.run('toast=message=>{globalThis.updateNotice=message;globalThis.noticeCount=(globalThis.noticeCount||0)+1};const updateFixture={id:"update-1",action:"updates",state:"succeeded",result:{data:{version:"v1.0.0",updateAvailable:true}}};notifySystemUpdate(updateFixture);notifySystemUpdate(updateFixture)');assert.equal(env.context.noticeCount,1);assert.match(env.context.updateNotice,/v1\.0\.0/);});
-test('a late system preview cannot restore a plan invalidated during the request',async()=>{const env=environment();env.run(systemSource);env.run('state.offline=false;state.loading=false;apiRequest=()=>new Promise(resolve=>{globalThis.resolvePlan=resolve})');const pending=env.run('previewSystem({action:"discover"})');env.run('invalidateSystemPlan()');env.context.resolvePlan({id:'stale',ready:true});await pending;assert.equal(env.run('systemUI.plan'),null);assert.equal(env.get('system-consent').disabled,true);});
+test('a late system preview cannot restore a plan invalidated during the request',async()=>{const env=environment();env.run(systemSource);env.run('state.offline=false;state.loading=false;apiRequest=()=>new Promise(resolve=>{globalThis.resolvePlan=resolve})');const pending=env.run('previewSystem({action:"discover"})');env.run('invalidateSystemPlan()');env.context.resolvePlan({id:'stale',ready:true});await pending;assert.equal(env.run('systemUI.plan'),null);assert.equal(env.get('system-consent').disabled,true);assert.equal(env.get('system-export').disabled,true);});
 test('applying a system operation submits only the reviewed plan ID',async()=>{const env=environment();env.run(systemSource);env.run('systemUI.plan={id:"reviewed",ready:true};$("system-consent").checked=true;apiRequest=async(path,method,payload)=>{globalThis.submittedSystem=payload;return {id:"reviewed",state:"succeeded"}};pollSystemJob=()=>{}');await env.run('applySystem()');assert.deepEqual(plain(env.context.submittedSystem),{planId:'reviewed',confirm:true});assert.equal(env.run('systemUI.plan'),null);});
 
 test('invalid browser entries survive unrelated offline saves',async()=>{const env=environment();env.put('fixture',baseProfile());env.put('invalid',{id:'broken-profile',custom:'keep this data'});env.run('state.preservedProfiles=[invalid]');await env.run('persist(fixture)');assert.deepEqual(JSON.parse(env.data.get('aw.profiles')),[baseProfile(),{id:'broken-profile',custom:'keep this data'}]);});
@@ -129,3 +129,30 @@ test('exporting while another action runs cannot release its busy state',async()
 test('IPv6 probe hosts are accepted and hostlist prefixes are rejected',()=>{const p=baseProfile();p.probe.host='2001:db8::1';valid(environment(),p);p.probe.host='^discord.com';rejectsProfile(p);p.probe.host='1:::2';rejectsProfile(p);});
 test('launch submits the exact revision reviewed by the user',async()=>{const env=environment();env.put('fixture',{...baseProfile(),updatedAt:'2026-10-31T12:00:00.123456789Z'});env.run('state.offline=false;state.loading=false;state.launch={profile:fixture,ready:true};apiRequest=async(path,method,payload)=>{globalThis.launchRequest=payload;return {state:"running",profileId:fixture.id}}');await env.run('confirmLaunch()');assert.equal(env.context.launchRequest.expectedUpdatedAt,'2026-10-31T12:00:00.123456789Z');assert.equal(env.context.launchRequest.confirm,true);});
 test('launch review refreshes a profile before checking its plan',async()=>{const env=environment();env.put('fixture',baseProfile());env.put('fresh',{...baseProfile(),updatedAt:'2026-10-31T12:00:00Z',args:['latest']});env.run('state.offline=false;state.loading=false;apiRequest=async(path,method,payload)=>{if(path.startsWith("/api/v1/profiles/"))return fresh;globalThis.previewed=payload;return {ready:true,args:[],warnings:[],issues:[]}}');await env.run('reviewLaunch(fixture)');assert.deepEqual(plain(env.context.previewed.args),['latest']);assert.equal(env.run('state.launch.profile.updatedAt'),'2026-10-31T12:00:00Z');});
+
+test('machine requests can be exported without exporting a plan credential or applying them',async()=>{
+  const env=environment();env.run(systemSource);
+  env.put('reviewed',{id:'private-plan-id',ready:false,requiresAdministrator:true,request:{action:'dns',dns:'doh'},issues:['administrator CLI required'],steps:[],warnings:[]});
+  let download;
+  env.context.downloadFile=(data,name)=>{download={data,name}};
+  env.run('systemUI.plan=reviewed;exportSystemRequest()');
+  assert.deepEqual(JSON.parse(download.data),{action:'dns',dns:'doh'});
+  assert.equal(download.name,'accessweaver-dns-request.json');
+  assert.equal(download.data.includes('private-plan-id'),false);
+  assert.equal(env.run('systemUI.plan.id'),'private-plan-id');
+  env.run('invalidateSystemPlan()');
+  assert.equal(env.get('system-export').disabled,true);
+  download=null;env.run('exportSystemRequest()');assert.equal(download,null);
+});
+
+test('a blocked machine preview enables only request export',async()=>{
+  const env=environment();env.run(systemSource);
+  env.run('state.offline=false;state.loading=false;state.disconnected=false');
+  env.put('reviewed',{id:'private-plan-id',ready:false,requiresAdministrator:true,request:{action:'dns',dns:'doh'},issues:['administrator CLI required'],steps:[],warnings:[]});
+  env.run('apiRequest=async()=>reviewed');
+  await env.run('previewSystem({action:"dns",dns:"doh"})');
+  assert.equal(env.get('system-export').disabled,false);
+  assert.equal(env.get('system-consent').disabled,true);
+  assert.equal(env.get('system-apply').disabled,true);
+  env.run('invalidateSystemPlan()');assert.equal(env.get('system-export').disabled,true);
+});

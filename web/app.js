@@ -54,6 +54,10 @@ Object.assign(en,{chooseFolder:'Add folder',clearApplications:'Clear application
 Object.assign(tr,{chooseFolder:'Klasör ekle',clearApplications:'Uygulama listesini temizle',scanTargets:'Tarama hedefleri (her satırda bir sunucu adı)',recoveryJournal:'Kurtarma günlüğü dosya adı',onceMode:'Tek seferlik çalıştır'});
 Object.assign(en,{updateAvailable:'Update available'});
 Object.assign(tr,{updateAvailable:'Güncelleme mevcut'});
+
+Object.assign(en,{exportSystemRequest:'Export reviewed request',exportSystemRequestNote:'Request files can contain private paths or arguments. Store them privately, review them again in the CLI, and confirm separately.'});
+Object.assign(tr,{exportSystemRequest:'İncelenen isteği dışa aktar',exportSystemRequestNote:'İstek dosyaları özel yollar veya parametreler içerebilir. Güvenli bir yerde saklayın, komut satırında yeniden inceleyin ve ayrıca onaylayın.'});
+
 const storage = {
   get(key) { try { return localStorage.getItem(key); } catch { return null; } },
   set(key, value) { localStorage.setItem(key, value); },

@@ -42,7 +42,7 @@ npm test
 
 The [Playwright browser documentation](https://playwright.dev/docs/browsers) explains host prerequisites. To use an already installed Microsoft Edge on Windows instead, set `$env:PW_BROWSER_CHANNEL='msedge'` in PowerShell and run `npm test -- --project=chromium`. `ACCESSWEAVER_BINARY` can select another candidate explicitly. Run as the ordinary desktop user, because the real controller refuses an elevated dashboard.
 
-Each test starts a separate real Go controller with disposable state/cache under ignored `build/browser-state/`. It exercises the actual private launcher, authenticated UI and unauthenticated API rejection, save/reload/export/import collision, concurrent-tab revision rejection, preserved invalid JSON, unavailable-engine launch review, keyboard focus, preferences and narrow layouts across all six screens in all four languages. No engine, diagnostic traffic or Windows maintenance operation is started. These tests do not certify screen-reader behavior or engine routing.
+Each test starts a separate real Go controller with disposable state/cache under ignored `build/browser-state/`. It exercises the actual private launcher, authenticated UI and unauthenticated API rejection, save/reload/export/import collision, concurrent-tab revision rejection, preserved invalid JSON, unavailable-engine launch review, keyboard focus, reviewed machine-request export without execution, preferences and narrow layouts across all six screens in all four languages. No engine, diagnostic traffic or Windows maintenance operation is started. These tests do not certify screen-reader behavior or engine routing.
 
 CI and release verification run the same suite on Chromium, Firefox and WebKit on Linux. Windows Edge is also locally testable; Linux WebKit does not certify native Safari/macOS. Results and failure screenshots under `build/browser-results/` identify the binary hash, runtime build metadata, OS/architecture, Node, Playwright and browser versions. Traces are disabled because they can retain session headers. Never upload `build/browser-state/`: it contains private launcher credentials and fixture profiles. Local fixture directories are retained for investigation; the harness stops each controller after use.
 
@@ -122,3 +122,9 @@ Module-only advisories stay visible when their affected packages are outside the
 - **Traffic-tested:** the intended application/protocol was independently verified through the selected route.
 
 Only the last two establish evidence about a particular external integration. None by itself establishes production readiness across other networks or releases.
+
+## Workflow cancellation and administrator handoff
+
+`go test ./cmd/accessweaver ./internal/workflow -count=1` now covers CLI cancellation waiting for terminal recording, bounded cancellation with an honest running snapshot, retained tool/output errors, rejected machine plans without administrator authority and a second authority check before job creation. These are controlled lifecycle tests; they do not execute Windows machine changes.
+
+The real-browser suite also previews a machine DNS request, requires unavailable consent/apply controls, exports exactly the retained request JSON, verifies no workflow job directory was created, and invalidates export when inputs change. Local Windows Edge exercises the real process-token check; Linux CI exercises unsupported-platform review and export. Neither path applies DNS or launches an engine. Export is a manual administrator handoff, not an elevation broker or a signed approval artifact.

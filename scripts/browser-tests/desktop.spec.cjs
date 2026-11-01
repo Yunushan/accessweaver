@@ -154,3 +154,24 @@ test('modal keyboard focus, preferences and narrow navigation work in the real D
     }
   }
 });
+
+test('machine review exports the exact request while unavailable apply stays disabled',async({page,core})=>{
+  await open(page,core);
+  await page.locator('.nav-item[data-view="system"]').click();
+  await page.locator('#system-action').selectOption('dns');
+  await page.locator('#system-dns').selectOption('doh');
+  await page.locator('#system-preview').click();
+  await expect(page.locator('#system-export')).toBeEnabled();
+  await expect(page.locator('#system-consent')).toBeDisabled();
+  await expect(page.locator('#system-apply')).toBeDisabled();
+  const reviewed=JSON.parse(await page.locator('#system-plan').textContent());
+  expect(reviewed.requiresAdministrator).toBe(true);
+  if(process.platform==='win32')expect(reviewed.issues.join(' ')).toContain('separately elevated');
+  const downloading=page.waitForEvent('download');await page.locator('#system-export').click();
+  const download=await downloading;
+  expect(download.suggestedFilename()).toBe('accessweaver-dns-request.json');
+  expect(JSON.parse(await fs.readFile(await download.path(),'utf8'))).toEqual(reviewed.operation);
+  await expect(fs.stat(path.join(core.home,'state','workflows'))).rejects.toMatchObject({code:'ENOENT'});
+  await page.locator('#system-dns').selectOption('dnscrypt');
+  await expect(page.locator('#system-export')).toBeDisabled();
+});

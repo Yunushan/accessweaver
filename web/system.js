@@ -22,7 +22,7 @@ function systemEnginesFor(action){
   if(action==='remove')return ['wiresock','byedpi','zapret','zapret2','goodbyedpi','dnscrypt','proxifyre','drover','windivert'];
   return ['wiresock','byedpi','zapret','zapret2','goodbyedpi','dnscrypt','proxifyre','drover','wgcf','ndisapi','vcredist'];
 }
-function invalidateSystemPlan(){systemUI.revision++;systemUI.plan=null;$('system-consent').checked=false;$('system-consent').disabled=true;$('system-apply').disabled=true;$('system-plan').textContent='';}
+function invalidateSystemPlan(){systemUI.revision++;systemUI.plan=null;$('system-consent').checked=false;$('system-consent').disabled=true;$('system-apply').disabled=true;$('system-export').disabled=true;$('system-plan').textContent='';}
 async function loadSystemTools(){
   if(systemUI.loading)return;
   if(!coreAvailable())throw new Error(t('coreRequired'));
@@ -60,8 +60,13 @@ function renderSystemPresets(){const previous=$('system-preset').value;$('system
 async function previewSystem(request=systemRequest()){
   if(systemUI.busy)return;
   invalidateSystemPlan();systemUI.busy=true;const revision=systemUI.revision;
-  try {if(!coreAvailable())throw new Error(t('coreRequired'));const plan=await apiRequest('/api/v1/system/preview','POST',request);if(revision!==systemUI.revision)return;systemUI.plan=plan;$('system-plan').textContent=JSON.stringify({operation:plan.request,steps:plan.steps,issues:plan.issues,warnings:plan.warnings,expiresAt:plan.expiresAt},null,2);$('system-consent').disabled=!plan.ready;}
+  try {if(!coreAvailable())throw new Error(t('coreRequired'));const plan=await apiRequest('/api/v1/system/preview','POST',request);if(revision!==systemUI.revision)return;systemUI.plan=plan;$('system-plan').textContent=JSON.stringify({operation:plan.request,requiresAdministrator:plan.requiresAdministrator,steps:plan.steps,issues:plan.issues,warnings:plan.warnings,expiresAt:plan.expiresAt},null,2);$('system-consent').disabled=!plan.ready;$('system-export').disabled=false;}
   catch(error){$('system-plan').textContent=error.message;toast(error.message,true)}finally{systemUI.busy=false}
+}
+function exportSystemRequest(){
+  if(!systemUI.plan?.request)return;
+  const request=systemUI.plan.request;
+  downloadFile(JSON.stringify(request,null,2)+'\n','accessweaver-'+request.action+'-request.json');
 }
 async function applySystem(){
   if(systemUI.busy||!systemUI.plan?.ready||!$('system-consent').checked)return;
@@ -82,6 +87,7 @@ $('system-clear-apps').addEventListener('click',()=>{$('system-applications').va
 $('system-preset').addEventListener('change',()=>{const p=systemUI.presets[Number($('system-preset').value)];if($('system-preset').value!==''&&p){$('system-args').value=p.args.join('\n');invalidateSystemPlan()}});
 $('system-consent').addEventListener('change',()=>{$('system-apply').disabled=!systemUI.plan?.ready||!$('system-consent').checked});
 $('system-apply').addEventListener('click',applySystem);
+$('system-export').addEventListener('click',exportSystemRequest);
 $('system-inspect').addEventListener('click',()=>previewSystem({action:'discover'}));
 $('system-cancel').addEventListener('click',async()=>{try{renderSystemJob(await apiRequest('/api/v1/system/cancel','POST',{}))}catch(e){toast(e.message,true)}});
 $('system-history').addEventListener('click',async()=>{try{$('system-output').textContent=JSON.stringify(await apiRequest('/api/v1/system/history'),null,2)}catch(e){toast(e.message,true)}});

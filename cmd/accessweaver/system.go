@@ -105,32 +105,65 @@ func systemCommand(args []string, root string) error {
 		if args[0] == "apply" && (len(args) != 3 || args[2] != "--confirm") {
 			return errors.New("preview the request, then use system apply REQUEST.json --confirm")
 		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if _, err = manager.Start(plan.ID); err != nil {
 			return err
 		}
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		ticker := time.NewTicker(300 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				manager.Cancel()
-				return errors.New("workflow cancelled; inspect the recovery journal before retrying")
-			case <-ticker.C:
-				job := manager.Snapshot()
-				if job.State != "running" {
-					if err := printJSON(job); err != nil {
-						return err
-					}
-					if job.State != "succeeded" {
-						return errors.New(job.Error)
-					}
-					return nil
-				}
-			}
-		}
+		return waitSystemWorkflow(ctx, manager, 8*time.Second, func(job workflow.Job) error { return printJSON(job) })
+
 	default:
 		return errors.New("unknown system command")
 	}
+}
+
+type systemWorkflow interface {
+	Snapshot() workflow.Job
+	Shutdown(context.Context) error
+}
+
+// Cancellation must wait for the manager's terminal history write, just as UI
+// shutdown does. A bounded timeout reports uncertainty without inventing success.
+func waitSystemWorkflow(ctx context.Context, manager systemWorkflow, shutdownTimeout time.Duration, emit func(workflow.Job) error) error {
+	ticker := time.NewTicker(300 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if ctx.Err() != nil {
+			return cancelSystemWorkflow(ctx, manager, shutdownTimeout, emit)
+		}
+		job := manager.Snapshot()
+		if job.State != "running" {
+			return errors.Join(emit(job), systemJobError(job))
+		}
+		select {
+		case <-ctx.Done():
+			return cancelSystemWorkflow(ctx, manager, shutdownTimeout, emit)
+		case <-ticker.C:
+		}
+	}
+}
+
+func cancelSystemWorkflow(ctx context.Context, manager systemWorkflow, timeout time.Duration, emit func(workflow.Job) error) error {
+	shutdown, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	err := manager.Shutdown(shutdown)
+	job := manager.Snapshot()
+	outputErr := emit(job)
+	if err != nil {
+		return errors.Join(fmt.Errorf("workflow cancellation did not finish: %w; inspect the recovery journal before retrying", err), ctx.Err(), outputErr)
+	}
+	return errors.Join(errors.New("workflow cancellation requested; inspect the recorded outcome and recovery journal before retrying"), ctx.Err(), systemJobError(job), outputErr)
+}
+
+func systemJobError(job workflow.Job) error {
+	if job.State == "succeeded" {
+		return nil
+	}
+	if job.Error != "" {
+		return errors.New(job.Error)
+	}
+	return fmt.Errorf("workflow ended in state %q without a successful result", job.State)
 }

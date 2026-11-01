@@ -67,6 +67,7 @@ func TestRejectedResultsRemainDurableAndSerializable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := New(t.TempDir())
 			m.platform = "windows"
+			m.requireAdmin = func() error { return nil }
 			toolErr := errors.New("fixture tool failed")
 			m.execute = func(context.Context, string, Request) (json.RawMessage, error) { return tc.result, toolErr }
 			p, err := m.Preview(Request{Action: "discover"})
