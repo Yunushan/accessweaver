@@ -424,7 +424,8 @@ test('large retained history has a bounded preview and complete private exports'
 
 test('optional workflow metadata cannot stop polling or replace reviewed inputs',async({page,core})=>{
  await open(page,core);await page.locator('.nav-item[data-view="system"]').click();
- await page.locator('#system-action').selectOption('recover');await page.locator('#system-journal').fill('reviewed.json');
+ await page.locator('#system-action').selectOption('recover');
+ await page.locator('#system-form details > summary').click();await expect(page.locator('#system-journal')).toBeVisible();await page.locator('#system-journal').fill('reviewed.json');
  await page.locator('#system-action').selectOption('config');await page.locator('#system-applications').fill('C:\\existing');
  const errors=[];page.on('pageerror',error=>errors.push(error.message));let choices=0,reports=0,journal='chosen.json';
  await page.route('**/api/v1/system/folder',async route=>{
