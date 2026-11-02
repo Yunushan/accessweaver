@@ -314,13 +314,19 @@ def main():
         acceleration = "kvm" if os.access("/dev/kvm", os.R_OK | os.W_OK) else "tcg"
         report["hypervisorAcceleration"] = acceleration
         report["CPUEmulated"] = acceleration == "tcg"
+        report["entropyDevice"] = "virtio-rng-pci"
+        report["entropyBackend"] = "host-kernel-urandom"
+        report["entropyMaximumBytesPerPeriod"] = 1024
+        report["entropyPeriodMilliseconds"] = 1000
         report["qemuVersion"] = run(["qemu-system-x86_64", "--version"]).stdout.decode().splitlines()[0]
         vm = subprocess.Popen(["qemu-system-x86_64", "-accel", acceleration, "-cpu", "host" if acceleration == "kvm" else "max", "-m", "3072", "-smp", "2",
                                "-display", "none", "-monitor", "none", "-serial", "stdio", "-no-reboot",
                                "-drive", f"file={overlay},if=virtio,format=qcow2",
                                "-drive", f"file={seed},media=cdrom,format=raw,readonly=on",
                                "-netdev", f"user,id=n1,restrict=on,hostfwd=tcp:127.0.0.1:{PORT}-:22",
-                               "-device", "virtio-net-pci,netdev=n1"], stdin=subprocess.DEVNULL,
+                               "-device", "virtio-net-pci,netdev=n1",
+                               "-object", "rng-random,id=rng0,filename=/dev/urandom",
+                               "-device", "virtio-rng-pci,rng=rng0,max-bytes=1024,period=1000"], stdin=subprocess.DEVNULL,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
         def drain_serial():
             while chunk := vm.stdout.read(4096):
@@ -424,6 +430,7 @@ def main():
                 report["serialTailSHA256"] = hashlib.sha256(serial_tail).hexdigest()
                 report["serialTailBytes"] = len(serial_tail)
                 report["sshdBootMessageObserved"] = b"Starting sshd" in serial_tail
+                report["virtioEntropyAdapterObserved"] = b"VirtIO Entropy Adapter" in serial_tail
                 report["nuageinitMessageObserved"] = b"nuageinit" in serial_tail
                 report["firstbootPackageMessageObserved"] = b"firstboot_pkg_upgrade" in serial_tail
                 report["consoleLoginObserved"] = b"login:" in serial_tail
