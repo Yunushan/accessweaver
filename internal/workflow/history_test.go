@@ -2,12 +2,15 @@ package workflow
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHistoryAggregateBoundaryPreservesEveryRecord(t *testing.T) {
@@ -117,5 +120,42 @@ func TestHistoryKeepsActiveJobAndMarksPreviousControllerInterrupted(t *testing.T
 	persisted, err := os.ReadFile(filepath.Join(m.root, "previous.json"))
 	if err != nil || bytes.Contains(persisted, []byte("interrupted")) {
 		t.Fatal("listing rewrote the retained outcome")
+	}
+}
+
+func TestHistoryContextHonorsEndedCallerAndPreservesRecords(t *testing.T) {
+	m := New(t.TempDir())
+	if err := os.MkdirAll(m.root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(m.root, "retained.json")
+	original := []byte(`{"id":"retained","state":"succeeded","result":{"evidence":"kept"}}`)
+	if err := os.WriteFile(path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	expired, end := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer end()
+	for _, ctx := range []context.Context{canceled, expired} {
+		jobs, err := m.HistoryContext(ctx)
+		if jobs != nil || !errors.Is(err, ctx.Err()) {
+			t.Fatalf("ended history returned records: %v", err)
+		}
+		if data, err := os.ReadFile(path); err != nil || !bytes.Equal(data, original) {
+			t.Fatal("cancellation altered history")
+		}
+		// Cancellation must win even before opening a missing directory.
+		missing := New(filepath.Join(t.TempDir(), "not-created"))
+		if jobs, err := missing.HistoryContext(ctx); jobs != nil || !errors.Is(err, ctx.Err()) {
+			t.Fatal("missing history hid cancellation")
+		}
+		if _, err := os.Stat(filepath.Dir(missing.root)); !os.IsNotExist(err) {
+			t.Fatal("canceled history created state")
+		}
+	}
+	jobs, err := m.HistoryContext(context.Background())
+	if err != nil || len(jobs) != 1 || jobs[0].ID != "retained" {
+		t.Fatalf("fresh history did not recover: %v", err)
 	}
 }

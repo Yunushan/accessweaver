@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Yunushan/accessweaver/internal/buildinfo"
@@ -27,14 +28,15 @@ import (
 )
 
 type Server struct {
-	Policy    *managed.Guard
-	Store     *profile.Store
-	Manager   *engine.Manager
-	Workflows *workflow.Manager
-	UI        fs.FS
-	Token     string
-	mutations mutationGate
-	done      chan struct{}
+	Policy      *managed.Guard
+	Store       *profile.Store
+	Manager     *engine.Manager
+	Workflows   *workflow.Manager
+	UI          fs.FS
+	Token       string
+	mutations   mutationGate
+	historyRead sync.Mutex
+	done        chan struct{}
 }
 
 func New(store *profile.Store, manager *engine.Manager, static fs.FS) (*Server, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,5 +126,61 @@ func TestCanceledWorkflowExecutionDoesNotCreateState(t *testing.T) {
 	}
 	if _, err := os.Stat(directory); !os.IsNotExist(err) {
 		t.Fatal("pre-canceled execution created workflow state")
+	}
+}
+
+type cancelingWorkflowReader struct {
+	reader                 io.Reader
+	cancel                 context.CancelFunc
+	after, read, largest   int
+	canceled               bool
+	readsAfterCancellation int
+}
+
+func (r *cancelingWorkflowReader) Read(p []byte) (int, error) {
+	if r.canceled {
+		r.readsAfterCancellation++
+	}
+	if len(p) > r.largest {
+		r.largest = len(p)
+	}
+	n, err := r.reader.Read(p)
+	r.read += n
+	if r.read >= r.after {
+		r.cancel()
+		r.canceled = true
+	}
+	return n, err
+}
+
+func TestBoundedWorkflowReadStopsOnCancellationWithoutPartialData(t *testing.T) {
+	for _, after := range []int{0, 64 << 10} {
+		ctx, cancel := context.WithCancel(context.Background())
+		reader := &cancelingWorkflowReader{reader: strings.NewReader(strings.Repeat("x", 128<<10)), cancel: cancel, after: after}
+		if after == 0 {
+			cancel()
+		}
+		data, err := readBoundedContext(ctx, reader, 128<<10)
+		cancel()
+		if data != nil || !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled read retained partial data: %v", err)
+		}
+		if reader.read > after+(32<<10) || reader.largest > 32<<10 || reader.readsAfterCancellation != 0 {
+			t.Fatalf("read beyond cancellation checkpoint: %+v", reader)
+		}
+		if after == 0 && reader.read != 0 {
+			t.Fatal("pre-canceled reader was consumed")
+		}
+	}
+	// Cancellation after a successful final read must also discard the result.
+	ctx, cancel := context.WithCancel(context.Background())
+	reader := &cancelingWorkflowReader{reader: strings.NewReader("small"), cancel: cancel, after: 5}
+	if data, err := readBoundedContext(ctx, reader, 5); data != nil || !errors.Is(err, context.Canceled) {
+		t.Fatal("final-read cancellation returned partial success")
+	}
+	cancel()
+	data, err := readBoundedContext(context.Background(), strings.NewReader("small"), 5)
+	if err != nil || string(data) != "small" {
+		t.Fatalf("fresh reader did not recover: %v", err)
 	}
 }

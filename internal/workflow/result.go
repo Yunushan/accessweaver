@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +28,13 @@ func validateResult(result json.RawMessage) error {
 // Bound reads even if a file grows after Stat. Do not follow a named symlink or
 // accept a pipe/device in place of a result or persisted job record.
 func readWorkflowFile(path string, limit int64) ([]byte, error) {
+	return readWorkflowFileContext(context.Background(), path, limit)
+}
+
+func readWorkflowFileContext(ctx context.Context, path string, limit int64) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	named, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
@@ -49,11 +57,18 @@ func readWorkflowFile(path string, limit int64) ([]byte, error) {
 	if opened.Size() > limit {
 		return nil, fmt.Errorf("workflow record exceeds %d bytes", limit)
 	}
-	return readBounded(f, limit)
+	return readBoundedContext(ctx, f, limit)
 }
 
 func readBounded(r io.Reader, limit int64) ([]byte, error) {
-	b, err := io.ReadAll(io.LimitReader(r, limit+1))
+	return readBoundedContext(context.Background(), r, limit)
+}
+
+func readBoundedContext(ctx context.Context, r io.Reader, limit int64) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(workflowContextReader{ctx, r}, limit+1))
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, contextErr
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -61,4 +76,21 @@ func readBounded(r io.Reader, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("workflow record exceeds %d bytes", limit)
 	}
 	return b, nil
+}
+
+// Limit each underlying read so a large record still reaches cancellation
+// checkpoints. This cannot interrupt a filesystem operation already in progress.
+type workflowContextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r workflowContextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	if len(p) > 32<<10 {
+		p = p[:32<<10]
+	}
+	return r.reader.Read(p)
 }
