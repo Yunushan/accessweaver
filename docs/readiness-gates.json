@@ -90,7 +90,10 @@
             "internal/logfile/writer_test.go",
             "internal/workflow/result_test.go",
             "internal/workflow/persistence_test.go",
-            "scripts/test-windows-workflow.ps1"
+            "scripts/test-windows-workflow.ps1",
+            "web/app.js",
+            "web/app.test.cjs",
+            "scripts/browser-tests/desktop.spec.cjs"
           ]
         },
         {
@@ -604,7 +607,9 @@
             "internal/engine/runner_test.go",
             "internal/workflow/result_test.go",
             "scripts/browser-tests/desktop.spec.cjs",
-            "docs/TESTING.md"
+            "docs/TESTING.md",
+            "web/system.js",
+            "web/app.test.cjs"
           ]
         },
         {

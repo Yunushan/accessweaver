@@ -10,7 +10,57 @@ function setSidebarOpen(open){
   if(open&&narrowNavigation.matches)(sidebar.querySelector('.nav-item.active')||sidebar.querySelector('.nav-item'))?.focus();
 }
 
-function setTextOutput(id,text){const target=$(id);target.textContent=text;target.tabIndex=target.textContent?0:-1;}
+function setTextOutput(id,text){
+  const target=$(id);target.textContent=text;target.tabIndex=target.textContent?0:-1;
+  if(id==='system-output'){$('system-output-limited').hidden=true;target.removeAttribute('aria-describedby');}
+}
+// Bound display work independently of retained/exported JSON. Each container is
+// visited lazily with an explicit stack; a deep value never reaches stringify.
+function formatJSONPreview(value){
+  const maxText=128*1024,maxNodes=4096,maxDepth=32,maxString=4096;
+  const chunks=[],ancestors=new Set(),stack=[{value,depth:0}];
+  let length=0,nodes=0,limited=false,full=false;
+  function clip(text,limit){
+    if(text.length<=limit)return text;
+    limited=true;let end=Math.max(0,limit-1);
+    if(end&&text.charCodeAt(end-1)>=0xd800&&text.charCodeAt(end-1)<=0xdbff)end--;
+    return limit?text.slice(0,end)+'…':'';
+  }
+  function write(text){
+    if(text.length>maxText-length){const room=maxText-length;text=clip(text,room);limited=true;full=true;}
+    chunks.push(text);length+=text.length;
+  }
+  function* entries(object){
+    if(Array.isArray(object)){for(let i=0;i<object.length;i++)yield [null,object[i]];}
+    else for(const key in object)if(Object.prototype.hasOwnProperty.call(object,key)){
+      const child=object[key];if(!['undefined','function','symbol'].includes(typeof child))yield [key,child];
+    }
+  }
+  while(stack.length&&!full){
+    const frame=stack.pop();
+    if(frame.iterator){
+      const next=frame.iterator.next();
+      if(next.done){if(!frame.first)write('\n'+'  '.repeat(frame.depth));write(frame.array?']':'}');ancestors.delete(frame.object);continue;}
+      write((frame.first?'\n':',\n')+'  '.repeat(frame.depth+1));frame.first=false;
+      if(!frame.array)write(JSON.stringify(clip(next.value[0],maxString))+': ');
+      stack.push(frame,{value:next.value[1],depth:frame.depth+1});continue;
+    }
+    if(++nodes>maxNodes){limited=true;write(JSON.stringify('…'));break;}
+    const item=frame.value;
+    if(item===null||typeof item==='boolean'||typeof item==='number'){write(JSON.stringify(item));continue;}
+    if(typeof item==='string'){write(JSON.stringify(clip(item,maxString)));continue;}
+    if(typeof item!=='object'){limited=true;write('null');continue;}
+    if(frame.depth>=maxDepth||ancestors.has(item)){limited=true;write(JSON.stringify('…'));continue;}
+    ancestors.add(item);const array=Array.isArray(item);write(array?'[':'{');
+    stack.push({iterator:entries(item),object:item,array,depth:frame.depth,first:true});
+  }
+  return {text:chunks.join(''),limited};
+}
+function showSystemOutput(value){
+  const preview=formatJSONPreview(value);setTextOutput('system-output',preview.text);
+  $('system-output-limited').hidden=!preview.limited;
+  if(preview.limited)$('system-output').setAttribute('aria-describedby','system-output-limited');
+}
 function setEditorFeedback(text,error=false){setTextOutput('editor-feedback',text);$('editor-feedback').className=error?'error':'';}
 
 const icon=(name)=>`<svg aria-hidden="true"><use href="#i-${name}"></use></svg>`;
@@ -66,6 +116,8 @@ Object.assign(tr,{chooseFolder:'Klasör ekle',clearApplications:'Uygulama listes
 Object.assign(en,{updateAvailable:'Update available'});
 Object.assign(tr,{updateAvailable:'Güncelleme mevcut'});
 
+Object.assign(en,{jsonPreviewLimited:'Preview shortened. Export the corresponding JSON to read all details.',exportSystemStatus:'Export latest status',exportSystemHistory:'Export full history',systemExportPrivacy:'These exports can contain private configuration, paths and tool output. Store them privately. Nothing is uploaded.',systemExportFailed:'Could not export this report.',systemExportTooLarge:'The report exceeds the download size limit.'});
+Object.assign(tr,{jsonPreviewLimited:'Önizleme kısaltıldı. Tüm ayrıntıları okumak için ilgili JSON dosyasını dışa aktarın.',exportSystemStatus:'Son durumu dışa aktar',exportSystemHistory:'Tüm geçmişi dışa aktar',systemExportPrivacy:'Bu dosyalar özel yapılandırma, yollar ve araç çıktıları içerebilir. Güvenli bir yerde saklayın. Hiçbir yere yüklenmez.',systemExportFailed:'Bu rapor dışa aktarılamadı.',systemExportTooLarge:'Rapor indirme boyutu sınırını aşıyor.'});
 Object.assign(en,{exportSystemRequest:'Export reviewed request',exportSystemRequestNote:'Request files can contain private paths or arguments. Store them privately, review them again in the CLI, and confirm separately.'});
 Object.assign(tr,{exportSystemRequest:'İncelenen isteği dışa aktar',exportSystemRequestNote:'İstek dosyaları özel yollar veya parametreler içerebilir. Güvenli bir yerde saklayın, komut satırında yeniden inceleyin ve ayrıca onaylayın.'});
 
@@ -280,6 +332,7 @@ function renderHero() {
   $('probe-submit').disabled = !coreAvailable() || !!state.probing;
   $('show-logs').disabled = state.offline || state.loading;
   $('export-support').disabled = !supportAvailable() || !!state.supportExporting;
+  if(typeof updateSystemExportButtons==='function')updateSystemExportButtons();
   $('launch-confirm').disabled = !coreAvailable() || !state.launch?.ready || state.busy;
 }
 function profileCard(p, full=false) {

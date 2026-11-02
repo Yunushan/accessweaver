@@ -382,3 +382,38 @@ test('narrow navigation excludes closed links and supports keyboard opening and 
  await page.locator('#sidebar .nav-item[data-view="profiles"]').focus();await page.setViewportSize({width:390,height:844});
  await expect(page.locator('#menu-toggle')).toBeFocused();await expect(page.locator('#sidebar')).toHaveJSProperty('inert',true);
 });
+
+
+test('large retained history has a bounded preview and complete private exports',async({page,core},testInfo)=>{
+ await open(page,core);await create(page,'export-recovery-fixture');await page.locator('.nav-item[data-view="system"]').click();
+ await expect(page.locator('#system-export-history')).toBeEnabled();
+ const folder=path.join(core.home,'state','workflows');await fs.mkdir(folder,{recursive:true});
+ const original='{"id":"display-fixture","action":"discover","state":"failed","startedAt":"2026-11-02T00:00:00Z","result":{"nested":'+'['.repeat(6000)+'0'+']'.repeat(6000)+',"text":'+JSON.stringify('x'.repeat(300000))+',"private":"PRIVATE_FULL_HISTORY_FIXTURE"}}';
+ const record=path.join(folder,'display-fixture.json');await fs.writeFile(record,original);
+ await page.locator('#system-history').click();
+ await expect(page.locator('#system-output')).toContainText('display-fixture');
+ await expect(page.locator('#system-output-limited')).toBeVisible();
+ await expect(page.locator('#system-output')).toHaveAttribute('aria-describedby','system-output-limited');
+ expect((await page.locator('#system-output').textContent()).length).toBeLessThanOrEqual(128*1024);
+ await scanAccessibility(page,core,testInfo,'limited-history-preview');await assertControlContrast(page,core,testInfo,'limited-history-preview');
+ const pending=page.waitForEvent('download');await page.locator('#system-export-history').click();
+ const download=await pending;expect(download.suggestedFilename()).toBe('accessweaver-workflow-history.json');
+ const full=await fs.readFile(await download.path(),'utf8');const rows=JSON.parse(full);expect(rows).toHaveLength(1);
+ expect(rows[0].id).toBe('display-fixture');expect(rows[0].result.text).toBe('x'.repeat(300000));expect(rows[0].result.private).toBe('PRIVATE_FULL_HISTORY_FIXTURE');
+ let value=rows[0].result.nested;for(let depth=0;depth<6000;depth++){expect(Array.isArray(value)).toBe(true);value=value[0];}expect(value).toBe(0);
+ expect(await fs.readFile(record,'utf8')).toBe(original);
+ const current=page.waitForEvent('download');await page.locator('#system-export-status').click();
+ const statusDownload=await current;expect(statusDownload.suggestedFilename()).toBe('accessweaver-system-status.json');
+ const status=JSON.parse(await fs.readFile(await statusDownload.path(),'utf8'));expect(status.operations.length).toBeGreaterThan(0);expect(status.job.state).not.toBe('running');
+ // A full, explicitly selected history export and the metadata-only support
+ // summary have different disclosure scopes; history must not enter support.
+ await page.locator('.nav-item[data-view="settings"]').click();const supportPending=page.waitForEvent('download');await page.locator('#export-support').click();
+ const support=await supportPending;expect(await fs.readFile(await support.path(),'utf8')).not.toContain('PRIVATE_FULL_HISTORY_FIXTURE');
+ expect(await fs.readFile(record,'utf8')).toBe(original);
+ await fs.writeFile(core.profilePath('export-recovery-fixture'),'{broken profile fixture');await page.reload();
+ await expect(page.locator('#connection-notice')).toBeVisible();await page.locator('.nav-item[data-view="system"]').click();
+ await expect(page.locator('#system-export-history')).toBeEnabled();const recovering=page.waitForEvent('download');await page.locator('#system-export-history').click();
+ const recovered=await recovering;expect(await fs.readFile(await recovered.path(),'utf8')).toBe(full);
+ expect(await fs.readFile(core.profilePath('export-recovery-fixture'),'utf8')).toBe('{broken profile fixture');
+ expect(await fs.readFile(record,'utf8')).toBe(original);
+});

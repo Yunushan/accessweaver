@@ -276,6 +276,12 @@ systemTools|Установка и восстановление|Instalación y re
 systemSubtitle|Методы доступа, правила приложений и восстановление системы.|Métodos de acceso, reglas de aplicaciones y recuperación del sistema.
 inspectSystem|Проверить систему|Inspeccionar sistema
 systemBoundary|Не запускайте панель с правами администратора. Проверьте изменения здесь и примените запрос отдельно командой system apply с повышенными правами. Службы продолжают работать после закрытия панели.|Mantén el panel sin privilegios elevados. Revisa los cambios aquí y aplica la solicitud con system apply en una consola elevada por separado. Los servicios siguen activos al cerrar el panel.
+jsonPreviewLimited|Предпросмотр сокращён. Экспортируйте соответствующий JSON, чтобы прочитать все сведения.|Vista previa abreviada. Exporta el JSON correspondiente para leer todos los detalles.
+exportSystemStatus|Экспорт текущего состояния|Exportar estado actual
+exportSystemHistory|Экспорт полной истории|Exportar historial completo
+systemExportPrivacy|Эти файлы могут содержать частную конфигурацию, пути и вывод инструментов. Храните их в защищённом месте. Ничего не отправляется.|Estos archivos pueden contener configuración, rutas y salida de herramientas privadas. Guárdalos de forma privada. No se sube nada.
+systemExportFailed|Не удалось экспортировать этот отчёт.|No se pudo exportar este informe.
+systemExportTooLarge|Отчёт превышает допустимый размер загрузки.|El informe supera el límite de tamaño de descarga.
 exportSystemRequest|Экспорт проверенного запроса|Exportar solicitud revisada
 exportSystemRequestNote|Файл запроса может содержать частные пути или аргументы. Храните его в защищённом месте, повторно проверьте в командной строке и подтвердите отдельно.|El archivo puede contener rutas o argumentos privados. Guárdalo de forma privada, revísalo de nuevo en la consola y confírmalo por separado.
 operation|Операция|Operación

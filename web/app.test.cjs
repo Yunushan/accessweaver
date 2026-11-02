@@ -203,3 +203,90 @@ test('a rejected diagnostic clears the previous report and export instead of sho
  env.get('probe-path').value='direct';env.get('probe-transport').value='tcp';env.context.fetch=async()=>({ok:false,status:403,json:async()=>({error:'policy denied'})});
  await env.run('runProbe()');assert.equal(env.run('state.lastProbe'),null);assert.equal(env.get('export-report').hidden,true);assert.equal(env.get('diagnostic-meta').hidden,true);assert.match(env.get('diagnostic-results').textContent,/Test failed: policy denied/);
 });
+
+
+test('ordinary JSON previews preserve formatting, values and source data',()=>{
+ const env=environment(),fixture=JSON.parse('{"__proto__":{"safe":true},"array":[null,true,2,"<script>\\n界"],"empty":{}}');
+ const original=JSON.stringify(fixture);env.context.previewFixture=fixture;
+ const preview=env.run('formatJSONPreview(previewFixture)');assert.equal(preview.text,JSON.stringify(fixture,null,2));assert.equal(preview.limited,false);assert.equal(JSON.stringify(fixture),original);
+});
+
+test('deep and cyclic JSON previews stay bounded without recursive stringify',()=>{
+ const env=environment();let deep=0;for(let i=0;i<6000;i++)deep=[deep];env.context.previewFixture=deep;
+ const preview=env.run('formatJSONPreview(previewFixture)');assert.equal(preview.limited,true);assert.ok(preview.text.length<128*1024);assert.match(preview.text,/…/);
+ let remaining=deep;for(let i=0;i<6000;i++)remaining=remaining[0];assert.equal(remaining,0);
+ const cycle={};cycle.self=cycle;env.context.previewFixture=cycle;assert.equal(env.run('formatJSONPreview(previewFixture).limited'),true);assert.equal(cycle.self,cycle);
+});
+
+test('wide, long-key and escaped-text previews enforce their display budget',()=>{
+ const env=environment();
+ for(const fixture of [Array.from({length:100000},(_,i)=>i),{['k'.repeat(200000)]:'value'},Array(10000).fill('\u0001'.repeat(4096)),{unicode:'😀'.repeat(10000)}]){
+  env.context.previewFixture=fixture;const result=env.run('formatJSONPreview(previewFixture)');assert.equal(result.limited,true);assert.ok(result.text.length<=128*1024);assert.ok(result.text.isWellFormed());
+ }
+});
+
+test('string preview caps include their omission marker without splitting Unicode',()=>{
+ const env=environment();env.context.previewFixture={text:'😀'.repeat(10000)};
+ const result=env.run('formatJSONPreview(previewFixture)');const rendered=JSON.parse(result.text);assert.ok(rendered.text.length<=4096);assert.ok(rendered.text.isWellFormed());assert.equal(result.limited,true);
+});
+
+test('shortened system output is labelled and ordinary output clears its notice',()=>{
+ const env=environment();env.run('showSystemOutput({message:"x".repeat(10000)})');
+ assert.equal(env.get('system-output-limited').hidden,false);assert.equal(env.get('system-output').getAttribute('aria-describedby'),'system-output-limited');assert.equal(env.get('system-output').innerHTML,'');
+ env.run('showSystemOutput({ok:true})');assert.equal(env.get('system-output-limited').hidden,true);assert.equal(env.get('system-output').getAttribute('aria-describedby'),null);
+ env.run('showSystemOutput({message:"x".repeat(10000)});setTextOutput("system-output","failed")');assert.equal(env.get('system-output-limited').hidden,true);
+});
+
+function onlineSystemExport(){const env=environment();env.run(systemSource);env.run('state.offline=false;state.loading=false;state.disconnected=false;state.coreAuthenticated=true;state.token="export-fixture";state.busy=true');return env;}
+
+test('system exports preserve raw response bytes and send credentials only to fixed local routes',async()=>{
+ const env=onlineSystemExport(),bytes='[ { "escaped": "\\u2028", "private": "FULL_EXPORT_FIXTURE" } ]\n';let downloaded,options,route;
+ env.context.fetch=async(path,input)=>{route=path;options=input;const response=new Response(bytes,{headers:{'Content-Type':'application/json; charset=utf-8'}});response.json=()=>{throw new Error('export parsed JSON')};return response;};
+ env.context.downloadFile=(data,name)=>{downloaded={data,name}};
+ await env.run('exportSystemReport("history")');assert.equal(route,'/api/v1/system/history');assert.equal(options.headers['X-AccessWeaver-Token'],'export-fixture');assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');assert.equal(options.credentials,'same-origin');assert.equal(options.signal.aborted,true);
+ assert.equal(downloaded.name,'accessweaver-workflow-history.json');assert.equal(await downloaded.data.text(),bytes);assert.equal(env.run('state.busy'),true);assert.equal(env.run('systemUI.exporting'),false);
+ await env.run('exportSystemReport("status")');assert.equal(route,'/api/v1/system');assert.equal(downloaded.name,'accessweaver-system-status.json');
+});
+
+test('offline, unrecognized, HTTP and non-JSON exports never download a report',async()=>{
+ const env=onlineSystemExport();let calls=0,downloads=0,lastSignal;
+ env.context.downloadFile=()=>downloads++;env.context.fetch=async(path,input)=>{calls++;lastSignal=input.signal;return new Response('private failure',{status:500,headers:{'Content-Type':'application/json'}})};
+ for(const kind of ['__proto__','https://untrusted.example/'])await assert.rejects(env.run('exportSystemReport('+JSON.stringify(kind)+')'));
+ assert.equal(calls,0);env.run('state.offline=true;state.coreAuthenticated=false');await env.run('exportSystemReport("history")');assert.equal(calls,0);
+ env.run('state.offline=false;state.coreAuthenticated=true');await env.run('exportSystemReport("history")');assert.equal(lastSignal.aborted,true);
+ env.context.fetch=async(path,input)=>{lastSignal=input.signal;return new Response('<html>private failure</html>',{headers:{'Content-Type':'text/html'}})};
+ await env.run('exportSystemReport("status")');assert.equal(lastSignal.aborted,true);assert.equal(downloads,0);assert.equal(env.run('systemUI.exporting'),false);
+});
+
+test('streamed report limits are exact and cancel oversized or failed bodies',async()=>{
+ const env=environment();env.run(systemSource);
+ for(const total of [16,17]){
+  let reads=0,cancelled=false,released=false;
+  env.context.streamResponse={body:{getReader:()=>({read:async()=>{reads++;return reads===1?{value:new Uint8Array(total),done:false}:{done:true}},cancel:async()=>{cancelled=true},releaseLock:()=>{released=true}})}};
+  if(total===16){const blob=await env.run('readSystemDownload(streamResponse,16)');assert.equal(blob.size,16);assert.equal(cancelled,false);}
+  else{await assert.rejects(env.run('readSystemDownload(streamResponse,16)'));assert.equal(cancelled,true);}
+  assert.equal(released,true);
+ }
+ let cancelled=false,released=false;env.context.streamResponse={body:{getReader:()=>({read:async()=>{throw new Error('interrupted')},cancel:async()=>{cancelled=true},releaseLock:()=>{released=true}})}};
+ await assert.rejects(env.run('readSystemDownload(streamResponse,16)'));assert.equal(cancelled,true);assert.equal(released,true);
+});
+
+test('concurrent report exports keep one transfer and release their own busy state',async()=>{
+ const env=onlineSystemExport();let controller,calls=0,downloads=0;
+ env.context.fetch=async()=>{calls++;return new Response(new ReadableStream({start(value){controller=value}}),{headers:{'Content-Type':'application/json'}})};
+ env.context.downloadFile=()=>downloads++;
+ const pending=env.run('exportSystemReport("history")');await Promise.resolve();
+ assert.equal(env.get('system-export-status').disabled,true);assert.equal(env.get('system-export-history').disabled,true);
+ await env.run('exportSystemReport("status")');assert.equal(calls,1);controller.enqueue(new TextEncoder().encode('[]'));controller.close();await pending;
+ assert.equal(downloads,1);assert.equal(env.get('system-export-status').disabled,false);assert.equal(env.get('system-export-history').disabled,false);assert.equal(env.run('state.busy'),true);
+});
+
+
+test('authenticated system reports remain available after profile loading fails',async()=>{
+ const env=environment();env.run(systemSource);env.run('state.token="fixture"');
+ env.context.fetch=async path=>path==='/api/bootstrap'?{ok:true,json:async()=>({platform:'windows'})}:{ok:false,status:500,json:async()=>({error:'private profile failure'})};
+ await assert.rejects(env.run('readCore()'));env.run('state.loading=false;state.offline=true;updateSystemExportButtons()');
+ assert.equal(env.get('system-export-history').disabled,false);assert.equal(env.get('system-export-status').disabled,false);
+ let download;env.context.downloadFile=(data,name)=>{download={data,name}};env.context.fetch=async()=>new Response('[]\n',{headers:{'Content-Type':'application/json'}});
+ await env.run('exportSystemReport("history")');assert.equal(await download.data.text(),'[]\n');assert.equal(download.name,'accessweaver-workflow-history.json');
+});

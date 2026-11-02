@@ -1,5 +1,5 @@
 'use strict';
-const systemUI={plan:null,presets:[],polling:false,busy:false,revision:0,loading:false,folderJob:null};
+const systemUI={plan:null,presets:[],polling:false,busy:false,revision:0,loading:false,folderJob:null,exporting:false};
 function notifySystemUpdate(job){if(job?.action==='updates'&&job.state==='succeeded'&&job.result?.data?.updateAvailable&&systemUI.lastUpdate!==job.id){systemUI.lastUpdate=job.id;toast(t('updateAvailable')+': '+job.result.data.version)}}
 function systemRequest(){
   const action=$('system-action').value,engine=$('system-engine').value,fields=systemFieldsFor(action,engine),request={action};
@@ -74,8 +74,38 @@ async function applySystem(){
   try {const job=await apiRequest('/api/v1/system/start','POST',{planId:id,confirm:true});renderSystemJob(job);pollSystemJob();}
   catch(error){setTextOutput('system-output',error.message);toast(error.message,true)}finally{systemUI.busy=false}
 }
-function renderSystemJob(job){if(!job?.id)return;notifySystemUpdate(job);setTextOutput('system-output',JSON.stringify(job,null,2));$('system-cancel').disabled=job.state!=='running';if(job.id===systemUI.folderJob&&job.state!=='running'){systemUI.folderJob=null;const folder=job.result?.data?.folder;if(folder){const paths=splitLines($('system-applications').value);if(!paths.includes(folder))paths.push(folder);$('system-applications').value=paths.join('\n');invalidateSystemPlan()}}if(job.result?.journal)$('system-journal').value=job.result.journal.split(/[\\/]/).pop();}
+function renderSystemJob(job){if(!job?.id)return;notifySystemUpdate(job);showSystemOutput(job);$('system-cancel').disabled=job.state!=='running';if(job.id===systemUI.folderJob&&job.state!=='running'){systemUI.folderJob=null;const folder=job.result?.data?.folder;if(folder){const paths=splitLines($('system-applications').value);if(!paths.includes(folder))paths.push(folder);$('system-applications').value=paths.join('\n');invalidateSystemPlan()}}if(job.result?.journal)$('system-journal').value=job.result.journal.split(/[\\/]/).pop();}
 async function pollSystemJob(){if(systemUI.polling)return;systemUI.polling=true;try{for(;;){const info=await apiRequest('/api/v1/system');renderSystemJob(info.job);if(info.job.state!=='running')break;await new Promise(resolve=>setTimeout(resolve,1500));}}catch(error){setTextOutput('system-output',error.message);}finally{systemUI.polling=false}}
+
+function updateSystemExportButtons(){
+  for(const id of ['system-export-status','system-export-history'])$(id).disabled=!supportAvailable()||systemUI.exporting;
+}
+// Preserve response bytes without parsing/stringifying an unbounded JSON tree.
+// The ceiling covers the existing 64 MiB history read cap even after escaping.
+async function readSystemDownload(response,maxBytes=512*1024*1024){
+  const reader=response.body.getReader(),chunks=[];let size=0,complete=false;
+  try{
+    for(;;){const {done,value}=await reader.read();if(done){complete=true;break;}
+      size+=value.byteLength;if(size>maxBytes)throw new Error(t('systemExportTooLarge'));chunks.push(value);
+    }
+    return new Blob(chunks,{type:'application/json'});
+  }finally{if(!complete)await reader.cancel().catch(()=>{});reader.releaseLock();}
+}
+async function exportSystemReport(kind){
+  const options={status:{path:'/api/v1/system',name:'accessweaver-system-status.json'},history:{path:'/api/v1/system/history',name:'accessweaver-workflow-history.json'}};
+  if(!Object.prototype.hasOwnProperty.call(options,kind))throw new Error(t('systemExportFailed'));
+  if(systemUI.exporting)return;
+  if(!supportAvailable()){toast(t('coreRequired'),true);return;}
+  systemUI.exporting=true;updateSystemExportButtons();
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
+  try{
+    const response=await fetch(options[kind].path,{method:'GET',headers:{'X-AccessWeaver-Token':state.token},credentials:'same-origin',redirect:'error',cache:'no-store',signal:controller.signal});
+    if(!response.ok)throw new Error(t('systemExportFailed')+' (HTTP '+response.status+')');
+    if(!/^application\/json(?:\s*;|$)/i.test(response.headers.get('Content-Type')||''))throw new Error(t('systemExportFailed'));
+    downloadFile(await readSystemDownload(response),options[kind].name);
+  }catch(error){toast(error.name==='AbortError'?t('systemExportFailed'):error.message,true);}
+  finally{controller.abort();clearTimeout(timer);systemUI.exporting=false;updateSystemExportButtons();}
+}
 
 const systemNavigation=document.createElement('button');systemNavigation.type='button';systemNavigation.className='nav-item';systemNavigation.dataset.view='system';systemNavigation.dataset.i18n='systemTools';systemNavigation.textContent=t('systemTools');systemNavigation.addEventListener('click',()=>navigate('system',true));document.querySelector('.main-nav').appendChild(systemNavigation);
 $('system-form').addEventListener('submit',event=>{event.preventDefault();previewSystem()});
@@ -88,8 +118,11 @@ $('system-preset').addEventListener('change',()=>{const p=systemUI.presets[Numbe
 $('system-consent').addEventListener('change',()=>{$('system-apply').disabled=!systemUI.plan?.ready||!$('system-consent').checked});
 $('system-apply').addEventListener('click',applySystem);
 $('system-export').addEventListener('click',exportSystemRequest);
+$('system-export-status').addEventListener('click',()=>exportSystemReport('status'));
+$('system-export-history').addEventListener('click',()=>exportSystemReport('history'));
+updateSystemExportButtons();
 $('system-inspect').addEventListener('click',()=>previewSystem({action:'discover'}));
 $('system-cancel').addEventListener('click',async()=>{try{renderSystemJob(await apiRequest('/api/v1/system/cancel','POST',{}))}catch(e){toast(e.message,true)}});
-$('system-history').addEventListener('click',async()=>{try{setTextOutput('system-output',JSON.stringify(await apiRequest('/api/v1/system/history'),null,2))}catch(e){toast(e.message,true)}});
+$('system-history').addEventListener('click',async()=>{try{showSystemOutput(await apiRequest('/api/v1/system/history'))}catch(e){toast(e.message,true)}});
 if(state.view==='system')loadSystemTools().catch(e=>{setTextOutput('system-output',e.message)});
 updateTranslations();
