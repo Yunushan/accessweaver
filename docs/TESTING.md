@@ -279,3 +279,7 @@ Seven Node regressions cover recovery review consistency, rendering, folder owne
 ## Native macOS policy protection groundwork
 
 [macOS managed-policy implementation](MACOS_MANAGED_POLICY.md) records the inactive integration status. `CGO_ENABLED=0 go test ./internal/darwintrust -count=1 -v` must run on an actual supported Mac; cross-compilation only checks build compatibility. The fixtures test native extended ACL behavior and atomic directory exchange on their own temporary objects, plus a read-only protection preflight of existing policy ancestors. They do not enroll machine policy or qualify macOS managed enforcement. CI and preview retain public `darwin-trust-preflight-ARCH` metadata. Full readiness requirements and statuses remain unchanged.
+
+### macOS paired policy storage preparation
+
+The native test matrix also exercises the internal paired policy transaction with owned APFS fixtures. The explicit CGO-disabled macOS step runs the TestDarwin tests in both internal/darwintrust and internal/managed. Inspect both Intel and ARM results for the exact source commit before recording native qualification. These fixtures do not enroll the host or activate managed policy; fixed-source loading, protected Mach-O inputs, sanitized launch integration and disposable enrollment acceptance remain open. See [MACOS_MANAGED_POLICY.md](MACOS_MANAGED_POLICY.md) for the storage and cleanup contracts.

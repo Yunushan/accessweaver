@@ -1,6 +1,6 @@
 # macOS managed-policy implementation
 
-Status: native file/ACL inspection and atomic directory-publication primitives are implemented with native tests. Machine policy loading, administrator transactions, protected input validation and launch-environment integration are not activated yet. macOS continues to report unsupported machine enforcement until those paths and their acceptance tests are connected. This work does not promote a readiness gate.
+Status: native file/ACL inspection and atomic directory-publication primitives are implemented and passed source-bound hosted Intel/ARM tests with CGO disabled. The paired policy transaction is implemented for owned native fixtures; its new native qualification is pending. Machine policy loading, administrator transactions, protected input validation and launch-environment integration are not activated yet. macOS continues to report unsupported machine enforcement until those paths and their acceptance tests are connected. This work does not promote a readiness gate.
 
 ## Native protection contract
 
@@ -17,6 +17,14 @@ The rename primitive exposes only exclusive initial publication and atomic direc
 Owned temporary fixtures exercise ordinary protected files, wrong owners, mutation modes, links, FIFOs, bounded names, actual extended-ACL mutation grants with unchanged POSIX modes, safe read/deny ACLs, clearing inherited deny ACLs on new objects, exclusive creation, nonempty directory exchange, held old directory descriptors and failed-publication preservation. They invoke only the fixed OS `chmod` on their own objects and do not change existing system configuration.
 
 A read-only preflight checks `/`, `/Library` and `/Library/Preferences` on both hosted Mac architectures, including actual owner/mode, local APFS and extended ACLs. CI and preview retain `darwin-trust-preflight-ARCH` records with source, compiler and host architecture. The additional native step builds and runs with `CGO_ENABLED=0`. Compilation on a different OS does not prove these behaviors; inspect the exact source-bound native result.
+
+## Paired storage under native qualification
+
+The internal macOS transaction stages a version-two installation and its exact accepted-history record in one private, exclusively created directory. Both records are bounded, protected and synced before the directory becomes public. The file, candidate directory and post-publication parent use fsync plus the native F_FULLFSYNC drive-cache flush request, with descriptor pinning and no error fallback; see [Apple fsync semantics](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/fsync.2.html). Successful calls do not replace actual power-loss qualification. Initial publication is exclusive; updates exchange the two directories atomically. Readers open both records through one held generation and recheck its active identity, with at most three attempts. Missing acceptance history is an error even when a legacy version-one preparation is present.
+
+A protected, empty mode-0600 coordination file serializes cooperating writers while leaving readers available. Before update publication, the directory identities, allowed entries and exact raw preimages must still match. A committed outcome survives a later parent-sync or cleanup error. Close removes only its known staging/displaced identity and exact record bytes; changed, partial or unrelated objects remain for administrator inspection. These checks do not authorize arbitrary root writers or defeat an administrator restoring the entire store.
+
+No runtime entry point calls this transaction yet. Owned fixtures exercise the shared installation/update/recovery signature and revision rules, initial-publication collisions, mandatory history, stale counters, links and mutation permissions, competing writers, concurrent readers and conservative cleanup. Native publication ordering still needs crash-process and physical power-loss qualification. Automatic reclamation after a process exit, full damaged-storage recovery and independently anchored revision history remain open; the transaction does not guess the provenance of abandoned directories.
 
 ## Required remaining integration
 
