@@ -125,6 +125,64 @@ def guard():
     return repo, source, sdk
 
 
+def decode_disk_observations(data):
+    """Accept only the private helper's fixed, bounded public observation schema."""
+    fields = json.loads(data)
+    booleans = {
+        "inspectionComplete",
+        "hostnameConfigured",
+        "nuageCachePresent",
+        "testUserCreated",
+        "clientKeyInstalled",
+        "hostKeyInstalled",
+        "passwordAuthenticationDisabled",
+        "sshdPIDFilePresent",
+        "sshdECDSAKeyPresent",
+        "sshdEd25519PrivateKeyPresent",
+        "virtioEntropyModulePresent",
+        "controlAddressDHCPLeasePresent",
+        "nuageLogPresent",
+        "nuageParseErrorObserved",
+        "nuageArgumentErrorObserved",
+        "nuageTracebackObserved",
+        "nuageOpenErrorObserved",
+        "sshdMessageObserved",
+        "cloudProviderMissingObserved",
+        "runtimeObservationPresent",
+        "sshdConfigCheckPassed",
+        "sshdRuntimeServiceRunningObserved",
+        "controlIPv4AddressObserved",
+        "sshdRuntimeIPv4ListenerObserved",
+        "sshdListeningLogObserved",
+        "sshdNoHostKeysObserved",
+        "sshdKeyPermissionErrorObserved",
+        "sshdMissingSeparationUserObserved",
+        "sshdMissingSeparationDirectoryObserved",
+        "sshdBadConfigOptionObserved",
+        "sshdSharedLibraryErrorObserved",
+        "sshdKeyLoadErrorObserved",
+        "sshdKeyFormatErrorObserved",
+        "sshdAuthenticationRejectedObserved",
+        "sshdKexNegotiationErrorObserved",
+        "sshdSessionExecErrorObserved",
+        "sshdFatalLogObserved",
+    }
+    numeric = {"sshdConfigCheckExitCode", "sshdConfigCheckLogBytes"}
+    if (not isinstance(fields, dict) or set(fields) != booleans | numeric or
+            any(type(fields[name]) is not bool for name in booleans)):
+        raise ValueError("unexpected disk observation fields")
+    code, size = fields["sshdConfigCheckExitCode"], fields["sshdConfigCheckLogBytes"]
+    # Missing numeric observations are explicit for absent/legacy runtime state.
+    if code is None and size is None:
+        return fields
+    if (type(code) is not int or not 0 <= code <= 255 or
+            type(size) is not int or not 0 <= size <= 1 << 20 or
+            not fields["runtimeObservationPresent"] or
+            fields["sshdConfigCheckPassed"] != (code == 0)):
+        raise ValueError("unexpected bounded disk command observations")
+    return fields
+
+
 def decode_objects(data):
     text = data.decode("utf-8")
     decoder = json.JSONDecoder()
@@ -448,15 +506,12 @@ def main():
                 report["defaultHostnameConsoleObserved"] = b"amnesiac" in serial_tail.lower() or b"freebsd login:" in serial_tail.lower()
         if emulator_stopped and vm is not None and phase == "guest-boot":
             # Read only the stopped overlay, in a separate bounded helper. The
-            # helper returns fixed booleans, never logs, keys or cached user data.
+            # helper returns a fixed boolean/bounded-numeric schema, never private contents.
             try:
                 observed = run([sys.executable, str(repo / "scripts" / "bsd_boot_diagnostics.py"), str(capsule)],
                                env=dict(os.environ, PYTHONPATH=str(repo / "build" / "bsd-inspection-tools")),
                                timeout=60, limit=16384)
-                fields = json.loads(observed.stdout)
-                if not isinstance(fields, dict) or not fields or any(type(v) is not bool for v in fields.values()):
-                    raise ValueError("unexpected disk observation result")
-                report["bootDiskInspection"] = fields
+                report["bootDiskInspection"] = decode_disk_observations(observed.stdout)
             except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired):
                 report["bootDiskInspectionFailed"] = True
         # Never publish the seed ISO, per-run credentials, disk image or serial

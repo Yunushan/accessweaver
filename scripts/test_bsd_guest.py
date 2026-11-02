@@ -190,6 +190,38 @@ class BootDiskPrivacyTests(unittest.TestCase):
                 self.assertFalse(self.boot.global_password_auth_disabled(text))
         self.assertTrue(self.boot.global_password_auth_disabled(b" PasswordAuthentication NO # fixture\n"))
 
+    def test_guest_report_consumer_preserves_numeric_and_legacy_observations(self):
+        absent = self.boot.boot_observations(lambda _: b"", lambda _: False, b"client", b"host")
+        self.assertEqual(guest.decode_disk_observations(json.dumps(absent).encode()), absent)
+        for code, size in ((132, 0), (1, 200), (0, 0), (255, 1 << 20)):
+            runtime = {"configurationValid": code == 0, "serviceRunning": False,
+                       "controlAddressConfigured": True, "ipv4SSHListening": False,
+                       "configurationExitCode": code, "configurationLogBytes": size}
+            files = {"/root/accessweaver-boot-state.json": json.dumps(runtime).encode()}
+            actual = self.boot.boot_observations(lambda name: files.get(name, b""), lambda _: False, b"client", b"host")
+            decoded = guest.decode_disk_observations(json.dumps(actual).encode())
+            self.assertEqual(decoded["sshdConfigCheckExitCode"], code)
+            self.assertEqual(decoded["sshdConfigCheckLogBytes"], size)
+            self.assertEqual(decoded, actual)
+
+    def test_guest_report_consumer_rejects_private_fields_and_invalid_command_metadata(self):
+        base = self.boot.boot_observations(lambda _: b"", lambda _: False, b"client", b"host")
+        valid = {**base, "runtimeObservationPresent": True,
+                 "sshdConfigCheckExitCode": 132, "sshdConfigCheckLogBytes": 0}
+        invalids = [{**valid, "PRIVATE_FIELD": True}, {**valid, "inspectionComplete": "PRIVATE"},
+                    {**valid, "sshdConfigCheckExitCode": 0},
+                    {**valid, "sshdConfigCheckExitCode": None},
+                    {**valid, "sshdConfigCheckLogBytes": None},
+                    {**valid, "runtimeObservationPresent": False},
+                    {name: value for name, value in valid.items() if name != "sshdPIDFilePresent"},
+                    [], "PRIVATE"]
+        invalids += [{**valid, "sshdConfigCheckExitCode": value} for value in (-1, 256, True, 1.5, "PRIVATE")]
+        invalids += [{**valid, "sshdConfigCheckLogBytes": value} for value in (-1, (1 << 20) + 1, False, 1.5, "PRIVATE")]
+        for invalid in invalids:
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError) as result:
+                guest.decode_disk_observations(json.dumps(invalid).encode())
+            self.assertNotIn("PRIVATE", str(result.exception))
+
     def test_runtime_observations_keep_independent_false_results(self):
         runtime = {"configurationValid": True, "serviceRunning": True,
                    "controlAddressConfigured": False, "ipv4SSHListening": False}
