@@ -28,6 +28,19 @@ class ImageAssociationTests(unittest.TestCase):
             with self.subTest(entities=entities),self.assertRaises(RuntimeError):
                 storage.association(self.info(entities),self.image,self.mount)
 
+class NativeHelpEvidenceTests(unittest.TestCase):
+    def test_minimal_help_retains_missing_flag_as_information(self):
+        from subprocess import CompletedProcess
+        result=storage.help_evidence(CompletedProcess([],1,b"Usage: hdiutil attach image",b""),b"-owners")
+        self.assertFalse(result["basicHelpListsRequestedFlag"])
+        self.assertEqual(result["statusCode"],1)
+        self.assertEqual(result["bytes"],len(b"Usage: hdiutil attach image"))
+        self.assertEqual(len(result["sha256"]),64)
+    def test_empty_or_signalled_help_is_refused(self):
+        from subprocess import CompletedProcess
+        for result in [CompletedProcess([],0,b"",b""),CompletedProcess([],-9,b"partial",b"")]:
+            with self.assertRaises(RuntimeError):storage.help_evidence(result,b"-owners")
+
 class HostedGuardTests(unittest.TestCase):
     def test_nonhosted_wrong_os_root_or_missing_optin_never_launches_a_command(self):
         valid={"ACCESSWEAVER_DISPOSABLE_DARWIN_STORAGE_TEST":"1","GITHUB_ACTIONS":"true","RUNNER_ENVIRONMENT":"github-hosted","RUNNER_OS":"macOS"}

@@ -57,6 +57,15 @@ def guarded_directory(path, owner):
     return entry
 
 
+def help_evidence(result, requested_flag):
+    body = result.stdout + result.stderr
+    if not body or result.returncode < 0:
+        raise RuntimeError("Native help failed or was empty")
+    return {"sha256": hashlib.sha256(body).hexdigest(), "bytes": len(body),
+            "statusCode": result.returncode,
+            "basicHelpListsRequestedFlag": requested_flag in body}
+
+
 def main():
     if (os.environ.get("ACCESSWEAVER_DISPOSABLE_DARWIN_STORAGE_TEST") != "1" or
         os.environ.get("GITHUB_ACTIONS") != "true" or
@@ -74,12 +83,25 @@ def main():
         raise RuntimeError("Expected clean exact-source checkout")
     if shutil.disk_usage(repo).free < 4 << 30:
         raise RuntimeError("Insufficient host reserve for a bounded image")
+    sdk = json.loads(command(["go", "env", "-json", "GOARCH", "GOHOSTARCH", "GOOS", "GOHOSTOS", "GOVERSION"]).stdout)
+    arch = sdk.get("GOARCH")
+    if (arch not in ("amd64", "arm64") or sdk.get("GOHOSTARCH") != arch or
+        sdk.get("GOOS") != "darwin" or sdk.get("GOHOSTOS") != "darwin" or
+        os.environ.get("ACCESSWEAVER_EXPECT_GOARCH") != arch or
+        sdk.get("GOVERSION") != "go" + os.environ.get("GO_VERSION", "")):
+        raise RuntimeError("Expected the verified native matrix SDK: " + json.dumps(sdk))
+    output = repo / "build" / "darwin-storage-checks"
+    output.mkdir(mode=0o755, parents=True, exist_ok=True)
+    guarded_directory(output, os.geteuid())
+    tools = output / ("native-tools-" + arch + ".json")
+    if tools.exists():
+        raise RuntimeError("Refusing existing native tool evidence")
     help_hashes = {}
     for verb, required in [("create", b"-fs"), ("attach", b"-owners")]:
-        help_result = command([HDIUTIL, verb, "-help"], check=False)
-        help_hashes[verb] = hashlib.sha256(help_result.stdout + help_result.stderr).hexdigest()
-        if required not in help_result.stdout + help_result.stderr:
-            raise RuntimeError("Review the installed native disk-image tool syntax")
+        help_hashes[verb] = help_evidence(command([HDIUTIL, verb, "-help"], check=False), required)
+    tools.write_text(json.dumps({"schemaVersion": 1, "sourceCommit": source, "arch": arch,
+                                "sdk": sdk, "nativeHelp": help_hashes,
+                                "productionQualificationComplete": False}, indent=2) + "\n", encoding="utf-8")
     parent = repo / "build" / "storage-capsules"
     parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     guarded_directory(parent, os.geteuid())
@@ -90,12 +112,6 @@ def main():
     image = capsule / "pressure.sparseimage"
     mount = capsule / "mount"
     mount.mkdir(mode=0o700)
-    output = repo / "build" / "darwin-storage-checks"
-    output.mkdir(mode=0o755, parents=True, exist_ok=True)
-    guarded_directory(output, os.geteuid())
-    arch = {"x86_64": "amd64", "arm64": "arm64"}.get(platform.machine())
-    if arch is None:
-        raise RuntimeError("Unsupported native test architecture")
     report = output / ("apfs-exhaustion-" + arch + ".json")
     lifecycle = output / ("image-lifecycle-" + arch + ".json")
     if report.exists() or lifecycle.exists():
@@ -104,7 +120,7 @@ def main():
     build_env = dict(os.environ, CGO_ENABLED="0")
     command(["go", "test", "-c", "-o", str(binary), "./internal/managed"], timeout=180, env=build_env)
     record = {"schemaVersion": 1, "sourceCommit": source, "arch": arch,
-              "imageVirtualBytes": 512 << 20, "nativeToolHelpSHA256": help_hashes, "productionQualificationComplete": False,
+              "imageVirtualBytes": 512 << 20, "nativeToolHelp": help_hashes, "productionQualificationComplete": False,
               "attached": False, "detached": False, "ownedImageRemoved": False,
               "rootMachinePolicyChanged": False, "hostVolumePressureApplied": False}
     failure = None
@@ -171,6 +187,8 @@ def main():
                     raise RuntimeError("Preserving image without a verified creation identity")
                 if any(i.get("image-path") == str(image) for i in info().get("images", [])):
                     raise RuntimeError("Refusing deletion of an associated image")
+                if mount.exists() and mount.stat().st_dev != image_stat.st_dev:
+                    raise RuntimeError("Refusing image deletion while the mount point is on another device")
                 current = image.lstat()
                 if image.is_symlink() or not image.is_file() or current.st_dev != image_stat.st_dev or current.st_ino != image_stat.st_ino:
                     raise RuntimeError("Refusing changed image cleanup")
