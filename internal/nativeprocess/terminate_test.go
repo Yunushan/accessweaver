@@ -99,7 +99,7 @@ func TestFailedTerminationStillKillsOwnedParent(t *testing.T) {
 			}
 			switch mode {
 			case "missing":
-				if !errors.Is(err, os.ErrNotExist) {
+				if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, exec.ErrNotFound) {
 					t.Fatal(err)
 				}
 			case "fail":
