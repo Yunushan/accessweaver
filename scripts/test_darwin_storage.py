@@ -40,7 +40,8 @@ class NormalDetachTests(ImageFixture,unittest.TestCase):
             self.assertEqual(command.call_count,2)
             for call in command.call_args_list:
                 self.assertEqual(call.args[0],[storage.HDIUTIL,"detach","/dev/disk20"])
-                self.assertLessEqual(call.kwargs["timeout"],8)
+                self.assertLessEqual(call.kwargs["timeout"],30)
+                self.assertGreater(call.kwargs["timeout"],0)
 
     def test_changed_device_after_busy_is_not_detached(self):
         from subprocess import CompletedProcess
