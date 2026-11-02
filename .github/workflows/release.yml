@@ -233,6 +233,20 @@ jobs:
             build/accessweaver-*-windows-${{ matrix.goarch }}-setup.exe.cdx.json
           if-no-files-found: ignore
           retention-days: 14
+      - name: Disposable macOS managed-policy acceptance
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          ACCESSWEAVER_DISPOSABLE_DARWIN_POLICY_TEST: '1'
+        run: bash scripts/test-darwin-managed-policy.sh
+      - name: Retain macOS managed-policy acceptance evidence
+        if: runner.os == 'macOS' && always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: darwin-managed-policy-check-${{ matrix.goarch }}
+          path: build/managed-policy-checks/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Disposable Linux managed-policy acceptance
         if: runner.os == 'Linux'
         env:

@@ -16,8 +16,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// These are not runtime selectors. Machine entry points remain unsupported until
-// protected input/launch checks and disposable native enrollment are connected.
+// These are fixed product names; callers cannot select the machine authority.
 const darwinPolicyDirectory = "AccessWeaver"
 const darwinPolicyFile = "installation.json"
 const darwinAcceptanceFile = "acceptance.json"
@@ -26,7 +25,7 @@ const darwinStagePrefix = ".accessweaver-policy-stage-"
 
 // This internal constructor transfers parent ownership, including on failure.
 // Only owned fixtures may supply a non-root owner. Runtime callers must open the
-// fixed protected parent and use root; no runtime callers are activated yet.
+// fixed protected parent and use root.
 type darwinInstallationTransaction struct {
 	parent, current, lock      *os.File
 	owner                      uint32

@@ -43,11 +43,13 @@ The binary can open its local dashboard without arguments. It still runs as a co
 
 Profile editing and ordinary diagnostics can run without elevated privileges. Packet interception needs upstream-specific OS setup. Use the engine's official documentation for NFQUEUE, divert sockets and firewall configuration; AccessWeaver does not generate those system rules. On headless systems, use the CLI. Do not expose the control API remotely to make the UI reachable.
 
-Linux amd64/arm64 includes partial administrator policy through a fixed root-owned `/etc` source, root-only atomic install/update/rotation and guarded foreground inputs. Storage must have qualified persistent local filesystem semantics. [Managed configuration](MANAGED_CONFIGURATION.md#protected-linux-source-and-update-behavior) defines the current restrictions; services, generated/native-argument assets and full desktop qualification remain unfinished. macOS/BSD machine authority remains work.
+Linux amd64/arm64 includes partial administrator policy through a fixed root-owned `/etc` source, root-only atomic install/update/rotation and guarded foreground inputs. Storage must have qualified persistent local filesystem semantics. [Managed configuration](MANAGED_CONFIGURATION.md#protected-linux-source-and-update-behavior) defines the current restrictions; services, generated/native-argument assets and full desktop qualification remain unfinished. BSD machine authority remains work.
 
 BSD CLI/dashboard builds are targets; engine syntax, privileges and cleanup still need verification on the exact OS release and architecture. `tpws` is managed only as an explicit SOCKS proxy.
 
 ## macOS
+
+macOS amd64/arm64 also have partial signed administrator policy through a fixed paired root-owned local-APFS source. [Native policy contracts and disposable acceptance](MACOS_MANAGED_POLICY.md) describe root-only CLI enrollment/update/rotation/recovery, protected Mach-O/bundle inputs, sanitized foreground launch and unqualified deployment/recovery boundaries. Both native architecture jobs must pass for the actual candidate.
 
 Use a compatible local proxy or external configured core. Zapret2 is not offered; legacy Zapret is limited to `tpws` SOCKS mode in this adapter. Some external proxy tools may change system proxy settings themselves. Native network extensions, signing/notarization and rollback remain planned.
 

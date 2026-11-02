@@ -1,6 +1,6 @@
 # Protected local policy acceptance state
 
-Windows and Linux native policy installation, update, rotation and signed recovery publish the installation and a protected acceptance record together. Runtime loading checks the pair before constructing authority. This local history detects primary-only rollback and retains a revision floor during primary corruption; it does not qualify independent revision escrow, automatic last-known-good selection or complete enterprise deployment.
+Windows, Linux and macOS native policy installation, update, rotation and signed recovery publish the installation and a protected acceptance record together. Runtime loading checks the pair before constructing authority. This local history detects primary-only rollback and retains a revision floor during primary corruption; it does not qualify independent revision escrow, automatic last-known-good selection or complete enterprise deployment.
 
 ## Record and storage contract
 
@@ -36,4 +36,8 @@ Corrupt acceptance or a missing mandatory record is refused by signed recovery w
 
 Portable tests cover migration semantics, exact matching, missing/corrupt records, expiry without permission fallback and the retained recovery floor. Temporary Linux tests use real directory publication, concurrent readers, direct source/record changes, unrelated entries and alias rejection. Guarded hosted Windows/Linux transaction tests stage pairs before abrupt process exit, test primary rollback, lost/corrupt acceptance and stale-floor recovery, and emit source-bound results. Inspect the CI run for the exact source being deployed; a test definition or source-only check is not native endpoint qualification.
 
-macOS/BSD machine policy, publisher signing, full damaged-storage recovery, physical power-loss/reboot, vendor lifecycle and real endpoint-management qualification remain open. Production-readiness requirements and gate statuses remain unchanged.
+BSD machine policy, publisher signing, full damaged-storage recovery, physical power-loss/reboot, vendor lifecycle and real endpoint-management qualification remain open. Production-readiness requirements and gate statuses remain unchanged.
+
+## macOS paired store
+
+macOS uses the fixed root-owned `/Library/Preferences/AccessWeaver` generation and always requires its acceptance record. It has no legacy one-file runtime fallback. Descriptor/ACL/APFS checks, exclusive initial publication, atomic directory exchange, fsync/F_FULLFSYNC ordering, bounded consistent readers and exact-preimage cleanup are described in [MACOS_MANAGED_POLICY.md](MACOS_MANAGED_POLICY.md). Its guarded hosted transaction fixture exercises rollback/counter/floor checks and close-abort recovery. Automatic orphan reclamation, abrupt-process and power-loss qualification remain open; Windows/Linux results cannot substitute for the Mac results.

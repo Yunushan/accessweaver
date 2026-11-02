@@ -134,7 +134,7 @@ Cross-build and packaging scripts require Go, Bash and Python 3.
 
 Saved profiles can be exported as authenticated, password-encrypted archives and restored into a new data directory through the [backup CLI](docs/BACKUP_RESTORE.md). External files, machine policy and OS state require separate recovery.
 
-Windows and Linux have partial signed administrator-policy enforcement; [managed configuration](docs/MANAGED_CONFIGURATION.md) documents its protected source, platform-specific install/update/rotation commands, current limits and unfinished recovery/qualification.
+Windows, Linux and macOS have partial signed administrator-policy enforcement; [managed configuration](docs/MANAGED_CONFIGURATION.md) documents its protected source, platform-specific install/update/rotation commands, current limits and unfinished recovery/qualification.
 
 CI is configured to run unit tests on Linux, Windows and macOS, a Linux race check, and ten cross-build targets. A workflow configuration is not evidence that a run passed: see [Actions](https://github.com/Yunushan/accessweaver/actions) for results. BSD cross-compilation does not execute tests on BSD.
 
