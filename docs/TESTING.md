@@ -45,7 +45,7 @@ Windows private-launcher ACL regression tests also parse real native security de
 
 ## Real browser acceptance
 
-Development-only Playwright dependencies are pinned in `scripts/browser-tests/package-lock.json`; downloaded application users do not need Node.js. Build the controller as `build/browser-tests/accessweaver` on Unix or `build/browser-tests/accessweaver.exe` on Windows, then run:
+Development-only Playwright and axe-core dependencies are pinned in `scripts/browser-tests/package-lock.json`; downloaded application users do not need Node.js. Build the controller as `build/browser-tests/accessweaver` on Unix or `build/browser-tests/accessweaver.exe` on Windows, then run:
 
 ```bash
 npm ci --prefix scripts/browser-tests --ignore-scripts
@@ -58,7 +58,19 @@ The [Playwright browser documentation](https://playwright.dev/docs/browsers) exp
 
 Each test starts a separate real Go controller with disposable state/cache under ignored `build/browser-state/`. It exercises the actual private launcher, authenticated UI and unauthenticated API rejection, save/reload/export/import collision, concurrent-tab revision rejection, preserved invalid JSON, unavailable-engine launch review, keyboard focus, reviewed machine-request export without execution, preferences and narrow layouts across all six screens in all four languages. The diagnostics browser case intercepts requests and checks exact selections without sending probe traffic. No engine or Windows maintenance operation is started. These tests do not certify screen-reader behavior or engine routing.
 
-CI and release verification run the same suite on Chromium, Firefox and WebKit on Linux. Windows Edge is also locally testable; Linux WebKit does not certify native Safari/macOS. Results and failure screenshots under `build/browser-results/` identify the binary hash, runtime build metadata, OS/architecture, Node, Playwright and browser versions. Traces are disabled because they can retain session headers. Never upload `build/browser-state/`: it contains private launcher credentials and fixture profiles. Local fixture directories are retained for investigation; the harness stops each controller after use.
+CI and release verification run the same suite on Chromium, Firefox and WebKit on Linux. Windows Edge is also locally testable; Linux WebKit does not certify native Safari/macOS. Results and failure screenshots under `build/browser-results/` identify the binary hash, runtime build metadata, OS/architecture, Node, Playwright and browser versions. Traces are disabled because they can retain session headers. Never upload `build/browser-state/`: it contains private launcher credentials and fixture profiles. After stopping each controller, the harness deletes only its verified owned fixture directory. Hosted runs require the executed core to identify the exact clean workflow commit.
+
+## Automated accessibility checks
+
+`desktop.spec.cjs` scans all six views, guided/expanded/JSON editors, editor preview/error states, launch review and logs in English, Turkish, Russian and Spanish, in both themes. The development-only `@axe-core/playwright` 4.14.0 runner uses the WCAG 2 A/AA, 2.1 A/AA, 2.2 AA and best-practice tags. Within those tags, no rules, elements or known violations are excluded. Each scan waits for finite page transitions to finish; it does not disable the application's normal animation. Failed violations fail the test. Incomplete checks remain in the evidence for review.
+
+A separate check calculates contrast from computed RGB colors: enabled primary-action text must meet 4.5:1 against every gradient stop, and styled input/select/textarea/search boundaries must meet 3:1 against their inside and outside colors. This supplements axe's unresolved gradient checks; it does not qualify every graphic or arbitrary image background. The thresholds follow W3C's [text contrast](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html) and [non-text contrast](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html) guidance. Unrounded ratios are retained.
+
+Keyboard cases exercise the skip link, closed/open narrow navigation and Escape/resize focus, visible focus, modal return focus after card replacement/saving, launch-review scrolling, and populated maintenance review/history regions. A synthetic retained history record reaches the actual read-only API without starting a job. Empty output/feedback regions stay outside Tab order while their live regions remain mounted. Reduced-motion checks cover CSS durations and the editor preview's explicit scrolling. A separate four-locale case checks all views and modals at 320 CSS pixels; this is a [reflow condition](https://www.w3.org/WAI/WCAG22/Understanding/reflow.html), not evidence that native browser zoom or assistive technology has been qualified.
+
+Accessibility attachments contain rule IDs, selectors, counts, incomplete results and explicit contrast samples, bound to the executed core's build identity and binary hash. They omit raw DOM, page URLs, session headers/storage and profile values. Candidate metadata and normal test results remain separate. Never publish private fixture state. The scanner and its dependencies are test tools and are not embedded in the application.
+
+Passing these tests does not establish complete WCAG conformance or the desktop accessibility gate. Manual screen-reader and inclusive user testing, native browser/OS combinations, browser zoom/text resizing, forced colors and the remaining interaction/state coverage still require qualification. [Playwright's accessibility guidance](https://playwright.dev/docs/accessibility-testing) explains the automated/manual distinction.
 
 ## External engine integration
 

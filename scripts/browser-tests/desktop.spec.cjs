@@ -5,6 +5,7 @@ const { spawn, execFileSync } = require('node:child_process');
 const { once } = require('node:events');
 const { createHash } = require('node:crypto');
 const { expect } = base;
+const {settleAnimations,scanAccessibility,assertControlContrast}=require('./accessibility.cjs');
 const repo = path.resolve(__dirname, '../..');
 const binary = path.resolve(process.env.ACCESSWEAVER_BINARY || path.join(repo, 'build/browser-tests', process.platform === 'win32' ? 'accessweaver.exe' : 'accessweaver'));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -32,14 +33,20 @@ const test = base.test.extend({
         if(Date.now()>deadline) throw new Error('Controller did not produce a private launcher');
         await delay(25);
       }
+      const binarySha256=createHash('sha256').update(await fs.readFile(binary)).digest('hex');
+      const build=JSON.parse(execFileSync(binary,['version','--json'],{windowsHide:true,encoding:'utf8'}));
+      if(process.env.GITHUB_ACTIONS==='true'){
+        expect(build.commit).toBe(process.env.GITHUB_SHA);
+        expect(build.sourceState).toBe('clean');
+      }
       await testInfo.attach('candidate.json', {body:JSON.stringify({
-        binarySha256:createHash('sha256').update(await fs.readFile(binary)).digest('hex'),
+        binarySha256,
         platform:process.platform, architecture:process.arch, node:process.version,
         browser:browser.version(), project:testInfo.project.name,
         playwright:require('@playwright/test/package.json').version,
-        build:JSON.parse(execFileSync(binary,['version','--json'],{windowsHide:true,encoding:'utf8'})),
+        build,
       }), contentType:'application/json'});
-      await use({launcher, home, profilePath:id=>path.join(home,'state','profiles',id+'.json')});
+      await use({launcher, home, build, binarySha256, profilePath:id=>path.join(home,'state','profiles',id+'.json')});
     } finally {
       if(!exited() && child.pid) {
         const exitEvent=once(child,'exit');
@@ -48,8 +55,11 @@ const test = base.test.extend({
         if(!exited()) {child.kill('SIGKILL');await Promise.race([exitEvent,delay(5000)]);}
         if(!exited()) throw new Error('Isolated test controller did not stop');
       }
-      // The private launcher lives only in this ignored test fixture. Do not
-      // upload state/cache: they contain session credentials and profile data.
+      // Delete only the verified owned fixture after its process stops. Private
+      // launchers, state and caches are never retained with public test evidence.
+      const info=await fs.lstat(home),resolved=await fs.realpath(home),intended=await fs.realpath(parent);
+      if(!info.isDirectory()||info.isSymbolicLink()||path.dirname(resolved)!==intended||!path.basename(resolved).startsWith('case-'))throw new Error('Unsafe browser fixture cleanup target');
+      await fs.rm(resolved,{recursive:true,force:true});
     }
   },
 });
@@ -222,4 +232,153 @@ test('diagnostics selects an explicit proxy path and STUN target without sending
  expect(submitted).toEqual({host:'stun.example.com',port:3478,timeoutSeconds:5,tls:false,path:'socks5',transport:'stun',proxy:'127.0.0.1:1080'});
  await expect(page.locator('#diagnostic-meta')).toContainText('socks5 / stun / 127.0.0.1:1080');
  await page.locator('#probe-path').selectOption('direct');await expect(page.locator('#probe-proxy-field')).toBeHidden();
+});
+
+// Each locale/theme gets bounded view and modal cases so browser slowness cannot
+// silently skip later screens. No exclusions, disabled rules or violation baselines.
+for(const language of ['en','tr','ru','es'])for(const theme of ['dark','light']){
+ test(`accessibility views in ${language}/${theme}`,async({page,core},testInfo)=>{
+  await open(page,core);
+  await page.locator('.nav-item[data-view="settings"]').click();
+  await page.locator('#settings-language').selectOption(language);await page.locator('#settings-theme').selectOption(theme);
+  await expect(page.locator('#lang-toggle')).toHaveAccessibleName(new RegExp(language.toUpperCase()));
+  let controls=0;
+  for(const view of ['dashboard','profiles','engines','diagnostics','settings','system']){
+   await page.locator(`.nav-item[data-view="${view}"]`).click();await expect(page.locator('#view-'+view)).toBeVisible();
+   if(view==='system')await expect(page.locator('#system-action option')).not.toHaveCount(0);
+   await scanAccessibility(page,core,testInfo,view);
+   controls+=await assertControlContrast(page,core,testInfo,view);
+  }
+  expect(controls).toBeGreaterThan(0);
+ });
+ test(`accessibility dialogs in ${language}/${theme}`,async({page,core},testInfo)=>{
+  await open(page,core);
+  await page.locator('.nav-item[data-view="settings"]').click();
+  await page.locator('#settings-language').selectOption(language);await page.locator('#settings-theme').selectOption(theme);
+  await profiles(page);await page.locator('#new-profile').click();
+  await expect(page.locator('#editor-modal [role="dialog"]')).toHaveAccessibleName(await page.locator('#editor-title').textContent());
+  expect(await page.locator('.skip-link').evaluate(el=>!!el.closest('[inert]'))).toBe(true);
+  await scanAccessibility(page,core,testInfo,'editor-guided');await assertControlContrast(page,core,testInfo,'editor-guided');
+  await page.locator('#editor-simple .advanced-details summary').click();
+  await scanAccessibility(page,core,testInfo,'editor-expanded');await assertControlContrast(page,core,testInfo,'editor-expanded');
+  await page.locator('#preview-profile').click();await expect(page.locator('#editor-preview .plan-status')).toBeVisible();
+  await scanAccessibility(page,core,testInfo,'editor-preview');
+  await page.locator('#tab-advanced').click();await scanAccessibility(page,core,testInfo,'editor-json');
+  await page.locator('#p-json').fill('{broken');await page.locator('#save-profile').click();
+  await expect(page.locator('#editor-feedback')).toHaveClass('error');await scanAccessibility(page,core,testInfo,'editor-error');
+  page.once('dialog',dialog=>dialog.accept());await page.locator('#cancel-editor').click();
+  await page.locator('#all-profiles [data-profile-action="run"]').first().click();
+  await expect(page.locator('#launch-plan .plan-status')).toBeVisible();
+  await scanAccessibility(page,core,testInfo,'launch-review');
+  await page.keyboard.press('Escape');
+  await page.locator('.nav-item[data-view="settings"]').click();await page.locator('#show-logs').click();
+  await expect(page.locator('#logs-modal [role="dialog"]')).toHaveAccessibleName(await page.locator('#logs-title').textContent());
+  await scanAccessibility(page,core,testInfo,'logs');await page.keyboard.press('Escape');
+  expect(await page.locator('.skip-link').evaluate(el=>!!el.closest('[inert]'))).toBe(false);
+ });
+}
+
+test('keyboard users can skip navigation and scroll launch review with visible focus',async({page,core},testInfo)=>{
+ await open(page,core);await page.keyboard.press('Tab');await expect(page.locator('.skip-link')).toBeFocused();
+ await assertControlContrast(page,core,testInfo,'focused-skip-link');
+ await page.keyboard.press('Enter');await expect(page.locator('#content')).toBeFocused();
+ await profiles(page);await page.setViewportSize({width:1000,height:500});
+ const run=page.locator('#all-profiles [data-profile-action="run"]').first();await run.click();
+ await expect(page.locator('#launch-plan .plan-status')).toBeVisible();await settleAnimations(page);
+ await expect(page.locator('#close-launch')).toBeFocused();await page.keyboard.press('Tab');
+ const region=page.locator('#launch-scroll');await expect(region).toBeFocused();
+ await expect.poll(()=>region.evaluate(el=>el.scrollHeight-el.clientHeight)).toBeGreaterThan(0);
+ await page.keyboard.press('PageDown');await expect.poll(()=>region.evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
+ const focus=await region.evaluate(el=>({style:getComputedStyle(el).outlineStyle,width:parseFloat(getComputedStyle(el).outlineWidth)}));
+ expect(focus.style).toBe('solid');expect(focus.width).toBeGreaterThanOrEqual(2);
+ await page.keyboard.press('Escape');await expect(run).toBeFocused();
+ await page.locator('#new-profile').click();await expect(page.locator('#p-name')).toBeFocused();
+ const field=await page.locator('#p-name').evaluate(el=>({style:getComputedStyle(el).outlineStyle,width:parseFloat(getComputedStyle(el).outlineWidth)}));
+ expect(field.style).toBe('solid');expect(field.width).toBeGreaterThanOrEqual(2);
+});
+
+
+test('keyboard users can read maintenance review and retained history without applying operations',async({page,core})=>{
+ await open(page,core);await page.setViewportSize({width:1000,height:500});
+ await page.locator('.nav-item[data-view="system"]').click();await page.locator('#system-action').selectOption('dns');
+ await expect(page.locator('#system-plan')).toHaveAttribute('tabindex','-1');
+ await page.locator('#system-dns').selectOption('doh');await page.locator('#system-preview').click();
+ await expect(page.locator('#system-export')).toBeEnabled();
+ await expect(page.locator('#system-plan')).toHaveAttribute('tabindex','0');
+ async function tabTo(id){for(let n=0;n<40;n++){await page.keyboard.press('Tab');if(await page.locator('#'+id).evaluate(el=>el===document.activeElement))return}throw new Error('Keyboard could not reach '+id)}
+ await tabTo('system-plan');await page.keyboard.press('PageDown');
+ await expect.poll(()=>page.locator('#system-plan').evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
+ await page.locator('#system-dns').selectOption('dnscrypt');
+ await expect(page.locator('#system-plan')).toHaveAttribute('tabindex','-1');
+ // Retained synthetic data exercises the real history API; it is never a job.
+ const folder=path.join(core.home,'state','workflows');await fs.mkdir(folder,{recursive:true});
+ const original=JSON.stringify({id:'keyboard-fixture',action:'discover',state:'failed',startedAt:'2026-11-02T00:00:00Z',result:{rows:Array.from({length:100},(_,i)=>({index:i,value:'Synthetic history fixture'}))}});
+ const record=path.join(folder,'keyboard-fixture.json');await fs.writeFile(record,original);
+ await page.locator('#system-history').click();await expect(page.locator('#system-output')).toContainText('keyboard-fixture');
+ await tabTo('system-output');await page.keyboard.press('PageDown');
+ await expect.poll(()=>page.locator('#system-output').evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
+ expect(await fs.readFile(record,'utf8')).toBe(original);
+});
+
+test('reduced motion applies to navigation and explicit editor preview scrolling',async({page,core})=>{
+ await page.emulateMedia({reducedMotion:'reduce'});await open(page,core);await profiles(page);
+ const durations=await page.locator('#view-profiles').evaluate(el=>({animation:getComputedStyle(el).animationDuration,transition:getComputedStyle(el).transitionDuration}));
+ const ms=value=>value.split(',').map(s=>parseFloat(s)*(s.trim().endsWith('ms')?1:1000));
+ expect(Math.max(...ms(durations.animation))).toBeLessThanOrEqual(.011);
+ expect(Math.max(...ms(durations.transition))).toBeLessThanOrEqual(.011);
+ await page.evaluate(()=>{window.a11yScrollCalls=[];const original=Element.prototype.scrollIntoView;Element.prototype.scrollIntoView=function(options){window.a11yScrollCalls.push(options?.behavior);return original.call(this,options)}});
+ await page.locator('#new-profile').click();await page.locator('#preview-profile').click();
+ await expect(page.locator('#editor-preview .plan-status')).toBeVisible();
+ expect(await page.evaluate(()=>window.a11yScrollCalls.at(-1))).toBe('auto');
+});
+
+for(const language of ['en','tr','ru','es'])test(`320 CSS pixel reflow includes modal controls in ${language}`,async({page,core})=>{
+ await open(page,core);await page.locator('.nav-item[data-view="settings"]').click();
+ await page.locator('#settings-language').selectOption(language);await page.setViewportSize({width:320,height:720});
+ async function fits(name){
+  await settleAnimations(page);
+  const overflow=await page.evaluate(()=>({viewport:innerWidth,scroll:document.documentElement.scrollWidth,
+   elements:Array.from(document.querySelectorAll('body *')).filter(el=>el.getClientRects().length&&getComputedStyle(el).visibility==='visible'&&el.getBoundingClientRect().right>innerWidth+1).slice(0,10).map(el=>({tag:el.tagName,id:el.id,class:typeof el.className==='string'?el.className:'svg',right:el.getBoundingClientRect().right}))}));
+  expect(overflow.scroll,name+': '+JSON.stringify(overflow)).toBeLessThanOrEqual(overflow.viewport+1);
+  expect(overflow.elements,name+' element overflow').toEqual([]);
+ }
+ for(const view of ['dashboard','profiles','engines','diagnostics','settings','system']){
+  await page.locator('#menu-toggle').click();await page.locator(`.nav-item[data-view="${view}"]`).click();await fits(view);
+ }
+ await page.locator('#menu-toggle').click();await page.locator('.nav-item[data-view="profiles"]').click();
+ await page.locator('#new-profile').click();await fits('editor');await page.locator('#tab-advanced').click();await fits('JSON editor');await page.keyboard.press('Escape');
+ await page.locator('#all-profiles [data-profile-action="run"]').first().click();await expect(page.locator('#launch-plan .plan-status')).toBeVisible();await fits('launch review');await page.keyboard.press('Escape');
+ await page.locator('#menu-toggle').click();await page.locator('.nav-item[data-view="settings"]').click();await page.locator('#show-logs').click();await fits('logs');
+});
+
+
+test('keyboard focus returns to the same card control after saves and engine creation',async({page,core})=>{
+ await open(page,core);await create(page,'keyboard-save');
+ const edit=page.locator('#all-profiles .profile-card-actions [data-profile-action="edit"][data-profile-id="keyboard-save"]');
+ await edit.click();await page.locator('#p-name').fill('Saved keyboard fixture');await page.locator('#save-profile').click();
+ await expect(page.locator('#editor-modal')).toBeHidden();await expect(edit).toBeFocused();
+ await page.locator('.nav-item[data-view="engines"]').click();
+ const createForEngine=page.locator('#engines-grid [data-engine-create="byedpi"]');await createForEngine.click();
+ await page.locator('#save-profile').click();await expect(page.locator('#editor-modal')).toBeHidden();
+ await expect(createForEngine).toBeFocused();
+});
+
+
+test('narrow navigation excludes closed links and supports keyboard opening and Escape',async({page,core})=>{
+ await open(page,core);await page.setViewportSize({width:390,height:844});
+ await expect(page.locator('#sidebar')).toHaveJSProperty('inert',true);
+ await page.keyboard.press('Tab');await expect(page.locator('.skip-link')).toBeFocused();
+ await page.keyboard.press('Tab');await expect(page.locator('#menu-toggle')).toBeFocused();
+ await page.keyboard.press('Enter');await expect(page.locator('#sidebar')).toHaveJSProperty('inert',false);
+ await expect(page.locator('#sidebar .nav-item.active')).toBeFocused();
+ await page.keyboard.press('Escape');await expect(page.locator('#menu-toggle')).toBeFocused();
+ await expect(page.locator('#menu-toggle')).toHaveAttribute('aria-expanded','false');
+ await expect(page.locator('#sidebar')).toHaveJSProperty('inert',true);
+ await page.keyboard.press('Enter');await page.keyboard.press('Tab');
+ await expect(page.locator('#sidebar .nav-item[data-view="profiles"]')).toBeFocused();
+ await page.keyboard.press('Enter');await expect(page.locator('#content')).toBeFocused();
+ await expect(page.locator('#sidebar')).toHaveJSProperty('inert',true);
+ await page.setViewportSize({width:1280,height:900});await expect(page.locator('#sidebar')).toHaveJSProperty('inert',false);
+ await page.locator('#sidebar .nav-item[data-view="profiles"]').focus();await page.setViewportSize({width:390,height:844});
+ await expect(page.locator('#menu-toggle')).toBeFocused();await expect(page.locator('#sidebar')).toHaveJSProperty('inert',true);
 });

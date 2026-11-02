@@ -2,6 +2,17 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const $$=selector=>Array.from(document.querySelectorAll(selector));
+const narrowNavigation=window.matchMedia('(max-width: 760px)');
+function setSidebarOpen(open){
+  const sidebar=$('sidebar');
+  sidebar.classList.toggle('open',open);$('menu-toggle').setAttribute('aria-expanded',String(open));
+  sidebar.inert=narrowNavigation.matches&&!open;
+  if(open&&narrowNavigation.matches)(sidebar.querySelector('.nav-item.active')||sidebar.querySelector('.nav-item'))?.focus();
+}
+
+function setTextOutput(id,text){const target=$(id);target.textContent=text;target.tabIndex=target.textContent?0:-1;}
+function setEditorFeedback(text,error=false){setTextOutput('editor-feedback',text);$('editor-feedback').className=error?'error':'';}
+
 const icon=(name)=>`<svg aria-hidden="true"><use href="#i-${name}"></use></svg>`;
 const escapeHTML=(s)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const splitLines=s=>String(s||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
@@ -112,6 +123,7 @@ function updateTranslations() {
   $$('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
   $$('[data-i18n-aria]').forEach(el => { el.setAttribute('aria-label',t(el.dataset.i18nAria)); });
   $('lang-toggle').innerHTML = state.lang.toUpperCase() + ' <span aria-hidden="true">⌄</span>';
+  $('lang-toggle').setAttribute('aria-label',t('language') + ': ' + state.lang.toUpperCase());
   $('settings-language').value = state.lang;
   $('profile-search').placeholder = t('searchProfiles');
   const filter = $('profile-filter').value || 'all';
@@ -153,12 +165,11 @@ function navigate(view, focus=false) {
     if (active) el.setAttribute('aria-current','page'); else el.removeAttribute('aria-current');
   });
   updateBreadcrumb();
-  $('sidebar').classList.remove('open');
-  $('menu-toggle').setAttribute('aria-expanded','false');
+  setSidebarOpen(false);
   if (location.hash !== '#' + view) location.hash = view;
   window.scrollTo(0,0);
   if (focus) $('content').focus({preventScroll:true});
-  if(view==='system'&&coreAvailable()&&typeof loadSystemTools==='function')loadSystemTools().catch(error=>{$('system-output').textContent=error.message});
+  if(view==='system'&&coreAvailable()&&typeof loadSystemTools==='function')loadSystemTools().catch(error=>{setTextOutput('system-output',error.message)});
 }
 async function apiRequest(path, method='GET', data, timeout=12000) {
   const controller = new AbortController();
@@ -215,7 +226,7 @@ async function initialize() {
   updateTranslations();
   renderAll();
   setInterval(pollStatus,2000);
-  if(state.view==='system'&&typeof loadSystemTools==='function')loadSystemTools().catch(error=>{$('system-output').textContent=error.message});
+  if(state.view==='system'&&typeof loadSystemTools==='function')loadSystemTools().catch(error=>{setTextOutput('system-output',error.message)});
 }
 async function reconnect() {
   if (state.reconnecting || state.editing) { if (state.editing) toast(t('discardChanges')); return; }
@@ -273,6 +284,7 @@ function renderHero() {
 }
 function profileCard(p, full=false) {
   const active = coreAvailable() && state.runtime.state === 'running' && state.runtime.profileId === p.id;
+  const heading = full ? 'h2' : 'h3';
   const e = state.engines.find(x => x.id === p.engine);
   const external = e?.integration === 'external' || p.engine === 'wireguard';
   const capable = e?.platforms?.includes(state.platform) && !external;
@@ -280,9 +292,10 @@ function profileCard(p, full=false) {
   const includes = p.routing?.includeDomains?.length || 0;
   const excludes = p.routing?.excludeDomains?.length || 0;
   const profileAction = (action, symbol, label, disabled=false) => `<button data-profile-action="${action}" data-profile-id="${escapeHTML(p.id)}" aria-label="${escapeHTML(t(label))}: ${escapeHTML(p.name)}" title="${escapeHTML(t(label))}" ${disabled ? 'disabled' : ''}>${icon(symbol)}</button>`;
-  return `<article class="profile-card ${active ? 'profile-active' : ''}"><div class="profile-top"><div class="profile-symbol ${p.engine === 'byedpi' ? 'teal' : ''}">${icon(['wiresock','wireguard'].includes(p.engine) ? 'shield' : p.engine === 'byedpi' ? 'globe' : 'layers')}</div><span class="tag ${active ? 'tag-teal' : 'tag-neutral'}">${active ? t('runningBadge') : escapeHTML(p.category || t('customCategory'))}</span></div><button class="profile-title" data-profile-action="edit" data-profile-id="${escapeHTML(p.id)}"><h3>${escapeHTML(p.name)}</h3></button><p title="${escapeHTML(desc)}">${escapeHTML(desc)}</p><div class="profile-rules"><span>${icon('globe')}${includes} ${t('includeCount')}</span><span>${icon('shield')}${excludes} ${t('excludeCount')}</span></div><div class="profile-card-foot"><span class="engine-label">${escapeHTML(e?.name || p.engine)}</span><div class="profile-card-actions">${profileAction(active ? 'stop' : 'run',active ? 'stop' : 'play',active ? 'stop' : 'reviewSetup',!coreAvailable() || state.busy || external)}${profileAction('edit','pen','edit',active)}${profileAction('duplicate','copy','duplicate',state.busy)}${profileAction('export','download','export')}${full ? profileAction('delete','trash','delete',active || state.busy) : ''}</div></div>${full ? `<div class="profile-availability"><span class="availability-dot ${capable ? 'available' : ''}"></span>${escapeHTML(t(external ? 'engineExternal' : capable ? 'engineAvailable' : state.offline ? 'platformUnknown' : 'engineUnsupported'))}</div>` : ''}</article>`;
+  return `<article class="profile-card ${active ? 'profile-active' : ''}"><div class="profile-top"><div class="profile-symbol ${p.engine === 'byedpi' ? 'teal' : ''}">${icon(['wiresock','wireguard'].includes(p.engine) ? 'shield' : p.engine === 'byedpi' ? 'globe' : 'layers')}</div><span class="tag ${active ? 'tag-teal' : 'tag-neutral'}">${active ? t('runningBadge') : escapeHTML(p.category || t('customCategory'))}</span></div><${heading} class="profile-card-heading"><button class="profile-title" data-profile-action="edit" data-profile-id="${escapeHTML(p.id)}">${escapeHTML(p.name)}</button></${heading}><p title="${escapeHTML(desc)}">${escapeHTML(desc)}</p><div class="profile-rules"><span>${icon('globe')}${includes} ${t('includeCount')}</span><span>${icon('shield')}${excludes} ${t('excludeCount')}</span></div><div class="profile-card-foot"><span class="engine-label">${escapeHTML(e?.name || p.engine)}</span><div class="profile-card-actions">${profileAction(active ? 'stop' : 'run',active ? 'stop' : 'play',active ? 'stop' : 'reviewSetup',!coreAvailable() || state.busy || external)}${profileAction('edit','pen','edit',active)}${profileAction('duplicate','copy','duplicate',state.busy)}${profileAction('export','download','export')}${full ? profileAction('delete','trash','delete',active || state.busy) : ''}</div></div>${full ? `<div class="profile-availability"><span class="availability-dot ${capable ? 'available' : ''}"></span>${escapeHTML(t(external ? 'engineExternal' : capable ? 'engineAvailable' : state.offline ? 'platformUnknown' : 'engineUnsupported'))}</div>` : ''}</article>`;
 }
 function renderProfiles() {
+  const focus = rememberFocus(document.activeElement);
   const term = $('profile-search').value.toLocaleLowerCase(state.lang).trim();
   const filter = $('profile-filter').value || 'all';
   const selected = state.profiles.filter(p => (filter === 'all' || p.engine === filter) && [p.name,p.engine,p.id,p.description,p.notes].join(' ').toLocaleLowerCase(state.lang).includes(term));
@@ -290,8 +303,10 @@ function renderProfiles() {
   $('quick-profiles').innerHTML = state.profiles.length ? state.profiles.slice(0,3).map(p => profileCard(p)).join('') : empty;
   $('all-profiles').innerHTML = selected.length ? selected.map(p => profileCard(p,true)).join('') : empty;
   $('profile-result-count').textContent = selected.length + ' / ' + state.profiles.length + ' ' + t('profilesShown');
+  restoreReplacedFocus(focus);
 }
 function renderEngines() {
+  const focus = rememberFocus(document.activeElement);
   $('engines-grid').innerHTML = state.engines.map(e => {
     const external = e.integration === 'external' || e.id === 'wireguard';
     const supported = e.platforms.includes(state.platform) && !external;
@@ -300,6 +315,7 @@ function renderEngines() {
   }).join('');
   const platforms = [ ['Windows','desktopCore','windowsSupport'],['Linux','desktopCore','linuxSupport'],['macOS','partialCore','macSupport'],['BSD','partialCore','bsdSupport'],['Android','mobileEditor','androidSupport'],['iOS','mobileEditor','iosSupport'] ];
   $('platform-matrix').innerHTML = platforms.map(([name,badge,desc]) => `<article><div><h3>${name}</h3><span class="tag tag-neutral">${escapeHTML(t(badge))}</span></div><p>${escapeHTML(t(desc))}</p></article>`).join('');
+  restoreReplacedFocus(focus);
 }
 function renderAll() { renderHero(); renderProfiles(); renderEngines(); }
 
@@ -367,16 +383,48 @@ function validateProfile(p) {
 function newProfile(engine='byedpi') {
   showEditor({version:1,id:uniqueId('my-' + (engine === 'byedpi' ? 'profile' : engine),state.profiles),name:t('newProfileName'),description:'',category:t('customCategory'),engine,binary:'',configPath:'',sha256:'',args:[],routing:{includeDomains:[],excludeDomains:[],applications:[]},probe:{host:'discord.com',port:443,tls:true,timeoutSeconds:5},notes:''},true);
 }
+// Remember logical controls as well as nodes: async reviews and saves replace
+// profile/engine cards. Compare data values instead of interpolating selectors.
+function rememberFocus(element) {
+  if (!element || element === document.body || element === document.documentElement) return null;
+  const anchor = {element,id:element.id};
+  const grid = element.closest?.('#quick-profiles,#all-profiles');
+  if (grid && element.dataset.profileAction) Object.assign(anchor,{kind:'profile',scope:grid.id,profile:element.dataset.profileId,action:element.dataset.profileAction,title:element.classList.contains('profile-title')});
+  else if (element.dataset?.engineCreate) Object.assign(anchor,{kind:'engine',engine:element.dataset.engineCreate});
+  else if (grid && element.getAttribute('data-create-profile') !== null) Object.assign(anchor,{kind:'empty',scope:grid.id});
+  return anchor;
+}
+function restoreFocus(anchor) {
+  if (!anchor) return false;
+  const available = element => element?.isConnected && !element.disabled && !element.closest('[hidden],[inert]') && element.getClientRects().length;
+  let target = anchor.element;
+  if (!available(target)) {
+    if (anchor.kind === 'profile') target = Array.from($(anchor.scope).querySelectorAll('[data-profile-action]')).find(element => {
+      const action = element.dataset.profileAction;
+      const matches = ['run','stop'].includes(anchor.action) ? ['run','stop'].includes(action) : action === anchor.action;
+      return available(element) && matches && element.dataset.profileId === anchor.profile && element.classList.contains('profile-title') === anchor.title;
+    });
+    else if (anchor.kind === 'engine') target = Array.from($('engines-grid').querySelectorAll('[data-engine-create]')).find(element => available(element) && element.dataset.engineCreate === anchor.engine);
+    else if (anchor.kind === 'empty') target = Array.from($(anchor.scope).querySelectorAll('[data-create-profile]')).find(available);
+    else if (anchor.id) target = $(anchor.id);
+  }
+  if (!available(target)) return false;
+  target.focus();
+  return document.activeElement === target;
+}
+function restoreReplacedFocus(anchor) {
+  if (anchor && !anchor.element.isConnected && !restoreFocus(anchor)) $('content').focus({preventScroll:true});
+}
 function setModal(id,open) {
   const modal = $(id);
-  if (open) modal.returnFocus = document.activeElement;
+  if (open) modal.returnFocus = rememberFocus(document.activeElement);
   modal.hidden = !open;
   const modalOpen = $$('.modal-backdrop').some(el => !el.hidden);
   document.querySelector('.app-shell').inert = modalOpen;
   document.body.classList.toggle('modal-open',modalOpen);
   if (!open) {
-    if (modal.returnFocus?.isConnected) modal.returnFocus.focus();
-    else if (!modalOpen) $('content').focus({preventScroll:true});
+    if (!restoreFocus(modal.returnFocus) && !modalOpen) $('content').focus({preventScroll:true});
+    modal.returnFocus = null;
   }
 }
 function showEditor(p,isNew=false) {
@@ -387,8 +435,7 @@ function showEditor(p,isNew=false) {
   $('p-id').disabled = !isNew;
   state.editorTab = 'simple';
   switchEditor('simple',false);
-  $('editor-feedback').textContent = '';
-  $('editor-feedback').className = '';
+  setEditorFeedback('');
   $('editor-preview').hidden = true;
   setModal('editor-modal',true);
   $('p-name').focus();
@@ -430,19 +477,16 @@ function switchEditor(tab,transfer=true) {
   $('editor-simple').hidden = tab !== 'simple';
   $('editor-advanced').hidden = tab !== 'advanced';
   if (tab === 'advanced' && !transfer) $('p-json').value = JSON.stringify(state.editing.profile,null,2);
-  $('editor-feedback').textContent = state.editing.dirty ? t('unsavedChanges') : '';
-  $('editor-feedback').className = '';
+  setEditorFeedback(state.editing.dirty ? t('unsavedChanges') : '');
 }
 function editorError(err) {
-  $('editor-feedback').textContent = err.message;
-  $('editor-feedback').className = 'error';
+  setEditorFeedback(err.message,true);
   toast(err.message,true);
 }
 function markDirty() {
   if (!state.editing) return;
   state.editing.dirty = true;
-  $('editor-feedback').textContent = t('unsavedChanges');
-  $('editor-feedback').className = '';
+  setEditorFeedback(t('unsavedChanges'));
   $('editor-preview').hidden = true;
   updateEditorGuidance();
 }
@@ -499,7 +543,7 @@ async function saveEditor() {
     if (state.editing.isNew && state.profiles.some(existing => existing.id === p.id)) throw new Error(t('duplicateId'));
     state.editing.saving = true;
     setEditorBusy(true);
-    $('editor-feedback').textContent = t('saving');
+    setEditorFeedback(t('saving'));
     await persist(p);
     state.editing.saving = false;
     renderAll();
@@ -532,7 +576,7 @@ async function importProfile(file) {
     delete p.updatedAt;
     showEditor(p,true);
     state.editing.dirty = true;
-    $('editor-feedback').textContent = t(collision ? 'importRenamed' : 'importReview');
+    setEditorFeedback(t(collision ? 'importRenamed' : 'importReview'));
   } catch (err) { toast(t('importInvalid') + ': ' + err.message,true); }
 }
 async function handleProfileAction(action,id) {
@@ -579,7 +623,7 @@ async function previewEditor() {
     const plan = await apiRequest('/api/v1/preview','POST',p);
     if (state.editing !== editor) return;
     renderPlan(plan,target);
-    target.scrollIntoView({behavior:'smooth',block:'nearest'});
+    target.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'nearest'});
   } catch (err) { editorError(err); $('editor-preview').hidden = true; }
   finally { $('preview-profile').disabled = !coreAvailable(); }
 }
@@ -682,7 +726,10 @@ async function showLogs() {
 function trapModalKeys(event) {
   const open = $$('.modal-backdrop').filter(el => !el.hidden);
   const modal = open[open.length - 1];
-  if (!modal) return;
+  if (!modal) {
+    if(event.key==='Escape'&&$('sidebar').classList.contains('open')){event.preventDefault();setSidebarOpen(false);$('menu-toggle').focus()}
+    return;
+  }
   if (event.key === 'Escape') {
     event.preventDefault();
     if (modal.id === 'editor-modal') closeEditor();
@@ -702,7 +749,15 @@ function bindEvents() {
   $$('[data-action]').forEach(el => el.addEventListener('click',() => navigate(el.dataset.action === 'diagnose' ? 'diagnostics' : el.dataset.action,true)));
   window.addEventListener('hashchange',() => navigate(location.hash.slice(1) || 'dashboard'));
   window.addEventListener('beforeunload',event => { if (state.editing?.dirty) { event.preventDefault(); event.returnValue = ''; } });
-  $('menu-toggle').addEventListener('click',() => { const open = $('sidebar').classList.toggle('open'); $('menu-toggle').setAttribute('aria-expanded',String(open)); });
+  $('menu-toggle').addEventListener('click',() => setSidebarOpen(!$('sidebar').classList.contains('open')));
+  narrowNavigation.addEventListener('change',() => {
+    const inside=$('sidebar').contains(document.activeElement);setSidebarOpen(false);
+    if(inside&&narrowNavigation.matches)$('menu-toggle').focus();
+  });
+  document.addEventListener('focusin',event => {
+    if(narrowNavigation.matches&&$('sidebar').classList.contains('open')&&!$('sidebar').contains(event.target))setSidebarOpen(false);
+  });
+  setSidebarOpen(false);
   $('theme-toggle').addEventListener('click',() => setTheme(state.theme === 'dark' ? 'light' : 'dark'));
   $('lang-toggle').addEventListener('click',() => {const languages=['en','tr','ru','es'];changeLanguage(languages[(languages.indexOf(state.lang)+1)%languages.length]);});
   $('settings-language').addEventListener('change',event => changeLanguage(event.target.value));

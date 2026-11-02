@@ -22,7 +22,7 @@ function systemEnginesFor(action){
   if(action==='remove')return ['wiresock','byedpi','zapret','zapret2','goodbyedpi','dnscrypt','proxifyre','drover','windivert'];
   return ['wiresock','byedpi','zapret','zapret2','goodbyedpi','dnscrypt','proxifyre','drover','wgcf','ndisapi','vcredist'];
 }
-function invalidateSystemPlan(){systemUI.revision++;systemUI.plan=null;$('system-consent').checked=false;$('system-consent').disabled=true;$('system-apply').disabled=true;$('system-export').disabled=true;$('system-plan').textContent='';}
+function invalidateSystemPlan(){systemUI.revision++;systemUI.plan=null;$('system-consent').checked=false;$('system-consent').disabled=true;$('system-apply').disabled=true;$('system-export').disabled=true;setTextOutput('system-plan','');}
 async function loadSystemTools(){
   if(systemUI.loading)return;
   if(!coreAvailable())throw new Error(t('coreRequired'));
@@ -33,7 +33,7 @@ async function loadSystemTools(){
   const selected=$('system-action').value;
   $('system-action').replaceChildren(...info.operations.filter(op=>op.id!=='choose-folder').map(op=>{const option=document.createElement('option');option.value=op.id;option.dataset.fallback=op.label;option.textContent=systemOperationText[op.id]?.[state.lang]||op.label;return option}));
   if(selected)$('system-action').value=selected;
-  renderSystemPresets();refreshSystemFields();if(!info.job?.id)$('system-output').textContent='';renderSystemJob(info.job);
+  renderSystemPresets();refreshSystemFields();if(!info.job?.id)setTextOutput('system-output','');renderSystemJob(info.job);
   if(info.job?.state==='running')pollSystemJob();
   }finally{systemUI.loading=false}
 }
@@ -60,8 +60,8 @@ function renderSystemPresets(){const previous=$('system-preset').value;$('system
 async function previewSystem(request=systemRequest()){
   if(systemUI.busy)return;
   invalidateSystemPlan();systemUI.busy=true;const revision=systemUI.revision;
-  try {if(!coreAvailable())throw new Error(t('coreRequired'));const plan=await apiRequest('/api/v1/system/preview','POST',request);if(revision!==systemUI.revision)return;systemUI.plan=plan;$('system-plan').textContent=JSON.stringify({operation:plan.request,requiresAdministrator:plan.requiresAdministrator,steps:plan.steps,issues:plan.issues,warnings:plan.warnings,expiresAt:plan.expiresAt},null,2);$('system-consent').disabled=!plan.ready;$('system-export').disabled=false;}
-  catch(error){$('system-plan').textContent=error.message;toast(error.message,true)}finally{systemUI.busy=false}
+  try {if(!coreAvailable())throw new Error(t('coreRequired'));const plan=await apiRequest('/api/v1/system/preview','POST',request);if(revision!==systemUI.revision)return;systemUI.plan=plan;setTextOutput('system-plan',JSON.stringify({operation:plan.request,requiresAdministrator:plan.requiresAdministrator,steps:plan.steps,issues:plan.issues,warnings:plan.warnings,expiresAt:plan.expiresAt},null,2));$('system-consent').disabled=!plan.ready;$('system-export').disabled=false;}
+  catch(error){setTextOutput('system-plan',error.message);toast(error.message,true)}finally{systemUI.busy=false}
 }
 function exportSystemRequest(){
   if(!systemUI.plan?.request)return;
@@ -72,10 +72,10 @@ async function applySystem(){
   if(systemUI.busy||!systemUI.plan?.ready||!$('system-consent').checked)return;
   systemUI.busy=true;const id=systemUI.plan.id;invalidateSystemPlan();
   try {const job=await apiRequest('/api/v1/system/start','POST',{planId:id,confirm:true});renderSystemJob(job);pollSystemJob();}
-  catch(error){$('system-output').textContent=error.message;toast(error.message,true)}finally{systemUI.busy=false}
+  catch(error){setTextOutput('system-output',error.message);toast(error.message,true)}finally{systemUI.busy=false}
 }
-function renderSystemJob(job){if(!job?.id)return;notifySystemUpdate(job);$('system-output').textContent=JSON.stringify(job,null,2);$('system-cancel').disabled=job.state!=='running';if(job.id===systemUI.folderJob&&job.state!=='running'){systemUI.folderJob=null;const folder=job.result?.data?.folder;if(folder){const paths=splitLines($('system-applications').value);if(!paths.includes(folder))paths.push(folder);$('system-applications').value=paths.join('\n');invalidateSystemPlan()}}if(job.result?.journal)$('system-journal').value=job.result.journal.split(/[\\/]/).pop();}
-async function pollSystemJob(){if(systemUI.polling)return;systemUI.polling=true;try{for(;;){const info=await apiRequest('/api/v1/system');renderSystemJob(info.job);if(info.job.state!=='running')break;await new Promise(resolve=>setTimeout(resolve,1500));}}catch(error){$('system-output').textContent=error.message;}finally{systemUI.polling=false}}
+function renderSystemJob(job){if(!job?.id)return;notifySystemUpdate(job);setTextOutput('system-output',JSON.stringify(job,null,2));$('system-cancel').disabled=job.state!=='running';if(job.id===systemUI.folderJob&&job.state!=='running'){systemUI.folderJob=null;const folder=job.result?.data?.folder;if(folder){const paths=splitLines($('system-applications').value);if(!paths.includes(folder))paths.push(folder);$('system-applications').value=paths.join('\n');invalidateSystemPlan()}}if(job.result?.journal)$('system-journal').value=job.result.journal.split(/[\\/]/).pop();}
+async function pollSystemJob(){if(systemUI.polling)return;systemUI.polling=true;try{for(;;){const info=await apiRequest('/api/v1/system');renderSystemJob(info.job);if(info.job.state!=='running')break;await new Promise(resolve=>setTimeout(resolve,1500));}}catch(error){setTextOutput('system-output',error.message);}finally{systemUI.polling=false}}
 
 const systemNavigation=document.createElement('button');systemNavigation.type='button';systemNavigation.className='nav-item';systemNavigation.dataset.view='system';systemNavigation.dataset.i18n='systemTools';systemNavigation.textContent=t('systemTools');systemNavigation.addEventListener('click',()=>navigate('system',true));document.querySelector('.main-nav').appendChild(systemNavigation);
 $('system-form').addEventListener('submit',event=>{event.preventDefault();previewSystem()});
@@ -90,6 +90,6 @@ $('system-apply').addEventListener('click',applySystem);
 $('system-export').addEventListener('click',exportSystemRequest);
 $('system-inspect').addEventListener('click',()=>previewSystem({action:'discover'}));
 $('system-cancel').addEventListener('click',async()=>{try{renderSystemJob(await apiRequest('/api/v1/system/cancel','POST',{}))}catch(e){toast(e.message,true)}});
-$('system-history').addEventListener('click',async()=>{try{$('system-output').textContent=JSON.stringify(await apiRequest('/api/v1/system/history'),null,2)}catch(e){toast(e.message,true)}});
-if(state.view==='system')loadSystemTools().catch(e=>{$('system-output').textContent=e.message});
+$('system-history').addEventListener('click',async()=>{try{setTextOutput('system-output',JSON.stringify(await apiRequest('/api/v1/system/history'),null,2))}catch(e){toast(e.message,true)}});
+if(state.view==='system')loadSystemTools().catch(e=>{setTextOutput('system-output',e.message)});
 updateTranslations();

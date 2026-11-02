@@ -364,7 +364,10 @@
           "evidence": [
             "web/index.html",
             "web/app.css",
-            "web/app.js"
+            "web/app.js",
+            "scripts/browser-tests/accessibility.cjs",
+            "scripts/browser-tests/desktop.spec.cjs",
+            "docs/TESTING.md"
           ]
         },
         {

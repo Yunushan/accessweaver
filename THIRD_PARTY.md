@@ -35,6 +35,10 @@ Before adding bundled code, packages, installers or drivers, document the exact 
 
 The preset collections identified above are the included SplitWire-Turkey assets. AccessWeaver's workflow implementation is original code. Project names and trademarks belong to their respective owners.
 
+## Development-only browser tools
+
+Browser acceptance uses Playwright under [Apache-2.0](https://github.com/microsoft/playwright/blob/main/LICENSE) and `@axe-core/playwright`/axe-core under [MPL-2.0](https://github.com/dequelabs/axe-core/blob/develop/LICENSE). Exact versions and package integrity hashes are retained in `scripts/browser-tests/package-lock.json`; package distributions retain their upstream notices. These tools run only in development/CI and are not embedded in the distributed dashboard or Go core.
+
 ## Generated software inventories
 
 Portable archives include a binary-bound CycloneDX SBOM and checksum-bound license evidence. VM fixture bundles and unsigned Windows installer compilation have separate inventories; they do not add runtime dependencies to the core. [SBOM procedures and boundaries](docs/SBOM.md) describe schema validation, copied notices and unfinished native/redistribution review. Inno Setup-generated installers retain their compiler distribution's custom license notice; no SPDX identifier or complete native dependency closure is invented for that runtime.
