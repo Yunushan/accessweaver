@@ -248,9 +248,8 @@ jobs:
           path: build/managed-policy-checks/
           if-no-files-found: ignore
           retention-days: 14
-      - name: Browser logic tests
-        if: runner.os == 'Linux'
-        run: node --test web/app.test.cjs
+      - name: Browser logic and fixture cleanup tests
+        run: node --test web/app.test.cjs scripts/browser-tests/core-fixture.test.cjs
       - name: Go formatting
         if: runner.os == 'Linux'
         shell: bash

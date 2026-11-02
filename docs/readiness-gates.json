@@ -337,7 +337,8 @@
           "status": "partial",
           "evidence": [
             "scripts/test-windows-workflow.ps1",
-            "internal/workflow/manager_test.go"
+            "internal/workflow/manager_test.go",
+            "scripts/browser-tests/core-fixture.test.cjs"
           ]
         },
         {

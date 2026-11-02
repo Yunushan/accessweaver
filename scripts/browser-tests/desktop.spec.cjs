@@ -16,15 +16,15 @@ const test = base.test.extend({
     await fs.mkdir(parent, {recursive:true, mode:0o700});
     const home = await fs.mkdtemp(path.join(parent, 'case-'));
     const cache = path.join(home, 'cache');
-    await fs.mkdir(cache, {mode:0o700});
-    let output = '', startError;
-    const child = spawn(binary, ['ui'], {windowsHide:true, stdio:['ignore','pipe','pipe'], env:{...process.env,
-      ACCESSWEAVER_HOME:path.join(home,'state'), ACCESSWEAVER_NO_BROWSER:'1', XDG_CACHE_HOME:cache, LOCALAPPDATA:cache}});
-    const exited = () => child.exitCode!==null || child.signalCode!==null;
-    child.once('error', error => {startError=error;});
-    child.stdout.on('data', data => {output=(output+data.toString()).slice(-65536);});
-    child.stderr.on('data', data => {output=(output+data.toString()).slice(-65536);});
+    let child, output = '', startError;
+    const exited = () => !child || child.exitCode!==null || child.signalCode!==null;
     try {
+      await fs.mkdir(cache, {mode:0o700});
+      child = spawn(binary, ['ui'], {windowsHide:true, stdio:['ignore','pipe','pipe'], env:{...process.env,
+        ACCESSWEAVER_HOME:path.join(home,'state'), ACCESSWEAVER_NO_BROWSER:'1', XDG_CACHE_HOME:cache, LOCALAPPDATA:cache}});
+      child.once('error', error => {startError=error;});
+      child.stdout?.on('data', data => {output=(output+data.toString()).slice(-65536);});
+      child.stderr?.on('data', data => {output=(output+data.toString()).slice(-65536);});
       const deadline=Date.now()+15_000;
       let launcher;
       while(!(launcher=output.match(/Open this private launch file in your browser: (file:[^\r\n]+)/)?.[1])) {
