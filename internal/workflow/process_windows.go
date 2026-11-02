@@ -6,32 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"path/filepath"
-	"strconv"
 	"syscall"
 	"unsafe"
 
-	"github.com/Yunushan/accessweaver/internal/nativepath"
+	"github.com/Yunushan/accessweaver/internal/nativeprocess"
 )
 
 func configureCommand(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		systemDirectory, err := nativepath.SystemDirectory()
-		if err != nil {
-			return err
-		}
-		kill := exec.Command(filepath.Join(systemDirectory, "taskkill.exe"), "/PID", strconv.Itoa(cmd.Process.Pid), "/T", "/F")
-		kill.Env, err = nativepath.UtilityEnvironment()
-		if err != nil {
-			return err
-		}
-		kill.Dir = systemDirectory
-		return kill.Run()
-	}
+	cmd.Cancel = func() error { return nativeprocess.TerminateTree(cmd.Process) }
 }
 
 func requireAdministrator() error {

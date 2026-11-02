@@ -18,6 +18,7 @@ import (
 	"github.com/Yunushan/accessweaver/internal/logfile"
 	"github.com/Yunushan/accessweaver/internal/managed"
 	"github.com/Yunushan/accessweaver/internal/nativepath"
+	"github.com/Yunushan/accessweaver/internal/nativeprocess"
 )
 
 var advapi = syscall.NewLazyDLL("advapi32.dll")
@@ -117,10 +118,18 @@ func Run(file string) error {
 			}
 		case <-stop:
 			status(3, 0, 0)
-			_ = exec.Command("taskkill.exe", "/PID", fmt.Sprint(cmd.Process.Pid), "/T", "/F").Run()
-			_ = cmd.Process.Kill()
-			<-done
-			finish(0)
+			stopErr := nativeprocess.TerminateTree(cmd.Process)
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				stopErr = errors.Join(stopErr, errors.New("owned engine did not exit within stop deadline; process cleanup incomplete"))
+			}
+			if stopErr != nil {
+				fmt.Fprintln(log, stopErr)
+				finish(1)
+			} else {
+				finish(0)
+			}
 		}
 		return 0
 	})
