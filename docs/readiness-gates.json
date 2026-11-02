@@ -96,7 +96,8 @@
             "scripts/browser-tests/desktop.spec.cjs",
             "internal/workflow/output_test.go",
             "cmd/accessweaver/system_output_test.go",
-            "internal/api/workflow_output_test.go"
+            "internal/api/workflow_output_test.go",
+            "internal/workflow/metadata_output_test.go"
           ]
         },
         {
@@ -343,7 +344,8 @@
             "internal/workflow/manager_test.go",
             "scripts/browser-tests/core-fixture.test.cjs",
             "internal/workflow/output_test.go",
-            "internal/api/workflow_output_test.go"
+            "internal/api/workflow_output_test.go",
+            "internal/workflow/metadata_output_test.go"
           ]
         },
         {

@@ -253,3 +253,29 @@ func TestBrokenWorkflowStreamIsAnIncompleteHTTPResponse(t *testing.T) {
 		t.Fatalf("aborted raw download did not end as an incomplete HTTP message: %v", err)
 	}
 }
+
+func TestWorkflowHistoryResponsePreservesLargeLegacyMetadata(t *testing.T) {
+	s := makeServer(t)
+	directory := filepath.Join(s.Store.Root, "workflows")
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	value := strings.Repeat("<", 32768)
+	original := []byte(`{"id":"legacy-metadata","state":"failed","error":"` + value + `"}`)
+	file := filepath.Join(directory, "legacy.json")
+	if err := os.WriteFile(file, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	w := request(t, s, http.MethodGet, "/api/v1/system/history", nil, s.Token, "127.0.0.1")
+	if w.Code != http.StatusOK || w.Body.Len() > len(original)+1024 {
+		t.Fatalf("legacy metadata expanded: record=%d response=%d status=%d", len(original), w.Body.Len(), w.Code)
+	}
+	var jobs []workflow.Job
+	if err := json.Unmarshal(w.Body.Bytes(), &jobs); err != nil || len(jobs) != 1 || jobs[0].Error != value {
+		t.Fatalf("complete private legacy cause changed: %v", err)
+	}
+	retained, err := os.ReadFile(file)
+	if err != nil || !bytes.Equal(original, retained) {
+		t.Fatal("metadata export changed the retained record")
+	}
+}

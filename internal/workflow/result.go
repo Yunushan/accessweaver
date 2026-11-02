@@ -39,8 +39,9 @@ func validateResult(result json.RawMessage) error {
 
 // Keep the result as compact JSON in this private data file. Indentation, HTML
 // escaping and even Encoder.SetEscapeHTML(false)'s Unicode-separator escaping
-// can expand a valid result beyond the reader's limit. Metadata is encoded by
-// the standard encoder; untrusted result bytes are validated and compacted.
+// can expand a valid result beyond the reader's limit. Private metadata strings
+// use bounded JSON quoting; timestamps retain standard encoding. Untrusted
+// result bytes are validated and compacted.
 // These records must never be embedded directly in HTML or JavaScript.
 func encodeJob(job Job) ([]byte, error) {
 	// The complete encoded record is validated below before persistence.

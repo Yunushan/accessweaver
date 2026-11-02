@@ -389,19 +389,20 @@ test('large retained history has a bounded preview and complete private exports'
  await expect(page.locator('#system-export-history')).toBeEnabled();
  const folder=path.join(core.home,'state','workflows');await fs.mkdir(folder,{recursive:true});
  const privateText='<img src=x onerror="globalThis.workflowPayloadExecuted=true">'+'x'.repeat(300000);
- const original='{"id":"display-fixture","action":"discover","state":"failed","startedAt":"2026-11-02T00:00:00Z","result":{"nested":'+'['.repeat(6000)+'0'+']'.repeat(6000)+',"text":'+JSON.stringify(privateText)+',"private":"PRIVATE_FULL_HISTORY_FIXTURE"}}';
+ const privateError='<img src=x onerror="globalThis.workflowMetadataExecuted=true">'+String.fromCodePoint(0x2028,0x2029).repeat(32768)+'<>&'.repeat(32768);
+ const original='{"id":"display-fixture","action":"discover","state":"failed","startedAt":"2026-11-02T00:00:00Z","error":'+JSON.stringify(privateError)+',"result":{"nested":'+'['.repeat(6000)+'0'+']'.repeat(6000)+',"text":'+JSON.stringify(privateText)+',"private":"PRIVATE_FULL_HISTORY_FIXTURE"}}';
  const record=path.join(folder,'display-fixture.json');await fs.writeFile(record,original);
  await page.locator('#system-history').click();
  await expect(page.locator('#system-output')).toContainText('display-fixture');
  await expect(page.locator('#system-output-limited')).toBeVisible();
- await expect(page.locator('#system-output img')).toHaveCount(0);expect(await page.evaluate(()=>globalThis.workflowPayloadExecuted)).toBeUndefined();
+ await expect(page.locator('#system-output img')).toHaveCount(0);expect(await page.evaluate(()=>globalThis.workflowPayloadExecuted)).toBeUndefined();expect(await page.evaluate(()=>globalThis.workflowMetadataExecuted)).toBeUndefined();
  await expect(page.locator('#system-output')).toHaveAttribute('aria-describedby','system-output-limited');
  expect((await page.locator('#system-output').textContent()).length).toBeLessThanOrEqual(128*1024);
  await scanAccessibility(page,core,testInfo,'limited-history-preview');await assertControlContrast(page,core,testInfo,'limited-history-preview');
  const pending=page.waitForEvent('download');await page.locator('#system-export-history').click();
  const download=await pending;expect(download.suggestedFilename()).toBe('accessweaver-workflow-history.json');
  const full=await fs.readFile(await download.path(),'utf8');const rows=JSON.parse(full);expect(rows).toHaveLength(1);
- expect(rows[0].id).toBe('display-fixture');expect(rows[0].result.text).toBe(privateText);expect(rows[0].result.private).toBe('PRIVATE_FULL_HISTORY_FIXTURE');
+ expect(rows[0].id).toBe('display-fixture');expect(rows[0].error).toBe(privateError);expect(rows[0].result.text).toBe(privateText);expect(rows[0].result.private).toBe('PRIVATE_FULL_HISTORY_FIXTURE');
  let value=rows[0].result.nested;for(let depth=0;depth<6000;depth++){expect(Array.isArray(value)).toBe(true);value=value[0];}expect(value).toBe(0);
  expect(await fs.readFile(record,'utf8')).toBe(original);
  const current=page.waitForEvent('download');await page.locator('#system-export-status').click();
@@ -410,7 +411,7 @@ test('large retained history has a bounded preview and complete private exports'
  // A full, explicitly selected history export and the metadata-only support
  // summary have different disclosure scopes; history must not enter support.
  await page.locator('.nav-item[data-view="settings"]').click();const supportPending=page.waitForEvent('download');await page.locator('#export-support').click();
- const support=await supportPending;expect(await fs.readFile(await support.path(),'utf8')).not.toContain('PRIVATE_FULL_HISTORY_FIXTURE');
+ const support=await supportPending;const supportText=await fs.readFile(await support.path(),'utf8');expect(supportText).not.toContain('PRIVATE_FULL_HISTORY_FIXTURE');expect(supportText).not.toContain('workflowMetadataExecuted');
  expect(await fs.readFile(record,'utf8')).toBe(original);
  await fs.writeFile(core.profilePath('export-recovery-fixture'),'{broken profile fixture');await page.reload();
  await expect(page.locator('#connection-notice')).toBeVisible();await page.locator('.nav-item[data-view="system"]').click();

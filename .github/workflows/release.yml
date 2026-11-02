@@ -131,6 +131,9 @@ jobs:
           node --check scripts/test-packaged-diagnostics.cjs
       - run: go vet ./...
       - run: go test ./... -count=1
+      - name: Fuzz private workflow metadata encoding
+        if: runner.os == 'Linux'
+        run: go test ./internal/workflow -run '^$' -fuzz '^FuzzWorkflowMetadataOutput$' -fuzztime=20s -parallel=2
       - name: Measure native concurrent profile inventory
         run: node scripts/check-profile-benchmark.cjs
       - name: Retain source-bound profile benchmark evidence

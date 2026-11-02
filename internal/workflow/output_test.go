@@ -145,3 +145,19 @@ func TestHistoryOutputWritesOneResultAtATime(t *testing.T) {
 		t.Fatalf("aggregate encoding or result expansion: largest=%d, total=%d", writer.largest, writer.total)
 	}
 }
+
+func TestHistoryMetadataStreamsWithoutExpansion(t *testing.T) {
+	for _, text := range []string{strings.Repeat("<&>", 32768), strings.Repeat("\u2028\u2029", 32768)} {
+		jobs := make([]Job, 4)
+		for i := range jobs {
+			jobs[i] = Job{ID: text, Action: text, State: text, Error: text}
+		}
+		writer := &outputCounter{}
+		if err := WriteHistoryJSON(writer, jobs); err != nil {
+			t.Fatal(err)
+		}
+		if writer.largest > 32<<10 || writer.total > len(text)*4*len(jobs)+4096 {
+			t.Fatalf("metadata expanded or buffered: input=%d largestWrite=%d total=%d", len(text)*4*len(jobs), writer.largest, writer.total)
+		}
+	}
+}
