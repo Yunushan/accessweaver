@@ -4,7 +4,7 @@ AccessWeaver welcomes focused contributions in English or Turkish. Start with [t
 
 ## Local development
 
-Use a current supported Go release (source minimum: Go 1.24). Node.js is used only for browser JavaScript checks and tests. The application has no npm build or third-party Go module dependencies.
+Use a supported Go release meeting the source minimum in `go.mod` (currently Go 1.26); CI pins Go 1.27.3. The root module pins `golang.org/x/sys` and `github.com/ebitengine/purego` for native OS interfaces, with checksums in `go.sum`. Separate tooling and optional fixture modules have their own pinned dependencies. The embedded application has no npm build; Node.js and browser-test dependencies support development checks. See [third-party notices](THIRD_PARTY.md) and [SBOM scope](docs/SBOM.md).
 
 ```bash
 go run ./cmd/accessweaver ui
@@ -15,7 +15,7 @@ node --check web/app.js
 node --test web/app.test.cjs
 ```
 
-The race detector needs a supported host and C toolchain. It runs in the Linux CI job. `ACCESSWEAVER_HOME` can point at a disposable development directory; `ACCESSWEAVER_NO_BROWSER=1` suppresses automatic browser opening. Do not develop against profiles containing personal VPN credentials.
+The race detector needs a supported host and C toolchain. CI runs the full suite on native Linux amd64/arm64 and selected paired-policy storage tests on both Mac architectures. `ACCESSWEAVER_HOME` can point at a disposable development directory; `ACCESSWEAVER_NO_BROWSER=1` suppresses automatic browser opening. Do not develop against profiles containing personal VPN credentials.
 
 ## Pull requests
 

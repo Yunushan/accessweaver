@@ -41,7 +41,7 @@ On Unix, Zapret-family engines drop privileges before reading hostlists. Guided 
 
 Generated files, where used, live under `ACCESSWEAVER_HOME/generated/` or the default application configuration root. They are recreated when starting a profile. Duplicate domains and the same domain in both lists are rejected. DNS names must be ASCII/IDNA; URLs, wildcard patterns and path strings are not accepted. The `^` exact-match prefix is accepted only for Zapret-family hostlists at launch.
 
-Guided lists cannot be combined with native Zapret `--hostlist...` options or ByeDPI `--auto`/`--hosts` groups: clear the guided lists if you want to manage those options yourself. GoodbyeDPI native `--blacklist` conflicts with guided includes. All adapters reject populated `routing.applications`; that field is reserved for future typed routing.
+Guided lists cannot be combined with native Zapret `--hostlist...` options or ByeDPI `--auto`/`--hosts` groups: clear the guided lists if you want to manage those options yourself. GoodbyeDPI native `--blacklist` conflicts with guided includes. The Windows WireSock adapter accepts guided `routing.applications`; other adapters reject that field. Guided rules are not a general application-routing implementation.
 
 Hostlists do not establish per-app routing, a system-wide firewall, DNS protection or a complete split tunnel. HTTPS hostname visibility, QUIC, IPv6 and application behavior require independent testing. The direct diagnostic tool does not validate these rules.
 
@@ -72,7 +72,7 @@ Install from [the official repository](https://github.com/ValdikSS/GoodbyeDPI), 
 
 Use the [vendor SDK](https://wiresock.net/wiresock-sdk) and its [foreground CLI documentation](https://wiresock.net/documentation/wiresock-secure-connect/command-line-interface.html). Set `configPath` to an existing local WireGuard-style `.conf` file. AccessWeaver supplies `run -config`; optional managed arguments are limited to `-log-level`, `-lac` and `-network-lock`.
 
-Application selection belongs in the vendor configuration, such as its supported `AllowedApps`/`DisallowedApps` fields; it is not generated from `routing.applications`. Config hooks named `PreUp`, `PostUp`, `PreDown` or `PostDown` block managed launch. Private keys should stay in the external configuration, never in profile notes or shared JSON.
+With empty `routing.applications`, application selection remains in the vendor configuration's `AllowedApps`/`DisallowedApps` fields. With guided application names, launch creates a private `generated/<profile-id>-wiresock.conf` copy, removes those two existing fields and adds `AllowedApps` for the selected names; the original configuration is unchanged. Preview reports this generated input without writing it. The copy includes the tunnel's private material and must stay inside a private configuration root. Enrolled managed launches reject generated inputs until protected staging/authorization is implemented. Config hooks named `PreUp`, `PostUp`, `PreDown` or `PostDown` block launch. Keep private keys out of profile notes and shared JSON. Native traffic tests remain required to establish actual application selection.
 
 The SDK and Secure Connect desktop product have distinct license terms. Read [THIRD_PARTY.md](../THIRD_PARTY.md). If you enable network lock, abnormal termination may need the vendor's recovery procedure; AccessWeaver does not automatically reset vendor state.
 

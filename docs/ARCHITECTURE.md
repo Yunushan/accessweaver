@@ -1,6 +1,6 @@
 # Architecture
 
-AccessWeaver is a single Go executable with embedded static HTML/CSS/JavaScript. The core uses the Go standard library. A browser UI and CLI share profile, engine and diagnostic modules.
+AccessWeaver is a single Go executable with embedded static HTML/CSS/JavaScript. A browser UI and CLI share profile, engine and diagnostic modules. The core uses the Go standard library plus the pinned `golang.org/x/sys` and `github.com/ebitengine/purego` modules for native OS interfaces. Optional fixtures and build/security tooling have separate module boundaries; see [SBOM scope](SBOM.md).
 
 ```mermaid
 flowchart TD
@@ -8,7 +8,7 @@ flowchart TD
   CLI["CLI"] --> PLAN["Profile validation and launch plan"]
   API --> PLAN
   API --> STORE["Local JSON store"]
-  API --> DIAG["Direct DNS, TCP and TLS checks"]
+  API --> DIAG["Direct/proxy TCP/TLS and bounded UDP/STUN checks"]
   PLAN --> MANAGER["Foreground process manager"]
   MANAGER --> ENGINE["User-installed engine"]
   ENGINE --> OS["Separately configured OS networking"]
@@ -23,7 +23,7 @@ flowchart TD
 | Profile store | Versioned JSON, validation, atomic replacement and OS-locked revision checks across cooperating local processes | Secret encryption or safe semantics for arbitrary engine arguments |
 | Launch planner | Platform/executable checks, optional hash, configuration checks and supported rule translation | Trusted publisher identity, a valid engine strategy or working traffic interception |
 | Process manager | One foreground child, bounded output, stop/shutdown | A service manager, installer or rollback of third-party OS changes |
-| Diagnostics | Direct DNS resolution, TCP connect and certificate-verified TLS handshake | Selected SOCKS route, UDP/voice, QUIC, hostlist correctness or anonymity |
+| Diagnostics | Direct resolution/TCP/TLS, explicitly selected SOCKS5 or HTTP CONNECT, and bounded direct/SOCKS5 UDP STUN probes | Ordinary application routing, OS resolver privacy, actual voice/QUIC operation, hostlist correctness or anonymity |
 
 The control listener binds to `127.0.0.1` on an ephemeral port. Host and browser-origin checks protect the API from typical cross-origin/rebinding access, and every API request, including reads and bootstrap, needs a random per-process token delivered through the OS-private launcher. The dashboard refuses elevated/root execution; Windows machine changes require separately elevated CLI requests. The static UI uses same-origin assets and a restrictive content security policy. The API is a local implementation interface, not a supported remote administration protocol.
 
@@ -49,4 +49,10 @@ The CLI also holds `.controller.lock` throughout `ui`, `run` and `import`, befor
 
 ## Signed administrator documents
 
-The `managed` CLI signs, verifies and prepares versioned Ed25519 policy envelopes. A separately elevated Windows CLI installs only absent policy using an independent key pin; updates retain the enrolled key and advance the authenticated revision floor inside a native registry transaction. Expired-policy metadata may be authenticated solely for renewal; runtime checks still reject expiry. A planned rotation requires an old-key-signed transition bound to the exact prior key/revision/policy hash and a higher-revision policy signed by a different new key; the same transaction replaces the public key and policy together. Damaged-state/emergency recovery remains unfinished. Windows reads the complete public key, revision floor and envelope from one protected 64-bit HKLM registry value. User data roots and environment variables cannot select that authority. Guards protect profile mutations, diagnostics, foreground launches and workflow requests/downloads, and reject unimplemented managed service-host authorization. Checks repeat at lock and execution boundaries; worker permissions travel with the exact retained in-memory request. Unmanaged behavior remains available when the protected key is absent. Linux amd64/arm64 also reads a fixed root-owned `/etc` file and uses descriptor-relative, synced atomic publication with a persistent private writer lock and bounded abandoned-stage cleanup. Its children receive a fixed environment; unsafe input objects and unqualified storage fail closed. macOS/BSD authority and several native provenance/service paths remain unfinished. [Managed configuration](MANAGED_CONFIGURATION.md) defines the protocol, current restrictions and remaining qualification.
+The `managed` CLI signs, verifies and prepares versioned Ed25519 policy envelopes. Native authority is independent of user data roots and environment overrides: Windows reads a protected 64-bit HKLM registry value; Linux amd64/arm64 reads a root-owned installation/acceptance pair under `/etc/accessweaver`; macOS amd64/arm64 reads its root-owned pair under `/Library/Preferences/AccessWeaver`. BSD native machine authority remains unfinished.
+
+Separately elevated CLI writers implement initial enrollment, monotonic update, planned key rotation and signed recovery. Windows uses native registry transactions. Linux and macOS use descriptor-relative checks, protected writer coordination and synced publication of paired state; macOS additionally requires qualified local APFS ownership/ACL semantics. Planned rotation binds old-key authorization to the exact prior state and a higher-revision policy signed by a different new key. Recovery requires its own authenticated prior-state and revision constraints. These implementations still require the documented deployment, storage and recovery qualification.
+
+Guards protect profile mutations, diagnostics, foreground launches and workflow requests/downloads. Policy checks repeat at lock and execution boundaries; worker permissions travel with the retained in-memory request. Active operations retain policy identity/expiry and cancel their contexts when the one-second monitor detects a change, removal, enrollment, expiry or unreadable authority. This is not an instantaneous OS revocation primitive or proof that a vendor's external state has been undone. Managed service-host authorization, generated inputs and native-argument assets remain blocked where protected authorization/staging is unfinished. Managed foreground children receive a fixed native environment; unmanaged behavior remains available when native authority is absent.
+
+[Managed configuration](MANAGED_CONFIGURATION.md) defines the protocol, source protection and remaining restrictions. [macOS acceptance](MACOS_MANAGED_POLICY.md) and [native acceptance](MACHINE_POLICY_ACCEPTANCE.md) distinguish source implementation, disposable tests and managed endpoint qualification.

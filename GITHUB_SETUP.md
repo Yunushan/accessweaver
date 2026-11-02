@@ -17,7 +17,7 @@ On Windows, use `./scripts/setup.ps1`. Run the checks in [CONTRIBUTING.md](CONTR
 
 [CI](.github/workflows/ci.yml) runs static analysis and unit tests on hosted Linux, Windows and macOS runners. A separate Linux job runs the race detector. Cross-builds cover amd64/arm64 for Linux, Windows, macOS, FreeBSD and OpenBSD. Hosted Linux/macOS/Windows unit tests do not certify external engine integration; BSD cross-builds do not execute BSD binaries.
 
-The workflow uses a read-only default token and pins third-party actions to full commit hashes. Keep these pins current through reviewed dependency updates. There are no project dependencies to cache with `go.sum` in this standard-library-only application.
+The workflow uses a read-only default token and pins third-party actions to full commit hashes. Keep these pins current through reviewed dependency updates. The root `go.mod` and `go.sum` pin the native OS interface dependencies; separate tooling/fixture modules retain their own manifests and sums. Current setup-go steps disable its dependency cache explicitly. Verify the actual manifests and [SBOM scope](docs/SBOM.md) when changing dependencies.
 
 ## Preview artifacts and build provenance
 
