@@ -84,10 +84,21 @@ func WriteJobJSON(w io.Writer, job Job) error {
 // one result at a time instead of allocating a second encoded history buffer.
 // The caller must not mutate jobs or their result bytes during this call.
 func WriteHistoryJSON(w io.Writer, jobs []Job) error {
+	return writeHistoryJSON(w, jobs, 2)
+}
+
+// WriteHistoryReportJSON preserves the API's existing acceptance of every valid
+// Job value, including jobs at the decoder's nesting limit. An enclosing report
+// may exceed an individual consumer's document-depth limit, as with json.Marshal.
+func WriteHistoryReportJSON(w io.Writer, jobs []Job) error {
+	return writeHistoryJSON(w, jobs, 1)
+}
+
+func writeHistoryJSON(w io.Writer, jobs []Job, nesting int) error {
 	prepared := make([]jobOutput, len(jobs))
 	for i, job := range jobs {
 		var err error
-		prepared[i], err = prepareJobOutput(job, 2)
+		prepared[i], err = prepareJobOutput(job, nesting)
 		if err != nil {
 			return err
 		}
@@ -106,4 +117,30 @@ func WriteHistoryJSON(w io.Writer, jobs []Job) error {
 		}
 	}
 	return writeOutput(w, []byte("]\n"))
+}
+
+// WriteSystemReportJSON streams the existing platform/operations/job response.
+// Header and job encoding are validated before any response bytes are written.
+func WriteSystemReportJSON(w io.Writer, platform string, job Job) error {
+	header, err := json.Marshal(struct {
+		Platform   string      `json:"platform"`
+		Operations []Operation `json:"operations"`
+	}{platform, Catalog()})
+	if err != nil {
+		return err
+	}
+	prepared, err := prepareJobOutput(job, 1)
+	if err != nil {
+		return err
+	}
+	if err = writeOutput(w, header[:len(header)-1]); err != nil {
+		return err
+	}
+	if err = writeOutput(w, []byte(`,"job":`)); err != nil {
+		return err
+	}
+	if err = prepared.writeTo(w); err != nil {
+		return err
+	}
+	return writeOutput(w, []byte("}\n"))
 }

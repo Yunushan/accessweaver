@@ -233,7 +233,7 @@ async function apiRequest(path, method='GET', data, timeout=12000) {
     });
     let json;
     try { json = await response.json(); } catch { throw new Error(t('disconnectedDesc')); }
-    if (!response.ok) throw new Error(json.error || `HTTP ${response.status}`);
+    if (!response.ok) throw Object.assign(new Error(json.error || `HTTP ${response.status}`),{status:response.status});
     return json;
   } finally { clearTimeout(timer); }
 }

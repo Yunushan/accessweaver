@@ -23,12 +23,19 @@ function systemEnginesFor(action){
   return ['wiresock','byedpi','zapret','zapret2','goodbyedpi','dnscrypt','proxifyre','drover','wgcf','ndisapi','vcredist'];
 }
 function invalidateSystemPlan(){systemUI.revision++;systemUI.plan=null;$('system-consent').checked=false;$('system-consent').disabled=true;$('system-apply').disabled=true;$('system-export').disabled=true;setTextOutput('system-plan','');}
+// Retry only this read-only report when the server explicitly signals busy.
+// Confirmed starts, cancellation and other mutations are never replayed.
+async function readSystemStatus(){
+ for(;;){try{return await apiRequest('/api/v1/system');}
+  catch(error){if(error.status!==503)throw error;await new Promise(resolve=>setTimeout(resolve,1000));}
+ }
+}
 async function loadSystemTools(){
   if(systemUI.loading)return;
   if(!coreAvailable())throw new Error(t('coreRequired'));
   systemUI.loading=true;
   try{
-  const [info,presets]=await Promise.all([apiRequest('/api/v1/system'),apiRequest('/api/v1/system/presets')]);
+  const [info,presets]=await Promise.all([readSystemStatus(),apiRequest('/api/v1/system/presets')]);
   systemUI.presets=presets;
   const selected=$('system-action').value;
   $('system-action').replaceChildren(...info.operations.filter(op=>op.id!=='choose-folder').map(op=>{const option=document.createElement('option');option.value=op.id;option.dataset.fallback=op.label;option.textContent=systemOperationText[op.id]?.[state.lang]||op.label;return option}));
@@ -75,7 +82,7 @@ async function applySystem(){
   catch(error){setTextOutput('system-output',error.message);toast(error.message,true)}finally{systemUI.busy=false}
 }
 function renderSystemJob(job){if(!job?.id)return;notifySystemUpdate(job);showSystemOutput(job);$('system-cancel').disabled=job.state!=='running';if(job.id===systemUI.folderJob&&job.state!=='running'){systemUI.folderJob=null;const folder=job.result?.data?.folder;if(folder){const paths=splitLines($('system-applications').value);if(!paths.includes(folder))paths.push(folder);$('system-applications').value=paths.join('\n');invalidateSystemPlan()}}if(job.result?.journal)$('system-journal').value=job.result.journal.split(/[\\/]/).pop();}
-async function pollSystemJob(){if(systemUI.polling)return;systemUI.polling=true;try{for(;;){const info=await apiRequest('/api/v1/system');renderSystemJob(info.job);if(info.job.state!=='running')break;await new Promise(resolve=>setTimeout(resolve,1500));}}catch(error){setTextOutput('system-output',error.message);}finally{systemUI.polling=false}}
+async function pollSystemJob(){if(systemUI.polling)return;systemUI.polling=true;try{for(;;){const info=await readSystemStatus();renderSystemJob(info.job);if(info.job.state!=='running')break;await new Promise(resolve=>setTimeout(resolve,1500));}}catch(error){setTextOutput('system-output',error.message);}finally{systemUI.polling=false}}
 
 function updateSystemExportButtons(){
   for(const id of ['system-export-status','system-export-history'])$(id).disabled=!supportAvailable()||systemUI.exporting;

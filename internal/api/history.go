@@ -1,6 +1,11 @@
 package api
 
-import "net/http"
+import (
+	"io"
+	"net/http"
+
+	"github.com/Yunushan/accessweaver/internal/workflow"
+)
 
 func (s *Server) workflowHistory(w http.ResponseWriter, r *http.Request) {
 	if r.Context().Err() != nil {
@@ -25,5 +30,5 @@ func (s *Server) workflowHistory(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	JSON(w, http.StatusOK, items)
+	streamWorkflowJSON(r.Context(), w, http.StatusOK, func(out io.Writer) error { return workflow.WriteHistoryReportJSON(out, items) })
 }

@@ -290,3 +290,24 @@ test('authenticated system reports remain available after profile loading fails'
  let download;env.context.downloadFile=(data,name)=>{download={data,name}};env.context.fetch=async()=>new Response('[]\n',{headers:{'Content-Type':'application/json'}});
  await env.run('exportSystemReport("history")');assert.equal(await download.data.text(),'[]\n');assert.equal(download.name,'accessweaver-workflow-history.json');
 });
+
+
+test('API errors retain their HTTP status for read-only report backpressure',async()=>{
+ const env=environment();env.context.fetch=async()=>({ok:false,status:503,json:async()=>({error:'report busy'})});
+ await assert.rejects(env.run('apiRequest("/api/v1/system")'),error=>error.status===503&&error.message==='report busy');
+});
+
+test('status backpressure retries only reads and observes the terminal job',async()=>{
+ const env=environment();env.run(systemSource);env.run('state.offline=false;state.loading=false;systemUI.plan={id:"reviewed",ready:true};$("system-consent").checked=true;const actualPoll=pollSystemJob;pollSystemJob=()=>{globalThis.pollPromise=actualPoll()}');
+ let starts=0,reads=0,retries=0;
+ env.context.setTimeout=(callback,ms)=>{if(ms===1000){retries++;queueMicrotask(callback)}return 1};
+ env.context.apiRequest=async(path)=>{if(path==='/api/v1/system/start'){starts++;return {id:'owned-job',state:'running'}};if(path==='/api/v1/system'){reads++;if(reads<=2)throw Object.assign(new Error('busy'),{status:503});return {job:{id:'owned-job',state:'succeeded'}}}throw new Error('unexpected report route')};
+ await env.run('applySystem()');await env.context.pollPromise;
+ assert.equal(starts,1);assert.equal(reads,3);assert.equal(retries,2);assert.equal(env.run('systemUI.polling'),false);assert.equal(env.get('system-cancel').disabled,true);assert.match(env.get('system-output').textContent,/succeeded/);
+});
+
+test('a busy mutation is not replayed and other status failures are returned',async()=>{
+ const env=environment();env.run(systemSource);env.run('systemUI.plan={id:"reviewed",ready:true};$("system-consent").checked=true');let calls=0;
+ env.context.apiRequest=async()=>{calls++;throw Object.assign(new Error('busy'),{status:503})};await env.run('applySystem()');assert.equal(calls,1);assert.equal(env.run('systemUI.polling'),false);
+ env.context.apiRequest=async()=>{throw Object.assign(new Error('denied'),{status:403})};await assert.rejects(env.run('readSystemStatus()'),error=>error.status===403);
+});

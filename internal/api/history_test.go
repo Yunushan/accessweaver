@@ -16,17 +16,18 @@ type heldHistoryResponse struct {
 	*httptest.ResponseRecorder
 	entered chan struct{}
 	release chan struct{}
+	once    sync.Once
 }
 
 func (w *heldHistoryResponse) Write(b []byte) (int, error) {
-	close(w.entered)
+	w.once.Do(func() { close(w.entered) })
 	<-w.release
 	return w.ResponseRecorder.Write(b)
 }
 
 func TestHistoryAdmissionCoversResponseAndKeepsControlsAvailable(t *testing.T) {
 	s := makeServer(t)
-	response := &heldHistoryResponse{httptest.NewRecorder(), make(chan struct{}), make(chan struct{})}
+	response := &heldHistoryResponse{ResponseRecorder: httptest.NewRecorder(), entered: make(chan struct{}), release: make(chan struct{})}
 	var once sync.Once
 	release := func() { once.Do(func() { close(response.release) }) }
 	defer release()
@@ -126,7 +127,14 @@ func TestFailedHistoryResponseReleasesAdmission(t *testing.T) {
 	s := makeServer(t)
 	r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/api/v1/system/history", nil)
 	r.Header.Set("X-AccessWeaver-Token", s.Token)
-	s.Handler().ServeHTTP(failedHistoryResponse{httptest.NewRecorder()}, r)
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != http.ErrAbortHandler {
+				t.Fatalf("failed stream did not abort HTTP framing: %v", recovered)
+			}
+		}()
+		s.Handler().ServeHTTP(failedHistoryResponse{httptest.NewRecorder()}, r)
+	}()
 	w := request(t, s, http.MethodGet, "/api/v1/system/history", nil, s.Token, "127.0.0.1")
 	if w.Code != http.StatusOK {
 		t.Fatalf("write failure retained admission: %d", w.Code)

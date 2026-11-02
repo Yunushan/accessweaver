@@ -36,6 +36,7 @@ type Server struct {
 	Token       string
 	mutations   mutationGate
 	historyRead sync.Mutex
+	statusRead  sync.Mutex
 	done        chan struct{}
 }
 
