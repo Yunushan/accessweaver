@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -46,10 +47,19 @@ func New(store *profile.Store, manager *engine.Manager, static fs.FS) (*Server, 
 	return &Server{Policy: managed.NewGuard(nil), Store: store, Manager: manager, Workflows: workflow.New(store.Root), UI: static, Token: base64.RawURLEncoding.EncodeToString(b)}, nil
 }
 func JSON(w http.ResponseWriter, status int, v any) {
+	// Encode before committing a success status. The exact byte length gives
+	// large JSON responses a body boundary without chunked transfer framing.
+	body, err := json.Marshal(v)
+	if err != nil {
+		status = http.StatusInternalServerError
+		body = []byte(`{"error":"response encoding failed"}`)
+	}
+	body = append(body, '\n')
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	_, _ = w.Write(body)
 }
 func fail(w http.ResponseWriter, status int, message string) {
 	JSON(w, status, map[string]string{"error": message})

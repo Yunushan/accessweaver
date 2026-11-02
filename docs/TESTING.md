@@ -117,6 +117,8 @@ Concurrent profile-list requests under the controller process identity share onl
 
 Regression cases cover concurrent callers, canceled leaders/followers, abandoned lock acquisition, mutable-result isolation, and fresh reads after writes, deletion or corruption. Concurrent HTTP profile/support reads also run against a real isolated loopback server.
 
+JSON API responses are encoded before their status and headers are committed and include an explicit byte `Content-Length`, preserving the existing trailing newline. Large-response regressions use actual HTTP connections for GET and HEAD, verify complete framing and unchanged JSON/HTML escaping, and require serialization failures to return valid generic JSON with status 500 without private error details. This avoids chunked transfer framing for already buffered JSON values. These checks do not attribute an underlying transport delay or establish sustained resource budgets.
+
 `go test ./internal/profile -run '^$' -bench '^BenchmarkList256$' -benchmem` compares serial and four-reader synthetic inventory cost; it does not measure browser rendering, vendor traffic or full desktop performance. Native CI and release verification retain `profile-benchmark-OS-ARCH` artifacts for all six Linux/Windows/macOS targets. The wrapper requires a clean expected commit and matching native host/SDK, rejects missing or invalid benchmark rows, and records per-call time/allocations with the actual reader count. Parallel `ns/op` is aggregate elapsed time divided by completed operations, not individual request latency. These are source-built synthetic measurements, not packaged-binary performance qualification or an enforcement of desktop resource/latency budgets.
 
 ## Windows process-resource attribution
