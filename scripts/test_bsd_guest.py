@@ -133,5 +133,73 @@ class GuestSafetyTests(unittest.TestCase):
             guest.decode_objects(b'{"name":"one"}\nmalformed')
 
 
+class BootDiskPrivacyTests(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("bsd_boot", Path(__file__).with_name("bsd_boot_diagnostics.py"))
+        self.boot = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.boot)
+
+    def test_missing_boot_state_never_becomes_a_successful_boot(self):
+        data = self.boot.boot_observations(lambda _: b"", lambda _: False, b"client", b"host")
+        self.assertTrue(data.pop("inspectionComplete"))
+        self.assertFalse(any(data.values()))
+
+    def test_disk_observations_exclude_contents_and_never_read_cached_keys(self):
+        private = b"PRIVATE_KEY_AND_HOSTILE_LOG_CONTENT"
+        files = {
+            "/etc/rc.conf.d/hostname": b'hostname="awbsd"\n',
+            "/etc/passwd": b"awtest:*:1001:1001::/home/awtest:/bin/sh\n",
+            "/home/awtest/.ssh/authorized_keys": b"client-public\n",
+            "/etc/ssh/ssh_host_ed25519_key.pub": b"host-public\n",
+            "/etc/ssh/sshd_config": b"#PasswordAuthentication yes\nPasswordAuthentication no\n",
+            "/var/db/dhclient.leases.vtnet0": b"lease { fixed-address 10.0.2.15; }\n",
+            "/var/log/nuageinit.log": private + b"\nbad argument\nstack traceback\nerror parsing\n",
+            "/var/log/messages": private + b"\nsshd[42]: test\n",
+        }
+        reads = []
+        def read(name):
+            reads.append(name)
+            return files.get(name, b"")
+        data = self.boot.boot_observations(read, lambda _: True, b"client-public", b"host-public")
+        for name in ("inspectionComplete", "hostnameConfigured", "nuageCachePresent", "testUserCreated",
+                     "clientKeyInstalled", "hostKeyInstalled", "passwordAuthenticationDisabled",
+                     "controlAddressDHCPLeasePresent", "sshdPIDFilePresent", "nuageParseErrorObserved",
+                     "nuageArgumentErrorObserved", "nuageTracebackObserved", "sshdMessageObserved"):
+            self.assertIs(data[name], True)
+        self.assertNotIn("/var/cache/nuageinit/user_data", reads)
+        self.assertTrue(all(type(value) is bool for value in data.values()))
+        self.assertNotIn("PRIVATE", json.dumps(data))
+        self.assertNotIn("public", json.dumps(data))
+
+    def test_root_user_wrong_keys_commented_auth_and_other_lease_are_not_matches(self):
+        files = {"/etc/passwd": b"awtest:*:0:0::/:/bin/sh\n",
+                 "/home/awtest/.ssh/authorized_keys": b"wrong-client\n",
+                 "/etc/ssh/ssh_host_ed25519_key.pub": b"wrong-host\n",
+                 "/etc/ssh/sshd_config": b"#PasswordAuthentication no\n",
+                 "/var/db/dhclient.leases.vtnet0": b"fixed-address 10.0.2.150;\n"}
+        data = self.boot.boot_observations(lambda name: files.get(name, b""), lambda _: False, b"client", b"host")
+        for name in ("testUserCreated", "clientKeyInstalled", "hostKeyInstalled",
+                     "passwordAuthenticationDisabled", "controlAddressDHCPLeasePresent"):
+            self.assertIs(data[name], False)
+
+    def test_later_or_conditional_password_directive_is_not_a_global_disable(self):
+        for text in (b"PasswordAuthentication yes\nPasswordAuthentication no\n",
+                     b"Match User awtest\nPasswordAuthentication no\n",
+                     b"#PasswordAuthentication no\n"):
+            with self.subTest(text=text):
+                self.assertFalse(self.boot.global_password_auth_disabled(text))
+        self.assertTrue(self.boot.global_password_auth_disabled(b" PasswordAuthentication NO # fixture\n"))
+
+    def test_postmortem_requires_hosted_opt_in_before_disk_reads(self):
+        with patch.dict(os.environ, {}, clear=True), patch.object(self.boot, "inspect") as inspect:
+            with self.assertRaises(RuntimeError):
+                self.boot.main()
+            inspect.assert_not_called()
+
+    def test_postmortem_refuses_path_outside_private_capsule_root(self):
+        with self.assertRaises(RuntimeError):
+            self.boot.inspect(Path(__file__).resolve().parents[1] / "build" / "unrelated")
+
+
 if __name__ == "__main__":
     unittest.main()

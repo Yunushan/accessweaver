@@ -18,6 +18,7 @@ import signal
 import socket
 import stat
 import subprocess
+import sys
 import tarfile
 import tempfile
 import threading
@@ -428,6 +429,19 @@ def main():
                 report["consoleLoginObserved"] = b"login:" in serial_tail
                 report["expectedHostnameConsoleObserved"] = b"awbsd login:" in serial_tail.lower()
                 report["defaultHostnameConsoleObserved"] = b"amnesiac" in serial_tail.lower() or b"freebsd login:" in serial_tail.lower()
+        if emulator_stopped and vm is not None and phase == "guest-boot":
+            # Read only the stopped overlay, in a separate bounded helper. The
+            # helper returns fixed booleans, never logs, keys or cached user data.
+            try:
+                observed = run([sys.executable, str(repo / "scripts" / "bsd_boot_diagnostics.py"), str(capsule)],
+                               env=dict(os.environ, PYTHONPATH=str(repo / "build" / "bsd-inspection-tools")),
+                               timeout=60, limit=16384)
+                fields = json.loads(observed.stdout)
+                if not isinstance(fields, dict) or not fields or any(type(v) is not bool for v in fields.values()):
+                    raise ValueError("unexpected disk observation result")
+                report["bootDiskInspection"] = fields
+            except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired):
+                report["bootDiskInspectionFailed"] = True
         # Never publish the seed ISO, per-run credentials, disk image or serial
         # console. The guest has no host filesystem mount or signing secrets.
         try:
