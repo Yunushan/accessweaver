@@ -83,6 +83,20 @@ class GuestSafetyTests(unittest.TestCase):
                 guest.run(["unused"], data=b"x" * 2049)
             launch.assert_not_called()
 
+    def test_boot_error_classification_excludes_arbitrary_private_text(self):
+        private = b"PRIVATE_SEED_MATERIAL_AND_PATH"
+        for message, expected in [(b"Host key verification failed", "host-key-rejected"),
+                                  (b"Permission denied (publickey)", "authentication-refused"),
+                                  (b"Connection refused", "not-listening"),
+                                  (b"Connection timed out", "connect-timeout"),
+                                  (b"Connection reset", "connection-reset"),
+                                  (b"No route to host", "unreachable")]:
+            with self.subTest(expected=expected):
+                result = guest.ssh_failure_class(message + private)
+                self.assertEqual(result, expected)
+                self.assertNotIn("PRIVATE", result)
+        self.assertEqual(guest.ssh_failure_class(private), "unclassified")
+
     def test_wrong_guest_kernel_architecture_user_or_uid_is_refused(self):
         valid = ["FreeBSD", "15.1-RELEASE", "amd64", "1001", "awtest"]
         self.assertEqual(guest.validate_guest_identity(valid)["uid"], 1001)

@@ -310,4 +310,6 @@ The base UFS image is pinned to the [official FreeBSD image checksum](https://do
 
 This offline fixture disables its image's first-boot package upgrade to retain the pinned test image; it is not a production OS security baseline or an endpoint deployment configuration. The driver stops its owned emulator and removes only its verified private capsule. Seed material, SSH keys, disk images and serial console output are excluded from retained artifacts. The source-bound report and package logs identify actual outcomes and skipped test instances; cleanup failures fail the job.
 
+Boot failures retain an allowlisted SSH error category and fixed expected/default-hostname console markers. A rejected pinned host key terminates the probe immediately.
+
 The hosted opt-in is mandatory. Ordinary unit tests never boot a VM; guard regressions verify refusal before launching a command, and POSIX helper checks exercise real output/deadline bounds. Inspect the actual completed guest report before claiming native guest core execution. FreeBSD arm64 and both OpenBSD targets, native hardware/performance, drivers/routing, managed BSD policy, installer/lifecycle, signed distribution and full platform qualification remain open. All 50 readiness requirements and statuses remain unchanged.

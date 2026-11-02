@@ -164,6 +164,20 @@ def expand_image(source, target, maximum=8 << 30):
     return total
 
 
+def ssh_failure_class(output):
+    # Keep arbitrary server/client text and seed material out of boot reports.
+    for needle, kind in [(b"REMOTE HOST IDENTIFICATION HAS CHANGED", "host-key-rejected"),
+                         (b"Host key verification failed", "host-key-rejected"),
+                         (b"Permission denied", "authentication-refused"),
+                         (b"Connection refused", "not-listening"),
+                         (b"Connection timed out", "connect-timeout"),
+                         (b"Connection reset", "connection-reset"),
+                         (b"No route to host", "unreachable")]:
+        if needle in output:
+            return kind
+    return "unclassified"
+
+
 def validate_guest_identity(actual):
     if (len(actual) != 5 or actual[0] != "FreeBSD" or not actual[1].startswith("15.1-RELEASE") or
             actual[2] != "amd64" or not actual[3].isdecimal() or int(actual[3]) == 0 or actual[4] != "awtest"):
@@ -330,6 +344,9 @@ def main():
                 report["lastSSHStatus"] = result.returncode
                 if result.returncode == 0:
                     break
+                report["lastSSHFailureClass"] = ssh_failure_class(result.stdout)
+                if report["lastSSHFailureClass"] == "host-key-rejected":
+                    raise RuntimeError("Pinned guest host key was rejected")
             except (TimeoutError, subprocess.TimeoutExpired):
                 report["bootProbeTimeouts"] = report.get("bootProbeTimeouts", 0) + 1
             if time.monotonic() >= deadline:
@@ -409,6 +426,8 @@ def main():
                 report["nuageinitMessageObserved"] = b"nuageinit" in serial_tail
                 report["firstbootPackageMessageObserved"] = b"firstboot_pkg_upgrade" in serial_tail
                 report["consoleLoginObserved"] = b"login:" in serial_tail
+                report["expectedHostnameConsoleObserved"] = b"awbsd login:" in serial_tail.lower()
+                report["defaultHostnameConsoleObserved"] = b"amnesiac" in serial_tail.lower() or b"freebsd login:" in serial_tail.lower()
         # Never publish the seed ISO, per-run credentials, disk image or serial
         # console. The guest has no host filesystem mount or signing secrets.
         try:
