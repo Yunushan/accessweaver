@@ -8,13 +8,15 @@ spec=importlib.util.spec_from_file_location("darwin_storage",Path(__file__).with
 storage=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(storage)
 
-class ImageAssociationTests(unittest.TestCase):
+class ImageFixture:
     def setUp(self):
         self.image=Path("/owned/pressure.sparseimage")
         self.mount=Path("/owned/mount")
         self.entities=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1","mount-point":str(self.mount)}]
     def info(self,entities=None):
         return {"images":[{"image-path":str(self.image),"system-entities":self.entities if entities is None else entities}]}
+
+class ImageAssociationTests(ImageFixture,unittest.TestCase):
     def test_exact_owned_image_and_mount_select_their_associated_devices(self):
         self.assertEqual(storage.association(self.info(),self.image,self.mount),("/dev/disk20","/dev/disk21s1"))
     def test_other_images_and_missing_or_duplicate_associations_are_refused(self):
@@ -27,6 +29,40 @@ class ImageAssociationTests(unittest.TestCase):
                          [{"dev-entry":"/dev/disk21s1","mount-point":str(self.mount)}]):
             with self.subTest(entities=entities),self.assertRaises(RuntimeError):
                 storage.association(self.info(entities),self.image,self.mount)
+
+class NormalDetachTests(ImageFixture,unittest.TestCase):
+    def test_busy_then_success_rebinds_and_never_forces(self):
+        from subprocess import CompletedProcess
+        busy=CompletedProcess([],16,b"",b"hdiutil: Resource busy")
+        done=CompletedProcess([],0,b"",b"")
+        with patch.object(storage,"info",side_effect=[self.info(),self.info(),{"images":[]}]),patch.object(storage,"command",side_effect=[busy,done]) as command,patch.object(storage.time,"sleep"):
+            self.assertEqual(storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1"),2)
+            self.assertEqual(command.call_count,2)
+            for call in command.call_args_list:
+                self.assertEqual(call.args[0],[storage.HDIUTIL,"detach","/dev/disk20"])
+                self.assertLessEqual(call.kwargs["timeout"],8)
+
+    def test_changed_device_after_busy_is_not_detached(self):
+        from subprocess import CompletedProcess
+        changed=[{"dev-entry":"/dev/disk30"},self.entities[1]]
+        with patch.object(storage,"info",side_effect=[self.info(),self.info(changed)]),patch.object(storage,"command",return_value=CompletedProcess([],16,b"",b"Resource busy")) as command,patch.object(storage.time,"sleep"):
+            with self.assertRaisesRegex(RuntimeError,"mapping changed"):
+                storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1")
+            self.assertEqual(command.call_count,1)
+
+    def test_other_failure_is_not_retried(self):
+        from subprocess import CompletedProcess
+        with patch.object(storage,"info",return_value=self.info()),patch.object(storage,"command",return_value=CompletedProcess([],1,b"",b"unrelated failure")) as command:
+            with self.assertRaisesRegex(RuntimeError,"normal detach failed"):
+                storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1")
+            self.assertEqual(command.call_count,1)
+
+    def test_busy_deadline_does_not_launch_another_detach(self):
+        from subprocess import CompletedProcess
+        with patch.object(storage.time,"monotonic",side_effect=[0,0,0,31]),patch.object(storage,"info",return_value=self.info()),patch.object(storage,"command",return_value=CompletedProcess([],16,b"",b"Resource busy")) as command:
+            with self.assertRaisesRegex(RuntimeError,"detach deadline"):
+                storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1")
+            self.assertEqual(command.call_count,1)
 
 class NativeHelpEvidenceTests(unittest.TestCase):
     def test_minimal_help_retains_missing_flag_as_information(self):

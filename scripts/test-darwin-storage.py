@@ -10,6 +10,7 @@ import re
 import shutil
 import signal
 import subprocess
+import time
 import sys
 import tempfile
 import time
@@ -46,8 +47,41 @@ def command(args, timeout=90, check=True, env=None):
     return result
 
 
-def info():
-    return plistlib.loads(command([HDIUTIL, "info", "-plist"]).stdout)
+def info(timeout=90):
+    return plistlib.loads(command([HDIUTIL, "info", "-plist"], timeout=timeout).stdout)
+
+
+def detach_owned(image, mount, expected_base, expected_volume, maximum_wait=30):
+    """Retry only normal busy detach, rebinding the exact owned mapping each time."""
+    deadline = time.monotonic() + maximum_wait
+    attempts = 0
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("Owned image remained busy through the detach deadline")
+        snapshot = info(timeout=min(5, remaining))
+        if not any(item.get("image-path") == str(image) for item in snapshot.get("images", [])):
+            return attempts
+        if association(snapshot, image, mount) != (expected_base, expected_volume):
+            raise RuntimeError("Owned image device mapping changed before detach")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("Owned image detach deadline exceeded")
+        attempts += 1
+        result = command([HDIUTIL, "detach", expected_base], timeout=min(8, remaining), check=False,
+                         env=dict(os.environ, LANG="C", LC_ALL="C"))
+        if result.returncode == 0:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or any(item.get("image-path") == str(image) for item in info(timeout=min(5, remaining)).get("images", [])):
+                raise RuntimeError("Owned image remains associated after detach")
+            return attempts
+        if b"Resource busy" not in result.stdout + result.stderr:
+            raise RuntimeError("Owned image normal detach failed: " +
+                               (result.stdout + result.stderr).decode("utf-8", "replace")[:8192])
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("Owned image remained busy through the detach deadline")
+        time.sleep(min(0.5, remaining))
 
 
 def guarded_directory(path, owner):
@@ -177,8 +211,8 @@ def main():
             if attached or associated:
                 # Rebind the exact device to our image before detaching. Never force
                 # eject an unidentified/busy device and never recurse into a mount.
-                base_device, _ = association(info(), image, mount)
-                command([HDIUTIL, "detach", base_device])
+                base_device, volume_device = association(info(), image, mount)
+                record["normalDetachAttempts"] = detach_owned(image, mount, base_device, volume_device)
                 if any(i.get("image-path") == str(image) for i in info().get("images", [])):
                     raise RuntimeError("Owned image remains attached")
                 record["detached"] = True
