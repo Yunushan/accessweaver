@@ -170,7 +170,7 @@ func TestDarwinReadAndDenyACLsAndNewObjectReset(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer dir.Close()
-	chmodFixture(t, dir.Name(), "+a", "everyone deny read file_inherit,only_inherit")
+	chmodFixture(t, dir.Name(), "+a", "everyone deny read,file_inherit,only_inherit")
 	defer chmodFixture(t, dir.Name(), "-N")
 	created, err := CreateRegularAt(dir, "policy", owner)
 	if err != nil {
@@ -302,5 +302,28 @@ func TestDarwinProtectedRootsPreflight(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "preflight-"+runtime.GOARCH+".json"), append(data, 10), 0644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDarwinAbsentACLIsDistinctFromInvalidDescriptor(t *testing.T) {
+	parent := fixtureParent(t)
+	path := filepath.Join(parent.Name(), "no-acl")
+	if err := os.WriteFile(path, []byte("POSIX-protected without an extended ACL"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	chmodFixture(t, path, "-N")
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Check(file, false, uint32(os.Geteuid())); err != nil {
+		file.Close()
+		t.Fatal("absent ACL rejected a protected existing descriptor", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkACL(file); err == nil {
+		t.Fatal("invalid descriptor was treated as absent ACL")
 	}
 }

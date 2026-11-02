@@ -77,15 +77,39 @@ const aclDeny = 2
 // synchronize. Unknown or mutation rights on any allow ACE are not trusted.
 const readOnlyACL = uint64(1<<1 | 1<<3 | 1<<7 | 1<<9 | 1<<11 | 1<<20)
 
-func checkACL(file *os.File) (result error) {
+// Control pins the descriptor through the foreign call, including concurrent
+// Close/finalizer activity. A locked OS thread also preserves errno identity.
+func withNativeFD(file *os.File, operation func(*nativeAPI, int32) error) error {
 	api, err := getNative()
 	if err != nil {
 		return err
 	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	acl := api.aclGetFD(int32(file.Fd()), aclTypeExtended)
+	raw, err := file.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var result error
+	controlErr := raw.Control(func(fd uintptr) {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		result = operation(api, int32(fd))
+	})
+	return errors.Join(result, controlErr)
+}
+
+func checkACL(file *os.File) error {
+	return withNativeFD(file, checkACLDescriptor)
+}
+
+func checkACLDescriptor(api *nativeAPI, fd int32) (result error) {
+	acl := api.aclGetFD(fd, aclTypeExtended)
 	if acl == 0 {
+		// Apple's descriptor API reports a missing FILESEC_ACL property as
+		// ENOENT even while the file exists. Control holds a valid descriptor;
+		// mode, owner, type, links and local APFS are checked separately.
+		if syscall.Errno(*api.errno()) == syscall.ENOENT {
+			return nil
+		}
 		return api.lastError("read extended ACL")
 	}
 	defer func() {
@@ -131,13 +155,11 @@ func checkACL(file *os.File) (result error) {
 
 // ResetCreatedACL is only for new product objects created exclusively beneath
 // a checked parent. It must never change an existing administrator-owned object.
-func ResetCreatedACL(file *os.File) (result error) {
-	api, err := getNative()
-	if err != nil {
-		return err
-	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
+func ResetCreatedACL(file *os.File) error {
+	return withNativeFD(file, resetCreatedDescriptorACL)
+}
+
+func resetCreatedDescriptorACL(api *nativeAPI, fd int32) (result error) {
 	acl := api.aclInit(0)
 	if acl == 0 {
 		return api.lastError("create empty extended ACL")
@@ -156,7 +178,7 @@ func ResetCreatedACL(file *os.File) (result error) {
 	if api.aclAddFlag(flags, 1<<17) != 0 {
 		return api.lastError("disable new-object ACL inheritance")
 	}
-	if api.aclSetFD(int32(file.Fd()), acl, aclTypeExtended) != 0 {
+	if api.aclSetFD(fd, acl, aclTypeExtended) != 0 {
 		return api.lastError("set new object extended ACL")
 	}
 	return nil
@@ -169,18 +191,14 @@ func RenameDirectories(parent *os.File, from, to string, exchange bool) error {
 	if !validName(from) || !validName(to) || from == to {
 		return errors.New("rename requires distinct single directory names")
 	}
-	api, err := getNative()
-	if err != nil {
-		return err
-	}
 	flags := uint32(unix.RENAME_EXCL)
 	if exchange {
 		flags = unix.RENAME_SWAP
 	}
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	if api.rename(int32(parent.Fd()), from, int32(parent.Fd()), to, flags) != 0 {
-		return api.lastError("publish policy directory")
-	}
-	return nil
+	return withNativeFD(parent, func(api *nativeAPI, fd int32) error {
+		if api.rename(fd, from, fd, to, flags) != 0 {
+			return api.lastError("publish policy directory")
+		}
+		return nil
+	})
 }
