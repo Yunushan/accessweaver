@@ -28,6 +28,7 @@ type darwinProcessFixture struct {
 	Publish    bool
 	Source     []byte
 	Acceptance []byte
+	Checkpoint string
 }
 
 // This helper receives only an owned temporary fixture. It never selects the
@@ -47,7 +48,11 @@ func TestNativeDarwinPolicyProcessHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx, err := beginDarwinInstallation(parent, fixture.Initial, uint32(os.Geteuid()))
+	tx, err := beginDarwinInstallationObserved(parent, fixture.Initial, uint32(os.Geteuid()), func(tx *darwinInstallationTransaction, checkpoint string) {
+		if checkpoint == fixture.Checkpoint {
+			waitForDarwinProcessKill(t, tx)
+		}
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,6 +73,17 @@ func TestNativeDarwinPolicyProcessHelper(t *testing.T) {
 			t.Fatal("publication outcome missing")
 		}
 	}
+	if fixture.Checkpoint != "" {
+		if err := tx.Close(); err != nil {
+			t.Fatal(err)
+		}
+		t.Fatal("selected transaction boundary was not reached", fixture.Checkpoint)
+	}
+	waitForDarwinProcessKill(t, tx)
+}
+
+func waitForDarwinProcessKill(t *testing.T, tx *darwinInstallationTransaction) {
+	t.Helper()
 	if _, err := fmt.Fprintln(os.Stdout, "policy-process-ready"); err != nil {
 		t.Fatal(err)
 	}
@@ -108,84 +124,7 @@ func TestDarwinPairSurvivesProcessTermination(t *testing.T) {
 				if publish {
 					expected = machineSnapshot{source: source, acceptance: acceptance, present: true, acceptancePresent: true}
 				}
-				executable, err := os.Executable()
-				if err != nil {
-					t.Fatal(err)
-				}
-				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				defer cancel()
-				child := exec.CommandContext(ctx, executable, "-test.run=^TestNativeDarwinPolicyProcessHelper$", "-test.timeout=25s")
-				child.Env = append(os.Environ(), "ACCESSWEAVER_DARWIN_PROCESS_FIXTURE=1")
-				var stderr bytes.Buffer
-				child.Stderr = &stderr
-				stdout, err := child.StdoutPipe()
-				if err != nil {
-					t.Fatal(err)
-				}
-				stdin, err := child.StdinPipe()
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer stdin.Close()
-				if err := child.Start(); err != nil {
-					t.Fatal(err)
-				}
-				waited := false
-				defer func() {
-					if !waited {
-						child.Process.Kill()
-						child.Wait()
-					}
-				}()
-				if err := json.NewEncoder(stdin).Encode(darwinProcessFixture{parent, initial, publish, source, acceptance}); err != nil {
-					t.Fatal(err)
-				}
-				ready := make(chan error, 1)
-				go func() {
-					line, err := bufio.NewReader(io.LimitReader(stdout, 512)).ReadString('\n')
-					if err == nil && line != "policy-process-ready\n" {
-						err = fmt.Errorf("unexpected helper output %q", line)
-					}
-					ready <- err
-				}()
-				select {
-				case err := <-ready:
-					if err != nil {
-						t.Fatal("helper did not reach its boundary", err)
-					}
-				case <-ctx.Done():
-					t.Fatal("helper boundary timed out", ctx.Err())
-				}
-				lock, err := os.OpenFile(filepath.Join(parent, darwinPolicyLock), os.O_RDWR, 0)
-				if err != nil {
-					t.Fatal(err)
-				}
-				lockInfo, err := lock.Stat()
-				if err != nil {
-					lock.Close()
-					t.Fatal(err)
-				}
-				lockErr := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB)
-				if lockErr == nil {
-					unix.Flock(int(lock.Fd()), unix.LOCK_UN)
-				}
-				lock.Close()
-				if !errors.Is(lockErr, unix.EWOULDBLOCK) && !errors.Is(lockErr, unix.EAGAIN) {
-					t.Fatal("child did not hold writer lock", lockErr)
-				}
-				if err := child.Process.Kill(); err != nil {
-					t.Fatal(err)
-				}
-				err = child.Wait()
-				waited = true
-				var exited *exec.ExitError
-				if ctx.Err() != nil || !errors.As(err, &exited) {
-					t.Fatalf("expected forced exit: %v; %s", err, stderr.Bytes())
-				}
-				status, ok := exited.Sys().(syscall.WaitStatus)
-				if !ok || !status.Signaled() || status.Signal() != syscall.SIGKILL {
-					t.Fatalf("unexpected termination: %v; %s", err, stderr.Bytes())
-				}
+				lockInfo := killDarwinTransactionChild(t, darwinProcessFixture{Parent: parent, Initial: initial, Publish: publish, Source: source, Acceptance: acceptance})
 
 				parentFD, err := os.Open(parent)
 				if err != nil {
@@ -297,4 +236,87 @@ func TestDarwinPairSurvivesProcessTermination(t *testing.T) {
 			})
 		}
 	}
+}
+
+func killDarwinTransactionChild(t *testing.T, fixture darwinProcessFixture) os.FileInfo {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	child := exec.CommandContext(ctx, executable, "-test.run=^TestNativeDarwinPolicyProcessHelper$", "-test.timeout=25s")
+	child.Env = append(os.Environ(), "ACCESSWEAVER_DARWIN_PROCESS_FIXTURE=1")
+	var stderr bytes.Buffer
+	child.Stderr = &stderr
+	stdout, err := child.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdin, err := child.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stdin.Close()
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waited := false
+	defer func() {
+		if !waited {
+			child.Process.Kill()
+			child.Wait()
+		}
+	}()
+	if err := json.NewEncoder(stdin).Encode(fixture); err != nil {
+		t.Fatal(err)
+	}
+	ready := make(chan error, 1)
+	go func() {
+		line, err := bufio.NewReader(io.LimitReader(stdout, 512)).ReadString('\n')
+		if err == nil && line != "policy-process-ready\n" {
+			err = fmt.Errorf("unexpected helper output %q", line)
+		}
+		ready <- err
+	}()
+	select {
+	case err := <-ready:
+		if err != nil {
+			t.Fatal("helper did not reach its boundary", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("helper boundary timed out", ctx.Err())
+	}
+	lock, err := os.OpenFile(filepath.Join(fixture.Parent, darwinPolicyLock), os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockInfo, err := lock.Stat()
+	if err != nil {
+		lock.Close()
+		t.Fatal(err)
+	}
+	lockErr := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+	if lockErr == nil {
+		unix.Flock(int(lock.Fd()), unix.LOCK_UN)
+	}
+	lock.Close()
+	if !errors.Is(lockErr, unix.EWOULDBLOCK) && !errors.Is(lockErr, unix.EAGAIN) {
+		t.Fatal("child did not hold writer lock", lockErr)
+	}
+	if err := child.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	err = child.Wait()
+	waited = true
+	var exited *exec.ExitError
+	if ctx.Err() != nil || !errors.As(err, &exited) {
+		t.Fatalf("expected forced exit: %v; %s", err, stderr.Bytes())
+	}
+	status, ok := exited.Sys().(syscall.WaitStatus)
+	if !ok || !status.Signaled() || status.Signal() != syscall.SIGKILL {
+		t.Fatalf("unexpected termination: %v; %s", err, stderr.Bytes())
+	}
+	return lockInfo
 }

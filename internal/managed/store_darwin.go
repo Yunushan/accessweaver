@@ -33,6 +33,7 @@ type darwinInstallationTransaction struct {
 	readSource, readRecord     bool
 	prior                      machineSnapshot
 	pair                       *darwinPolicyPair
+	observe                    func(*darwinInstallationTransaction, string)
 }
 
 type darwinPolicyPair struct {
@@ -43,7 +44,13 @@ type darwinPolicyPair struct {
 }
 
 func beginDarwinInstallation(parent *os.File, initial bool, owner uint32) (*darwinInstallationTransaction, error) {
-	tx := &darwinInstallationTransaction{parent: parent, initial: initial, owner: owner}
+	return beginDarwinInstallationObserved(parent, initial, owner, nil)
+}
+
+// Only in-package owned-fixture tests supply an observer. Runtime construction
+// always passes nil; no configuration or environment selects this callback.
+func beginDarwinInstallationObserved(parent *os.File, initial bool, owner uint32, observe func(*darwinInstallationTransaction, string)) (*darwinInstallationTransaction, error) {
+	tx := &darwinInstallationTransaction{parent: parent, initial: initial, owner: owner, observe: observe}
 	fail := func(err error) (*darwinInstallationTransaction, error) { return nil, errors.Join(err, tx.Close()) }
 	if _, err := darwintrust.Check(parent, true, owner); err != nil {
 		return fail(err)
@@ -91,6 +98,7 @@ func beginDarwinInstallation(parent *os.File, initial bool, owner uint32) (*darw
 	if !os.SameFile(before, after) {
 		return fail(errors.New("policy coordination file changed while acquiring lock"))
 	}
+	tx.checkpoint("writer-locked")
 	current, err := darwintrust.OpenDirectoryAt(parent, darwinPolicyDirectory, owner)
 	if initial {
 		if err == nil {
@@ -107,6 +115,12 @@ func beginDarwinInstallation(parent *os.File, initial bool, owner uint32) (*darw
 		tx.current = current
 	}
 	return tx, nil
+}
+
+func (tx *darwinInstallationTransaction) checkpoint(name string) {
+	if tx.observe != nil {
+		tx.observe(tx, name)
+	}
 }
 
 func readDarwinValue(dir *os.File, name string, owner uint32, limit int64) ([]byte, error) {
@@ -229,10 +243,11 @@ func (tx *darwinInstallationTransaction) Stage([]byte) error {
 // drive-cache flush needed for publication ordering. Refuse unsupported/error
 // results instead of silently downgrading. Actual power-loss qualification is
 // still separate from a successful native call on a hosted fixture.
-func syncDarwinPolicyObject(file *os.File) error {
+func (tx *darwinInstallationTransaction) syncObject(file *os.File, phase string) error {
 	if err := file.Sync(); err != nil {
 		return err
 	}
+	tx.checkpoint(phase + ".fsync")
 	raw, err := file.SyscallConn()
 	if err != nil {
 		return err
@@ -242,21 +257,33 @@ func syncDarwinPolicyObject(file *os.File) error {
 	if err := errors.Join(syncErr, controlErr); err != nil {
 		return fmt.Errorf("full native policy sync: %w", err)
 	}
+	tx.checkpoint(phase + ".fullsync")
 	return nil
 }
 
-func writeDarwinValue(dir *os.File, name string, data []byte, owner uint32) error {
-	file, err := darwintrust.CreateRegularAt(dir, name, owner)
+func (tx *darwinInstallationTransaction) writeValue(dir *os.File, name string, data []byte) error {
+	file, err := darwintrust.CreateRegularAt(dir, name, tx.owner)
 	if err != nil {
 		return err
 	}
+	tx.checkpoint(name + ".created")
 	n, writeErr := file.Write(data)
 	if writeErr == nil && n != len(data) {
 		writeErr = io.ErrShortWrite
 	}
+	if writeErr == nil {
+		tx.checkpoint(name + ".written")
+	}
 	modeErr := file.Chmod(0644)
-	syncErr := syncDarwinPolicyObject(file)
-	return errors.Join(writeErr, modeErr, syncErr, file.Close())
+	if modeErr == nil {
+		tx.checkpoint(name + ".mode")
+	}
+	syncErr := tx.syncObject(file, name)
+	closeErr := file.Close()
+	if closeErr == nil {
+		tx.checkpoint(name + ".closed")
+	}
+	return errors.Join(writeErr, modeErr, syncErr, closeErr)
 }
 
 func (tx *darwinInstallationTransaction) StageAccepted(source, record []byte) error {
@@ -294,10 +321,11 @@ func (tx *darwinInstallationTransaction) StageAccepted(source, record []byte) er
 	}
 	pair.dir = dir
 	tx.pair = pair
-	if err := writeDarwinValue(dir, darwinPolicyFile, source, tx.owner); err != nil {
+	tx.checkpoint("stage-created")
+	if err := tx.writeValue(dir, darwinPolicyFile, source); err != nil {
 		return err
 	}
-	if err := writeDarwinValue(dir, darwinAcceptanceFile, record, tx.owner); err != nil {
+	if err := tx.writeValue(dir, darwinAcceptanceFile, record); err != nil {
 		return err
 	}
 	pair.ready = true
@@ -379,17 +407,19 @@ func (tx *darwinInstallationTransaction) Commit() error {
 	if err := pair.dir.Chmod(0755); err != nil {
 		return err
 	}
-	if err := syncDarwinPolicyObject(pair.dir); err != nil {
+	tx.checkpoint("candidate-mode")
+	if err := tx.syncObject(pair.dir, "candidate"); err != nil {
 		return err
 	}
 	if tx.initial {
 		if err := darwintrust.RenameDirectories(tx.parent, pair.name, darwinPolicyDirectory, false); err != nil {
 			return err
 		}
+		tx.checkpoint("publication-returned")
 		pair.name = ""
 		pair.published = true
 		tx.committed = true
-		return syncDarwinPolicyObject(tx.parent)
+		return tx.syncObject(tx.parent, "parent")
 	}
 	same, err = sameDarwinDirectory(tx.parent, darwinPolicyDirectory, tx.current, tx.owner)
 	if err != nil {
@@ -411,12 +441,13 @@ func (tx *darwinInstallationTransaction) Commit() error {
 	if err := darwintrust.RenameDirectories(tx.parent, pair.name, darwinPolicyDirectory, true); err != nil {
 		return err
 	}
+	tx.checkpoint("publication-returned")
 	pair.published = true
 	tx.committed = true
 	pair.displaced = tx.current
 	tx.current = nil
 	pair.cleanupExpected = actual
-	return syncDarwinPolicyObject(tx.parent)
+	return tx.syncObject(tx.parent, "parent")
 }
 func (tx *darwinInstallationTransaction) Published() bool { return tx.committed }
 
@@ -471,12 +502,14 @@ func (tx *darwinInstallationTransaction) cleanupPair() error {
 		if err := unix.Unlinkat(int(dir.Fd()), name, 0); err != nil {
 			return err
 		}
+		tx.checkpoint("cleanup-" + name + "-unlinked")
 	}
 	if err := unix.Unlinkat(int(tx.parent.Fd()), pair.name, unix.AT_REMOVEDIR); err != nil {
 		return err
 	}
 	pair.name = ""
-	return syncDarwinPolicyObject(tx.parent)
+	tx.checkpoint("cleanup-removed")
+	return tx.syncObject(tx.parent, "cleanup-parent")
 }
 
 func (tx *darwinInstallationTransaction) Close() error {
