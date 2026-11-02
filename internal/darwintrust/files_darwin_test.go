@@ -264,10 +264,11 @@ func TestDarwinDirectoryPublicationPrimitives(t *testing.T) {
 
 func TestDarwinProtectedRootsPreflight(t *testing.T) {
 	type checked struct {
-		Path    string `json:"path"`
-		Owner   uint32 `json:"owner"`
-		Mode    string `json:"mode"`
-		Trusted bool   `json:"trusted"`
+		Path       string `json:"path"`
+		Owner      uint32 `json:"owner"`
+		Mode       string `json:"mode"`
+		Trusted    bool   `json:"trusted"`
+		MountFlags uint32 `json:"mountFlags"`
 	}
 	checks := make([]checked, 0, 3)
 	for _, path := range []string{"/", "/Library", "/Library/Preferences"} {
@@ -276,12 +277,17 @@ func TestDarwinProtectedRootsPreflight(t *testing.T) {
 			t.Fatalf("existing protected parent %s: %v", path, err)
 		}
 		info, err := file.Stat()
+		var fs unix.Statfs_t
+		if statErr := unix.Fstatfs(int(file.Fd()), &fs); statErr != nil {
+			file.Close()
+			t.Fatal(statErr)
+		}
 		file.Close()
 		if err != nil {
 			t.Fatal(err)
 		}
 		stat := info.Sys().(*syscall.Stat_t)
-		checks = append(checks, checked{path, stat.Uid, fmt.Sprintf("%04o", info.Mode().Perm()), true})
+		checks = append(checks, checked{path, stat.Uid, fmt.Sprintf("%04o", info.Mode().Perm()), true, fs.Flags})
 	}
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
 		return
@@ -293,7 +299,7 @@ func TestDarwinProtectedRootsPreflight(t *testing.T) {
 	if len(sha) != 40 {
 		t.Fatal("missing source identity")
 	}
-	report := map[string]any{"schemaVersion": 1, "cgoEnvironment": os.Getenv("CGO_ENABLED"), "sourceCommit": sha, "platform": runtime.GOOS, "arch": runtime.GOARCH, "goVersion": runtime.Version(), "effectiveUID": os.Geteuid(), "checks": checks, "posixAndExtendedACLChecked": true, "localAPFSChecked": true, "readOnlyExistingParents": true, "machinePolicyActivated": false, "productionQualificationComplete": false}
+	report := map[string]any{"schemaVersion": 1, "cgoEnvironment": os.Getenv("CGO_ENABLED"), "sourceCommit": sha, "platform": runtime.GOOS, "arch": runtime.GOARCH, "goVersion": runtime.Version(), "effectiveUID": os.Geteuid(), "checks": checks, "posixAndExtendedACLChecked": true, "localAPFSChecked": true, "filesystemOwnershipEnabledChecked": true, "readOnlyExistingParents": true, "machinePolicyActivated": false, "productionQualificationComplete": false}
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -424,5 +430,20 @@ func TestDarwinNativeErrnoCapturedBeforeReturningToGo(t *testing.T) {
 	// C errno occupies only the low 32 bits of a pointer-sized native slot.
 	if err := nativeError("native fixture", uintptr(uint64(1)<<32|uint64(syscall.EACCES))); !errors.Is(err, syscall.EACCES) {
 		t.Fatal("C-int error width was not preserved", err)
+	}
+}
+
+func TestDarwinPersistentStorageRequiresOwnershipSemantics(t *testing.T) {
+	for _, flags := range []uint32{unix.MNT_LOCAL, unix.MNT_LOCAL | unix.MNT_RDONLY, 0, unix.MNT_LOCAL | unix.MNT_IGNORE_OWNERSHIP} {
+		var fs unix.Statfs_t
+		for i, b := range []byte("apfs") {
+			fs.Fstypename[i] = b
+		}
+		fs.Flags = flags
+		err := checkPersistentFS(&fs)
+		valid := flags&unix.MNT_LOCAL != 0 && flags&unix.MNT_IGNORE_OWNERSHIP == 0
+		if (err == nil) != valid {
+			t.Fatal("untrusted filesystem ownership model admitted", flags, err)
+		}
 	}
 }

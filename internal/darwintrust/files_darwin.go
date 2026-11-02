@@ -24,6 +24,10 @@ func CheckPersistent(file *os.File) error {
 	if err := unix.Fstatfs(int(file.Fd()), &fs); err != nil {
 		return err
 	}
+	return checkPersistentFS(&fs)
+}
+
+func checkPersistentFS(fs *unix.Statfs_t) error {
 	var name []byte
 	for _, c := range fs.Fstypename {
 		if c == 0 {
@@ -31,8 +35,8 @@ func CheckPersistent(file *os.File) error {
 		}
 		name = append(name, byte(c))
 	}
-	if string(name) != "apfs" || fs.Flags&unix.MNT_LOCAL == 0 {
-		return fmt.Errorf("managed storage requires local APFS; got %q", string(name))
+	if string(name) != "apfs" || fs.Flags&unix.MNT_LOCAL == 0 || fs.Flags&unix.MNT_IGNORE_OWNERSHIP != 0 {
+		return fmt.Errorf("managed storage requires local APFS with ownership enabled; got %q", string(name))
 	}
 	return nil
 }
