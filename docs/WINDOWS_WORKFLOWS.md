@@ -65,7 +65,7 @@ Auto-install selects only a completed reported common strategy, preferring HTTPS
 
 ## Ownership, cancellation and recovery
 
-Components, private profiles, service configuration, backups and persistent logs live under `%ProgramData%\AccessWeaver`, with administrator/SYSTEM access. Foreground profiles and workflow history use the ordinary AccessWeaver data directory. Keep private configurations and logs out of public issue reports.
+Components, private profiles, service configuration, backups and persistent logs live under `%ProgramData%\AccessWeaver`, with administrator/SYSTEM access. Foreground profiles and workflow history use the ordinary AccessWeaver data directory. New history records retain compact result JSON (up to 32 MiB); the summary error is capped at 16 KiB with a visible truncation notice. Inspect the full result, when available, and private process log for details. History listing has a combined 64 MiB read limit; old records and recovery evidence are not automatically deleted or repaired. Keep private configurations and logs out of public issue reports.
 
 `remove` removes a selected managed method; `remove-all` removes owned methods in dependency order and restores DNS/drover files. Independent services, vendor installations and private recovery evidence are retained. Explicit WinDivert removal verifies that the driver's path belongs to the managed component store; shared external drivers are refused.
 

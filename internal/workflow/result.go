@@ -1,16 +1,20 @@
 package workflow
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"unicode/utf8"
 )
 
 const (
 	maxResultBytes        = 32 << 20
+	maxJobErrorBytes      = 16 << 10
 	maxHistoryRecordBytes = 64 << 20
 )
 
@@ -19,10 +23,61 @@ func validateResult(result json.RawMessage) error {
 		return errors.New("workflow result exceeds 32 MiB; inspect process.log and the recovery journal")
 	}
 	// A failed tool may have no result. The executor's error remains authoritative.
-	if len(result) != 0 && !json.Valid(result) {
-		return errors.New("workflow returned invalid result JSON; inspect process.log and the recovery journal")
+	if len(result) != 0 {
+		// A result is embedded one level inside its Job. It must remain valid at
+		// that depth too, rather than producing a record the reader cannot decode.
+		wrapped := make([]byte, 0, len(result)+2)
+		wrapped = append(wrapped, '[')
+		wrapped = append(wrapped, result...)
+		wrapped = append(wrapped, ']')
+		if !json.Valid(result) || !json.Valid(wrapped) {
+			return errors.New("workflow returned invalid result JSON; inspect process.log and the recovery journal")
+		}
 	}
 	return nil
+}
+
+// Keep the result as compact JSON in this private data file. Indentation, HTML
+// escaping and even Encoder.SetEscapeHTML(false)'s Unicode-separator escaping
+// can expand a valid result beyond the reader's limit. Metadata is encoded by
+// the standard encoder; untrusted result bytes are validated and compacted.
+// These records must never be embedded directly in HTML or JavaScript.
+func encodeJob(job Job) ([]byte, error) {
+	result := job.Result
+	job.Result = nil
+	encoded, err := json.Marshal(job)
+	if err != nil {
+		return nil, err
+	}
+	if len(result) != 0 {
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, result); err != nil {
+			return nil, err
+		}
+		// Marshal(Job) always produces an object; Result was omitted above.
+		encoded = append(encoded[:len(encoded)-1], `,"result":`...)
+		encoded = append(encoded, compact.Bytes()...)
+		encoded = append(encoded, '}')
+	}
+	if len(encoded) > maxHistoryRecordBytes {
+		return nil, errors.New("serialized workflow job exceeds the history record limit")
+	}
+	if !json.Valid(encoded) {
+		return nil, errors.New("serialized workflow job is not valid JSON")
+	}
+	return encoded, nil
+}
+
+func boundedJobError(message string) string {
+	if len(message) <= maxJobErrorBytes {
+		return strings.ToValidUTF8(message, "?")
+	}
+	const notice = "\n[Error truncated; inspect process.log, any retained result and recovery journal.]"
+	end := maxJobErrorBytes - len(notice)
+	for end > 0 && !utf8.RuneStart(message[end]) {
+		end--
+	}
+	return strings.ToValidUTF8(message[:end], "?") + notice
 }
 
 // Bound reads even if a file grows after Stat. Do not follow a named symlink or

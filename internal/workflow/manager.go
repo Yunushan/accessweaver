@@ -510,13 +510,14 @@ func (m *Manager) Start(id string) (Job, error) {
 		}
 		if e := m.saveLocked(); e != nil {
 			m.job.State = "failed"
-			m.job.Error += "; persist result: " + e.Error()
+			m.job.Error = boundedJobError("persist result: " + e.Error() + "; " + m.job.Error)
 		}
 	}()
 	return m.job, nil
 }
 func (m *Manager) saveLocked() error {
-	b, e := json.MarshalIndent(m.job, "", "  ")
+	m.job.Error = boundedJobError(m.job.Error)
+	b, e := encodeJob(m.job)
 	if e != nil {
 		return e
 	}

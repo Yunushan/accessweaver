@@ -89,6 +89,7 @@
           "evidence": [
             "internal/logfile/writer_test.go",
             "internal/workflow/result_test.go",
+            "internal/workflow/persistence_test.go",
             "scripts/test-windows-workflow.ps1"
           ]
         },

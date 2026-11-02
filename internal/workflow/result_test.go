@@ -63,6 +63,8 @@ func TestRejectedResultsRemainDurableAndSerializable(t *testing.T) {
 		message string
 	}{
 		{"malformed", json.RawMessage(`{"ok":`), "invalid result JSON"},
+		{"multiple-values", json.RawMessage(`true,false`), "invalid result JSON"},
+		{"too-deep-in-job", json.RawMessage(strings.Repeat("[", 10000) + "0" + strings.Repeat("]", 10000)), "invalid result JSON"},
 		{"oversized", json.RawMessage(`"` + strings.Repeat("x", maxResultBytes) + `"`), "exceeds 32 MiB"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
