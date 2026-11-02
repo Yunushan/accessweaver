@@ -91,6 +91,12 @@ func withNativeFD(file *os.File, operation func(*nativeAPI, int32) error) error 
 	controlErr := raw.Control(func(fd uintptr) { result = operation(api, int32(fd)) })
 	return errors.Join(result, controlErr)
 }
+
+// CheckReadOnlyACL rejects mutation/unknown allow rights on a held object.
+// It permits read/search grants, so it is not a confidentiality check. Callers
+// must separately verify ownership, POSIX permissions and object identity.
+func CheckReadOnlyACL(file *os.File) error { return checkACL(file) }
+
 func checkACL(file *os.File) error { return withNativeFD(file, checkACLWithRetry) }
 
 // Only interrupted read-only inspections repeat. Persistent interruptions and

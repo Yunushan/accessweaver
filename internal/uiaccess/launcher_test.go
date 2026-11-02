@@ -15,6 +15,8 @@ func TestPrivateLauncherLifecycle(t *testing.T) {
 	cache := t.TempDir()
 	if runtime.GOOS == "windows" {
 		t.Setenv("LOCALAPPDATA", cache)
+	} else if runtime.GOOS == "darwin" {
+		t.Setenv("HOME", cache)
 	} else {
 		t.Setenv("XDG_CACHE_HOME", cache)
 	}

@@ -63,7 +63,7 @@ func New(address, token string) (*Launcher, error) {
 	u.Fragment = "accessweaver-session=" + token
 	target := html.EscapeString(u.String())
 	page := "<!doctype html><meta charset=utf-8><meta name=referrer content=no-referrer><meta http-equiv=Content-Security-Policy content=\"default-src 'none'; base-uri 'none'; form-action 'none'\"><meta http-equiv=refresh content=\"0;url=" + target + "\"><title>AccessWeaver</title><a href=\"" + target + "\">Open AccessWeaver</a>"
-	f, err := os.OpenFile(launcher.Path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	f, err := createPrivateFile(launcher.Path)
 	if err != nil {
 		_ = launcher.Close()
 		return nil, err
