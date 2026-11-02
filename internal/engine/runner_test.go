@@ -50,6 +50,9 @@ func TestPrepareHostListAndChecksum(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		name = "winws2.exe"
 	}
+	if runtime.GOOS == "freebsd" || runtime.GOOS == "openbsd" {
+		name = "dvtws2"
+	}
 	root := t.TempDir()
 	bin := filepath.Join(root, name)
 	if err := os.WriteFile(bin, []byte("fake-binary-test"), 0700); err != nil {

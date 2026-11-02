@@ -230,6 +230,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_windows_handle_census.py -v
           python3 -m unittest discover -s scripts -p test_sbom.py -v
           python3 -m unittest discover -s scripts -p test_darwin_storage.py -v
+          python3 -m unittest discover -s scripts -p test_bsd_guest.py -v
       - if: runner.os == 'Windows'
         shell: powershell
         run: ./scripts/test-windows-workflow.ps1
