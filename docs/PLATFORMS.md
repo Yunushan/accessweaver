@@ -21,7 +21,7 @@ CI/release verification is configured for native execution on six hosted targets
 | Linux amd64 | `ubuntu-latest` | Unit/static/race, Unix controller/session isolation, backup/recovery interoperability, protected policy/rotation/recovery |
 | Linux arm64 | `ubuntu-24.04-arm` | The same native Linux checks, including ordinary-user/root separation |
 | Windows amd64 | `windows-latest` | Unit/static, workflow contracts, backup/recovery interoperability and protected policy/rotation/recovery with restricted-token checks |
-| Windows arm64 | `windows-11-arm` | The same native core/policy checks on Windows 11 ARM64; installer compilation still targets the existing amd64 payload |
+| Windows arm64 | `windows-11-arm` | The same native core/policy checks on Windows 11 ARM64; installer compilation selects and verifies an ARM64 core payload |
 | macOS arm64 | `macos-latest` | Unit/static, Unix controller ownership/shutdown and backup/recovery interoperability |
 | macOS amd64 | `macos-15-intel` | The same native core checks on an Intel Mac |
 
@@ -29,11 +29,13 @@ The [hosted-runner labels](https://docs.github.com/en/actions/reference/runners/
 
 Release previews also authenticate and execute the actual packaged portable cores on those six hosts. Publication requires every packaged check to pass. Separate `packaged-native-OS-ARCH` artifacts bind the archive/executable hashes to runtime identity, backup/recovery, loopback diagnostics and Unix controller checks; see [release provenance](RELEASE_PROVENANCE.md#execute-the-authenticated-portable-candidate). The source-built native policy tests above remain separate from packaged-candidate acceptance.
 
-The ten packaging targets remain cross-compiled with `CGO_ENABLED=0`. BSD builds are not native BSD execution. Hosted core acceptance does not establish vendor driver/routing behavior, every OS version/distribution, domain/MDM enrollment, signed distribution, native arm64 installer support or complete desktop qualification. Current run results belong in GitHub Actions; [TESTING.md](TESTING.md) defines what additional integration evidence is needed.
+The ten packaging targets remain cross-compiled with `CGO_ENABLED=0`. BSD builds are not native BSD execution. Hosted core acceptance does not establish vendor driver/routing behavior, every OS version/distribution, domain/MDM enrollment, signed distribution, installer lifecycle/signatures or complete desktop qualification. Current run results belong in GitHub Actions; [TESTING.md](TESTING.md) defines what additional integration evidence is needed.
 
 ## Windows
 
 External packet engines may need administrator privileges and compatible driver files. AccessWeaver does not elevate itself or install services/drivers automatically. Running the controller elevated also elevates its external children, so inspect the profile and configuration first.
+
+The installer builder selects an amd64 or ARM64 core payload to match the host Go SDK, and CI verifies each on its corresponding Windows runner. The pinned Inno Setup 6 bootstrap remains x86; the architecture in the setup filename identifies its core payload, not a native ARM64 setup runtime. Compilation does not prove installation, upgrade, architecture migration, uninstall or external engine/driver compatibility.
 
 The binary can open its local dashboard without arguments. It still runs as a console application, not an installed Windows service or a native signed desktop application. Closing/terminating a process is not proof that vendor network state has been restored.
 

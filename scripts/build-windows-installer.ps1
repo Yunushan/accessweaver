@@ -1,14 +1,19 @@
 [CmdletBinding()]
-param([Parameter(Mandatory=$true)][string]$Compiler, [string]$Version='0.1.0-alpha', [string]$Go='go')
+param([Parameter(Mandatory=$true)][string]$Compiler, [string]$Version='0.1.0-alpha', [string]$Go='go', [ValidateSet('amd64','arm64')][string]$TargetArch)
 $ErrorActionPreference='Stop'
 if($Version -notmatch '^\d+\.\d+\.\d+([.-][a-zA-Z0-9.-]+)?$'){throw 'Expected a semantic release version'}
 $project=Split-Path -Parent $PSScriptRoot
-$stage=Join-Path $project ('build\installer-'+[guid]::NewGuid().ToString('N'))
+. (Join-Path $PSScriptRoot 'windows-installer-common.ps1')
+$sdkJSON=& $Go env -json GOHOSTOS GOHOSTARCH GOVERSION
+if($LASTEXITCODE -ne 0){throw 'Cannot inspect the installer Go SDK host'}
+$sdk=($sdkJSON -join "`n") | ConvertFrom-Json
+$TargetArch=Resolve-InstallerTarget $sdk.GOHOSTOS $sdk.GOHOSTARCH $TargetArch
+$stage=Join-Path $project ('build\installer-'+$TargetArch+'-'+[guid]::NewGuid().ToString('N'))
 [void](New-Item -ItemType Directory -Force -Path $stage)
 Push-Location $project
 $previousOS=$env:GOOS;$previousArch=$env:GOARCH;$previousCGO=$env:CGO_ENABLED
 try {
-    $env:GOOS='windows';$env:GOARCH='amd64';$env:CGO_ENABLED='0'
+    $env:GOOS='windows';$env:GOARCH=$TargetArch;$env:CGO_ENABLED='0'
     $commit='unknown';$sourceState='unknown'
     if(Get-Command git -ErrorAction SilentlyContinue){
         $revision=& git rev-parse HEAD 2>$null
@@ -23,8 +28,11 @@ try {
     $flags='-X github.com/Yunushan/accessweaver/internal/buildinfo.Version='+$Version+' -X github.com/Yunushan/accessweaver/internal/buildinfo.Commit='+$commit+' -X github.com/Yunushan/accessweaver/internal/buildinfo.SourceState='+$sourceState+' -X github.com/Yunushan/accessweaver/internal/buildinfo.BuiltAt='+$builtAt
     & $Go build -trimpath -buildvcs=false -ldflags $flags -o (Join-Path $stage 'accessweaver.exe') ./cmd/accessweaver
     if($LASTEXITCODE -ne 0){throw 'Go build failed'}
+    Assert-InstallerPEArchitecture (Join-Path $stage 'accessweaver.exe') $TargetArch
     $identity=& (Join-Path $stage 'accessweaver.exe') version --json
     if($LASTEXITCODE -ne 0){throw 'Cannot read staged runtime build identity'}
+    $buildIdentity=($identity -join "`n") | ConvertFrom-Json
+    Assert-InstallerPayloadIdentity (Join-Path $stage 'accessweaver.exe') $buildIdentity @{version=$Version;commit=$commit;sourceState=$sourceState;builtAt=$builtAt;goVersion=$sdk.GOVERSION;platform='windows';arch=$TargetArch}
     [IO.File]::WriteAllText((Join-Path $stage 'BUILD-INFO.json'),($identity -join "`n"))
     foreach($file in @('LICENSE','README.md','README.tr.md','THIRD_PARTY.md','SECURITY.md')){Copy-Item -LiteralPath (Join-Path $project $file) -Destination $stage}
     Copy-Item -LiteralPath (Join-Path $project 'docs') -Destination (Join-Path $stage 'docs') -Recurse
@@ -37,7 +45,7 @@ try {
     $compilerLicense=Join-Path (Split-Path -Parent $Compiler) 'License.txt'
     if(-not (Test-Path -LiteralPath $compilerLicense -PathType Leaf)){throw 'Inno Setup license evidence is missing'}
     Copy-Item -LiteralPath $compilerLicense -Destination (Join-Path $stage 'licenses\Inno-Setup-License.txt')
-    $validator=Join-Path $project 'build\tools\sbom-schema.exe'
+    $validator=Join-Path $project ('build\tools\sbom-schema-'+$TargetArch+'.exe')
     & $Go -C (Join-Path $project 'scripts\sbom-tools') build -mod=readonly -trimpath -o $validator .
     if($LASTEXITCODE -ne 0){throw 'SBOM validator build failed'}
     $payloadSBOM=Join-Path $stage 'SBOM.cdx.json'
@@ -45,19 +53,23 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Installer payload SBOM generation failed'}
     & $validator --schemas (Join-Path $project 'scripts\sbom\schema') $payloadSBOM
     if($LASTEXITCODE -ne 0){throw 'Installer payload SBOM validation failed'}
-    $compilerOutput=@(& $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) (Join-Path $PSScriptRoot 'windows-installer.iss'))
+    $evidence=Join-Path $project ('build\installer-checks\'+$TargetArch)
+    [void](New-Item -ItemType Directory -Force -Path $evidence)
+    $preprocessed=Join-Path $evidence 'setup-preprocessed.iss'
+    $compilerOutput=@(& $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) (Join-Path $PSScriptRoot 'windows-installer.iss'))
     if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
+    $null=Assert-InstallerSetupScript $preprocessed $TargetArch $Version
     $compilerOutput | Write-Output
     $actualVersion=[regex]::Match(($compilerOutput -join "`n"),'(?im)^Compiler engine version:\s*Inno Setup\s+(\d+\.\d+\.\d+)\b')
     if(-not $actualVersion.Success){throw 'Could not identify installer compiler version'}
-    $artifact=Join-Path $project ('build\accessweaver-'+$Version+'-windows-amd64-setup.exe')
+    $artifact=Join-Path $project ('build\accessweaver-'+$Version+'-windows-'+$TargetArch+'-setup.exe')
     & python (Join-Path $project 'scripts\sbom.py') --binary $artifact --payload-sbom $payloadSBOM --compiler $Compiler --compiler-version $actualVersion.Groups[1].Value --compiler-license $compilerLicense --notices (Join-Path $stage 'licenses') --out ($artifact+'.cdx.json')
     if($LASTEXITCODE -ne 0){throw 'Installer SBOM generation failed'}
     & $validator --schemas (Join-Path $project 'scripts\sbom\schema') ($artifact+'.cdx.json')
     if($LASTEXITCODE -ne 0){throw 'Installer SBOM validation failed'}
-    $evidence=Join-Path $project 'build\installer-checks'
-    [void](New-Item -ItemType Directory -Force -Path $evidence)
     Copy-Item -LiteralPath $payloadSBOM -Destination (Join-Path $evidence 'payload-SBOM.cdx.json') -Force
+    Copy-Item -LiteralPath (Join-Path $stage 'BUILD-INFO.json') -Destination (Join-Path $evidence 'payload-BUILD-INFO.json') -Force
+    Copy-Item -LiteralPath (Join-Path $stage 'accessweaver.exe') -Destination (Join-Path $evidence 'payload.exe') -Force
     Copy-Item -LiteralPath (Join-Path $stage 'licenses') -Destination $evidence -Recurse -Force
     Get-FileHash -LiteralPath $artifact -Algorithm SHA256
 } finally { $env:GOOS=$previousOS;$env:GOARCH=$previousArch;$env:CGO_ENABLED=$previousCGO;Pop-Location }

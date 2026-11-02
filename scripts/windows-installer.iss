@@ -4,6 +4,16 @@
 #ifndef ReleaseVersion
   #define ReleaseVersion "0.1.0"
 #endif
+#ifndef TargetArch
+  #error TargetArch must identify the verified staged payload
+#endif
+#if TargetArch == "amd64"
+  #define InstallArchitecture "x64compatible"
+#elif TargetArch == "arm64"
+  #define InstallArchitecture "arm64"
+#else
+  #error TargetArch must be amd64 or arm64
+#endif
 [Setup]
 AppId={{B13D4677-4660-4E63-B3DB-03077ACBB092}
 AppName=AccessWeaver
@@ -12,12 +22,12 @@ AppPublisher=AccessWeaver contributors
 AppPublisherURL=https://github.com/Yunushan/accessweaver
 DefaultDirName={autopf}\AccessWeaver
 DefaultGroupName=AccessWeaver
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed={#InstallArchitecture}
+ArchitecturesInstallIn64BitMode={#InstallArchitecture}
 PrivilegesRequired=admin
 LicenseFile={#BuildRoot}\LICENSE
 OutputDir={#BuildRoot}\..
-OutputBaseFilename=accessweaver-{#ReleaseVersion}-windows-amd64-setup
+OutputBaseFilename=accessweaver-{#ReleaseVersion}-windows-{#TargetArch}-setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -48,3 +58,7 @@ begin
       MsgBox('AccessWeaver could not restore its system changes. Review the recovery journal in ProgramData\AccessWeaver\logs, then retry uninstalling.', mbError, MB_OK);
   end;
 end;
+
+#ifdef EvidenceOutput
+  #expr SaveToFile(EvidenceOutput)
+#endif
