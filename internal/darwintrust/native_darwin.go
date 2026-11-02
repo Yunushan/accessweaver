@@ -10,27 +10,22 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/ebitengine/purego"
 	"golang.org/x/sys/unix"
 )
 
-// All symbols come from the fixed OS library. No caller or configuration can
-// choose a library, symbol, ABI or rename flags. Keep the handle for process life.
+// All symbols come from the fixed OS library. No caller/configuration selects a
+// library, symbol, ABI or rename flags. Keep the handle for process life.
+// Darwin SyscallN captures errno inside its maintained native trampoline before
+// returning to Go; a later TLS read is unsafe even with LockOSThread because Go
+// allocation/scheduling can use libc and change the same thread's errno.
 type nativeAPI struct {
-	library     uintptr
-	errno       func() *int32
-	aclGetFD    func(int32, int32) uintptr
-	aclValid    func(uintptr) int32
-	aclFree     func(uintptr) int32
-	aclGetEntry func(uintptr, int32, *uintptr) int32
-	aclGetTag   func(uintptr, *int32) int32
-	aclGetMask  func(uintptr, *uint64) int32
-	aclInit     func(int32) uintptr
-	aclSetFD    func(int32, uintptr, int32) int32
-	aclGetFlags func(uintptr, *uintptr) int32
-	aclAddFlag  func(uintptr, int32) int32
-	rename      func(int32, string, int32, string, uint32) int32
+	library                                               uintptr
+	aclGetFD                                              func(int32, int32) (uintptr, syscall.Errno)
+	aclValid, aclFree, aclGetEntry, aclGetTag, aclGetMask uintptr
+	aclInit, aclSetFD, aclGetFlags, aclAddFlag, rename    uintptr
 }
 
 var getNative = sync.OnceValues(loadNative)
@@ -41,33 +36,36 @@ func loadNative() (*nativeAPI, error) {
 		return nil, fmt.Errorf("cannot load OS security APIs: %w", err)
 	}
 	api := &nativeAPI{library: handle}
+	var getFD uintptr
 	for _, symbol := range []struct {
 		name   string
-		target any
+		target *uintptr
 	}{
-		{"__error", &api.errno}, {"acl_get_fd_np", &api.aclGetFD},
-		{"acl_valid", &api.aclValid}, {"acl_free", &api.aclFree},
+		{"acl_get_fd_np", &getFD}, {"acl_valid", &api.aclValid}, {"acl_free", &api.aclFree},
 		{"acl_get_entry", &api.aclGetEntry}, {"acl_get_tag_type", &api.aclGetTag},
 		{"acl_get_permset_mask_np", &api.aclGetMask}, {"acl_init", &api.aclInit},
-		{"acl_set_fd_np", &api.aclSetFD}, {"renameatx_np", &api.rename},
-		{"acl_get_flagset_np", &api.aclGetFlags}, {"acl_add_flag_np", &api.aclAddFlag},
+		{"acl_set_fd_np", &api.aclSetFD}, {"acl_get_flagset_np", &api.aclGetFlags},
+		{"acl_add_flag_np", &api.aclAddFlag}, {"renameatx_np", &api.rename},
 	} {
 		address, err := purego.Dlsym(handle, symbol.name)
 		if err != nil {
 			return nil, errors.Join(fmt.Errorf("OS security API %s unavailable: %w", symbol.name, err), purego.Dlclose(handle))
 		}
-		purego.RegisterFunc(symbol.target, address)
+		*symbol.target = address
+	}
+	api.aclGetFD = func(fd, kind int32) (uintptr, syscall.Errno) {
+		value, _, code := purego.SyscallN(getFD, uintptr(fd), uintptr(kind))
+		// errno is a C int, even where a pointer-sized trampoline slot is used.
+		return value, syscall.Errno(uint32(code))
 	}
 	return api, nil
 }
-
-func (api *nativeAPI) lastError(operation string, errno *int32) error {
-	// The caller holds its OS thread through the native call and errno read.
-	code := syscall.Errno(*errno)
-	if code == 0 {
+func nativeError(operation string, code uintptr) error {
+	errno := syscall.Errno(uint32(code))
+	if errno == 0 {
 		return fmt.Errorf("%s failed without an OS error", operation)
 	}
-	return fmt.Errorf("%s: %w", operation, code)
+	return fmt.Errorf("%s: %w", operation, errno)
 }
 
 const aclTypeExtended = 0x100
@@ -78,9 +76,9 @@ const aclDeny = 2
 // synchronize. Unknown or mutation rights on any allow ACE are not trusted.
 const readOnlyACL = uint64(1<<1 | 1<<3 | 1<<7 | 1<<9 | 1<<11 | 1<<20)
 
-// Control pins the descriptor through the foreign call, including concurrent
-// Close/finalizer activity. A locked OS thread also preserves errno identity.
-func withNativeFD(file *os.File, operation func(*nativeAPI, int32, *int32) error) error {
+// Control pins the descriptor through native calls, including concurrent Close
+// and finalizer activity. Error identity comes from each trampoline result.
+func withNativeFD(file *os.File, operation func(*nativeAPI, int32) error) error {
 	api, err := getNative()
 	if err != nil {
 		return err
@@ -90,35 +88,18 @@ func withNativeFD(file *os.File, operation func(*nativeAPI, int32, *int32) error
 		return err
 	}
 	var result error
-	controlErr := raw.Control(func(fd uintptr) {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-		// Resolve the thread-local errno address before the operation. No
-		// second foreign call may intervene between failure and reading its code.
-		errno := api.errno()
-		if errno == nil {
-			result = errors.New("native errno storage unavailable")
-			return
-		}
-		result = operation(api, int32(fd), errno)
-	})
+	controlErr := raw.Control(func(fd uintptr) { result = operation(api, int32(fd)) })
 	return errors.Join(result, controlErr)
 }
+func checkACL(file *os.File) error { return withNativeFD(file, checkACLWithRetry) }
 
-func checkACL(file *os.File) error {
-	return withNativeFD(file, func(api *nativeAPI, fd int32, errno *int32) error {
-		return checkACLWithRetry(api, fd, errno)
-	})
-}
-
-// Inspection can be interrupted by signals or a transient native metadata
-// timeout. Retry the complete read at most three times; never interpret these
-// errors as an absent ACL. Publication/ACL writes are not retried here.
-func checkACLWithRetry(api *nativeAPI, fd int32, errno *int32) error {
+// Only interrupted read-only inspections repeat. Persistent interruptions and
+// all other errors remain blocking; writes/publication are not retried here.
+func checkACLWithRetry(api *nativeAPI, fd int32) error {
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
-		err = checkACLDescriptor(api, fd, errno)
-		if !errors.Is(err, syscall.EINTR) && !errors.Is(err, syscall.ETIMEDOUT) {
+		err = checkACLDescriptor(api, fd)
+		if !errors.Is(err, syscall.EINTR) {
 			return err
 		}
 		if attempt < 2 {
@@ -127,41 +108,43 @@ func checkACLWithRetry(api *nativeAPI, fd int32, errno *int32) error {
 	}
 	return err
 }
-
-func checkACLDescriptor(api *nativeAPI, fd int32, errno *int32) (result error) {
-	acl := api.aclGetFD(fd, aclTypeExtended)
+func checkACLDescriptor(api *nativeAPI, fd int32) (result error) {
+	acl, code := api.aclGetFD(fd, aclTypeExtended)
 	if acl == 0 {
-		// Apple's descriptor API reports a missing FILESEC_ACL property as
-		// ENOENT even while the file exists. Control holds a valid descriptor;
-		// mode, owner, type, links and local APFS are checked separately.
-		if syscall.Errno(*errno) == syscall.ENOENT {
+		// Apple reports a missing FILESEC_ACL property as ENOENT on a held valid
+		// descriptor. All POSIX/owner/type/link/local-APFS checks remain mandatory.
+		if code == syscall.ENOENT {
 			return nil
 		}
-		return api.lastError("read extended ACL", errno)
+		return nativeError("read extended ACL", uintptr(code))
 	}
 	defer func() {
-		if api.aclFree(acl) != 0 {
-			result = errors.Join(result, api.lastError("free extended ACL", errno))
+		value, _, code := purego.SyscallN(api.aclFree, acl)
+		if int32(value) != 0 {
+			result = errors.Join(result, nativeError("free extended ACL", code))
 		}
 	}()
-	if api.aclValid(acl) != 0 {
-		return api.lastError("validate extended ACL", errno)
+	value, _, errcode := purego.SyscallN(api.aclValid, acl)
+	if int32(value) != 0 {
+		return nativeError("validate extended ACL", errcode)
 	}
 	for index := 0; index <= 128; index++ {
 		var entry uintptr
-		if api.aclGetEntry(acl, int32(index), &entry) != 0 {
-			// On Apple's validated ACL object, an out-of-range entry is EINVAL.
-			if syscall.Errno(*errno) == syscall.EINVAL {
+		value, _, code := purego.SyscallN(api.aclGetEntry, acl, uintptr(index), uintptr(unsafe.Pointer(&entry)))
+		if int32(value) != 0 {
+			// Apple's validated ACL getter reports the out-of-range entry as EINVAL.
+			if syscall.Errno(uint32(code)) == syscall.EINVAL {
 				return nil
 			}
-			return api.lastError("read extended ACL entry", errno)
+			return nativeError("read extended ACL entry", code)
 		}
 		if index == 128 {
 			return errors.New("extended ACL exceeds 128 entries")
 		}
 		var tag int32
-		if api.aclGetTag(entry, &tag) != 0 {
-			return api.lastError("read extended ACL tag", errno)
+		value, _, code = purego.SyscallN(api.aclGetTag, entry, uintptr(unsafe.Pointer(&tag)))
+		if int32(value) != 0 {
+			return nativeError("read extended ACL tag", code)
 		}
 		if tag == aclDeny {
 			continue
@@ -170,8 +153,9 @@ func checkACLDescriptor(api *nativeAPI, fd int32, errno *int32) (result error) {
 			return errors.New("extended ACL has an unsupported entry type")
 		}
 		var mask uint64
-		if api.aclGetMask(entry, &mask) != 0 {
-			return api.lastError("read extended ACL permissions", errno)
+		value, _, code = purego.SyscallN(api.aclGetMask, entry, uintptr(unsafe.Pointer(&mask)))
+		if int32(value) != 0 {
+			return nativeError("read extended ACL permissions", code)
 		}
 		if mask & ^readOnlyACL != 0 {
 			return errors.New("extended ACL grants mutation or unknown permissions")
@@ -181,50 +165,63 @@ func checkACLDescriptor(api *nativeAPI, fd int32, errno *int32) (result error) {
 }
 
 // ResetCreatedACL is only for new product objects created exclusively beneath
-// a checked parent. It must never change an existing administrator-owned object.
-func ResetCreatedACL(file *os.File) error {
-	return withNativeFD(file, resetCreatedDescriptorACL)
-}
-
-func resetCreatedDescriptorACL(api *nativeAPI, fd int32, errno *int32) (result error) {
-	acl := api.aclInit(0)
+// a checked parent. Never change an existing administrator-owned object's ACL.
+func ResetCreatedACL(file *os.File) error { return withNativeFD(file, resetCreatedDescriptorACL) }
+func resetCreatedDescriptorACL(api *nativeAPI, fd int32) (result error) {
+	acl, _, code := purego.SyscallN(api.aclInit, 0)
 	if acl == 0 {
-		return api.lastError("create empty extended ACL", errno)
+		return nativeError("create empty extended ACL", code)
 	}
 	defer func() {
-		if api.aclFree(acl) != 0 {
-			result = errors.Join(result, api.lastError("free empty extended ACL", errno))
+		value, _, code := purego.SyscallN(api.aclFree, acl)
+		if int32(value) != 0 {
+			result = errors.Join(result, nativeError("free empty extended ACL", code))
 		}
 	}()
-	// Preserve the intended new-object ACL across a later publication rename;
-	// parent inheritance must not reintroduce a removed read-deny entry.
+	// No-inherit prevents a publication rename restoring a removed read denial.
 	var flags uintptr
-	if api.aclGetFlags(acl, &flags) != 0 {
-		return api.lastError("read new ACL flags", errno)
+	value, _, code := purego.SyscallN(api.aclGetFlags, acl, uintptr(unsafe.Pointer(&flags)))
+	if int32(value) != 0 {
+		return nativeError("read new ACL flags", code)
 	}
-	if api.aclAddFlag(flags, 1<<17) != 0 {
-		return api.lastError("disable new-object ACL inheritance", errno)
+	value, _, code = purego.SyscallN(api.aclAddFlag, flags, 1<<17)
+	if int32(value) != 0 {
+		return nativeError("disable new-object ACL inheritance", code)
 	}
-	if api.aclSetFD(fd, acl, aclTypeExtended) != 0 {
-		return api.lastError("set new object extended ACL", errno)
+	value, _, code = purego.SyscallN(api.aclSetFD, uintptr(fd), acl, aclTypeExtended)
+	if int32(value) != 0 {
+		return nativeError("set new object extended ACL", code)
 	}
 	return nil
 }
 
-// RenameDirectories publishes a complete candidate. The caller must hold the
-// writer lock and check identities, protection, allowed layouts and preimages.
-// It never deletes objects or falls back to copying on unsupported filesystems.
+// RenameDirectories exposes only exclusive initial publication and atomic
+// exchange. Its transaction caller must lock, check identities/preimages, sync
+// and clean conservatively. There is no copy/delete fallback.
 func RenameDirectories(parent *os.File, from, to string, exchange bool) error {
 	if !validName(from) || !validName(to) || from == to {
 		return errors.New("rename requires distinct single directory names")
 	}
-	flags := uint32(unix.RENAME_EXCL)
+	flags := uintptr(unix.RENAME_EXCL)
 	if exchange {
 		flags = unix.RENAME_SWAP
 	}
-	return withNativeFD(parent, func(api *nativeAPI, fd int32, errno *int32) error {
-		if api.rename(fd, from, fd, to, flags) != 0 {
-			return api.lastError("publish policy directory", errno)
+	fromPointer, err := unix.BytePtrFromString(from)
+	if err != nil {
+		return err
+	}
+	toPointer, err := unix.BytePtrFromString(to)
+	if err != nil {
+		return err
+	}
+	defer runtime.KeepAlive(fromPointer)
+	defer runtime.KeepAlive(toPointer)
+	return withNativeFD(parent, func(api *nativeAPI, fd int32) error {
+		// Pointer conversions are direct SyscallN arguments. Its uintptrescapes
+		// contract pins Go output/name allocations through the foreign call.
+		value, _, code := purego.SyscallN(api.rename, uintptr(fd), uintptr(unsafe.Pointer(fromPointer)), uintptr(fd), uintptr(unsafe.Pointer(toPointer)), flags)
+		if int32(value) != 0 {
+			return nativeError("publish policy directory", code)
 		}
 		return nil
 	})

@@ -334,21 +334,20 @@ func TestDarwinACLInspectionRetriesOnlyBoundedTransientReads(t *testing.T) {
 	for _, code := range []syscall.Errno{syscall.EINTR, syscall.ETIMEDOUT, syscall.EACCES, syscall.EIO} {
 		t.Run(code.Error(), func(t *testing.T) {
 			for _, persistent := range []bool{false, true} {
-				var errno int32
 				calls := 0
-				api := &nativeAPI{aclGetFD: func(fd, kind int32) uintptr {
+				api := &nativeAPI{aclGetFD: func(fd, kind int32) (uintptr, syscall.Errno) {
 					calls++
 					if fd != 42 || kind != aclTypeExtended {
 						t.Fatal("native inspection parameters changed")
 					}
-					errno = int32(code)
+					errno := code
 					if !persistent && calls > 1 {
-						errno = int32(syscall.ENOENT)
+						errno = syscall.ENOENT
 					}
-					return 0
+					return 0, errno
 				}}
-				err := checkACLWithRetry(api, 42, &errno)
-				transient := code == syscall.EINTR || code == syscall.ETIMEDOUT
+				err := checkACLWithRetry(api, 42)
+				transient := code == syscall.EINTR
 				want := 1
 				if transient {
 					want = 3
@@ -371,7 +370,7 @@ func TestDarwinACLInspectionRetriesOnlyBoundedTransientReads(t *testing.T) {
 	}
 }
 
-func TestDarwinConcurrentACLInspectionKeepsThreadLocalErrors(t *testing.T) {
+func TestDarwinConcurrentACLInspectionCapturesNativeErrors(t *testing.T) {
 	parent := fixtureParent(t)
 	file := fixtureFile(t, parent, "stable-acl", []byte("unchanged native fixture"))
 	chmodFixture(t, file.Name(), "+a", "everyone allow read,readattr,readextattr,readsecurity")
@@ -393,5 +392,37 @@ func TestDarwinConcurrentACLInspectionKeepsThreadLocalErrors(t *testing.T) {
 	close(failures)
 	for err := range failures {
 		t.Error("unchanged protected ACL failed concurrent native inspection", err)
+	}
+}
+
+func TestDarwinNativeErrnoCapturedBeforeReturningToGo(t *testing.T) {
+	api, err := getNative()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workers sync.WaitGroup
+	failures := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for attempt := 0; attempt < 100; attempt++ {
+				value, code := api.aclGetFD(-1, aclTypeExtended)
+				runtime.Gosched()
+				if value != 0 || code != syscall.EBADF {
+					failures <- fmt.Errorf("invalid descriptor returned ACL=%d errno=%d; require captured EBADF", value, code)
+					return
+				}
+			}
+		}()
+	}
+	workers.Wait()
+	close(failures)
+	for err := range failures {
+		t.Error(err)
+	}
+	// C errno occupies only the low 32 bits of a pointer-sized native slot.
+	if err := nativeError("native fixture", uintptr(uint64(1)<<32|uint64(syscall.EACCES))); !errors.Is(err, syscall.EACCES) {
+		t.Fatal("C-int error width was not preserved", err)
 	}
 }
