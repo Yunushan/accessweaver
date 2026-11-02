@@ -611,7 +611,7 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, powershell, "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", "$source=[Console]::In.ReadToEnd(); & ([scriptblock]::Create($source))")
+	cmd := exec.CommandContext(ctx, powershell, "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", "[Console]::WriteLine('Workflow phase: input'); $source=[Console]::In.ReadToEnd(); [Console]::WriteLine('Workflow phase: parse'); & ([scriptblock]::Create($source))")
 	cmd.Env = environment
 	cmd.Dir = systemDirectory
 	cmd.Stdin = strings.NewReader(program)

@@ -51,12 +51,24 @@ func TestNativeDiscoveryIgnoresUntrustedEnvironment(t *testing.T) {
 			for _, line := range strings.Split(string(log), "\n") {
 				line = strings.TrimSpace(line)
 				switch line {
-				case "Discovery phase: services", "Discovery phase: components", "Discovery phase: applications", "Discovery phase: conflicts", "Discovery phase: refresh-task", "Discovery phase: final-paths", "Discovery phase: complete":
+				case "Workflow phase: input", "Workflow phase: parse", "Workflow phase: initialize", "Workflow phase: dispatch", "Discovery phase: services", "Discovery phase: components", "Discovery phase: applications", "Discovery phase: conflicts", "Discovery phase: refresh-task", "Discovery phase: final-paths", "Discovery phase: complete":
 					phases = append(phases, line)
 				}
 			}
 		}
 		t.Fatalf("read-only discovery failed: %v; context=%v; phases=%v", err, ctx.Err(), phases)
+	}
+	log, logErr := readWorkflowFile(filepath.Join(root, "job", "process.log"), 64<<10)
+	if logErr != nil {
+		t.Fatal("startup diagnostics were not retained")
+	}
+	position := -1
+	for _, phase := range []string{"Workflow phase: input", "Workflow phase: parse", "Workflow phase: initialize", "Workflow phase: dispatch", "Discovery phase: services", "Discovery phase: complete"} {
+		next := strings.Index(string(log), phase)
+		if next <= position {
+			t.Fatalf("missing or unordered fixed startup marker: %s", phase)
+		}
+		position = next
 	}
 	var result struct {
 		OK   bool `json:"ok"`
