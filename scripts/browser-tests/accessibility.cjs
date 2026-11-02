@@ -1,6 +1,7 @@
 // Development-only checks. Retain metadata and selectors, never raw DOM/URLs.
 const {expect}=require('@playwright/test');
 const AxeBuilder=require('@axe-core/playwright').default;
+const {summarize}=require('./accessibility-report.cjs');
 const tags=['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa','best-practice'];
 async function settleAnimations(page){
  await page.evaluate(async()=>{await Promise.all(document.getAnimations()
@@ -8,14 +9,11 @@ async function settleAnimations(page){
   .map(animation=>animation.finished.catch(()=>{})))});
 }
 function identity(core){return {sourceCommit:core.build.commit,binarySha256:core.binarySha256,build:core.build,productionQualificationComplete:false}}
-function summarize(rules){return rules.map(rule=>({id:rule.id,impact:rule.impact,nodes:rule.nodes.map(node=>({
- target:node.target,checks:[...node.any,...node.all,...node.none].map(check=>check.id),
-}))}))}
 async function scanAccessibility(page,core,testInfo,name){
  await settleAnimations(page);
  const result=await new AxeBuilder({page}).withTags(tags).analyze();
  const report={schemaVersion:1,...identity(core),scope:'automated-accessibility',name,project:testInfo.project.name,
-  engine:result.testEngine,tags,violations:summarize(result.violations),incomplete:summarize(result.incomplete),
+  engine:result.testEngine,tags,violations:summarize(result.violations),incomplete:summarize(result.incomplete,true),
   passedRules:result.passes.length,inapplicableRules:result.inapplicable.length};
  await testInfo.attach('accessibility-'+name+'.json',{body:JSON.stringify(report,null,2)+'\n',contentType:'application/json'});
  expect(report.violations,name+' accessibility violations').toEqual([]);
