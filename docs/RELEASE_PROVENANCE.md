@@ -50,6 +50,9 @@ Publication depends on all six packaged jobs as well as packaging. A manual prev
 
 These checks execute the actual stripped, trimpath, CGO-disabled portable cores, rather than substituting a separate test build. They do not qualify BSD execution, OS publisher signatures, native installers, vendor network changes or managed deployment. The manifest's aggregate `targetExecutionTested: false` remains accurate because the ten-target set includes four unexecuted BSD targets. Individual records retain `productionQualificationComplete: false`.
 
+
+The [manual preview for exact source `00a5122bef6d58607186fcd22e9e32fd5cd542c0`](https://github.com/Yunushan/accessweaver/actions/runs/41544531520) passed all 17 jobs, including actual portable-candidate execution on all six desktop targets. Independent verification authenticated all twelve Sigstore subjects, checked all ten archives and passed the five real provenance-rejection probes. The six packaged evidence ZIPs were checked against their provider SHA-256 digests; runtime receipts and acceptance/interoperability/diagnostic reports were then matched to the authenticated archive and actual embedded binary hashes. Each target passed backup/recovery interoperability and nine loopback diagnostic cases, with Unix controller checks where applicable. This is evidence for that specific unsigned core candidate, not later source revisions, BSD execution, signed installers or full desktop readiness.
+
 ## Remaining signing and trust requirements
 
 The manifest's `unsigned: true` and the unsigned-alpha artifact labels still describe the OS binaries. Build provenance identifies a GitHub workflow and source; it does not provide Windows Authenticode, macOS Developer ID/notarization, an installer signature or authenticated in-product update selection. Publisher certificates, signing-key ownership, deployment application control and those native distribution checks remain required.

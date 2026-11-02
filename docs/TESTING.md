@@ -315,6 +315,9 @@ Boot failures retain an allowlisted SSH error category and fixed expected/defaul
 The hosted opt-in is mandatory. Ordinary unit tests never boot a VM; guard regressions verify refusal before launching a command, and POSIX helper checks exercise real output/deadline bounds. Inspect the actual completed guest report before claiming native guest core execution. FreeBSD arm64 and both OpenBSD targets, native hardware/performance, drivers/routing, managed BSD policy, installer/lifecycle, signed distribution and full platform qualification remain open. All 50 readiness requirements and statuses remain unchanged.
 
 
+
+The [source-bound probe at `820c420`](https://github.com/Yunushan/accessweaver/actions/runs/41544995397) retained the control IP, installed keys and a failed SSH configuration check with exit status 139 and zero stderr bytes. No guest core package executed. The next TCG probe selects the versioned `Nehalem-v1` CPU model, defined in [QEMU 8.2.2's x86 source](https://github.com/qemu/qemu/blob/v8.2.2/target/i386/cpu.c), instead of `max`, and records `cpuModel` beside the emulator version and acceleration. This controlled change tests whether the startup failure depends on advertised CPU features; it does not establish a QEMU/OpenSSH defect or a successful remedy. KVM still uses the host CPU. Guest image, SSH host-key pinning, authentication, isolation and execution deadlines remain the same. Hardware and full platform qualification remain open.
+
 ## Disposable macOS cross-user credential isolation
 
 The CI and release source-test matrices run `scripts/test-darwin-session.sh` on both Mac architectures with `ACCESSWEAVER_DISPOSABLE_DARWIN_SESSION_TEST=1`. The script and Go fixture require an ordinary user on an explicitly identified disposable GitHub-hosted Mac. They change ACLs only inside newly owned temporary directories and never change an account, machine policy or existing cache ACL.

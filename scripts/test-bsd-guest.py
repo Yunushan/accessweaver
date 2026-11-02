@@ -379,12 +379,13 @@ def main():
         acceleration = "kvm" if os.access("/dev/kvm", os.R_OK | os.W_OK) else "tcg"
         report["hypervisorAcceleration"] = acceleration
         report["CPUEmulated"] = acceleration == "tcg"
+        report["cpuModel"] = "host" if acceleration == "kvm" else "Nehalem-v1"
         report["entropyDevice"] = "virtio-rng-pci"
         report["entropyBackend"] = "host-kernel-urandom"
         report["entropyMaximumBytesPerPeriod"] = 1024
         report["entropyPeriodMilliseconds"] = 1000
         report["qemuVersion"] = run(["qemu-system-x86_64", "--version"]).stdout.decode().splitlines()[0]
-        vm = subprocess.Popen(["qemu-system-x86_64", "-accel", acceleration, "-cpu", "host" if acceleration == "kvm" else "max", "-m", "3072", "-smp", "2",
+        vm = subprocess.Popen(["qemu-system-x86_64", "-accel", acceleration, "-cpu", report["cpuModel"], "-m", "3072", "-smp", "2",
                                "-display", "none", "-monitor", "none", "-serial", "stdio", "-no-reboot",
                                "-drive", f"file={overlay},if=virtio,format=qcow2",
                                "-drive", f"file={seed},media=cdrom,format=raw,readonly=on",
