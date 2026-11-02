@@ -624,7 +624,8 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	defer log.Close()
 	cmd.Stdout = log
 	cmd.Stderr = log
-	err = cmd.Run()
+	// Finish persistence before interpreting a successful child result.
+	err = errors.Join(cmd.Run(), log.Close())
 	if err != nil {
 		if contextErr := ctx.Err(); contextErr != nil {
 			err = errors.Join(err, contextErr)

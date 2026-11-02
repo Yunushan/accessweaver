@@ -87,6 +87,12 @@ func Run(file string) error {
 			return 0
 		}
 		defer log.Close()
+		finish := func(exit uint32) {
+			if log.Close() != nil {
+				exit = 1
+			}
+			status(1, 0, exit)
+		}
 		cmd := exec.Command(cfg.Binary, cfg.Args...)
 		cmd.Dir = cfg.Directory
 		cmd.Stdout = log
@@ -95,7 +101,7 @@ func Run(file string) error {
 		cmd.WaitDelay = 2 * time.Second
 		if e = cmd.Start(); e != nil {
 			fmt.Fprintln(log, e)
-			status(1, 0, 1)
+			finish(1)
 			return 0
 		}
 		status(4, 5, 0)
@@ -105,16 +111,16 @@ func Run(file string) error {
 		case e = <-done:
 			if e != nil {
 				fmt.Fprintln(log, e)
-				status(1, 0, 1)
+				finish(1)
 			} else {
-				status(1, 0, 0)
+				finish(0)
 			}
 		case <-stop:
 			status(3, 0, 0)
 			_ = exec.Command("taskkill.exe", "/PID", fmt.Sprint(cmd.Process.Pid), "/T", "/F").Run()
 			_ = cmd.Process.Kill()
 			<-done
-			status(1, 0, 0)
+			finish(0)
 		}
 		return 0
 	})

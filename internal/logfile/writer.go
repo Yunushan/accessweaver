@@ -148,12 +148,14 @@ func (w *Writer) Write(data []byte) (int, error) {
 func (w *Writer) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.closed {
-		return nil
+	if !w.closed {
+		w.closed = true
+		if w.file != nil {
+			w.err = errors.Join(w.err, w.file.Close())
+		}
 	}
-	w.closed = true
-	if w.file != nil {
-		return w.file.Close()
-	}
-	return nil
+	// Preserve an earlier write/rotation failure even if closing succeeds. A
+	// caller completing an operation must not report successful log retention
+	// after output was lost. Repeated closes retain the same failure outcome.
+	return w.err
 }
