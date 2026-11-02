@@ -190,6 +190,43 @@ class BootDiskPrivacyTests(unittest.TestCase):
                 self.assertFalse(self.boot.global_password_auth_disabled(text))
         self.assertTrue(self.boot.global_password_auth_disabled(b" PasswordAuthentication NO # fixture\n"))
 
+    def test_runtime_observations_keep_independent_false_results(self):
+        runtime = {"configurationValid": True, "serviceRunning": True,
+                   "controlAddressConfigured": False, "ipv4SSHListening": False}
+        files = {"/root/accessweaver-boot-state.json": json.dumps(runtime).encode(),
+                 "/var/log/accessweaver-sshd.log": b"PRIVATE_CONTENT\nServer listening on 0.0.0.0 port 22.\n",
+                 "/var/log/accessweaver-sshd-configtest.log": b"UNPROTECTED PRIVATE KEY FILE: PRIVATE_PATH\n"}
+        data = self.boot.boot_observations(lambda name: files.get(name, b""), lambda _: False, b"client", b"host")
+        for name in ("runtimeObservationPresent", "sshdConfigCheckPassed", "sshdRuntimeServiceRunningObserved",
+                     "sshdListeningLogObserved", "sshdKeyPermissionErrorObserved"):
+            self.assertIs(data[name], True)
+        for name in ("controlIPv4AddressObserved", "sshdRuntimeIPv4ListenerObserved"):
+            self.assertIs(data[name], False)
+        self.assertNotIn("PRIVATE", json.dumps(data))
+
+    def test_runtime_observer_rejects_extra_fields_nonbooleans_and_invalid_json(self):
+        valid = {"configurationValid": True, "serviceRunning": True,
+                 "controlAddressConfigured": True, "ipv4SSHListening": True}
+        for invalid in ({**valid, "private": "PRIVATE_SECRET"}, {**valid, "serviceRunning": 1},
+                        {"serviceRunning": True}, [], "PRIVATE_SECRET"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.boot.runtime_observations(json.dumps(invalid).encode())
+        with self.assertRaises(ValueError):
+            self.boot.runtime_observations(b"PRIVATE_INVALID_JSON")
+        self.assertEqual(self.boot.runtime_observations(b""), {})
+        self.assertEqual(self.boot.runtime_observations(json.dumps(valid).encode()), valid)
+
+    @unittest.skipUnless(os.name == "posix", "guest observer rejection uses a POSIX shell")
+    def test_actual_observer_refuses_missing_opt_in_or_non_freebsd_host(self):
+        script = str(Path(__file__).with_name("bsd-boot-observer.sh"))
+        result = guest.run(["/bin/sh", script], env={}, check=False)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, b"")
+        if not sys.platform.startswith("freebsd"):
+            result = guest.run(["/bin/sh", script], env={"ACCESSWEAVER_DISPOSABLE_BSD_BOOT_OBSERVER": "1"}, check=False)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stdout, b"")
+
     def test_postmortem_requires_hosted_opt_in_before_disk_reads(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(self.boot, "inspect") as inspect:
             with self.assertRaises(RuntimeError):

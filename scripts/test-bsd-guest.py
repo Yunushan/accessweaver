@@ -150,8 +150,15 @@ def cloud_config(client_public, host_private, host_public):
     return {"hostname": "awbsd", "users": [{"name": "awtest", "homedir": "/home/awtest", "shell": "/bin/sh",
              "passwd": "*", "ssh_authorized_keys": [client_public]}], "ssh_pwauth": False,
             "ssh_keys": {"ed25519_private": host_private, "ed25519_public": host_public},
+            "runcmd": ["ACCESSWEAVER_DISPOSABLE_BSD_BOOT_OBSERVER=1 /bin/sh /root/accessweaver-boot-observer.sh </dev/null >/dev/null 2>&1 &"],
             "write_files": [{"path": "/etc/rc.conf.d/firstboot_pkg_upgrade", "permissions": "0600", "owner": "root:wheel",
-                             "content": 'firstboot_pkg_upgrade_enable="NO"\n'}]}
+                             "content": 'firstboot_pkg_upgrade_enable="NO"\n'},
+                            {"path": "/etc/rc.conf.d/sshd", "permissions": "0600", "owner": "root:wheel",
+                             "content": 'sshd_flags="-E /var/log/accessweaver-sshd.log"\n'},
+                            {"path": "/var/log/accessweaver-sshd.log", "permissions": "0600", "owner": "root:wheel",
+                             "content": ""},
+                            {"path": "/root/accessweaver-boot-observer.sh", "permissions": "0700", "owner": "root:wheel",
+                             "content": Path(__file__).with_name("bsd-boot-observer.sh").read_text(encoding="utf-8")} ]}
 
 
 def expand_image(source, target, maximum=8 << 30):
@@ -352,6 +359,9 @@ def main():
                 if result.returncode == 0:
                     break
                 report["lastSSHFailureClass"] = ssh_failure_class(result.stdout)
+                counts = report.setdefault("sshFailureCounts", {})
+                kind = report["lastSSHFailureClass"]
+                counts[kind] = counts.get(kind, 0) + 1
                 if report["lastSSHFailureClass"] == "host-key-rejected":
                     raise RuntimeError("Pinned guest host key was rejected")
             except (TimeoutError, subprocess.TimeoutExpired):

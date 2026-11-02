@@ -25,6 +25,16 @@ def global_password_auth_disabled(data):
     return False
 
 
+def runtime_observations(data):
+    if not data:
+        return {}
+    fields = json.loads(data)
+    expected = {"configurationValid", "serviceRunning", "controlAddressConfigured", "ipv4SSHListening"}
+    if not isinstance(fields, dict) or set(fields) != expected or any(type(value) is not bool for value in fields.values()):
+        raise ValueError("unexpected private boot observer result")
+    return fields
+
+
 def boot_observations(read_file, exists, client_public, host_public):
     hostname = read_file('/etc/rc.conf.d/hostname')
     passwd = read_file('/etc/passwd')
@@ -34,6 +44,8 @@ def boot_observations(read_file, exists, client_public, host_public):
     lease = read_file('/var/db/dhclient.leases.vtnet0')
     nuage = read_file('/var/log/nuageinit.log')
     messages = read_file('/var/log/messages')
+    ssh_log = read_file('/var/log/accessweaver-sshd.log') + read_file('/var/log/accessweaver-sshd-configtest.log')
+    runtime = runtime_observations(read_file('/root/accessweaver-boot-state.json'))
     return {
         'inspectionComplete': True,
         'hostnameConfigured': b'hostname="awbsd"' in hostname.splitlines(),
@@ -54,6 +66,24 @@ def boot_observations(read_file, exists, client_public, host_public):
         'nuageOpenErrorObserved': b'unable to open' in nuage or b'Impossible to open' in nuage,
         'sshdMessageObserved': b'sshd[' in messages,
         'cloudProviderMissingObserved': b'Impossible to find a cloud init provider' in messages,
+        'runtimeObservationPresent': bool(runtime),
+        'sshdConfigCheckPassed': runtime.get('configurationValid', False),
+        'sshdRuntimeServiceRunningObserved': runtime.get('serviceRunning', False),
+        'controlIPv4AddressObserved': runtime.get('controlAddressConfigured', False),
+        'sshdRuntimeIPv4ListenerObserved': runtime.get('ipv4SSHListening', False),
+        'sshdListeningLogObserved': b'Server listening on ' in ssh_log,
+        'sshdNoHostKeysObserved': b'no hostkeys available' in ssh_log,
+        'sshdKeyPermissionErrorObserved': b'bad permissions' in ssh_log or b'UNPROTECTED PRIVATE KEY FILE' in ssh_log,
+        'sshdMissingSeparationUserObserved': b'Privilege separation user sshd does not exist' in ssh_log,
+        'sshdMissingSeparationDirectoryObserved': b'Missing privilege separation directory' in ssh_log,
+        'sshdBadConfigOptionObserved': b'Bad configuration option' in ssh_log,
+        'sshdSharedLibraryErrorObserved': b'Shared object ' in ssh_log and b'not found' in ssh_log,
+        'sshdKeyLoadErrorObserved': b'Unable to load host key' in ssh_log,
+        'sshdKeyFormatErrorObserved': b'invalid format' in ssh_log or b'error in libcrypto' in ssh_log,
+        'sshdAuthenticationRejectedObserved': b'not allowed because account' in ssh_log or b'Invalid user awtest' in ssh_log,
+        'sshdKexNegotiationErrorObserved': b'Unable to negotiate' in ssh_log or b'no matching ' in ssh_log,
+        'sshdSessionExecErrorObserved': b'sshd-session' in ssh_log and b'failed' in ssh_log,
+        'sshdFatalLogObserved': b'fatal:' in ssh_log,
     }
 
 
