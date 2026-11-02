@@ -45,7 +45,7 @@ Profile editing and ordinary diagnostics can run without elevated privileges. Pa
 
 Linux amd64/arm64 includes partial administrator policy through a fixed root-owned `/etc` source, root-only atomic install/update/rotation and guarded foreground inputs. Storage must have qualified persistent local filesystem semantics. [Managed configuration](MANAGED_CONFIGURATION.md#protected-linux-source-and-update-behavior) defines the current restrictions; services, generated/native-argument assets and full desktop qualification remain unfinished. BSD machine authority remains work.
 
-BSD CLI/dashboard builds are targets; engine syntax, privileges and cleanup still need verification on the exact OS release and architecture. `tpws` is managed only as an explicit SOCKS proxy.
+BSD CLI/dashboard builds are targets; engine syntax, privileges and cleanup still need verification on the exact OS release and architecture. The manual [disposable guest core probe](TESTING.md#disposable-bsd-guest-core-probe) is an initial FreeBSD 15.1 amd64 path; its existence and host-built test payload are not evidence of completed guest execution. The other BSD targets and full native platform acceptance remain open. `tpws` is managed only as an explicit SOCKS proxy.
 
 ## macOS
 
