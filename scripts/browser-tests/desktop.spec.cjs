@@ -420,3 +420,29 @@ test('large retained history has a bounded preview and complete private exports'
  expect(await fs.readFile(core.profilePath('export-recovery-fixture'),'utf8')).toBe('{broken profile fixture');
  expect(await fs.readFile(record,'utf8')).toBe(original);
 });
+
+
+test('optional workflow metadata cannot stop polling or replace reviewed inputs',async({page,core})=>{
+ await open(page,core);await page.locator('.nav-item[data-view="system"]').click();
+ await page.locator('#system-action').selectOption('recover');await page.locator('#system-journal').fill('reviewed.json');
+ await page.locator('#system-action').selectOption('config');await page.locator('#system-applications').fill('C:\\existing');
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));let choices=0,reports=0;
+ await page.route('**/api/v1/system/folder',async route=>{
+  expect(route.request().method()).toBe('POST');choices++;
+  // Controlled UI response: never open the host's native folder dialog.
+  await route.fulfill({json:{id:'chooser-'+choices,action:'choose-folder',state:'running'}});
+ });
+ await page.route('**/api/v1/system',async route=>{
+  expect(route.request().method()).toBe('GET');const response=await route.fetch();const info=await response.json();reports++;
+  const state=choices===1?(reports===1?'running':'failed'):'succeeded';
+  const result=choices===1?{journal:{legacy:'RAW_OPTIONAL_METADATA'},data:{folder:'C:\\failed-choice'}}:{journal:'C:\\journals\\chosen.json',data:{folder:'C:\\selected'}};
+  await route.fulfill({response,json:{...info,job:{id:'chooser-'+choices,action:'choose-folder',state,result}}});
+ });
+ await page.locator('#system-folder').click();await expect(page.locator('#system-cancel')).toBeEnabled();
+ await expect(page.locator('#system-output')).toContainText('RAW_OPTIONAL_METADATA');
+ await expect(page.locator('#system-cancel')).toBeDisabled();await expect(page.locator('#system-output')).toContainText('failed');
+ expect(reports).toBe(2);expect(choices).toBe(1);await expect(page.locator('#system-applications')).toHaveValue('C:\\existing');await expect(page.locator('#system-journal')).toHaveValue('reviewed.json');
+ await page.locator('#system-folder').click();await expect(page.locator('#system-applications')).toHaveValue('C:\\existing\nC:\\selected');
+ await expect(page.locator('#system-journal')).toHaveValue('chosen.json');await expect(page.locator('#system-cancel')).toBeDisabled();
+ expect(choices).toBe(2);expect(reports).toBe(3);expect(errors).toEqual([]);
+});

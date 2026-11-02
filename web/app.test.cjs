@@ -311,3 +311,59 @@ test('a busy mutation is not replayed and other status failures are returned',as
  env.context.apiRequest=async()=>{calls++;throw Object.assign(new Error('busy'),{status:503})};await env.run('applySystem()');assert.equal(calls,1);assert.equal(env.run('systemUI.polling'),false);
  env.context.apiRequest=async()=>{throw Object.assign(new Error('denied'),{status:403})};await assert.rejects(env.run('readSystemStatus()'),error=>error.status===403);
 });
+
+
+test('optional workflow metadata cannot interrupt job rendering',()=>{
+ for(const journal of [null,false,true,0,7,[],{},['unexpected'],{split:'not a function'}]){
+  const env=environment();env.run(systemSource);env.get('system-journal').value='reviewed.json';
+  const job={id:'raw-result',action:'discover',state:'failed',result:{journal,private:'RAW_RESULT_RETAINED'}};env.put('jobFixture',job);
+  assert.doesNotThrow(()=>env.run('renderSystemJob(jobFixture)'));
+  assert.equal(env.get('system-journal').value,'reviewed.json');assert.equal(env.get('system-cancel').disabled,true);
+  assert.match(env.get('system-output').textContent,/RAW_RESULT_RETAINED/);assert.deepEqual(plain(env.run('jobFixture')),job);
+ }
+ const env=environment();env.run(systemSource);env.put('jobFixture',{id:'recovery',action:'install',state:'failed',result:{journal:'C:\\private\\journals\\change.json'}});
+ env.run('renderSystemJob(jobFixture)');assert.equal(env.get('system-journal').value,'change.json');
+});
+
+test('only a successful owned folder choice can change the application list',()=>{
+ const cases=[
+  ...[null,false,true,9,[],{},['C:\\invalid'],''].map(folder=>({folder,state:'succeeded',action:'choose-folder',id:'chooser'})),
+  {folder:'C:\\failed',state:'failed',action:'choose-folder',id:'chooser'},
+  {folder:'C:\\different-action',state:'succeeded',action:'discover',id:'chooser'},
+  {folder:'C:\\different-job',state:'succeeded',action:'choose-folder',id:'another'},
+  {folder:'C:\\pending',state:'running',action:'choose-folder',id:'chooser'},
+ ];
+ for(const row of cases){
+  const env=environment();env.run(systemSource);env.get('system-applications').value='C:\\existing';env.get('system-consent').checked=true;
+  env.run('systemUI.folderJob="chooser";systemUI.plan={id:"reviewed",ready:true}');
+  env.put('jobFixture',{id:row.id,action:row.action,state:row.state,result:{data:{folder:row.folder}}});env.run('renderSystemJob(jobFixture)');
+  assert.equal(env.get('system-applications').value,'C:\\existing',JSON.stringify(row));assert.equal(env.run('systemUI.plan.id'),'reviewed');assert.equal(env.get('system-consent').checked,true);
+ }
+});
+
+test('a successful folder choice is added once and invalidates its old review',()=>{
+ const env=environment();env.run(systemSource);env.get('system-applications').value='C:\\existing';env.get('system-consent').checked=true;
+ env.run('systemUI.folderJob="chooser";systemUI.plan={id:"reviewed",ready:true}');env.put('jobFixture',{id:'chooser',action:'choose-folder',state:'succeeded',result:{data:{folder:'C:\\selected'}}});
+ env.run('renderSystemJob(jobFixture);renderSystemJob(jobFixture)');assert.equal(env.get('system-applications').value,'C:\\existing\nC:\\selected');assert.equal(env.run('systemUI.folderJob'),null);assert.equal(env.run('systemUI.plan'),null);assert.equal(env.get('system-consent').checked,false);assert.equal(env.get('system-apply').disabled,true);
+});
+
+test('a duplicate folder choice preserves the current reviewed request',()=>{
+ const env=environment();env.run(systemSource);env.get('system-applications').value='C:\\existing';env.get('system-consent').checked=true;
+ env.run('systemUI.folderJob="chooser";systemUI.plan={id:"reviewed",ready:true}');env.put('jobFixture',{id:'chooser',action:'choose-folder',state:'succeeded',result:{data:{folder:'C:\\existing'}}});
+ env.run('renderSystemJob(jobFixture)');assert.equal(env.run('systemUI.folderJob'),null);assert.equal(env.get('system-applications').value,'C:\\existing');assert.equal(env.run('systemUI.plan.id'),'reviewed');assert.equal(env.get('system-consent').checked,true);
+});
+
+test('invalid update metadata cannot show or consume a release notification',()=>{
+ for(const data of [null,{},[],{updateAvailable:'true',version:'v2'},{updateAvailable:true},{updateAvailable:true,version:{}},{updateAvailable:true,version:7},{updateAvailable:true,version:''}]){
+  const env=environment();env.run(systemSource);env.run('toast=message=>{globalThis.notices=(globalThis.notices||[]).concat(message)}');
+  env.put('jobFixture',{id:'updates',action:'updates',state:'succeeded',result:{data}});env.run('notifySystemUpdate(jobFixture)');assert.equal(env.context.notices,undefined);assert.equal(env.run('systemUI.lastUpdate'),undefined);
+  env.put('jobFixture',{id:'updates',action:'updates',state:'succeeded',result:{data:{updateAvailable:true,version:'v2.0.0'}}});env.run('notifySystemUpdate(jobFixture);notifySystemUpdate(jobFixture)');assert.equal(env.context.notices.length,1);assert.match(env.context.notices[0],/v2.0.0/);
+ }
+});
+
+test('workflow polling survives untyped optional metadata until the terminal report',async()=>{
+ const env=environment();env.run(systemSource);env.get('system-journal').value='reviewed.json';let reads=0,pauses=0;
+ env.context.setTimeout=(callback,ms)=>{assert.equal(ms,1500);pauses++;queueMicrotask(callback);return 1};
+ env.context.apiRequest=async path=>{assert.equal(path,'/api/v1/system');reads++;return {job:{id:'polling',action:'discover',state:reads===1?'running':'failed',result:{journal:{legacy:'RAW_OPTIONAL_METADATA'},data:{folder:{invalid:true}}}}}};
+ await env.run('pollSystemJob()');assert.equal(reads,2);assert.equal(pauses,1);assert.equal(env.run('systemUI.polling'),false);assert.equal(env.get('system-cancel').disabled,true);assert.equal(env.get('system-journal').value,'reviewed.json');assert.match(env.get('system-output').textContent,/RAW_OPTIONAL_METADATA/);assert.match(env.get('system-output').textContent,/failed/);
+});

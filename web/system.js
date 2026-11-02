@@ -1,6 +1,11 @@
 'use strict';
 const systemUI={plan:null,presets:[],polling:false,busy:false,revision:0,loading:false,folderJob:null,exporting:false};
-function notifySystemUpdate(job){if(job?.action==='updates'&&job.state==='succeeded'&&job.result?.data?.updateAvailable&&systemUI.lastUpdate!==job.id){systemUI.lastUpdate=job.id;toast(t('updateAvailable')+': '+job.result.data.version)}}
+function notifySystemUpdate(job){
+ const data=job?.result?.data;
+ if(job?.action==='updates'&&job.state==='succeeded'&&data?.updateAvailable===true&&typeof data.version==='string'&&data.version.trim()&&systemUI.lastUpdate!==job.id){
+  systemUI.lastUpdate=job.id;toast(t('updateAvailable')+': '+data.version);
+ }
+}
 function systemRequest(){
   const action=$('system-action').value,engine=$('system-engine').value,fields=systemFieldsFor(action,engine),request={action};
   const names={mode:'mode',profile:'profileId',config:'configPath',bundle:'bundlePath',applications:'applications',browsers:'browsers',refresh:'refresh',dns:'dns',scan:'scan',targets:'targets',journal:'journalId',domains:'domains',enabled:'enabled',clean:'clean',args:'args',url:'downloadUrl',sha:'sha256','cloudflare-terms':'acceptCloudflareTerms'};
@@ -81,7 +86,25 @@ async function applySystem(){
   try {const job=await apiRequest('/api/v1/system/start','POST',{planId:id,confirm:true});renderSystemJob(job);pollSystemJob();}
   catch(error){setTextOutput('system-output',error.message);toast(error.message,true)}finally{systemUI.busy=false}
 }
-function renderSystemJob(job){if(!job?.id)return;notifySystemUpdate(job);showSystemOutput(job);$('system-cancel').disabled=job.state!=='running';if(job.id===systemUI.folderJob&&job.state!=='running'){systemUI.folderJob=null;const folder=job.result?.data?.folder;if(folder){const paths=splitLines($('system-applications').value);if(!paths.includes(folder))paths.push(folder);$('system-applications').value=paths.join('\n');invalidateSystemPlan()}}if(job.result?.journal)$('system-journal').value=job.result.journal.split(/[\\/]/).pop();}
+function renderSystemJob(job){
+ if(!job?.id)return;
+ notifySystemUpdate(job);showSystemOutput(job);$('system-cancel').disabled=job.state!=='running';
+ // Optional worker metadata may have any JSON shape. Keep the raw report, but
+ // only use typed fields to change the request being reviewed.
+ if(job.id===systemUI.folderJob&&job.state!=='running'){
+  systemUI.folderJob=null;
+  const folder=job.result?.data?.folder;
+  if(job.action==='choose-folder'&&job.state==='succeeded'&&typeof folder==='string'&&folder.trim()){
+   const paths=splitLines($('system-applications').value);
+   if(!paths.includes(folder)){paths.push(folder);$('system-applications').value=paths.join('\n');invalidateSystemPlan();}
+  }
+ }
+ const journal=job.result?.journal;
+ if(typeof journal==='string'&&journal){
+  const name=journal.split(/[\\/]/).pop();
+  if(name)$('system-journal').value=name;
+ }
+}
 async function pollSystemJob(){if(systemUI.polling)return;systemUI.polling=true;try{for(;;){const info=await readSystemStatus();renderSystemJob(info.job);if(info.job.state!=='running')break;await new Promise(resolve=>setTimeout(resolve,1500));}}catch(error){setTextOutput('system-output',error.message);}finally{systemUI.polling=false}}
 
 function updateSystemExportButtons(){
