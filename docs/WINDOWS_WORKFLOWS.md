@@ -19,6 +19,8 @@ accessweaver.exe system apply request.json --confirm
 accessweaver.exe system history
 ```
 
+`system history` and the final `system apply`/`system discover` snapshot use compact JSON with a trailing newline. Their fields and complete result values are preserved. Redirect exports to a private file; they can contain configuration, paths and tool output. An output-write failure returns an error and can leave an incomplete destination file.
+
 Pressing Ctrl+C during `system apply` requests cancellation and waits up to eight seconds for shutdown and outcome recording before returning a nonzero exit status. The CLI prints the actual final job snapshot. If shutdown times out, it reports that cancellation did not finish and preserves the actual running state rather than inventing a terminal result. Inspect the recovery journal before retrying. A vendor cleanup or rollback is not certified by the controller merely exiting.
 
 For example, install an automatic ByeDPI proxy service without app interception:

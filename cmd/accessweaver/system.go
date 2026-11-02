@@ -45,7 +45,7 @@ func systemCommand(args []string, root string) error {
 		if err != nil {
 			return err
 		}
-		return printJSON(items)
+		return workflow.WriteHistoryJSON(os.Stdout, items)
 	case "parse-scan":
 		if len(args) != 3 {
 			return errors.New("usage: system parse-scan REPORT.txt zapret|zapret2")
@@ -113,7 +113,7 @@ func systemCommand(args []string, root string) error {
 		if _, err = manager.Start(plan.ID); err != nil {
 			return err
 		}
-		return waitSystemWorkflow(ctx, manager, 8*time.Second, func(job workflow.Job) error { return printJSON(job) })
+		return waitSystemWorkflow(ctx, manager, 8*time.Second, func(job workflow.Job) error { return workflow.WriteJobJSON(os.Stdout, job) })
 
 	default:
 		return errors.New("unknown system command")

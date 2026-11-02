@@ -43,22 +43,16 @@ func validateResult(result json.RawMessage) error {
 // the standard encoder; untrusted result bytes are validated and compacted.
 // These records must never be embedded directly in HTML or JavaScript.
 func encodeJob(job Job) ([]byte, error) {
-	result := job.Result
-	job.Result = nil
-	encoded, err := json.Marshal(job)
+	// The complete encoded record is validated below before persistence.
+	prepared, err := prepareJobOutput(job, 0)
 	if err != nil {
 		return nil, err
 	}
-	if len(result) != 0 {
-		var compact bytes.Buffer
-		if err := json.Compact(&compact, result); err != nil {
-			return nil, err
-		}
-		// Marshal(Job) always produces an object; Result was omitted above.
-		encoded = append(encoded[:len(encoded)-1], `,"result":`...)
-		encoded = append(encoded, compact.Bytes()...)
-		encoded = append(encoded, '}')
+	var buffer bytes.Buffer
+	if err := prepared.writeTo(&buffer); err != nil {
+		return nil, err
 	}
+	encoded := buffer.Bytes()
 	if len(encoded) > maxHistoryRecordBytes {
 		return nil, errors.New("serialized workflow job exceeds the history record limit")
 	}
