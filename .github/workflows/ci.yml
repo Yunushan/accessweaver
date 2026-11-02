@@ -132,6 +132,18 @@ jobs:
         run: go vet ./...
       - name: Unit tests
         run: go test ./... -count=1
+      - name: Native macOS trust primitives without CGO
+        if: runner.os == 'macOS'
+        shell: bash
+        run: CGO_ENABLED=0 go test ./internal/darwintrust -count=1 -v
+      - name: Retain macOS trust preflight
+        if: runner.os == 'macOS' && always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: darwin-trust-preflight-${{ matrix.goarch }}
+          path: build/darwin-trust-checks/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Fuzz private workflow metadata encoding
         if: runner.os == 'Linux'
         run: go test ./internal/workflow -run '^$' -fuzz '^FuzzWorkflowMetadataOutput$' -fuzztime=20s -parallel=2

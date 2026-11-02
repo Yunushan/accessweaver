@@ -45,7 +45,7 @@ The browser dashboard opens automatically; keep the console process running. **G
 
 ### Build from source
 
-Install a current supported [Go release](https://go.dev/dl/) (the source requires Go 1.24 or later), then:
+Install a current supported [Go release](https://go.dev/dl/) (the source requires Go 1.26 or later), then:
 
 ```bash
 git clone https://github.com/Yunushan/accessweaver.git

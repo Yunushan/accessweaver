@@ -19,7 +19,7 @@ PRESET_COMMIT="766422ed8ca9cb5360e8d9d540e80722a0508efc"
 PRESETS={"internal/workflow/presets/zapret.txt","internal/workflow/presets/zapret2.txt","internal/workflow/presets/goodbyedpi.txt","internal/workflow/presets/LICENSE.SplitWire-Turkey"}
 LICENSE_NAMES=("LICENSE","LICENSE.txt","LICENSE.md","COPYING","COPYRIGHT","NOTICE","NOTICE.txt")
 # Declarations are supported by copied notice evidence, not inferred text matching.
-DECLARED={"github.com/Yunushan/accessweaver":"0BSD","accessweaver.test/wgpeer":"0BSD",
+DECLARED={"github.com/Yunushan/accessweaver":"0BSD","accessweaver.test/wgpeer":"0BSD","github.com/ebitengine/purego":"Apache-2.0",
           "github.com/google/btree":"Apache-2.0","gvisor.dev/gvisor":"Apache-2.0",
           "golang.zx2c4.com/wireguard":"MIT","golang.zx2c4.com/wintun":"MIT"}
 
