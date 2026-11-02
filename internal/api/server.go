@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Yunushan/accessweaver/internal/buildinfo"
@@ -34,7 +33,7 @@ type Server struct {
 	Workflows *workflow.Manager
 	UI        fs.FS
 	Token     string
-	mutations sync.Mutex
+	mutations mutationGate
 	done      chan struct{}
 }
 
@@ -271,15 +270,29 @@ func (s *Server) Handler() http.Handler {
 					fail(w, 415, "JSON content type required")
 					return
 				}
-				if r.ContentLength > 1<<20 {
+				if r.ContentLength > maxAPIRequestBodyBytes {
 					fail(w, 413, "payload too large")
 					return
 				}
 				// Keep active-profile checks and mutations in one transaction.
 				// Diagnostics and read-only previews need not serialize with these.
 				if r.URL.Path != "/api/v1/diagnose" && r.URL.Path != "/api/v1/preview" {
-					s.mutations.Lock()
-					defer s.mutations.Unlock()
+					releaseAdmission, err := s.mutations.reserve(r.Context())
+					if err != nil {
+						rejectMutation(w, err)
+						return
+					}
+					defer releaseAdmission()
+					if err := prepareMutationBody(w, r); err != nil {
+						rejectMutation(w, err)
+						return
+					}
+					release, err := s.mutations.acquire(r.Context())
+					if err != nil {
+						rejectMutation(w, err)
+						return
+					}
+					defer release()
 				}
 			}
 		}
@@ -287,7 +300,7 @@ func (s *Server) Handler() http.Handler {
 	})
 }
 func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, maxAPIRequestBodyBytes)
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
 	if err := d.Decode(v); err != nil {
