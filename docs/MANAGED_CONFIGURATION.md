@@ -1,6 +1,6 @@
 # Signed managed configuration
 
-Current status: signed administrator documents and partial Windows and Linux runtime enforcement through protected machine configuration. The production/enterprise readiness gates remain partial. Verification alone returns `runtimeEnforced: false`; offline tools do not enroll or authorize a machine. Windows initial installation and monotonic updates use native registry transactions. macOS/BSD machine policy, damaged-state/emergency recovery, protected input staging, service authorization and managed-endpoint qualification remain work.
+Current status: signed administrator documents and partial Windows and Linux runtime enforcement through protected machine configuration. The production/enterprise readiness gates remain partial. Verification alone returns `runtimeEnforced: false`; offline tools do not enroll or authorize a machine. Windows initial installation and monotonic updates use native registry transactions. macOS/BSD machine policy, unreadable-storage recovery, independent revision escrow, protected input staging, service authorization and managed-endpoint qualification remain work.
 
 ## Document and trust contract
 

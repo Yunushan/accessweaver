@@ -37,8 +37,8 @@ func readLinuxInstallation(dir *os.File, owner uint32, persistent bool) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	if before.Size() < 1 || before.Size() > MaxInstallationBytes {
-		return nil, errors.New("machine installation must be bounded nonempty JSON")
+	if before.Size() < 0 || before.Size() > MaxInstallationBytes {
+		return nil, errors.New("machine installation source must be bounded")
 	}
 	data, err := io.ReadAll(io.LimitReader(file, MaxInstallationBytes+1))
 	if err != nil {
@@ -48,7 +48,7 @@ func readLinuxInstallation(dir *os.File, owner uint32, persistent bool) ([]byte,
 	if err != nil {
 		return nil, err
 	}
-	if len(data) == 0 || len(data) > MaxInstallationBytes || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) || int64(len(data)) != after.Size() {
+	if len(data) > MaxInstallationBytes || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) || int64(len(data)) != after.Size() {
 		return nil, errors.New("machine installation changed during reading")
 	}
 	return data, nil

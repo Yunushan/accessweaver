@@ -79,7 +79,8 @@
           "status": "partial",
           "evidence": [
             "scripts/test-windows-workflow.ps1",
-            "internal/workflow/windows.ps1"
+            "internal/workflow/windows.ps1",
+            "internal/managed/recovery_empty_test.go"
           ]
         },
         {
@@ -345,7 +346,8 @@
             "scripts/browser-tests/core-fixture.test.cjs",
             "internal/workflow/output_test.go",
             "internal/api/workflow_output_test.go",
-            "internal/workflow/metadata_output_test.go"
+            "internal/workflow/metadata_output_test.go",
+            "internal/managed/recovery_empty_test.go"
           ]
         },
         {
@@ -486,7 +488,8 @@
             "internal/managed/rotation_test.go",
             "internal/managed/key.go",
             "internal/managed/key_test.go",
-            "internal/managed/machine_windows_test.go"
+            "internal/managed/machine_windows_test.go",
+            "internal/managed/recovery_empty_test.go"
           ]
         },
         {

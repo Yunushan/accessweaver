@@ -14,7 +14,16 @@ import (
 // The caller owns the protected source and its validated cleanup procedure.
 func exerciseNativeRecovery(t *testing.T, minimum uint64, damage func([]byte), abandon func([]byte)) {
 	t.Helper()
-	damaged := []byte("AccessWeaver disposable damaged source fixture\n")
+	for i, source := range [][]byte{[]byte("AccessWeaver disposable damaged source fixture\n"), nil} {
+		name := "damaged"
+		if i == 1 {
+			name = "empty"
+		}
+		t.Run(name, func(t *testing.T) { exerciseNativeRecoverySource(t, minimum+uint64(i), source, damage, abandon) })
+	}
+}
+func exerciseNativeRecoverySource(t *testing.T, minimum uint64, damaged []byte, damage func([]byte), abandon func([]byte)) {
+	t.Helper()
 	damage(damaged)
 	if _, err := Current(); !errors.Is(err, ErrUnavailable) {
 		t.Fatal("damaged source became usable/unmanaged", err)
@@ -40,6 +49,14 @@ func exerciseNativeRecovery(t *testing.T, minimum uint64, damage func([]byte), a
 	if _, err := Update(next); err == nil {
 		t.Fatal("ordinary update trusted damaged prior state")
 	}
+	candidateForInstall, err := PrepareInstallation(next, public, now, minimum)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(candidateForInstall, public); err == nil {
+		t.Fatal("initial install overwrote an existing damaged/empty enrollment")
+	}
+
 	recovery, err := SignRecovery(damaged, next, private, minimum, now, time.Hour)
 	if err != nil {
 		t.Fatal(err)

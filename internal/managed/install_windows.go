@@ -134,7 +134,7 @@ func (tx *nativeInstallationTransaction) Read() ([]byte, bool, error) {
 // source. A reader that observed an older revision before another commit must
 // abort, even if its later transacted write is otherwise permitted by the OS.
 func (tx *nativeInstallationTransaction) reservePrior(data []byte) error {
-	if err := tx.Stage(data); err != nil {
+	if err := tx.setInstallationValue(data); err != nil {
 		return err
 	}
 	committed, present, err := readMachineInstallation()
@@ -151,8 +151,21 @@ func (tx *nativeInstallationTransaction) Stage(data []byte) error {
 	if len(data) == 0 || len(data) > MaxInstallationBytes {
 		return errors.New("invalid installation size")
 	}
+	return tx.setInstallationValue(data)
+}
+
+// Write within the already protected native transaction. Read may reserve an
+// existing empty value; Stage still requires a nonempty candidate.
+func (tx *nativeInstallationTransaction) setInstallationValue(data []byte) error {
+	if len(data) > MaxInstallationBytes {
+		return errors.New("invalid installation size")
+	}
 	value, _ := syscall.UTF16PtrFromString(machinePolicyValue)
-	code, _, _ := securityDLL.NewProc("RegSetValueExW").Call(uintptr(tx.keys[len(tx.keys)-1]), uintptr(unsafe.Pointer(value)), 0, syscall.REG_BINARY, uintptr(unsafe.Pointer(&data[0])), uintptr(len(data)))
+	var pointer unsafe.Pointer
+	if len(data) > 0 {
+		pointer = unsafe.Pointer(&data[0])
+	}
+	code, _, _ := securityDLL.NewProc("RegSetValueExW").Call(uintptr(tx.keys[len(tx.keys)-1]), uintptr(unsafe.Pointer(value)), 0, syscall.REG_BINARY, uintptr(pointer), uintptr(len(data)))
 	if code != 0 {
 		return syscall.Errno(code)
 	}

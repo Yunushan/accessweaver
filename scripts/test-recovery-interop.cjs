@@ -68,8 +68,21 @@ function cli(args, success=true) {
   await writeForeign(foreignRequest,policyDomain);verify(false);
   await writeForeign();const damaged=JSON.parse(fs.readFileSync(foreign,'utf8'));const sig=Buffer.from(damaged.signature,'base64');sig[0]^=1;damaged.signature=sig.toString('base64');fs.writeFileSync(foreign,JSON.stringify(damaged));verify(false);
   await writeForeign();assert.equal(verify().next.policy.revision,9);
+  const emptySource=path.join(workspace,'empty-source.bin');fs.writeFileSync(emptySource,Buffer.alloc(0),{mode:0o600});
+  const emptyGo=path.join(workspace,'empty-go-recovery.json');
+  cli(['managed','sign-recovery',nextFile,'--previous-source',emptySource,'--minimum-revision','7','--private-key',keyFile,'--valid-for','1h','--out',emptyGo]);
+  const emptySigned=JSON.parse(fs.readFileSync(emptyGo,'utf8')),emptyPayload=Buffer.from(emptySigned.payload,'base64');
+  assert.equal(JSON.parse(emptyPayload.toString('utf8')).previousSourceSHA256,sha(Buffer.alloc(0)));
+  assert(await webcrypto.subtle.verify('Ed25519',keys.publicKey,Buffer.from(emptySigned.signature,'base64'),Buffer.concat([recoveryDomain,emptyPayload])));
+  const emptyForeign=path.join(workspace,'empty-foreign.json');
+  fs.writeFileSync(emptyForeign,JSON.stringify(await envelope({...foreignRequest,previousSourceSHA256:sha(Buffer.alloc(0))},recoveryDomain)),{mode:0o600});
+  const verifyEmpty=(success=true,sourcePath=emptySource)=>cli(['managed','verify-recovery',emptyForeign,'--previous-source',sourcePath,'--public-key',publicKey,'--minimum-revision','7'],success);
+  assert.equal(verifyEmpty().next.policy.revision,9);assert.equal(verifyEmpty().previousAuthenticated,false);
+  verifyEmpty(false,sourceFile);
+  fs.unlinkSync(emptySource);verifyEmpty(false);fs.writeFileSync(emptySource,Buffer.alloc(0),{mode:0o600});
+  assert.equal(verifyEmpty().signatureValid,true);
   assert(!fs.existsSync(userState),'offline commands unexpectedly created user state');
-  const evidence={sourceCommit:process.env.GITHUB_SHA||'unknown',platform:process.platform,arch:process.arch,nodeVersion:process.version,binarySha256:sha(fs.readFileSync(executable)),build,goToWebCrypto:true,webCryptoToGo:true,replacementPolicySignatureVerified:true,binarySourceBytesPreserved:true,wrongKeyAndFloorRejected:true,changedSourceRejected:true,expiryRejected:true,crossProtocolSignatureRejected:true,changedSignatureRejected:true,validReviewBeforeAndAfterRejections:true,machinePolicyMutationAttempted:false,productionQualificationComplete:false};
+  const evidence={sourceCommit:process.env.GITHUB_SHA||'unknown',platform:process.platform,arch:process.arch,nodeVersion:process.version,binarySha256:sha(fs.readFileSync(executable)),build,goToWebCrypto:true,webCryptoToGo:true,emptySourceGoToWebCrypto:true,emptySourceWebCryptoToGo:true,missingSnapshotRejected:true,replacementPolicySignatureVerified:true,binarySourceBytesPreserved:true,wrongKeyAndFloorRejected:true,changedSourceRejected:true,expiryRejected:true,crossProtocolSignatureRejected:true,changedSignatureRejected:true,validReviewBeforeAndAfterRejections:true,machinePolicyMutationAttempted:false,productionQualificationComplete:false};
   const directory=path.resolve('build','managed-policy-checks');fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,'recovery-interop-'+process.platform+'.json'),JSON.stringify(evidence,null,2)+'\n');
   console.log(JSON.stringify(evidence));
  } finally {

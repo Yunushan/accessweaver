@@ -300,7 +300,13 @@ func TestDisposablePolicyTransactionRollback(t *testing.T) {
 			tx.Close()
 			t.Fatal(err)
 		}
-		if err := tx.Stage(damaged); err != nil {
+		var damageErr error
+		if len(damaged) == 0 {
+			damageErr = tx.setInstallationValue(damaged)
+		} else {
+			damageErr = tx.Stage(damaged)
+		}
+		if err := damageErr; err != nil {
 			tx.Close()
 			t.Fatal(err)
 		}
@@ -325,7 +331,7 @@ func TestDisposablePolicyTransactionRollback(t *testing.T) {
 			t.Fatalf("recovery abort child failed: %v %s", err, output)
 		}
 	})
-	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "goVersion": runtime.Version(), "platform": runtime.GOOS, "arch": runtime.GOARCH, "abandonedBootstrapInvisible": true, "pendingUpdateInvisible": true, "closedTransactionRolledBack": true, "processExitRolledBack": true, "validUpdateAfterAbort": true, "staleReaderCannotOverwriteNewRevision": true, "abandonedRotationKeepsOldKey": true, "nativeKeyRotationCommitted": true, "keyRotationReplayDenied": true, "retiredKeyUpdateDenied": true, "newKeyUpdateAccepted": true, "damagedSourceRemainsBlocked": true, "abandonedRecoveryKeepsDamagedSource": true, "nativeSignedRecoveryCommitted": true, "recoveryReplayDenied": true, "recoveryKeyAndFloorMismatchDenied": true, "registryCleanupScheduled": true, "productionQualificationComplete": false}
+	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "goVersion": runtime.Version(), "platform": runtime.GOOS, "arch": runtime.GOARCH, "abandonedBootstrapInvisible": true, "pendingUpdateInvisible": true, "closedTransactionRolledBack": true, "processExitRolledBack": true, "validUpdateAfterAbort": true, "staleReaderCannotOverwriteNewRevision": true, "abandonedRotationKeepsOldKey": true, "nativeKeyRotationCommitted": true, "keyRotationReplayDenied": true, "retiredKeyUpdateDenied": true, "newKeyUpdateAccepted": true, "damagedSourceRemainsBlocked": true, "emptySourceRemainsBlocked": true, "nativeEmptySourceRecoveryCommitted": true, "emptySourceRecoveryReplayDenied": true, "abandonedRecoveryKeepsDamagedSource": true, "nativeSignedRecoveryCommitted": true, "recoveryReplayDenied": true, "recoveryKeyAndFloorMismatchDenied": true, "registryCleanupScheduled": true, "productionQualificationComplete": false}
 	data, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		t.Fatal(err)

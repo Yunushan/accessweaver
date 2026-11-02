@@ -40,9 +40,11 @@ type RecoveryReview struct {
 	RuntimeEnforced       bool      `json:"runtimeEnforced"`
 }
 
+// An empty snapshot has a well-defined digest. Native recovery separately
+// requires an existing, protected source; an approval cannot enroll absence.
 func recoverySourceDigest(prior []byte) (string, error) {
-	if len(prior) == 0 || len(prior) > MaxInstallationBytes {
-		return "", errors.New("recovery requires a bounded nonempty prior machine source")
+	if len(prior) > MaxInstallationBytes {
+		return "", errors.New("recovery prior machine source exceeds size limit")
 	}
 	digest := sha256.Sum256(prior)
 	return hex.EncodeToString(digest[:]), nil
@@ -55,7 +57,8 @@ func recoveryFloor(minimum uint64) error {
 }
 
 // ExportMachineSource reads the fixed protected source without granting runtime
-// authority to its contents. It also works for bounded corrupt JSON/signatures.
+// authority to its contents. It works for bounded corrupt JSON/signatures and
+// existing empty values.
 func ExportMachineSource() ([]byte, error) {
 	if !machinePolicySupported() {
 		return nil, ErrUnsupported

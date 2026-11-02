@@ -364,58 +364,97 @@ func TestLinuxStagingCleanupLeavesUnexpectedObjectsUntouched(t *testing.T) {
 
 func TestLinuxRecoveryUsesAtomicPublicationAndRejectsSourceReplacement(t *testing.T) {
 	prior, _, _, _, now := renewalFixture(t)
-	for _, replace := range []bool{false, true} {
-		t.Run(fmt.Sprint(replace), func(t *testing.T) {
-			parent := t.TempDir()
-			linuxFixtureInstall(t, parent, prior, now)
-			path := filepath.Join(parent, linuxPolicyDirectory, linuxPolicyFile)
-			damaged := []byte("damaged protected source")
-			if err := os.WriteFile(path, damaged, 0644); err != nil {
-				t.Fatal(err)
-			}
-			recovery, public, _, now := recoveryFixture(t, damaged, time.Hour)
-			tx := linuxFixtureTransaction(t, parent, false)
-			if replace {
-				current, present, err := tx.Read()
-				if err != nil || !present {
+	for _, damaged := range [][]byte{[]byte("damaged protected source"), nil} {
+		for _, replace := range []bool{false, true} {
+			t.Run(fmt.Sprint(len(damaged), "-", replace), func(t *testing.T) {
+				parent := t.TempDir()
+				linuxFixtureInstall(t, parent, prior, now)
+				path := filepath.Join(parent, linuxPolicyDirectory, linuxPolicyFile)
+				if err := os.WriteFile(path, damaged, 0644); err != nil {
 					t.Fatal(err)
 				}
-				_, candidate, err := recoveryTransition(current, recovery, public, 2, now)
+				recovery, public, _, now := recoveryFixture(t, damaged, time.Hour)
+				tx := linuxFixtureTransaction(t, parent, false)
+				if replace {
+					current, present, err := tx.Read()
+					if err != nil || !present {
+						t.Fatal(err)
+					}
+					_, candidate, err := recoveryTransition(current, recovery, public, 2, now)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := tx.Stage(candidate); err != nil {
+						t.Fatal(err)
+					}
+					replacement := []byte("new administrator source")
+					if err := os.WriteFile(path, replacement, 0644); err != nil {
+						t.Fatal(err)
+					}
+					if err := tx.Commit(); err == nil {
+						t.Fatal("stale recovery overwrote source replacement")
+					}
+					got, err := os.ReadFile(path)
+					if err != nil || !bytes.Equal(got, replacement) {
+						t.Fatal("source replacement lost", err)
+					}
+					return
+				}
+				result, err := commitRecovery(tx, recovery, public, 2, func() time.Time { return now })
+				if err != nil || !result.Committed || result.Operation != "recover" {
+					t.Fatal(result, err)
+				}
+				data, err := os.ReadFile(path)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := tx.Stage(candidate); err != nil {
-					t.Fatal(err)
+				authority, err := DecodeInstallation(data, now)
+				if err != nil || authority.verified.KeyID != KeyID(public) {
+					t.Fatal("repair did not become valid authority", err)
 				}
-				replacement := []byte("new administrator source")
-				if err := os.WriteFile(path, replacement, 0644); err != nil {
-					t.Fatal(err)
+				retry := linuxFixtureTransaction(t, parent, false)
+				if _, err := commitRecovery(retry, recovery, public, 2, func() time.Time { return now }); err == nil {
+					t.Fatal("repair replay published")
 				}
-				if err := tx.Commit(); err == nil {
-					t.Fatal("stale recovery overwrote source replacement")
-				}
-				got, err := os.ReadFile(path)
-				if err != nil || !bytes.Equal(got, replacement) {
-					t.Fatal("source replacement lost", err)
-				}
-				return
-			}
-			result, err := commitRecovery(tx, recovery, public, 2, func() time.Time { return now })
-			if err != nil || !result.Committed || result.Operation != "recover" {
-				t.Fatal(result, err)
-			}
-			data, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			authority, err := DecodeInstallation(data, now)
-			if err != nil || authority.verified.KeyID != KeyID(public) {
-				t.Fatal("repair did not become valid authority", err)
-			}
-			retry := linuxFixtureTransaction(t, parent, false)
-			if _, err := commitRecovery(retry, recovery, public, 2, func() time.Time { return now }); err == nil {
-				t.Fatal("repair replay published")
-			}
-		})
+			})
+		}
+	}
+}
+
+func TestLinuxEmptySourceSignedRecovery(t *testing.T) {
+	prior, next, public, private, now := renewalFixture(t)
+	parent := t.TempDir()
+	linuxFixtureInstall(t, parent, prior, now)
+	path := filepath.Join(parent, linuxPolicyDirectory, linuxPolicyFile)
+	if err := os.WriteFile(path, nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+	tx := linuxFixtureTransaction(t, parent, false)
+	empty, present, err := tx.Read()
+	if err != nil || !present || len(empty) != 0 {
+		t.Fatal("existing zero-byte protected file cannot be read for recovery", present, err)
+	}
+	if _, err := DecodeInstallation(empty, now); err == nil {
+		t.Fatal("empty native source became authority")
+	}
+	signed, err := SignRecovery(empty, next, private, 2, now, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := commitRecovery(tx, signed, public, 2, func() time.Time { return now })
+	if err != nil || !result.Committed {
+		t.Fatal("empty protected source repair failed", result, err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := DecodeInstallation(data, now)
+	if err != nil || authority.verified.KeyID != KeyID(public) {
+		t.Fatal("repaired source did not authenticate", err)
+	}
+	replay := linuxFixtureTransaction(t, parent, false)
+	if _, err := commitRecovery(replay, signed, public, 2, func() time.Time { return now }); err == nil {
+		t.Fatal("empty source approval replayed")
 	}
 }

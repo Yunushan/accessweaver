@@ -70,15 +70,21 @@ func readInstallationValue(key syscall.Handle) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if kind != syscall.REG_BINARY || size == 0 || size > MaxInstallationBytes {
-		return nil, errors.New("machine installation must be bounded nonempty REG_BINARY JSON")
+	if kind != syscall.REG_BINARY || size > MaxInstallationBytes {
+		return nil, errors.New("machine installation source must be bounded REG_BINARY")
 	}
 	data := make([]byte, int(size))
-	err = syscall.RegQueryValueEx(key, name, nil, &kind, &data[0], &size)
+	var pointer *byte
+	if len(data) > 0 {
+		pointer = &data[0]
+	}
+	// Query again even for an empty value: a missing, resized or retyped value
+	// between queries must fail rather than being returned as an empty snapshot.
+	err = syscall.RegQueryValueEx(key, name, nil, &kind, pointer, &size)
 	if err != nil {
 		return nil, err
 	}
-	if kind != syscall.REG_BINARY || size == 0 || size > uint32(len(data)) {
+	if kind != syscall.REG_BINARY || size > uint32(len(data)) {
 		return nil, errors.New("machine installation changed during reading")
 	}
 	return data[:size], nil

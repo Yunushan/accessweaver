@@ -14,6 +14,10 @@ function matchReceipt(receipt,report,expected){
  validateBuild(report.build,expected);
  for(const key of identityKeys)assert.equal(report.build[key],receipt.build[key],'runtime differs from authenticated BUILD-INFO: '+key);
 }
+function validateRecoveryEvidence(recovery){
+ for(const key of ['goToWebCrypto','webCryptoToGo','emptySourceGoToWebCrypto','emptySourceWebCryptoToGo','missingSnapshotRejected','replacementPolicySignatureVerified','binarySourceBytesPreserved','wrongKeyAndFloorRejected','changedSourceRejected','expiryRejected','crossProtocolSignatureRejected','changedSignatureRejected','validReviewBeforeAndAfterRejections'])assert.equal(recovery[key],true);
+ assert.equal(recovery.machinePolicyMutationAttempted,false);
+}
 function read(file){const st=fs.lstatSync(file);assert(st.isFile()&&!st.isSymbolicLink()&&st.size>0&&st.size<=1<<20,'evidence must be a bounded regular file');return JSON.parse(fs.readFileSync(file,'utf8'));}
 function main(){
  const [phase,folder]=process.argv.slice(2);assert(['identity','complete'].includes(phase)&&folder,'usage: check-packaged-evidence.cjs identity|complete STAGED_DIRECTORY');
@@ -29,8 +33,7 @@ function main(){
  const backup=read('build/backup-checks/interop-'+nodePlatform+'.json');matchReceipt(receipt,backup,expected);
  for(const key of ['goToWebCrypto','webCryptoToGo','restoredRevisionPreserved','tamperRejected','wrongPassphraseRejected'])assert.equal(backup[key],true);
  const recovery=read('build/managed-policy-checks/recovery-interop-'+nodePlatform+'.json');matchReceipt(receipt,recovery,expected);
- for(const key of ['goToWebCrypto','webCryptoToGo','replacementPolicySignatureVerified','binarySourceBytesPreserved','wrongKeyAndFloorRejected','changedSourceRejected','expiryRejected','crossProtocolSignatureRejected','changedSignatureRejected','validReviewBeforeAndAfterRejections'])assert.equal(recovery[key],true);
- assert.equal(recovery.machinePolicyMutationAttempted,false);
+ validateRecoveryEvidence(recovery);
  const diagnostics=read('build/packaged-native-checks/diagnostics-'+expected.goos+'-'+expected.goarch+'.json');matchReceipt(receipt,diagnostics,expected);
  assert.equal(diagnostics.loopbackOnly,true);assert.equal(diagnostics.settingsChanged,false);assert.equal(diagnostics.checks.length,9);assert(diagnostics.checks.every(c=>c.passed===true));
  if(expected.goos!=='windows'){
@@ -39,5 +42,5 @@ function main(){
  const result={schemaVersion:1,sourceCommit:expected.commit,sourceRef:expected.ref,target:receipt.target,binarySha256:receipt.binarySha256,archiveSha256:receipt.archiveSha256,build:receipt.build,authenticatedCandidateExecuted:true,backupAndRecoveryVerified:true,loopbackDiagnosticsVerified:true,unixControllerVerified:expected.goos!=='windows',publisherSignatureVerified:false,productionQualificationComplete:false};
  fs.writeFileSync('build/packaged-native-checks/acceptance.json',JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify(result));
 }
-module.exports={matchReceipt};
+module.exports={matchReceipt,validateRecoveryEvidence};
 if(require.main===module){try{main()}catch(error){console.error(error.message);process.exitCode=1;}}
