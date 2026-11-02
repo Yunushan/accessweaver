@@ -43,6 +43,14 @@ class NormalDetachTests(ImageFixture,unittest.TestCase):
                 self.assertLessEqual(call.kwargs["timeout"],30)
                 self.assertGreater(call.kwargs["timeout"],0)
 
+    def test_clock_rounding_never_extends_detach_timeout_past_total_budget(self):
+        from subprocess import CompletedProcess
+        # (2.02 + 30) - 2.02 rounds above 30 on binary floating-point clocks.
+        with patch.object(storage.time,"monotonic",return_value=2.02),patch.object(storage,"info",side_effect=[self.info(),{"images":[]}]),patch.object(storage,"command",return_value=CompletedProcess([],0,b"",b"")) as command:
+            self.assertEqual(storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1"),1)
+            self.assertLessEqual(command.call_args.kwargs["timeout"],30)
+            self.assertGreater(command.call_args.kwargs["timeout"],0)
+
     def test_changed_device_after_busy_is_not_detached(self):
         from subprocess import CompletedProcess
         changed=[{"dev-entry":"/dev/disk30"},self.entities[1]]

@@ -68,7 +68,7 @@ def detach_owned(image, mount, expected_base, expected_volume, maximum_wait=30):
         if remaining <= 0:
             raise RuntimeError("Owned image detach deadline exceeded")
         attempts += 1
-        result = command([HDIUTIL, "detach", expected_base], timeout=remaining, check=False,
+        result = command([HDIUTIL, "detach", expected_base], timeout=min(maximum_wait, remaining), check=False,
                          env=dict(os.environ, LANG="C", LC_ALL="C"))
         if result.returncode == 0:
             remaining = deadline - time.monotonic()
