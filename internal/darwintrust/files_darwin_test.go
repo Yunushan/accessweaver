@@ -160,6 +160,7 @@ func TestDarwinReadAndDenyACLsAndNewObjectReset(t *testing.T) {
 	parent := fixtureParent(t)
 	owner := uint32(os.Geteuid())
 	file := fixtureFile(t, parent, "read-only", []byte("retained"))
+	defer chmodFixture(t, file.Name(), "-N")
 	chmodFixture(t, file.Name(), "+a", "everyone allow read,readattr,readextattr,readsecurity")
 	chmodFixture(t, file.Name(), "+a", "everyone deny delete")
 	if _, err := Check(file, false, owner); err != nil {
