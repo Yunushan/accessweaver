@@ -215,6 +215,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_stage_packaged_native.py -v
           python3 -m unittest discover -s scripts -p test_windows_handle_census.py -v
           python3 -m unittest discover -s scripts -p test_sbom.py -v
+          python3 -m unittest discover -s scripts -p test_darwin_storage.py -v
       - if: runner.os == 'Windows'
         shell: powershell
         run: ./scripts/test-windows-workflow.ps1
@@ -245,6 +246,20 @@ jobs:
         with:
           name: darwin-managed-policy-check-${{ matrix.goarch }}
           path: build/managed-policy-checks/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Disposable macOS APFS exhaustion acceptance
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          ACCESSWEAVER_DISPOSABLE_DARWIN_STORAGE_TEST: '1'
+        run: python3 scripts/test-darwin-storage.py
+      - name: Retain macOS APFS exhaustion evidence
+        if: runner.os == 'macOS' && always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: darwin-storage-fault-check-${{ matrix.goarch }}
+          path: build/darwin-storage-checks/
           if-no-files-found: ignore
           retention-days: 14
       - name: Disposable Linux managed-policy acceptance
