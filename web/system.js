@@ -102,7 +102,10 @@ function renderSystemJob(job){
  const journal=job.result?.journal;
  if(typeof journal==='string'&&journal){
   const name=journal.split(/[\\/]/).pop();
-  if(name)$('system-journal').value=name;
+  if(name.trim()&&name!==$('system-journal').value){
+   $('system-journal').value=name;
+   if($('system-action').value==='recover')invalidateSystemPlan();
+  }
  }
 }
 async function pollSystemJob(){if(systemUI.polling)return;systemUI.polling=true;try{for(;;){const info=await readSystemStatus();renderSystemJob(info.job);if(info.job.state!=='running')break;await new Promise(resolve=>setTimeout(resolve,1500));}}catch(error){setTextOutput('system-output',error.message);}finally{systemUI.polling=false}}

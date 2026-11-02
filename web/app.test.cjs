@@ -314,7 +314,7 @@ test('a busy mutation is not replayed and other status failures are returned',as
 
 
 test('optional workflow metadata cannot interrupt job rendering',()=>{
- for(const journal of [null,false,true,0,7,[],{},['unexpected'],{split:'not a function'}]){
+ for(const journal of [null,false,true,0,7,[],{},['unexpected'],{split:'not a function'},'', '   ', 'C:/journals/']){
   const env=environment();env.run(systemSource);env.get('system-journal').value='reviewed.json';
   const job={id:'raw-result',action:'discover',state:'failed',result:{journal,private:'RAW_RESULT_RETAINED'}};env.put('jobFixture',job);
   assert.doesNotThrow(()=>env.run('renderSystemJob(jobFixture)'));
@@ -366,4 +366,13 @@ test('workflow polling survives untyped optional metadata until the terminal rep
  env.context.setTimeout=(callback,ms)=>{assert.equal(ms,1500);pauses++;queueMicrotask(callback);return 1};
  env.context.apiRequest=async path=>{assert.equal(path,'/api/v1/system');reads++;return {job:{id:'polling',action:'discover',state:reads===1?'running':'failed',result:{journal:{legacy:'RAW_OPTIONAL_METADATA'},data:{folder:{invalid:true}}}}}};
  await env.run('pollSystemJob()');assert.equal(reads,2);assert.equal(pauses,1);assert.equal(env.run('systemUI.polling'),false);assert.equal(env.get('system-cancel').disabled,true);assert.equal(env.get('system-journal').value,'reviewed.json');assert.match(env.get('system-output').textContent,/RAW_OPTIONAL_METADATA/);assert.match(env.get('system-output').textContent,/failed/);
+});
+
+
+test('journal hints invalidate a changed recovery review and preserve an unchanged one',()=>{
+ const env=environment();env.run(systemSource);env.get('system-action').value='recover';env.get('system-journal').value='reviewed.json';env.get('system-consent').checked=true;env.get('system-apply').disabled=false;
+ env.run('systemUI.plan={id:"reviewed",ready:true}');env.put('jobFixture',{id:'completed',action:'install',state:'failed',result:{journal:'C:\\journals\\reviewed.json'}});
+ env.run('renderSystemJob(jobFixture)');assert.equal(env.run('systemUI.plan.id'),'reviewed');assert.equal(env.get('system-consent').checked,true);
+ env.put('jobFixture',{id:'completed',action:'install',state:'failed',result:{journal:'C:\\journals\\replacement.json'}});env.run('renderSystemJob(jobFixture)');
+ assert.equal(env.get('system-journal').value,'replacement.json');assert.equal(env.run('systemUI.plan'),null);assert.equal(env.get('system-consent').checked,false);assert.equal(env.get('system-apply').disabled,true);
 });
