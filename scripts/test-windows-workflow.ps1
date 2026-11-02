@@ -208,3 +208,30 @@ foreach($url in @('https://github.com/hufrea/byedpi/releases/download/v-test/com
     $target=Component-ArchivePath $archiveRoot $url
     Assert ((Under $target $archiveRoot) -and [IO.Path]::GetFileName($target) -match '^asset-[a-f0-9]{32}\.zip$') 'Component metadata cannot select the staging filename or escape its directory'
 }
+
+
+# Scheduled-task inspection remains read-only, bounded and language-independent.
+$previousTaskNative=(Get-Command Native).ScriptBlock
+try {
+    $script:taskQueryCalls=[Collections.Generic.List[object]]::new()
+    function Native([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600) {
+        $script:taskQueryCalls.Add(@{program=$program;arguments=@($arguments);codes=@($codes);secret=[bool]$Secret;timeout=$Timeout})
+        if($script:taskQueryMode -eq 'denied'){throw 'PRIVATE_TASK_QUERY_DETAIL'}
+        if($script:taskQueryMode -eq 'timeout'){throw 'Timed out: PRIVATE_TASK_QUERY_DETAIL'}
+        $exit=if($script:taskQueryMode -eq 'absent'){-2147024894}elseif($script:taskQueryMode -eq 'unexpected'){1}else{0}
+        return @{exitCode=$exit;outputComplete=($script:taskQueryMode -ne 'incomplete');stdout='PRIVATE_TASK_QUERY_DETAIL';stderr='PRIVATE_TASK_QUERY_DETAIL'}
+    }
+    foreach($mode in @('present','absent','denied','timeout','unexpected','incomplete')) {
+        $script:taskQueryMode=$mode
+        $inspection=Get-RefreshTaskInspection
+        if($mode -eq 'present'){Assert ($inspection.present -eq $true -and $null -eq $inspection.error) 'Task inspection reports a successful query as present'}
+        elseif($mode -eq 'absent'){Assert ($inspection.present -eq $false -and $null -eq $inspection.error) 'Task inspection reports only the file-not-found HRESULT as absent'}
+        else{Assert ($null -eq $inspection.present -and -not [string]::IsNullOrWhiteSpace($inspection.error)) ($mode+' task inspection remains explicitly unknown')}
+        Assert (($inspection|ConvertTo-Json) -notmatch 'PRIVATE_TASK_QUERY_DETAIL') 'Task inspection omits command output and private exception details'
+    }
+    foreach($call in $script:taskQueryCalls) {
+        Assert ($call.program -eq (Join-Path $env:SystemRoot 'System32\schtasks.exe')) 'Task inspection uses the absolute trusted native utility'
+        Assert (($call.arguments -join '|') -eq '/Query|/TN|\AccessWeaver-WireSock-Refresh|/FO|CSV|/NH|/HRESULT') 'Task inspection queries only the fixed local task with HRESULT result codes'
+        Assert ($call.timeout -eq 5 -and $call.secret -and ($call.codes -join ',') -eq '0,-2147024894') 'Task inspection bounds execution and suppresses query output'
+    }
+}finally{Set-Item Function:Native $previousTaskNative}

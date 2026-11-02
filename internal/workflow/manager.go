@@ -559,6 +559,9 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 }
 
 func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if runtime.GOOS != "windows" {
 		return nil, errors.New("Windows required")
 	}
@@ -621,6 +624,11 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	cmd.Stdout = log
 	cmd.Stderr = log
 	err = cmd.Run()
+	if err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			err = errors.Join(err, contextErr)
+		}
+	}
 	result, readErr := readWorkflowFile(input.ResultPath, maxResultBytes)
 	if readErr != nil {
 		return nil, errors.Join(err, fmt.Errorf("read workflow result: %w", readErr))
@@ -633,9 +641,9 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 			Error string `json:"error"`
 		}
 		if json.Unmarshal(result, &outcome) == nil && outcome.Error != "" {
-			return result, fmt.Errorf("Windows workflow failed: %s", outcome.Error)
+			return result, fmt.Errorf("Windows workflow failed: %s: %w", outcome.Error, err)
 		}
-		return result, fmt.Errorf("Windows workflow failed (%v); inspect process.log and the protected recovery journal", err)
+		return result, fmt.Errorf("Windows workflow failed (%w); inspect process.log and the protected recovery journal", err)
 	}
 	var outcome struct {
 		OK    bool   `json:"ok"`

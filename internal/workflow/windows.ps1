@@ -692,13 +692,34 @@ function Auto-Install {
     $installed=Install-Method
     return @{installed=$installed;selectedStrategy=$selected;scanReport=$scan.reportPath;note='Only the protocol and scan targets in the report were tested. UDP voice and other networks require separate verification.'}
 }
+function Get-RefreshTaskInspection {
+    # The executor supplies a canonical SystemRoot and a trusted native PATH.
+    # Avoid an unbounded ScheduledTasks/WMI module query during discovery.
+    $program=Join-Path $env:SystemRoot 'System32\schtasks.exe'
+    try {
+        $query=Native $program @('/Query','/TN','\AccessWeaver-WireSock-Refresh','/FO','CSV','/NH','/HRESULT') @(0,-2147024894) -Secret -Timeout 5
+        if($query.outputComplete -ne $true){return @{present=$null;error='Scheduled task query output was incomplete; status is unknown'}}
+        if($query.exitCode -eq 0){return @{present=$true;error=$null}}
+        # HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND), independently of UI language.
+        if($query.exitCode -eq -2147024894){return @{present=$false;error=$null}}
+    }catch{}
+    return @{present=$null;error='Scheduled task inspection failed; status is unknown'}
+}
 function Discover {
+    [Console]::WriteLine('Discovery phase: services')
     $serviceError=$null;$services=@();try{foreach($name in @('AccessWeaver-*','WireSockAppService','WireSockConnectService','wiresock-client-service','ByeDPI','ProxiFyreService','WinDivert','WinDivert14','NDISRD','zapret','zapret2','GoodbyeDPI','dnscrypt-proxy','CloudflareWARP')){foreach($svc in @(Get-Service -Name $name -ErrorAction SilentlyContinue)){$services+=@{name=$svc.Name;status=[string]$svc.Status;owned=$svc.Name.StartsWith('AccessWeaver-')}}}}catch{$serviceError=$_.Exception.Message}
+    [Console]::WriteLine('Discovery phase: components')
     $assets=@{};foreach($engine in $assetNames.Keys){$assets[$engine]=Find-Source $engine}
+    [Console]::WriteLine('Discovery phase: applications')
     $apps=@{};foreach($variant in @('discord','discord-ptb','splitcord')){$apps[$variant]=Find-App $variant}
+    [Console]::WriteLine('Discovery phase: conflicts')
     $conflicts=@();$kaspersky=Get-Process -Name 'avp','avpui' -ErrorAction SilentlyContinue;if($kaspersky){$conflicts+=@('Kaspersky is running; WinDivert compatibility must be checked')};if(($services|Where-Object {$_.name -eq 'CloudflareWARP' -and $_.status -eq 'Running'})){$conflicts+=@('Cloudflare WARP is running; check routing conflicts')}
-    $task=$null;try{$task=Get-ScheduledTask -TaskName 'AccessWeaver-WireSock-Refresh' -ErrorAction SilentlyContinue}catch{}
-    return @{services=@($services);serviceInspectionError=$serviceError;components=$assets;applications=$apps;wiresockCLI=(WireSock-CLI);conflicts=@($conflicts);managedRoot=$root;refreshTask=[bool]$task;dnsSnapshot=[bool](Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json'))}
+    [Console]::WriteLine('Discovery phase: refresh-task')
+    $task=Get-RefreshTaskInspection
+    [Console]::WriteLine('Discovery phase: final-paths')
+    $cli=WireSock-CLI;$dnsSnapshot=[bool](Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json'))
+    [Console]::WriteLine('Discovery phase: complete')
+    return @{services=@($services);serviceInspectionError=$serviceError;components=$assets;applications=$apps;wiresockCLI=$cli;conflicts=@($conflicts);managedRoot=$root;refreshTask=$task.present;refreshTaskInspectionError=$task.error;dnsSnapshot=$dnsSnapshot}
 }
 function Rollback {
     $rollbackErrors=@()

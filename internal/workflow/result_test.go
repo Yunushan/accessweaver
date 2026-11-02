@@ -114,3 +114,16 @@ func TestSupportSummaryDoesNotExposeResultOrJobIdentity(t *testing.T) {
 		t.Fatal("summary lost status information")
 	}
 }
+
+func TestCanceledWorkflowExecutionDoesNotCreateState(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "must-not-create")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result, err := execute(ctx, directory, Request{Action: "discover"})
+	if !errors.Is(err, context.Canceled) || len(result) != 0 {
+		t.Fatalf("pre-canceled execution: %v", err)
+	}
+	if _, err := os.Stat(directory); !os.IsNotExist(err) {
+		t.Fatal("pre-canceled execution created workflow state")
+	}
+}
