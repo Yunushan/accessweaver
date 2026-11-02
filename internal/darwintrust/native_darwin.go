@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/ebitengine/purego"
 	"golang.org/x/sys/unix"
@@ -60,9 +61,9 @@ func loadNative() (*nativeAPI, error) {
 	return api, nil
 }
 
-func (api *nativeAPI) lastError(operation string) error {
+func (api *nativeAPI) lastError(operation string, errno *int32) error {
 	// The caller holds its OS thread through the native call and errno read.
-	code := syscall.Errno(*api.errno())
+	code := syscall.Errno(*errno)
 	if code == 0 {
 		return fmt.Errorf("%s failed without an OS error", operation)
 	}
@@ -79,7 +80,7 @@ const readOnlyACL = uint64(1<<1 | 1<<3 | 1<<7 | 1<<9 | 1<<11 | 1<<20)
 
 // Control pins the descriptor through the foreign call, including concurrent
 // Close/finalizer activity. A locked OS thread also preserves errno identity.
-func withNativeFD(file *os.File, operation func(*nativeAPI, int32) error) error {
+func withNativeFD(file *os.File, operation func(*nativeAPI, int32, *int32) error) error {
 	api, err := getNative()
 	if err != nil {
 		return err
@@ -92,49 +93,75 @@ func withNativeFD(file *os.File, operation func(*nativeAPI, int32) error) error 
 	controlErr := raw.Control(func(fd uintptr) {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
-		result = operation(api, int32(fd))
+		// Resolve the thread-local errno address before the operation. No
+		// second foreign call may intervene between failure and reading its code.
+		errno := api.errno()
+		if errno == nil {
+			result = errors.New("native errno storage unavailable")
+			return
+		}
+		result = operation(api, int32(fd), errno)
 	})
 	return errors.Join(result, controlErr)
 }
 
 func checkACL(file *os.File) error {
-	return withNativeFD(file, checkACLDescriptor)
+	return withNativeFD(file, func(api *nativeAPI, fd int32, errno *int32) error {
+		return checkACLWithRetry(api, fd, errno)
+	})
 }
 
-func checkACLDescriptor(api *nativeAPI, fd int32) (result error) {
+// Inspection can be interrupted by signals or a transient native metadata
+// timeout. Retry the complete read at most three times; never interpret these
+// errors as an absent ACL. Publication/ACL writes are not retried here.
+func checkACLWithRetry(api *nativeAPI, fd int32, errno *int32) error {
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		err = checkACLDescriptor(api, fd, errno)
+		if !errors.Is(err, syscall.EINTR) && !errors.Is(err, syscall.ETIMEDOUT) {
+			return err
+		}
+		if attempt < 2 {
+			time.Sleep(time.Duration(attempt+1) * time.Millisecond)
+		}
+	}
+	return err
+}
+
+func checkACLDescriptor(api *nativeAPI, fd int32, errno *int32) (result error) {
 	acl := api.aclGetFD(fd, aclTypeExtended)
 	if acl == 0 {
 		// Apple's descriptor API reports a missing FILESEC_ACL property as
 		// ENOENT even while the file exists. Control holds a valid descriptor;
 		// mode, owner, type, links and local APFS are checked separately.
-		if syscall.Errno(*api.errno()) == syscall.ENOENT {
+		if syscall.Errno(*errno) == syscall.ENOENT {
 			return nil
 		}
-		return api.lastError("read extended ACL")
+		return api.lastError("read extended ACL", errno)
 	}
 	defer func() {
 		if api.aclFree(acl) != 0 {
-			result = errors.Join(result, api.lastError("free extended ACL"))
+			result = errors.Join(result, api.lastError("free extended ACL", errno))
 		}
 	}()
 	if api.aclValid(acl) != 0 {
-		return api.lastError("validate extended ACL")
+		return api.lastError("validate extended ACL", errno)
 	}
 	for index := 0; index <= 128; index++ {
 		var entry uintptr
 		if api.aclGetEntry(acl, int32(index), &entry) != 0 {
 			// On Apple's validated ACL object, an out-of-range entry is EINVAL.
-			if syscall.Errno(*api.errno()) == syscall.EINVAL {
+			if syscall.Errno(*errno) == syscall.EINVAL {
 				return nil
 			}
-			return api.lastError("read extended ACL entry")
+			return api.lastError("read extended ACL entry", errno)
 		}
 		if index == 128 {
 			return errors.New("extended ACL exceeds 128 entries")
 		}
 		var tag int32
 		if api.aclGetTag(entry, &tag) != 0 {
-			return api.lastError("read extended ACL tag")
+			return api.lastError("read extended ACL tag", errno)
 		}
 		if tag == aclDeny {
 			continue
@@ -144,7 +171,7 @@ func checkACLDescriptor(api *nativeAPI, fd int32) (result error) {
 		}
 		var mask uint64
 		if api.aclGetMask(entry, &mask) != 0 {
-			return api.lastError("read extended ACL permissions")
+			return api.lastError("read extended ACL permissions", errno)
 		}
 		if mask & ^readOnlyACL != 0 {
 			return errors.New("extended ACL grants mutation or unknown permissions")
@@ -159,27 +186,27 @@ func ResetCreatedACL(file *os.File) error {
 	return withNativeFD(file, resetCreatedDescriptorACL)
 }
 
-func resetCreatedDescriptorACL(api *nativeAPI, fd int32) (result error) {
+func resetCreatedDescriptorACL(api *nativeAPI, fd int32, errno *int32) (result error) {
 	acl := api.aclInit(0)
 	if acl == 0 {
-		return api.lastError("create empty extended ACL")
+		return api.lastError("create empty extended ACL", errno)
 	}
 	defer func() {
 		if api.aclFree(acl) != 0 {
-			result = errors.Join(result, api.lastError("free empty extended ACL"))
+			result = errors.Join(result, api.lastError("free empty extended ACL", errno))
 		}
 	}()
 	// Preserve the intended new-object ACL across a later publication rename;
 	// parent inheritance must not reintroduce a removed read-deny entry.
 	var flags uintptr
 	if api.aclGetFlags(acl, &flags) != 0 {
-		return api.lastError("read new ACL flags")
+		return api.lastError("read new ACL flags", errno)
 	}
 	if api.aclAddFlag(flags, 1<<17) != 0 {
-		return api.lastError("disable new-object ACL inheritance")
+		return api.lastError("disable new-object ACL inheritance", errno)
 	}
 	if api.aclSetFD(fd, acl, aclTypeExtended) != 0 {
-		return api.lastError("set new object extended ACL")
+		return api.lastError("set new object extended ACL", errno)
 	}
 	return nil
 }
@@ -195,9 +222,9 @@ func RenameDirectories(parent *os.File, from, to string, exchange bool) error {
 	if exchange {
 		flags = unix.RENAME_SWAP
 	}
-	return withNativeFD(parent, func(api *nativeAPI, fd int32) error {
+	return withNativeFD(parent, func(api *nativeAPI, fd int32, errno *int32) error {
 		if api.rename(fd, from, fd, to, flags) != 0 {
-			return api.lastError("publish policy directory")
+			return api.lastError("publish policy directory", errno)
 		}
 		return nil
 	})

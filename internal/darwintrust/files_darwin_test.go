@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -326,5 +327,71 @@ func TestDarwinAbsentACLIsDistinctFromInvalidDescriptor(t *testing.T) {
 	}
 	if err := checkACL(file); err == nil {
 		t.Fatal("invalid descriptor was treated as absent ACL")
+	}
+}
+
+func TestDarwinACLInspectionRetriesOnlyBoundedTransientReads(t *testing.T) {
+	for _, code := range []syscall.Errno{syscall.EINTR, syscall.ETIMEDOUT, syscall.EACCES, syscall.EIO} {
+		t.Run(code.Error(), func(t *testing.T) {
+			for _, persistent := range []bool{false, true} {
+				var errno int32
+				calls := 0
+				api := &nativeAPI{aclGetFD: func(fd, kind int32) uintptr {
+					calls++
+					if fd != 42 || kind != aclTypeExtended {
+						t.Fatal("native inspection parameters changed")
+					}
+					errno = int32(code)
+					if !persistent && calls > 1 {
+						errno = int32(syscall.ENOENT)
+					}
+					return 0
+				}}
+				err := checkACLWithRetry(api, 42, &errno)
+				transient := code == syscall.EINTR || code == syscall.ETIMEDOUT
+				want := 1
+				if transient {
+					want = 3
+					if !persistent {
+						want = 2
+					}
+				}
+				if calls != want {
+					t.Fatal("incorrect native retry bound", code, persistent, calls, want)
+				}
+				if transient && !persistent {
+					if err != nil {
+						t.Fatal("successful complete retry failed", err)
+					}
+				} else if !errors.Is(err, code) {
+					t.Fatal("persistent or permanent failure became authority", err)
+				}
+			}
+		})
+	}
+}
+
+func TestDarwinConcurrentACLInspectionKeepsThreadLocalErrors(t *testing.T) {
+	parent := fixtureParent(t)
+	file := fixtureFile(t, parent, "stable-acl", []byte("unchanged native fixture"))
+	chmodFixture(t, file.Name(), "+a", "everyone allow read,readattr,readextattr,readsecurity")
+	var readers sync.WaitGroup
+	failures := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for attempt := 0; attempt < 100; attempt++ {
+				if _, err := Check(file, false, uint32(os.Geteuid())); err != nil {
+					failures <- err
+					return
+				}
+			}
+		}()
+	}
+	readers.Wait()
+	close(failures)
+	for err := range failures {
+		t.Error("unchanged protected ACL failed concurrent native inspection", err)
 	}
 }
