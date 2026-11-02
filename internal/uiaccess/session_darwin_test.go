@@ -29,6 +29,16 @@ func TestDisposableDarwinInheritedACLSession(t *testing.T) {
 		}
 		return out
 	}
+	aclEntries := func(path string) []byte {
+		t.Helper()
+		// The first ls line includes directory size and modification time, which
+		// legitimately change when a child is created. Compare the ACL only.
+		_, entries, ok := bytes.Cut(run("/bin/ls", "-lde", path), []byte("\n"))
+		if !ok {
+			t.Fatal("native ACL listing has no header terminator")
+		}
+		return entries
+	}
 	run("/usr/bin/sudo", "-n", "-u", "nobody", "/usr/bin/true")
 	fixture, err := os.MkdirTemp("/private/tmp", "accessweaver-session-acl-")
 	if err != nil {
@@ -49,7 +59,10 @@ func TestDisposableDarwinInheritedACLSession(t *testing.T) {
 	t.Setenv("HOME", fixture)
 	t.Setenv("LC_ALL", "C")
 	run("/bin/chmod", "+a", "everyone allow read,execute,readattr,readextattr,readsecurity,file_inherit,directory_inherit", cache)
-	parentACL := run("/bin/ls", "-lde", cache)
+	parentACL := aclEntries(cache)
+	if len(parentACL) == 0 {
+		t.Fatal("inheritable ACL fixture was not installed")
+	}
 	credential := strings.Repeat("s", 43) // Public fixture data, never a real session.
 	launcher, err := New("http://127.0.0.1:45678", credential)
 	if err != nil {
@@ -88,16 +101,16 @@ func TestDisposableDarwinInheritedACLSession(t *testing.T) {
 		}
 		// A mutation ACL on an existing parent must be rejected without removing it.
 		run("/bin/chmod", "+a", "everyone allow write", cache)
-		mutationACL := run("/bin/ls", "-lde", cache)
+		mutationACL := aclEntries(cache)
 		if _, err := New("http://127.0.0.1:45678", credential); err == nil {
 			t.Fatal("mutable ACL parent accepted")
 		}
-		if !bytes.Equal(mutationACL, run("/bin/ls", "-lde", cache)) {
+		if !bytes.Equal(mutationACL, aclEntries(cache)) {
 			t.Fatal("existing cache ACL changed during refusal")
 		}
 		run("/bin/chmod", "-a", "everyone allow write", cache)
 	}
-	if !bytes.Equal(parentACL, run("/bin/ls", "-lde", cache)) {
+	if !bytes.Equal(parentACL, aclEntries(cache)) {
 		t.Fatal("existing cache ACL was changed")
 	}
 	report := os.Getenv("ACCESSWEAVER_DARWIN_SESSION_REPORT")
