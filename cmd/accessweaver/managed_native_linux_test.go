@@ -311,11 +311,15 @@ func TestDisposableLinuxManagedPolicyNative(t *testing.T) {
 		if _, err := managed.Update(next); err != nil {
 			t.Fatal(err)
 		}
-		installed, err = managed.PrepareInstallation(next, public, time.Now(), 1)
+		installed, err = managed.ExportInstallation()
 		if err != nil {
 			t.Fatal(err)
 		}
 	})
+	owned, err = os.Lstat(policyDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	file, err := os.OpenFile(enginePath, os.O_WRONLY|os.O_APPEND, 0)
 	if err != nil {
 		t.Fatal(err)

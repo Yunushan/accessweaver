@@ -11,9 +11,9 @@ if sudo -n test -e /etc/accessweaver || sudo -n test -L /etc/accessweaver || sud
   exit 1
 fi
 shopt -s nullglob
-existing_stages=(/etc/.accessweaver-install-*)
+existing_stages=(/etc/.accessweaver-install-* /etc/.accessweaver-policy-stage-*)
 if ((${#existing_stages[@]})); then
-  echo 'Refusing preexisting bootstrap stages.' >&2
+  echo 'Refusing preexisting policy stages.' >&2
   exit 1
 fi
 stat -c '%u %g %a %n' / /etc /opt
@@ -30,8 +30,8 @@ if sudo -n test -e /etc/accessweaver || sudo -n test -L /etc/accessweaver || sud
   exit 1
 fi
 
-remaining_stages=(/etc/.accessweaver-install-*)
+remaining_stages=(/etc/.accessweaver-install-* /etc/.accessweaver-policy-stage-*)
 if ((${#remaining_stages[@]})); then
-  echo 'Native policy tests retained bootstrap stages.' >&2
+  echo 'Native policy tests retained policy stages.' >&2
   exit 1
 fi

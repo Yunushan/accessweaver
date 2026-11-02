@@ -98,3 +98,91 @@ func exerciseNativeRecoverySource(t *testing.T, minimum uint64, damaged []byte, 
 		t.Fatal("native repair replay accepted")
 	}
 }
+
+// Stages the exact pair used by administrative publication, including both
+// preimage reservations. Only the caller's guarded native fixture may commit.
+func stageNativePolicyFixture(tx installationTransaction, candidate []byte, now time.Time) error {
+	if _, _, err := tx.Read(); err != nil {
+		return err
+	}
+	if _, _, err := tx.ReadAcceptance(); err != nil {
+		return err
+	}
+	source, record, err := prepareNativeAcceptance(candidate, now)
+	if err != nil {
+		return err
+	}
+	return tx.StageAccepted(source, record)
+}
+
+func exerciseNativeAcceptance(t *testing.T, rollbackSource, envelope []byte, mutateSource, mutateAcceptance func([]byte)) {
+	t.Helper()
+	before, err := readMachineSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, history, err := decodeMachineSnapshot(before, time.Now())
+	if err != nil || authority == nil || history == nil {
+		t.Fatal("missing native accepted history", err)
+	}
+	status, err := MachineStatus()
+	if err != nil || status.StorageVersion != 2 || status.AcceptedRevision != history.revision {
+		t.Fatal("missing native storage metadata", status, err)
+	}
+	mutateSource(rollbackSource)
+	if _, err := Current(); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("primary rollback granted authority", err)
+	}
+	if err := NewGuard(nil).Diagnostics(); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("primary rollback guard bypass", err)
+	}
+	if _, err := ExportInstallation(); err == nil {
+		t.Fatal("mismatched pair exported as authenticated enrollment")
+	}
+	if _, err := Update(envelope); err == nil {
+		t.Fatal("ordinary update discarded accepted history")
+	}
+	mutateSource(before.source)
+	for _, record := range [][]byte{nil, {}, []byte("{}")} {
+		mutateAcceptance(record)
+		if _, err := Current(); !errors.Is(err, ErrUnavailable) {
+			t.Fatal("missing or corrupt native counter granted authority", err)
+		}
+		if _, err := Update(envelope); err == nil {
+			t.Fatal("ordinary update recreated a lost counter")
+		}
+		mutateAcceptance(before.acceptance)
+		if current, err := Current(); err != nil || current == nil {
+			t.Fatal("restored exact pair unavailable", err)
+		}
+	}
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	payload, err := json.Marshal(Policy{SchemaVersion: 1, Revision: history.revision, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := Sign(payload, private, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutateSource(nil)
+	approval, err := SignRecovery(nil, next, private, history.revision-1, now, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, err := Recover(approval, public, history.revision-1); !errors.Is(err, ErrDenied) || result.Committed {
+		t.Fatal("lower external floor erased native accepted revision", result, err)
+	}
+	retained, err := readMachineSnapshot()
+	if err != nil || len(retained.source) != 0 || !bytes.Equal(retained.acceptance, before.acceptance) {
+		t.Fatal("rejected recovery changed native pair", err)
+	}
+	mutateSource(before.source)
+	if current, err := Current(); err != nil || current == nil {
+		t.Fatal("accepted policy not restored", err)
+	}
+}

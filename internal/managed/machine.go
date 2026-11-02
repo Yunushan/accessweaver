@@ -35,7 +35,7 @@ func parseInstallation(data []byte) (Installation, error) {
 	if err := strictJSON(data, MaxInstallationBytes, &installed); err != nil {
 		return Installation{}, err
 	}
-	if installed.SchemaVersion != 1 {
+	if installed.SchemaVersion != 1 && installed.SchemaVersion != 2 {
 		return Installation{}, errors.New("unsupported managed installation schema")
 	}
 	if installed.MinimumRevision == nil {
@@ -85,14 +85,14 @@ var ErrDenied = errors.New("operation denied by administrator policy")
 // Current reads only the fixed native machine authority. User data roots,
 // environment variables, profiles and browser input never select that source.
 func Current() (*Authority, error) {
-	data, present, err := readMachineInstallation()
+	snapshot, err := readMachineSnapshot()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
-	if !present {
+	if !snapshot.present {
 		return nil, nil
 	}
-	authority, err := DecodeInstallation(data, time.Now())
+	authority, _, err := decodeMachineSnapshot(snapshot, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
@@ -100,32 +100,47 @@ func Current() (*Authority, error) {
 }
 
 type Status struct {
-	Supported   bool       `json:"supported"`
-	Configured  bool       `json:"configured"`
-	Valid       bool       `json:"valid"`
-	KeyID       string     `json:"keyId,omitempty"`
-	Revision    uint64     `json:"revision,omitempty"`
-	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
-	Enforcement string     `json:"enforcement"`
+	StorageVersion   int        `json:"storageVersion,omitempty"`
+	AcceptedRevision uint64     `json:"acceptedRevision,omitempty"`
+	Supported        bool       `json:"supported"`
+	Configured       bool       `json:"configured"`
+	Valid            bool       `json:"valid"`
+	KeyID            string     `json:"keyId,omitempty"`
+	Revision         uint64     `json:"revision,omitempty"`
+	ExpiresAt        *time.Time `json:"expiresAt,omitempty"`
+	Enforcement      string     `json:"enforcement"`
 }
 
 func MachineStatus() (Status, error) {
 	result := Status{Supported: machinePolicySupported(), Enforcement: "none"}
-	data, present, err := readMachineInstallation()
-	result.Configured = present
+	snapshot, err := readMachineSnapshot()
+	result.Configured = snapshot.present
 	if err != nil {
 		result.Enforcement = "blocked"
 		return result, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
-	if !present {
+	if !snapshot.present {
 		return result, nil
 	}
-	authority, err := DecodeInstallation(data, time.Now())
+	if installed, e := parseInstallation(snapshot.source); e == nil {
+		result.StorageVersion = installed.SchemaVersion
+	}
+	if snapshot.acceptancePresent {
+		if history, e := readAcceptance(snapshot.acceptance); e == nil {
+			result.AcceptedRevision = history.revision
+		}
+	}
+	authority, accepted, err := decodeMachineSnapshot(snapshot, time.Now())
 	if err != nil {
 		result.Enforcement = "blocked"
 		return result, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
 	result.Valid = true
+	installed, _ := parseInstallation(snapshot.source)
+	result.StorageVersion = installed.SchemaVersion
+	if accepted != nil {
+		result.AcceptedRevision = accepted.revision
+	}
 	result.Enforcement = "partial"
 	result.KeyID = authority.verified.KeyID
 	result.Revision = authority.verified.Policy.Revision

@@ -144,10 +144,13 @@ func TestPolicyUpdateRejectsTrustSubstitutionAndInvalidPriorState(t *testing.T) 
 }
 
 type fakeInstallationTransaction struct {
-	prior, staged, published               []byte
-	present                                bool
-	readErr, stageErr, commitErr, closeErr error
-	stageCalls, commitCalls, closeCalls    int
+	acceptance, stagedAcceptance, publishedAcceptance []byte
+	acceptancePresent                                 bool
+	acceptanceErr                                     error
+	prior, staged, published                          []byte
+	present                                           bool
+	readErr, stageErr, commitErr, closeErr            error
+	stageCalls, commitCalls, closeCalls               int
 }
 
 func (tx *fakeInstallationTransaction) Read() ([]byte, bool, error) {
@@ -162,6 +165,7 @@ func (tx *fakeInstallationTransaction) Commit() error {
 	tx.commitCalls++
 	if tx.commitErr == nil {
 		tx.published = append([]byte(nil), tx.staged...)
+		tx.publishedAcceptance = bytes.Clone(tx.stagedAcceptance)
 	}
 	return tx.commitErr
 }
@@ -226,8 +230,20 @@ func TestInitialPolicyInstallRequiresIndependentPinAndAbsentSource(t *testing.T)
 	if err != nil || !result.Committed || result.Revision != 2 || result.PreviousRevision != 0 || tx.closeCalls != 1 || tx.commitCalls != 1 {
 		t.Fatal("valid initial install did not commit", result, err)
 	}
-	if !bytes.Equal(tx.published, prior) {
-		t.Fatal("initial install changed reviewed document")
+	expected, expectedRecord, err := prepareNativeAcceptance(prior, now)
+	if err != nil || !bytes.Equal(tx.published, expected) || !bytes.Equal(tx.publishedAcceptance, expectedRecord) {
+		t.Fatal("initial install failed to publish the reviewed policy and matching acceptance record", err)
+	}
+	original, err := parseInstallation(prior)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := parseInstallation(tx.published)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual.SchemaVersion != 2 || actual.Envelope != original.Envelope || actual.PublicKey != original.PublicKey || actual.MinimumRevision != original.MinimumRevision {
+		t.Fatal("native wrapper changed reviewed signed contents")
 	}
 }
 
@@ -264,4 +280,12 @@ func TestPublishedPolicyIsReportedWhenDurabilitySyncFails(t *testing.T) {
 	if !errors.Is(err, failure) || !result.Committed || result.Operation != "recover" || tx.published == nil {
 		t.Fatal("known recovery publication concealed by sync error", result, err)
 	}
+}
+
+func (tx *fakeInstallationTransaction) ReadAcceptance() ([]byte, bool, error) {
+	return tx.acceptance, tx.acceptancePresent, tx.acceptanceErr
+}
+func (tx *fakeInstallationTransaction) StageAccepted(source, record []byte) error {
+	tx.stagedAcceptance = bytes.Clone(record)
+	return tx.Stage(source)
 }

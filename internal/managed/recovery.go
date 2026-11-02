@@ -223,11 +223,29 @@ func commitRecovery(tx installationTransaction, recovery []byte, key ed25519.Pub
 	if !present {
 		return result, errors.New("recovery cannot enroll an absent machine source")
 	}
-	review, candidate, err := recoveryTransition(prior, recovery, key, minimum, clock())
+	record, recordPresent, err := tx.ReadAcceptance()
 	if err != nil {
 		return result, err
 	}
-	if err := tx.Stage(candidate); err != nil {
+	accepted, err := transitionAcceptance(prior, record, recordPresent, true)
+	if err != nil {
+		return result, err
+	}
+	now := clock()
+	review, candidate, err := recoveryTransition(prior, recovery, key, minimum, now)
+	if err != nil {
+		return result, err
+	}
+	if accepted != nil {
+		if err := accepted.checkAdvance(candidate, now); err != nil {
+			return result, err
+		}
+	}
+	candidate, record, err = prepareNativeAcceptance(candidate, now)
+	if err != nil {
+		return result, err
+	}
+	if err := tx.StageAccepted(candidate, record); err != nil {
 		return result, err
 	}
 	// A valid policy can outlive its much shorter emergency approval. Check both
@@ -236,6 +254,10 @@ func commitRecovery(tx installationTransaction, recovery []byte, key ed25519.Pub
 		return result, err
 	}
 	result = InstallResult{Operation: "recover", PreviousKeyID: review.PreviousKeyID, PreviousRevision: review.PreviousRevision, Revision: review.Next.Policy.Revision, KeyID: review.Next.KeyID, PayloadSHA256: review.Next.PayloadSHA256, Enforcement: "partial", PreviousSourceSHA256: review.PreviousSourceSHA256, RecoveryPayloadSHA256: review.PayloadSHA256}
+	if accepted != nil && accepted.revision > result.PreviousRevision {
+		result.PreviousRevision = accepted.revision
+		result.PreviousKeyID = accepted.keyID
+	}
 	committed, commitErr := commitPolicyTransaction(tx)
 	result.Committed = committed
 	if commitErr != nil {

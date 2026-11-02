@@ -55,6 +55,8 @@ func Update(envelope []byte) (InstallResult, error) {
 // accepts a replacement native backend or any fault-injection option.
 type installationTransaction interface {
 	Read() ([]byte, bool, error)
+	ReadAcceptance() ([]byte, bool, error)
+	StageAccepted([]byte, []byte) error
 	Stage([]byte) error
 	Commit() error
 	Close() error
@@ -73,19 +75,42 @@ func commitInstallation(tx installationTransaction, next []byte, key ed25519.Pub
 	if !initial && !present {
 		return result, errors.New("no enrolled machine policy; initial installation requires an independent public key")
 	}
+	record, recordPresent, err := tx.ReadAcceptance()
+	if err != nil {
+		return result, err
+	}
+	var accepted *acceptedHistory
+	if !initial {
+		accepted, err = transitionAcceptance(prior, record, recordPresent, false)
+		if err != nil {
+			return result, err
+		}
+	} else if recordPresent {
+		return result, errors.New("accepted policy state already exists")
+	}
+	now := clock()
 	var candidate []byte
 	switch change {
 	case changeInstall, changeUpdate:
-		candidate, result, err = installationTransition(prior, next, key, initial, clock())
+		candidate, result, err = installationTransition(prior, next, key, initial, now)
 	case changeRotate:
-		candidate, result, err = rotationTransition(prior, next, clock())
+		candidate, result, err = rotationTransition(prior, next, now)
 	default:
 		return InstallResult{}, errors.New("unknown managed policy operation")
 	}
 	if err != nil {
 		return InstallResult{}, err
 	}
-	if err := tx.Stage(candidate); err != nil {
+	if accepted != nil {
+		if err := accepted.checkAdvance(candidate, now); err != nil {
+			return InstallResult{}, err
+		}
+	}
+	candidate, record, err = prepareNativeAcceptance(candidate, now)
+	if err != nil {
+		return InstallResult{}, err
+	}
+	if err := tx.StageAccepted(candidate, record); err != nil {
 		return InstallResult{}, err
 	}
 	// Stage may wait on native contention. Never commit a candidate that expired
@@ -173,17 +198,21 @@ func ExportInstallation() ([]byte, error) {
 	if !machinePolicySupported() {
 		return nil, ErrUnsupported
 	}
-	data, present, err := readMachineInstallation()
+	snapshot, err := readMachineSnapshot()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
-	if !present {
+	if !snapshot.present {
 		return nil, fmt.Errorf("%w: no enrolled policy", ErrUnavailable)
 	}
-	if _, _, err := authenticateInstallationHistory(data); err != nil {
+	if _, err := transitionAcceptance(snapshot.source, snapshot.acceptance, snapshot.acceptancePresent, false); err != nil {
 		return nil, err
 	}
-	return data, nil
+	// Authenticated export retains expired history for administrator renewal.
+	if _, _, err := authenticateInstallationHistory(snapshot.source); err != nil {
+		return nil, err
+	}
+	return snapshot.source, nil
 }
 
 // Linux can publish by rename and then fail the directory durability sync. Keep

@@ -47,7 +47,7 @@ func TestDisposableLinuxPolicyTransactions(t *testing.T) {
 		if _, _, err := tx.Read(); err != nil {
 			t.Fatal(err)
 		}
-		if err := tx.Stage(data); err != nil {
+		if err := stageNativePolicyFixture(tx, data, time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		fmt.Println("candidate staged; abandoning process before publication")
@@ -120,7 +120,7 @@ func TestDisposableLinuxPolicyTransactions(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	if err := tx.Stage(installed); err != nil {
+	if err := stageNativePolicyFixture(tx, installed, time.Now()); err != nil {
 		tx.Close()
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestDisposableLinuxPolicyTransactions(t *testing.T) {
 		tx.Close()
 		t.Fatal(err)
 	}
-	if err := tx.Stage(candidate); err != nil {
+	if err := stageNativePolicyFixture(tx, candidate, time.Now()); err != nil {
 		tx.Close()
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestDisposableLinuxPolicyTransactions(t *testing.T) {
 		t.Fatal("lock not released after process exit", result, err)
 	}
 	entries, err := os.ReadDir(source)
-	if err != nil || len(entries) != 1 || entries[0].Name() != linuxPolicyFile {
+	if err != nil || len(entries) != 2 || entries[0].Name() != linuxAcceptanceFile || entries[1].Name() != linuxPolicyFile {
 		t.Fatal("abandoned update stage not reclaimed", entries, err)
 	}
 	previous, err := ExportInstallation()
@@ -250,6 +250,10 @@ func TestDisposableLinuxPolicyTransactions(t *testing.T) {
 	if _, err := Rotate(rotation); err == nil {
 		t.Fatal("rotation replay accepted")
 	}
+	rollbackSource, err := ExportInstallation()
+	if err != nil {
+		t.Fatal(err)
+	}
 	p.Revision = 4
 	payload, err = json.Marshal(p)
 	if err != nil {
@@ -271,12 +275,32 @@ func TestDisposableLinuxPolicyTransactions(t *testing.T) {
 		t.Fatal("new key could not update", result, err)
 	}
 
+	mutateSource := func(value []byte) {
+		if err := os.WriteFile(filepath.Join(source, linuxPolicyFile), value, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mutateAcceptance := func(value []byte) {
+		path := filepath.Join(source, linuxAcceptanceFile)
+		if value == nil {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		} else if err := os.WriteFile(path, value, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exerciseNativeAcceptance(t, rollbackSource, next, mutateSource, mutateAcceptance)
 	exerciseNativeRecovery(t, 4, func(damaged []byte) {
 		if err := os.WriteFile(filepath.Join(source, linuxPolicyFile), damaged, 0644); err != nil {
 			t.Fatal(err)
 		}
 	}, func(candidate []byte) { abandon(candidate, false) })
-	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "platform": "linux", "arch": runtime.GOARCH, "goVersion": runtime.Version(), "initialStagingInvisible": true, "abandonedBootstrapStageReclaimed": true, "pendingUpdateInvisible": true, "processExitDoesNotPublish": true, "abandonedUpdateStageReclaimed": true, "lockReleasedAfterProcessExit": true, "abandonedRotationKeepsOldKey": true, "nativeRotationCommitted": true, "retiredKeyDenied": true, "newKeyUpdateAccepted": true, "rotationReplayDenied": true, "damagedSourceRemainsBlocked": true, "emptySourceRemainsBlocked": true, "nativeEmptySourceRecoveryCommitted": true, "emptySourceRecoveryReplayDenied": true, "abandonedRecoveryKeepsDamagedSource": true, "nativeSignedRecoveryCommitted": true, "recoveryReplayDenied": true, "recoveryKeyAndFloorMismatchDenied": true, "fileAndDirectorySyncCompleted": true, "cleanupScheduled": true, "powerLossQualified": false, "productionQualificationComplete": false}
+	owned, err = os.Lstat(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "platform": "linux", "arch": runtime.GOARCH, "goVersion": runtime.Version(), "initialStagingInvisible": true, "abandonedBootstrapStageReclaimed": true, "pendingUpdateInvisible": true, "processExitDoesNotPublish": true, "abandonedUpdateStageReclaimed": true, "lockReleasedAfterProcessExit": true, "abandonedRotationKeepsOldKey": true, "nativeRotationCommitted": true, "retiredKeyDenied": true, "newKeyUpdateAccepted": true, "rotationReplayDenied": true, "nativeAcceptedPairPublished": true, "primaryRollbackDenied": true, "missingAcceptanceDenied": true, "corruptAcceptanceDenied": true, "acceptedRecoveryFloorEnforced": true, "damagedSourceRemainsBlocked": true, "emptySourceRemainsBlocked": true, "nativeEmptySourceRecoveryCommitted": true, "emptySourceRecoveryReplayDenied": true, "abandonedRecoveryKeepsDamagedSource": true, "nativeSignedRecoveryCommitted": true, "recoveryReplayDenied": true, "recoveryKeyAndFloorMismatchDenied": true, "fileAndDirectorySyncCompleted": true, "cleanupScheduled": true, "powerLossQualified": false, "productionQualificationComplete": false}
 	data, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		t.Fatal(err)

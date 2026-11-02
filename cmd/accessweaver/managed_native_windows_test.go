@@ -85,6 +85,35 @@ func nativeTestSetInstallation(t *testing.T, key syscall.Handle, data []byte) {
 	}
 }
 
+// Only the guarded fixture simulates elapsed time by replacing an entire pair.
+// Ordinary native changes use the production transaction, never this writer.
+func nativeTestSetAcceptedInstallation(t *testing.T, key syscall.Handle, source []byte, validAt time.Time) {
+	t.Helper()
+	if _, err := managed.DecodeInstallation(source, validAt); err != nil {
+		t.Fatal(err)
+	}
+	var installation managed.Installation
+	if err := json.Unmarshal(source, &installation); err != nil {
+		t.Fatal(err)
+	}
+	installation.SchemaVersion = 2
+	pairedSource, err := json.MarshalIndent(installation, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pairedSource = append(pairedSource, 10)
+	record, err := json.Marshal(map[string]any{"schemaVersion": 1, "installation": base64.StdEncoding.EncodeToString(pairedSource)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeTestSetInstallation(t, key, pairedSource)
+	value, _ := syscall.UTF16PtrFromString("Acceptance")
+	code, _, _ := nativePolicyDLL.NewProc("RegSetValueExW").Call(uintptr(key), uintptr(unsafe.Pointer(value)), 0, syscall.REG_BINARY, uintptr(unsafe.Pointer(&record[0])), uintptr(len(record)))
+	if code != 0 {
+		t.Fatal(syscall.Errno(code))
+	}
+}
+
 // Never enable this on a desktop or self-hosted runner. The workflow invokes it
 // only in its disposable GitHub-hosted Windows VM, after ordinary verification.
 func TestDisposableManagedPolicyNative(t *testing.T) {
@@ -366,7 +395,7 @@ func TestDisposableManagedPolicyNative(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	nativeTestSetInstallation(t, key, expiredInstallation)
+	nativeTestSetAcceptedInstallation(t, key, expiredInstallation, now.Add(-90*time.Minute))
 	if _, err := managed.Current(); !errors.Is(err, managed.ErrUnavailable) {
 		t.Fatal("expired fixture authorized runtime", err)
 	}
@@ -385,7 +414,7 @@ func TestDisposableManagedPolicyNative(t *testing.T) {
 	if err != nil || renewed.PreviousRevision != 2 || renewed.Revision != 3 {
 		t.Fatal("expired native policy could not renew", renewed, err)
 	}
-	installed, err = managed.PrepareInstallation(renewedEnvelope, public, now, 2)
+	installed, err = managed.ExportInstallation()
 	if err != nil {
 		t.Fatal(err)
 	}

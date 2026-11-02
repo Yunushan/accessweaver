@@ -32,7 +32,7 @@ func linuxFixtureTransaction(t *testing.T, parent string, initial bool) *linuxIn
 	})
 	return tx
 }
-func linuxFixtureInstall(t *testing.T, parent string, data []byte, now time.Time) {
+func linuxFixtureInstall(t *testing.T, parent string, data []byte, now time.Time) []byte {
 	t.Helper()
 	tx := linuxFixtureTransaction(t, parent, true)
 	installed, err := parseInstallation(data)
@@ -47,6 +47,11 @@ func linuxFixtureInstall(t *testing.T, parent string, data []byte, now time.Time
 	if err != nil || !result.Committed {
 		t.Fatal("temporary fixture install", result, err)
 	}
+	stored, err := os.ReadFile(filepath.Join(parent, linuxPolicyDirectory, linuxPolicyFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return stored
 }
 func TestLinuxStagingKeepsInitialSourceAbsentAndAbortCleansOwnFiles(t *testing.T) {
 	prior, _, _, _, now := renewalFixture(t)
@@ -84,7 +89,7 @@ func TestLinuxStagingKeepsInitialSourceAbsentAndAbortCleansOwnFiles(t *testing.T
 func TestLinuxPendingUpdateInvisibleAndStaleAdministratorWritePreserved(t *testing.T) {
 	prior, next, _, _, now := renewalFixture(t)
 	parent := t.TempDir()
-	linuxFixtureInstall(t, parent, prior, now)
+	prior = linuxFixtureInstall(t, parent, prior, now)
 	tx := linuxFixtureTransaction(t, parent, false)
 	if _, present, err := tx.Read(); err != nil || !present {
 		t.Fatal(err)
@@ -93,7 +98,14 @@ func TestLinuxPendingUpdateInvisibleAndStaleAdministratorWritePreserved(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.Stage(candidate); err != nil {
+	if _, _, err := tx.ReadAcceptance(); err != nil {
+		t.Fatal(err)
+	}
+	candidate, record, err := prepareNativeAcceptance(candidate, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.StageAccepted(candidate, record); err != nil {
 		t.Fatal(err)
 	}
 	current, err := os.ReadFile(filepath.Join(parent, linuxPolicyDirectory, linuxPolicyFile))
@@ -115,8 +127,12 @@ func TestLinuxPendingUpdateInvisibleAndStaleAdministratorWritePreserved(t *testi
 		t.Fatal("failed candidate changed administrative bytes", err)
 	}
 	files, err := os.ReadDir(filepath.Join(parent, linuxPolicyDirectory))
-	if err != nil || len(files) != 1 {
-		t.Fatal("abort did not retain exactly the published source", files, err)
+	if err != nil || len(files) != 2 || files[0].Name() != linuxAcceptanceFile || files[1].Name() != linuxPolicyFile {
+		t.Fatal("abort did not retain exactly the published pair", files, err)
+	}
+	counter, err := os.ReadFile(filepath.Join(parent, linuxPolicyDirectory, linuxAcceptanceFile))
+	if err != nil || !bytes.Equal(counter, tx.priorAcceptance) {
+		t.Fatal("abort changed accepted state", err)
 	}
 }
 func TestLinuxInitialPublishNeverReplacesConcurrentlyCreatedDirectory(t *testing.T) {
@@ -144,7 +160,7 @@ func TestLinuxInitialPublishNeverReplacesConcurrentlyCreatedDirectory(t *testing
 func TestLinuxPolicyLockSerializesUpdatesAndReadersStayAvailable(t *testing.T) {
 	prior, next, _, _, now := renewalFixture(t)
 	parent := t.TempDir()
-	linuxFixtureInstall(t, parent, prior, now)
+	prior = linuxFixtureInstall(t, parent, prior, now)
 	first := linuxFixtureTransaction(t, parent, false)
 	if _, _, err := first.Read(); err != nil {
 		t.Fatal(err)
@@ -153,7 +169,14 @@ func TestLinuxPolicyLockSerializesUpdatesAndReadersStayAvailable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := first.Stage(candidate); err != nil {
+	if _, _, err := first.ReadAcceptance(); err != nil {
+		t.Fatal(err)
+	}
+	candidate, record, err := prepareNativeAcceptance(candidate, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := first.StageAccepted(candidate, record); err != nil {
 		t.Fatal(err)
 	}
 	outcomes := make(chan error, 1)

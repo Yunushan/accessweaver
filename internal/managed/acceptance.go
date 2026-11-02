@@ -88,3 +88,68 @@ func (accepted *acceptedHistory) checkAdvance(candidate []byte, now time.Time) e
 	// revision check neither authorizes a new key nor chooses a recovery key.
 	return nil
 }
+
+// machineSnapshot is populated only by fixed, protected native stores.
+type machineSnapshot struct {
+	source, acceptance         []byte
+	present, acceptancePresent bool
+}
+
+func transitionAcceptance(source, record []byte, present, repair bool) (*acceptedHistory, error) {
+	if !present && len(record) > 0 {
+		return nil, fmt.Errorf("%w: inconsistent accepted policy presence", ErrUnavailable)
+	}
+	if present {
+		accepted, err := readAcceptance(record)
+		if err != nil {
+			return nil, err
+		}
+		if !repair {
+			if err := accepted.checkSource(source); err != nil {
+				return nil, err
+			}
+		}
+		return accepted, nil
+	}
+	installed, err := parseInstallation(source)
+	if err == nil && installed.SchemaVersion == 2 {
+		return nil, fmt.Errorf("%w: version-two storage requires its acceptance record", ErrUnavailable)
+	}
+	if err != nil && !repair {
+		return nil, err
+	}
+	return nil, nil
+}
+
+func decodeMachineSnapshot(snapshot machineSnapshot, now time.Time) (*Authority, *acceptedHistory, error) {
+	if !snapshot.present {
+		if snapshot.acceptancePresent || len(snapshot.source) > 0 || len(snapshot.acceptance) > 0 {
+			return nil, nil, fmt.Errorf("%w: inconsistent native policy presence", ErrUnavailable)
+		}
+		return nil, nil, nil
+	}
+	accepted, err := transitionAcceptance(snapshot.source, snapshot.acceptance, snapshot.acceptancePresent, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	authority, err := DecodeInstallation(snapshot.source, now)
+	return authority, accepted, err
+}
+
+func prepareNativeAcceptance(candidate []byte, now time.Time) ([]byte, []byte, error) {
+	installed, err := parseInstallation(candidate)
+	if err != nil {
+		return nil, nil, err
+	}
+	installed.SchemaVersion = 2
+	source, err := json.MarshalIndent(installed, "", "  ")
+	if err != nil {
+		return nil, nil, err
+	}
+	source = append(source, '\n')
+	record, err := prepareAcceptance(source, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	return source, record, nil
+}

@@ -36,6 +36,9 @@ func applyMachinePolicy(data []byte, key ed25519.PublicKey, change policyChange)
 }
 
 type linuxInstallationTransaction struct {
+	pair                     *linuxPolicyPair
+	priorAcceptance          []byte
+	priorAcceptancePresent   bool
 	parent, dir, lock        *os.File
 	owner                    uint32
 	initial, committed       bool
@@ -82,6 +85,9 @@ func beginLinuxInstallation(parent *os.File, initial bool, owner uint32) (*linux
 			return fail(errors.New("policy update is busy; inspect managed status and retry"))
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	if err := cleanupLinuxAcceptanceStages(parent, owner); err != nil {
+		return fail(err)
 	}
 	if initial {
 		existing, err := linuxtrust.OpenDirectoryAt(parent, linuxPolicyDirectory, owner)
@@ -185,6 +191,9 @@ func removeDirectoryAt(parent *os.File, name string) error {
 	return nil
 }
 func (tx *linuxInstallationTransaction) Commit() error {
+	if tx.pair != nil {
+		return tx.pair.commit(tx)
+	}
 	if tx.stageName == "" {
 		return errors.New("no staged installation")
 	}
@@ -239,6 +248,11 @@ func (tx *linuxInstallationTransaction) Published() bool { return tx.committed }
 
 func (tx *linuxInstallationTransaction) Close() error {
 	var result error
+	hadPair := tx.pair != nil
+	if tx.pair != nil {
+		result = errors.Join(result, tx.pair.close())
+		tx.pair = nil
+	}
 	if tx.dir != nil && !tx.committed {
 		if tx.stageName != "" {
 			result = errors.Join(result, syscall.Unlinkat(int(tx.dir.Fd()), tx.stageName))
@@ -253,7 +267,7 @@ func (tx *linuxInstallationTransaction) Close() error {
 		tx.dir = nil
 	}
 	if tx.parent != nil {
-		if tx.initial && !tx.committed && strings.HasPrefix(tx.directoryName, ".accessweaver-install-") {
+		if tx.initial && (!tx.committed || hadPair) && strings.HasPrefix(tx.directoryName, ".accessweaver-install-") {
 			result = errors.Join(result, removeDirectoryAt(tx.parent, tx.directoryName))
 		}
 		result = errors.Join(result, tx.parent.Close())

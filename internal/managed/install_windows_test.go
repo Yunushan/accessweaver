@@ -48,7 +48,7 @@ func TestDisposablePolicyTransactionRollback(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := tx.Stage(candidate); err != nil {
+		if err := stageNativePolicyFixture(tx, candidate, time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		// Terminate without Close/Commit or Go test cleanup. The OS must abort
@@ -89,7 +89,7 @@ func TestDisposablePolicyTransactionRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.Stage(installed); err != nil {
+	if err := stageNativePolicyFixture(tx, installed, time.Now()); err != nil {
 		tx.Close()
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestDisposablePolicyTransactionRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.Stage(candidate); err != nil {
+	if err := stageNativePolicyFixture(tx, candidate, time.Now()); err != nil {
 		tx.Close()
 		t.Fatal(err)
 	}
@@ -270,6 +270,10 @@ func TestDisposablePolicyTransactionRollback(t *testing.T) {
 	if _, err := Rotate(rotation); err == nil {
 		t.Fatal("rotation replay accepted")
 	}
+	rollbackSource, err := ExportInstallation()
+	if err != nil {
+		t.Fatal(err)
+	}
 	policy.Revision = 5
 	payload, err = json.Marshal(policy)
 	if err != nil {
@@ -291,7 +295,7 @@ func TestDisposablePolicyTransactionRollback(t *testing.T) {
 		t.Fatal("rotated native key could not update", result, err)
 	}
 
-	exerciseNativeRecovery(t, 5, func(damaged []byte) {
+	mutateSource := func(damaged []byte) {
 		tx, err := beginMachineInstallation(false)
 		if err != nil {
 			t.Fatal(err)
@@ -300,13 +304,7 @@ func TestDisposablePolicyTransactionRollback(t *testing.T) {
 			tx.Close()
 			t.Fatal(err)
 		}
-		var damageErr error
-		if len(damaged) == 0 {
-			damageErr = tx.setInstallationValue(damaged)
-		} else {
-			damageErr = tx.Stage(damaged)
-		}
-		if err := damageErr; err != nil {
+		if err := tx.setInstallationValue(damaged); err != nil {
 			tx.Close()
 			t.Fatal(err)
 		}
@@ -317,7 +315,31 @@ func TestDisposablePolicyTransactionRollback(t *testing.T) {
 		if err := tx.Close(); err != nil {
 			t.Fatal(err)
 		}
-	}, func(candidate []byte) {
+	}
+	mutateAcceptance := func(value []byte) {
+		tx, err := beginMachineInstallation(false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Close()
+		if _, _, err := tx.Read(); err != nil {
+			t.Fatal(err)
+		}
+		if value == nil {
+			name, _ := syscall.UTF16PtrFromString(machineAcceptanceValue)
+			code, _, _ := securityDLL.NewProc("RegDeleteValueW").Call(uintptr(tx.keys[len(tx.keys)-1]), uintptr(unsafe.Pointer(name)))
+			if code != 0 {
+				t.Fatal(syscall.Errno(code))
+			}
+		} else if err := tx.setAcceptanceValue(value); err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exerciseNativeAcceptance(t, rollbackSource, newEnvelope, mutateSource, mutateAcceptance)
+	exerciseNativeRecovery(t, 5, mutateSource, func(candidate []byte) {
 		path := filepath.Join(t.TempDir(), "recovery-candidate.json")
 		if err := os.WriteFile(path, candidate, 0600); err != nil {
 			t.Fatal(err)
@@ -331,7 +353,7 @@ func TestDisposablePolicyTransactionRollback(t *testing.T) {
 			t.Fatalf("recovery abort child failed: %v %s", err, output)
 		}
 	})
-	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "goVersion": runtime.Version(), "platform": runtime.GOOS, "arch": runtime.GOARCH, "abandonedBootstrapInvisible": true, "pendingUpdateInvisible": true, "closedTransactionRolledBack": true, "processExitRolledBack": true, "validUpdateAfterAbort": true, "staleReaderCannotOverwriteNewRevision": true, "abandonedRotationKeepsOldKey": true, "nativeKeyRotationCommitted": true, "keyRotationReplayDenied": true, "retiredKeyUpdateDenied": true, "newKeyUpdateAccepted": true, "damagedSourceRemainsBlocked": true, "emptySourceRemainsBlocked": true, "nativeEmptySourceRecoveryCommitted": true, "emptySourceRecoveryReplayDenied": true, "abandonedRecoveryKeepsDamagedSource": true, "nativeSignedRecoveryCommitted": true, "recoveryReplayDenied": true, "recoveryKeyAndFloorMismatchDenied": true, "registryCleanupScheduled": true, "productionQualificationComplete": false}
+	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "goVersion": runtime.Version(), "platform": runtime.GOOS, "arch": runtime.GOARCH, "abandonedBootstrapInvisible": true, "pendingUpdateInvisible": true, "closedTransactionRolledBack": true, "processExitRolledBack": true, "validUpdateAfterAbort": true, "staleReaderCannotOverwriteNewRevision": true, "abandonedRotationKeepsOldKey": true, "nativeKeyRotationCommitted": true, "keyRotationReplayDenied": true, "retiredKeyUpdateDenied": true, "newKeyUpdateAccepted": true, "nativeAcceptedPairPublished": true, "primaryRollbackDenied": true, "missingAcceptanceDenied": true, "corruptAcceptanceDenied": true, "acceptedRecoveryFloorEnforced": true, "damagedSourceRemainsBlocked": true, "emptySourceRemainsBlocked": true, "nativeEmptySourceRecoveryCommitted": true, "emptySourceRecoveryReplayDenied": true, "abandonedRecoveryKeepsDamagedSource": true, "nativeSignedRecoveryCommitted": true, "recoveryReplayDenied": true, "recoveryKeyAndFloorMismatchDenied": true, "registryCleanupScheduled": true, "productionQualificationComplete": false}
 	data, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		t.Fatal(err)
