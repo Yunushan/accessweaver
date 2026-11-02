@@ -30,8 +30,16 @@ def runtime_observations(data):
         return {}
     fields = json.loads(data)
     expected = {"configurationValid", "serviceRunning", "controlAddressConfigured", "ipv4SSHListening"}
-    if not isinstance(fields, dict) or set(fields) != expected or any(type(value) is not bool for value in fields.values()):
+    extended = {"configurationExitCode", "configurationLogBytes"}
+    if (not isinstance(fields, dict) or set(fields) not in (expected, expected | extended) or
+            any(type(fields[name]) is not bool for name in expected)):
         raise ValueError("unexpected private boot observer result")
+    if extended <= set(fields):
+        code, size = fields["configurationExitCode"], fields["configurationLogBytes"]
+        if (type(code) is not int or not 0 <= code <= 255 or
+                type(size) is not int or not 0 <= size <= 1 << 20 or
+                fields["configurationValid"] != (code == 0)):
+            raise ValueError("unexpected bounded boot observer command result")
     return fields
 
 
@@ -68,6 +76,8 @@ def boot_observations(read_file, exists, client_public, host_public):
         'cloudProviderMissingObserved': b'Impossible to find a cloud init provider' in messages,
         'runtimeObservationPresent': bool(runtime),
         'sshdConfigCheckPassed': runtime.get('configurationValid', False),
+        'sshdConfigCheckExitCode': runtime.get('configurationExitCode'),
+        'sshdConfigCheckLogBytes': runtime.get('configurationLogBytes'),
         'sshdRuntimeServiceRunningObserved': runtime.get('serviceRunning', False),
         'controlIPv4AddressObserved': runtime.get('controlAddressConfigured', False),
         'sshdRuntimeIPv4ListenerObserved': runtime.get('ipv4SSHListening', False),

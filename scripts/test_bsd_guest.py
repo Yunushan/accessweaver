@@ -167,7 +167,7 @@ class BootDiskPrivacyTests(unittest.TestCase):
                      "nuageArgumentErrorObserved", "nuageTracebackObserved", "sshdMessageObserved"):
             self.assertIs(data[name], True)
         self.assertNotIn("/var/cache/nuageinit/user_data", reads)
-        self.assertTrue(all(type(value) is bool for value in data.values()))
+        self.assertTrue(all(type(value) is bool or value is None for value in data.values()))
         self.assertNotIn("PRIVATE", json.dumps(data))
         self.assertNotIn("public", json.dumps(data))
 
@@ -215,6 +215,31 @@ class BootDiskPrivacyTests(unittest.TestCase):
             self.boot.runtime_observations(b"PRIVATE_INVALID_JSON")
         self.assertEqual(self.boot.runtime_observations(b""), {})
         self.assertEqual(self.boot.runtime_observations(json.dumps(valid).encode()), valid)
+
+    def test_runtime_command_exit_and_empty_stderr_remain_distinct(self):
+        runtime = {"configurationValid": False, "serviceRunning": False,
+                   "controlAddressConfigured": True, "ipv4SSHListening": False,
+                   "configurationExitCode": 132, "configurationLogBytes": 0}
+        files = {"/root/accessweaver-boot-state.json": json.dumps(runtime).encode()}
+        data = self.boot.boot_observations(lambda name: files.get(name, b""), lambda _: False, b"client", b"host")
+        self.assertEqual(data["sshdConfigCheckExitCode"], 132)
+        self.assertEqual(data["sshdConfigCheckLogBytes"], 0)
+        self.assertIs(data["sshdConfigCheckPassed"], False)
+        self.assertNotIn("PRIVATE", json.dumps(data))
+        runtime.update(configurationValid=True, configurationExitCode=0, configurationLogBytes=1 << 20)
+        self.assertEqual(self.boot.runtime_observations(json.dumps(runtime).encode()), runtime)
+
+    def test_runtime_command_metadata_rejects_unbounded_inconsistent_or_hostile_values(self):
+        valid = {"configurationValid": False, "serviceRunning": False,
+                 "controlAddressConfigured": True, "ipv4SSHListening": False,
+                 "configurationExitCode": 1, "configurationLogBytes": 1}
+        invalids = [{**valid, "configurationExitCode": value} for value in (-1, 256, True, 1.5, "PRIVATE")]
+        invalids += [{**valid, "configurationLogBytes": value} for value in (-1, (1 << 20) + 1, False, 1.5, "PRIVATE")]
+        invalids += [{**valid, "configurationExitCode": 0}, {**valid, "configurationValid": True},
+                     {name: value for name, value in valid.items() if name != "configurationLogBytes"}]
+        for invalid in invalids:
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.boot.runtime_observations(json.dumps(invalid).encode())
 
     @unittest.skipUnless(os.name == "posix", "guest observer rejection uses a POSIX shell")
     def test_actual_observer_refuses_missing_opt_in_or_non_freebsd_host(self):

@@ -9,7 +9,11 @@ umask 077
 configuration=false
 if /usr/sbin/sshd -t >/dev/null 2>/var/log/accessweaver-sshd-configtest.log; then
     configuration=true
+    configuration_exit=0
+else
+    configuration_exit=$?
 fi
+configuration_log_bytes=$(/usr/bin/wc -c </var/log/accessweaver-sshd-configtest.log)
 running=false
 attempt=0
 while [ "$attempt" -lt 60 ]; do
@@ -28,6 +32,6 @@ listening=false
 if /usr/bin/sockstat -4l -P tcp 2>/dev/null | /usr/bin/awk '$2 == "sshd" && $5 == "tcp4" && $6 ~ /:22$/ { seen=1 } END { exit !seen }'; then
     listening=true
 fi
-printf '{"configurationValid":%s,"serviceRunning":%s,"controlAddressConfigured":%s,"ipv4SSHListening":%s}\n' \
-    "$configuration" "$running" "$address" "$listening" >/root/.accessweaver-boot-state.tmp
+printf '{"configurationValid":%s,"configurationExitCode":%s,"configurationLogBytes":%s,"serviceRunning":%s,"controlAddressConfigured":%s,"ipv4SSHListening":%s}\n' \
+    "$configuration" "$configuration_exit" "$configuration_log_bytes" "$running" "$address" "$listening" >/root/.accessweaver-boot-state.tmp
 /bin/mv /root/.accessweaver-boot-state.tmp /root/accessweaver-boot-state.json
