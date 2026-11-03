@@ -224,7 +224,7 @@ func inspectBundleInventory(root *os.File, m Manifest, encoded []byte, embedded 
 				return errors.New("installed file differs from manifest")
 			}
 			switch relative {
-			case "Contents/Info.plist", "Contents/Resources/BUILD-INFO.json", "Contents/MacOS/accessweaver":
+			case "Contents/Info.plist", "Contents/Resources/BUILD-INFO.json", "Contents/MacOS/accessweaver", "Contents/MacOS/accessweaver-launcher":
 				important[relative] = data
 			}
 		}
@@ -247,6 +247,9 @@ type plistNode struct {
 }
 
 func checkPlist(data []byte, releaseVersion string) error {
+	return checkBundlePlist(data, releaseVersion, BundleID, "accessweaver")
+}
+func checkBundlePlist(data []byte, releaseVersion, identifier, executable string) error {
 	if len(data) > 1<<20 || bytes.Contains(data, []byte{0}) || bytes.Contains(bytes.ToUpper(data), []byte("<!ENTITY")) {
 		return errors.New("unsupported plist encoding/extent")
 	}
@@ -316,7 +319,7 @@ func checkPlist(data []byte, releaseVersion string) error {
 		return e
 	}
 	numeric := strings.Join(parts[1:4], ".")
-	for k, want := range map[string]string{"CFBundleIdentifier": BundleID, "CFBundleExecutable": "accessweaver", "CFBundlePackageType": "APPL", "CFBundleVersion": numeric, "CFBundleShortVersionString": numeric, "AccessWeaverReleaseVersion": releaseVersion} {
+	for k, want := range map[string]string{"CFBundleIdentifier": identifier, "CFBundleExecutable": executable, "CFBundlePackageType": "APPL", "CFBundleVersion": numeric, "CFBundleShortVersionString": numeric, "AccessWeaverReleaseVersion": releaseVersion} {
 		v := values[k]
 		if v.XMLName.Local != "string" || v.Text != want {
 			return errors.New("bundle plist identity differs")

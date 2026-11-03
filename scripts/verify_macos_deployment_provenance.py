@@ -45,7 +45,7 @@ def authenticate(path,bundle,commit,ref,gh):
     except subprocess.CalledProcessError as error:raise ValueError("Deployment cryptographic provenance verification failed") from error
 
 
-def validate_contents(root,commit,arch):
+def validate_packages(root,commit,arch):
     read=lambda name:json.loads((root/name).read_text(encoding="utf-8"))
     outputs=[];package_bindings={}
     for version in VERSIONS:
@@ -77,6 +77,12 @@ def validate_contents(root,commit,arch):
                     entry=available.get(prefix+evidence["path"]);require(entry is not None and not entry["directory"] and digest(entry["data"])==evidence["sha256"],"Packaged compiled-component notice differs")
         package_bindings[version]={"file":package,"bytes":len(binary),**{key:inspected[key] for key in ("packageSHA256","payloadSHA256","manifestSHA256","helperSHA256","payloadSBOMSHA256")}}
         outputs.append(inspected)
+    return outputs,package_bindings,identity
+
+
+def validate_contents(root,commit,arch):
+    read=lambda name:json.loads((root/name).read_text(encoding="utf-8"))
+    outputs,package_bindings,identity=validate_packages(root,commit,arch)
     launcher=inspect_launcher((root/archive_name(arch)).read_bytes(),identity)
     life=read("lifecycle-artifact.json")
     require(life.get("schemaVersion")==1 and life.get("sourceCommit")==commit and life.get("target")=="darwin/"+arch and life.get("stage")=="deactivation-and-owned-cleanup" and life.get("failureType") is None and life.get("failureSourceLine") is None,"Deployment lifecycle identity/completion differs")
@@ -133,8 +139,8 @@ def stage(build_root,destination,commit,ref,arch,run_id=None):
     return {"producerValidation":result,"cryptographicAuthenticationPerformed":False,"sourceCommit":commit,"target":"darwin/"+arch}
 
 
-def check_rejections(path,bundle,commit,ref,gh):
-    base=verification_command(path,bundle,commit,ref,gh)
+def check_rejections(path,bundle,commit,ref,gh,command_builder=None):
+    base=(command_builder or verification_command)(path,bundle,commit,ref,gh)
     def run(command,success):require((subprocess.run(command,capture_output=True,timeout=120).returncode==0)==success,"Unexpected deployment provenance rejection outcome")
     run(base,True);rejected=[]
     for flag,value in (("--source-digest","0"*len(commit)),("--source-ref","refs/tags/invalid-deployment-probe"),("--signer-workflow",REPOSITORY+"/.github/workflows/ci.yml"),("--repo","octocat/Hello-World")):

@@ -1,0 +1,81 @@
+{
+  "build": {
+    "arch": "amd64",
+    "builtAt": "2026-11-03T19:37:42Z",
+    "commit": "ac640bf803da036e769e25a7a6b9bab2a66ea4fa",
+    "goVersion": "go1.27.3",
+    "platform": "darwin",
+    "sourceState": "clean",
+    "version": "0.1.1-alpha"
+  },
+  "compiledSBOM": "{\n  \"$schema\": \"http://cyclonedx.org/schema/bom-1.6.schema.json\",\n  \"bomFormat\": \"CycloneDX\",\n  \"specVersion\": \"1.6\",\n  \"version\": 1,\n  \"serialNumber\": \"urn:uuid:09348bf5-3344-5628-be81-6f48bb9775ac\",\n  \"metadata\": {\n    \"timestamp\": \"2026-11-03T19:37:42Z\",\n    \"component\": {\n      \"bom-ref\": \"application\",\n      \"type\": \"application\",\n      \"name\": \"github.com/Yunushan/accessweaver\",\n      \"version\": \"0.1.1-alpha\",\n      \"hashes\": [\n        {\n          \"alg\": \"SHA-256\",\n          \"content\": \"697f7553c5c451835d17e2a7d2f72f376cd45763e0fdfe549688bb2a7b07ea65\"\n        }\n      ],\n      \"properties\": [\n        {\n          \"name\": \"accessweaver:cgo-enabled\",\n          \"value\": \"0\"\n        },\n        {\n          \"name\": \"accessweaver:inventory-scope\",\n          \"value\": \"compiled Go import graph and embedded non-standard-library assets; OS libraries and build tools excluded\"\n        },\n        {\n          \"name\": \"accessweaver:main-package\",\n          \"value\": \"./cmd/accessweaver-launcher\"\n        },\n        {\n          \"name\": \"accessweaver:source-commit\",\n          \"value\": \"ac640bf803da036e769e25a7a6b9bab2a66ea4fa\"\n        },\n        {\n          \"name\": \"accessweaver:source-state\",\n          \"value\": \"clean\"\n        },\n        {\n          \"name\": \"accessweaver:target-arch\",\n          \"value\": \"amd64\"\n        },\n        {\n          \"name\": \"accessweaver:target-os\",\n          \"value\": \"darwin\"\n        },\n        {\n          \"name\": \"accessweaver:license-evidence\",\n          \"value\": \"[{\\\"path\\\":\\\"licenses/module-aeb01a8023e0292b0fc0-LICENSE\\\",\\\"sha256\\\":\\\"2a0f003de0b98e7c3575cfab898ceaaadcaf4673080d20c138583136c2f99f10\\\"}]\"\n        }\n      ],\n      \"licenses\": [\n        {\n          \"license\": {\n            \"id\": \"0BSD\"\n          }\n        }\n      ]\n    }\n  },\n  \"components\": [\n    {\n      \"bom-ref\": \"go-stdlib\",\n      \"type\": \"library\",\n      \"name\": \"stdlib\",\n      \"version\": \"1.27.3\",\n      \"description\": \"Go standard library and runtime\",\n      \"purl\": \"pkg:golang/stdlib@1.27.3\",\n      \"licenses\": [\n        {\n          \"license\": {\n            \"id\": \"BSD-3-Clause\"\n          }\n        }\n      ],\n      \"properties\": [\n        {\n          \"name\": \"accessweaver:license-evidence\",\n          \"value\": \"[{\\\"path\\\":\\\"licenses/Go-runtime-LICENSE\\\",\\\"sha256\\\":\\\"911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad\\\"}]\"\n        }\n      ]\n    },\n    {\n      \"bom-ref\": \"module:github.com/ebitengine/purego\",\n      \"type\": \"library\",\n      \"name\": \"github.com/ebitengine/purego\",\n      \"version\": \"v0.11.2\",\n      \"licenses\": [\n        {\n          \"license\": {\n            \"id\": \"Apache-2.0\"\n          }\n        }\n      ],\n      \"properties\": [\n        {\n          \"name\": \"accessweaver:license-evidence\",\n          \"value\": \"[{\\\"path\\\":\\\"licenses/module-7de58308ca506cec3a17-LICENSE\\\",\\\"sha256\\\":\\\"b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1\\\"}]\"\n        },\n        {\n          \"name\": \"accessweaver:go-module-sum\",\n          \"value\": \"h1:WWiTx8rD8zYdOwSj8O/NiNbsOvSAgJMTlyV1XlbUSeU=\"\n        }\n      ],\n      \"purl\": \"pkg:golang/github.com/ebitengine/purego@v0.11.2\"\n    },\n    {\n      \"bom-ref\": \"module:golang.org/x/sys\",\n      \"type\": \"library\",\n      \"name\": \"golang.org/x/sys\",\n      \"version\": \"v0.49.0\",\n      \"licenses\": [\n        {\n          \"license\": {\n            \"id\": \"BSD-3-Clause\"\n          }\n        }\n      ],\n      \"properties\": [\n        {\n          \"name\": \"accessweaver:license-evidence\",\n          \"value\": \"[{\\\"path\\\":\\\"licenses/module-0e809cf2e86424fe46db-LICENSE\\\",\\\"sha256\\\":\\\"911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad\\\"}]\"\n        },\n        {\n          \"name\": \"accessweaver:go-module-sum\",\n          \"value\": \"h1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA=\"\n        }\n      ],\n      \"purl\": \"pkg:golang/golang.org/x/sys@v0.49.0\"\n    }\n  ],\n  \"dependencies\": [\n    {\n      \"ref\": \"application\",\n      \"dependsOn\": [\n        \"go-stdlib\",\n        \"module:github.com/ebitengine/purego\",\n        \"module:golang.org/x/sys\"\n      ]\n    },\n    {\n      \"ref\": \"go-stdlib\",\n      \"dependsOn\": []\n    },\n    {\n      \"ref\": \"module:github.com/ebitengine/purego\",\n      \"dependsOn\": [\n        \"go-stdlib\"\n      ]\n    },\n    {\n      \"ref\": \"module:golang.org/x/sys\",\n      \"dependsOn\": [\n        \"go-stdlib\"\n      ]\n    }\n  ],\n  \"compositions\": [\n    {\n      \"aggregate\": \"incomplete\",\n      \"assemblies\": [\n        \"application\"\n      ],\n      \"dependencies\": [\n        \"application\"\n      ]\n    }\n  ]\n}\n",
+  "manifest": {
+    "bundleIdentifier": "io.github.yunushan.accessweaver.desktop",
+    "directories": [
+      {
+        "mode": "0755",
+        "path": "Contents"
+      },
+      {
+        "mode": "0755",
+        "path": "Contents/MacOS"
+      },
+      {
+        "mode": "0755",
+        "path": "Contents/Resources"
+      },
+      {
+        "mode": "0755",
+        "path": "Contents/Resources/licenses"
+      }
+    ],
+    "files": [
+      {
+        "bytes": 967,
+        "mode": "0644",
+        "path": "Contents/Info.plist",
+        "sha256": "e04bcdafa1af184ba0d9d40a8a3c7690e10333b1d52b669e22cdf8f03e9e9199"
+      },
+      {
+        "bytes": 5336272,
+        "mode": "0755",
+        "path": "Contents/MacOS/accessweaver-launcher",
+        "sha256": "697f7553c5c451835d17e2a7d2f72f376cd45763e0fdfe549688bb2a7b07ea65"
+      },
+      {
+        "bytes": 220,
+        "mode": "0644",
+        "path": "Contents/Resources/BUILD-INFO.json",
+        "sha256": "2b86bb89f1a4edebe97746f60f070ef92c4006116f23d6d2a8f6bcbd6f858615"
+      },
+      {
+        "bytes": 1453,
+        "mode": "0644",
+        "path": "Contents/Resources/licenses/Go-runtime-LICENSE",
+        "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+      },
+      {
+        "bytes": 1453,
+        "mode": "0644",
+        "path": "Contents/Resources/licenses/module-0e809cf2e86424fe46db-LICENSE",
+        "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+      },
+      {
+        "bytes": 11357,
+        "mode": "0644",
+        "path": "Contents/Resources/licenses/module-7de58308ca506cec3a17-LICENSE",
+        "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+      },
+      {
+        "bytes": 653,
+        "mode": "0644",
+        "path": "Contents/Resources/licenses/module-aeb01a8023e0292b0fc0-LICENSE",
+        "sha256": "2a0f003de0b98e7c3575cfab898ceaaadcaf4673080d20c138583136c2f99f10"
+      }
+    ],
+    "schemaVersion": 1
+  },
+  "noticeRoot": "AccessWeaver.app/Contents/Resources",
+  "role": "active-copy-launcher",
+  "schemaVersion": 1
+}

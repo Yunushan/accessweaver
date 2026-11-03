@@ -5,15 +5,16 @@ import re
 import stat
 import zipfile
 
-from macos_installer import digest,macho_identity,require
+from macos_installer import digest,macho_identity,require,version_parts
 from sbom import validate,prop_map
 
 BINARY="accessweaver-launcher"
 MAIN="github.com/Yunushan/accessweaver/cmd/accessweaver-launcher"
 
-def archive_name(arch):
+def archive_name(arch,version=None):
     require(arch in ("amd64","arm64"),"Invalid launcher architecture")
-    return "accessweaver-launcher-darwin-"+arch+"-experimental.zip"
+    if version is not None:version_parts(version)
+    return "accessweaver-launcher-"+((version+"-") if version is not None else "")+"darwin-"+arch+"-experimental.zip"
 
 def inspect_launcher(encoded,identity):
     require(type(encoded) is bytes and 0<len(encoded)<=16<<20,"Invalid launcher archive extent")

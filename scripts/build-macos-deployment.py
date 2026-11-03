@@ -116,10 +116,11 @@ def build(version,arch,go="go"):
         shutil.rmtree(stage)
 
 
-def build_launcher(arch,go="go"):
+def build_launcher(arch,go="go",version="0.1.1-alpha"):
+    version_parts(version)
     require(legacy.platform.system()=="Darwin" and arch in ("amd64","arm64"),"Native Mac launcher builder required")
     root=REPO/"build/macos-deployment-checks"/arch
-    identity=json.loads((root/"0.1.1-alpha/BUILD-INFO.json").read_bytes())
+    identity=json.loads((root/version/"BUILD-INFO.json").read_bytes())
     require(identity["sourceState"]=="clean" and identity["arch"]==arch and identity["platform"]=="darwin" and identity["commit"]==run(["git","rev-parse","HEAD"]).stdout.decode().strip() and not run(["git","status","--porcelain","--untracked-files=normal"]).stdout.strip(),"Launcher requires the exact clean native package source")
     environment=dict(os.environ,GOTOOLCHAIN="local",GOFLAGS="",GOOS="darwin",GOARCH=arch,CGO_ENABLED="0")
     sdk=json.loads(run([go,"env","-json","GOHOSTOS","GOHOSTARCH","GOVERSION"],env=environment).stdout)
@@ -127,7 +128,7 @@ def build_launcher(arch,go="go"):
     require(run(["/usr/sbin/sysctl","-n","sysctl.proc_translated"],codes=(0,1)).stdout.strip()!=b"1","Translated launcher builds are not qualified")
     native=run(["/usr/sbin/sysctl","-n","hw.optional.arm64"],codes=(0,1)).stdout.strip()
     require(arch==("arm64" if native==b"1" else "amd64"),"Cross/emulated launcher builds are not qualified")
-    output=root/"launcher";require(not output.exists(),"Launcher output exists; preserve it")
+    output=root/("launcher" if version=="0.1.1-alpha" else "launcher-"+version);require(not output.exists(),"Launcher output exists; preserve it")
     output.mkdir();binary=output/BINARY
     flags=" ".join("-X github.com/Yunushan/accessweaver/internal/buildinfo."+key+"="+value for key,value in {"Version":identity["version"],"Commit":identity["commit"],"SourceState":"clean","BuiltAt":identity["builtAt"]}.items())
     run([go,"build","-mod=readonly","-trimpath","-buildvcs=false","-ldflags",flags,"-o",binary,"./cmd/accessweaver-launcher"],env=environment)
@@ -141,7 +142,7 @@ def build_launcher(arch,go="go"):
         report={"schemaVersion":1,"build":identity,"binarySHA256":digest(binary.read_bytes()),"binaryBytes":binary.stat().st_size,"macho":macho_identity(binary.read_bytes(),arch),"goBuildMetadata":metadata,"linkerFlags":flags,"unsigned":True,"publisherSignatureVerified":False,"publicApplicationIntegrated":False,"productionQualificationComplete":False}
         encode(output/"compiler-artifact.json",report)
         epoch=int(run(["git","show","-s","--format=%ct","HEAD"]).stdout);stamp=datetime.datetime.fromtimestamp(epoch,datetime.timezone.utc).timetuple()[:6]
-        target=root/archive_name(arch);require(not target.exists(),"Launcher archive exists")
+        target=root/archive_name(arch,None if version=="0.1.1-alpha" else version);require(not target.exists(),"Launcher archive exists")
         with zipfile.ZipFile(target,"x",compression=zipfile.ZIP_DEFLATED,compresslevel=9) as archive:
             for path in sorted(p for p in output.rglob("*") if p.is_file()):
                 require(not path.is_symlink() and path.stat().st_nlink==1,"Launcher source alias")

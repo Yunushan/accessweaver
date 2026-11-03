@@ -233,11 +233,17 @@ func validPath(value string) bool {
 	return value != "." && value != ".." && len(value) <= 4096 && relative.MatchString(value) && path.Clean(value) == value && len(strings.Split(value, "/")) <= 32 && !strings.Contains("/"+value+"/", "/../")
 }
 func DecodeManifest(data []byte) (Manifest, error) {
+	return decodeBundleManifest(data, BundleID, "accessweaver", true)
+}
+
+// Role choices are private constants supplied by core/desktop validators.
+// Public desktop inventories never become installed-core authorization.
+func decodeBundleManifest(data []byte, identifier, executable string, embeddedSBOM bool) (Manifest, error) {
 	var m Manifest
 	if e := strict(data, &m); e != nil {
 		return m, e
 	}
-	if (m.SchemaVersion != 1 && m.SchemaVersion != 2) || m.BundleIdentifier != BundleID || len(m.Files) < 3 || len(m.Files)+len(m.Directories) > MaxFiles {
+	if (m.SchemaVersion != 1 && m.SchemaVersion != 2) || m.BundleIdentifier != identifier || len(m.Files) < 3 || len(m.Files)+len(m.Directories) > MaxFiles {
 		return m, errors.New("unsupported manifest identity/inventory")
 	}
 	names := map[string]bool{}
@@ -261,15 +267,16 @@ func DecodeManifest(data []byte) (Manifest, error) {
 		names[d.Path] = true
 		dirs[d.Path] = true
 	}
-	required := map[string]bool{"Contents/Info.plist": false, "Contents/MacOS/accessweaver": false, "Contents/Resources/BUILD-INFO.json": false}
-	if m.SchemaVersion == 1 {
+	binary := "Contents/MacOS/" + executable
+	required := map[string]bool{"Contents/Info.plist": false, binary: false, "Contents/Resources/BUILD-INFO.json": false}
+	if m.SchemaVersion == 1 && embeddedSBOM {
 		required[embeddedPayloadSBOM] = false
 	}
 	for _, f := range m.Files {
-		if !validPath(f.Path) || names[f.Path] || f.Path == ManifestName || (m.SchemaVersion == 2 && f.Path == embeddedPayloadSBOM) || f.Bytes < 0 || f.Bytes > 64<<20 || !hash.MatchString(f.SHA256) || f.Mode != "0644" && !(f.Path == "Contents/MacOS/accessweaver" && f.Mode == "0755") {
+		if !validPath(f.Path) || names[f.Path] || f.Path == ManifestName || ((m.SchemaVersion == 2 || !embeddedSBOM) && f.Path == embeddedPayloadSBOM) || f.Bytes < 0 || f.Bytes > 64<<20 || !hash.MatchString(f.SHA256) || f.Mode != "0644" && !(f.Path == binary && f.Mode == "0755") {
 			return m, errors.New("unsafe manifest file")
 		}
-		if f.Path == "Contents/MacOS/accessweaver" && f.Mode != "0755" {
+		if f.Path == binary && f.Mode != "0755" {
 			return m, errors.New("core is not executable")
 		}
 		total += f.Bytes

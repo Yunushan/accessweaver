@@ -1,0 +1,120 @@
+name: Native public macOS desktop acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/*macos*desktop*
+      - scripts/*macos*deployment*
+      - scripts/*macos*launcher*
+      - scripts/build-macos-installer.py
+      - scripts/macos_installer.py
+      - scripts/macos_package_archive.py
+      - scripts/test-macos-installer-lifecycle.py
+      - scripts/sbom.py
+      - scripts/sbom/**
+      - scripts/sbom-tools/**
+      - scripts/verify_release_provenance.py
+      - scripts/verify_release_rebuild.py
+      - cmd/accessweaver*/**
+      - internal/**
+      - web/**
+      - go.mod
+      - go.sum
+      - LICENSE
+      - README.md
+      - README.tr.md
+      - THIRD_PARTY.md
+      - .github/workflows/macos-desktop.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    name: Public desktop lifecycle (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            arch: amd64
+          - os: macos-15
+            arch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          architecture: ${{ matrix.arch == 'amd64' && 'x64' || 'arm64' }}
+          cache: false
+      - name: Public role, archive, graph and authentication-order contracts
+        env:
+          GOTOOLCHAIN: local
+          CGO_ENABLED: '0'
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_macos*.py' -v
+          go test ./internal/packageupgrade ./cmd/accessweaver-desktop-installer ./cmd/accessweaver-launcher ./cmd/accessweaver-installer -count=1
+          go test ./internal/packageupgrade -run '^TestDarwinLauncher' -count=20 -v
+      - name: Build and inspect two actual native deployment packages
+        env:
+          GOTOOLCHAIN: local
+        run: |
+          python3 scripts/build-macos-deployment.py --architecture '${{ matrix.arch }}' --version 0.1.0-alpha
+          python3 scripts/build-macos-deployment.py --architecture '${{ matrix.arch }}' --version 0.1.1-alpha
+          python3 scripts/build-macos-desktop.py --architecture '${{ matrix.arch }}' --version 0.1.0-alpha
+          python3 scripts/build-macos-desktop.py --architecture '${{ matrix.arch }}' --version 0.1.1-alpha
+      - name: Actual public components, LaunchServices, refusal, retry and owned cleanup
+        env:
+          ACCESSWEAVER_DISPOSABLE_MACOS_DESKTOP_PACKAGE_TEST: '1'
+          ACCESSWEAVER_MACOS_INSTALLER_ARCH: '${{ matrix.arch }}'
+        run: python3 scripts/test-macos-desktop-package.py
+      - name: Validate and stage independently known subjects before attesting
+        env:
+          PACKAGE_ARCH: '${{ matrix.arch }}'
+        run: |
+          mkdir -p "build/macos-desktop-provenance/$PACKAGE_ARCH"
+          python3 scripts/verify_macos_desktop_provenance.py "build/macos-desktop-provenance/$PACKAGE_ARCH/candidate" --stage-build-root "build/macos-deployment-checks/$PACKAGE_ARCH" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --architecture "$PACKAGE_ARCH" --run-id "$GITHUB_RUN_ID"
+      - name: Attest all41 independently selected desktop subjects
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: build/macos-desktop-provenance/${{ matrix.arch }}/candidate/*
+          create-storage-record: false
+      - name: Authenticate every subject and reject changed identity/digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_ARCH: '${{ matrix.arch }}'
+          ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          root="build/macos-desktop-provenance/$PACKAGE_ARCH"
+          cp "$ATTESTATION_BUNDLE" "$root/candidate/BUILD-PROVENANCE.sigstore.json"
+          python3 scripts/verify_macos_desktop_provenance.py "$root/candidate" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --architecture "$PACKAGE_ARCH" --run-id "$GITHUB_RUN_ID" --check-rejections > "$root/verified.json"
+      - name: Retain authenticated public desktop subjects and verification
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-desktop-candidate-${{ matrix.arch }}
+          path: build/macos-desktop-provenance/${{ matrix.arch }}/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain unqualified raw diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-desktop-diagnostics-${{ matrix.arch }}
+          path: build/macos-deployment-checks/${{ matrix.arch }}/
+          if-no-files-found: warn
+          retention-days: 14

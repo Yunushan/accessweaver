@@ -6,37 +6,25 @@ import (
 	"bytes"
 	"errors"
 	"github.com/Yunushan/accessweaver/internal/darwintrust"
-	"golang.org/x/sys/unix"
 	"os"
 )
 
 const deploymentIncoming = "AccessWeaver Incoming"
 
 func legacyDeploymentAbsent() error {
+	if e := legacyReceiptsAbsent(); e != nil {
+		return e
+	}
 	apps, e := applications()
 	if e != nil {
 		return e
 	}
 	defer apps.Close()
-	receipts, e := darwintrust.OpenRootDirectory("/private/var/db/receipts")
+	records, _, e := readDesktopRegistrations()
 	if e != nil {
 		return e
 	}
-	defer receipts.Close()
-	for _, object := range []struct {
-		parent *os.File
-		name   string
-	}{{apps, "AccessWeaver.app"}, {receipts, BundleID + ".plist"}, {receipts, BundleID + ".bom"}} {
-		var st unix.Stat_t
-		e = unix.Fstatat(int(object.parent.Fd()), object.name, &st, unix.AT_SYMLINK_NOFOLLOW)
-		if e == nil {
-			return errors.New("legacy app or receipt exists; explicit migration is required")
-		}
-		if !errors.Is(e, unix.ENOENT) {
-			return e
-		}
-	}
-	return nil
+	return desktopApplicationCompatible(apps, records)
 }
 func openDeploymentIncoming(identity deploymentIdentity) (*os.File, error) {
 	parent, e := darwintrust.OpenRootDirectory(deploymentParent)
