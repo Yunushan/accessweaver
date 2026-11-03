@@ -56,6 +56,8 @@ class InstallerInputTests(unittest.TestCase):
         key=base64.b64decode(probe.PUBLIC_KEY)
         signature=base64.b64encode(key[:10]+b'0'*64)
         payload=b'SHA256 (install80.iso) = '+(digest or probe.MEDIA[arch][0]).encode()+b'\n'
+        if arch=='arm64':
+            payload+=b'SHA256 (miniroot80.img) = '+probe.ARM_BOOTSTRAP_SHA256.encode()+b'\n'
         return b'untrusted comment: fixture, NOT a signature\n'+signature+b'\n'+payload
 
     def test_signature_is_checked_before_digest_interpretation(self):
@@ -119,6 +121,8 @@ class InstallerInputTests(unittest.TestCase):
                 def fetch(url,destination,maximum,expected=None):
                     if url.endswith('SHA256.sig'):
                         events.append('signed-metadata');destination.write_bytes(b'signature-fixture');return 17,'0'*64
+                    if url.endswith('miniroot80.img'):
+                        self.assertEqual(expected,probe.ARM_BOOTSTRAP_SHA256);destination.write_bytes(b'bootstrap-disk');return 14,expected
                     events.append('image');self.assertEqual(expected,probe.MEDIA[arch][0]);destination.write_bytes(b'official-image');return probe.MEDIA[arch][1],expected
                 def authenticate(*args):
                     events.append('authenticate');return {'installerMetadataSignatureVerified':True}
@@ -126,6 +130,7 @@ class InstallerInputTests(unittest.TestCase):
                     if '-outdev' in args:
                         events.append('transform')
                         self.assertIn('/etc/boot.conf',args)
+                        self.assertIn('iso_9660_level=2',args)
                         self.assertIn('/8.0/'+arch+'/SHA256.sig',args)
                         self.assertIn(['-boot_image','any','replay'],[args[i:i+3] for i in range(len(args)-2)])
                         Path(args[args.index('-outdev')+1]).write_bytes(b'prepared-image')
@@ -137,8 +142,8 @@ class InstallerInputTests(unittest.TestCase):
                 actual_digest=probe.common.digest
                 def digest(path):
                     return probe.MEDIA[arch][0] if path.name=='official.iso' else actual_digest(path)
-                with patch.object(probe,'download',side_effect=fetch),patch.object(probe,'verify_manifest',side_effect=authenticate),patch.object(probe.common,'run',side_effect=command),patch.object(probe.common,'digest',side_effect=digest):
-                    installer,seed,observed=probe.prepare_media(capsule,target,PUBLIC)
+                with patch.object(probe,'download',side_effect=fetch),patch.object(probe,'verify_manifest',side_effect=authenticate),patch.object(probe.common,'run',side_effect=command),patch.object(probe.common,'digest',side_effect=digest),patch.object(probe,'iso_primary_bytes',side_effect=lambda *args:(capsule/'boot.conf').read_bytes()):
+                    installer,seed,bootstrap,observed=probe.prepare_media(capsule,target,PUBLIC)
                 self.assertEqual(events[:4],['signed-metadata','authenticate','image','transform'])
                 self.assertEqual((capsule/'official.iso').read_bytes(),b'official-image')
                 self.assertEqual((capsule/'seed/host').read_bytes(),b'PRIVATE_HOST_KEY_FIXTURE')
@@ -153,7 +158,8 @@ class InstallerInputTests(unittest.TestCase):
         for arch in ('amd64','arm64'):
             target=probe.common.selected_target(arch)
             for acceleration in ('tcg','kvm'):
-                install=probe.machine_command(target,Path('/private/root'),acceleration,firmware,Path('/private/installer'),Path('/private/seed'))
+                bootstrap=Path('/private/miniroot') if arch=='arm64' else None
+                install=probe.machine_command(target,Path('/private/root'),acceleration,firmware,Path('/private/installer'),Path('/private/seed'),bootstrap)
                 runtime=probe.machine_command(target,Path('/private/root'),acceleration,firmware)
                 for command in (install,runtime):
                     self.assertIn('user,id=n1,restrict=on,hostfwd=tcp:127.0.0.1:2222-:22',command)
@@ -162,9 +168,11 @@ class InstallerInputTests(unittest.TestCase):
                     self.assertNotIn('-fsdev',command)
                 self.assertTrue(any('file='+str(Path('/private/seed'))+',' in a for a in install))
                 self.assertIn('virtio-blk-pci,drive=osdisk,bootindex=2',install)
-                self.assertIn('scsi-cd,drive=installer,bus=scsi0.0,bootindex=1',install)
+                self.assertIn('scsi-cd,drive=installer,bus=scsi0.0'+(',bootindex=1' if arch=='amd64' else ''),install)
+                if arch=='arm64':
+                    self.assertIn('virtio-blk-pci,drive=bootdisk,bootindex=1',install)
                 self.assertIn('virtio-blk-pci,drive=osdisk,bootindex=1',runtime)
-                self.assertFalse(any('cdrom' in a or 'installer' in a or 'seed' in a for a in runtime))
+                self.assertFalse(any('cdrom' in a or 'installer' in a or 'seed' in a or 'miniroot' in a for a in runtime))
         with self.assertRaises(ValueError):
             probe.machine_command(target,Path('/private/root'),'tcg',firmware,Path('/private/installer'))
 
@@ -176,6 +184,39 @@ class InstallerInputTests(unittest.TestCase):
                     probe.common.build_payload(Path(tmp),Path(tmp),'a'*40,target,packaged)
                 run.assert_not_called()
                 self.assertFalse((Path(tmp)/'payload').exists())
+
+
+class PrimaryISOTests(unittest.TestCase):
+    def image(self, name=b'BOOT.CONF;1', file_block=22):
+        data=bytearray(24*2048)
+        data[16*2048:16*2048+7]=bytes([1])+b'CD001'+bytes([1])
+        def record(name,block,size,directory=False):
+            length=33+len(name)+(1 if len(name)%2==0 else 0)
+            value=bytearray(length);value[0]=length
+            value[2:6]=block.to_bytes(4,'little');value[6:10]=block.to_bytes(4,'big')
+            value[10:14]=size.to_bytes(4,'little');value[14:18]=size.to_bytes(4,'big')
+            value[25]=2 if directory else 0;value[32]=len(name);value[33:33+len(name)]=name
+            return value
+        root=record(bytes([0]),20,2048,True)
+        data[16*2048+156:16*2048+190]=root
+        entries=root+record(bytes([1]),20,2048,True)+record(b'ETC',21,2048,True)
+        data[20*2048:20*2048+len(entries)]=entries
+        entries=record(bytes([0]),21,2048,True)+record(bytes([1]),20,2048,True)+record(name,file_block,4)
+        data[21*2048:21*2048+len(entries)]=entries
+        data[22*2048:22*2048+4]=b'boot'
+        return data
+
+    def test_primary_boot_name_is_read_without_rock_ridge_aliases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'fixture.iso';path.write_bytes(self.image())
+            self.assertEqual(probe.iso_primary_bytes(path,('etc','boot.conf'),1024),b'boot')
+            with self.assertRaises(ValueError):probe.iso_primary_bytes(path,('etc','boot.conf'),3)
+
+    def test_truncated_primary_name_and_out_of_image_extent_are_rejected(self):
+        for data in (self.image(name=b'BOOT.CON;1'),self.image(file_block=999),b'not-an-iso'):
+            with tempfile.TemporaryDirectory() as tmp:
+                path=Path(tmp)/'fixture.iso';path.write_bytes(data)
+                with self.assertRaises(ValueError):probe.iso_primary_bytes(path,('etc','boot.conf'),1024)
 
 
 class SSHBootTests(unittest.TestCase):

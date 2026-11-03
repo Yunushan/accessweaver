@@ -31,6 +31,7 @@ MEDIA = {
     "arm64": ("6449a657d021e000cebb50987535b3dec6988edc65908107b42a42c2f95c3f6b", 656941056),
 }
 PORT = 2222
+ARM_BOOTSTRAP_SHA256 = "30e76fa7616c0cda0e3514d341ffa5a21b1b9efb5c71820b53a63b15c305296d"
 
 
 def guard():
@@ -79,6 +80,8 @@ def verify_manifest(signed, capsule, arch):
     matches = re.findall(rb"^SHA256 \(install80\.iso\) = ([a-f0-9]{64})$", parts[2], re.M)
     if matches != [MEDIA[arch][0].encode()]:
         raise ValueError("signed installer digest differs from source-controlled media pin")
+    if arch == "arm64" and re.findall(rb"^SHA256 \(miniroot80\.img\) = ([a-f0-9]{64})$", parts[2], re.M) != [ARM_BOOTSTRAP_SHA256.encode()]:
+        raise ValueError("signed ARM bootstrap disk differs from reviewed pin")
     return {"signedManifestSHA256": hashlib.sha256(signed).hexdigest(), "installerMetadataSignatureVerified": True}
 
 
@@ -137,6 +140,56 @@ def bootstrap_command():
             b"cp /awseed/guest-setup.sh /tmp/aw-setup.sh && umount /awseed && /bin/ksh /tmp/aw-setup.sh\n")
 
 
+def iso_primary_bytes(path, components, maximum):
+    """Read a small ISO9660 primary-name file, without Rock Ridge aliases."""
+    size = path.stat().st_size
+    with path.open("rb") as stream:
+        def read(offset, length, bound):
+            if not 0 <= offset or not 0 < length <= bound or offset + length > size:
+                raise ValueError("ISO primary record exceeds bounds")
+            stream.seek(offset)
+            data = stream.read(length)
+            if len(data) != length:
+                raise ValueError("truncated ISO primary record")
+            return data
+        def record(data):
+            if len(data) < 34 or data[0] != len(data) or data[32] == 0 or 33 + data[32] > len(data) or data[25] & 128:
+                raise ValueError("unsupported ISO primary record")
+            offset = int.from_bytes(data[2:6], "little")
+            length = int.from_bytes(data[10:14], "little")
+            if offset != int.from_bytes(data[6:10], "big") or length != int.from_bytes(data[14:18], "big"):
+                raise ValueError("inconsistent ISO primary record")
+            return offset * 2048, length, bool(data[25] & 2)
+        for sector in range(16, 48):
+            pvd = read(sector * 2048, 2048, 2048)
+            if pvd[:7] == b"\x01CD001\x01":
+                break
+        else:
+            raise ValueError("missing ISO primary descriptor")
+        current = record(pvd[156:190])
+        for component in components:
+            if not current[2] or not re.fullmatch(r"[A-Za-z0-9._-]+", component):
+                raise ValueError("invalid ISO bootstrap path")
+            directory = read(current[0], current[1], 1 << 20)
+            offset, matches = 0, []
+            while offset < len(directory):
+                length = directory[offset]
+                if length == 0:
+                    offset = (offset // 2048 + 1) * 2048
+                    continue
+                entry = directory[offset:offset + length]
+                value = record(entry)
+                if entry[33:33 + entry[32]].split(b";", 1)[0].upper() == component.upper().encode():
+                    matches.append(value)
+                offset += length
+            if len(matches) != 1:
+                raise ValueError("bootstrap file absent or ambiguous in primary ISO names")
+            current = matches[0]
+        if current[2]:
+            raise ValueError("expected ISO bootstrap file, not directory")
+        return read(current[0], current[1], maximum)
+
+
 def prepare_media(capsule, target, client_public):
     signed = capsule / "SHA256.sig"
     download("https://cdn.openbsd.org/pub/OpenBSD/8.0/" + target["arch"] + "/SHA256.sig", signed, 65536)
@@ -148,7 +201,7 @@ def prepare_media(capsule, target, client_public):
     original.chmod(0o400)
     boot = capsule / "boot.conf"
     boot.write_text(("stty com0 115200\nset tty com0\n" if target["arch"] == "amd64" else "") + "set timeout 1\n", encoding="ascii")
-    common.run(["xorriso", "-indev", str(original), "-outdev", str(prepared), "-boot_image", "any", "replay",
+    common.run(["xorriso", "-indev", str(original), "-outdev", str(prepared), "-compliance", "iso_9660_level=2", "-boot_image", "any", "replay",
                 "-map", str(boot), "/etc/boot.conf", "-map", str(signed), "/8.0/" + target["arch"] + "/SHA256.sig"], timeout=180)
     if not 0 < prepared.stat().st_size <= 1 << 30 or common.digest(original) != digest:
         raise RuntimeError("installer media preparation violated bounds or changed original")
@@ -160,6 +213,17 @@ def prepare_media(capsule, target, client_public):
     if (copied_signature.stat().st_size > 65536 or copied_boot.stat().st_size > 1024 or
             copied_signature.read_bytes() != signed.read_bytes() or copied_boot.read_bytes() != boot.read_bytes()):
         raise RuntimeError("prepared installer did not retain exact signature and boot configuration")
+    if iso_primary_bytes(prepared, ("etc", "boot.conf"), 1024) != boot.read_bytes():
+        raise RuntimeError("boot configuration is not readable through primary ISO names")
+    bootstrap = None
+    if target["arch"] == "arm64":
+        # The ARM full ISO has a legacy BIOS/floppy El Torito entry, not an
+        # EFI boot entry. Boot the official signed miniroot disk; use CD0 for
+        # the independently authenticated full sets and CD1 for private input.
+        bootstrap = capsule / "miniroot.img"
+        bootstrap_bytes, _ = download("https://cdn.openbsd.org/pub/OpenBSD/8.0/arm64/miniroot80.img", bootstrap, 128 << 20, ARM_BOOTSTRAP_SHA256)
+        bootstrap.chmod(0o400)
+        observed.update(bootstrapDiskSHA256=ARM_BOOTSTRAP_SHA256, bootstrapDiskBytes=bootstrap_bytes)
     seed_dir = capsule / "seed"
     seed_dir.mkdir(mode=0o700)
     (seed_dir / "auto_install.conf").write_text(response_file(target["arch"], client_public), encoding="ascii")
@@ -181,13 +245,16 @@ Subsystem sftp /usr/libexec/sftp-server
     common.run(["xorriso", "-as", "mkisofs", "-quiet", "-R", "-V", "AWSEED", "-o", str(seed), str(seed_dir)])
     if not 0 < seed.stat().st_size <= 8 << 20:
         raise RuntimeError("private seed exceeds bounds")
-    return prepared, seed, {**observed, "installerMediaDigestVerified": True, "officialInstallerSHA256": digest,
+    return prepared, seed, bootstrap, {**observed, "installerMediaDigestVerified": True, "officialInstallerSHA256": digest,
                             "officialInstallerBytes": size, "preparedInstallerSHA256": common.digest(prepared),
                             "bootConfigurationSHA256": common.digest(boot), "officialSetSignatureInserted": True}
 
 
-def machine_command(target, disk, acceleration, firmware=None, installer=None, seed=None):
-    if acceleration not in ("kvm", "tcg") or (installer is None) != (seed is None):
+def machine_command(target, disk, acceleration, firmware=None, installer=None, seed=None, bootstrap=None):
+    if (acceleration not in ("kvm", "tcg") or (installer is None) != (seed is None) or
+            (installer is None and bootstrap is not None) or
+            (target["arch"] == "arm64" and installer is not None and bootstrap is None) or
+            (target["arch"] != "arm64" and bootstrap is not None)):
         raise ValueError("invalid OpenBSD virtual machine parameters")
     cpu = "host" if acceleration == "kvm" else target["tcgCPU"]
     args = [target["qemu"], "-accel", acceleration, "-cpu", cpu, "-m", "3072", "-smp", "2", "-display", "none",
@@ -198,9 +265,13 @@ def machine_command(target, disk, acceleration, firmware=None, installer=None, s
         args += ["-machine", "virt,gic-version=3", "-drive", f"if=pflash,format=raw,unit=0,file={firmware['code']},readonly=on",
                  "-drive", f"if=pflash,format=raw,unit=1,file={firmware['variables']}"]
     args += ["-drive", f"file={disk},if=none,id=osdisk,format=qcow2", "-device", "virtio-blk-pci,drive=osdisk,bootindex=" + ("2" if installer is not None else "1")]
+    if bootstrap is not None:
+        args += ["-drive", f"file={bootstrap},if=none,id=bootdisk,format=raw,readonly=on",
+                 "-device", "virtio-blk-pci,drive=bootdisk,bootindex=1"]
     if installer is not None:
+        optical = "scsi-cd,drive=installer,bus=scsi0.0" + (",bootindex=1" if bootstrap is None else "")
         args += ["-device", "virtio-scsi-pci,id=scsi0", "-drive", f"file={installer},if=none,id=installer,media=cdrom,format=raw,readonly=on",
-                 "-device", "scsi-cd,drive=installer,bus=scsi0.0,bootindex=1",
+                 "-device", optical,
                  "-drive", f"file={seed},if=none,id=seed,media=cdrom,format=raw,readonly=on",
                  "-device", "scsi-cd,drive=seed,bus=scsi0.0"]
     args += ["-netdev", f"user,id=n1,restrict=on,hostfwd=tcp:127.0.0.1:{PORT}-:22", "-device", "virtio-net-pci,netdev=n1,romfile=",
@@ -291,7 +362,11 @@ class Console:
                 "installerCongratulationsObserved": b"CONGRATULATIONS!" in data,
                 "privateBootstrapMarkerObserved": b"AW_OPENBSD_PRIVATE_BOOTSTRAP_COMPLETE" in data,
                 "privateBootstrapFailureObserved": b"AW_OPENBSD_BOOTSTRAP_FAILED" in data,
-                "kernelPanicObserved": b"panic:" in data}
+                "kernelPanicObserved": b"panic:" in data,
+                "openbsdLoaderObserved": b">> OpenBSD/" in data,
+                "openbsdLoaderPromptObserved": b"boot>" in data,
+                "efiShellObserved": b"UEFI Interactive Shell" in data or b"Shell>" in data,
+                "efiBootFailureObserved": b"BdsDxe: failed" in data}
 
 
 def validate_identity(lines, arch):
@@ -351,7 +426,7 @@ def main():
         host_public = (capsule / "host.pub").read_text(encoding="ascii").strip()
         (capsule / "known_hosts").write_text(f"[127.0.0.1]:{PORT} {host_public}\n", encoding="ascii")
         phase = "installer-media"
-        installer, seed, observed = prepare_media(capsule, target, client_public)
+        installer, seed, bootstrap, observed = prepare_media(capsule, target, client_public)
         report.update(observed)
         disk = capsule / "root.qcow2"
         common.run(["qemu-img", "create", "-f", "qcow2", str(disk), "16G"])
@@ -365,7 +440,7 @@ def main():
             report.update(bootFirmwareCodeSHA256=firmware["codeSHA256"], bootFirmwareInitialVariablesSHA256=firmware["initialVariablesSHA256"])
         phase = "installer-boot"
         unconfirmed_start = True
-        installer_vm = Console(machine_command(target, disk, acceleration, firmware, installer, seed))
+        installer_vm = Console(machine_command(target, disk, acceleration, firmware, installer, seed, bootstrap))
         unconfirmed_start = False
         stopped = False
         installer_vm.wait(b"(S)hell?", 480)
