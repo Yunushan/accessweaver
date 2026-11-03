@@ -1,5 +1,9 @@
 import importlib.util
 import json
+import hashlib
+import subprocess
+
+import bsd_packaged_candidate as packaged_candidate
 import lzma
 import os
 from pathlib import Path
@@ -174,8 +178,8 @@ class TargetAndFirmwareTests(unittest.TestCase):
                         self.assertEqual(target["arch"], arch)
 
     def test_payload_keeps_selected_architecture_through_test_and_cli_builds(self):
-        for arch in ("amd64", "arm64"):
-            with self.subTest(arch=arch), tempfile.TemporaryDirectory(prefix="accessweaver-payload-") as name:
+        for arch, packaged in (("amd64", False), ("arm64", False), ("amd64", True), ("arm64", True), ("amd64", "changed-cli"), ("arm64", "changed-cli")):
+            with self.subTest(arch=arch, packaged=packaged), tempfile.TemporaryDirectory(prefix="accessweaver-payload-") as name:
                 root = Path(name).resolve()
                 repo, capsule = root / "repo", root / "capsule"
                 (repo / "internal" / "profile").mkdir(parents=True)
@@ -193,6 +197,7 @@ class TargetAndFirmwareTests(unittest.TestCase):
                         output.write_bytes(b"test-for-" + arch.encode())
                         compiled.append(env["GOARCH"])
                     elif args[:2] == ["bash", "scripts/build-all.sh"]:
+                        self.assertFalse(packaged, "archived CLI was replaced with a source build")
                         self.assertEqual(args[2], "freebsd/" + arch)
                         output = Path(env["OUTPUT_DIR"])
                         (output / ("accessweaver-freebsd-" + arch)).write_bytes(b"cli-for-" + arch.encode())
@@ -206,8 +211,25 @@ class TargetAndFirmwareTests(unittest.TestCase):
                         self.fail("unexpected build command")
                     return guest.subprocess.CompletedProcess(args, 0, result)
                 target = guest.selected_target(arch)
-                with patch.object(guest, "run", side_effect=command):
-                    manifest, archive = guest.build_payload(repo, capsule, "a" * 40, target)
+                staged = root / "authenticated-stage"
+                receipt = {"build": {"arch": arch}, "binarySha256": hashlib.sha256(b"archived-cli-for-" + arch.encode()).hexdigest()}
+                def copy(directory, destination, source, actual_arch, ref):
+                    self.assertEqual((directory, source, actual_arch, ref), (staged, "a" * 40, arch, "refs/heads/main"))
+                    destination.write_bytes(b"changed-after-handoff" if packaged == "changed-cli" else b"archived-cli-for-" + arch.encode())
+                    return receipt
+                with patch.object(guest, "run", side_effect=command), patch.object(guest, "copy_packaged_cli", side_effect=copy) as stage, patch.dict(os.environ, {"GITHUB_REF": "refs/heads/main"}):
+                    if packaged == "changed-cli":
+                        with self.assertRaisesRegex(RuntimeError, "archived executable changed"):
+                            guest.build_payload(repo, capsule, "a" * 40, target, staged)
+                        self.assertFalse((capsule / "payload.tar.gz").exists())
+                        continue
+                    manifest, archive = guest.build_payload(repo, capsule, "a" * 40, target, staged if packaged else None)
+                if packaged:
+                    stage.assert_called_once()
+                    self.assertEqual(manifest["packagedCandidate"], receipt)
+                else:
+                    stage.assert_not_called()
+                    self.assertNotIn("packagedCandidate", manifest)
                 self.assertEqual(target["arch"], arch)
                 self.assertEqual(compiled, [arch])
                 self.assertEqual(manifest["goarch"], arch)
@@ -217,6 +239,8 @@ class TargetAndFirmwareTests(unittest.TestCase):
                 self.assertEqual(len(manifest["packages"]), 1)
                 with guest.tarfile.open(archive) as payload:
                     self.assertIn("accessweaver-freebsd-" + arch, payload.getnames())
+                    expected_cli = (b"archived-cli-for-" if packaged else b"cli-for-") + arch.encode()
+                    self.assertEqual(payload.extractfile("accessweaver-freebsd-" + arch).read(), expected_cli)
                     self.assertNotIn("accessweaver-freebsd-" + ("amd64" if arch == "arm64" else "arm64"), payload.getnames())
 
     def test_guest_architecture_cannot_be_substituted_between_targets(self):
@@ -367,6 +391,7 @@ class TargetAndFirmwareTests(unittest.TestCase):
             os.mkfifo(source, 0o600)
             code = (
                 "import importlib.util,os,sys;from pathlib import Path;"
+                "sys.path.insert(0,str(Path(sys.argv[1]).parent));"
                 "s=importlib.util.spec_from_file_location('probe',sys.argv[1]);"
                 "m=importlib.util.module_from_spec(s);s.loader.exec_module(m);"
                 "\ntry: m.copy_firmware(Path(sys.argv[2]),Path(sys.argv[3]),owner=os.geteuid())"
@@ -553,6 +578,174 @@ class BootDiskPrivacyTests(unittest.TestCase):
     def test_postmortem_refuses_path_outside_private_capsule_root(self):
         with self.assertRaises(RuntimeError):
             self.boot.inspect(Path(__file__).resolve().parents[1] / "build" / "unrelated")
+
+
+class PackagedBackupProbeTests(unittest.TestCase):
+    def test_failed_or_leaking_backup_response_never_becomes_passing_evidence(self):
+        for mode in ("command-failure", "private-output", "wrong-count"):
+            with self.subTest(mode=mode):
+                responses = iter([guest.subprocess.CompletedProcess([], 0, b""),
+                                  guest.subprocess.CompletedProcess([], 1 if mode == "command-failure" else 0,
+                                      b"private-fixture-password" if mode == "private-output" else
+                                      json.dumps({"profiles": 2 if mode == "wrong-count" else 1, "encrypted": True, "externalFilesIncluded": False}).encode())])
+                with patch.object(guest, "run", side_effect=lambda *args, **kwargs: next(responses)), patch.object(guest.secrets, "token_urlsafe", return_value="private-fixture-password"):
+                    with self.assertRaises(RuntimeError):
+                        guest.packaged_backup_checks(["ssh"], "/home/awtest/fixture", "/home/awtest/fixture/accessweaver")
+
+
+    def test_wrong_passphrase_acceptance_or_changed_restore_never_passes(self):
+        for mode in ("accepted-wrong-passphrase", "changed-restore", "invalid-encrypted-format"):
+            with self.subTest(mode=mode):
+                fixture = None
+                wrong_password = False
+                def command(args, *, data, **kwargs):
+                    nonlocal fixture, wrong_password
+                    script = data.decode()
+                    output, status = b"", 0
+                    if "mkdir -p" in script:
+                        fixture_line = next(line for line in script.splitlines() if "bsd-archive-check.json" in line)
+                        fixture = json.loads(guest.shlex.split(fixture_line)[2])
+                    elif "wrong-fixture-passphrase" in script:
+                        wrong_password = True
+                    elif "backup create" in script:
+                        output = json.dumps({"profiles": 1, "encrypted": True, "externalFilesIncluded": False}).encode()
+                    elif "backup inspect" in script:
+                        if wrong_password and mode != "accepted-wrong-passphrase":
+                            status, output = 1, b"error: authentication failed"
+                        else:
+                            output = json.dumps({"authenticated": True, "profiles": 1, "externalFilesIncluded": False}).encode()
+                    elif "backup restore" in script:
+                        output = json.dumps({"complete": True, "startedEngines": False, "machinePolicyRestored": False}).encode()
+                    elif "profiles.awbackup" in script:
+                        encrypted = bytearray(80)
+                        encrypted[:8] = b"BADMAGIC" if mode == "invalid-encrypted-format" else b"AWBACKUP"
+                        encrypted[12:16] = (600000).to_bytes(4, "big")
+                        output = bytes(encrypted)
+                    elif "bsd-archive-check.json" in script:
+                        result = dict(fixture)
+                        if mode == "changed-restore":
+                            result["name"] = "Changed restored profile"
+                        output = json.dumps(result).encode()
+                    else:
+                        self.fail("unexpected backup probe command")
+                    return guest.subprocess.CompletedProcess(args, status, output)
+                with patch.object(guest, "run", side_effect=command):
+                    with self.assertRaises(RuntimeError):
+                        guest.packaged_backup_checks(["ssh"], "/home/awtest/fixture", "/home/awtest/fixture/accessweaver")
+
+
+@unittest.skipUnless(os.name == "posix", "private descriptor-based guest staging requires POSIX")
+class PackagedGuestHandoffTests(unittest.TestCase):
+    def fixture(self, root, arch="amd64"):
+        stage = root / "stage"
+        stage.mkdir(mode=0o700)
+        binary = b"exact-authenticated-archived-binary"
+        (stage / "accessweaver").write_bytes(binary)
+        (stage / "accessweaver").chmod(0o700)
+        receipt = {"schemaVersion": 1, "sourceCommit": "a" * 40, "sourceRef": "refs/heads/main",
+                   "repository": packaged_candidate.REPOSITORY, "workflow": packaged_candidate.WORKFLOW,
+                   "target": "freebsd/" + arch, "archive": "accessweaver-preview-freebsd-" + arch + ".tar.gz",
+                   "archiveSha256": "1" * 64, "manifestSha256": "2" * 64, "bundleSha256": "3" * 64,
+                   "binary": "accessweaver", "binarySha256": hashlib.sha256(binary).hexdigest(),
+                   "build": {"version": "0.1.0-alpha", "commit": "a" * 40, "sourceState": "clean",
+                             "builtAt": "2026-11-01T00:00:00Z", "goVersion": "go1.27.3", "platform": "freebsd", "arch": arch},
+                   "provenanceSubjectsVerified": 12, "authenticatedBeforeStaging": True,
+                   "publisherSignatureVerified": False, "productionQualificationComplete": False,
+                   "executionEnvironment": "disposable-freebsd-guest"}
+        (stage / "candidate.json").write_text(json.dumps(receipt), encoding="utf-8")
+        (stage / "candidate.json").chmod(0o600)
+        return stage, receipt, binary
+
+    def test_archived_candidate_copy_retains_exact_bytes_and_receipt(self):
+        for arch in ("amd64", "arm64"):
+            with self.subTest(arch=arch), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                stage, expected, binary = self.fixture(root, arch)
+                destination = root / "payload-cli"
+                receipt = packaged_candidate.copy_packaged_cli(stage, destination, "a" * 40, arch, "refs/heads/main")
+                self.assertEqual(receipt, expected)
+                self.assertEqual(destination.read_bytes(), binary)
+                self.assertEqual(destination.stat().st_mode & 0o777, 0o700)
+
+    def test_receipt_and_file_substitutions_fail_before_payload_creation(self):
+        cases = ("source", "ref", "target", "build", "unauthenticated", "subjects", "schema-bool", "unknown", "duplicate",
+                 "archive-path", "binary-path", "binary-tamper", "binary-symlink", "receipt-symlink", "hardlink",
+                 "file-mode", "directory-mode", "directory-symlink", "oversize-receipt", "oversize-binary", "existing-output")
+        for mode in cases:
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                stage, receipt, binary = self.fixture(root)
+                destination = root / "payload-cli"
+                if mode in ("source", "ref", "target", "unauthenticated", "subjects", "schema-bool", "unknown", "archive-path", "binary-path"):
+                    key, value = {"source": ("sourceCommit", "b" * 40), "ref": ("sourceRef", "refs/tags/v1"),
+                                  "target": ("target", "freebsd/arm64"), "unauthenticated": ("authenticatedBeforeStaging", False),
+                                  "subjects": ("provenanceSubjectsVerified", True), "schema-bool": ("schemaVersion", True),
+                                  "unknown": ("unreviewed", "private"), "archive-path": ("archive", "../other.tar.gz"),
+                                  "binary-path": ("binary", "../other")}[mode]
+                    receipt[key] = value
+                if mode == "build":
+                    receipt["build"]["arch"] = "arm64"
+                (stage / "candidate.json").write_text(json.dumps(receipt), encoding="utf-8")
+                if mode == "duplicate":
+                    (stage / "candidate.json").write_text(json.dumps(receipt)[:-1] + ',"sourceCommit":"' + "a" * 40 + '"}', encoding="utf-8")
+                if mode == "binary-tamper":
+                    (stage / "accessweaver").write_bytes(b"changed binary")
+                if mode in ("binary-symlink", "receipt-symlink"):
+                    path = stage / ("accessweaver" if mode == "binary-symlink" else "candidate.json")
+                    saved = root / "outside"
+                    path.rename(saved)
+                    path.symlink_to(saved)
+                if mode == "hardlink":
+                    os.link(stage / "accessweaver", root / "alias")
+                if mode == "file-mode":
+                    (stage / "accessweaver").chmod(0o666)
+                if mode == "directory-mode":
+                    stage.chmod(0o755)
+                if mode == "directory-symlink":
+                    held = root / "elsewhere"
+                    stage.rename(held)
+                    stage.symlink_to(held, target_is_directory=True)
+                if mode.startswith("oversize-"):
+                    with (stage / ("candidate.json" if mode == "oversize-receipt" else "accessweaver")).open("wb") as stream:
+                        stream.truncate((16 << 10) + 1 if mode == "oversize-receipt" else (64 << 20) + 1)
+                if mode == "existing-output":
+                    destination.write_bytes(b"preserve-existing")
+                with self.assertRaises((ValueError, OSError)):
+                    packaged_candidate.copy_packaged_cli(stage, destination, "a" * 40, "amd64", "refs/heads/main")
+                if mode == "existing-output":
+                    self.assertEqual(destination.read_bytes(), b"preserve-existing")
+                else:
+                    self.assertFalse(destination.exists())
+
+    def test_handoff_holds_directory_identity_after_staging_name_is_replaced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stage, receipt, binary = self.fixture(root)
+            original = packaged_candidate.read_private
+            def read(fd, name, maximum):
+                data = original(fd, name, maximum)
+                if name == "candidate.json":
+                    stage.rename(root / "displaced")
+                    stage.mkdir(mode=0o700)
+                    (stage / "accessweaver").write_bytes(b"replaced path")
+                return data
+            destination = root / "payload-cli"
+            with patch.object(packaged_candidate, "read_private", side_effect=read):
+                actual = packaged_candidate.copy_packaged_cli(stage, destination, "a" * 40, "amd64", "refs/heads/main")
+            self.assertEqual(actual, receipt)
+            self.assertEqual(destination.read_bytes(), binary)
+
+    def test_fifo_candidate_input_is_refused_without_waiting_for_writer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stage, _, _ = self.fixture(root)
+            (stage / "accessweaver").unlink()
+            os.mkfifo(stage / "accessweaver", 0o600)
+            code = "import sys; from pathlib import Path; from bsd_packaged_candidate import copy_packaged_cli; copy_packaged_cli(Path(sys.argv[1]),Path(sys.argv[2]),'a'*40,'amd64','refs/heads/main')"
+            result = subprocess.run([sys.executable, "-c", code, str(stage), str(root / "payload-cli")], cwd=Path(__file__).parent, capture_output=True, timeout=3)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(b"unsafe or unbounded staged candidate file", result.stderr)
+            self.assertFalse((root / "payload-cli").exists())
 
 
 if __name__ == "__main__":

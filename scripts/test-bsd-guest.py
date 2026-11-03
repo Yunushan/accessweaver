@@ -4,6 +4,7 @@
 The host cross-compiles; the guest executes. This is not hardware, routing,
 managed BSD policy, installer or complete platform qualification.
 """
+import argparse
 import hashlib
 import json
 import lzma
@@ -12,6 +13,7 @@ from pathlib import Path
 import platform
 import re
 import selectors
+import secrets
 import shlex
 import shutil
 import signal
@@ -24,6 +26,8 @@ import tempfile
 import threading
 import time
 import urllib.request
+
+from bsd_packaged_candidate import copy_packaged_cli
 
 TARGETS = {
     "amd64": {
@@ -412,7 +416,7 @@ def remove_owned_capsule(capsule, root, identity, emulator_stopped):
     shutil.rmtree(capsule)
 
 
-def build_payload(repo, capsule, source, target):
+def build_payload(repo, capsule, source, target, packaged=None):
     payload = capsule / "payload"
     payload.mkdir(mode=0o700)
     tests = payload / "tests"
@@ -435,8 +439,16 @@ def build_payload(repo, capsule, source, target):
         records.append({"package": name, "directory": directory, "file": filename, "sha256": digest(executable)})
     if not records or len(records) > 64:
         raise RuntimeError("unexpected unit package set")
-    run(["bash", "scripts/build-all.sh", "freebsd/" + target["arch"]],
-        env=dict(os.environ, OUTPUT_DIR=str(payload), GOTOOLCHAIN="local"), timeout=300)
+    cli = "accessweaver-" + target["label"]
+    receipt = None
+    if packaged is None:
+        run(["bash", "scripts/build-all.sh", "freebsd/" + target["arch"]],
+            env=dict(os.environ, OUTPUT_DIR=str(payload), GOTOOLCHAIN="local"), timeout=300)
+    else:
+        # The prior credential-scoped step authenticates all twelve subjects.
+        # Copy the exact staged archive bytes; never substitute a rebuilt CLI.
+        receipt = copy_packaged_cli(packaged, payload / cli, source, target["arch"], os.environ.get("GITHUB_REF", ""))
+        (payload / "BUILD-INFO.json").write_text(json.dumps(receipt["build"]) + "\n", encoding="utf-8")
     tree = run(["git", "ls-tree", "-r", "-l", "HEAD"]).stdout.decode("utf-8").splitlines()
     sizes = [line.split("\t", 1)[0].split()[-1] for line in tree]
     if len(tree) > 4096 or any(not value.isdecimal() for value in sizes) or sum(map(int, sizes)) > 64 << 20:
@@ -444,10 +456,13 @@ def build_payload(repo, capsule, source, target):
     run(["git", "archive", "--format=tar", "--output=" + str(payload / "source.tar"), "HEAD"])
     if run(["git", "status", "--porcelain"]).stdout.strip():
         raise RuntimeError("source changed while building")
-    cli = "accessweaver-" + target["label"]
     manifest = {"sourceCommit": source, "goos": "freebsd", "goarch": target["arch"], "hostCrossCompiled": True,
                 "cli": {"file": cli, "sha256": digest(payload / cli)}, "packages": records,
                 "sourceArchiveSHA256": digest(payload / "source.tar")}
+    if receipt is not None:
+        if manifest["cli"]["sha256"] != receipt["binarySha256"]:
+            raise RuntimeError("archived executable changed before payload packaging")
+        manifest["packagedCandidate"] = receipt
     (payload / "PROBE-MANIFEST.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     files = [payload / cli, payload / "BUILD-INFO.json", payload / "PROBE-MANIFEST.json", payload / "source.tar"]
     files += [payload / record["file"] for record in records]
@@ -460,7 +475,62 @@ def build_payload(repo, capsule, source, target):
     return manifest, archive
 
 
+def packaged_backup_checks(ssh, guest, executable):
+    """Exercise the archived CLI offline; export only fixed boolean results."""
+    root = guest + "/packaged-backup"
+    source, password_file = root + "/source", root + "/passphrase"
+    archive, restored = root + "/profiles.awbackup", root + "/restored"
+    fixture = {"version": 1, "id": "bsd-archive-check", "name": "Private BSD archive fixture", "engine": "byedpi",
+               "args": ["private fixture argument"], "routing": {"includeDomains": [], "excludeDomains": [], "applications": []},
+               "probe": {"host": "example.invalid", "port": 443, "tls": True, "timeoutSeconds": 5}, "updatedAt": "2026-11-01T00:00:00Z"}
+    password = secrets.token_urlsafe(32)
+    setup = ("set -eu\numask 077\nmkdir -p " + shlex.quote(source + "/profiles") +
+             "\nprintf '%s\\n' " + shlex.quote(json.dumps(fixture)) + " > " + shlex.quote(source + "/profiles/" + fixture["id"] + ".json") +
+             "\nprintf '%s\\n' " + shlex.quote(password) + " > " + shlex.quote(password_file) + "\n")
+    run(ssh, data=setup.encode(), limit=16384)
+
+    def invoke(arguments, success=True):
+        command = ["env", "-i", "HOME=/home/awtest", "PATH=/sbin:/bin:/usr/sbin:/usr/bin", "LANG=C", "LC_ALL=C", "TZ=UTC",
+                   "ACCESSWEAVER_HOME=" + source, executable, "backup", *arguments]
+        result = run(ssh, data=("set -eu\n" + shlex.join(command) + "\n").encode(), timeout=150, limit=16384, check=False)
+        if any(value.encode() in result.stdout for value in (password, fixture["name"], fixture["args"][0])):
+            raise RuntimeError("packaged backup response exposed private fixture data")
+        if success:
+            if result.returncode != 0:
+                raise RuntimeError("packaged backup operation failed")
+            return json.loads(result.stdout)
+        if result.returncode == 0 or b"authentication failed" not in result.stdout:
+            raise RuntimeError("packaged backup accepted the wrong passphrase or failed unexpectedly")
+        return None
+
+    created = invoke(["create", "--out", archive, "--passphrase-file", password_file])
+    if created.get("profiles") != 1 or created.get("encrypted") is not True or created.get("externalFilesIncluded") is not False:
+        raise RuntimeError("unexpected packaged backup creation result")
+    encrypted = run(ssh, data=("set -eu\ncat " + shlex.quote(archive) + "\n").encode(), limit=64 << 10).stdout
+    if (len(encrypted) <= 60 or encrypted[:8] != b"AWBACKUP" or int.from_bytes(encrypted[12:16], "big") != 600000 or
+            any(value.encode() in encrypted for value in (password, fixture["name"], fixture["args"][0]))):
+        raise RuntimeError("unexpected packaged encrypted backup format")
+    inspected = invoke(["inspect", "--archive", archive, "--passphrase-file", password_file])
+    if inspected.get("authenticated") is not True or inspected.get("profiles") != 1 or inspected.get("externalFilesIncluded") is not False:
+        raise RuntimeError("packaged backup inspection did not authenticate the archive")
+    recovered = invoke(["restore", "--archive", archive, "--passphrase-file", password_file, "--into", restored])
+    if recovered.get("complete") is not True or recovered.get("startedEngines") is not False or recovered.get("machinePolicyRestored") is not False:
+        raise RuntimeError("packaged backup restore did not complete safely")
+    data = run(ssh, data=("set -eu\ntest ! -e " + shlex.quote(restored + "/.restore-incomplete") +
+                         "\ncat " + shlex.quote(restored + "/profiles/" + fixture["id"] + ".json") + "\n").encode(), limit=16384).stdout
+    if json.loads(data) != fixture:
+        raise RuntimeError("packaged backup restore changed the saved profile")
+    run(ssh, data=("set -eu\numask 077\nprintf '%s\\n' wrong-fixture-passphrase > " + shlex.quote(password_file) + "\n").encode(), limit=16384)
+    invoke(["inspect", "--archive", archive, "--passphrase-file", password_file], success=False)
+    return {"encryptedBackupCreated": True, "archiveAuthenticated": True, "restoredProfileMatched": True,
+            "wrongPassphraseRejected": True, "backupNoPlaintext": True, "offlineOnly": True,
+            "settingsChanged": False, "productionQualificationComplete": False}
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--packaged-candidate", type=Path, help="Prior authenticated private staging directory; require exact archived CLI execution")
+    args = parser.parse_args()
     repo, source, sdk, target = guard()
     os.chdir(repo)
     os.umask(0o077)
@@ -475,6 +545,7 @@ def main():
     owned_directory(output)
     report = {"schemaVersion": 1, "sourceCommit": source, "target": "freebsd/" + target["arch"], "hostSDK": sdk,
               "imageURL": target["imageURL"], "imageSHA256": target["imageSHA256"], "packages": [], "guestExecutionPassed": False,
+              "packagedCandidateExecuted": False,
               "hardwareQualificationComplete": False, "platformQualificationComplete": False,
               "readinessGatesPromoted": 0, "productionQualificationComplete": False}
     vm = None
@@ -483,7 +554,9 @@ def main():
     phase = "build"
     failed = True
     try:
-        manifest, archive = build_payload(repo, capsule, source, target)
+        manifest, archive = build_payload(repo, capsule, source, target, args.packaged_candidate)
+        if args.packaged_candidate is not None:
+            report["packagedCandidate"] = manifest["packagedCandidate"]
         report["crossCompiledPackages"] = len(manifest["packages"])
         phase = "image-download"
         compressed = capsule / target["image"]
@@ -600,8 +673,15 @@ def main():
         cli = json.loads(run(ssh, data=f"{shlex.quote(guest + '/' + manifest['cli']['file'])} version --json\n".encode()).stdout)
         if cli.get("commit") != source or cli.get("sourceState") != "clean" or cli.get("platform") != "freebsd" or cli.get("arch") != target["arch"] or cli.get("goVersion") != sdk["GOVERSION"]:
             raise RuntimeError("executed CLI differs from candidate")
+        if args.packaged_candidate is not None:
+            if cli != manifest["packagedCandidate"]["build"] or manifest["cli"]["sha256"] != manifest["packagedCandidate"]["binarySha256"]:
+                raise RuntimeError("executed CLI differs from authenticated archived candidate")
+            report["packagedCandidateExecuted"] = True
         report["executedCLI"] = cli
         report["cliSHA256"] = manifest["cli"]["sha256"]
+        if args.packaged_candidate is not None:
+            phase = "packaged-backup-roundtrip"
+            report["packagedBackupChecks"] = packaged_backup_checks(ssh, guest, guest + "/" + manifest["cli"]["file"])
         phase = "guest-unit-tests"
         for index, package in enumerate(manifest["packages"]):
             script = f"set -eu\ncd {shlex.quote(guest + '/source/' + package['directory'])}\nexec env -i HOME=/home/awtest PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin LANG=C LC_ALL=C TZ=UTC {shlex.quote(guest + '/' + package['file'])} -test.timeout=150s -test.count=1 -test.v\n"

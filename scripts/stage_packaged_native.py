@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Authenticate a private candidate snapshot and stage one native executable.
+"""Authenticate a private candidate snapshot and stage one target executable.
 
 Never executes release code. Source commit/ref and native target are independent
 inputs; the authenticated distribution metadata cannot choose those expectations.
@@ -58,6 +58,19 @@ def snapshot_inputs(source, snapshot):
 def stage(directory, destination, target, commit, ref, gh="gh"):
     validate_identity(commit, ref)
     require(target in NATIVE_TARGETS and target == host_target(), "Requested packaged target must match this native host")
+    return _stage_snapshot(directory, destination, target, commit, ref, gh)
+
+
+def stage_freebsd_guest(directory, destination, target, commit, ref, gh="gh"):
+    validate_identity(commit, ref)
+    require(target in {("freebsd", "amd64"), ("freebsd", "arm64")} and host_target() == ("linux", target[1]),
+            "FreeBSD guest staging requires a matching native Linux host architecture")
+    return _stage_snapshot(directory, destination, target, commit, ref, gh, guest=True)
+
+
+def _stage_snapshot(directory, destination, target, commit, ref, gh, guest=False):
+    # This helper never executes release code. Each public entry point enforces
+    # its own disjoint native-host or explicit FreeBSD-guest staging contract.
     directory = directory.resolve(strict=True)
     parent = destination.parent.resolve(strict=True)
     destination = parent / destination.name
@@ -90,6 +103,8 @@ def stage(directory, destination, target, commit, ref, gh="gh"):
                    "binary": name, "binarySha256": hashlib.sha256(binary).hexdigest(), "build": info,
                    "provenanceSubjectsVerified": provenance["subjectsVerified"], "authenticatedBeforeStaging": True,
                    "publisherSignatureVerified": False, "productionQualificationComplete": False}
+        if guest:
+            receipt["executionEnvironment"] = "disposable-freebsd-guest"
         destination.mkdir(mode=0o700)
         executable = destination / name
         with executable.open("xb") as stream:
@@ -111,6 +126,7 @@ def main():
     parser.add_argument("--source-commit", default=os.environ.get("GITHUB_SHA", ""))
     parser.add_argument("--source-ref", default=os.environ.get("GITHUB_REF", ""))
     parser.add_argument("--gh", default="gh")
+    parser.add_argument("--freebsd-guest", action="store_true", help="Stage a FreeBSD archive for a matching-architecture Linux-hosted disposable guest; never execute it here")
     args = parser.parse_args()
     try:
         require((args.directory is None) != (args.download_root is None), "Choose a candidate directory or workflow download root")
@@ -118,7 +134,8 @@ def main():
             package = os.environ.get("PACKAGE_DIRECTORY", "")
             require(re.fullmatch(r"dist/[A-Za-z0-9][A-Za-z0-9._-]*", package) is not None, "Invalid workflow package directory")
             args.directory = args.download_root / package.removeprefix("dist/")
-        receipt = stage(args.directory, args.into, tuple(args.target.split("/")), args.source_commit, args.source_ref, args.gh)
+        staging = stage_freebsd_guest if args.freebsd_guest else stage
+        receipt = staging(args.directory, args.into, tuple(args.target.split("/")), args.source_commit, args.source_ref, args.gh)
         print(json.dumps(receipt))
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile) as error:
         print("Packaged native staging failed: " + str(error), file=sys.stderr)

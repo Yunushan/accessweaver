@@ -125,5 +125,51 @@ class StagingTests(unittest.TestCase):
                     self.assertFalse((root / "out").exists())
 
 
+    def test_freebsd_guest_staging_authenticates_exact_archive_on_matching_linux_host(self):
+        for arch in ("amd64", "arm64"):
+            with self.subTest(arch=arch), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, info = self.fixture(root)
+                info.update(platform="freebsd", arch=arch)
+                def inspect(path, archive_root, binary_name):
+                    self.assertEqual(path.name, "accessweaver-preview-freebsd-" + arch + ".tar.gz")
+                    self.assertEqual(path.read_bytes(), b"original archived binary")
+                    return info, b"verified archived FreeBSD executable"
+                with patch.object(candidate, "host_target", return_value=("linux", arch)), patch.object(candidate, "verify_provenance", return_value={"subjectsVerified": 12}) as auth, patch.object(candidate, "inspect_archive", side_effect=inspect):
+                    receipt = candidate.stage_freebsd_guest(source, root / "out", ("freebsd", arch), COMMIT, REF)
+                auth.assert_called_once()
+                self.assertEqual(receipt["executionEnvironment"], "disposable-freebsd-guest")
+                self.assertEqual(receipt["target"], "freebsd/" + arch)
+                self.assertTrue(receipt["authenticatedBeforeStaging"])
+                self.assertFalse(receipt["publisherSignatureVerified"])
+                self.assertEqual((root / "out/accessweaver").read_bytes(), b"verified archived FreeBSD executable")
+
+    def test_freebsd_staging_refuses_wrong_host_or_target_before_authentication(self):
+        for host, target in ((("windows", "amd64"), ("freebsd", "amd64")),
+                             (("freebsd", "amd64"), ("freebsd", "amd64")),
+                             (("linux", "arm64"), ("freebsd", "amd64")),
+                             (("linux", "amd64"), ("openbsd", "amd64")),
+                             (("linux", "amd64"), ("linux", "amd64"))):
+            with self.subTest(host=host, target=target), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, _ = self.fixture(root)
+                with patch.object(candidate, "host_target", return_value=host), patch.object(candidate, "verify_provenance") as auth:
+                    with self.assertRaises(ValueError):
+                        candidate.stage_freebsd_guest(source, root / "out", target, COMMIT, REF)
+                    auth.assert_not_called()
+                self.assertFalse((root / "out").exists())
+
+    def test_freebsd_staging_never_interprets_unauthenticated_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, _ = self.fixture(root)
+            (source / "BUILD-MANIFEST.json").write_bytes(b"malformed untrusted metadata")
+            with patch.object(candidate, "host_target", return_value=("linux", "amd64")), patch.object(candidate, "verify_provenance", side_effect=ValueError("bad signature")), patch.object(candidate, "inspect_archive") as inspect:
+                with self.assertRaisesRegex(ValueError, "bad signature"):
+                    candidate.stage_freebsd_guest(source, root / "out", ("freebsd", "amd64"), COMMIT, REF)
+                inspect.assert_not_called()
+                self.assertFalse((root / "out").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
