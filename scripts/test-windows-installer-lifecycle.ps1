@@ -400,6 +400,7 @@ try {
     $originalFileSDDL=[IO.File]::GetAccessControl($core,$fileAccess).GetSecurityDescriptorSddlForm($fileAccess)
     foreach($case in @(
         @{name='missing-controller-refused';kind='missing';nativeError=2},
+        @{name='truncated-controller-refused';kind='truncated';nativeError=1392},
         @{name='malformed-controller-refused';kind='malformed';nativeError=193},
         @{name='execution-denied-controller-refused';kind='denied';nativeError=5}
     )){
@@ -407,7 +408,8 @@ try {
         try {
             switch($case.kind){
                 'missing' {[IO.File]::Delete($core)}
-                'malformed' {[IO.File]::WriteAllBytes($core,[byte[]]@(0,0,0,0))}
+                'truncated' {[IO.File]::WriteAllBytes($core,[byte[]]@(0,0,0,0))}
+                'malformed' {[IO.File]::WriteAllBytes($core,[byte[]]::new(4096))}
                 'denied' {
                     $deniedSecurity=[Security.AccessControl.FileSecurity]::new()
                     $deniedSecurity.SetSecurityDescriptorSddlForm($originalFileSDDL,$fileAccess)
