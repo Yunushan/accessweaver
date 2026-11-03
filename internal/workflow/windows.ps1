@@ -772,27 +772,40 @@ function Get-RefreshTaskInspection {
     }catch{}
     return @{present=$null;error='Scheduled task inspection failed; status is unknown'}
 }
+function Get-DriverServiceControllers {
+    [CmdletBinding()]param()
+    # Get-Service without a name excludes device drivers. Enumerate them through
+    # the stock Framework API instead of losing WinDivert/NDISRD discovery.
+    [ServiceProcess.ServiceController]::GetDevices()
+}
 function Get-ServiceInspection {
     $inspection=@{services=[Collections.Generic.List[object]]::new();error=$null}
     $incomplete='Some services could not be inspected; service inventory is incomplete'
     $names=@('WireSockAppService','WireSockConnectService','wiresock-client-service','ByeDPI','ProxiFyreService','WinDivert','WinDivert14','NDISRD','zapret','zapret2','GoodbyeDPI','dnscrypt-proxy','CloudflareWARP')
-    $queryErrors=@()
-    try {
-        # Enumerate once, then filter locally. A per-name "not found" result can
-        # conceal a failed lookup; enumeration errors always mean incomplete data.
-        Get-Service -ErrorAction SilentlyContinue -ErrorVariable queryErrors | ForEach-Object {
-            try {
-                $serviceName=[string]$_.Name
-                if([string]::IsNullOrWhiteSpace($serviceName)){throw 'Incomplete service properties'}
-                if($serviceName.StartsWith('AccessWeaver-',[StringComparison]::OrdinalIgnoreCase) -or $serviceName -in $names){
-                    $status=[string]$_.Status
-                    if([string]::IsNullOrWhiteSpace($status)){throw 'Incomplete service properties'}
-                    [void]$inspection.services.Add(@{name=$serviceName;status=$status;owned=$serviceName.StartsWith('AccessWeaver-')})
+    $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach($provider in @('Get-Service','Get-DriverServiceControllers')){
+        $queryErrors=@()
+        try {
+            # These two fixed providers cover ordinary services and device drivers.
+            # Preserve successful snapshots even if either provider reports errors.
+            & $provider -ErrorAction SilentlyContinue -ErrorVariable queryErrors | ForEach-Object {
+                $controller=$_
+                try {
+                    $serviceName=[string]$controller.ServiceName
+                    if([string]::IsNullOrWhiteSpace($serviceName)){throw 'Incomplete service properties'}
+                    if($serviceName.StartsWith('AccessWeaver-',[StringComparison]::OrdinalIgnoreCase) -or $serviceName -in $names){
+                        $status=[string]$controller.Status
+                        if([string]::IsNullOrWhiteSpace($status)){throw 'Incomplete service properties'}
+                        if($seen.Add($serviceName)){[void]$inspection.services.Add(@{name=$serviceName;status=$status;owned=$serviceName.StartsWith('AccessWeaver-')})}
+                    }
+                } catch {$inspection.error=$incomplete}
+                finally {
+                    if($controller -is [IDisposable]){try{$controller.Dispose()}catch{$inspection.error=$incomplete}}
                 }
-            } catch {$inspection.error=$incomplete}
-        }
-    } catch {$inspection.error=$incomplete}
-    if($queryErrors.Count){$inspection.error=$incomplete}
+            }
+        } catch {$inspection.error=$incomplete}
+        if($queryErrors.Count){$inspection.error=$incomplete}
+    }
     return @{services=@($inspection.services.ToArray());error=$inspection.error}
 }
 function Discover {
