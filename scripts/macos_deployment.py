@@ -5,20 +5,29 @@ Inspection is bounded/in-memory; it neither extracts nor executes package code.
 """
 import copy
 import json
-from pathlib import PurePosixPath
+from pathlib import Path,PurePosixPath
 import plistlib
 import re
 import uuid
 
-from macos_installer import BUNDLE_ID,BUNDLE_NAME,MAX_BYTES,MAX_FILES,bundle_plist,digest,macho_identity,require,version_parts
+from macos_installer import BUNDLE_ID,BUNDLE_NAME,MAX_BYTES,MAX_FILES,bundle_plist,digest,macho_identity,require,version_parts,verify_bundle
 from macos_package_archive import flat_members,cpio,inflate,xml
 from sbom import component,properties,prop_map,validate
 
 PACKAGE_ID=BUNDLE_ID+".deployment"
 INCOMING="/Library/Application Support/AccessWeaver Incoming"
 MANIFEST="Contents/Resources/INSTALL-MANIFEST.json"
+DETACHED_MANIFEST="INSTALL-MANIFEST.json"
 HASH=re.compile(r"[a-f0-9]{64}")
 RELATIVE=re.compile(r"(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+")
+
+def verify_deployment_bundle(app,manifest,identity,manifest_bytes):
+    sidecar=Path(app).parent/DETACHED_MANIFEST
+    require(type(manifest_bytes) is bytes and 0<len(manifest_bytes)<=2<<20,"Invalid detached inventory bytes")
+    verify_bundle(app,manifest,identity,manifest_path=sidecar)
+    require(sidecar.read_bytes()==manifest_bytes,"Detached manifest byte seal differs")
+    return True
+
 
 def canonical_path(value):
     return type(value) is str and len(value)<=4096 and RELATIVE.fullmatch(value) is not None and len(value.split("/"))<=32 and all(p not in (".","..") for p in value.split("/"))
@@ -66,7 +75,7 @@ def inspect_deployment(package,manifest_bytes,identity,scripts_manifest):
     members=flat_members(package);entries=cpio(inflate(members["Payload"],MAX_BYTES,31));scripts=cpio(inflate(members["Scripts"],32<<20,31))
     prefix=BUNDLE_NAME+"/"
     directories={"":0o755,BUNDLE_NAME:0o755};directories.update({prefix+d["path"]:0o755 for d in manifest["directories"]})
-    files={prefix+f["path"]:f for f in manifest["files"]};files[prefix+MANIFEST]={"mode":"0644","bytes":len(manifest_bytes),"sha256":digest(manifest_bytes)}
+    files={prefix+f["path"]:f for f in manifest["files"]};files[DETACHED_MANIFEST]={"mode":"0644","bytes":len(manifest_bytes),"sha256":digest(manifest_bytes)}
     require(set(entries)==set(directories)|set(files),"Unexpected or missing deployment package payload")
     for name,item in entries.items():
         require(item["uid"]==0 and item["gid"]==0,"Deployment payload is not root:wheel")
@@ -91,9 +100,11 @@ def inspect_deployment(package,manifest_bytes,identity,scripts_manifest):
     require([n.get("id") for n in metadata.findall("./strict-identifier/bundle")]==[BUNDLE_ID],"Deployment strict bundle identity differs")
     phases=metadata.findall("./scripts/*")
     require(len(phases)==2 and {n.tag:n.get("file") for n in phases}=={"preinstall":"./preinstall","postinstall":"./postinstall"},"Deployment package phase entry points differ")
-    return {"packageSHA256":digest(package),"payloadSHA256":digest(core),"manifestSHA256":digest(manifest_bytes),"helperSHA256":digest(scripts["preinstall"]["data"]),"installLocation":location,"packageIdentifier":PACKAGE_ID,"payloadFiles":len(files),"payloadDirectories":len(directories),"scriptFiles":len(expected_scripts),"macho":native,"helperMachO":helper,"allPathsModesOwnershipAndHashesVerified":True,"xarAndCpioIntegrityVerified":True,"targetExecutionPerformed":False,"publisherSignatureVerified":False,"productionQualificationComplete":False}
+    return {"packageSHA256":digest(package),"payloadSHA256":digest(core),"manifestSHA256":digest(manifest_bytes),"helperSHA256":digest(scripts["preinstall"]["data"]),"installLocation":location,"packageIdentifier":PACKAGE_ID,"payloadFiles":len(files),"payloadDirectories":len(directories),"scriptFiles":len(expected_scripts),"macho":native,"helperMachO":helper,"detachedManifestOutsideAppVerified":True,"allPathsModesOwnershipAndHashesVerified":True,"xarAndCpioIntegrityVerified":True,"targetExecutionPerformed":False,"publisherSignatureVerified":False,"productionQualificationComplete":False}
 
-def deployment_sbom(package,payload,helper,manifest,scripts_manifest,tool,core_bytes,helper_bytes):
+def deployment_sbom(package,payload,helper,manifest_bytes,scripts_manifest,tool,core_bytes,helper_bytes):
+    require(type(manifest_bytes) is bytes and 0<len(manifest_bytes)<=2<<20,"Invalid detached SBOM inventory")
+    manifest=json.loads(manifest_bytes)
     manifest_contract(manifest);script_contract(scripts_manifest)
     require(type(package) is bytes and package[:4]==b"xar!" and len(package)<=64<<20,"Expected a bounded Apple component package")
     validate(payload,core_bytes);validate(helper,helper_bytes)
@@ -113,14 +124,14 @@ def deployment_sbom(package,payload,helper,manifest,scripts_manifest,tool,core_b
             item=copy.deepcopy(entry);item["bom-ref"]=prefix+item["bom-ref"];components.append(item)
         for edge in document["dependencies"]:edges.append({"ref":prefix+edge["ref"],"dependsOn":[prefix+n for n in edge["dependsOn"]]})
     file_refs=[]
-    for label,records in (("bundle",manifest["files"]),("script",scripts_manifest)):
+    for label,records in (("bundle",manifest["files"]),("script",scripts_manifest),("detached",[{"path":DETACHED_MANIFEST,"sha256":digest(manifest_bytes)}])):
         for record in records:
             ref=label+"-file:"+record["path"];item=component(ref,record["path"],"file");item["hashes"]=[{"alg":"SHA-256","content":record["sha256"]}]
             components.append(item);edges.append({"ref":ref,"dependsOn":[]});file_refs.append(ref)
     root=component("application","AccessWeaver experimental versioned macOS installer","application",payload["metadata"]["component"]["version"])
     root["hashes"]=[{"alg":"SHA-256","content":digest(package)}]
     root["properties"]=[copy.deepcopy(p) for p in payload["metadata"]["component"]["properties"] if p["name"]!="accessweaver:inventory-scope"]
-    root["properties"].extend(properties({"inventory-scope":"compiled core/helper graphs, sealed bundle and package-script files; OS Installer/system library closure excluded","package-format":"Apple flat component package","experimental-versioned-deployment":"true","bundle-identifier":BUNDLE_ID,"package-identifier":PACKAGE_ID}))
+    root["properties"].extend(properties({"inventory-scope":"compiled core/helper graphs, detached inventory, sealed bundle and package-script files; OS Installer/system library closure excluded","package-format":"Apple flat component package","experimental-versioned-deployment":"true","bundle-identifier":BUNDLE_ID,"package-identifier":PACKAGE_ID}))
     result["metadata"]["component"]=root;result["metadata"]["tools"]={"components":[{"type":"application","name":"Apple pkgbuild","version":tool["osBuild"],"hashes":[{"alg":"SHA-256","content":tool["sha256"]}],"properties":properties({"host-os-version":tool["osVersion"],"scope":"measured build tool; not redistributed"})}]}
     result["components"]=components;result["dependencies"]=edges+[{"ref":"application","dependsOn":roots+file_refs}]
     result["compositions"]=[{"aggregate":"incomplete","assemblies":["application"],"dependencies":roots}]

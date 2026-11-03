@@ -10,6 +10,7 @@ import unittest
 
 from macos_installer import BUNDLE_ID,bundle_manifest,bundle_plist,macho_identity,verify_bundle,version_parts
 from sbom import macos_package,sha,validate
+from macos_deployment import verify_deployment_bundle
 
 class MacPackageContracts(unittest.TestCase):
     def image(self,arch="amd64"):
@@ -49,6 +50,21 @@ class MacPackageContracts(unittest.TestCase):
             embedded.write_text(json.dumps(manifest),encoding="utf-8")
             original=binary.read_bytes();binary.write_bytes(original+b"changed")
             with self.assertRaises(ValueError):verify_bundle(bundle,manifest,identity)
+            binary.write_bytes(original)
+            encoded=embedded.read_bytes();sidecar=Path(folder)/"INSTALL-MANIFEST.json";embedded.rename(sidecar)
+            self.assertTrue(verify_deployment_bundle(bundle,manifest,identity,encoded))
+            embedded.write_bytes(encoded)
+            with self.assertRaises(ValueError):verify_deployment_bundle(bundle,manifest,identity,encoded)
+            embedded.unlink();sidecar.write_bytes(encoded+b" ")
+            with self.assertRaises(ValueError):verify_deployment_bundle(bundle,manifest,identity,encoded)
+            sidecar.write_bytes(encoded);sidecar.chmod(0o600)
+            with self.assertRaises(ValueError):verify_deployment_bundle(bundle,manifest,identity,encoded)
+            sidecar.chmod(0o644);alias=Path(folder)/"manifest-alias";alias.hardlink_to(sidecar)
+            with self.assertRaises(ValueError):verify_deployment_bundle(bundle,manifest,identity,encoded)
+            alias.unlink();sidecar.rename(alias);sidecar.symlink_to(alias)
+            with self.assertRaises(ValueError):verify_deployment_bundle(bundle,manifest,identity,encoded)
+            sidecar.unlink();alias.rename(sidecar)
+            self.assertTrue(verify_deployment_bundle(bundle,manifest,identity,encoded))
     def test_package_sbom_binds_pkg_and_bundle_files_without_claiming_native_closure(self):
         with tempfile.TemporaryDirectory() as folder:
             pkg=Path(folder)/"test.pkg";pkg.write_bytes(b"xar!fixture")

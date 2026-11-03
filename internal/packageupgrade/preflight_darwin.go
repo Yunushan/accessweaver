@@ -136,6 +136,12 @@ func applications() (*os.File, error) {
 	return f, nil
 }
 func inspectBundle(root *os.File, m Manifest, encoded []byte) (map[string][]byte, error) {
+	return inspectBundleInventory(root, m, encoded, true)
+}
+
+// Detached inventories cover every app file, including code-signature resources.
+// Only the legacy reader admits the embedded inventory as an excluded file.
+func inspectBundleInventory(root *os.File, m Manifest, encoded []byte, embedded bool) (map[string][]byte, error) {
 	files := map[string]File{}
 	dirs := map[string]bool{}
 	seen := map[string]bool{}
@@ -146,7 +152,9 @@ func inspectBundle(root *os.File, m Manifest, encoded []byte) (map[string][]byte
 	for _, d := range m.Directories {
 		dirs[d.Path] = true
 	}
-	files[ManifestName] = File{ManifestName, int64(len(encoded)), digest(encoded), "0644"}
+	if embedded {
+		files[ManifestName] = File{ManifestName, int64(len(encoded)), digest(encoded), "0644"}
+	}
 	count := 0
 	total := int64(0)
 	var walk func(*os.File, string, int) error

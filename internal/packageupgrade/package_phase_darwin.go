@@ -34,22 +34,25 @@ func packageIncoming(identity deploymentIdentity, create bool) error {
 		return e
 	}
 	defer stage.Close()
-	entries, e := deploymentEntries(stage, 0, 1)
+	entries, e := deploymentEntries(stage, 0, 2)
 	if e != nil {
 		return e
 	}
 	if len(entries) == 0 {
 		return nil
 	}
-	if len(entries) != 1 || entries[0].Name() != "AccessWeaver.app" {
+	if len(entries) != 2 {
 		return errors.New("existing package input has unexpected contents; preserve and inspect")
 	}
-	app, e := directoryAt(stage, "AccessWeaver.app")
+	app, encoded, embedded, e := openDeploymentBundle(stage)
 	if e != nil {
 		return e
 	}
 	defer app.Close()
-	_, _, e = verifyDeploymentBundle(app, identity)
+	if embedded {
+		return errors.New("new packages require a detached deployment manifest")
+	}
+	_, _, e = verifyDeploymentInventory(app, identity, encoded, false)
 	return e
 }
 
@@ -58,6 +61,16 @@ func packageIncoming(identity deploymentIdentity, create bool) error {
 // There is no removal, installed-code execution, target path or seal override.
 func PackageOperation(phase string) (result DeploymentResult, err error) {
 	if phase == "postinstall" {
+		if os.Geteuid() != 0 {
+			return result, errors.New("package operation requires root")
+		}
+		identity, e := compiledDeploymentIdentity()
+		if e != nil {
+			return result, e
+		}
+		if e = packageIncoming(identity, false); e != nil {
+			return result, e
+		}
 		return DeploymentOperation("activate-deployment")
 	}
 	if phase != "preinstall" {

@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 
 from macos_installer import BUNDLE_ID,BUNDLE_NAME,bundle_manifest,digest,require,verify_bundle
 from macos_package_archive import inspect
+from macos_deployment import DETACHED_MANIFEST,verify_deployment_bundle
 
 REPO=Path(__file__).resolve().parent.parent
 APP=Path("/Applications")/BUNDLE_NAME
@@ -289,7 +290,18 @@ def fixed_deployment_lifecycle(context,capsule,environment):
     operation("restored-retry-prepared","prepare-deployment",2,"prepared",True)
     run(["/usr/bin/sudo","-n","/bin/cp","-R",context["candidate"],stage/"AccessWeaver.app"],environment)
     verify_bundle(stage/"AccessWeaver.app",context["manifest"],identity)
-    operation("restored-retry-activated","activate-deployment",3,"active",True)
+    # Migrate only this newly restored owned incoming copy. The retained first
+    # slot stays in its original embedded layout and must continue to verify.
+    sidecar=stage/DETACHED_MANIFEST;no_alias(sidecar);require(not sidecar.exists(),"Unexpected detached fixture manifest")
+    embedded=stage/"AccessWeaver.app/Contents/Resources/INSTALL-MANIFEST.json"
+    run(["/usr/bin/sudo","-n","/bin/mv","--",embedded,sidecar],environment)
+    encoded=(context["candidate"]/"Contents/Resources/INSTALL-MANIFEST.json").read_bytes()
+    require(digest(encoded)==context["manifestSHA256"],"Restored fixture manifest changed")
+    verify_deployment_bundle(stage/"AccessWeaver.app",context["manifest"],identity,encoded)
+    restored=operation("restored-retry-activated","activate-deployment",3,"active",True)
+    restored_app=AUTHORITY/"versions"/restored["slotID"]/"AccessWeaver.app"
+    verify_deployment_bundle(restored_app,context["manifest"],identity,encoded)
+    verify_bundle(active_app,context["manifest"],identity)
     operation("restored-activation-idempotent","activate-deployment",3,"active",False)
     operation("final-deactivation","deactivate-deployment",4,"inactive",True)
     final=json.loads((AUTHORITY/"state/deployment.json").read_bytes())
@@ -303,7 +315,7 @@ def fixed_deployment_lifecycle(context,capsule,environment):
     run(["/usr/bin/sudo","-n","/bin/rm","-rf","--",AUTHORITY,INCOMING],environment)
     require(not AUTHORITY.exists() and not INCOMING.exists() and not APP.exists() and all(not p.exists() for p in RECEIPTS),"Owned fixed deployment state was not removed")
     require(digest(binary.read_bytes())==context["sha256"],"Sealed deployment helper changed")
-    return {"schemaVersion":1,"build":identity,"helperSHA256":context["sha256"],"manifestSHA256":context["manifestSHA256"],"payloadSHA256":context["payloadSHA256"],"cases":cases,"rootAndLegacyRefusalsPreservedAbsentAuthority":True,"ordinaryUserActiveRuntimeVerified":True,"stagingRemovalPreservedActiveCopy":True,"ownedFixedFixtureCleanupVerified":True,"installedCodeExecutedAsRoot":False,"actualApplePackageUpgradeExecuted":False,"packageScriptsIntegrated":False,"productionQualificationComplete":False}
+    return {"schemaVersion":1,"build":identity,"helperSHA256":context["sha256"],"manifestSHA256":context["manifestSHA256"],"payloadSHA256":context["payloadSHA256"],"cases":cases,"rootAndLegacyRefusalsPreservedAbsentAuthority":True,"ordinaryUserActiveRuntimeVerified":True,"stagingRemovalPreservedActiveCopy":True,"detachedManifestBridgeVerified":True,"ownedFixedFixtureCleanupVerified":True,"installedCodeExecutedAsRoot":False,"actualApplePackageUpgradeExecuted":False,"packageScriptsIntegrated":False,"productionQualificationComplete":False}
 
 
 def main():

@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
     paths:
+      - scripts/test-macos-installer-lifecycle.py
       - scripts/*macos*deployment*
       - scripts/build-macos-installer.py
       - scripts/macos_installer.py

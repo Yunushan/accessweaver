@@ -467,7 +467,82 @@ func TestDarwinDeploymentRootCopyRecovery(t *testing.T) {
 	if e = s.Close(); e != nil {
 		t.Fatal(e)
 	}
-	report := map[string]any{"schemaVersion": 1, "manifestSHA256": identity.ManifestSHA256, "payloadSHA256": identity.PayloadSHA256, "version": identity.Version, "fixedProtectedParentVerified": true, "partialCopyPreservedAndRefused": true, "completeCopyRecovered": true, "concurrentPreparationFenced": true, "postPublicationRemovalRecovered": true, "oldCompleteSlotFencedAfterRemoval": true, "restoredRetryVerified": true, "payloadIsIndependentCopy": true, "copiedCodeExecuted": false, "productionQualificationComplete": false, "finalGeneration": 4}
+	// Exercise interruption at the new external-manifest durability boundary
+	// using only another exclusively owned temporary authority/source tree.
+	containerPath := filepath.Join(parent, "detached-source")
+	if e = os.Mkdir(containerPath, 0755); e != nil {
+		t.Fatal(e)
+	}
+	appPath := filepath.Join(containerPath, "AccessWeaver.app")
+	if e = os.CopyFS(appPath, os.DirFS("/Applications/AccessWeaver.app")); e != nil {
+		t.Fatal(e)
+	}
+	if e = os.Rename(filepath.Join(appPath, ManifestName), filepath.Join(containerPath, detachedDeploymentManifest)); e != nil {
+		t.Fatal(e)
+	}
+	container, e := os.Open(containerPath)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer container.Close()
+	detachedParent := filepath.Join(parent, "detached-authority")
+	if e = os.Mkdir(detachedParent, 0755); e != nil {
+		t.Fatal(e)
+	}
+	detached := deploymentFixtureStore(t, detachedParent, nil)
+	manifestOnly, e := detached.prepare(identity)
+	if e != nil {
+		t.Fatal(e)
+	}
+	detached.observe = func(phase string) error {
+		if phase == "payload-manifest-durable" {
+			return errors.New("injected detached manifest interruption")
+		}
+		return nil
+	}
+	if published, e := detached.copyIncomingAndActivate(manifestOnly, container); published || e == nil {
+		t.Fatal("manifest-only copy published", e)
+	}
+	detached.observe = nil
+	if published, e := detached.activatePrepared(manifestOnly); published || e == nil {
+		t.Fatal("manifest-only copy recovered as complete", e)
+	}
+	if detached.state.Active != (deploymentSlot{}) {
+		t.Fatal("manifest-only copy changed active state")
+	}
+	if _, e = detached.abandon(manifestOnly.ID); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = os.Stat(filepath.Join(detachedParent, deploymentRoot, "versions", manifestOnly.ID, detachedDeploymentManifest)); e != nil {
+		t.Fatal("partial manifest evidence lost", e)
+	}
+	whole, e := detached.prepare(identity)
+	if e != nil {
+		t.Fatal(e)
+	}
+	detached.observe = func(phase string) error {
+		if phase == "payload-complete" {
+			return errors.New("injected detached complete-copy interruption")
+		}
+		return nil
+	}
+	if published, e := detached.copyIncomingAndActivate(whole, container); published || e == nil {
+		t.Fatal("complete detached copy interruption was not retained", e)
+	}
+	if e = detached.Close(); e != nil {
+		t.Fatal(e)
+	}
+	detached = deploymentFixtureStore(t, detachedParent, nil)
+	if published, e := detached.activatePrepared(whole); !published || e != nil {
+		t.Fatal("complete detached copy recovery", e)
+	}
+	if detached.state.Generation != 1 {
+		t.Fatal("unexpected detached recovery generation")
+	}
+	if e = detached.Close(); e != nil {
+		t.Fatal(e)
+	}
+	report := map[string]any{"schemaVersion": 1, "manifestSHA256": identity.ManifestSHA256, "payloadSHA256": identity.PayloadSHA256, "version": identity.Version, "fixedProtectedParentVerified": true, "partialCopyPreservedAndRefused": true, "completeCopyRecovered": true, "concurrentPreparationFenced": true, "postPublicationRemovalRecovered": true, "oldCompleteSlotFencedAfterRemoval": true, "restoredRetryVerified": true, "payloadIsIndependentCopy": true, "detachedManifestPartialCopyPreservedAndRefused": true, "detachedManifestCompleteCopyRecovered": true, "copiedCodeExecuted": false, "productionQualificationComplete": false, "finalGeneration": 4}
 	data, _ := json.Marshal(report)
 	t.Log("DEPLOYMENT-RESULT " + string(data))
 }

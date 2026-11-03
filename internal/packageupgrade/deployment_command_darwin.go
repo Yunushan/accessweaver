@@ -53,17 +53,9 @@ func openDeploymentIncoming(identity deploymentIdentity) (*os.File, error) {
 	if e != nil {
 		return nil, e
 	}
-	defer stage.Close()
-	// A package-owned input is separate from the authority/versions store.
-	// Receipt rollback/removal of this staging path cannot delete active bytes.
-	entries, e := deploymentEntries(stage, 0, 1)
-	if e != nil {
-		return nil, e
-	}
-	if len(entries) != 1 || entries[0].Name() != "AccessWeaver.app" {
-		return nil, errors.New("incoming package stage inventory differs")
-	}
-	return directoryAt(stage, "AccessWeaver.app")
+	// The container carries either a strictly verified legacy app or the new
+	// detached manifest plus app. Its descriptor stays held through the copy.
+	return stage, nil
 }
 func (s *deploymentStore) matchingPending(identity deploymentIdentity) (deploymentPending, bool, error) {
 	var found deploymentPending
@@ -116,7 +108,7 @@ func (s *deploymentStore) reconcileDeployment(op string, identity deploymentIden
 		if e != nil {
 			return pending.Slot, false, "refused", e
 		}
-		entries, readErr := deploymentEntries(dir, 0, 1)
+		entries, readErr := deploymentEntries(dir, 0, 2)
 		closeErr := dir.Close()
 		if e = errors.Join(readErr, closeErr); e != nil {
 			return pending.Slot, false, "refused", e
@@ -129,7 +121,7 @@ func (s *deploymentStore) reconcileDeployment(op string, identity deploymentIden
 		if e != nil {
 			return pending.Slot, false, "refused", e
 		}
-		published, copyErr := s.copyAndActivate(pending.Slot, app)
+		published, copyErr := s.copyIncomingAndActivate(pending.Slot, app)
 		return pending.Slot, published, "active", errors.Join(copyErr, app.Close())
 	case "deactivate-deployment":
 		// An older helper cannot deactivate a newer or differently sealed app.

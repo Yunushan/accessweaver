@@ -8,7 +8,7 @@ import unittest
 import xml.etree.ElementTree as ET
 import zlib
 
-from macos_deployment import PACKAGE_ID,MANIFEST,install_location,inspect_deployment,manifest_contract,script_contract,deployment_sbom
+from macos_deployment import PACKAGE_ID,MANIFEST,DETACHED_MANIFEST,install_location,inspect_deployment,manifest_contract,script_contract,deployment_sbom
 from macos_installer import BUNDLE_ID,bundle_plist,digest
 from sbom import validate,properties
 
@@ -41,14 +41,16 @@ def flat_package(members):
     return struct.pack(">4sHHQQI",b"xar!",28,1,len(encoded),len(decoded),1)+encoded+hashlib.sha1(encoded).digest()+heap
 
 class DeploymentPackageContracts(unittest.TestCase):
-    def fixture(self,arch="amd64"):
+    def fixture(self,arch="amd64",signature_resources=False):
         identity={"version":"0.1.0-alpha","commit":"a"*40,"sourceState":"clean","platform":"darwin","arch":arch,"goVersion":"go1.27.3","builtAt":"2026-11-03T00:00:00Z"}
         values={"Contents/Info.plist":plistlib.dumps(bundle_plist(identity["version"],"13.0.0")),"Contents/MacOS/accessweaver":image(arch),"Contents/Resources/BUILD-INFO.json":json.dumps(identity).encode(),"Contents/Resources/SBOM.cdx.json":b"{}"}
-        manifest={"schemaVersion":1,"bundleIdentifier":BUNDLE_ID,"directories":[{"path":n,"mode":"0755"} for n in ("Contents","Contents/MacOS","Contents/Resources")],"files":[{"path":n,"bytes":len(v),"sha256":digest(v),"mode":"0755" if n.endswith("/accessweaver") else "0644"} for n,v in values.items()]}
-        encoded=json.dumps(manifest).encode();values[MANIFEST]=encoded
+        if signature_resources:values["Contents/_CodeSignature/CodeResources"]=b"opaque resource-seal fixture; not a validated signature"
+        manifest={"schemaVersion":1,"bundleIdentifier":BUNDLE_ID,"directories":[{"path":n,"mode":"0755"} for n in (("Contents","Contents/MacOS","Contents/Resources","Contents/_CodeSignature") if signature_resources else ("Contents","Contents/MacOS","Contents/Resources"))],"files":[{"path":n,"bytes":len(v),"sha256":digest(v),"mode":"0755" if n.endswith("/accessweaver") else "0644"} for n,v in values.items()]}
+        encoded=json.dumps(manifest).encode()
         payload={".":{"mode":stat.S_IFDIR|0o755},"AccessWeaver.app":{"mode":stat.S_IFDIR|0o755}}
         payload.update({"AccessWeaver.app/"+d["path"]:{"mode":stat.S_IFDIR|0o755} for d in manifest["directories"]})
         payload.update({"AccessWeaver.app/"+n:{"data":v,"mode":stat.S_IFREG|(0o755 if n.endswith("/accessweaver") else 0o644)} for n,v in values.items()})
+        payload[DETACHED_MANIFEST]={"data":encoded}
         scripts={".":{"mode":stat.S_IFDIR|0o755,"uid":501,"gid":20},"licenses":{"mode":stat.S_IFDIR|0o755,"uid":501,"gid":20},"preinstall":{"data":image(arch),"mode":stat.S_IFREG|0o755,"uid":501,"gid":20},"postinstall":{"data":image(arch),"mode":stat.S_IFREG|0o755,"uid":501,"gid":20},"licenses/notice.txt":{"data":b"notice","uid":501,"gid":20}}
         records=[{"path":n,"mode":"0755" if n in ("preinstall","postinstall") else "0644","bytes":len(v["data"]),"sha256":digest(v["data"])} for n,v in scripts.items() if "data" in v]
         metadata=ET.Element("pkg-info",identifier=PACKAGE_ID,version=identity["version"],auth="root",relocatable="false",attrib={"install-location":install_location(digest(encoded))})
@@ -65,6 +67,7 @@ class DeploymentPackageContracts(unittest.TestCase):
             self.assertEqual(result["installLocation"],install_location(digest(fixture[2])))
             self.assertEqual(result["helperSHA256"],digest(image(arch)))
             self.assertTrue(result["allPathsModesOwnershipAndHashesVerified"])
+            self.assertTrue(result["detachedManifestOutsideAppVerified"])
             self.assertFalse(result["targetExecutionPerformed"])
             self.assertFalse(result["productionQualificationComplete"])
     def test_payload_changes_aliases_extra_paths_and_owner_changes_fail(self):
@@ -79,6 +82,28 @@ class DeploymentPackageContracts(unittest.TestCase):
                 elif kind=="hardlink":leaf["links"]=2
                 else:f[3]["unrelated"]={"data":b"preserve"}
                 with self.assertRaises(ValueError):self.inspect(f)
+    def test_detached_inventory_hashes_signature_resources_without_claiming_signature_validation(self):
+        fixture=self.fixture(signature_resources=True);result=self.inspect(fixture)
+        self.assertTrue(result["detachedManifestOutsideAppVerified"])
+        self.assertFalse(result["publisherSignatureVerified"])
+        fixture[3]["AccessWeaver.app/Contents/_CodeSignature/CodeResources"]["data"]+=b"changed"
+        with self.assertRaises(ValueError):self.inspect(fixture)
+
+    def test_detached_manifest_must_be_exact_unique_regular_and_outside_app(self):
+        for kind in ("missing","changed","embedded","both","mode","owner","alias","hardlink"):
+            with self.subTest(kind=kind):
+                f=self.fixture();sidecar=f[3][DETACHED_MANIFEST]
+                if kind=="missing":del f[3][DETACHED_MANIFEST]
+                elif kind=="changed":sidecar["data"]+=b" "
+                elif kind in ("embedded","both"):
+                    f[3]["AccessWeaver.app/"+MANIFEST]=dict(sidecar)
+                    if kind=="embedded":del f[3][DETACHED_MANIFEST]
+                elif kind=="mode":sidecar["mode"]=stat.S_IFREG|0o600
+                elif kind=="owner":sidecar["uid"]=501
+                elif kind=="alias":sidecar["mode"]=stat.S_IFLNK|0o644
+                else:sidecar["links"]=2
+                with self.assertRaises(ValueError):self.inspect(f)
+
     def test_scripts_and_fixed_package_destination_cannot_be_substituted(self):
         for kind in ("helper","phase","unexpected","destination","identifier","version","relocation","duplicate-phase"):
             with self.subTest(kind=kind):
@@ -105,12 +130,12 @@ class DeploymentPackageContracts(unittest.TestCase):
             root={"bom-ref":"application","type":"application","name":"AccessWeaver","version":identity["version"],"hashes":[{"alg":"SHA-256","content":digest(binary)}],"properties":properties({"source-commit":identity["commit"],"source-state":"clean","target-os":"darwin","target-arch":"amd64","license-evidence":evidence})}
             return {"bomFormat":"CycloneDX","specVersion":"1.6","version":1,"metadata":{"component":root},"components":[{"bom-ref":"stdlib","type":"library","name":"Go","properties":properties({"license-evidence":evidence})}],"dependencies":[{"ref":"application","dependsOn":["stdlib"]},{"ref":"stdlib","dependsOn":[]}],"compositions":[{"aggregate":"incomplete","assemblies":["application"]}]}
         payload=document(image("amd64"));helper=document(image("amd64"));tool={"osBuild":"fixture","osVersion":"15.0","sha256":"c"*64}
-        result=deployment_sbom(b"xar!fixture",payload,helper,manifest,records,tool,image("amd64"),image("amd64"))
+        result=deployment_sbom(b"xar!fixture",payload,helper,f[2],records,tool,image("amd64"),image("amd64"))
         self.assertTrue(validate(result,b"xar!fixture"))
         self.assertEqual(result["compositions"][0]["aggregate"],"incomplete")
-        refs={c["bom-ref"] for c in result["components"]};self.assertIn("payload:application",refs);self.assertIn("helper:application",refs);self.assertIn("script-file:postinstall",refs)
+        refs={c["bom-ref"] for c in result["components"]};self.assertIn("payload:application",refs);self.assertIn("helper:application",refs);self.assertIn("script-file:postinstall",refs);self.assertIn("detached-file:INSTALL-MANIFEST.json",refs)
         changed=copy.deepcopy(helper);changed["metadata"]["component"]["hashes"][0]["content"]="0"*64
-        with self.assertRaises(ValueError):deployment_sbom(b"xar!fixture",payload,changed,manifest,records,tool,image("amd64"),image("amd64"))
+        with self.assertRaises(ValueError):deployment_sbom(b"xar!fixture",payload,changed,f[2],records,tool,image("amd64"),image("amd64"))
         self.assertEqual(payload["metadata"]["component"]["bom-ref"],"application")
 
 if __name__=="__main__":unittest.main()

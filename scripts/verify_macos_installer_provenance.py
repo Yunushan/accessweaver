@@ -95,7 +95,7 @@ def validate_contents(root,package,commit,version,arch):
 def validate_deployment_transactions(deployment,manifest_hash,payload_hash,version):
     require(type(deployment) is dict,"Missing native protected deployment transactions")
     require(type(deployment.get("schemaVersion")) is int and deployment["schemaVersion"]==1 and deployment.get("manifestSHA256")==manifest_hash and deployment.get("payloadSHA256")==payload_hash and deployment.get("version")==version and type(deployment.get("finalGeneration")) is int and deployment["finalGeneration"]==4,"Native protected deployment identity differs")
-    for key in ("fixedProtectedParentVerified","partialCopyPreservedAndRefused","completeCopyRecovered","concurrentPreparationFenced","postPublicationRemovalRecovered","oldCompleteSlotFencedAfterRemoval","restoredRetryVerified","payloadIsIndependentCopy","installedObjectsAndReceiptsPreserved"):
+    for key in ("fixedProtectedParentVerified","partialCopyPreservedAndRefused","completeCopyRecovered","concurrentPreparationFenced","postPublicationRemovalRecovered","oldCompleteSlotFencedAfterRemoval","restoredRetryVerified","payloadIsIndependentCopy","detachedManifestPartialCopyPreservedAndRefused","detachedManifestCompleteCopyRecovered","installedObjectsAndReceiptsPreserved"):
         require(deployment.get(key) is True,"Native protected deployment transaction did not pass")
     require(deployment.get("copiedCodeExecuted") is False and deployment.get("packageScriptsIntegrated") is False and deployment.get("productionQualificationComplete") is False and deployment.get("fixtureParent")=="private-exclusive-temporary-directory" and re.fullmatch("[a-f0-9]{64}",deployment.get("testExecutableSHA256","")) is not None,"Native protected deployment scope differs")
     require(type(deployment.get("elapsedMilliseconds")) is int and 0<=deployment["elapsedMilliseconds"]<=150000,"Native protected deployment timing differs")
@@ -103,7 +103,7 @@ def validate_deployment_transactions(deployment,manifest_hash,payload_hash,versi
 
 def validate_fixed_deployment_helper(value,identity,manifest_hash,payload_hash):
     require(type(value) is dict and value.get("schemaVersion")==1 and value.get("build")==identity and value.get("manifestSHA256")==manifest_hash and value.get("payloadSHA256")==payload_hash and re.fullmatch("[a-f0-9]{64}",value.get("helperSHA256","")) is not None,"Fixed deployment helper identity differs")
-    for key in ("rootAndLegacyRefusalsPreservedAbsentAuthority","ordinaryUserActiveRuntimeVerified","stagingRemovalPreservedActiveCopy","ownedFixedFixtureCleanupVerified"):
+    for key in ("rootAndLegacyRefusalsPreservedAbsentAuthority","ordinaryUserActiveRuntimeVerified","stagingRemovalPreservedActiveCopy","detachedManifestBridgeVerified","ownedFixedFixtureCleanupVerified"):
         require(value.get(key) is True,"Fixed deployment helper acceptance did not pass")
     for key in ("installedCodeExecutedAsRoot","actualApplePackageUpgradeExecuted","packageScriptsIntegrated","productionQualificationComplete"):
         require(value.get(key) is False,"Fixed deployment helper scope differs")

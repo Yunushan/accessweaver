@@ -72,7 +72,7 @@ class NativePackageProvenanceTests(unittest.TestCase):
 
     def test_deployment_report_is_bound_to_copied_subjects_and_fixed_scope(self):
         value={"schemaVersion":1,"manifestSHA256":"a"*64,"payloadSHA256":"b"*64,"version":VERSION,"finalGeneration":4,"testExecutableSHA256":"c"*64,"elapsedMilliseconds":123,"fixtureParent":"private-exclusive-temporary-directory","copiedCodeExecuted":False,"packageScriptsIntegrated":False,"productionQualificationComplete":False}
-        checks=("fixedProtectedParentVerified","partialCopyPreservedAndRefused","completeCopyRecovered","concurrentPreparationFenced","postPublicationRemovalRecovered","oldCompleteSlotFencedAfterRemoval","restoredRetryVerified","payloadIsIndependentCopy","installedObjectsAndReceiptsPreserved")
+        checks=("fixedProtectedParentVerified","partialCopyPreservedAndRefused","completeCopyRecovered","concurrentPreparationFenced","postPublicationRemovalRecovered","oldCompleteSlotFencedAfterRemoval","restoredRetryVerified","payloadIsIndependentCopy","detachedManifestPartialCopyPreservedAndRefused","detachedManifestCompleteCopyRecovered","installedObjectsAndReceiptsPreserved")
         value.update({key:True for key in checks})
         def validate(record):validate_deployment_transactions(record,"a"*64,"b"*64,VERSION)
         validate(value)
@@ -88,7 +88,7 @@ class NativePackageProvenanceTests(unittest.TestCase):
     def test_fixed_helper_report_requires_the_complete_fenced_protocol(self):
         import copy
         identity={"version":VERSION,"commit":COMMIT,"sourceState":"clean","builtAt":"2026-11-03T00:00:00Z","goVersion":"go1.27.3","platform":"darwin","arch":"amd64"}
-        value={"schemaVersion":1,"build":identity,"helperSHA256":"c"*64,"manifestSHA256":"a"*64,"payloadSHA256":"b"*64,"rootAndLegacyRefusalsPreservedAbsentAuthority":True,"ordinaryUserActiveRuntimeVerified":True,"stagingRemovalPreservedActiveCopy":True,"ownedFixedFixtureCleanupVerified":True,"installedCodeExecutedAsRoot":False,"actualApplePackageUpgradeExecuted":False,"packageScriptsIntegrated":False,"productionQualificationComplete":False,"cases":[]}
+        value={"schemaVersion":1,"build":identity,"helperSHA256":"c"*64,"manifestSHA256":"a"*64,"payloadSHA256":"b"*64,"rootAndLegacyRefusalsPreservedAbsentAuthority":True,"ordinaryUserActiveRuntimeVerified":True,"stagingRemovalPreservedActiveCopy":True,"detachedManifestBridgeVerified":True,"ownedFixedFixtureCleanupVerified":True,"installedCodeExecutedAsRoot":False,"actualApplePackageUpgradeExecuted":False,"packageScriptsIntegrated":False,"productionQualificationComplete":False,"cases":[]}
         sequence=[
             ("activation-without-authority-refused","activate-deployment",None,0),
             ("unsealed-helper-refused","prepare-deployment",None,0),
@@ -118,7 +118,7 @@ class NativePackageProvenanceTests(unittest.TestCase):
             value["cases"].append({"name":name,"operation":op,"exitCode":0 if transition else 1,"elapsedMilliseconds":5,"passed":True,"result":result,"recordPreserved":transition is None or not transition[2]})
         validate=lambda v:validate_fixed_deployment_helper(v,identity,"a"*64,"b"*64)
         validate(value)
-        mutations=[lambda v:v.update(payloadSHA256="0"*64),lambda v:v.update(helperSHA256="unmeasured"),lambda v:v.update(installedCodeExecutedAsRoot=True),lambda v:v.update(packageScriptsIntegrated=True),lambda v:v.update(ownedFixedFixtureCleanupVerified=False),lambda v:v["cases"].pop(),lambda v:v["cases"][0].update(exitCode=0),lambda v:v["cases"][0].update(recordPreserved=False),lambda v:v["cases"][3]["result"].update(slotID=f"{4:032x}"),lambda v:v["cases"][5]["result"].update(generation=2),lambda v:v["cases"][6]["result"].update(operationRecordPublished=True),lambda v:v["cases"][17]["result"].update(slotID=f"{2:032x}")]
+        mutations=[lambda v:v.update(detachedManifestBridgeVerified=False),lambda v:v.update(payloadSHA256="0"*64),lambda v:v.update(helperSHA256="unmeasured"),lambda v:v.update(installedCodeExecutedAsRoot=True),lambda v:v.update(packageScriptsIntegrated=True),lambda v:v.update(ownedFixedFixtureCleanupVerified=False),lambda v:v["cases"].pop(),lambda v:v["cases"][0].update(exitCode=0),lambda v:v["cases"][0].update(recordPreserved=False),lambda v:v["cases"][3]["result"].update(slotID=f"{4:032x}"),lambda v:v["cases"][5]["result"].update(generation=2),lambda v:v["cases"][6]["result"].update(operationRecordPublished=True),lambda v:v["cases"][17]["result"].update(slotID=f"{2:032x}")]
         for change in mutations:
             changed=copy.deepcopy(value);change(changed)
             with self.assertRaises(ValueError):validate(changed)

@@ -81,12 +81,18 @@ def bundle_manifest(bundle):
     require(entries and len(entries)<=MAX_FILES,"Empty or oversized app bundle")
     return {"schemaVersion":1,"bundleIdentifier":BUNDLE_ID,"files":sorted(entries,key=lambda v:v["path"]),"directories":sorted(directories,key=lambda v:v["path"])}
 
-def verify_bundle(bundle,manifest,identity):
+def verify_bundle(bundle,manifest,identity,*,manifest_path=None):
     require(bundle_manifest(bundle)==manifest,"App bundle differs from its sealed manifest")
     bundle=Path(bundle)
     require(stat.S_IMODE((bundle/"Contents/MacOS/accessweaver").stat().st_mode)==0o755,"App executable mode differs")
     embedded=bundle/"Contents/Resources/INSTALL-MANIFEST.json"
-    require(embedded.stat().st_size<=2<<20 and json.loads(embedded.read_text(encoding="utf-8"))==manifest,"Embedded manifest differs")
+    if manifest_path is None:
+        require(embedded.stat().st_size<=2<<20 and json.loads(embedded.read_text(encoding="utf-8"))==manifest,"Embedded manifest differs")
+    else:
+        require(not os.path.lexists(embedded),"Detached inventory must not coexist with an embedded manifest")
+        sidecar=Path(manifest_path);info=sidecar.lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_nlink==1 and stat.S_IMODE(info.st_mode)==0o644 and info.st_size<=2<<20,"Invalid detached manifest")
+        require(json.loads(sidecar.read_text(encoding="utf-8"))==manifest,"Detached manifest differs")
     info=plistlib.loads((bundle/"Contents/Info.plist").read_bytes())
     require(info==bundle_plist(identity["version"],macho_identity((bundle/"Contents/MacOS/accessweaver").read_bytes(),identity["arch"])["minimumOSVersion"]),"Bundle metadata differs from native identity")
     require(json.loads((bundle/"Contents/Resources/BUILD-INFO.json").read_text(encoding="utf-8"))==identity,"Bundle build identity differs from payload")

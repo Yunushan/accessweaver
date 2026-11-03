@@ -11,8 +11,8 @@ import shutil
 import stat
 import tempfile
 
-from macos_deployment import PACKAGE_ID,INCOMING,inspect_deployment,MANIFEST
-from macos_installer import BUNDLE_NAME,digest,require,verify_bundle,MAX_BYTES
+from macos_deployment import PACKAGE_ID,INCOMING,inspect_deployment,DETACHED_MANIFEST,verify_deployment_bundle
+from macos_installer import BUNDLE_NAME,digest,require,MAX_BYTES
 from macos_package_archive import flat_members,cpio,inflate
 
 REPO=Path(__file__).resolve().parent.parent
@@ -50,7 +50,7 @@ def main():
         require(report["packageFile"]==filename,"Unexpected deployment package filename")
         package=output/filename;encoded=(output/"INSTALL-MANIFEST.json").read_bytes();scripts=json.loads((output/"SCRIPT-MANIFEST.json").read_bytes())
         require(inspect_deployment(package.read_bytes(),encoded,identity,scripts)==report["archiveInspection"],"Actual deployment package changed after construction")
-        candidates[version]={"identity":identity,"report":report,"package":package,"manifest":json.loads(encoded)}
+        candidates[version]={"identity":identity,"report":report,"package":package,"manifest":json.loads(encoded),"manifestBytes":encoded}
     temporary=Path(os.environ["RUNNER_TEMP"]);no_alias(temporary)
     capsule=Path(tempfile.mkdtemp(prefix="accessweaver-deployment-package-",dir=temporary));user=capsule/"user";user.mkdir();private_temp=capsule/"tmp";private_temp.mkdir()
     environment={"PATH":"/usr/bin:/bin:/usr/sbin:/sbin","HOME":str(user),"TMPDIR":str(private_temp),"LANG":"C","LC_ALL":"C","TZ":"UTC","ACCESSWEAVER_NO_BROWSER":"1"}
@@ -63,10 +63,10 @@ def main():
     def active(version,generation):
         candidate=candidates[version];value,_=state();slot=value["active"]
         require(value["generation"]==generation and value["highWaterVersion"]==version and value["pending"]==[] and slot["identity"]=={"version":version,"manifestSHA256":candidate["report"]["manifestSHA256"],"payloadSHA256":candidate["report"]["payloadSHA256"]} and re.fullmatch("[a-f0-9]{32}",slot["id"]) is not None,"Activated package state differs")
-        app=AUTHORITY/"versions"/slot["id"]/BUNDLE_NAME;verify_bundle(app,candidate["manifest"],candidate["identity"])
+        app=AUTHORITY/"versions"/slot["id"]/BUNDLE_NAME;verify_deployment_bundle(app,candidate["manifest"],candidate["identity"],candidate["manifestBytes"])
         actual,_=run([app/"Contents/MacOS/accessweaver","version","--json"],environment,30)
         require(json.loads(actual.stdout)==candidate["identity"],"Actual unelevated active runtime differs")
-        for prior,(prior_version,prior_app) in known_slots.items():verify_bundle(prior_app,candidates[prior_version]["manifest"],candidates[prior_version]["identity"])
+        for prior,(prior_version,prior_app) in known_slots.items():verify_deployment_bundle(prior_app,candidates[prior_version]["manifest"],candidates[prior_version]["identity"],candidates[prior_version]["manifestBytes"])
         known_slots[slot["id"]]=(version,app)
         info,_=run(["/usr/sbin/pkgutil","--pkg-info",PACKAGE_ID],environment,30)
         values=dict(line.split(": ",1) if ": " in line else (line.rstrip(":"),"") for line in info.stdout.decode().splitlines() if line)
@@ -129,7 +129,7 @@ def main():
                 serving=True
                 result,elapsed=run(["/usr/bin/sudo","-n","/usr/sbin/installer","-pkg",candidates[VERSIONS[1]]["package"],"-target","/"],environment,180,codes=tuple(range(256)))
                 require(1<=result.returncode<=255 and state()[1]==before_state and receipt_snapshot()==before_receipts,"Running controller did not fence actual package mutation")
-                verify_bundle(app,candidates[VERSIONS[0]]["manifest"],candidates[VERSIONS[0]]["identity"])
+                verify_deployment_bundle(app,candidates[VERSIONS[0]]["manifest"],candidates[VERSIONS[0]]["identity"],candidates[VERSIONS[0]]["manifestBytes"])
                 require(child.poll() is None and digest(profile_path.read_bytes())==profile_hash,"Refused upgrade disturbed the live controller/profile")
                 lease_cases.append({"kind":kind,"installerExitCode":result.returncode,"elapsedMilliseconds":elapsed,"servingControllerVerified":True,"activeRecordAndReceiptBytesPreserved":True,"actualProfilePreserved":True,"controllerRemainedRunning":True,"parentInheritedDescriptorClosed":kind=="inherited","passed":True})
             except Exception:
@@ -144,7 +144,14 @@ def main():
         install("upgrade",VERSIONS[1],2)
         install("same-version-reinstall",VERSIONS[1],3)
         install("older-version-refused",VERSIONS[0],3,False)
-        candidate=candidates[VERSIONS[1]];incoming=INPUT/candidate["report"]["manifestSHA256"]/BUNDLE_NAME;verify_bundle(incoming,candidate["manifest"],candidate["identity"])
+        candidate=candidates[VERSIONS[1]];incoming=INPUT/candidate["report"]["manifestSHA256"]/BUNDLE_NAME;verify_deployment_bundle(incoming,candidate["manifest"],candidate["identity"],candidate["manifestBytes"])
+        sidecar=incoming.parent/DETACHED_MANIFEST;original_manifest=capsule/"saved-detached-manifest";original_manifest.write_bytes(sidecar.read_bytes())
+        changed_manifest=capsule/"changed-detached-manifest";changed_manifest.write_bytes(original_manifest.read_bytes()+b" ")
+        run(["/usr/bin/sudo","-n","/bin/cp",changed_manifest,sidecar],environment)
+        install("changed-detached-manifest-refused",VERSIONS[1],3,False)
+        require(sidecar.read_bytes()==changed_manifest.read_bytes(),"Refused package overwrote a changed detached manifest")
+        run(["/usr/bin/sudo","-n","/bin/cp",original_manifest,sidecar],environment)
+        verify_deployment_bundle(incoming,candidate["manifest"],candidate["identity"],candidate["manifestBytes"])
         leaf=incoming/"Contents/Resources/README.md";original=capsule/"saved-readme";original.write_bytes(leaf.read_bytes());changed=capsule/"changed-readme";changed.write_bytes(original.read_bytes()+b"changed")
         run(["/usr/bin/sudo","-n","/bin/cp",changed,leaf],environment)
         install("changed-staging-refused",VERSIONS[1],3,False)
@@ -158,7 +165,7 @@ def main():
         require(value["generation"]==5 and value["state"]=="inactive" and value["operationRecordPublished"] is True,"Packaged recovery helper did not publish deactivation")
         operations.append({"operation":"deactivate-for-cleanup","version":VERSIONS[1],"exitCode":stopped.returncode,"elapsedMilliseconds":elapsed,"generation":5,"passed":True})
         final,_=state();require(final["active"]["id"]=="" and final["pending"]==[] and len(known_slots)==4,"Unexpected retained deployment fixture state")
-        for version,app in known_slots.values():verify_bundle(app,candidates[version]["manifest"],candidates[version]["identity"])
+        for version,app in known_slots.values():verify_deployment_bundle(app,candidates[version]["manifest"],candidates[version]["identity"],candidates[version]["manifestBytes"])
         for path in (AUTHORITY,INPUT):
             no_alias(path);info=path.stat();require(path.parent==Path("/Library/Application Support") and path.name in ("AccessWeaver","AccessWeaver Incoming") and stat.S_ISDIR(info.st_mode) and info.st_uid==0 and info.st_gid==0 and stat.S_IMODE(info.st_mode)==0o755,"Unsafe newly owned fixture cleanup")
             aliases,_=run(["/usr/bin/sudo","-n","/usr/bin/find",path,"-type","l","-print"],environment);require(not aliases.stdout.strip(),"Unexpected fixture alias")
@@ -173,7 +180,7 @@ def main():
         while trace:
             if trace.tb_frame.f_code.co_filename==__file__:failure_line=trace.tb_lineno
             trace=trace.tb_next
-    report={"schemaVersion":1,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packages":{v:{"file":c["report"]["packageFile"],"bytes":c["report"]["packageBytes"],"packageSHA256":c["report"]["packageSHA256"],"payloadSHA256":c["report"]["payloadSHA256"],"manifestSHA256":c["report"]["manifestSHA256"],"helperSHA256":c["report"]["helperSHA256"]} for v,c in candidates.items()},"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"runtimeLeaseCases":lease_cases,"installedControllerLeaseRefusalVerified":complete,"packageScriptsIntegrated":True,"actualApplePackageUpgradeExecuted":complete,"actualUserProfilePreservationVerified":complete,"retainedPriorCopiesVerified":complete,"ownedFixturesRemoved":cleaned,"installedCodeExecutedAsRoot":False,"publicLauncherIntegrated":False,"runtimeLeaseQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"abruptTerminationQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
+    report={"schemaVersion":1,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packages":{v:{"file":c["report"]["packageFile"],"bytes":c["report"]["packageBytes"],"packageSHA256":c["report"]["packageSHA256"],"payloadSHA256":c["report"]["payloadSHA256"],"manifestSHA256":c["report"]["manifestSHA256"],"helperSHA256":c["report"]["helperSHA256"]} for v,c in candidates.items()},"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"runtimeLeaseCases":lease_cases,"installedControllerLeaseRefusalVerified":complete,"packageScriptsIntegrated":True,"detachedManifestSealingVerified":complete,"actualApplePackageUpgradeExecuted":complete,"actualUserProfilePreservationVerified":complete,"retainedPriorCopiesVerified":complete,"ownedFixturesRemoved":cleaned,"installedCodeExecutedAsRoot":False,"publicLauncherIntegrated":False,"runtimeLeaseQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"abruptTerminationQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
     (root/"lifecycle-artifact.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     require(complete,"Native deployment package acceptance failed at "+stage+"; owned disposable state retained")
     print(json.dumps({"target":report["target"],"actualApplePackageOperations":len(operations)+len(lease_cases),"passed":True,"productionQualificationComplete":False}))

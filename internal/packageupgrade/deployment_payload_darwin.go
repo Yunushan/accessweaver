@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/Yunushan/accessweaver/internal/darwintrust"
 	"golang.org/x/sys/unix"
@@ -17,17 +18,68 @@ import (
 
 // The seal must come from the newly built trusted packaging helper, never the
 // installed app, an incoming self-description alone, environment or caller path.
-// Publisher/notarization validation and that helper integration remain separate.
+// Publisher/notarization validation remains a separate requirement.
 func verifyDeploymentBundle(app *os.File, identity deploymentIdentity) (Manifest, []byte, error) {
+	encoded, e := readPath(app, ManifestName, 2<<20)
+	if e != nil {
+		return Manifest{}, nil, e
+	}
+	return verifyDeploymentInventory(app, identity, encoded, true)
+}
+
+const detachedDeploymentManifest = "INSTALL-MANIFEST.json"
+
+// Inventory location is determined by an exact, protected container layout.
+// One app is the legacy embedded format; app plus sidecar is the new format.
+// Missing, duplicate, linked, or unexpected objects never trigger a fallback.
+func openDeploymentBundle(container *os.File) (*os.File, []byte, bool, error) {
+	if e := deploymentObject(container, true, 0, 0755); e != nil {
+		return nil, nil, false, e
+	}
+	entries, e := deploymentEntries(container, 0, 2)
+	if e != nil {
+		return nil, nil, false, e
+	}
+	hasApp, hasSidecar := false, false
+	for _, entry := range entries {
+		switch entry.Name() {
+		case "AccessWeaver.app":
+			hasApp = true
+		case detachedDeploymentManifest:
+			hasSidecar = true
+		default:
+			return nil, nil, false, errors.New("deployment bundle container inventory differs")
+		}
+	}
+	if !hasApp || len(entries) != 1 && !hasSidecar {
+		return nil, nil, false, errors.New("deployment bundle container is incomplete")
+	}
+	app, e := directoryAt(container, "AccessWeaver.app")
+	if e != nil {
+		return nil, nil, false, e
+	}
+	var encoded []byte
+	if hasSidecar {
+		var st syscall.Stat_t
+		encoded, st, e = readAt(container, detachedDeploymentManifest, 2<<20)
+		if e == nil && st.Mode&07777 != 0644 {
+			e = errors.New("detached deployment manifest mode differs")
+		}
+	} else {
+		encoded, e = readPath(app, ManifestName, 2<<20)
+	}
+	if e != nil {
+		return nil, nil, false, errors.Join(e, app.Close())
+	}
+	return app, encoded, !hasSidecar, nil
+}
+
+func verifyDeploymentInventory(app *os.File, identity deploymentIdentity, encoded []byte, embedded bool) (Manifest, []byte, error) {
 	var empty Manifest
 	if e := identity.validate(); e != nil {
 		return empty, nil, e
 	}
 	if e := deploymentObject(app, true, 0, 0755); e != nil {
-		return empty, nil, e
-	}
-	encoded, e := readPath(app, ManifestName, 2<<20)
-	if e != nil {
 		return empty, nil, e
 	}
 	if digest(encoded) != identity.ManifestSHA256 {
@@ -42,7 +94,7 @@ func verifyDeploymentBundle(app *os.File, identity deploymentIdentity) (Manifest
 		return empty, nil, e
 	}
 	fresh := os.NewFile(uintptr(fd), app.Name())
-	important, e := inspectBundle(fresh, m, encoded)
+	important, e := inspectBundleInventory(fresh, m, encoded, embedded)
 	e = errors.Join(e, fresh.Close())
 	if e != nil {
 		return empty, nil, e
@@ -100,19 +152,12 @@ func (s *deploymentStore) verifySlot(slot deploymentSlot) error {
 	if e = deploymentObject(dir, true, 0, 0755); e != nil {
 		return e
 	}
-	entries, e := deploymentEntries(dir, 0, 1)
-	if e != nil {
-		return e
-	}
-	if len(entries) != 1 || entries[0].Name() != "AccessWeaver.app" {
-		return errors.New("deployment slot inventory differs")
-	}
-	app, e := directoryAt(dir, "AccessWeaver.app")
+	app, encoded, embedded, e := openDeploymentBundle(dir)
 	if e != nil {
 		return e
 	}
 	defer app.Close()
-	_, _, e = verifyDeploymentBundle(app, slot.Identity)
+	_, _, e = verifyDeploymentInventory(app, slot.Identity, encoded, embedded)
 	return e
 }
 
@@ -144,6 +189,21 @@ func (s *deploymentStore) activatePrepared(slot deploymentSlot) (bool, error) {
 	return s.commit(next)
 }
 func (s *deploymentStore) copyAndActivate(slot deploymentSlot, source *os.File) (bool, error) {
+	encoded, e := readPath(source, ManifestName, 2<<20)
+	if e != nil {
+		return false, e
+	}
+	return s.copyBundleAndActivate(slot, source, encoded, true)
+}
+func (s *deploymentStore) copyIncomingAndActivate(slot deploymentSlot, container *os.File) (published bool, err error) {
+	app, encoded, embedded, e := openDeploymentBundle(container)
+	if e != nil {
+		return false, e
+	}
+	defer func() { err = errors.Join(err, app.Close()) }()
+	return s.copyBundleAndActivate(slot, app, encoded, embedded)
+}
+func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.File, inventory []byte, embedded bool) (bool, error) {
 	if s.owner != 0 {
 		return false, errors.New("deployment copy requires root-owned storage")
 	}
@@ -151,7 +211,7 @@ func (s *deploymentStore) copyAndActivate(slot deploymentSlot, source *os.File) 
 	if _, e := s.state.activate(slot); e != nil {
 		return false, e
 	}
-	m, encoded, e := verifyDeploymentBundle(source, slot.Identity)
+	m, encoded, e := verifyDeploymentInventory(source, slot.Identity, inventory, embedded)
 	if e != nil {
 		return false, e
 	}
@@ -198,7 +258,25 @@ func (s *deploymentStore) copyAndActivate(slot deploymentSlot, source *os.File) 
 			return false, e
 		}
 	}
-	files := append(append([]File{}, m.Files...), File{Path: ManifestName, Bytes: int64(len(encoded)), SHA256: digest(encoded), Mode: "0644"})
+	files := append([]File{}, m.Files...)
+	if embedded {
+		files = append(files, File{Path: ManifestName, Bytes: int64(len(encoded)), SHA256: digest(encoded), Mode: "0644"})
+	} else {
+		f, createErr := darwintrust.CreateRegularAt(dir, detachedDeploymentManifest, 0)
+		if createErr != nil {
+			return false, createErr
+		}
+		n, writeErr := f.Write(encoded)
+		if writeErr == nil && n != len(encoded) {
+			writeErr = io.ErrShortWrite
+		}
+		if e = errors.Join(writeErr, f.Chmod(0644), fullDeploymentSync(f), f.Close(), fullDeploymentSync(dir)); e != nil {
+			return false, e
+		}
+		if e = s.phase("payload-manifest-durable"); e != nil {
+			return false, e
+		}
+	}
 	for _, record := range files {
 		data, e := readPath(source, record.Path, 64<<20)
 		if e != nil {
