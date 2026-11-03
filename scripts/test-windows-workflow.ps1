@@ -14,6 +14,98 @@ $testRoot=Join-Path $projectRoot ('build\workflow-tests-'+[guid]::NewGuid().ToSt
 $root=$testRoot;$script:undo=[Collections.Generic.List[object]]::new();$script:events=[Collections.Generic.List[string]]::new();$script:journalPath=$null
 [void](New-Item -ItemType Directory -Force -Path (Join-Path $testRoot 'backups'))
 function Assert([bool]$condition,[string]$message){if(-not $condition){throw $message};Write-Output ('PASS '+$message)}
+# The OS identity comes from IsWow64Process2 in Go, outside the reviewed request.
+# These fixtures only read inert MSI databases; signature/network/launch are mocked.
+$previousPrerequisiteInput=$inputData;$previousPrerequisiteRequest=$r
+$prerequisiteFunctions=@{}
+foreach($name in @('Read-RemoteJSON','Download','Get-AuthenticodeSignature','Native','Event')){$prerequisiteFunctions[$name]=(Get-Command $name).ScriptBlock}
+$prerequisiteRoot=Join-Path $testRoot 'prerequisites';[void](New-Item -ItemType Directory -Path $prerequisiteRoot)
+$script:prerequisiteFixtures=@{}
+foreach($platform in @('x64','Arm64','Intel')) {
+    $path=Join-Path $prerequisiteRoot ('fixture-'+$platform+'.msi')
+    $msi=$null;$database=$null;$summary=$null
+    try {
+        $msi=New-Object -ComObject WindowsInstaller.Installer
+        $database=$msi.OpenDatabase($path,3)
+        $summary=$database.SummaryInformation(1)
+        [void]$summary.GetType().InvokeMember('Property',[Reflection.BindingFlags]::SetProperty,$null,$summary,@(7,($platform+';1033')))
+        $summary.Persist();$database.Commit()
+    } finally {foreach($object in @($summary,$database,$msi)){if($null -ne $object){[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($object)}}}
+    $script:prerequisiteFixtures[$platform]=$path
+    Assert ((Get-MSIPlatform $path) -ceq $platform) ('Read-only MSI metadata preserves '+$platform+' without running an installer')
+}
+try {
+    $script:prerequisiteCalls=[Collections.Generic.List[object]]::new()
+    $script:prerequisiteSignature='Valid'
+    function Get-AuthenticodeSignature {param($LiteralPath);$script:prerequisiteCalls.Add(@{kind='signature';path=$LiteralPath});return @{Status=$script:prerequisiteSignature}}
+    function Read-RemoteJSON {param($Headers,$Uri);$script:prerequisiteCalls.Add(@{kind='release';url=$Uri});return @{assets=$script:prerequisiteAssets}}
+    function Download {param($url,$hash,$destination,[switch]$Signed);$script:prerequisiteCalls.Add(@{kind='download';url=$url;hash=$hash});Copy-Item -LiteralPath $script:prerequisiteDownloadFixture -Destination $destination -Force}
+    function Native {param($Program,$Arguments,$SuccessCodes);$script:prerequisiteCalls.Add(@{kind='launch';program=$Program;arguments=$Arguments;codes=$SuccessCodes});return @{exitCode=0}}
+    function Event {param($text)}
+    [void](New-Item -ItemType Directory -Force -Path (Join-Path $root 'downloads'))
+    foreach($architecture in @('amd64','arm64')) {
+        $inputData=[pscustomobject]@{nativeArchitecture=$architecture}
+        $platform=if($architecture -eq 'amd64'){'x64'}else{'Arm64'}
+        $plan=Prerequisite-Plan 'ndisapi'
+        Assert ($plan.platform -ceq $platform) ($architecture+' prerequisite selection uses the native kernel architecture')
+        foreach($other in @('x64','Arm64','x86')) {
+            $matched=('Windows.Packet.Filter.3.6.2.1.'+$other+'.msi') -match $plan.assetPattern
+            Assert ($matched -eq ($other -ieq $platform)) ($architecture+' prerequisite selection separates '+$other+' package names')
+        }
+        foreach($invalid in @(('Windows.Packet.Filter.evil.'+$platform+'.msi'),('prefix.Windows.Packet.Filter.3.6.2.1.'+$platform+'.msi'),('Windows.Packet.Filter.3.6.2.1.'+$platform+'.msi.exe'))) {
+            Assert ($invalid -notmatch $plan.assetPattern) ($architecture+' prerequisite selection rejects malformed asset names')
+        }
+        $bundle=Join-Path $prerequisiteRoot ('bundle-'+$architecture);[void](New-Item -ItemType Directory -Path $bundle)
+        foreach($other in @('x64','Arm64')) {Copy-Item -LiteralPath $script:prerequisiteFixtures[$other] -Destination (Join-Path $bundle ('Windows.Packet.Filter.3.6.2.1.'+$other+'.msi'))}
+        $r=[pscustomobject]@{bundlePath=$bundle};$script:prerequisiteCalls.Clear()
+        Install-Prerequisite 'ndisapi'
+        $launch=@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'})
+        Assert ($launch.Count -eq 1 -and $launch[0].arguments[1].EndsWith('.'+$platform+'.msi',[StringComparison]::OrdinalIgnoreCase) -and $launch[0].program -eq 'msiexec.exe' -and ($launch[0].codes -join ',') -eq '0,3010,1641') ($architecture+' bundle selects only its platform and preserves reboot exit codes')
+        Assert (@($script:prerequisiteCalls | Where-Object {$_.kind -in @('release','download')}).Count -eq 0) ($architecture+' compatible bundle avoids remote retrieval')
+        # A correct filename cannot override an incompatible MSI template.
+        $selected=Join-Path $bundle ('Windows.Packet.Filter.3.6.2.1.'+$platform+'.msi')
+        Copy-Item -LiteralPath $script:prerequisiteFixtures['Intel'] -Destination $selected -Force
+        $script:prerequisiteCalls.Clear();$rejected=$false
+        try {Install-Prerequisite 'ndisapi'}catch{$rejected=$_.Exception.Message -like '*MSI platform does not match*'}
+        Assert ($rejected -and @($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'}).Count -eq 0) ($architecture+' mismatched MSI metadata prevents execution despite a matching filename')
+        Copy-Item -LiteralPath $script:prerequisiteFixtures[$platform] -Destination $selected -Force
+        $duplicate=Join-Path $bundle ('Windows.Packet.Filter.3.6.1.1.'+$platform+'.msi');Copy-Item -LiteralPath $selected -Destination $duplicate
+        $script:prerequisiteCalls.Clear();$rejected=$false
+        try {Install-Prerequisite 'ndisapi'}catch{$rejected=$_.Exception.Message -like 'Multiple compatible*'}
+        Assert ($rejected -and $script:prerequisiteCalls.Count -eq 0) ($architecture+' ambiguous local packages fail before signature checks or launch')
+        Remove-Item -LiteralPath $duplicate
+        $r=[pscustomobject]@{bundlePath=$null}
+        $script:prerequisiteAssets=@(foreach($other in @('x64','Arm64','x86')){@{name=('Windows.Packet.Filter.3.6.2.1.'+$other+'.msi');browser_download_url=('https://github.com/wiresock/ndisapi/releases/download/v3.6.2/filter-'+$other+'.msi');digest=('sha256:'+('a'*64))}})
+        $script:prerequisiteDownloadFixture=$script:prerequisiteFixtures[$platform];$script:prerequisiteCalls.Clear()
+        Install-Prerequisite 'ndisapi'
+        $downloads=@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'download'})
+        Assert ($downloads.Count -eq 1 -and $downloads[0].url.EndsWith('filter-'+$platform+'.msi',[StringComparison]::OrdinalIgnoreCase) -and $downloads[0].hash -eq ('a'*64)) ($architecture+' remote package selection preserves the exact vendor digest')
+        Assert (@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'}).Count -eq 1) ($architecture+' matching remote MSI reaches only the mocked launcher')
+        $matchingAsset=@($script:prerequisiteAssets | Where-Object {$_.name -match $plan.assetPattern})[0]
+        foreach($assets in @(@($matchingAsset,$matchingAsset),@())) {
+            $script:prerequisiteAssets=$assets;$script:prerequisiteCalls.Clear();$rejected=$false
+            try {Install-Prerequisite 'ndisapi'}catch{$rejected=$_.Exception.Message -like 'Exactly one*'}
+            Assert ($rejected -and @($script:prerequisiteCalls | Where-Object {$_.kind -in @('download','launch')}).Count -eq 0) ($architecture+' ambiguous or missing remote assets prevent download and launch')
+        }
+        $r=[pscustomobject]@{bundlePath=$bundle};$script:prerequisiteSignature='NotTrusted';$script:prerequisiteCalls.Clear();$rejected=$false
+        try {Install-Prerequisite 'ndisapi'}catch{$rejected=$_.Exception.Message -eq 'Prerequisite signature is invalid'}
+        Assert ($rejected -and @($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'}).Count -eq 0) ($architecture+' invalid publisher signature prevents launch')
+        $script:prerequisiteSignature='Valid'
+    }
+    foreach($architecture in @('','x86','unknown')) {
+        $inputData=[pscustomobject]@{nativeArchitecture=$architecture};$script:prerequisiteCalls.Clear();$rejected=$false
+        try {Install-Prerequisite 'ndisapi'}catch{$rejected=$_.Exception.Message -like 'Native Windows architecture is unavailable*'}
+        Assert ($rejected -and $script:prerequisiteCalls.Count -eq 0) 'Unknown native architecture prevents prerequisite lookup, download and launch'
+    }
+    $inputData=[pscustomobject]@{}
+    Assert ((Prerequisite-Plan 'vcredist').pattern -eq 'VC_redist.x64.exe') 'Visual C runtime selection remains separate from kernel driver architecture'
+    $rejected=$false;try{Prerequisite-Plan 'unknown'|Out-Null}catch{$rejected=$_.Exception.Message -eq 'Unknown prerequisite component'}
+    Assert $rejected 'Unknown prerequisite names cannot fall back to Visual C runtime installation'
+} finally {
+    foreach($name in $prerequisiteFunctions.Keys){if($null -eq $prerequisiteFunctions[$name]){Remove-Item ('Function:'+$name)}else{Set-Item ('Function:'+$name) $prerequisiteFunctions[$name]}}
+    $inputData=$previousPrerequisiteInput;$r=$previousPrerequisiteRequest
+}
+
 # These real read-only queries cover stock Windows services and device drivers.
 $nativeServiceInspection=Get-ServiceInspection
 Assert ($null -eq $nativeServiceInspection.error -and $nativeServiceInspection.services -is [array]) 'Native service and driver enumeration succeeds with an explicit array result'

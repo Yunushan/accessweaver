@@ -623,15 +623,19 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 		return nil, err
 	}
 	hook, _ := presetFiles.ReadFile("presets/00-accessweaver-isp.sh")
+	// Unavailable host identity stays unknown. Read-only workflows may proceed,
+	// but driver prerequisite selection must refuse it without an x64 fallback.
+	nativeArchitecture, _ := nativepath.WindowsArchitecture()
 	input := struct {
-		Request        Request                `json:"request"`
-		Controller     string                 `json:"controller"`
-		ResultPath     string                 `json:"resultPath"`
-		ISPHook        string                 `json:"ispHook"`
-		ManagedPolicy  bool                   `json:"managedPolicy"`
-		AllowDownloads bool                   `json:"allowDownloads"`
-		Downloads      []managed.DownloadRule `json:"downloads"`
-	}{r, executable, filepath.Join(dir, "result.json"), string(hook), permission.Managed, permission.AllowDownloads, permission.Downloads}
+		NativeArchitecture string                 `json:"nativeArchitecture"`
+		Request            Request                `json:"request"`
+		Controller         string                 `json:"controller"`
+		ResultPath         string                 `json:"resultPath"`
+		ISPHook            string                 `json:"ispHook"`
+		ManagedPolicy      bool                   `json:"managedPolicy"`
+		AllowDownloads     bool                   `json:"allowDownloads"`
+		Downloads          []managed.DownloadRule `json:"downloads"`
+	}{nativeArchitecture, r, executable, filepath.Join(dir, "result.json"), string(hook), permission.Managed, permission.AllowDownloads, permission.Downloads}
 	b, _ := json.Marshal(input)
 	requestPath := filepath.Join(dir, "request.json")
 	if err := profile.AtomicWrite(requestPath, b); err != nil {

@@ -37,6 +37,8 @@ External packet engines may need administrator privileges and compatible driver 
 
 The installer builder selects an amd64 or ARM64 core payload to match the host Go SDK, and CI verifies each on its corresponding Windows runner. The pinned Inno Setup 6 bootstrap remains x86; the architecture in the setup filename identifies its core payload, not a native ARM64 setup runtime. Compilation does not prove installation, upgrade, architecture migration, uninstall or external engine/driver compatibility.
 
+Windows Packet Filter prerequisite selection uses the host architecture returned by [IsWow64Process2](https://learn.microsoft.com/en-us/windows/win32/api/wow64apiset/nf-wow64apiset-iswow64process2), including an emulated controller process. Bundle and upstream asset selection require one matching x64 or ARM64 MSI; a valid publisher signature and the [MSI Template Summary platform](https://learn.microsoft.com/en-us/windows/win32/msi/template-summary) must both pass before launch. Unknown OS identity, ambiguous assets and mismatched templates fail. This addresses the prerequisite selection path only. Other engine/driver asset selection, installation and traffic acceptance still need architecture-specific work; the portable ARM64 core does not qualify those integrations. The [vendor release](https://github.com/wiresock/ndisapi/releases/tag/v3.6.2) supplies separate x64 and ARM64 driver installers.
+
 The binary can open its local dashboard without arguments. It still runs as a console application, not an installed Windows service or a native signed desktop application. Closing/terminating a process is not proof that vendor network state has been restored.
 
 ## Linux and BSD

@@ -462,15 +462,45 @@ function Setup-ProxiFyre([string]$proxy) {
     Firewall 'proxifyre' $binary
     Event 'Per-application TCP/UDP proxifier service started'
 }
+function Prerequisite-Plan([string]$component) {
+    if($component -eq 'vcredist'){return @{pattern='VC_redist.x64.exe';assetPattern='^VC_redist[.]x64[.]exe$';platform=$null}}
+    if($component -ne 'ndisapi'){throw 'Unknown prerequisite component'}
+    $platform=switch($inputData.nativeArchitecture){'amd64' {'x64'} 'arm64' {'Arm64'} default {throw 'Native Windows architecture is unavailable or unsupported; driver installation was not attempted'}}
+    return @{pattern=('Windows.Packet.Filter.*.'+$platform+'.msi');assetPattern=('^Windows[.]Packet[.]Filter[.][0-9]+(?:[.][0-9]+){2,3}[.]'+$platform+'[.]msi$');platform=$platform}
+}
+function Get-MSIPlatform([string]$path) {
+    $installer=$null;$database=$null;$summary=$null
+    try {
+        $installer=New-Object -ComObject WindowsInstaller.Installer
+        $database=$installer.OpenDatabase([IO.Path]::GetFullPath($path),0)
+        $summary=$database.SummaryInformation(0)
+        return (([string]$summary.Property(7)).Split(';')[0])
+    } finally {
+        foreach($object in @($summary,$database,$installer)){if($null -ne $object){[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($object)}}
+    }
+}
 function Install-Prerequisite([string]$component) {
-    $pattern=if($component -eq 'ndisapi'){'Windows.Packet.Filter.*.x64.msi'}else{'VC_redist.x64.exe'}
+    # Resolve the kernel's architecture before any bundle lookup or download.
+    $plan=Prerequisite-Plan $component
     $installer=$null
-    foreach($base in @($r.bundlePath,(Join-Path $env:ProgramFiles 'SplitWire-Turkey\Prerequisites'))) {if($base -and (Test-Path -LiteralPath $base)){$installer=Get-ChildItem -LiteralPath $base -Recurse -Filter $pattern -File | Select-Object -First 1;if($installer){break}}}
+    foreach($base in @($r.bundlePath,(Join-Path $env:ProgramFiles 'SplitWire-Turkey\Prerequisites'))) {
+        if($base -and (Test-Path -LiteralPath $base)){
+            $candidateInstallers=@(Get-ChildItem -LiteralPath $base -Recurse -Filter $plan.pattern -File | Where-Object {$_.Name -match $plan.assetPattern})
+            if($candidateInstallers.Count -gt 1){throw 'Multiple compatible prerequisite installers found; supply one reviewed installer'}
+            if($candidateInstallers.Count -eq 1){$installer=$candidateInstallers[0];break}
+        }
+    }
     if(-not $installer){
-        if($component -eq 'ndisapi'){$release=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/wiresock/ndisapi/releases/latest';$asset=$release.assets|Where-Object {$_.name -match '\.x64\.msi$'}|Select-Object -First 1;if(-not $asset){throw 'Official Windows Packet Filter x64 installer not found'};$destination=Join-Path $root 'downloads\packet-filter.msi';Download $asset.browser_download_url (([string]$asset.digest)-replace '^sha256:','') $destination;$installer=Get-Item -LiteralPath $destination}
-        else{$destination=Join-Path $root 'downloads\VC_redist.x64.exe';Download 'https://aka.ms/vs/17/release/vc_redist.x64.exe' '' $destination -Signed;$installer=Get-Item -LiteralPath $destination}
+        if($component -eq 'ndisapi'){
+            $release=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/wiresock/ndisapi/releases/latest'
+            $assets=@($release.assets | Where-Object {$_.name -match $plan.assetPattern})
+            if($assets.Count -ne 1){throw 'Exactly one architecture-compatible Windows Packet Filter installer is required'}
+            $asset=$assets[0];$destination=Join-Path $root 'downloads\packet-filter.msi'
+            Download $asset.browser_download_url (([string]$asset.digest)-replace '^sha256:','') $destination;$installer=Get-Item -LiteralPath $destination
+        }else{$destination=Join-Path $root 'downloads\VC_redist.x64.exe';Download 'https://aka.ms/vs/17/release/vc_redist.x64.exe' '' $destination -Signed;$installer=Get-Item -LiteralPath $destination}
     }
     if((Get-AuthenticodeSignature -LiteralPath $installer.FullName).Status -ne 'Valid'){throw 'Prerequisite signature is invalid'}
+    if($component -eq 'ndisapi' -and (Get-MSIPlatform $installer.FullName) -ine $plan.platform){throw 'Windows Packet Filter MSI platform does not match the native OS architecture'}
     if($installer.Extension -eq '.msi'){[void](Native 'msiexec.exe' @('/i',$installer.FullName,'/qn','/norestart') @(0,3010,1641))}else{[void](Native $installer.FullName @('/install','/quiet','/norestart') @(0,3010,1641))}
     Event ('Prerequisite installed: '+$component)
 }
