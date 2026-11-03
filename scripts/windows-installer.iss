@@ -42,6 +42,7 @@ Source: "{#BuildRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 [Icons]
 Name: "{group}\AccessWeaver"; Filename: "{app}\accessweaver.exe"; Parameters: "ui"
 [Code]
+#include "windows-installer-lock.iss"
 #include "windows-installer-version.iss"
 
 function AWReadRegisteredVersion(const Root: Integer; var Found: Boolean; var Version: String): String;
@@ -99,9 +100,11 @@ end;
 function InitializeSetup: Boolean;
 var Failure: String;
 begin
-  Failure := AWVersionPreflight;
+  Failure := AWAcquireLifecycle;
+  if Failure = '' then Failure := AWVersionPreflight;
   Result := Failure = '';
   if not Result then begin
+    AWReleaseLifecycle;
     Log(Failure);
     if not WizardSilent then SuppressibleMsgBox(Failure, mbCriticalError, MB_OK, IDOK);
   end;
@@ -110,13 +113,34 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   { Recheck after wizard interaction, while the product SetupMutex remains held. }
-  Result := AWVersionPreflight;
+  if not AWLifecycleOwned then Result := 'The AccessWeaver installation lock is not held. Retry setup.'
+  else Result := AWVersionPreflight;
+end;
+
+procedure DeinitializeSetup;
+begin
+  AWReleaseLifecycle;
+end;
+
+procedure DeinitializeUninstall;
+begin
+  AWReleaseLifecycle;
 end;
 
 function InitializeUninstall: Boolean;
 var
   ResultCode: Integer;
+  Failure: String;
 begin
+  { Respect an already active older setup, as well as corrected lifecycle owners. }
+  if CheckForMutexes('Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092') then
+    Failure := 'An AccessWeaver setup is active. Wait for it to finish before uninstalling.'
+  else Failure := AWAcquireLifecycle;
+  if Failure <> '' then begin
+    Log(Failure);
+    if not UninstallSilent then SuppressibleMsgBox(Failure, mbCriticalError, MB_OK, IDOK);
+    Result := False; Exit;
+  end;
   { Abort before deleting the controller when restoration fails. The user can
     inspect the protected recovery journal and retry the uninstaller. }
   Result := Exec(ExpandConstant('{app}\accessweaver.exe'),
@@ -125,6 +149,7 @@ begin
   Result := Result and (ResultCode = 0);
   if not Result then
   begin
+    AWReleaseLifecycle;
     Log('AccessWeaver system restoration failed; process result/error code: ' + IntToStr(ResultCode));
     { Unattended deployment must fail without waiting on an interactive dialog. }
     if not UninstallSilent then

@@ -150,7 +150,7 @@ function Assert-Installed($expected){
 }
 $reportDirectory=Join-Path $project 'build\installer-lifecycle-checks';[void][IO.Directory]::CreateDirectory($reportDirectory)
 $reportPath=Join-Path $reportDirectory ($Architecture+'.json')
-$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@()
+$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null
 try {
     foreach($version in @('0.1.0-alpha','0.1.1-alpha')){
         $null=@(& (Join-Path $PSScriptRoot 'test-windows-installer.ps1') -ExpectedCompilerVersion '6.7.1' -TargetArch $Architecture -Version $version)
@@ -188,6 +188,7 @@ try {
     $reinstalled=Native-Record $second $arguments;Assert-Installed $builds[1]
     Require ((Digest $marker) -ceq $markerHash) 'Reinstall changed an unrelated installed-directory file'
     $observations+=,@{operation='reinstall';exitCode=$reinstalled.result.exitCode;elapsedMilliseconds=$reinstalled.milliseconds;deadlineMilliseconds=180000;payloadAndRegistrationVerified=$true;unrelatedStatePreserved=$true}
+    Require ((Read-InstallerPEMachine (Join-Path $install 'unins000.exe')) -eq 0x014c) 'Pinned Inno uninstaller differs from the supported x86 native-handle ABI'
     $stage='active-setup-uninstall';$lifecycleLockCases=@()
     $setupMutexName='Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092'
     $setupMutex=[Threading.Mutex]::new($false,$setupMutexName);$ownsSetupMutex=$false
@@ -205,6 +206,39 @@ try {
         Assert-Installed $builds[1]
         Require (-not (Test-Path -LiteralPath $managed)) 'Refused concurrent removal unexpectedly created machine recovery state'
     } finally {if($ownsSetupMutex){$setupMutex.ReleaseMutex()};$setupMutex.Dispose()}
+    $stage='lifecycle-lock-contracts'
+    $lockName='Global\AccessWeaver-Lifecycle-B13D4677-4660-4E63-B3DB-03077ACBB092'
+    $lockFixture=Join-Path $PSScriptRoot 'fixtures\InstallerLifecycleLock.cs'
+    Add-Type -Path $lockFixture
+    $lifecycleLockFixtureSHA256=Digest $lockFixture
+    $productLockSHA256=Digest (Join-Path $PSScriptRoot 'windows-installer-lock.iss')
+    $uninstallArguments=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART')
+    function Assert-LockRefusal([string]$name,[string]$binary,[string[]]$argsForChild){
+        $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
+        $refused=Native-Record $binary $argsForChild (0..255)
+        $treeAfter=Installed-TreeFingerprint;$registrationAfter=Registration-Fingerprint
+        Require ($refused.result.exitCode -ne 0 -and $treeBefore -ceq $treeAfter -and $registrationBefore -ceq $registrationAfter) 'Lifecycle lock refusal changed installation state or reported success'
+        Assert-Installed $builds[1]
+        Require (-not (Test-Path -LiteralPath $managed)) 'Refused lifecycle contention unexpectedly changed machine recovery state'
+        return @{name=$name;exitCode=$refused.result.exitCode;elapsedMilliseconds=$refused.milliseconds;installedFileTreePreserved=$true;registrationValuesPreserved=$true;profilePreserved=$true;machineRecoveryStateAbsent=$true}
+    }
+    $mutex=[Threading.Mutex]::new($false,$lockName);$ownsMutex=$false
+    try {
+        $ownsMutex=$mutex.WaitOne(0);Require $ownsMutex 'Lifecycle fixture could not obtain exclusive ownership'
+        $lifecycleLockCases+=,(Assert-LockRefusal 'active-lifecycle-blocks-setup' $second $arguments)
+        $lifecycleLockCases+=,(Assert-LockRefusal 'active-lifecycle-blocks-uninstall' (Join-Path $install 'unins000.exe') $uninstallArguments)
+    } finally {if($ownsMutex){$mutex.ReleaseMutex()};$mutex.Dispose()}
+    try {
+        [AccessWeaverLifecycleLockFixture]::Abandon($lockName)
+        $lifecycleLockCases+=,(Assert-LockRefusal 'abandoned-lifecycle-refused' $second $arguments)
+    } finally {[AccessWeaverLifecycleLockFixture]::Close()}
+    $collision=[Threading.EventWaitHandle]::new($false,[Threading.EventResetMode]::ManualReset,$lockName)
+    try {
+        $lifecycleLockCases+=,(Assert-LockRefusal 'different-kernel-object-refused' $second $arguments)
+    } finally {$collision.Dispose()}
+    # Successful setup after all holders close proves the fixture leaves no lock.
+    $resumed=Native-Record $second $arguments;Assert-Installed $builds[1]
+    $lifecycleLockCases+=,@{name='released-lifecycle-allows-setup';exitCode=$resumed.result.exitCode;elapsedMilliseconds=$resumed.milliseconds;payloadAndRegistrationVerified=$true;profilePreserved=$true}
     $stage='refused-downgrade'
     $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
     $downgrade=Native-Record $first $arguments (0..255)
@@ -282,7 +316,7 @@ try {
     Remove-OwnedTree $capsule $temporary $capsuleLeaf
     $complete=$true
 } catch {$failureType=$_.Exception.GetType().FullName}
-$record=[ordered]@{schemaVersion=3;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;versionPolicyCases=$versionPolicyCases;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=3;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'
