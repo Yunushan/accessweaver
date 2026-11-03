@@ -41,6 +41,12 @@ TARGETS = {
         "qemu": "qemu-system-aarch64", "tcgCPU": "cortex-a72",
     },
 }
+# From the official Ubuntu qemu-efi-aarch64 2024.02-2ubuntu0.10 package.
+ARM_FIRMWARE_PINS = {
+    "code": "545e2eda871a00dba51c0df48a34829fe3b0de6ec10ea760c75f1fc1c6a29dc5",
+    "variables": "b3b855c5a80310168051164986855692d1bdb06e67619856177965cd87c6774f",
+}
+
 MODULE = "github.com/Yunushan/accessweaver/"
 PORT = 2222
 
@@ -57,7 +63,7 @@ def selected_target(name=None):
 
 class FirmwareSnapshotError(RuntimeError):
     codes = {"ancestor-owner", "ancestor-permissions", "source-type", "source-owner", "source-links",
-             "source-permissions", "source-size", "copy-grew", "copy-changed", "capsule-permissions"}
+             "source-permissions", "source-size", "source-digest", "copy-grew", "copy-changed", "capsule-permissions"}
     nodes = {"root", "usr", "share", "firmware", "capsule", "other"}
     numbers = {"uid", "mode", "links", "bytes", "bytesCopied"}
     flags = {"sizeChanged", "mtimeChanged", "ctimeChanged"}
@@ -86,18 +92,21 @@ def firmware_failure_observations(error):
     return {}
 
 
-def copy_firmware(source, destination, *, owner=0):
+def copy_firmware(source, destination, *, owner=0, expected_sha256=None):
     """Snapshot an administrator-owned firmware input; fixtures may name their UID."""
+    if expected_sha256 is not None and (not isinstance(expected_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", expected_sha256)):
+        raise ValueError("firmware digest must be an independently pinned SHA-256")
     resolved = source.resolve(strict=True)
-    # The fixed runtime caller uses /usr/share/AAVMF. Inspect actual ancestors,
-    # allowing only root/expected ownership and no untrusted mutation rights.
+    # The fixed runtime caller uses /usr/share/AAVMF. Root/expected ownership
+    # remains mandatory. Mutable ancestors require a separately pinned content
+    # digest: trust the copied bytes, never the mutable pathname.
     for parent in resolved.parents:
         info = parent.stat()
         node = {"/": "root", "/usr": "usr", "/usr/share": "share", "/usr/share/AAVMF": "firmware"}.get(str(parent), "other")
         metadata = {"node": node, "uid": info.st_uid, "mode": stat.S_IMODE(info.st_mode)}
         if not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, owner):
             raise FirmwareSnapshotError("ancestor-owner", metadata)
-        if info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX:
+        if info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX and expected_sha256 is None:
             raise FirmwareSnapshotError("ancestor-permissions", metadata)
     fd = os.open(resolved, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as stream:
@@ -123,7 +132,10 @@ def copy_firmware(source, destination, *, owner=0):
             raise FirmwareSnapshotError("copy-changed", {"bytesCopied": total, "sizeChanged": before.st_size != after.st_size,
                                                          "mtimeChanged": before.st_mtime_ns != after.st_mtime_ns,
                                                          "ctimeChanged": before.st_ctime_ns != after.st_ctime_ns})
-    return value.hexdigest()
+    actual = value.hexdigest()
+    if expected_sha256 is not None and actual != expected_sha256:
+        raise FirmwareSnapshotError("source-digest", {"bytes": total})
+    return actual
 
 
 def prepare_arm_firmware(capsule):
@@ -132,8 +144,8 @@ def prepare_arm_firmware(capsule):
         raise FirmwareSnapshotError("capsule-permissions", {"node": "capsule", "mode": stat.S_IMODE(capsule.stat().st_mode)})
     code, variables = capsule / "efi-code.fd", capsule / "efi-vars.fd"
     # Source paths and expected root ownership are not environment-selectable.
-    code_hash = copy_firmware(Path("/usr/share/AAVMF/AAVMF_CODE.fd"), code)
-    variables_hash = copy_firmware(Path("/usr/share/AAVMF/AAVMF_VARS.fd"), variables)
+    code_hash = copy_firmware(Path("/usr/share/AAVMF/AAVMF_CODE.fd"), code, expected_sha256=ARM_FIRMWARE_PINS["code"])
+    variables_hash = copy_firmware(Path("/usr/share/AAVMF/AAVMF_VARS.fd"), variables, expected_sha256=ARM_FIRMWARE_PINS["variables"])
     code.chmod(0o400)
     return {"code": code, "variables": variables, "codeSHA256": code_hash, "initialVariablesSHA256": variables_hash}
 

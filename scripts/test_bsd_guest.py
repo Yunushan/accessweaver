@@ -277,11 +277,11 @@ class TargetAndFirmwareTests(unittest.TestCase):
             for source in (code, variables):
                 source.chmod(0o600)
             original = guest.copy_firmware
-            def copy(source, destination):
+            def copy(source, destination, *, expected_sha256):
                 self.assertEqual(source.parent, Path("/usr/share/AAVMF"))
-                return original(templates / source.name, destination, owner=os.geteuid())
+                return original(templates / source.name, destination, owner=os.geteuid(), expected_sha256=expected_sha256)
             prepared = []
-            with patch.object(guest, "copy_firmware", side_effect=copy):
+            with patch.object(guest, "copy_firmware", side_effect=copy), patch.object(guest, "ARM_FIRMWARE_PINS", {"code": guest.digest(code), "variables": guest.digest(variables)}):
                 for label in ("one", "two"):
                     capsule = root / label
                     capsule.mkdir(mode=0o700)
@@ -325,6 +325,36 @@ class TargetAndFirmwareTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 guest.copy_firmware(source, destination, owner=os.geteuid())
             self.assertEqual(destination.read_bytes(), b"retain-existing")
+
+    @unittest.skipUnless(os.name == "posix", "mutable firmware source directories require POSIX")
+    def test_mutable_firmware_ancestor_requires_an_independent_matching_digest(self):
+        with tempfile.TemporaryDirectory(prefix="accessweaver-firmware-") as name:
+            root = Path(name).resolve()
+            mutable = root / "mutable"
+            mutable.mkdir(mode=0o700)
+            mutable.chmod(0o777)
+            source = mutable / "template"
+            source.write_bytes(b"authenticated-public-firmware")
+            source.chmod(0o600)
+            expected = guest.digest(source)
+            destination = root / "snapshot"
+            with self.assertRaises(guest.FirmwareSnapshotError) as failure:
+                guest.copy_firmware(source, destination, owner=os.geteuid())
+            self.assertEqual(failure.exception.code, "ancestor-permissions")
+            self.assertFalse(destination.exists())
+            self.assertEqual(guest.copy_firmware(source, destination, owner=os.geteuid(), expected_sha256=expected), expected)
+            self.assertEqual(destination.read_bytes(), b"authenticated-public-firmware")
+            self.assertEqual(mutable.stat().st_mode & 0o777, 0o777)
+            destination.unlink()
+            source.write_bytes(b"tampered-public-firmware")
+            with self.assertRaises(guest.FirmwareSnapshotError) as failure:
+                guest.copy_firmware(source, destination, owner=os.geteuid(), expected_sha256=expected)
+            self.assertEqual(failure.exception.code, "source-digest")
+            destination.unlink()
+            for invalid in ("", "PRIVATE", "0" * 63, "0" * 65, True):
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    guest.copy_firmware(source, destination, owner=os.geteuid(), expected_sha256=invalid)
+                self.assertFalse(destination.exists())
 
     @unittest.skipUnless(os.name == "posix", "firmware special-file refusal requires POSIX")
     def test_firmware_fifo_is_refused_without_waiting_for_a_writer(self):

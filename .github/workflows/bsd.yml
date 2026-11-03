@@ -28,7 +28,7 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
             sdkarch: arm64
-            packages: qemu-system-arm qemu-efi-aarch64
+            packages: qemu-system-arm qemu-efi-aarch64=2024.02-2ubuntu0.10
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     steps:
