@@ -1,0 +1,54 @@
+name: Windows installer lifecycle acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/*windows-installer*
+      - internal/**
+      - cmd/accessweaver/**
+      - .github/workflows/installer-lifecycle.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-lifecycle-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  lifecycle:
+    name: Native installer lifecycle (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: amd64
+          - os: windows-11-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          architecture: ${{ matrix.arch == 'amd64' && 'x64' || 'arm64' }}
+          cache: false
+      - name: Exercise actual unsigned installer on a disposable native host
+        shell: powershell
+        env:
+          ACCESSWEAVER_DISPOSABLE_INSTALLER_ACCEPTANCE: '1'
+        run: ./scripts/test-windows-installer-lifecycle.ps1 -Architecture '${{ matrix.arch }}'
+      - name: Retain scoped public lifecycle result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-lifecycle-windows-${{ matrix.arch }}
+          path: build/installer-lifecycle-checks/
+          if-no-files-found: ignore
+          retention-days: 14

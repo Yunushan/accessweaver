@@ -1,7 +1,7 @@
 # Compile an unsigned candidate and record compiler/artifact identity. This does
 # not install/uninstall anything or invoke machine maintenance operations.
 [CmdletBinding()]
-param([string]$ExpectedCompilerVersion='6.7.1',[string]$Compiler,[string]$Go='go',[ValidateSet('amd64','arm64')][string]$TargetArch)
+param([string]$ExpectedCompilerVersion='6.7.1',[string]$Compiler,[string]$Go='go',[ValidateSet('amd64','arm64')][string]$TargetArch,[string]$Version='0.1.0-alpha')
 $ErrorActionPreference='Stop'
 $project=Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'windows-installer-common.ps1')
@@ -19,7 +19,6 @@ $Compiler=(Resolve-Path -LiteralPath $Compiler -ErrorAction Stop).Path
 $recordPath=Join-Path $project ('build\installer-checks\'+$TargetArch)
 [void](New-Item -ItemType Directory -Force -Path $recordPath)
 $compileLog=Join-Path $recordPath 'compiler.log'
-$version='0.1.0-alpha'
 $compileOutput=@(& (Join-Path $PSScriptRoot 'build-windows-installer.ps1') -Compiler $Compiler -Go $Go -Version $version -TargetArch $TargetArch | Tee-Object -FilePath $compileLog)
 $versionMatch=[regex]::Match(($compileOutput -join "`n"),'(?im)^Compiler engine version:\s*Inno Setup\s+(\d+\.\d+\.\d+)\b')
 if(-not $versionMatch.Success){throw 'Could not determine the Inno Setup compiler-engine version from the compilation log'}
