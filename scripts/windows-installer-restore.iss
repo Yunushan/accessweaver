@@ -131,15 +131,20 @@ begin
   Limits.PeakJobMemory := 0;
   try
     { Anonymous, non-inheritable job; never permit child breakaway. }
+    Failure := 'AccessWeaver could not create restoration containment.';
     Job := AWCreateRestoreJob(0, 0);
     if Job = 0 then begin Code := AWRestoreLastError; Exit; end;
+    Failure := 'AccessWeaver could not configure restoration containment.';
     if AWSetRestoreLimits(Job, 9, Limits, 112) = 0 then begin Code := AWRestoreLastError; Exit; end;
     { Suspended until contained. A hidden new console provides valid standard
       console handles for the CLI without inheriting installer handles. }
+    Failure := 'AccessWeaver could not launch the restoration controller.';
     if AWCreateRestoreProcess(Executable, CommandLine, 0, 0, 0, $00000014,
       0, Directory, Startup, Process) = 0 then begin Code := AWRestoreLastError; Exit; end;
+    Failure := 'AccessWeaver could not contain the restoration controller.';
     if AWAssignRestoreJob(Job, Process.Process) = 0 then begin Code := AWRestoreLastError; Exit; end;
     Contained := True;
+    Failure := 'AccessWeaver could not resume the contained restoration controller.';
     if AWResumeRestoreThread(Process.Thread) = $FFFFFFFF then begin Code := AWRestoreLastError; Exit; end;
     if AWCloseRestoreHandle(Process.Thread) = 0 then begin Code := AWRestoreLastError; Exit; end;
     Process.Thread := 0;

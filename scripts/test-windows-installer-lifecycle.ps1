@@ -151,7 +151,7 @@ function Assert-Installed($expected){
 }
 $reportDirectory=Join-Path $project 'build\installer-lifecycle-checks';[void][IO.Directory]::CreateDirectory($reportDirectory)
 $reportPath=Join-Path $reportDirectory ($Architecture+'.json')
-$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null;$registryReadCases=@();$registryViewCases=@();$registryAccessCases=@();$failureSourceLine=$null;$registryFixtureSHA256=$null;$productRegistrySHA256=$null;$restorationCases=@();$productRestoreSHA256=$null;$restoreFixtureSourceSHA256=$null;$restoreFixtureBinarySHA256=$null;$restoreContractSourceSHA256=$null;$restoreContractBinarySHA256=$null;$restorationOwnerCases=@();$restoreOwnerFixtureSHA256=$null
+$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null;$registryReadCases=@();$registryViewCases=@();$registryAccessCases=@();$failureSourceLine=$null;$registryFixtureSHA256=$null;$productRegistrySHA256=$null;$restorationCases=@();$productRestoreSHA256=$null;$restoreFixtureSourceSHA256=$null;$restoreFixtureBinarySHA256=$null;$restoreContractSourceSHA256=$null;$restoreContractBinarySHA256=$null;$restorationOwnerCases=@();$restoreOwnerFixtureSHA256=$null;$restorationLaunchCases=@()
 try {
     foreach($version in @('0.1.0-alpha','0.1.1-alpha')){
         $null=@(& (Join-Path $PSScriptRoot 'test-windows-installer.ps1') -ExpectedCompilerVersion '6.7.1' -TargetArch $Architecture -Version $version)
@@ -391,6 +391,67 @@ try {
         $registryAccessCases[-1].fixtureDACLRestored=$true
     } finally {if($key){$key.Dispose()};$base.Dispose()}
     Assert-Installed $builds[1]
+    $stage='restoration-launch-failures'
+    $core=Join-Path $install 'accessweaver.exe';No-Reparse $core
+    $launchBackup=Join-Path $capsule 'launch-original-controller.exe'
+    [IO.File]::Copy($core,$launchBackup,$false)
+    Require ((Digest $launchBackup) -ceq $builds[1].payloadSha256) 'Launch fixture backup differs from the installed controller'
+    $fileAccess=[Security.AccessControl.AccessControlSections]::Access
+    $originalFileSDDL=[IO.File]::GetAccessControl($core,$fileAccess).GetSecurityDescriptorSddlForm($fileAccess)
+    foreach($case in @(
+        @{name='missing-controller-refused';kind='missing';nativeError=2},
+        @{name='malformed-controller-refused';kind='malformed';nativeError=193},
+        @{name='execution-denied-controller-refused';kind='denied';nativeError=5}
+    )){
+        $stage='restoration-launch-'+$case.kind;$caseRecord=$null
+        try {
+            switch($case.kind){
+                'missing' {[IO.File]::Delete($core)}
+                'malformed' {[IO.File]::WriteAllBytes($core,[byte[]]@(0x4d,0x5a,0,0))}
+                'denied' {
+                    $deniedSecurity=[Security.AccessControl.FileSecurity]::new()
+                    $deniedSecurity.SetSecurityDescriptorSddlForm($originalFileSDDL,$fileAccess)
+                    $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+                    try {$deniedSecurity.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($identity.User,[Security.AccessControl.FileSystemRights]::ExecuteFile,[Security.AccessControl.AccessControlType]::Deny))} finally {$identity.Dispose()}
+                    [IO.File]::SetAccessControl($core,$deniedSecurity)
+                }
+            }
+            $controllerPresent=[IO.File]::Exists($core)
+            Require ($controllerPresent -eq ($case.kind -cne 'missing')) 'Launch fixture controller state differs from its expected precondition'
+            $fixtureSDDL=if($controllerPresent){[IO.File]::GetAccessControl($core,$fileAccess).GetSecurityDescriptorSddlForm($fileAccess)}else{$null}
+            $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
+            $logPath=Join-Path $capsule ($case.name+'.log')
+            Require (-not (Test-Path -LiteralPath $logPath)) 'Launch fixture log already exists'
+            $attempt=Native-Record (Join-Path $install 'unins000.exe') @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/LOG='+$logPath)) @(1)
+            Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint) -ceq $registrationBefore) 'Native restoration launch failure changed installation state'
+            $fileDACLUnchanged=$false
+            if($controllerPresent){
+                Require ([IO.File]::GetAccessControl($core,$fileAccess).GetSecurityDescriptorSddlForm($fileAccess) -ceq $fixtureSDDL) 'Launch refusal changed the fixture controller DACL'
+                $fileDACLUnchanged=$true
+            }
+            Assert-UserState
+            Require (-not (Test-Path -LiteralPath $managed)) 'Unlaunched controller unexpectedly created machine recovery state'
+            No-Reparse $logPath;Require ((Get-Item -LiteralPath $logPath).Length -le 4MB) 'Launch refusal log exceeds bounds'
+            $log=[IO.File]::ReadAllText($logPath)
+            Require ($log.Contains('AccessWeaver could not launch the restoration controller.') -and [regex]::IsMatch($log,('(?m)AccessWeaver system restoration failed; process result/error code: '+[regex]::Escape([string]$case.nativeError)+'\r?$'))) 'Native launch refusal did not retain its fixed phase and exact error code'
+            $caseRecord=@{name=$case.name;failurePhase='launch-controller';nativeError=$case.nativeError;nativeErrorLogVerified=$true;exitCode=$attempt.result.exitCode;elapsedMilliseconds=$attempt.milliseconds;observationDeadlineMilliseconds=180000;controllerPresentDuringRefusal=$controllerPresent;installedFileTreePreserved=$true;registrationValuesPreserved=$true;profilePreserved=$true;fileDACLCheckApplicable=$controllerPresent;fileDACLUnchangedDuringRefusal=$fileDACLUnchanged}
+        } finally {
+            # Reconstruct a modified security object so SetAccessControl really
+            # persists the saved DACL; never change the parent installation ACL.
+            if([IO.File]::Exists($core)){
+                No-Reparse $core
+                $restoreSecurity=[Security.AccessControl.FileSecurity]::new();$restoreSecurity.SetSecurityDescriptorSddlForm($originalFileSDDL,$fileAccess)
+                [IO.File]::SetAccessControl($core,$restoreSecurity)
+            }
+            [IO.File]::Copy($launchBackup,$core,$true)
+            $restoreSecurity=[Security.AccessControl.FileSecurity]::new();$restoreSecurity.SetSecurityDescriptorSddlForm($originalFileSDDL,$fileAccess)
+            [IO.File]::SetAccessControl($core,$restoreSecurity)
+            Require ((Digest $core) -ceq $builds[1].payloadSha256 -and [IO.File]::GetAccessControl($core,$fileAccess).GetSecurityDescriptorSddlForm($fileAccess) -ceq $originalFileSDDL) 'Launch fixture controller bytes or DACL were not restored'
+        }
+        Assert-Installed $builds[1]
+        $caseRecord.originalControllerAndDACLRestored=$true
+        $restorationLaunchCases+=,$caseRecord
+    }
     $stage='restoration-ownership-contracts'
     $restoreOwnerFixture=Join-Path $PSScriptRoot 'fixtures\InstallerRestorationOwner.cs'
     Add-Type -Path $restoreOwnerFixture -ReferencedAssemblies @('System.dll','System.Core.dll','System.Runtime.Serialization.dll','System.Xml.dll')
@@ -526,7 +587,7 @@ try {
     Remove-OwnedTree $capsule $temporary $capsuleLeaf
     $complete=$true
 } catch {$failureType=$_.Exception.GetType().FullName;$failureSourceLine=$_.InvocationInfo.ScriptLineNumber}
-$record=[ordered]@{schemaVersion=6;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=7;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'
