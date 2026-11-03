@@ -202,6 +202,110 @@ def deployment_transactions(capsule,environment,identity):
     return value
 
 
+AUTHORITY=Path("/Library/Application Support/AccessWeaver")
+INCOMING=Path("/Library/Application Support/AccessWeaver Incoming")
+
+def prepare_fixed_deployment(capsule,environment,identity,manifest):
+    for path in (AUTHORITY,INCOMING):
+        no_alias(path);require(not path.exists(),"Existing deployment authority/staging must never become a fixture")
+    binary=capsule/"sealed-deployment-helper"
+    manifest_hash=digest((APP/"Contents/Resources/INSTALL-MANIFEST.json").read_bytes())
+    payload_hash=digest((APP/"Contents/MacOS/accessweaver").read_bytes())
+    names={"Version":identity["version"],"Commit":identity["commit"],"SourceState":"clean","BuiltAt":identity["builtAt"]}
+    flags=["-X github.com/Yunushan/accessweaver/internal/buildinfo."+key+"="+value for key,value in names.items()]
+    flags.extend("-X github.com/Yunushan/accessweaver/internal/packageupgrade."+key+"="+value for key,value in {"sealedVersion":identity["version"],"sealedManifestSHA256":manifest_hash,"sealedPayloadSHA256":payload_hash}.items())
+    compiler_environment=dict(os.environ,GOTOOLCHAIN="local",GOFLAGS="",GOOS="darwin",GOARCH=identity["arch"],CGO_ENABLED="0")
+    go=shutil.which("go");require(go is not None,"Native SDK missing for sealed deployment helper")
+    run([go,"build","-mod=readonly","-trimpath","-buildvcs=false","-ldflags"," ".join(flags),"-o",binary,"./cmd/accessweaver-installer"],compiler_environment,240)
+    actual,_=run([binary,"version","--json"],environment,30);require(json.loads(actual.stdout)==identity,"Sealed helper runtime identity differs")
+    ordinary,_=run([binary,"prepare-deployment"],environment,30,codes=tuple(range(1,256)))
+    legacy,_=run(["/usr/bin/sudo","-n",binary,"prepare-deployment"],environment,30,codes=tuple(range(1,256)))
+    require(b"requires root" in ordinary.stderr and b"legacy app or receipt" in legacy.stderr,"Missing native root/legacy refusal")
+    require(not AUTHORITY.exists() and not INCOMING.exists(),"Refused helper created authority/staging")
+    candidate=capsule/"deployment-candidate.app";shutil.copytree(APP,candidate);verify_bundle(candidate,manifest,identity)
+    stage=INCOMING/manifest_hash
+    run(["/usr/bin/sudo","-n","/bin/mkdir","-m","755",INCOMING],environment)
+    run(["/usr/bin/sudo","-n","/usr/sbin/chown","root:wheel",INCOMING],environment)
+    run(["/usr/bin/sudo","-n","/bin/mkdir","-m","755",stage],environment)
+    run(["/usr/bin/sudo","-n","/bin/cp","-R",APP,stage/"AccessWeaver.app"],environment)
+    verify_bundle(stage/"AccessWeaver.app",manifest,identity)
+    return {"binary":binary,"candidate":candidate,"stage":stage,"identity":identity,"manifest":manifest,"manifestSHA256":manifest_hash,"payloadSHA256":payload_hash,"sha256":digest(binary.read_bytes()),"rootAndLegacyRefusalsPreservedAbsentAuthority":True}
+
+def fixed_deployment_lifecycle(context,capsule,environment):
+    binary=context["binary"];identity=context["identity"];stage=context["stage"];cases=[]
+    require(not APP.exists() and all(not path.exists() for path in RECEIPTS),"Legacy cleanup is required before versioned deployment")
+    def record():
+        path=AUTHORITY/"state/deployment.json"
+        if not path.exists():return None
+        no_alias(path);info=path.stat();require(stat.S_ISREG(info.st_mode) and info.st_uid==0 and info.st_gid==0 and info.st_nlink==1 and info.st_size<=16384,"Unexpected deployment record")
+        return {"inode":info.st_ino,"mtime":info.st_mtime_ns,"ctime":info.st_ctime_ns,"sha256":digest(path.read_bytes())}
+    def operation(name,op,generation=None,state=None,published=None,success=True,helper=None):
+        before=record()
+        result,elapsed=run(["/usr/bin/sudo","-n",helper or binary,op],environment,90,codes=tuple(range(256)))
+        require((result.returncode==0)==success,"Unexpected fixed deployment helper result: "+name)
+        value=json.loads(result.stdout) if result.stdout.strip() else None
+        if success:
+            require(value["schemaVersion"]==1 and value["operation"]==op and value["generation"]==generation and value["state"]==state and value["operationRecordPublished"] is published,"Fixed deployment transition differs: "+name)
+            require(value["version"]==identity["version"] and value["manifestSHA256"]==context["manifestSHA256"] and value["payloadSHA256"]==context["payloadSHA256"],"Fixed deployment subject differs")
+            require(re.fullmatch("[a-f0-9]{32}",value["slotID"]) is not None and value["publisherSignatureVerified"] is False and value["productionQualificationComplete"] is False,"Fixed deployment scope differs")
+        if not success or published is False:require(record()==before,"Refused/idempotent deployment changed active record: "+name)
+        cases.append({"name":name,"operation":op,"exitCode":result.returncode,"elapsedMilliseconds":elapsed,"passed":True,"result":value,"recordPreserved":record()==before})
+        return value
+    operation("activation-without-authority-refused","activate-deployment",success=False)
+    require(not AUTHORITY.exists(),"Activation initialized absent authority")
+    operation("unsealed-helper-refused","prepare-deployment",success=False,helper=capsule/"upgrade-preflight-0.1.0-alpha")
+    require(not AUTHORITY.exists(),"Unsealed helper initialized absent authority")
+    prepared=operation("prepared","prepare-deployment",0,"prepared",True)
+    again=operation("prepare-retry-idempotent","prepare-deployment",0,"prepared",False)
+    require(again["slotID"]==prepared["slotID"],"Prepare retry allocated a different transaction")
+    leaf=stage/"AccessWeaver.app/Contents/Resources/README.md"
+    original=capsule/"deployment-readme";original.write_bytes(leaf.read_bytes())
+    changed=capsule/"deployment-readme-changed";changed.write_bytes(original.read_bytes()+b"changed")
+    run(["/usr/bin/sudo","-n","/bin/cp",changed,leaf],environment)
+    operation("changed-incoming-refused","activate-deployment",success=False)
+    run(["/usr/bin/sudo","-n","/bin/cp",original,leaf],environment)
+    verify_bundle(stage/"AccessWeaver.app",context["manifest"],identity)
+    active=operation("activated","activate-deployment",1,"active",True)
+    operation("activation-retry-idempotent","activate-deployment",1,"active",False)
+    active_app=AUTHORITY/"versions"/active["slotID"]/"AccessWeaver.app"
+    verify_bundle(active_app,context["manifest"],identity)
+    runtime,_=run([active_app/"Contents/MacOS/accessweaver","version","--json"],environment,30)
+    require(json.loads(runtime.stdout)==identity,"Ordinary-user active runtime identity differs")
+    # Simulated package-receipt staging removal: only this exact newly copied,
+    # fully inventoried input is removed. The active independent copy remains.
+    run(["/usr/bin/sudo","-n","/bin/rm","-rf","--",stage/"AccessWeaver.app"],environment)
+    require(not (stage/"AccessWeaver.app").exists(),"Owned incoming fixture was not removed")
+    operation("active-survives-staging-removal","activate-deployment",1,"active",False)
+    verify_bundle(active_app,context["manifest"],identity)
+    stale=operation("reinstall-prepared","prepare-deployment",1,"prepared",True)
+    operation("missing-incoming-refused","activate-deployment",success=False)
+    operation("deactivated-with-pending","deactivate-deployment",2,"inactive",True)
+    operation("stale-activation-fenced","activate-deployment",success=False)
+    operation("stale-prepare-fenced","prepare-deployment",success=False)
+    abandoned=operation("stale-preparation-abandoned","abandon-deployment",2,"abandoned",True)
+    require(abandoned["slotID"]==stale["slotID"],"Abandon changed a different transaction")
+    require((AUTHORITY/"versions"/stale["slotID"]).is_dir(),"Abandon deleted retained slot")
+    operation("abandon-retry-refused","abandon-deployment",success=False)
+    operation("restored-retry-prepared","prepare-deployment",2,"prepared",True)
+    run(["/usr/bin/sudo","-n","/bin/cp","-R",context["candidate"],stage/"AccessWeaver.app"],environment)
+    verify_bundle(stage/"AccessWeaver.app",context["manifest"],identity)
+    operation("restored-retry-activated","activate-deployment",3,"active",True)
+    operation("restored-activation-idempotent","activate-deployment",3,"active",False)
+    operation("final-deactivation","deactivate-deployment",4,"inactive",True)
+    final=json.loads((AUTHORITY/"state/deployment.json").read_bytes())
+    require(final["generation"]==4 and final["active"]["id"]=="" and final["pending"]==[],"Unexpected retained tombstone")
+    # Explicit fixture cleanup is separate from the product's conservative
+    # retention policy. Both roots were absent at entry and created by this test.
+    for path in (AUTHORITY,INCOMING):
+        no_alias(path);info=path.stat();require(path.parent==Path("/Library/Application Support") and path.name in ("AccessWeaver","AccessWeaver Incoming") and stat.S_ISDIR(info.st_mode) and info.st_uid==0 and info.st_gid==0 and stat.S_IMODE(info.st_mode)==0o755,"Unsafe fixed fixture cleanup")
+        aliases,_=run(["/usr/bin/sudo","-n","/usr/bin/find",path,"-type","l","-print"],environment)
+        require(not aliases.stdout.strip(),"Alias found in owned deployment fixture")
+    run(["/usr/bin/sudo","-n","/bin/rm","-rf","--",AUTHORITY,INCOMING],environment)
+    require(not AUTHORITY.exists() and not INCOMING.exists() and not APP.exists() and all(not p.exists() for p in RECEIPTS),"Owned fixed deployment state was not removed")
+    require(digest(binary.read_bytes())==context["sha256"],"Sealed deployment helper changed")
+    return {"schemaVersion":1,"build":identity,"helperSHA256":context["sha256"],"manifestSHA256":context["manifestSHA256"],"payloadSHA256":context["payloadSHA256"],"cases":cases,"rootAndLegacyRefusalsPreservedAbsentAuthority":True,"ordinaryUserActiveRuntimeVerified":True,"stagingRemovalPreservedActiveCopy":True,"ownedFixedFixtureCleanupVerified":True,"installedCodeExecutedAsRoot":False,"actualApplePackageUpgradeExecuted":False,"packageScriptsIntegrated":False,"productionQualificationComplete":False}
+
+
 def main():
     require(platform.system()=="Darwin" and os.geteuid()!=0,"Acceptance requires an ordinary-user native Mac host")
     require(os.environ.get("GITHUB_ACTIONS")=="true" and os.environ.get("RUNNER_ENVIRONMENT")=="github-hosted" and os.environ.get("GITHUB_REPOSITORY")=="Yunushan/accessweaver" and os.environ.get("ACCESSWEAVER_DISPOSABLE_MACOS_INSTALLER_TEST")=="1","Explicit disposable hosted Mac opt-in required")
@@ -223,7 +327,7 @@ def main():
     capsule=Path(tempfile.mkdtemp(prefix="accessweaver-macos-installer-",dir=temporary));user=capsule/"user";user.mkdir();private_temp=capsule/"tmp";private_temp.mkdir()
     environment={"PATH":"/usr/bin:/bin:/usr/sbin:/sbin","HOME":str(user),"TMPDIR":str(private_temp),"LANG":"C","LC_ALL":"C","TZ":"UTC","ACCESSWEAVER_NO_BROWSER":"1"}
     marker=user/"preserve.json";marker.write_text('{"preserve":"unrelated"}',encoding="utf-8");marker_hash=digest(marker.read_bytes())
-    complete=False;stage="preflight-refusals";failure=None;operations=[];profile_hash=None;cleaned=False;refusal_cases=[];failure_line=None;upgrade_cases=[];upgrade_helpers=[];deployment_report=None
+    complete=False;stage="preflight-refusals";failure=None;operations=[];profile_hash=None;cleaned=False;refusal_cases=[];failure_line=None;upgrade_cases=[];upgrade_helpers=[];deployment_report=None;fixed_deployment_report=None;fixed_context=None
     try:
         preflight_refusals(package,capsule,environment,marker,refusal_cases)
         stage="install"
@@ -249,6 +353,8 @@ def main():
         stage="protected-deployment-transactions"
         deployment_report=deployment_transactions(capsule,environment,identity)
         require(digest(profile_path.read_bytes())==profile_hash and digest(marker.read_bytes())==marker_hash,"Deployment transactions changed user data")
+        stage="sealed-deployment-helper-preparation"
+        fixed_context=prepare_fixed_deployment(capsule,environment,identity,manifest)
         stage="existing-install-refusal"
         refused,elapsed=run(["/usr/bin/sudo","-n","/usr/sbin/installer","-pkg",package,"-target","/"],environment,codes=tuple(range(1,256)))
         require(bundle_manifest(APP)==before and snapshot_receipts()==receipt_before,"Refused experimental reinstall changed app or receipt bytes")
@@ -272,6 +378,10 @@ def main():
         run(["/usr/bin/sudo","-n","/usr/sbin/pkgutil","--forget",BUNDLE_ID],environment)
         require(not APP.exists() and all(not path.exists() for path in RECEIPTS),"Owned package fixtures were not removed")
         require(digest(profile_path.read_bytes())==profile_hash and digest(marker.read_bytes())==marker_hash,"Owned cleanup changed user data")
+        stage="fixed-deployment-helper-lifecycle"
+        fixed_deployment_report=fixed_deployment_lifecycle(fixed_context,capsule,environment)
+        require(digest(profile_path.read_bytes())==profile_hash and digest(marker.read_bytes())==marker_hash,"Fixed deployment helper changed user data")
+        stage="owned-fixture-cleanup"
         require(capsule.resolve().parent==temporary.resolve() and capsule.name.startswith("accessweaver-macos-installer-"),"Unsafe capsule cleanup")
         no_alias(capsule);shutil.rmtree(capsule);cleaned=True;complete=True
     except Exception as error:
@@ -280,7 +390,7 @@ def main():
         while trace is not None:
             if trace.tb_frame.f_code.co_filename==__file__:failure_line=trace.tb_lineno
             trace=trace.tb_next
-    result={"schemaVersion":2,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packageSHA256":report["packageSHA256"],"payloadSHA256":report["payloadSHA256"],"operations":operations,"preflightRefusalCases":refusal_cases,"nativeUpgradePreflightCases":upgrade_cases,"nativeUpgradePreflightHelpers":upgrade_helpers,"nativeUpgradeExecuted":False,"protectedDeploymentTransactions":deployment_report,"passed":complete,"stage":stage,"failureType":failure,"failureSourceLine":failure_line,"cleanInstallExecuted":bool(operations),"actualUserProfilePreservationVerified":complete,"ownedFixturesRemoved":cleaned,"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"upgradeQualified":False,"downgradeQualified":False,"productUninstallQualified":False,"finderInteractionQualified":False,"managedEndpointQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
+    result={"schemaVersion":2,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packageSHA256":report["packageSHA256"],"payloadSHA256":report["payloadSHA256"],"operations":operations,"preflightRefusalCases":refusal_cases,"nativeUpgradePreflightCases":upgrade_cases,"nativeUpgradePreflightHelpers":upgrade_helpers,"nativeUpgradeExecuted":False,"protectedDeploymentTransactions":deployment_report,"fixedDeploymentHelper":fixed_deployment_report,"passed":complete,"stage":stage,"failureType":failure,"failureSourceLine":failure_line,"cleanInstallExecuted":bool(operations),"actualUserProfilePreservationVerified":complete,"ownedFixturesRemoved":cleaned,"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"upgradeQualified":False,"downgradeQualified":False,"productUninstallQualified":False,"finderInteractionQualified":False,"managedEndpointQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
     (output/"lifecycle-artifact.json").write_text(json.dumps(result,indent=2)+"\n",encoding="utf-8")
     require(complete,"Disposable native package acceptance failed at "+stage+"; owned fixture retained on disposable host")
     print(json.dumps({"target":result["target"],"cleanInstallAndExistingRefusalPassed":True,"preflightRefusalCases":len(refusal_cases),"productionQualificationComplete":False}))

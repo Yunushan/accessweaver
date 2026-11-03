@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-from verify_macos_installer_provenance import BUNDLE_NAME,WORKFLOW,check_rejections,subject_names,verification_command,verify,validate_deployment_transactions
+from verify_macos_installer_provenance import BUNDLE_NAME,WORKFLOW,check_rejections,subject_names,verification_command,verify,validate_deployment_transactions,validate_fixed_deployment_helper
 COMMIT='a'*40
 REF='refs/heads/main'
 VERSION='0.1.0-alpha'
@@ -82,6 +82,45 @@ class NativePackageProvenanceTests(unittest.TestCase):
                 with self.assertRaises(ValueError):validate(changed)
         for key in value:
             changed=dict(value);del changed[key]
+            with self.assertRaises(ValueError):validate(changed)
+        with self.assertRaises(ValueError):validate(None)
+
+    def test_fixed_helper_report_requires_the_complete_fenced_protocol(self):
+        import copy
+        identity={"version":VERSION,"commit":COMMIT,"sourceState":"clean","builtAt":"2026-11-03T00:00:00Z","goVersion":"go1.27.3","platform":"darwin","arch":"amd64"}
+        value={"schemaVersion":1,"build":identity,"helperSHA256":"c"*64,"manifestSHA256":"a"*64,"payloadSHA256":"b"*64,"rootAndLegacyRefusalsPreservedAbsentAuthority":True,"ordinaryUserActiveRuntimeVerified":True,"stagingRemovalPreservedActiveCopy":True,"ownedFixedFixtureCleanupVerified":True,"installedCodeExecutedAsRoot":False,"actualApplePackageUpgradeExecuted":False,"packageScriptsIntegrated":False,"productionQualificationComplete":False,"cases":[]}
+        sequence=[
+            ("activation-without-authority-refused","activate-deployment",None,0),
+            ("unsealed-helper-refused","prepare-deployment",None,0),
+            ("prepared","prepare-deployment",(0,"prepared",True),1),
+            ("prepare-retry-idempotent","prepare-deployment",(0,"prepared",False),1),
+            ("changed-incoming-refused","activate-deployment",None,0),
+            ("activated","activate-deployment",(1,"active",True),1),
+            ("activation-retry-idempotent","activate-deployment",(1,"active",False),1),
+            ("active-survives-staging-removal","activate-deployment",(1,"active",False),1),
+            ("reinstall-prepared","prepare-deployment",(1,"prepared",True),2),
+            ("missing-incoming-refused","activate-deployment",None,0),
+            ("deactivated-with-pending","deactivate-deployment",(2,"inactive",True),1),
+            ("stale-activation-fenced","activate-deployment",None,0),
+            ("stale-prepare-fenced","prepare-deployment",None,0),
+            ("stale-preparation-abandoned","abandon-deployment",(2,"abandoned",True),2),
+            ("abandon-retry-refused","abandon-deployment",None,0),
+            ("restored-retry-prepared","prepare-deployment",(2,"prepared",True),3),
+            ("restored-retry-activated","activate-deployment",(3,"active",True),3),
+            ("restored-activation-idempotent","activate-deployment",(3,"active",False),3),
+            ("final-deactivation","deactivate-deployment",(4,"inactive",True),3),
+        ]
+        for name,op,transition,slot in sequence:
+            result=None
+            if transition:
+                generation,state,published=transition
+                result={"schemaVersion":1,"operation":op,"generation":generation,"version":VERSION,"manifestSHA256":"a"*64,"payloadSHA256":"b"*64,"slotID":f"{slot:032x}","state":state,"operationRecordPublished":published,"publisherSignatureVerified":False,"productionQualificationComplete":False}
+            value["cases"].append({"name":name,"operation":op,"exitCode":0 if transition else 1,"elapsedMilliseconds":5,"passed":True,"result":result,"recordPreserved":transition is None or not transition[2]})
+        validate=lambda v:validate_fixed_deployment_helper(v,identity,"a"*64,"b"*64)
+        validate(value)
+        mutations=[lambda v:v.update(payloadSHA256="0"*64),lambda v:v.update(helperSHA256="unmeasured"),lambda v:v.update(installedCodeExecutedAsRoot=True),lambda v:v.update(packageScriptsIntegrated=True),lambda v:v.update(ownedFixedFixtureCleanupVerified=False),lambda v:v["cases"].pop(),lambda v:v["cases"][0].update(exitCode=0),lambda v:v["cases"][0].update(recordPreserved=False),lambda v:v["cases"][3]["result"].update(slotID=f"{4:032x}"),lambda v:v["cases"][5]["result"].update(generation=2),lambda v:v["cases"][6]["result"].update(operationRecordPublished=True),lambda v:v["cases"][17]["result"].update(slotID=f"{2:032x}")]
+        for change in mutations:
+            changed=copy.deepcopy(value);change(changed)
             with self.assertRaises(ValueError):validate(changed)
         with self.assertRaises(ValueError):validate(None)
 

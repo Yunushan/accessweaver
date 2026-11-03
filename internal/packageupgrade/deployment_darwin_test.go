@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,6 +172,79 @@ func TestDarwinDeploymentUnknownAuthorityPreservedWithoutBootstrapWrite(t *testi
 	actual, e := os.ReadFile(marker)
 	if e != nil || string(actual) != "preserve" {
 		t.Fatal("unknown bytes changed", e)
+	}
+}
+func TestDarwinDeploymentMissingVersionsHistoryIsPreserved(t *testing.T) {
+	for _, kind := range []string{"current-state", "displaced-history"} {
+		t.Run(kind, func(t *testing.T) {
+			parent := t.TempDir()
+			s := deploymentFixtureStore(t, parent, nil)
+			if e := s.Close(); e != nil {
+				t.Fatal(e)
+			}
+			root := filepath.Join(parent, deploymentRoot)
+			if e := os.Rename(filepath.Join(root, "versions"), filepath.Join(parent, "preserved-versions")); e != nil {
+				t.Fatal(e)
+			}
+			if kind == "displaced-history" {
+				if e := os.Rename(filepath.Join(root, "state"), filepath.Join(root, ".record-"+strings.Repeat("a", 32))); e != nil {
+					t.Fatal(e)
+				}
+			}
+			before, e := os.ReadDir(root)
+			if e != nil {
+				t.Fatal(e)
+			}
+			f, e := os.Open(parent)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if other, e := beginDeployment(f, uint32(os.Geteuid()), nil); e == nil {
+				other.Close()
+				t.Fatal("missing versions history initialized")
+			}
+			after, e := os.ReadDir(root)
+			if e != nil || len(after) != len(before) {
+				t.Fatal("refusal changed retained authority inventory", e)
+			}
+			for i := range before {
+				if before[i].Name() != after[i].Name() {
+					t.Fatal("retained authority names changed")
+				}
+			}
+			if _, e = os.Lstat(filepath.Join(root, "versions")); !os.IsNotExist(e) {
+				t.Fatal("missing versions were recreated", e)
+			}
+		})
+	}
+}
+func TestDarwinDeploymentNonPrepareCannotInitialize(t *testing.T) {
+	for _, partial := range []bool{false, true} {
+		t.Run(fmt.Sprint(partial), func(t *testing.T) {
+			parent := t.TempDir()
+			if partial {
+				if e := os.Mkdir(filepath.Join(parent, deploymentRoot), 0755); e != nil {
+					t.Fatal(e)
+				}
+			}
+			f, e := os.Open(parent)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if other, e := beginDeploymentMode(f, uint32(os.Geteuid()), nil, false); e == nil {
+				other.Close()
+				t.Fatal("non-prepare initialized state")
+			}
+			root := filepath.Join(parent, deploymentRoot)
+			if partial {
+				entries, e := os.ReadDir(root)
+				if e != nil || len(entries) != 0 {
+					t.Fatal("non-prepare changed partial authority", e)
+				}
+			} else if _, e = os.Lstat(root); !os.IsNotExist(e) {
+				t.Fatal("non-prepare created authority", e)
+			}
+		})
 	}
 }
 func TestDarwinDeploymentAliasesAndPartialInitialHistoryRefused(t *testing.T) {

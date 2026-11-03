@@ -88,6 +88,7 @@ def validate_contents(root,package,commit,version,arch):
         require(report.get(key) is False and life.get(key) is False,"Unqualified package scope changed")
     require(life.get("productUninstallQualified") is False and life.get("rebootOrPowerLossQualified") is False,"Unqualified lifecycle scope changed")
     validate_deployment_transactions(life.get("protectedDeploymentTransactions"),actual["bundleManifestSHA256"],digest(core),version)
+    validate_fixed_deployment_helper(life.get("fixedDeploymentHelper"),identity,actual["bundleManifestSHA256"],digest(core))
     return {"packageSHA256":digest(binary),"payloadSHA256":digest(core),"macho":actual["macho"],"isolatedRefusalCases":8,"nativeInstallationOperations":3}
 
 
@@ -98,6 +99,51 @@ def validate_deployment_transactions(deployment,manifest_hash,payload_hash,versi
         require(deployment.get(key) is True,"Native protected deployment transaction did not pass")
     require(deployment.get("copiedCodeExecuted") is False and deployment.get("packageScriptsIntegrated") is False and deployment.get("productionQualificationComplete") is False and deployment.get("fixtureParent")=="private-exclusive-temporary-directory" and re.fullmatch("[a-f0-9]{64}",deployment.get("testExecutableSHA256","")) is not None,"Native protected deployment scope differs")
     require(type(deployment.get("elapsedMilliseconds")) is int and 0<=deployment["elapsedMilliseconds"]<=150000,"Native protected deployment timing differs")
+
+
+def validate_fixed_deployment_helper(value,identity,manifest_hash,payload_hash):
+    require(type(value) is dict and value.get("schemaVersion")==1 and value.get("build")==identity and value.get("manifestSHA256")==manifest_hash and value.get("payloadSHA256")==payload_hash and re.fullmatch("[a-f0-9]{64}",value.get("helperSHA256","")) is not None,"Fixed deployment helper identity differs")
+    for key in ("rootAndLegacyRefusalsPreservedAbsentAuthority","ordinaryUserActiveRuntimeVerified","stagingRemovalPreservedActiveCopy","ownedFixedFixtureCleanupVerified"):
+        require(value.get(key) is True,"Fixed deployment helper acceptance did not pass")
+    for key in ("installedCodeExecutedAsRoot","actualApplePackageUpgradeExecuted","packageScriptsIntegrated","productionQualificationComplete"):
+        require(value.get(key) is False,"Fixed deployment helper scope differs")
+    expected=[
+        ("activation-without-authority-refused","activate-deployment",None),
+        ("unsealed-helper-refused","prepare-deployment",None),
+        ("prepared","prepare-deployment",(0,"prepared",True)),
+        ("prepare-retry-idempotent","prepare-deployment",(0,"prepared",False)),
+        ("changed-incoming-refused","activate-deployment",None),
+        ("activated","activate-deployment",(1,"active",True)),
+        ("activation-retry-idempotent","activate-deployment",(1,"active",False)),
+        ("active-survives-staging-removal","activate-deployment",(1,"active",False)),
+        ("reinstall-prepared","prepare-deployment",(1,"prepared",True)),
+        ("missing-incoming-refused","activate-deployment",None),
+        ("deactivated-with-pending","deactivate-deployment",(2,"inactive",True)),
+        ("stale-activation-fenced","activate-deployment",None),
+        ("stale-prepare-fenced","prepare-deployment",None),
+        ("stale-preparation-abandoned","abandon-deployment",(2,"abandoned",True)),
+        ("abandon-retry-refused","abandon-deployment",None),
+        ("restored-retry-prepared","prepare-deployment",(2,"prepared",True)),
+        ("restored-retry-activated","activate-deployment",(3,"active",True)),
+        ("restored-activation-idempotent","activate-deployment",(3,"active",False)),
+        ("final-deactivation","deactivate-deployment",(4,"inactive",True)),
+    ]
+    cases=value.get("cases",[]);require(type(cases) is list and len(cases)==len(expected),"Fixed deployment helper case extent differs")
+    slots={}
+    for case,(name,operation,success) in zip(cases,expected):
+        require(case.get("name")==name and case.get("operation")==operation and case.get("passed") is True and type(case.get("elapsedMilliseconds")) is int and 0<=case["elapsedMilliseconds"]<=90000,"Fixed deployment helper case differs")
+        result=case.get("result")
+        if success is None:
+            require(type(case.get("exitCode")) is int and 1<=case["exitCode"]<=255 and case.get("recordPreserved") is True,"Fixed deployment refusal did not preserve record")
+            if result is not None:require(result.get("operationRecordPublished") is False and result.get("state")=="refused","Refused helper published a record")
+        else:
+            generation,state,published=success
+            require(case.get("exitCode")==0 and type(result) is dict and result.get("schemaVersion")==1 and result.get("operation")==operation and type(result.get("generation")) is int and result["generation"]==generation and result.get("state")==state and result.get("operationRecordPublished") is published,"Fixed deployment transition differs")
+            require(result.get("version")==identity["version"] and result.get("manifestSHA256")==manifest_hash and result.get("payloadSHA256")==payload_hash and re.fullmatch("[a-f0-9]{32}",result.get("slotID","")) is not None and result.get("publisherSignatureVerified") is False and result.get("productionQualificationComplete") is False,"Fixed deployment result identity/scope differs")
+            require(case.get("recordPreserved") is (not published),"Fixed deployment publication observation differs")
+            slots[name]=result["slotID"]
+    require(slots["prepared"]==slots["prepare-retry-idempotent"]==slots["activated"]==slots["activation-retry-idempotent"]==slots["active-survives-staging-removal"]==slots["deactivated-with-pending"],"Fixed deployment initial slot/retry differs")
+    require(slots["reinstall-prepared"]==slots["stale-preparation-abandoned"] and slots["restored-retry-prepared"]==slots["restored-retry-activated"]==slots["restored-activation-idempotent"]==slots["final-deactivation"] and len({slots["prepared"],slots["reinstall-prepared"],slots["restored-retry-prepared"]})==3,"Fixed deployment reserved slot fencing differs")
 
 
 def check_rejections(path,bundle,commit,ref,gh):

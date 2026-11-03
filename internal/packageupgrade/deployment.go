@@ -8,8 +8,8 @@ import (
 	"regexp"
 )
 
-// Deployment records are internal prototypes. No package or command invokes
-// them until native publication/recovery and launcher integration are qualified.
+// Deployment records support the separate sealed root-only packaging tool.
+// Apple package-script and ordinary-user launcher integration remain pending.
 // The generation is a removal fence as well as an activation sequence number.
 const maxDeploymentPending = 8
 const maxDeploymentRecord = 16384
@@ -120,20 +120,29 @@ func decodeDeployment(data []byte) (deploymentState, error) {
 	}
 	return s, nil
 }
-func (s deploymentState) prepare(slot deploymentSlot) (deploymentState, error) {
+func (s deploymentState) canPrepare(identity deploymentIdentity) error {
 	if e := s.validate(); e != nil {
+		return e
+	}
+	if e := identity.validate(); e != nil {
+		return e
+	}
+	if s.Generation == math.MaxUint64 || len(s.Pending) == maxDeploymentPending {
+		return errors.New("deployment transaction capacity exhausted")
+	}
+	if s.HighWaterVersion != "" {
+		if _, e := decision(identity.Version, s.HighWaterVersion); e != nil {
+			return e
+		}
+	}
+	return nil
+}
+func (s deploymentState) prepare(slot deploymentSlot) (deploymentState, error) {
+	if e := s.canPrepare(slot.Identity); e != nil {
 		return s, e
 	}
 	if e := slot.validate(); e != nil {
 		return s, e
-	}
-	if s.Generation == math.MaxUint64 || len(s.Pending) == maxDeploymentPending {
-		return s, errors.New("deployment transaction capacity exhausted")
-	}
-	if s.HighWaterVersion != "" {
-		if _, e := decision(slot.Identity.Version, s.HighWaterVersion); e != nil {
-			return s, e
-		}
 	}
 	if s.Active.ID == slot.ID {
 		return s, errors.New("active slot cannot be prepared again")

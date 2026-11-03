@@ -26,8 +26,8 @@ const maxRetainedRecords = 128
 
 var recordName = regexp.MustCompile(`^\.record-[a-f0-9]{32}$`)
 
-// All constructors are private. Package scripts/CLI do not yet invoke this
-// prototype. Production construction fixes the path and root owner; only owned
+// All constructors are private. The sealed CLI uses the fixed root authority;
+// Apple package-script integration is pending. Only owned
 // in-package native fixtures may supply a different parent/owner.
 type deploymentStore struct {
 	parent, root, versions, lock, current *os.File
@@ -39,7 +39,7 @@ type deploymentStore struct {
 	observe func(string) error
 }
 
-func openDeployment() (*deploymentStore, error) {
+func openDeployment(initialize bool) (*deploymentStore, error) {
 	if os.Geteuid() != 0 {
 		return nil, errors.New("deployment mutation requires root")
 	}
@@ -47,7 +47,7 @@ func openDeployment() (*deploymentStore, error) {
 	if e != nil {
 		return nil, e
 	}
-	return beginDeployment(parent, 0, nil)
+	return beginDeploymentMode(parent, 0, nil, initialize)
 }
 func deploymentDirectory(parent *os.File, name string, owner uint32, create bool) (*os.File, error) {
 	f, e := darwintrust.OpenDirectoryAt(parent, name, owner)
@@ -149,13 +149,16 @@ func deploymentEntries(dir *os.File, owner uint32, limit int) ([]os.DirEntry, er
 // Parent ownership transfers on all paths. No unchecked caller path is used by
 // the runtime constructor. Unknown/orphan state is retained, never scavenged.
 func beginDeployment(parent *os.File, owner uint32, observe func(string) error) (*deploymentStore, error) {
+	return beginDeploymentMode(parent, owner, observe, true)
+}
+func beginDeploymentMode(parent *os.File, owner uint32, observe func(string) error, initialize bool) (*deploymentStore, error) {
 	s := &deploymentStore{parent: parent, owner: owner, observe: observe}
 	fail := func(e error) (*deploymentStore, error) { return nil, errors.Join(e, s.Close()) }
 	if _, e := darwintrust.Check(parent, true, owner); e != nil {
 		return fail(e)
 	}
 	var e error
-	s.root, e = deploymentDirectory(parent, deploymentRoot, owner, true)
+	s.root, e = deploymentDirectory(parent, deploymentRoot, owner, initialize)
 	if e != nil {
 		return fail(e)
 	}
@@ -165,12 +168,21 @@ func beginDeployment(parent *os.File, owner uint32, observe func(string) error) 
 	if e != nil {
 		return fail(e)
 	}
-	hasLock := false
+	hasLock, hasVersions, hasHistory, hasState := false, false, false, false
 	for _, entry := range initialEntries {
 		name := entry.Name()
 		if name == deploymentLock {
 			hasLock = true
 			continue
+		}
+		if name == "versions" {
+			hasVersions = true
+		}
+		if name == "state" {
+			hasState = true
+		}
+		if name == "state" || recordName.MatchString(name) {
+			hasHistory = true
 		}
 		if name != "versions" && name != "state" && !recordName.MatchString(name) {
 			return fail(errors.New("unexpected deployment authority object"))
@@ -178,6 +190,12 @@ func beginDeployment(parent *os.File, owner uint32, observe func(string) error) 
 	}
 	if len(initialEntries) != 0 && !hasLock {
 		return fail(errors.New("existing deployment history has no coordination file; preserve and inspect"))
+	}
+	if hasHistory && !hasVersions {
+		return fail(errors.New("existing deployment history has no versions directory; preserve and inspect"))
+	}
+	if !initialize && !hasState {
+		return fail(errors.New("deployment state is absent; only prepare may initialize a new store"))
 	}
 	s.lock, e = darwintrust.CreateRegularAt(s.root, deploymentLock, owner)
 	createdLock := e == nil
@@ -235,7 +253,7 @@ func beginDeployment(parent *os.File, owner uint32, observe func(string) error) 
 		}
 		history++
 	}
-	s.versions, e = deploymentDirectory(s.root, "versions", owner, true)
+	s.versions, e = deploymentDirectory(s.root, "versions", owner, initialize && !hasHistory)
 	if e != nil {
 		return fail(e)
 	}
@@ -465,8 +483,7 @@ func (s *deploymentStore) prepare(identity deploymentIdentity) (deploymentSlot, 
 		return deploymentSlot{}, e
 	}
 	// Capacity/downgrade refusal must occur before reserving a filesystem slot.
-	probe := deploymentSlot{ID: "00000000000000000000000000000000", Inode: 1, Identity: identity}
-	if _, e := s.state.prepare(probe); e != nil {
+	if e := s.state.canPrepare(identity); e != nil {
 		return deploymentSlot{}, e
 	}
 	if e := s.checkRoot(); e != nil {
