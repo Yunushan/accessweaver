@@ -94,6 +94,30 @@ function State-Snapshot {
     $dns=@(Get-DnsClientServerAddress -ErrorAction Stop | Sort-Object InterfaceIndex,AddressFamily | Select-Object InterfaceIndex,AddressFamily,ServerAddresses)
     return (ConvertTo-Json -InputObject @{services=$services;firewall=$firewall;dns=$dns} -Depth 8 -Compress)
 }
+function Installed-TreeFingerprint {
+    No-Reparse $install
+    $items=@(Get-ChildItem -LiteralPath $install -Force -Recurse -ErrorAction Stop)
+    Require ($items.Count -le 10000 -and -not @($items | Where-Object {$_.Attributes -band [IO.FileAttributes]::ReparsePoint}).Count) 'Installed fixture contains unexpected aliases or excessive entries'
+    $records=@($items | Where-Object {-not $_.PSIsContainer} | Sort-Object FullName | ForEach-Object {
+        @{relative=$_.FullName.Substring($install.Length+1);bytes=$_.Length;sha256=(Digest $_.FullName)}
+    })
+    $bytes=[Text.UTF8Encoding]::new($false).GetBytes((ConvertTo-Json -InputObject $records -Depth 4 -Compress))
+    $hash=[Security.Cryptography.SHA256]::Create()
+    try {return [BitConverter]::ToString($hash.ComputeHash($bytes)).Replace('-','').ToLowerInvariant()} finally {$hash.Dispose()}
+}
+function Registration-Fingerprint {
+    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+    $key=$null
+    try {
+        $key=$base.OpenSubKey($uninstallKey);Require ($null -ne $key) 'Installed fixture registration disappeared'
+        $names=@($key.GetValueNames() | Sort-Object)
+        Require ($names.Count -le 256) 'Installer registration exceeds fixture bounds'
+        $values=@($names | ForEach-Object {@{name=$_;kind=[string]$key.GetValueKind($_);data=$key.GetValue($_,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)}})
+        $bytes=[Text.UTF8Encoding]::new($false).GetBytes((ConvertTo-Json -InputObject $values -Depth 6 -Compress))
+        $hash=[Security.Cryptography.SHA256]::Create()
+        try {return [BitConverter]::ToString($hash.ComputeHash($bytes)).Replace('-','').ToLowerInvariant()} finally {$hash.Dispose()}
+    } finally {if($key){$key.Dispose()};$base.Dispose()}
+}
 function Assert-UserState {
     Require ((Digest $userMarker) -ceq $userHash) 'An installer operation changed unrelated user state'
     if($script:profileDataPath){Require ((Digest $script:profileDataPath) -ceq $script:profileDataHash) 'An installer operation changed the actual saved AccessWeaver profile'}
@@ -149,6 +173,17 @@ try {
     $upgraded=Native-Record $second $arguments;Assert-Installed $builds[1]
     Require ((Digest $marker) -ceq $markerHash) 'Upgrade changed an unrelated installed-directory file'
     $observations+=,@{operation='upgrade';exitCode=$upgraded.result.exitCode;elapsedMilliseconds=$upgraded.milliseconds;deadlineMilliseconds=180000;payloadAndRegistrationVerified=$true;unrelatedStatePreserved=$true}
+    $stage='refused-downgrade'
+    $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
+    $downgrade=Native-Record $first $arguments (0..255)
+    $treeAfter=Installed-TreeFingerprint;$registrationAfter=Registration-Fingerprint
+    $after=Native-Record (Join-Path $install 'accessweaver.exe') @('version','--json')
+    $afterIdentity=$after.result.stdout | ConvertFrom-Json
+    $observations+=,@{operation='refused-downgrade';exitCode=$downgrade.result.exitCode;elapsedMilliseconds=$downgrade.milliseconds;deadlineMilliseconds=180000;installedVersionAfter=$afterIdentity.version;installedFileTreePreserved=($treeAfter -ceq $treeBefore);completeRegistrationPreserved=($registrationAfter -ceq $registrationBefore)}
+    Require ($downgrade.result.exitCode -ne 0) 'Older installer accepted an unattended downgrade over the newer installation'
+    Require ($treeAfter -ceq $treeBefore -and $registrationAfter -ceq $registrationBefore) 'Refused downgrade changed installed files or registration'
+    Assert-Installed $builds[1]
+    Require ((Digest $marker) -ceq $markerHash) 'Refused downgrade changed an unrelated file'
     $stage='refused-uninstall'
     $uninstaller=Join-Path $install 'unins000.exe';No-Reparse $uninstaller;$uninstallerHash=Digest $uninstaller
     $request=Join-Path $install 'uninstall-system.json';$original=[IO.File]::ReadAllBytes($request)
@@ -189,7 +224,7 @@ try {
     Remove-OwnedTree $capsule $temporary $capsuleLeaf
     $complete=$true
 } catch {$failureType=$_.Exception.GetType().FullName}
-$record=[ordered]@{schemaVersion=1;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;passed=$complete;stage=$stage;failureType=$failureType;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$false;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=1;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;passed=$complete;stage=$stage;failureType=$failureType;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
-Write-Output 'Actual clean install, upgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'
+Write-Output 'Actual clean install, upgrade, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'
