@@ -46,8 +46,6 @@ function AWCloseRestoreHandle(Handle: LongWord): Integer;
   external 'CloseHandle@kernel32.dll stdcall';
 function AWRestoreTicks: Int64;
   external 'GetTickCount64@kernel32.dll stdcall';
-function AWRestoreLastError: LongWord;
-  external 'GetLastError@kernel32.dll stdcall';
 function AWPeekRestoreMessage(var Message: TAWRestoreMessage;
   Window, Minimum, Maximum, Remove: LongWord): Integer;
   external 'PeekMessageW@user32.dll stdcall';
@@ -133,20 +131,20 @@ begin
     { Anonymous, non-inheritable job; never permit child breakaway. }
     Failure := 'AccessWeaver could not create restoration containment.';
     Job := AWCreateRestoreJob(0, 0);
-    if Job = 0 then begin Code := AWRestoreLastError; Exit; end;
+    if Job = 0 then begin Code := DLLGetLastError; Exit; end;
     Failure := 'AccessWeaver could not configure restoration containment.';
-    if AWSetRestoreLimits(Job, 9, Limits, 112) = 0 then begin Code := AWRestoreLastError; Exit; end;
+    if AWSetRestoreLimits(Job, 9, Limits, 112) = 0 then begin Code := DLLGetLastError; Exit; end;
     { Suspended until contained. A hidden new console provides valid standard
       console handles for the CLI without inheriting installer handles. }
     Failure := 'AccessWeaver could not launch the restoration controller.';
     if AWCreateRestoreProcess(Executable, CommandLine, 0, 0, 0, $00000014,
-      0, Directory, Startup, Process) = 0 then begin Code := AWRestoreLastError; Exit; end;
+      0, Directory, Startup, Process) = 0 then begin Code := DLLGetLastError; Exit; end;
     Failure := 'AccessWeaver could not contain the restoration controller.';
-    if AWAssignRestoreJob(Job, Process.Process) = 0 then begin Code := AWRestoreLastError; Exit; end;
+    if AWAssignRestoreJob(Job, Process.Process) = 0 then begin Code := DLLGetLastError; Exit; end;
     Contained := True;
     Failure := 'AccessWeaver could not resume the contained restoration controller.';
-    if AWResumeRestoreThread(Process.Thread) = $FFFFFFFF then begin Code := AWRestoreLastError; Exit; end;
-    if AWCloseRestoreHandle(Process.Thread) = 0 then begin Code := AWRestoreLastError; Exit; end;
+    if AWResumeRestoreThread(Process.Thread) = $FFFFFFFF then begin Code := DLLGetLastError; Exit; end;
+    if AWCloseRestoreHandle(Process.Thread) = 0 then begin Code := DLLGetLastError; Exit; end;
     Process.Thread := 0;
     Failure := 'AccessWeaver system restoration did not complete successfully.';
     while AWRestoreTicks < Deadline do begin
@@ -154,14 +152,14 @@ begin
       if not RootExited then begin
         WaitResult := AWWaitRestoreProcess(Process.Process, 0);
         if WaitResult = 0 then begin
-          if AWRestoreExitCode(Process.Process, Code) = 0 then begin Code := AWRestoreLastError; Exit; end;
-          if AWCloseRestoreHandle(Process.Process) = 0 then begin Code := AWRestoreLastError; Exit; end;
+          if AWRestoreExitCode(Process.Process, Code) = 0 then begin Code := DLLGetLastError; Exit; end;
+          if AWCloseRestoreHandle(Process.Process) = 0 then begin Code := DLLGetLastError; Exit; end;
           Process.Process := 0; RootExited := True;
           if Code <> 0 then Exit;
-        end else if WaitResult <> $00000102 then begin Code := AWRestoreLastError; Exit; end;
+        end else if WaitResult <> $00000102 then begin Code := DLLGetLastError; Exit; end;
       end;
       Returned := 0;
-      if AWQueryRestoreJob(Job, 1, Accounting, 48, Returned) = 0 then begin Code := AWRestoreLastError; Exit; end;
+      if AWQueryRestoreJob(Job, 1, Accounting, 48, Returned) = 0 then begin Code := DLLGetLastError; Exit; end;
       if Returned <> 48 then Exit;
       if RootExited and (Accounting.ActiveProcesses = 0) then begin
         Completed := True; Result := True; Failure := ''; Exit;

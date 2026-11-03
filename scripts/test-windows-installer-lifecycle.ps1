@@ -151,7 +151,7 @@ function Assert-Installed($expected){
 }
 $reportDirectory=Join-Path $project 'build\installer-lifecycle-checks';[void][IO.Directory]::CreateDirectory($reportDirectory)
 $reportPath=Join-Path $reportDirectory ($Architecture+'.json')
-$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null;$registryReadCases=@();$registryViewCases=@();$registryAccessCases=@();$failureSourceLine=$null;$registryFixtureSHA256=$null;$productRegistrySHA256=$null;$restorationCases=@();$productRestoreSHA256=$null;$restoreFixtureSourceSHA256=$null;$restoreFixtureBinarySHA256=$null;$restoreContractSourceSHA256=$null;$restoreContractBinarySHA256=$null;$restorationOwnerCases=@();$restoreOwnerFixtureSHA256=$null;$restorationLaunchCases=@()
+$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null;$registryReadCases=@();$registryViewCases=@();$registryAccessCases=@();$failureSourceLine=$null;$registryFixtureSHA256=$null;$productRegistrySHA256=$null;$restorationCases=@();$productRestoreSHA256=$null;$restoreFixtureSourceSHA256=$null;$restoreFixtureBinarySHA256=$null;$restoreContractSourceSHA256=$null;$restoreContractBinarySHA256=$null;$restorationOwnerCases=@();$restoreOwnerFixtureSHA256=$null;$restorationLaunchCases=@();$restoreLaunchFixtureSHA256=$null
 try {
     foreach($version in @('0.1.0-alpha','0.1.1-alpha')){
         $null=@(& (Join-Path $PSScriptRoot 'test-windows-installer.ps1') -ExpectedCompilerVersion '6.7.1' -TargetArch $Architecture -Version $version)
@@ -392,6 +392,9 @@ try {
     } finally {if($key){$key.Dispose()};$base.Dispose()}
     Assert-Installed $builds[1]
     $stage='restoration-launch-failures'
+    $launchFixture=Join-Path $PSScriptRoot 'fixtures\InstallerRestorationLaunch.cs'
+    Add-Type -Path $launchFixture
+    $restoreLaunchFixtureSHA256=Digest $launchFixture
     $core=Join-Path $install 'accessweaver.exe';No-Reparse $core
     $launchBackup=Join-Path $capsule 'launch-original-controller.exe'
     [IO.File]::Copy($core,$launchBackup,$false)
@@ -399,10 +402,10 @@ try {
     $fileAccess=[Security.AccessControl.AccessControlSections]::Access
     $originalFileSDDL=[IO.File]::GetAccessControl($core,$fileAccess).GetSecurityDescriptorSddlForm($fileAccess)
     foreach($case in @(
-        @{name='missing-controller-refused';kind='missing';nativeError=2},
-        @{name='truncated-controller-refused';kind='truncated';nativeError=1392},
-        @{name='malformed-controller-refused';kind='malformed';nativeError=193},
-        @{name='execution-denied-controller-refused';kind='denied';nativeError=5}
+        @{name='missing-controller-refused';kind='missing';nativeErrors=@(2)},
+        @{name='truncated-controller-refused';kind='truncated';nativeErrors=@(193,1392)},
+        @{name='malformed-controller-refused';kind='malformed';nativeErrors=@(193,1392)},
+        @{name='execution-denied-controller-refused';kind='denied';nativeErrors=@(5)}
     )){
         $stage='restoration-launch-'+$case.kind;$caseRecord=$null
         try {
@@ -421,6 +424,8 @@ try {
             $controllerPresent=[IO.File]::Exists($core)
             Require ($controllerPresent -eq ($case.kind -cne 'missing')) 'Launch fixture controller state differs from its expected precondition'
             $fixtureSDDL=if($controllerPresent){[IO.File]::GetAccessControl($core,$fileAccess).GetSecurityDescriptorSddlForm($fileAccess)}else{$null}
+            $probe=[InstallerRestorationLaunch]::Probe($core)
+            Require (-not $probe.Started -and $case.nativeErrors -contains $probe.NativeError) 'Independent native launch probe did not confirm the expected rejection category'
             $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
             $logPath=Join-Path $capsule ($case.name+'.log')
             Require (-not (Test-Path -LiteralPath $logPath)) 'Launch fixture log already exists'
@@ -440,8 +445,8 @@ try {
             $observedNativeError=[long]::Parse($nativeMatches[0].Groups[1].Value,[Globalization.CultureInfo]::InvariantCulture)
             Require ($observedNativeError -le [uint32]::MaxValue) 'Native launch error exceeds the Windows error-code range'
             $launchPhaseObserved=$log.Contains('AccessWeaver could not launch the restoration controller.')
-            $expectedErrorObserved=$observedNativeError -eq $case.nativeError
-            $caseRecord=@{name=$case.name;failurePhase='launch-controller';launchPhaseObserved=$launchPhaseObserved;expectedNativeError=$case.nativeError;nativeError=$observedNativeError;nativeErrorLogVerified=($launchPhaseObserved -and $expectedErrorObserved);exitCode=$attempt.result.exitCode;elapsedMilliseconds=$attempt.milliseconds;observationDeadlineMilliseconds=180000;controllerPresentDuringRefusal=$controllerPresent;installedFileTreePreserved=$true;registrationValuesPreserved=$true;profilePreserved=$true;fileDACLCheckApplicable=$controllerPresent;fileDACLUnchangedDuringRefusal=$fileDACLUnchanged;originalControllerAndDACLRestored=$false;restoredControllerRuntimeVerified=$false}
+            $expectedErrorObserved=$observedNativeError -eq $probe.NativeError
+            $caseRecord=@{name=$case.name;failurePhase='launch-controller';launchPhaseObserved=$launchPhaseObserved;expectedNativeError=$probe.NativeError;independentProbeStarted=$probe.Started;independentProbeNativeError=$probe.NativeError;nativeError=$observedNativeError;nativeErrorLogVerified=($launchPhaseObserved -and $expectedErrorObserved);exitCode=$attempt.result.exitCode;elapsedMilliseconds=$attempt.milliseconds;observationDeadlineMilliseconds=180000;controllerPresentDuringRefusal=$controllerPresent;installedFileTreePreserved=$true;registrationValuesPreserved=$true;profilePreserved=$true;fileDACLCheckApplicable=$controllerPresent;fileDACLUnchangedDuringRefusal=$fileDACLUnchanged;originalControllerAndDACLRestored=$false;restoredControllerRuntimeVerified=$false}
             # Preserve fixed numeric observations even when the expectation fails.
             $restorationLaunchCases+=,$caseRecord
             Require ($launchPhaseObserved -and $expectedErrorObserved) 'Native launch refusal did not retain its fixed phase and exact error code'
@@ -597,7 +602,7 @@ try {
     Remove-OwnedTree $capsule $temporary $capsuleLeaf
     $complete=$true
 } catch {$failureType=$_.Exception.GetType().FullName;$failureSourceLine=$_.InvocationInfo.ScriptLineNumber}
-$record=[ordered]@{schemaVersion=7;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=7;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'
