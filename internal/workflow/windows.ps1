@@ -3,10 +3,14 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::WriteLine('Workflow phase: initialize')
 if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-initialize {0}' -f $script:workflowClock.ElapsedMilliseconds))}
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $inputData = Get-Content -LiteralPath $RequestPath -Raw | ConvertFrom-Json
 $r = $inputData.request
+if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-request-decoded {0}' -f $script:workflowClock.ElapsedMilliseconds))}
+# Local inventory and folder selection have no HTTP requests to configure.
+if($r.action -notin @('discover','choose-folder')){[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12}
+if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-network-ready {0}' -f $script:workflowClock.ElapsedMilliseconds))}
 $script:root = Join-Path $env:ProgramData 'AccessWeaver'
+if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-root-ready {0}' -f $script:workflowClock.ElapsedMilliseconds))}
 $script:undo = [Collections.Generic.List[object]]::new()
 $script:events = [Collections.Generic.List[string]]::new()
 $script:journalPath = $null
@@ -18,6 +22,7 @@ $script:ownsMutex = $false
 $script:journalState = 'running'
 $script:pendingUninstaller = $null
 $script:repairProxyReady = $false
+if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-state-ready {0}' -f $script:workflowClock.ElapsedMilliseconds))}
 
 function Event([string]$text) { $script:events.Add(([DateTime]::UtcNow.ToString('o')+' '+$text)); [Console]::WriteLine($text); Save-Journal }
 function Save-Journal { if ($script:journalPath) { $text=@{action=$r.action;engine=$r.engine;state=$script:journalState;undo=@($script:undo.ToArray());events=@($script:events.ToArray())} | ConvertTo-Json -Depth 12;$temp=$script:journalPath+'.tmp';[IO.File]::WriteAllText($temp,$text,[Text.UTF8Encoding]::new($false));if(Test-Path -LiteralPath $script:journalPath){$old=$temp+'.old';[IO.File]::Replace($temp,$script:journalPath,$old);Remove-Item -LiteralPath $old}else{[IO.File]::Move($temp,$script:journalPath)} } }
@@ -259,6 +264,7 @@ function Expand-Safe([string]$archive,[string]$destination) {
     try { $total=0L;foreach($entry in $zip.Entries){$total+=$entry.Length;if($total -gt 2147483648){throw 'Component archive exceeds 2 GiB'};$target=Join-Path $destination $entry.FullName;if(-not (Under $target $destination)){throw 'Archive path escapes component storage'};if($entry.FullName.EndsWith('/')){continue};[void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target));Backup-File $target;$stream=$entry.Open();$hasher=[Security.Cryptography.SHA256]::Create();try{$hash=[BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-','')}finally{$stream.Dispose();$hasher.Dispose()};Expected-Hash $target $hash;[IO.Compression.ZipFileExtensions]::ExtractToFile($entry,$target,$true)} } finally {$zip.Dispose()}
 }
 $assetNames=@{byedpi='ciadpi.exe';proxifyre='ProxiFyre.exe';wgcf='wgcf.exe';zapret='winws.exe';zapret2='winws2.exe';goodbyedpi='goodbyedpi.exe';dnscrypt='dnscrypt-proxy.exe';drover='version.dll'}
+if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-catalog-ready {0}' -f $script:workflowClock.ElapsedMilliseconds))}
 function Find-Source([string]$engine) {
     $name=$assetNames[$engine];if (-not $name){throw 'Unknown component'}
     $roots=@((Join-Path $root ('components\'+$engine)))

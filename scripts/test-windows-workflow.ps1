@@ -14,6 +14,20 @@ $testRoot=Join-Path $projectRoot ('build\workflow-tests-'+[guid]::NewGuid().ToSt
 $root=$testRoot;$script:undo=[Collections.Generic.List[object]]::new();$script:events=[Collections.Generic.List[string]]::new();$script:journalPath=$null
 [void](New-Item -ItemType Directory -Force -Path (Join-Path $testRoot 'backups'))
 function Assert([bool]$condition,[string]$message){if(-not $condition){throw $message};Write-Output ('PASS '+$message)}
+# Evaluate only the isolated process-local TLS setup, with no HTTP operations.
+$tlsStatements=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.IfStatementAst] -and $_.Extent.Text.Contains('[Net.ServicePointManager]::SecurityProtocol')})
+Assert ($tlsStatements.Count -eq 1) 'HTTP TLS setup is conditional rather than an eager global initializer'
+$tlsSetup=[scriptblock]::Create($tlsStatements[0].Extent.Text)
+$previousTLS=[Net.ServicePointManager]::SecurityProtocol;$previousRequest=$r
+try {
+    foreach($action in @('discover','choose-folder','updates','download','install')) {
+        [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::SystemDefault
+        $r=[pscustomobject]@{action=$action}
+        & $tlsSetup
+        $expected=if($action -in @('discover','choose-folder')){[Net.SecurityProtocolType]::SystemDefault}else{[Net.SecurityProtocolType]::Tls12}
+        Assert ([Net.ServicePointManager]::SecurityProtocol -eq $expected) ('Process-local TLS setup preserves the contract for '+$action)
+    }
+} finally {[Net.ServicePointManager]::SecurityProtocol=$previousTLS;$r=$previousRequest}
 # Exercise both direct helper calls and the dispatcher before any real OS work.
 $desktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
 $machineInitializer=(Get-Command Initialize-Changes).ScriptBlock
