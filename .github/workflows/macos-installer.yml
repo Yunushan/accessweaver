@@ -18,6 +18,14 @@ on:
       - cmd/accessweaver-installer/**
       - internal/**
       - web/**
+      - LICENSE
+      - README.md
+      - README.tr.md
+      - THIRD_PARTY.md
+      - SECURITY.md
+      - docs/MACOS_MANAGED_POLICY.md
+      - docs/MANAGED_CONFIGURATION.md
+      - docs/RELEASE_PROVENANCE.md
       - go.mod
       - go.sum
       - .github/workflows/macos-installer.yml

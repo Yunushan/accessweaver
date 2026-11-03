@@ -9,6 +9,9 @@ import (
 	"github.com/Yunushan/accessweaver/internal/buildinfo"
 	"github.com/Yunushan/accessweaver/internal/packageupgrade"
 	"os"
+	"path/filepath"
+	"strings"
+	"unicode/utf8"
 )
 
 func execute(args []string) error {
@@ -31,8 +34,34 @@ func execute(args []string) error {
 	}
 	return json.NewEncoder(os.Stdout).Encode(result)
 }
+
+// PackageKit supplies package path, install location and target volume. Only
+// the target-volume guard is interpreted; all filesystem authority stays fixed
+// inside the compiled-seal API. Ordinary command routing remains available for
+// explicit root recovery with a helper extracted from an authenticated package.
+func executeForName(name string, args []string) error {
+	if name != "preinstall" && name != "postinstall" {
+		return execute(args)
+	}
+	if len(args) == 1 || len(args) == 2 {
+		return execute(args)
+	}
+	if len(args) < 3 || len(args) > 8 || args[2] != "/" {
+		return errors.New("package phase requires the system root target")
+	}
+	for _, arg := range args {
+		if len(arg) > 4096 || !utf8.ValidString(arg) || strings.IndexByte(arg, 0) >= 0 {
+			return errors.New("package argument exceeds encoding/size limits")
+		}
+	}
+	result, err := packageupgrade.PackageOperation(name)
+	if result.Operation != "" {
+		err = errors.Join(err, json.NewEncoder(os.Stdout).Encode(result))
+	}
+	return err
+}
 func main() {
-	if err := execute(os.Args[1:]); err != nil {
+	if err := executeForName(filepath.Base(os.Args[0]), os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "installer operation refused:", err)
 		os.Exit(1)
 	}

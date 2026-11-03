@@ -1,0 +1,116 @@
+import copy
+import hashlib
+import json
+import plistlib
+import stat
+import struct
+import unittest
+import xml.etree.ElementTree as ET
+import zlib
+
+from macos_deployment import PACKAGE_ID,MANIFEST,install_location,inspect_deployment,manifest_contract,script_contract,deployment_sbom
+from macos_installer import BUNDLE_ID,bundle_plist,digest
+from sbom import validate,properties
+
+
+def image(arch):
+    return struct.pack("<8I",0xfeedfacf,{"amd64":0x1000007,"arm64":0x100000c}[arch],0,2,1,16,0,0)+struct.pack("<4I",0x24,16,0x000d0000,0)
+
+def cpio_entry(name,data=b"",mode=stat.S_IFREG|0o644,uid=0,gid=0,links=1):
+    encoded=name.encode()+b"\0"
+    fields=[(0,6),(1,6),(mode,6),(uid,6),(gid,6),(links,6),(0,6),(0,11),(len(encoded),6),(len(data),11)]
+    return b"070707"+b"".join(format(v,"0"+str(w)+"o").encode() for v,w in fields)+encoded+data
+
+def archive(entries):
+    data=b"".join(cpio_entry(name,**item) for name,item in entries.items())+cpio_entry("TRAILER!!!",mode=0)
+    compressor=zlib.compressobj(wbits=31)
+    return compressor.compress(data)+compressor.flush()
+
+def flat_package(members):
+    root=ET.Element("xar");toc=ET.SubElement(root,"toc");checksum=ET.SubElement(toc,"checksum",style="sha1")
+    ET.SubElement(checksum,"offset").text="0";ET.SubElement(checksum,"size").text="20"
+    heap=b"";offset=20
+    for name,contents in members.items():
+        entry=ET.SubElement(toc,"file");ET.SubElement(entry,"name").text=name;ET.SubElement(entry,"type").text="file";data=ET.SubElement(entry,"data");raw=zlib.compress(contents)
+        for key,value in (("offset",offset),("length",len(raw)),("size",len(contents))):ET.SubElement(data,key).text=str(value)
+        ET.SubElement(data,"encoding",style="application/x-gzip")
+        ET.SubElement(data,"archived-checksum",style="sha1").text=hashlib.sha1(raw).hexdigest()
+        ET.SubElement(data,"extracted-checksum",style="sha1").text=hashlib.sha1(contents).hexdigest()
+        heap+=raw;offset+=len(raw)
+    decoded=ET.tostring(root);encoded=zlib.compress(decoded)
+    return struct.pack(">4sHHQQI",b"xar!",28,1,len(encoded),len(decoded),1)+encoded+hashlib.sha1(encoded).digest()+heap
+
+class DeploymentPackageContracts(unittest.TestCase):
+    def fixture(self,arch="amd64"):
+        identity={"version":"0.1.0-alpha","commit":"a"*40,"sourceState":"clean","platform":"darwin","arch":arch,"goVersion":"go1.27.3","builtAt":"2026-11-03T00:00:00Z"}
+        values={"Contents/Info.plist":plistlib.dumps(bundle_plist(identity["version"],"13.0.0")),"Contents/MacOS/accessweaver":image(arch),"Contents/Resources/BUILD-INFO.json":json.dumps(identity).encode(),"Contents/Resources/SBOM.cdx.json":b"{}"}
+        manifest={"schemaVersion":1,"bundleIdentifier":BUNDLE_ID,"directories":[{"path":n,"mode":"0755"} for n in ("Contents","Contents/MacOS","Contents/Resources")],"files":[{"path":n,"bytes":len(v),"sha256":digest(v),"mode":"0755" if n.endswith("/accessweaver") else "0644"} for n,v in values.items()]}
+        encoded=json.dumps(manifest).encode();values[MANIFEST]=encoded
+        payload={".":{"mode":stat.S_IFDIR|0o755},"AccessWeaver.app":{"mode":stat.S_IFDIR|0o755}}
+        payload.update({"AccessWeaver.app/"+d["path"]:{"mode":stat.S_IFDIR|0o755} for d in manifest["directories"]})
+        payload.update({"AccessWeaver.app/"+n:{"data":v,"mode":stat.S_IFREG|(0o755 if n.endswith("/accessweaver") else 0o644)} for n,v in values.items()})
+        scripts={".":{"mode":stat.S_IFDIR|0o755,"uid":501,"gid":20},"licenses":{"mode":stat.S_IFDIR|0o755,"uid":501,"gid":20},"preinstall":{"data":image(arch),"mode":stat.S_IFREG|0o755,"uid":501,"gid":20},"postinstall":{"data":image(arch),"mode":stat.S_IFREG|0o755,"uid":501,"gid":20},"licenses/notice.txt":{"data":b"notice","uid":501,"gid":20}}
+        records=[{"path":n,"mode":"0755" if n in ("preinstall","postinstall") else "0644","bytes":len(v["data"]),"sha256":digest(v["data"])} for n,v in scripts.items() if "data" in v]
+        metadata=ET.Element("pkg-info",identifier=PACKAGE_ID,version=identity["version"],auth="root",relocatable="false",attrib={"install-location":install_location(digest(encoded))})
+        ET.SubElement(metadata,"relocate");strict=ET.SubElement(metadata,"strict-identifier");ET.SubElement(strict,"bundle",id=BUNDLE_ID)
+        phases=ET.SubElement(metadata,"scripts");ET.SubElement(phases,"preinstall",file="./preinstall");ET.SubElement(phases,"postinstall",file="./postinstall")
+        return identity,manifest,encoded,payload,scripts,records,metadata
+    def inspect(self,fixture):
+        identity,manifest,encoded,payload,scripts,records,metadata=fixture
+        package=flat_package({"Bom":b"fixture-bom","PackageInfo":ET.tostring(metadata),"Payload":archive(payload),"Scripts":archive(scripts)})
+        return inspect_deployment(package,encoded,identity,records)
+    def test_actual_archive_structure_binds_two_native_binary_phases_and_private_input(self):
+        for arch in ("amd64","arm64"):
+            fixture=self.fixture(arch);result=self.inspect(fixture)
+            self.assertEqual(result["installLocation"],install_location(digest(fixture[2])))
+            self.assertEqual(result["helperSHA256"],digest(image(arch)))
+            self.assertTrue(result["allPathsModesOwnershipAndHashesVerified"])
+            self.assertFalse(result["targetExecutionPerformed"])
+            self.assertFalse(result["productionQualificationComplete"])
+    def test_payload_changes_aliases_extra_paths_and_owner_changes_fail(self):
+        for kind in ("changed","owner","group","writable","alias","hardlink","extra"):
+            with self.subTest(kind=kind):
+                f=self.fixture();leaf=f[3]["AccessWeaver.app/Contents/MacOS/accessweaver"]
+                if kind=="changed":leaf["data"]+=b"changed"
+                elif kind=="owner":leaf["uid"]=501
+                elif kind=="group":leaf["gid"]=80
+                elif kind=="writable":leaf["mode"]=stat.S_IFREG|0o777
+                elif kind=="alias":leaf["mode"]=stat.S_IFLNK|0o755
+                elif kind=="hardlink":leaf["links"]=2
+                else:f[3]["unrelated"]={"data":b"preserve"}
+                with self.assertRaises(ValueError):self.inspect(f)
+    def test_scripts_and_fixed_package_destination_cannot_be_substituted(self):
+        for kind in ("helper","phase","unexpected","destination","identifier","version","relocation","duplicate-phase"):
+            with self.subTest(kind=kind):
+                f=self.fixture()
+                if kind=="helper":f[4]["preinstall"]["data"]=image("arm64")
+                elif kind=="phase":f[4]["postinstall"]["data"]+=b"different"
+                elif kind=="unexpected":f[4]["other"]={"data":b"unexpected"}
+                elif kind=="duplicate-phase":ET.SubElement(f[6].find("scripts"),"preinstall",file="./preinstall")
+                else:f[6].set({"destination":"install-location","identifier":"identifier","version":"version","relocation":"relocatable"}[kind],{"destination":"/Applications","identifier":BUNDLE_ID,"version":"0.0.9","relocation":"true"}[kind])
+                with self.assertRaises(ValueError):self.inspect(f)
+    def test_manifest_and_script_subject_contracts_reject_ambiguity(self):
+        for change in (lambda m:m.update(schemaVersion=True),lambda m:m["files"].append(dict(m["files"][0],path="contents/Info.plist")),lambda m:m["files"][0].update(path="../outside"),lambda m:m["files"][0].update(bytes=True),lambda m:m["files"][0].update(bytes=64<<20|1),lambda m:m["files"][0].update(mode="0755"),lambda m:m["directories"].pop(0)):
+            manifest=copy.deepcopy(self.fixture()[1]);change(manifest)
+            with self.assertRaises(ValueError):manifest_contract(manifest)
+        for name in ("../outside","licenses/..","preinstall/extra","licenses/nested/file"):
+            records=copy.deepcopy(self.fixture()[5]);records[-1]["path"]=name
+            with self.assertRaises(ValueError):script_contract(records)
+        for seal in ("a"*63,"A"*64,"../input",None):
+            with self.assertRaises(ValueError):install_location(seal)
+    def test_sbom_keeps_both_compiled_graphs_and_file_subjects_with_incomplete_os_closure(self):
+        f=self.fixture();identity,manifest,_,_,_,records,_=f
+        def document(binary):
+            evidence=json.dumps([{"path":"licenses/notice.txt","sha256":digest(b"notice")}])
+            root={"bom-ref":"application","type":"application","name":"AccessWeaver","version":identity["version"],"hashes":[{"alg":"SHA-256","content":digest(binary)}],"properties":properties({"source-commit":identity["commit"],"source-state":"clean","target-os":"darwin","target-arch":"amd64","license-evidence":evidence})}
+            return {"bomFormat":"CycloneDX","specVersion":"1.6","version":1,"metadata":{"component":root},"components":[{"bom-ref":"stdlib","type":"library","name":"Go","properties":properties({"license-evidence":evidence})}],"dependencies":[{"ref":"application","dependsOn":["stdlib"]},{"ref":"stdlib","dependsOn":[]}],"compositions":[{"aggregate":"incomplete","assemblies":["application"]}]}
+        payload=document(image("amd64"));helper=document(image("amd64"));tool={"osBuild":"fixture","osVersion":"15.0","sha256":"c"*64}
+        result=deployment_sbom(b"xar!fixture",payload,helper,manifest,records,tool,image("amd64"),image("amd64"))
+        self.assertTrue(validate(result,b"xar!fixture"))
+        self.assertEqual(result["compositions"][0]["aggregate"],"incomplete")
+        refs={c["bom-ref"] for c in result["components"]};self.assertIn("payload:application",refs);self.assertIn("helper:application",refs);self.assertIn("script-file:postinstall",refs)
+        changed=copy.deepcopy(helper);changed["metadata"]["component"]["hashes"][0]["content"]="0"*64
+        with self.assertRaises(ValueError):deployment_sbom(b"xar!fixture",payload,changed,manifest,records,tool,image("amd64"),image("amd64"))
+        self.assertEqual(payload["metadata"]["component"]["bom-ref"],"application")
+
+if __name__=="__main__":unittest.main()

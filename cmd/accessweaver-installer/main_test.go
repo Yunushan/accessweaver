@@ -20,3 +20,17 @@ func TestDeploymentCLIRefusesCallerPathsAndUnsealedOperation(t *testing.T) {
 		}
 	}
 }
+
+func TestPackagePhasesCannotSelectAnotherVolumeOrInputPath(t *testing.T) {
+	for _, phase := range []string{"preinstall", "postinstall"} {
+		for _, args := range [][]string{nil, {"package.pkg", "location", "/Volumes/Other"}, {"package.pkg", "location", "/", "bad\x00arg"}, {"package.pkg", "location", "/", strings.Repeat("x", 4097)}} {
+			if e := executeForName(phase, args); e == nil {
+				t.Fatal("invalid package argument accepted", phase)
+			}
+		}
+		// The default unsealed/user build refuses even correct phase shape.
+		if e := executeForName(phase, []string{"package.pkg", "ignored-install-location", "/"}); e == nil {
+			t.Fatal("unsealed package phase accepted", phase)
+		}
+	}
+}

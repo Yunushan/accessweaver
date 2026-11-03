@@ -1,0 +1,119 @@
+name: Native versioned macOS deployment acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/*macos*deployment*
+      - scripts/build-macos-installer.py
+      - scripts/macos_installer.py
+      - scripts/macos_package_archive.py
+      - scripts/sbom.py
+      - scripts/sbom/**
+      - scripts/verify_release_provenance.py
+      - scripts/verify_release_rebuild.py
+      - cmd/accessweaver/**
+      - cmd/accessweaver-installer/**
+      - internal/**
+      - web/**
+      - LICENSE
+      - README.md
+      - README.tr.md
+      - THIRD_PARTY.md
+      - SECURITY.md
+      - docs/MACOS_MANAGED_POLICY.md
+      - docs/MANAGED_CONFIGURATION.md
+      - docs/RELEASE_PROVENANCE.md
+      - go.mod
+      - go.sum
+      - .github/workflows/macos-deployment.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-deployment-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native:
+    name: Versioned package lifecycle (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            arch: amd64
+          - os: macos-15
+            arch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          architecture: ${{ matrix.arch == 'amd64' && 'x64' || 'arm64' }}
+          cache: false
+      - name: Package archive, graph, trust ordering and default CLI guards
+        env:
+          GOTOOLCHAIN: local
+          CGO_ENABLED: '0'
+        run: |
+          python3 -m unittest discover -s scripts -p test_macos_deployment.py -v
+          python3 -m unittest discover -s scripts -p test_macos_deployment_provenance.py -v
+          go test ./internal/packageupgrade ./cmd/accessweaver-installer -count=1
+      - name: Build and inspect two actual native deployment packages
+        env:
+          GOTOOLCHAIN: local
+        run: |
+          python3 scripts/build-macos-deployment.py --architecture '${{ matrix.arch }}' --version 0.1.0-alpha
+          python3 scripts/build-macos-deployment.py --architecture '${{ matrix.arch }}' --version 0.1.1-alpha
+      - name: Actual install, upgrade, refusal, retry and owned cleanup
+        env:
+          ACCESSWEAVER_DISPOSABLE_MACOS_DEPLOYMENT_PACKAGE_TEST: '1'
+          ACCESSWEAVER_MACOS_INSTALLER_ARCH: '${{ matrix.arch }}'
+        run: python3 scripts/test-macos-deployment-package.py
+      - name: Validate and stage independently known subjects before attesting
+        env:
+          PACKAGE_ARCH: '${{ matrix.arch }}'
+        run: |
+          mkdir -p "build/macos-deployment-provenance/$PACKAGE_ARCH"
+          python3 scripts/verify_macos_deployment_provenance.py "build/macos-deployment-provenance/$PACKAGE_ARCH/candidate" --stage-build-root "build/macos-deployment-checks/$PACKAGE_ARCH" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --architecture "$PACKAGE_ARCH" --run-id "$GITHUB_RUN_ID"
+      - name: Attest both actual packages, inventories and native lifecycle
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: build/macos-deployment-provenance/${{ matrix.arch }}/candidate/*
+          create-storage-record: false
+      - name: Authenticate every subject and reject changed identity/digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_ARCH: '${{ matrix.arch }}'
+          ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          root="build/macos-deployment-provenance/$PACKAGE_ARCH"
+          cp "$ATTESTATION_BUNDLE" "$root/candidate/BUILD-PROVENANCE.sigstore.json"
+          python3 scripts/verify_macos_deployment_provenance.py "$root/candidate" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --architecture "$PACKAGE_ARCH" --run-id "$GITHUB_RUN_ID" --check-rejections > "$root/verified.json"
+      - name: Retain authenticated deployment subjects and verification
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-deployment-candidate-${{ matrix.arch }}
+          path: build/macos-deployment-provenance/${{ matrix.arch }}/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain unqualified raw diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-deployment-diagnostics-${{ matrix.arch }}
+          path: build/macos-deployment-checks/${{ matrix.arch }}/
+          if-no-files-found: warn
+          retention-days: 14
