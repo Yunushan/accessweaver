@@ -4,7 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-from verify_macos_installer_provenance import BUNDLE_NAME,WORKFLOW,check_rejections,subject_names,verification_command,verify
+from verify_macos_installer_provenance import BUNDLE_NAME,WORKFLOW,check_rejections,subject_names,verification_command,verify,validate_deployment_transactions
 COMMIT='a'*40
 REF='refs/heads/main'
 VERSION='0.1.0-alpha'
@@ -69,5 +69,20 @@ class NativePackageProvenanceTests(unittest.TestCase):
             with patch('verify_macos_installer_provenance.subprocess.run',side_effect=run):result=check_rejections(root/package,root/BUNDLE_NAME,COMMIT,REF,'trusted-gh')
             self.assertEqual(calls[0],calls[-1]);self.assertEqual(len(result['rejected']),5)
             self.assertTrue(result['realBundleVerifiedBeforeAndAfter']);self.assertTrue(all('--deny-self-hosted-runners' in c for c in calls))
+
+    def test_deployment_report_is_bound_to_copied_subjects_and_fixed_scope(self):
+        value={"schemaVersion":1,"manifestSHA256":"a"*64,"payloadSHA256":"b"*64,"version":VERSION,"finalGeneration":4,"testExecutableSHA256":"c"*64,"elapsedMilliseconds":123,"fixtureParent":"private-exclusive-temporary-directory","copiedCodeExecuted":False,"packageScriptsIntegrated":False,"productionQualificationComplete":False}
+        checks=("fixedProtectedParentVerified","partialCopyPreservedAndRefused","completeCopyRecovered","concurrentPreparationFenced","postPublicationRemovalRecovered","oldCompleteSlotFencedAfterRemoval","restoredRetryVerified","payloadIsIndependentCopy","installedObjectsAndReceiptsPreserved")
+        value.update({key:True for key in checks})
+        def validate(record):validate_deployment_transactions(record,"a"*64,"b"*64,VERSION)
+        validate(value)
+        for key,bad in [(key,False) for key in checks]+[("schemaVersion",True),("manifestSHA256","0"*64),("payloadSHA256","0"*64),("version","0.1.1-alpha"),("finalGeneration",5),("testExecutableSHA256","unknown"),("copiedCodeExecuted",True),("packageScriptsIntegrated",True),("productionQualificationComplete",True),("fixtureParent","/Applications"),("elapsedMilliseconds",True),("elapsedMilliseconds",-1),("elapsedMilliseconds",150001)]:
+            with self.subTest(key=key):
+                changed=dict(value);changed[key]=bad
+                with self.assertRaises(ValueError):validate(changed)
+        for key in value:
+            changed=dict(value);del changed[key]
+            with self.assertRaises(ValueError):validate(changed)
+        with self.assertRaises(ValueError):validate(None)
 
 if __name__=='__main__':unittest.main()

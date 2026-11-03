@@ -176,6 +176,32 @@ def upgrade_preflight(capsule,environment,identity,manifest,profile_path,marker,
     no_alias(backup);require(not receipt.exists() and digest(backup.read_bytes())==original_receipt[1]["sha256"],"Owned receipt backup changed");run(["/usr/bin/sudo","-n","/bin/mv",backup,receipt],environment);require(snapshot_receipts()==original_receipt,"Owned receipt fixture was not restored")
     verify_bundle(APP,manifest,identity);check("restored-state-preflight","0.1.1-alpha","upgrade")
 
+def deployment_transactions(capsule,environment,identity):
+    go=shutil.which("go");require(go is not None,"Native SDK missing for deployment transactions")
+    compiler_environment=dict(os.environ,GOTOOLCHAIN="local",GOFLAGS="",GOOS="darwin",GOARCH=identity["arch"],CGO_ENABLED="0")
+    binary=capsule/"deployment-transactions.test"
+    run([go,"test","-c","-mod=readonly","-trimpath","-buildvcs=false","-o",binary,"./internal/packageupgrade"],compiler_environment,240)
+    before=owned_bundle_snapshot();receipts=snapshot_receipts()
+    # The outer driver has already required the explicit hosted/disposable
+    # opt-in. Pass only fixed fixture guards, not workflow credentials, to root.
+    command=["/usr/bin/sudo","-n","/usr/bin/env","-i","PATH=/usr/bin:/bin:/usr/sbin:/sbin","LANG=C","LC_ALL=C","TZ=UTC","GITHUB_ACTIONS=true","RUNNER_ENVIRONMENT=github-hosted","RUNNER_OS=macOS","ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST=1",binary,"-test.run=^TestDarwinDeploymentRootCopyRecovery$","-test.v","-test.timeout=120s"]
+    result,elapsed=run(command,environment,150,codes=tuple(range(256)))
+    if result.returncode:
+        # Only this trusted test binary's bounded fixture diagnostics enter the
+        # job log. No inherited credentials or user profile contents are input.
+        diagnostic=result.stdout.decode("utf-8",errors="replace")[-12000:]
+        diagnostic=re.sub(r"/private/tmp/accessweaver-deployment-[^\s/:]+","[owned-fixture]",diagnostic)
+        print(diagnostic,flush=True)
+    require(result.returncode==0,"Native protected deployment transaction fixture failed")
+    lines=[line.split("DEPLOYMENT-RESULT ",1)[1] for line in result.stdout.decode("utf-8").splitlines() if "DEPLOYMENT-RESULT " in line]
+    require(len(lines)==1 and b"--- PASS: TestDarwinDeploymentRootCopyRecovery" in result.stdout,"Native deployment test did not execute to completion")
+    value=json.loads(lines[0])
+    require(value["manifestSHA256"]==digest((APP/"Contents/Resources/INSTALL-MANIFEST.json").read_bytes()) and value["payloadSHA256"]==digest((APP/"Contents/MacOS/accessweaver").read_bytes()) and value["version"]==identity["version"],"Copied deployment subjects differ from installed package")
+    require(owned_bundle_snapshot()==before and snapshot_receipts()==receipts,"Deployment transaction fixture changed installed app/receipts")
+    value.update({"testExecutableSHA256":digest(binary.read_bytes()),"elapsedMilliseconds":elapsed,"installedObjectsAndReceiptsPreserved":True,"fixtureParent":"private-exclusive-temporary-directory","packageScriptsIntegrated":False})
+    return value
+
+
 def main():
     require(platform.system()=="Darwin" and os.geteuid()!=0,"Acceptance requires an ordinary-user native Mac host")
     require(os.environ.get("GITHUB_ACTIONS")=="true" and os.environ.get("RUNNER_ENVIRONMENT")=="github-hosted" and os.environ.get("GITHUB_REPOSITORY")=="Yunushan/accessweaver" and os.environ.get("ACCESSWEAVER_DISPOSABLE_MACOS_INSTALLER_TEST")=="1","Explicit disposable hosted Mac opt-in required")
@@ -197,7 +223,7 @@ def main():
     capsule=Path(tempfile.mkdtemp(prefix="accessweaver-macos-installer-",dir=temporary));user=capsule/"user";user.mkdir();private_temp=capsule/"tmp";private_temp.mkdir()
     environment={"PATH":"/usr/bin:/bin:/usr/sbin:/sbin","HOME":str(user),"TMPDIR":str(private_temp),"LANG":"C","LC_ALL":"C","TZ":"UTC","ACCESSWEAVER_NO_BROWSER":"1"}
     marker=user/"preserve.json";marker.write_text('{"preserve":"unrelated"}',encoding="utf-8");marker_hash=digest(marker.read_bytes())
-    complete=False;stage="preflight-refusals";failure=None;operations=[];profile_hash=None;cleaned=False;refusal_cases=[];failure_line=None;upgrade_cases=[];upgrade_helpers=[]
+    complete=False;stage="preflight-refusals";failure=None;operations=[];profile_hash=None;cleaned=False;refusal_cases=[];failure_line=None;upgrade_cases=[];upgrade_helpers=[];deployment_report=None
     try:
         preflight_refusals(package,capsule,environment,marker,refusal_cases)
         stage="install"
@@ -220,6 +246,9 @@ def main():
         before=bundle_manifest(APP)
         stage="native-upgrade-preflight"
         upgrade_preflight(capsule,environment,identity,manifest,profile_path,marker,upgrade_cases,upgrade_helpers)
+        stage="protected-deployment-transactions"
+        deployment_report=deployment_transactions(capsule,environment,identity)
+        require(digest(profile_path.read_bytes())==profile_hash and digest(marker.read_bytes())==marker_hash,"Deployment transactions changed user data")
         stage="existing-install-refusal"
         refused,elapsed=run(["/usr/bin/sudo","-n","/usr/sbin/installer","-pkg",package,"-target","/"],environment,codes=tuple(range(1,256)))
         require(bundle_manifest(APP)==before and snapshot_receipts()==receipt_before,"Refused experimental reinstall changed app or receipt bytes")
@@ -251,7 +280,7 @@ def main():
         while trace is not None:
             if trace.tb_frame.f_code.co_filename==__file__:failure_line=trace.tb_lineno
             trace=trace.tb_next
-    result={"schemaVersion":2,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packageSHA256":report["packageSHA256"],"payloadSHA256":report["payloadSHA256"],"operations":operations,"preflightRefusalCases":refusal_cases,"nativeUpgradePreflightCases":upgrade_cases,"nativeUpgradePreflightHelpers":upgrade_helpers,"nativeUpgradeExecuted":False,"passed":complete,"stage":stage,"failureType":failure,"failureSourceLine":failure_line,"cleanInstallExecuted":bool(operations),"actualUserProfilePreservationVerified":complete,"ownedFixturesRemoved":cleaned,"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"upgradeQualified":False,"downgradeQualified":False,"productUninstallQualified":False,"finderInteractionQualified":False,"managedEndpointQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
+    result={"schemaVersion":2,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packageSHA256":report["packageSHA256"],"payloadSHA256":report["payloadSHA256"],"operations":operations,"preflightRefusalCases":refusal_cases,"nativeUpgradePreflightCases":upgrade_cases,"nativeUpgradePreflightHelpers":upgrade_helpers,"nativeUpgradeExecuted":False,"protectedDeploymentTransactions":deployment_report,"passed":complete,"stage":stage,"failureType":failure,"failureSourceLine":failure_line,"cleanInstallExecuted":bool(operations),"actualUserProfilePreservationVerified":complete,"ownedFixturesRemoved":cleaned,"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"upgradeQualified":False,"downgradeQualified":False,"productUninstallQualified":False,"finderInteractionQualified":False,"managedEndpointQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
     (output/"lifecycle-artifact.json").write_text(json.dumps(result,indent=2)+"\n",encoding="utf-8")
     require(complete,"Disposable native package acceptance failed at "+stage+"; owned fixture retained on disposable host")
     print(json.dumps({"target":result["target"],"cleanInstallAndExistingRefusalPassed":True,"preflightRefusalCases":len(refusal_cases),"productionQualificationComplete":False}))
