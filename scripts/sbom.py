@@ -269,6 +269,41 @@ def installer(binary,payload,compiler,compiler_version,compiler_license,notices)
     return result
 
 
+def macos_package(binary,payload,manifest,tool):
+    """Bind the actual flat package to its core graph and sealed bundle files.
+
+    Apple packaging tools are measured build tools, not redistributed runtime
+    components. OS libraries/Installer and publisher trust remain unqualified.
+    """
+    result=copy.deepcopy(payload);application=result["metadata"]["component"]
+    require(prop_map(application).get("accessweaver:target-os")=="darwin","Expected a macOS payload")
+    old_ref=application["bom-ref"];application["bom-ref"]="payload-application"
+    for edge in result["dependencies"]:
+        if edge["ref"]==old_ref:edge["ref"]="payload-application"
+        edge["dependsOn"]=["payload-application" if ref==old_ref else ref for ref in edge["dependsOn"]]
+    result["components"].insert(0,application)
+    files=[]
+    for record in manifest["files"]:
+        require(re.fullmatch(r"(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+",record["path"]) and ".." not in record["path"].split("/"),"Unsafe bundle SBOM path")
+        require(re.fullmatch(r"[a-f0-9]{64}",record["sha256"]),"Invalid bundle subject hash")
+        ref="bundle-file:"+record["path"];entry=component(ref,record["path"],"file")
+        entry["hashes"]=[{"alg":"SHA-256","content":record["sha256"]}]
+        result["components"].append(entry);files.append(ref)
+        result["dependencies"].append({"ref":ref,"dependsOn":[]})
+    contents=read_file(binary);require(contents[:4]==b"xar!","Expected an Apple flat package")
+    root=component("application","AccessWeaver experimental macOS installer","application",application["version"])
+    root["hashes"]=[{"alg":"SHA-256","content":sha(contents)}]
+    root["properties"]=[copy.deepcopy(p) for p in application["properties"] if p["name"]!="accessweaver:inventory-scope"]
+    root["properties"].extend(properties({"inventory-scope":"compiled core graph and sealed bundle files; OS Installer/system library closure excluded","package-format":"Apple flat component package","experimental-clean-install-only":"true","bundle-identifier":manifest["bundleIdentifier"]}))
+    result["metadata"]["component"]=root
+    result["metadata"]["tools"]={"components":[{"type":"application","name":"Apple pkgbuild","version":tool["osBuild"],"hashes":[{"alg":"SHA-256","content":tool["sha256"]}],"properties":properties({"host-os-version":tool["osVersion"],"scope":"measured host build tool; not redistributed"})}]}
+    result["serialNumber"]="urn:uuid:"+str(uuid.uuid5(uuid.NAMESPACE_URL,"accessweaver-macos-package:"+sha(contents)))
+    result["dependencies"].append({"ref":"application","dependsOn":["payload-application"]+files})
+    result["compositions"]=[{"aggregate":"incomplete","assemblies":["application"],"dependencies":["payload-application"]}]
+    validate(result,contents)
+    return result
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary",type=Path,required=True)
