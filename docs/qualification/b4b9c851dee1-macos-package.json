@@ -1,0 +1,310 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "b4b9c851dee16401c2e83d189f5d9c1151e4725b",
+  "scope": "Native Intel and Apple Silicon experimental clean-install-only app/pkg construction, Apple expansion and independent in-memory archive/SBOM inspection, disposable actual clean installation, refusal of an existing-install attempt with real profile/receipt/payload preservation, and verified test fixture cleanup. Cleanup is not a product uninstaller; no broader lifecycle or publisher/MDM qualification.",
+  "run": 41650667788,
+  "url": "https://github.com/Yunushan/accessweaver/actions/runs/41650667788",
+  "passedNativeJobs": 2,
+  "sourceCI": {
+    "run": 41650667820,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41650667820",
+    "passedJobs": 22
+  },
+  "sourceHashes": {
+    "scripts/build-macos-installer.py": "47374535586280a9c683e983985399381e3010078986935d9a690ea373b193c0",
+    "scripts/macos_installer.py": "c1b49745d1e8ac6ed8b1b70de1a6a8e63e043df14f2881bf146d0b72e96af62c",
+    "scripts/macos_package_archive.py": "26e3eba94b58b6010af47670acb798e289a05aef1e9b23c4cdfd59e25b9326c0",
+    "scripts/test_macos_installer.py": "ca47338dafb99140226c248e2b91b12437f404cb974cdcad6dfe1fc09f216a4b",
+    "scripts/test_macos_package_archive.py": "e2a42f22f909565a4dfd770b1f204e5db78c531277f5d30e44634b9c27d05989",
+    "scripts/test-macos-installer-lifecycle.py": "26b3f4e1f5de5c569214979ea27438284d103c4cdd7831586e6097274f9faebd",
+    "scripts/sbom.py": "80adc50c84ea2b4f6911c60b9b74186b2909ec53cc32da83e08f2e97a5ef8d59",
+    "scripts/test_sbom.py": "c74d4568c14ff9f682e6425084359d8ffb4799dd092b953f101f477763de2a3b",
+    ".github/workflows/macos-installer.yml": "1cd012c0653cdee4fdc24cfec18a9481ee17b6c7b81f4d0f692e725359ce3249",
+    ".github/workflows/ci.yml": "70a532a3454d0d54be1cc2a4b49c9d4d69d8db3951ae8273d1a952858d80d461"
+  },
+  "providerArtifacts": [
+    {
+      "name": "macos-installer-inspection-amd64",
+      "id": 13236528888,
+      "bytes": 7090026,
+      "sha256": "8e16e8fec0c26f1b15f9466dbcbea6d92416df40d6194dbb78a7fd9d435d64a0"
+    },
+    {
+      "name": "macos-installer-inspection-arm64",
+      "id": 13237461793,
+      "bytes": 6640227,
+      "sha256": "34316d9ddc3d10cab25e94d7b368c4d79a39529fa1a64087089786c9995f8e9a"
+    }
+  ],
+  "targets": [
+    {
+      "target": "darwin/amd64",
+      "compilerReport": {
+        "schemaVersion": 1,
+        "sourceCommit": "b4b9c851dee16401c2e83d189f5d9c1151e4725b",
+        "sourceState": "clean",
+        "target": "darwin/amd64",
+        "payloadBuild": {
+          "version": "0.1.0-alpha",
+          "commit": "b4b9c851dee16401c2e83d189f5d9c1151e4725b",
+          "sourceState": "clean",
+          "builtAt": "2026-11-03T14:07:51Z",
+          "goVersion": "go1.27.3",
+          "platform": "darwin",
+          "arch": "amd64"
+        },
+        "payloadSHA256": "301e99a76b41fc56ec68ed125795747131803c95947b47420f92fdf61deb4e21",
+        "macho": {
+          "cpuType": "0x01000007",
+          "minimumOSVersion": "13.0.0"
+        },
+        "packageFile": "accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg",
+        "packageSHA256": "9c01e40d86dfc9444b49c1db0505d605f0b7d832ad586a57f4b73a1666a6cda4",
+        "packageBytes": 7094786,
+        "bundleManifestSHA256": "a454fff490abb76390e0cdaec7f40a3e0723c9b07fe986a3987acea6ba1a3665",
+        "bundleInfoSHA256": "0678673fdf2d5abf3e8e64f324de56d87b8b5f5698dacfc10125429bde5f57c6",
+        "preinstallSHA256": "27aab0584ebb7a004d6997b02927464e9af65c739d962c5ec4efb3ee6c500755",
+        "pkgbuild": {
+          "name": "Apple pkgbuild",
+          "sha256": "aeb329f33f1b37f6719356d720d72db935d5b9456ebc0d64b07688be5d9abc52",
+          "osVersion": "15.7.9",
+          "osBuild": "24G830"
+        },
+        "nativePayloadIdentityVerified": true,
+        "actualExpandedPayloadVerified": true,
+        "archiveInspection": {
+          "packageSHA256": "9c01e40d86dfc9444b49c1db0505d605f0b7d832ad586a57f4b73a1666a6cda4",
+          "payloadSHA256": "301e99a76b41fc56ec68ed125795747131803c95947b47420f92fdf61deb4e21",
+          "bundleInfoSHA256": "0678673fdf2d5abf3e8e64f324de56d87b8b5f5698dacfc10125429bde5f57c6",
+          "bundleManifestSHA256": "a454fff490abb76390e0cdaec7f40a3e0723c9b07fe986a3987acea6ba1a3665",
+          "preinstallSHA256": "27aab0584ebb7a004d6997b02927464e9af65c739d962c5ec4efb3ee6c500755",
+          "macho": {
+            "cpuType": "0x01000007",
+            "minimumOSVersion": "13.0.0"
+          },
+          "payloadFiles": 18,
+          "payloadDirectories": 8,
+          "allPayloadPathsModesOwnershipAndHashesVerified": true,
+          "xarAndCpioIntegrityVerified": true,
+          "localTargetExecution": false,
+          "publisherSignatureVerified": false,
+          "productionQualificationComplete": false
+        },
+        "bundleRelocationDisabled": true,
+        "unsigned": true,
+        "publisherSignatureVerified": false,
+        "notarized": false,
+        "experimentalCleanInstallOnly": true,
+        "installationExecuted": false,
+        "upgradeQualified": false,
+        "downgradeQualified": false,
+        "finderInteractionQualified": false,
+        "managedEndpointQualified": false,
+        "productionQualificationComplete": false
+      },
+      "lifecycleReport": {
+        "schemaVersion": 1,
+        "sourceCommit": "b4b9c851dee16401c2e83d189f5d9c1151e4725b",
+        "runID": "41650667788",
+        "target": "darwin/amd64",
+        "packageSHA256": "9c01e40d86dfc9444b49c1db0505d605f0b7d832ad586a57f4b73a1666a6cda4",
+        "payloadSHA256": "301e99a76b41fc56ec68ed125795747131803c95947b47420f92fdf61deb4e21",
+        "operations": [
+          {
+            "operation": "clean-install",
+            "exitCode": 0,
+            "elapsedMilliseconds": 1891,
+            "payloadAndReceiptsVerified": true
+          },
+          {
+            "operation": "existing-install-refused",
+            "exitCode": 1,
+            "elapsedMilliseconds": 2444,
+            "installedFilesAndReceiptBytesPreserved": true,
+            "actualUserProfilePreserved": true
+          }
+        ],
+        "passed": true,
+        "stage": "owned-fixture-cleanup",
+        "failureType": null,
+        "cleanInstallExecuted": true,
+        "actualUserProfilePreservationVerified": true,
+        "ownedFixturesRemoved": true,
+        "unsigned": true,
+        "publisherSignatureVerified": false,
+        "notarized": false,
+        "upgradeQualified": false,
+        "downgradeQualified": false,
+        "productUninstallQualified": false,
+        "finderInteractionQualified": false,
+        "managedEndpointQualified": false,
+        "rebootOrPowerLossQualified": false,
+        "productionQualificationComplete": false
+      },
+      "independentActualPackageInspection": {
+        "packageSHA256": "9c01e40d86dfc9444b49c1db0505d605f0b7d832ad586a57f4b73a1666a6cda4",
+        "payloadSHA256": "301e99a76b41fc56ec68ed125795747131803c95947b47420f92fdf61deb4e21",
+        "bundleInfoSHA256": "0678673fdf2d5abf3e8e64f324de56d87b8b5f5698dacfc10125429bde5f57c6",
+        "bundleManifestSHA256": "a454fff490abb76390e0cdaec7f40a3e0723c9b07fe986a3987acea6ba1a3665",
+        "preinstallSHA256": "27aab0584ebb7a004d6997b02927464e9af65c739d962c5ec4efb3ee6c500755",
+        "macho": {
+          "cpuType": "0x01000007",
+          "minimumOSVersion": "13.0.0"
+        },
+        "payloadFiles": 18,
+        "payloadDirectories": 8,
+        "allPayloadPathsModesOwnershipAndHashesVerified": true,
+        "xarAndCpioIntegrityVerified": true,
+        "localTargetExecution": false,
+        "publisherSignatureVerified": false,
+        "productionQualificationComplete": false
+      },
+      "packageSBOMSHA256": "f72f4787fbbca5e4b9573dc97d404fd62587b299e0741d9ef3cd9263aa14e443",
+      "payloadSBOMSHA256": "7967704ee00f09575878062cdc6cd7ffd90f38cf4efec05182db03648a8a821a",
+      "sbomGraphAndSubjectsVerified": true,
+      "localTargetExecution": false
+    },
+    {
+      "target": "darwin/arm64",
+      "compilerReport": {
+        "schemaVersion": 1,
+        "sourceCommit": "b4b9c851dee16401c2e83d189f5d9c1151e4725b",
+        "sourceState": "clean",
+        "target": "darwin/arm64",
+        "payloadBuild": {
+          "version": "0.1.0-alpha",
+          "commit": "b4b9c851dee16401c2e83d189f5d9c1151e4725b",
+          "sourceState": "clean",
+          "builtAt": "2026-11-03T14:07:51Z",
+          "goVersion": "go1.27.3",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        "payloadSHA256": "22ab43dc954f31151c4b8c3527b3296aea4ff9c1258e6e6bdeee47e0fe62673b",
+        "macho": {
+          "cpuType": "0x0100000c",
+          "minimumOSVersion": "13.0.0"
+        },
+        "packageFile": "accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg",
+        "packageSHA256": "06422c4f060f351db9e0db3d00beb8bff359f4ac75a3f30937f3e8e9ad5e7ed8",
+        "packageBytes": 6646268,
+        "bundleManifestSHA256": "ccf9b68353e2c4a68a4e1cd268b88257d2b286cd89d9b0765f9e61cf0fb9d69d",
+        "bundleInfoSHA256": "0678673fdf2d5abf3e8e64f324de56d87b8b5f5698dacfc10125429bde5f57c6",
+        "preinstallSHA256": "27aab0584ebb7a004d6997b02927464e9af65c739d962c5ec4efb3ee6c500755",
+        "pkgbuild": {
+          "name": "Apple pkgbuild",
+          "sha256": "9fa7537c284dcd0890628d46355442201255c9b509dd5b05374690bfd5fd22b9",
+          "osVersion": "15.8.2",
+          "osBuild": "24H232"
+        },
+        "nativePayloadIdentityVerified": true,
+        "actualExpandedPayloadVerified": true,
+        "archiveInspection": {
+          "packageSHA256": "06422c4f060f351db9e0db3d00beb8bff359f4ac75a3f30937f3e8e9ad5e7ed8",
+          "payloadSHA256": "22ab43dc954f31151c4b8c3527b3296aea4ff9c1258e6e6bdeee47e0fe62673b",
+          "bundleInfoSHA256": "0678673fdf2d5abf3e8e64f324de56d87b8b5f5698dacfc10125429bde5f57c6",
+          "bundleManifestSHA256": "ccf9b68353e2c4a68a4e1cd268b88257d2b286cd89d9b0765f9e61cf0fb9d69d",
+          "preinstallSHA256": "27aab0584ebb7a004d6997b02927464e9af65c739d962c5ec4efb3ee6c500755",
+          "macho": {
+            "cpuType": "0x0100000c",
+            "minimumOSVersion": "13.0.0"
+          },
+          "payloadFiles": 18,
+          "payloadDirectories": 8,
+          "allPayloadPathsModesOwnershipAndHashesVerified": true,
+          "xarAndCpioIntegrityVerified": true,
+          "localTargetExecution": false,
+          "publisherSignatureVerified": false,
+          "productionQualificationComplete": false
+        },
+        "bundleRelocationDisabled": true,
+        "unsigned": true,
+        "publisherSignatureVerified": false,
+        "notarized": false,
+        "experimentalCleanInstallOnly": true,
+        "installationExecuted": false,
+        "upgradeQualified": false,
+        "downgradeQualified": false,
+        "finderInteractionQualified": false,
+        "managedEndpointQualified": false,
+        "productionQualificationComplete": false
+      },
+      "lifecycleReport": {
+        "schemaVersion": 1,
+        "sourceCommit": "b4b9c851dee16401c2e83d189f5d9c1151e4725b",
+        "runID": "41650667788",
+        "target": "darwin/arm64",
+        "packageSHA256": "06422c4f060f351db9e0db3d00beb8bff359f4ac75a3f30937f3e8e9ad5e7ed8",
+        "payloadSHA256": "22ab43dc954f31151c4b8c3527b3296aea4ff9c1258e6e6bdeee47e0fe62673b",
+        "operations": [
+          {
+            "operation": "clean-install",
+            "exitCode": 0,
+            "elapsedMilliseconds": 3202,
+            "payloadAndReceiptsVerified": true
+          },
+          {
+            "operation": "existing-install-refused",
+            "exitCode": 1,
+            "elapsedMilliseconds": 1281,
+            "installedFilesAndReceiptBytesPreserved": true,
+            "actualUserProfilePreserved": true
+          }
+        ],
+        "passed": true,
+        "stage": "owned-fixture-cleanup",
+        "failureType": null,
+        "cleanInstallExecuted": true,
+        "actualUserProfilePreservationVerified": true,
+        "ownedFixturesRemoved": true,
+        "unsigned": true,
+        "publisherSignatureVerified": false,
+        "notarized": false,
+        "upgradeQualified": false,
+        "downgradeQualified": false,
+        "productUninstallQualified": false,
+        "finderInteractionQualified": false,
+        "managedEndpointQualified": false,
+        "rebootOrPowerLossQualified": false,
+        "productionQualificationComplete": false
+      },
+      "independentActualPackageInspection": {
+        "packageSHA256": "06422c4f060f351db9e0db3d00beb8bff359f4ac75a3f30937f3e8e9ad5e7ed8",
+        "payloadSHA256": "22ab43dc954f31151c4b8c3527b3296aea4ff9c1258e6e6bdeee47e0fe62673b",
+        "bundleInfoSHA256": "0678673fdf2d5abf3e8e64f324de56d87b8b5f5698dacfc10125429bde5f57c6",
+        "bundleManifestSHA256": "ccf9b68353e2c4a68a4e1cd268b88257d2b286cd89d9b0765f9e61cf0fb9d69d",
+        "preinstallSHA256": "27aab0584ebb7a004d6997b02927464e9af65c739d962c5ec4efb3ee6c500755",
+        "macho": {
+          "cpuType": "0x0100000c",
+          "minimumOSVersion": "13.0.0"
+        },
+        "payloadFiles": 18,
+        "payloadDirectories": 8,
+        "allPayloadPathsModesOwnershipAndHashesVerified": true,
+        "xarAndCpioIntegrityVerified": true,
+        "localTargetExecution": false,
+        "publisherSignatureVerified": false,
+        "productionQualificationComplete": false
+      },
+      "packageSBOMSHA256": "b1fdb13de27554334ade14c764728970fe66f340d2a533689c1c35cb706aa232",
+      "payloadSBOMSHA256": "c73af340947c4cd6c0845dd9a01c768058c4e45f91a3692d16281e249f141613",
+      "sbomGraphAndSubjectsVerified": true,
+      "localTargetExecution": false
+    }
+  ],
+  "unsigned": true,
+  "cleanInstallationQualifiedForDisposableHosts": true,
+  "existingInstallRefusalAndPreservationVerified": true,
+  "publisherSigningComplete": false,
+  "notarizationComplete": false,
+  "upgradeQualified": false,
+  "downgradeQualified": false,
+  "productUninstallQualified": false,
+  "finderInteractionQualified": false,
+  "ordinaryManagedUserSessionQualified": false,
+  "managedEndpointQualificationComplete": false,
+  "rebootOrPowerLossQualified": false,
+  "nativeSystemDependencyClosureComplete": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": 0
+}

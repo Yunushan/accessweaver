@@ -38,6 +38,56 @@ def snapshot_receipts():
         values.append({"suffix":path.suffix,"bytes":info.st_size,"sha256":digest(path.read_bytes())})
     return values
 
+
+def fixture_snapshot(path):
+    # Leaf aliases are deliberate refusal fixtures; ancestors never may be.
+    no_alias(path.parent);info=path.lstat()
+    require(info.st_uid==0 and info.st_gid==0 and (info.st_nlink==1 or stat.S_ISDIR(info.st_mode)) and info.st_size<=4<<20,"Unexpected fixed fixture ownership/type")
+    value={"inode":info.st_ino,"mode":info.st_mode,"uid":info.st_uid,"gid":info.st_gid}
+    if stat.S_ISLNK(info.st_mode):value["target"]=os.readlink(path)
+    elif stat.S_ISDIR(info.st_mode):
+        require(not list(path.iterdir()),"Refusal fixture directory changed")
+    else:
+        require(stat.S_ISREG(info.st_mode),"Unsupported refusal fixture")
+        value["sha256"]=digest(path.read_bytes())
+    return value
+
+def preflight_refusals(package,capsule,environment,marker,results):
+    fixed=[APP]+RECEIPTS
+    target=capsule/"alias-target";target.mkdir()
+    target_marker=target/"preserve";target_marker.write_bytes(b"unrelated alias destination")
+    source=capsule/"receipt-fixture";source.write_bytes(b"deliberately invalid package receipt")
+    expected_marker=digest(marker.read_bytes());expected_target=digest(target_marker.read_bytes())
+    cases=[
+        ("existing-app-directory",APP,"directory"),
+        ("existing-app-file",APP,"file"),
+        ("existing-app-symlink",APP,"symlink"),
+        ("dangling-app-symlink",APP,"dangling"),
+        ("partial-plist-receipt",RECEIPTS[0],"file"),
+        ("partial-bom-receipt",RECEIPTS[1],"file"),
+        ("plist-receipt-symlink",RECEIPTS[0],"symlink"),
+        ("bom-receipt-symlink",RECEIPTS[1],"dangling"),
+    ]
+    for name,path,kind in cases:
+        results.append({"name":name,"passed":False})
+        for item in fixed:
+            no_alias(item);require(not item.exists() and not item.is_symlink(),"Unexpected fixed state before refusal fixture")
+        require(path in fixed,"Unapproved fixed fixture target")
+        if kind=="directory":run(["/usr/bin/sudo","-n","/bin/mkdir","-m","755",path],environment)
+        elif kind=="file":run(["/usr/bin/sudo","-n","/bin/cp",source,path],environment)
+        else:run(["/usr/bin/sudo","-n","/bin/ln","-s",target if kind=="symlink" else capsule/"absent-alias-target",path],environment)
+        before=fixture_snapshot(path)
+        refused,elapsed=run(["/usr/bin/sudo","-n","/usr/sbin/installer","-pkg",package,"-target","/"],environment,codes=tuple(range(1,256)))
+        require(fixture_snapshot(path)==before,"Refused native package changed existing fixture")
+        require(all(item==path or not item.exists() and not item.is_symlink() for item in fixed),"Refused native package created unrelated fixed state")
+        require(digest(marker.read_bytes())==expected_marker and digest(target_marker.read_bytes())==expected_target and set(target.iterdir())=={target_marker},"Refused native package changed alias destination or unrelated data")
+        # Remove only the exact one root-owned object created in this iteration;
+        # never traverse a link or recursively delete a refusal fixture.
+        require(fixture_snapshot(path)==before,"Fixture changed before cleanup")
+        run(["/usr/bin/sudo","-n","/bin/rmdir" if kind=="directory" else "/bin/rm","--",path],environment)
+        require(not path.exists() and not path.is_symlink(),"Owned refusal fixture was not removed")
+        results[-1].update({"passed":True,"exitCode":refused.returncode,"elapsedMilliseconds":elapsed,"fixtureIdentityAndBytesPreserved":True,"aliasDestinationAndUnrelatedDataPreserved":True,"noAdditionalAppOrReceiptCreated":True,"ownedFixtureRemoved":True})
+
 def main():
     require(platform.system()=="Darwin" and os.geteuid()!=0,"Acceptance requires an ordinary-user native Mac host")
     require(os.environ.get("GITHUB_ACTIONS")=="true" and os.environ.get("RUNNER_ENVIRONMENT")=="github-hosted" and os.environ.get("GITHUB_REPOSITORY")=="Yunushan/accessweaver" and os.environ.get("ACCESSWEAVER_DISPOSABLE_MACOS_INSTALLER_TEST")=="1","Explicit disposable hosted Mac opt-in required")
@@ -59,8 +109,10 @@ def main():
     capsule=Path(tempfile.mkdtemp(prefix="accessweaver-macos-installer-",dir=temporary));user=capsule/"user";user.mkdir();private_temp=capsule/"tmp";private_temp.mkdir()
     environment={"PATH":"/usr/bin:/bin:/usr/sbin:/sbin","HOME":str(user),"TMPDIR":str(private_temp),"LANG":"C","LC_ALL":"C","TZ":"UTC","ACCESSWEAVER_NO_BROWSER":"1"}
     marker=user/"preserve.json";marker.write_text('{"preserve":"unrelated"}',encoding="utf-8");marker_hash=digest(marker.read_bytes())
-    complete=False;stage="install";failure=None;operations=[];profile_hash=None;cleaned=False
+    complete=False;stage="preflight-refusals";failure=None;operations=[];profile_hash=None;cleaned=False;refusal_cases=[]
     try:
+        preflight_refusals(package,capsule,environment,marker,refusal_cases)
+        stage="install"
         installed,elapsed=run(["/usr/bin/sudo","-n","/usr/sbin/installer","-pkg",package,"-target","/"],environment)
         verify_bundle(APP,manifest,identity)
         for root,dirs,files in os.walk(APP):
@@ -90,15 +142,23 @@ def main():
         verify_bundle(APP,manifest,identity);require(snapshot_receipts()==receipt_before,"Owned receipt changed before cleanup")
         no_alias(APP);require(APP.parent==Path("/Applications") and APP.name==BUNDLE_NAME,"Unexpected cleanup target")
         run(["/usr/bin/sudo","-n","/bin/rm","-rf","--",APP],environment)
+        # The independently installed valid receipt must also block a package
+        # when the app is absent. The app was removed as verified test cleanup;
+        # the receipt and real profile remain unchanged until this check passes.
+        require(not APP.exists() and not APP.is_symlink(),"App fixture remains before receipt-only refusal")
+        refused,elapsed=run(["/usr/bin/sudo","-n","/usr/sbin/installer","-pkg",package,"-target","/"],environment,codes=tuple(range(1,256)))
+        require(not APP.exists() and not APP.is_symlink() and snapshot_receipts()==receipt_before,"Receipt-only refusal changed installed receipt or recreated app")
+        require(digest(profile_path.read_bytes())==profile_hash and digest(marker.read_bytes())==marker_hash,"Receipt-only refusal changed user data")
+        operations.append({"operation":"valid-receipt-only-refused","exitCode":refused.returncode,"elapsedMilliseconds":elapsed,"receiptBytesPreserved":True,"appNotRecreated":True,"actualUserProfilePreserved":True})
         run(["/usr/bin/sudo","-n","/usr/sbin/pkgutil","--forget",BUNDLE_ID],environment)
         require(not APP.exists() and all(not path.exists() for path in RECEIPTS),"Owned package fixtures were not removed")
         require(digest(profile_path.read_bytes())==profile_hash and digest(marker.read_bytes())==marker_hash,"Owned cleanup changed user data")
         require(capsule.resolve().parent==temporary.resolve() and capsule.name.startswith("accessweaver-macos-installer-"),"Unsafe capsule cleanup")
         no_alias(capsule);shutil.rmtree(capsule);cleaned=True;complete=True
     except Exception as error:failure=type(error).__name__
-    result={"schemaVersion":1,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packageSHA256":report["packageSHA256"],"payloadSHA256":report["payloadSHA256"],"operations":operations,"passed":complete,"stage":stage,"failureType":failure,"cleanInstallExecuted":bool(operations),"actualUserProfilePreservationVerified":complete,"ownedFixturesRemoved":cleaned,"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"upgradeQualified":False,"downgradeQualified":False,"productUninstallQualified":False,"finderInteractionQualified":False,"managedEndpointQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
+    result={"schemaVersion":2,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packageSHA256":report["packageSHA256"],"payloadSHA256":report["payloadSHA256"],"operations":operations,"preflightRefusalCases":refusal_cases,"passed":complete,"stage":stage,"failureType":failure,"cleanInstallExecuted":bool(operations),"actualUserProfilePreservationVerified":complete,"ownedFixturesRemoved":cleaned,"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"upgradeQualified":False,"downgradeQualified":False,"productUninstallQualified":False,"finderInteractionQualified":False,"managedEndpointQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
     (output/"lifecycle-artifact.json").write_text(json.dumps(result,indent=2)+"\n",encoding="utf-8")
     require(complete,"Disposable native package acceptance failed at "+stage+"; owned fixture retained on disposable host")
-    print(json.dumps({"target":result["target"],"cleanInstallAndExistingRefusalPassed":True,"productionQualificationComplete":False}))
+    print(json.dumps({"target":result["target"],"cleanInstallAndExistingRefusalPassed":True,"preflightRefusalCases":len(refusal_cases),"productionQualificationComplete":False}))
 
 if __name__=="__main__":main()

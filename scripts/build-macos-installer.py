@@ -79,7 +79,7 @@ def build(version,arch,go="go"):
         # This first experimental package deliberately refuses every existing
         # app/receipt. Upgrade/downgrade and endpoint qualification are pending.
         preinstall=scripts/"preinstall"
-        preinstall.write_text("#!/bin/sh\nset -eu\nPATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH\nLC_ALL=C; export LC_ALL\n[ \"$(/usr/bin/id -u)\" -eq 0 ] || exit 1\n[ \"${3:-}\" = / ] || exit 1\nif [ -e /Applications/AccessWeaver.app ] || [ -L /Applications/AccessWeaver.app ]; then echo 'AccessWeaver experimental package refuses an existing app.' >&2; exit 1; fi\nif /usr/sbin/pkgutil --pkg-info io.github.yunushan.accessweaver >/dev/null 2>&1; then echo 'AccessWeaver experimental package refuses an existing receipt.' >&2; exit 1; fi\nexit 0\n",encoding="utf-8")
+        shutil.copyfile(REPO/"scripts/macos-installer-preinstall.sh",preinstall)
         preinstall.chmod(0o755)
         package=output/("accessweaver-"+version+"-darwin-"+arch+"-experimental.pkg")
         pkgbuild=Path("/usr/bin/pkgbuild")

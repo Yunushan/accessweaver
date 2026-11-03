@@ -57,7 +57,7 @@ jobs:
         env:
           GOTOOLCHAIN: local
         run: python3 scripts/build-macos-installer.py --architecture '${{ matrix.arch }}' --version 0.1.0-alpha
-      - name: Disposable clean installation and existing-install refusal
+      - name: Disposable clean installation and isolated app/receipt refusal
         env:
           ACCESSWEAVER_DISPOSABLE_MACOS_INSTALLER_TEST: '1'
           ACCESSWEAVER_MACOS_INSTALLER_ARCH: '${{ matrix.arch }}'
