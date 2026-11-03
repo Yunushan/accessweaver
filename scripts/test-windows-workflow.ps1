@@ -463,7 +463,7 @@ try {
         [void][IO.Directory]::CreateDirectory($destination)
         $original=Join-Path $destination 'root.txt';[IO.File]::WriteAllText($original,'original')
         $rejected=$false
-        try{Expand-Safe (Join-Path $archiveFixtures $case.name) $destination}catch{$rejected=$true}
+        try{Expand-Safe (Join-Path $archiveFixtures $case.name) $destination}catch{if($case.expected -eq 'valid'){throw};$rejected=$true}
         if($case.expected -eq 'valid'){
             Assert (-not $rejected -and [IO.File]::ReadAllText($original) -ceq 'replacement') ($case.name+' extracts a valid archive and replaces only its planned file')
             foreach($record in $script:undo){Assert ($record.expectedHash -eq (Get-FileHash -LiteralPath $record.path -Algorithm SHA256).Hash) 'Archive journal records the actual streamed file hash'}

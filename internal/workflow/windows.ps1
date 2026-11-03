@@ -430,7 +430,7 @@ function Expand-Safe([string]$archive,[string]$destination) {
                 [void]$hasher.TransformFinalBlock([byte[]]::new(0),0,0);$hash=[BitConverter]::ToString($hasher.Hash).Replace('-','')
                 $output.Flush($true);$output.Dispose();$output=$null
                 Backup-File $item.target;Expected-Hash $item.target $hash
-                if(Test-Path -LiteralPath $item.target){[IO.File]::Replace($temporary,$item.target,$null)}else{[IO.File]::Move($temporary,$item.target)}
+                if(Test-Path -LiteralPath $item.target){[IO.File]::Replace($temporary,$item.target,[System.Management.Automation.Language.NullString]::Value)}else{[IO.File]::Move($temporary,$item.target)}
             } finally {
                 if($hasher){$hasher.Dispose()};if($output){$output.Dispose()};if($source){$source.Dispose()}
                 if($ownsTemporary -and (Test-Path -LiteralPath $temporary)){No-Reparse $temporary;Remove-Item -LiteralPath $temporary -Force}
