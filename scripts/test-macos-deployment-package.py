@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Actual experimental component-package lifecycle on opted-in disposable Macs."""
 import importlib.util
+import fcntl
+import time
 import json
 import os
 from pathlib import Path
@@ -53,7 +55,7 @@ def main():
     capsule=Path(tempfile.mkdtemp(prefix="accessweaver-deployment-package-",dir=temporary));user=capsule/"user";user.mkdir();private_temp=capsule/"tmp";private_temp.mkdir()
     environment={"PATH":"/usr/bin:/bin:/usr/sbin:/sbin","HOME":str(user),"TMPDIR":str(private_temp),"LANG":"C","LC_ALL":"C","TZ":"UTC","ACCESSWEAVER_NO_BROWSER":"1"}
     marker=user/"preserve";marker.write_bytes(b"unrelated deployment package fixture");marker_hash=digest(marker.read_bytes())
-    complete=False;cleaned=False;failure=None;failure_line=None;stage="clean-install";operations=[];profile_path=None;profile_hash=None;known_slots={}
+    complete=False;cleaned=False;failure=None;failure_line=None;stage="clean-install";operations=[];profile_path=None;profile_hash=None;known_slots={};lease_cases=[]
     def state():
         path=AUTHORITY/"state/deployment.json";no_alias(path);info=path.stat()
         require(stat.S_ISREG(info.st_mode) and info.st_uid==0 and info.st_gid==0 and info.st_nlink==1 and info.st_size<=16384,"Unexpected protected deployment state")
@@ -101,6 +103,44 @@ def main():
         request=capsule/"profile.json";request.write_text(json.dumps(profile),encoding="utf-8")
         run([app/"Contents/MacOS/accessweaver","import",request],environment,30)
         profile_path=user/"Library/Application Support/AccessWeaver/profiles/deployment-preserve.json";no_alias(profile_path);profile_hash=digest(profile_path.read_bytes())
+        stage="running-controller-runtime-lease"
+        core=app/"Contents/MacOS/accessweaver"
+        for kind in ("direct","inherited","alias"):
+            output=capsule/("runtime-"+kind+".stdout");child_environment=dict(environment);descriptor=None
+            command=core
+            if kind=="alias":
+                command=capsule/"alias-core";command.symlink_to(core)
+            if kind=="inherited":
+                descriptor=os.open(AUTHORITY/".runtime.lock",os.O_RDONLY)
+                fcntl.flock(descriptor,fcntl.LOCK_SH|fcntl.LOCK_NB)
+                child_environment["ACCESSWEAVER_RUNTIME_LEASE_FD"]=str(descriptor)
+            before_state=state()[1];before_receipts=receipt_snapshot();child=None;serving=False
+            try:
+                with output.open("xb") as stream:
+                    child=support.subprocess.Popen([str(command),"ui"],cwd=REPO,env=child_environment,stdout=stream,stderr=support.subprocess.STDOUT,pass_fds=(() if descriptor is None else (descriptor,)))
+                if descriptor is not None:os.close(descriptor);descriptor=None
+                deadline=time.monotonic()+30
+                while time.monotonic()<deadline:
+                    require(output.stat().st_size<=65536,"Controller startup output exceeds limit")
+                    if b"AccessWeaver is running at" in output.read_bytes():break
+                    require(child.poll() is None,"Installed controller failed to acquire its runtime lease")
+                    time.sleep(0.05)
+                require(b"AccessWeaver is running at" in output.read_bytes(),"Installed controller did not reach serving state")
+                serving=True
+                result,elapsed=run(["/usr/bin/sudo","-n","/usr/sbin/installer","-pkg",candidates[VERSIONS[1]]["package"],"-target","/"],environment,180,codes=tuple(range(256)))
+                require(1<=result.returncode<=255 and state()[1]==before_state and receipt_snapshot()==before_receipts,"Running controller did not fence actual package mutation")
+                verify_bundle(app,candidates[VERSIONS[0]]["manifest"],candidates[VERSIONS[0]]["identity"])
+                require(child.poll() is None and digest(profile_path.read_bytes())==profile_hash,"Refused upgrade disturbed the live controller/profile")
+                lease_cases.append({"kind":kind,"installerExitCode":result.returncode,"elapsedMilliseconds":elapsed,"servingControllerVerified":True,"activeRecordAndReceiptBytesPreserved":True,"actualProfilePreserved":True,"controllerRemainedRunning":True,"parentInheritedDescriptorClosed":kind=="inherited","passed":True})
+            except Exception:
+                if output.exists():print(output.read_bytes()[:65536].decode("utf-8",errors="replace").replace(str(capsule),"[owned-capsule]"),flush=True)
+                raise
+            finally:
+                if descriptor is not None:os.close(descriptor)
+                if child is not None and child.poll() is None:child.terminate()
+                if child is not None:
+                    stopped=child.wait(timeout=30)
+                    if serving:require(stopped==0,"Owned controller did not stop cleanly")
         install("upgrade",VERSIONS[1],2)
         install("same-version-reinstall",VERSIONS[1],3)
         install("older-version-refused",VERSIONS[0],3,False)
@@ -133,9 +173,9 @@ def main():
         while trace:
             if trace.tb_frame.f_code.co_filename==__file__:failure_line=trace.tb_lineno
             trace=trace.tb_next
-    report={"schemaVersion":1,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packages":{v:{"file":c["report"]["packageFile"],"bytes":c["report"]["packageBytes"],"packageSHA256":c["report"]["packageSHA256"],"payloadSHA256":c["report"]["payloadSHA256"],"manifestSHA256":c["report"]["manifestSHA256"],"helperSHA256":c["report"]["helperSHA256"]} for v,c in candidates.items()},"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"packageScriptsIntegrated":True,"actualApplePackageUpgradeExecuted":complete,"actualUserProfilePreservationVerified":complete,"retainedPriorCopiesVerified":complete,"ownedFixturesRemoved":cleaned,"installedCodeExecutedAsRoot":False,"publicLauncherIntegrated":False,"runtimeLeaseQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"abruptTerminationQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
+    report={"schemaVersion":1,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packages":{v:{"file":c["report"]["packageFile"],"bytes":c["report"]["packageBytes"],"packageSHA256":c["report"]["packageSHA256"],"payloadSHA256":c["report"]["payloadSHA256"],"manifestSHA256":c["report"]["manifestSHA256"],"helperSHA256":c["report"]["helperSHA256"]} for v,c in candidates.items()},"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"runtimeLeaseCases":lease_cases,"installedControllerLeaseRefusalVerified":complete,"packageScriptsIntegrated":True,"actualApplePackageUpgradeExecuted":complete,"actualUserProfilePreservationVerified":complete,"retainedPriorCopiesVerified":complete,"ownedFixturesRemoved":cleaned,"installedCodeExecutedAsRoot":False,"publicLauncherIntegrated":False,"runtimeLeaseQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"abruptTerminationQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
     (root/"lifecycle-artifact.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     require(complete,"Native deployment package acceptance failed at "+stage+"; owned disposable state retained")
-    print(json.dumps({"target":report["target"],"actualApplePackageOperations":len(operations),"passed":True,"productionQualificationComplete":False}))
+    print(json.dumps({"target":report["target"],"actualApplePackageOperations":len(operations)+len(lease_cases),"passed":True,"productionQualificationComplete":False}))
 
 if __name__=="__main__":main()

@@ -9,7 +9,7 @@ import (
 )
 
 // Deployment records support the separate sealed root-only packaging tool.
-// Apple package-script and ordinary-user launcher integration remain pending.
+// Apple package phases share this authority; public launcher integration remains pending.
 // The generation is a removal fence as well as an activation sequence number.
 const maxDeploymentPending = 8
 const maxDeploymentRecord = 16384

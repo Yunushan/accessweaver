@@ -27,13 +27,13 @@ const maxRetainedRecords = 128
 var recordName = regexp.MustCompile(`^\.record-[a-f0-9]{32}$`)
 
 // All constructors are private. The sealed CLI uses the fixed root authority;
-// Apple package-script integration is pending. Only owned
+// Apple package phases use the same authority. Only owned
 // in-package native fixtures may supply a different parent/owner.
 type deploymentStore struct {
-	parent, root, versions, lock, current *os.File
-	owner                                 uint32
-	state                                 deploymentState
-	encoded                               []byte
+	parent, root, versions, lock, current, runtimeLock *os.File
+	owner                                              uint32
+	state                                              deploymentState
+	encoded                                            []byte
 	// Native tests inject a stopped operation at durable phase boundaries.
 	// There is no environment or configuration route to this callback.
 	observe func(string) error
@@ -164,15 +164,19 @@ func beginDeploymentMode(parent *os.File, owner uint32, observe func(string) err
 	}
 	// Inspect before creating coordination state: an existing unrecognized
 	// directory must remain byte-for-byte untouched on bootstrap refusal.
-	initialEntries, e := deploymentEntries(s.root, owner, maxRetainedRecords+3)
+	initialEntries, e := deploymentEntries(s.root, owner, maxRetainedRecords+4)
 	if e != nil {
 		return fail(e)
 	}
-	hasLock, hasVersions, hasHistory, hasState := false, false, false, false
+	hasLock, hasVersions, hasHistory, hasState, hasRuntime := false, false, false, false, false
 	for _, entry := range initialEntries {
 		name := entry.Name()
 		if name == deploymentLock {
 			hasLock = true
+			continue
+		}
+		if name == runtimeLeaseName {
+			hasRuntime = true
 			continue
 		}
 		if name == "versions" {
@@ -190,6 +194,9 @@ func beginDeploymentMode(parent *os.File, owner uint32, observe func(string) err
 	}
 	if len(initialEntries) != 0 && !hasLock {
 		return fail(errors.New("existing deployment history has no coordination file; preserve and inspect"))
+	}
+	if hasHistory && !hasRuntime {
+		return fail(errors.New("deployment runtime coordination is absent; explicit maintenance migration is required"))
 	}
 	if hasHistory && !hasVersions {
 		return fail(errors.New("existing deployment history has no versions directory; preserve and inspect"))
@@ -238,20 +245,58 @@ func beginDeploymentMode(parent *os.File, owner uint32, observe func(string) err
 	if e = s.checkRoot(); e != nil {
 		return fail(e)
 	}
-	entries, e := deploymentEntries(s.root, owner, maxRetainedRecords+3)
+	entries, e := deploymentEntries(s.root, owner, maxRetainedRecords+4)
 	if e != nil {
 		return fail(e)
 	}
 	history := 0
 	for _, entry := range entries {
 		name := entry.Name()
-		if name == deploymentLock || name == "versions" || name == "state" {
+		if name == deploymentLock || name == runtimeLeaseName || name == "versions" || name == "state" {
 			continue
 		}
 		if !recordName.MatchString(name) {
 			return fail(errors.New("unexpected deployment authority object"))
 		}
 		history++
+	}
+	s.runtimeLock, e = darwintrust.CreateRegularAt(s.root, runtimeLeaseName, owner)
+	createdRuntime := e == nil
+	if errors.Is(e, unix.EEXIST) {
+		s.runtimeLock, e = darwintrust.OpenRegularAt(s.root, runtimeLeaseName, owner)
+	}
+	if e != nil {
+		return fail(e)
+	}
+	if createdRuntime {
+		if e = errors.Join(s.runtimeLock.Chmod(0644), fullDeploymentSync(s.runtimeLock), fullDeploymentSync(s.root)); e != nil {
+			return fail(e)
+		}
+	}
+	if e = deploymentObject(s.runtimeLock, false, owner, 0644); e != nil {
+		return fail(e)
+	}
+	runtimeInfo, e := s.runtimeLock.Stat()
+	if e != nil {
+		return fail(e)
+	}
+	if runtimeInfo.Size() != 0 {
+		return fail(errors.New("deployment runtime coordination file is not empty"))
+	}
+	if e = unix.Flock(int(s.runtimeLock.Fd()), unix.LOCK_EX|unix.LOCK_NB); e != nil {
+		return fail(fmt.Errorf("AccessWeaver is running; close it before changing this installation: %w", e))
+	}
+	currentRuntime, e := darwintrust.OpenRegularAt(s.root, runtimeLeaseName, owner)
+	if e != nil {
+		return fail(e)
+	}
+	currentInfo, statErr := currentRuntime.Stat()
+	closeErr = currentRuntime.Close()
+	if e = errors.Join(statErr, closeErr); e != nil {
+		return fail(e)
+	}
+	if !os.SameFile(runtimeInfo, currentInfo) {
+		return fail(errors.New("runtime coordination identity changed"))
 	}
 	s.versions, e = deploymentDirectory(s.root, "versions", owner, initialize && !hasHistory)
 	if e != nil {
@@ -317,6 +362,11 @@ func (s *deploymentStore) checkRoot() error {
 	}
 	if !os.SameFile(before, after) || after.Size() != 0 {
 		return errors.New("deployment lock identity changed")
+	}
+	if s.runtimeLock != nil {
+		if e := sameRuntimeFile(s.root, s.runtimeLock, s.owner); e != nil {
+			return e
+		}
 	}
 	return nil
 }
@@ -385,7 +435,7 @@ func (s *deploymentStore) commit(next deploymentState) (published bool, result e
 			return false, errors.New("deployment preimage changed")
 		}
 	}
-	entries, e := deploymentEntries(s.root, s.owner, maxRetainedRecords+3)
+	entries, e := deploymentEntries(s.root, s.owner, maxRetainedRecords+4)
 	if e != nil {
 		return false, e
 	}
@@ -556,7 +606,7 @@ func (s *deploymentStore) abandon(id string) (bool, error) {
 }
 func (s *deploymentStore) Close() error {
 	var result error
-	for _, p := range []**os.File{&s.current, &s.lock, &s.versions, &s.root, &s.parent} {
+	for _, p := range []**os.File{&s.current, &s.runtimeLock, &s.lock, &s.versions, &s.root, &s.parent} {
 		if *p != nil {
 			result = errors.Join(result, (*p).Close())
 			*p = nil

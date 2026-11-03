@@ -81,6 +81,11 @@ def validate_contents(root,commit,arch):
     require(life.get("packages")==package_bindings and re.fullmatch("[1-9][0-9]{0,19}",str(life.get("runID",""))) is not None,"Native lifecycle is not bound to the actual package subjects/run")
     for key in ("passed","packageScriptsIntegrated","actualApplePackageUpgradeExecuted","actualUserProfilePreservationVerified","retainedPriorCopiesVerified","ownedFixturesRemoved"):require(life.get(key) is True,"Actual deployment lifecycle did not pass")
     for key in ("installedCodeExecutedAsRoot","publicLauncherIntegrated","runtimeLeaseQualified","publisherSignatureVerified","notarized","productUninstallQualified","managedEndpointQualified","abruptTerminationQualified","rebootOrPowerLossQualified","productionQualificationComplete"):require(life.get(key) is False,"Unqualified deployment lifecycle scope changed")
+    lease_cases=life.get("runtimeLeaseCases",[])
+    require(life.get("installedControllerLeaseRefusalVerified") is True and len(lease_cases)==3 and [c.get("kind") for c in lease_cases]==["direct","inherited","alias"],"Installed controller lease coverage differs")
+    for case in lease_cases:
+        require(type(case.get("installerExitCode")) is int and 1<=case["installerExitCode"]<=255 and type(case.get("elapsedMilliseconds")) is int and 0<=case["elapsedMilliseconds"]<=180000,"Runtime lease refusal exit/timing differs")
+        require(all(case.get(k) is True for k in ("servingControllerVerified","activeRecordAndReceiptBytesPreserved","actualProfilePreserved","controllerRemainedRunning","passed")) and case.get("parentInheritedDescriptorClosed") is (case["kind"]=="inherited"),"Runtime lease did not preserve the serving controller")
     expected=[("clean-install",VERSIONS[0],1),("upgrade",VERSIONS[1],2),("same-version-reinstall",VERSIONS[1],3),("older-version-refused",VERSIONS[0],None),("changed-staging-refused",VERSIONS[1],None),("restored-reinstall",VERSIONS[1],4),("deactivate-for-cleanup",VERSIONS[1],5)]
     operations=life.get("operations",[]);require(len(operations)==len(expected),"Deployment lifecycle operation extent differs")
     slots=set()
@@ -92,7 +97,7 @@ def validate_contents(root,commit,arch):
             if generation<5:
                 require(op.get("activeIdentity")=={"version":version,"manifestSHA256":package_bindings[version]["manifestSHA256"],"payloadSHA256":package_bindings[version]["payloadSHA256"]},"Activated compiled seal differs from actual package")
                 require(op.get("actualUnelevatedRuntimeVerified") is True and op.get("retainedPriorCopiesVerified") is True and re.fullmatch("[a-f0-9]{32}",op.get("slotID","")) is not None and op["slotID"] not in slots,"Activated package copy identity differs");slots.add(op["slotID"])
-    return {"packages":outputs,"lifecycleRunID":str(life["runID"]),"actualApplePackageOperations":7,"retainedIndependentCopies":4,"publisherSignatureVerified":False,"productionQualificationComplete":False}
+    return {"packages":outputs,"lifecycleRunID":str(life["runID"]),"actualApplePackageOperations":10,"retainedIndependentCopies":4,"publisherSignatureVerified":False,"productionQualificationComplete":False}
 
 
 def copy_subject(source,destination,limit):

@@ -20,6 +20,7 @@ import (
 	"github.com/Yunushan/accessweaver/internal/buildinfo"
 	"github.com/Yunushan/accessweaver/internal/engine"
 	"github.com/Yunushan/accessweaver/internal/filelock"
+	"github.com/Yunushan/accessweaver/internal/packageupgrade"
 	"github.com/Yunushan/accessweaver/internal/profile"
 	"github.com/Yunushan/accessweaver/internal/servicehost"
 	"github.com/Yunushan/accessweaver/internal/uiaccess"
@@ -53,13 +54,20 @@ func execute(args []string) error {
 		fmt.Printf("AccessWeaver %s (%s %s)\n", buildinfo.Version, runtime.GOOS, runtime.GOARCH)
 		return nil
 	}
-	if args[0] == "managed" {
-		return managedCommand(args[1:])
-	}
 	if args[0] == "ui" {
 		if err := uiaccess.RequireUnelevated(); err != nil {
 			return err
 		}
+	}
+	runtimeLease, leaseErr := packageupgrade.AcquireInstalledRuntime()
+	if leaseErr != nil {
+		return leaseErr
+	}
+	if runtimeLease != nil {
+		defer runtimeLease.Close()
+	}
+	if args[0] == "managed" {
+		return managedCommand(args[1:])
 	}
 	root, err := profile.DefaultRoot()
 	if err != nil {
