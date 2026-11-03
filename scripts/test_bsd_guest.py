@@ -228,6 +228,18 @@ class TargetAndFirmwareTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 guest.validate_guest_identity(actual, target)
 
+    def test_firmware_failure_report_exposes_only_fixed_codes_and_metadata(self):
+        error = guest.FirmwareSnapshotError("ancestor-permissions", {"node": "share", "uid": 0, "mode": 0o777})
+        self.assertEqual(guest.firmware_failure_observations(error),
+                         {"firmwareFailureCode": "ancestor-permissions",
+                          "firmwareFailureMetadata": {"node": "share", "uid": 0, "mode": 0o777}})
+        self.assertEqual(guest.firmware_failure_observations(RuntimeError("PRIVATE_PATH_OR_CONTENT")), {})
+        for code, metadata in (("PRIVATE", {}), ("source-owner", {"path": "PRIVATE"}),
+                               ("source-owner", {"node": "PRIVATE"}), ("source-owner", {"uid": "PRIVATE"}),
+                               ("source-owner", {"uid": True}), ("copy-changed", {"mtimeChanged": 1})):
+            with self.subTest(code=code, metadata=metadata), self.assertRaises(ValueError):
+                guest.FirmwareSnapshotError(code, metadata)
+
     def test_vm_commands_keep_control_isolated_and_firmware_private(self):
         firmware = {"code": Path("/private/capsule/efi-code.fd"), "variables": Path("/private/capsule/efi-vars.fd")}
         for arch in ("amd64", "arm64"):

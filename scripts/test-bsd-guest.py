@@ -55,6 +55,37 @@ def selected_target(name=None):
     return target
 
 
+class FirmwareSnapshotError(RuntimeError):
+    codes = {"ancestor-owner", "ancestor-permissions", "source-type", "source-owner", "source-links",
+             "source-permissions", "source-size", "copy-grew", "copy-changed", "capsule-permissions"}
+    nodes = {"root", "usr", "share", "firmware", "capsule", "other"}
+    numbers = {"uid", "mode", "links", "bytes", "bytesCopied"}
+    flags = {"sizeChanged", "mtimeChanged", "ctimeChanged"}
+
+    def __init__(self, code, metadata):
+        if code not in self.codes or not isinstance(metadata, dict):
+            raise ValueError("unexpected firmware observation")
+        for name, value in metadata.items():
+            if name == "node":
+                valid = value in self.nodes if isinstance(value, str) else False
+            elif name in self.numbers:
+                valid = type(value) is int and 0 <= value < 1 << 64
+            elif name in self.flags:
+                valid = type(value) is bool
+            else:
+                valid = False
+            if not valid:
+                raise ValueError("unexpected firmware observation field")
+        super().__init__(code)
+        self.code, self.metadata = code, dict(metadata)
+
+
+def firmware_failure_observations(error):
+    if isinstance(error, FirmwareSnapshotError):
+        return {"firmwareFailureCode": error.code, "firmwareFailureMetadata": error.metadata}
+    return {}
+
+
 def copy_firmware(source, destination, *, owner=0):
     """Snapshot an administrator-owned firmware input; fixtures may name their UID."""
     resolved = source.resolve(strict=True)
@@ -62,15 +93,21 @@ def copy_firmware(source, destination, *, owner=0):
     # allowing only root/expected ownership and no untrusted mutation rights.
     for parent in resolved.parents:
         info = parent.stat()
-        if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, owner) or
-                (info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX)):
-            raise RuntimeError("untrusted firmware ancestor")
+        node = {"/": "root", "/usr": "usr", "/usr/share": "share", "/usr/share/AAVMF": "firmware"}.get(str(parent), "other")
+        metadata = {"node": node, "uid": info.st_uid, "mode": stat.S_IMODE(info.st_mode)}
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, owner):
+            raise FirmwareSnapshotError("ancestor-owner", metadata)
+        if info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX:
+            raise FirmwareSnapshotError("ancestor-permissions", metadata)
     fd = os.open(resolved, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as stream:
         before = os.fstat(stream.fileno())
-        if (not stat.S_ISREG(before.st_mode) or before.st_uid != owner or
-                before.st_nlink != 1 or before.st_mode & 0o022 or not 0 < before.st_size <= 64 << 20):
-            raise RuntimeError("untrusted or unbounded firmware input")
+        metadata = {"uid": before.st_uid, "mode": stat.S_IMODE(before.st_mode), "links": before.st_nlink, "bytes": before.st_size}
+        for valid, code in ((stat.S_ISREG(before.st_mode), "source-type"), (before.st_uid == owner, "source-owner"),
+                            (before.st_nlink == 1, "source-links"), (not before.st_mode & 0o022, "source-permissions"),
+                            (0 < before.st_size <= 64 << 20, "source-size")):
+            if not valid:
+                raise FirmwareSnapshotError(code, metadata)
         output_fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
         total = 0
         value = hashlib.sha256()
@@ -78,19 +115,21 @@ def copy_firmware(source, destination, *, owner=0):
             while block := stream.read(1 << 20):
                 total += len(block)
                 if total > before.st_size:
-                    raise RuntimeError("firmware grew while copying")
+                    raise FirmwareSnapshotError("copy-grew", {"bytes": before.st_size, "bytesCopied": total})
                 output.write(block)
                 value.update(block)
         after = os.fstat(stream.fileno())
         if total != before.st_size or (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
-            raise RuntimeError("firmware changed while copying")
+            raise FirmwareSnapshotError("copy-changed", {"bytesCopied": total, "sizeChanged": before.st_size != after.st_size,
+                                                         "mtimeChanged": before.st_mtime_ns != after.st_mtime_ns,
+                                                         "ctimeChanged": before.st_ctime_ns != after.st_ctime_ns})
     return value.hexdigest()
 
 
 def prepare_arm_firmware(capsule):
     owned_directory(capsule)
     if capsule.stat().st_mode & 0o077:
-        raise RuntimeError("firmware requires a private capsule")
+        raise FirmwareSnapshotError("capsule-permissions", {"node": "capsule", "mode": stat.S_IMODE(capsule.stat().st_mode)})
     code, variables = capsule / "efi-code.fd", capsule / "efi-vars.fd"
     # Source paths and expected root ownership are not environment-selectable.
     code_hash = copy_firmware(Path("/usr/share/AAVMF/AAVMF_CODE.fd"), code)
@@ -566,6 +605,7 @@ def main():
         report["guestExecutionPassed"] = True
         failed = False
     except Exception as error:
+        report.update(firmware_failure_observations(error))
         report["failurePhase"] = phase
         report["failureType"] = type(error).__name__
         print("Guest qualification incomplete: " + phase + "/" + type(error).__name__, flush=True)
