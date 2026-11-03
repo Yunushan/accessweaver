@@ -1,15 +1,17 @@
 """Bounded unsigned single-product contracts; never install or execute packages."""
 import copy
 import hashlib
+import os
+import stat
 import re
 import struct
 import uuid
 import xml.etree.ElementTree as ET
 
-from macos_installer import BUNDLE_ID,BUNDLE_NAME,MAX_BYTES,digest,require,version_parts
+from macos_installer import BUNDLE_ID,BUNDLE_NAME,MAX_BYTES,MAX_FILES,digest,require,version_parts
 from macos_deployment import PACKAGE_ID
 from macos_desktop import component_name,package_id
-from macos_package_archive import flat_members,inflate,number,xml
+from macos_package_archive import flat_members,cpio,inflate,number,xml
 from sbom import component,properties,validate
 
 ROLES=("core","metadata","application")
@@ -149,6 +151,53 @@ def inspect_product(package,version,arch,inputs,packages):
         require(actual[name]==originals[name],"Embedded product component bytes differ: "+name)
     validate_distribution(members["Distribution"],version,arch,inputs,actual)
     return {"productSHA256":digest(package),"distributionSHA256":digest(members["Distribution"]),"componentOrder":list(ROLES),"componentInputs":[{"role":role,"identifier":identifier,"file":name,"sha256":digest(packages[name]),"members":{p:digest(v) for p,v in sorted(actual[name].items())}} for role,identifier,name in inputs],"allEmbeddedComponentMemberBytesVerified":True,"systemDomainOnly":True,"targetExecutionPerformed":False,"installationExecuted":False,"publisherSignatureVerified":False,"productionQualificationComplete":False}
+
+
+def expanded_inventory(distribution_bytes,packages):
+    require(len(packages)==3,"Expanded product component count differs")
+    files={"Distribution":{"data":distribution_bytes,"mode":None}};directories={};total=len(distribution_bytes)
+    for name,raw in packages.items():
+        require(re.fullmatch(r"[A-Za-z0-9._-]{1,255}\.pkg",name) is not None,"Unsafe expanded component name")
+        members=flat_members(raw);directories[name]=None
+        for part in ("Bom","PackageInfo"):
+            files[name+"/"+part]={"data":members[part],"mode":None};total+=len(members[part])
+        for part,limit in (("Payload",MAX_BYTES),("Scripts",32<<20)):
+            entries=cpio(inflate(members[part],limit,31));require("" in entries and entries[""]["directory"],"Missing expanded component root")
+            for relative,entry in entries.items():
+                path=name+"/"+part+("/"+relative if relative else "")
+                require(path not in files and path not in directories,"Expanded source path collision")
+                if entry["directory"]:directories[path]=entry["mode"]
+                else:files[path]={"data":entry["data"],"mode":entry["mode"]};total+=len(entry["data"])
+                require(total<=MAX_BYTES and len(files)+len(directories)<=MAX_FILES,"Expanded product inventory exceeds budget")
+    return files,directories
+
+
+def verify_expanded_product(expanded,distribution_bytes,packages,diagnostic=None):
+    files,directories=expanded_inventory(distribution_bytes,packages)
+    observed={"expectedFiles":len(files),"expectedDirectories":len(directories),"entries":[]}
+    if diagnostic is not None:diagnostic.update(observed)
+    root=expanded.lstat();require(stat.S_ISDIR(root.st_mode) and root.st_uid==os.getuid(),"Unexpected expanded product root")
+    found_files=set();found_dirs=set()
+    def identity(st):return (st.st_dev,st.st_ino,st.st_mode,st.st_uid,st.st_gid,st.st_nlink,st.st_size,st.st_mtime_ns,st.st_ctime_ns)
+    for path in expanded.rglob("*"):
+        st=path.lstat();name=path.relative_to(expanded).as_posix();kind="directory" if stat.S_ISDIR(st.st_mode) else "file" if stat.S_ISREG(st.st_mode) else "unsupported"
+        item={"path":name,"kind":kind,"mode":f"{stat.S_IMODE(st.st_mode):04o}","uid":st.st_uid,"gid":st.st_gid,"links":st.st_nlink,"bytes":st.st_size};observed["entries"].append(item)
+        require(len(observed["entries"])<=MAX_FILES and st.st_uid==os.getuid(),"Expanded product ownership/budget differs")
+        if kind=="directory":
+            require(name in directories or name=="Resources","Unexpected expanded product directory")
+            mode=directories.get(name)
+            require(mode is None or stat.S_IMODE(st.st_mode)==mode,"Expanded payload/script directory mode differs");found_dirs.add(name)
+        else:
+            require(kind=="file" and name in files and st.st_nlink==1,"Unexpected expanded product file/type/link")
+            expected=files[name];require(st.st_size==len(expected["data"]) and (expected["mode"] is None or stat.S_IMODE(st.st_mode)==expected["mode"]),"Expanded payload/script file size/mode differs")
+            flags=os.O_RDONLY|getattr(os,"O_NOFOLLOW",0)|getattr(os,"O_NONBLOCK",0)|getattr(os,"O_CLOEXEC",0)
+            with os.fdopen(os.open(path,flags),"rb") as stream:
+                require(identity(os.fstat(stream.fileno()))==identity(st),"Expanded product file changed before read")
+                data=stream.read(len(expected["data"])+1);item["sha256"]=digest(data)
+                require(data==expected["data"] and identity(os.fstat(stream.fileno()))==identity(st),"Expanded payload/script bytes changed")
+            require(identity(path.lstat())==identity(st),"Expanded product entry changed after read");found_files.add(name)
+    require(found_files==set(files) and found_dirs in (set(directories),set(directories)|{"Resources"}),"Expanded product file/directory inventory differs")
+    return {"files":len(found_files),"payloadAndScriptDirectoryModesVerified":True,"payloadAndScriptFileModesVerified":True,"allExpandedBytesVerified":True,"targetExecutionPerformed":False}
 
 
 def product_sbom(package,identity,inputs,packages,graphs,tool):

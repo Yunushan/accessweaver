@@ -7,13 +7,12 @@ import os
 from pathlib import Path
 import platform
 import shutil
-import stat
 import tempfile
 
 from macos_installer import digest,require
 from macos_desktop import inspect_component
 from macos_deployment import inspect_deployment
-from macos_product import component_inputs,distribution,product_name,product_members,inspect_product,product_sbom
+from macos_product import component_inputs,distribution,product_name,product_members,inspect_product,product_sbom,verify_expanded_product
 from sbom import validate
 
 REPO=Path(__file__).resolve().parent.parent
@@ -58,23 +57,19 @@ def build(version,arch,go="go"):
         run(["/usr/bin/productbuild","--distribution",source,"--package-path",stage,target],env=env)
         raw=target.read_bytes();members=product_members(raw,list(packages));inspection=inspect_product(raw,version,arch,inputs,packages)
         (output/"DISTRIBUTION.xml").write_bytes(members["Distribution"])
-        expanded=stage/"expanded";run(["/usr/sbin/pkgutil","--expand",target,expanded],env=env)
-        expected_dirs={name.rsplit("/",1)[0] for name in members if "/" in name};actual_files={};actual_dirs=set()
-        for path in expanded.rglob("*"):
-            st=path.lstat();name=path.relative_to(expanded).as_posix()
-            require(not path.is_symlink() and st.st_uid==os.getuid(),"Expanded product ownership/type differs")
-            if stat.S_ISDIR(st.st_mode):actual_dirs.add(name)
-            else:
-                require(stat.S_ISREG(st.st_mode) and st.st_nlink==1 and st.st_size<=64<<20,"Expanded product file differs")
-                actual_files[name]=path.read_bytes()
-        require(actual_files==members and actual_dirs in (expected_dirs,expected_dirs|{"Resources"}),"Expanded product member bytes differ")
-        if "Resources" in actual_dirs:require(not list((expanded/"Resources").iterdir()),"Unexpected product resources")
+        expanded=stage/"expanded";run(["/usr/sbin/pkgutil","--expand-full",target,expanded],env=env)
+        observation={"sourceCommit":identity["commit"],"build":identity,"productSHA256":digest(raw),"installationExecuted":False,"productionQualificationComplete":False}
+        try:expanded_check=verify_expanded_product(expanded,members["Distribution"],packages,observation)
+        except Exception as error:
+            observation["failureType"]=type(error).__name__
+            if len(json.dumps(observation).encode("utf-8"))>256<<10:observation["entries"]=observation.get("entries",[])[:32];observation["entriesTruncated"]=True
+            encode(output/"EXPANSION-DIAGNOSTIC.json",observation);raise
         signature=run(["/usr/sbin/pkgutil","--check-signature",target],env=env,codes=(0,1))
         require(signature.returncode!=0 and b"no signature" in (signature.stdout+signature.stderr).lower(),"Experimental product unexpectedly publisher-signed")
         tool={"sha256":digest(Path("/usr/bin/productbuild").read_bytes()),"osVersion":run(["/usr/bin/sw_vers","-productVersion"],env=env).stdout.decode().strip(),"osBuild":run(["/usr/bin/sw_vers","-buildVersion"],env=env).stdout.decode().strip()}
         graph=product_sbom(raw,identity,inputs,packages,graphs,tool);encode(output/(target.name+".cdx.json"),graph)
         validator=stage/"sbom-schema";run([go,"-C",REPO/"scripts/sbom-tools","build","-mod=readonly","-trimpath","-o",validator,"."],env=dict(os.environ,GOTOOLCHAIN="local"));run([validator,"--schemas",REPO/"scripts/sbom/schema",output/(target.name+".cdx.json")],env=env)
-        report={"schemaVersion":1,"sourceCommit":identity["commit"],"build":identity,"productFile":target.name,"productBytes":len(raw),"productSHA256":digest(raw),"productbuild":tool,"archiveInspection":inspection,"componentInspections":reports,"actualExpandedMemberBytesVerified":True,"productGraphSchemaValidated":True,"unsigned":True,"installationExecuted":False,"singleProductLifecycleQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"productionQualificationComplete":False}
+        report={"schemaVersion":1,"sourceCommit":identity["commit"],"build":identity,"productFile":target.name,"productBytes":len(raw),"productSHA256":digest(raw),"productbuild":tool,"archiveInspection":inspection,"componentInspections":reports,"actualExpandedPayloadAndScriptsVerified":True,"expandedInspection":expanded_check,"productGraphSchemaValidated":True,"unsigned":True,"installationExecuted":False,"singleProductLifecycleQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"productionQualificationComplete":False}
         encode(output/"compiler-artifact.json",report);return report
     finally:
         require(stage.resolve().parent==(REPO/"build").resolve() and stage.name.startswith("macos-product-stage-"),"Unsafe product builder cleanup");shutil.rmtree(stage)

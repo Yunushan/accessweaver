@@ -1,16 +1,21 @@
 import copy
 import hashlib
 import json
+import os
+from pathlib import Path
+import tempfile
 import struct
 import unittest
 import xml.etree.ElementTree as ET
 import zlib
 
-from macos_product import component_inputs,distribution,inspect_product,product_members,product_sbom,tree
+from macos_product import component_inputs,distribution,inspect_product,product_members,product_sbom,tree,expanded_inventory,verify_expanded_product
 from macos_installer import digest
 from macos_package_archive import flat_members
 from test_macos_deployment import flat_package
 import test_macos_launcher as launcher_fixture
+import test_macos_desktop as desktop_fixture
+import test_macos_deployment as deployment_fixture
 
 
 def product_archive(members,nested=False,change=None):
@@ -139,6 +144,46 @@ class ProductContracts(unittest.TestCase):
         ET.SubElement(doc.findall("pkg-ref")[0],"bundle-version")
         members["Distribution"]=ET.tostring(doc)
         with self.assertRaisesRegex(ValueError,"bundle metadata"):inspect_product(product_archive(members),version,arch,inputs,packages)
+    def expanded_fixture(self,root):
+        public=desktop_fixture.DesktopComponentContracts();app=public.fixture("application");metadata=public.fixture("metadata");core=deployment_fixture.DeploymentPackageContracts().fixture()
+        inputs=component_inputs("0.1.0-alpha","amd64",app[1]);packages={}
+        for role,_,name in inputs:
+            fixture=core if role=="core" else metadata if role=="metadata" else app
+            payload,scripts,info=(fixture[3],fixture[4],fixture[6]) if role=="core" else (fixture[2],fixture[3],fixture[5])
+            packages[name]=flat_package({"Bom":b"fixture-bom","PackageInfo":ET.tostring(info),"Payload":deployment_fixture.archive(payload),"Scripts":deployment_fixture.archive(scripts)})
+        dist=distribution("0.1.0-alpha","amd64",inputs);files,dirs=expanded_inventory(dist,packages);root.mkdir(mode=0o755)
+        for name,mode in sorted(dirs.items(),key=lambda p:p[0].count("/")):
+            path=root/name;path.mkdir(parents=True,exist_ok=True);path.chmod(mode if mode is not None else 0o755)
+        for name,item in files.items():
+            path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(item["data"]);path.chmod(item["mode"] if item["mode"] is not None else 0o644)
+        return dist,packages,files,dirs
+    @unittest.skipUnless(os.name=="posix","Expanded modes/aliases require POSIX")
+    def test_full_expansion_matches_original_payload_and_script_bytes_and_modes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)/"expanded";dist,packages,files,dirs=self.expanded_fixture(root);observation={}
+            result=verify_expanded_product(root,dist,packages,observation)
+            self.assertEqual(result["files"],len(files));self.assertTrue(result["allExpandedBytesVerified"])
+            self.assertTrue(all("sha256" in e for e in observation["entries"] if e["kind"]=="file"))
+            (root/"Resources").mkdir();self.assertTrue(verify_expanded_product(root,dist,packages)["payloadAndScriptFileModesVerified"])
+    @unittest.skipUnless(os.name=="posix","Expanded modes/aliases require POSIX")
+    def test_full_expansion_refuses_changed_missing_extra_linked_and_writable_objects(self):
+        for kind in ("bytes","missing","extra","file-mode","directory-mode","symlink","hardlink","resource-content"):
+            with self.subTest(kind=kind),tempfile.TemporaryDirectory() as folder:
+                root=Path(folder)/"expanded";dist,packages,files,dirs=self.expanded_fixture(root)
+                target=root/next(n for n in files if n.endswith("/Contents/MacOS/accessweaver"))
+                if kind=="bytes":data=target.read_bytes();target.write_bytes(bytes([data[0]^1])+data[1:])
+                elif kind=="missing":target.unlink()
+                elif kind=="extra":(root/"unexpected").write_bytes(b"extra")
+                elif kind=="file-mode":target.chmod(0o644)
+                elif kind=="directory-mode":target.parent.chmod(0o775)
+                elif kind in ("symlink","hardlink"):
+                    outside=Path(folder)/"outside";outside.write_bytes(target.read_bytes());outside.chmod(0o755);target.unlink()
+                    if kind=="symlink":target.symlink_to(outside)
+                    else:target.hardlink_to(outside)
+                elif kind=="resource-content":(root/"Resources").mkdir();(root/"Resources/unexpected").write_bytes(b"extra")
+                observed={}
+                with self.assertRaises(ValueError):verify_expanded_product(root,dist,packages,observed)
+                self.assertIn("expectedFiles",observed)
     def test_product_graph_preserves_compiled_inputs_and_actual_member_hashes(self):
         version,arch,inputs,packages,members,raw=self.fixture(nested=True)
         identity,files=launcher_fixture.LauncherArchiveContracts().fixture(arch);graph=json.loads(files["SBOM.cdx.json"])

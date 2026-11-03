@@ -12,7 +12,7 @@ import zipfile
 from macos_installer import BUNDLE_NAME,MAX_BYTES,digest,require
 from macos_desktop import BINARY,component_name,record_name,validate_record,inspect_component,package_sbom
 from macos_launcher import archive_name,inspect_launcher
-from macos_product import component_inputs,product_name,product_members,inspect_product,product_sbom
+from macos_product import component_inputs,product_name,product_members,inspect_product,product_sbom,expanded_inventory
 from macos_package_archive import flat_members,cpio,inflate
 from sbom import validate,prop_map
 from verify_macos_deployment_provenance import VERSIONS,subjects as core_subjects,validate_packages,copy_subject,check_rejections as shared_rejections
@@ -100,7 +100,9 @@ def validate_contents(root,commit,arch):
         product_inspection=inspect_product(product_raw,version,arch,inputs,input_packages)
         require(product_report.get("schemaVersion")==1 and product_report.get("sourceCommit")==commit and product_report.get("build")==identity and product_report.get("productFile")==product and product_report.get("productBytes")==len(product_raw) and product_report.get("productSHA256")==digest(product_raw) and product_report.get("archiveInspection")==product_inspection,"Actual product construction differs")
         require(product_report.get("componentInspections")==dict(core=cores[VERSIONS.index(version)],**{i["component"]:i for i in inspections}),"Product component construction differs")
-        require(all(product_report.get(k) is True for k in ("actualExpandedMemberBytesVerified","productGraphSchemaValidated","unsigned")),"Product construction incomplete")
+        require(all(product_report.get(k) is True for k in ("actualExpandedPayloadAndScriptsVerified","productGraphSchemaValidated","unsigned")),"Product construction incomplete")
+        expected_files,_=expanded_inventory((root/("product-"+version+"-DISTRIBUTION.xml")).read_bytes(),input_packages)
+        expanded=product_report.get("expandedInspection",{});require(type(expanded.get("files")) is int and expanded["files"]==len(expected_files) and all(expanded.get(k) is True for k in ("payloadAndScriptDirectoryModesVerified","payloadAndScriptFileModesVerified","allExpandedBytesVerified")) and expanded.get("targetExecutionPerformed") is False,"Native expanded product inspection incomplete")
         require(all(product_report.get(k) is False for k in ("installationExecuted","singleProductLifecycleQualified","publisherSignatureVerified","notarized","productUninstallQualified","managedEndpointQualified","productionQualificationComplete")),"Unqualified product construction scope changed")
         tool=product_report["productbuild"];core_tool=read(version+"-compiler-artifact.json")["pkgbuild"]
         require(set(tool)=={"sha256","osVersion","osBuild"} and re.fullmatch("[a-f0-9]{64}",tool["sha256"]) is not None and all(tool[k]==core_tool[k] for k in ("osVersion","osBuild")),"Product builder observation differs")
