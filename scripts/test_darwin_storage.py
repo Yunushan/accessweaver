@@ -43,6 +43,31 @@ class NormalDetachTests(ImageFixture,unittest.TestCase):
                 self.assertLessEqual(call.kwargs["timeout"],30)
                 self.assertGreater(call.kwargs["timeout"],0)
 
+    def test_accepted_detach_waits_for_exact_association_to_disappear_without_redetaching(self):
+        from subprocess import CompletedProcess
+        partial=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}]
+        with patch.object(storage,"info",side_effect=[self.info(),self.info(),self.info(partial),{"images":[]}]),patch.object(storage,"command",return_value=CompletedProcess([],0,b"",b"")) as command,patch.object(storage.time,"sleep") as sleep:
+            self.assertEqual(storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1"),1)
+            self.assertEqual(command.call_count,1);self.assertEqual(sleep.call_count,2)
+            self.assertEqual(command.call_args.args[0],[storage.HDIUTIL,"detach","/dev/disk20"])
+
+    def test_accepted_detach_never_resets_deadline_or_launches_another_detach(self):
+        from subprocess import CompletedProcess
+        with patch.object(storage.time,"monotonic",side_effect=[0,0,0,0,1,30]),patch.object(storage,"info",return_value=self.info()),patch.object(storage,"command",return_value=CompletedProcess([],0,b"",b"")) as command,patch.object(storage.time,"sleep"):
+            with self.assertRaisesRegex(RuntimeError,"associated after detach deadline"):
+                storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1")
+            self.assertEqual(command.call_count,1)
+
+    def test_accepted_detach_refuses_reassigned_devices_ambiguous_images_and_other_mounts(self):
+        from subprocess import CompletedProcess
+        changed=[{"dev-entry":"/dev/disk30"},self.entities[1]]
+        relocated=[self.entities[0],dict(self.entities[1],**{"mount-point":"/other"})]
+        for observed in (self.info(changed),{"images":self.info()["images"]*2},self.info(relocated)):
+            with self.subTest(observed=observed),patch.object(storage,"info",side_effect=[self.info(),observed]),patch.object(storage,"command",return_value=CompletedProcess([],0,b"",b"")) as command:
+                with self.assertRaisesRegex(RuntimeError,"mapping changed after accepted detach"):
+                    storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1")
+                self.assertEqual(command.call_count,1)
+
     def test_clock_rounding_never_extends_detach_timeout_past_total_budget(self):
         from subprocess import CompletedProcess
         # (2.02 + 30) - 2.02 rounds above 30 on binary floating-point clocks.

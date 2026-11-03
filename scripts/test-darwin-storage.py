@@ -13,7 +13,6 @@ import subprocess
 import time
 import sys
 import tempfile
-import time
 
 DEVICE = re.compile(r"/dev/disk[0-9]+(?:s[0-9]+)?")
 BASE_DEVICE = re.compile(r"/dev/disk[0-9]+")
@@ -52,7 +51,7 @@ def info(timeout=90):
 
 
 def detach_owned(image, mount, expected_base, expected_volume, maximum_wait=30):
-    """Retry only normal busy detach, rebinding the exact owned mapping each time."""
+    """Rebind busy retries; after accepted detach only observe bounded completion."""
     deadline = time.monotonic() + maximum_wait
     attempts = 0
     while True:
@@ -71,10 +70,28 @@ def detach_owned(image, mount, expected_base, expected_volume, maximum_wait=30):
         result = command([HDIUTIL, "detach", expected_base], timeout=min(maximum_wait, remaining), check=False,
                          env=dict(os.environ, LANG="C", LC_ALL="C"))
         if result.returncode == 0:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0 or any(item.get("image-path") == str(image) for item in info(timeout=min(5, remaining)).get("images", [])):
-                raise RuntimeError("Owned image remains associated after detach")
-            return attempts
+            # Disk Arbitration may still report the accepted image association.
+            # Never issue another detach: its device number may already be reused.
+            # Observe only disappearance of this exact image within the ORIGINAL
+            # deadline, refusing reassignment or unexpected mount/device identity.
+            owned = next(item for item in snapshot["images"] if item.get("image-path") == str(image))
+            devices = {e["dev-entry"] for e in owned.get("system-entities", []) if "dev-entry" in e}
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError("Owned image remains associated after detach deadline")
+                observed = [item for item in info(timeout=min(5, remaining)).get("images", []) if item.get("image-path") == str(image)]
+                if not observed:
+                    return attempts
+                if len(observed) != 1 or any(
+                    e.get("dev-entry") not in devices or e.get("mount-point") not in (None, "", str(mount))
+                    for e in observed[0].get("system-entities", [])
+                ):
+                    raise RuntimeError("Owned image device mapping changed after accepted detach")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError("Owned image remains associated after detach deadline")
+                time.sleep(min(0.5, remaining))
         if b"Resource busy" not in result.stdout + result.stderr:
             raise RuntimeError("Owned image normal detach failed: " +
                                (result.stdout + result.stderr).decode("utf-8", "replace")[:8192])
