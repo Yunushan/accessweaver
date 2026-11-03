@@ -228,15 +228,34 @@ def run(args, *, env=None, timeout=120, limit=8 << 20, data=None, check=True):
             raise CommandFailure(result)
         return result
     finally:
-        # Until wait() reaps this session leader, its PID cannot be reused.
-        if proc.returncode is None:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            proc.wait(timeout=5)
-        selector.close()
-        proc.stdout.close()
+        try:
+            # Until wait() reaps this session leader, its PID cannot be reused.
+            if proc.returncode is None:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except PermissionError:
+                    # A completed child may still be unreaped when output hits
+                    # its bound. Accept cleanup only after reaping and proving
+                    # that no process group remains. Never signal a possibly
+                    # reused group with SIGKILL after releasing the child PID.
+                    proc.wait(timeout=5)
+                    try:
+                        os.killpg(proc.pid, 0)
+                    except ProcessLookupError:
+                        pass
+                    else:
+                        raise
+                proc.wait(timeout=5)
+        finally:
+            selector.close()
+            proc.stdout.close()
+            if proc.stdin is not None and not proc.stdin.closed:
+                try:
+                    proc.stdin.close()
+                except BrokenPipeError:
+                    pass
 
 
 def digest(path):

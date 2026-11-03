@@ -81,6 +81,34 @@ class GuestSafetyTests(unittest.TestCase):
             guest.run([sys.executable, "-c", "import time;print('ready',flush=True);time.sleep(30)"], timeout=0.3)
         self.assertLess(time.monotonic() - started, 5)
 
+    @unittest.skipUnless(os.name == "posix", "host helper session tests require POSIX")
+    def test_output_bound_survives_permission_error_only_when_reaped_group_is_gone(self):
+        actual = guest.os.killpg
+        signals = []
+        def signal_group(pid, sig):
+            signals.append(sig)
+            if sig == guest.signal.SIGKILL:
+                raise PermissionError("simulated unreaped-child signal refusal")
+            return actual(pid, sig)
+        with patch.object(guest.os, "killpg", side_effect=signal_group):
+            with self.assertRaisesRegex(ValueError, "bounded helper output exceeded"):
+                guest.run([sys.executable, "-c", "import sys;sys.stdout.write('x'*4096)"], limit=4095)
+        self.assertEqual(signals, [guest.signal.SIGKILL, 0])
+
+    @unittest.skipUnless(os.name == "posix", "host helper session tests require POSIX")
+    def test_reaped_child_with_unconfirmed_group_cleanup_still_fails(self):
+        for result in (None, PermissionError("group still inaccessible")):
+            with self.subTest(result=type(result).__name__):
+                def signal_group(pid, sig):
+                    if sig == guest.signal.SIGKILL:
+                        raise PermissionError("signal refused")
+                    if result is not None:
+                        raise result
+                    return result
+                with patch.object(guest.os, "killpg", side_effect=signal_group):
+                    with self.assertRaises(PermissionError):
+                        guest.run([sys.executable, "-c", "import sys;sys.stdout.write('x'*4096)"], limit=4095)
+
     def test_large_helper_input_is_refused_before_launch(self):
         with patch.object(guest.subprocess, "Popen") as launch:
             with self.assertRaises(ValueError):
