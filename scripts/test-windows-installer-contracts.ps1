@@ -96,3 +96,5 @@ try {
     if(-not $resolved.StartsWith($intended,[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($resolved) -notmatch '^installer-contracts-[a-f0-9]{32}$'){throw 'Unsafe installer fixture cleanup target'}
     Remove-Item -LiteralPath $resolved -Recurse -Force
 }
+
+& (Join-Path $PSScriptRoot 'test-windows-installer-state.ps1')

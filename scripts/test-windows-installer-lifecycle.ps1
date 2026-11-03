@@ -12,6 +12,7 @@ if([Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLow
 $project=[IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 if((git -C $project rev-parse HEAD).Trim() -cne $source -or $LASTEXITCODE -ne 0 -or (git -C $project status --porcelain --untracked-files=no)){throw 'Expected a clean exact-source checkout'}
 . (Join-Path $PSScriptRoot 'windows-installer-common.ps1')
+. (Join-Path $PSScriptRoot 'windows-installer-state.ps1')
 $tokens=$null;$issues=$null
 $workflow=Join-Path $project 'internal\workflow\windows.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($workflow,[ref]$tokens,[ref]$issues)
@@ -21,7 +22,7 @@ foreach($name in @('No-Reparse','Quote-Arg','Native-Argument','New-ToolCapture',
     if($nodes.Count -ne 1){throw 'Expected one fixed product process/inspection helper'}
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
-function Require([bool]$ok,[string]$message){if(-not $ok){$script:assertionFailure=$message;throw $message}}
+function Require([bool]$ok,[string]$message){if(-not $ok){$script:assertionFailure=$message;$frames=@(Get-PSCallStack);if($frames.Count -gt 1){$script:assertionFailureLine=$frames[1].ScriptLineNumber};throw $message}}
 function Digest([string]$path){return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()}
 function Remove-OwnedTree([string]$path,[string]$parent,[string]$leaf){
     $resolved=[IO.Path]::GetFullPath($path);$expected=[IO.Path]::Combine([IO.Path]::GetFullPath($parent),$leaf)
@@ -95,6 +96,12 @@ function State-Snapshot {
     $dns=@(Get-DnsClientServerAddress -ErrorAction Stop | Sort-Object InterfaceIndex,AddressFamily | Select-Object InterfaceIndex,AddressFamily,ServerAddresses)
     return (ConvertTo-Json -InputObject @{services=$services;firewall=$firewall;dns=$dns} -Depth 8 -Compress)
 }
+function State-Checkpoint([string]$Phase) {
+    $snapshot=State-Snapshot
+    $comparison=Compare-InstallerState $script:stateBaseline $snapshot
+    $script:stateObservations+=,[ordered]@{phase=$Phase;comparison=$comparison}
+    return $snapshot
+}
 function Installed-TreeFingerprint {
     No-Reparse $install
     $items=@(Get-ChildItem -LiteralPath $install -Force -Recurse -ErrorAction Stop)
@@ -151,6 +158,7 @@ function Assert-Installed($expected){
 }
 $reportDirectory=Join-Path $project 'build\installer-lifecycle-checks';[void][IO.Directory]::CreateDirectory($reportDirectory)
 $reportPath=Join-Path $reportDirectory ($Architecture+'.json')
+$script:stateObservations=@();$script:stateBaseline=$null;$script:assertionFailureLine=$null
 $stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null;$registryReadCases=@();$registryViewCases=@();$registryAccessCases=@();$failureSourceLine=$null;$registryFixtureSHA256=$null;$productRegistrySHA256=$null;$restorationCases=@();$productRestoreSHA256=$null;$restoreFixtureSourceSHA256=$null;$restoreFixtureBinarySHA256=$null;$restoreContractSourceSHA256=$null;$restoreContractBinarySHA256=$null;$restorationOwnerCases=@();$restoreOwnerFixtureSHA256=$null;$restorationLaunchCases=@();$restoreLaunchFixtureSHA256=$null
 try {
     foreach($version in @('0.1.0-alpha','0.1.1-alpha')){
@@ -171,7 +179,7 @@ try {
     $versionFixture=Join-Path $capsule 'installer-version-contracts.exe'
     $versionFixtureSHA256=Digest $versionFixture
     $versionContracts=Native-Record $versionFixture @('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART')
-    $stage='baseline';$before=State-Snapshot
+    $stage='baseline';$before=State-Snapshot;$script:stateBaseline=$before;$script:stateObservations+=,[ordered]@{phase='baseline';comparison=(Compare-InstallerState $before $before)}
     Require (-not @(Get-Service -Name 'AccessWeaver-*' -ErrorAction SilentlyContinue).Count) 'Existing product services are outside this fixture'
     Require (-not @(Get-NetFirewallRule -Name 'AccessWeaver-*' -ErrorAction SilentlyContinue).Count) 'Existing product firewall rules are outside this fixture'
     $arguments=@('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/RESTARTEXITCODE=3010','/NOCLOSEAPPLICATIONS','/NORESTARTAPPLICATIONS','/NOICONS',('/DIR='+$install),('/GROUP='+$group))
@@ -180,15 +188,18 @@ try {
     $installed=Native-Record $first $arguments;Assert-Installed $builds[0];Create-UserProfile
     $marker=Join-Path $install 'unrelated-preserve.txt';[IO.File]::WriteAllText($marker,'unrelated-existing-file');$markerHash=Digest $marker
     $observations+=,@{operation='install';exitCode=$installed.result.exitCode;elapsedMilliseconds=$installed.milliseconds;deadlineMilliseconds=180000;payloadAndRegistrationVerified=$true}
+    $null=State-Checkpoint 'after-install'
     $stage='upgrade';$second=Join-Path $project ('build\'+$builds[1].installerName)
     Require ((Digest $second) -ceq $builds[1].installerSHA256) 'Upgrade installer changed after compilation'
     $upgraded=Native-Record $second $arguments;Assert-Installed $builds[1]
     Require ((Digest $marker) -ceq $markerHash) 'Upgrade changed an unrelated installed-directory file'
     $observations+=,@{operation='upgrade';exitCode=$upgraded.result.exitCode;elapsedMilliseconds=$upgraded.milliseconds;deadlineMilliseconds=180000;payloadAndRegistrationVerified=$true;unrelatedStatePreserved=$true}
+    $null=State-Checkpoint 'after-upgrade'
     $stage='reinstall'
     $reinstalled=Native-Record $second $arguments;Assert-Installed $builds[1]
     Require ((Digest $marker) -ceq $markerHash) 'Reinstall changed an unrelated installed-directory file'
     $observations+=,@{operation='reinstall';exitCode=$reinstalled.result.exitCode;elapsedMilliseconds=$reinstalled.milliseconds;deadlineMilliseconds=180000;payloadAndRegistrationVerified=$true;unrelatedStatePreserved=$true}
+    $null=State-Checkpoint 'after-reinstall'
     Require ((Read-InstallerPEMachine (Join-Path $install 'unins000.exe')) -eq 0x014c) 'Pinned Inno uninstaller differs from the supported x86 native-handle ABI'
     $stage='active-setup-uninstall';$lifecycleLockCases=@()
     $setupMutexName='Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092'
@@ -575,6 +586,7 @@ try {
         Require (-not (Test-Path -LiteralPath $managed)) 'Rejected restore input unexpectedly created machine recovery state'
     } finally {if(Test-Path -LiteralPath $request){No-Reparse $request;[IO.File]::WriteAllBytes($request,$original)}}
     $observations+=,@{operation='refused-uninstall';exitCode=$refused.result.exitCode;elapsedMilliseconds=$refused.milliseconds;deadlineMilliseconds=180000;controllerAndRegistrationRetained=$true;unrelatedStatePreserved=$true}
+    $null=State-Checkpoint 'before-uninstall'
     $stage='uninstall';$removed=Native-Record $uninstaller $silent
     $deadline=[DateTime]::UtcNow.AddSeconds(20)
     do {
@@ -591,7 +603,8 @@ try {
     Require ($journals.Count -eq 1) 'Expected exactly one recovery journal from clean removal'
     $journal=Get-Content -LiteralPath $journals[0].FullName -Raw | ConvertFrom-Json
     Require ($journal.action -ceq 'remove-all' -and $journal.state -ceq 'succeeded') 'Recovery-aware uninstall did not record successful machine restoration'
-    Require ((State-Snapshot) -ceq $before) 'Installer lifecycle changed selected services, firewall rules or DNS configuration'
+    $after=State-Checkpoint 'after-uninstall'
+    Require ($after -ceq $before) 'Installer lifecycle changed selected services, firewall rules or DNS configuration'
     $observations+=,@{operation='uninstall';exitCode=$removed.result.exitCode;elapsedMilliseconds=$removed.milliseconds;deadlineMilliseconds=180000;ownedPayloadAndRegistrationRemoved=$true;unrelatedStatePreserved=$true;recoveryJournalRetained=$true}
     $stage='cleanup'
     # Only the known successful journal may remain in the newly created store.
@@ -601,8 +614,8 @@ try {
     Remove-OwnedTree $install $programFiles $installLeaf
     Remove-OwnedTree $capsule $temporary $capsuleLeaf
     $complete=$true
-} catch {$failureType=$_.Exception.GetType().FullName;$failureSourceLine=$_.InvocationInfo.ScriptLineNumber}
-$record=[ordered]@{schemaVersion=7;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
-$record | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding utf8
+} catch {$failureType=$_.Exception.GetType().FullName;$failureSourceLine=$_.InvocationInfo.ScriptLineNumber;if($null -ne $script:assertionFailureLine){$failureSourceLine=$script:assertionFailureLine}}
+$record=[ordered]@{schemaVersion=7;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'

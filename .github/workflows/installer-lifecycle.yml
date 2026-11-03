@@ -41,6 +41,9 @@ jobs:
           go-version: '1.27.3'
           architecture: ${{ matrix.arch == 'amd64' && 'x64' || 'arm64' }}
           cache: false
+      - name: Pure state comparison diagnostics
+        shell: powershell
+        run: ./scripts/test-windows-installer-state.ps1
       - name: Exercise actual unsigned installer on a disposable native host
         shell: powershell
         env:
