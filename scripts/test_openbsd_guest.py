@@ -269,6 +269,21 @@ class SSHBootTests(unittest.TestCase):
 
 
 class SerialObservationTests(unittest.TestCase):
+    def test_bootstrap_failure_reports_only_a_known_stage_and_bounded_exit_code(self):
+        machine=probe.Console.__new__(probe.Console)
+        machine.condition=probe.threading.Condition()
+        for marker,stage,code in ((b'server-validation:1','server-validation',1),(b'seed-mount:255','seed-mount',255),
+                                  (b'PRIVATE_CREDENTIAL:1',None,None),(b'install:999',None,None),(b'install:0',None,None)):
+            machine.tail=bytearray(b'AW_OPENBSD_BOOTSTRAP_FAILED:'+marker+b'\r\n')
+            report=machine.observations()
+            self.assertEqual(report['bootstrapFailureStage'],stage)
+            self.assertEqual(report['bootstrapFailureExitCode'],code)
+            self.assertNotIn('PRIVATE_CREDENTIAL',json.dumps(report))
+        script=probe.bootstrap_script()
+        self.assertEqual(len({s for s,_ in probe.bootstrap_steps()}),len(probe.bootstrap_steps()))
+        for stage,command in probe.bootstrap_steps():
+            self.assertIn('stage='+stage+'\n'+command+'\n',script)
+
     def test_unanswered_prompt_is_fingerprinted_without_retaining_private_text(self):
         machine=probe.Console.__new__(probe.Console)
         machine.condition=probe.threading.Condition()

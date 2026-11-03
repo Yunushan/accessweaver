@@ -112,27 +112,34 @@ def response_file(arch, client_public):
     return "".join(question + " = " + answer + "\n" for question, answer in answers)
 
 
+def bootstrap_steps():
+    # Identifiers and commands are fixed source input, never console-derived.
+    return (
+        ("install", "/install -af /tmp/aw-install.conf </dev/null"),
+        ("completion-file", "test -f /tmp/ai/ai.done"),
+        ("target-directory", "test -d /mnt/etc/ssh"),
+        ("seed-directory", "mkdir -p /awseed"),
+        ("seed-device", "(cd /dev && sh MAKEDEV cd1)"),
+        ("seed-mount", "mount -t cd9660 -o ro /dev/cd1c /awseed"),
+        ("host-key", "cp /awseed/host /mnt/etc/ssh/ssh_host_ed25519_key"),
+        ("host-public-key", "cp /awseed/host.pub /mnt/etc/ssh/ssh_host_ed25519_key.pub"),
+        ("server-config", "cp /awseed/sshd_config /mnt/etc/ssh/sshd_config"),
+        ("private-permissions", "chmod 600 /mnt/etc/ssh/ssh_host_ed25519_key /mnt/etc/ssh/sshd_config"),
+        ("public-permissions", "chmod 644 /mnt/etc/ssh/ssh_host_ed25519_key.pub"),
+        ("ownership", "chown root:wheel /mnt/etc/ssh/ssh_host_ed25519_key /mnt/etc/ssh/ssh_host_ed25519_key.pub /mnt/etc/ssh/sshd_config"),
+        ("server-validation", "chroot /mnt /usr/sbin/sshd -t"),
+        ("sync", "sync"),
+        ("unmount", "umount -af"),
+    )
+
+
 def bootstrap_script():
-    return """#!/bin/ksh
-set -eu
-trap 'rc=$?; if ((rc != 0)); then print -u2 AW_OPENBSD_BOOTSTRAP_FAILED; fi' EXIT
-/install -af /tmp/aw-install.conf </dev/null
-test -f /tmp/ai/ai.done
-test -d /mnt/etc/ssh
-mkdir -p /awseed
-(cd /dev && sh MAKEDEV cd1)
-mount -t cd9660 -o ro /dev/cd1c /awseed
-cp /awseed/host /mnt/etc/ssh/ssh_host_ed25519_key
-cp /awseed/host.pub /mnt/etc/ssh/ssh_host_ed25519_key.pub
-cp /awseed/sshd_config /mnt/etc/ssh/sshd_config
-chmod 600 /mnt/etc/ssh/ssh_host_ed25519_key /mnt/etc/ssh/sshd_config
-chmod 644 /mnt/etc/ssh/ssh_host_ed25519_key.pub
-chown root:wheel /mnt/etc/ssh/ssh_host_ed25519_key /mnt/etc/ssh/ssh_host_ed25519_key.pub /mnt/etc/ssh/sshd_config
-chroot /mnt /usr/sbin/sshd -t
-sync
-umount -af
-printf '\\nAW_OPENBSD_PRIVATE_BOOTSTRAP_COMPLETE\\n'
-"""
+    lines = ["#!/bin/ksh", "set -eu", "stage=install",
+             "trap 'rc=$?; if ((rc != 0)); then print -u2 -- \"AW_OPENBSD_BOOTSTRAP_FAILED:$stage:$rc\"; fi' EXIT"]
+    for stage, command in bootstrap_steps():
+        lines.extend(("stage=" + stage, command))
+    lines.append("printf '\\nAW_OPENBSD_PRIVATE_BOOTSTRAP_COMPLETE\\n'")
+    return "\n".join(lines) + "\n"
 
 
 def bootstrap_command():
@@ -372,7 +379,13 @@ class Console:
         with self.condition:
             data = bytes(self.tail)
         unanswered = re.findall(rb'Question has no answer in response file: "([^"\r\n]{1,512})"', data)
-        return {"serialTailBytes": len(data), "serialTailSHA256": hashlib.sha256(data).hexdigest(),
+        failures = re.findall(rb"AW_OPENBSD_BOOTSTRAP_FAILED:([a-z-]{1,48}):([0-9]{1,3})(?=[\r\n])", data)
+        failure = failures[-1] if failures else None
+        if failure and (failure[0].decode() not in {s for s, _ in bootstrap_steps()} or not 0 < int(failure[1]) <= 255):
+            failure = None
+        return {"bootstrapFailureStage": failure[0].decode() if failure else None,
+                "bootstrapFailureExitCode": int(failure[1]) if failure else None,
+                "serialTailBytes": len(data), "serialTailSHA256": hashlib.sha256(data).hexdigest(),
                 "installerUnansweredPromptSHA256": hashlib.sha256(unanswered[-1]).hexdigest() if unanswered else None,
                 "installerQuestionWithoutAnswerObserved": b"Question has no answer" in data,
                 "installerSignatureFailureObserved": b"Signature check of SHA256.sig failed" in data,
