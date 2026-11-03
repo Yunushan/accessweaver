@@ -133,13 +133,14 @@ type Manager struct {
 	done         chan struct{}
 	closing      bool
 	execute      func(context.Context, string, Request) (json.RawMessage, error)
+	persist      func(string, []byte) error
 	platform     string
 	requireAdmin func() error
 }
 
 func New(root string) *Manager { return NewWithGuard(root, managed.NewGuard(nil)) }
 func NewWithGuard(root string, guard *managed.Guard) *Manager {
-	return &Manager{guard: guard, root: filepath.Join(root, "workflows"), plans: map[string]Plan{}, execute: execute, platform: runtime.GOOS, requireAdmin: requireAdministrator}
+	return &Manager{guard: guard, root: filepath.Join(root, "workflows"), plans: map[string]Plan{}, execute: execute, persist: profile.AtomicWrite, platform: runtime.GOOS, requireAdmin: requireAdministrator}
 }
 
 func (m *Manager) Preview(r Request) (Plan, error) {
@@ -480,7 +481,7 @@ func (m *Manager) Start(id string) (Job, error) {
 	}
 	m.cancel = cancel
 	m.job = Job{ID: id, Action: p.Request.Action, State: "running", StartedAt: time.Now().UTC()}
-	if err := m.saveLocked(); err != nil {
+	if err := m.saveJob(&m.job); err != nil {
 		cancel()
 		m.job.State = "failed"
 		return Job{}, err
@@ -488,6 +489,7 @@ func (m *Manager) Start(id string) (Job, error) {
 	done := make(chan struct{})
 	m.done = done
 	started = true
+	job := m.job
 	go func() {
 		defer close(done)
 		result, err := m.execute(ctx, filepath.Join(m.root, id), p.Request)
@@ -499,29 +501,36 @@ func (m *Manager) Start(id string) (Job, error) {
 			err = errors.Join(err, resultErr)
 		}
 		cancel()
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		m.job.Result = result
-		m.job.FinishedAt = time.Now().UTC()
-		m.job.State = "succeeded"
+		// Keep the published job running until its terminal write finishes.
+		// Encoding and storage must not hold mu: status/cancellation remain
+		// responsive, and Shutdown can honor its caller's waiting deadline.
+		job.Result = result
+		job.FinishedAt = time.Now().UTC()
+		job.State = "succeeded"
 		if err != nil {
-			m.job.State = "failed"
-			m.job.Error = err.Error()
+			job.State = "failed"
+			job.Error = err.Error()
 		}
-		if e := m.saveLocked(); e != nil {
-			m.job.State = "failed"
-			m.job.Error = boundedJobError("persist result: " + e.Error() + "; " + m.job.Error)
+		if e := m.saveJob(&job); e != nil {
+			job.State = "failed"
+			job.Error = boundedJobError("persist result: " + e.Error() + "; " + job.Error)
 		}
+		m.mu.Lock()
+		m.job = job
+		m.mu.Unlock()
 	}()
 	return m.job, nil
 }
-func (m *Manager) saveLocked() error {
-	m.job.Error = boundedJobError(m.job.Error)
-	b, e := encodeJob(m.job)
+
+// saveJob owns its argument. The initial running record is protected by mu;
+// the terminal record is private to the worker until persistence completes.
+func (m *Manager) saveJob(job *Job) error {
+	job.Error = boundedJobError(job.Error)
+	b, e := encodeJob(*job)
 	if e != nil {
 		return e
 	}
-	return profile.AtomicWrite(filepath.Join(m.root, m.job.ID+".json"), b)
+	return m.persist(filepath.Join(m.root, job.ID+".json"), b)
 }
 func (m *Manager) Snapshot() Job {
 	m.mu.Lock()

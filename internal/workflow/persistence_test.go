@@ -8,9 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/Yunushan/accessweaver/internal/profile"
 )
 
 // Both inputs satisfy the 32 MiB result contract, but formatting/HTML escaping
@@ -143,5 +146,115 @@ func TestWorkflowPersistenceFailureRemainsVisibleWithOversizedCause(t *testing.T
 	job := m.Snapshot()
 	if job.State != "failed" || len(job.Error) > 16<<10 || !strings.HasPrefix(job.Error, "persist result:") || !strings.Contains(job.Error, "truncated") {
 		t.Fatal("persistence failure hidden by oversized tool error")
+	}
+}
+
+func TestTerminalPersistenceDoesNotBlockControlOrClaimCompletion(t *testing.T) {
+	for _, failWrite := range []bool{false, true} {
+		name := "success"
+		if failWrite {
+			name = "failure"
+		}
+		t.Run(name, func(t *testing.T) {
+			m := New(t.TempDir())
+			m.platform = "windows"
+			m.execute = func(context.Context, string, Request) (json.RawMessage, error) {
+				return json.RawMessage(`{"ok":true}`), nil
+			}
+			writing, release := make(chan struct{}), make(chan struct{})
+			var releaseOnce sync.Once
+			unblock := func() { releaseOnce.Do(func() { close(release) }) }
+			m.persist = func(path string, data []byte) error {
+				var record Job
+				if err := json.Unmarshal(data, &record); err != nil {
+					return err
+				}
+				if record.State != "running" {
+					close(writing)
+					<-release
+					if failWrite {
+						return errors.New("injected terminal persistence failure")
+					}
+				}
+				return profile.AtomicWrite(path, data)
+			}
+			plan, err := m.Preview(Request{Action: "discover"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = m.Start(plan.ID); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				unblock()
+				select {
+				case <-m.done:
+				case <-time.After(5 * time.Second):
+					t.Error("fixture worker did not exit after releasing persistence")
+				}
+			})
+			select {
+			case <-writing:
+			case <-time.After(5 * time.Second):
+				t.Fatal("worker did not reach terminal persistence")
+			}
+			control := make(chan error, 1)
+			go func() {
+				if snapshot := m.Snapshot(); snapshot.State != "running" || !snapshot.FinishedAt.IsZero() || len(snapshot.Result) != 0 {
+					control <- errors.New("unfinished persistence published a terminal outcome")
+					return
+				}
+				m.Cancel()
+				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+				defer cancel()
+				if err := m.Shutdown(ctx); !errors.Is(err, context.DeadlineExceeded) {
+					control <- errors.New("shutdown claimed completion before persistence finished")
+					return
+				}
+				plan, err := m.Preview(Request{Action: "discover"})
+				if err != nil {
+					control <- err
+					return
+				}
+				if _, err = m.Start(plan.ID); err == nil {
+					control <- errors.New("shutdown accepted a new job while persistence was pending")
+					return
+				}
+				control <- nil
+			}()
+			select {
+			case err := <-control:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("terminal persistence blocked control operations")
+			}
+			select {
+			case <-m.done:
+				t.Fatal("worker completed before terminal persistence was released")
+			default:
+			}
+			unblock()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := m.Shutdown(ctx); err != nil {
+				t.Fatal(err)
+			}
+			job := m.Snapshot()
+			if job.FinishedAt.IsZero() || string(job.Result) != `{"ok":true}` {
+				t.Fatal("completed write lost the terminal result")
+			}
+			if failWrite {
+				if job.State != "failed" || !strings.Contains(job.Error, "persist result: injected terminal persistence failure") {
+					t.Fatal("failed persistence did not remain visible")
+				}
+			} else {
+				history, err := m.History()
+				if job.State != "succeeded" || err != nil || len(history) != 1 || history[0].State != "succeeded" || !bytes.Equal(history[0].Result, job.Result) {
+					t.Fatalf("successful shutdown was not durable: %v", err)
+				}
+			}
+		})
 	}
 }
