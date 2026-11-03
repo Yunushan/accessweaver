@@ -102,11 +102,15 @@ func completedPersistenceFixture(t *testing.T, result json.RawMessage, runErr er
 	if _, err = m.Start(plan.ID); err != nil {
 		t.Fatal(err)
 	}
+	// This is a durability/round-trip assertion for inputs up to 32 MiB, not
+	// a latency budget. CPU-emulated guest runs can exceed 15 seconds while
+	// validating and saving that input. Keep a bounded wait within the package
+	// deadline without reducing the input or omitting the read-back assertions.
 	select {
 	case <-m.done:
-	case <-time.After(15 * time.Second):
+	case <-time.After(time.Minute):
 		m.Cancel()
-		t.Fatal("fixture job did not record its terminal outcome")
+		t.Fatal("fixture job did not record its terminal outcome within one minute")
 	}
 	return m
 }
