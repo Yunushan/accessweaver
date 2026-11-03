@@ -77,6 +77,14 @@ class InstallerInputTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmp, patch.object(probe.common,'run'), self.assertRaises(ValueError):
                 probe.verify_manifest(self.signed(arch,'f'*64),Path(tmp),arch)
 
+    def test_authenticated_arm_bootstrap_pin_is_required_exactly_once(self):
+        valid=self.signed('arm64')
+        line=b'SHA256 (miniroot80.img) = '+probe.ARM_BOOTSTRAP_SHA256.encode()+b'\n'
+        for data in (valid.replace(line,b''),valid.replace(probe.ARM_BOOTSTRAP_SHA256.encode(),b'f'*64),valid+line):
+            with tempfile.TemporaryDirectory() as tmp,patch.object(probe.common,'run') as run,self.assertRaises(ValueError):
+                probe.verify_manifest(data,Path(tmp),'arm64')
+            run.assert_called_once()
+
     def test_unknown_signer_malformed_signature_and_oversize_fail_before_crypto(self):
         key=base64.b64decode(probe.PUBLIC_KEY)
         wrong=base64.b64encode(b'Ed'+b'Z'*8+b'0'*64)
@@ -91,6 +99,8 @@ class InstallerInputTests(unittest.TestCase):
             data=probe.response_file(arch,PUBLIC)
             self.assertIn('Which disk is the root disk = sd0\n',data)
             self.assertIn('Location of sets = cd0\n',data)
+            self.assertIn('Network interface to configure = vio0\n',data)
+            self.assertIn('Network interface to configure = done\n',data)
             self.assertIn('Allow root ssh login = no\n',data)
             self.assertIn('Password for root account = *************\n',data)
             self.assertNotIn('without verification',data)
@@ -168,7 +178,11 @@ class InstallerInputTests(unittest.TestCase):
                     self.assertNotIn('-fsdev',command)
                 self.assertTrue(any('file='+str(Path('/private/seed'))+',' in a for a in install))
                 self.assertIn('virtio-blk-pci,drive=osdisk,bootindex=2',install)
-                self.assertIn('scsi-cd,drive=installer,bus=scsi0.0'+(',bootindex=1' if arch=='amd64' else ''),install)
+                optical='ide-cd,drive=installer,bus=ide.1,unit=0,bootindex=1' if arch=='amd64' else 'scsi-cd,drive=installer,bus=scsi0.0'
+                self.assertIn(optical,install)
+                if arch=='amd64':
+                    self.assertIn('ide-cd,drive=seed,bus=ide.1,unit=1',install)
+                    self.assertNotIn('virtio-scsi-pci,id=scsi0',install)
                 if arch=='arm64':
                     self.assertIn('virtio-blk-pci,drive=bootdisk,bootindex=1',install)
                 self.assertIn('virtio-blk-pci,drive=osdisk,bootindex=1',runtime)
@@ -241,6 +255,23 @@ class SSHBootTests(unittest.TestCase):
         with patch.object(probe.common,'run') as run,self.assertRaises(TimeoutError):
             probe.wait_for_ssh(['ssh'],process,{},timeout=0)
         run.assert_not_called()
+
+
+class SerialObservationTests(unittest.TestCase):
+    def test_unanswered_prompt_is_fingerprinted_without_retaining_private_text(self):
+        machine=probe.Console.__new__(probe.Console)
+        machine.condition=probe.threading.Condition()
+        prompt=b'private fixture question?'
+        machine.tail=bytearray(b'PRIVATE_CREDENTIAL\nQuestion has no answer in response file: "'+prompt+b'"\n')
+        report=machine.observations()
+        self.assertTrue(report['installerQuestionWithoutAnswerObserved'])
+        self.assertEqual(report['installerUnansweredPromptSHA256'],probe.hashlib.sha256(prompt).hexdigest())
+        self.assertNotIn('private fixture',json.dumps(report))
+        self.assertNotIn('PRIVATE_CREDENTIAL',json.dumps(report))
+        machine.tail=bytearray(b'Question has no answer in response file: "'+b'x'*513+b'"\n')
+        self.assertIsNone(machine.observations()['installerUnansweredPromptSHA256'])
+        machine.tail=bytearray(b'ordinary boot')
+        self.assertIsNone(machine.observations()['installerUnansweredPromptSHA256'])
 
 
 @unittest.skipUnless(os.name=='posix','bounded serial subprocess pipes require POSIX')

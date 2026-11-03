@@ -90,8 +90,8 @@ def response_file(arch, client_public):
         raise ValueError("invalid OpenBSD bootstrap target or public key")
     answers = [
         ("System hostname", "awobsd"), ("Terminal type", "vt220"),
-        ("Which network interface", "vio0"), ("IPv4 address for vio0", "autoconf"),
-        ("IPv6 address for vio0", "none"), ("Which network interface", "done"),
+        ("Network interface to configure", "vio0"), ("IPv4 address for vio0", "autoconf"),
+        ("IPv6 address for vio0", "none"), ("Network interface to configure", "done"),
         ("DNS domain name", "invalid"), ("DNS nameservers", "10.0.2.3"),
         ("Password for root account", "*************"), ("Public ssh key for root account", "none"),
         ("Start sshd(8) by default", "yes"), ("Do you expect to run the X Window System", "no"),
@@ -269,11 +269,17 @@ def machine_command(target, disk, acceleration, firmware=None, installer=None, s
         args += ["-drive", f"file={bootstrap},if=none,id=bootdisk,format=raw,readonly=on",
                  "-device", "virtio-blk-pci,drive=bootdisk,bootindex=1"]
     if installer is not None:
-        optical = "scsi-cd,drive=installer,bus=scsi0.0" + (",bootindex=1" if bootstrap is None else "")
-        args += ["-device", "virtio-scsi-pci,id=scsi0", "-drive", f"file={installer},if=none,id=installer,media=cdrom,format=raw,readonly=on",
+        if target["arch"] == "amd64":
+            # Use the PC's native optical controller for the BIOS/CD loader.
+            # The installed root disk remains virtio and is always sd0.
+            optical, seed_device = "ide-cd,drive=installer,bus=ide.1,unit=0,bootindex=1", "ide-cd,drive=seed,bus=ide.1,unit=1"
+        else:
+            args += ["-device", "virtio-scsi-pci,id=scsi0"]
+            optical, seed_device = "scsi-cd,drive=installer,bus=scsi0.0", "scsi-cd,drive=seed,bus=scsi0.0"
+        args += ["-drive", f"file={installer},if=none,id=installer,media=cdrom,format=raw,readonly=on",
                  "-device", optical,
                  "-drive", f"file={seed},if=none,id=seed,media=cdrom,format=raw,readonly=on",
-                 "-device", "scsi-cd,drive=seed,bus=scsi0.0"]
+                 "-device", seed_device]
     args += ["-netdev", f"user,id=n1,restrict=on,hostfwd=tcp:127.0.0.1:{PORT}-:22", "-device", "virtio-net-pci,netdev=n1,romfile=",
              "-object", "rng-random,id=rng0,filename=/dev/urandom", "-device", "virtio-rng-pci,rng=rng0,max-bytes=1024,period=1000"]
     return args
@@ -356,7 +362,9 @@ class Console:
     def observations(self):
         with self.condition:
             data = bytes(self.tail)
+        unanswered = re.findall(rb'Question has no answer in response file: "([^"\r\n]{1,512})"', data)
         return {"serialTailBytes": len(data), "serialTailSHA256": hashlib.sha256(data).hexdigest(),
+                "installerUnansweredPromptSHA256": hashlib.sha256(unanswered[-1]).hexdigest() if unanswered else None,
                 "installerQuestionWithoutAnswerObserved": b"Question has no answer" in data,
                 "installerSignatureFailureObserved": b"Signature check of SHA256.sig failed" in data,
                 "installerCongratulationsObserved": b"CONGRATULATIONS!" in data,
