@@ -162,7 +162,9 @@ def package_sbom(package,identity,helper,launcher,payload_records,scripts_manife
         for f in records:
             ref=label+":"+f["path"];c=component(ref,f["path"],"file");c["hashes"]=[{"alg":"SHA-256","content":f["sha256"]}];components.append(c);edges.append({"ref":ref,"dependsOn":[]});file_refs.append(ref)
     root=copy.deepcopy(helper["metadata"]["component"]);root["bom-ref"]="application";root["name"]="AccessWeaver public desktop component";root["hashes"]=[{"alg":"SHA-256","content":digest(package)}]
-    root.setdefault("properties",[]).extend(properties({"inventory-scope":"compiled subjects and actual payload/scripts; OS dependency closure excluded","desktop-registration-is-separate-from-core-authority":"true"}))
+    overrides=properties({"inventory-scope":"compiled subjects and actual payload/scripts; OS dependency closure excluded","desktop-registration-is-separate-from-core-authority":"true"})
+    override_names={p["name"] for p in overrides}
+    root["properties"]=[p for p in root.get("properties",[]) if p["name"] not in override_names]+overrides
     result["metadata"]["component"]=root;result["metadata"]["tools"]={"components":[{"type":"application","name":"Apple pkgbuild","version":tool["osBuild"],"hashes":[{"alg":"SHA-256","content":tool["sha256"]}]}]}
     edges.append({"ref":"application","dependsOn":roots+file_refs});result["components"]=components;result["dependencies"]=edges;result["compositions"]=[{"aggregate":"incomplete","assemblies":["application"]}]
     validate(result,package,identity);return result

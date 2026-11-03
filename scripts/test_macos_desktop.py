@@ -85,11 +85,17 @@ class DesktopComponentContracts(unittest.TestCase):
             f=self.fixture(role);identity,encoded,payload,scripts,records,info,_=f
             raw=flat_package({"Bom":b"fixture-bom","PackageInfo":ET.tostring(info),"Payload":archive(payload),"Scripts":archive(scripts)})
             _,source=launcher_fixture.LauncherArchiveContracts().fixture();graph=json.loads(source["SBOM.cdx.json"])
+            graph["metadata"]["component"]["properties"].append({"name":"accessweaver:inventory-scope","value":"compiled helper graph"})
+            original_graph=json.dumps(graph,sort_keys=True)
             manifest=json.loads(encoded)["manifest"]
             paths=[dict(item,path="AccessWeaver.app/"+item["path"]) for item in manifest["files"]] if role=="application" else [{"path":record_name(encoded),"sha256":digest(encoded)}]
             result=package_sbom(raw,identity,graph,graph if role=="application" else None,paths,records,{"osBuild":"fixture","sha256":"a"*64})
             self.assertEqual({c["name"] for c in result["components"] if c["bom-ref"].startswith("payload:")},{n for n,v in payload.items() if "data" in v})
             self.assertTrue(all(c["aggregate"]=="incomplete" for c in result["compositions"]))
+            self.assertEqual(sum(p["name"]=="accessweaver:inventory-scope" for p in result["metadata"]["component"]["properties"]),1)
+            self.assertEqual(json.dumps(graph,sort_keys=True),original_graph)
+            helper_root=next(c for c in result["components"] if c["bom-ref"]=="helper:application")
+            self.assertEqual(next(p["value"] for p in helper_root["properties"] if p["name"]=="accessweaver:inventory-scope"),"compiled helper graph")
     @unittest.skipUnless(os.name=="posix","Physical modes/alias checks require POSIX")
     def test_real_bundle_does_not_hide_binary_bound_metadata_or_aliases(self):
         identity,encoded,_,_,_,_,values=self.fixture()
