@@ -477,46 +477,91 @@ func TestDarwinDeploymentRootCopyRecovery(t *testing.T) {
 	if e = os.CopyFS(appPath, os.DirFS("/Applications/AccessWeaver.app")); e != nil {
 		t.Fatal(e)
 	}
-	if e = os.Rename(filepath.Join(appPath, ManifestName), filepath.Join(containerPath, detachedDeploymentManifest)); e != nil {
+	if e = os.Remove(filepath.Join(appPath, ManifestName)); e != nil {
 		t.Fatal(e)
 	}
+	if e = os.Rename(filepath.Join(appPath, embeddedPayloadSBOM), filepath.Join(containerPath, PayloadSBOMName)); e != nil {
+		t.Fatal(e)
+	}
+	sbomData, e := os.ReadFile(filepath.Join(containerPath, PayloadSBOMName))
+	if e != nil {
+		t.Fatal(e)
+	}
+	newManifest, e := DecodeManifest(encoded)
+	if e != nil {
+		t.Fatal(e)
+	}
+	newManifest.SchemaVersion = 2
+	newManifest.PayloadSBOM = &File{PayloadSBOMName, int64(len(sbomData)), digest(sbomData), "0644"}
+	newManifest.Files = nil
+	legacyManifest, e := DecodeManifest(encoded)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, file := range legacyManifest.Files {
+		if file.Path != embeddedPayloadSBOM {
+			newManifest.Files = append(newManifest.Files, file)
+		}
+	}
+	// Canonical sorted-object encoding matches the native Python producer.
+	raw, e := json.Marshal(newManifest)
+	if e != nil {
+		t.Fatal(e)
+	}
+	var canonical map[string]any
+	if e = json.Unmarshal(raw, &canonical); e != nil {
+		t.Fatal(e)
+	}
+	newEncoded, e := json.MarshalIndent(canonical, "", "  ")
+	if e != nil {
+		t.Fatal(e)
+	}
+	newEncoded = append(newEncoded, '\n')
+	newIdentity := identity
+	newIdentity.ManifestSHA256 = digest(newEncoded)
 	container, e := os.Open(containerPath)
 	if e != nil {
 		t.Fatal(e)
 	}
 	defer container.Close()
+	if e = writeDetachedDeploymentFile(container, detachedDeploymentManifest, newEncoded); e != nil {
+		t.Fatal(e)
+	}
 	detachedParent := filepath.Join(parent, "detached-authority")
 	if e = os.Mkdir(detachedParent, 0755); e != nil {
 		t.Fatal(e)
 	}
 	detached := deploymentFixtureStore(t, detachedParent, nil)
-	manifestOnly, e := detached.prepare(identity)
-	if e != nil {
-		t.Fatal(e)
-	}
-	detached.observe = func(phase string) error {
-		if phase == "payload-manifest-durable" {
-			return errors.New("injected detached manifest interruption")
+	for _, interrupted := range []string{"payload-manifest-durable", "payload-sbom-durable"} {
+		partialSlot, e := detached.prepare(newIdentity)
+		if e != nil {
+			t.Fatal(e)
 		}
-		return nil
+		before := append([]byte{}, detached.encoded...)
+		detached.observe = func(phase string) error {
+			if phase == interrupted {
+				return errors.New("injected detached metadata interruption")
+			}
+			return nil
+		}
+		if published, e := detached.copyIncomingAndActivate(partialSlot, container); published || e == nil {
+			t.Fatal("metadata-only copy published", interrupted, e)
+		}
+		detached.observe = nil
+		if published, e := detached.activatePrepared(partialSlot); published || e == nil {
+			t.Fatal("metadata-only copy recovered as complete", interrupted, e)
+		}
+		if detached.state.Active != (deploymentSlot{}) || string(detached.encoded) != string(before) {
+			t.Fatal("metadata-only copy changed state", interrupted)
+		}
+		if _, e = detached.abandon(partialSlot.ID); e != nil {
+			t.Fatal(e)
+		}
+		if _, e = os.Stat(filepath.Join(detachedParent, deploymentRoot, "versions", partialSlot.ID, detachedDeploymentManifest)); e != nil {
+			t.Fatal("partial metadata evidence lost", e)
+		}
 	}
-	if published, e := detached.copyIncomingAndActivate(manifestOnly, container); published || e == nil {
-		t.Fatal("manifest-only copy published", e)
-	}
-	detached.observe = nil
-	if published, e := detached.activatePrepared(manifestOnly); published || e == nil {
-		t.Fatal("manifest-only copy recovered as complete", e)
-	}
-	if detached.state.Active != (deploymentSlot{}) {
-		t.Fatal("manifest-only copy changed active state")
-	}
-	if _, e = detached.abandon(manifestOnly.ID); e != nil {
-		t.Fatal(e)
-	}
-	if _, e = os.Stat(filepath.Join(detachedParent, deploymentRoot, "versions", manifestOnly.ID, detachedDeploymentManifest)); e != nil {
-		t.Fatal("partial manifest evidence lost", e)
-	}
-	whole, e := detached.prepare(identity)
+	whole, e := detached.prepare(newIdentity)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -542,7 +587,39 @@ func TestDarwinDeploymentRootCopyRecovery(t *testing.T) {
 	if e = detached.Close(); e != nil {
 		t.Fatal(e)
 	}
-	report := map[string]any{"schemaVersion": 1, "manifestSHA256": identity.ManifestSHA256, "payloadSHA256": identity.PayloadSHA256, "version": identity.Version, "fixedProtectedParentVerified": true, "partialCopyPreservedAndRefused": true, "completeCopyRecovered": true, "concurrentPreparationFenced": true, "postPublicationRemovalRecovered": true, "oldCompleteSlotFencedAfterRemoval": true, "restoredRetryVerified": true, "payloadIsIndependentCopy": true, "detachedManifestPartialCopyPreservedAndRefused": true, "detachedManifestCompleteCopyRecovered": true, "copiedCodeExecuted": false, "productionQualificationComplete": false, "finalGeneration": 4}
+	bridgeParent := filepath.Join(parent, "schema2-bridge")
+	if e = os.Mkdir(bridgeParent, 0755); e != nil {
+		t.Fatal(e)
+	}
+	bridge := deploymentFixtureStore(t, bridgeParent, nil)
+	oldSlot, e := bridge.prepare(identity)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if published, e := bridge.copyAndActivate(oldSlot, source); !published || e != nil {
+		t.Fatal("legacy bridge baseline", e)
+	}
+	newSlot, e := bridge.prepare(newIdentity)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if published, e := bridge.copyIncomingAndActivate(newSlot, container); !published || e != nil {
+		t.Fatal("schema2 bridge activation", e)
+	}
+	if bridge.state.Generation != 2 || bridge.state.Active != newSlot {
+		t.Fatal("schema2 bridge state differs")
+	}
+	if e = bridge.verifySlot(oldSlot); e != nil {
+		t.Fatal("legacy retained slot changed during schema2 activation", e)
+	}
+	if e = bridge.verifySlot(newSlot); e != nil {
+		t.Fatal(e)
+	}
+	if e = bridge.Close(); e != nil {
+		t.Fatal(e)
+	}
+
+	report := map[string]any{"schemaVersion": 1, "manifestSHA256": identity.ManifestSHA256, "payloadSHA256": identity.PayloadSHA256, "version": identity.Version, "fixedProtectedParentVerified": true, "partialCopyPreservedAndRefused": true, "completeCopyRecovered": true, "concurrentPreparationFenced": true, "postPublicationRemovalRecovered": true, "oldCompleteSlotFencedAfterRemoval": true, "restoredRetryVerified": true, "payloadIsIndependentCopy": true, "detachedManifestPartialCopyPreservedAndRefused": true, "detachedManifestCompleteCopyRecovered": true, "detachedPayloadSBOMPartialCopyPreservedAndRefused": true, "legacyToSchema2BridgeVerified": true, "detachedPayloadSBOMManifestSHA256": newIdentity.ManifestSHA256, "detachedPayloadSBOMSHA256": digest(sbomData), "copiedCodeExecuted": false, "productionQualificationComplete": false, "finalGeneration": 4}
 	data, _ := json.Marshal(report)
 	t.Log("DEPLOYMENT-RESULT " + string(data))
 }

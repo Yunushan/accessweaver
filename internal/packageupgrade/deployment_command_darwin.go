@@ -53,8 +53,8 @@ func openDeploymentIncoming(identity deploymentIdentity) (*os.File, error) {
 	if e != nil {
 		return nil, e
 	}
-	// The container carries either a strictly verified legacy app or the new
-	// detached manifest plus app. Its descriptor stays held through the copy.
+	// The exact legacy or schema2 container stays held through the copy.
+	// Both detached metadata files are authenticated by the compiled seal.
 	return stage, nil
 }
 func (s *deploymentStore) matchingPending(identity deploymentIdentity) (deploymentPending, bool, error) {
@@ -108,7 +108,7 @@ func (s *deploymentStore) reconcileDeployment(op string, identity deploymentIden
 		if e != nil {
 			return pending.Slot, false, "refused", e
 		}
-		entries, readErr := deploymentEntries(dir, 0, 2)
+		entries, readErr := deploymentEntries(dir, 0, 3)
 		closeErr := dir.Close()
 		if e = errors.Join(readErr, closeErr); e != nil {
 			return pending.Slot, false, "refused", e

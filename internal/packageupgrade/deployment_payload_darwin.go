@@ -10,7 +10,6 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"syscall"
 
 	"github.com/Yunushan/accessweaver/internal/darwintrust"
 	"golang.org/x/sys/unix"
@@ -24,57 +23,68 @@ func verifyDeploymentBundle(app *os.File, identity deploymentIdentity) (Manifest
 	if e != nil {
 		return Manifest{}, nil, e
 	}
-	return verifyDeploymentInventory(app, identity, encoded, true)
+	return verifyDeploymentInventory(app, identity, encoded, true, nil)
 }
 
 const detachedDeploymentManifest = "INSTALL-MANIFEST.json"
 
-// Inventory location is determined by an exact, protected container layout.
-// One app is the legacy embedded format; app plus sidecar is the new format.
-// Missing, duplicate, linked, or unexpected objects never trigger a fallback.
-func openDeploymentBundle(container *os.File) (*os.File, []byte, bool, error) {
+// Accept only three exact protected layouts: legacy embedded metadata, a
+// legacy detached inventory, or schema2 with both inventory and SBOM detached.
+// Layout alone never grants trust: inventory/core seals are verified below.
+func openDeploymentBundle(container *os.File) (*os.File, []byte, []byte, bool, error) {
 	if e := deploymentObject(container, true, 0, 0755); e != nil {
-		return nil, nil, false, e
+		return nil, nil, nil, false, e
 	}
-	entries, e := deploymentEntries(container, 0, 2)
+	entries, e := deploymentEntries(container, 0, 3)
 	if e != nil {
-		return nil, nil, false, e
+		return nil, nil, nil, false, e
 	}
-	hasApp, hasSidecar := false, false
+	hasApp, hasSidecar, hasSBOM := false, false, false
 	for _, entry := range entries {
 		switch entry.Name() {
 		case "AccessWeaver.app":
 			hasApp = true
 		case detachedDeploymentManifest:
 			hasSidecar = true
+		case PayloadSBOMName:
+			hasSBOM = true
 		default:
-			return nil, nil, false, errors.New("deployment bundle container inventory differs")
+			return nil, nil, nil, false, errors.New("deployment bundle container inventory differs")
 		}
 	}
-	if !hasApp || len(entries) != 1 && !hasSidecar {
-		return nil, nil, false, errors.New("deployment bundle container is incomplete")
+	if !hasApp || len(entries) != 1 && !hasSidecar || hasSBOM && !hasSidecar {
+		return nil, nil, nil, false, errors.New("deployment bundle container is incomplete")
 	}
 	app, e := directoryAt(container, "AccessWeaver.app")
 	if e != nil {
-		return nil, nil, false, e
+		return nil, nil, nil, false, e
 	}
-	var encoded []byte
+	var encoded, sbom []byte
 	if hasSidecar {
-		var st syscall.Stat_t
-		encoded, st, e = readAt(container, detachedDeploymentManifest, 2<<20)
-		if e == nil && st.Mode&07777 != 0644 {
-			e = errors.New("detached deployment manifest mode differs")
-		}
+		encoded, e = readDetachedDeploymentFile(container, detachedDeploymentManifest, 2<<20)
 	} else {
 		encoded, e = readPath(app, ManifestName, 2<<20)
 	}
-	if e != nil {
-		return nil, nil, false, errors.Join(e, app.Close())
+	if e == nil && hasSBOM {
+		sbom, e = readDetachedDeploymentFile(container, PayloadSBOMName, maxPayloadSBOM)
 	}
-	return app, encoded, !hasSidecar, nil
+	if e != nil {
+		return nil, nil, nil, false, errors.Join(e, app.Close())
+	}
+	return app, encoded, sbom, !hasSidecar, nil
+}
+func readDetachedDeploymentFile(container *os.File, name string, limit int64) ([]byte, error) {
+	data, st, e := readAt(container, name, limit)
+	if e != nil {
+		return nil, e
+	}
+	if st.Mode&07777 != 0644 || len(data) == 0 {
+		return nil, errors.New("detached deployment metadata mode/size differs")
+	}
+	return data, nil
 }
 
-func verifyDeploymentInventory(app *os.File, identity deploymentIdentity, encoded []byte, embedded bool) (Manifest, []byte, error) {
+func verifyDeploymentInventory(app *os.File, identity deploymentIdentity, encoded []byte, embedded bool, sbom []byte) (Manifest, []byte, error) {
 	var empty Manifest
 	if e := identity.validate(); e != nil {
 		return empty, nil, e
@@ -88,6 +98,13 @@ func verifyDeploymentInventory(app *os.File, identity deploymentIdentity, encode
 	m, e := DecodeManifest(encoded)
 	if e != nil {
 		return empty, nil, e
+	}
+	if m.SchemaVersion == 2 {
+		if embedded || int64(len(sbom)) != m.PayloadSBOM.Bytes || digest(sbom) != m.PayloadSBOM.SHA256 {
+			return empty, nil, errors.New("detached payload SBOM seal/layout differs")
+		}
+	} else if len(sbom) != 0 {
+		return empty, nil, errors.New("legacy deployment has unexpected detached SBOM")
 	}
 	fd, e := unix.Openat(int(app.Fd()), ".", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if e != nil {
@@ -152,12 +169,12 @@ func (s *deploymentStore) verifySlot(slot deploymentSlot) error {
 	if e = deploymentObject(dir, true, 0, 0755); e != nil {
 		return e
 	}
-	app, encoded, embedded, e := openDeploymentBundle(dir)
+	app, encoded, sbom, embedded, e := openDeploymentBundle(dir)
 	if e != nil {
 		return e
 	}
 	defer app.Close()
-	_, _, e = verifyDeploymentInventory(app, slot.Identity, encoded, embedded)
+	_, _, e = verifyDeploymentInventory(app, slot.Identity, encoded, embedded, sbom)
 	return e
 }
 
@@ -193,17 +210,17 @@ func (s *deploymentStore) copyAndActivate(slot deploymentSlot, source *os.File) 
 	if e != nil {
 		return false, e
 	}
-	return s.copyBundleAndActivate(slot, source, encoded, true)
+	return s.copyBundleAndActivate(slot, source, encoded, true, nil)
 }
 func (s *deploymentStore) copyIncomingAndActivate(slot deploymentSlot, container *os.File) (published bool, err error) {
-	app, encoded, embedded, e := openDeploymentBundle(container)
+	app, encoded, sbom, embedded, e := openDeploymentBundle(container)
 	if e != nil {
 		return false, e
 	}
 	defer func() { err = errors.Join(err, app.Close()) }()
-	return s.copyBundleAndActivate(slot, app, encoded, embedded)
+	return s.copyBundleAndActivate(slot, app, encoded, embedded, sbom)
 }
-func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.File, inventory []byte, embedded bool) (bool, error) {
+func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.File, inventory []byte, embedded bool, sbom []byte) (bool, error) {
 	if s.owner != 0 {
 		return false, errors.New("deployment copy requires root-owned storage")
 	}
@@ -211,7 +228,7 @@ func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.
 	if _, e := s.state.activate(slot); e != nil {
 		return false, e
 	}
-	m, encoded, e := verifyDeploymentInventory(source, slot.Identity, inventory, embedded)
+	m, encoded, e := verifyDeploymentInventory(source, slot.Identity, inventory, embedded, sbom)
 	if e != nil {
 		return false, e
 	}
@@ -262,19 +279,19 @@ func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.
 	if embedded {
 		files = append(files, File{Path: ManifestName, Bytes: int64(len(encoded)), SHA256: digest(encoded), Mode: "0644"})
 	} else {
-		f, createErr := darwintrust.CreateRegularAt(dir, detachedDeploymentManifest, 0)
-		if createErr != nil {
-			return false, createErr
-		}
-		n, writeErr := f.Write(encoded)
-		if writeErr == nil && n != len(encoded) {
-			writeErr = io.ErrShortWrite
-		}
-		if e = errors.Join(writeErr, f.Chmod(0644), fullDeploymentSync(f), f.Close(), fullDeploymentSync(dir)); e != nil {
+		if e = writeDetachedDeploymentFile(dir, detachedDeploymentManifest, encoded); e != nil {
 			return false, e
 		}
 		if e = s.phase("payload-manifest-durable"); e != nil {
 			return false, e
+		}
+		if m.SchemaVersion == 2 {
+			if e = writeDetachedDeploymentFile(dir, PayloadSBOMName, sbom); e != nil {
+				return false, e
+			}
+			if e = s.phase("payload-sbom-durable"); e != nil {
+				return false, e
+			}
 		}
 	}
 	for _, record := range files {
@@ -334,4 +351,18 @@ func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.
 		return false, e
 	}
 	return s.activatePrepared(slot)
+}
+
+// Create only in the private uncommitted slot. Partial metadata is retained;
+// neither a missing sibling nor a failed flush authorizes repair/publication.
+func writeDetachedDeploymentFile(container *os.File, name string, data []byte) error {
+	f, e := darwintrust.CreateRegularAt(container, name, 0)
+	if e != nil {
+		return e
+	}
+	n, writeErr := f.Write(data)
+	if writeErr == nil && n != len(data) {
+		writeErr = io.ErrShortWrite
+	}
+	return errors.Join(writeErr, f.Chmod(0644), fullDeploymentSync(f), f.Close(), fullDeploymentSync(container))
 }

@@ -34,25 +34,25 @@ func packageIncoming(identity deploymentIdentity, create bool) error {
 		return e
 	}
 	defer stage.Close()
-	entries, e := deploymentEntries(stage, 0, 2)
+	entries, e := deploymentEntries(stage, 0, 3)
 	if e != nil {
 		return e
 	}
 	if len(entries) == 0 {
 		return nil
 	}
-	if len(entries) != 2 {
+	if len(entries) != 3 {
 		return errors.New("existing package input has unexpected contents; preserve and inspect")
 	}
-	app, encoded, embedded, e := openDeploymentBundle(stage)
+	app, encoded, sbom, embedded, e := openDeploymentBundle(stage)
 	if e != nil {
 		return e
 	}
 	defer app.Close()
-	if embedded {
-		return errors.New("new packages require a detached deployment manifest")
+	if embedded || len(sbom) == 0 {
+		return errors.New("new packages require detached inventory and payload SBOM")
 	}
-	_, _, e = verifyDeploymentInventory(app, identity, encoded, false)
+	_, _, e = verifyDeploymentInventory(app, identity, encoded, false, sbom)
 	return e
 }
 

@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tempfile
 
-from macos_deployment import BUNDLE_NAME,MANIFEST,inspect_deployment,deployment_sbom
+from macos_deployment import BUNDLE_NAME,MANIFEST,PAYLOAD_SBOM,inspect_deployment,deployment_sbom
 from macos_installer import MAX_BYTES,require,digest
 from macos_package_archive import flat_members,cpio,inflate
 from sbom import validate,prop_map
@@ -56,8 +56,8 @@ def validate_contents(root,commit,arch):
         inspected=inspect_deployment(binary,encoded,identity,scripts)
         require(report.get("schemaVersion")==1 and report.get("sourceCommit")==commit and report.get("sourceState")=="clean" and report.get("target")=="darwin/"+arch and report.get("payloadBuild")==identity and report.get("helperBuild")==identity,"Deployment compiler/helper identity differs")
         require(report.get("packageFile")==package and report.get("packageBytes")==len(binary) and report.get("archiveInspection")==inspected,"Deployment actual package inspection differs")
-        for key in ("packageSHA256","payloadSHA256","manifestSHA256","helperSHA256"):require(report.get(key)==inspected[key],"Deployment subject differs")
-        require(report.get("helperMachO")==inspected["helperMachO"] and all(report.get(k) is True for k in ("packageScriptsIntegrated","actualExpandedPayloadAndScriptsVerified","detachedManifestOutsideAppVerified","unsigned")),"Deployment construction incomplete")
+        for key in ("packageSHA256","payloadSHA256","manifestSHA256","helperSHA256","payloadSBOMSHA256"):require(report.get(key)==inspected[key],"Deployment subject differs")
+        require(report.get("helperMachO")==inspected["helperMachO"] and all(report.get(k) is True for k in ("packageScriptsIntegrated","actualExpandedPayloadAndScriptsVerified","detachedManifestOutsideAppVerified","detachedPayloadSBOMOutsideAppVerified","unsigned")),"Deployment construction incomplete")
         for key in ("publisherSignatureVerified","notarized","installationExecuted","upgradeQualified","productUninstallQualified","launcherIntegrated","managedEndpointQualified","productionQualificationComplete"):require(report.get(key) is False,"Unqualified deployment construction scope changed")
         metadata=report["helperBuildMetadata"];settings={v["Key"]:v["Value"] for v in metadata["Settings"]}
         names={"Version":version,"Commit":commit,"SourceState":"clean","BuiltAt":identity["builtAt"]}
@@ -67,26 +67,26 @@ def validate_contents(root,commit,arch):
         members=flat_members(binary);payload=cpio(inflate(members["Payload"],MAX_BYTES,31));script_data=cpio(inflate(members["Scripts"],32<<20,31))
         core=payload[BUNDLE_NAME+"/Contents/MacOS/accessweaver"]["data"];helper=script_data["preinstall"]["data"]
         payload_bom=read(version+"-payload-SBOM.cdx.json");helper_bom=read(version+"-helper-SBOM.cdx.json");bom=read(package+".cdx.json")
-        require(payload[BUNDLE_NAME+"/Contents/Resources/SBOM.cdx.json"]["data"]==(root/(version+"-payload-SBOM.cdx.json")).read_bytes(),"Actual payload SBOM differs")
+        require(payload[PAYLOAD_SBOM]["data"]==(root/(version+"-payload-SBOM.cdx.json")).read_bytes(),"Actual payload SBOM differs")
         validate(payload_bom,core,identity);validate(helper_bom,helper,identity);validate(bom,binary,identity)
-        require(bom==deployment_sbom(binary,payload_bom,helper_bom,encoded,scripts,report["pkgbuild"],core,helper),"Deployment compiled/file graph differs")
+        require(bom==deployment_sbom(binary,(root/(version+"-payload-SBOM.cdx.json")).read_bytes(),helper_bom,encoded,scripts,report["pkgbuild"],core,helper),"Deployment compiled/file graph differs")
         for document,available,prefix in ((payload_bom,payload,BUNDLE_NAME+"/Contents/Resources/"),(helper_bom,script_data,"")):
             for component in [document["metadata"]["component"]]+document["components"]:
                 for evidence in json.loads(prop_map(component).get("accessweaver:license-evidence","[]")):
                     entry=available.get(prefix+evidence["path"]);require(entry is not None and not entry["directory"] and digest(entry["data"])==evidence["sha256"],"Packaged compiled-component notice differs")
-        package_bindings[version]={"file":package,"bytes":len(binary),**{key:inspected[key] for key in ("packageSHA256","payloadSHA256","manifestSHA256","helperSHA256")}}
+        package_bindings[version]={"file":package,"bytes":len(binary),**{key:inspected[key] for key in ("packageSHA256","payloadSHA256","manifestSHA256","helperSHA256","payloadSBOMSHA256")}}
         outputs.append(inspected)
     life=read("lifecycle-artifact.json")
     require(life.get("schemaVersion")==1 and life.get("sourceCommit")==commit and life.get("target")=="darwin/"+arch and life.get("stage")=="deactivation-and-owned-cleanup" and life.get("failureType") is None and life.get("failureSourceLine") is None,"Deployment lifecycle identity/completion differs")
     require(life.get("packages")==package_bindings and re.fullmatch("[1-9][0-9]{0,19}",str(life.get("runID",""))) is not None,"Native lifecycle is not bound to the actual package subjects/run")
-    for key in ("passed","packageScriptsIntegrated","actualApplePackageUpgradeExecuted","actualUserProfilePreservationVerified","retainedPriorCopiesVerified","ownedFixturesRemoved","detachedManifestSealingVerified"):require(life.get(key) is True,"Actual deployment lifecycle did not pass")
+    for key in ("passed","packageScriptsIntegrated","actualApplePackageUpgradeExecuted","actualUserProfilePreservationVerified","retainedPriorCopiesVerified","ownedFixturesRemoved","detachedManifestSealingVerified","detachedPayloadSBOMSealingVerified"):require(life.get(key) is True,"Actual deployment lifecycle did not pass")
     for key in ("installedCodeExecutedAsRoot","publicLauncherIntegrated","runtimeLeaseQualified","publisherSignatureVerified","notarized","productUninstallQualified","managedEndpointQualified","abruptTerminationQualified","rebootOrPowerLossQualified","productionQualificationComplete"):require(life.get(key) is False,"Unqualified deployment lifecycle scope changed")
     lease_cases=life.get("runtimeLeaseCases",[])
     require(life.get("installedControllerLeaseRefusalVerified") is True and len(lease_cases)==3 and [c.get("kind") for c in lease_cases]==["direct","inherited","alias"],"Installed controller lease coverage differs")
     for case in lease_cases:
         require(type(case.get("installerExitCode")) is int and 1<=case["installerExitCode"]<=255 and type(case.get("elapsedMilliseconds")) is int and 0<=case["elapsedMilliseconds"]<=180000,"Runtime lease refusal exit/timing differs")
         require(all(case.get(k) is True for k in ("servingControllerVerified","activeRecordAndReceiptBytesPreserved","actualProfilePreserved","controllerRemainedRunning","passed")) and case.get("parentInheritedDescriptorClosed") is (case["kind"]=="inherited"),"Runtime lease did not preserve the serving controller")
-    expected=[("clean-install",VERSIONS[0],1),("upgrade",VERSIONS[1],2),("same-version-reinstall",VERSIONS[1],3),("older-version-refused",VERSIONS[0],None),("changed-detached-manifest-refused",VERSIONS[1],None),("changed-staging-refused",VERSIONS[1],None),("restored-reinstall",VERSIONS[1],4),("deactivate-for-cleanup",VERSIONS[1],5)]
+    expected=[("clean-install",VERSIONS[0],1),("upgrade",VERSIONS[1],2),("same-version-reinstall",VERSIONS[1],3),("older-version-refused",VERSIONS[0],None),("changed-detached-sbom-refused",VERSIONS[1],None),("changed-detached-manifest-refused",VERSIONS[1],None),("changed-staging-refused",VERSIONS[1],None),("restored-reinstall",VERSIONS[1],4),("deactivate-for-cleanup",VERSIONS[1],5)]
     operations=life.get("operations",[]);require(len(operations)==len(expected),"Deployment lifecycle operation extent differs")
     slots=set()
     for op,(name,version,generation) in zip(operations,expected):
@@ -97,7 +97,7 @@ def validate_contents(root,commit,arch):
             if generation<5:
                 require(op.get("activeIdentity")=={"version":version,"manifestSHA256":package_bindings[version]["manifestSHA256"],"payloadSHA256":package_bindings[version]["payloadSHA256"]},"Activated compiled seal differs from actual package")
                 require(op.get("actualUnelevatedRuntimeVerified") is True and op.get("retainedPriorCopiesVerified") is True and re.fullmatch("[a-f0-9]{32}",op.get("slotID","")) is not None and op["slotID"] not in slots,"Activated package copy identity differs");slots.add(op["slotID"])
-    return {"packages":outputs,"lifecycleRunID":str(life["runID"]),"actualApplePackageOperations":11,"retainedIndependentCopies":4,"publisherSignatureVerified":False,"productionQualificationComplete":False}
+    return {"packages":outputs,"lifecycleRunID":str(life["runID"]),"actualApplePackageOperations":12,"retainedIndependentCopies":4,"publisherSignatureVerified":False,"productionQualificationComplete":False}
 
 
 def copy_subject(source,destination,limit):

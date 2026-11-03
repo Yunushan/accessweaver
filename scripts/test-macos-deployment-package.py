@@ -11,7 +11,7 @@ import shutil
 import stat
 import tempfile
 
-from macos_deployment import PACKAGE_ID,INCOMING,inspect_deployment,DETACHED_MANIFEST,verify_deployment_bundle
+from macos_deployment import PACKAGE_ID,INCOMING,inspect_deployment,DETACHED_MANIFEST,PAYLOAD_SBOM,verify_deployment_bundle
 from macos_installer import BUNDLE_NAME,digest,require,MAX_BYTES
 from macos_package_archive import flat_members,cpio,inflate
 
@@ -145,6 +145,13 @@ def main():
         install("same-version-reinstall",VERSIONS[1],3)
         install("older-version-refused",VERSIONS[0],3,False)
         candidate=candidates[VERSIONS[1]];incoming=INPUT/candidate["report"]["manifestSHA256"]/BUNDLE_NAME;verify_deployment_bundle(incoming,candidate["manifest"],candidate["identity"],candidate["manifestBytes"])
+        payload_sbom=incoming.parent/PAYLOAD_SBOM;original_sbom=capsule/"saved-payload-sbom";original_sbom.write_bytes(payload_sbom.read_bytes())
+        changed_sbom=capsule/"changed-payload-sbom";changed_sbom.write_bytes(original_sbom.read_bytes()+b" ")
+        run(["/usr/bin/sudo","-n","/bin/cp",changed_sbom,payload_sbom],environment)
+        install("changed-detached-sbom-refused",VERSIONS[1],3,False)
+        require(payload_sbom.read_bytes()==changed_sbom.read_bytes(),"Refused package overwrote a changed detached SBOM")
+        run(["/usr/bin/sudo","-n","/bin/cp",original_sbom,payload_sbom],environment)
+        verify_deployment_bundle(incoming,candidate["manifest"],candidate["identity"],candidate["manifestBytes"])
         sidecar=incoming.parent/DETACHED_MANIFEST;original_manifest=capsule/"saved-detached-manifest";original_manifest.write_bytes(sidecar.read_bytes())
         changed_manifest=capsule/"changed-detached-manifest";changed_manifest.write_bytes(original_manifest.read_bytes()+b" ")
         run(["/usr/bin/sudo","-n","/bin/cp",changed_manifest,sidecar],environment)
@@ -180,7 +187,7 @@ def main():
         while trace:
             if trace.tb_frame.f_code.co_filename==__file__:failure_line=trace.tb_lineno
             trace=trace.tb_next
-    report={"schemaVersion":1,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packages":{v:{"file":c["report"]["packageFile"],"bytes":c["report"]["packageBytes"],"packageSHA256":c["report"]["packageSHA256"],"payloadSHA256":c["report"]["payloadSHA256"],"manifestSHA256":c["report"]["manifestSHA256"],"helperSHA256":c["report"]["helperSHA256"]} for v,c in candidates.items()},"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"runtimeLeaseCases":lease_cases,"installedControllerLeaseRefusalVerified":complete,"packageScriptsIntegrated":True,"detachedManifestSealingVerified":complete,"actualApplePackageUpgradeExecuted":complete,"actualUserProfilePreservationVerified":complete,"retainedPriorCopiesVerified":complete,"ownedFixturesRemoved":cleaned,"installedCodeExecutedAsRoot":False,"publicLauncherIntegrated":False,"runtimeLeaseQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"abruptTerminationQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
+    report={"schemaVersion":1,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packages":{v:{"file":c["report"]["packageFile"],"bytes":c["report"]["packageBytes"],"packageSHA256":c["report"]["packageSHA256"],"payloadSHA256":c["report"]["payloadSHA256"],"manifestSHA256":c["report"]["manifestSHA256"],"helperSHA256":c["report"]["helperSHA256"],"payloadSBOMSHA256":c["report"]["payloadSBOMSHA256"]} for v,c in candidates.items()},"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"runtimeLeaseCases":lease_cases,"installedControllerLeaseRefusalVerified":complete,"packageScriptsIntegrated":True,"detachedManifestSealingVerified":complete,"detachedPayloadSBOMSealingVerified":complete,"actualApplePackageUpgradeExecuted":complete,"actualUserProfilePreservationVerified":complete,"retainedPriorCopiesVerified":complete,"ownedFixturesRemoved":cleaned,"installedCodeExecutedAsRoot":False,"publicLauncherIntegrated":False,"runtimeLeaseQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"abruptTerminationQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
     (root/"lifecycle-artifact.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     require(complete,"Native deployment package acceptance failed at "+stage+"; owned disposable state retained")
     print(json.dumps({"target":report["target"],"actualApplePackageOperations":len(operations)+len(lease_cases),"passed":True,"productionQualificationComplete":False}))

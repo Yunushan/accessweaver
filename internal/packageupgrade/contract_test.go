@@ -100,3 +100,56 @@ func TestBuildAndNativeReceiptIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestDetachedPayloadSBOMManifestContracts(t *testing.T) {
+	makeManifest := func() Manifest {
+		m := fixture()
+		m.SchemaVersion = 2
+		m.Files = m.Files[:3]
+		m.PayloadSBOM = &File{PayloadSBOMName, 32, strings.Repeat("b", 64), "0644"}
+		return m
+	}
+	good, _ := json.Marshal(makeManifest())
+	sealedMeta, _ := json.Marshal(makeManifest().PayloadSBOM)
+	if _, e := DecodeManifest(good); e != nil {
+		t.Fatal(e)
+	}
+	for name, mutate := range map[string]func(*Manifest){
+		"missing seal":      func(m *Manifest) { m.PayloadSBOM = nil },
+		"legacy extra seal": func(m *Manifest) { m.SchemaVersion = 1 },
+		"unknown schema":    func(m *Manifest) { m.SchemaVersion = 3 },
+		"caller path":       func(m *Manifest) { m.PayloadSBOM.Path = "../other" },
+		"wrong name":        func(m *Manifest) { m.PayloadSBOM.Path = "other.cdx.json" },
+		"zero bytes":        func(m *Manifest) { m.PayloadSBOM.Bytes = 0 },
+		"oversize":          func(m *Manifest) { m.PayloadSBOM.Bytes = maxPayloadSBOM + 1 },
+		"bad hash":          func(m *Manifest) { m.PayloadSBOM.SHA256 = "unknown" },
+		"aggregate including metadata": func(m *Manifest) {
+			m.PayloadSBOM.Bytes = maxPayloadSBOM
+			for i := range m.Files {
+				m.Files[i].Bytes = 42 << 20
+			}
+		},
+		"executable": func(m *Manifest) { m.PayloadSBOM.Mode = "0755" },
+		"duplicate embedded": func(m *Manifest) {
+			m.Files = append(m.Files, File{embeddedPayloadSBOM, 32, strings.Repeat("a", 64), "0644"})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := makeManifest()
+			mutate(&m)
+			raw, _ := json.Marshal(m)
+			if _, e := DecodeManifest(raw); e == nil {
+				t.Fatal("invalid detached SBOM accepted")
+			}
+		})
+	}
+	for _, raw := range []string{
+		strings.Replace(string(good), `"payloadSBOM":`+string(sealedMeta), `"payloadSBOM":null`, 1),
+		strings.Replace(string(good), `"path":"payload-SBOM.cdx.json"`, `"path":"payload-SBOM.cdx.json","path":"payload-SBOM.cdx.json"`, 1),
+		strings.Replace(string(good), `"bytes":32,"sha256":"bbbb`, `"bytes":null,"sha256":"bbbb`, 1),
+	} {
+		if _, e := DecodeManifest([]byte(raw)); e == nil {
+			t.Fatal("ambiguous detached metadata accepted")
+		}
+	}
+}

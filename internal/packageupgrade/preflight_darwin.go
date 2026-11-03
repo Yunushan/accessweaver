@@ -142,6 +142,9 @@ func inspectBundle(root *os.File, m Manifest, encoded []byte) (map[string][]byte
 // Detached inventories cover every app file, including code-signature resources.
 // Only the legacy reader admits the embedded inventory as an excluded file.
 func inspectBundleInventory(root *os.File, m Manifest, encoded []byte, embedded bool) (map[string][]byte, error) {
+	if embedded && m.SchemaVersion != 1 {
+		return nil, errors.New("embedded manifest schema differs")
+	}
 	files := map[string]File{}
 	dirs := map[string]bool{}
 	seen := map[string]bool{}

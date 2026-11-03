@@ -9,8 +9,8 @@ import plistlib
 import shutil
 import tempfile
 
-from macos_deployment import BUNDLE_NAME,PACKAGE_ID,MANIFEST,DETACHED_MANIFEST,verify_deployment_bundle,install_location,inspect_deployment,deployment_sbom,manifest_contract
-from macos_installer import digest,macho_identity,require,version_parts,MAX_BYTES
+from macos_deployment import BUNDLE_NAME,PACKAGE_ID,MANIFEST,DETACHED_MANIFEST,PAYLOAD_SBOM,EMBEDDED_SBOM,detached_payload_manifest,verify_deployment_bundle,install_location,inspect_deployment,deployment_sbom,manifest_contract
+from macos_installer import bundle_manifest,digest,macho_identity,require,version_parts,MAX_BYTES
 from macos_package_archive import flat_members,cpio,inflate,inspect as inspect_legacy
 from sbom import generate,validate
 
@@ -45,12 +45,19 @@ def build(version,arch,go="go"):
         for directory in sorted(manifest["directories"],key=lambda d:d["path"]):
             path=app/directory["path"];path.mkdir();path.chmod(0o755)
         for record in manifest["files"]:
+            if record["path"]==EMBEDDED_SBOM:continue
             path=app/record["path"]
             with path.open("xb") as stream:stream.write(entries[prefix+record["path"]]["data"])
             path.chmod(int(record["mode"],8))
+        payload_raw=(source/PAYLOAD_SBOM).read_bytes()
+        require(entries[prefix+EMBEDDED_SBOM]["data"]==payload_raw,"Legacy payload SBOM input differs")
+        (payload/PAYLOAD_SBOM).write_bytes(payload_raw);(payload/PAYLOAD_SBOM).chmod(0o644)
+        manifest=detached_payload_manifest(bundle_manifest(app),payload_raw)
+        encoded=(json.dumps(manifest,indent=2,sort_keys=True)+"\n").encode("utf-8")
         (payload/DETACHED_MANIFEST).write_bytes(encoded);(payload/DETACHED_MANIFEST).chmod(0o644)
         payload.chmod(0o755);app.chmod(0o755);verify_deployment_bundle(app,manifest,identity,encoded)
-        core=entries[prefix+"Contents/MacOS/accessweaver"]["data"]
+        core=(app/"Contents/MacOS/accessweaver").read_bytes()
+        validate(json.loads(payload_raw),core,identity)
         names={"Version":version,"Commit":identity["commit"],"SourceState":"clean","BuiltAt":identity["builtAt"]}
         flags=["-X github.com/Yunushan/accessweaver/internal/buildinfo."+key+"="+value for key,value in names.items()]
         flags.extend("-X github.com/Yunushan/accessweaver/internal/packageupgrade."+key+"="+value for key,value in {"sealedVersion":version,"sealedManifestSHA256":digest(encoded),"sealedPayloadSHA256":digest(core)}.items())
@@ -89,16 +96,15 @@ def build(version,arch,go="go"):
             require(path.is_file() and not path.is_symlink() and digest(path.read_bytes())==record["sha256"],"Expanded package script differs")
         signature=run(["/usr/sbin/pkgutil","--check-signature",package],env=child_env,codes=(0,1))
         require(signature.returncode!=0 and b"no signature" in (signature.stdout+signature.stderr).lower(),"Experimental package unexpectedly has a publisher signature")
-        payload_bom=json.loads((source/"payload-SBOM.cdx.json").read_bytes())
-        bom=deployment_sbom(package_bytes,payload_bom,helper_bom,encoded,scripts_manifest,original["pkgbuild"],core,helper_bytes)
+        bom=deployment_sbom(package_bytes,payload_raw,helper_bom,encoded,scripts_manifest,original["pkgbuild"],core,helper_bytes)
         encode(output/(filename+".cdx.json"),bom)
         encode(output/"BUILD-INFO.json",identity);encode(output/"SCRIPT-MANIFEST.json",scripts_manifest)
         (output/"INSTALL-MANIFEST.json").write_bytes(encoded)
-        encode(output/"payload-SBOM.cdx.json",payload_bom);encode(output/"helper-SBOM.cdx.json",helper_bom)
+        (output/PAYLOAD_SBOM).write_bytes(payload_raw);encode(output/"helper-SBOM.cdx.json",helper_bom)
         validator=stage/"sbom-schema"
         run([go,"-C",REPO/"scripts/sbom-tools","build","-mod=readonly","-trimpath","-o",validator,"."],env=environment)
         run([validator,"--schemas",REPO/"scripts/sbom/schema",output/(filename+".cdx.json"),output/"payload-SBOM.cdx.json",output/"helper-SBOM.cdx.json"],env=child_env)
-        report={"schemaVersion":1,"sourceCommit":identity["commit"],"sourceState":"clean","target":"darwin/"+arch,"payloadBuild":identity,"packageFile":filename,"packageBytes":len(package_bytes),"packageSHA256":digest(package_bytes),"payloadSHA256":digest(core),"manifestSHA256":digest(encoded),"helperSHA256":digest(helper_bytes),"helperBuild":actual,"helperBuildMetadata":helper_build,"helperLinkerFlags":" ".join(flags),"helperMachO":helper_native,"pkgbuild":original["pkgbuild"],"archiveInspection":inspected,"actualExpandedPayloadAndScriptsVerified":True,"packageScriptsIntegrated":True,"detachedManifestOutsideAppVerified":True,"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"installationExecuted":False,"upgradeQualified":False,"productUninstallQualified":False,"launcherIntegrated":False,"managedEndpointQualified":False,"productionQualificationComplete":False}
+        report={"schemaVersion":1,"sourceCommit":identity["commit"],"sourceState":"clean","target":"darwin/"+arch,"payloadBuild":identity,"packageFile":filename,"packageBytes":len(package_bytes),"packageSHA256":digest(package_bytes),"payloadSHA256":digest(core),"manifestSHA256":digest(encoded),"helperSHA256":digest(helper_bytes),"helperBuild":actual,"helperBuildMetadata":helper_build,"helperLinkerFlags":" ".join(flags),"helperMachO":helper_native,"pkgbuild":original["pkgbuild"],"archiveInspection":inspected,"actualExpandedPayloadAndScriptsVerified":True,"packageScriptsIntegrated":True,"detachedManifestOutsideAppVerified":True,"detachedPayloadSBOMOutsideAppVerified":True,"payloadSBOMSHA256":digest(payload_raw),"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"installationExecuted":False,"upgradeQualified":False,"productUninstallQualified":False,"launcherIntegrated":False,"managedEndpointQualified":False,"productionQualificationComplete":False}
         encode(output/"compiler-artifact.json",report)
         return report
     finally:

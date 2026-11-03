@@ -82,7 +82,13 @@ def bundle_manifest(bundle):
     return {"schemaVersion":1,"bundleIdentifier":BUNDLE_ID,"files":sorted(entries,key=lambda v:v["path"]),"directories":sorted(directories,key=lambda v:v["path"])}
 
 def verify_bundle(bundle,manifest,identity,*,manifest_path=None):
-    require(bundle_manifest(bundle)==manifest,"App bundle differs from its sealed manifest")
+    keys={"schemaVersion","bundleIdentifier","files","directories"}
+    require(type(manifest) is dict and type(manifest.get("schemaVersion")) is int and manifest["schemaVersion"] in (1,2),"Unsupported bundle inventory schema")
+    require(set(manifest)==keys|({"payloadSBOM"} if manifest["schemaVersion"]==2 else set()),"Unexpected bundle inventory field")
+    inventory={k:manifest[k] for k in ("schemaVersion","bundleIdentifier","files","directories")};inventory["schemaVersion"]=1
+    require(bundle_manifest(bundle)==inventory,"App bundle differs from its sealed manifest")
+    if manifest["schemaVersion"]==2:
+        require(manifest_path is not None and not os.path.lexists(Path(bundle)/"Contents/Resources/SBOM.cdx.json"),"Schema2 metadata must remain outside the app")
     bundle=Path(bundle)
     require(stat.S_IMODE((bundle/"Contents/MacOS/accessweaver").stat().st_mode)==0o755,"App executable mode differs")
     embedded=bundle/"Contents/Resources/INSTALL-MANIFEST.json"

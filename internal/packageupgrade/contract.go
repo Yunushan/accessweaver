@@ -23,6 +23,9 @@ const BundleID = "io.github.yunushan.accessweaver"
 const MaxFiles = 4096
 const MaxBytes = 128 << 20
 const ManifestName = "Contents/Resources/INSTALL-MANIFEST.json"
+const PayloadSBOMName = "payload-SBOM.cdx.json"
+const embeddedPayloadSBOM = "Contents/Resources/SBOM.cdx.json"
+const maxPayloadSBOM = 8 << 20
 
 var release = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$`)
 var relative = regexp.MustCompile(`^(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+$`)
@@ -137,6 +140,7 @@ type Manifest struct {
 	BundleIdentifier string      `json:"bundleIdentifier"`
 	Files            []File      `json:"files"`
 	Directories      []Directory `json:"directories"`
+	PayloadSBOM      *File       `json:"payloadSBOM,omitempty"`
 }
 
 func strict(data []byte, into any) error {
@@ -147,6 +151,9 @@ func strict(data []byte, into any) error {
 	count := 0
 	var visit func(int, reflect.Type) error
 	visit = func(depth int, shape reflect.Type) error {
+		for shape.Kind() == reflect.Pointer {
+			shape = shape.Elem()
+		}
 		count++
 		if depth > 32 || count > 65536 {
 			return errors.New("JSON structure exceeds limit")
@@ -230,12 +237,23 @@ func DecodeManifest(data []byte) (Manifest, error) {
 	if e := strict(data, &m); e != nil {
 		return m, e
 	}
-	if m.SchemaVersion != 1 || m.BundleIdentifier != BundleID || len(m.Files) < 4 || len(m.Files)+len(m.Directories) > MaxFiles {
+	if (m.SchemaVersion != 1 && m.SchemaVersion != 2) || m.BundleIdentifier != BundleID || len(m.Files) < 3 || len(m.Files)+len(m.Directories) > MaxFiles {
 		return m, errors.New("unsupported manifest identity/inventory")
 	}
 	names := map[string]bool{}
 	dirs := map[string]bool{}
 	total := int64(0)
+	if m.SchemaVersion == 1 {
+		if m.PayloadSBOM != nil {
+			return m, errors.New("legacy manifest cannot declare detached SBOM")
+		}
+	} else {
+		f := m.PayloadSBOM
+		if f == nil || f.Path != PayloadSBOMName || f.Bytes <= 0 || f.Bytes > maxPayloadSBOM || !hash.MatchString(f.SHA256) || f.Mode != "0644" || len(m.Files)+len(m.Directories) > MaxFiles-5 {
+			return m, errors.New("invalid detached payload SBOM seal")
+		}
+		total = f.Bytes
+	}
 	for _, d := range m.Directories {
 		if !validPath(d.Path) || names[d.Path] || d.Mode != "0755" {
 			return m, errors.New("unsafe manifest directory")
@@ -243,9 +261,12 @@ func DecodeManifest(data []byte) (Manifest, error) {
 		names[d.Path] = true
 		dirs[d.Path] = true
 	}
-	required := map[string]bool{"Contents/Info.plist": false, "Contents/MacOS/accessweaver": false, "Contents/Resources/BUILD-INFO.json": false, "Contents/Resources/SBOM.cdx.json": false}
+	required := map[string]bool{"Contents/Info.plist": false, "Contents/MacOS/accessweaver": false, "Contents/Resources/BUILD-INFO.json": false}
+	if m.SchemaVersion == 1 {
+		required[embeddedPayloadSBOM] = false
+	}
 	for _, f := range m.Files {
-		if !validPath(f.Path) || names[f.Path] || f.Path == ManifestName || f.Bytes < 0 || f.Bytes > 64<<20 || !hash.MatchString(f.SHA256) || f.Mode != "0644" && !(f.Path == "Contents/MacOS/accessweaver" && f.Mode == "0755") {
+		if !validPath(f.Path) || names[f.Path] || f.Path == ManifestName || (m.SchemaVersion == 2 && f.Path == embeddedPayloadSBOM) || f.Bytes < 0 || f.Bytes > 64<<20 || !hash.MatchString(f.SHA256) || f.Mode != "0644" && !(f.Path == "Contents/MacOS/accessweaver" && f.Mode == "0755") {
 			return m, errors.New("unsafe manifest file")
 		}
 		if f.Path == "Contents/MacOS/accessweaver" && f.Mode != "0755" {

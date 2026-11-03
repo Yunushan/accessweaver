@@ -10,7 +10,7 @@ import unittest
 
 from macos_installer import BUNDLE_ID,bundle_manifest,bundle_plist,macho_identity,verify_bundle,version_parts
 from sbom import macos_package,sha,validate
-from macos_deployment import verify_deployment_bundle
+from macos_deployment import verify_deployment_bundle,detached_payload_manifest,PAYLOAD_SBOM
 
 class MacPackageContracts(unittest.TestCase):
     def image(self,arch="amd64"):
@@ -42,6 +42,9 @@ class MacPackageContracts(unittest.TestCase):
                     if Path(root)/name!=binary:os.chmod(Path(root)/name,0o644)
             manifest=bundle_manifest(bundle);embedded=resources/"INSTALL-MANIFEST.json";embedded.write_text(json.dumps(manifest),encoding="utf-8");embedded.chmod(0o644)
             self.assertTrue(verify_bundle(bundle,manifest,identity))
+            extra=dict(manifest,unexpected=True);embedded.write_text(json.dumps(extra),encoding="utf-8")
+            with self.assertRaises(ValueError):verify_bundle(bundle,extra,identity)
+            embedded.write_text(json.dumps(manifest),encoding="utf-8")
             (resources/"unexpected").mkdir()
             with self.assertRaises(ValueError):verify_bundle(bundle,manifest,identity)
             (resources/"unexpected").rmdir()
@@ -65,6 +68,24 @@ class MacPackageContracts(unittest.TestCase):
             with self.assertRaises(ValueError):verify_deployment_bundle(bundle,manifest,identity,encoded)
             sidecar.unlink();alias.rename(sidecar)
             self.assertTrue(verify_deployment_bundle(bundle,manifest,identity,encoded))
+            payload=Path(folder)/PAYLOAD_SBOM;payload.write_bytes(b"{}");payload.chmod(0o644)
+            manifest2=detached_payload_manifest(bundle_manifest(bundle),b"{}")
+            encoded2=json.dumps(manifest2).encode();sidecar.write_bytes(encoded2)
+            self.assertTrue(verify_deployment_bundle(bundle,manifest2,identity,encoded2))
+            payload.write_bytes(b"[]")
+            with self.assertRaises(ValueError):verify_deployment_bundle(bundle,manifest2,identity,encoded2)
+            payload.write_bytes(b"{}");payload.chmod(0o600)
+            with self.assertRaises(ValueError):verify_deployment_bundle(bundle,manifest2,identity,encoded2)
+            payload.chmod(0o644);alias.hardlink_to(payload)
+            with self.assertRaises(ValueError):verify_deployment_bundle(bundle,manifest2,identity,encoded2)
+            alias.unlink();payload.rename(alias);payload.symlink_to(alias)
+            with self.assertRaises(ValueError):verify_deployment_bundle(bundle,manifest2,identity,encoded2)
+            payload.unlink();alias.rename(payload)
+            (resources/"SBOM.cdx.json").write_bytes(b"{}")
+            with self.assertRaises(ValueError):verify_deployment_bundle(bundle,manifest2,identity,encoded2)
+            (resources/"SBOM.cdx.json").unlink()
+            with self.assertRaises(ValueError):verify_bundle(bundle,manifest2,identity)
+            self.assertTrue(verify_deployment_bundle(bundle,manifest2,identity,encoded2))
     def test_package_sbom_binds_pkg_and_bundle_files_without_claiming_native_closure(self):
         with tempfile.TemporaryDirectory() as folder:
             pkg=Path(folder)/"test.pkg";pkg.write_bytes(b"xar!fixture")
