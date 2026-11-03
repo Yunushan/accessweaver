@@ -169,6 +169,12 @@ def main(product_mode=False):
         result,_=run(command,env,60);value=json.loads(result.stdout)
         require(value["allKnownSourcePrefixesVerified"] is True,"Partial copy lacks exact source-prefix verification")
         return value
+    def recovery_preserved(old_state):
+        verify_bundle(APP,desktop[VERSIONS[1]]["record"],core[VERSIONS[1]]["identity"])
+        version,old_app=known_slots[old_state["active"]["id"]]
+        verify_deployment_bundle(old_app,core[version]["manifest"],core[version]["identity"],core[version]["manifestBytes"])
+        for candidate in desktop.values():require(root_regular(DESKTOP/record_name(candidate["record"]),64<<10)==candidate["record"],"Recovery changed a protected registration")
+        preserved()
     def recovery_helper(helper,action,name,limit=None):
         nonlocal last_recovery_helper
         candidate=core[VERSIONS[1]]
@@ -322,19 +328,19 @@ def main(product_mode=False):
                 pending=state["pending"][0];slot=pending["slot"];case["partialSlot"]=slot
                 require(pending["baseGeneration"]==base_generation and slot["id"]==prepared["result"]["slotID"] and slot["identity"]==expected_identity and state["active"]==old_state["active"] and state["highWaterVersion"]==VERSIONS[1],"Write-fault preparation changed active core")
                 prepared_snapshot=snapshot();fault=recovery_helper(helper,"activate-deployment","limited-activate",limit);case["operations"].append(fault)
-                require(snapshot()==prepared_snapshot,"Write-fault helper changed published app/record/receipt state")
+                require(snapshot()==prepared_snapshot,"Write-fault helper changed published app/record/receipt state");recovery_preserved(old_state)
                 inventory=partial_observation(slot);case["partialInventory"]=inventory
                 partial=[r for r in inventory["entries"] if r["kind"]=="file" and not r["complete"]]
                 require(len(partial)==1 and partial[0]["bytes"]==limit and (partial[0]["path"] in ("INSTALL-MANIFEST.json","payload-SBOM.cdx.json") if name=="metadata" else partial[0]["path"]=="AccessWeaver.app/Contents/MacOS/accessweaver"),"Kernel limit did not interrupt the expected real copy")
                 fingerprint=digest(json.dumps(inventory,sort_keys=True,separators=(",",":")).encode());case["partialFingerprintSHA256"]=fingerprint
                 refused=recovery_helper(helper,"activate-deployment","partial-retry-refused");case["operations"].append(refused)
                 require(refused["exitCode"]==1 and refused["result"]["state"]=="refused" and refused["result"]["generation"]==base_generation and snapshot()==prepared_snapshot and partial_observation(slot)==inventory,"Partial-copy retry failed to preserve/refuse")
-                case["refusedRetryPreservedFingerprintSHA256"]=fingerprint;selection(name+"-fault-old-active",VERSIONS[1]);preserved()
+                case["refusedRetryPreservedFingerprintSHA256"]=fingerprint;recovery_preserved(old_state);selection(name+"-fault-old-active",VERSIONS[1])
                 abandoned=recovery_helper(helper,"abandon-deployment","explicit-abandon");case["operations"].append(abandoned)
                 after=json.loads(root_regular(AUTHORITY/"state/deployment.json",16384))
                 require(abandoned["exitCode"]==0 and abandoned["result"]["state"]=="abandoned" and abandoned["result"]["generation"]==base_generation and abandoned["result"]["operationRecordPublished"] is True and after["pending"]==[] and after["active"]==old_state["active"] and after["highWaterVersion"]==VERSIONS[1],"Explicit abandonment changed active core/fence")
                 require(partial_observation(slot)==inventory and {k:v for k,v in snapshot().items() if k!="activeRecord"}=={k:v for k,v in before.items() if k!="activeRecord"},"Abandonment changed retained bytes or public receipts")
-                case["abandonmentPreservedFingerprintSHA256"]=fingerprint;partial_slots[slot["id"]]=(slot,inventory)
+                recovery_preserved(old_state);case["abandonmentPreservedFingerprintSHA256"]=fingerprint;partial_slots[slot["id"]]=(slot,inventory)
                 install(name+"-fault-product-retry",VERSIONS[1],"product",generation=base_generation+1)
                 recovered=json.loads(root_regular(AUTHORITY/"state/deployment.json",16384))
                 require(recovered["active"]["id"] not in (slot["id"],old_state["active"]["id"]) and partial_observation(slot)==inventory,"Product retry reused/changed an abandoned partial copy")
