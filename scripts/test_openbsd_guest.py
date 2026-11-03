@@ -97,7 +97,13 @@ class InstallerInputTests(unittest.TestCase):
         for invalid in ('private-data',PUBLIC+'\nAllow root ssh login = yes'):
             with self.assertRaises(ValueError):
                 probe.response_file('amd64',invalid)
+        command=probe.bootstrap_command()
+        self.assertLess(len(command),1024)
+        self.assertLess(command.index(b'sh MAKEDEV cd1'),command.index(b'mount -t cd9660'))
+        self.assertNotIn(b'AW_OPENBSD_BOOTSTRAP_FAILED',command)
         script=probe.bootstrap_script()
+        self.assertIn('AW_OPENBSD_BOOTSTRAP_FAILED',script)
+        self.assertIn('(cd /dev && sh MAKEDEV cd1)',script)
         self.assertLess(script.index('/install -af'),script.index('ssh_host_ed25519_key'))
         self.assertIn('chroot /mnt /usr/sbin/sshd -t',script)
         self.assertLess(script.index('umount -af'),script.index('AW_OPENBSD_PRIVATE_BOOTSTRAP_COMPLETE'))
@@ -223,6 +229,17 @@ class SerialTests(unittest.TestCase):
         self.assertIsNotNone(children[0].returncode)
         self.assertTrue(children[0].stdin.closed)
         self.assertTrue(children[0].stdout.closed)
+
+    def test_bootstrap_failure_marker_stops_the_stage_without_waiting_for_deadline(self):
+        machine=probe.Console([sys.executable,'-c',"import time;print('AW_OPENBSD_BOOTSTRAP_FAILED',flush=True);time.sleep(30)"])
+        started=time.monotonic()
+        try:
+            with self.assertRaisesRegex(RuntimeError,'bootstrap reported failure'):
+                machine.wait(b'UNREACHABLE',5)
+            self.assertLess(time.monotonic()-started,2)
+            self.assertTrue(machine.observations()['privateBootstrapFailureObserved'])
+        finally:
+            self.assertTrue(machine.stop())
 
     def test_missing_prompt_has_a_deadline_and_owned_child_is_reaped(self):
         machine=probe.Console([sys.executable,'-c',"import time;time.sleep(30)"])

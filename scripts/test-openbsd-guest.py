@@ -111,10 +111,12 @@ def response_file(arch, client_public):
 def bootstrap_script():
     return """#!/bin/ksh
 set -eu
+trap 'rc=$?; if ((rc != 0)); then print -u2 AW_OPENBSD_BOOTSTRAP_FAILED; fi' EXIT
 /install -af /tmp/aw-install.conf </dev/null
 test -f /tmp/ai/ai.done
 test -d /mnt/etc/ssh
 mkdir -p /awseed
+(cd /dev && sh MAKEDEV cd1)
 mount -t cd9660 -o ro /dev/cd1c /awseed
 cp /awseed/host /mnt/etc/ssh/ssh_host_ed25519_key
 cp /awseed/host.pub /mnt/etc/ssh/ssh_host_ed25519_key.pub
@@ -127,6 +129,12 @@ sync
 umount -af
 printf '\\nAW_OPENBSD_PRIVATE_BOOTSTRAP_COMPLETE\\n'
 """
+
+
+def bootstrap_command():
+    return (b"mkdir -p /awseed /tmp/ai && (cd /dev && sh MAKEDEV cd1) && "
+            b"mount -t cd9660 -o ro /dev/cd1c /awseed && cp /awseed/auto_install.conf /tmp/aw-install.conf && "
+            b"cp /awseed/guest-setup.sh /tmp/aw-setup.sh && umount /awseed && /bin/ksh /tmp/aw-setup.sh\n")
 
 
 def prepare_media(capsule, target, client_public):
@@ -237,7 +245,11 @@ class Console:
     def wait(self, marker, timeout):
         deadline = time.monotonic() + timeout
         with self.condition:
-            while marker not in self.tail:
+            while True:
+                if b"AW_OPENBSD_BOOTSTRAP_FAILED" in self.tail:
+                    raise RuntimeError("OpenBSD installer/bootstrap reported failure")
+                if marker in self.tail:
+                    return
                 if self.process.poll() is not None:
                     raise RuntimeError("owned OpenBSD emulator exited before expected stage")
                 remaining = deadline - time.monotonic()
@@ -278,6 +290,7 @@ class Console:
                 "installerSignatureFailureObserved": b"Signature check of SHA256.sig failed" in data,
                 "installerCongratulationsObserved": b"CONGRATULATIONS!" in data,
                 "privateBootstrapMarkerObserved": b"AW_OPENBSD_PRIVATE_BOOTSTRAP_COMPLETE" in data,
+                "privateBootstrapFailureObserved": b"AW_OPENBSD_BOOTSTRAP_FAILED" in data,
                 "kernelPanicObserved": b"panic:" in data}
 
 
@@ -360,7 +373,7 @@ def main():
         installer_vm.wait(b"# ", 30)
         # The script and response are copied to RAM before /install unmounts
         # other filesystems. No private key bytes travel through console input.
-        installer_vm.send(b"mkdir -p /awseed /tmp/ai; mount -t cd9660 -o ro /dev/cd1c /awseed && cp /awseed/auto_install.conf /tmp/aw-install.conf && cp /awseed/guest-setup.sh /tmp/aw-setup.sh && umount /awseed && /bin/ksh /tmp/aw-setup.sh\n")
+        installer_vm.send(bootstrap_command())
         phase = "guest-installation"
         installer_vm.wait(b"AW_OPENBSD_PRIVATE_BOOTSTRAP_COMPLETE", 1200)
         report["installerCompleted"] = True
