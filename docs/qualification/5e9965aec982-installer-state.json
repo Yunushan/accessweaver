@@ -1,0 +1,1728 @@
+{
+  "schemaVersion": 1,
+  "sourceCI": {
+    "run": 41661481494,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41661481494",
+    "passedJobs": 22
+  },
+  "sourceCommit": "5e9965aec982a5d68ff4c4f2c123ceeed48573a1",
+  "scope": "Six exact state checkpoints per target with zero selected service/firewall/DNS row or serialization changes, plus native disposable Windows actual restoration launch failures independently compared with a cached Win32 probe for missing/truncated/malformed/execute-denied controllers, restored bytes/DACL and later real uninstall, plus scoped owner-termination/lifecycle/version/registration acceptance; no other containment API, real OS mutation or machine-fault qualification",
+  "run": 41661481193,
+  "url": "https://github.com/Yunushan/accessweaver/actions/runs/41661481193",
+  "passedNativeJobs": 2,
+  "observedStateCheckpointsPerTarget": 6,
+  "allRecordedStateCheckpointsUnchanged": true,
+  "priorARMStateDriftRootCauseEstablished": false,
+  "priorFailedSource": "49ce4eb13dad3daa4dba99622d2197cf9ffff5d1",
+  "sourceHashes": {
+    "scripts/windows-installer-state.ps1": "7582f10993e442c4d01c85b5e7c24e07fd2e4689d8c99ed5717a93ae587c740b",
+    "scripts/test-windows-installer-state.ps1": "3f14877b437071d3e350d0a3531cf8a460e0f4e21d95dc6e3d7eba2ab5df1486",
+    "scripts/test-windows-installer-contracts.ps1": "5d2598136b592e550c011aaac4d2b5e3d25e95b197d57893c45abe9baf39caf1",
+    "scripts/windows-installer.iss": "43363083e97ead552d35573e63889b58428cb8d85d610ce902bd32e99d95f3cf",
+    "scripts/fixtures/InstallerRestorationLaunch.cs": "b8fd666d8f409e189aa62b372635beafe438a0719b129df845ba158d8363a6e2",
+    "scripts/fixtures/InstallerRestorationOwner.cs": "1033aa14ce0ef58ad3f8515f1e4f975ff734506cbbca8677d38bf974d4b60913",
+    "scripts/windows-installer-restore.iss": "61fab7801066778bfcc249260d38b2f94a62b2e47f0b15d93d59d634ae3dd720",
+    "scripts/test-windows-installer-restore.iss": "17cc8bb8c899a920eb683c44e80a51feada34942b3bf974a6bc5a461aeff99ee",
+    "scripts/fixtures/installer-restoration/main.go": "a3d46dd219a1447c4063e8732a1ab38b0f817286af16da170c987a07cc93cc45",
+    "scripts/windows-installer-registry.iss": "6165b90c132a4589c672a40aa9c54b2740d1fbfad370d86c2b816caf7b7d0693",
+    "scripts/fixtures/InstallerRegistryFixture.cs": "baf023196987157beb4258a6e83b0f7411d1ceb5913d950025e285687b875106",
+    "scripts/windows-installer-lock.iss": "0ae3c475039339887a4187887d71a9fcfa0a8942df448ebfc965ba5ab846ac10",
+    "scripts/fixtures/InstallerLifecycleLock.cs": "a37a31fa5fae44903a2caeedf67a685bf8024c99adc7bfd9cb40ebc906653cc0",
+    "scripts/windows-installer-version.iss": "66b7d127bcde4b2853fc55297b902e0b5bc8692fabe004a6fdadadbc33670c3b",
+    "scripts/test-windows-installer-version.iss": "131ff4a6cc5f5531ff671a5322d0906f38a66b7ecfbf0f7bb33b097adf1aba06",
+    "scripts/windows-installer-common.ps1": "1a80d161c3d3047194a45cbba34f88f88d5aed2f9c22ade85ddd578e098ffa60",
+    "scripts/build-windows-installer.ps1": "f561f917b71bebba5bdbad6917174d8eb62a2bd6fb5c5a1b125ca9bb30413ea2",
+    "scripts/test-windows-installer.ps1": "cec197c1b446d0b36ec4ef1894fd516d4671d8e2cec76756d37362d819793a47",
+    "scripts/test-windows-installer-lifecycle.ps1": "c734511ce6df994fe6e0ea3652f59c58d7dcffd5db4d39b9fa500fb9df4f0a91",
+    ".github/workflows/installer-lifecycle.yml": "b185b92b1b3505229959ce8636a989e8c6c48398de762c3e32c5cda2494d07d6"
+  },
+  "providerArtifacts": [
+    {
+      "name": "installer-lifecycle-candidates-windows-amd64",
+      "id": 13241384002,
+      "sha256": "9768cbd05acdd36f6a1187e16b3bc16ba8734c99e9cbf8c3250d4079e41f9b27",
+      "bytes": 16448556
+    },
+    {
+      "name": "installer-lifecycle-candidates-windows-arm64",
+      "id": 13243247156,
+      "sha256": "11e33797a96f5112dd385a8d4e2a630c4f4b6a846f8d9a601f7cab2699ef955b",
+      "bytes": 15291828
+    },
+    {
+      "name": "installer-lifecycle-windows-amd64",
+      "id": 13243215927,
+      "sha256": "7501c9505fd42eef64b96779a7b4f702d1675052f443ce9fcb88a4f23407e683",
+      "bytes": 4731
+    },
+    {
+      "name": "installer-lifecycle-windows-arm64",
+      "id": 13241998241,
+      "sha256": "556e223b3c4033ffc614a29a99b1b503bd1407e224edc23101088a13685d1976",
+      "bytes": 4757
+    }
+  ],
+  "targets": [
+    {
+      "target": "windows/amd64",
+      "report": {
+        "schemaVersion": 7,
+        "sourceCommit": "5e9965aec982a5d68ff4c4f2c123ceeed48573a1",
+        "sourceRef": "refs/heads/main",
+        "runID": "41661481193",
+        "target": "windows/amd64",
+        "compilerVersion": "6.7.1",
+        "stateObservations": [
+          {
+            "phase": "baseline",
+            "comparison": {
+              "exactMatch": true,
+              "beforeSHA256": "6b29416541f12c4d7452a5cbeb96647c2abbbcdef97c65fb8462dd5ad593278e",
+              "afterSHA256": "6b29416541f12c4d7452a5cbeb96647c2abbbcdef97c65fb8462dd5ad593278e",
+              "domains": {
+                "services": {
+                  "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "serializedEqual": true,
+                  "beforeRows": 0,
+                  "afterRows": 0,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "firewall": {
+                  "beforeSHA256": "776debf2c037c4c5625c19d2224227858c13ddc3b7d2f7d8bcd3ff9963a57e62",
+                  "afterSHA256": "776debf2c037c4c5625c19d2224227858c13ddc3b7d2f7d8bcd3ff9963a57e62",
+                  "serializedEqual": true,
+                  "beforeRows": 351,
+                  "afterRows": 351,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "dns": {
+                  "beforeSHA256": "a4f917bc2ebcccd4d2a38446c0805e88a8d6b333b9dac8dbce2e0a42c9a4a3c4",
+                  "afterSHA256": "a4f917bc2ebcccd4d2a38446c0805e88a8d6b333b9dac8dbce2e0a42c9a4a3c4",
+                  "serializedEqual": true,
+                  "beforeRows": 6,
+                  "afterRows": 6,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                }
+              }
+            }
+          },
+          {
+            "phase": "after-install",
+            "comparison": {
+              "exactMatch": true,
+              "beforeSHA256": "6b29416541f12c4d7452a5cbeb96647c2abbbcdef97c65fb8462dd5ad593278e",
+              "afterSHA256": "6b29416541f12c4d7452a5cbeb96647c2abbbcdef97c65fb8462dd5ad593278e",
+              "domains": {
+                "services": {
+                  "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "serializedEqual": true,
+                  "beforeRows": 0,
+                  "afterRows": 0,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "firewall": {
+                  "beforeSHA256": "776debf2c037c4c5625c19d2224227858c13ddc3b7d2f7d8bcd3ff9963a57e62",
+                  "afterSHA256": "776debf2c037c4c5625c19d2224227858c13ddc3b7d2f7d8bcd3ff9963a57e62",
+                  "serializedEqual": true,
+                  "beforeRows": 351,
+                  "afterRows": 351,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "dns": {
+                  "beforeSHA256": "a4f917bc2ebcccd4d2a38446c0805e88a8d6b333b9dac8dbce2e0a42c9a4a3c4",
+                  "afterSHA256": "a4f917bc2ebcccd4d2a38446c0805e88a8d6b333b9dac8dbce2e0a42c9a4a3c4",
+                  "serializedEqual": true,
+                  "beforeRows": 6,
+                  "afterRows": 6,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                }
+              }
+            }
+          },
+          {
+            "phase": "after-upgrade",
+            "comparison": {
+              "exactMatch": true,
+              "beforeSHA256": "6b29416541f12c4d7452a5cbeb96647c2abbbcdef97c65fb8462dd5ad593278e",
+              "afterSHA256": "6b29416541f12c4d7452a5cbeb96647c2abbbcdef97c65fb8462dd5ad593278e",
+              "domains": {
+                "services": {
+                  "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "serializedEqual": true,
+                  "beforeRows": 0,
+                  "afterRows": 0,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "firewall": {
+                  "beforeSHA256": "776debf2c037c4c5625c19d2224227858c13ddc3b7d2f7d8bcd3ff9963a57e62",
+                  "afterSHA256": "776debf2c037c4c5625c19d2224227858c13ddc3b7d2f7d8bcd3ff9963a57e62",
+                  "serializedEqual": true,
+                  "beforeRows": 351,
+                  "afterRows": 351,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "dns": {
+                  "beforeSHA256": "a4f917bc2ebcccd4d2a38446c0805e88a8d6b333b9dac8dbce2e0a42c9a4a3c4",
+                  "afterSHA256": "a4f917bc2ebcccd4d2a38446c0805e88a8d6b333b9dac8dbce2e0a42c9a4a3c4",
+                  "serializedEqual": true,
+                  "beforeRows": 6,
+                  "afterRows": 6,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                }
+              }
+            }
+          },
+          {
+            "phase": "after-reinstall",
+            "comparison": {
+              "exactMatch": true,
+              "beforeSHA256": "6b29416541f12c4d7452a5cbeb96647c2abbbcdef97c65fb8462dd5ad593278e",
+              "afterSHA256": "6b29416541f12c4d7452a5cbeb96647c2abbbcdef97c65fb8462dd5ad593278e",
+              "domains": {
+                "services": {
+                  "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "serializedEqual": true,
+                  "beforeRows": 0,
+                  "afterRows": 0,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "firewall": {
+                  "beforeSHA256": "776debf2c037c4c5625c19d2224227858c13ddc3b7d2f7d8bcd3ff9963a57e62",
+                  "afterSHA256": "776debf2c037c4c5625c19d2224227858c13ddc3b7d2f7d8bcd3ff9963a57e62",
+                  "serializedEqual": true,
+                  "beforeRows": 351,
+                  "afterRows": 351,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "dns": {
+                  "beforeSHA256": "a4f917bc2ebcccd4d2a38446c0805e88a8d6b333b9dac8dbce2e0a42c9a4a3c4",
+                  "afterSHA256": "a4f917bc2ebcccd4d2a38446c0805e88a8d6b333b9dac8dbce2e0a42c9a4a3c4",
+                  "serializedEqual": true,
+                  "beforeRows": 6,
+                  "afterRows": 6,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                }
+              }
+            }
+          },
+          {
+            "phase": "before-uninstall",
+            "comparison": {
+              "exactMatch": true,
+              "beforeSHA256": "6b29416541f12c4d7452a5cbeb96647c2abbbcdef97c65fb8462dd5ad593278e",
+              "afterSHA256": "6b29416541f12c4d7452a5cbeb96647c2abbbcdef97c65fb8462dd5ad593278e",
+              "domains": {
+                "services": {
+                  "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "serializedEqual": true,
+                  "beforeRows": 0,
+                  "afterRows": 0,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "firewall": {
+                  "beforeSHA256": "776debf2c037c4c5625c19d2224227858c13ddc3b7d2f7d8bcd3ff9963a57e62",
+                  "afterSHA256": "776debf2c037c4c5625c19d2224227858c13ddc3b7d2f7d8bcd3ff9963a57e62",
+                  "serializedEqual": true,
+                  "beforeRows": 351,
+                  "afterRows": 351,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "dns": {
+                  "beforeSHA256": "a4f917bc2ebcccd4d2a38446c0805e88a8d6b333b9dac8dbce2e0a42c9a4a3c4",
+                  "afterSHA256": "a4f917bc2ebcccd4d2a38446c0805e88a8d6b333b9dac8dbce2e0a42c9a4a3c4",
+                  "serializedEqual": true,
+                  "beforeRows": 6,
+                  "afterRows": 6,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                }
+              }
+            }
+          },
+          {
+            "phase": "after-uninstall",
+            "comparison": {
+              "exactMatch": true,
+              "beforeSHA256": "6b29416541f12c4d7452a5cbeb96647c2abbbcdef97c65fb8462dd5ad593278e",
+              "afterSHA256": "6b29416541f12c4d7452a5cbeb96647c2abbbcdef97c65fb8462dd5ad593278e",
+              "domains": {
+                "services": {
+                  "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "serializedEqual": true,
+                  "beforeRows": 0,
+                  "afterRows": 0,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "firewall": {
+                  "beforeSHA256": "776debf2c037c4c5625c19d2224227858c13ddc3b7d2f7d8bcd3ff9963a57e62",
+                  "afterSHA256": "776debf2c037c4c5625c19d2224227858c13ddc3b7d2f7d8bcd3ff9963a57e62",
+                  "serializedEqual": true,
+                  "beforeRows": 351,
+                  "afterRows": 351,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "dns": {
+                  "beforeSHA256": "a4f917bc2ebcccd4d2a38446c0805e88a8d6b333b9dac8dbce2e0a42c9a4a3c4",
+                  "afterSHA256": "a4f917bc2ebcccd4d2a38446c0805e88a8d6b333b9dac8dbce2e0a42c9a4a3c4",
+                  "serializedEqual": true,
+                  "beforeRows": 6,
+                  "afterRows": 6,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                }
+              }
+            }
+          }
+        ],
+        "stateDiagnosticsSourceSHA256": "7582f10993e442c4d01c85b5e7c24e07fd2e4689d8c99ed5717a93ae587c740b",
+        "builds": [
+          {
+            "compilerSHA256": "eb6f4410c8db367a5f74127e8025ad2ccacc0afabbe783959d237df3050f97fb",
+            "installerBytes": 8773366,
+            "payloadSha256": "2c157fde159be509810d439a5b05250b30a2ed604b925af4b24c710939a10aac",
+            "version": "0.1.0-alpha",
+            "payloadBuild": {
+              "version": "0.1.0-alpha",
+              "commit": "5e9965aec982a5d68ff4c4f2c123ceeed48573a1",
+              "sourceState": "clean",
+              "builtAt": "2026-11-03T15:13:23Z",
+              "goVersion": "go1.27.3",
+              "platform": "windows",
+              "arch": "amd64"
+            },
+            "preprocessedSetupSHA256": "95b395ea271b8f0abf9a2fea251d96b91eae9c8cb635761e74b2b3efac4893bb",
+            "installerSHA256": "c73a08e5c12340afb02355222d7b39e163b66557e994d63d2a55ae979e38a688",
+            "identityFileSHA256": "4378428dbe939ed0c70d608611ed5692485aac90ea09b3f0fec3fe13bdc82f59",
+            "installerName": "accessweaver-0.1.0-alpha-windows-amd64-setup.exe"
+          },
+          {
+            "compilerSHA256": "eb6f4410c8db367a5f74127e8025ad2ccacc0afabbe783959d237df3050f97fb",
+            "installerBytes": 8771928,
+            "payloadSha256": "6ce74ca563eb6aacfd351adc0c55be638e16287935a05a7cda47608dffe5b025",
+            "version": "0.1.1-alpha",
+            "payloadBuild": {
+              "version": "0.1.1-alpha",
+              "commit": "5e9965aec982a5d68ff4c4f2c123ceeed48573a1",
+              "sourceState": "clean",
+              "builtAt": "2026-11-03T15:13:55Z",
+              "goVersion": "go1.27.3",
+              "platform": "windows",
+              "arch": "amd64"
+            },
+            "preprocessedSetupSHA256": "fb1b12e4c17141832a81b6f9f8f195d8d0ec450c33c8af93a6a1f8dfa7010b3c",
+            "installerSHA256": "f7fc50b5b87cf825a93d5cc62b403b16e226132ec1dbb22b25acd8f18c2018ba",
+            "identityFileSHA256": "77a5dfb2743bdc55a6b6aa65f6b0222f9d63e2ab9117cbbd47f1d94780861855",
+            "installerName": "accessweaver-0.1.1-alpha-windows-amd64-setup.exe"
+          }
+        ],
+        "operations": [
+          {
+            "operation": "install",
+            "deadlineMilliseconds": 180000,
+            "exitCode": 0,
+            "elapsedMilliseconds": 1440,
+            "payloadAndRegistrationVerified": true
+          },
+          {
+            "exitCode": 0,
+            "deadlineMilliseconds": 180000,
+            "unrelatedStatePreserved": true,
+            "elapsedMilliseconds": 902,
+            "payloadAndRegistrationVerified": true,
+            "operation": "upgrade"
+          },
+          {
+            "exitCode": 0,
+            "deadlineMilliseconds": 180000,
+            "unrelatedStatePreserved": true,
+            "elapsedMilliseconds": 893,
+            "payloadAndRegistrationVerified": true,
+            "operation": "reinstall"
+          },
+          {
+            "installedFileTreePreserved": true,
+            "exitCode": 1,
+            "deadlineMilliseconds": 180000,
+            "elapsedMilliseconds": 236,
+            "installedVersionAfter": "0.1.1-alpha",
+            "operation": "refused-downgrade",
+            "completeRegistrationPreserved": true
+          },
+          {
+            "controllerAndRegistrationRetained": true,
+            "exitCode": 1,
+            "deadlineMilliseconds": 180000,
+            "unrelatedStatePreserved": true,
+            "elapsedMilliseconds": 210,
+            "operation": "refused-uninstall"
+          },
+          {
+            "recoveryJournalRetained": true,
+            "exitCode": 0,
+            "deadlineMilliseconds": 180000,
+            "unrelatedStatePreserved": true,
+            "elapsedMilliseconds": 38000,
+            "ownedPayloadAndRegistrationRemoved": true,
+            "operation": "uninstall"
+          }
+        ],
+        "lifecycleLockCases": [
+          {
+            "registrationPresent": true,
+            "name": "active-setup-blocks-uninstall",
+            "exitCode": 1,
+            "installedFileTreePreserved": true,
+            "elapsedMilliseconds": 112,
+            "registrationValuesPreserved": true,
+            "payloadPresent": true
+          },
+          {
+            "registrationValuesPreserved": true,
+            "name": "active-lifecycle-blocks-setup",
+            "exitCode": 1,
+            "installedFileTreePreserved": true,
+            "machineRecoveryStateAbsent": true,
+            "elapsedMilliseconds": 239,
+            "profilePreserved": true
+          },
+          {
+            "registrationValuesPreserved": true,
+            "name": "active-lifecycle-blocks-uninstall",
+            "exitCode": 1,
+            "installedFileTreePreserved": true,
+            "machineRecoveryStateAbsent": true,
+            "elapsedMilliseconds": 102,
+            "profilePreserved": true
+          },
+          {
+            "registrationValuesPreserved": true,
+            "name": "abandoned-lifecycle-refused",
+            "exitCode": 1,
+            "installedFileTreePreserved": true,
+            "machineRecoveryStateAbsent": true,
+            "elapsedMilliseconds": 237,
+            "profilePreserved": true
+          },
+          {
+            "registrationValuesPreserved": true,
+            "name": "different-kernel-object-refused",
+            "exitCode": 1,
+            "installedFileTreePreserved": true,
+            "machineRecoveryStateAbsent": true,
+            "elapsedMilliseconds": 236,
+            "profilePreserved": true
+          },
+          {
+            "profilePreserved": true,
+            "exitCode": 0,
+            "name": "released-lifecycle-allows-setup",
+            "elapsedMilliseconds": 1049,
+            "payloadAndRegistrationVerified": true
+          }
+        ],
+        "lifecycleLockFixtureSHA256": "a37a31fa5fae44903a2caeedf67a685bf8024c99adc7bfd9cb40ebc906653cc0",
+        "productLockSHA256": "0ae3c475039339887a4187887d71a9fcfa0a8942df448ebfc965ba5ab846ac10",
+        "versionPolicyCases": [
+          {
+            "installedFileTreePreserved": true,
+            "exitCode": 1,
+            "completeRegistrationPreserved": true,
+            "name": "same-core-stable",
+            "elapsedMilliseconds": 234
+          },
+          {
+            "installedFileTreePreserved": true,
+            "exitCode": 1,
+            "completeRegistrationPreserved": true,
+            "name": "newer-prerelease",
+            "elapsedMilliseconds": 238
+          },
+          {
+            "installedFileTreePreserved": true,
+            "exitCode": 1,
+            "completeRegistrationPreserved": true,
+            "name": "invalid-version",
+            "elapsedMilliseconds": 236
+          },
+          {
+            "installedFileTreePreserved": true,
+            "exitCode": 1,
+            "completeRegistrationPreserved": true,
+            "name": "leading-zero",
+            "elapsedMilliseconds": 237
+          },
+          {
+            "installedFileTreePreserved": true,
+            "exitCode": 1,
+            "completeRegistrationPreserved": true,
+            "name": "missing-version",
+            "elapsedMilliseconds": 238
+          },
+          {
+            "installedFileTreePreserved": true,
+            "exitCode": 1,
+            "completeRegistrationPreserved": true,
+            "name": "wrong-type",
+            "elapsedMilliseconds": 233
+          }
+        ],
+        "registryReadCases": [
+          {
+            "profilePreserved": true,
+            "name": "maximum-string-accepted",
+            "exitCode": 0,
+            "elapsedMilliseconds": 889,
+            "refusedStatePreserved": false,
+            "expectedExitCode": 0,
+            "fixtureUTF16Bytes": 514
+          },
+          {
+            "profilePreserved": true,
+            "name": "maximum-expand-literal-accepted",
+            "exitCode": 0,
+            "elapsedMilliseconds": 899,
+            "refusedStatePreserved": false,
+            "expectedExitCode": 0,
+            "fixtureUTF16Bytes": 514
+          },
+          {
+            "profilePreserved": true,
+            "name": "over-budget-string-refused",
+            "exitCode": 1,
+            "elapsedMilliseconds": 232,
+            "refusedStatePreserved": true,
+            "expectedExitCode": 1,
+            "fixtureUTF16Bytes": 516
+          },
+          {
+            "profilePreserved": true,
+            "name": "oversized-string-refused",
+            "exitCode": 1,
+            "elapsedMilliseconds": 233,
+            "refusedStatePreserved": true,
+            "expectedExitCode": 1,
+            "fixtureUTF16Bytes": 131086
+          },
+          {
+            "profilePreserved": true,
+            "name": "environment-reference-not-expanded",
+            "exitCode": 1,
+            "elapsedMilliseconds": 235,
+            "refusedStatePreserved": true,
+            "expectedExitCode": 1,
+            "fixtureUTF16Bytes": 108
+          }
+        ],
+        "registryReadBufferBytes": 514,
+        "restorationCases": [
+          {
+            "mode": "exit-failure-with-child",
+            "timeoutLogVerified": false,
+            "observationDeadlineMilliseconds": 180000,
+            "ownedRootAndChildExitVerified": true,
+            "installedFileTreePreserved": true,
+            "usesActualProductUninstaller": true,
+            "name": "failed-controller-descendant-cleaned",
+            "elapsedMilliseconds": 263,
+            "exitCode": 1,
+            "restorationDeadlineMilliseconds": 300000,
+            "registrationValuesPreserved": true,
+            "profilePreserved": true
+          },
+          {
+            "mode": "exit-success-with-child",
+            "timeoutLogVerified": false,
+            "observationDeadlineMilliseconds": 180000,
+            "ownedRootAndChildExitVerified": true,
+            "installedFileTreePreserved": true,
+            "usesActualProductUninstaller": false,
+            "name": "successful-controller-orphan-refused",
+            "elapsedMilliseconds": 5402,
+            "exitCode": 0,
+            "restorationDeadlineMilliseconds": 5000,
+            "registrationValuesPreserved": true,
+            "profilePreserved": true
+          },
+          {
+            "mode": "hang-with-child",
+            "timeoutLogVerified": true,
+            "observationDeadlineMilliseconds": 360000,
+            "ownedRootAndChildExitVerified": true,
+            "installedFileTreePreserved": true,
+            "usesActualProductUninstaller": true,
+            "name": "stalled-controller-deadline-refused",
+            "elapsedMilliseconds": 300149,
+            "exitCode": 1,
+            "restorationDeadlineMilliseconds": 300000,
+            "registrationValuesPreserved": true,
+            "profilePreserved": true
+          },
+          {
+            "mode": "owner-termination-with-child",
+            "timeoutLogVerified": false,
+            "observationDeadlineMilliseconds": 180000,
+            "ownedRootAndChildExitVerified": true,
+            "installedFileTreePreserved": true,
+            "usesActualProductUninstaller": true,
+            "name": "terminated-uninstaller-owner-cleans-children",
+            "elapsedMilliseconds": 219,
+            "exitCode": 1,
+            "restorationDeadlineMilliseconds": 300000,
+            "registrationValuesPreserved": true,
+            "profilePreserved": true
+          }
+        ],
+        "restorationLaunchCases": [
+          {
+            "exitCode": 1,
+            "registrationValuesPreserved": true,
+            "independentProbeNativeError": 2,
+            "independentProbeStarted": false,
+            "originalControllerAndDACLRestored": true,
+            "elapsedMilliseconds": 121,
+            "expectedNativeError": 2,
+            "failurePhase": "launch-controller",
+            "launchPhaseObserved": true,
+            "profilePreserved": true,
+            "installedFileTreePreserved": true,
+            "observationDeadlineMilliseconds": 180000,
+            "fileDACLUnchangedDuringRefusal": false,
+            "restoredControllerRuntimeVerified": true,
+            "name": "missing-controller-refused",
+            "controllerPresentDuringRefusal": false,
+            "fileDACLCheckApplicable": false,
+            "nativeErrorLogVerified": true,
+            "nativeError": 2
+          },
+          {
+            "exitCode": 1,
+            "registrationValuesPreserved": true,
+            "independentProbeNativeError": 1392,
+            "independentProbeStarted": false,
+            "originalControllerAndDACLRestored": true,
+            "elapsedMilliseconds": 126,
+            "expectedNativeError": 1392,
+            "failurePhase": "launch-controller",
+            "launchPhaseObserved": true,
+            "profilePreserved": true,
+            "installedFileTreePreserved": true,
+            "observationDeadlineMilliseconds": 180000,
+            "fileDACLUnchangedDuringRefusal": true,
+            "restoredControllerRuntimeVerified": true,
+            "name": "truncated-controller-refused",
+            "controllerPresentDuringRefusal": true,
+            "fileDACLCheckApplicable": true,
+            "nativeErrorLogVerified": true,
+            "nativeError": 1392
+          },
+          {
+            "exitCode": 1,
+            "registrationValuesPreserved": true,
+            "independentProbeNativeError": 1392,
+            "independentProbeStarted": false,
+            "originalControllerAndDACLRestored": true,
+            "elapsedMilliseconds": 122,
+            "expectedNativeError": 1392,
+            "failurePhase": "launch-controller",
+            "launchPhaseObserved": true,
+            "profilePreserved": true,
+            "installedFileTreePreserved": true,
+            "observationDeadlineMilliseconds": 180000,
+            "fileDACLUnchangedDuringRefusal": true,
+            "restoredControllerRuntimeVerified": true,
+            "name": "malformed-controller-refused",
+            "controllerPresentDuringRefusal": true,
+            "fileDACLCheckApplicable": true,
+            "nativeErrorLogVerified": true,
+            "nativeError": 1392
+          },
+          {
+            "exitCode": 1,
+            "registrationValuesPreserved": true,
+            "independentProbeNativeError": 5,
+            "independentProbeStarted": false,
+            "originalControllerAndDACLRestored": true,
+            "elapsedMilliseconds": 157,
+            "expectedNativeError": 5,
+            "failurePhase": "launch-controller",
+            "launchPhaseObserved": true,
+            "profilePreserved": true,
+            "installedFileTreePreserved": true,
+            "observationDeadlineMilliseconds": 180000,
+            "fileDACLUnchangedDuringRefusal": true,
+            "restoredControllerRuntimeVerified": true,
+            "name": "execution-denied-controller-refused",
+            "controllerPresentDuringRefusal": true,
+            "fileDACLCheckApplicable": true,
+            "nativeErrorLogVerified": true,
+            "nativeError": 5
+          }
+        ],
+        "restoreLaunchFixtureSHA256": "b8fd666d8f409e189aa62b372635beafe438a0719b129df845ba158d8363a6e2",
+        "restorationOwnerCases": [
+          {
+            "childExitConfirmed": true,
+            "stage": "complete",
+            "passed": true,
+            "ownerExitCode": 167,
+            "rootExitConfirmed": true,
+            "creationTimesVerified": true,
+            "name": "terminated-live-uninstaller-owner",
+            "fixtureImageSHA256": "cfb073d6ccc4a19358a6c7a858181e5a0073e273a4bd8321a7a9bb3703038d75",
+            "rootAndChildImagesVerified": true,
+            "cleanupMilliseconds": 4,
+            "onlyOwnerSignaled": true,
+            "ownerExitConfirmed": true,
+            "ownerImageVerified": true,
+            "uninstallerImageSHA256": "00bb846d8c4ba6239646a4126371ffc17b37fa76fcf82bf2718656cd0716b2f2"
+          }
+        ],
+        "restorationOwnerTerminationTested": true,
+        "restoreOwnerFixtureSHA256": "1033aa14ce0ef58ad3f8515f1e4f975ff734506cbbca8677d38bf974d4b60913",
+        "productRestoreSHA256": "61fab7801066778bfcc249260d38b2f94a62b2e47f0b15d93d59d634ae3dd720",
+        "restoreFixtureSourceSHA256": "a3d46dd219a1447c4063e8732a1ab38b0f817286af16da170c987a07cc93cc45",
+        "restoreFixtureBinarySHA256": "cfb073d6ccc4a19358a6c7a858181e5a0073e273a4bd8321a7a9bb3703038d75",
+        "restoreContractSourceSHA256": "17cc8bb8c899a920eb683c44e80a51feada34942b3bf974a6bc5a461aeff99ee",
+        "restoreContractBinarySHA256": "13e738664573ca34e68816639defc304a4d0d2d66905eaf6282a66fa1f86210e",
+        "registryViewCases": [
+          {
+            "registrationValuesPreserved": true,
+            "name": "ambiguous-views-refused",
+            "exitCode": 1,
+            "installedFileTreePreserved": true,
+            "elapsedMilliseconds": 235,
+            "profilePreserved": true
+          },
+          {
+            "registrationValuesPreserved": true,
+            "name": "32-bit-only-newer-version-refused",
+            "exitCode": 1,
+            "installedFileTreePreserved": true,
+            "elapsedMilliseconds": 239,
+            "profilePreserved": true
+          }
+        ],
+        "registryAccessCases": [
+          {
+            "fixtureDACLRestored": true,
+            "installedFileTreePreserved": true,
+            "fixtureDACLUnchangedDuringRefusal": true,
+            "nativeQueryStatus": 5,
+            "name": "denied-product-key-refused",
+            "elapsedMilliseconds": 241,
+            "exitCode": 1,
+            "profilePreserved": true,
+            "registrationValuesPreserved": true,
+            "queryDenialIndependentlyObserved": true
+          }
+        ],
+        "registryFixtureSHA256": "baf023196987157beb4258a6e83b0f7411d1ceb5913d950025e285687b875106",
+        "productRegistrySHA256": "6165b90c132a4589c672a40aa9c54b2740d1fbfad370d86c2b816caf7b7d0693",
+        "versionContractCases": 41,
+        "versionFixtureSHA256": "dfa6a5c607f2e183b0348e691f35cb1ee1af30ac01af025fc1c49dff918e70d8",
+        "passed": true,
+        "stage": "cleanup",
+        "failureType": null,
+        "failureSourceLine": null,
+        "assertionFailure": null,
+        "lastNative": {
+          "outputComplete": true,
+          "exitCode": 0,
+          "file": "unins000.exe"
+        },
+        "actualUserProfilePreservationVerified": true,
+        "childEnvironmentSanitized": true,
+        "selectedServiceFirewallDNSStateUnchanged": true,
+        "ownedFixturesRemoved": true,
+        "unsigned": true,
+        "publisherSignatureVerified": false,
+        "rebootTested": false,
+        "downgradeTested": true,
+        "crashOrPowerLossTested": false,
+        "vendorDriverOrRoutingQualified": false,
+        "productionQualificationComplete": false
+      },
+      "independentlyInspectedCandidates": [
+        {
+          "file": "accessweaver-0.1.0-alpha-windows-amd64-setup.exe",
+          "sha256": "c73a08e5c12340afb02355222d7b39e163b66557e994d63d2a55ae979e38a688",
+          "bytes": 8773366,
+          "bootstrapPEMachine": "0x014c",
+          "payloadTarget": "windows/amd64",
+          "payloadSHA256": "2c157fde159be509810d439a5b05250b30a2ed604b925af4b24c710939a10aac",
+          "sbomSHA256": "ab9b693460fb77ab54958b9c65b654a9d57567d204a153463c788883b499e14b",
+          "sbomIdentityAndSubjectVerified": true,
+          "nativeDependencyClosureComplete": false,
+          "executedLocally": false
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-windows-amd64-setup.exe",
+          "sha256": "f7fc50b5b87cf825a93d5cc62b403b16e226132ec1dbb22b25acd8f18c2018ba",
+          "bytes": 8771928,
+          "bootstrapPEMachine": "0x014c",
+          "payloadTarget": "windows/amd64",
+          "payloadSHA256": "6ce74ca563eb6aacfd351adc0c55be638e16287935a05a7cda47608dffe5b025",
+          "sbomSHA256": "042e0a74ff398e53aececbc3e05c943d7db747298c238e6e3f4a45eba1a1cd1c",
+          "sbomIdentityAndSubjectVerified": true,
+          "nativeDependencyClosureComplete": false,
+          "executedLocally": false
+        }
+      ]
+    },
+    {
+      "target": "windows/arm64",
+      "report": {
+        "schemaVersion": 7,
+        "sourceCommit": "5e9965aec982a5d68ff4c4f2c123ceeed48573a1",
+        "sourceRef": "refs/heads/main",
+        "runID": "41661481193",
+        "target": "windows/arm64",
+        "compilerVersion": "6.7.1",
+        "stateObservations": [
+          {
+            "phase": "baseline",
+            "comparison": {
+              "exactMatch": true,
+              "beforeSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+              "afterSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+              "domains": {
+                "services": {
+                  "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "serializedEqual": true,
+                  "beforeRows": 0,
+                  "afterRows": 0,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "firewall": {
+                  "beforeSHA256": "95620ff9abfc8e4cd498dd7011345e06bc940688d381a1083a0371723c0cfb42",
+                  "afterSHA256": "95620ff9abfc8e4cd498dd7011345e06bc940688d381a1083a0371723c0cfb42",
+                  "serializedEqual": true,
+                  "beforeRows": 505,
+                  "afterRows": 505,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "dns": {
+                  "beforeSHA256": "42939d42dce2b5967d69cbdd142059a23e78aa8cfd4d3ae74e817956ea2aa811",
+                  "afterSHA256": "42939d42dce2b5967d69cbdd142059a23e78aa8cfd4d3ae74e817956ea2aa811",
+                  "serializedEqual": true,
+                  "beforeRows": 6,
+                  "afterRows": 6,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                }
+              }
+            }
+          },
+          {
+            "phase": "after-install",
+            "comparison": {
+              "exactMatch": true,
+              "beforeSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+              "afterSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+              "domains": {
+                "services": {
+                  "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "serializedEqual": true,
+                  "beforeRows": 0,
+                  "afterRows": 0,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "firewall": {
+                  "beforeSHA256": "95620ff9abfc8e4cd498dd7011345e06bc940688d381a1083a0371723c0cfb42",
+                  "afterSHA256": "95620ff9abfc8e4cd498dd7011345e06bc940688d381a1083a0371723c0cfb42",
+                  "serializedEqual": true,
+                  "beforeRows": 505,
+                  "afterRows": 505,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "dns": {
+                  "beforeSHA256": "42939d42dce2b5967d69cbdd142059a23e78aa8cfd4d3ae74e817956ea2aa811",
+                  "afterSHA256": "42939d42dce2b5967d69cbdd142059a23e78aa8cfd4d3ae74e817956ea2aa811",
+                  "serializedEqual": true,
+                  "beforeRows": 6,
+                  "afterRows": 6,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                }
+              }
+            }
+          },
+          {
+            "phase": "after-upgrade",
+            "comparison": {
+              "exactMatch": true,
+              "beforeSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+              "afterSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+              "domains": {
+                "services": {
+                  "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "serializedEqual": true,
+                  "beforeRows": 0,
+                  "afterRows": 0,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "firewall": {
+                  "beforeSHA256": "95620ff9abfc8e4cd498dd7011345e06bc940688d381a1083a0371723c0cfb42",
+                  "afterSHA256": "95620ff9abfc8e4cd498dd7011345e06bc940688d381a1083a0371723c0cfb42",
+                  "serializedEqual": true,
+                  "beforeRows": 505,
+                  "afterRows": 505,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "dns": {
+                  "beforeSHA256": "42939d42dce2b5967d69cbdd142059a23e78aa8cfd4d3ae74e817956ea2aa811",
+                  "afterSHA256": "42939d42dce2b5967d69cbdd142059a23e78aa8cfd4d3ae74e817956ea2aa811",
+                  "serializedEqual": true,
+                  "beforeRows": 6,
+                  "afterRows": 6,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                }
+              }
+            }
+          },
+          {
+            "phase": "after-reinstall",
+            "comparison": {
+              "exactMatch": true,
+              "beforeSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+              "afterSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+              "domains": {
+                "services": {
+                  "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "serializedEqual": true,
+                  "beforeRows": 0,
+                  "afterRows": 0,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "firewall": {
+                  "beforeSHA256": "95620ff9abfc8e4cd498dd7011345e06bc940688d381a1083a0371723c0cfb42",
+                  "afterSHA256": "95620ff9abfc8e4cd498dd7011345e06bc940688d381a1083a0371723c0cfb42",
+                  "serializedEqual": true,
+                  "beforeRows": 505,
+                  "afterRows": 505,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "dns": {
+                  "beforeSHA256": "42939d42dce2b5967d69cbdd142059a23e78aa8cfd4d3ae74e817956ea2aa811",
+                  "afterSHA256": "42939d42dce2b5967d69cbdd142059a23e78aa8cfd4d3ae74e817956ea2aa811",
+                  "serializedEqual": true,
+                  "beforeRows": 6,
+                  "afterRows": 6,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                }
+              }
+            }
+          },
+          {
+            "phase": "before-uninstall",
+            "comparison": {
+              "exactMatch": true,
+              "beforeSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+              "afterSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+              "domains": {
+                "services": {
+                  "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "serializedEqual": true,
+                  "beforeRows": 0,
+                  "afterRows": 0,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "firewall": {
+                  "beforeSHA256": "95620ff9abfc8e4cd498dd7011345e06bc940688d381a1083a0371723c0cfb42",
+                  "afterSHA256": "95620ff9abfc8e4cd498dd7011345e06bc940688d381a1083a0371723c0cfb42",
+                  "serializedEqual": true,
+                  "beforeRows": 505,
+                  "afterRows": 505,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "dns": {
+                  "beforeSHA256": "42939d42dce2b5967d69cbdd142059a23e78aa8cfd4d3ae74e817956ea2aa811",
+                  "afterSHA256": "42939d42dce2b5967d69cbdd142059a23e78aa8cfd4d3ae74e817956ea2aa811",
+                  "serializedEqual": true,
+                  "beforeRows": 6,
+                  "afterRows": 6,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                }
+              }
+            }
+          },
+          {
+            "phase": "after-uninstall",
+            "comparison": {
+              "exactMatch": true,
+              "beforeSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+              "afterSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+              "domains": {
+                "services": {
+                  "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "serializedEqual": true,
+                  "beforeRows": 0,
+                  "afterRows": 0,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "firewall": {
+                  "beforeSHA256": "95620ff9abfc8e4cd498dd7011345e06bc940688d381a1083a0371723c0cfb42",
+                  "afterSHA256": "95620ff9abfc8e4cd498dd7011345e06bc940688d381a1083a0371723c0cfb42",
+                  "serializedEqual": true,
+                  "beforeRows": 505,
+                  "afterRows": 505,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                },
+                "dns": {
+                  "beforeSHA256": "42939d42dce2b5967d69cbdd142059a23e78aa8cfd4d3ae74e817956ea2aa811",
+                  "afterSHA256": "42939d42dce2b5967d69cbdd142059a23e78aa8cfd4d3ae74e817956ea2aa811",
+                  "serializedEqual": true,
+                  "beforeRows": 6,
+                  "afterRows": 6,
+                  "added": 0,
+                  "removed": 0,
+                  "changed": 0,
+                  "rowSerializationChanges": 0,
+                  "recordOrderingChanged": false,
+                  "changes": [],
+                  "changesTruncated": false
+                }
+              }
+            }
+          }
+        ],
+        "stateDiagnosticsSourceSHA256": "7582f10993e442c4d01c85b5e7c24e07fd2e4689d8c99ed5717a93ae587c740b",
+        "builds": [
+          {
+            "compilerSHA256": "eb6f4410c8db367a5f74127e8025ad2ccacc0afabbe783959d237df3050f97fb",
+            "installerBytes": 8194803,
+            "payloadSha256": "57fe58a465146511c0ec1995e4404cf3403f15970aafc4ff9c249a5538ec72f8",
+            "version": "0.1.0-alpha",
+            "payloadBuild": {
+              "version": "0.1.0-alpha",
+              "commit": "5e9965aec982a5d68ff4c4f2c123ceeed48573a1",
+              "sourceState": "clean",
+              "builtAt": "2026-11-03T15:14:50Z",
+              "goVersion": "go1.27.3",
+              "platform": "windows",
+              "arch": "arm64"
+            },
+            "preprocessedSetupSHA256": "6eb774c6cc700d4f500c57b6c023971a4626c4153364cb51127be2ec4a52ef27",
+            "installerSHA256": "c0f35c4157f38a530ad47d3a80781fe3b0bff7d112979c762ed977371db883c3",
+            "identityFileSHA256": "05f92ec44792a93973f472a874dff0fa3ee2c4d994fcd8777b38882c35797047",
+            "installerName": "accessweaver-0.1.0-alpha-windows-arm64-setup.exe"
+          },
+          {
+            "compilerSHA256": "eb6f4410c8db367a5f74127e8025ad2ccacc0afabbe783959d237df3050f97fb",
+            "installerBytes": 8194853,
+            "payloadSha256": "2501a139b9e635dc7d6c10a78df03504110185783a81c17e8d29ee31f83f810c",
+            "version": "0.1.1-alpha",
+            "payloadBuild": {
+              "version": "0.1.1-alpha",
+              "commit": "5e9965aec982a5d68ff4c4f2c123ceeed48573a1",
+              "sourceState": "clean",
+              "builtAt": "2026-11-03T15:15:17Z",
+              "goVersion": "go1.27.3",
+              "platform": "windows",
+              "arch": "arm64"
+            },
+            "preprocessedSetupSHA256": "dcfb27670abfb00f1e4687a7a9263d2dcfd438bb3275260d5fd3920fc0daf09e",
+            "installerSHA256": "ec297f8f23268006ae8f7eba9eebde6a3a62815568faac4072eb4343b28449c2",
+            "identityFileSHA256": "fe152d7802cc9e619b4ea9a501fc3b85b9bbaca5127b73274f06b5c492ef46c3",
+            "installerName": "accessweaver-0.1.1-alpha-windows-arm64-setup.exe"
+          }
+        ],
+        "operations": [
+          {
+            "operation": "install",
+            "deadlineMilliseconds": 180000,
+            "exitCode": 0,
+            "elapsedMilliseconds": 2068,
+            "payloadAndRegistrationVerified": true
+          },
+          {
+            "exitCode": 0,
+            "deadlineMilliseconds": 180000,
+            "unrelatedStatePreserved": true,
+            "elapsedMilliseconds": 1476,
+            "payloadAndRegistrationVerified": true,
+            "operation": "upgrade"
+          },
+          {
+            "exitCode": 0,
+            "deadlineMilliseconds": 180000,
+            "unrelatedStatePreserved": true,
+            "elapsedMilliseconds": 1356,
+            "payloadAndRegistrationVerified": true,
+            "operation": "reinstall"
+          },
+          {
+            "installedFileTreePreserved": true,
+            "exitCode": 1,
+            "deadlineMilliseconds": 180000,
+            "elapsedMilliseconds": 475,
+            "installedVersionAfter": "0.1.1-alpha",
+            "operation": "refused-downgrade",
+            "completeRegistrationPreserved": true
+          },
+          {
+            "controllerAndRegistrationRetained": true,
+            "exitCode": 1,
+            "deadlineMilliseconds": 180000,
+            "unrelatedStatePreserved": true,
+            "elapsedMilliseconds": 412,
+            "operation": "refused-uninstall"
+          },
+          {
+            "recoveryJournalRetained": true,
+            "exitCode": 0,
+            "deadlineMilliseconds": 180000,
+            "unrelatedStatePreserved": true,
+            "elapsedMilliseconds": 32476,
+            "ownedPayloadAndRegistrationRemoved": true,
+            "operation": "uninstall"
+          }
+        ],
+        "lifecycleLockCases": [
+          {
+            "registrationPresent": true,
+            "name": "active-setup-blocks-uninstall",
+            "exitCode": 1,
+            "installedFileTreePreserved": true,
+            "elapsedMilliseconds": 357,
+            "registrationValuesPreserved": true,
+            "payloadPresent": true
+          },
+          {
+            "registrationValuesPreserved": true,
+            "name": "active-lifecycle-blocks-setup",
+            "exitCode": 1,
+            "installedFileTreePreserved": true,
+            "machineRecoveryStateAbsent": true,
+            "elapsedMilliseconds": 429,
+            "profilePreserved": true
+          },
+          {
+            "registrationValuesPreserved": true,
+            "name": "active-lifecycle-blocks-uninstall",
+            "exitCode": 1,
+            "installedFileTreePreserved": true,
+            "machineRecoveryStateAbsent": true,
+            "elapsedMilliseconds": 295,
+            "profilePreserved": true
+          },
+          {
+            "registrationValuesPreserved": true,
+            "name": "abandoned-lifecycle-refused",
+            "exitCode": 1,
+            "installedFileTreePreserved": true,
+            "machineRecoveryStateAbsent": true,
+            "elapsedMilliseconds": 446,
+            "profilePreserved": true
+          },
+          {
+            "registrationValuesPreserved": true,
+            "name": "different-kernel-object-refused",
+            "exitCode": 1,
+            "installedFileTreePreserved": true,
+            "machineRecoveryStateAbsent": true,
+            "elapsedMilliseconds": 423,
+            "profilePreserved": true
+          },
+          {
+            "profilePreserved": true,
+            "exitCode": 0,
+            "name": "released-lifecycle-allows-setup",
+            "elapsedMilliseconds": 1399,
+            "payloadAndRegistrationVerified": true
+          }
+        ],
+        "lifecycleLockFixtureSHA256": "a37a31fa5fae44903a2caeedf67a685bf8024c99adc7bfd9cb40ebc906653cc0",
+        "productLockSHA256": "0ae3c475039339887a4187887d71a9fcfa0a8942df448ebfc965ba5ab846ac10",
+        "versionPolicyCases": [
+          {
+            "installedFileTreePreserved": true,
+            "exitCode": 1,
+            "completeRegistrationPreserved": true,
+            "name": "same-core-stable",
+            "elapsedMilliseconds": 440
+          },
+          {
+            "installedFileTreePreserved": true,
+            "exitCode": 1,
+            "completeRegistrationPreserved": true,
+            "name": "newer-prerelease",
+            "elapsedMilliseconds": 427
+          },
+          {
+            "installedFileTreePreserved": true,
+            "exitCode": 1,
+            "completeRegistrationPreserved": true,
+            "name": "invalid-version",
+            "elapsedMilliseconds": 675
+          },
+          {
+            "installedFileTreePreserved": true,
+            "exitCode": 1,
+            "completeRegistrationPreserved": true,
+            "name": "leading-zero",
+            "elapsedMilliseconds": 420
+          },
+          {
+            "installedFileTreePreserved": true,
+            "exitCode": 1,
+            "completeRegistrationPreserved": true,
+            "name": "missing-version",
+            "elapsedMilliseconds": 416
+          },
+          {
+            "installedFileTreePreserved": true,
+            "exitCode": 1,
+            "completeRegistrationPreserved": true,
+            "name": "wrong-type",
+            "elapsedMilliseconds": 412
+          }
+        ],
+        "registryReadCases": [
+          {
+            "profilePreserved": true,
+            "name": "maximum-string-accepted",
+            "exitCode": 0,
+            "elapsedMilliseconds": 1367,
+            "refusedStatePreserved": false,
+            "expectedExitCode": 0,
+            "fixtureUTF16Bytes": 514
+          },
+          {
+            "profilePreserved": true,
+            "name": "maximum-expand-literal-accepted",
+            "exitCode": 0,
+            "elapsedMilliseconds": 1344,
+            "refusedStatePreserved": false,
+            "expectedExitCode": 0,
+            "fixtureUTF16Bytes": 514
+          },
+          {
+            "profilePreserved": true,
+            "name": "over-budget-string-refused",
+            "exitCode": 1,
+            "elapsedMilliseconds": 415,
+            "refusedStatePreserved": true,
+            "expectedExitCode": 1,
+            "fixtureUTF16Bytes": 516
+          },
+          {
+            "profilePreserved": true,
+            "name": "oversized-string-refused",
+            "exitCode": 1,
+            "elapsedMilliseconds": 427,
+            "refusedStatePreserved": true,
+            "expectedExitCode": 1,
+            "fixtureUTF16Bytes": 131086
+          },
+          {
+            "profilePreserved": true,
+            "name": "environment-reference-not-expanded",
+            "exitCode": 1,
+            "elapsedMilliseconds": 427,
+            "refusedStatePreserved": true,
+            "expectedExitCode": 1,
+            "fixtureUTF16Bytes": 108
+          }
+        ],
+        "registryReadBufferBytes": 514,
+        "restorationCases": [
+          {
+            "mode": "exit-failure-with-child",
+            "timeoutLogVerified": false,
+            "observationDeadlineMilliseconds": 180000,
+            "ownedRootAndChildExitVerified": true,
+            "installedFileTreePreserved": true,
+            "usesActualProductUninstaller": true,
+            "name": "failed-controller-descendant-cleaned",
+            "elapsedMilliseconds": 458,
+            "exitCode": 1,
+            "restorationDeadlineMilliseconds": 300000,
+            "registrationValuesPreserved": true,
+            "profilePreserved": true
+          },
+          {
+            "mode": "exit-success-with-child",
+            "timeoutLogVerified": false,
+            "observationDeadlineMilliseconds": 180000,
+            "ownedRootAndChildExitVerified": true,
+            "installedFileTreePreserved": true,
+            "usesActualProductUninstaller": false,
+            "name": "successful-controller-orphan-refused",
+            "elapsedMilliseconds": 5955,
+            "exitCode": 0,
+            "restorationDeadlineMilliseconds": 5000,
+            "registrationValuesPreserved": true,
+            "profilePreserved": true
+          },
+          {
+            "mode": "hang-with-child",
+            "timeoutLogVerified": true,
+            "observationDeadlineMilliseconds": 360000,
+            "ownedRootAndChildExitVerified": true,
+            "installedFileTreePreserved": true,
+            "usesActualProductUninstaller": true,
+            "name": "stalled-controller-deadline-refused",
+            "elapsedMilliseconds": 300353,
+            "exitCode": 1,
+            "restorationDeadlineMilliseconds": 300000,
+            "registrationValuesPreserved": true,
+            "profilePreserved": true
+          },
+          {
+            "mode": "owner-termination-with-child",
+            "timeoutLogVerified": false,
+            "observationDeadlineMilliseconds": 180000,
+            "ownedRootAndChildExitVerified": true,
+            "installedFileTreePreserved": true,
+            "usesActualProductUninstaller": true,
+            "name": "terminated-uninstaller-owner-cleans-children",
+            "elapsedMilliseconds": 486,
+            "exitCode": 1,
+            "restorationDeadlineMilliseconds": 300000,
+            "registrationValuesPreserved": true,
+            "profilePreserved": true
+          }
+        ],
+        "restorationLaunchCases": [
+          {
+            "exitCode": 1,
+            "registrationValuesPreserved": true,
+            "independentProbeNativeError": 2,
+            "independentProbeStarted": false,
+            "originalControllerAndDACLRestored": true,
+            "elapsedMilliseconds": 358,
+            "expectedNativeError": 2,
+            "failurePhase": "launch-controller",
+            "launchPhaseObserved": true,
+            "profilePreserved": true,
+            "installedFileTreePreserved": true,
+            "observationDeadlineMilliseconds": 180000,
+            "fileDACLUnchangedDuringRefusal": false,
+            "restoredControllerRuntimeVerified": true,
+            "name": "missing-controller-refused",
+            "controllerPresentDuringRefusal": false,
+            "fileDACLCheckApplicable": false,
+            "nativeErrorLogVerified": true,
+            "nativeError": 2
+          },
+          {
+            "exitCode": 1,
+            "registrationValuesPreserved": true,
+            "independentProbeNativeError": 1392,
+            "independentProbeStarted": false,
+            "originalControllerAndDACLRestored": true,
+            "elapsedMilliseconds": 319,
+            "expectedNativeError": 1392,
+            "failurePhase": "launch-controller",
+            "launchPhaseObserved": true,
+            "profilePreserved": true,
+            "installedFileTreePreserved": true,
+            "observationDeadlineMilliseconds": 180000,
+            "fileDACLUnchangedDuringRefusal": true,
+            "restoredControllerRuntimeVerified": true,
+            "name": "truncated-controller-refused",
+            "controllerPresentDuringRefusal": true,
+            "fileDACLCheckApplicable": true,
+            "nativeErrorLogVerified": true,
+            "nativeError": 1392
+          },
+          {
+            "exitCode": 1,
+            "registrationValuesPreserved": true,
+            "independentProbeNativeError": 1392,
+            "independentProbeStarted": false,
+            "originalControllerAndDACLRestored": true,
+            "elapsedMilliseconds": 299,
+            "expectedNativeError": 1392,
+            "failurePhase": "launch-controller",
+            "launchPhaseObserved": true,
+            "profilePreserved": true,
+            "installedFileTreePreserved": true,
+            "observationDeadlineMilliseconds": 180000,
+            "fileDACLUnchangedDuringRefusal": true,
+            "restoredControllerRuntimeVerified": true,
+            "name": "malformed-controller-refused",
+            "controllerPresentDuringRefusal": true,
+            "fileDACLCheckApplicable": true,
+            "nativeErrorLogVerified": true,
+            "nativeError": 1392
+          },
+          {
+            "exitCode": 1,
+            "registrationValuesPreserved": true,
+            "independentProbeNativeError": 5,
+            "independentProbeStarted": false,
+            "originalControllerAndDACLRestored": true,
+            "elapsedMilliseconds": 334,
+            "expectedNativeError": 5,
+            "failurePhase": "launch-controller",
+            "launchPhaseObserved": true,
+            "profilePreserved": true,
+            "installedFileTreePreserved": true,
+            "observationDeadlineMilliseconds": 180000,
+            "fileDACLUnchangedDuringRefusal": true,
+            "restoredControllerRuntimeVerified": true,
+            "name": "execution-denied-controller-refused",
+            "controllerPresentDuringRefusal": true,
+            "fileDACLCheckApplicable": true,
+            "nativeErrorLogVerified": true,
+            "nativeError": 5
+          }
+        ],
+        "restoreLaunchFixtureSHA256": "b8fd666d8f409e189aa62b372635beafe438a0719b129df845ba158d8363a6e2",
+        "restorationOwnerCases": [
+          {
+            "childExitConfirmed": true,
+            "stage": "complete",
+            "passed": true,
+            "ownerExitCode": 167,
+            "rootExitConfirmed": true,
+            "creationTimesVerified": true,
+            "name": "terminated-live-uninstaller-owner",
+            "fixtureImageSHA256": "a51547e5655c4599c7c0d1d2ad510615f196bd9602635f8e690a108697ce7d1e",
+            "rootAndChildImagesVerified": true,
+            "cleanupMilliseconds": 5,
+            "onlyOwnerSignaled": true,
+            "ownerExitConfirmed": true,
+            "ownerImageVerified": true,
+            "uninstallerImageSHA256": "00bb846d8c4ba6239646a4126371ffc17b37fa76fcf82bf2718656cd0716b2f2"
+          }
+        ],
+        "restorationOwnerTerminationTested": true,
+        "restoreOwnerFixtureSHA256": "1033aa14ce0ef58ad3f8515f1e4f975ff734506cbbca8677d38bf974d4b60913",
+        "productRestoreSHA256": "61fab7801066778bfcc249260d38b2f94a62b2e47f0b15d93d59d634ae3dd720",
+        "restoreFixtureSourceSHA256": "a3d46dd219a1447c4063e8732a1ab38b0f817286af16da170c987a07cc93cc45",
+        "restoreFixtureBinarySHA256": "a51547e5655c4599c7c0d1d2ad510615f196bd9602635f8e690a108697ce7d1e",
+        "restoreContractSourceSHA256": "17cc8bb8c899a920eb683c44e80a51feada34942b3bf974a6bc5a461aeff99ee",
+        "restoreContractBinarySHA256": "56018b63b71be4d3ec472bb19354cf183894e3a8c23d025eef62bd5e8731b9bc",
+        "registryViewCases": [
+          {
+            "registrationValuesPreserved": true,
+            "name": "ambiguous-views-refused",
+            "exitCode": 1,
+            "installedFileTreePreserved": true,
+            "elapsedMilliseconds": 413,
+            "profilePreserved": true
+          },
+          {
+            "registrationValuesPreserved": true,
+            "name": "32-bit-only-newer-version-refused",
+            "exitCode": 1,
+            "installedFileTreePreserved": true,
+            "elapsedMilliseconds": 416,
+            "profilePreserved": true
+          }
+        ],
+        "registryAccessCases": [
+          {
+            "fixtureDACLRestored": true,
+            "installedFileTreePreserved": true,
+            "fixtureDACLUnchangedDuringRefusal": true,
+            "nativeQueryStatus": 5,
+            "name": "denied-product-key-refused",
+            "elapsedMilliseconds": 424,
+            "exitCode": 1,
+            "profilePreserved": true,
+            "registrationValuesPreserved": true,
+            "queryDenialIndependentlyObserved": true
+          }
+        ],
+        "registryFixtureSHA256": "baf023196987157beb4258a6e83b0f7411d1ceb5913d950025e285687b875106",
+        "productRegistrySHA256": "6165b90c132a4589c672a40aa9c54b2740d1fbfad370d86c2b816caf7b7d0693",
+        "versionContractCases": 41,
+        "versionFixtureSHA256": "437c1a55427ec95394fa65b7a09f93795a60f8810a2cddab0c4de875c03a3a29",
+        "passed": true,
+        "stage": "cleanup",
+        "failureType": null,
+        "failureSourceLine": null,
+        "assertionFailure": null,
+        "lastNative": {
+          "outputComplete": true,
+          "exitCode": 0,
+          "file": "unins000.exe"
+        },
+        "actualUserProfilePreservationVerified": true,
+        "childEnvironmentSanitized": true,
+        "selectedServiceFirewallDNSStateUnchanged": true,
+        "ownedFixturesRemoved": true,
+        "unsigned": true,
+        "publisherSignatureVerified": false,
+        "rebootTested": false,
+        "downgradeTested": true,
+        "crashOrPowerLossTested": false,
+        "vendorDriverOrRoutingQualified": false,
+        "productionQualificationComplete": false
+      },
+      "independentlyInspectedCandidates": [
+        {
+          "file": "accessweaver-0.1.0-alpha-windows-arm64-setup.exe",
+          "sha256": "c0f35c4157f38a530ad47d3a80781fe3b0bff7d112979c762ed977371db883c3",
+          "bytes": 8194803,
+          "bootstrapPEMachine": "0x014c",
+          "payloadTarget": "windows/arm64",
+          "payloadSHA256": "57fe58a465146511c0ec1995e4404cf3403f15970aafc4ff9c249a5538ec72f8",
+          "sbomSHA256": "c3703ced3220c12e72c37005ac28b2033c9c967834431315a4e4e7e76a468a80",
+          "sbomIdentityAndSubjectVerified": true,
+          "nativeDependencyClosureComplete": false,
+          "executedLocally": false
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-windows-arm64-setup.exe",
+          "sha256": "ec297f8f23268006ae8f7eba9eebde6a3a62815568faac4072eb4343b28449c2",
+          "bytes": 8194853,
+          "bootstrapPEMachine": "0x014c",
+          "payloadTarget": "windows/arm64",
+          "payloadSHA256": "2501a139b9e635dc7d6c10a78df03504110185783a81c17e8d29ee31f83f810c",
+          "sbomSHA256": "5989034b9f6bacbec7f1f4749e9a17063e61767e080b6385d1ba940cc312d203",
+          "sbomIdentityAndSubjectVerified": true,
+          "nativeDependencyClosureComplete": false,
+          "executedLocally": false
+        }
+      ]
+    }
+  ],
+  "nativeDLLLastErrorCaptureVerified": true,
+  "nativeRestorationLaunchFailureCasesVerified": true,
+  "restorationContainmentApiFailureQualified": false,
+  "boundedRestorationAndOwnedDescendantNativeCasesVerified": true,
+  "restorationOwnerTerminationQualified": true,
+  "interruptedRealOSMutationQualified": false,
+  "machineCrashOrPowerLossQualified": false,
+  "serviceManagerLaunchedProcessContainmentQualified": false,
+  "arbitraryKernelAPIStallBounded": false,
+  "boundedVersionReadNativeCasesVerified": true,
+  "sharedParentAccessDenialQualified": false,
+  "midWizardMetadataRaceQualified": false,
+  "ordinaryUserSessionQualified": false,
+  "publisherSigningComplete": false,
+  "correctedInstallerDowngradeRefusalVerified": true,
+  "correctedSetupUninstallExclusionVerified": true,
+  "persistentCrashRecoveryQualified": false,
+  "legacyLateStartConcurrencyQualified": false,
+  "administratorOrLegacyInstallerRollbackPrevented": false,
+  "rebootOrPowerLossQualified": false,
+  "vendorDriverOrRoutingQualified": false,
+  "installerSBOMNativeClosureComplete": false,
+  "managedEndpointQualificationComplete": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": 0
+}

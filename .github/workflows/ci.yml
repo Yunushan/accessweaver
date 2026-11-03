@@ -246,6 +246,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_macos_installer.py -v
           python3 -m unittest discover -s scripts -p test_macos_package_archive.py -v
           python3 -m unittest discover -s scripts -p test_macos_installer_provenance.py -v
+          python3 -m unittest discover -s scripts -p test_windows_installer_provenance.py -v
           python3 -m unittest discover -s scripts -p test_darwin_storage.py -v
           python3 -m unittest discover -s scripts -p test_bsd_guest.py -v
           python3 -m unittest discover -s scripts -p test_openbsd_guest.py -v

@@ -6,6 +6,14 @@ on:
     branches: [main]
     paths:
       - scripts/*windows-installer*
+      - scripts/verify_windows_installer_provenance.py
+      - scripts/test_windows_installer_provenance.py
+      - scripts/verify_release.py
+      - scripts/verify_release_provenance.py
+      - scripts/verify_release_rebuild.py
+      - scripts/release_archive.py
+      - scripts/sbom.py
+      - scripts/sbom/**
       - scripts/fixtures/Installer*.cs
       - scripts/fixtures/installer-restoration/**
       - internal/**
@@ -24,6 +32,10 @@ jobs:
     name: Native installer lifecycle (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -41,6 +53,9 @@ jobs:
           go-version: '1.27.3'
           architecture: ${{ matrix.arch == 'amd64' && 'x64' || 'arm64' }}
           cache: false
+      - name: Pure provenance contracts
+        shell: powershell
+        run: python -m unittest discover -s scripts -p test_windows_installer_provenance.py -v
       - name: Pure state comparison diagnostics
         shell: powershell
         run: ./scripts/test-windows-installer-state.ps1
@@ -49,6 +64,43 @@ jobs:
         env:
           ACCESSWEAVER_DISPOSABLE_INSTALLER_ACCEPTANCE: '1'
         run: ./scripts/test-windows-installer-lifecycle.ps1 -Architecture '${{ matrix.arch }}'
+      - name: Stage and validate all native subjects before signing
+        shell: powershell
+        env:
+          CANDIDATE_DIRECTORY: build/installer-lifecycle-provenance/${{ matrix.arch }}/candidate
+          TARGET_ARCH: '${{ matrix.arch }}'
+        run: |
+          python scripts/verify_windows_installer_provenance.py "$env:CANDIDATE_DIRECTORY" --stage-build-root build --source-commit "$env:GITHUB_SHA" --source-ref "$env:GITHUB_REF" --architecture "$env:TARGET_ARCH"
+          if ($LASTEXITCODE -ne 0) { throw 'Native installer staging/acceptance failed' }
+      - name: Attest installer, SBOM and actual native acceptance subjects
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: build/installer-lifecycle-provenance/${{ matrix.arch }}/candidate/*
+          create-storage-record: false
+      - name: Retain and authenticate the real native provenance bundle
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          CANDIDATE_DIRECTORY: build/installer-lifecycle-provenance/${{ matrix.arch }}/candidate
+          PROVENANCE_DIRECTORY: build/installer-lifecycle-provenance/${{ matrix.arch }}/public
+          TARGET_ARCH: '${{ matrix.arch }}'
+        run: |
+          [void](New-Item -ItemType Directory -Path "$env:PROVENANCE_DIRECTORY")
+          $bundle=Join-Path $env:CANDIDATE_DIRECTORY 'BUILD-PROVENANCE.sigstore.json'
+          Copy-Item -LiteralPath "$env:ATTESTATION_BUNDLE" -Destination $bundle
+          $verification=& python scripts/verify_windows_installer_provenance.py "$env:CANDIDATE_DIRECTORY" --source-commit "$env:GITHUB_SHA" --source-ref "$env:GITHUB_REF" --architecture "$env:TARGET_ARCH" --check-rejections
+          if ($LASTEXITCODE -ne 0) { throw 'Native installer cryptographic verification failed' }
+          [IO.File]::WriteAllText((Join-Path $env:PROVENANCE_DIRECTORY 'verified.json'),(($verification -join [Environment]::NewLine)+[Environment]::NewLine),[Text.UTF8Encoding]::new($false))
+          Copy-Item -LiteralPath $bundle -Destination (Join-Path $env:PROVENANCE_DIRECTORY 'BUILD-PROVENANCE.sigstore.json')
+      - name: Retain native installer provenance and verification results
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-lifecycle-provenance-windows-${{ matrix.arch }}
+          path: build/installer-lifecycle-provenance/${{ matrix.arch }}/public/
+          if-no-files-found: error
+          retention-days: 14
       - name: Retain the actual unsigned installer candidates and validated SBOMs
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
