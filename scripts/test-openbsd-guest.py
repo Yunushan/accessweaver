@@ -4,6 +4,7 @@
 Never boot locally. Installer media is authenticated before a reviewed ISO
 transform. Seed media is removed before target execution; no host mounts exist.
 """
+import argparse
 import base64
 import hashlib
 import importlib.util
@@ -427,7 +428,20 @@ def wait_for_ssh(ssh, process, report, timeout=600):
         time.sleep(min(2, max(0, deadline - time.monotonic())))
 
 
+def validate_cli(cli, manifest, source, arch, compiler, packaged=False):
+    for key, expected in {"commit": source, "sourceState": "clean", "platform": "openbsd", "arch": arch, "goVersion": compiler}.items():
+        if cli.get(key) != expected:
+            raise RuntimeError("executed OpenBSD CLI source/target differs")
+    if packaged:
+        if cli != manifest["packagedCandidate"]["build"] or manifest["cli"]["sha256"] != manifest["packagedCandidate"]["binarySha256"]:
+            raise RuntimeError("executed OpenBSD CLI differs from authenticated archived candidate")
+    return packaged
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--packaged-candidate", type=Path, help="Prior authenticated private staging directory; require the original archived CLI")
+    args = parser.parse_args()
     repo, source, sdk, target = guard()
     os.chdir(repo)
     os.umask(0o077)
@@ -448,7 +462,9 @@ def main():
     stopped, failed, phase = True, True, "source-build"
     unconfirmed_start = False
     try:
-        manifest, payload = common.build_payload(repo, capsule, source, target)
+        manifest, payload = common.build_payload(repo, capsule, source, target, args.packaged_candidate)
+        if args.packaged_candidate is not None:
+            report["packagedCandidate"] = manifest["packagedCandidate"]
         report["crossCompiledPackages"] = len(manifest["packages"])
         for name in ("client", "host"):
             common.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "aw-disposable-openbsd", "-f", str(capsule / name)])
@@ -519,10 +535,11 @@ def main():
         report["allTransportedExecutableHashesVerified"] = True
         phase = "guest-cli"
         cli = json.loads(common.run(ssh, data=f"{shlex.quote(guest + '/' + manifest['cli']['file'])} version --json\n".encode()).stdout)
-        for key, expected in {"commit": source, "sourceState": "clean", "platform": "openbsd", "arch": target["arch"], "goVersion": sdk["GOVERSION"]}.items():
-            if cli.get(key) != expected:
-                raise RuntimeError("executed OpenBSD CLI source/target differs")
+        report["packagedCandidateExecuted"] = validate_cli(cli, manifest, source, target["arch"], sdk["GOVERSION"], args.packaged_candidate is not None)
         report.update(executedCLI=cli, cliSHA256=manifest["cli"]["sha256"])
+        if args.packaged_candidate is not None:
+            phase = "packaged-backup-roundtrip"
+            report["packagedBackupChecks"] = common.packaged_backup_checks(ssh, guest, guest + "/" + manifest["cli"]["file"])
         phase = "guest-unit-tests"
         for index, package in enumerate(manifest["packages"]):
             script = f"set -eu\ncd {shlex.quote(guest + '/source/' + package['directory'])}\nexec env -i HOME=/home/awtest TMPDIR={shlex.quote(guest + '/tmp')} PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin LANG=C LC_ALL=C TZ=UTC {shlex.quote(guest + '/' + package['file'])} -test.timeout=150s -test.count=1 -test.v\n"

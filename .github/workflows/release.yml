@@ -535,9 +535,73 @@ jobs:
             build/bsd-native-checks/
           if-no-files-found: ignore
           retention-days: 14
+  packaged-openbsd:
+    name: Packaged guest (openbsd/${{ matrix.arch }})
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            sdkarch: x64
+            packages: qemu-system-x86
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            sdkarch: arm64
+            packages: qemu-system-arm qemu-efi-aarch64=2024.02-2ubuntu0.10
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 50
+    env:
+      GOTOOLCHAIN: local
+      PACKAGE_DIRECTORY: ${{ needs.package.outputs.directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          architecture: ${{ matrix.sdkarch }}
+          cache: false
+      - name: Check candidate staging and guest isolation regressions
+        run: |
+          python3 -m unittest discover -s scripts -p test_stage_packaged_native.py -v
+          python3 -m unittest discover -s scripts -p test_bsd_guest.py -v
+          python3 -m unittest discover -s scripts -p test_openbsd_guest.py -v
+      - name: Install distribution-signed hypervisor and ISO tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ${{ matrix.packages }} qemu-utils xorriso openssh-client openssl
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: accessweaver-unsigned
+          path: build/release-candidate
+      - name: Authenticate snapshot and stage archived OpenBSD candidate (no execution)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/stage_packaged_native.py --openbsd-guest --target openbsd/${{ matrix.arch }}
+          --download-root build/release-candidate --into build/packaged-openbsd
+      - name: Execute archived candidate and core regressions inside the pinned guest
+        env:
+          ACCESSWEAVER_DISPOSABLE_BSD_GUEST_TEST: '1'
+          ACCESSWEAVER_DISPOSABLE_OPENBSD_GUEST_TEST: '1'
+          ACCESSWEAVER_BSD_ARCH: ${{ matrix.arch }}
+        run: python3 scripts/test-openbsd-guest.py --packaged-candidate build/packaged-openbsd
+      - name: Retain public archived-candidate execution evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packaged-openbsd-${{ matrix.arch }}
+          path: |
+            build/packaged-openbsd/candidate.json
+            build/openbsd-native-checks/
+          if-no-files-found: ignore
+          retention-days: 14
   publish:
     name: Publish prerelease assets
-    needs: [package, packaged-native, packaged-freebsd]
+    needs: [package, packaged-native, packaged-freebsd, packaged-openbsd]
     if: github.event_name != 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 10

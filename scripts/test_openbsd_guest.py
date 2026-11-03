@@ -194,14 +194,34 @@ class InstallerInputTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             probe.machine_command(target,Path('/private/root'),'tcg',firmware,Path('/private/installer'))
 
-    def test_payload_cannot_mix_os_label_or_use_openbsd_packaged_fallback(self):
+    def test_payload_cannot_mix_os_label_architecture_or_unsupported_os(self):
         for target,packaged in ((dict(probe.common.selected_target('amd64'),goos='openbsd'),None),
-                                 (dict(probe.common.selected_target('amd64'),goos='openbsd',label='openbsd-amd64'),Path('/staged'))):
+                                 (dict(probe.common.selected_target('amd64'),goos='linux',label='linux-amd64'),Path('/staged')),
+                                 (dict(probe.common.selected_target('amd64'),goos='openbsd',arch='mips',label='openbsd-mips'),Path('/staged'))):
             with tempfile.TemporaryDirectory() as tmp,patch.object(probe.common,'run') as run:
                 with self.assertRaises(ValueError):
                     probe.common.build_payload(Path(tmp),Path(tmp),'a'*40,target,packaged)
                 run.assert_not_called()
                 self.assertFalse((Path(tmp)/'payload').exists())
+
+
+class ArchivedCLIIdentityTests(unittest.TestCase):
+    def fixture(self, arch):
+        cli=dict(version='0.1.0-alpha',commit='a'*40,sourceState='clean',builtAt='2026-11-03T00:00:00Z',goVersion='go1.27.3',platform='openbsd',arch=arch)
+        manifest={'cli':{'sha256':'1'*64},'packagedCandidate':{'build':dict(cli),'binarySha256':'1'*64}}
+        return cli,manifest
+
+    def test_archive_identity_is_required_before_execution_can_be_reported(self):
+        for arch in ('amd64','arm64'):
+            cli,manifest=self.fixture(arch)
+            self.assertTrue(probe.validate_cli(cli,manifest,'a'*40,arch,'go1.27.3',True))
+            self.assertFalse(probe.validate_cli(cli,manifest,'a'*40,arch,'go1.27.3',False))
+            for field in (*cli,'unknown','binary'):
+                cli,manifest=self.fixture(arch)
+                if field=='binary':manifest['cli']['sha256']='2'*64
+                else:cli[field]='changed'
+                with self.subTest(arch=arch,field=field),self.assertRaises(RuntimeError):
+                    probe.validate_cli(cli,manifest,'a'*40,arch,'go1.27.3',True)
 
 
 class PrimaryISOTests(unittest.TestCase):

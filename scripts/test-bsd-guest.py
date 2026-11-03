@@ -438,7 +438,7 @@ def remove_owned_capsule(capsule, root, identity, emulator_stopped):
 def build_payload(repo, capsule, source, target, packaged=None):
     goos = target.get("goos", "freebsd")
     if (goos not in ("freebsd", "openbsd") or target["arch"] not in ("amd64", "arm64") or
-            target["label"] != goos + "-" + target["arch"] or (packaged is not None and goos != "freebsd")):
+            target["label"] != goos + "-" + target["arch"]):
         raise ValueError("unsupported explicit BSD payload target")
     payload = capsule / "payload"
     payload.mkdir(mode=0o700)
@@ -470,7 +470,7 @@ def build_payload(repo, capsule, source, target, packaged=None):
     else:
         # The prior credential-scoped step authenticates all twelve subjects.
         # Copy the exact staged archive bytes; never substitute a rebuilt CLI.
-        receipt = copy_packaged_cli(packaged, payload / cli, source, target["arch"], os.environ.get("GITHUB_REF", ""))
+        receipt = copy_packaged_cli(packaged, payload / cli, source, target["arch"], os.environ.get("GITHUB_REF", ""), goos=goos)
         (payload / "BUILD-INFO.json").write_text(json.dumps(receipt["build"]) + "\n", encoding="utf-8")
     tree = run(["git", "ls-tree", "-r", "-l", "HEAD"]).stdout.decode("utf-8").splitlines()
     sizes = [line.split("\t", 1)[0].split()[-1] for line in tree]

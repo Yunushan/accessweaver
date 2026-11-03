@@ -1,4 +1,4 @@
-"""Copy an already authenticated FreeBSD candidate into a private guest payload.
+"""Copy an already authenticated BSD candidate into a private guest payload.
 
 Authentication is performed by the prior credential-scoped staging step. This
 consumer pins its independently supplied source/ref/target, holds the private
@@ -39,10 +39,10 @@ def read_private(directory_fd, name, maximum):
         return data
 
 
-def copy_packaged_cli(directory, destination, source, arch, ref):
+def copy_packaged_cli(directory, destination, source, arch, ref, *, goos="freebsd"):
     validate_identity(source, ref)
-    if arch not in ("amd64", "arm64"):
-        raise ValueError("unsupported packaged FreeBSD target")
+    if goos not in ("freebsd", "openbsd") or arch not in ("amd64", "arm64"):
+        raise ValueError("unsupported packaged BSD target")
     fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
     try:
         # Open every source relative to this held directory, even after rename.
@@ -60,20 +60,20 @@ def copy_packaged_cli(directory, destination, source, arch, ref):
                 receipt["publisherSignatureVerified"] is not False or receipt["productionQualificationComplete"] is not False):
             raise ValueError("unexpected packaged candidate receipt schema")
         for key, expected in {"sourceCommit": source, "sourceRef": ref, "repository": REPOSITORY, "workflow": WORKFLOW,
-                              "target": "freebsd/" + arch, "binary": "accessweaver",
-                              "executionEnvironment": "disposable-freebsd-guest"}.items():
+                              "target": goos + "/" + arch, "binary": "accessweaver",
+                              "executionEnvironment": "disposable-" + goos + "-guest"}.items():
             if receipt[key] != expected:
                 raise ValueError("packaged candidate identity mismatch: " + key)
         for key in ("archiveSha256", "manifestSha256", "bundleSha256", "binarySha256"):
             if not isinstance(receipt[key], str) or not re.fullmatch(r"[a-f0-9]{64}", receipt[key]):
                 raise ValueError("invalid packaged candidate digest")
-        if not isinstance(receipt["archive"], str) or not re.fullmatch(r"accessweaver-[A-Za-z0-9._-]+-freebsd-" + arch + r"\.tar\.gz", receipt["archive"]):
+        if not isinstance(receipt["archive"], str) or not re.fullmatch(r"accessweaver-[A-Za-z0-9._-]+-" + goos + "-" + arch + r"\.tar\.gz", receipt["archive"]):
             raise ValueError("invalid packaged candidate archive")
         build = receipt["build"]
         if (not isinstance(build, dict) or set(build) != {"version", "commit", "sourceState", "builtAt", "goVersion", "platform", "arch"} or
                 any(not isinstance(value, str) or not 0 < len(value) <= 256 for value in build.values())):
             raise ValueError("invalid packaged build identity")
-        for key, expected in {"commit": source, "sourceState": "clean", "platform": "freebsd", "arch": arch}.items():
+        for key, expected in {"commit": source, "sourceState": "clean", "platform": goos, "arch": arch}.items():
             if build[key] != expected:
                 raise ValueError("packaged build identity mismatch: " + key)
         binary = read_private(fd, "accessweaver", 64 << 20)

@@ -207,7 +207,7 @@ class TargetAndFirmwareTests(unittest.TestCase):
 
     def test_payload_keeps_selected_architecture_through_test_and_cli_builds(self):
         cases = [("freebsd", arch, mode) for arch in ("amd64", "arm64") for mode in (False, True, "changed-cli")]
-        cases += [("openbsd", arch, False) for arch in ("amd64", "arm64")]
+        cases += [("openbsd", arch, mode) for arch in ("amd64", "arm64") for mode in (False, True, "changed-cli")]
         for goos, arch, packaged in cases:
             with self.subTest(goos=goos, arch=arch, packaged=packaged), tempfile.TemporaryDirectory(prefix="accessweaver-payload-") as name:
                 root = Path(name).resolve()
@@ -243,8 +243,8 @@ class TargetAndFirmwareTests(unittest.TestCase):
                 target = dict(guest.selected_target(arch), goos=goos, label=goos + "-" + arch)
                 staged = root / "authenticated-stage"
                 receipt = {"build": {"arch": arch}, "binarySha256": hashlib.sha256(b"archived-cli-for-" + arch.encode()).hexdigest()}
-                def copy(directory, destination, source, actual_arch, ref):
-                    self.assertEqual((directory, source, actual_arch, ref), (staged, "a" * 40, arch, "refs/heads/main"))
+                def copy(directory, destination, source, actual_arch, ref, *, goos):
+                    self.assertEqual((directory, source, actual_arch, ref, goos), (staged, "a" * 40, arch, "refs/heads/main", target["goos"]))
                     destination.write_bytes(b"changed-after-handoff" if packaged == "changed-cli" else b"archived-cli-for-" + arch.encode())
                     return receipt
                 with patch.object(guest, "run", side_effect=command), patch.object(guest, "copy_packaged_cli", side_effect=copy) as stage, patch.dict(os.environ, {"GITHUB_REF": "refs/heads/main"}):
@@ -667,6 +667,11 @@ class PackagedBackupProbeTests(unittest.TestCase):
 
 @unittest.skipUnless(os.name == "posix", "private descriptor-based guest staging requires POSIX")
 class PackagedGuestHandoffTests(unittest.TestCase):
+    goos = "freebsd"
+
+    def copy_cli(self, *args):
+        return packaged_candidate.copy_packaged_cli(*args, goos=self.goos)
+
     def fixture(self, root, arch="amd64"):
         stage = root / "stage"
         stage.mkdir(mode=0o700)
@@ -675,14 +680,14 @@ class PackagedGuestHandoffTests(unittest.TestCase):
         (stage / "accessweaver").chmod(0o700)
         receipt = {"schemaVersion": 1, "sourceCommit": "a" * 40, "sourceRef": "refs/heads/main",
                    "repository": packaged_candidate.REPOSITORY, "workflow": packaged_candidate.WORKFLOW,
-                   "target": "freebsd/" + arch, "archive": "accessweaver-preview-freebsd-" + arch + ".tar.gz",
+                   "target": self.goos + "/" + arch, "archive": "accessweaver-preview-" + self.goos + "-" + arch + ".tar.gz",
                    "archiveSha256": "1" * 64, "manifestSha256": "2" * 64, "bundleSha256": "3" * 64,
                    "binary": "accessweaver", "binarySha256": hashlib.sha256(binary).hexdigest(),
                    "build": {"version": "0.1.0-alpha", "commit": "a" * 40, "sourceState": "clean",
-                             "builtAt": "2026-11-01T00:00:00Z", "goVersion": "go1.27.3", "platform": "freebsd", "arch": arch},
+                             "builtAt": "2026-11-01T00:00:00Z", "goVersion": "go1.27.3", "platform": self.goos, "arch": arch},
                    "provenanceSubjectsVerified": 12, "authenticatedBeforeStaging": True,
                    "publisherSignatureVerified": False, "productionQualificationComplete": False,
-                   "executionEnvironment": "disposable-freebsd-guest"}
+                   "executionEnvironment": "disposable-" + self.goos + "-guest"}
         (stage / "candidate.json").write_text(json.dumps(receipt), encoding="utf-8")
         (stage / "candidate.json").chmod(0o600)
         return stage, receipt, binary
@@ -693,13 +698,13 @@ class PackagedGuestHandoffTests(unittest.TestCase):
                 root = Path(tmp)
                 stage, expected, binary = self.fixture(root, arch)
                 destination = root / "payload-cli"
-                receipt = packaged_candidate.copy_packaged_cli(stage, destination, "a" * 40, arch, "refs/heads/main")
+                receipt = self.copy_cli(stage, destination, "a" * 40, arch, "refs/heads/main")
                 self.assertEqual(receipt, expected)
                 self.assertEqual(destination.read_bytes(), binary)
                 self.assertEqual(destination.stat().st_mode & 0o777, 0o700)
 
     def test_receipt_and_file_substitutions_fail_before_payload_creation(self):
-        cases = ("source", "ref", "target", "build", "unauthenticated", "subjects", "schema-bool", "unknown", "duplicate",
+        cases = ("source", "ref", "target", "os", "environment", "platform", "build", "unauthenticated", "subjects", "schema-bool", "unknown", "duplicate",
                  "archive-path", "binary-path", "binary-tamper", "binary-symlink", "receipt-symlink", "hardlink",
                  "file-mode", "directory-mode", "directory-symlink", "oversize-receipt", "oversize-binary", "existing-output")
         for mode in cases:
@@ -714,6 +719,12 @@ class PackagedGuestHandoffTests(unittest.TestCase):
                                   "unknown": ("unreviewed", "private"), "archive-path": ("archive", "../other.tar.gz"),
                                   "binary-path": ("binary", "../other")}[mode]
                     receipt[key] = value
+                if mode == "os":
+                    receipt["target"] = ("openbsd" if self.goos == "freebsd" else "freebsd") + "/amd64"
+                if mode == "environment":
+                    receipt["executionEnvironment"] = "disposable-other-guest"
+                if mode == "platform":
+                    receipt["build"]["platform"] = "openbsd" if self.goos == "freebsd" else "freebsd"
                 if mode == "build":
                     receipt["build"]["arch"] = "arm64"
                 (stage / "candidate.json").write_text(json.dumps(receipt), encoding="utf-8")
@@ -742,7 +753,7 @@ class PackagedGuestHandoffTests(unittest.TestCase):
                 if mode == "existing-output":
                     destination.write_bytes(b"preserve-existing")
                 with self.assertRaises((ValueError, OSError)):
-                    packaged_candidate.copy_packaged_cli(stage, destination, "a" * 40, "amd64", "refs/heads/main")
+                    self.copy_cli(stage, destination, "a" * 40, "amd64", "refs/heads/main")
                 if mode == "existing-output":
                     self.assertEqual(destination.read_bytes(), b"preserve-existing")
                 else:
@@ -762,7 +773,7 @@ class PackagedGuestHandoffTests(unittest.TestCase):
                 return data
             destination = root / "payload-cli"
             with patch.object(packaged_candidate, "read_private", side_effect=read):
-                actual = packaged_candidate.copy_packaged_cli(stage, destination, "a" * 40, "amd64", "refs/heads/main")
+                actual = self.copy_cli(stage, destination, "a" * 40, "amd64", "refs/heads/main")
             self.assertEqual(actual, receipt)
             self.assertEqual(destination.read_bytes(), binary)
 
@@ -772,11 +783,15 @@ class PackagedGuestHandoffTests(unittest.TestCase):
             stage, _, _ = self.fixture(root)
             (stage / "accessweaver").unlink()
             os.mkfifo(stage / "accessweaver", 0o600)
-            code = "import sys; from pathlib import Path; from bsd_packaged_candidate import copy_packaged_cli; copy_packaged_cli(Path(sys.argv[1]),Path(sys.argv[2]),'a'*40,'amd64','refs/heads/main')"
-            result = subprocess.run([sys.executable, "-c", code, str(stage), str(root / "payload-cli")], cwd=Path(__file__).parent, capture_output=True, timeout=3)
+            code = "import sys; from pathlib import Path; from bsd_packaged_candidate import copy_packaged_cli; copy_packaged_cli(Path(sys.argv[1]),Path(sys.argv[2]),'a'*40,'amd64','refs/heads/main',goos=sys.argv[3])"
+            result = subprocess.run([sys.executable, "-c", code, str(stage), str(root / "payload-cli"), self.goos], cwd=Path(__file__).parent, capture_output=True, timeout=3)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(b"unsafe or unbounded staged candidate file", result.stderr)
             self.assertFalse((root / "payload-cli").exists())
+
+
+class OpenBSDPackagedGuestHandoffTests(PackagedGuestHandoffTests):
+    goos = "openbsd"
 
 
 if __name__ == "__main__":
