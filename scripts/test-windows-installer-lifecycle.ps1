@@ -150,7 +150,7 @@ function Assert-Installed($expected){
 }
 $reportDirectory=Join-Path $project 'build\installer-lifecycle-checks';[void][IO.Directory]::CreateDirectory($reportDirectory)
 $reportPath=Join-Path $reportDirectory ($Architecture+'.json')
-$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null
+$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@()
 try {
     foreach($version in @('0.1.0-alpha','0.1.1-alpha')){
         $null=@(& (Join-Path $PSScriptRoot 'test-windows-installer.ps1') -ExpectedCompilerVersion '6.7.1' -TargetArch $Architecture -Version $version)
@@ -188,6 +188,23 @@ try {
     $reinstalled=Native-Record $second $arguments;Assert-Installed $builds[1]
     Require ((Digest $marker) -ceq $markerHash) 'Reinstall changed an unrelated installed-directory file'
     $observations+=,@{operation='reinstall';exitCode=$reinstalled.result.exitCode;elapsedMilliseconds=$reinstalled.milliseconds;deadlineMilliseconds=180000;payloadAndRegistrationVerified=$true;unrelatedStatePreserved=$true}
+    $stage='active-setup-uninstall';$lifecycleLockCases=@()
+    $setupMutexName='Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092'
+    $setupMutex=[Threading.Mutex]::new($false,$setupMutexName);$ownsSetupMutex=$false
+    try {
+        $ownsSetupMutex=$setupMutex.WaitOne(0)
+        Require $ownsSetupMutex 'The fixture could not reserve its setup mutex'
+        $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
+        $busyRemoval=Native-Record (Join-Path $install 'unins000.exe') @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') (0..255)
+        $binaryPresent=Test-Path -LiteralPath (Join-Path $install 'accessweaver.exe')
+        $registrationPresent=$null -ne (Registration)
+        $treeAfter=if(Test-Path -LiteralPath $install){Installed-TreeFingerprint}else{'absent'}
+        $registrationAfter=if($registrationPresent){Registration-Fingerprint}else{'absent'}
+        $lifecycleLockCases+=,@{name='active-setup-blocks-uninstall';exitCode=$busyRemoval.result.exitCode;elapsedMilliseconds=$busyRemoval.milliseconds;payloadPresent=$binaryPresent;registrationPresent=$registrationPresent;installedFileTreePreserved=($treeAfter -ceq $treeBefore);registrationValuesPreserved=($registrationAfter -ceq $registrationBefore)}
+        Require ($busyRemoval.result.exitCode -ne 0 -and $binaryPresent -and $registrationPresent -and $treeAfter -ceq $treeBefore -and $registrationAfter -ceq $registrationBefore) 'Uninstaller changed the installation while a setup mutex was active'
+        Assert-Installed $builds[1]
+        Require (-not (Test-Path -LiteralPath $managed)) 'Refused concurrent removal unexpectedly created machine recovery state'
+    } finally {if($ownsSetupMutex){$setupMutex.ReleaseMutex()};$setupMutex.Dispose()}
     $stage='refused-downgrade'
     $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
     $downgrade=Native-Record $first $arguments (0..255)
@@ -265,7 +282,7 @@ try {
     Remove-OwnedTree $capsule $temporary $capsuleLeaf
     $complete=$true
 } catch {$failureType=$_.Exception.GetType().FullName}
-$record=[ordered]@{schemaVersion=2;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;versionPolicyCases=$versionPolicyCases;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=3;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;versionPolicyCases=$versionPolicyCases;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'
