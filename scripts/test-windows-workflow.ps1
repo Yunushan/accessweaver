@@ -449,6 +449,34 @@ $archive=Join-Path $root 'traversal.zip';$zip=[IO.Compression.ZipFile]::Open($ar
 $entry=$zip.CreateEntry('../escape.txt');$writer=[IO.StreamWriter]::new($entry.Open());$writer.Write('bad');$writer.Dispose();$zip.Dispose()
 $rejected=$false;try{Expand-Safe $archive (Join-Path $root 'extracted')}catch{$rejected=$true}
 Assert $rejected 'Archive traversal rejected before extraction'
+# Independent CPython ZIP/ZIP64 and malformed-metadata fixtures remain inert.
+$archiveFixtures=Join-Path $testRoot 'component-archives'
+& python (Join-Path $PSScriptRoot 'fixtures\component_archives.py') $archiveFixtures
+Assert ($LASTEXITCODE -eq 0) 'Independent archive fixture generation succeeds without vendor execution'
+$archiveCases=Get-Content -LiteralPath (Join-Path $archiveFixtures 'cases.json') -Raw | ConvertFrom-Json
+$archiveUndo=$script:undo;$archiveJournal=$script:journalPath
+try {
+    $script:journalPath=$null
+    foreach($case in $archiveCases){
+        $script:undo=[Collections.Generic.List[object]]::new()
+        $destination=Join-Path $archiveFixtures ([IO.Path]::GetFileNameWithoutExtension($case.name)+'-output')
+        [void][IO.Directory]::CreateDirectory($destination)
+        $original=Join-Path $destination 'root.txt';[IO.File]::WriteAllText($original,'original')
+        $rejected=$false
+        try{Expand-Safe (Join-Path $archiveFixtures $case.name) $destination}catch{$rejected=$true}
+        if($case.expected -eq 'valid'){
+            Assert (-not $rejected -and [IO.File]::ReadAllText($original) -ceq 'replacement') ($case.name+' extracts a valid archive and replaces only its planned file')
+            foreach($record in $script:undo){Assert ($record.expectedHash -eq (Get-FileHash -LiteralPath $record.path -Algorithm SHA256).Hash) 'Archive journal records the actual streamed file hash'}
+            $errors=@(Rollback)
+            Assert ($errors.Count -eq 0 -and [IO.File]::ReadAllText($original) -ceq 'original') ($case.name+' restores the original file through the existing recovery journal')
+        }else{
+            Assert ($rejected -and [IO.File]::ReadAllText($original) -ceq 'original') ($case.name+' is rejected without replacing the original file')
+            Assert (@(Get-ChildItem -LiteralPath $destination -Recurse -File | Where-Object {$_.FullName -ine $original}).Count -eq 0) ($case.name+' leaves no payload or extraction-temporary file')
+        }
+        Assert (@(Get-ChildItem -LiteralPath $destination -Recurse -File -Filter '.accessweaver-extract-*.tmp').Count -eq 0) 'Archive extraction always removes its owned staging file'
+    }
+} finally {$script:undo=$archiveUndo;$script:journalPath=$archiveJournal}
+
 $previousAppData=$env:APPDATA
 try{
     $env:APPDATA=Join-Path $testRoot 'fake-appdata';$cache=Join-Path $env:APPDATA 'discord';[void](New-Item -ItemType Directory -Force -Path $cache)

@@ -20,7 +20,7 @@ $selected=$pins.targets.$Architecture
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($workflow,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Workflow parse failed'}
-$functions=@('No-Reparse','Under','Quote-Arg','Native-Argument','New-ToolCapture','Receive-ToolCapture','Wait-ToolCapture','Stop-ToolTreeWithHelper','Stop-ToolTree','Run-Tool','Native','Get-PEMachine','Component-ArchitecturePlan','Find-Source','Get-DriverServiceControllers','Get-ServiceInspection')
+$functions=@('No-Reparse','Under','Quote-Arg','Native-Argument','New-ToolCapture','Receive-ToolCapture','Wait-ToolCapture','Stop-ToolTreeWithHelper','Stop-ToolTree','Run-Tool','Native','Assert-ComponentZipBudget','Component-ArchivePlan','Expand-Safe','Backup-File','Expected-Hash','Save-Journal','Get-PEMachine','Component-ArchitecturePlan','Find-Source','Get-DriverServiceControllers','Get-ServiceInspection')
 foreach($name in $functions){
     $nodes=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Required workflow helper missing or duplicated'}
@@ -54,21 +54,6 @@ function Receive-PinnedAsset($pin,[string]$path){
         Require ($total -eq $pin.bytes) 'Asset is incomplete'
     } finally {if($file){$file.Dispose()};if($stream){$stream.Dispose()};if($response){$response.Dispose()};$cancel.Dispose();$client.Dispose()}
     Require ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $pin.sha256) 'Asset SHA-256 differs from its pin'
-}
-function Expand-PinnedZip([string]$archive,[string]$destination){
-    $zip=[IO.Compression.ZipFile]::OpenRead($archive)
-    try {
-        Require ($zip.Entries.Count -gt 0 -and $zip.Entries.Count -le 256) 'Unexpected archive entry count'
-        $total=0L;$names=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-        foreach($entry in $zip.Entries){
-            $total+=$entry.Length
-            Require ($entry.Length -le 64MB -and $total -le 128MB -and $entry.FullName -notmatch '(^|/)[.][.]?(/|$)|[:\\]' -and -not $entry.FullName.StartsWith('/') -and $names.Add($entry.FullName)) 'Invalid bounded archive entry'
-            $path=Join-Path $destination $entry.FullName;Require (Under $path $destination) 'Archive entry escapes capsule'
-            if($entry.FullName.EndsWith('/')){[void][IO.Directory]::CreateDirectory($path);continue}
-            [void][IO.Directory]::CreateDirectory((Split-Path -Parent $path))
-            [IO.Compression.ZipFileExtensions]::ExtractToFile($entry,$path,$false)
-        }
-    } finally {$zip.Dispose()}
 }
 function Public-VendorFailureMessages([string]$text){
     $tokenIdentity=[Security.Principal.WindowsIdentity]::GetCurrent()
@@ -108,6 +93,7 @@ function Invoke-PrivateStartup([string]$binary,[string[]]$arguments,[string]$pro
 $temporary=[IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\');No-Reparse $temporary
 $capsule=Join-Path $temporary ('accessweaver-vendor-preflight-'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($capsule)
+$script:undo=[Collections.Generic.List[object]]::new();$script:journalPath=$null
 $root=Join-Path $capsule 'managed';$r=[pscustomobject]@{bundlePath=(Join-Path $capsule 'payloads')}
 $inputData=[pscustomobject]@{nativeArchitecture=$Architecture}
 $assetNames=@{proxifyre='ProxiFyre.exe';wgcf='wgcf.exe';dnscrypt='dnscrypt-proxy.exe'}
@@ -123,7 +109,7 @@ try {
         $asset=Join-Path $capsule $pin.asset;Receive-PinnedAsset $pin $asset
         $destination=Join-Path $r.bundlePath $engine;[void][IO.Directory]::CreateDirectory($destination)
         if($pin.member){
-            Expand-PinnedZip $asset $destination
+            Expand-Safe $asset $destination
             $binary=Join-Path $destination $pin.member;Require (Under $binary $destination) 'Pinned member escapes payload'
         }else{$binary=Join-Path $destination 'wgcf.exe';[IO.File]::Copy($asset,$binary,$false)}
         $binary=[IO.Path]::GetFullPath($binary)

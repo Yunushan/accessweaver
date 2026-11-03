@@ -311,10 +311,132 @@ function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signe
     Copy-Checked $temp $destination;Remove-Item -LiteralPath $temp
     Event ('Verified download: '+[IO.Path]::GetFileName($destination))
 }
+function Assert-ComponentZipBudget([IO.Stream]$stream) {
+    # Bound central-directory parsing before ZipArchive materializes its entries.
+    if(-not $stream.CanSeek -or $stream.Length -lt 22 -or $stream.Length -gt (2147483648L+32MB)){throw 'Component archive has an unsupported compressed size'}
+    $reader=[IO.BinaryReader]::new($stream,[Text.Encoding]::UTF8,$true)
+    try {
+        $tailLength=[int][Math]::Min(65557,$stream.Length);[void]$stream.Seek(-$tailLength,[IO.SeekOrigin]::End)
+        $tail=$reader.ReadBytes($tailLength);$position=-1
+        for($i=$tail.Length-22;$i -ge 0;$i--){
+            if([BitConverter]::ToUInt32($tail,$i) -eq 0x06054b50){$position=$i;break}
+        }
+        if($position -lt 0 -or [BitConverter]::ToUInt16($tail,$position+20) -ne $tail.Length-$position-22){throw 'Component archive end record is invalid'}
+        $footer=$stream.Length-$tailLength+$position
+        if([BitConverter]::ToUInt16($tail,$position+4) -ne 0 -or [BitConverter]::ToUInt16($tail,$position+6) -ne 0){throw 'Multi-volume component archives are unsupported'}
+        $diskCount=[long][BitConverter]::ToUInt16($tail,$position+8);$count=[long][BitConverter]::ToUInt16($tail,$position+10)
+        $size=[long][BitConverter]::ToUInt32($tail,$position+12);$offset=[long][BitConverter]::ToUInt32($tail,$position+16)
+        $zip64=$false
+        if($footer -ge 20){[void]$stream.Seek($footer-20,[IO.SeekOrigin]::Begin);$locator=$reader.ReadBytes(20);$zip64=[BitConverter]::ToUInt32($locator,0) -eq 0x07064b50}
+        if($zip64){
+            if([BitConverter]::ToUInt32($locator,4) -ne 0 -or [BitConverter]::ToUInt32($locator,16) -ne 1){throw 'Multi-volume ZIP64 component archives are unsupported'}
+            $recordOffset=[BitConverter]::ToUInt64($locator,8)
+            if($recordOffset -gt $footer-76){throw 'Component ZIP64 end record is out of bounds'}
+            [void]$stream.Seek([long]$recordOffset,[IO.SeekOrigin]::Begin);$record=$reader.ReadBytes(56)
+            if($record.Length -ne 56 -or [BitConverter]::ToUInt32($record,0) -ne 0x06064b50){throw 'Component ZIP64 end record is invalid'}
+            $recordLength=[BitConverter]::ToUInt64($record,4)
+            if($recordLength -lt 44 -or $recordLength -gt 1MB -or $recordOffset+12+$recordLength -ne $footer-20){throw 'Component ZIP64 end record has an invalid size'}
+            if([BitConverter]::ToUInt32($record,16) -ne 0 -or [BitConverter]::ToUInt32($record,20) -ne 0){throw 'Multi-volume ZIP64 component archives are unsupported'}
+            $values=@([BitConverter]::ToUInt64($record,24),[BitConverter]::ToUInt64($record,32),[BitConverter]::ToUInt64($record,40),[BitConverter]::ToUInt64($record,48))
+            if($values[0] -gt 4096 -or $values[1] -gt 4096){throw 'Component archive exceeds the 4096-entry limit'}
+            if($values[2] -gt 16MB -or $values[3] -gt $stream.Length){throw 'Component archive central directory exceeds its bounds'}
+            if(($diskCount -ne 65535 -and $diskCount -ne $values[0]) -or ($count -ne 65535 -and $count -ne $values[1]) -or ($size -ne 4294967295L -and $size -ne $values[2]) -or ($offset -ne 4294967295L -and $offset -ne $values[3])){throw 'Component ZIP64 end records disagree'}
+            $diskCount=[long]$values[0];$count=[long]$values[1];$size=[long]$values[2];$offset=[long]$values[3];$footer=[long]$recordOffset
+        }
+        if($count -gt 4096 -or $diskCount -ne $count){throw 'Component archive exceeds the 4096-entry limit or has inconsistent counts'}
+        if($size -gt 16MB -or $offset -gt $footer -or $size -gt $footer-$offset){throw 'Component archive central directory exceeds its bounds'}
+        $end=$offset+$size
+        if($end -ne $footer){
+            # Some writers exclude the optional signature from directory size.
+            if($footer-$end -lt 6 -or $footer-$end -gt 65541 -or $size+$footer-$end -gt 16MB){throw 'Component archive has unexpected data after its central directory'}
+            [void]$stream.Seek($end,[IO.SeekOrigin]::Begin)
+            if($reader.ReadUInt32() -ne 0x05054b50 -or $reader.ReadUInt16() -ne $footer-$stream.Position){throw 'Component archive central signature is invalid'}
+        }
+        [void]$stream.Seek($offset,[IO.SeekOrigin]::Begin)
+        for($i=0;$i -lt $count;$i++){
+            if($end-$stream.Position -lt 46){throw 'Component archive central directory is incomplete'}
+            $header=$reader.ReadBytes(46)
+            if($header.Length -ne 46 -or [BitConverter]::ToUInt32($header,0) -ne 0x02014b50){throw 'Component archive central directory entry is invalid'}
+            $nameLength=[BitConverter]::ToUInt16($header,28);$extra=[BitConverter]::ToUInt16($header,30);$comment=[BitConverter]::ToUInt16($header,32)
+            $skip=[long]$nameLength+$extra+$comment
+            if($nameLength -eq 0 -or $skip -gt $end-$stream.Position){throw 'Component archive central directory entry exceeds its bounds'}
+            [void]$stream.Seek($skip,[IO.SeekOrigin]::Current)
+        }
+        if($stream.Position -ne $end){
+            # Optional PKWARE central-directory digital signature; no extra entries.
+            if($end-$stream.Position -lt 6 -or $reader.ReadUInt32() -ne 0x05054b50){throw 'Component archive contains unexpected central directory data'}
+            $length=$reader.ReadUInt16()
+            if($length -ne $end-$stream.Position){throw 'Component archive central signature is out of bounds'}
+            [void]$stream.Seek($length,[IO.SeekOrigin]::Current)
+        }
+    } finally {$reader.Dispose();[void]$stream.Seek(0,[IO.SeekOrigin]::Begin)}
+}
+function Component-ArchivePlan($zip,[string]$destination) {
+    if($zip.Entries.Count -eq 0 -or $zip.Entries.Count -gt 4096){throw 'Component archive must contain between 1 and 4096 entries'}
+    $base=[IO.Path]::GetFullPath($destination).TrimEnd('\');No-Reparse $base
+    $paths=[Collections.Generic.Dictionary[string,bool]]::new([StringComparer]::OrdinalIgnoreCase)
+    $plan=[Collections.Generic.List[object]]::new();$total=0L
+    foreach($entry in $zip.Entries){
+        if($entry.Length -gt 2147483648L-$total){throw 'Component archive exceeds 2 GiB'};$total+=$entry.Length
+        $name=$entry.FullName.Replace('\','/')
+        $mode=($entry.ExternalAttributes -shr 16) -band 0xf000
+        if($mode -notin @(0,0x4000,0x8000) -or ($entry.ExternalAttributes -band 0x400)){throw 'Component archive contains an unsupported file type'}
+        $directory=$name.EndsWith('/') -or $mode -eq 0x4000 -or ($entry.ExternalAttributes -band 0x10)
+        if($directory -and $entry.Length -ne 0){throw 'Component archive directory contains file data'}
+        if(-not $name -or $name.StartsWith('/') -or $name.Contains('//') -or $name -match '[:<>\"|?*\x00-\x1f]'){throw 'Component archive contains an invalid Windows path'}
+        $relative=$name.TrimEnd('/')
+        foreach($part in $relative.Split('/')){
+            $stem=($part -split '[.]',2)[0].TrimEnd(' ')
+            if(-not $part -or $part -in @('.','..') -or $part.EndsWith('.') -or $part.EndsWith(' ') -or $stem -match '^(CON|PRN|AUX|NUL|CLOCK[$]|CONIN[$]|CONOUT[$]|COM[1-9\u00b9\u00b2\u00b3]|LPT[1-9\u00b9\u00b2\u00b3])$'){throw 'Component archive contains an ambiguous Windows path'}
+        }
+        $target=[IO.Path]::GetFullPath((Join-Path $base $relative))
+        if(-not (Under $target $base) -or $paths.ContainsKey($target)){throw 'Component archive contains an escaping or duplicate path'}
+        $paths.Add($target,[bool]$directory);$plan.Add(@{entry=$entry;target=$target;directory=[bool]$directory})
+    }
+    foreach($item in $plan){
+        No-Reparse $item.target
+        if((Test-Path -LiteralPath $item.target) -and [bool](Get-Item -LiteralPath $item.target -Force).PSIsContainer -ne $item.directory){throw 'Component archive conflicts with an existing file or directory'}
+        $parent=Split-Path -Parent $item.target
+        while($parent -and $parent -ine $base){
+            if(($paths.ContainsKey($parent) -and -not $paths[$parent]) -or ((Test-Path -LiteralPath $parent) -and -not (Get-Item -LiteralPath $parent -Force).PSIsContainer)){throw 'Component archive file conflicts with a directory path'}
+            $parent=Split-Path -Parent $parent
+        }
+    }
+    return $plan.ToArray()
+}
 function Expand-Safe([string]$archive,[string]$destination) {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zip=[IO.Compression.ZipFile]::OpenRead($archive)
-    try { $total=0L;foreach($entry in $zip.Entries){$total+=$entry.Length;if($total -gt 2147483648){throw 'Component archive exceeds 2 GiB'};$target=Join-Path $destination $entry.FullName;if(-not (Under $target $destination)){throw 'Archive path escapes component storage'};if($entry.FullName.EndsWith('/')){continue};[void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target));Backup-File $target;$stream=$entry.Open();$hasher=[Security.Cryptography.SHA256]::Create();try{$hash=[BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-','')}finally{$stream.Dispose();$hasher.Dispose()};Expected-Hash $target $hash;[IO.Compression.ZipFileExtensions]::ExtractToFile($entry,$target,$true)} } finally {$zip.Dispose()}
+    No-Reparse $archive
+    $inputStream=[IO.File]::Open($archive,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    $zip=$null
+    try {
+        Assert-ComponentZipBudget $inputStream
+        $zip=[IO.Compression.ZipArchive]::new($inputStream,[IO.Compression.ZipArchiveMode]::Read,$true)
+        $plan=@(Component-ArchivePlan $zip $destination);$total=0L;$buffer=[byte[]]::new(65536)
+        if(@($plan | Where-Object {$_.target -ieq $inputStream.Name}).Count){throw 'Component archive cannot replace its own container'}
+        foreach($item in $plan){
+            if($item.directory){[void][IO.Directory]::CreateDirectory($item.target);continue}
+            $parent=Split-Path -Parent $item.target;[void][IO.Directory]::CreateDirectory($parent);No-Reparse $parent
+            $temporary=Join-Path $parent ('.accessweaver-extract-'+[guid]::NewGuid().ToString('N')+'.tmp')
+            $source=$null;$output=$null;$hasher=$null;$ownsTemporary=$false
+            try {
+                $source=$item.entry.Open();$output=[IO.File]::Open($temporary,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);$ownsTemporary=$true
+                $hasher=[Security.Cryptography.SHA256]::Create();$written=0L
+                while(($count=$source.Read($buffer,0,$buffer.Length)) -gt 0){
+                    if($count -gt $item.entry.Length-$written -or $count -gt 2147483648L-$total){throw 'Component archive stream exceeds its declared size or 2 GiB budget'}
+                    $output.Write($buffer,0,$count);[void]$hasher.TransformBlock($buffer,0,$count,$buffer,0);$written+=$count;$total+=$count
+                }
+                if($written -ne $item.entry.Length){throw 'Component archive stream is incomplete'}
+                [void]$hasher.TransformFinalBlock([byte[]]::new(0),0,0);$hash=[BitConverter]::ToString($hasher.Hash).Replace('-','')
+                $output.Flush($true);$output.Dispose();$output=$null
+                Backup-File $item.target;Expected-Hash $item.target $hash
+                if(Test-Path -LiteralPath $item.target){[IO.File]::Replace($temporary,$item.target,$null)}else{[IO.File]::Move($temporary,$item.target)}
+            } finally {
+                if($hasher){$hasher.Dispose()};if($output){$output.Dispose()};if($source){$source.Dispose()}
+                if($ownsTemporary -and (Test-Path -LiteralPath $temporary)){No-Reparse $temporary;Remove-Item -LiteralPath $temporary -Force}
+            }
+        }
+    } finally {if($zip){$zip.Dispose()};$inputStream.Dispose()}
 }
 $assetNames=@{byedpi='ciadpi.exe';proxifyre='ProxiFyre.exe';wgcf='wgcf.exe';zapret='winws.exe';zapret2='winws2.exe';goodbyedpi='goodbyedpi.exe';dnscrypt='dnscrypt-proxy.exe';drover='version.dll'}
 if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-catalog-ready {0}' -f $script:workflowClock.ElapsedMilliseconds))}
