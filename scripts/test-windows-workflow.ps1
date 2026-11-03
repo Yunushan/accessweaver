@@ -4,7 +4,7 @@
 param()
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path -Parent $PSScriptRoot
-foreach($file in @('test-windows-integration.ps1','build-windows-installer.ps1','test-windows-installer.ps1','test-windows-installer-contracts.ps1','windows-installer-common.ps1','build-windows-fixtures.ps1','test-windows-apps.ps1','test-windows-wiresock.ps1','test-windows-reboot.ps1','test-windows-storage.ps1','test-windows-uiaccess.ps1','vmware-test-bootstrap.ps1','vmware-reboot-resume.ps1')){$tokens=$null;$issues=$null;[void][Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $file),[ref]$tokens,[ref]$issues);if($issues.Count){throw ($issues|Out-String)}}
+foreach($file in @('test-windows-vendor-preflight.ps1','test-windows-integration.ps1','build-windows-installer.ps1','test-windows-installer.ps1','test-windows-installer-contracts.ps1','windows-installer-common.ps1','build-windows-fixtures.ps1','test-windows-apps.ps1','test-windows-wiresock.ps1','test-windows-reboot.ps1','test-windows-storage.ps1','test-windows-uiaccess.ps1','vmware-test-bootstrap.ps1','vmware-reboot-resume.ps1')){$tokens=$null;$issues=$null;[void][Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $file),[ref]$tokens,[ref]$issues);if($issues.Count){throw ($issues|Out-String)}}
 $tokens=$null;$parseErrors=$null
 $ast=[System.Management.Automation.Language.Parser]::ParseFile((Join-Path $projectRoot 'internal\workflow\windows.ps1'),[ref]$tokens,[ref]$parseErrors)
 if($parseErrors.Count){throw ($parseErrors|Out-String)}

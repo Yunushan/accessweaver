@@ -1,0 +1,54 @@
+name: Windows vendor startup preflight
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - internal/workflow/windows.ps1
+      - scripts/vendor-windows-pins.json
+      - scripts/test-windows-vendor-preflight.ps1
+      - .github/workflows/vendor-preflight.yml
+  pull_request:
+    paths:
+      - internal/workflow/windows.ps1
+      - scripts/vendor-windows-pins.json
+      - scripts/test-windows-vendor-preflight.ps1
+      - .github/workflows/vendor-preflight.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vendor-startup-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  startup:
+    name: Native vendor startup (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            arch: amd64
+          - os: windows-11-arm
+            arch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify real native vendor selection and startup without installation
+        shell: pwsh
+        env:
+          ACCESSWEAVER_DISPOSABLE_WINDOWS_VENDOR_PREFLIGHT: '1'
+        run: ./scripts/test-windows-vendor-preflight.ps1 -Architecture '${{ matrix.arch }}'
+      - name: Retain scoped source-bound startup evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vendor-startup-windows-${{ matrix.arch }}
+          path: build/vendor-startup-checks/
+          if-no-files-found: error
+          retention-days: 14
