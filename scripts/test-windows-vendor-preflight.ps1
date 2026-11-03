@@ -81,7 +81,7 @@ function Invoke-PrivateStartup([string]$binary,[string[]]$arguments,[string]$pro
     try {
         foreach($entry in Get-ChildItem Env:){[Environment]::SetEnvironmentVariable($entry.Name,$null,'Process')}
         foreach($name in $allowed.Keys){[Environment]::SetEnvironmentVariable($name,$allowed[$name],'Process')}
-        return (Native $binary $arguments ((0..255)+@(-532462766,-1073741515,-1073741701)) -Secret -Timeout 30)
+        return (Native $binary $arguments ((0..255)+@(1067,-532462766,-1073741515,-1073741701)) -Secret -Timeout 30)
     } finally {
         foreach($entry in Get-ChildItem Env:){[Environment]::SetEnvironmentVariable($entry.Name,$null,'Process')}
         foreach($name in $saved.Keys){[Environment]::SetEnvironmentVariable($name,$saved[$name],'Process')}
@@ -94,10 +94,12 @@ $root=Join-Path $capsule 'managed';$r=[pscustomobject]@{bundlePath=(Join-Path $c
 $inputData=[pscustomobject]@{nativeArchitecture=$Architecture}
 $assetNames=@{proxifyre='ProxiFyre.exe';wgcf='wgcf.exe';dnscrypt='dnscrypt-proxy.exe'}
 $repositories=@{proxifyre='wiresock/proxifyre';wgcf='ViRb3/wgcf';dnscrypt='DNSCrypt/dnscrypt-proxy'}
-$records=@();$failure=$false;$cleaned=$false;$stage='service-baseline';$failureType=$null;$failureInnerType=$null;$startupDiagnostic=$null
+$failures=@();$records=@();$failure=$false;$cleaned=$false;$stage='service-baseline';$failureType=$null;$failureInnerType=$null;$startupDiagnostic=$null
 try {
     $before=Service-Snapshot
     foreach($engine in @('proxifyre','wgcf','dnscrypt')){
+        $startupDiagnostic=$null
+        try {
         $stage='download-'+$engine;$pin=$selected.$engine;$plan=Component-ArchitecturePlan $engine
         Require ($pin.url.StartsWith(('https://github.com/'+$repositories[$engine]+'/releases/download/'),[StringComparison]::Ordinal) -and $pin.asset -match $plan.assetPattern -and ([uri]$pin.url).AbsolutePath.EndsWith('/'+$pin.asset) -and $pin.binarySHA256 -cmatch '^[a-f0-9]{64}$') 'Native asset pin does not match the component plan'
         $asset=Join-Path $capsule $pin.asset;Receive-PinnedAsset $pin $asset
@@ -115,6 +117,7 @@ try {
         $stage='process-'+$engine;$clock=[Diagnostics.Stopwatch]::StartNew();$result=Invoke-PrivateStartup $binary $arguments $profile;$clock.Stop();$elapsed=$clock.ElapsedMilliseconds
         $stage='result-'+$engine
         $startupDiagnostic=@{engine=$engine;exitCode=$result.exitCode;outputComplete=$result.outputComplete;stdoutCharacters=$result.stdout.Length;stderrCharacters=$result.stderr.Length;loaderFailureClass='none'}
+        $startupDiagnostic.outputTags=@(foreach($tag in @('FileNotFoundException','BadImageFormatException','UnauthorizedAccessException','ArgumentNullException','TypeInitializationException','TypeLoadException','Win32Exception','NDISRD','NLog','Topshelf','ProxiFyre.Configuration')){if(($result.stdout+$result.stderr).Contains($tag)){$tag}})
         $startupDiagnostic.mixedModeDependencyMarker=(($result.stdout+$result.stderr) -match 'socksify|Socksifier|mixed.mode')
         $startupDiagnostic.configurationDependencyMarker=(($result.stdout+$result.stderr) -match 'ProxiFyre[.]Configuration')
         if($result.stderr -match 'could not establish its secure native dependency loading policy'){$startupDiagnostic.loaderFailureClass='native-loader-policy'}
@@ -128,12 +131,19 @@ try {
         Require $matched 'Vendor startup output does not match the pinned command contract'
         Require ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $pin.binarySHA256) 'Executable changed during startup'
         $records+=@{engine=$engine;version=$pin.version;asset=$pin.asset;assetSHA256=$pin.sha256;binarySHA256=$pin.binarySHA256;coffMachine=$plan.machine;discoverySelectedPinnedExecutable=$true;helpOrVersionPassed=$true;exitCode=$result.exitCode;outputComplete=$result.outputComplete;elapsedMilliseconds=$elapsed;deadlineMilliseconds=30000;childEnvironmentSanitized=$true}
+        } catch {
+            $failure=$true;$failureType=$_.Exception.GetType().FullName;$failureInnerType=$null
+            if($_.Exception.InnerException){$failureInnerType=$_.Exception.InnerException.GetType().FullName}
+            if($_.Exception.Message -match '^Tool failed: (ProxiFyre|wgcf|dnscrypt-proxy)[.]exe [(]exit (-?[0-9]+)[)]$'){$startupDiagnostic=@{toolExitCode=[int]$Matches[2]}}
+            $failures+=@{stage=$stage;exceptionType=$failureType;innerExceptionType=$failureInnerType;startup=$startupDiagnostic}
+        }
     }
     $stage='service-comparison';Require ((Service-Snapshot) -ceq $before) 'Relevant service state changed during help/version probes'
 } catch {
     $failure=$true;$failureType=$_.Exception.GetType().FullName
     if($_.Exception.InnerException){$failureInnerType=$_.Exception.InnerException.GetType().FullName}
     if($_.Exception.Message -match '^Tool failed: (ProxiFyre|wgcf|dnscrypt-proxy)[.]exe [(]exit (-?[0-9]+)[)]$'){$startupDiagnostic=@{toolExitCode=[int]$Matches[2]}}
+    $failures+=@{stage=$stage;exceptionType=$failureType;innerExceptionType=$failureInnerType;startup=$startupDiagnostic}
 }
 finally {
     $resolved=[IO.Path]::GetFullPath($capsule)
@@ -144,8 +154,8 @@ finally {
     $cleaned=-not (Test-Path -LiteralPath $resolved)
 }
 if($failure){
-    $diagnostic=@{stage=$stage;exceptionType=$failureType;innerExceptionType=$failureInnerType;startup=$startupDiagnostic;ownedCapsuleRemoved=$cleaned;productionQualificationComplete=$false}
-    Write-Output ('Fixed vendor startup failure: '+($diagnostic|ConvertTo-Json -Depth 4 -Compress))
+    $diagnostic=@{failures=$failures;successfulComponents=@($records.engine);ownedCapsuleRemoved=$cleaned;productionQualificationComplete=$false}
+    Write-Output ('Fixed vendor startup failure: '+($diagnostic|ConvertTo-Json -Depth 6 -Compress))
 }
 Require (-not $failure -and $cleaned -and $records.Count -eq 3) ('Vendor startup preflight failed at '+$stage+'; no production qualification is established')
 $report=@{schemaVersion=1;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);hostArchitecture=$hostArch;workflowScriptSHA256=$workflowHash;pinsSHA256=$pinsHash;components=$records;relevantServiceStateUnchanged=$true;ownedCapsuleRemoved=$cleaned;commandsRequestedServiceOrDriverChanges=$false;networkIsolationVerified=$false;vendorRoutingQualified=$false;productionQualificationComplete=$false}
