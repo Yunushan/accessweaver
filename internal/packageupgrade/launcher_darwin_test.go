@@ -35,10 +35,6 @@ func TestDarwinLauncherExecFailureDoesNotLeakLease(t *testing.T) {
 	if e = execWithRuntimeLease(lease, filepath.Join(t.TempDir(), "absent"), nil, []string{runtimeLeaseEnvironment + "=999"}); !errors.Is(e, unix.ENOENT) {
 		t.Fatal("missing executable did not return ENOENT", e)
 	}
-	afterExec := leaseFixtureDescriptors(t, path)
-	if len(afterExec) != 1 || afterExec[0] != originalFD {
-		t.Fatalf("failed exec left unexpected descriptors: original=%d actual=%v", originalFD, afterExec)
-	}
 	flags, e := unix.FcntlInt(f.Fd(), unix.F_GETFD, 0)
 	if e != nil || flags&unix.FD_CLOEXEC == 0 {
 		t.Fatal("original descriptor flags changed", e)
@@ -55,7 +51,32 @@ func TestDarwinLauncherExecFailureDoesNotLeakLease(t *testing.T) {
 		t.Fatal(e)
 	}
 	if e = unix.Flock(int(writer.Fd()), unix.LOCK_EX|unix.LOCK_NB); e != nil {
-		t.Fatalf("failed exec retained lease: %v; original=%d afterExec=%v afterClose=%v", e, originalFD, afterExec, leaseFixtureDescriptors(t, path))
+		t.Fatalf("failed exec retained lease: %v; original=%d writer=%d afterClose=%v", e, originalFD, writer.Fd(), leaseFixtureDescriptors(t, path))
+	}
+}
+
+// Keep this inventory check separate: scanning descriptors between close and
+// the writer assertion would change the timing of the immediate-release probe.
+func TestDarwinLauncherFailedExecClosesDuplicateDescriptor(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "lease")
+	if e := os.WriteFile(path, nil, 0644); e != nil {
+		t.Fatal(e)
+	}
+	f, e := os.Open(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	lease := &RuntimeLease{file: f}
+	defer lease.Close()
+	if e = unix.Flock(int(f.Fd()), unix.LOCK_SH|unix.LOCK_NB); e != nil {
+		t.Fatal(e)
+	}
+	if e = execWithRuntimeLease(lease, filepath.Join(t.TempDir(), "absent"), nil, nil); !errors.Is(e, unix.ENOENT) {
+		t.Fatal(e)
+	}
+	actual := leaseFixtureDescriptors(t, path)
+	if len(actual) != 1 || actual[0] != int(f.Fd()) {
+		t.Fatalf("failed exec retained duplicate: %v", actual)
 	}
 }
 
