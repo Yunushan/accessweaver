@@ -20,6 +20,7 @@ type processIdentity struct {
 }
 
 type observation struct {
+	Owner processIdentity `json:"owner"`
 	Mode  string          `json:"mode"`
 	Root  processIdentity `json:"root"`
 	Child processIdentity `json:"child"`
@@ -93,10 +94,14 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if input.Mode != "exit-failure-with-child" && input.Mode != "exit-success-with-child" && input.Mode != "hang-with-child" {
+	if input.Mode != "exit-failure-with-child" && input.Mode != "exit-success-with-child" && input.Mode != "hang-with-child" && input.Mode != "owner-termination-with-child" {
 		return fmt.Errorf("unknown fixture mode")
 	}
 	own, err := identity(os.Getpid())
+	if err != nil {
+		return err
+	}
+	owner, err := identity(os.Getppid())
 	if err != nil {
 		return err
 	}
@@ -123,7 +128,7 @@ func run() error {
 	if childID.PID != child.Process.Pid {
 		return fmt.Errorf("owned child did not become ready")
 	}
-	if err = writeNew(config+".ready", observation{input.Mode, own, childID}); err != nil {
+	if err = writeNew(config+".ready", observation{Owner: owner, Mode: input.Mode, Root: own, Child: childID}); err != nil {
 		return err
 	}
 	switch input.Mode {
