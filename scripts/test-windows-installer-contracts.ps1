@@ -63,12 +63,14 @@ try {
     $setupPath=Join-Path $fixture 'preprocessed.iss'
     foreach($arch in @('amd64','arm64')){
         $architecture=if($arch -ceq 'arm64'){'arm64'}else{'x64compatible'}
-        $script="[Setup]`nArchitecturesAllowed=$architecture`nArchitecturesInstallIn64BitMode=$architecture`nOutputBaseFilename=accessweaver-0.1.0-alpha-windows-$arch-setup`n[Code]`n"
+        $script="[Setup]`nAllowNoIcons=yes`nArchitecturesAllowed=$architecture`nArchitecturesInstallIn64BitMode=$architecture`nOutputBaseFilename=accessweaver-0.1.0-alpha-windows-$arch-setup`n[Code]`n"
         [IO.File]::WriteAllText($setupPath,$script)
         $values=Assert-InstallerSetupScript $setupPath $arch '0.1.0-alpha'
         Assert ($values.ArchitecturesAllowed -ceq $architecture) 'Valid preprocessed architecture rejected'
-        foreach($kind in @('allowed','install-mode','filename','duplicate','wrong-section')){
+        foreach($kind in @('icons','missing-icons','allowed','install-mode','filename','duplicate','wrong-section')){
             $changed=switch($kind){
+                'icons' {$script.Replace('AllowNoIcons=yes','AllowNoIcons=no')}
+                'missing-icons' {$script.Replace(('AllowNoIcons=yes'+"`n"),'')}
                 'allowed' {$script.Replace(('ArchitecturesAllowed='+$architecture),'ArchitecturesAllowed=win64')}
                 'install-mode' {$script.Replace(('ArchitecturesInstallIn64BitMode='+$architecture),'ArchitecturesInstallIn64BitMode=x86compatible')}
                 'filename' {$script.Replace(('windows-'+$arch),'windows-386')}

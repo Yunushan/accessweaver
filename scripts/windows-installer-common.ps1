@@ -40,14 +40,14 @@ function Assert-InstallerSetupScript([string]$Path, [string]$TargetArch, [string
     if($TargetArch -cnotin @('amd64','arm64')){throw 'Invalid installer script target'}
     if((Get-Item -LiteralPath $Path).Length -gt 1MB){throw 'Preprocessed installer script exceeds evidence limit'}
     $architecture=if($TargetArch -ceq 'arm64'){'arm64'}else{'x64compatible'}
-    $expected=@{ArchitecturesAllowed=$architecture;ArchitecturesInstallIn64BitMode=$architecture;OutputBaseFilename=('accessweaver-'+$Version+'-windows-'+$TargetArch+'-setup')}
+    $expected=@{AllowNoIcons='yes';ArchitecturesAllowed=$architecture;ArchitecturesInstallIn64BitMode=$architecture;OutputBaseFilename=('accessweaver-'+$Version+'-windows-'+$TargetArch+'-setup')}
     $actual=@{};$section=''
     foreach($line in [IO.File]::ReadAllLines($Path)){
         if($line -match '^\s*\[([^]]+)\]\s*$'){$section=$matches[1];continue}
         if($section -ieq 'Setup' -and $line -match '^\s*([^=;]+?)\s*=(.*)$'){
             $name=$matches[1].Trim();$value=$matches[2].Trim()
             if($expected.ContainsKey($name)){
-                if($actual.ContainsKey($name)){throw 'Duplicate architecture/output directive in preprocessed installer'}
+                if($actual.ContainsKey($name)){throw 'Duplicate required directive in preprocessed installer'}
                 $actual[$name]=$value
             }
         }

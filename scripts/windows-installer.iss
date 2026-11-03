@@ -22,6 +22,7 @@ AppPublisher=AccessWeaver contributors
 AppPublisherURL=https://github.com/Yunushan/accessweaver
 DefaultDirName={autopf}\AccessWeaver
 DefaultGroupName=AccessWeaver
+AllowNoIcons=yes
 ArchitecturesAllowed={#InstallArchitecture}
 ArchitecturesInstallIn64BitMode={#InstallArchitecture}
 PrivilegesRequired=admin
