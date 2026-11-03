@@ -13,7 +13,7 @@ class DeploymentProvenanceContracts(unittest.TestCase):
     def fixture(self,root):
         for name in set(subjects("amd64"))|{PROVENANCE_BUNDLE}:(root/name).write_bytes(b"not parsed before authentication")
     def test_known_subjects_and_source_workflow_are_independent_inputs(self):
-        self.assertEqual(len(subjects("amd64")),17)
+        self.assertEqual(len(subjects("amd64")),18)
         command=verification_command(Path("p.pkg"),Path("bundle"),COMMIT,REF,"trusted-gh")
         for flag,value in {"--signer-workflow":WORKFLOW,"--repo":"Yunushan/accessweaver","--source-digest":COMMIT,"--signer-digest":COMMIT,"--source-ref":REF,"--cert-oidc-issuer":"https://token.actions.githubusercontent.com","--predicate-type":"https://slsa.dev/provenance/v1"}.items():self.assertEqual(command[command.index(flag)+1],value)
         self.assertIn("--deny-self-hosted-runners",command)
@@ -29,9 +29,9 @@ class DeploymentProvenanceContracts(unittest.TestCase):
                 self.assertEqual((private/name).read_bytes(),b"not parsed before authentication")
                 return {"mocked":True}
             with patch("verify_macos_deployment_provenance.authenticate",side_effect=auth),patch("verify_macos_deployment_provenance.validate_contents",side_effect=parse):result=verify(root,COMMIT,REF,"amd64","trusted-gh")
-            self.assertEqual(result["subjectsVerified"],17);self.assertFalse(result["localTargetExecution"])
+            self.assertEqual(result["subjectsVerified"],18);self.assertFalse(result["localTargetExecution"])
     def test_first_and_last_signature_failure_stop_before_parsing(self):
-        for failed in (1,17):
+        for failed in (1,18):
             with tempfile.TemporaryDirectory() as folder:
                 root=Path(folder);self.fixture(root);calls=[]
                 def invoke(*args,**kwargs):
@@ -57,7 +57,7 @@ class DeploymentProvenanceContracts(unittest.TestCase):
             root=Path(folder);self.fixture(root)
             with patch("verify_macos_deployment_provenance.authenticate") as auth,patch("verify_macos_deployment_provenance.validate_contents",return_value={"lifecycleRunID":"7"}):
                 with self.assertRaisesRegex(ValueError,"native run"):verify(root,COMMIT,REF,"amd64","trusted-gh",run_id="8")
-                self.assertEqual(auth.call_count,17)
+                self.assertEqual(auth.call_count,18)
     def test_real_rejection_protocol_brackets_all_five_changed_choices(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);path=root/"p.pkg";path.write_bytes(b"candidate");calls=[]

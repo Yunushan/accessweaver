@@ -14,6 +14,7 @@ import tempfile
 from macos_deployment import PACKAGE_ID,INCOMING,inspect_deployment,DETACHED_MANIFEST,PAYLOAD_SBOM,verify_deployment_bundle
 from macos_installer import BUNDLE_NAME,digest,require,MAX_BYTES
 from macos_package_archive import flat_members,cpio,inflate
+from macos_launcher import BINARY,archive_name,inspect_launcher
 
 REPO=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location("accessweaver_mac_fixture_support",Path(__file__).with_name("test-macos-installer-lifecycle.py"))
@@ -51,11 +52,14 @@ def main():
         package=output/filename;encoded=(output/"INSTALL-MANIFEST.json").read_bytes();scripts=json.loads((output/"SCRIPT-MANIFEST.json").read_bytes())
         require(inspect_deployment(package.read_bytes(),encoded,identity,scripts)==report["archiveInspection"],"Actual deployment package changed after construction")
         candidates[version]={"identity":identity,"report":report,"package":package,"manifest":json.loads(encoded),"manifestBytes":encoded}
+    launcher_archive=root/archive_name(arch);launcher_info=inspect_launcher(launcher_archive.read_bytes(),candidates[VERSIONS[-1]]["identity"])
+    launcher=root/"launcher"/BINARY;no_alias(launcher);launcher_stat=launcher.stat()
+    require(stat.S_ISREG(launcher_stat.st_mode) and launcher_stat.st_nlink==1 and stat.S_IMODE(launcher_stat.st_mode)==0o755 and digest(launcher.read_bytes())==launcher_info["binarySHA256"],"Native launcher differs from its archived subject")
     temporary=Path(os.environ["RUNNER_TEMP"]);no_alias(temporary)
     capsule=Path(tempfile.mkdtemp(prefix="accessweaver-deployment-package-",dir=temporary));user=capsule/"user";user.mkdir();private_temp=capsule/"tmp";private_temp.mkdir()
     environment={"PATH":"/usr/bin:/bin:/usr/sbin:/sbin","HOME":str(user),"TMPDIR":str(private_temp),"LANG":"C","LC_ALL":"C","TZ":"UTC","ACCESSWEAVER_NO_BROWSER":"1"}
     marker=user/"preserve";marker.write_bytes(b"unrelated deployment package fixture");marker_hash=digest(marker.read_bytes())
-    complete=False;cleaned=False;failure=None;failure_line=None;stage="clean-install";operations=[];profile_path=None;profile_hash=None;known_slots={};lease_cases=[]
+    complete=False;cleaned=False;failure=None;failure_line=None;stage="clean-install";operations=[];profile_path=None;profile_hash=None;known_slots={};lease_cases=[];launcher_cases=[]
     def state():
         path=AUTHORITY/"state/deployment.json";no_alias(path);info=path.stat()
         require(stat.S_ISREG(info.st_mode) and info.st_uid==0 and info.st_gid==0 and info.st_nlink==1 and info.st_size<=16384,"Unexpected protected deployment state")
@@ -96,8 +100,29 @@ def main():
         if profile_path is not None:require(digest(profile_path.read_bytes())==profile_hash,"Actual package operation changed saved profile")
         require(digest(marker.read_bytes())==marker_hash,"Actual package operation changed unrelated user data")
         entry["passed"]=True
+    def check_launcher(name,expected=None,elevated=False,hint=False):
+        nonlocal stage
+        stage="launcher-"+name;before=state()[1] if AUTHORITY.exists() else None;before_receipts=receipt_snapshot() if all(p.exists() for p in RECEIPTS) else None
+        child=dict(environment)
+        if hint:child["ACCESSWEAVER_RUNTIME_LEASE_FD"]="999"
+        command=(["/usr/bin/sudo","-n"] if elevated else [])+[launcher,"version","--json"]
+        result,elapsed=run(command,child,30,codes=tuple(range(256)))
+        require(digest(launcher.read_bytes())==launcher_info["binarySHA256"],"Native launcher changed during execution")
+        require(result.returncode==0 if expected is not None else 1<=result.returncode<=255,"Unexpected launcher resolution/refusal: "+name)
+        if expected is not None:require(json.loads(result.stdout)==expected,"Launcher executed an unexpected core version")
+        if elevated:require(b"ordinary desktop user" in result.stderr,"Elevated launcher did not refuse before core execution")
+        if hint:require(b"runtime descriptor supplied" in result.stderr,"Launcher did not reject the supplied descriptor hint")
+        if name=="inactive-refused":require(b"not active" in result.stderr,"Launcher did not reject the inactive authority")
+        if before is None:require(not AUTHORITY.exists() and not INPUT.exists() and all(not p.exists() for p in RECEIPTS),"Refused launcher initialized an installation")
+        else:require(state()[1]==before and receipt_snapshot()==before_receipts,"Launcher changed deployment record/receipt")
+        require(digest(marker.read_bytes())==marker_hash and (profile_path is None or digest(profile_path.read_bytes())==profile_hash),"Launcher changed user data")
+        launcher_cases.append({"name":name,"exitCode":result.returncode,"elapsedMilliseconds":elapsed,"expectedCoreBuild":expected,"activeRecordAndReceiptBytesPreserved":True,"actualUserDataPreserved":True,"passed":True})
     try:
+        check_launcher("absent-refused")
+        check_launcher("elevated-refused",elevated=True)
+        check_launcher("descriptor-hint-refused",hint=True)
         install("clean-install",VERSIONS[0],1)
+        check_launcher("initial-active",candidates[VERSIONS[0]]["identity"])
         app,_=active(VERSIONS[0],1)
         template,_=run([app/"Contents/MacOS/accessweaver","show","discord-proxy"],environment,30);profile=json.loads(template.stdout);profile["id"]="deployment-preserve";profile["name"]="Preserved native deployment profile"
         request=capsule/"profile.json";request.write_text(json.dumps(profile),encoding="utf-8")
@@ -105,9 +130,10 @@ def main():
         profile_path=user/"Library/Application Support/AccessWeaver/profiles/deployment-preserve.json";no_alias(profile_path);profile_hash=digest(profile_path.read_bytes())
         stage="running-controller-runtime-lease"
         core=app/"Contents/MacOS/accessweaver"
-        for kind in ("direct","inherited","alias"):
+        for kind in ("direct","inherited","alias","launcher"):
             output=capsule/("runtime-"+kind+".stdout");child_environment=dict(environment);descriptor=None
             command=core
+            if kind=="launcher":command=launcher
             if kind=="alias":
                 command=capsule/"alias-core";command.symlink_to(core)
             if kind=="inherited":
@@ -117,7 +143,7 @@ def main():
             before_state=state()[1];before_receipts=receipt_snapshot();child=None;serving=False
             try:
                 with output.open("xb") as stream:
-                    child=support.subprocess.Popen([str(command),"ui"],cwd=REPO,env=child_environment,stdout=stream,stderr=support.subprocess.STDOUT,pass_fds=(() if descriptor is None else (descriptor,)))
+                    child=support.subprocess.Popen([str(command)]+([] if kind=="launcher" else ["ui"]),cwd=REPO,env=child_environment,stdout=stream,stderr=support.subprocess.STDOUT,pass_fds=(() if descriptor is None else (descriptor,)))
                 if descriptor is not None:os.close(descriptor);descriptor=None
                 deadline=time.monotonic()+30
                 while time.monotonic()<deadline:
@@ -142,6 +168,7 @@ def main():
                     stopped=child.wait(timeout=30)
                     if serving:require(stopped==0,"Owned controller did not stop cleanly")
         install("upgrade",VERSIONS[1],2)
+        check_launcher("upgraded-active",candidates[VERSIONS[1]]["identity"])
         install("same-version-reinstall",VERSIONS[1],3)
         install("older-version-refused",VERSIONS[0],3,False)
         candidate=candidates[VERSIONS[1]];incoming=INPUT/candidate["report"]["manifestSHA256"]/BUNDLE_NAME;verify_deployment_bundle(incoming,candidate["manifest"],candidate["identity"],candidate["manifestBytes"])
@@ -171,6 +198,8 @@ def main():
         stopped,elapsed=run(["/usr/bin/sudo","-n",helper,"deactivate-deployment"],environment,60);value=json.loads(stopped.stdout)
         require(value["generation"]==5 and value["state"]=="inactive" and value["operationRecordPublished"] is True,"Packaged recovery helper did not publish deactivation")
         operations.append({"operation":"deactivate-for-cleanup","version":VERSIONS[1],"exitCode":stopped.returncode,"elapsedMilliseconds":elapsed,"generation":5,"passed":True})
+        check_launcher("inactive-refused")
+        stage="deactivation-and-owned-cleanup"
         final,_=state();require(final["active"]["id"]=="" and final["pending"]==[] and len(known_slots)==4,"Unexpected retained deployment fixture state")
         for version,app in known_slots.values():verify_deployment_bundle(app,candidates[version]["manifest"],candidates[version]["identity"],candidates[version]["manifestBytes"])
         for path in (AUTHORITY,INPUT):
@@ -187,7 +216,7 @@ def main():
         while trace:
             if trace.tb_frame.f_code.co_filename==__file__:failure_line=trace.tb_lineno
             trace=trace.tb_next
-    report={"schemaVersion":1,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packages":{v:{"file":c["report"]["packageFile"],"bytes":c["report"]["packageBytes"],"packageSHA256":c["report"]["packageSHA256"],"payloadSHA256":c["report"]["payloadSHA256"],"manifestSHA256":c["report"]["manifestSHA256"],"helperSHA256":c["report"]["helperSHA256"],"payloadSBOMSHA256":c["report"]["payloadSBOMSHA256"]} for v,c in candidates.items()},"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"runtimeLeaseCases":lease_cases,"installedControllerLeaseRefusalVerified":complete,"packageScriptsIntegrated":True,"detachedManifestSealingVerified":complete,"detachedPayloadSBOMSealingVerified":complete,"actualApplePackageUpgradeExecuted":complete,"actualUserProfilePreservationVerified":complete,"retainedPriorCopiesVerified":complete,"ownedFixturesRemoved":cleaned,"installedCodeExecutedAsRoot":False,"publicLauncherIntegrated":False,"runtimeLeaseQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"abruptTerminationQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
+    report={"schemaVersion":1,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packages":{v:{"file":c["report"]["packageFile"],"bytes":c["report"]["packageBytes"],"packageSHA256":c["report"]["packageSHA256"],"payloadSHA256":c["report"]["payloadSHA256"],"manifestSHA256":c["report"]["manifestSHA256"],"helperSHA256":c["report"]["helperSHA256"],"payloadSBOMSHA256":c["report"]["payloadSBOMSHA256"]} for v,c in candidates.items()},"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"runtimeLeaseCases":lease_cases,"launcherCases":launcher_cases,"launcherCandidate":launcher_info,"activeCopyLauncherVerified":complete,"installedControllerLeaseRefusalVerified":complete,"packageScriptsIntegrated":True,"detachedManifestSealingVerified":complete,"detachedPayloadSBOMSealingVerified":complete,"actualApplePackageUpgradeExecuted":complete,"actualUserProfilePreservationVerified":complete,"retainedPriorCopiesVerified":complete,"ownedFixturesRemoved":cleaned,"installedCodeExecutedAsRoot":False,"publicLauncherIntegrated":False,"runtimeLeaseQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"abruptTerminationQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
     (root/"lifecycle-artifact.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     require(complete,"Native deployment package acceptance failed at "+stage+"; owned disposable state retained")
     print(json.dumps({"target":report["target"],"actualApplePackageOperations":len(operations)+len(lease_cases),"passed":True,"productionQualificationComplete":False}))

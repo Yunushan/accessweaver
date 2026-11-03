@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Build/inspect an unsigned experimental versioned deployment package; never install it."""
 import argparse
+import datetime
+import stat
+import zipfile
 import importlib.util
 import json
 import os
@@ -13,6 +16,7 @@ from macos_deployment import BUNDLE_NAME,PACKAGE_ID,MANIFEST,DETACHED_MANIFEST,P
 from macos_installer import bundle_manifest,digest,macho_identity,require,version_parts,MAX_BYTES
 from macos_package_archive import flat_members,cpio,inflate,inspect as inspect_legacy
 from sbom import generate,validate
+from macos_launcher import archive_name,inspect_launcher,BINARY
 
 REPO=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location("accessweaver_native_package_builder",Path(__file__).with_name("build-macos-installer.py"))
@@ -112,9 +116,49 @@ def build(version,arch,go="go"):
         shutil.rmtree(stage)
 
 
+def build_launcher(arch,go="go"):
+    require(legacy.platform.system()=="Darwin" and arch in ("amd64","arm64"),"Native Mac launcher builder required")
+    root=REPO/"build/macos-deployment-checks"/arch
+    identity=json.loads((root/"0.1.1-alpha/BUILD-INFO.json").read_bytes())
+    require(identity["sourceState"]=="clean" and identity["arch"]==arch and identity["platform"]=="darwin" and identity["commit"]==run(["git","rev-parse","HEAD"]).stdout.decode().strip() and not run(["git","status","--porcelain","--untracked-files=normal"]).stdout.strip(),"Launcher requires the exact clean native package source")
+    environment=dict(os.environ,GOTOOLCHAIN="local",GOFLAGS="",GOOS="darwin",GOARCH=arch,CGO_ENABLED="0")
+    sdk=json.loads(run([go,"env","-json","GOHOSTOS","GOHOSTARCH","GOVERSION"],env=environment).stdout)
+    require(sdk=={"GOHOSTOS":"darwin","GOHOSTARCH":arch,"GOVERSION":identity["goVersion"]},"Launcher native SDK differs")
+    require(run(["/usr/sbin/sysctl","-n","sysctl.proc_translated"],codes=(0,1)).stdout.strip()!=b"1","Translated launcher builds are not qualified")
+    native=run(["/usr/sbin/sysctl","-n","hw.optional.arm64"],codes=(0,1)).stdout.strip()
+    require(arch==("arm64" if native==b"1" else "amd64"),"Cross/emulated launcher builds are not qualified")
+    output=root/"launcher";require(not output.exists(),"Launcher output exists; preserve it")
+    output.mkdir();binary=output/BINARY
+    flags=" ".join("-X github.com/Yunushan/accessweaver/internal/buildinfo."+key+"="+value for key,value in {"Version":identity["version"],"Commit":identity["commit"],"SourceState":"clean","BuiltAt":identity["builtAt"]}.items())
+    run([go,"build","-mod=readonly","-trimpath","-buildvcs=false","-ldflags",flags,"-o",binary,"./cmd/accessweaver-launcher"],env=environment)
+    metadata=json.loads(run([go,"version","-m","-json",binary],env=environment).stdout)
+    private=Path(tempfile.mkdtemp(prefix="macos-launcher-probe-",dir=REPO/"build"))
+    try:
+        child_env={"PATH":"/usr/bin:/bin:/usr/sbin:/sbin","HOME":str(private),"TMPDIR":str(private),"LANG":"C","LC_ALL":"C","TZ":"UTC"}
+        require(json.loads(run([binary,"launcher-version","--json"],env=child_env,timeout=30).stdout)==identity,"Executed launcher identity differs")
+        bom=generate(binary,REPO,"./cmd/accessweaver-launcher",identity,output/"licenses",go)
+        encode(output/"BUILD-INFO.json",identity);encode(output/"SBOM.cdx.json",bom)
+        report={"schemaVersion":1,"build":identity,"binarySHA256":digest(binary.read_bytes()),"binaryBytes":binary.stat().st_size,"macho":macho_identity(binary.read_bytes(),arch),"goBuildMetadata":metadata,"linkerFlags":flags,"unsigned":True,"publisherSignatureVerified":False,"publicApplicationIntegrated":False,"productionQualificationComplete":False}
+        encode(output/"compiler-artifact.json",report)
+        epoch=int(run(["git","show","-s","--format=%ct","HEAD"]).stdout);stamp=datetime.datetime.fromtimestamp(epoch,datetime.timezone.utc).timetuple()[:6]
+        target=root/archive_name(arch);require(not target.exists(),"Launcher archive exists")
+        with zipfile.ZipFile(target,"x",compression=zipfile.ZIP_DEFLATED,compresslevel=9) as archive:
+            for path in sorted(p for p in output.rglob("*") if p.is_file()):
+                require(not path.is_symlink() and path.stat().st_nlink==1,"Launcher source alias")
+                name=path.relative_to(output).as_posix();info=zipfile.ZipInfo(name,stamp);info.create_system=3;info.external_attr=(stat.S_IFREG|(0o755 if name==BINARY else 0o644))<<16;info.compress_type=zipfile.ZIP_DEFLATED
+                archive.writestr(info,path.read_bytes())
+        return inspect_launcher(target.read_bytes(),identity)
+    finally:
+        require(private.resolve().parent==(REPO/"build").resolve() and private.name.startswith("macos-launcher-probe-"),"Unsafe launcher probe cleanup")
+        shutil.rmtree(private)
+
+
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("--version",required=True);parser.add_argument("--architecture",choices=("amd64","arm64"),required=True);parser.add_argument("--go",default="go")
-    args=parser.parse_args();report=build(args.version,args.architecture,args.go)
+    parser=argparse.ArgumentParser(description=__doc__);choice=parser.add_mutually_exclusive_group(required=True);choice.add_argument("--version");choice.add_argument("--launcher",action="store_true");parser.add_argument("--architecture",choices=("amd64","arm64"),required=True);parser.add_argument("--go",default="go")
+    args=parser.parse_args()
+    if args.launcher:
+        print(json.dumps(build_launcher(args.architecture,args.go)));return
+    report=build(args.version,args.architecture,args.go)
     print(json.dumps({"sourceCommit":report["sourceCommit"],"target":report["target"],"packageSHA256":report["packageSHA256"],"installationExecuted":False,"productionQualificationComplete":False}))
 
 if __name__=="__main__":main()

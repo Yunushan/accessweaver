@@ -14,6 +14,7 @@ import tempfile
 
 from macos_deployment import BUNDLE_NAME,MANIFEST,PAYLOAD_SBOM,inspect_deployment,deployment_sbom
 from macos_installer import MAX_BYTES,require,digest
+from macos_launcher import archive_name,inspect_launcher
 from macos_package_archive import flat_members,cpio,inflate
 from sbom import validate,prop_map
 from verify_release_provenance import BUNDLE_NAME as PROVENANCE_BUNDLE,REPOSITORY,validate_identity,verification_command as portable_command
@@ -25,7 +26,7 @@ WORKFLOW=REPOSITORY+"/.github/workflows/macos-deployment.yml"
 
 def subjects(arch):
     require(arch in ("amd64","arm64"),"Expected a native deployment architecture")
-    files={"lifecycle-artifact.json":(None,"lifecycle-artifact.json")}
+    files={"lifecycle-artifact.json":(None,"lifecycle-artifact.json"),archive_name(arch):(None,archive_name(arch))}
     for version in VERSIONS:
         package="accessweaver-"+version+"-darwin-"+arch+"-deployment-experimental.pkg"
         files[package]=(version,package);files[package+".cdx.json"]=(version,package+".cdx.json")
@@ -76,16 +77,24 @@ def validate_contents(root,commit,arch):
                     entry=available.get(prefix+evidence["path"]);require(entry is not None and not entry["directory"] and digest(entry["data"])==evidence["sha256"],"Packaged compiled-component notice differs")
         package_bindings[version]={"file":package,"bytes":len(binary),**{key:inspected[key] for key in ("packageSHA256","payloadSHA256","manifestSHA256","helperSHA256","payloadSBOMSHA256")}}
         outputs.append(inspected)
+    launcher=inspect_launcher((root/archive_name(arch)).read_bytes(),identity)
     life=read("lifecycle-artifact.json")
     require(life.get("schemaVersion")==1 and life.get("sourceCommit")==commit and life.get("target")=="darwin/"+arch and life.get("stage")=="deactivation-and-owned-cleanup" and life.get("failureType") is None and life.get("failureSourceLine") is None,"Deployment lifecycle identity/completion differs")
     require(life.get("packages")==package_bindings and re.fullmatch("[1-9][0-9]{0,19}",str(life.get("runID",""))) is not None,"Native lifecycle is not bound to the actual package subjects/run")
     for key in ("passed","packageScriptsIntegrated","actualApplePackageUpgradeExecuted","actualUserProfilePreservationVerified","retainedPriorCopiesVerified","ownedFixturesRemoved","detachedManifestSealingVerified","detachedPayloadSBOMSealingVerified"):require(life.get(key) is True,"Actual deployment lifecycle did not pass")
     for key in ("installedCodeExecutedAsRoot","publicLauncherIntegrated","runtimeLeaseQualified","publisherSignatureVerified","notarized","productUninstallQualified","managedEndpointQualified","abruptTerminationQualified","rebootOrPowerLossQualified","productionQualificationComplete"):require(life.get(key) is False,"Unqualified deployment lifecycle scope changed")
     lease_cases=life.get("runtimeLeaseCases",[])
-    require(life.get("installedControllerLeaseRefusalVerified") is True and len(lease_cases)==3 and [c.get("kind") for c in lease_cases]==["direct","inherited","alias"],"Installed controller lease coverage differs")
+    require(life.get("installedControllerLeaseRefusalVerified") is True and len(lease_cases)==4 and [c.get("kind") for c in lease_cases]==["direct","inherited","alias","launcher"],"Installed controller lease coverage differs")
     for case in lease_cases:
         require(type(case.get("installerExitCode")) is int and 1<=case["installerExitCode"]<=255 and type(case.get("elapsedMilliseconds")) is int and 0<=case["elapsedMilliseconds"]<=180000,"Runtime lease refusal exit/timing differs")
         require(all(case.get(k) is True for k in ("servingControllerVerified","activeRecordAndReceiptBytesPreserved","actualProfilePreserved","controllerRemainedRunning","passed")) and case.get("parentInheritedDescriptorClosed") is (case["kind"]=="inherited"),"Runtime lease did not preserve the serving controller")
+    require(life.get("activeCopyLauncherVerified") is True and life.get("launcherCandidate")==launcher,"Actual launcher candidate differs")
+    launcher_cases=life.get("launcherCases",[]);names=["absent-refused","elevated-refused","descriptor-hint-refused","initial-active","upgraded-active","inactive-refused"]
+    require(type(launcher_cases) is list and [c.get("name") for c in launcher_cases]==names,"Launcher selection/refusal coverage differs")
+    for case in launcher_cases:
+        expected_build=read(VERSIONS[0]+"-BUILD-INFO.json") if case["name"]=="initial-active" else read(VERSIONS[1]+"-BUILD-INFO.json") if case["name"]=="upgraded-active" else None
+        require(case.get("expectedCoreBuild")==expected_build and type(case.get("exitCode")) is int and (case["exitCode"]==0 if expected_build is not None else 1<=case["exitCode"]<=255),"Launcher selected an unexpected core/refusal")
+        require(type(case.get("elapsedMilliseconds")) is int and 0<=case["elapsedMilliseconds"]<=30000 and all(case.get(k) is True for k in ("activeRecordAndReceiptBytesPreserved","actualUserDataPreserved","passed")),"Launcher selection mutated protected/user data")
     expected=[("clean-install",VERSIONS[0],1),("upgrade",VERSIONS[1],2),("same-version-reinstall",VERSIONS[1],3),("older-version-refused",VERSIONS[0],None),("changed-detached-sbom-refused",VERSIONS[1],None),("changed-detached-manifest-refused",VERSIONS[1],None),("changed-staging-refused",VERSIONS[1],None),("restored-reinstall",VERSIONS[1],4),("deactivate-for-cleanup",VERSIONS[1],5)]
     operations=life.get("operations",[]);require(len(operations)==len(expected),"Deployment lifecycle operation extent differs")
     slots=set()
@@ -97,7 +106,7 @@ def validate_contents(root,commit,arch):
             if generation<5:
                 require(op.get("activeIdentity")=={"version":version,"manifestSHA256":package_bindings[version]["manifestSHA256"],"payloadSHA256":package_bindings[version]["payloadSHA256"]},"Activated compiled seal differs from actual package")
                 require(op.get("actualUnelevatedRuntimeVerified") is True and op.get("retainedPriorCopiesVerified") is True and re.fullmatch("[a-f0-9]{32}",op.get("slotID","")) is not None and op["slotID"] not in slots,"Activated package copy identity differs");slots.add(op["slotID"])
-    return {"packages":outputs,"lifecycleRunID":str(life["runID"]),"actualApplePackageOperations":12,"retainedIndependentCopies":4,"publisherSignatureVerified":False,"productionQualificationComplete":False}
+    return {"packages":outputs,"lifecycleRunID":str(life["runID"]),"actualApplePackageOperations":13,"launcher":launcher,"retainedIndependentCopies":4,"publisherSignatureVerified":False,"productionQualificationComplete":False}
 
 
 def copy_subject(source,destination,limit):
@@ -118,7 +127,7 @@ def copy_subject(source,destination,limit):
 
 def stage(build_root,destination,commit,ref,arch,run_id=None):
     validate_identity(commit,ref);mapping=subjects(arch);destination.mkdir(mode=0o700)
-    for name,(version,original) in mapping.items():copy_subject(build_root/version/original if version else build_root/original,destination/name,64<<20 if name.endswith(".pkg") else 8<<20)
+    for name,(version,original) in mapping.items():copy_subject(build_root/version/original if version else build_root/original,destination/name,64<<20 if name.endswith(".pkg") else 16<<20 if name.endswith(".zip") else 8<<20)
     result=validate_contents(destination,commit,arch)
     if run_id is not None:require(result.get("lifecycleRunID")==run_id,"Native producer run differs from caller expectation")
     return {"producerValidation":result,"cryptographicAuthenticationPerformed":False,"sourceCommit":commit,"target":"darwin/"+arch}
@@ -141,7 +150,7 @@ def verify(directory,commit,ref,arch,gh="gh",rejections=False,run_id=None):
     with tempfile.TemporaryDirectory(prefix="accessweaver-deployment-verify-") as temporary:
         root=Path(temporary);present=snapshot(directory,root,len(names)+1)
         require(present==names|{PROVENANCE_BUNDLE},"Deployment input inventory differs")
-        for name in present:require((root/name).stat().st_size<=(64<<20 if name.endswith(".pkg") else 16<<20 if name==PROVENANCE_BUNDLE else 8<<20),"Deployment verification input exceeds budget")
+        for name in present:require((root/name).stat().st_size<=(64<<20 if name.endswith(".pkg") else 16<<20 if name==PROVENANCE_BUNDLE or name.endswith(".zip") else 8<<20),"Deployment verification input exceeds budget")
         for name in sorted(names):authenticate(root/name,root/PROVENANCE_BUNDLE,commit,ref,gh)
         result=validate_contents(root,commit,arch)
         if run_id is not None:require(result.get("lifecycleRunID")==run_id,"Authenticated native run differs from caller expectation")

@@ -210,33 +210,11 @@ func AcquireInstalledRuntime() (lease *RuntimeLease, err error) {
 			lease = nil
 		}
 	}()
-	stateDir, e := deploymentDirectory(root, "state", 0, false)
+	active, build, e := readActiveRuntime(root, slot)
 	if e != nil {
 		return lease, e
 	}
-	reader := &deploymentStore{owner: 0}
-	encoded, readErr := reader.readRecord(stateDir)
-	e = errors.Join(readErr, stateDir.Close())
-	if e != nil {
-		return lease, e
-	}
-	state, e := decodeDeployment(encoded)
-	if e != nil {
-		return lease, e
-	}
-	if state.Active.ID != slot {
-		return lease, errors.New("this installed version is no longer active; launch the current application")
-	}
-	versions, e := deploymentDirectory(root, "versions", 0, false)
-	if e != nil {
-		return lease, e
-	}
-	defer versions.Close()
-	reader.versions = versions
-	if e = reader.verifySlot(state.Active); e != nil {
-		return lease, e
-	}
-	core := deploymentParent + "/" + deploymentRoot + "/versions/" + slot + "/AccessWeaver.app/Contents/MacOS/accessweaver"
+	core := installedCorePath(active.ID)
 	actual, e := os.Stat(image)
 	if e != nil {
 		return lease, e
@@ -248,24 +226,6 @@ func AcquireInstalledRuntime() (lease *RuntimeLease, err error) {
 	if !os.SameFile(actual, expected) {
 		return lease, errors.New("running application image identity differs")
 	}
-	dir, e := reader.openSlot(state.Active)
-	if e != nil {
-		return lease, e
-	}
-	defer dir.Close()
-	app, e := directoryAt(dir, "AccessWeaver.app")
-	if e != nil {
-		return lease, e
-	}
-	defer app.Close()
-	buildData, e := readPath(app, "Contents/Resources/BUILD-INFO.json", 16384)
-	if e != nil {
-		return lease, e
-	}
-	build, e := decodeBuild(buildData, runtime.GOARCH)
-	if e != nil {
-		return lease, e
-	}
 	if build != buildinfo.Current() {
 		return lease, errors.New("running application build differs from active installation")
 	}
@@ -276,4 +236,60 @@ func AcquireInstalledRuntime() (lease *RuntimeLease, err error) {
 		return lease, e
 	}
 	return lease, nil
+}
+
+// All callers hold the shared runtime lease. There is no path/version/record
+// supplied by a caller; only the fixed protected authority selects a core.
+func readActiveRuntime(root *os.File, expectedSlot string) (deploymentSlot, buildinfo.Info, error) {
+	stateDir, e := deploymentDirectory(root, "state", 0, false)
+	if e != nil {
+		return deploymentSlot{}, buildinfo.Info{}, e
+	}
+	reader := &deploymentStore{owner: 0}
+	encoded, readErr := reader.readRecord(stateDir)
+	e = errors.Join(readErr, stateDir.Close())
+	if e != nil {
+		return deploymentSlot{}, buildinfo.Info{}, e
+	}
+	state, e := decodeDeployment(encoded)
+	if e != nil {
+		return deploymentSlot{}, buildinfo.Info{}, e
+	}
+	if expectedSlot != "" && state.Active.ID != expectedSlot {
+		return deploymentSlot{}, buildinfo.Info{}, errors.New("this installed version is no longer active; launch the current application")
+	}
+	if state.Active.ID == "" {
+		return deploymentSlot{}, buildinfo.Info{}, errors.New("AccessWeaver is not active; install or repair the application")
+	}
+	versions, e := deploymentDirectory(root, "versions", 0, false)
+	if e != nil {
+		return deploymentSlot{}, buildinfo.Info{}, e
+	}
+	defer versions.Close()
+	reader.versions = versions
+	if e = reader.verifySlot(state.Active); e != nil {
+		return deploymentSlot{}, buildinfo.Info{}, e
+	}
+	dir, e := reader.openSlot(state.Active)
+	if e != nil {
+		return deploymentSlot{}, buildinfo.Info{}, e
+	}
+	defer dir.Close()
+	app, e := directoryAt(dir, "AccessWeaver.app")
+	if e != nil {
+		return deploymentSlot{}, buildinfo.Info{}, e
+	}
+	defer app.Close()
+	buildData, e := readPath(app, "Contents/Resources/BUILD-INFO.json", 16384)
+	if e != nil {
+		return deploymentSlot{}, buildinfo.Info{}, e
+	}
+	build, e := decodeBuild(buildData, runtime.GOARCH)
+	if e != nil {
+		return deploymentSlot{}, buildinfo.Info{}, e
+	}
+	return state.Active, build, nil
+}
+func installedCorePath(slot string) string {
+	return deploymentParent + "/" + deploymentRoot + "/versions/" + slot + "/AccessWeaver.app/Contents/MacOS/accessweaver"
 }

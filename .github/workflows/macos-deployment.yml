@@ -14,6 +14,9 @@ on:
       - scripts/sbom/**
       - scripts/verify_release_provenance.py
       - scripts/verify_release_rebuild.py
+      - cmd/accessweaver-launcher/**
+      - scripts/macos_launcher.py
+      - scripts/test_macos_launcher.py
       - cmd/accessweaver/**
       - cmd/accessweaver-installer/**
       - internal/**
@@ -70,13 +73,15 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p test_macos_deployment.py -v
           python3 -m unittest discover -s scripts -p test_macos_deployment_provenance.py -v
-          go test ./internal/packageupgrade ./cmd/accessweaver-installer -count=1
+          python3 -m unittest discover -s scripts -p test_macos_launcher.py -v
+          go test ./internal/packageupgrade ./cmd/accessweaver-launcher ./cmd/accessweaver-installer -count=1
       - name: Build and inspect two actual native deployment packages
         env:
           GOTOOLCHAIN: local
         run: |
           python3 scripts/build-macos-deployment.py --architecture '${{ matrix.arch }}' --version 0.1.0-alpha
           python3 scripts/build-macos-deployment.py --architecture '${{ matrix.arch }}' --version 0.1.1-alpha
+          python3 scripts/build-macos-deployment.py --architecture '${{ matrix.arch }}' --launcher
       - name: Actual install, upgrade, refusal, retry and owned cleanup
         env:
           ACCESSWEAVER_DISPOSABLE_MACOS_DEPLOYMENT_PACKAGE_TEST: '1'
