@@ -170,8 +170,11 @@ def virtual_machine_command(target, overlay, seed, acceleration, firmware=None):
     else:
         command += ["-drive", f"file={overlay},if=virtio,format=qcow2",
                     "-drive", f"file={seed},media=cdrom,format=raw,readonly=on"]
+    # Boot only the pinned disk/seed, never a NIC option ROM. ARM distribution
+    # packages need not ship the optional efi-virtio.rom PXE image.
+    network_device = "virtio-net-pci,netdev=n1" + (",romfile=" if target["arch"] == "arm64" else "")
     command += ["-netdev", f"user,id=n1,restrict=on,hostfwd=tcp:127.0.0.1:{PORT}-:22",
-                "-device", "virtio-net-pci,netdev=n1",
+                "-device", network_device,
                 "-object", "rng-random,id=rng0,filename=/dev/urandom",
                 "-device", "virtio-rng-pci,rng=rng0,max-bytes=1024,period=1000"]
     return command

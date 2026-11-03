@@ -254,11 +254,14 @@ class TargetAndFirmwareTests(unittest.TestCase):
                 self.assertNotIn("-virtfs", command)
                 self.assertNotIn("-fsdev", command)
                 if arch == "arm64":
+                    self.assertIn("virtio-net-pci,netdev=n1,romfile=", command)
+                    self.assertNotIn("virtio-net-pci,netdev=n1", command)
                     self.assertIn("virt,gic-version=3", command)
                     self.assertIn("if=pflash,format=raw,unit=0,file=" + str(firmware["code"]) + ",readonly=on", command)
                     self.assertIn("if=pflash,format=raw,unit=1,file=" + str(firmware["variables"]), command)
                     self.assertIn("scsi-cd,drive=seed,bus=scsi0.0,bootindex=2", command)
                 else:
+                    self.assertIn("virtio-net-pci,netdev=n1", command)
                     self.assertFalse(any("pflash" in value for value in command))
         with self.assertRaises(RuntimeError):
             guest.virtual_machine_command(guest.selected_target("arm64"), Path("/overlay"), Path("/seed"), "tcg")
