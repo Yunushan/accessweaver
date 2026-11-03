@@ -23,3 +23,16 @@ test('packaged recovery evidence requires empty-source and missing-file checks',
  }
  assert.throws(()=>validateRecoveryEvidence({...complete,machinePolicyMutationAttempted:true}));
 });
+
+
+test('archived Windows discovery requires complete source-bound successful inspection and owned cleanup',()=>{
+ const {validateWindowsDiscoveryEvidence}=require('./check-packaged-evidence.cjs');
+ const report={schemaVersion:1,deadlineMilliseconds:45000,probeElapsedMilliseconds:8100,originalArchiveExecuted:true,readOnlyActionVerified:true,fullDiscoveryShapeVerified:true,ownedProcessStopped:true,ownedCapsuleRemoved:true,serviceInspectionSucceeded:true,taskInspectionSucceeded:true,settingsChanged:false,productionQualificationComplete:false,phases:['Workflow timing ms: shell-dispatch 1000','Discovery timing ms: complete 1200','Workflow timing ms: child-exited 8000']};
+ validateWindowsDiscoveryEvidence(report);
+ for(const key of ['originalArchiveExecuted','readOnlyActionVerified','fullDiscoveryShapeVerified','ownedProcessStopped','ownedCapsuleRemoved','serviceInspectionSucceeded','taskInspectionSucceeded']){
+  const missing={...report};delete missing[key];assert.throws(()=>validateWindowsDiscoveryEvidence(missing),key);
+  assert.throws(()=>validateWindowsDiscoveryEvidence({...report,[key]:false}),key);
+ }
+ for(const elapsed of [-1,45001,1.1,NaN,'8100'])assert.throws(()=>validateWindowsDiscoveryEvidence({...report,probeElapsedMilliseconds:elapsed}));
+ for(const change of [{settingsChanged:true},{productionQualificationComplete:true},{deadlineMilliseconds:60000},{phases:[]},{phases:['PRIVATE']},{phases:[...report.phases,'Workflow timing ms: private-name 5']},{phases:Array(129).fill(report.phases[0])},{phases:report.phases.slice(1)}])assert.throws(()=>validateWindowsDiscoveryEvidence({...report,...change}));
+});

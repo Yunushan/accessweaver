@@ -240,6 +240,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_release_provenance.py -v
           python3 -m unittest discover -s scripts -p test_stage_packaged_native.py -v
           python3 -m unittest discover -s scripts -p test_windows_handle_census.py -v
+          python3 -m unittest discover -s scripts -p test_packaged_windows_discovery.py -v
           python3 -m unittest discover -s scripts -p test_sbom.py -v
           python3 -m unittest discover -s scripts -p test_darwin_storage.py -v
           python3 -m unittest discover -s scripts -p test_bsd_guest.py -v
