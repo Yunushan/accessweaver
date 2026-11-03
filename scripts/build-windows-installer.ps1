@@ -1,9 +1,9 @@
 [CmdletBinding()]
 param([Parameter(Mandatory=$true)][string]$Compiler, [string]$Version='0.1.0-alpha', [string]$Go='go', [ValidateSet('amd64','arm64')][string]$TargetArch)
 $ErrorActionPreference='Stop'
-if($Version -notmatch '^\d+\.\d+\.\d+([.-][a-zA-Z0-9.-]+)?$'){throw 'Expected a semantic release version'}
 $project=Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'windows-installer-common.ps1')
+Assert-InstallerReleaseVersion $Version
 $sdkJSON=& $Go env -json GOHOSTOS GOHOSTARCH GOVERSION
 if($LASTEXITCODE -ne 0){throw 'Cannot inspect the installer Go SDK host'}
 $sdk=($sdkJSON -join "`n") | ConvertFrom-Json

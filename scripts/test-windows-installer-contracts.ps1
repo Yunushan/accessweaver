@@ -5,6 +5,12 @@ $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'windows-installer-common.ps1')
 function Assert([bool]$Condition,[string]$Message){if(-not $Condition){throw $Message}}
 function Reject([scriptblock]$Action,[string]$Message){$rejected=$false;try{& $Action}catch{$rejected=$true};Assert $rejected $Message}
+foreach($value in @('0.1.0-alpha','1.0.0','1.2.3-alpha.2+build.001','999999999999999999999.0.0','1.2.3--',('1.2.3-'+('a'*250)))){
+    Assert-InstallerReleaseVersion $value
+}
+foreach($value in @('','v1.2.3','01.2.3','1.02.3','1.2.03','1.2','1.2.3.4','1.2.3-','1.2.3-alpha.01','1.2.3+','1.2.3+a..b','1.2.3-..',('1.2.3'+[char]10),('1.2.3-'+('a'*251)))){
+    Reject {Assert-InstallerReleaseVersion $value} 'Invalid installer release version was accepted'
+}
 foreach($arch in @('amd64','arm64')){
     Assert ((Resolve-InstallerTarget 'windows' $arch '') -ceq $arch) 'Default target must follow the SDK host'
     Assert ((Resolve-InstallerTarget 'windows' $arch $arch) -ceq $arch) 'Explicit matching target rejected'
@@ -63,12 +69,14 @@ try {
     $setupPath=Join-Path $fixture 'preprocessed.iss'
     foreach($arch in @('amd64','arm64')){
         $architecture=if($arch -ceq 'arm64'){'arm64'}else{'x64compatible'}
-        $script="[Setup]`nAllowNoIcons=yes`nArchitecturesAllowed=$architecture`nArchitecturesInstallIn64BitMode=$architecture`nOutputBaseFilename=accessweaver-0.1.0-alpha-windows-$arch-setup`n[Code]`n"
+        $script="[Setup]`nSetupMutex=Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092`nAllowNoIcons=yes`nArchitecturesAllowed=$architecture`nArchitecturesInstallIn64BitMode=$architecture`nOutputBaseFilename=accessweaver-0.1.0-alpha-windows-$arch-setup`n[Code]`n"
         [IO.File]::WriteAllText($setupPath,$script)
         $values=Assert-InstallerSetupScript $setupPath $arch '0.1.0-alpha'
         Assert ($values.ArchitecturesAllowed -ceq $architecture) 'Valid preprocessed architecture rejected'
-        foreach($kind in @('icons','missing-icons','allowed','install-mode','filename','duplicate','wrong-section')){
+        foreach($kind in @('mutex','missing-mutex','icons','missing-icons','allowed','install-mode','filename','duplicate','wrong-section')){
             $changed=switch($kind){
+                'mutex' {$script.Replace('SetupMutex=Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092','SetupMutex=OtherProduct')}
+                'missing-mutex' {$script.Replace(('SetupMutex=Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092'+"`n"),'')}
                 'icons' {$script.Replace('AllowNoIcons=yes','AllowNoIcons=no')}
                 'missing-icons' {$script.Replace(('AllowNoIcons=yes'+"`n"),'')}
                 'allowed' {$script.Replace(('ArchitecturesAllowed='+$architecture),'ArchitecturesAllowed=win64')}

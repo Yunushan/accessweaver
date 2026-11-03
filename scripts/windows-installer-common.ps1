@@ -1,4 +1,13 @@
 # Build-time checks only. These helpers never install software or change the OS.
+function Assert-InstallerReleaseVersion([string]$Version) {
+    if($Version.Length -gt 256){throw 'Installer release version exceeds 256 characters'}
+    $match=[regex]::Match($Version,'\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?<pre>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\z')
+    if(-not $match.Success){throw 'Expected a canonical semantic release version without a tag prefix'}
+    foreach($identifier in ($match.Groups['pre'].Value -split '\.')){
+        if($identifier -cmatch '\A[0-9]+\z' -and $identifier.Length -gt 1 -and $identifier[0] -eq '0'){throw 'Numeric prerelease identifiers cannot contain leading zeroes'}
+    }
+}
+
 function Resolve-InstallerTarget([string]$HostOS, [string]$HostArch, [string]$TargetArch) {
     if($HostOS -cne 'windows' -or $HostArch -cnotin @('amd64','arm64')){throw 'Installer verification requires a Windows amd64 or arm64 Go SDK'}
     if(-not $TargetArch){$TargetArch=$HostArch}
@@ -40,7 +49,7 @@ function Assert-InstallerSetupScript([string]$Path, [string]$TargetArch, [string
     if($TargetArch -cnotin @('amd64','arm64')){throw 'Invalid installer script target'}
     if((Get-Item -LiteralPath $Path).Length -gt 1MB){throw 'Preprocessed installer script exceeds evidence limit'}
     $architecture=if($TargetArch -ceq 'arm64'){'arm64'}else{'x64compatible'}
-    $expected=@{AllowNoIcons='yes';ArchitecturesAllowed=$architecture;ArchitecturesInstallIn64BitMode=$architecture;OutputBaseFilename=('accessweaver-'+$Version+'-windows-'+$TargetArch+'-setup')}
+    $expected=@{SetupMutex='Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092';AllowNoIcons='yes';ArchitecturesAllowed=$architecture;ArchitecturesInstallIn64BitMode=$architecture;OutputBaseFilename=('accessweaver-'+$Version+'-windows-'+$TargetArch+'-setup')}
     $actual=@{};$section=''
     foreach($line in [IO.File]::ReadAllLines($Path)){
         if($line -match '^\s*\[([^]]+)\]\s*$'){$section=$matches[1];continue}
