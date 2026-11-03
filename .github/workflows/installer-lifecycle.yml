@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - scripts/*windows-installer*
+      - scripts/fixtures/Installer*.cs
       - internal/**
       - cmd/accessweaver/**
       - .github/workflows/installer-lifecycle.yml

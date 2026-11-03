@@ -69,7 +69,7 @@ foreach($path in $groupPaths){Require (-not (Test-Path -LiteralPath $path)) 'Fix
 function Invoke-Isolated([string]$binary,[string[]]$arguments,[int[]]$codes=@(0)){
     $saved=@{};foreach($entry in Get-ChildItem Env:){$saved[$entry.Name]=$entry.Value}
     $system=[Environment]::SystemDirectory;$windows=Split-Path -Parent $system
-    $allowed=@{SystemRoot=$windows;WINDIR=$windows;SystemDrive=[IO.Path]::GetPathRoot($system).TrimEnd('\');ComSpec=(Join-Path $system 'cmd.exe');PATH=($system+';'+$windows);PATHEXT='.COM;.EXE;.BAT;.CMD';TEMP=$privateTemp;TMP=$privateTemp;USERPROFILE=$profile;APPDATA=(Join-Path $profile 'roaming');LOCALAPPDATA=(Join-Path $profile 'local');ProgramData=$managedParent;ALLUSERSPROFILE=$managedParent}
+    $allowed=@{SystemRoot=$windows;WINDIR=$windows;SystemDrive=[IO.Path]::GetPathRoot($system).TrimEnd('\');ComSpec=(Join-Path $system 'cmd.exe');PATH=($system+';'+$windows);PATHEXT='.COM;.EXE;.BAT;.CMD';TEMP=$privateTemp;TMP=$privateTemp;USERPROFILE=$profile;APPDATA=(Join-Path $profile 'roaming');LOCALAPPDATA=(Join-Path $profile 'local');ProgramData=$managedParent;ALLUSERSPROFILE=$managedParent;ACCESSWEAVER_INSTALLER_REGISTRY_VERSION_PROBE='alpha'}
     foreach($name in @('ProgramFiles','ProgramFiles(x86)','ProgramW6432','CommonProgramFiles','CommonProgramFiles(x86)','CommonProgramW6432')){if($saved[$name]){$allowed[$name]=$saved[$name]}}
     try {
         foreach($entry in Get-ChildItem Env:){[Environment]::SetEnvironmentVariable($entry.Name,$null,'Process')}
@@ -105,18 +105,18 @@ function Installed-TreeFingerprint {
     $hash=[Security.Cryptography.SHA256]::Create()
     try {return [BitConverter]::ToString($hash.ComputeHash($bytes)).Replace('-','').ToLowerInvariant()} finally {$hash.Dispose()}
 }
-function Registration-Fingerprint {
-    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
-    $key=$null
+function Registration-Fingerprint([Microsoft.Win32.RegistryKey]$ExistingKey=$null,[Microsoft.Win32.RegistryView]$View=[Microsoft.Win32.RegistryView]::Registry64) {
+    $base=$null;$key=$ExistingKey;$ownsKey=$null -eq $ExistingKey
     try {
-        $key=$base.OpenSubKey($uninstallKey);Require ($null -ne $key) 'Installed fixture registration disappeared'
+        if($ownsKey){$base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,$View);$key=$base.OpenSubKey($uninstallKey)}
+        Require ($null -ne $key) 'Installed fixture registration disappeared'
         $names=@($key.GetValueNames() | Sort-Object)
         Require ($names.Count -le 256) 'Installer registration exceeds fixture bounds'
         $values=@($names | ForEach-Object {[ordered]@{name=$_;kind=[string]$key.GetValueKind($_);data=$key.GetValue($_,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)}})
         $bytes=[Text.UTF8Encoding]::new($false).GetBytes((ConvertTo-Json -InputObject $values -Depth 6 -Compress))
         $hash=[Security.Cryptography.SHA256]::Create()
         try {return [BitConverter]::ToString($hash.ComputeHash($bytes)).Replace('-','').ToLowerInvariant()} finally {$hash.Dispose()}
-    } finally {if($key){$key.Dispose()};$base.Dispose()}
+    } finally {if($ownsKey -and $key){$key.Dispose()};if($base){$base.Dispose()}}
 }
 function Assert-UserState {
     Require ((Digest $userMarker) -ceq $userHash) 'An installer operation changed unrelated user state'
@@ -150,7 +150,7 @@ function Assert-Installed($expected){
 }
 $reportDirectory=Join-Path $project 'build\installer-lifecycle-checks';[void][IO.Directory]::CreateDirectory($reportDirectory)
 $reportPath=Join-Path $reportDirectory ($Architecture+'.json')
-$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null
+$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null;$registryReadCases=@();$registryViewCases=@();$registryAccessCases=@();$registryFixtureSHA256=$null;$productRegistrySHA256=$null
 try {
     foreach($version in @('0.1.0-alpha','0.1.1-alpha')){
         $null=@(& (Join-Path $PSScriptRoot 'test-windows-installer.ps1') -ExpectedCompilerVersion '6.7.1' -TargetArch $Architecture -Version $version)
@@ -276,6 +276,117 @@ try {
         } finally {if($key){$key.Dispose()};$base.Dispose()}
         Assert-Installed $builds[1]
     }
+    $stage='registry-read-boundaries';$registryReadCases=@()
+    foreach($case in @(
+        @{name='maximum-string-accepted';value=('0.0.0-'+('a'*250));kind=[Microsoft.Win32.RegistryValueKind]::String;expected=0},
+        @{name='maximum-expand-literal-accepted';value=('0.0.0-'+('a'*250));kind=[Microsoft.Win32.RegistryValueKind]::ExpandString;expected=0},
+        @{name='over-budget-string-refused';value=('0.0.0-'+('a'*251));kind=[Microsoft.Win32.RegistryValueKind]::String;expected=1},
+        @{name='oversized-string-refused';value=('0.0.0-'+('a'*65536));kind=[Microsoft.Win32.RegistryValueKind]::String;expected=1},
+        @{name='environment-reference-not-expanded';value='0.0.0-%ACCESSWEAVER_INSTALLER_REGISTRY_VERSION_PROBE%';kind=[Microsoft.Win32.RegistryValueKind]::ExpandString;expected=1}
+    )){
+        $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64);$key=$null
+        try {
+            $key=$base.OpenSubKey($uninstallKey,$true);Require ($null -ne $key) 'Owned installation registration is unavailable'
+            $originalVersion=$key.GetValue('DisplayVersion');$originalKind=$key.GetValueKind('DisplayVersion')
+            try {
+                $key.SetValue('DisplayVersion',$case.value,$case.kind)
+                $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint $key
+                $resultCase=Native-Record $second $arguments (0..255)
+                Require ($resultCase.result.exitCode -eq $case.expected) 'Bounded registry version handling returned an unexpected result'
+                if($case.expected -ne 0){
+                    Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint $key) -ceq $registrationBefore) 'Registry value refusal changed installed state'
+                }
+                $registryReadCases+=,@{name=$case.name;expectedExitCode=$case.expected;exitCode=$resultCase.result.exitCode;elapsedMilliseconds=$resultCase.milliseconds;fixtureUTF16Bytes=([Text.Encoding]::Unicode.GetByteCount($case.value)+2);refusedStatePreserved=($case.expected -ne 0);profilePreserved=$true}
+            } finally {$key.SetValue('DisplayVersion',$originalVersion,$originalKind)}
+        } finally {if($key){$key.Dispose()};$base.Dispose()}
+        Assert-Installed $builds[1]
+    }
+    $stage='registry-view-policy'
+    $registryFixture=Join-Path $PSScriptRoot 'fixtures\InstallerRegistryFixture.cs'
+    Add-Type -Path $registryFixture
+    $registryFixtureSHA256=Digest $registryFixture
+    $productRegistrySHA256=Digest (Join-Path $PSScriptRoot 'windows-installer-registry.iss')
+    $parentPath='SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+    $productLeaf='{B13D4677-4660-4E63-B3DB-03077ACBB092}_is1'
+    $backupLeaf='AccessWeaver-owned-fixture-'+$guid
+    $base32=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry32)
+    $base64=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+    $parent32=$null;$parent64=$null;$key32=$null;$created32=$false;$renamed64=$false
+    try {
+        $parent32=$base32.OpenSubKey($parentPath,$true);$parent64=$base64.OpenSubKey($parentPath,$true)
+        Require ($null -ne $parent32 -and $null -ne $parent64) 'Owned registry fixture parents are unavailable'
+        foreach($check in @(@{parent=$parent32;leaf=$productLeaf},@{parent=$parent64;leaf=$backupLeaf})){
+            $existing=$check.parent.OpenSubKey($check.leaf)
+            try {Require ($null -eq $existing) 'Registry view fixture destination already exists'} finally {if($existing){$existing.Dispose()}}
+        }
+        $key32=$parent32.CreateSubKey($productLeaf);$created32=$true
+        $key32.SetValue('DisplayVersion',$builds[1].version,[Microsoft.Win32.RegistryValueKind]::String)
+        $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
+        $view32Before=Registration-Fingerprint $key32
+        $ambiguous=Native-Record $second $arguments (0..255)
+        Require ($ambiguous.result.exitCode -eq 1 -and (Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint) -ceq $registrationBefore -and (Registration-Fingerprint $key32) -ceq $view32Before) 'Ambiguous registry views allowed setup or changed installed state'
+        Assert-UserState
+        $registryViewCases+=,@{name='ambiguous-views-refused';exitCode=$ambiguous.result.exitCode;elapsedMilliseconds=$ambiguous.milliseconds;installedFileTreePreserved=$true;registrationValuesPreserved=$true;profilePreserved=$true}
+        [InstallerRegistryFixture]::Rename($parent64,$productLeaf,$backupLeaf);$renamed64=$true
+        try {
+            $absent=$parent64.OpenSubKey($productLeaf)
+            try {Require ($null -eq $absent) '64-bit registration was not hidden for the isolated view fixture'} finally {if($absent){$absent.Dispose()}}
+            $older=Native-Record $first $arguments (0..255)
+            $backup=$parent64.OpenSubKey($backupLeaf)
+            try {Require ($null -ne $backup -and (Registration-Fingerprint $backup) -ceq $registrationBefore) 'Refused 32-bit-view downgrade changed the retained 64-bit registration'} finally {if($backup){$backup.Dispose()}}
+            $unexpected=$parent64.OpenSubKey($productLeaf)
+            try {Require ($null -eq $unexpected) '32-bit-view downgrade created unexpected 64-bit registration'} finally {if($unexpected){$unexpected.Dispose()}}
+            Require ($older.result.exitCode -eq 1 -and (Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint $key32) -ceq $view32Before) '32-bit-only registration allowed downgrade or changed installed state'
+            Assert-UserState
+            $registryViewCases+=,@{name='32-bit-only-newer-version-refused';exitCode=$older.result.exitCode;elapsedMilliseconds=$older.milliseconds;installedFileTreePreserved=$true;registrationValuesPreserved=$true;profilePreserved=$true}
+        } finally {
+            # RegRenameKey refuses an existing destination; preserve unexpected
+            # state for review rather than deleting/overwriting either key.
+            if($renamed64){[InstallerRegistryFixture]::Rename($parent64,$backupLeaf,$productLeaf);$renamed64=$false}
+        }
+    } finally {
+        if($created32 -and $key32){
+            try {
+                Require ($key32.SubKeyCount -eq 0 -and $key32.ValueCount -eq 1 -and $key32.GetValueNames()[0] -ceq 'DisplayVersion' -and $key32.GetValueKind('DisplayVersion') -eq [Microsoft.Win32.RegistryValueKind]::String -and $key32.GetValue('DisplayVersion') -ceq $builds[1].version) 'Unexpected 32-bit fixture state must be retained for review'
+                $key32.Dispose();$key32=$null
+                $parent32.DeleteSubKey($productLeaf,$true)
+            } finally {if($key32){$key32.Dispose()}}
+        }
+        if($parent64){$parent64.Dispose()};if($parent32){$parent32.Dispose()};$base64.Dispose();$base32.Dispose()
+    }
+    Assert-Installed $builds[1]
+    $stage='registry-access-policy'
+    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64);$key=$null;$restoreSecurity=$null
+    try {
+        $key=$base.OpenSubKey($uninstallKey,[Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,[Security.AccessControl.RegistryRights]::FullControl)
+        Require ($null -ne $key) 'Owned key is unavailable for isolated access-denial fixture'
+        $access=[Security.AccessControl.AccessControlSections]::Access
+        $originalSDDL=$key.GetAccessControl($access).GetSecurityDescriptorSddlForm($access)
+        $restoreSecurity=[Security.AccessControl.RegistrySecurity]::new();$restoreSecurity.SetSecurityDescriptorSddlForm($originalSDDL,$access)
+        $deniedSecurity=[Security.AccessControl.RegistrySecurity]::new();$deniedSecurity.SetSecurityDescriptorSddlForm($originalSDDL,$access)
+        $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+        try {$deniedSecurity.AddAccessRule([Security.AccessControl.RegistryAccessRule]::new($identity.User,[Security.AccessControl.RegistryRights]::QueryValues,[Security.AccessControl.AccessControlType]::Deny))} finally {$identity.Dispose()}
+        try {
+            $key.SetAccessControl($deniedSecurity)
+            $deniedSDDL=$key.GetAccessControl($access).GetSecurityDescriptorSddlForm($access)
+            $probe=$null;$accessDenied=$false
+            try {$probe=$base.OpenSubKey($uninstallKey)} catch {
+                $cause=$_.Exception
+                while($cause.InnerException){$cause=$cause.InnerException}
+                if($cause -is [UnauthorizedAccessException]){$accessDenied=$true}else{throw}
+            } finally {if($probe){$probe.Dispose()}}
+            Require $accessDenied 'Owned-key query denial did not take effect'
+            # Existing handle retains its granted rights for inspection/restore.
+            $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint $key
+            $denied=Native-Record $second $arguments (0..255)
+            Require ($denied.result.exitCode -eq 1 -and (Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint $key) -ceq $registrationBefore -and $key.GetAccessControl($access).GetSecurityDescriptorSddlForm($access) -ceq $deniedSDDL) 'Denied registration read allowed setup or changed protected state'
+            Assert-UserState
+            $registryAccessCases+=,@{name='denied-product-key-refused';exitCode=$denied.result.exitCode;elapsedMilliseconds=$denied.milliseconds;queryDenialIndependentlyObserved=$true;installedFileTreePreserved=$true;registrationValuesPreserved=$true;fixtureDACLUnchangedDuringRefusal=$true;profilePreserved=$true}
+        } finally {$key.SetAccessControl($restoreSecurity)}
+        Require ($key.GetAccessControl($access).GetSecurityDescriptorSddlForm($access) -ceq $originalSDDL) 'Owned key access-control restoration differs from the original'
+        $registryAccessCases[-1].fixtureDACLRestored=$true
+    } finally {if($key){$key.Dispose()};$base.Dispose()}
+    Assert-Installed $builds[1]
     $stage='refused-uninstall'
     $uninstaller=Join-Path $install 'unins000.exe';No-Reparse $uninstaller;$uninstallerHash=Digest $uninstaller
     $request=Join-Path $install 'uninstall-system.json';$original=[IO.File]::ReadAllBytes($request)
@@ -316,7 +427,7 @@ try {
     Remove-OwnedTree $capsule $temporary $capsuleLeaf
     $complete=$true
 } catch {$failureType=$_.Exception.GetType().FullName}
-$record=[ordered]@{schemaVersion=3;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=4;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'

@@ -45,42 +45,14 @@ Name: "{group}\AccessWeaver"; Filename: "{app}\accessweaver.exe"; Parameters: "u
 #include "windows-installer-lock.iss"
 #include "windows-installer-version.iss"
 
-function AWReadRegisteredVersion(const Root: Integer; var Found: Boolean; var Version: String): String;
-var Names: TArrayOfString; I: Integer; HasUninstall: Boolean;
-    Parent, Leaf: String;
-begin
-  Result := ''; Found := False; Version := '';
-  Parent := 'SOFTWARE\Microsoft\Windows\CurrentVersion';
-  Leaf := '{B13D4677-4660-4E63-B3DB-03077ACBB092}_is1';
-  { Enumerate a readable fixed parent: access denied must not look uninstalled. }
-  if not RegGetSubkeyNames(Root, Parent, Names) then begin
-    Result := 'Cannot inspect machine installation registration. Review access and retry.'; Exit;
-  end;
-  if GetArrayLength(Names) > 65536 then begin Result := 'Machine installation registration exceeds its inspection limit.'; Exit; end;
-  HasUninstall := False;
-  for I := 0 to GetArrayLength(Names) - 1 do
-    if CompareText(Names[I], 'Uninstall') = 0 then HasUninstall := True;
-  if not HasUninstall then Exit;
-  Parent := Parent + '\Uninstall';
-  if not RegGetSubkeyNames(Root, Parent, Names) then begin
-    Result := 'Cannot inspect machine installation registration. Review access and retry.'; Exit;
-  end;
-  if GetArrayLength(Names) > 65536 then begin Result := 'Machine installation registration exceeds its inspection limit.'; Exit; end;
-  for I := 0 to GetArrayLength(Names) - 1 do
-    if CompareText(Names[I], Leaf) = 0 then begin
-      Found := True;
-      if not RegQueryStringValue(Root, Parent + '\' + Leaf, 'DisplayVersion', Version) then
-        Result := 'The installed AccessWeaver version cannot be read. Review the installation and recovery records before retrying.';
-      Exit;
-    end;
-end;
+#include "windows-installer-registry.iss"
 
 function AWVersionPreflight: String;
 var Found64, Found32: Boolean; Version64, Version32, Installed: String; Ordering: Integer;
 begin
-  Result := AWReadRegisteredVersion(HKLM64, Found64, Version64);
+  Result := AWReadRegisteredVersion($0100, Found64, Version64);
   if Result <> '' then Exit;
-  Result := AWReadRegisteredVersion(HKLM32, Found32, Version32);
+  Result := AWReadRegisteredVersion($0200, Found32, Version32);
   if Result <> '' then Exit;
   if Found64 and Found32 then begin
     Result := 'Multiple machine installations of AccessWeaver are registered. Review them before retrying.'; Exit;
