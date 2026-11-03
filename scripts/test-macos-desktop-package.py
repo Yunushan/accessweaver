@@ -21,7 +21,7 @@ from macos_installer import BUNDLE_NAME,digest,require
 from macos_deployment import PACKAGE_ID,INCOMING,inspect_deployment,verify_deployment_bundle
 from macos_desktop import DESKTOP_ID,ROOT,BINARY,record_name,package_id,component_name,validate_record,verify_bundle,inspect_component
 from macos_package_archive import flat_members,cpio,inflate
-from macos_product import component_inputs,product_name,inspect_product,product_installer_observation
+from macos_product import component_inputs,product_name,inspect_product,product_installer_observation,product_install_log_window
 
 REPO=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location("accessweaver_desktop_fixture_support",Path(__file__).with_name("test-macos-installer-lifecycle.py"))
@@ -126,10 +126,12 @@ def main(product_mode=False):
         stage=name;before=snapshot();candidate=core[version] if role=="core" else products[version] if role=="product" else desktop[version]["components"][role]
         package=candidate["package"];expected=candidate["report"]["packageSHA256"] if role=="core" else candidate["sha256"]
         require(digest(package.read_bytes())==expected,"Package changed before desktop acceptance")
-        result,elapsed=run(["/usr/bin/sudo","-n","/usr/sbin/installer",*(["-dumplog"] if product_mode else []),"-pkg",package,"-target","/"],env,180,codes=tuple(range(256)))
-        last_installer={"name":name,"version":version,"component":role,"exitCode":result.returncode,"packageSHA256":expected}
-        if product_mode:
-            last_installer["diagnostics"]=product_installer_observation(result.stdout,result.stderr)
+        with product_install_log_window(product_mode) as log_observation:
+            result,elapsed=run(["/usr/bin/sudo","-n","/usr/sbin/installer",*(["-dumplog"] if product_mode else []),"-pkg",package,"-target","/"],env,180,codes=tuple(range(256)))
+            last_installer={"name":name,"version":version,"component":role,"exitCode":result.returncode,"packageSHA256":expected}
+            if product_mode:
+                last_installer["diagnostics"]=product_installer_observation(result.stdout,result.stderr)
+                last_installer["packageKitLog"]=log_observation()
         if (result.returncode==0)!=success:
             if product_mode:print(json.dumps({"lastInstaller":last_installer}),flush=True)
             else:print((result.stdout+result.stderr)[-12000:].decode("utf-8",errors="replace").replace(str(capsule),"[owned-capsule]"),flush=True)

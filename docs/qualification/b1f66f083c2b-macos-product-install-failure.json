@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "native-single-product-failure-diagnostics",
+  "sourceCommit": "b1f66f083c2ba00f7e1e480995b88069e3d93586",
+  "workflow": ".github/workflows/macos-desktop.yml",
+  "runID": 41731420840,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/41731420840",
+  "providerArtifactDigestsVerified": true,
+  "sigstoreQualified": false,
+  "nativeProductLifecycleQualified": false,
+  "helperRefusalReasonKnown": false,
+  "sourceCI": {
+    "runID": 41731420818,
+    "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/41731420818",
+    "conclusion": "success",
+    "successfulJobs": 22,
+    "observation": "GitHub REST run/jobs; not Sigstore attestation"
+  },
+  "targets": [
+    {
+      "target": "darwin/amd64",
+      "jobID": 126249456805,
+      "artifact": {
+        "id": 13277456012,
+        "name": "macos-desktop-lifecycle-diagnostics-amd64",
+        "bytes": 3605,
+        "digest": "sha256:4e9fec823181e0e57e1f2dc400cc7d7790d2261af4a944085d7efe61566568b3",
+        "providerDigestVerified": true
+      },
+      "componentReport": {
+        "sha256": "8337cae9906c50e339a05b94404b151dab2e611817ac3ab59d4f3c2015ac74d1",
+        "passed": true,
+        "reportedInstallerOperations": 21,
+        "ownedFixturesRemoved": true,
+        "sigstoreQualified": false
+      },
+      "productReport": {
+        "sha256": "d97d399d4c658c6d23aa105c7622dccf6529e0c54332c34b037a3c4a558c60a2",
+        "stage": "product-clean-install",
+        "passed": false,
+        "failureType": "ValueError",
+        "failureSourceLine": 136,
+        "lastInstaller": {
+          "name": "product-clean-install",
+          "version": "0.1.0-alpha",
+          "component": "product",
+          "exitCode": 1,
+          "packageSHA256": "e28efff7d1c242f15c3e2b3aed9016fa22477ba101dba27502dba33bccfa4ada",
+          "diagnostics": {
+            "schemaVersion": 1,
+            "loggingOption": "-dumplog",
+            "streams": [
+              {
+                "stream": "stdout",
+                "bytes": 368,
+                "sha256": "ee895c68eee60374c32094243f23889c67a5c275c9ea872bf3a8ea39a4f1919b",
+                "events": []
+              },
+              {
+                "stream": "stderr",
+                "bytes": 4524,
+                "sha256": "2ce68b9974fdf9f3817b3c0d53ef8855b52eb99cfac6fc7da710a35293f1b69f",
+                "events": []
+              }
+            ],
+            "rawLogRetained": false,
+            "diagnosticOnly": true
+          }
+        },
+        "failedProductState": {
+          "recordAvailable": true,
+          "generation": 0,
+          "activeSlotPresent": false,
+          "pendingCount": 1,
+          "highWaterVersion": null
+        },
+        "installerLogging": {
+          "option": "-dumplog",
+          "nativeHelpSHA256": "2f8238c4a4e31b404a3f83516594aa758059131e871abc32d2ab912248e9f889",
+          "nativeHelpBytes": 3405,
+          "nativeHelpExitCode": 0
+        },
+        "ownedFixturesRemoved": false,
+        "productionQualificationComplete": false
+      }
+    },
+    {
+      "target": "darwin/arm64",
+      "jobID": 126249456516,
+      "artifact": {
+        "id": 13278280507,
+        "name": "macos-desktop-lifecycle-diagnostics-arm64",
+        "bytes": 3604,
+        "digest": "sha256:1cff8ae05639f616f8a24b4ba0f86fc8d07d8224f6f0c8c3a129fa43ac0cb3fa",
+        "providerDigestVerified": true
+      },
+      "componentReport": {
+        "sha256": "a3f69d795acd81447913771765d87ccc10b7d5a6402ea53d77b72639674016df",
+        "passed": true,
+        "reportedInstallerOperations": 21,
+        "ownedFixturesRemoved": true,
+        "sigstoreQualified": false
+      },
+      "productReport": {
+        "sha256": "84ee6a7f16f61b21312166e769f569caca1a7906df335bf1573bf486c412d3af",
+        "stage": "product-clean-install",
+        "passed": false,
+        "failureType": "ValueError",
+        "failureSourceLine": 136,
+        "lastInstaller": {
+          "name": "product-clean-install",
+          "version": "0.1.0-alpha",
+          "component": "product",
+          "exitCode": 1,
+          "packageSHA256": "d2e1a5fe2be8bf4edd02cd5224284521ba1c15eec6b28856a2c2e8fad1d9f039",
+          "diagnostics": {
+            "schemaVersion": 1,
+            "loggingOption": "-dumplog",
+            "streams": [
+              {
+                "stream": "stdout",
+                "bytes": 368,
+                "sha256": "49c251ebda3c0f1c565d736ed306a10ab4705d50ad225d098096c0bdd515da08",
+                "events": []
+              },
+              {
+                "stream": "stderr",
+                "bytes": 4522,
+                "sha256": "366fa33f0c40f00dc02f2d2b7a97b901a5c25df991386c129027a958aab4e3fc",
+                "events": []
+              }
+            ],
+            "rawLogRetained": false,
+            "diagnosticOnly": true
+          }
+        },
+        "failedProductState": {
+          "recordAvailable": true,
+          "generation": 0,
+          "activeSlotPresent": false,
+          "pendingCount": 1,
+          "highWaterVersion": null
+        },
+        "installerLogging": {
+          "option": "-dumplog",
+          "nativeHelpSHA256": "2f8238c4a4e31b404a3f83516594aa758059131e871abc32d2ab912248e9f889",
+          "nativeHelpBytes": 3405,
+          "nativeHelpExitCode": 0
+        },
+        "ownedFixturesRemoved": false,
+        "productionQualificationComplete": false
+      }
+    }
+  ],
+  "limitations": [
+    "Both products failed first installation; no successful whole-product install/upgrade/recovery is claimed.",
+    "Generation zero with one pending core slot and no active core proves preparation was observed, not why a later script refused.",
+    "Installer client output contains no recognized helper/phase markers; the actual refusal reason remains unknown.",
+    "Separate-component lifecycle reports passed, but this failed run never reached candidate attestation.",
+    "No raw install logs, private user paths or credentials are retained in this public record."
+  ],
+  "readinessGatesPromoted": 0,
+  "readinessGatesSHA256": "6aba24860c171a7a3931029589b0e04dac90ed4a6f22da3fc02bd058bf903b0e",
+  "productionQualificationComplete": false
+}

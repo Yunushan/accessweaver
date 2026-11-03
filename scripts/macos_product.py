@@ -1,5 +1,6 @@
 """Bounded unsigned single-product contracts; never install or execute packages."""
 import copy
+from contextlib import contextmanager
 import hashlib
 import os
 import stat
@@ -249,3 +250,39 @@ def product_installer_observation(stdout,stderr):
             require(len(events)<=64,"Product Installer diagnostic event budget exceeded")
         streams.append({"stream":name,"bytes":len(data),"sha256":digest(data),"events":events})
     return {"schemaVersion":1,"loggingOption":"-dumplog","streams":streams,"rawLogRetained":False,"diagnosticOnly":True}
+
+@contextmanager
+def product_install_log_window(enabled):
+    """Read only the append window of Apple's fixed protected install log."""
+    fd=None;initial=None;unavailable=None;path="/private/var/log/install.log"
+    def identity(info):
+        return (info.st_dev,info.st_ino,info.st_uid,info.st_gid,info.st_mode,info.st_nlink)
+    def protected(info):
+        return stat.S_ISREG(info.st_mode) and info.st_uid==0 and info.st_nlink==1 and info.st_mode&0o022==0
+    if enabled:
+        try:
+            fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC)
+            initial=os.fstat(fd)
+            if not protected(initial):
+                os.close(fd);fd=None;unavailable="unprotected-log-object"
+        except OSError:
+            if fd is not None:os.close(fd);fd=None
+            unavailable="log-open-unavailable"
+    def observe():
+        if not enabled:return None
+        if fd is None:return {"available":False,"reason":unavailable}
+        try:
+            current=os.fstat(fd);entry=os.stat(path,follow_symlinks=False)
+            if not protected(current) or identity(current)!=identity(initial) or identity(entry)!=identity(current):
+                return {"available":False,"reason":"log-identity-changed"}
+            extent=current.st_size-initial.st_size
+            if not 0<=extent<=1<<20:return {"available":False,"reason":"log-window-outside-budget"}
+            data=os.pread(fd,extent,initial.st_size)
+            final=os.fstat(fd);entry=os.stat(path,follow_symlinks=False)
+            if len(data)!=extent or identity(final)!=identity(current) or identity(entry)!=identity(final) or final.st_size<current.st_size or final.st_mtime_ns<current.st_mtime_ns:
+                return {"available":False,"reason":"log-window-changed"}
+            return {"available":True,"startOffset":initial.st_size,"endOffset":current.st_size,"observations":product_installer_observation(b"",data)}
+        except OSError:return {"available":False,"reason":"log-read-unavailable"}
+    try:yield observe
+    finally:
+        if fd is not None:os.close(fd)
