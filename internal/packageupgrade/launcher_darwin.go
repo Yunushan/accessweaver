@@ -58,7 +58,7 @@ func LaunchInstalled(args []string) (err error) {
 // Duplicate the existing open-file description, never unlock/relock between
 // images. Every metadata descriptor and the original lease remain CLOEXEC.
 // Failure closes only our duplicate; the caller still owns its original lease.
-func execWithRuntimeLease(lease *RuntimeLease, path string, args, environment []string) error {
+func execWithRuntimeLease(lease *RuntimeLease, path string, args, environment []string) (err error) {
 	if lease == nil || lease.file == nil {
 		return errors.New("runtime lease is absent")
 	}
@@ -66,7 +66,7 @@ func execWithRuntimeLease(lease *RuntimeLease, path string, args, environment []
 	if e != nil {
 		return e
 	}
-	defer unix.Close(fd)
+	defer func() { err = errors.Join(err, unix.Close(fd)) }()
 	if fd > 1024 {
 		return errors.New("runtime descriptor exceeds handoff limit")
 	}

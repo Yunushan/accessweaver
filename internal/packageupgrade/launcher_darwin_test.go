@@ -4,11 +4,13 @@ package packageupgrade
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -29,8 +31,13 @@ func TestDarwinLauncherExecFailureDoesNotLeakLease(t *testing.T) {
 	if e = unix.Flock(int(f.Fd()), unix.LOCK_SH|unix.LOCK_NB); e != nil {
 		t.Fatal(e)
 	}
-	if e = execWithRuntimeLease(lease, filepath.Join(t.TempDir(), "absent"), nil, []string{runtimeLeaseEnvironment + "=999"}); e == nil {
-		t.Fatal("missing executable succeeded")
+	originalFD := int(f.Fd())
+	if e = execWithRuntimeLease(lease, filepath.Join(t.TempDir(), "absent"), nil, []string{runtimeLeaseEnvironment + "=999"}); !errors.Is(e, unix.ENOENT) {
+		t.Fatal("missing executable did not return ENOENT", e)
+	}
+	afterExec := leaseFixtureDescriptors(t, path)
+	if len(afterExec) != 1 || afterExec[0] != originalFD {
+		t.Fatalf("failed exec left unexpected descriptors: original=%d actual=%v", originalFD, afterExec)
 	}
 	flags, e := unix.FcntlInt(f.Fd(), unix.F_GETFD, 0)
 	if e != nil || flags&unix.FD_CLOEXEC == 0 {
@@ -48,8 +55,27 @@ func TestDarwinLauncherExecFailureDoesNotLeakLease(t *testing.T) {
 		t.Fatal(e)
 	}
 	if e = unix.Flock(int(writer.Fd()), unix.LOCK_EX|unix.LOCK_NB); e != nil {
-		t.Fatal("failed exec leaked duplicated lease", e)
+		t.Fatalf("failed exec retained lease: %v; original=%d afterExec=%v afterClose=%v", e, originalFD, afterExec, leaseFixtureDescriptors(t, path))
 	}
+}
+
+// Inspect owned fixture descriptors without creating os.File wrappers/finalizers.
+// Keep a hard assertion on immediate release; a later retry must not hide a leak.
+func leaseFixtureDescriptors(t *testing.T, path string) []int {
+	t.Helper()
+	info, e := os.Stat(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	want := info.Sys().(*syscall.Stat_t)
+	var descriptors []int
+	for fd := 0; fd <= 1024; fd++ {
+		var st syscall.Stat_t
+		if syscall.Fstat(fd, &st) == nil && st.Dev == want.Dev && st.Ino == want.Ino {
+			descriptors = append(descriptors, fd)
+		}
+	}
+	return descriptors
 }
 func TestDarwinLauncherLeaseSurvivesRealExec(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lease")

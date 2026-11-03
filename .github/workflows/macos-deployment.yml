@@ -75,6 +75,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_macos_deployment_provenance.py -v
           python3 -m unittest discover -s scripts -p test_macos_launcher.py -v
           go test ./internal/packageupgrade ./cmd/accessweaver-launcher ./cmd/accessweaver-installer -count=1
+          go test ./internal/packageupgrade -run '^TestDarwinLauncher' -count=20 -v
       - name: Build and inspect two actual native deployment packages
         env:
           GOTOOLCHAIN: local
