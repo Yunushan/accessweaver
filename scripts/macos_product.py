@@ -6,7 +6,7 @@ import struct
 import uuid
 import xml.etree.ElementTree as ET
 
-from macos_installer import BUNDLE_ID,MAX_BYTES,digest,require,version_parts
+from macos_installer import BUNDLE_ID,BUNDLE_NAME,MAX_BYTES,digest,require,version_parts
 from macos_deployment import PACKAGE_ID
 from macos_desktop import component_name,package_id
 from macos_package_archive import flat_members,inflate,number,xml
@@ -48,10 +48,23 @@ def tree(node):
     return (node.tag,tuple(sorted(node.attrib.items())),(node.text or "").strip(),tuple(tree(c) for c in node))
 
 
+def bundle_versions(original,role):
+    markers=original.findall("bundle-version");bundles=original.findall("bundle")
+    require(len(markers)<=1 and all(not m.attrib and len(m)==0 and not (m.text or "").strip() for m in markers),"Source bundle-version marker differs")
+    require(len(bundles)<=1 and (role!="metadata" or not bundles),"Source component bundle role differs")
+    if not markers and not bundles:return []
+    result=ET.Element("bundle-version")
+    for bundle in bundles:
+        require(set(bundle.attrib)=={"path","id","CFBundleShortVersionString","CFBundleVersion"} and len(bundle)==0 and not (bundle.text or "").strip(),"Source component bundle metadata differs")
+        values=dict(bundle.attrib);require(values["path"] in (BUNDLE_NAME,"./"+BUNDLE_NAME) and values["id"]==BUNDLE_ID+(".desktop" if role=="application" else ""),"Source bundle identity/path differs")
+        values["path"]=BUNDLE_NAME;ET.SubElement(result,"bundle",**values)
+    return [result]
+
+
 def validate_distribution(encoded,version,arch,inputs,members):
     root=xml(encoded);expected=xml(distribution(version,arch,inputs))
     require(root.tag==expected.tag and root.attrib==expected.attrib,"Product distribution root differs")
-    require(len(root)==len(expected) and sorted(n.tag for n in root)==sorted(n.tag for n in expected),"Product distribution elements differ")
+    require(sorted(n.tag for n in root if n.tag!="pkg-ref")==sorted(n.tag for n in expected if n.tag!="pkg-ref"),"Product distribution elements differ")
     for tag in ("title","product","options","domains","volume-check","choices-outline"):
         found=root.findall(tag);want=expected.findall(tag)
         require(len(found)==len(want)==1 and tree(found[0])==tree(want[0]),"Product distribution policy differs: "+tag)
@@ -60,14 +73,21 @@ def validate_distribution(encoded,version,arch,inputs,members):
     for choice in choices:
         want=next(c for c in expected.findall("choice") if c.get("id")==choice.get("id"))
         require(tree(choice)==tree(want),"Product choice may be changed or redirected")
-    refs=root.findall("pkg-ref");require(len(refs)==3 and len({n.get("id") for n in refs})==3,"Product references differ")
+    refs=root.findall("pkg-ref");require(3<=len(refs)<=6 and {n.get("id") for n in refs}=={p[1] for p in inputs},"Product references differ")
     for role,identifier,name in inputs:
-        ref=next((n for n in refs if n.get("id")==identifier),None)
-        require(ref is not None and ref.get("version")==version and (ref.text or "").strip() in (name,"#"+name),"Product component URL/version differs")
-        require(set(ref.attrib)<={"id","version","installKBytes","auth","onConclusion"} and ref.get("auth","root")=="root" and ref.get("onConclusion","None")=="None","Product component execution policy differs")
-        if "installKBytes" in ref.attrib:number(ref.get("installKBytes"))
+        group=[n for n in refs if n.get("id")==identifier];primary=[n for n in group if (n.text or "").strip()]
+        require(1<=len(group)<=2 and len(primary)==1,"Product reference has ambiguous package URL")
+        ref=primary[0];require(ref.get("version")==version and (ref.text or "").strip() in (name,"#"+name),"Product component URL/version differs")
+        require(set(ref.attrib)<={"id","version","installKBytes","updateKBytes","auth","onConclusion"} and ref.get("auth","root")=="root" and ref.get("onConclusion","None")=="None" and ref.get("updateKBytes","0")=="0","Product component execution policy differs")
         original=xml(members[name]["PackageInfo"])
-        require([tree(c) for c in ref]==[tree(c) for c in original.findall("bundle-version")],"Product component bundle metadata differs")
+        if "installKBytes" in ref.attrib:
+            number(ref.get("installKBytes"));payloads=original.findall("payload")
+            require(len(payloads)==1 and ref.get("installKBytes")==payloads[0].get("installKBytes"),"Product component install size differs")
+        metadata=ref
+        if len(group)==2:
+            metadata=next(n for n in group if n is not ref)
+            require(len(ref)==0 and metadata.attrib=={"id":identifier} and not (metadata.text or "").strip(),"Product supplemental reference differs")
+        require([tree(c) for c in metadata]==[tree(c) for c in bundle_versions(original,role)],"Product component bundle metadata differs")
     return True
 
 
@@ -85,9 +105,10 @@ def product_members(package,names):
     output={};ranges=[(0,20)];total=0;seen=set()
     def read(entry,parent=""):
         nonlocal total
-        require(len(entry.findall("name"))==len(entry.findall("type"))==1,"Ambiguous product entry")
-        require(not entry.findall("link") and not entry.find("name").attrib and not entry.find("type").attrib,"Product archive link metadata forbidden")
-        name=entry.findtext("name");kind=entry.findtext("type")
+        name_nodes=entry.findall("name");type_nodes=entry.findall("type")
+        require(len(type_nodes)==1 and (len(name_nodes)==1 or parent and type_nodes[0].text=="file" and len(name_nodes)==2 and name_nodes[0].text==name_nodes[1].text),"Ambiguous product entry")
+        require(not entry.findall("link") and all(not n.attrib and len(n)==0 for n in name_nodes+type_nodes),"Product archive link metadata forbidden")
+        name=name_nodes[0].text;kind=type_nodes[0].text
         require(isinstance(name,str) and re.fullmatch(r"[A-Za-z0-9._-]{1,255}",name) is not None and name not in (".",".."),"Unsafe product archive name")
         path=parent+name;require(path not in seen,"Duplicate product entry");seen.add(path)
         if kind=="directory":

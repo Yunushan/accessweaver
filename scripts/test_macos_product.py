@@ -34,7 +34,9 @@ def product_archive(members,nested=False,change=None):
 class ProductContracts(unittest.TestCase):
     def fixture(self,arch="amd64",nested=False):
         version="0.1.0-alpha";inputs=component_inputs(version,arch,b"protected fixture registration")
-        packages={name:flat_package({"Bom":b"bom-"+role.encode(),"PackageInfo":ET.tostring(ET.Element("pkg-info",identifier=identifier,version=version)),"Payload":b"payload-"+role.encode(),"Scripts":b"phases-"+role.encode()}) for role,identifier,name in inputs}
+        def info(identifier):
+            root=ET.Element("pkg-info",identifier=identifier,version=version);ET.SubElement(root,"payload",installKBytes="123");return ET.tostring(root)
+        packages={name:flat_package({"Bom":b"bom-"+role.encode(),"PackageInfo":info(identifier),"Payload":b"payload-"+role.encode(),"Scripts":b"phases-"+role.encode()}) for role,identifier,name in inputs}
         members={"Distribution":distribution(version,arch,inputs)}
         for name,value in packages.items():
             if nested:members.update({name+"/"+p:b for p,b in flat_members(value).items()})
@@ -70,6 +72,48 @@ class ProductContracts(unittest.TestCase):
                 elif kind=="custom-location":doc.find("choice").set("customLocation","/tmp")
                 changed=dict(members,Distribution=ET.tostring(doc))
                 with self.assertRaises(ValueError):inspect_product(product_archive(changed),version,arch,inputs,packages)
+    def test_native_repeated_nested_names_must_be_identical_and_bounded(self):
+        version,arch,inputs,packages,members,_=self.fixture(nested=True)
+        def repeat(toc):
+            for directory in toc.findall("file"):
+                for child in directory.findall("file"):child.append(copy.deepcopy(child.find("name")))
+        native=product_archive(members,True,repeat)
+        self.assertTrue(inspect_product(native,version,arch,inputs,packages)["allEmbeddedComponentMemberBytesVerified"])
+        for kind in ("conflicting","third","attribute","root","type"):
+            def invalid(toc):
+                repeat(toc);directory=next(d for d in toc.findall("file") if d.findall("file"));child=directory.findall("file")[0]
+                if kind=="conflicting":child.findall("name")[-1].text="Payload" if child.findtext("name")!="Payload" else "Bom"
+                elif kind=="third":child.append(copy.deepcopy(child.find("name")))
+                elif kind=="attribute":child.findall("name")[-1].set("unexpected","true")
+                elif kind=="root":directory.append(copy.deepcopy(directory.find("name")))
+                elif kind=="type":child.append(copy.deepcopy(child.find("type")))
+            with self.subTest(kind=kind),self.assertRaises(ValueError):inspect_product(product_archive(members,True,invalid),version,arch,inputs,packages)
+    def test_native_supplemental_references_bind_source_bundle_and_size_metadata(self):
+        version,arch,inputs,packages,_,_=self.fixture();doc=ET.fromstring(distribution(version,arch,inputs))
+        for role,identifier,name in inputs:
+            parts=flat_members(packages[name]);info=ET.Element("pkg-info",identifier=identifier,version=version)
+            ET.SubElement(info,"payload",installKBytes="123")
+            supplemental=ET.SubElement(doc,"pkg-ref",id=identifier);bundles=ET.SubElement(supplemental,"bundle-version")
+            if role!="metadata":
+                values={"path":"./AccessWeaver.app","id":"io.github.yunushan.accessweaver"+(".desktop" if role=="application" else ""),"CFBundleShortVersionString":"0.1.0","CFBundleVersion":"0.1.0"}
+                ET.SubElement(info,"bundle",**values);ET.SubElement(bundles,"bundle",**dict(values,path="AccessWeaver.app"))
+            ET.SubElement(info,"bundle-version");parts["PackageInfo"]=ET.tostring(info);packages[name]=flat_package(parts)
+            ref=next(n for n in doc.findall("pkg-ref") if n.get("id")==identifier and n.get("version"));ref.text="#"+name;ref.set("installKBytes","123");ref.set("updateKBytes","0")
+        def package(dist):
+            members={"Distribution":ET.tostring(dist)}
+            for name,raw in packages.items():members.update({name+"/"+p:v for p,v in flat_members(raw).items()})
+            return product_archive(members,True)
+        self.assertTrue(inspect_product(package(doc),version,arch,inputs,packages)["systemDomainOnly"])
+        for kind in ("second-url","duplicate-metadata","bundle-path","bundle-version","extra-attribute","install-size","update-size"):
+            changed=copy.deepcopy(doc);supplement=next(n for n in changed.findall("pkg-ref") if n.find("bundle-version/bundle") is not None);primary=next(n for n in changed.findall("pkg-ref") if n.get("version"))
+            if kind=="second-url":supplement.text="other.pkg"
+            elif kind=="duplicate-metadata":changed.append(copy.deepcopy(supplement))
+            elif kind=="bundle-path":supplement.find("bundle-version/bundle").set("path","Other.app")
+            elif kind=="bundle-version":supplement.find("bundle-version/bundle").set("CFBundleVersion","9.9.9")
+            elif kind=="extra-attribute":supplement.set("active","true")
+            elif kind=="install-size":primary.set("installKBytes","124")
+            elif kind=="update-size":primary.set("updateKBytes","1")
+            with self.subTest(kind=kind),self.assertRaises(ValueError):inspect_product(package(changed),version,arch,inputs,packages)
     def test_changed_component_bytes_fail_even_with_valid_rebuilt_xar_checksums(self):
         for nested in (False,True):
             version,arch,inputs,packages,members,_=self.fixture(nested=nested);name=inputs[1][2]

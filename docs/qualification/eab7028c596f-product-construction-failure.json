@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "scope": "Read-only diagnosis of failed first native product construction; not cryptographic or installation qualification.",
+  "sourceCommit": "eab7028c596f7aea0f7afc685c55b5f3e65498b2",
+  "nativeRun": 41720864277,
+  "failedJob": 126212948116,
+  "failure": "Strict product parser rejected two identical name fields on nested regular members. Further inspection showed productbuild also appends source-derived bundle metadata in separate references and updateKBytes=0. No component/product installation ran before this failure.",
+  "providerArtifact": {
+    "id": 13273210944,
+    "name": "macos-desktop-diagnostics-amd64",
+    "size_in_bytes": 100593508,
+    "digest": "sha256:d1c4d4b7d06e789febeb2d8d90e6dae419eacb402b22f5614b1aff0e4db19305",
+    "created_at": "2026-11-03T21:23:41Z",
+    "expires_at": "2026-11-17T21:23:30Z"
+  },
+  "nativeProduct": {
+    "bytes": 29429940,
+    "sha256": "b619057f00c410a71f497eec4675be3a1cd9f5e284683cc3ae49f92d89628483",
+    "distributionSHA256": "127453f0059115a726c432777e43afd8a3362b756e5384084d5df9ef3018f403",
+    "nestedRegularMembersWithTwoIdenticalNames": 12
+  },
+  "correctedReadOnlyInspection": {
+    "productSHA256": "b619057f00c410a71f497eec4675be3a1cd9f5e284683cc3ae49f92d89628483",
+    "distributionSHA256": "127453f0059115a726c432777e43afd8a3362b756e5384084d5df9ef3018f403",
+    "componentOrder": [
+      "core",
+      "metadata",
+      "application"
+    ],
+    "componentInputs": [
+      {
+        "role": "core",
+        "identifier": "io.github.yunushan.accessweaver.deployment",
+        "file": "accessweaver-0.1.0-alpha-darwin-amd64-deployment-experimental.pkg",
+        "sha256": "9fd639b7e2b61c3260fb84c0ccf1ca36691715ab2e0033b6de0dee1cf8dbe849",
+        "members": {
+          "Bom": "58c1bc727c32231e51c2c0a8e0329ef55c98eb0f6d33916dd7f8e567fd8e857a",
+          "PackageInfo": "30b5336996656dec34a2c09fb34e3d5156deabd011528f9c9649ef5a9974da85",
+          "Payload": "a3eb56c4a0e189600b6c955a4db7e1c581d3d4a6d632a81142f34a61db61195f",
+          "Scripts": "4a22b465657abccf6c4e8ffee07c45a98acab3a6bff11800af26d73f1f78d557"
+        }
+      },
+      {
+        "role": "metadata",
+        "identifier": "io.github.yunushan.accessweaver.desktop.registration.3e5c596ef7680c90bdb5431606695a5df16925af33e60fb2448492992d79b8f4",
+        "file": "accessweaver-0.1.0-alpha-darwin-amd64-desktop-metadata-experimental.pkg",
+        "sha256": "4ce15e3fe383e4fca234dc4c03ed8660e9f3cdce2dd05fb90e4f9769a1d47b4b",
+        "members": {
+          "Bom": "ab01e23234ef32921ffb71e53853b9466072f8209261dfae298736f5cf5d5af7",
+          "PackageInfo": "588c99fa8c8676a17b42f146993c89c7b4b60ff2eb2dc56014a5b562bb1fe55a",
+          "Payload": "e09bf0fa923c2e5ad07fc64a478e843e08cabb666ae5a3373b4c66786c6b4750",
+          "Scripts": "9d99dc0a1119fcb55fd7936a764e74a6ae1eaa2b679a8a297df628221448b6a4"
+        }
+      },
+      {
+        "role": "application",
+        "identifier": "io.github.yunushan.accessweaver.desktop",
+        "file": "accessweaver-0.1.0-alpha-darwin-amd64-desktop-application-experimental.pkg",
+        "sha256": "2a9c0bb960ee09e9612e2f4efd32763e353d6d623942d1e035be7a700792ee98",
+        "members": {
+          "Bom": "7c51b2f946c8702d03a4ab6d5dea93061005959ae9c5fa3d8ac3e4a53f0da4c4",
+          "PackageInfo": "a05d3d66f1d7917eadbfdf0381166686d040b5684a45734bab32fd95eb413102",
+          "Payload": "9d5be60629e8e0e2af2d0137a66d044f3db5ecec778c0503c38d04a8d02a52c0",
+          "Scripts": "4e28ddeadc59a479d0a068270b8db0da59f97f283df455b83f69ed5d03a8f82b"
+        }
+      }
+    ],
+    "allEmbeddedComponentMemberBytesVerified": true,
+    "systemDomainOnly": true,
+    "targetExecutionPerformed": false,
+    "installationExecuted": false,
+    "publisherSignatureVerified": false,
+    "productionQualificationComplete": false
+  },
+  "fixConstraints": [
+    "Only one name field globally or two identical unattributed names on a nested regular member; duplicate paths, conflicting names, excess names and duplicate types still refuse.",
+    "Exactly one package URL per approved component; at most one supplemental reference containing only source-derived bundle metadata. Fixed domains, choices, architecture, minimum OS and external-script prohibition unchanged.",
+    "Supplemental bundle identities/versions/paths bind to the original PackageInfo; installKBytes binds to its payload size and updateKBytes must remain zero.",
+    "Every embedded Bom/PackageInfo/Payload/Scripts byte stream equals the original inspected component. Existing flat component parser unchanged."
+  ],
+  "providerDigestVerified": true,
+  "sigstoreAuthenticationPerformed": false,
+  "cryptographicallyQualified": false,
+  "correctedNativeConstructionPassed": false,
+  "targetExecutedLocally": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": 0,
+  "readinessGatesSHA256": "6aba24860c171a7a3931029589b0e04dac90ed4a6f22da3fc02bd058bf903b0e"
+}
