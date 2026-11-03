@@ -106,6 +106,85 @@ try {
     $inputData=$previousPrerequisiteInput;$r=$previousPrerequisiteRequest
 }
 
+# Native component metadata fixtures are deliberately non-executable. No DLL
+# is loaded; download, expansion, staging and event hooks stay within this fixture.
+$previousComponentInput=$inputData;$previousComponentRequest=$r;$previousComponentRoot=$root;$previousAssetNames=$assetNames
+$componentFunctions=@{}
+foreach($name in @('Read-RemoteJSON','Download','Expand-Safe','Protect-Dir','Copy-Checked','Copy-Tree','Event')){$componentFunctions[$name]=(Get-Command $name).ScriptBlock}
+function Write-InertPE([string]$path,[uint16]$machine) {
+    [void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path))
+    $bytes=[byte[]]::new(256);$bytes[0]=0x4d;$bytes[1]=0x5a;[BitConverter]::GetBytes([uint32]128).CopyTo($bytes,60)
+    $bytes[128]=0x50;$bytes[129]=0x45;[BitConverter]::GetBytes($machine).CopyTo($bytes,132)
+    [IO.File]::WriteAllBytes($path,$bytes)
+}
+try {
+    $assetNames=@{proxifyre='ProxiFyre.exe';wgcf='wgcf.exe';dnscrypt='dnscrypt-proxy.exe'}
+    $script:componentCalls=[Collections.Generic.List[object]]::new();$script:componentTamperStaging=$false
+    function Read-RemoteJSON {param($Headers,$Uri);$script:componentCalls.Add(@{kind='release';url=$Uri});return @{assets=$script:componentAssets}}
+    function Protect-Dir {param($path);[void](New-Item -ItemType Directory -Force -Path $path)}
+    function Copy-Checked {param($source,$destination);[void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination));Copy-Item -LiteralPath $source -Destination $destination -Force;if($script:componentTamperStaging){Write-InertPE $destination 0x014c}}
+    function Copy-Tree {param($source,$destination);foreach($file in Get-ChildItem -LiteralPath $source -File){Copy-Checked $file.FullName (Join-Path $destination $file.Name)}}
+    function Download {param($url,$hash,$destination);$script:componentCalls.Add(@{kind='download';url=$url;hash=$hash});if($destination.EndsWith('.exe')){Write-InertPE $destination $script:componentDownloadMachine}else{[IO.File]::WriteAllText($destination,'inert mocked archive')}}
+    function Expand-Safe {param($archive,$destination);Write-InertPE (Join-Path $destination ('payload\'+$assetNames[$script:componentEngine])) $script:componentDownloadMachine}
+    function Event {param($text);$script:componentCalls.Add(@{kind='event';text=$text})}
+    $componentBase=Join-Path $testRoot 'native-components';[void](New-Item -ItemType Directory -Path $componentBase)
+    foreach($machine in @(0x8664,0xaa64,0x014c)) {
+        $path=Join-Path $componentBase ('machine-'+$machine+'.exe');Write-InertPE $path $machine
+        Assert ((Get-PEMachine $path) -eq $machine) 'Bounded PE inspection reads the COFF machine without executing a fixture'
+    }
+    foreach($mode in @('short','dos-magic','offset-before-header','offset-overflow','pe-magic')) {
+        $path=Join-Path $componentBase ($mode+'.exe');Write-InertPE $path 0xaa64;$bytes=[IO.File]::ReadAllBytes($path)
+        switch($mode){'short' {$bytes=[byte[]]::new(63)} 'dos-magic' {$bytes[0]=0} 'offset-before-header' {[BitConverter]::GetBytes([uint32]1).CopyTo($bytes,60)} 'offset-overflow' {[BitConverter]::GetBytes([uint32]::MaxValue).CopyTo($bytes,60)} 'pe-magic' {$bytes[128]=0}}
+        [IO.File]::WriteAllBytes($path,$bytes)
+        Assert ((Get-PEMachine $path) -eq 0) ($mode+' malformed PE metadata cannot establish a compatible machine')
+    }
+    foreach($engine in @('proxifyre','wgcf','dnscrypt')) {
+        $script:componentEngine=$engine
+        $names=@{proxifyre=@('ProxiFyre-v2.6.4-x64.zip','ProxiFyre-v2.6.4-ARM64.zip');wgcf=@('wgcf_2.3.1_windows_amd64.exe','wgcf_2.3.1_windows_arm64.exe');dnscrypt=@('dnscrypt-proxy-win64-2.1.20.zip','dnscrypt-proxy-winarm-2.1.20.zip')}
+        $bundle=Join-Path $componentBase ('bundle-'+$engine)
+        # Misleading folder labels must not override the actual machine field.
+        $amdPath=Join-Path $bundle ('arm64\'+$assetNames[$engine]);Write-InertPE $amdPath 0x8664
+        $armPath=Join-Path $bundle ('x64\'+$assetNames[$engine]);Write-InertPE $armPath 0xaa64
+        foreach($architecture in @('amd64','arm64')) {
+            $inputData=[pscustomobject]@{nativeArchitecture=$architecture};$plan=Component-ArchitecturePlan $engine
+            $index=if($architecture -eq 'amd64'){0}else{1};$expectedPath=if($index -eq 0){$amdPath}else{$armPath}
+            $root=Join-Path $componentBase ('local-'+$engine+'-'+$architecture);$r=[pscustomobject]@{bundlePath=$bundle}
+            Assert ((Find-Source $engine) -eq $expectedPath) ($engine+' '+$architecture+' discovery selects PE metadata across misleading folder names')
+            Assert ($names[$engine][$index] -match $plan.assetPattern -and $names[$engine][1-$index] -notmatch $plan.assetPattern) ($engine+' '+$architecture+' remote pattern separates native assets')
+            foreach($invalid in @(('prefix-'+$names[$engine][$index]),($names[$engine][$index]+'.sha256'))) {Assert ($invalid -notmatch $plan.assetPattern) ($engine+' '+$architecture+' native pattern rejects unrelated and sidecar assets')}
+            $script:componentCalls.Clear();$ready=Ensure-Asset $engine
+            Assert ((Get-PEMachine $ready) -eq $plan.machine -and (Under $ready (Join-Path $root ('components\'+$engine)))) ($engine+' '+$architecture+' compatible bundle is staged with its native machine')
+            Assert (@($script:componentCalls | Where-Object {$_.kind -in @('release','download')}).Count -eq 0) ($engine+' '+$architecture+' native bundle needs no remote fallback')
+            $root=Join-Path $componentBase ('tampered-staging-'+$engine+'-'+$architecture)
+            $script:componentTamperStaging=$true;$script:componentCalls.Clear();$rejected=$false
+            try {Ensure-Asset $engine|Out-Null}catch{$rejected=$_.Exception.Message -eq 'Staged component does not match the native Windows architecture'}finally{$script:componentTamperStaging=$false}
+            Assert ($rejected -and @($script:componentCalls | Where-Object {$_.kind -eq 'event'}).Count -eq 0) ($engine+' '+$architecture+' staged machine mismatch fails before a ready event')
+            $root=Join-Path $componentBase ('remote-'+$engine+'-'+$architecture);$r=[pscustomobject]@{bundlePath=$null}
+            $script:componentAssets=@(foreach($name in $names[$engine]){@{name=$name;browser_download_url=('https://github.com/vendor/component/releases/download/test/'+$name);digest=('sha256:'+('b'*64))}})
+            $script:componentDownloadMachine=$plan.machine;$script:componentCalls.Clear();$ready=Ensure-Asset $engine
+            $downloads=@($script:componentCalls | Where-Object {$_.kind -eq 'download'})
+            Assert ($downloads.Count -eq 1 -and $downloads[0].url.EndsWith($names[$engine][$index]) -and $downloads[0].hash -eq ('b'*64) -and (Get-PEMachine $ready) -eq $plan.machine) ($engine+' '+$architecture+' remote selection stages the native asset and preserves its digest')
+            foreach($mode in @('missing','duplicate','mismatched-payload')) {
+                $root=Join-Path $componentBase ($mode+'-'+$engine+'-'+$architecture)
+                $matching=$script:componentAssets[$index]
+                $script:componentAssets=switch($mode){'missing' {@()} 'duplicate' {@($matching,$matching)} default {@($matching)}}
+                if($mode -eq 'mismatched-payload'){$script:componentDownloadMachine=0x014c}
+                $script:componentCalls.Clear();$rejected=$false
+                try {Ensure-Asset $engine|Out-Null}catch{$rejected=if($mode -eq 'mismatched-payload'){$_.Exception.Message -like 'Downloaded component does not contain*'}else{$_.Exception.Message -like 'Exactly one native Windows asset*'}}
+                Assert ($rejected -and @($script:componentCalls | Where-Object {$_.kind -eq 'event'}).Count -eq 0) ($engine+' '+$architecture+' '+$mode+' cannot report a ready component')
+                $script:componentAssets=@(foreach($name in $names[$engine]){@{name=$name;browser_download_url=('https://github.com/vendor/component/releases/download/test/'+$name);digest=('sha256:'+('b'*64))}})
+            }
+        }
+        $inputData=[pscustomobject]@{nativeArchitecture='unknown'};$script:componentCalls.Clear();$rejected=$false
+        try {Ensure-Asset $engine|Out-Null}catch{$rejected=$_.Exception.Message -like 'Native Windows architecture is unavailable*'}
+        Assert ($rejected -and $null -eq (Find-Source $engine) -and $script:componentCalls.Count -eq 0) ($engine+' unknown host identity refuses native component retrieval and readiness')
+    }
+} finally {
+    foreach($name in $componentFunctions.Keys){Set-Item ('Function:'+$name) $componentFunctions[$name]}
+    Remove-Item Function:Write-InertPE
+    $inputData=$previousComponentInput;$r=$previousComponentRequest;$root=$previousComponentRoot;$assetNames=$previousAssetNames
+}
+
 # These real read-only queries cover stock Windows services and device drivers.
 $nativeServiceInspection=Get-ServiceInspection
 Assert ($null -eq $nativeServiceInspection.error -and $nativeServiceInspection.services -is [array]) 'Native service and driver enumeration succeeds with an explicit array result'

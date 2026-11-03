@@ -312,12 +312,61 @@ function Expand-Safe([string]$archive,[string]$destination) {
 }
 $assetNames=@{byedpi='ciadpi.exe';proxifyre='ProxiFyre.exe';wgcf='wgcf.exe';zapret='winws.exe';zapret2='winws2.exe';goodbyedpi='goodbyedpi.exe';dnscrypt='dnscrypt-proxy.exe';drover='version.dll'}
 if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-catalog-ready {0}' -f $script:workflowClock.ElapsedMilliseconds))}
+# These upstreams publish separate native Windows builds. Other integrations
+# retain their existing behavior and still require independent ARM64 work.
+function Component-ArchitecturePlan([string]$engine) {
+    if($engine -notin @('proxifyre','wgcf','dnscrypt')){throw 'Unknown native component'}
+    $architecture=[string]$inputData.nativeArchitecture
+    if($architecture -notin @('amd64','arm64')){throw 'Native Windows architecture is unavailable or unsupported; component selection was not attempted'}
+    $machine=if($architecture -eq 'arm64'){0xaa64}else{0x8664}
+    $pattern=switch($engine){
+        'proxifyre' {'^ProxiFyre-v[0-9]+(?:[.][0-9]+){1,3}-'+$(if($architecture -eq 'arm64'){'ARM64'}else{'x64'})+'[.]zip$'}
+        'wgcf' {'^wgcf_[0-9]+(?:[.][0-9]+){1,3}_windows_'+$architecture+'[.]exe$'}
+        'dnscrypt' {'^dnscrypt-proxy-'+$(if($architecture -eq 'arm64'){'winarm'}else{'win64'})+'-[0-9]+(?:[.][0-9]+){1,3}[.]zip$'}
+    }
+    return @{machine=$machine;assetPattern=$pattern}
+}
+function Get-PEMachine([string]$path) {
+    No-Reparse $path
+    $stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    $reader=$null
+    try {
+        if($stream.Length -lt 64 -or $stream.Length -gt 128MB){return 0}
+        $reader=[IO.BinaryReader]::new($stream)
+        $header=$reader.ReadBytes(64)
+        if($header.Length -ne 64 -or $header[0] -ne 0x4d -or $header[1] -ne 0x5a){return 0}
+        $offset=[BitConverter]::ToUInt32($header,60)
+        if($offset -lt 64 -or $offset -gt 1MB -or $offset -gt $stream.Length-6){return 0}
+        [void]$stream.Seek($offset,[IO.SeekOrigin]::Begin)
+        $coff=$reader.ReadBytes(6)
+        if($coff.Length -ne 6 -or $coff[0] -ne 0x50 -or $coff[1] -ne 0x45 -or $coff[2] -ne 0 -or $coff[3] -ne 0){return 0}
+        return [BitConverter]::ToUInt16($coff,4)
+    } finally {if($null -ne $reader){$reader.Dispose()}else{$stream.Dispose()}}
+}
 function Find-Source([string]$engine) {
     $name=$assetNames[$engine];if (-not $name){throw 'Unknown component'}
+    $native=$engine -in @('proxifyre','wgcf','dnscrypt')
+    if($native -and $inputData.nativeArchitecture -notin @('amd64','arm64')){return $null}
+    $plan=if($native){Component-ArchitecturePlan $engine}else{$null}
     $roots=@((Join-Path $root ('components\'+$engine)))
     if ($r.bundlePath) {$roots+=[IO.Path]::GetFullPath($r.bundlePath)}
     $roots+=@((Join-Path $env:ProgramFiles 'SplitWire-Turkey\res'),(Join-Path $env:ProgramFiles 'SplitWire-Turkey\Prerequisites'))
-    foreach ($base in $roots) {if(Test-Path -LiteralPath $base){No-Reparse $base;if($engine -in @('zapret','zapret2')){$folder=if($engine -eq 'zapret2'){'zapret-winws2'}else{'zapret-winws'};$preferred=Get-ChildItem -LiteralPath $base -Directory -Recurse -Filter $folder|Select-Object -First 1;if($preferred -and (Test-Path -LiteralPath (Join-Path $preferred.FullName 'winws.exe'))){return (Join-Path $preferred.FullName 'winws.exe')}};$match=Get-ChildItem -LiteralPath $base -Recurse -Filter $name -File | Where-Object {$_.FullName -notmatch '\\x86\\|\\32\\|\\arm64\\|\\win7\\'} | Select-Object -First 1;if ($match){return $match.FullName}}}
+    foreach ($base in $roots) {
+        if(-not (Test-Path -LiteralPath $base)){continue}
+        No-Reparse $base
+        if($native){
+            $compatible=Get-ChildItem -LiteralPath $base -Recurse -Filter $name -File | Where-Object {(Get-PEMachine $_.FullName) -eq $plan.machine} | Select-Object -First 1
+            if($compatible){return $compatible.FullName}
+            continue
+        }
+        if($engine -in @('zapret','zapret2')){
+            $folder=if($engine -eq 'zapret2'){'zapret-winws2'}else{'zapret-winws'}
+            $preferred=Get-ChildItem -LiteralPath $base -Directory -Recurse -Filter $folder | Select-Object -First 1
+            if($preferred -and (Test-Path -LiteralPath (Join-Path $preferred.FullName 'winws.exe'))){return (Join-Path $preferred.FullName 'winws.exe')}
+        }
+        $match=Get-ChildItem -LiteralPath $base -Recurse -Filter $name -File | Where-Object {$_.FullName -notmatch '\\x86\\|\\32\\|\\arm64\\|\\win7\\'} | Select-Object -First 1
+        if($match){return $match.FullName}
+    }
     return $null
 }
 function Component-ArchivePath([string]$directory,[string]$url) {
@@ -328,13 +377,17 @@ function Component-ArchivePath([string]$directory,[string]$url) {
     return $target
 }
 function Ensure-Asset([string]$engine) {
+    $plan=if($engine -in @('proxifyre','wgcf','dnscrypt')){Component-ArchitecturePlan $engine}else{$null}
     $source=Find-Source $engine
     if (-not $source) {
         $repos=@{byedpi='hufrea/byedpi';proxifyre='wiresock/proxifyre';wgcf='ViRb3/wgcf';zapret='cagritaskn/SplitWire-Turkey';zapret2='cagritaskn/SplitWire-Turkey';goodbyedpi='ValdikSS/GoodbyeDPI';dnscrypt='DNSCrypt/dnscrypt-proxy';drover='hdrover/discord-drover'}
         $patterns=@{byedpi='x86_64-w64.*zip$';proxifyre='x64\.zip$';wgcf='windows_amd64.exe$';zapret='ZIP.*Windows.*zip$';zapret2='ZIP.*Windows.*zip$';goodbyedpi='goodbyedpi.*zip$';dnscrypt='win64.*zip$';drover='drover.*zip$'}
+        if($plan){$patterns[$engine]=$plan.assetPattern}
         if(-not $repos[$engine]){throw ('Supply an official component bundle for '+$engine)}
         $release=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri ('https://api.github.com/repos/'+$repos[$engine]+'/releases/latest')
-        $asset=$release.assets | Where-Object {$_.name -match $patterns[$engine]} | Select-Object -First 1
+        $candidates=@($release.assets | Where-Object {$_.name -match $patterns[$engine]})
+        if($plan -and $candidates.Count -ne 1){throw ('Exactly one native Windows asset is required for '+$engine)}
+        $asset=$candidates | Select-Object -First 1
         if(-not $asset){throw ('No compatible Windows asset found for '+$engine)}
         $hash=([string]$asset.digest) -replace '^sha256:',''
         if(-not $hash -and $r.sha256){$hash=$r.sha256}
@@ -351,6 +404,7 @@ function Ensure-Asset([string]$engine) {
         else {Copy-Tree (Split-Path -Parent $source) $destination;$source=Join-Path $destination ([IO.Path]::GetFileName($source))}
     }
     if([IO.Path]::GetFileName($source) -ne $assetNames[$engine]){$canonical=Join-Path $destination $assetNames[$engine];Copy-Checked $source $canonical;$source=$canonical}
+    if($plan -and (Get-PEMachine $source) -ne $plan.machine){throw 'Staged component does not match the native Windows architecture'}
     Event ('Component ready: '+$engine+'; SHA256 '+(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash)
     return $source
 }
