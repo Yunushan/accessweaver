@@ -46,6 +46,7 @@ Name: "{group}\AccessWeaver"; Filename: "{app}\accessweaver.exe"; Parameters: "u
 #include "windows-installer-version.iss"
 
 #include "windows-installer-registry.iss"
+#include "windows-installer-restore.iss"
 
 function AWVersionPreflight: String;
 var Found64, Found32: Boolean; Version64, Version32, Installed: String; Ordering: Integer;
@@ -101,7 +102,7 @@ end;
 
 function InitializeUninstall: Boolean;
 var
-  ResultCode: Integer;
+  ResultCode: LongWord;
   Failure: String;
 begin
   { Respect an already active older setup, as well as corrected lifecycle owners. }
@@ -115,13 +116,13 @@ begin
   end;
   { Abort before deleting the controller when restoration fails. The user can
     inspect the protected recovery journal and retry the uninstaller. }
-  Result := Exec(ExpandConstant('{app}\accessweaver.exe'),
+  Result := AWRunBoundedRestoration(ExpandConstant('{app}\accessweaver.exe'),
     'system apply "' + ExpandConstant('{app}\uninstall-system.json') + '" --confirm',
-    ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Result := Result and (ResultCode = 0);
+    ExpandConstant('{app}'), AWRestorationDeadlineMilliseconds, ResultCode, Failure);
   if not Result then
   begin
     AWReleaseLifecycle;
+    Log(Failure);
     Log('AccessWeaver system restoration failed; process result/error code: ' + IntToStr(ResultCode));
     { Unattended deployment must fail without waiting on an interactive dialog. }
     if not UninstallSilent then

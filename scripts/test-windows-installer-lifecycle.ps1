@@ -62,26 +62,27 @@ $root=$capsule;$profile=Join-Path $capsule 'user';$privateTemp=Join-Path $capsul
 foreach($dir in @($profile,$privateTemp,(Join-Path $profile 'roaming'),(Join-Path $profile 'local'))){[void][IO.Directory]::CreateDirectory($dir)}
 $userMarker=Join-Path $profile 'user-state.json';[IO.File]::WriteAllText($userMarker,'{"preserve":"user-state"}')
 $userHash=Digest $userMarker
-$script:profileDataPath=$null;$script:profileDataHash=$null
+$script:profileDataPath=$null;$script:profileDataHash=$null;$script:restoreFixtureConfiguration=$null
 $group='AccessWeaver acceptance '+$guid
 $groupPaths=@((Join-Path ([Environment]::GetFolderPath('CommonPrograms')) $group),(Join-Path ([Environment]::GetFolderPath('Programs')) $group))
 foreach($path in $groupPaths){Require (-not (Test-Path -LiteralPath $path)) 'Fixture start-menu folder already exists'}
-function Invoke-Isolated([string]$binary,[string[]]$arguments,[int[]]$codes=@(0)){
+function Invoke-Isolated([string]$binary,[string[]]$arguments,[int[]]$codes=@(0),[int]$Timeout=180){
     $saved=@{};foreach($entry in Get-ChildItem Env:){$saved[$entry.Name]=$entry.Value}
     $system=[Environment]::SystemDirectory;$windows=Split-Path -Parent $system
     $allowed=@{SystemRoot=$windows;WINDIR=$windows;SystemDrive=[IO.Path]::GetPathRoot($system).TrimEnd('\');ComSpec=(Join-Path $system 'cmd.exe');PATH=($system+';'+$windows);PATHEXT='.COM;.EXE;.BAT;.CMD';TEMP=$privateTemp;TMP=$privateTemp;USERPROFILE=$profile;APPDATA=(Join-Path $profile 'roaming');LOCALAPPDATA=(Join-Path $profile 'local');ProgramData=$managedParent;ALLUSERSPROFILE=$managedParent;ACCESSWEAVER_INSTALLER_REGISTRY_VERSION_PROBE='alpha'}
+    if($script:restoreFixtureConfiguration){$allowed['ACCESSWEAVER_INSTALLER_RESTORE_FIXTURE']=$script:restoreFixtureConfiguration}
     foreach($name in @('ProgramFiles','ProgramFiles(x86)','ProgramW6432','CommonProgramFiles','CommonProgramFiles(x86)','CommonProgramW6432')){if($saved[$name]){$allowed[$name]=$saved[$name]}}
     try {
         foreach($entry in Get-ChildItem Env:){[Environment]::SetEnvironmentVariable($entry.Name,$null,'Process')}
         foreach($name in $allowed.Keys){[Environment]::SetEnvironmentVariable($name,$allowed[$name],'Process')}
-        return (Native $binary $arguments $codes -Secret -Timeout 180)
+        return (Native $binary $arguments $codes -Secret -Timeout $Timeout)
     } finally {
         foreach($entry in Get-ChildItem Env:){[Environment]::SetEnvironmentVariable($entry.Name,$null,'Process')}
         foreach($name in $saved.Keys){[Environment]::SetEnvironmentVariable($name,$saved[$name],'Process')}
     }
 }
-function Native-Record([string]$binary,[string[]]$arguments,[int[]]$codes=@(0)){
-    $clock=[Diagnostics.Stopwatch]::StartNew();$r=Invoke-Isolated $binary $arguments ((0..255)+@(3010,1641));$clock.Stop()
+function Native-Record([string]$binary,[string[]]$arguments,[int[]]$codes=@(0),[int]$Timeout=180){
+    $clock=[Diagnostics.Stopwatch]::StartNew();$r=Invoke-Isolated $binary $arguments ((0..255)+@(3010,1641)) $Timeout;$clock.Stop()
     $script:lastNative=@{file=[IO.Path]::GetFileName($binary);exitCode=$r.exitCode;outputComplete=$r.outputComplete}
     Require ($codes -contains $r.exitCode) 'Installer operation returned an unexpected exit code'
     Require $r.outputComplete 'Native installer process left incomplete output capture'
@@ -150,7 +151,7 @@ function Assert-Installed($expected){
 }
 $reportDirectory=Join-Path $project 'build\installer-lifecycle-checks';[void][IO.Directory]::CreateDirectory($reportDirectory)
 $reportPath=Join-Path $reportDirectory ($Architecture+'.json')
-$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null;$registryReadCases=@();$registryViewCases=@();$registryAccessCases=@();$failureSourceLine=$null;$registryFixtureSHA256=$null;$productRegistrySHA256=$null
+$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null;$registryReadCases=@();$registryViewCases=@();$registryAccessCases=@();$failureSourceLine=$null;$registryFixtureSHA256=$null;$productRegistrySHA256=$null;$restorationCases=@();$productRestoreSHA256=$null;$restoreFixtureSourceSHA256=$null;$restoreContractSourceSHA256=$null;$restoreContractBinarySHA256=$null
 try {
     foreach($version in @('0.1.0-alpha','0.1.1-alpha')){
         $null=@(& (Join-Path $PSScriptRoot 'test-windows-installer.ps1') -ExpectedCompilerVersion '6.7.1' -TargetArch $Architecture -Version $version)
@@ -390,6 +391,79 @@ try {
         $registryAccessCases[-1].fixtureDACLRestored=$true
     } finally {if($key){$key.Dispose()};$base.Dispose()}
     Assert-Installed $builds[1]
+    $stage='restoration-ownership-contracts'
+    $restoreFixtureSource=Join-Path $PSScriptRoot 'fixtures\installer-restoration\main.go'
+    $restoreFixtureSourceSHA256=Digest $restoreFixtureSource
+    $productRestoreSHA256=Digest (Join-Path $PSScriptRoot 'windows-installer-restore.iss')
+    $fixtureController=Join-Path $capsule 'restoration-controller.exe'
+    $null=@(& go build -trimpath -buildvcs=false -o $fixtureController ./scripts/fixtures/installer-restoration)
+    Require ($LASTEXITCODE -eq 0) 'Native restoration fixture compilation failed'
+    Assert-InstallerPEArchitecture $fixtureController $Architecture
+    $restoreContractSource=Join-Path $PSScriptRoot 'test-windows-installer-restore.iss'
+    $restoreContractSourceSHA256=Digest $restoreContractSource
+    $null=@(& $compiler ('/DEvidenceRoot='+$capsule) $restoreContractSource)
+    Require ($LASTEXITCODE -eq 0) 'Shared restoration contract compilation failed'
+    $restoreContract=Join-Path $capsule 'installer-restoration-contracts.exe'
+    $restoreContractBinarySHA256=Digest $restoreContract
+    function Assert-FixtureProcessExited($idRecord){
+        Require ($idRecord.pid -is [int] -or $idRecord.pid -is [long]) 'Fixture process identity is missing'
+        Require ([long]$idRecord.pid -gt 0 -and [long]$idRecord.created -gt 0) 'Fixture process identity is invalid'
+        $process=$null
+        try {
+            try {$process=[Diagnostics.Process]::GetProcessById([int]$idRecord.pid)} catch [ArgumentException] {return}
+            if($process.HasExited){return}
+            # Reused PIDs are a different process and must never be signaled.
+            Require ($process.StartTime.ToUniversalTime().ToFileTimeUtc() -ne [long]$idRecord.created) 'Restoration left an owned fixture process running'
+        } finally {if($process){$process.Dispose()}}
+    }
+    $core=Join-Path $install 'accessweaver.exe';$originalCore=Join-Path $capsule 'original-controller.exe'
+    [IO.File]::Copy($core,$originalCore,$false)
+    Require ((Digest $originalCore) -ceq $builds[1].payloadSha256) 'Original controller backup differs from the installed candidate'
+    try {
+        foreach($case in @(
+            @{name='failed-controller-descendant-cleaned';mode='exit-failure-with-child';contract=$false;deadline=180000;minimum=0},
+            @{name='successful-controller-orphan-refused';mode='exit-success-with-child';contract=$true;deadline=180000;minimum=5000},
+            @{name='stalled-controller-deadline-refused';mode='hang-with-child';contract=$false;deadline=360000;minimum=300000}
+        )){
+            $stage='restoration-'+$case.name
+            [IO.File]::Copy($fixtureController,$core,$true)
+            $configuration=Join-Path $capsule ($case.name+'.json')
+            [IO.File]::WriteAllText($configuration,('{"mode":"'+$case.mode+'"}'),[Text.UTF8Encoding]::new($false))
+            $script:restoreFixtureConfiguration=$configuration
+            $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
+            $logPath=Join-Path $capsule ($case.name+'.log')
+            Require (-not (Test-Path -LiteralPath $logPath)) 'Restoration fixture log already exists'
+            if($case.contract){
+                $attempt=Native-Record $restoreContract @('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/Controller='+$core)) @(0)
+            }else{
+                $attempt=Native-Record (Join-Path $install 'unins000.exe') @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/LOG='+$logPath)) @(1) ([int]($case.deadline/1000))
+            }
+            Require ($attempt.milliseconds -ge $case.minimum -and $attempt.milliseconds -lt $case.deadline) 'Restoration ownership/deadline case finished outside its expected bound'
+            $readyPath=$configuration+'.ready';No-Reparse $readyPath
+            Require ((Get-Item -LiteralPath $readyPath).Length -le 4096) 'Restoration fixture observation exceeds bounds'
+            $ready=Get-Content -LiteralPath $readyPath -Raw | ConvertFrom-Json
+            Require ($ready.mode -ceq $case.mode -and $ready.root.pid -ne $ready.child.pid) 'Restoration fixture did not start the expected independent child'
+            Assert-FixtureProcessExited $ready.root;Assert-FixtureProcessExited $ready.child
+            Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint) -ceq $registrationBefore) 'Refused restoration changed installed files or registration'
+            Assert-UserState
+            Require (-not (Test-Path -LiteralPath $managed)) 'Inert restoration fixture unexpectedly created machine recovery state'
+            $timeoutLogVerified=$false
+            if($case.mode -ceq 'hang-with-child'){
+                No-Reparse $logPath;Require ((Get-Item -LiteralPath $logPath).Length -le 4MB) 'Restoration fixture log exceeds bounds'
+                $log=[IO.File]::ReadAllText($logPath)
+                Require ($log.Contains('AccessWeaver system restoration exceeded its five-minute deadline.') -and $log.Contains('AccessWeaver system restoration failed; process result/error code: 1460')) 'Stalled uninstaller did not retain the expected deadline refusal'
+                $timeoutLogVerified=$true
+            }
+            $restorationCases+=,@{name=$case.name;mode=$case.mode;usesActualProductUninstaller=(-not $case.contract);exitCode=$attempt.result.exitCode;elapsedMilliseconds=$attempt.milliseconds;observationDeadlineMilliseconds=$case.deadline;restorationDeadlineMilliseconds=$(if($case.contract){5000}else{300000});ownedRootAndChildExitVerified=$true;installedFileTreePreserved=$true;registrationValuesPreserved=$true;profilePreserved=$true;timeoutLogVerified=$timeoutLogVerified}
+            $script:restoreFixtureConfiguration=$null
+            [IO.File]::Copy($originalCore,$core,$true)
+            Assert-Installed $builds[1]
+        }
+    } finally {
+        $script:restoreFixtureConfiguration=$null
+        [IO.File]::Copy($originalCore,$core,$true)
+    }
+    Assert-Installed $builds[1]
     $stage='refused-uninstall'
     $uninstaller=Join-Path $install 'unins000.exe';No-Reparse $uninstaller;$uninstallerHash=Digest $uninstaller
     $request=Join-Path $install 'uninstall-system.json';$original=[IO.File]::ReadAllBytes($request)
@@ -430,7 +504,7 @@ try {
     Remove-OwnedTree $capsule $temporary $capsuleLeaf
     $complete=$true
 } catch {$failureType=$_.Exception.GetType().FullName;$failureSourceLine=$_.InvocationInfo.ScriptLineNumber}
-$record=[ordered]@{schemaVersion=4;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=5;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'
