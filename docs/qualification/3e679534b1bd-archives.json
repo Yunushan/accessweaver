@@ -1,0 +1,900 @@
+{
+  "schemaVersion": 1,
+  "scope": "portable core archive execution and provenance; not full desktop/enterprise qualification or independent rebuild",
+  "repository": "Yunushan/accessweaver",
+  "sourceCommit": "3e679534b1bd2668ec964a3fde2e606351f10f17",
+  "sourceRef": "refs/heads/main",
+  "sourceState": "clean",
+  "sourceCI": {
+    "run": 41604161667,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41604161667",
+    "passedJobs": 22
+  },
+  "archiveQualification": {
+    "run": 41605026760,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41605026760",
+    "passedJobs": 21,
+    "executedArchiveTargets": 10,
+    "nativeRecordsVerified": 48,
+    "bsdPackageLogDigestsVerified": 60,
+    "exactTrackedBSDPackageCoverageVerified": true
+  },
+  "provenance": {
+    "workflow": "Yunushan/accessweaver/.github/workflows/release.yml",
+    "subjectsAuthenticated": 12,
+    "realNegativeCasesPassed": 5,
+    "manifestSHA256": "e085e060d9668c219d09d3110d53bb2092d8a8599765d81214051d126a47b76e",
+    "signingBundleSHA256": "2d17d311d5e5d1541b20f846886aa15cb87b7bb2801b75ba5918dcfda7886484",
+    "publisherSignatureVerified": false
+  },
+  "distributionArtifacts": [
+    {
+      "file": "accessweaver-preview-3e679534b1bd-darwin-amd64.tar.gz",
+      "goos": "darwin",
+      "goarch": "amd64",
+      "sha256": "434174a27590a031683c7ce9d618edff4423b433b2265aa2bbea4d6b4885f6cf",
+      "bytes": 4165331
+    },
+    {
+      "file": "accessweaver-preview-3e679534b1bd-darwin-arm64.tar.gz",
+      "goos": "darwin",
+      "goarch": "arm64",
+      "sha256": "aee22dd8c50180b29cc705ed1936ea5d8e5b036979fae583be96d2f659dd092d",
+      "bytes": 3888863
+    },
+    {
+      "file": "accessweaver-preview-3e679534b1bd-freebsd-amd64.tar.gz",
+      "goos": "freebsd",
+      "goarch": "amd64",
+      "sha256": "3ca32d3af1bc8de44f75e966df4adc48ba1ada5be3a7d5cb0e52d7f4a7b0511f",
+      "bytes": 3975095
+    },
+    {
+      "file": "accessweaver-preview-3e679534b1bd-freebsd-arm64.tar.gz",
+      "goos": "freebsd",
+      "goarch": "arm64",
+      "sha256": "4237a0debeabbf5c4d8703b6b417c3e0ceb88599489f9bdddafc3bca0dfe4681",
+      "bytes": 3638071
+    },
+    {
+      "file": "accessweaver-preview-3e679534b1bd-linux-amd64.tar.gz",
+      "goos": "linux",
+      "goarch": "amd64",
+      "sha256": "c1ccb5d6bcd1eaf25747e95ff169180b1816bb19e5c11f4c9b3f3c9ec3b844a0",
+      "bytes": 4048360
+    },
+    {
+      "file": "accessweaver-preview-3e679534b1bd-linux-arm64.tar.gz",
+      "goos": "linux",
+      "goarch": "arm64",
+      "sha256": "d77db7deed42416d487498a944ca2af8b274574f5f7edcdd6b68a77bc0d67086",
+      "bytes": 3704294
+    },
+    {
+      "file": "accessweaver-preview-3e679534b1bd-openbsd-amd64.tar.gz",
+      "goos": "openbsd",
+      "goarch": "amd64",
+      "sha256": "d64a5aa7df088f06c98d033bd63a23f1f5a40a4a3e365f46a01998ce48215e87",
+      "bytes": 3967774
+    },
+    {
+      "file": "accessweaver-preview-3e679534b1bd-openbsd-arm64.tar.gz",
+      "goos": "openbsd",
+      "goarch": "arm64",
+      "sha256": "22b050d72c4c7eb52769889b8d5972b64ab07e888230e62dd56c2523b05a802a",
+      "bytes": 3634675
+    },
+    {
+      "file": "accessweaver-preview-3e679534b1bd-windows-amd64.zip",
+      "goos": "windows",
+      "goarch": "amd64",
+      "sha256": "0b400cec79c8826aac705ea3b26e26496d665edefa77c448c9e0bb6e5d5a583c",
+      "bytes": 4208670
+    },
+    {
+      "file": "accessweaver-preview-3e679534b1bd-windows-arm64.zip",
+      "goos": "windows",
+      "goarch": "arm64",
+      "sha256": "3589fad98a3d94e279f284c698d466cabe7d3a7c405ee5ebdd3102307181c13d",
+      "bytes": 3822258
+    }
+  ],
+  "providerEvidenceArtifacts": [
+    {
+      "name": "packaged-freebsd-amd64",
+      "providerArtifactID": 13216739920,
+      "providerSHA256": "d1aac672652e8e265267a2b16165c6bcee3aefa2a9b033561d072a82d927c147",
+      "bytes": 19855
+    },
+    {
+      "name": "packaged-freebsd-arm64",
+      "providerArtifactID": 13216564569,
+      "providerSHA256": "232f631d6e665923b0ea60e3883fa3c62e4a2adaf3fd913ddf48f16f8841f5d3",
+      "bytes": 20014
+    },
+    {
+      "name": "packaged-native-darwin-amd64",
+      "providerArtifactID": 13216288773,
+      "providerSHA256": "4e9eb75a405431aa554873d892be00f46138cc3d83c2d80662c51590484b449c",
+      "bytes": 5057
+    },
+    {
+      "name": "packaged-native-darwin-arm64",
+      "providerArtifactID": 13216643011,
+      "providerSHA256": "6a17c07567cbc547635e96d97b8ae966291688afbff910cbec9e76572801a6a5",
+      "bytes": 5045
+    },
+    {
+      "name": "packaged-native-linux-amd64",
+      "providerArtifactID": 13217206975,
+      "providerSHA256": "4054afdd8ccdfe07fa0fd56336975e80dcbbf8a1ba0473a29d36dcc5c41a2bee",
+      "bytes": 5065
+    },
+    {
+      "name": "packaged-native-linux-arm64",
+      "providerArtifactID": 13216044464,
+      "providerSHA256": "35a4d3e3ad8a5d5b16521547eeb7b28c67020fd53d50878044bd42c794d9587c",
+      "bytes": 5071
+    },
+    {
+      "name": "packaged-native-windows-amd64",
+      "providerArtifactID": 13217381305,
+      "providerSHA256": "241ecfafb9ed1fd58883bee58ed7a0e4cf79fe9399903ac1ad170a33bbece25b",
+      "bytes": 5659
+    },
+    {
+      "name": "packaged-native-windows-arm64",
+      "providerArtifactID": 13217565640,
+      "providerSHA256": "aa0b9b72fefc0b5aa0ee4e048354dbe75d9cef0bbc021721bddd57da80cf381b",
+      "bytes": 5652
+    },
+    {
+      "name": "packaged-openbsd-amd64",
+      "providerArtifactID": 13217776497,
+      "providerSHA256": "76433cb25028cf3ac13d98850d130833f59037965e9d558b7f8690f73bb2dd65",
+      "bytes": 20192
+    },
+    {
+      "name": "packaged-openbsd-arm64",
+      "providerArtifactID": 13217727214,
+      "providerSHA256": "182e8a6544ff1670081d93d2280d0115b8ac3a05344d17cd889808037c52f18a",
+      "bytes": 20336
+    }
+  ],
+  "nativeExecution": [
+    {
+      "target": "windows/amd64",
+      "sourceCommit": "3e679534b1bd2668ec964a3fde2e606351f10f17",
+      "binarySha256": "71fa7bccdd08114d0c1027187477cfeeeb6474042fc0266a0634326d6c4bf200",
+      "archiveSha256": "0b400cec79c8826aac705ea3b26e26496d665edefa77c448c9e0bb6e5d5a583c",
+      "records": 8,
+      "imageOS": "win25-vs2026",
+      "osRelease": "10.0.26100",
+      "nineLoopbackCasesPassed": true,
+      "productionQualificationComplete": false
+    },
+    {
+      "target": "windows/arm64",
+      "sourceCommit": "3e679534b1bd2668ec964a3fde2e606351f10f17",
+      "binarySha256": "d148817e1cc02b9d6eb72b8e3b8c00a3ae7c9f20cce850c599d72a96b744c5b1",
+      "archiveSha256": "3589fad98a3d94e279f284c698d466cabe7d3a7c405ee5ebdd3102307181c13d",
+      "records": 8,
+      "imageOS": "win11-vs2026-arm64",
+      "osRelease": "10.0.26200",
+      "nineLoopbackCasesPassed": true,
+      "productionQualificationComplete": false
+    },
+    {
+      "target": "linux/amd64",
+      "sourceCommit": "3e679534b1bd2668ec964a3fde2e606351f10f17",
+      "binarySha256": "bbd56981a3371a85846e8f7388cd623662439a4319afb2925d3aafd8506a66c8",
+      "archiveSha256": "c1ccb5d6bcd1eaf25747e95ff169180b1816bb19e5c11f4c9b3f3c9ec3b844a0",
+      "records": 8,
+      "imageOS": "ubuntu24",
+      "osRelease": "7.0.0-1017-azure",
+      "nineLoopbackCasesPassed": true,
+      "productionQualificationComplete": false
+    },
+    {
+      "target": "linux/arm64",
+      "sourceCommit": "3e679534b1bd2668ec964a3fde2e606351f10f17",
+      "binarySha256": "5d1f2318bfaae72b4b95e74c0b0239020789fbcbd25f54510809ed87b696e662",
+      "archiveSha256": "d77db7deed42416d487498a944ca2af8b274574f5f7edcdd6b68a77bc0d67086",
+      "records": 8,
+      "imageOS": "ubuntu24-arm64",
+      "osRelease": "7.0.0-1017-azure",
+      "nineLoopbackCasesPassed": true,
+      "productionQualificationComplete": false
+    },
+    {
+      "target": "darwin/amd64",
+      "sourceCommit": "3e679534b1bd2668ec964a3fde2e606351f10f17",
+      "binarySha256": "07f3f0a9e357e7b765e5dec0ccc6c31bb23770fc36b1068ebba04eb95da10c35",
+      "archiveSha256": "434174a27590a031683c7ce9d618edff4423b433b2265aa2bbea4d6b4885f6cf",
+      "records": 8,
+      "imageOS": "macos15",
+      "osRelease": "24.6.0",
+      "nineLoopbackCasesPassed": true,
+      "productionQualificationComplete": false
+    },
+    {
+      "target": "darwin/arm64",
+      "sourceCommit": "3e679534b1bd2668ec964a3fde2e606351f10f17",
+      "binarySha256": "dca243a9dc6303c203b0e1d5d077724c24c60054b1777533768e6480bd9af083",
+      "archiveSha256": "aee22dd8c50180b29cc705ed1936ea5d8e5b036979fae583be96d2f659dd092d",
+      "records": 8,
+      "imageOS": "macos26",
+      "osRelease": "25.6.0",
+      "nineLoopbackCasesPassed": true,
+      "productionQualificationComplete": false
+    }
+  ],
+  "archivedWindowsDiscovery": [
+    {
+      "sourceCommit": "3e679534b1bd2668ec964a3fde2e606351f10f17",
+      "sourceRef": "refs/heads/main",
+      "target": "windows/amd64",
+      "binarySha256": "71fa7bccdd08114d0c1027187477cfeeeb6474042fc0266a0634326d6c4bf200",
+      "archiveSha256": "0b400cec79c8826aac705ea3b26e26496d665edefa77c448c9e0bb6e5d5a583c",
+      "manifestSha256": "e085e060d9668c219d09d3110d53bb2092d8a8599765d81214051d126a47b76e",
+      "bundleSha256": "2d17d311d5e5d1541b20f846886aa15cb87b7bb2801b75ba5918dcfda7886484",
+      "build": {
+        "version": "0.1.0-alpha",
+        "commit": "3e679534b1bd2668ec964a3fde2e606351f10f17",
+        "sourceState": "clean",
+        "builtAt": "2026-11-03T08:33:25Z",
+        "goVersion": "go1.27.3",
+        "platform": "windows",
+        "arch": "amd64"
+      },
+      "schemaVersion": 1,
+      "probeElapsedMilliseconds": 5452,
+      "deadlineMilliseconds": 45000,
+      "phases": [
+        "Workflow timing ms: storage-ready 2",
+        "Workflow timing ms: script-ready 14",
+        "Workflow timing ms: request-ready 29",
+        "Workflow timing ms: environment-ready 30",
+        "Workflow timing ms: launch 30",
+        "Workflow timing ms: first-output 2237",
+        "Workflow timing ms: shell-input 3",
+        "Workflow timing ms: shell-parse 17",
+        "Workflow timing ms: shell-initialize 89",
+        "Workflow timing ms: shell-utility-ready 499",
+        "Workflow timing ms: shell-management-ready 631",
+        "Workflow timing ms: shell-request-decoded 1536",
+        "Workflow timing ms: shell-network-ready 1550",
+        "Workflow timing ms: shell-root-ready 1578",
+        "Workflow timing ms: shell-state-ready 1580",
+        "Workflow timing ms: shell-catalog-ready 1580",
+        "Workflow timing ms: shell-dispatch 1580",
+        "Discovery timing ms: services 0",
+        "Discovery timing ms: components 988",
+        "Discovery timing ms: applications 1050",
+        "Discovery timing ms: conflicts 1065",
+        "Discovery timing ms: refresh-task 1073",
+        "Task query timing ms: start 0",
+        "Task query timing ms: started 19",
+        "Task query timing ms: capture-ready 40",
+        "Task query timing ms: exited 84",
+        "Task query timing ms: drained 87",
+        "Task query timing ms: cleanup 93",
+        "Task query timing ms: disposed 95",
+        "Discovery timing ms: final-paths 1253",
+        "Discovery timing ms: complete 1255",
+        "Workflow timing ms: child-exited 5175"
+      ],
+      "originalArchiveExecuted": true,
+      "readOnlyActionVerified": true,
+      "fullDiscoveryShapeVerified": true,
+      "ownedProcessStopped": true,
+      "ownedCapsuleRemoved": true,
+      "serviceInspectionSucceeded": true,
+      "taskInspectionSucceeded": true,
+      "settingsChanged": false,
+      "productionQualificationComplete": false
+    },
+    {
+      "sourceCommit": "3e679534b1bd2668ec964a3fde2e606351f10f17",
+      "sourceRef": "refs/heads/main",
+      "target": "windows/arm64",
+      "binarySha256": "d148817e1cc02b9d6eb72b8e3b8c00a3ae7c9f20cce850c599d72a96b744c5b1",
+      "archiveSha256": "3589fad98a3d94e279f284c698d466cabe7d3a7c405ee5ebdd3102307181c13d",
+      "manifestSha256": "e085e060d9668c219d09d3110d53bb2092d8a8599765d81214051d126a47b76e",
+      "bundleSha256": "2d17d311d5e5d1541b20f846886aa15cb87b7bb2801b75ba5918dcfda7886484",
+      "build": {
+        "version": "0.1.0-alpha",
+        "commit": "3e679534b1bd2668ec964a3fde2e606351f10f17",
+        "sourceState": "clean",
+        "builtAt": "2026-11-03T08:33:25Z",
+        "goVersion": "go1.27.3",
+        "platform": "windows",
+        "arch": "arm64"
+      },
+      "schemaVersion": 1,
+      "probeElapsedMilliseconds": 7559,
+      "deadlineMilliseconds": 45000,
+      "phases": [
+        "Workflow timing ms: storage-ready 2",
+        "Workflow timing ms: script-ready 12",
+        "Workflow timing ms: request-ready 20",
+        "Workflow timing ms: environment-ready 21",
+        "Workflow timing ms: launch 21",
+        "Workflow timing ms: first-output 4500",
+        "Workflow timing ms: shell-input 4",
+        "Workflow timing ms: shell-parse 16",
+        "Workflow timing ms: shell-initialize 426",
+        "Workflow timing ms: shell-utility-ready 884",
+        "Workflow timing ms: shell-management-ready 1040",
+        "Workflow timing ms: shell-request-decoded 1680",
+        "Workflow timing ms: shell-network-ready 1683",
+        "Workflow timing ms: shell-root-ready 1711",
+        "Workflow timing ms: shell-state-ready 1713",
+        "Workflow timing ms: shell-catalog-ready 1713",
+        "Workflow timing ms: shell-dispatch 1713",
+        "Discovery timing ms: services 0",
+        "Discovery timing ms: components 549",
+        "Discovery timing ms: applications 587",
+        "Discovery timing ms: conflicts 605",
+        "Discovery timing ms: refresh-task 625",
+        "Task query timing ms: start 0",
+        "Task query timing ms: started 33",
+        "Task query timing ms: capture-ready 49",
+        "Task query timing ms: exited 102",
+        "Task query timing ms: drained 107",
+        "Task query timing ms: cleanup 113",
+        "Task query timing ms: disposed 114",
+        "Discovery timing ms: final-paths 870",
+        "Discovery timing ms: complete 873",
+        "Workflow timing ms: child-exited 7223"
+      ],
+      "originalArchiveExecuted": true,
+      "readOnlyActionVerified": true,
+      "fullDiscoveryShapeVerified": true,
+      "ownedProcessStopped": true,
+      "ownedCapsuleRemoved": true,
+      "serviceInspectionSucceeded": true,
+      "taskInspectionSucceeded": true,
+      "settingsChanged": false,
+      "productionQualificationComplete": false
+    }
+  ],
+  "bsdExecution": [
+    {
+      "target": "freebsd/amd64",
+      "guestIdentity": {
+        "OS": "FreeBSD",
+        "release": "15.1-RELEASE",
+        "machine": "amd64",
+        "uid": 1001,
+        "user": "awtest"
+      },
+      "packages": [
+        {
+          "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+          "sha256": "1347d55883b604c56d5de1a63f57cb8d46284a3ddda36aa0f2e8ac18ed3f1f52",
+          "logSHA256": "676ffb80ddae5ae75c5a62d9ce72080aa5208851d9c523c9d8cf92f697db0945",
+          "passedTestInstances": 22,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/api",
+          "sha256": "16ec0743705841d35db71a0cd25bf98dc8baa2da6d4ed1a41ecfdd83b8d676dc",
+          "logSHA256": "f65ec9658d21da91a89a594864c67328d15a4ad2bbe20e9546be11a58b2cc65a",
+          "passedTestInstances": 41,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/backup",
+          "sha256": "f23cafa3b5d67a3e361f52dc427ef34b7b4a7cc4726d4f6d96a0e69dc05f76ae",
+          "logSHA256": "6fa28499f04e8160cfb1842585a027eee4cf6f0d420bf32ecfab54c911284100",
+          "passedTestInstances": 3,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/buildinfo",
+          "sha256": "c68ecc5c5dd1e359ec701e1809d1675016200d9c21b742449a6f3517f1a87da7",
+          "logSHA256": "89bd3e83bfd4f23991bcf87d50324025c054f1bfb94aee4d8fa62dff73190abe",
+          "passedTestInstances": 1,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/diagnostics",
+          "sha256": "5f2cf323937c43cff15fff473f2e03da1f1b5e3e3d15b864345a8c78dcabab7a",
+          "logSHA256": "f6b611a0fc4d9fd3aa43d9ea45b1d9324b9a79ec22333006f67f2db7da3603d3",
+          "passedTestInstances": 34,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/engine",
+          "sha256": "83e1e2c435708b1aef7bb0e25ebc1a95b73f813b7354a66f0454fd7c922d6ced",
+          "logSHA256": "1727184dba9d7315d3432f8a9cff942653172458f70644ca31ec4faca54948d9",
+          "passedTestInstances": 30,
+          "skippedTestInstances": 2
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/filelock",
+          "sha256": "16adcb9cea6c0e5618db9c21cc4a162954821ec8326e60ce7da28631d1af74ba",
+          "logSHA256": "f803151c1f9c10e51eb076db0e1e4235be0e58f6772bf17200897f99a3f74140",
+          "passedTestInstances": 7,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/logfile",
+          "sha256": "b442461d11a1af53894f970e58ffa1323ffb6e57f0a332823d3efcd3cf2a18ff",
+          "logSHA256": "0ce754612384758d8e5a2d90e1e997bd768fde92eea962ae9de7a8d2f372e14b",
+          "passedTestInstances": 8,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/managed",
+          "sha256": "fe4373e73b8f46becbdcd2b24f8edeb9b002cd859a4b9a0175ceb68f6b504496",
+          "logSHA256": "42a26b84b04beed06842e9c045ff91daf5ae6a55c9239b4f093e3d9f86bb5c1c",
+          "passedTestInstances": 125,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/nativeargs",
+          "sha256": "acb9eca9cd607628a67aabcc9f1ff153e7d973b5498b6c7fbc568c67ebf04681",
+          "logSHA256": "89200092f884164fc4cabdd37de3949cc02912dc1b5c0dc2263bbc9eba696df5",
+          "passedTestInstances": 2,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/nativepath",
+          "sha256": "bb61b04269a1a95f561b657964def9feccc137476a41f9a16d291e1253b2f975",
+          "logSHA256": "10b883fbe8a191977c123eace096947257a1f8d48e7b3c9138553531bd6837e0",
+          "passedTestInstances": 2,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/nativeprocess",
+          "sha256": "0d2a764579ae1b7a05a4cd06c185a5ad5ad36807fe8396877616906cd7d9dbb4",
+          "logSHA256": "6c10da5938adc76db78ff37d7ade7f66c6051e783de851c651777b42acad863f",
+          "passedTestInstances": 6,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/profile",
+          "sha256": "12e182cbe2e60a11a8c0f32cdab029164c87b4f047480194ad2c95fa31179911",
+          "logSHA256": "900b64d73d43fd200efd0f6db5b893000632c67a132cf0874e2afa39ef512532",
+          "passedTestInstances": 41,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/uiaccess",
+          "sha256": "cf219157e3b48871da0e3b673f751acbb867b4ff23f824d1820e6a07f2ce7fc1",
+          "logSHA256": "449d126dc23a5e60d752ddc67d6af2dcc1539d4427eaef350e191de75b035ac5",
+          "passedTestInstances": 3,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/workflow",
+          "sha256": "51009167e6cd0fa9d44d4e9de6903393dd12033880745feb81998c160165fbbc",
+          "logSHA256": "9ba4fa744c33378390504fd188eb555e5770698dbe50fca0ae88d242275caf76",
+          "passedTestInstances": 69,
+          "skippedTestInstances": 0
+        }
+      ],
+      "backupChecks": {
+        "encryptedBackupCreated": true,
+        "archiveAuthenticated": true,
+        "restoredProfileMatched": true,
+        "wrongPassphraseRejected": true,
+        "backupNoPlaintext": true,
+        "offlineOnly": true,
+        "settingsChanged": false,
+        "productionQualificationComplete": false
+      },
+      "archiveReceiptAndRuntimeVerified": true,
+      "exactTrackedPackageCoverageVerified": true,
+      "ownedCleanupVerified": true,
+      "cpuEmulated": true,
+      "fullPlatformQualificationComplete": false
+    },
+    {
+      "target": "freebsd/arm64",
+      "guestIdentity": {
+        "OS": "FreeBSD",
+        "release": "15.1-RELEASE",
+        "machine": "arm64",
+        "uid": 1001,
+        "user": "awtest"
+      },
+      "packages": [
+        {
+          "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+          "sha256": "b870290b3d5f41058161cf007a7ffdeb6c6f5604f42f766408caa97ab0f1911c",
+          "logSHA256": "5f03cc6b1a66f900dd749a62acf0100a693225a81e2bccbb34cd1bced84c7844",
+          "passedTestInstances": 22,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/api",
+          "sha256": "8be2aa545b72e65817d23dd6ff546bb9d6cf3e55150990c8058a01c69e5318c7",
+          "logSHA256": "5709626c76c8fe0535cc205129be4d74b6a277f7ed7cc500e4a9dfe7ac519cc2",
+          "passedTestInstances": 41,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/backup",
+          "sha256": "484cef1b19bfa150af9d186a79d3c62a469117b99d43a747ca0bed499904f5e7",
+          "logSHA256": "beff57aa47260ae3b99acda1d250578b5e3f1bf3596b3f77863833d89c688b10",
+          "passedTestInstances": 3,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/buildinfo",
+          "sha256": "1f6b47b15d199d6e2d94a68c9ae1fc81eab181b9f5d31c5b9cd2c9a1daee63a8",
+          "logSHA256": "89bd3e83bfd4f23991bcf87d50324025c054f1bfb94aee4d8fa62dff73190abe",
+          "passedTestInstances": 1,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/diagnostics",
+          "sha256": "ee8f8a5239b8456baf443c47035aabc00325922d60dad22774cc299a8ebb6819",
+          "logSHA256": "f5fdf62581eb5926fe5c2c3f0c62d50073d4f5407f74a3990da862fd3f4dc576",
+          "passedTestInstances": 34,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/engine",
+          "sha256": "e7c15a84361937f044dd6fe24e10104a2ee44d24b033302834e5bc27fcfea49f",
+          "logSHA256": "1334375730f96e372c4f736b3837ef5e8308cb90f855134a0ee335d1f18cb656",
+          "passedTestInstances": 30,
+          "skippedTestInstances": 2
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/filelock",
+          "sha256": "344b6af3c95dbb24a39e0f9588c611205ca2c4f3d3a0dbb3854b80928033be9b",
+          "logSHA256": "1ae531bd08ba7498c70db8f90281c78dd3fec8a466552f14b449368a74012ed6",
+          "passedTestInstances": 7,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/logfile",
+          "sha256": "a9007f9aa448459fd4691014cd534a6c8b2957a2ecaa30966637328b92a4213c",
+          "logSHA256": "dd2a94545ae359717b4b6811ac2cfa3017b0d19ff1cc89fafa1853cf7a0e4ac7",
+          "passedTestInstances": 8,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/managed",
+          "sha256": "db47424f414cf41998e6c4e40c4c10529d01869cd6b8762f6480b06ef2c8e2d2",
+          "logSHA256": "f7654f7a53579f0fb6e2113f3d4c42aa91843e1fbe175acd2e578bcb315460d4",
+          "passedTestInstances": 125,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/nativeargs",
+          "sha256": "40f4ccc30cf3acd2a292244bb19aa9e55eed13f4590357f1f5fa06bf0af23457",
+          "logSHA256": "89200092f884164fc4cabdd37de3949cc02912dc1b5c0dc2263bbc9eba696df5",
+          "passedTestInstances": 2,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/nativepath",
+          "sha256": "b7ee90db76d7561431997401de7c5fb7865c83e8a6ea0f31731dbd719f1f6550",
+          "logSHA256": "10b883fbe8a191977c123eace096947257a1f8d48e7b3c9138553531bd6837e0",
+          "passedTestInstances": 2,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/nativeprocess",
+          "sha256": "578ce80a61b6b3cae7946aaa2a6e67bbd67b5dcd81b51d57ea5ed045fb5e99fe",
+          "logSHA256": "7eb6245f7d649598d17710557514b97ce623e3be82a6b68a68b029c2c0ad911c",
+          "passedTestInstances": 6,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/profile",
+          "sha256": "9a1044360f84846bcbbdfd7cd8797f917e4cdf5735a20936c269c02da6d9527c",
+          "logSHA256": "01547b6e02782f6f5cdf7fa26d83e5aa3ce38984cfd362f9edee09b3608e7786",
+          "passedTestInstances": 41,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/uiaccess",
+          "sha256": "eb02365c918f00ac7e72197d8e02a1694613c5cd824c62b3d00fa5c1937b0d02",
+          "logSHA256": "449d126dc23a5e60d752ddc67d6af2dcc1539d4427eaef350e191de75b035ac5",
+          "passedTestInstances": 3,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/workflow",
+          "sha256": "d3b988c14dfbc75074e1ade5bd2eccdd7da1c23e3f235e85473f251fa535309b",
+          "logSHA256": "7acacfb33b26079583a44a1e32236f4f73f2a86a56d85d5236938af0d071e581",
+          "passedTestInstances": 69,
+          "skippedTestInstances": 0
+        }
+      ],
+      "backupChecks": {
+        "encryptedBackupCreated": true,
+        "archiveAuthenticated": true,
+        "restoredProfileMatched": true,
+        "wrongPassphraseRejected": true,
+        "backupNoPlaintext": true,
+        "offlineOnly": true,
+        "settingsChanged": false,
+        "productionQualificationComplete": false
+      },
+      "archiveReceiptAndRuntimeVerified": true,
+      "exactTrackedPackageCoverageVerified": true,
+      "ownedCleanupVerified": true,
+      "cpuEmulated": true,
+      "fullPlatformQualificationComplete": false
+    },
+    {
+      "target": "openbsd/amd64",
+      "guestIdentity": {
+        "OS": "OpenBSD",
+        "release": "8.0",
+        "machine": "amd64",
+        "uid": 1000,
+        "user": "awtest"
+      },
+      "packages": [
+        {
+          "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+          "sha256": "4c8da7d44550f2f91250bc8cf778303941ffcf5b9a1182926e12c3d9b7fe1d43",
+          "logSHA256": "20659876aa4b2ffba03b61860f169d7a1af5078ec6cd14305e6f8160d3c54ce7",
+          "passedTestInstances": 22,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/api",
+          "sha256": "7b3a1d7ecfdf441e1875b728fede958c94545c1b4538768575ceb7bb16977cd1",
+          "logSHA256": "6cde9c42313fb665bf74649cce2307b47651cca691ca112d2b5863f16cca70be",
+          "passedTestInstances": 41,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/backup",
+          "sha256": "89e0d753d0f16d0d715fbde5fb5c5a25248413acdf12f35f76a4fbf95859e814",
+          "logSHA256": "9476237af874c2dede26197a8b0c3b07926f0583d3ad8f3b693455a423d6257f",
+          "passedTestInstances": 3,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/buildinfo",
+          "sha256": "c8d57f4d1845477ecfd52f2f100169f99645c09d8fb6ca8fd368aac2cd484178",
+          "logSHA256": "89bd3e83bfd4f23991bcf87d50324025c054f1bfb94aee4d8fa62dff73190abe",
+          "passedTestInstances": 1,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/diagnostics",
+          "sha256": "ca32f07dda3cdfdca42500b519e16037cf89816fea6c7531eabe7350516445a0",
+          "logSHA256": "c7293aee3e6ed52ccf32ed792ce3de7e14aa65ad5945d8fd8902ad4dc747cda7",
+          "passedTestInstances": 34,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/engine",
+          "sha256": "9a4604bc6ef7041f1cdcb47064bb5f865a4075cc2676c7a7c144af16b233fc9f",
+          "logSHA256": "4722bf1f0b9fa21d4562d27975f8eee4d465c4147c63d9705148c0364f689c4a",
+          "passedTestInstances": 30,
+          "skippedTestInstances": 2
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/filelock",
+          "sha256": "60d4f89c532dc9b93e657bf58e3b0dd8fef4b3007ced4c99a619bcf212f1d616",
+          "logSHA256": "065a45baa6f1fab4b1a79220f1fc801b1fab1216176e5af9400e3acd9ba1d40b",
+          "passedTestInstances": 7,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/logfile",
+          "sha256": "95d81cb5c9c792817255fc1230beffc0b62175c69df2fc0bd8241df680753847",
+          "logSHA256": "472dace4235ccb5845beafd16ab8717165ddfbeb3ad454ffaacf7999f92ea5ab",
+          "passedTestInstances": 8,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/managed",
+          "sha256": "436f53728defe4b5e3b7db6cd03daa09eae49fb4e5971c108931e89c46740987",
+          "logSHA256": "cb87b1a12f847f120bc6fdd569f1ae8e85eef147b73943996b0750702c514b0e",
+          "passedTestInstances": 125,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/nativeargs",
+          "sha256": "6e98409d3cffd7c2f5e2cf652dc6232f5c8b924e87eecae10a440893008e2a59",
+          "logSHA256": "89200092f884164fc4cabdd37de3949cc02912dc1b5c0dc2263bbc9eba696df5",
+          "passedTestInstances": 2,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/nativepath",
+          "sha256": "c9ca43bdd5c55524e8242e3a9f031cafde31a6a9cb26260e02246199ea72928f",
+          "logSHA256": "10b883fbe8a191977c123eace096947257a1f8d48e7b3c9138553531bd6837e0",
+          "passedTestInstances": 2,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/nativeprocess",
+          "sha256": "1583af9223578f1de14e70c2f2e489666154cf293ebba28ffaae240362660bc8",
+          "logSHA256": "561fa825538e8193bcd125fc4c4491e758088194e1af9b285a99ee59d6808820",
+          "passedTestInstances": 6,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/profile",
+          "sha256": "d30c76df11e16666fc713f6a26fe824958db6d0d418654f6fdd5eb12f0eac938",
+          "logSHA256": "6022b1cb7faae6f4c79d8ad8b48a2e26864035570d2431348bcc664639f29f4d",
+          "passedTestInstances": 41,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/uiaccess",
+          "sha256": "9c4e8633306cf93274a7ae8cb5bd9dae7b4a9fbbd3deb65ff912281d82845d34",
+          "logSHA256": "c746f1c49b5297c08bc60ec63abea7385419b3a2b302e8f5c078783e5183720e",
+          "passedTestInstances": 3,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/workflow",
+          "sha256": "be7274c93b4821771a6c6db677055817a920642b1d1da22e27a45b2aa3b485c0",
+          "logSHA256": "fbefd5e41e4d38abd32d1deec3116e3e392a8bd100d5e0f515cf04ff65256c1e",
+          "passedTestInstances": 69,
+          "skippedTestInstances": 0
+        }
+      ],
+      "backupChecks": {
+        "encryptedBackupCreated": true,
+        "archiveAuthenticated": true,
+        "restoredProfileMatched": true,
+        "wrongPassphraseRejected": true,
+        "backupNoPlaintext": true,
+        "offlineOnly": true,
+        "settingsChanged": false,
+        "productionQualificationComplete": false
+      },
+      "archiveReceiptAndRuntimeVerified": true,
+      "exactTrackedPackageCoverageVerified": true,
+      "ownedCleanupVerified": true,
+      "cpuEmulated": true,
+      "fullPlatformQualificationComplete": false
+    },
+    {
+      "target": "openbsd/arm64",
+      "guestIdentity": {
+        "OS": "OpenBSD",
+        "release": "8.0",
+        "machine": "arm64",
+        "uid": 1000,
+        "user": "awtest"
+      },
+      "packages": [
+        {
+          "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+          "sha256": "9e65761d058596ae316872fce53ee37c492f9f9202cb7ea763174c7bd7591977",
+          "logSHA256": "58d38af0d5b0f7546b2c92e66ef461beff285c60933e76eb5136aa51cd25b688",
+          "passedTestInstances": 22,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/api",
+          "sha256": "6b5af8270c96ecadc27cd35ff5fd345de629a5c83578045ebd11dcd2c0a916ec",
+          "logSHA256": "7632063497bc9578da8353feb0c85a535008a208a0c10652f6f58f75bda0bf72",
+          "passedTestInstances": 41,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/backup",
+          "sha256": "0318f30f4f7fe15f6e9ed38d5063fc7155ec10d621dbdb8fb87395b35a9c62b8",
+          "logSHA256": "9c9c745e63b4a1554a389835bf5fba02e6d30bec2952abebd2db18943c6f8a8c",
+          "passedTestInstances": 3,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/buildinfo",
+          "sha256": "aa48a8b9f94d798a3587b5ba0665e3c1a904e3bfaefe7ddcbf26a3d64dc35c07",
+          "logSHA256": "6d1de883465d67abc6adee7d2c5c293f8b23beddd1922d12bd4375e5ab0c94fe",
+          "passedTestInstances": 1,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/diagnostics",
+          "sha256": "f668d1a136f3d4c4e8a483753a15440e41bcd47b06e5de3fb3938fdc47f01b9a",
+          "logSHA256": "e53956631aa59fa1fea8d7fc2ffbacde2bb15ae08de75a3d033a9fd3f5200917",
+          "passedTestInstances": 34,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/engine",
+          "sha256": "eaff2af42ac45219feb18e6f08a17bf262ff9d4deace34f9b5e8b4acffa92a0d",
+          "logSHA256": "de62f9332ec100f79419c39f2c8f744f6db4d1afb891229ef1438ca6004bb71c",
+          "passedTestInstances": 30,
+          "skippedTestInstances": 2
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/filelock",
+          "sha256": "8e020286f3f7c628eb9bb2d5b177151956fb802dd06dd575f2f8eb299109a929",
+          "logSHA256": "2e5f4eb702a7133f864a8cf8ed1e0c83bd50fbd197b907075c9e5f2d95a4e78a",
+          "passedTestInstances": 7,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/logfile",
+          "sha256": "9de0dae3286a53e2d4a329e3871203d64de133e0263cacda3b86fdebfe58a246",
+          "logSHA256": "eddbfa46dcdae63b26471ad2e79f249669c5e31b621ace21da7a09b77a33fd53",
+          "passedTestInstances": 8,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/managed",
+          "sha256": "76cc2ec43d751d1c060780a5dc353a4723f9db5a483881b97e1c1a3ffc5d1ef3",
+          "logSHA256": "29b72466b4cff7686c68d6735900533432eb6ca655499db3eba18260f7315e1b",
+          "passedTestInstances": 125,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/nativeargs",
+          "sha256": "b42fd78bd6827d8c3c33e046ce40e40faf2ac4ffdd3b7ad5c535a1a772168e4d",
+          "logSHA256": "89200092f884164fc4cabdd37de3949cc02912dc1b5c0dc2263bbc9eba696df5",
+          "passedTestInstances": 2,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/nativepath",
+          "sha256": "85e86f8d1cda38190060e1009018ccc7b4ca997c87ae48075c11971074f95ecb",
+          "logSHA256": "10b883fbe8a191977c123eace096947257a1f8d48e7b3c9138553531bd6837e0",
+          "passedTestInstances": 2,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/nativeprocess",
+          "sha256": "0777d65cbc3e264789a5cbc1424bc970e4feeb246c9d8468ff8be0cf003c339a",
+          "logSHA256": "1039331811d512ec6d87f25f45957d430ecb4e76e0a8bb4ea603729a3f00a6e1",
+          "passedTestInstances": 6,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/profile",
+          "sha256": "ad489a63374394afe619782016b39297378067fbb7407f10d2449fa87e7b8e9b",
+          "logSHA256": "f18bc8b094cfed58f0647cf585accdb1d2a4c20d5afa582cf0689ab62d45254e",
+          "passedTestInstances": 41,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/uiaccess",
+          "sha256": "1d85eb81306d6708e1c3beff46717822bdab9298762edb0d97ada88b9cef6394",
+          "logSHA256": "c746f1c49b5297c08bc60ec63abea7385419b3a2b302e8f5c078783e5183720e",
+          "passedTestInstances": 3,
+          "skippedTestInstances": 0
+        },
+        {
+          "package": "github.com/Yunushan/accessweaver/internal/workflow",
+          "sha256": "8ac8ffd394034b8e955309feb92f9769cf1427a46c3cf733edc747e406824970",
+          "logSHA256": "48bcde9c91086c4dcecf592ee777448138306fcd81079d954a2801ac12f1756e",
+          "passedTestInstances": 69,
+          "skippedTestInstances": 0
+        }
+      ],
+      "backupChecks": {
+        "encryptedBackupCreated": true,
+        "archiveAuthenticated": true,
+        "restoredProfileMatched": true,
+        "wrongPassphraseRejected": true,
+        "backupNoPlaintext": true,
+        "offlineOnly": true,
+        "settingsChanged": false,
+        "productionQualificationComplete": false
+      },
+      "archiveReceiptAndRuntimeVerified": true,
+      "exactTrackedPackageCoverageVerified": true,
+      "ownedCleanupVerified": true,
+      "cpuEmulated": true,
+      "fullPlatformQualificationComplete": false
+    }
+  ],
+  "independentRebuildPerformed": false,
+  "readinessGatesPromoted": 0,
+  "publisherSigningComplete": false,
+  "hardwareQualificationComplete": false,
+  "vendorRoutingQualificationComplete": false,
+  "installerLifecycleQualificationComplete": false,
+  "managedDeploymentQualificationComplete": false,
+  "productionQualificationComplete": false
+}

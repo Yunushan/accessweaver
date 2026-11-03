@@ -70,6 +70,21 @@ function Expand-PinnedZip([string]$archive,[string]$destination){
         }
     } finally {$zip.Dispose()}
 }
+function Public-VendorFailureMessages([string]$text){
+    $identity=[Security.Principal.WindowsIdentity]::GetCurrent().Name;$machine=[Environment]::MachineName
+    $messages=@()
+    foreach($line in ($text -split '\r?\n')){
+        if($line -notmatch '(?i)exception|error|failed|could not|unable|invalid|not found|unknown|terminated'){continue}
+        $safe=$line.Replace($identity,'<account>').Replace($machine,'<machine>')
+        $safe=$safe -replace '(?i)[A-Z]:[\\/].*$','<path>' -replace '\\\\.*$','<path>'
+        $safe=$safe -replace '(?i)\b(token|secret|password|credential|account|key)\b.*$','<redacted>'
+        $safe=$safe -replace '[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}','<id>'
+        $safe=($safe -replace '[^\x20-\x7e]',' ').Trim()
+        if($safe.Length -gt 160){$safe=$safe.Substring(0,160)}
+        if($safe){$messages+=,$safe};if($messages.Count -ge 4){break}
+    }
+    return $messages
+}
 function Service-Snapshot {
     $inspection=Get-ServiceInspection;Require ($null -eq $inspection.error) 'Relevant service inspection is incomplete'
     return (ConvertTo-Json -InputObject @($inspection.services | Sort-Object name) -Depth 4 -Compress)
@@ -120,6 +135,7 @@ try {
         $startupDiagnostic.outputTags=@(foreach($tag in @('FileNotFoundException','BadImageFormatException','UnauthorizedAccessException','ArgumentNullException','TypeInitializationException','TypeLoadException','Win32Exception','NDISRD','NLog','Topshelf','ProxiFyre.Configuration')){if(($result.stdout+$result.stderr).Contains($tag)){$tag}})
         $startupDiagnostic.mixedModeDependencyMarker=(($result.stdout+$result.stderr) -match 'socksify|Socksifier|mixed.mode')
         $startupDiagnostic.configurationDependencyMarker=(($result.stdout+$result.stderr) -match 'ProxiFyre[.]Configuration')
+        if($result.exitCode -ne 0){$startupDiagnostic.sanitizedFailureMessages=@(Public-VendorFailureMessages ($result.stdout+[Environment]::NewLine+$result.stderr))}
         if($result.stderr -match 'could not establish its secure native dependency loading policy'){$startupDiagnostic.loaderFailureClass='native-loader-policy'}
         elseif(($result.stdout+$result.stderr) -match 'Could not load file or assembly|FileNotFoundException|BadImageFormatException'){$startupDiagnostic.loaderFailureClass='assembly-load'}
         elseif(($result.stdout+$result.stderr) -match 'You must install|framework.*not found|MSVCP|VCRUNTIME'){$startupDiagnostic.loaderFailureClass='runtime-missing'}
