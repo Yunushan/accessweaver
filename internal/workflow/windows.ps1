@@ -3,6 +3,10 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::WriteLine('Workflow phase: initialize')
 if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-initialize {0}' -f $script:workflowClock.ElapsedMilliseconds))}
+# Import the required JSON cmdlets from this stock shell's module directory.
+# Avoid command discovery across unrelated modules on each fresh workflow process.
+Import-Module -Name ([IO.Path]::Combine($PSHOME,'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1')) -ErrorAction Stop
+if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-utility-ready {0}' -f $script:workflowClock.ElapsedMilliseconds))}
 $inputData = Get-Content -LiteralPath $RequestPath -Raw | ConvertFrom-Json
 $r = $inputData.request
 if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-request-decoded {0}' -f $script:workflowClock.ElapsedMilliseconds))}
