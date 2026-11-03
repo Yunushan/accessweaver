@@ -1,0 +1,338 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "d5bbd8a58d31d69153e31342dd0df68ef28e8926",
+  "sourceRef": "refs/heads/main",
+  "scope": "Corrected root/legacy receipt refusal acceptance and complete existing unsigned native legacy fixture lifecycle on Intel/Apple Silicon. No single product installation or full desktop qualification.",
+  "nativeRun": {
+    "id": 41718813994,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41718813994",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 126205806378,
+        "name": "Native package acceptance (arm64)",
+        "conclusion": "success",
+        "html_url": "https://github.com/Yunushan/accessweaver/actions/runs/41718813994/job/126205806378"
+      },
+      {
+        "id": 126205806905,
+        "name": "Native package acceptance (amd64)",
+        "conclusion": "success",
+        "html_url": "https://github.com/Yunushan/accessweaver/actions/runs/41718813994/job/126205806905"
+      }
+    ]
+  },
+  "ciAtCapture": {
+    "id": 41718813964,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41718813964",
+    "status": "queued",
+    "conclusion": null,
+    "successfulJobs": 21,
+    "allJobsSuccessful": false,
+    "unfinishedJobs": [
+      {
+        "id": 126205807280,
+        "name": "Test (macos-latest)",
+        "status": "queued",
+        "conclusion": null,
+        "html_url": "https://github.com/Yunushan/accessweaver/actions/runs/41718813964/job/126205807280"
+      }
+    ]
+  },
+  "providerArtifacts": [
+    {
+      "id": 13272410493,
+      "name": "macos-installer-inspection-arm64",
+      "size_in_bytes": 6807045,
+      "digest": "sha256:42c41d848d6b7b24989371610c55225a5621358fc9d99216be3453a168f79f91",
+      "created_at": "2026-11-03T21:14:07Z",
+      "expires_at": "2026-11-17T21:14:06Z"
+    },
+    {
+      "id": 13271870380,
+      "name": "macos-installer-inspection-amd64",
+      "size_in_bytes": 7271483,
+      "digest": "sha256:1d64828d67edc35b55a93cbcdc672be14b5c0ff23f2b54b7e9f6c0ea39f1b77d",
+      "created_at": "2026-11-03T21:10:28Z",
+      "expires_at": "2026-11-17T21:10:25Z"
+    }
+  ],
+  "independentVerificationTool": {
+    "name": "GitHub CLI",
+    "version": "gh version 2.102.0 (2026-09-30)",
+    "sha256": "756724853cc579510b58e65e7a7429ad6b1af29cf99ef19b3a95f3b701c5c580",
+    "authenticodeStatus": "Valid",
+    "publisher": "CN=\"GitHub, Inc.\", O=\"GitHub, Inc.\", L=San Francisco, S=California, C=US",
+    "candidateExecutablesRun": false
+  },
+  "independentProvenance": [
+    {
+      "schemaVersion": 1,
+      "repository": "Yunushan/accessweaver",
+      "workflow": "Yunushan/accessweaver/.github/workflows/macos-installer.yml",
+      "sourceCommit": "d5bbd8a58d31d69153e31342dd0df68ef28e8926",
+      "sourceRef": "refs/heads/main",
+      "target": "darwin/amd64",
+      "subjectsVerified": 7,
+      "hostedRunnerRequired": true,
+      "authenticatedBeforeParsing": true,
+      "subjects": [
+        {
+          "file": "BUILD-INFO.json",
+          "sha256": "9b4fb3a08c6d13564d26d10685bc99bb626946bb5f4629ef8bbc83cf8b25ce9a"
+        },
+        {
+          "file": "INSTALL-MANIFEST.json",
+          "sha256": "cfe66cec4e506b92620339787da5fc1b7afc9ba0bc33e6eb3c41d2981d2570fe"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg",
+          "sha256": "a82fd8671ab02f509c9f233cbd9626574118e000f23b77565a9b813998d23f80"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg.cdx.json",
+          "sha256": "05cfebb196c77ca54ead0b372f053ae47ddff1c987747d28d9226b7a2faac632"
+        },
+        {
+          "file": "compiler-artifact.json",
+          "sha256": "17a4714d1c4e085a3f6a3abf5ff29ed9601330701251a1e5980fbd6265fe86bd"
+        },
+        {
+          "file": "lifecycle-artifact.json",
+          "sha256": "fd54393bc2de11dae2e97129899d78ae0633e214094ad66942d9f7d132b05f50"
+        },
+        {
+          "file": "payload-SBOM.cdx.json",
+          "sha256": "304820a804a4a866b6248bfbe7055def61b623153c51bdc39fb6ce178e1103d5"
+        }
+      ],
+      "package": {
+        "packageSHA256": "a82fd8671ab02f509c9f233cbd9626574118e000f23b77565a9b813998d23f80",
+        "payloadSHA256": "3dc75373447e3e79db05d8a162eb0eca2a7a8ca45d7c2ccaceb98786a857a343",
+        "macho": {
+          "cpuType": "0x01000007",
+          "minimumOSVersion": "13.0.0"
+        },
+        "isolatedRefusalCases": 8,
+        "nativeInstallationOperations": 3
+      },
+      "publisherSignatureVerified": false,
+      "notarized": false,
+      "productionQualificationComplete": false,
+      "localTargetExecution": false,
+      "rejectionChecks": {
+        "rejected": [
+          "--source-digest",
+          "--source-ref",
+          "--signer-workflow",
+          "--repo",
+          "changed-subject-digest"
+        ],
+        "realBundleVerifiedBeforeAndAfter": true
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "repository": "Yunushan/accessweaver",
+      "workflow": "Yunushan/accessweaver/.github/workflows/macos-installer.yml",
+      "sourceCommit": "d5bbd8a58d31d69153e31342dd0df68ef28e8926",
+      "sourceRef": "refs/heads/main",
+      "target": "darwin/arm64",
+      "subjectsVerified": 7,
+      "hostedRunnerRequired": true,
+      "authenticatedBeforeParsing": true,
+      "subjects": [
+        {
+          "file": "BUILD-INFO.json",
+          "sha256": "8d58c6c4b87ccdbdc5ae2621710d4f669ab946e741c04792d51d3af9f7386f58"
+        },
+        {
+          "file": "INSTALL-MANIFEST.json",
+          "sha256": "051739d781dd3b12a72703a705e7b5e3824815c09a5bf3290f2bfcf9e963b06f"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg",
+          "sha256": "0df9856eb378208b4e7f668ac79853140145fe66fbc7252d8d064b7d43272152"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg.cdx.json",
+          "sha256": "e5952cfe0d0b4ebdb5410605dc87a160494bca014acb6f247bb5c20ce3cb065b"
+        },
+        {
+          "file": "compiler-artifact.json",
+          "sha256": "5a5906e02ad6070edffc651f4787c83f4027a9b908e98e1ee828ffe489bc324a"
+        },
+        {
+          "file": "lifecycle-artifact.json",
+          "sha256": "927d0660df75ea5f4f75ed69296170a821702e60dbf39a7d5add913857078338"
+        },
+        {
+          "file": "payload-SBOM.cdx.json",
+          "sha256": "d2db331edd5c68f7300cc38981927c2817125c6174bebd6159c72586c44b3401"
+        }
+      ],
+      "package": {
+        "packageSHA256": "0df9856eb378208b4e7f668ac79853140145fe66fbc7252d8d064b7d43272152",
+        "payloadSHA256": "6e7a760effb493d8d74d961cfe316a7f1829ba8c03125fa8ee6776d4a7a572db",
+        "macho": {
+          "cpuType": "0x0100000c",
+          "minimumOSVersion": "13.0.0"
+        },
+        "isolatedRefusalCases": 8,
+        "nativeInstallationOperations": 3
+      },
+      "publisherSignatureVerified": false,
+      "notarized": false,
+      "productionQualificationComplete": false,
+      "localTargetExecution": false,
+      "rejectionChecks": {
+        "rejected": [
+          "--source-digest",
+          "--source-ref",
+          "--signer-workflow",
+          "--repo",
+          "changed-subject-digest"
+        ],
+        "realBundleVerifiedBeforeAndAfter": true
+      }
+    }
+  ],
+  "nativeLifecycle": [
+    {
+      "target": "darwin/amd64",
+      "stage": "owned-fixture-cleanup",
+      "nativeInstallerOperations": [
+        {
+          "operation": "clean-install",
+          "exitCode": 0,
+          "elapsedMilliseconds": 2440,
+          "payloadAndReceiptsVerified": true
+        },
+        {
+          "operation": "existing-install-refused",
+          "exitCode": 1,
+          "elapsedMilliseconds": 1543,
+          "installedFilesAndReceiptBytesPreserved": true,
+          "actualUserProfilePreserved": true
+        },
+        {
+          "operation": "valid-receipt-only-refused",
+          "exitCode": 1,
+          "elapsedMilliseconds": 1401,
+          "receiptBytesPreserved": true,
+          "appNotRecreated": true,
+          "actualUserProfilePreserved": true
+        }
+      ],
+      "isolatedRefusalCases": 8,
+      "upgradePreflightCases": 11,
+      "fixedHelperCases": 19,
+      "rootAndLegacyRefusalsPreservedAbsentAuthority": true,
+      "fixedHelperSHA256": "f73f099e7ceb57a649d593b3534c4bb222f3819c0afb7dd58517ce540c57b492",
+      "protectedTransactions": {
+        "completeCopyRecovered": true,
+        "concurrentPreparationFenced": true,
+        "copiedCodeExecuted": false,
+        "detachedManifestCompleteCopyRecovered": true,
+        "detachedManifestPartialCopyPreservedAndRefused": true,
+        "detachedPayloadSBOMManifestSHA256": "dfa2f6c34932a3a5287ffd022f6024c42616718562876599637367e461740ef2",
+        "detachedPayloadSBOMPartialCopyPreservedAndRefused": true,
+        "detachedPayloadSBOMSHA256": "304820a804a4a866b6248bfbe7055def61b623153c51bdc39fb6ce178e1103d5",
+        "finalGeneration": 4,
+        "fixedProtectedParentVerified": true,
+        "legacyToSchema2BridgeVerified": true,
+        "manifestSHA256": "cfe66cec4e506b92620339787da5fc1b7afc9ba0bc33e6eb3c41d2981d2570fe",
+        "oldCompleteSlotFencedAfterRemoval": true,
+        "partialCopyPreservedAndRefused": true,
+        "payloadIsIndependentCopy": true,
+        "payloadSHA256": "3dc75373447e3e79db05d8a162eb0eca2a7a8ca45d7c2ccaceb98786a857a343",
+        "postPublicationRemovalRecovered": true,
+        "productionQualificationComplete": false,
+        "restoredRetryVerified": true,
+        "schemaVersion": 1,
+        "version": "0.1.0-alpha",
+        "testExecutableSHA256": "14c2bc89148e9357fd5048cb80ea331dab7b4a7834b187ff20b500ce212907ed",
+        "elapsedMilliseconds": 5470,
+        "installedObjectsAndReceiptsPreserved": true,
+        "fixtureParent": "private-exclusive-temporary-directory",
+        "packageScriptsIntegrated": false
+      },
+      "userProfilePreserved": true,
+      "ownedFixturesRemoved": true,
+      "individualFixtureHelperBytesRetained": false
+    },
+    {
+      "target": "darwin/arm64",
+      "stage": "owned-fixture-cleanup",
+      "nativeInstallerOperations": [
+        {
+          "operation": "clean-install",
+          "exitCode": 0,
+          "elapsedMilliseconds": 1220,
+          "payloadAndReceiptsVerified": true
+        },
+        {
+          "operation": "existing-install-refused",
+          "exitCode": 1,
+          "elapsedMilliseconds": 1315,
+          "installedFilesAndReceiptBytesPreserved": true,
+          "actualUserProfilePreserved": true
+        },
+        {
+          "operation": "valid-receipt-only-refused",
+          "exitCode": 1,
+          "elapsedMilliseconds": 1303,
+          "receiptBytesPreserved": true,
+          "appNotRecreated": true,
+          "actualUserProfilePreserved": true
+        }
+      ],
+      "isolatedRefusalCases": 8,
+      "upgradePreflightCases": 11,
+      "fixedHelperCases": 19,
+      "rootAndLegacyRefusalsPreservedAbsentAuthority": true,
+      "fixedHelperSHA256": "91eee0b2e5930d18b3023a9cd1253af661a40f5efb2f264bcec4a0900a564b39",
+      "protectedTransactions": {
+        "completeCopyRecovered": true,
+        "concurrentPreparationFenced": true,
+        "copiedCodeExecuted": false,
+        "detachedManifestCompleteCopyRecovered": true,
+        "detachedManifestPartialCopyPreservedAndRefused": true,
+        "detachedPayloadSBOMManifestSHA256": "adde6fc0a01d2a16f284870b60b9c7a022952e98ba13c6b6f9e3aae8038b345b",
+        "detachedPayloadSBOMPartialCopyPreservedAndRefused": true,
+        "detachedPayloadSBOMSHA256": "d2db331edd5c68f7300cc38981927c2817125c6174bebd6159c72586c44b3401",
+        "finalGeneration": 4,
+        "fixedProtectedParentVerified": true,
+        "legacyToSchema2BridgeVerified": true,
+        "manifestSHA256": "051739d781dd3b12a72703a705e7b5e3824815c09a5bf3290f2bfcf9e963b06f",
+        "oldCompleteSlotFencedAfterRemoval": true,
+        "partialCopyPreservedAndRefused": true,
+        "payloadIsIndependentCopy": true,
+        "payloadSHA256": "6e7a760effb493d8d74d961cfe316a7f1829ba8c03125fa8ee6776d4a7a572db",
+        "postPublicationRemovalRecovered": true,
+        "productionQualificationComplete": false,
+        "restoredRetryVerified": true,
+        "schemaVersion": 1,
+        "version": "0.1.0-alpha",
+        "testExecutableSHA256": "b53362b33471c8f002201153df5ab8933a0af3b035130ecbffff1d0f8a28b3b1",
+        "elapsedMilliseconds": 783,
+        "installedObjectsAndReceiptsPreserved": true,
+        "fixtureParent": "private-exclusive-temporary-directory",
+        "packageScriptsIntegrated": false
+      },
+      "userProfilePreserved": true,
+      "ownedFixturesRemoved": true,
+      "individualFixtureHelperBytesRetained": false
+    }
+  ],
+  "changedHarnessSHA256": "5098a4d1af2d1f3e701b702a1bbc01ea043d4ee9be14d63baa1c8ef8d96ee39c",
+  "earlierFailureSource": "457dc00a3f279c9467fa3916fd7241a51f061fc6",
+  "earlierFailure": "Native AMD64 stopped at obsolete combined message assertion after protected transaction checks. The original failure remains retained and unqualified; this fresh-source run passed the exact root and legacy receipt refusal checks.",
+  "readinessGatesPromoted": 0,
+  "readinessGatesSHA256": "6aba24860c171a7a3931029589b0e04dac90ed4a6f22da3fc02bd058bf903b0e",
+  "publisherSignatureVerified": false,
+  "notarized": false,
+  "productUninstallQualified": false,
+  "singleProductLifecycleQualified": false,
+  "productionQualificationComplete": false
+}

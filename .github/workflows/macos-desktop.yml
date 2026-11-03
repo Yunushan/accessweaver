@@ -8,6 +8,7 @@ on:
       - scripts/*macos*desktop*
       - scripts/*macos*deployment*
       - scripts/*macos*launcher*
+      - scripts/*macos*product*
       - scripts/build-macos-installer.py
       - scripts/macos_installer.py
       - scripts/macos_package_archive.py
@@ -77,6 +78,8 @@ jobs:
           python3 scripts/build-macos-deployment.py --architecture '${{ matrix.arch }}' --version 0.1.1-alpha
           python3 scripts/build-macos-desktop.py --architecture '${{ matrix.arch }}' --version 0.1.0-alpha
           python3 scripts/build-macos-desktop.py --architecture '${{ matrix.arch }}' --version 0.1.1-alpha
+          python3 scripts/build-macos-product.py --architecture '${{ matrix.arch }}' --version 0.1.0-alpha
+          python3 scripts/build-macos-product.py --architecture '${{ matrix.arch }}' --version 0.1.1-alpha
       - name: Actual public components, LaunchServices, refusal, retry and owned cleanup
         env:
           ACCESSWEAVER_DISPOSABLE_MACOS_DESKTOP_PACKAGE_TEST: '1'
@@ -88,7 +91,7 @@ jobs:
         run: |
           mkdir -p "build/macos-desktop-provenance/$PACKAGE_ARCH"
           python3 scripts/verify_macos_desktop_provenance.py "build/macos-desktop-provenance/$PACKAGE_ARCH/candidate" --stage-build-root "build/macos-deployment-checks/$PACKAGE_ARCH" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --architecture "$PACKAGE_ARCH" --run-id "$GITHUB_RUN_ID"
-      - name: Attest all41 independently selected desktop subjects
+      - name: Attest all49 independently selected desktop subjects
         id: provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:

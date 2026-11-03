@@ -12,6 +12,7 @@ import zipfile
 from macos_installer import BUNDLE_NAME,MAX_BYTES,digest,require
 from macos_desktop import BINARY,component_name,record_name,validate_record,inspect_component,package_sbom
 from macos_launcher import archive_name,inspect_launcher
+from macos_product import component_inputs,product_name,product_members,inspect_product,product_sbom
 from macos_package_archive import flat_members,cpio,inflate
 from sbom import validate,prop_map
 from verify_macos_deployment_provenance import VERSIONS,subjects as core_subjects,validate_packages,copy_subject,check_rejections as shared_rejections
@@ -33,7 +34,10 @@ def subjects(arch):
             result[name]=Path("desktop")/version/name;result[name+".cdx.json"]=Path("desktop")/version/(name+".cdx.json")
         for original in ("BUILD-INFO.json","DESKTOP-RECORD.json","compiler-artifact.json","metadata-SCRIPT-MANIFEST.json","application-SCRIPT-MANIFEST.json","metadata-helper-SBOM.cdx.json","application-helper-SBOM.cdx.json"):
             result["desktop-"+version+"-"+original]=Path("desktop")/version/original
-    require(len(result)==41,"Desktop known subject extent changed")
+        name=product_name(version,arch)
+        result[name]=Path("product")/version/name;result[name+".cdx.json"]=Path("product")/version/(name+".cdx.json")
+        for original in ("DISTRIBUTION.xml","compiler-artifact.json"):result["product-"+version+"-"+original]=Path("product")/version/original
+    require(len(result)==49,"Desktop known subject extent changed")
     return result
 
 
@@ -91,7 +95,19 @@ def validate_contents(root,commit,arch):
                     path=evidence["path"];require(path in script_data and digest(script_data[path]["data"])==evidence["sha256"],"Desktop compiled component notice differs")
             if role=="application":require(digest(payload[BUNDLE_NAME+"/Contents/MacOS/"+BINARY]["data"])==launcher["binarySHA256"],"Actual public launcher and standalone archive differ")
             public_bindings[version][role]=digest(raw);inspections.append(inspected)
-        outputs.append({"version":version,"launcher":launcher,"components":inspections,"recordSHA256":digest(encoded)})
+        product=product_name(version,arch);product_raw=(root/product).read_bytes();product_report=read("product-"+version+"-compiler-artifact.json")
+        inputs=component_inputs(version,arch,encoded);input_packages={name:(root/name).read_bytes() for _,_,name in inputs}
+        product_inspection=inspect_product(product_raw,version,arch,inputs,input_packages)
+        require(product_report.get("schemaVersion")==1 and product_report.get("sourceCommit")==commit and product_report.get("build")==identity and product_report.get("productFile")==product and product_report.get("productBytes")==len(product_raw) and product_report.get("productSHA256")==digest(product_raw) and product_report.get("archiveInspection")==product_inspection,"Actual product construction differs")
+        require(product_report.get("componentInspections")==dict(core=cores[VERSIONS.index(version)],**{i["component"]:i for i in inspections}),"Product component construction differs")
+        require(all(product_report.get(k) is True for k in ("actualExpandedMemberBytesVerified","productGraphSchemaValidated","unsigned")),"Product construction incomplete")
+        require(all(product_report.get(k) is False for k in ("installationExecuted","singleProductLifecycleQualified","publisherSignatureVerified","notarized","productUninstallQualified","managedEndpointQualified","productionQualificationComplete")),"Unqualified product construction scope changed")
+        tool=product_report["productbuild"];core_tool=read(version+"-compiler-artifact.json")["pkgbuild"]
+        require(set(tool)=={"sha256","osVersion","osBuild"} and re.fullmatch("[a-f0-9]{64}",tool["sha256"]) is not None and all(tool[k]==core_tool[k] for k in ("osVersion","osBuild")),"Product builder observation differs")
+        require((root/("product-"+version+"-DISTRIBUTION.xml")).read_bytes()==product_members(product_raw,list(input_packages))["Distribution"],"Retained product distribution bytes differ")
+        input_graphs={role:read(name+".cdx.json") for role,_,name in inputs};product_graph=read(product+".cdx.json");validate(product_graph,product_raw,identity)
+        require(product_graph==product_sbom(product_raw,identity,inputs,input_packages,input_graphs,tool),"Product compiled/input/member graph differs")
+        outputs.append({"version":version,"launcher":launcher,"components":inspections,"recordSHA256":digest(encoded),"productArchiveConstruction":product_inspection})
     life=read("desktop-lifecycle-artifact.json")
     require(life.get("schemaVersion")==1 and life.get("sourceCommit")==commit and life.get("target")=="darwin/"+arch and life.get("stage")=="deactivation-and-owned-cleanup" and life.get("failureType") is None and life.get("failureSourceLine") is None and re.fullmatch("[1-9][0-9]{0,19}",str(life.get("runID",""))) is not None,"Desktop native lifecycle identity/completion differs")
     require(life.get("corePackageSHA256")=={v:b["packageSHA256"] for v,b in core_bindings.items()} and life.get("desktopRecordSHA256")==records and life.get("desktopPackageSHA256")==public_bindings,"Desktop native lifecycle is not bound to actual subjects")
@@ -111,7 +127,7 @@ def validate_contents(root,commit,arch):
         require(c.get("expectedCoreBuild")==expected_build and c.get("installationAndUserDataPreserved") is True and c.get("passed") is True and type(c.get("exitCode")) is int and (c["exitCode"]==0 if expected_build is not None else 1<=c["exitCode"]<=255) and type(c.get("elapsedMilliseconds")) is int and 0<=c["elapsedMilliseconds"]<=30000,"Public app selection/refusal differs")
     launched=life.get("launchServices",{});require(all(launched.get(k) is True for k in ("defaultNoArgumentLaunch","kernelImageAndOrdinaryOwnerVerified","dashboardHTTPVerified","privateProfileLockVerified","authenticatedSavedProfileVerified","installerRefusalWhileServingVerified","controllerRemainedRunning","cleanShutdownVerified","passed")) and type(launched.get("elapsedMilliseconds")) is int and 0<=launched["elapsedMilliseconds"]<=300000,"Actual LaunchServices controller acceptance incomplete")
     deactivated=life.get("deactivation",{});require(deactivated.get("generation")==3 and deactivated.get("state")=="inactive" and deactivated.get("operationRecordPublished") is True and deactivated.get("exitCode")==0 and type(deactivated.get("elapsedMilliseconds")) is int and 0<=deactivated["elapsedMilliseconds"]<=60000,"Public/core deactivation fence differs")
-    return {"lifecycleRunID":str(life["runID"]),"corePackages":cores,"desktop":outputs,"actualInstallerOperations":21,"actualCoreDeactivationOperations":1,"publicAppSelectionCases":5,"launchServicesDefaultControllerVerified":True,"finderInteractiveQualificationComplete":False,"singleProductDistributionQualified":False,"publisherSignatureVerified":False,"productionQualificationComplete":False}
+    return {"lifecycleRunID":str(life["runID"]),"corePackages":cores,"desktop":outputs,"actualInstallerOperations":21,"actualCoreDeactivationOperations":1,"publicAppSelectionCases":5,"launchServicesDefaultControllerVerified":True,"productArchiveConstructionVerified":True,"singleProductLifecycleQualified":False,"finderInteractiveQualificationComplete":False,"singleProductDistributionQualified":False,"publisherSignatureVerified":False,"productionQualificationComplete":False}
 
 
 def limit(name):return 64<<20 if name.endswith(".pkg") else 16<<20 if name.endswith(".zip") or name==PROVENANCE_BUNDLE else 8<<20
