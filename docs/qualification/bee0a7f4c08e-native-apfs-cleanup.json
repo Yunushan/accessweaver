@@ -1,0 +1,296 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "native-apfs-cleanup-after-accepted-detach",
+  "sourceCommit": "bee0a7f4c08e24340b1549b931d1ce5f4c3f514e",
+  "CI": {
+    "sourceCommit": "bee0a7f4c08e24340b1549b931d1ce5f4c3f514e",
+    "runID": 41736991356,
+    "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/41736991356",
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 126268621374,
+        "name": "Go vulnerability checks",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621629,
+        "name": "Test (macos-latest)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621654,
+        "name": "Test (macos-15-intel)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621716,
+        "name": "Cross-build (linux/arm64)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621739,
+        "name": "Test (windows-latest)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621746,
+        "name": "Test (ubuntu-latest)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621757,
+        "name": "Cross-build (windows/amd64)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621787,
+        "name": "Cross-build (freebsd/arm64)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621798,
+        "name": "Test (windows-11-arm)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621806,
+        "name": "Race detector (Linux)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621824,
+        "name": "Race detector (Linux/arm64)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621856,
+        "name": "Cross-build (freebsd/amd64)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621870,
+        "name": "browser / Real browser (firefox)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621876,
+        "name": "Cross-build (darwin/arm64)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621930,
+        "name": "Cross-build (darwin/amd64)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621969,
+        "name": "Cross-build (openbsd/amd64)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268621996,
+        "name": "Test (ubuntu-24.04-arm)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268622046,
+        "name": "Cross-build (windows/arm64)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268622075,
+        "name": "Cross-build (linux/amd64)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268622092,
+        "name": "browser / Real browser (chromium)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268622144,
+        "name": "Cross-build (openbsd/arm64)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 126268622361,
+        "name": "browser / Real browser (webkit)",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "targets": [
+    {
+      "schemaVersion": 1,
+      "sourceCommit": "bee0a7f4c08e24340b1549b931d1ce5f4c3f514e",
+      "target": "darwin/amd64",
+      "runID": 41736991356,
+      "jobID": 126268621654,
+      "nativeJobConclusion": "success",
+      "nativeStorageStepConclusion": "success",
+      "providerArtifact": {
+        "id": 13280146345,
+        "name": "darwin-storage-fault-check-amd64",
+        "bytes": 1837,
+        "digest": "sha256:1c90765560c7a4278ccfe4635be873209416916a98f121b2a3f62e8abf9ffdc8",
+        "providerDigestVerified": true,
+        "sigstoreQualified": false
+      },
+      "rawReportSHA256": {
+        "apfs-exhaustion-amd64.json": "c63a9daf629b7087e74c3477574bfdfdcc5b23fb548ecca005da1d1a483ca502",
+        "native-tools-amd64.json": "bae7fa7a8b45517d9f5f029a5132b81de1a60256393180a760867f3dd331bbe1",
+        "image-lifecycle-amd64.json": "07e9269f7687e4087a94b8a01940583e1530683e687d7ec7a2c227a9bde67a23"
+      },
+      "nativePressureCasesPassed": 8,
+      "normalDetachAttempts": 1,
+      "exactOwnedImageDetached": true,
+      "exactOwnedImageRemoved": true,
+      "cleanupFailed": false,
+      "rootMachinePolicyChanged": false,
+      "hostVolumePressureApplied": false,
+      "nativeTools": {
+        "schemaVersion": 1,
+        "sourceCommit": "bee0a7f4c08e24340b1549b931d1ce5f4c3f514e",
+        "arch": "amd64",
+        "sdk": {
+          "GOARCH": "amd64",
+          "GOHOSTARCH": "amd64",
+          "GOHOSTOS": "darwin",
+          "GOOS": "darwin",
+          "GOVERSION": "go1.27.3"
+        },
+        "nativeHelp": {
+          "create": {
+            "sha256": "60325e582f6721bb7b3482815ea50436e477983eee05f0d7a7d17683e3f0bdb9",
+            "bytes": 3611,
+            "statusCode": 0,
+            "basicHelpListsRequestedFlag": true
+          },
+          "attach": {
+            "sha256": "b05d957e3744182417a7f820e5ecbe2b9030d0d5b6883e701a96a5ea541b1cad",
+            "bytes": 1091,
+            "statusCode": 0,
+            "basicHelpListsRequestedFlag": false
+          }
+        },
+        "productionQualificationComplete": false
+      },
+      "asynchronousPostSuccessAssociationBranchObservedNatively": null,
+      "asynchronousBranchValidatedByRegressionTests": true,
+      "targetExecutedLocally": false,
+      "productionQualificationComplete": false
+    },
+    {
+      "schemaVersion": 1,
+      "sourceCommit": "bee0a7f4c08e24340b1549b931d1ce5f4c3f514e",
+      "target": "darwin/arm64",
+      "runID": 41736991356,
+      "jobID": 126268621629,
+      "nativeJobConclusion": "success",
+      "nativeStorageStepConclusion": "success",
+      "providerArtifact": {
+        "id": 13278494331,
+        "name": "darwin-storage-fault-check-arm64",
+        "bytes": 1836,
+        "digest": "sha256:a41c702bcae4fb3f6bacdcc6b6df2455db81c13078880c87d55f1f565f03b97d",
+        "providerDigestVerified": true,
+        "sigstoreQualified": false
+      },
+      "rawReportSHA256": {
+        "image-lifecycle-arm64.json": "5ec5bbd155cbd10a2323305757b95f70a25b6adaf1928dd881b5ca89fdde7002",
+        "native-tools-arm64.json": "f1ff48c1c3420fbdb86c5fca7e713889bda3ee558f367e5e4b24968f39eaa510",
+        "apfs-exhaustion-arm64.json": "50ef98d38f421a885269236856786d8332c34a48fa8af49d13aa23b4fd557622"
+      },
+      "nativePressureCasesPassed": 8,
+      "normalDetachAttempts": 1,
+      "exactOwnedImageDetached": true,
+      "exactOwnedImageRemoved": true,
+      "cleanupFailed": false,
+      "rootMachinePolicyChanged": false,
+      "hostVolumePressureApplied": false,
+      "nativeTools": {
+        "schemaVersion": 1,
+        "sourceCommit": "bee0a7f4c08e24340b1549b931d1ce5f4c3f514e",
+        "arch": "arm64",
+        "sdk": {
+          "GOARCH": "arm64",
+          "GOHOSTARCH": "arm64",
+          "GOHOSTOS": "darwin",
+          "GOOS": "darwin",
+          "GOVERSION": "go1.27.3"
+        },
+        "nativeHelp": {
+          "create": {
+            "sha256": "60325e582f6721bb7b3482815ea50436e477983eee05f0d7a7d17683e3f0bdb9",
+            "bytes": 3611,
+            "statusCode": 0,
+            "basicHelpListsRequestedFlag": true
+          },
+          "attach": {
+            "sha256": "b05d957e3744182417a7f820e5ecbe2b9030d0d5b6883e701a96a5ea541b1cad",
+            "bytes": 1091,
+            "statusCode": 0,
+            "basicHelpListsRequestedFlag": false
+          }
+        },
+        "productionQualificationComplete": false
+      },
+      "asynchronousPostSuccessAssociationBranchObservedNatively": null,
+      "asynchronousBranchValidatedByRegressionTests": true,
+      "targetExecutedLocally": false,
+      "productionQualificationComplete": false
+    }
+  ],
+  "totals": {
+    "successfulCIJobs": 22,
+    "nativeAPFSPressureCasesPassed": 16,
+    "exactOwnedImagesDetachedAndRemoved": 2,
+    "localStorageHarnessRegressionTests": 14
+  },
+  "productImplementation": {
+    "lastQualifiedSourceCommit": "695110bfd98f6255f8d1d984cebe9e22b0a4180a",
+    "evidenceFile": "695110bfd98f-macos-single-product-lifecycle.json",
+    "evidenceSHA256": "bc5674d319411f90d17e007c45d5a8a86d026af9b8d29f3886631fa61193b980",
+    "productionGoAndProductBuilderCodeChanged": false,
+    "changedFilesBetweenSources": [
+      "docs/TESTING.md",
+      "docs/qualification/695110bfd98f-macos-single-product-lifecycle.json",
+      "scripts/test-darwin-storage.py",
+      "scripts/test_darwin_storage.py"
+    ]
+  },
+  "qualificationScope": "Provider-bound native CI and actual owned APFS image lifecycle at the corrected harness source; artifacts are not Sigstore-qualified",
+  "limitations": [
+    "Native cleanup passed on both architectures. Deterministic regression tests cover transient stale association; these native reports do not record whether that branch occurred.",
+    "The preceding product-source cleanup failure remains recorded, with no retroactive change to its CI result.",
+    "This record does not qualify whole-product interruption, reboot or power-loss recovery, product uninstall, publisher signing/notarization, Finder interaction, managed endpoints or enterprise production readiness."
+  ],
+  "readinessGatesPromoted": 0,
+  "readinessGatesSHA256": "6aba24860c171a7a3931029589b0e04dac90ed4a6f22da3fc02bd058bf903b0e",
+  "targetExecutedLocally": false,
+  "productionQualificationComplete": false
+}
