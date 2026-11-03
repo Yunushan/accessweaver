@@ -61,6 +61,12 @@ function Initialize-Operation {
     }elseif($r.action -notin @('discover','updates','choose-folder')){Initialize-Changes}
 }
 function Quote-Arg([string]$text) { return '"'+[regex]::Replace([regex]::Replace($text,'(\\*)"','$1$1\"'),'(\\+)$','$1$1')+'"' }
+function Native-Argument([string]$text) {
+    # Some vendor CLIs parse the raw command line instead of the decoded argv.
+    # Keep simple verbs/switches bare; complex values retain literal escaping.
+    if($text -cmatch '\A[A-Za-z0-9_./:=\\-]+\z'){return $text}
+    return (Quote-Arg $text)
+}
 function New-ToolCapture([IO.StreamReader]$reader) {
     $buffer=[char[]]::new(4096)
     return @{reader=$reader;buffer=$buffer;text=[Text.StringBuilder]::new();done=$false;task=$reader.ReadAsync($buffer,0,$buffer.Length)}
@@ -123,7 +129,7 @@ function Stop-ToolTree([Diagnostics.Process]$process) {
 }
 function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600) {
     if($Timeout -lt 1 -or $Timeout -gt 86400){throw 'Tool timeout must be between 1 and 86400 seconds'}
-    $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$program;$start.Arguments=(@($arguments | ForEach-Object {Quote-Arg $_}) -join ' ')
+    $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$program;$start.Arguments=(@($arguments | ForEach-Object {Native-Argument $_}) -join ' ')
     $start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true;$start.RedirectStandardInput=$true
     $start.WorkingDirectory=Split-Path -Parent $program
     if (-not [IO.Path]::IsPathRooted($program)) {$start.WorkingDirectory=$root}

@@ -303,10 +303,12 @@ Assert (-not (Under (Join-Path $root '..\escape') $root)) 'Parent path escape re
 Assert (-not (Under ($root+'-sibling\file') $root)) 'Sibling prefix rejected'
 Assert ((Quote-Arg 'with spaces') -eq '"with spaces"') 'Windows argument quoting preserves spaces'
 Assert ((Quote-Arg '') -eq '""') 'Empty Windows argument preserved'
+foreach($value in @('help','run','--help','/Query','safe=value','trailing\')){Assert ((Native-Argument $value) -ceq $value) 'Simple native verbs and switches remain unquoted for raw-command-line CLIs'}
+foreach($value in @('with spaces','','quote"inside','literal&|<>^%!,;',('help'+[char]10),('non-ascii-'+[char]0x00e9))){Assert ((Native-Argument $value) -ceq (Quote-Arg $value)) 'Complex native argument values retain literal Windows escaping'}
 $node=(Get-Command node -ErrorAction Stop).Source
-$native=Native $node @('-e','process.stdout.write(JSON.stringify(process.argv.slice(1)))','with spaces','','trailing\','quote"inside')
+$native=Native $node @('-e','process.stdout.write(JSON.stringify(process.argv.slice(1)))','with spaces','','trailing\','quote"inside','help','--flag=value','literal&|<>^%!,;','hyphen-name')
 $nativeArgs=$native.stdout|ConvertFrom-Json
-Assert ($nativeArgs.Count -eq 4 -and $nativeArgs[0] -eq 'with spaces' -and $nativeArgs[1] -eq '' -and $nativeArgs[2] -eq 'trailing\' -and $nativeArgs[3] -eq 'quote"inside') 'Native processes receive literal Windows arguments without shell evaluation'
+Assert ($nativeArgs.Count -eq 8 -and $nativeArgs[0] -eq 'with spaces' -and $nativeArgs[1] -eq '' -and $nativeArgs[2] -eq 'trailing\' -and $nativeArgs[3] -eq 'quote"inside' -and $nativeArgs[4] -ceq 'help' -and $nativeArgs[5] -ceq '--flag=value' -and $nativeArgs[6] -ceq 'literal&|<>^%!,;' -and $nativeArgs[7] -ceq 'hyphen-name') 'Native processes receive literal Windows arguments without shell evaluation'
 Assert $native.outputComplete 'Ordinary native output reaches EOF'
 $clock=[Diagnostics.Stopwatch]::StartNew()
 [void](Native $node @('-e','require("child_process").spawn(process.execPath,["-e","setTimeout(()=>{},12000)"],{stdio:"inherit"});process.exit(0)'))

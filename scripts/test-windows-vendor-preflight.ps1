@@ -20,7 +20,7 @@ $selected=$pins.targets.$Architecture
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($workflow,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Workflow parse failed'}
-$functions=@('No-Reparse','Under','Quote-Arg','New-ToolCapture','Receive-ToolCapture','Wait-ToolCapture','Stop-ToolTreeWithHelper','Stop-ToolTree','Run-Tool','Native','Get-PEMachine','Component-ArchitecturePlan','Find-Source','Get-DriverServiceControllers','Get-ServiceInspection')
+$functions=@('No-Reparse','Under','Quote-Arg','Native-Argument','New-ToolCapture','Receive-ToolCapture','Wait-ToolCapture','Stop-ToolTreeWithHelper','Stop-ToolTree','Run-Tool','Native','Get-PEMachine','Component-ArchitecturePlan','Find-Source','Get-DriverServiceControllers','Get-ServiceInspection')
 foreach($name in $functions){
     $nodes=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Required workflow helper missing or duplicated'}
