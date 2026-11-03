@@ -75,14 +75,23 @@ function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[
     $start.WorkingDirectory=Split-Path -Parent $program
     if (-not [IO.Path]::IsPathRooted($program)) {$start.WorkingDirectory=$root}
     $p=[Diagnostics.Process]::new();$p.StartInfo=$start;$started=$false
+    # Fixed diagnostics only: never include the task output, arguments or path.
+    $traceTask=([IO.Path]::GetFileName($program) -ieq 'schtasks.exe')
+    $traceClock=[Diagnostics.Stopwatch]::StartNew()
+    function Trace-TaskQueryStage([ValidateSet('start','started','capture-ready','exited','timed-out','drained','cleanup','tree-helper-returned','disposed')][string]$Phase) {
+        if($traceTask){[Console]::WriteLine(('Task query timing ms: {0} {1}' -f $Phase,$traceClock.ElapsedMilliseconds))}
+    }
     try {
+        Trace-TaskQueryStage 'start'
         [void]$p.Start();$started=$true;$p.StandardInput.Close()
+        Trace-TaskQueryStage 'started'
         $stdout=New-ToolCapture $p.StandardOutput;$stderr=New-ToolCapture $p.StandardError
+        Trace-TaskQueryStage 'capture-ready'
         $clock=[Diagnostics.Stopwatch]::StartNew()
         while($true){
             Receive-ToolCapture $stdout;Receive-ToolCapture $stderr
-            if($p.HasExited){break}
-            if($clock.Elapsed.TotalSeconds -ge $Timeout){throw ('Timed out: '+[IO.Path]::GetFileName($program))}
+            if($p.HasExited){Trace-TaskQueryStage 'exited';break}
+            if($clock.Elapsed.TotalSeconds -ge $Timeout){Trace-TaskQueryStage 'timed-out';throw ('Timed out: '+[IO.Path]::GetFileName($program))}
             Wait-ToolCapture $stdout $stderr
         }
         # GUI children can inherit output handles. Drain for at most two seconds
@@ -92,6 +101,7 @@ function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[
             Receive-ToolCapture $stdout;Receive-ToolCapture $stderr
             if(-not ($stdout.done -and $stderr.done)){Wait-ToolCapture $stdout $stderr}
         }
+        Trace-TaskQueryStage 'drained'
         $out=$stdout.text.ToString();$errorText=$stderr.text.ToString()
         $complete=$stdout.done -and $stderr.done
         if (-not $Secret) {if ($out) {[Console]::WriteLine($out)};if($errorText){[Console]::WriteLine($errorText)}}
@@ -101,11 +111,13 @@ function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[
         return @{stdout=$out;stderr=$errorText;exitCode=$p.ExitCode;outputComplete=$complete}
     } finally {
         try {
+            Trace-TaskQueryStage 'cleanup'
             if($started -and -not $p.HasExited){
                 & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /PID $p.Id /T /F | Out-Null
+                Trace-TaskQueryStage 'tree-helper-returned'
                 if(-not $p.WaitForExit(2000)){throw ('Tool process '+$p.Id+' could not be stopped; inspect the recovery journal')}
             }
-        } finally {$p.Dispose()}
+        } finally {$p.Dispose();Trace-TaskQueryStage 'disposed'}
     }
 }
 function Native([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600) {
@@ -707,19 +719,27 @@ function Get-RefreshTaskInspection {
     return @{present=$null;error='Scheduled task inspection failed; status is unknown'}
 }
 function Discover {
+    $discoveryClock=[Diagnostics.Stopwatch]::StartNew()
     [Console]::WriteLine('Discovery phase: services')
+    [Console]::WriteLine(('Discovery timing ms: services {0}' -f $discoveryClock.ElapsedMilliseconds))
     $serviceError=$null;$services=@();try{foreach($name in @('AccessWeaver-*','WireSockAppService','WireSockConnectService','wiresock-client-service','ByeDPI','ProxiFyreService','WinDivert','WinDivert14','NDISRD','zapret','zapret2','GoodbyeDPI','dnscrypt-proxy','CloudflareWARP')){foreach($svc in @(Get-Service -Name $name -ErrorAction SilentlyContinue)){$services+=@{name=$svc.Name;status=[string]$svc.Status;owned=$svc.Name.StartsWith('AccessWeaver-')}}}}catch{$serviceError=$_.Exception.Message}
     [Console]::WriteLine('Discovery phase: components')
+    [Console]::WriteLine(('Discovery timing ms: components {0}' -f $discoveryClock.ElapsedMilliseconds))
     $assets=@{};foreach($engine in $assetNames.Keys){$assets[$engine]=Find-Source $engine}
     [Console]::WriteLine('Discovery phase: applications')
+    [Console]::WriteLine(('Discovery timing ms: applications {0}' -f $discoveryClock.ElapsedMilliseconds))
     $apps=@{};foreach($variant in @('discord','discord-ptb','splitcord')){$apps[$variant]=Find-App $variant}
     [Console]::WriteLine('Discovery phase: conflicts')
+    [Console]::WriteLine(('Discovery timing ms: conflicts {0}' -f $discoveryClock.ElapsedMilliseconds))
     $conflicts=@();$kaspersky=Get-Process -Name 'avp','avpui' -ErrorAction SilentlyContinue;if($kaspersky){$conflicts+=@('Kaspersky is running; WinDivert compatibility must be checked')};if(($services|Where-Object {$_.name -eq 'CloudflareWARP' -and $_.status -eq 'Running'})){$conflicts+=@('Cloudflare WARP is running; check routing conflicts')}
     [Console]::WriteLine('Discovery phase: refresh-task')
+    [Console]::WriteLine(('Discovery timing ms: refresh-task {0}' -f $discoveryClock.ElapsedMilliseconds))
     $task=Get-RefreshTaskInspection
     [Console]::WriteLine('Discovery phase: final-paths')
+    [Console]::WriteLine(('Discovery timing ms: final-paths {0}' -f $discoveryClock.ElapsedMilliseconds))
     $cli=WireSock-CLI;$dnsSnapshot=[bool](Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json'))
     [Console]::WriteLine('Discovery phase: complete')
+    [Console]::WriteLine(('Discovery timing ms: complete {0}' -f $discoveryClock.ElapsedMilliseconds))
     return @{services=@($services);serviceInspectionError=$serviceError;components=$assets;applications=$apps;wiresockCLI=$cli;conflicts=@($conflicts);managedRoot=$root;refreshTask=$task.present;refreshTaskInspectionError=$task.error;dnsSnapshot=$dnsSnapshot}
 }
 function Rollback {

@@ -131,7 +131,17 @@ jobs:
       - name: Static analysis
         run: go vet ./...
       - name: Unit tests
+        env:
+          ACCESSWEAVER_NATIVE_DISCOVERY_REPORT_DIR: ${{ github.workspace }}/build/native-discovery-checks
         run: go test ./... -count=1
+      - name: Retain native Windows discovery timings
+        if: runner.os == 'Windows' && always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-discovery-windows-${{ matrix.goarch }}
+          path: build/native-discovery-checks/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Race macOS paired policy storage
         if: runner.os == 'macOS'
         run: go test -race ./internal/managed -run '^TestDarwin' -count=1

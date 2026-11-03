@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -44,17 +46,13 @@ func TestNativeDiscoveryIgnoresUntrustedEnvironment(t *testing.T) {
 	t.Setenv("ProgramFiles(x86)", fakeRoot)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
+	executionStarted := time.Now()
+	t.Cleanup(func() { retainNativeDiscoveryTiming(t, filepath.Join(root, "job", "process.log"), executionStarted) })
 	data, err := execute(ctx, filepath.Join(root, "job"), Request{Action: "discover"})
 	if err != nil {
 		phases := []string{}
 		if log, logErr := readWorkflowFile(filepath.Join(root, "job", "process.log"), 64<<10); logErr == nil {
-			for _, line := range strings.Split(string(log), "\n") {
-				line = strings.TrimSpace(line)
-				switch line {
-				case "Workflow phase: input", "Workflow phase: parse", "Workflow phase: initialize", "Workflow phase: dispatch", "Discovery phase: services", "Discovery phase: components", "Discovery phase: applications", "Discovery phase: conflicts", "Discovery phase: refresh-task", "Discovery phase: final-paths", "Discovery phase: complete":
-					phases = append(phases, line)
-				}
-			}
+			phases = nativeDiscoveryPhases(log)
 		}
 		t.Fatalf("read-only discovery failed: %v; context=%v; phases=%v", err, ctx.Err(), phases)
 	}
@@ -94,5 +92,72 @@ func TestNativeDiscoveryIgnoresUntrustedEnvironment(t *testing.T) {
 	}
 	if _, err := os.Stat(fakeRoot); !os.IsNotExist(err) {
 		t.Fatal("discovery wrote attacker-selected machine storage", err)
+	}
+}
+
+func nativeDiscoveryPhases(log []byte) []string {
+	timing := regexp.MustCompile(`^(Discovery timing ms: (services|components|applications|conflicts|refresh-task|final-paths|complete)|Task query timing ms: (start|started|capture-ready|exited|timed-out|drained|cleanup|tree-helper-returned|disposed)) [0-9]{1,12}$`)
+	phases := []string{}
+	for _, line := range strings.Split(string(log), "\n") {
+		line = strings.TrimSpace(line)
+		switch line {
+		case "Workflow phase: input", "Workflow phase: parse", "Workflow phase: initialize", "Workflow phase: dispatch", "Discovery phase: services", "Discovery phase: components", "Discovery phase: applications", "Discovery phase: conflicts", "Discovery phase: refresh-task", "Discovery phase: final-paths", "Discovery phase: complete":
+			phases = append(phases, line)
+		default:
+			if timing.MatchString(line) {
+				phases = append(phases, line)
+			}
+		}
+		if len(phases) == 128 {
+			break
+		}
+	}
+	return phases
+}
+
+func retainNativeDiscoveryTiming(t *testing.T, logPath string, started time.Time) {
+	t.Helper()
+	directory := os.Getenv("ACCESSWEAVER_NATIVE_DISCOVERY_REPORT_DIR")
+	if directory == "" {
+		return
+	}
+	source := os.Getenv("GITHUB_SHA")
+	if os.Getenv("GITHUB_ACTIONS") != "true" || os.Getenv("RUNNER_ENVIRONMENT") != "github-hosted" || !regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(source) || (runtime.GOARCH != "amd64" && runtime.GOARCH != "arm64") {
+		t.Error("discovery timing export requires an identified hosted native candidate")
+		return
+	}
+	log, logErr := readWorkflowFile(logPath, 64<<10)
+	record := map[string]any{"schemaVersion": 1, "sourceCommit": source, "target": "windows/" + runtime.GOARCH, "goVersion": runtime.Version(), "probeElapsedMilliseconds": time.Since(started).Milliseconds(), "testPassed": !t.Failed(), "logAvailable": logErr == nil, "phases": nativeDiscoveryPhases(log), "settingsChanged": false, "productionQualificationComplete": false}
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Error(err)
+		return
+	}
+	file, err := os.OpenFile(filepath.Join(directory, "discovery-windows-"+runtime.GOARCH+".json"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if err := json.NewEncoder(file).Encode(record); err != nil {
+		t.Error(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestNativeDiscoveryPhaseExportOmitsPrivateAndUnknownLines(t *testing.T) {
+	log := strings.Join([]string{
+		"PRIVATE_CREDENTIAL",
+		"Workflow phase: dispatch",
+		"Task query timing ms: start 12",
+		"Task query timing ms: private-name 7",
+		"Task query timing ms: start PRIVATE_CREDENTIAL",
+		"Discovery timing ms: refresh-task 1234567890123",
+		"Discovery phase: private-name",
+		"Discovery timing ms: refresh-task 25",
+	}, "\n")
+	phases := nativeDiscoveryPhases([]byte(log))
+	if strings.Join(phases, "|") != "Workflow phase: dispatch|Task query timing ms: start 12|Discovery timing ms: refresh-task 25" {
+		t.Fatal("discovery export retained private, unknown or unbounded diagnostics")
 	}
 }
