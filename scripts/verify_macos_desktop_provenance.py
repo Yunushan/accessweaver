@@ -73,7 +73,7 @@ def validate_contents(root,commit,arch):
         public_bindings[version]={};inspections=[]
         for role,item in zip(("metadata","application"),items):
             name=component_name(version,arch,role);raw=(root/name).read_bytes();scripts=read(prefix+role+"-SCRIPT-MANIFEST.json")
-            inspected=inspect_component(raw,encoded,identity,role,scripts)
+            inspected=inspect_component(raw,encoded,identity,role,scripts,item["scriptArchiveOwner"])
             require(item.get("file")==name and item.get("bytes")==len(raw) and item.get("sha256")==digest(raw) and item.get("archiveInspection")==inspected and item.get("helperSHA256")==inspected["helperSHA256"],"Actual desktop component differs from producer inspection")
             check_metadata(item["helperBuildMetadata"],identity,"accessweaver-desktop-installer")
             stamps={"Version":version,"Commit":commit,"SourceState":"clean","BuiltAt":identity["builtAt"]}

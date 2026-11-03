@@ -27,6 +27,7 @@ class DesktopComponentContracts(unittest.TestCase):
             payload.update({"AccessWeaver.app/"+d:{"mode":stat.S_IFDIR|0o755} for d in dirs})
             payload.update({"AccessWeaver.app/"+n:{"data":v,"mode":stat.S_IFREG|(0o755 if n.endswith("/"+BINARY) else 0o644)} for n,v in values.items()})
         scripts={".":{"mode":stat.S_IFDIR|0o755},"preinstall":{"data":image(arch),"mode":stat.S_IFREG|0o755},"postinstall":{"data":image(arch),"mode":stat.S_IFREG|0o755}}
+        for entry in scripts.values():entry.update({"uid":501,"gid":20})
         records=[{"path":n,"bytes":len(v["data"]),"sha256":digest(v["data"]),"mode":"0755"} for n,v in scripts.items() if "data" in v]
         info=ET.Element("pkg-info",identifier=package_id(role,encoded),version=identity["version"],auth="root",relocatable="false",attrib={"install-location":ROOT if role=="metadata" else "/Applications"})
         ET.SubElement(info,"relocate");strict=ET.SubElement(info,"strict-identifier")
@@ -36,7 +37,7 @@ class DesktopComponentContracts(unittest.TestCase):
     def inspect(self,f,role):
         identity,encoded,payload,scripts,records,info,_=f
         package=flat_package({"Bom":b"fixture-bom","PackageInfo":ET.tostring(info),"Payload":archive(payload),"Scripts":archive(scripts)})
-        return inspect_component(package,encoded,identity,role,records)
+        return inspect_component(package,encoded,identity,role,records,{"uid":501,"gid":20})
     def test_both_native_roles_bind_distinct_fixed_destinations_and_receipts(self):
         for role in ("metadata","application"):
             for arch in ("amd64","arm64"):
@@ -45,7 +46,7 @@ class DesktopComponentContracts(unittest.TestCase):
                 self.assertEqual(result["packageIdentifier"],package_id(role,f[1]))
     def test_unknown_modified_aliased_or_writable_payloads_fail(self):
         for role in ("metadata","application"):
-            for kind in ("bytes","owner","group","writable","symlink","hardlink","extra","target","identity","phase"):
+            for kind in ("bytes","owner","group","writable","symlink","hardlink","extra","target","identity","script-owner","script-group","phase"):
                 with self.subTest(role=role,kind=kind):
                     f=self.fixture(role);leaf=f[2][record_name(f[1]) if role=="metadata" else "AccessWeaver.app/Contents/MacOS/"+BINARY]
                     if kind=="bytes":leaf["data"]+=b"changed"
@@ -57,6 +58,8 @@ class DesktopComponentContracts(unittest.TestCase):
                     elif kind=="extra":f[2]["unrelated"]={"data":b"preserve"}
                     elif kind=="target":f[5].set("install-location","/tmp/other")
                     elif kind=="identity":f[5].set("identifier","other")
+                    elif kind=="script-owner":f[3]["preinstall"]["uid"]=0
+                    elif kind=="script-group":f[3]["postinstall"]["gid"]=80
                     else:f[3]["postinstall"]["data"]+=b"changed"
                     with self.assertRaises(ValueError):self.inspect(f,role)
     def test_registration_rejects_public_core_confusion_and_unbound_graphs(self):

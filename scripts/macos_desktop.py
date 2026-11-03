@@ -112,7 +112,7 @@ def verify_bundle(app,encoded,identity):
     return r
 
 
-def inspect_component(package,encoded,identity,role,scripts_manifest):
+def inspect_component(package,encoded,identity,role,scripts_manifest,script_owner):
     r=validate_record(encoded,identity);expected_scripts=script_contract(scripts_manifest)
     members=flat_members(package);entries=cpio(inflate(members["Payload"],MAX_BYTES,31));scripts=cpio(inflate(members["Scripts"],32<<20,31))
     dirs={""};files={}
@@ -135,8 +135,9 @@ def inspect_component(package,encoded,identity,role,scripts_manifest):
             for e in json.loads(prop_map(c).get("accessweaver:license-evidence","[]")):require(digest(entries[prefix+"Contents/Resources/"+e["path"]]["data"])==e["sha256"],"Packaged desktop notice differs")
     script_dirs={""}|({"licenses"} if any(n.startswith("licenses/") for n in expected_scripts) else set())
     require(set(scripts)==set(expected_scripts)|script_dirs,"Unexpected desktop package scripts")
+    require(type(script_owner) is dict and set(script_owner)=={"uid","gid"} and type(script_owner["uid"]) is int and 0<script_owner["uid"]<2**32-1 and type(script_owner["gid"]) is int and 0<=script_owner["gid"]<2**32-1,"Expected an ordinary native builder script owner")
     for name,entry in scripts.items():
-        require(entry["uid"]==0 and entry["gid"]==0,"Desktop script owner differs")
+        require(entry["uid"]==script_owner["uid"] and entry["gid"]==script_owner["gid"],"Desktop script archive owner differs from measured builder tree")
         if name in script_dirs:require(entry["directory"] and entry["mode"]==0o755,"Desktop script directory differs")
         else:
             f=expected_scripts[name];require(not entry["directory"] and entry["mode"]==int(f["mode"],8) and len(entry["data"])==f["bytes"] and digest(entry["data"])==f["sha256"],"Desktop script file differs")
@@ -146,7 +147,7 @@ def inspect_component(package,encoded,identity,role,scripts_manifest):
     require(info.find("relocate") is None or len(info.find("relocate"))==0,"Desktop relocation forbidden")
     require([n.get("file") for n in info.findall("./scripts/preinstall")]==["./preinstall"] and [n.get("file") for n in info.findall("./scripts/postinstall")]==["./postinstall"] and len(info.findall("./scripts/*"))==2,"Desktop package phases differ")
     bundles=[n.get("id") for n in info.findall("./strict-identifier/bundle")];require(bundles==([DESKTOP_ID] if role=="application" else []),"Desktop component bundle role differs")
-    return {"packageSHA256":digest(package),"recordSHA256":digest(encoded),"component":role,"packageIdentifier":package_id(role,encoded),"payloadFiles":len(files),"payloadDirectories":len(dirs),"helperSHA256":digest(scripts["preinstall"]["data"]),"helperMachO":helper,"allPathsModesOwnersAndHashesVerified":True,"targetExecutionPerformed":False,"publisherSignatureVerified":False,"productionQualificationComplete":False}
+    return {"packageSHA256":digest(package),"recordSHA256":digest(encoded),"component":role,"packageIdentifier":package_id(role,encoded),"payloadFiles":len(files),"payloadDirectories":len(dirs),"helperSHA256":digest(scripts["preinstall"]["data"]),"helperMachO":helper,"scriptArchiveOwner":script_owner,"allPayloadPathsModesOwnersAndScriptHashesVerified":True,"targetExecutionPerformed":False,"publisherSignatureVerified":False,"productionQualificationComplete":False}
 
 
 def package_sbom(package,identity,helper,launcher,payload_records,scripts_manifest,tool):

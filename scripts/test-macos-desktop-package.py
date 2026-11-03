@@ -62,7 +62,7 @@ def main():
         components={}
         for role in ("metadata","application"):
             package=output/component_name(version,arch,role);item=next(v for v in compiler["components"] if v["component"]==role)
-            require(inspect_component(package.read_bytes(),record,identity,role,json.loads((output/(role+"-SCRIPT-MANIFEST.json")).read_bytes()))==item["archiveInspection"],"Public component changed")
+            require(inspect_component(package.read_bytes(),record,identity,role,json.loads((output/(role+"-SCRIPT-MANIFEST.json")).read_bytes()),item["scriptArchiveOwner"])==item["archiveInspection"],"Public component changed")
             components[role]={"package":package,"sha256":digest(package.read_bytes())};receipt_ids.add(package_id(role,record))
         desktop[version]={"record":record,"registration":registration,"components":components}
     receipt_paths=[RECEIPTS/(identifier+suffix) for identifier in sorted(receipt_ids) for suffix in (".plist",".bom")]

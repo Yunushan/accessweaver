@@ -25,7 +25,7 @@ run=deployment.run;encode=deployment.encode
 
 def build(version,arch,go="go"):
     version_parts(version);require(arch in ("amd64","arm64"),"Expected native desktop architecture")
-    require(deployment.legacy.platform.system()=="Darwin","Native Mac desktop builder required")
+    require(deployment.legacy.platform.system()=="Darwin" and os.geteuid()!=0,"Native ordinary-user Mac desktop builder required")
     base=REPO/"build/macos-deployment-checks"/arch
     identity=json.loads((base/version/"BUILD-INFO.json").read_bytes())
     require(identity["version"]==version and identity["arch"]==arch and identity["platform"]=="darwin" and identity["sourceState"]=="clean" and identity["commit"]==run(["git","rev-parse","HEAD"]).stdout.decode().strip() and not run(["git","status","--porcelain","--untracked-files=normal"]).stdout.strip(),"Desktop requires exact clean core source")
@@ -84,11 +84,15 @@ def build(version,arch,go="go"):
             for path in sorted(p for p in scripts.rglob("*") if p.is_file()):
                 require(not path.is_symlink() and path.stat().st_nlink==1,"Desktop script alias")
                 raw=path.read_bytes();script_manifest.append({"path":path.relative_to(scripts).as_posix(),"bytes":len(raw),"sha256":digest(raw),"mode":f"{path.stat().st_mode&0o7777:04o}"})
+            script_stat=scripts.stat();script_owner={"uid":script_stat.st_uid,"gid":script_stat.st_gid}
+            require(script_owner["uid"]==os.getuid(),"Desktop script tree is not owned by this native builder")
+            for path in scripts.rglob("*"):
+                st=path.lstat();require(st.st_uid==script_owner["uid"] and st.st_gid==script_owner["gid"],"Desktop script tree ownership is not uniform")
             components=stage/(role+"-components.plist")
             with components.open("wb") as stream:plistlib.dump([{"RootRelativeBundlePath":BUNDLE_NAME,"BundleIsRelocatable":False,"BundleHasStrictIdentifier":True,"BundleIsVersionChecked":False,"BundleOverwriteAction":"upgrade"}] if role=="application" else [],stream)
             target=output/component_name(version,arch,role)
             run(["/usr/bin/pkgbuild","--root",payload if role=="application" else metadata_payload,"--identifier",package_id(role,encoded),"--version",version,"--install-location","/Applications" if role=="application" else ROOT,"--ownership","recommended","--component-plist",components,"--scripts",scripts,target],env=child_env)
-            raw=target.read_bytes();inspection=inspect_component(raw,encoded,identity,role,script_manifest)
+            raw=target.read_bytes();inspection=inspect_component(raw,encoded,identity,role,script_manifest,script_owner)
             require(inspection["helperSHA256"]==digest(helper_bytes),"Desktop phase helper differs from actual package")
             expanded=stage/(role+"-expanded");run(["/usr/sbin/pkgutil","--expand-full",target,expanded],env=child_env)
             if role=="application":verify_bundle(expanded/"Payload"/BUNDLE_NAME,encoded,identity)
@@ -107,7 +111,7 @@ def build(version,arch,go="go"):
                 for evidence in json.loads(prop_map(c).get("accessweaver:license-evidence","[]")):
                     require(evidence["path"] in actual_scripts and digest(actual_scripts[evidence["path"]]["data"])==evidence["sha256"],"Compiled desktop component notice differs")
             encode(output/(target.name+".cdx.json"),bom);encode(output/(role+"-SCRIPT-MANIFEST.json"),script_manifest);encode(output/(role+"-helper-SBOM.cdx.json"),helper_bom)
-            reports.append({"component":role,"file":target.name,"bytes":len(raw),"sha256":digest(raw),"archiveInspection":inspection,"helperBuildMetadata":helper_info,"helperSHA256":digest(helper_bytes),"helperLinkerFlags":" ".join(flags)})
+            reports.append({"component":role,"file":target.name,"bytes":len(raw),"sha256":digest(raw),"archiveInspection":inspection,"helperBuildMetadata":helper_info,"scriptArchiveOwner":script_owner,"helperSHA256":digest(helper_bytes),"helperLinkerFlags":" ".join(flags)})
         validator=stage/"sbom-schema"
         run([go,"-C",REPO/"scripts/sbom-tools","build","-mod=readonly","-trimpath","-o",validator,"."],env=environment)
         graph_path=stage/"launcher-SBOM.cdx.json";graph_path.write_bytes(graph)
