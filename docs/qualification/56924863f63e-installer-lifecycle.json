@@ -1,0 +1,357 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "56924863f63e9989d104acb4983ae228fbf83451",
+  "scope": "native disposable Windows clean install, same-architecture in-place upgrade, restoration-refusal and successful recovery-aware uninstall; private elevated fixture profile; no complete enterprise qualification",
+  "run": 41624741227,
+  "url": "https://github.com/Yunushan/accessweaver/actions/runs/41624741227",
+  "passedNativeJobs": 2,
+  "sourceHashes": {
+    "scripts/windows-installer.iss": "4edbf77e619eb39f6e657642a2abfc7098e7be92130e64d8b96f9e773645b3be",
+    "scripts/windows-installer-common.ps1": "427c645cc44509a5bad662d4d183e2b6ff223a84e48e07dde96b3b7e3a0ca68a",
+    "scripts/build-windows-installer.ps1": "6c368926ee6a505ba9532a7fba47cebacf13d9fc6b4f608062237c548b421797",
+    "scripts/test-windows-installer.ps1": "cec197c1b446d0b36ec4ef1894fd516d4671d8e2cec76756d37362d819793a47",
+    "scripts/test-windows-installer-contracts.ps1": "3ef1547263081084b1190e4abbe98726a24dfbaaa98afde6e9b2cf04df4d8e7f",
+    "scripts/test-windows-installer-lifecycle.ps1": "d9e01cabf210befdf65855f3c436cc4e3fc6f282fb6b33b3ed955820f89c6cd8",
+    ".github/workflows/installer-lifecycle.yml": "4e5ecf99f47ce0f01ad707f850caa326b8286d1c9ff4cfe8d97e655261be9bc5"
+  },
+  "providerArtifacts": [
+    {
+      "name": "installer-lifecycle-candidates-windows-amd64",
+      "id": 13224454959,
+      "sha256": "9359db74721903fb67fbc4431daf78b73439f45409b076f00a868ccee37dfd33",
+      "bytes": 16421891
+    },
+    {
+      "name": "installer-lifecycle-candidates-windows-arm64",
+      "id": 13224883011,
+      "sha256": "23a906b5cb76a9a68a8102afb5221cf48eb90ed43adb0f304df9912887f62f2f",
+      "bytes": 15263804
+    },
+    {
+      "name": "installer-lifecycle-windows-amd64",
+      "id": 13224868220,
+      "sha256": "bd3f5c8370bed00ac5fc0f9ed16e67a034bcc6cc2ce54a2ef701f0721c9f6f96",
+      "bytes": 1443
+    },
+    {
+      "name": "installer-lifecycle-windows-arm64",
+      "id": 13225775747,
+      "sha256": "31e04cf415f2797149b2b8aa216a4ca2f30c9a54c7a9002a32afcf32183a85f1",
+      "bytes": 1446
+    }
+  ],
+  "targets": [
+    {
+      "target": "windows/amd64",
+      "report": {
+        "schemaVersion": 1,
+        "sourceCommit": "56924863f63e9989d104acb4983ae228fbf83451",
+        "sourceRef": "refs/heads/main",
+        "runID": "41624741227",
+        "target": "windows/amd64",
+        "compilerVersion": "6.7.1",
+        "builds": [
+          {
+            "compilerSHA256": "eb6f4410c8db367a5f74127e8025ad2ccacc0afabbe783959d237df3050f97fb",
+            "installerBytes": 8759906,
+            "payloadSha256": "ef7242fa446fba13bfc3087bde9f65e3391b29787990df4c80d8b0faf29edf33",
+            "version": "0.1.0-alpha",
+            "payloadBuild": {
+              "version": "0.1.0-alpha",
+              "commit": "56924863f63e9989d104acb4983ae228fbf83451",
+              "sourceState": "clean",
+              "builtAt": "2026-11-03T11:07:03Z",
+              "goVersion": "go1.27.3",
+              "platform": "windows",
+              "arch": "amd64"
+            },
+            "preprocessedSetupSHA256": "aed676e5c4be4a9ac580d47ac549f10220cee63ab89ddb2ac279b405afdac8cc",
+            "installerSHA256": "7e1ef24b3847a29baec00f0dba3108d487112299c54db7f755fb9128e1fc74e6",
+            "identityFileSHA256": "a8c672cd6b1534ba8fbf61a7e88cbb3a3509ca306a0381cfdc4631f1106d2750",
+            "installerName": "accessweaver-0.1.0-alpha-windows-amd64-setup.exe"
+          },
+          {
+            "compilerSHA256": "eb6f4410c8db367a5f74127e8025ad2ccacc0afabbe783959d237df3050f97fb",
+            "installerBytes": 8758714,
+            "payloadSha256": "a82f51fc2f9d224d4878accdf8dcd0b8f996fcfa7ce852a5c36a3f260bb4428a",
+            "version": "0.1.1-alpha",
+            "payloadBuild": {
+              "version": "0.1.1-alpha",
+              "commit": "56924863f63e9989d104acb4983ae228fbf83451",
+              "sourceState": "clean",
+              "builtAt": "2026-11-03T11:07:34Z",
+              "goVersion": "go1.27.3",
+              "platform": "windows",
+              "arch": "amd64"
+            },
+            "preprocessedSetupSHA256": "2456d2de93912572955fb7f897932d82cbd518f005ad689928db139e2a18ca42",
+            "installerSHA256": "e72f8346bbde69cd26dacef744f41b15f7a319e3dbaec9a441fdd649dbc3ca98",
+            "identityFileSHA256": "76158f72c136cee9feafbb3325ffcbe4153ec8661719a87450b123e99ee31d52",
+            "installerName": "accessweaver-0.1.1-alpha-windows-amd64-setup.exe"
+          }
+        ],
+        "operations": [
+          {
+            "operation": "install",
+            "deadlineMilliseconds": 180000,
+            "exitCode": 0,
+            "elapsedMilliseconds": 3737,
+            "payloadAndRegistrationVerified": true
+          },
+          {
+            "exitCode": 0,
+            "deadlineMilliseconds": 180000,
+            "unrelatedStatePreserved": true,
+            "elapsedMilliseconds": 958,
+            "payloadAndRegistrationVerified": true,
+            "operation": "upgrade"
+          },
+          {
+            "controllerAndRegistrationRetained": true,
+            "exitCode": 1,
+            "deadlineMilliseconds": 180000,
+            "unrelatedStatePreserved": true,
+            "elapsedMilliseconds": 161,
+            "operation": "refused-uninstall"
+          },
+          {
+            "recoveryJournalRetained": true,
+            "exitCode": 0,
+            "deadlineMilliseconds": 180000,
+            "unrelatedStatePreserved": true,
+            "elapsedMilliseconds": 58661,
+            "ownedPayloadAndRegistrationRemoved": true,
+            "operation": "uninstall"
+          }
+        ],
+        "passed": true,
+        "stage": "cleanup",
+        "failureType": null,
+        "assertionFailure": null,
+        "lastNative": {
+          "outputComplete": true,
+          "exitCode": 0,
+          "file": "unins000.exe"
+        },
+        "actualUserProfilePreservationVerified": true,
+        "childEnvironmentSanitized": true,
+        "selectedServiceFirewallDNSStateUnchanged": true,
+        "ownedFixturesRemoved": true,
+        "unsigned": true,
+        "publisherSignatureVerified": false,
+        "rebootTested": false,
+        "downgradeTested": false,
+        "crashOrPowerLossTested": false,
+        "vendorDriverOrRoutingQualified": false,
+        "productionQualificationComplete": false
+      },
+      "independentlyInspectedCandidates": [
+        {
+          "file": "accessweaver-0.1.0-alpha-windows-amd64-setup.exe",
+          "sha256": "7e1ef24b3847a29baec00f0dba3108d487112299c54db7f755fb9128e1fc74e6",
+          "bytes": 8759906,
+          "bootstrapPEMachine": "0x014c",
+          "payloadTarget": "windows/amd64",
+          "payloadSHA256": "ef7242fa446fba13bfc3087bde9f65e3391b29787990df4c80d8b0faf29edf33",
+          "sbomSHA256": "2108be0b4f4cfbe5f0e4b0bdccec41f9d9bcd24f685e763a6fc09ed98d7f7bb6",
+          "sbomIdentityAndSubjectVerified": true,
+          "nativeDependencyClosureComplete": false,
+          "executedLocally": false
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-windows-amd64-setup.exe",
+          "sha256": "e72f8346bbde69cd26dacef744f41b15f7a319e3dbaec9a441fdd649dbc3ca98",
+          "bytes": 8758714,
+          "bootstrapPEMachine": "0x014c",
+          "payloadTarget": "windows/amd64",
+          "payloadSHA256": "a82f51fc2f9d224d4878accdf8dcd0b8f996fcfa7ce852a5c36a3f260bb4428a",
+          "sbomSHA256": "be1668d802d90d00cf938361f587e90503cdbf958d09ae2a944e0058211fd186",
+          "sbomIdentityAndSubjectVerified": true,
+          "nativeDependencyClosureComplete": false,
+          "executedLocally": false
+        }
+      ]
+    },
+    {
+      "target": "windows/arm64",
+      "report": {
+        "schemaVersion": 1,
+        "sourceCommit": "56924863f63e9989d104acb4983ae228fbf83451",
+        "sourceRef": "refs/heads/main",
+        "runID": "41624741227",
+        "target": "windows/arm64",
+        "compilerVersion": "6.7.1",
+        "builds": [
+          {
+            "compilerSHA256": "eb6f4410c8db367a5f74127e8025ad2ccacc0afabbe783959d237df3050f97fb",
+            "installerBytes": 8180875,
+            "payloadSha256": "9e9d535f8e548336e424ee8b696a41b13abdcd47539efb4716cbb92904c79c3e",
+            "version": "0.1.0-alpha",
+            "payloadBuild": {
+              "version": "0.1.0-alpha",
+              "commit": "56924863f63e9989d104acb4983ae228fbf83451",
+              "sourceState": "clean",
+              "builtAt": "2026-11-03T11:08:38Z",
+              "goVersion": "go1.27.3",
+              "platform": "windows",
+              "arch": "arm64"
+            },
+            "preprocessedSetupSHA256": "0a651b58399e584db4610971b604f5ea1b45e6b9f545cee4406a3f6c646947a7",
+            "installerSHA256": "670629666ce2a102e8a72a08b7aeb083393b917e2875826c28c57d6ba9f0c875",
+            "identityFileSHA256": "bfc6edbe3900cd29137e3aad1c035967efab2612025f8819f73169a9b2b9e952",
+            "installerName": "accessweaver-0.1.0-alpha-windows-arm64-setup.exe"
+          },
+          {
+            "compilerSHA256": "eb6f4410c8db367a5f74127e8025ad2ccacc0afabbe783959d237df3050f97fb",
+            "installerBytes": 8180780,
+            "payloadSha256": "e0a971df4bc71305893fbbf1cea0a0d76439bf21ae27009d662f8d0dd5d4d2c1",
+            "version": "0.1.1-alpha",
+            "payloadBuild": {
+              "version": "0.1.1-alpha",
+              "commit": "56924863f63e9989d104acb4983ae228fbf83451",
+              "sourceState": "clean",
+              "builtAt": "2026-11-03T11:09:11Z",
+              "goVersion": "go1.27.3",
+              "platform": "windows",
+              "arch": "arm64"
+            },
+            "preprocessedSetupSHA256": "8d4985faea4fabd6a2b0abd3c415dcbe875b61d3354c2aa32ea54d83c8255ecc",
+            "installerSHA256": "52e2322bb4fb25b43a5448b9bdc89856d8cec63c86014c2dfc96b98e90d3b284",
+            "identityFileSHA256": "b2b8f16fa07bb4700a69dafde609b91556c1947fb8dab50cccd6cd63f21ba4dc",
+            "installerName": "accessweaver-0.1.1-alpha-windows-arm64-setup.exe"
+          }
+        ],
+        "operations": [
+          {
+            "operation": "install",
+            "deadlineMilliseconds": 180000,
+            "exitCode": 0,
+            "elapsedMilliseconds": 5313,
+            "payloadAndRegistrationVerified": true
+          },
+          {
+            "exitCode": 0,
+            "deadlineMilliseconds": 180000,
+            "unrelatedStatePreserved": true,
+            "elapsedMilliseconds": 1697,
+            "payloadAndRegistrationVerified": true,
+            "operation": "upgrade"
+          },
+          {
+            "controllerAndRegistrationRetained": true,
+            "exitCode": 1,
+            "deadlineMilliseconds": 180000,
+            "unrelatedStatePreserved": true,
+            "elapsedMilliseconds": 475,
+            "operation": "refused-uninstall"
+          },
+          {
+            "recoveryJournalRetained": true,
+            "exitCode": 0,
+            "deadlineMilliseconds": 180000,
+            "unrelatedStatePreserved": true,
+            "elapsedMilliseconds": 32446,
+            "ownedPayloadAndRegistrationRemoved": true,
+            "operation": "uninstall"
+          }
+        ],
+        "passed": true,
+        "stage": "cleanup",
+        "failureType": null,
+        "assertionFailure": null,
+        "lastNative": {
+          "outputComplete": true,
+          "exitCode": 0,
+          "file": "unins000.exe"
+        },
+        "actualUserProfilePreservationVerified": true,
+        "childEnvironmentSanitized": true,
+        "selectedServiceFirewallDNSStateUnchanged": true,
+        "ownedFixturesRemoved": true,
+        "unsigned": true,
+        "publisherSignatureVerified": false,
+        "rebootTested": false,
+        "downgradeTested": false,
+        "crashOrPowerLossTested": false,
+        "vendorDriverOrRoutingQualified": false,
+        "productionQualificationComplete": false
+      },
+      "independentlyInspectedCandidates": [
+        {
+          "file": "accessweaver-0.1.0-alpha-windows-arm64-setup.exe",
+          "sha256": "670629666ce2a102e8a72a08b7aeb083393b917e2875826c28c57d6ba9f0c875",
+          "bytes": 8180875,
+          "bootstrapPEMachine": "0x014c",
+          "payloadTarget": "windows/arm64",
+          "payloadSHA256": "9e9d535f8e548336e424ee8b696a41b13abdcd47539efb4716cbb92904c79c3e",
+          "sbomSHA256": "51b5f636f5c94333fccb1bb46981593cf427cca2cdae359233167cd539aa3020",
+          "sbomIdentityAndSubjectVerified": true,
+          "nativeDependencyClosureComplete": false,
+          "executedLocally": false
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-windows-arm64-setup.exe",
+          "sha256": "52e2322bb4fb25b43a5448b9bdc89856d8cec63c86014c2dfc96b98e90d3b284",
+          "bytes": 8180780,
+          "bootstrapPEMachine": "0x014c",
+          "payloadTarget": "windows/arm64",
+          "payloadSHA256": "e0a971df4bc71305893fbbf1cea0a0d76439bf21ae27009d662f8d0dd5d4d2c1",
+          "sbomSHA256": "0e189dd991aa1ae4caa907320ef2cb87cee0607ad00805dc6474af4088dbcf22",
+          "sbomIdentityAndSubjectVerified": true,
+          "nativeDependencyClosureComplete": false,
+          "executedLocally": false
+        }
+      ]
+    }
+  ],
+  "beforeFixNativeRegressions": [
+    {
+      "sourceCommit": "37e0a01f08647fbcda35aba6d473503b8e845bbd",
+      "run": 41623770874,
+      "target": "windows/arm64",
+      "providerArtifactID": 13225071708,
+      "providerSHA256": "cd037ab641d8534c0278d288f179821f2bdc9a790b4077ec80d1424991d01a05",
+      "failedAssertion": "Silent no-icons installation created a start-menu folder"
+    },
+    {
+      "sourceCommit": "37e0a01f08647fbcda35aba6d473503b8e845bbd",
+      "run": 41623770874,
+      "target": "windows/amd64",
+      "providerArtifactID": 13224432598,
+      "providerSHA256": "6e846b0909cd5a26b9bb6cb5ba67a38ed277f915daacdad2a05fddf5561581c2",
+      "failedAssertion": "Silent no-icons installation created a start-menu folder"
+    }
+  ],
+  "ordinaryUserSessionQualified": false,
+  "publisherSigningComplete": false,
+  "downgradeQualified": false,
+  "rebootOrPowerLossQualified": false,
+  "vendorDriverOrRoutingQualified": false,
+  "installerSBOMNativeClosureComplete": false,
+  "managedEndpointQualificationComplete": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": 0,
+  "sourceCI": {
+    "run": 41624741330,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41624741330",
+    "passedJobs": 22,
+    "conclusion": "success"
+  },
+  "nativeJobs": [
+    {
+      "id": 125879145045,
+      "name": "Native installer lifecycle (arm64)",
+      "conclusion": "success",
+      "sourceCommit": "56924863f63e9989d104acb4983ae228fbf83451"
+    },
+    {
+      "id": 125879145645,
+      "name": "Native installer lifecycle (amd64)",
+      "conclusion": "success",
+      "sourceCommit": "56924863f63e9989d104acb4983ae228fbf83451"
+    }
+  ],
+  "sanitizedExecutionScope": "setup/uninstaller and installed-product lifecycle commands; compiler and source build checks use the normal hosted build environment",
+  "executionToken": "already elevated hosted fixture account",
+  "privateFixtureProfile": true
+}
