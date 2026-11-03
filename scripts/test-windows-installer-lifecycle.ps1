@@ -407,7 +407,7 @@ try {
         try {
             switch($case.kind){
                 'missing' {[IO.File]::Delete($core)}
-                'malformed' {[IO.File]::WriteAllBytes($core,[byte[]]@(0x4d,0x5a,0,0))}
+                'malformed' {[IO.File]::WriteAllBytes($core,[byte[]]@(0,0,0,0))}
                 'denied' {
                     $deniedSecurity=[Security.AccessControl.FileSecurity]::new()
                     $deniedSecurity.SetSecurityDescriptorSddlForm($originalFileSDDL,$fileAccess)
@@ -433,8 +433,16 @@ try {
             Require (-not (Test-Path -LiteralPath $managed)) 'Unlaunched controller unexpectedly created machine recovery state'
             No-Reparse $logPath;Require ((Get-Item -LiteralPath $logPath).Length -le 4MB) 'Launch refusal log exceeds bounds'
             $log=[IO.File]::ReadAllText($logPath)
-            Require ($log.Contains('AccessWeaver could not launch the restoration controller.') -and [regex]::IsMatch($log,('(?m)AccessWeaver system restoration failed; process result/error code: '+[regex]::Escape([string]$case.nativeError)+'\r?$'))) 'Native launch refusal did not retain its fixed phase and exact error code'
-            $caseRecord=@{name=$case.name;failurePhase='launch-controller';nativeError=$case.nativeError;nativeErrorLogVerified=$true;exitCode=$attempt.result.exitCode;elapsedMilliseconds=$attempt.milliseconds;observationDeadlineMilliseconds=180000;controllerPresentDuringRefusal=$controllerPresent;installedFileTreePreserved=$true;registrationValuesPreserved=$true;profilePreserved=$true;fileDACLCheckApplicable=$controllerPresent;fileDACLUnchangedDuringRefusal=$fileDACLUnchanged}
+            $nativeMatches=[regex]::Matches($log,'(?m)AccessWeaver system restoration failed; process result/error code: ([0-9]{1,10})\r?$')
+            Require ($nativeMatches.Count -eq 1) 'Native launch refusal did not retain exactly one bounded numeric error'
+            $observedNativeError=[long]::Parse($nativeMatches[0].Groups[1].Value,[Globalization.CultureInfo]::InvariantCulture)
+            Require ($observedNativeError -le [uint32]::MaxValue) 'Native launch error exceeds the Windows error-code range'
+            $launchPhaseObserved=$log.Contains('AccessWeaver could not launch the restoration controller.')
+            $expectedErrorObserved=$observedNativeError -eq $case.nativeError
+            $caseRecord=@{name=$case.name;failurePhase='launch-controller';launchPhaseObserved=$launchPhaseObserved;expectedNativeError=$case.nativeError;nativeError=$observedNativeError;nativeErrorLogVerified=($launchPhaseObserved -and $expectedErrorObserved);exitCode=$attempt.result.exitCode;elapsedMilliseconds=$attempt.milliseconds;observationDeadlineMilliseconds=180000;controllerPresentDuringRefusal=$controllerPresent;installedFileTreePreserved=$true;registrationValuesPreserved=$true;profilePreserved=$true;fileDACLCheckApplicable=$controllerPresent;fileDACLUnchangedDuringRefusal=$fileDACLUnchanged;originalControllerAndDACLRestored=$false;restoredControllerRuntimeVerified=$false}
+            # Preserve fixed numeric observations even when the expectation fails.
+            $restorationLaunchCases+=,$caseRecord
+            Require ($launchPhaseObserved -and $expectedErrorObserved) 'Native launch refusal did not retain its fixed phase and exact error code'
         } finally {
             # Reconstruct a modified security object so SetAccessControl really
             # persists the saved DACL; never change the parent installation ACL.
@@ -447,10 +455,10 @@ try {
             $restoreSecurity=[Security.AccessControl.FileSecurity]::new();$restoreSecurity.SetSecurityDescriptorSddlForm($originalFileSDDL,$fileAccess)
             [IO.File]::SetAccessControl($core,$restoreSecurity)
             Require ((Digest $core) -ceq $builds[1].payloadSha256 -and [IO.File]::GetAccessControl($core,$fileAccess).GetSecurityDescriptorSddlForm($fileAccess) -ceq $originalFileSDDL) 'Launch fixture controller bytes or DACL were not restored'
+            if($caseRecord){$caseRecord.originalControllerAndDACLRestored=$true}
         }
         Assert-Installed $builds[1]
-        $caseRecord.originalControllerAndDACLRestored=$true
-        $restorationLaunchCases+=,$caseRecord
+        $caseRecord.restoredControllerRuntimeVerified=$true
     }
     $stage='restoration-ownership-contracts'
     $restoreOwnerFixture=Join-Path $PSScriptRoot 'fixtures\InstallerRestorationOwner.cs'
