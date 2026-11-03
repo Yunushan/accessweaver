@@ -90,8 +90,9 @@ def response_file(arch, client_public):
         raise ValueError("invalid OpenBSD bootstrap target or public key")
     answers = [
         ("System hostname", "awobsd"), ("Terminal type", "vt220"),
-        ("Network interface to configure", "vio0"), ("IPv4 address for vio0", "autoconf"),
+        ("Network interface to configure", "vio0"), ("IPv4 address for vio0", "10.0.2.15/24"),
         ("IPv6 address for vio0", "none"), ("Network interface to configure", "done"),
+        ("Default IPv4 route", "10.0.2.2"),
         ("DNS domain name", "invalid"), ("DNS nameservers", "10.0.2.3"),
         ("Password for root account", "*************"), ("Public ssh key for root account", "none"),
         ("Start sshd(8) by default", "yes"), ("Do you expect to run the X Window System", "no"),
@@ -201,7 +202,7 @@ def prepare_media(capsule, target, client_public):
     original.chmod(0o400)
     boot = capsule / "boot.conf"
     boot.write_text(("stty com0 115200\nset tty com0\n" if target["arch"] == "amd64" else "") + "set timeout 1\n", encoding="ascii")
-    common.run(["xorriso", "-indev", str(original), "-outdev", str(prepared), "-compliance", "iso_9660_level=2", "-boot_image", "any", "replay",
+    common.run(["xorriso", "-indev", str(original), "-outdev", str(prepared), "-compliance", "iso_9660_level=2:allow_dir_id_ext:no_force_dots", "-boot_image", "any", "replay",
                 "-map", str(boot), "/etc/boot.conf", "-map", str(signed), "/8.0/" + target["arch"] + "/SHA256.sig"], timeout=180)
     if not 0 < prepared.stat().st_size <= 1 << 30 or common.digest(original) != digest:
         raise RuntimeError("installer media preparation violated bounds or changed original")
@@ -215,6 +216,14 @@ def prepare_media(capsule, target, client_public):
         raise RuntimeError("prepared installer did not retain exact signature and boot configuration")
     if iso_primary_bytes(prepared, ("etc", "boot.conf"), 1024) != boot.read_bytes():
         raise RuntimeError("boot configuration is not readable through primary ISO names")
+    # The BIOS cdbr loader searches the literal release directory without
+    # Rock Ridge support. Preserve its dot and the exact authenticated loader.
+    if target["arch"] == "amd64":
+        loader_path = ("8.0", "amd64", "cdboot")
+        loader = iso_primary_bytes(original, loader_path, 1 << 20)
+        if iso_primary_bytes(prepared, loader_path, 1 << 20) != loader:
+            raise RuntimeError("prepared primary BIOS loader path or bytes changed")
+        observed.update(primaryBIOSLoaderPathVerified=True, biosLoaderSHA256=hashlib.sha256(loader).hexdigest())
     bootstrap = None
     if target["arch"] == "arm64":
         # The ARM full ISO has a legacy BIOS/floppy El Torito entry, not an

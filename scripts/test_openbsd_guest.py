@@ -101,6 +101,8 @@ class InstallerInputTests(unittest.TestCase):
             self.assertIn('Location of sets = cd0\n',data)
             self.assertIn('Network interface to configure = vio0\n',data)
             self.assertIn('Network interface to configure = done\n',data)
+            self.assertIn('IPv4 address for vio0 = 10.0.2.15/24\n',data)
+            self.assertIn('Default IPv4 route = 10.0.2.2\n',data)
             self.assertIn('Allow root ssh login = no\n',data)
             self.assertIn('Password for root account = *************\n',data)
             self.assertNotIn('without verification',data)
@@ -140,7 +142,7 @@ class InstallerInputTests(unittest.TestCase):
                     if '-outdev' in args:
                         events.append('transform')
                         self.assertIn('/etc/boot.conf',args)
-                        self.assertIn('iso_9660_level=2',args)
+                        self.assertIn('iso_9660_level=2:allow_dir_id_ext:no_force_dots',args)
                         self.assertIn('/8.0/'+arch+'/SHA256.sig',args)
                         self.assertIn(['-boot_image','any','replay'],[args[i:i+3] for i in range(len(args)-2)])
                         Path(args[args.index('-outdev')+1]).write_bytes(b'prepared-image')
@@ -152,7 +154,7 @@ class InstallerInputTests(unittest.TestCase):
                 actual_digest=probe.common.digest
                 def digest(path):
                     return probe.MEDIA[arch][0] if path.name=='official.iso' else actual_digest(path)
-                with patch.object(probe,'download',side_effect=fetch),patch.object(probe,'verify_manifest',side_effect=authenticate),patch.object(probe.common,'run',side_effect=command),patch.object(probe.common,'digest',side_effect=digest),patch.object(probe,'iso_primary_bytes',side_effect=lambda *args:(capsule/'boot.conf').read_bytes()):
+                with patch.object(probe,'download',side_effect=fetch),patch.object(probe,'verify_manifest',side_effect=authenticate),patch.object(probe.common,'run',side_effect=command),patch.object(probe.common,'digest',side_effect=digest),patch.object(probe,'iso_primary_bytes',side_effect=lambda path,components,limit:(capsule/'boot.conf').read_bytes() if components==('etc','boot.conf') else b'authenticated-loader'):
                     installer,seed,bootstrap,observed=probe.prepare_media(capsule,target,PUBLIC)
                 self.assertEqual(events[:4],['signed-metadata','authenticate','image','transform'])
                 self.assertEqual((capsule/'official.iso').read_bytes(),b'official-image')
@@ -201,7 +203,7 @@ class InstallerInputTests(unittest.TestCase):
 
 
 class PrimaryISOTests(unittest.TestCase):
-    def image(self, name=b'BOOT.CONF;1', file_block=22):
+    def image(self, name=b'BOOT.CONF;1', file_block=22, directory_name=b'ETC'):
         data=bytearray(24*2048)
         data[16*2048:16*2048+7]=bytes([1])+b'CD001'+bytes([1])
         def record(name,block,size,directory=False):
@@ -213,7 +215,7 @@ class PrimaryISOTests(unittest.TestCase):
             return value
         root=record(bytes([0]),20,2048,True)
         data[16*2048+156:16*2048+190]=root
-        entries=root+record(bytes([1]),20,2048,True)+record(b'ETC',21,2048,True)
+        entries=root+record(bytes([1]),20,2048,True)+record(directory_name,21,2048,True)
         data[20*2048:20*2048+len(entries)]=entries
         entries=record(bytes([0]),21,2048,True)+record(bytes([1]),20,2048,True)+record(name,file_block,4)
         data[21*2048:21*2048+len(entries)]=entries
@@ -225,6 +227,15 @@ class PrimaryISOTests(unittest.TestCase):
             path=Path(tmp)/'fixture.iso';path.write_bytes(self.image())
             self.assertEqual(probe.iso_primary_bytes(path,('etc','boot.conf'),1024),b'boot')
             with self.assertRaises(ValueError):probe.iso_primary_bytes(path,('etc','boot.conf'),3)
+
+    def test_literal_release_directory_does_not_accept_a_sanitized_alias(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'fixture.iso'
+            path.write_bytes(self.image(directory_name=b'8.0'))
+            self.assertEqual(probe.iso_primary_bytes(path,('8.0','boot.conf'),1024),b'boot')
+            path.write_bytes(self.image(directory_name=b'8_0'))
+            with self.assertRaises(ValueError):
+                probe.iso_primary_bytes(path,('8.0','boot.conf'),1024)
 
     def test_truncated_primary_name_and_out_of_image_extent_are_rejected(self):
         for data in (self.image(name=b'BOOT.CON;1'),self.image(file_block=999),b'not-an-iso'):
