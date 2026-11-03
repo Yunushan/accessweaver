@@ -81,7 +81,7 @@ function Invoke-PrivateStartup([string]$binary,[string[]]$arguments,[string]$pro
     try {
         foreach($entry in Get-ChildItem Env:){[Environment]::SetEnvironmentVariable($entry.Name,$null,'Process')}
         foreach($name in $allowed.Keys){[Environment]::SetEnvironmentVariable($name,$allowed[$name],'Process')}
-        return (Native $binary $arguments -Secret -Timeout 30)
+        return (Native $binary $arguments @(0,5,87,126,-532462766,-1073741515,-1073741701) -Secret -Timeout 30)
     } finally {
         foreach($entry in Get-ChildItem Env:){[Environment]::SetEnvironmentVariable($entry.Name,$null,'Process')}
         foreach($name in $saved.Keys){[Environment]::SetEnvironmentVariable($name,$saved[$name],'Process')}
@@ -94,7 +94,7 @@ $root=Join-Path $capsule 'managed';$r=[pscustomobject]@{bundlePath=(Join-Path $c
 $inputData=[pscustomobject]@{nativeArchitecture=$Architecture}
 $assetNames=@{proxifyre='ProxiFyre.exe';wgcf='wgcf.exe';dnscrypt='dnscrypt-proxy.exe'}
 $repositories=@{proxifyre='wiresock/proxifyre';wgcf='ViRb3/wgcf';dnscrypt='DNSCrypt/dnscrypt-proxy'}
-$records=@();$failure=$false;$cleaned=$false;$stage='service-baseline'
+$records=@();$failure=$false;$cleaned=$false;$stage='service-baseline';$failureType=$null;$failureInnerType=$null;$startupDiagnostic=$null
 try {
     $before=Service-Snapshot
     foreach($engine in @('proxifyre','wgcf','dnscrypt')){
@@ -112,15 +112,22 @@ try {
         Require ((Find-Source $engine) -ieq $binary) 'Product discovery did not select the real native executable'
         $arguments=switch($engine){'proxifyre' {@('help')} 'wgcf' {@('--help')} 'dnscrypt' {@('-version')}}
         $profile=Join-Path $capsule ('profile-'+$engine);[void][IO.Directory]::CreateDirectory($profile)
-        $stage='startup-'+$engine;$clock=[Diagnostics.Stopwatch]::StartNew();$result=Invoke-PrivateStartup $binary $arguments $profile;$clock.Stop();$elapsed=$clock.ElapsedMilliseconds
+        $stage='process-'+$engine;$clock=[Diagnostics.Stopwatch]::StartNew();$result=Invoke-PrivateStartup $binary $arguments $profile;$clock.Stop();$elapsed=$clock.ElapsedMilliseconds
+        $stage='result-'+$engine
+        $startupDiagnostic=@{engine=$engine;exitCode=$result.exitCode;outputComplete=$result.outputComplete;stdoutCharacters=$result.stdout.Length;stderrCharacters=$result.stderr.Length;loaderFailureClass='none'}
+        if($result.stderr -match 'could not establish its secure native dependency loading policy'){$startupDiagnostic.loaderFailureClass='native-loader-policy'}
+        elseif(($result.stdout+$result.stderr) -match 'Could not load file or assembly|FileNotFoundException|BadImageFormatException'){$startupDiagnostic.loaderFailureClass='assembly-load'}
+        elseif(($result.stdout+$result.stderr) -match 'You must install|framework.*not found|MSVCP|VCRUNTIME'){$startupDiagnostic.loaderFailureClass='runtime-missing'}
         Require ($result.exitCode -eq 0 -and $result.outputComplete -and $elapsed -le 30000) 'Vendor startup did not complete within its bound'
         $matched=switch($engine){'proxifyre' {$result.stdout -match '(?i)help' -and $result.stdout -match '(?i)install' -and $result.stdout -match '(?i)uninstall'} 'wgcf' {$result.stdout -match 'wgcf is a utility' -and $result.stdout -match 'Available Commands:'} 'dnscrypt' {$result.stdout.Trim() -ceq $pin.version}}
+        $stage='output-'+$engine
+        $startupDiagnostic.helpMarker=($result.stdout -match '(?i)help');$startupDiagnostic.installMarker=($result.stdout -match '(?i)install');$startupDiagnostic.uninstallMarker=($result.stdout -match '(?i)uninstall')
         Require $matched 'Vendor startup output does not match the pinned command contract'
         Require ((Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $pin.binarySHA256) 'Executable changed during startup'
         $records+=@{engine=$engine;version=$pin.version;asset=$pin.asset;assetSHA256=$pin.sha256;binarySHA256=$pin.binarySHA256;coffMachine=$plan.machine;discoverySelectedPinnedExecutable=$true;helpOrVersionPassed=$true;exitCode=$result.exitCode;outputComplete=$result.outputComplete;elapsedMilliseconds=$elapsed;deadlineMilliseconds=30000;childEnvironmentSanitized=$true}
     }
     $stage='service-comparison';Require ((Service-Snapshot) -ceq $before) 'Relevant service state changed during help/version probes'
-} catch {$failure=$true}
+} catch {$failure=$true;$failureType=$_.Exception.GetType().FullName;if($_.Exception.InnerException){$failureInnerType=$_.Exception.InnerException.GetType().FullName}}
 finally {
     $resolved=[IO.Path]::GetFullPath($capsule)
     Require ((Split-Path -Parent $resolved) -ieq $temporary -and (Split-Path -Leaf $resolved) -match '^accessweaver-vendor-preflight-[a-f0-9]{32}$') 'Refusing unexpected capsule cleanup target'
@@ -128,6 +135,10 @@ finally {
     Require (@(Get-ChildItem -LiteralPath $resolved -Force -Recurse -Attributes ReparsePoint).Count -eq 0) 'Refusing capsule cleanup with reparse entries'
     Remove-Item -LiteralPath $resolved -Recurse -Force
     $cleaned=-not (Test-Path -LiteralPath $resolved)
+}
+if($failure){
+    $diagnostic=@{stage=$stage;exceptionType=$failureType;innerExceptionType=$failureInnerType;startup=$startupDiagnostic;ownedCapsuleRemoved=$cleaned;productionQualificationComplete=$false}
+    Write-Output ('Fixed vendor startup failure: '+($diagnostic|ConvertTo-Json -Depth 4 -Compress))
 }
 Require (-not $failure -and $cleaned -and $records.Count -eq 3) ('Vendor startup preflight failed at '+$stage+'; no production qualification is established')
 $report=@{schemaVersion=1;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);hostArchitecture=$hostArch;workflowScriptSHA256=$workflowHash;pinsSHA256=$pinsHash;components=$records;relevantServiceStateUnchanged=$true;ownedCapsuleRemoved=$cleaned;commandsRequestedServiceOrDriverChanges=$false;networkIsolationVerified=$false;vendorRoutingQualified=$false;productionQualificationComplete=$false}
