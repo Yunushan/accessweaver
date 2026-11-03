@@ -14,6 +14,7 @@ import tempfile
 
 from macos_installer import BUNDLE_ID,BUNDLE_NAME,bundle_manifest,bundle_plist,digest,macho_identity,require,verify_bundle,version_parts
 from sbom import generate,macos_package
+from macos_package_archive import inspect as inspect_flat_package
 
 REPO=Path(__file__).resolve().parent.parent
 
@@ -100,6 +101,8 @@ def build(version,arch,go="go"):
         require(metadata.tag=="pkg-info" and metadata.get("identifier")==BUNDLE_ID and metadata.get("version")==version and metadata.get("install-location")=="/","Native package metadata differs from requested target")
         signature=run(["/usr/sbin/pkgutil","--check-signature",package],env=child_env,codes=(0,1))
         require(signature.returncode!=0 and b"no signature" in (signature.stdout+signature.stderr).lower(),"Experimental package must report no publisher signature")
+        archive_inspection=inspect_flat_package(package.read_bytes(),manifest,identity)
+        require(archive_inspection["preinstallSHA256"]==digest(preinstall.read_bytes()),"Independent package script inspection differs")
         package_bom=macos_package(package,bom,manifest,tool)
         encode(Path(str(package)+".cdx.json"),package_bom)
         validator=stage/"sbom-schema"
@@ -108,7 +111,7 @@ def build(version,arch,go="go"):
         encode(output/"INSTALL-MANIFEST.json",manifest)
         encode(output/"BUILD-INFO.json",identity)
         encode(output/"payload-SBOM.cdx.json",bom)
-        report={"schemaVersion":1,"sourceCommit":commit,"sourceState":identity["sourceState"],"target":"darwin/"+arch,"payloadBuild":identity,"payloadSHA256":digest(binary.read_bytes()),"macho":native_info,"packageFile":package.name,"packageSHA256":digest(package.read_bytes()),"packageBytes":package.stat().st_size,"bundleManifestSHA256":digest((resources/"INSTALL-MANIFEST.json").read_bytes()),"bundleInfoSHA256":digest((bundle/"Contents/Info.plist").read_bytes()),"preinstallSHA256":digest(preinstall.read_bytes()),"pkgbuild":tool,"nativePayloadIdentityVerified":True,"actualExpandedPayloadVerified":True,"bundleRelocationDisabled":True,"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"experimentalCleanInstallOnly":True,"installationExecuted":False,"upgradeQualified":False,"downgradeQualified":False,"finderInteractionQualified":False,"managedEndpointQualified":False,"productionQualificationComplete":False}
+        report={"schemaVersion":1,"sourceCommit":commit,"sourceState":identity["sourceState"],"target":"darwin/"+arch,"payloadBuild":identity,"payloadSHA256":digest(binary.read_bytes()),"macho":native_info,"packageFile":package.name,"packageSHA256":digest(package.read_bytes()),"packageBytes":package.stat().st_size,"bundleManifestSHA256":digest((resources/"INSTALL-MANIFEST.json").read_bytes()),"bundleInfoSHA256":digest((bundle/"Contents/Info.plist").read_bytes()),"preinstallSHA256":digest(preinstall.read_bytes()),"pkgbuild":tool,"nativePayloadIdentityVerified":True,"actualExpandedPayloadVerified":True,"archiveInspection":archive_inspection,"bundleRelocationDisabled":True,"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"experimentalCleanInstallOnly":True,"installationExecuted":False,"upgradeQualified":False,"downgradeQualified":False,"finderInteractionQualified":False,"managedEndpointQualified":False,"productionQualificationComplete":False}
         encode(output/"compiler-artifact.json",report)
         return report
     finally:
@@ -118,6 +121,6 @@ def build(version,arch,go="go"):
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("--version",default="0.1.0-alpha");parser.add_argument("--architecture",choices=("amd64","arm64"),required=True);parser.add_argument("--go",default="go")
     args=parser.parse_args();report=build(args.version,args.architecture,args.go)
-    print(json.dumps({"sourceCommit":report["sourceCommit"],"target":report["target"],"actualExpandedPayloadVerified":True,"productionQualificationComplete":False}))
+    print(json.dumps({"sourceCommit":report["sourceCommit"],"target":report["target"],"actualExpandedPayloadVerified":True,"archiveInspection":archive_inspection,"productionQualificationComplete":False}))
 
 if __name__=="__main__":main()

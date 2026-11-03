@@ -6,6 +6,8 @@ on:
     branches: [main]
     paths:
       - scripts/*macos*installer*
+      - scripts/macos_package_archive.py
+      - scripts/test_macos_package_archive.py
       - scripts/sbom.py
       - scripts/sbom/**
       - cmd/accessweaver/**
@@ -49,12 +51,19 @@ jobs:
           GOTOOLCHAIN: local
         run: |
           python3 -m unittest discover -s scripts -p test_macos_installer.py -v
+          python3 -m unittest discover -s scripts -p test_macos_package_archive.py -v
           python3 -m unittest discover -s scripts -p test_sbom.py -v
       - name: Build and inspect actual unsigned native package without installation
         env:
           GOTOOLCHAIN: local
         run: python3 scripts/build-macos-installer.py --architecture '${{ matrix.arch }}' --version 0.1.0-alpha
+      - name: Disposable clean installation and existing-install refusal
+        env:
+          ACCESSWEAVER_DISPOSABLE_MACOS_INSTALLER_TEST: '1'
+          ACCESSWEAVER_MACOS_INSTALLER_ARCH: '${{ matrix.arch }}'
+        run: python3 scripts/test-macos-installer-lifecycle.py
       - name: Retain actual package, SBOM and scoped compiler/inspection evidence
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: macos-installer-inspection-${{ matrix.arch }}
