@@ -231,6 +231,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_sbom.py -v
           python3 -m unittest discover -s scripts -p test_darwin_storage.py -v
           python3 -m unittest discover -s scripts -p test_bsd_guest.py -v
+          python3 -m unittest discover -s scripts -p test_openbsd_guest.py -v
       - if: runner.os == 'Windows'
         shell: powershell
         run: ./scripts/test-windows-workflow.ps1
@@ -499,6 +500,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p test_stage_packaged_native.py -v
           python3 -m unittest discover -s scripts -p test_bsd_guest.py -v
+          python3 -m unittest discover -s scripts -p test_openbsd_guest.py -v
       - name: Install distribution-signed hypervisor and ISO tools
         run: |
           sudo apt-get update

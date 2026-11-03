@@ -1,0 +1,64 @@
+name: OpenBSD guest core probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openbsd-core-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: '1.27.3'
+  GOTOOLCHAIN: local
+
+jobs:
+  openbsd:
+    name: OpenBSD 8.0 ${{ matrix.arch }} guest core
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            sdkarch: x64
+            packages: qemu-system-x86
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            sdkarch: arm64
+            packages: qemu-system-arm qemu-efi-aarch64=2024.02-2ubuntu0.10
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          architecture: ${{ matrix.sdkarch }}
+          cache: false
+      - name: Check installer, source, isolation and lifetime guards
+        run: |
+          python3 -m unittest discover -s scripts -p test_bsd_guest.py -v
+          python3 -m unittest discover -s scripts -p test_openbsd_guest.py -v
+      - name: Install distribution-signed emulator and media tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ${{ matrix.packages }} qemu-utils xorriso openssh-client openssl
+      - name: Install, privately bootstrap and execute the ordinary-user core candidate
+        env:
+          ACCESSWEAVER_DISPOSABLE_BSD_GUEST_TEST: '1'
+          ACCESSWEAVER_DISPOSABLE_OPENBSD_GUEST_TEST: '1'
+          ACCESSWEAVER_BSD_ARCH: ${{ matrix.arch }}
+        run: python3 scripts/test-openbsd-guest.py
+      - name: Retain public source-bound execution evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: openbsd-${{ matrix.arch }}-guest-core
+          path: build/openbsd-native-checks/
+          if-no-files-found: ignore
+          retention-days: 14

@@ -206,8 +206,10 @@ class TargetAndFirmwareTests(unittest.TestCase):
                         self.assertEqual(target["arch"], arch)
 
     def test_payload_keeps_selected_architecture_through_test_and_cli_builds(self):
-        for arch, packaged in (("amd64", False), ("arm64", False), ("amd64", True), ("arm64", True), ("amd64", "changed-cli"), ("arm64", "changed-cli")):
-            with self.subTest(arch=arch, packaged=packaged), tempfile.TemporaryDirectory(prefix="accessweaver-payload-") as name:
+        cases = [("freebsd", arch, mode) for arch in ("amd64", "arm64") for mode in (False, True, "changed-cli")]
+        cases += [("openbsd", arch, False) for arch in ("amd64", "arm64")]
+        for goos, arch, packaged in cases:
+            with self.subTest(goos=goos, arch=arch, packaged=packaged), tempfile.TemporaryDirectory(prefix="accessweaver-payload-") as name:
                 root = Path(name).resolve()
                 repo, capsule = root / "repo", root / "capsule"
                 (repo / "internal" / "profile").mkdir(parents=True)
@@ -219,16 +221,16 @@ class TargetAndFirmwareTests(unittest.TestCase):
                         result = json.dumps({"ImportPath": guest.MODULE + "internal/profile",
                                              "Dir": str(repo / "internal/profile"), "TestGoFiles": ["fixture_test.go"]}).encode()
                     elif args[:2] == ["go", "test"]:
-                        self.assertEqual(env["GOOS"], "freebsd")
+                        self.assertEqual(env["GOOS"], goos)
                         self.assertEqual(env["GOARCH"], arch)
                         output = Path(args[args.index("-o") + 1])
                         output.write_bytes(b"test-for-" + arch.encode())
                         compiled.append(env["GOARCH"])
                     elif args[:2] == ["bash", "scripts/build-all.sh"]:
                         self.assertFalse(packaged, "archived CLI was replaced with a source build")
-                        self.assertEqual(args[2], "freebsd/" + arch)
+                        self.assertEqual(args[2], goos + "/" + arch)
                         output = Path(env["OUTPUT_DIR"])
-                        (output / ("accessweaver-freebsd-" + arch)).write_bytes(b"cli-for-" + arch.encode())
+                        (output / ("accessweaver-" + goos + "-" + arch)).write_bytes(b"cli-for-" + arch.encode())
                         (output / "BUILD-INFO.json").write_text("{}", encoding="utf-8")
                     elif args[:2] == ["git", "ls-tree"]:
                         result = b"100644 blob " + b"0" * 40 + b" 4\tfixture.txt\n"
@@ -238,7 +240,7 @@ class TargetAndFirmwareTests(unittest.TestCase):
                     elif args[:2] != ["git", "status"]:
                         self.fail("unexpected build command")
                     return guest.subprocess.CompletedProcess(args, 0, result)
-                target = guest.selected_target(arch)
+                target = dict(guest.selected_target(arch), goos=goos, label=goos + "-" + arch)
                 staged = root / "authenticated-stage"
                 receipt = {"build": {"arch": arch}, "binarySha256": hashlib.sha256(b"archived-cli-for-" + arch.encode()).hexdigest()}
                 def copy(directory, destination, source, actual_arch, ref):
@@ -261,15 +263,16 @@ class TargetAndFirmwareTests(unittest.TestCase):
                 self.assertEqual(target["arch"], arch)
                 self.assertEqual(compiled, [arch])
                 self.assertEqual(manifest["goarch"], arch)
-                self.assertEqual(manifest["cli"]["file"], "accessweaver-freebsd-" + arch)
+                self.assertEqual(manifest["goos"], goos)
+                self.assertEqual(manifest["cli"]["file"], "accessweaver-" + goos + "-" + arch)
                 self.assertEqual(manifest["cli"]["sha256"], guest.digest(capsule / "payload" / manifest["cli"]["file"]))
                 self.assertEqual(manifest["sourceArchiveSHA256"], guest.digest(capsule / "payload/source.tar"))
                 self.assertEqual(len(manifest["packages"]), 1)
                 with guest.tarfile.open(archive) as payload:
-                    self.assertIn("accessweaver-freebsd-" + arch, payload.getnames())
+                    self.assertIn("accessweaver-" + goos + "-" + arch, payload.getnames())
                     expected_cli = (b"archived-cli-for-" if packaged else b"cli-for-") + arch.encode()
-                    self.assertEqual(payload.extractfile("accessweaver-freebsd-" + arch).read(), expected_cli)
-                    self.assertNotIn("accessweaver-freebsd-" + ("amd64" if arch == "arm64" else "arm64"), payload.getnames())
+                    self.assertEqual(payload.extractfile("accessweaver-" + goos + "-" + arch).read(), expected_cli)
+                    self.assertNotIn("accessweaver-" + goos + "-" + ("amd64" if arch == "arm64" else "arm64"), payload.getnames())
 
     def test_guest_architecture_cannot_be_substituted_between_targets(self):
         for arch, wrong in (("amd64", "arm64"), ("arm64", "amd64")):

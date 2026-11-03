@@ -436,11 +436,15 @@ def remove_owned_capsule(capsule, root, identity, emulator_stopped):
 
 
 def build_payload(repo, capsule, source, target, packaged=None):
+    goos = target.get("goos", "freebsd")
+    if (goos not in ("freebsd", "openbsd") or target["arch"] not in ("amd64", "arm64") or
+            target["label"] != goos + "-" + target["arch"] or (packaged is not None and goos != "freebsd")):
+        raise ValueError("unsupported explicit BSD payload target")
     payload = capsule / "payload"
     payload.mkdir(mode=0o700)
     tests = payload / "tests"
     tests.mkdir(mode=0o700)
-    env = dict(os.environ, GOOS="freebsd", GOARCH=target["arch"], CGO_ENABLED="0", GOTOOLCHAIN="local")
+    env = dict(os.environ, GOOS=goos, GOARCH=target["arch"], CGO_ENABLED="0", GOTOOLCHAIN="local")
     packages = decode_objects(run(["go", "list", "-json", "./..."], env=env).stdout)
     records = []
     for package in packages:
@@ -461,7 +465,7 @@ def build_payload(repo, capsule, source, target, packaged=None):
     cli = "accessweaver-" + target["label"]
     receipt = None
     if packaged is None:
-        run(["bash", "scripts/build-all.sh", "freebsd/" + target["arch"]],
+        run(["bash", "scripts/build-all.sh", goos + "/" + target["arch"]],
             env=dict(os.environ, OUTPUT_DIR=str(payload), GOTOOLCHAIN="local"), timeout=300)
     else:
         # The prior credential-scoped step authenticates all twelve subjects.
@@ -475,7 +479,7 @@ def build_payload(repo, capsule, source, target, packaged=None):
     run(["git", "archive", "--format=tar", "--output=" + str(payload / "source.tar"), "HEAD"])
     if run(["git", "status", "--porcelain"]).stdout.strip():
         raise RuntimeError("source changed while building")
-    manifest = {"sourceCommit": source, "goos": "freebsd", "goarch": target["arch"], "hostCrossCompiled": True,
+    manifest = {"sourceCommit": source, "goos": goos, "goarch": target["arch"], "hostCrossCompiled": True,
                 "cli": {"file": cli, "sha256": digest(payload / cli)}, "packages": records,
                 "sourceArchiveSHA256": digest(payload / "source.tar")}
     if receipt is not None:

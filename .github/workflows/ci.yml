@@ -233,6 +233,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_sbom.py -v
           python3 -m unittest discover -s scripts -p test_darwin_storage.py -v
           python3 -m unittest discover -s scripts -p test_bsd_guest.py -v
+          python3 -m unittest discover -s scripts -p test_openbsd_guest.py -v
       - name: Windows workflow contracts (no system changes)
         if: runner.os == 'Windows'
         shell: powershell
