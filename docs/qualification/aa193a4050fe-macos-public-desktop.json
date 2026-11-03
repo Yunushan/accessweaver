@@ -1,0 +1,1330 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "aa193a4050feeb5d10182ea174666aa8fda63fd3",
+  "sourceRef": "refs/heads/main",
+  "scope": "Experimental unsigned macOS protected public components and default LaunchServices controller lifecycle on Intel and Apple Silicon; no single product distribution or full desktop qualification.",
+  "nativeWorkflow": {
+    "runID": 41715809139,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41715809139",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 126195358241,
+        "name": "Public desktop lifecycle (arm64)",
+        "conclusion": "success",
+        "html_url": "https://github.com/Yunushan/accessweaver/actions/runs/41715809139/job/126195358241"
+      },
+      {
+        "id": 126195358763,
+        "name": "Public desktop lifecycle (amd64)",
+        "conclusion": "success",
+        "html_url": "https://github.com/Yunushan/accessweaver/actions/runs/41715809139/job/126195358763"
+      }
+    ]
+  },
+  "ci": {
+    "runID": 41715809282,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41715809282",
+    "statusAtEvidenceCapture": "completed",
+    "conclusionAtEvidenceCapture": "failure",
+    "successfulJobs": 21,
+    "all22JobsSuccessful": false,
+    "unfinishedJobs": [
+      {
+        "id": 126196170834,
+        "name": "Test (macos-latest)",
+        "status": "completed",
+        "conclusion": "cancelled",
+        "html_url": "https://github.com/Yunushan/accessweaver/actions/runs/41715809282/job/126196170834"
+      }
+    ],
+    "infrastructureCancellation": {
+      "job": 126196170834,
+      "status": "completed",
+      "conclusion": "cancelled",
+      "runnerID": 0,
+      "steps": 0,
+      "checkTitle": null,
+      "checkSummary": null,
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/aa193a4050feeb5d10182ea174666aa8fda63fd3/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/aa193a4050feeb5d10182ea174666aa8fda63fd3/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/aa193a4050feeb5d10182ea174666aa8fda63fd3/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/aa193a4050feeb5d10182ea174666aa8fda63fd3/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        }
+      ]
+    },
+    "note": "CI is incomplete:21 successful jobs and one unstarted hosted-runner capacity cancellation. No assertion ran in the canceled job. A fresh source push starts new checks; this native artifact proof grants no whole-CI or readiness qualification."
+  },
+  "providerArtifacts": [
+    {
+      "id": 13269303496,
+      "name": "macos-desktop-candidate-amd64",
+      "size_in_bytes": 64974537,
+      "digest": "sha256:5bdeabd55efb77fb867abf465241b02974a73b715ab59807b84c7c4dc833da4c",
+      "created_at": "2026-11-03T20:55:04Z",
+      "expires_at": "2026-11-17T20:54:57Z"
+    },
+    {
+      "id": 13268719822,
+      "name": "macos-desktop-candidate-arm64",
+      "size_in_bytes": 61084861,
+      "digest": "sha256:5c790b73a096771160fd393151df65a8816b1f301c54ce260dca5873c463f6f9",
+      "created_at": "2026-11-03T20:52:33Z",
+      "expires_at": "2026-11-17T20:52:30Z"
+    }
+  ],
+  "independentVerificationTool": {
+    "name": "GitHub CLI",
+    "version": "gh version 2.102.0 (2026-09-30)",
+    "sha256": "756724853cc579510b58e65e7a7429ad6b1af29cf99ef19b3a95f3b701c5c580",
+    "authenticodeStatus": "Valid",
+    "publisher": "CN=\"GitHub, Inc.\", O=\"GitHub, Inc.\", L=San Francisco, S=California, C=US",
+    "candidateExecutablesRun": false
+  },
+  "independentProvenance": [
+    {
+      "schemaVersion": 1,
+      "repository": "Yunushan/accessweaver",
+      "workflow": "Yunushan/accessweaver/.github/workflows/macos-desktop.yml",
+      "sourceCommit": "aa193a4050feeb5d10182ea174666aa8fda63fd3",
+      "sourceRef": "refs/heads/main",
+      "target": "darwin/amd64",
+      "subjectsVerified": 41,
+      "subjects": [
+        {
+          "file": "0.1.0-alpha-BUILD-INFO.json",
+          "sha256": "1bd87e0a10413b7cfad1f2a989957c35574b4837a961d0a0958b1799a4ef938b"
+        },
+        {
+          "file": "0.1.0-alpha-INSTALL-MANIFEST.json",
+          "sha256": "cc23d2470b1999f82319f0677ee9c4d189193cc80742712a433b760e080699a4"
+        },
+        {
+          "file": "0.1.0-alpha-SCRIPT-MANIFEST.json",
+          "sha256": "df19196db810fe0198267feeb2e93f867367b9a6bbafde44474aa8d7e2173824"
+        },
+        {
+          "file": "0.1.0-alpha-compiler-artifact.json",
+          "sha256": "fe4bdfe7b74d6c2428864b1838cca4d5ccc97007dc09631351adc76ddeb3a443"
+        },
+        {
+          "file": "0.1.0-alpha-helper-SBOM.cdx.json",
+          "sha256": "aeea4f30a43bfe00cc5ee1d70b0577c5e6b9c82730e393609c9c3dddaaffcba3"
+        },
+        {
+          "file": "0.1.0-alpha-payload-SBOM.cdx.json",
+          "sha256": "65db349da386c89e9729e53f0436c2f4144f4d8d2b150d31868a6613437f172b"
+        },
+        {
+          "file": "0.1.1-alpha-BUILD-INFO.json",
+          "sha256": "0cd1197123001d10416c37374df096bcfcdf4ffcaaa9832f5f2dd2fdf1b0b560"
+        },
+        {
+          "file": "0.1.1-alpha-INSTALL-MANIFEST.json",
+          "sha256": "e008a1514e4ca3021dd49f27eb896eec1af416f2fe1ebce307802d29c3dd2292"
+        },
+        {
+          "file": "0.1.1-alpha-SCRIPT-MANIFEST.json",
+          "sha256": "4964ce114a762462a5a905351490411264577eee20dfb7e0fdd63615af21ca2e"
+        },
+        {
+          "file": "0.1.1-alpha-compiler-artifact.json",
+          "sha256": "a2ddafb54baa0fee04ab4a1fee76650d9001f6a8c6ddc4dac84c70430a36eeb1"
+        },
+        {
+          "file": "0.1.1-alpha-helper-SBOM.cdx.json",
+          "sha256": "1e6dd34124e37cd04158b4db27629853cbc321b28f1a536cae4d61ef567ad619"
+        },
+        {
+          "file": "0.1.1-alpha-payload-SBOM.cdx.json",
+          "sha256": "6df96a1852a9a951bdbf3bc4d3467759bf0860bfdd057874854c21adfcc6edd0"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-amd64-deployment-experimental.pkg",
+          "sha256": "f33911e404f1c52ed626f71451e6946665b157b2dfbcc7048dcadb276e61e785"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-amd64-deployment-experimental.pkg.cdx.json",
+          "sha256": "3f9e39395fbb958ba222b4ee067d6f02f10de32f68d05ba320f10d4319e0fcc0"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-amd64-desktop-application-experimental.pkg",
+          "sha256": "c536cd88d5d7e62be4dd015ca0ed51d8233bad2f9df24583c7d34e51b9c18e2c"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-amd64-desktop-application-experimental.pkg.cdx.json",
+          "sha256": "91c6389d95712f3047848ab1d67992ff997fb3647fc5e454f9152884b29ddd17"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-amd64-desktop-metadata-experimental.pkg",
+          "sha256": "35978985f6391243ac7941ee920451856fcbb527d098f7f64c0073c248632238"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-amd64-desktop-metadata-experimental.pkg.cdx.json",
+          "sha256": "bd9095ffb189adba247f80235a49e6a982528e90cce6e19034285069447a6d0f"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-amd64-deployment-experimental.pkg",
+          "sha256": "4240f759aad2b0a0ab21a60b5ab5c531f12e9f8d6d1abb958dfb2f1c504d9007"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-amd64-deployment-experimental.pkg.cdx.json",
+          "sha256": "348d22544fefa49d7ef1d408cbf23c4a06a2f4ffb2f67d9a9a211f1fbc67d8ec"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-amd64-desktop-application-experimental.pkg",
+          "sha256": "62d611ace536f734f850078164714306e99d980373a8ffcc4f2e5f968fab7a53"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-amd64-desktop-application-experimental.pkg.cdx.json",
+          "sha256": "b662bce27ca8c589f7e6287d0fc237880bc8480ad9fe710bd9e18f8fe6fe6474"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-amd64-desktop-metadata-experimental.pkg",
+          "sha256": "7be70dc943803e818840a19dabb9a2c1b394525ec74b977efffcfd497cc4d3b3"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-amd64-desktop-metadata-experimental.pkg.cdx.json",
+          "sha256": "747282a81fd42aee1a65666f329513cd96f832fa1473f71577163e47e16c68e7"
+        },
+        {
+          "file": "accessweaver-launcher-0.1.0-alpha-darwin-amd64-experimental.zip",
+          "sha256": "fc2a83c252e14aa8a35de80d28831cf77590cbec7a02675508ccc007abc75ec1"
+        },
+        {
+          "file": "accessweaver-launcher-darwin-amd64-experimental.zip",
+          "sha256": "c3e9a31347103e81c780f58a6e2296a9f654b2b95c3acdcbae569aa590e51ebf"
+        },
+        {
+          "file": "desktop-0.1.0-alpha-BUILD-INFO.json",
+          "sha256": "1bd87e0a10413b7cfad1f2a989957c35574b4837a961d0a0958b1799a4ef938b"
+        },
+        {
+          "file": "desktop-0.1.0-alpha-DESKTOP-RECORD.json",
+          "sha256": "fe850e8c63cc00f28ede62f71752f02d322aca29d5cc0a26fb1272fb7cc7e6df"
+        },
+        {
+          "file": "desktop-0.1.0-alpha-application-SCRIPT-MANIFEST.json",
+          "sha256": "59ea6e6c003533a7fbd176d89648624cf87dccbeac434f95b95fa20ac133c4b5"
+        },
+        {
+          "file": "desktop-0.1.0-alpha-application-helper-SBOM.cdx.json",
+          "sha256": "2b953c98da5ece23654b3ee7545c63dffc5049ba71942bb027443d401f714160"
+        },
+        {
+          "file": "desktop-0.1.0-alpha-compiler-artifact.json",
+          "sha256": "8b97803d2e5a4a04d2f14794bf5f41e3a4137654861ac6e425adc029c00d3f68"
+        },
+        {
+          "file": "desktop-0.1.0-alpha-metadata-SCRIPT-MANIFEST.json",
+          "sha256": "9f0a097c6c59aa15c4163f09a2b54f449afc8f1d3c20c1045b041ebcdfe3024c"
+        },
+        {
+          "file": "desktop-0.1.0-alpha-metadata-helper-SBOM.cdx.json",
+          "sha256": "5b5af60110d85e311575895c2017049777e0203569ca568a55bb769fd8127c07"
+        },
+        {
+          "file": "desktop-0.1.1-alpha-BUILD-INFO.json",
+          "sha256": "0cd1197123001d10416c37374df096bcfcdf4ffcaaa9832f5f2dd2fdf1b0b560"
+        },
+        {
+          "file": "desktop-0.1.1-alpha-DESKTOP-RECORD.json",
+          "sha256": "f0004ecdb7e91c4cae28a06183b1d914498bdb82789f2c1d5cc2f569203fa55e"
+        },
+        {
+          "file": "desktop-0.1.1-alpha-application-SCRIPT-MANIFEST.json",
+          "sha256": "d2df88c696278eda3cbea11fd405f9cb548187f78d463831e59bdd7d3399a037"
+        },
+        {
+          "file": "desktop-0.1.1-alpha-application-helper-SBOM.cdx.json",
+          "sha256": "37f197576764fdd8c75a0d5818fe4530b9d80a5d3703fbbf03b7a071e84640e4"
+        },
+        {
+          "file": "desktop-0.1.1-alpha-compiler-artifact.json",
+          "sha256": "2512b01c4ffaf4da9ef509a22f0fea4297751759f147957aebe3ba02d489269f"
+        },
+        {
+          "file": "desktop-0.1.1-alpha-metadata-SCRIPT-MANIFEST.json",
+          "sha256": "dfe293b665ebbd4499c05128167a804ce09e8cedfe8b7eed55755765424d4f2a"
+        },
+        {
+          "file": "desktop-0.1.1-alpha-metadata-helper-SBOM.cdx.json",
+          "sha256": "ccc1455c13d28b7102d44aa042e8e4b0923ca6d23a0d0ff1bdd9bcaeea7d0d29"
+        },
+        {
+          "file": "desktop-lifecycle-artifact.json",
+          "sha256": "d1a0ce8c47e8e718a777248b76a6226e2a90b421bf65320fb7027e1da88b54af"
+        }
+      ],
+      "authenticatedBeforeParsing": true,
+      "hostedRunnerRequired": true,
+      "desktop": {
+        "lifecycleRunID": "41715809139",
+        "corePackages": [
+          {
+            "packageSHA256": "f33911e404f1c52ed626f71451e6946665b157b2dfbcc7048dcadb276e61e785",
+            "payloadSHA256": "1f4b87aeded6ac63497e0ff89592046b3f922a775b0cdb4f9322d6e9ed857088",
+            "manifestSHA256": "cc23d2470b1999f82319f0677ee9c4d189193cc80742712a433b760e080699a4",
+            "helperSHA256": "6ebb56f2157a64f8c360ff8eeaf9979495c8183f6e50137dd9278b25a73ca39b",
+            "installLocation": "/Library/Application Support/AccessWeaver Incoming/cc23d2470b1999f82319f0677ee9c4d189193cc80742712a433b760e080699a4",
+            "packageIdentifier": "io.github.yunushan.accessweaver.deployment",
+            "payloadFiles": 18,
+            "payloadDirectories": 7,
+            "scriptFiles": 6,
+            "macho": {
+              "cpuType": "0x01000007",
+              "minimumOSVersion": "13.0.0"
+            },
+            "helperMachO": {
+              "cpuType": "0x01000007",
+              "minimumOSVersion": "13.0.0"
+            },
+            "detachedPayloadSBOMOutsideAppVerified": true,
+            "payloadSBOMSHA256": "65db349da386c89e9729e53f0436c2f4144f4d8d2b150d31868a6613437f172b",
+            "detachedManifestOutsideAppVerified": true,
+            "allPathsModesOwnershipAndHashesVerified": true,
+            "xarAndCpioIntegrityVerified": true,
+            "targetExecutionPerformed": false,
+            "publisherSignatureVerified": false,
+            "productionQualificationComplete": false
+          },
+          {
+            "packageSHA256": "4240f759aad2b0a0ab21a60b5ab5c531f12e9f8d6d1abb958dfb2f1c504d9007",
+            "payloadSHA256": "f932a980b39a3271cf5bc0de099fb749867c05e8b7973503b1aeab58d4ac6b29",
+            "manifestSHA256": "e008a1514e4ca3021dd49f27eb896eec1af416f2fe1ebce307802d29c3dd2292",
+            "helperSHA256": "6ed95a0f381708981d5c40b1a4cb4112198696067bbf710dbd6f51cd33a43437",
+            "installLocation": "/Library/Application Support/AccessWeaver Incoming/e008a1514e4ca3021dd49f27eb896eec1af416f2fe1ebce307802d29c3dd2292",
+            "packageIdentifier": "io.github.yunushan.accessweaver.deployment",
+            "payloadFiles": 18,
+            "payloadDirectories": 7,
+            "scriptFiles": 6,
+            "macho": {
+              "cpuType": "0x01000007",
+              "minimumOSVersion": "13.0.0"
+            },
+            "helperMachO": {
+              "cpuType": "0x01000007",
+              "minimumOSVersion": "13.0.0"
+            },
+            "detachedPayloadSBOMOutsideAppVerified": true,
+            "payloadSBOMSHA256": "6df96a1852a9a951bdbf3bc4d3467759bf0860bfdd057874854c21adfcc6edd0",
+            "detachedManifestOutsideAppVerified": true,
+            "allPathsModesOwnershipAndHashesVerified": true,
+            "xarAndCpioIntegrityVerified": true,
+            "targetExecutionPerformed": false,
+            "publisherSignatureVerified": false,
+            "productionQualificationComplete": false
+          }
+        ],
+        "desktop": [
+          {
+            "version": "0.1.0-alpha",
+            "launcher": {
+              "archiveSHA256": "fc2a83c252e14aa8a35de80d28831cf77590cbec7a02675508ccc007abc75ec1",
+              "binarySHA256": "e92326868c9c7a667239908826527dce25a1f0d81ee5fac3dc1943fe4cd8beb3",
+              "binaryBytes": 5340480,
+              "macho": {
+                "cpuType": "0x01000007",
+                "minimumOSVersion": "13.0.0"
+              },
+              "goBuildMetadata": {
+                "GoVersion": "go1.27.3",
+                "Path": "github.com/Yunushan/accessweaver/cmd/accessweaver-launcher",
+                "Main": {
+                  "Path": "github.com/Yunushan/accessweaver",
+                  "Version": "(devel)"
+                },
+                "Deps": [
+                  {
+                    "Path": "github.com/ebitengine/purego",
+                    "Version": "v0.11.2",
+                    "Sum": "h1:WWiTx8rD8zYdOwSj8O/NiNbsOvSAgJMTlyV1XlbUSeU="
+                  },
+                  {
+                    "Path": "golang.org/x/sys",
+                    "Version": "v0.49.0",
+                    "Sum": "h1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA="
+                  }
+                ],
+                "Settings": [
+                  {
+                    "Key": "-buildmode",
+                    "Value": "exe"
+                  },
+                  {
+                    "Key": "-compiler",
+                    "Value": "gc"
+                  },
+                  {
+                    "Key": "-trimpath",
+                    "Value": "true"
+                  },
+                  {
+                    "Key": "DefaultGODEBUG",
+                    "Value": "tracebacklabels=0,x509sslcertoverrideplatform=0"
+                  },
+                  {
+                    "Key": "CGO_ENABLED",
+                    "Value": "0"
+                  },
+                  {
+                    "Key": "GOARCH",
+                    "Value": "amd64"
+                  },
+                  {
+                    "Key": "GOOS",
+                    "Value": "darwin"
+                  },
+                  {
+                    "Key": "GOAMD64",
+                    "Value": "v1"
+                  }
+                ]
+              },
+              "build": {
+                "version": "0.1.0-alpha",
+                "commit": "aa193a4050feeb5d10182ea174666aa8fda63fd3",
+                "sourceState": "clean",
+                "builtAt": "2026-11-03T20:47:30Z",
+                "goVersion": "go1.27.3",
+                "platform": "darwin",
+                "arch": "amd64"
+              },
+              "noticesVerified": 4,
+              "publicApplicationIntegrated": false,
+              "publisherSignatureVerified": false,
+              "productionQualificationComplete": false
+            },
+            "components": [
+              {
+                "packageSHA256": "35978985f6391243ac7941ee920451856fcbb527d098f7f64c0073c248632238",
+                "recordSHA256": "fe850e8c63cc00f28ede62f71752f02d322aca29d5cc0a26fb1272fb7cc7e6df",
+                "component": "metadata",
+                "packageIdentifier": "io.github.yunushan.accessweaver.desktop.registration.fe850e8c63cc00f28ede62f71752f02d322aca29d5cc0a26fb1272fb7cc7e6df",
+                "payloadFiles": 1,
+                "payloadDirectories": 1,
+                "helperSHA256": "cafa8dda66aef848f033db9a03a2db178deae8c920c68f81b8212d43282d2512",
+                "helperMachO": {
+                  "cpuType": "0x01000007",
+                  "minimumOSVersion": "13.0.0"
+                },
+                "scriptArchiveOwner": {
+                  "uid": 501,
+                  "gid": 20
+                },
+                "allPayloadPathsModesOwnersAndScriptHashesVerified": true,
+                "targetExecutionPerformed": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              {
+                "packageSHA256": "c536cd88d5d7e62be4dd015ca0ed51d8233bad2f9df24583c7d34e51b9c18e2c",
+                "recordSHA256": "fe850e8c63cc00f28ede62f71752f02d322aca29d5cc0a26fb1272fb7cc7e6df",
+                "component": "application",
+                "packageIdentifier": "io.github.yunushan.accessweaver.desktop",
+                "payloadFiles": 7,
+                "payloadDirectories": 6,
+                "helperSHA256": "394af7900a8757a03d9cd568274cc87617eb78e806458160d0b11d33dc0b44d6",
+                "helperMachO": {
+                  "cpuType": "0x01000007",
+                  "minimumOSVersion": "13.0.0"
+                },
+                "scriptArchiveOwner": {
+                  "uid": 501,
+                  "gid": 20
+                },
+                "allPayloadPathsModesOwnersAndScriptHashesVerified": true,
+                "targetExecutionPerformed": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              }
+            ],
+            "recordSHA256": "fe850e8c63cc00f28ede62f71752f02d322aca29d5cc0a26fb1272fb7cc7e6df"
+          },
+          {
+            "version": "0.1.1-alpha",
+            "launcher": {
+              "archiveSHA256": "c3e9a31347103e81c780f58a6e2296a9f654b2b95c3acdcbae569aa590e51ebf",
+              "binarySHA256": "47f317663be073232938a619a4fd1ccf9535edcb6edbae94d9abe624383f236c",
+              "binaryBytes": 5340480,
+              "macho": {
+                "cpuType": "0x01000007",
+                "minimumOSVersion": "13.0.0"
+              },
+              "goBuildMetadata": {
+                "GoVersion": "go1.27.3",
+                "Path": "github.com/Yunushan/accessweaver/cmd/accessweaver-launcher",
+                "Main": {
+                  "Path": "github.com/Yunushan/accessweaver",
+                  "Version": "(devel)"
+                },
+                "Deps": [
+                  {
+                    "Path": "github.com/ebitengine/purego",
+                    "Version": "v0.11.2",
+                    "Sum": "h1:WWiTx8rD8zYdOwSj8O/NiNbsOvSAgJMTlyV1XlbUSeU="
+                  },
+                  {
+                    "Path": "golang.org/x/sys",
+                    "Version": "v0.49.0",
+                    "Sum": "h1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA="
+                  }
+                ],
+                "Settings": [
+                  {
+                    "Key": "-buildmode",
+                    "Value": "exe"
+                  },
+                  {
+                    "Key": "-compiler",
+                    "Value": "gc"
+                  },
+                  {
+                    "Key": "-trimpath",
+                    "Value": "true"
+                  },
+                  {
+                    "Key": "DefaultGODEBUG",
+                    "Value": "tracebacklabels=0,x509sslcertoverrideplatform=0"
+                  },
+                  {
+                    "Key": "CGO_ENABLED",
+                    "Value": "0"
+                  },
+                  {
+                    "Key": "GOARCH",
+                    "Value": "amd64"
+                  },
+                  {
+                    "Key": "GOOS",
+                    "Value": "darwin"
+                  },
+                  {
+                    "Key": "GOAMD64",
+                    "Value": "v1"
+                  }
+                ]
+              },
+              "build": {
+                "version": "0.1.1-alpha",
+                "commit": "aa193a4050feeb5d10182ea174666aa8fda63fd3",
+                "sourceState": "clean",
+                "builtAt": "2026-11-03T20:47:30Z",
+                "goVersion": "go1.27.3",
+                "platform": "darwin",
+                "arch": "amd64"
+              },
+              "noticesVerified": 4,
+              "publicApplicationIntegrated": false,
+              "publisherSignatureVerified": false,
+              "productionQualificationComplete": false
+            },
+            "components": [
+              {
+                "packageSHA256": "7be70dc943803e818840a19dabb9a2c1b394525ec74b977efffcfd497cc4d3b3",
+                "recordSHA256": "f0004ecdb7e91c4cae28a06183b1d914498bdb82789f2c1d5cc2f569203fa55e",
+                "component": "metadata",
+                "packageIdentifier": "io.github.yunushan.accessweaver.desktop.registration.f0004ecdb7e91c4cae28a06183b1d914498bdb82789f2c1d5cc2f569203fa55e",
+                "payloadFiles": 1,
+                "payloadDirectories": 1,
+                "helperSHA256": "55ac12dc9dbd1556b8e9234b531c40b00ff25f072f7e7929955b20abc22f0bb7",
+                "helperMachO": {
+                  "cpuType": "0x01000007",
+                  "minimumOSVersion": "13.0.0"
+                },
+                "scriptArchiveOwner": {
+                  "uid": 501,
+                  "gid": 20
+                },
+                "allPayloadPathsModesOwnersAndScriptHashesVerified": true,
+                "targetExecutionPerformed": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              {
+                "packageSHA256": "62d611ace536f734f850078164714306e99d980373a8ffcc4f2e5f968fab7a53",
+                "recordSHA256": "f0004ecdb7e91c4cae28a06183b1d914498bdb82789f2c1d5cc2f569203fa55e",
+                "component": "application",
+                "packageIdentifier": "io.github.yunushan.accessweaver.desktop",
+                "payloadFiles": 7,
+                "payloadDirectories": 6,
+                "helperSHA256": "3fe537117f5b6f5a32bbc7ab22e2e6a0c60f357dbbaa56606ba6ccbf8198f300",
+                "helperMachO": {
+                  "cpuType": "0x01000007",
+                  "minimumOSVersion": "13.0.0"
+                },
+                "scriptArchiveOwner": {
+                  "uid": 501,
+                  "gid": 20
+                },
+                "allPayloadPathsModesOwnersAndScriptHashesVerified": true,
+                "targetExecutionPerformed": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              }
+            ],
+            "recordSHA256": "f0004ecdb7e91c4cae28a06183b1d914498bdb82789f2c1d5cc2f569203fa55e"
+          }
+        ],
+        "actualInstallerOperations": 21,
+        "actualCoreDeactivationOperations": 1,
+        "publicAppSelectionCases": 5,
+        "launchServicesDefaultControllerVerified": true,
+        "finderInteractiveQualificationComplete": false,
+        "singleProductDistributionQualified": false,
+        "publisherSignatureVerified": false,
+        "productionQualificationComplete": false
+      },
+      "rejectionChecks": {
+        "rejected": [
+          "--source-digest",
+          "--source-ref",
+          "--signer-workflow",
+          "--repo",
+          "changed-subject-digest"
+        ],
+        "realBundleVerifiedBeforeAndAfter": true
+      },
+      "localTargetExecution": false,
+      "publisherSignatureVerified": false,
+      "notarized": false,
+      "productionQualificationComplete": false
+    },
+    {
+      "schemaVersion": 1,
+      "repository": "Yunushan/accessweaver",
+      "workflow": "Yunushan/accessweaver/.github/workflows/macos-desktop.yml",
+      "sourceCommit": "aa193a4050feeb5d10182ea174666aa8fda63fd3",
+      "sourceRef": "refs/heads/main",
+      "target": "darwin/arm64",
+      "subjectsVerified": 41,
+      "subjects": [
+        {
+          "file": "0.1.0-alpha-BUILD-INFO.json",
+          "sha256": "f8cce16292c1817cf6604d97854b72e7510449c08f4b6ad34d1c2f8fe2ef080f"
+        },
+        {
+          "file": "0.1.0-alpha-INSTALL-MANIFEST.json",
+          "sha256": "0e842f8e11b719b7b04e53258bf7bfa6cee67c88782189b94882066ba74efa55"
+        },
+        {
+          "file": "0.1.0-alpha-SCRIPT-MANIFEST.json",
+          "sha256": "8fcaaf2c3fcbd52303ffe1083313abd2994c0cad62d1c07cf168ed22f966bfdf"
+        },
+        {
+          "file": "0.1.0-alpha-compiler-artifact.json",
+          "sha256": "601374ed1ba4a0f0649cd32a34e5f1a9f2e65f91b49457bf24062d0e1bcbb6ba"
+        },
+        {
+          "file": "0.1.0-alpha-helper-SBOM.cdx.json",
+          "sha256": "2eaf3058a370bbde0c05ea7244590e4dd3f7885d1b686c12a69392bbb9f33bd2"
+        },
+        {
+          "file": "0.1.0-alpha-payload-SBOM.cdx.json",
+          "sha256": "f1f4f2fad366a151c877176ee737e2255071e9ac922dcaeee5fe556c1ab7b178"
+        },
+        {
+          "file": "0.1.1-alpha-BUILD-INFO.json",
+          "sha256": "df249949de42b38d9a8c38cf09b2be29edd19614d7680ab95255c8be38dfe372"
+        },
+        {
+          "file": "0.1.1-alpha-INSTALL-MANIFEST.json",
+          "sha256": "21b7c8236af3f758c737b11bfe74199c75358ffce08eee1a19040a93c1e9266d"
+        },
+        {
+          "file": "0.1.1-alpha-SCRIPT-MANIFEST.json",
+          "sha256": "9e66ade61974b9e676807c7e828f35d3b976ba73b051eb86e264b74f364f63d1"
+        },
+        {
+          "file": "0.1.1-alpha-compiler-artifact.json",
+          "sha256": "125555915c11ad903c79002835dd1ee08251912efd9e76e6e4df34fe7fc132c0"
+        },
+        {
+          "file": "0.1.1-alpha-helper-SBOM.cdx.json",
+          "sha256": "ec085ad98ab1ea64e26c97ffd30256b2c45864f33ee393d001b7667cfb78bc24"
+        },
+        {
+          "file": "0.1.1-alpha-payload-SBOM.cdx.json",
+          "sha256": "13ff2bb01bd4eeb6a42a7feaa7cb1686ba5a34e21502413c1dbb33207b3df413"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-arm64-deployment-experimental.pkg",
+          "sha256": "444d6b70f6fd93addebb1007e91eb76413c6760de650b19776bf6d2d8e8d9b5b"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-arm64-deployment-experimental.pkg.cdx.json",
+          "sha256": "4a5b6813ae82ba49a0d2680b3a795fbae7eb07e9873506e3d01a1564694e84e2"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-arm64-desktop-application-experimental.pkg",
+          "sha256": "703cba68bfb602256bb87dbf0f543db79d7d3f8b0a3a26297365e455bb1626fd"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-arm64-desktop-application-experimental.pkg.cdx.json",
+          "sha256": "020d37f3aa5025d705e7991223860f9f2f1ef3c03e4718422dc95a6597ad071e"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-arm64-desktop-metadata-experimental.pkg",
+          "sha256": "8c3deff69e738c7ca1d68c15e4274794660733760e7eecb071d833bc088e99a4"
+        },
+        {
+          "file": "accessweaver-0.1.0-alpha-darwin-arm64-desktop-metadata-experimental.pkg.cdx.json",
+          "sha256": "e68e244f17a9debb05bb4c11de9314357ba9b0e8477f8eeb2e1ea5545b805978"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-arm64-deployment-experimental.pkg",
+          "sha256": "10a6cf9ba60b4331beac92d6433783d519ad805a83cc43e69f89bc6b56d86d74"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-arm64-deployment-experimental.pkg.cdx.json",
+          "sha256": "9df99a2567f4cd3d05b3dd65d204d2813001449c4c124edabcc35fa499a3f575"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-arm64-desktop-application-experimental.pkg",
+          "sha256": "c870938d705beda9d3a6014bbf145da02d00571bfca571b9083bdc0014d0f014"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-arm64-desktop-application-experimental.pkg.cdx.json",
+          "sha256": "71050c5d0f825647ad46cc2a130332a84993e73e9ab383e60e596095b2a4f71f"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-arm64-desktop-metadata-experimental.pkg",
+          "sha256": "f71d521ff97ed96a19fb96775bc213ed5019e11f9656c0adca90b9f734134ea4"
+        },
+        {
+          "file": "accessweaver-0.1.1-alpha-darwin-arm64-desktop-metadata-experimental.pkg.cdx.json",
+          "sha256": "0a8d388074147cf74848aa3a7cd3b611cc0255bf26b9b6c319d92687f07bc9b3"
+        },
+        {
+          "file": "accessweaver-launcher-0.1.0-alpha-darwin-arm64-experimental.zip",
+          "sha256": "8b47856b7a2b888bdfdfe9be2bf62bae7a9f0248f7c829d6ee25779ebbdf7a88"
+        },
+        {
+          "file": "accessweaver-launcher-darwin-arm64-experimental.zip",
+          "sha256": "71458e21aa40c3d1390c4b6c94c89df70e107457e96dc4c3939d7b8a136751ac"
+        },
+        {
+          "file": "desktop-0.1.0-alpha-BUILD-INFO.json",
+          "sha256": "f8cce16292c1817cf6604d97854b72e7510449c08f4b6ad34d1c2f8fe2ef080f"
+        },
+        {
+          "file": "desktop-0.1.0-alpha-DESKTOP-RECORD.json",
+          "sha256": "2df58f9102f90ed7a817120fe37406b89bedd7e7679ecfbbb7dd8bf3fef617b0"
+        },
+        {
+          "file": "desktop-0.1.0-alpha-application-SCRIPT-MANIFEST.json",
+          "sha256": "d0afb9861c66f0e74a9aa2f3ee8a4f0beb390acc68250f5038ebd8b136750044"
+        },
+        {
+          "file": "desktop-0.1.0-alpha-application-helper-SBOM.cdx.json",
+          "sha256": "1a11905aac9ff0ea1dc2f81436bee01abaa832255ae4b276a268002d1ec566b1"
+        },
+        {
+          "file": "desktop-0.1.0-alpha-compiler-artifact.json",
+          "sha256": "f4982a335b1f0b875dc3d4e1dcaa10eaa59436c866197ee5baaac0557d6eb7dc"
+        },
+        {
+          "file": "desktop-0.1.0-alpha-metadata-SCRIPT-MANIFEST.json",
+          "sha256": "9c72cfb9195e4b29a4641784be35be7b2111dfaac5984176689178b837684b59"
+        },
+        {
+          "file": "desktop-0.1.0-alpha-metadata-helper-SBOM.cdx.json",
+          "sha256": "e7729b24d62b3827f56445052a034f910756e0e065f3cb6482908c65e4544ea4"
+        },
+        {
+          "file": "desktop-0.1.1-alpha-BUILD-INFO.json",
+          "sha256": "df249949de42b38d9a8c38cf09b2be29edd19614d7680ab95255c8be38dfe372"
+        },
+        {
+          "file": "desktop-0.1.1-alpha-DESKTOP-RECORD.json",
+          "sha256": "33e7b5f8e08675d94519f2b3018d6a3fb19914690caff8693575ecc696248fca"
+        },
+        {
+          "file": "desktop-0.1.1-alpha-application-SCRIPT-MANIFEST.json",
+          "sha256": "aea80794dc3353814c56557a402643e339b9d813b02e32c29f9b90a2b5c45740"
+        },
+        {
+          "file": "desktop-0.1.1-alpha-application-helper-SBOM.cdx.json",
+          "sha256": "e35f9385479e93413fa831db881eff9bd23fa2625c483e2d8b5646a89dcd3b52"
+        },
+        {
+          "file": "desktop-0.1.1-alpha-compiler-artifact.json",
+          "sha256": "7e3fb134a572b8ba640ef09e13752b740a44b20c95e8e3af8bfe6f297ec0740c"
+        },
+        {
+          "file": "desktop-0.1.1-alpha-metadata-SCRIPT-MANIFEST.json",
+          "sha256": "13adb136c76f0f0106562d8ff041a8c96c94c1bcee0415c66d25cd711108b2b8"
+        },
+        {
+          "file": "desktop-0.1.1-alpha-metadata-helper-SBOM.cdx.json",
+          "sha256": "29d48698f7d463b5f6cd5b2eba717633a20d9dae14665d944f9b965c7b03bb57"
+        },
+        {
+          "file": "desktop-lifecycle-artifact.json",
+          "sha256": "ebb5e26566f83663e08262e72a34b6fa08cc7e66cc2127ff10f251cb6ef254ea"
+        }
+      ],
+      "authenticatedBeforeParsing": true,
+      "hostedRunnerRequired": true,
+      "desktop": {
+        "lifecycleRunID": "41715809139",
+        "corePackages": [
+          {
+            "packageSHA256": "444d6b70f6fd93addebb1007e91eb76413c6760de650b19776bf6d2d8e8d9b5b",
+            "payloadSHA256": "426f53a5cf62851c0916912feb3a1c3004d24362ddb822ebc8599bf499af4996",
+            "manifestSHA256": "0e842f8e11b719b7b04e53258bf7bfa6cee67c88782189b94882066ba74efa55",
+            "helperSHA256": "27d375f4dfe11bbb99882f52af998d8e859fe8de524aca98fda0e261717a75ab",
+            "installLocation": "/Library/Application Support/AccessWeaver Incoming/0e842f8e11b719b7b04e53258bf7bfa6cee67c88782189b94882066ba74efa55",
+            "packageIdentifier": "io.github.yunushan.accessweaver.deployment",
+            "payloadFiles": 18,
+            "payloadDirectories": 7,
+            "scriptFiles": 6,
+            "macho": {
+              "cpuType": "0x0100000c",
+              "minimumOSVersion": "13.0.0"
+            },
+            "helperMachO": {
+              "cpuType": "0x0100000c",
+              "minimumOSVersion": "13.0.0"
+            },
+            "detachedPayloadSBOMOutsideAppVerified": true,
+            "payloadSBOMSHA256": "f1f4f2fad366a151c877176ee737e2255071e9ac922dcaeee5fe556c1ab7b178",
+            "detachedManifestOutsideAppVerified": true,
+            "allPathsModesOwnershipAndHashesVerified": true,
+            "xarAndCpioIntegrityVerified": true,
+            "targetExecutionPerformed": false,
+            "publisherSignatureVerified": false,
+            "productionQualificationComplete": false
+          },
+          {
+            "packageSHA256": "10a6cf9ba60b4331beac92d6433783d519ad805a83cc43e69f89bc6b56d86d74",
+            "payloadSHA256": "ad9d678973980d65542ea9a7fb2b91fb2cdc1ba42b07938abb7d594e9ee2c20b",
+            "manifestSHA256": "21b7c8236af3f758c737b11bfe74199c75358ffce08eee1a19040a93c1e9266d",
+            "helperSHA256": "ebc4cce8e2d4a4a11e010b0b1f7c257e15ba6d6cd1d1f8d99a1f81c296fef938",
+            "installLocation": "/Library/Application Support/AccessWeaver Incoming/21b7c8236af3f758c737b11bfe74199c75358ffce08eee1a19040a93c1e9266d",
+            "packageIdentifier": "io.github.yunushan.accessweaver.deployment",
+            "payloadFiles": 18,
+            "payloadDirectories": 7,
+            "scriptFiles": 6,
+            "macho": {
+              "cpuType": "0x0100000c",
+              "minimumOSVersion": "13.0.0"
+            },
+            "helperMachO": {
+              "cpuType": "0x0100000c",
+              "minimumOSVersion": "13.0.0"
+            },
+            "detachedPayloadSBOMOutsideAppVerified": true,
+            "payloadSBOMSHA256": "13ff2bb01bd4eeb6a42a7feaa7cb1686ba5a34e21502413c1dbb33207b3df413",
+            "detachedManifestOutsideAppVerified": true,
+            "allPathsModesOwnershipAndHashesVerified": true,
+            "xarAndCpioIntegrityVerified": true,
+            "targetExecutionPerformed": false,
+            "publisherSignatureVerified": false,
+            "productionQualificationComplete": false
+          }
+        ],
+        "desktop": [
+          {
+            "version": "0.1.0-alpha",
+            "launcher": {
+              "archiveSHA256": "8b47856b7a2b888bdfdfe9be2bf62bae7a9f0248f7c829d6ee25779ebbdf7a88",
+              "binarySHA256": "7e3bc9d8fb8f009652a23a440142c59c8a98b808b81a3e96a5a82922409c372a",
+              "binaryBytes": 5065538,
+              "macho": {
+                "cpuType": "0x0100000c",
+                "minimumOSVersion": "13.0.0"
+              },
+              "goBuildMetadata": {
+                "GoVersion": "go1.27.3",
+                "Path": "github.com/Yunushan/accessweaver/cmd/accessweaver-launcher",
+                "Main": {
+                  "Path": "github.com/Yunushan/accessweaver",
+                  "Version": "(devel)"
+                },
+                "Deps": [
+                  {
+                    "Path": "github.com/ebitengine/purego",
+                    "Version": "v0.11.2",
+                    "Sum": "h1:WWiTx8rD8zYdOwSj8O/NiNbsOvSAgJMTlyV1XlbUSeU="
+                  },
+                  {
+                    "Path": "golang.org/x/sys",
+                    "Version": "v0.49.0",
+                    "Sum": "h1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA="
+                  }
+                ],
+                "Settings": [
+                  {
+                    "Key": "-buildmode",
+                    "Value": "exe"
+                  },
+                  {
+                    "Key": "-compiler",
+                    "Value": "gc"
+                  },
+                  {
+                    "Key": "-trimpath",
+                    "Value": "true"
+                  },
+                  {
+                    "Key": "DefaultGODEBUG",
+                    "Value": "tracebacklabels=0,x509sslcertoverrideplatform=0"
+                  },
+                  {
+                    "Key": "CGO_ENABLED",
+                    "Value": "0"
+                  },
+                  {
+                    "Key": "GOARCH",
+                    "Value": "arm64"
+                  },
+                  {
+                    "Key": "GOOS",
+                    "Value": "darwin"
+                  },
+                  {
+                    "Key": "GOARM64",
+                    "Value": "v8.0"
+                  }
+                ]
+              },
+              "build": {
+                "version": "0.1.0-alpha",
+                "commit": "aa193a4050feeb5d10182ea174666aa8fda63fd3",
+                "sourceState": "clean",
+                "builtAt": "2026-11-03T20:47:30Z",
+                "goVersion": "go1.27.3",
+                "platform": "darwin",
+                "arch": "arm64"
+              },
+              "noticesVerified": 4,
+              "publicApplicationIntegrated": false,
+              "publisherSignatureVerified": false,
+              "productionQualificationComplete": false
+            },
+            "components": [
+              {
+                "packageSHA256": "8c3deff69e738c7ca1d68c15e4274794660733760e7eecb071d833bc088e99a4",
+                "recordSHA256": "2df58f9102f90ed7a817120fe37406b89bedd7e7679ecfbbb7dd8bf3fef617b0",
+                "component": "metadata",
+                "packageIdentifier": "io.github.yunushan.accessweaver.desktop.registration.2df58f9102f90ed7a817120fe37406b89bedd7e7679ecfbbb7dd8bf3fef617b0",
+                "payloadFiles": 1,
+                "payloadDirectories": 1,
+                "helperSHA256": "3ecef09bfcee2bc1ff4ed94e803ac596fa39c93a90bf5dd0eb73aefbf5bf3d19",
+                "helperMachO": {
+                  "cpuType": "0x0100000c",
+                  "minimumOSVersion": "13.0.0"
+                },
+                "scriptArchiveOwner": {
+                  "uid": 501,
+                  "gid": 20
+                },
+                "allPayloadPathsModesOwnersAndScriptHashesVerified": true,
+                "targetExecutionPerformed": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              {
+                "packageSHA256": "703cba68bfb602256bb87dbf0f543db79d7d3f8b0a3a26297365e455bb1626fd",
+                "recordSHA256": "2df58f9102f90ed7a817120fe37406b89bedd7e7679ecfbbb7dd8bf3fef617b0",
+                "component": "application",
+                "packageIdentifier": "io.github.yunushan.accessweaver.desktop",
+                "payloadFiles": 7,
+                "payloadDirectories": 6,
+                "helperSHA256": "2426259fbad35fa18e03214727c2007b88bb6704a1b949218ed4899d1c42e116",
+                "helperMachO": {
+                  "cpuType": "0x0100000c",
+                  "minimumOSVersion": "13.0.0"
+                },
+                "scriptArchiveOwner": {
+                  "uid": 501,
+                  "gid": 20
+                },
+                "allPayloadPathsModesOwnersAndScriptHashesVerified": true,
+                "targetExecutionPerformed": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              }
+            ],
+            "recordSHA256": "2df58f9102f90ed7a817120fe37406b89bedd7e7679ecfbbb7dd8bf3fef617b0"
+          },
+          {
+            "version": "0.1.1-alpha",
+            "launcher": {
+              "archiveSHA256": "71458e21aa40c3d1390c4b6c94c89df70e107457e96dc4c3939d7b8a136751ac",
+              "binarySHA256": "ca24f8af550db6f34da09d426d9c721b43bde9816be8d6189f3561476610694f",
+              "binaryBytes": 5065538,
+              "macho": {
+                "cpuType": "0x0100000c",
+                "minimumOSVersion": "13.0.0"
+              },
+              "goBuildMetadata": {
+                "GoVersion": "go1.27.3",
+                "Path": "github.com/Yunushan/accessweaver/cmd/accessweaver-launcher",
+                "Main": {
+                  "Path": "github.com/Yunushan/accessweaver",
+                  "Version": "(devel)"
+                },
+                "Deps": [
+                  {
+                    "Path": "github.com/ebitengine/purego",
+                    "Version": "v0.11.2",
+                    "Sum": "h1:WWiTx8rD8zYdOwSj8O/NiNbsOvSAgJMTlyV1XlbUSeU="
+                  },
+                  {
+                    "Path": "golang.org/x/sys",
+                    "Version": "v0.49.0",
+                    "Sum": "h1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA="
+                  }
+                ],
+                "Settings": [
+                  {
+                    "Key": "-buildmode",
+                    "Value": "exe"
+                  },
+                  {
+                    "Key": "-compiler",
+                    "Value": "gc"
+                  },
+                  {
+                    "Key": "-trimpath",
+                    "Value": "true"
+                  },
+                  {
+                    "Key": "DefaultGODEBUG",
+                    "Value": "tracebacklabels=0,x509sslcertoverrideplatform=0"
+                  },
+                  {
+                    "Key": "CGO_ENABLED",
+                    "Value": "0"
+                  },
+                  {
+                    "Key": "GOARCH",
+                    "Value": "arm64"
+                  },
+                  {
+                    "Key": "GOOS",
+                    "Value": "darwin"
+                  },
+                  {
+                    "Key": "GOARM64",
+                    "Value": "v8.0"
+                  }
+                ]
+              },
+              "build": {
+                "version": "0.1.1-alpha",
+                "commit": "aa193a4050feeb5d10182ea174666aa8fda63fd3",
+                "sourceState": "clean",
+                "builtAt": "2026-11-03T20:47:30Z",
+                "goVersion": "go1.27.3",
+                "platform": "darwin",
+                "arch": "arm64"
+              },
+              "noticesVerified": 4,
+              "publicApplicationIntegrated": false,
+              "publisherSignatureVerified": false,
+              "productionQualificationComplete": false
+            },
+            "components": [
+              {
+                "packageSHA256": "f71d521ff97ed96a19fb96775bc213ed5019e11f9656c0adca90b9f734134ea4",
+                "recordSHA256": "33e7b5f8e08675d94519f2b3018d6a3fb19914690caff8693575ecc696248fca",
+                "component": "metadata",
+                "packageIdentifier": "io.github.yunushan.accessweaver.desktop.registration.33e7b5f8e08675d94519f2b3018d6a3fb19914690caff8693575ecc696248fca",
+                "payloadFiles": 1,
+                "payloadDirectories": 1,
+                "helperSHA256": "ecf391babb87601682b2792fef53e9c1051f293747209f2442369d1337ed1675",
+                "helperMachO": {
+                  "cpuType": "0x0100000c",
+                  "minimumOSVersion": "13.0.0"
+                },
+                "scriptArchiveOwner": {
+                  "uid": 501,
+                  "gid": 20
+                },
+                "allPayloadPathsModesOwnersAndScriptHashesVerified": true,
+                "targetExecutionPerformed": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              {
+                "packageSHA256": "c870938d705beda9d3a6014bbf145da02d00571bfca571b9083bdc0014d0f014",
+                "recordSHA256": "33e7b5f8e08675d94519f2b3018d6a3fb19914690caff8693575ecc696248fca",
+                "component": "application",
+                "packageIdentifier": "io.github.yunushan.accessweaver.desktop",
+                "payloadFiles": 7,
+                "payloadDirectories": 6,
+                "helperSHA256": "9cfa8372ab67e8cca2f85f8f734b7c6e819989f7ec56dd15b07c75f685819ace",
+                "helperMachO": {
+                  "cpuType": "0x0100000c",
+                  "minimumOSVersion": "13.0.0"
+                },
+                "scriptArchiveOwner": {
+                  "uid": 501,
+                  "gid": 20
+                },
+                "allPayloadPathsModesOwnersAndScriptHashesVerified": true,
+                "targetExecutionPerformed": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              }
+            ],
+            "recordSHA256": "33e7b5f8e08675d94519f2b3018d6a3fb19914690caff8693575ecc696248fca"
+          }
+        ],
+        "actualInstallerOperations": 21,
+        "actualCoreDeactivationOperations": 1,
+        "publicAppSelectionCases": 5,
+        "launchServicesDefaultControllerVerified": true,
+        "finderInteractiveQualificationComplete": false,
+        "singleProductDistributionQualified": false,
+        "publisherSignatureVerified": false,
+        "productionQualificationComplete": false
+      },
+      "rejectionChecks": {
+        "rejected": [
+          "--source-digest",
+          "--source-ref",
+          "--signer-workflow",
+          "--repo",
+          "changed-subject-digest"
+        ],
+        "realBundleVerifiedBeforeAndAfter": true
+      },
+      "localTargetExecution": false,
+      "publisherSignatureVerified": false,
+      "notarized": false,
+      "productionQualificationComplete": false
+    }
+  ],
+  "actualBinaryMetadataInspection": {
+    "sourceCommit": "aa193a4050feeb5d10182ea174666aa8fda63fd3",
+    "nativeRun": 41715809139,
+    "binaries": [
+      {
+        "target": "darwin/amd64",
+        "version": "0.1.0-alpha",
+        "role": "core-helper",
+        "sha256": "6ebb56f2157a64f8c360ff8eeaf9979495c8183f6e50137dd9278b25a73ca39b",
+        "bytes": 5757120,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/amd64",
+        "version": "0.1.0-alpha",
+        "role": "desktop-metadata-helper",
+        "sha256": "cafa8dda66aef848f033db9a03a2db178deae8c920c68f81b8212d43282d2512",
+        "bytes": 5379104,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/amd64",
+        "version": "0.1.0-alpha",
+        "role": "desktop-application-helper",
+        "sha256": "394af7900a8757a03d9cd568274cc87617eb78e806458160d0b11d33dc0b44d6",
+        "bytes": 5379104,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/amd64",
+        "version": "0.1.0-alpha",
+        "role": "launcher",
+        "sha256": "e92326868c9c7a667239908826527dce25a1f0d81ee5fac3dc1943fe4cd8beb3",
+        "bytes": 5340480,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/amd64",
+        "version": "0.1.1-alpha",
+        "role": "core-helper",
+        "sha256": "6ed95a0f381708981d5c40b1a4cb4112198696067bbf710dbd6f51cd33a43437",
+        "bytes": 5757120,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/amd64",
+        "version": "0.1.1-alpha",
+        "role": "desktop-metadata-helper",
+        "sha256": "55ac12dc9dbd1556b8e9234b531c40b00ff25f072f7e7929955b20abc22f0bb7",
+        "bytes": 5379104,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/amd64",
+        "version": "0.1.1-alpha",
+        "role": "desktop-application-helper",
+        "sha256": "3fe537117f5b6f5a32bbc7ab22e2e6a0c60f357dbbaa56606ba6ccbf8198f300",
+        "bytes": 5379104,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/amd64",
+        "version": "0.1.1-alpha",
+        "role": "launcher",
+        "sha256": "47f317663be073232938a619a4fd1ccf9535edcb6edbae94d9abe624383f236c",
+        "bytes": 5340480,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/arm64",
+        "version": "0.1.0-alpha",
+        "role": "core-helper",
+        "sha256": "27d375f4dfe11bbb99882f52af998d8e859fe8de524aca98fda0e261717a75ab",
+        "bytes": 5452370,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/arm64",
+        "version": "0.1.0-alpha",
+        "role": "desktop-metadata-helper",
+        "sha256": "3ecef09bfcee2bc1ff4ed94e803ac596fa39c93a90bf5dd0eb73aefbf5bf3d19",
+        "bytes": 5100338,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/arm64",
+        "version": "0.1.0-alpha",
+        "role": "desktop-application-helper",
+        "sha256": "2426259fbad35fa18e03214727c2007b88bb6704a1b949218ed4899d1c42e116",
+        "bytes": 5100338,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/arm64",
+        "version": "0.1.0-alpha",
+        "role": "launcher",
+        "sha256": "7e3bc9d8fb8f009652a23a440142c59c8a98b808b81a3e96a5a82922409c372a",
+        "bytes": 5065538,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/arm64",
+        "version": "0.1.1-alpha",
+        "role": "core-helper",
+        "sha256": "ebc4cce8e2d4a4a11e010b0b1f7c257e15ba6d6cd1d1f8d99a1f81c296fef938",
+        "bytes": 5452370,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/arm64",
+        "version": "0.1.1-alpha",
+        "role": "desktop-metadata-helper",
+        "sha256": "ecf391babb87601682b2792fef53e9c1051f293747209f2442369d1337ed1675",
+        "bytes": 5100338,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/arm64",
+        "version": "0.1.1-alpha",
+        "role": "desktop-application-helper",
+        "sha256": "9cfa8372ab67e8cca2f85f8f734b7c6e819989f7ec56dd15b07c75f685819ace",
+        "bytes": 5100338,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      },
+      {
+        "target": "darwin/arm64",
+        "version": "0.1.1-alpha",
+        "role": "launcher",
+        "sha256": "ca24f8af550db6f34da09d426d9c721b43bde9816be8d6189f3561476610694f",
+        "bytes": 5065538,
+        "actualBinaryGoMetadataVerified": true,
+        "targetExecutedLocally": false
+      }
+    ],
+    "inspectionTool": {
+      "name": "Go SDK metadata reader",
+      "version": "go1.27.3",
+      "platform": "linux/amd64",
+      "sha256": "5f5eb6d0b2fb6aa0bb5d5f8c5f1c944e0de955c925f0111af92a9d8f79680b5b"
+    },
+    "nativeMachOTargetsExecutedLocally": false,
+    "productionQualificationComplete": false
+  },
+  "coverage": {
+    "authenticatedSubjectStatements": 82,
+    "realNegativeProbes": 10,
+    "actualInstallerOperations": 42,
+    "actualCoreDeactivations": 2,
+    "publicAppSelectionCases": 10,
+    "actualDefaultLaunchServicesControllers": 2,
+    "binaryMetadataInspections": 16
+  },
+  "qualificationLimits": {
+    "publisherSignatureVerified": false,
+    "notarized": false,
+    "interactiveFinderQualified": false,
+    "singleProductDistributionQualified": false,
+    "managedEndpointQualified": false,
+    "productUninstallQualified": false,
+    "rebootOrPowerLossQualified": false,
+    "productionQualificationComplete": false
+  },
+  "historicalFailures": {
+    "586086e71c33": "Stopped before installation: script archive owner was ordinary builder, while parser incorrectly required root. Corrected by measuring and authenticating actual uniform builder UID/GID; payload ownership and runtime root requirements unchanged.",
+    "457dc00a3f27": "Public construction stopped before installation: package root inventory-scope duplicated the compiled helper property. Corrected package-only overrides with preserved helper subgraph and strict duplicate validation. Separate legacy regression stopped at stale combined diagnostic assertion; it remains failed and unqualified, with a fresh-source harness correction required."
+  },
+  "readinessGatesPromoted": 0,
+  "readinessGatesSHA256": "6aba24860c171a7a3931029589b0e04dac90ed4a6f22da3fc02bd058bf903b0e",
+  "productionQualificationComplete": false
+}

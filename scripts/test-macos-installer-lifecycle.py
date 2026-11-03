@@ -221,7 +221,8 @@ def prepare_fixed_deployment(capsule,environment,identity,manifest):
     actual,_=run([binary,"version","--json"],environment,30);require(json.loads(actual.stdout)==identity,"Sealed helper runtime identity differs")
     ordinary,_=run([binary,"prepare-deployment"],environment,30,codes=tuple(range(1,256)))
     legacy,_=run(["/usr/bin/sudo","-n",binary,"prepare-deployment"],environment,30,codes=tuple(range(1,256)))
-    require(b"requires root" in ordinary.stderr and b"legacy app or receipt" in legacy.stderr,"Missing native root/legacy refusal")
+    require(b"native deployment operation requires root" in ordinary.stderr,"Missing native root refusal")
+    require(b"legacy receipt exists; explicit migration is required" in legacy.stderr,"Missing native legacy receipt refusal")
     require(not AUTHORITY.exists() and not INCOMING.exists(),"Refused helper created authority/staging")
     candidate=capsule/"deployment-candidate.app";shutil.copytree(APP,candidate);verify_bundle(candidate,manifest,identity)
     stage=INCOMING/manifest_hash
