@@ -25,11 +25,106 @@ import threading
 import time
 import urllib.request
 
-IMAGE = "FreeBSD-15.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz"
-IMAGE_URL = "https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/amd64/Latest/" + IMAGE
-IMAGE_SHA256 = "e4ca4db889f8559c9b9dfcacc70405c038476f4b6d41649b152d3809a2ed9e1f"
+TARGETS = {
+    "amd64": {
+        "arch": "amd64", "machine": "amd64", "hostMachines": ("x86_64", "amd64"),
+        "image": "FreeBSD-15.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz",
+        "imageDirectory": "amd64",
+        "imageSHA256": "e4ca4db889f8559c9b9dfcacc70405c038476f4b6d41649b152d3809a2ed9e1f",
+        "qemu": "qemu-system-x86_64", "tcgCPU": "Nehalem-v1",
+    },
+    "arm64": {
+        "arch": "arm64", "machine": "arm64", "hostMachines": ("aarch64", "arm64"),
+        "image": "FreeBSD-15.1-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz",
+        "imageDirectory": "aarch64",
+        "imageSHA256": "9722aea499610802de9a14bb645707fc4f6df49ff765cd9ce372b783c4693963",
+        "qemu": "qemu-system-aarch64", "tcgCPU": "cortex-a72",
+    },
+}
 MODULE = "github.com/Yunushan/accessweaver/"
 PORT = 2222
+
+
+def selected_target(name=None):
+    name = os.environ.get("ACCESSWEAVER_BSD_ARCH", "amd64") if name is None else name
+    if name not in TARGETS:
+        raise RuntimeError("unsupported explicit BSD target")
+    target = dict(TARGETS[name])
+    target["imageURL"] = "https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/" + target["imageDirectory"] + "/Latest/" + target["image"]
+    target["label"] = "freebsd-" + target["arch"]
+    return target
+
+
+def copy_firmware(source, destination, *, owner=0):
+    """Snapshot an administrator-owned firmware input; fixtures may name their UID."""
+    resolved = source.resolve(strict=True)
+    # The fixed runtime caller uses /usr/share/AAVMF. Inspect actual ancestors,
+    # allowing only root/expected ownership and no untrusted mutation rights.
+    for parent in resolved.parents:
+        info = parent.stat()
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, owner) or
+                (info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX)):
+            raise RuntimeError("untrusted firmware ancestor")
+    fd = os.open(resolved, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        before = os.fstat(stream.fileno())
+        if (not stat.S_ISREG(before.st_mode) or before.st_uid != owner or
+                before.st_nlink != 1 or before.st_mode & 0o022 or not 0 < before.st_size <= 64 << 20):
+            raise RuntimeError("untrusted or unbounded firmware input")
+        output_fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        total = 0
+        value = hashlib.sha256()
+        with os.fdopen(output_fd, "wb") as output:
+            while block := stream.read(1 << 20):
+                total += len(block)
+                if total > before.st_size:
+                    raise RuntimeError("firmware grew while copying")
+                output.write(block)
+                value.update(block)
+        after = os.fstat(stream.fileno())
+        if total != before.st_size or (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise RuntimeError("firmware changed while copying")
+    return value.hexdigest()
+
+
+def prepare_arm_firmware(capsule):
+    owned_directory(capsule)
+    if capsule.stat().st_mode & 0o077:
+        raise RuntimeError("firmware requires a private capsule")
+    code, variables = capsule / "efi-code.fd", capsule / "efi-vars.fd"
+    # Source paths and expected root ownership are not environment-selectable.
+    code_hash = copy_firmware(Path("/usr/share/AAVMF/AAVMF_CODE.fd"), code)
+    variables_hash = copy_firmware(Path("/usr/share/AAVMF/AAVMF_VARS.fd"), variables)
+    code.chmod(0o400)
+    return {"code": code, "variables": variables, "codeSHA256": code_hash, "initialVariablesSHA256": variables_hash}
+
+
+def virtual_machine_command(target, overlay, seed, acceleration, firmware=None):
+    if acceleration not in ("kvm", "tcg"):
+        raise RuntimeError("unsupported accelerator")
+    cpu = "host" if acceleration == "kvm" else target["tcgCPU"]
+    command = [target["qemu"], "-accel", acceleration, "-cpu", cpu, "-m", "3072", "-smp", "2",
+               "-display", "none", "-monitor", "none", "-serial", "stdio", "-no-reboot"]
+    if target["arch"] == "arm64":
+        if firmware is None:
+            raise RuntimeError("ARM64 requires private firmware snapshots")
+        command += ["-machine", "virt,gic-version=3",
+                    "-drive", f"if=pflash,format=raw,unit=0,file={firmware['code']},readonly=on",
+                    "-drive", f"if=pflash,format=raw,unit=1,file={firmware['variables']}",
+                    "-drive", f"file={overlay},if=none,id=osdisk,format=qcow2",
+                    "-device", "virtio-blk-pci,drive=osdisk,bootindex=1",
+                    "-device", "virtio-scsi-pci,id=scsi0",
+                    "-drive", f"file={seed},if=none,id=seed,media=cdrom,format=raw,readonly=on",
+                    "-device", "scsi-cd,drive=seed,bus=scsi0.0,bootindex=2"]
+    else:
+        command += ["-drive", f"file={overlay},if=virtio,format=qcow2",
+                    "-drive", f"file={seed},media=cdrom,format=raw,readonly=on"]
+    command += ["-netdev", f"user,id=n1,restrict=on,hostfwd=tcp:127.0.0.1:{PORT}-:22",
+                "-device", "virtio-net-pci,netdev=n1",
+                "-object", "rng-random,id=rng0,filename=/dev/urandom",
+                "-device", "virtio-rng-pci,rng=rng0,max-bytes=1024,period=1000"]
+    return command
+
 
 
 class CommandFailure(RuntimeError):
@@ -105,8 +200,9 @@ def guard():
             os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted" or os.environ.get("RUNNER_OS") != "Linux" or
             os.environ.get("ACCESSWEAVER_DISPOSABLE_BSD_GUEST_TEST") != "1" or os.geteuid() == 0):
         raise RuntimeError("refusing guest execution outside an ordinary-user opted-in hosted Linux job")
-    if platform.machine().lower() not in ("x86_64", "amd64"):
-        raise RuntimeError("first guest probe requires an x86_64 host")
+    target = selected_target()
+    if platform.machine().lower() not in target["hostMachines"]:
+        raise RuntimeError("native host architecture differs from selected BSD target")
     repo = Path(__file__).resolve().parents[1]
     if Path(os.environ.get("GITHUB_WORKSPACE", "")).resolve() != repo or any(c in str(repo) for c in ",\n\r"):
         raise RuntimeError("unexpected hosted workspace")
@@ -118,11 +214,11 @@ def guard():
     if shutil.disk_usage(repo).free < 10 << 30:
         raise RuntimeError("insufficient host storage reserve")
     sdk = json.loads(run(["go", "env", "-json", "GOOS", "GOARCH", "GOHOSTOS", "GOHOSTARCH", "GOVERSION", "GOTOOLCHAIN"]).stdout)
-    expected = {"GOOS": "linux", "GOARCH": "amd64", "GOHOSTOS": "linux", "GOHOSTARCH": "amd64",
+    expected = {"GOOS": "linux", "GOARCH": target["arch"], "GOHOSTOS": "linux", "GOHOSTARCH": target["arch"],
                 "GOVERSION": "go" + os.environ.get("GO_VERSION", ""), "GOTOOLCHAIN": "local"}
     if sdk != expected or not re.fullmatch(r"go\d+\.\d+\.\d+", sdk["GOVERSION"]):
         raise RuntimeError("unexpected native host SDK")
-    return repo, source, sdk
+    return repo, source, sdk, target
 
 
 def decode_disk_observations(data):
@@ -244,9 +340,10 @@ def ssh_failure_class(output):
     return "unclassified"
 
 
-def validate_guest_identity(actual):
+def validate_guest_identity(actual, target=None):
+    target = selected_target("amd64") if target is None else target
     if (len(actual) != 5 or actual[0] != "FreeBSD" or not actual[1].startswith("15.1-RELEASE") or
-            actual[2] != "amd64" or not actual[3].isdecimal() or int(actual[3]) == 0 or actual[4] != "awtest"):
+            actual[2] != target["machine"] or not actual[3].isdecimal() or int(actual[3]) == 0 or actual[4] != "awtest"):
         raise RuntimeError("unexpected actual guest identity")
     return {"OS": actual[0], "release": actual[1], "machine": actual[2], "uid": int(actual[3]), "user": actual[4]}
 
@@ -261,12 +358,12 @@ def remove_owned_capsule(capsule, root, identity, emulator_stopped):
     shutil.rmtree(capsule)
 
 
-def build_payload(repo, capsule, source):
+def build_payload(repo, capsule, source, target):
     payload = capsule / "payload"
     payload.mkdir(mode=0o700)
     tests = payload / "tests"
     tests.mkdir(mode=0o700)
-    env = dict(os.environ, GOOS="freebsd", GOARCH="amd64", CGO_ENABLED="0", GOTOOLCHAIN="local")
+    env = dict(os.environ, GOOS="freebsd", GOARCH=target["arch"], CGO_ENABLED="0", GOTOOLCHAIN="local")
     packages = decode_objects(run(["go", "list", "-json", "./..."], env=env).stdout)
     records = []
     for package in packages:
@@ -277,14 +374,14 @@ def build_payload(repo, capsule, source):
             raise RuntimeError("unexpected test module")
         directory = relative_package(package["Dir"], repo)
         filename = "tests/" + hashlib.sha256(name.encode()).hexdigest()[:20] + ".test"
-        target = payload / filename
-        run(["go", "test", "-mod=readonly", "-c", "-o", str(target), name], env=env, timeout=300)
-        if not target.is_file() or target.stat().st_size > 128 << 20:
+        executable = payload / filename
+        run(["go", "test", "-mod=readonly", "-c", "-o", str(executable), name], env=env, timeout=300)
+        if not executable.is_file() or executable.stat().st_size > 128 << 20:
             raise RuntimeError("unbounded test binary")
-        records.append({"package": name, "directory": directory, "file": filename, "sha256": digest(target)})
+        records.append({"package": name, "directory": directory, "file": filename, "sha256": digest(executable)})
     if not records or len(records) > 64:
         raise RuntimeError("unexpected unit package set")
-    run(["bash", "scripts/build-all.sh", "freebsd/amd64"],
+    run(["bash", "scripts/build-all.sh", "freebsd/" + target["arch"]],
         env=dict(os.environ, OUTPUT_DIR=str(payload), GOTOOLCHAIN="local"), timeout=300)
     tree = run(["git", "ls-tree", "-r", "-l", "HEAD"]).stdout.decode("utf-8").splitlines()
     sizes = [line.split("\t", 1)[0].split()[-1] for line in tree]
@@ -293,8 +390,8 @@ def build_payload(repo, capsule, source):
     run(["git", "archive", "--format=tar", "--output=" + str(payload / "source.tar"), "HEAD"])
     if run(["git", "status", "--porcelain"]).stdout.strip():
         raise RuntimeError("source changed while building")
-    cli = "accessweaver-freebsd-amd64"
-    manifest = {"sourceCommit": source, "goos": "freebsd", "goarch": "amd64", "hostCrossCompiled": True,
+    cli = "accessweaver-" + target["label"]
+    manifest = {"sourceCommit": source, "goos": "freebsd", "goarch": target["arch"], "hostCrossCompiled": True,
                 "cli": {"file": cli, "sha256": digest(payload / cli)}, "packages": records,
                 "sourceArchiveSHA256": digest(payload / "source.tar")}
     (payload / "PROBE-MANIFEST.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -310,20 +407,20 @@ def build_payload(repo, capsule, source):
 
 
 def main():
-    repo, source, sdk = guard()
+    repo, source, sdk, target = guard()
     os.chdir(repo)
     os.umask(0o077)
     root = repo / "build" / "bsd-capsules"
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     owned_directory(root)
-    capsule = Path(tempfile.mkdtemp(prefix="freebsd-amd64-", dir=root))
+    capsule = Path(tempfile.mkdtemp(prefix=target["label"] + "-", dir=root))
     owned_directory(capsule)
     identity = capsule.stat()
     output = repo / "build" / "bsd-native-checks"
     output.mkdir(mode=0o700, parents=True, exist_ok=True)
     owned_directory(output)
-    report = {"schemaVersion": 1, "sourceCommit": source, "target": "freebsd/amd64", "hostSDK": sdk,
-              "imageURL": IMAGE_URL, "imageSHA256": IMAGE_SHA256, "packages": [], "guestExecutionPassed": False,
+    report = {"schemaVersion": 1, "sourceCommit": source, "target": "freebsd/" + target["arch"], "hostSDK": sdk,
+              "imageURL": target["imageURL"], "imageSHA256": target["imageSHA256"], "packages": [], "guestExecutionPassed": False,
               "hardwareQualificationComplete": False, "platformQualificationComplete": False,
               "readinessGatesPromoted": 0, "productionQualificationComplete": False}
     vm = None
@@ -332,14 +429,14 @@ def main():
     phase = "build"
     failed = True
     try:
-        manifest, archive = build_payload(repo, capsule, source)
+        manifest, archive = build_payload(repo, capsule, source, target)
         report["crossCompiledPackages"] = len(manifest["packages"])
         phase = "image-download"
-        compressed = capsule / IMAGE
+        compressed = capsule / target["image"]
         value = hashlib.sha256()
         size = 0
         download_deadline = time.monotonic() + 600
-        with urllib.request.urlopen(IMAGE_URL, timeout=60) as response, compressed.open("xb") as destination:
+        with urllib.request.urlopen(target["imageURL"], timeout=60) as response, compressed.open("xb") as destination:
             if response.geturl().split(":", 1)[0] != "https":
                 raise RuntimeError("image download changed transport")
             while data := response.read(1 << 20):
@@ -350,7 +447,7 @@ def main():
                     raise ValueError("compressed image exceeds bound")
                 value.update(data)
                 destination.write(data)
-        if value.hexdigest() != IMAGE_SHA256:
+        if value.hexdigest() != target["imageSHA256"]:
             raise RuntimeError("official image digest mismatch")
         report["imageDigestVerified"] = True
         phase = "image-prepare"
@@ -379,20 +476,19 @@ def main():
         acceleration = "kvm" if os.access("/dev/kvm", os.R_OK | os.W_OK) else "tcg"
         report["hypervisorAcceleration"] = acceleration
         report["CPUEmulated"] = acceleration == "tcg"
-        report["cpuModel"] = "host" if acceleration == "kvm" else "Nehalem-v1"
+        report["cpuModel"] = "host" if acceleration == "kvm" else target["tcgCPU"]
         report["entropyDevice"] = "virtio-rng-pci"
         report["entropyBackend"] = "host-kernel-urandom"
         report["entropyMaximumBytesPerPeriod"] = 1024
         report["entropyPeriodMilliseconds"] = 1000
-        report["qemuVersion"] = run(["qemu-system-x86_64", "--version"]).stdout.decode().splitlines()[0]
-        vm = subprocess.Popen(["qemu-system-x86_64", "-accel", acceleration, "-cpu", report["cpuModel"], "-m", "3072", "-smp", "2",
-                               "-display", "none", "-monitor", "none", "-serial", "stdio", "-no-reboot",
-                               "-drive", f"file={overlay},if=virtio,format=qcow2",
-                               "-drive", f"file={seed},media=cdrom,format=raw,readonly=on",
-                               "-netdev", f"user,id=n1,restrict=on,hostfwd=tcp:127.0.0.1:{PORT}-:22",
-                               "-device", "virtio-net-pci,netdev=n1",
-                               "-object", "rng-random,id=rng0,filename=/dev/urandom",
-                               "-device", "virtio-rng-pci,rng=rng0,max-bytes=1024,period=1000"], stdin=subprocess.DEVNULL,
+        report["qemuVersion"] = run([target["qemu"], "--version"]).stdout.decode().splitlines()[0]
+        firmware = None
+        if target["arch"] == "arm64":
+            phase = "firmware-prepare"
+            firmware = prepare_arm_firmware(capsule)
+            report["bootFirmwareCodeSHA256"] = firmware["codeSHA256"]
+            report["bootFirmwareInitialVariablesSHA256"] = firmware["initialVariablesSHA256"]
+        vm = subprocess.Popen(virtual_machine_command(target, overlay, seed, acceleration, firmware), stdin=subprocess.DEVNULL,
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
         def drain_serial():
             while chunk := vm.stdout.read(4096):
@@ -430,7 +526,7 @@ def main():
             time.sleep(2)
         phase = "guest-identity"
         actual = run(ssh, data=b"set -eu\nuname -s\nuname -r\nuname -m\nid -u\nid -un\n").stdout.decode().splitlines()
-        report["guestIdentity"] = validate_guest_identity(actual)
+        report["guestIdentity"] = validate_guest_identity(actual, target)
         report["sshHostKeyPinned"] = True
         phase = "payload-transfer"
         guest = "/home/awtest/awprobe-" + capsule.name.split("-")[-1]
@@ -448,7 +544,7 @@ def main():
         report["allTransportedExecutableHashesVerified"] = True
         phase = "guest-cli"
         cli = json.loads(run(ssh, data=f"{shlex.quote(guest + '/' + manifest['cli']['file'])} version --json\n".encode()).stdout)
-        if cli.get("commit") != source or cli.get("sourceState") != "clean" or cli.get("platform") != "freebsd" or cli.get("arch") != "amd64" or cli.get("goVersion") != sdk["GOVERSION"]:
+        if cli.get("commit") != source or cli.get("sourceState") != "clean" or cli.get("platform") != "freebsd" or cli.get("arch") != target["arch"] or cli.get("goVersion") != sdk["GOVERSION"]:
             raise RuntimeError("executed CLI differs from candidate")
         report["executedCLI"] = cli
         report["cliSHA256"] = manifest["cli"]["sha256"]
@@ -458,7 +554,7 @@ def main():
             started = time.monotonic()
             result = run(ssh, data=script.encode(), timeout=180, check=False)
             text = result.stdout.decode("utf-8", "replace")
-            log = output / f"freebsd-amd64-unit-{index:02d}.log"
+            log = output / f"{target['label']}-unit-{index:02d}.log"
             log.write_bytes(result.stdout)
             record = {**package, "returnCode": result.returncode, "elapsedSeconds": round(time.monotonic() - started, 3),
                       "passedTestInstances": len(re.findall(r"--- PASS:", text)), "skippedTestInstances": len(re.findall(r"--- SKIP:", text)),
@@ -523,7 +619,7 @@ def main():
         except (OSError, RuntimeError):
             report["cleanupFailed"] = True
             failed = True
-        (output / "freebsd-amd64.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        (output / (target["label"] + ".json")).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return 1 if failed else 0
 
 
