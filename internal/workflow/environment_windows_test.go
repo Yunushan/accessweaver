@@ -96,7 +96,7 @@ func TestNativeDiscoveryIgnoresUntrustedEnvironment(t *testing.T) {
 }
 
 func nativeDiscoveryPhases(log []byte) []string {
-	timing := regexp.MustCompile(`^(Discovery timing ms: (services|components|applications|conflicts|refresh-task|final-paths|complete)|Task query timing ms: (start|started|capture-ready|exited|timed-out|drained|cleanup|tree-helper-returned|disposed)) [0-9]{1,12}$`)
+	timing := regexp.MustCompile(`^(Workflow timing ms: (storage-ready|script-ready|request-ready|environment-ready|launch|first-output|child-exited|shell-input|shell-parse|shell-initialize|shell-dispatch)|Discovery timing ms: (services|components|applications|conflicts|refresh-task|final-paths|complete)|Task query timing ms: (start|started|capture-ready|exited|timed-out|drained|cleanup|tree-helper-returned|disposed)) [0-9]{1,12}$`)
 	phases := []string{}
 	for _, line := range strings.Split(string(log), "\n") {
 		line = strings.TrimSpace(line)
@@ -149,6 +149,9 @@ func TestNativeDiscoveryPhaseExportOmitsPrivateAndUnknownLines(t *testing.T) {
 	log := strings.Join([]string{
 		"PRIVATE_CREDENTIAL",
 		"Workflow phase: dispatch",
+		"Workflow timing ms: first-output 3",
+		"Workflow timing ms: shell-parse 4",
+		"Workflow timing ms: private-name 5",
 		"Task query timing ms: start 12",
 		"Task query timing ms: private-name 7",
 		"Task query timing ms: start PRIVATE_CREDENTIAL",
@@ -157,7 +160,7 @@ func TestNativeDiscoveryPhaseExportOmitsPrivateAndUnknownLines(t *testing.T) {
 		"Discovery timing ms: refresh-task 25",
 	}, "\n")
 	phases := nativeDiscoveryPhases([]byte(log))
-	if strings.Join(phases, "|") != "Workflow phase: dispatch|Task query timing ms: start 12|Discovery timing ms: refresh-task 25" {
+	if strings.Join(phases, "|") != "Workflow phase: dispatch|Workflow timing ms: first-output 3|Workflow timing ms: shell-parse 4|Task query timing ms: start 12|Discovery timing ms: refresh-task 25" {
 		t.Fatal("discovery export retained private, unknown or unbounded diagnostics")
 	}
 }

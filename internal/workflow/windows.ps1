@@ -2,6 +2,7 @@ param([Parameter(Mandatory=$true)][string]$RequestPath)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::WriteLine('Workflow phase: initialize')
+if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-initialize {0}' -f $script:workflowClock.ElapsedMilliseconds))}
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $inputData = Get-Content -LiteralPath $RequestPath -Raw | ConvertFrom-Json
 $r = $inputData.request
@@ -779,6 +780,7 @@ function Recover-Operation {
 $result=@{ok=$false;events=@();data=$null;rebootRequired=$false;journal=$null}
 try {
     [Console]::WriteLine('Workflow phase: dispatch')
+    if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-dispatch {0}' -f $script:workflowClock.ElapsedMilliseconds))}
     Initialize-Operation
     if($r.action -eq 'scan' -and $r.dns -and $r.dns -ne 'unchanged'){Configure-DNS $r.dns}
     $data=switch($r.action) {

@@ -584,6 +584,7 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 }
 
 func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error) {
+	started := time.Now()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -597,9 +598,24 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
+	log, err := logfile.Open(filepath.Join(dir, "process.log"), 4<<20, 2)
+	if err != nil {
+		return nil, err
+	}
+	defer log.Close()
+	phase := func(name string) error {
+		_, err := fmt.Fprintf(log, "Workflow timing ms: %s %d\n", name, time.Since(started).Milliseconds())
+		return err
+	}
+	if err := phase("storage-ready"); err != nil {
+		return nil, err
+	}
 	script, _ := scripts.ReadFile("windows.ps1")
 	scriptPath := filepath.Join(dir, "workflow.ps1")
 	if err := profile.AtomicWrite(scriptPath, script); err != nil {
+		return nil, err
+	}
+	if err := phase("script-ready"); err != nil {
 		return nil, err
 	}
 	executable, err := os.Executable()
@@ -621,6 +637,9 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	if err := profile.AtomicWrite(requestPath, b); err != nil {
 		return nil, err
 	}
+	if err := phase("request-ready"); err != nil {
+		return nil, err
+	}
 	// Execute the embedded program and the exact retained request through stdin.
 	// Editable debug snapshots in the user's configuration directory must not be
 	// reread as privileged code or as a different request after launch review.
@@ -635,21 +654,24 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, powershell, "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", "[Console]::WriteLine('Workflow phase: input'); $source=[Console]::In.ReadToEnd(); [Console]::WriteLine('Workflow phase: parse'); & ([scriptblock]::Create($source))")
+	if err := phase("environment-ready"); err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, powershell, "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", "$script:workflowClock=[Diagnostics.Stopwatch]::StartNew(); [Console]::WriteLine('Workflow phase: input'); [Console]::WriteLine(('Workflow timing ms: shell-input {0}' -f $script:workflowClock.ElapsedMilliseconds)); $source=[Console]::In.ReadToEnd(); [Console]::WriteLine('Workflow phase: parse'); [Console]::WriteLine(('Workflow timing ms: shell-parse {0}' -f $script:workflowClock.ElapsedMilliseconds)); & ([scriptblock]::Create($source))")
 	cmd.Env = environment
 	cmd.Dir = systemDirectory
 	cmd.Stdin = strings.NewReader(program)
 	cmd.WaitDelay = 2 * time.Second
 	configureCommand(cmd)
-	log, err := logfile.Open(filepath.Join(dir, "process.log"), 4<<20, 2)
-	if err != nil {
+	output := &startupLog{writer: log, started: started}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := phase("launch"); err != nil {
 		return nil, err
 	}
-	defer log.Close()
-	cmd.Stdout = log
-	cmd.Stderr = log
 	// Finish persistence before interpreting a successful child result.
-	err = errors.Join(cmd.Run(), log.Close())
+	runErr := cmd.Run()
+	err = errors.Join(runErr, phase("child-exited"), log.Close())
 	if err != nil {
 		if contextErr := ctx.Err(); contextErr != nil {
 			err = errors.Join(err, contextErr)
