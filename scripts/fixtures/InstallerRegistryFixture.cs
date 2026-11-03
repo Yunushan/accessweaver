@@ -11,6 +11,18 @@ public static class InstallerRegistryFixture
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
     private static extern int RegRenameKey(SafeRegistryHandle key, string subKey, string newName);
 
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern int RegOpenKeyExW(SafeRegistryHandle parent, string subKey,
+        uint options, uint access, out SafeRegistryHandle key);
+
+    public static int QueryStatus64(RegistryKey machine, string subKey)
+    {
+        SafeRegistryHandle key;
+        int status = RegOpenKeyExW(machine.Handle, subKey, 0, 0x0101, out key);
+        if (key != null) key.Dispose();
+        return status;
+    }
+
     public static void Rename(RegistryKey parent, string oldName, string newName)
     {
         if (parent == null || String.IsNullOrEmpty(oldName) || String.IsNullOrEmpty(newName) ||

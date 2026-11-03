@@ -375,19 +375,16 @@ try {
         try {
             $key.SetAccessControl($deniedSecurity)
             $deniedSDDL=$key.GetAccessControl($access).GetSecurityDescriptorSddlForm($access)
-            $probe=$null;$accessDenied=$false
-            try {$probe=$base.OpenSubKey($uninstallKey)} catch {
-                $cause=$_.Exception
-                while($cause.InnerException){$cause=$cause.InnerException}
-                if($cause -is [UnauthorizedAccessException]){$accessDenied=$true}else{throw}
-            } finally {if($probe){$probe.Dispose()}}
-            Require $accessDenied 'Owned-key query denial did not take effect'
+            # Framework versions wrap this deliberate denial differently.
+            # Require the exact native result instead of matching exceptions.
+            $queryStatus=[InstallerRegistryFixture]::QueryStatus64($base,$uninstallKey)
+            Require ($queryStatus -eq 5) 'Owned-key query denial did not produce native ERROR_ACCESS_DENIED'
             # Existing handle retains its granted rights for inspection/restore.
             $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint $key
             $denied=Native-Record $second $arguments (0..255)
             Require ($denied.result.exitCode -eq 1 -and (Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint $key) -ceq $registrationBefore -and $key.GetAccessControl($access).GetSecurityDescriptorSddlForm($access) -ceq $deniedSDDL) 'Denied registration read allowed setup or changed protected state'
             Assert-UserState
-            $registryAccessCases+=,@{name='denied-product-key-refused';exitCode=$denied.result.exitCode;elapsedMilliseconds=$denied.milliseconds;queryDenialIndependentlyObserved=$true;installedFileTreePreserved=$true;registrationValuesPreserved=$true;fixtureDACLUnchangedDuringRefusal=$true;profilePreserved=$true}
+            $registryAccessCases+=,@{name='denied-product-key-refused';exitCode=$denied.result.exitCode;elapsedMilliseconds=$denied.milliseconds;queryDenialIndependentlyObserved=$true;nativeQueryStatus=$queryStatus;installedFileTreePreserved=$true;registrationValuesPreserved=$true;fixtureDACLUnchangedDuringRefusal=$true;profilePreserved=$true}
         } finally {$key.SetAccessControl($restoreSecurity)}
         Require ($key.GetAccessControl($access).GetSecurityDescriptorSddlForm($access) -ceq $originalSDDL) 'Owned key access-control restoration differs from the original'
         $registryAccessCases[-1].fixtureDACLRestored=$true
