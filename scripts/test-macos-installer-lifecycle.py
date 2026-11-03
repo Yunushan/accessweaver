@@ -93,6 +93,89 @@ def preflight_refusals(package,capsule,environment,marker,results):
         require(not path.exists() and not path.is_symlink(),"Owned refusal fixture was not removed")
         results[-1].update({"passed":True,"exitCode":refused.returncode,"elapsedMilliseconds":elapsed,"fixtureIdentityAndBytesPreserved":True,"aliasDestinationAndUnrelatedDataPreserved":True,"noAdditionalAppOrReceiptCreated":True,"ownedFixtureRemoved":True})
 
+
+def owned_bundle_snapshot():
+    no_alias(APP);values={};total=0
+    for root,dirs,files in os.walk(APP,followlinks=False):
+        for item in [Path(root)]+[Path(root)/name for name in files+dirs]:
+            name=item.relative_to(APP).as_posix()
+            if name in values:continue
+            info=item.lstat();require(len(values)<4096 and info.st_size<=64<<20,"Owned snapshot exceeds limits")
+            record={"mode":info.st_mode,"uid":info.st_uid,"gid":info.st_gid,"links":info.st_nlink,"inode":info.st_ino,"mtime":info.st_mtime_ns,"ctime":info.st_ctime_ns}
+            if stat.S_ISLNK(info.st_mode):record["target"]=os.readlink(item)
+            elif stat.S_ISREG(info.st_mode):
+                total+=info.st_size;require(total<=128<<20,"Owned snapshot exceeds byte limit");record["sha256"]=digest(item.read_bytes())
+            else:require(stat.S_ISDIR(info.st_mode),"Unexpected owned snapshot object")
+            values[name]=record
+    return values
+
+def upgrade_preflight(capsule,environment,identity,manifest,profile_path,marker,cases,helpers):
+    go=shutil.which("go");require(go is not None,"Native SDK missing for upgrade preflight")
+    compiler_environment=dict(os.environ,GOTOOLCHAIN="local",GOFLAGS="",GOOS="darwin",GOARCH=identity["arch"],CGO_ENABLED="0")
+    binaries={}
+    for version in ("0.1.1-alpha","0.1.0-alpha","0.0.9"):
+        binary=capsule/("upgrade-preflight-"+version)
+        expected=dict(identity,version=version)
+        names={"Version":version,"Commit":identity["commit"],"SourceState":"clean","BuiltAt":identity["builtAt"]}
+        flags=" ".join("-X github.com/Yunushan/accessweaver/internal/buildinfo."+key+"="+value for key,value in names.items())
+        run([go,"build","-mod=readonly","-trimpath","-buildvcs=false","-ldflags",flags,"-o",binary,"./cmd/accessweaver-installer"],compiler_environment,240)
+        actual,_=run([binary,"version","--json"],environment,30);require(json.loads(actual.stdout)==expected,"Native upgrade helper build identity differs")
+        binaries[version]=binary;helpers.append({"build":expected,"sha256":digest(binary.read_bytes())})
+    profile_hash=digest(profile_path.read_bytes());marker_hash=digest(marker.read_bytes())
+    def receipts():
+        values=[]
+        for path in RECEIPTS:
+            no_alias(path)
+            if path.exists():
+                info=path.stat();require(stat.S_ISREG(info.st_mode) and info.st_size<=4<<20,"Unexpected owned receipt fixture")
+                values.append({"exists":True,"mode":info.st_mode,"uid":info.st_uid,"gid":info.st_gid,"inode":info.st_ino,"mtime":info.st_mtime_ns,"ctime":info.st_ctime_ns,"sha256":digest(path.read_bytes())})
+            else:values.append({"exists":False})
+        return values
+    def check(name,version,mode=None,elevated=True):
+        cases.append({"name":name,"passed":False,"incomingVersion":version})
+        before=owned_bundle_snapshot();receipt_before=receipts()
+        command=(["/usr/bin/sudo","-n"] if elevated else [])+[binaries[version],"preflight-upgrade"]
+        result,elapsed=run(command,environment,30,codes=tuple(range(256)))
+        cases[-1].update({"exitCode":result.returncode,"elapsedMilliseconds":elapsed})
+        if result.returncode:
+            cases[-1]["refusalDiagnosticSHA256"]=digest(result.stderr)
+            for text,label in ((b"receipt","receipt"),(b"Applications container","container"),(b"root:wheel","ownership"),(b"ACL","acl"),(b"manifest","inventory"),(b"plist","plist"),(b"root","root-required")):
+                if text in result.stderr:cases[-1]["refusalCategory"]=label;break
+        require(result.returncode==0 if mode else 1<=result.returncode<=255,"Unexpected native upgrade preflight acceptance")
+        if mode:
+            value=json.loads(result.stdout)
+            require(value["mode"]==mode and value["incomingVersion"]==version and value["installedBuild"]==identity and value["completeProtectedInventoryVerified"] is True,"Native upgrade preflight identity/inventory differs")
+            require(value["manifestSHA256"]==digest((APP/"Contents/Resources/INSTALL-MANIFEST.json").read_bytes()) and value["payloadSHA256"]==digest((APP/"Contents/MacOS/accessweaver").read_bytes()),"Native upgrade preflight subject differs")
+            require(value["receiptSHA256"]=={r["suffix"]:r["sha256"] for r in snapshot_receipts()},"Native upgrade preflight receipt binding differs")
+            require(all(value[k] is False for k in ("mutationPerformed","upgradeExecuted","productionQualificationComplete")),"Read-only preflight scope changed")
+            cases[-1]["verifiedDecision"]=value
+        require(owned_bundle_snapshot()==before and receipts()==receipt_before,"Read-only upgrade preflight changed app or receipts")
+        require(digest(profile_path.read_bytes())==profile_hash and digest(marker.read_bytes())==marker_hash,"Read-only upgrade preflight changed user data")
+        require(all(digest(binaries[h["build"]["version"]].read_bytes())==h["sha256"] for h in helpers),"Owned helper bytes changed")
+        cases[-1].update({"passed":True,"installedObjectsAndReceiptsPreserved":True,"actualUserProfilePreserved":True,"installedCodeExecutedAsRoot":False,"upgradeExecuted":False})
+    check("newer-release-preflight","0.1.1-alpha","upgrade")
+    check("same-release-preflight","0.1.0-alpha","reinstall")
+    check("older-release-refused","0.0.9")
+    check("ordinary-user-refused","0.1.1-alpha",elevated=False)
+    core=APP/"Contents/MacOS/accessweaver";saved_core=capsule/"saved-preflight-core";saved_core.write_bytes(core.read_bytes());changed=capsule/"changed-preflight-core";changed.write_bytes(saved_core.read_bytes()+b"changed")
+    run(["/usr/bin/sudo","-n","/bin/cp",changed,core],environment)
+    check("changed-core-refused","0.1.1-alpha")
+    run(["/usr/bin/sudo","-n","/bin/cp",saved_core,core],environment);run(["/usr/bin/sudo","-n","/bin/chmod","755",core],environment);verify_bundle(APP,manifest,identity)
+    leaf=APP/"Contents/Resources/README.md";saved_leaf=capsule/"saved-preflight-readme";saved_leaf.write_bytes(leaf.read_bytes())
+    extra=APP/"Contents/Resources/upgrade-preflight-extra";require(not extra.exists() and not extra.is_symlink(),"Unexpected preflight fixture leaf")
+    run(["/usr/bin/sudo","-n","/bin/cp",saved_leaf,extra],environment);check("unexpected-file-refused","0.1.1-alpha");no_alias(extra);require(digest(extra.read_bytes())==digest(saved_leaf.read_bytes()),"Extra fixture changed before cleanup");run(["/usr/bin/sudo","-n","/bin/rm","--",extra],environment)
+    run(["/usr/bin/sudo","-n","/bin/chmod","666",leaf],environment);check("writable-file-refused","0.1.1-alpha");run(["/usr/bin/sudo","-n","/bin/chmod","644",leaf],environment)
+    no_alias(leaf);require(digest(leaf.read_bytes())==digest(saved_leaf.read_bytes()),"Readme fixture changed before alias")
+    run(["/usr/bin/sudo","-n","/bin/rm","--",leaf],environment);run(["/usr/bin/sudo","-n","/bin/ln","-s",marker,leaf],environment);check("file-alias-refused","0.1.1-alpha")
+    require(leaf.is_symlink() and os.readlink(leaf)==str(marker),"Owned alias changed before cleanup");run(["/usr/bin/sudo","-n","/bin/rm","--",leaf],environment);run(["/usr/bin/sudo","-n","/bin/cp",saved_leaf,leaf],environment);run(["/usr/bin/sudo","-n","/bin/chmod","644",leaf],environment)
+    acl_before,_=run(["/bin/ls","-le",leaf],environment);require(b"everyone allow write" not in acl_before.stdout,"Do not replace an existing ACL fixture")
+    run(["/usr/bin/sudo","-n","/bin/chmod","+a","everyone allow write",leaf],environment);check("acl-mutation-grant-refused","0.1.1-alpha");run(["/usr/bin/sudo","-n","/bin/chmod","-a","everyone allow write",leaf],environment)
+    acl_after,_=run(["/bin/ls","-le",leaf],environment);require(acl_after.stdout==acl_before.stdout,"Owned ACL fixture was not restored")
+    receipt=RECEIPTS[1];backup=capsule/"saved-owned-package.bom";no_alias(backup);require(not backup.exists() and backup.parent.resolve()==capsule.resolve(),"Unsafe owned receipt backup")
+    original_receipt=snapshot_receipts();run(["/usr/bin/sudo","-n","/bin/mv",receipt,backup],environment);check("missing-bom-receipt-refused","0.1.1-alpha")
+    no_alias(backup);require(not receipt.exists() and digest(backup.read_bytes())==original_receipt[1]["sha256"],"Owned receipt backup changed");run(["/usr/bin/sudo","-n","/bin/mv",backup,receipt],environment);require(snapshot_receipts()==original_receipt,"Owned receipt fixture was not restored")
+    verify_bundle(APP,manifest,identity);check("restored-state-preflight","0.1.1-alpha","upgrade")
+
 def main():
     require(platform.system()=="Darwin" and os.geteuid()!=0,"Acceptance requires an ordinary-user native Mac host")
     require(os.environ.get("GITHUB_ACTIONS")=="true" and os.environ.get("RUNNER_ENVIRONMENT")=="github-hosted" and os.environ.get("GITHUB_REPOSITORY")=="Yunushan/accessweaver" and os.environ.get("ACCESSWEAVER_DISPOSABLE_MACOS_INSTALLER_TEST")=="1","Explicit disposable hosted Mac opt-in required")
@@ -114,7 +197,7 @@ def main():
     capsule=Path(tempfile.mkdtemp(prefix="accessweaver-macos-installer-",dir=temporary));user=capsule/"user";user.mkdir();private_temp=capsule/"tmp";private_temp.mkdir()
     environment={"PATH":"/usr/bin:/bin:/usr/sbin:/sbin","HOME":str(user),"TMPDIR":str(private_temp),"LANG":"C","LC_ALL":"C","TZ":"UTC","ACCESSWEAVER_NO_BROWSER":"1"}
     marker=user/"preserve.json";marker.write_text('{"preserve":"unrelated"}',encoding="utf-8");marker_hash=digest(marker.read_bytes())
-    complete=False;stage="preflight-refusals";failure=None;operations=[];profile_hash=None;cleaned=False;refusal_cases=[];failure_line=None
+    complete=False;stage="preflight-refusals";failure=None;operations=[];profile_hash=None;cleaned=False;refusal_cases=[];failure_line=None;upgrade_cases=[];upgrade_helpers=[]
     try:
         preflight_refusals(package,capsule,environment,marker,refusal_cases)
         stage="install"
@@ -135,6 +218,8 @@ def main():
         profile_hash=digest(profile_path.read_bytes())
         check,_=run([binary,"show","package-preserve"],environment,30);require(json.loads(check.stdout)["name"]==profile["name"],"Installed core did not round-trip actual saved profile")
         before=bundle_manifest(APP)
+        stage="native-upgrade-preflight"
+        upgrade_preflight(capsule,environment,identity,manifest,profile_path,marker,upgrade_cases,upgrade_helpers)
         stage="existing-install-refusal"
         refused,elapsed=run(["/usr/bin/sudo","-n","/usr/sbin/installer","-pkg",package,"-target","/"],environment,codes=tuple(range(1,256)))
         require(bundle_manifest(APP)==before and snapshot_receipts()==receipt_before,"Refused experimental reinstall changed app or receipt bytes")
@@ -166,7 +251,7 @@ def main():
         while trace is not None:
             if trace.tb_frame.f_code.co_filename==__file__:failure_line=trace.tb_lineno
             trace=trace.tb_next
-    result={"schemaVersion":2,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packageSHA256":report["packageSHA256"],"payloadSHA256":report["payloadSHA256"],"operations":operations,"preflightRefusalCases":refusal_cases,"passed":complete,"stage":stage,"failureType":failure,"failureSourceLine":failure_line,"cleanInstallExecuted":bool(operations),"actualUserProfilePreservationVerified":complete,"ownedFixturesRemoved":cleaned,"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"upgradeQualified":False,"downgradeQualified":False,"productUninstallQualified":False,"finderInteractionQualified":False,"managedEndpointQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
+    result={"schemaVersion":2,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packageSHA256":report["packageSHA256"],"payloadSHA256":report["payloadSHA256"],"operations":operations,"preflightRefusalCases":refusal_cases,"nativeUpgradePreflightCases":upgrade_cases,"nativeUpgradePreflightHelpers":upgrade_helpers,"nativeUpgradeExecuted":False,"passed":complete,"stage":stage,"failureType":failure,"failureSourceLine":failure_line,"cleanInstallExecuted":bool(operations),"actualUserProfilePreservationVerified":complete,"ownedFixturesRemoved":cleaned,"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"upgradeQualified":False,"downgradeQualified":False,"productUninstallQualified":False,"finderInteractionQualified":False,"managedEndpointQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
     (output/"lifecycle-artifact.json").write_text(json.dumps(result,indent=2)+"\n",encoding="utf-8")
     require(complete,"Disposable native package acceptance failed at "+stage+"; owned fixture retained on disposable host")
     print(json.dumps({"target":result["target"],"cleanInstallAndExistingRefusalPassed":True,"preflightRefusalCases":len(refusal_cases),"productionQualificationComplete":False}))
