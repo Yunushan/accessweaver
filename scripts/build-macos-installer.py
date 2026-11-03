@@ -121,6 +121,6 @@ def build(version,arch,go="go"):
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("--version",default="0.1.0-alpha");parser.add_argument("--architecture",choices=("amd64","arm64"),required=True);parser.add_argument("--go",default="go")
     args=parser.parse_args();report=build(args.version,args.architecture,args.go)
-    print(json.dumps({"sourceCommit":report["sourceCommit"],"target":report["target"],"actualExpandedPayloadVerified":True,"archiveInspection":archive_inspection,"productionQualificationComplete":False}))
+    print(json.dumps({"sourceCommit":report["sourceCommit"],"target":report["target"],"actualExpandedPayloadVerified":True,"productionQualificationComplete":False}))
 
 if __name__=="__main__":main()

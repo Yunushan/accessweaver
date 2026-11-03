@@ -1,4 +1,4 @@
-name: Native macOS experimental package inspection
+name: Native macOS experimental package acceptance
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   inspect:
-    name: Native package inspection (${{ matrix.arch }})
+    name: Native package acceptance (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
