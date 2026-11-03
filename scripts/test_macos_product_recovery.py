@@ -23,27 +23,32 @@ class PartialCopyObservation(unittest.TestCase):
         return recovery.partial_inventory(root,expected,os.getuid(),os.getgid())
     def test_complete_metadata_and_partial_known_binary_are_exactly_fingerprinted(self):
         with tempfile.TemporaryDirectory() as folder:
-            root=Path(folder)/"partial";expected=self.fixture(root);before=self.inspect(root,expected)
+            root=Path(folder).resolve()/"partial";expected=self.fixture(root);before=self.inspect(root,expected)
             self.assertEqual(before["partialFiles"],["App/core"]);self.assertTrue(before["allKnownSourcePrefixesVerified"])
             self.assertEqual(before,self.inspect(root,expected))
             self.assertFalse(next(r for r in before["entries"] if r["path"]=="App/core")["complete"])
     def test_unknown_wrong_prefix_overlong_alias_hardlink_and_writable_objects_refuse(self):
         for kind in ("extra","wrong-prefix","overlong","symlink","hardlink","file-mode","directory-mode"):
             with self.subTest(kind=kind),tempfile.TemporaryDirectory() as folder:
-                root=Path(folder)/"partial";expected=self.fixture(root);file=root/"App/core"
+                root=Path(folder).resolve()/"partial";expected=self.fixture(root);file=root/"App/core"
                 if kind=="extra":(root/"unrelated").write_bytes(b"private")
                 elif kind=="wrong-prefix":file.write_bytes(b"other")
                 elif kind=="overlong":file.write_bytes(expected["App/core"]["data"]+b"x")
                 elif kind in ("symlink","hardlink"):
-                    other=Path(folder)/"outside";other.write_bytes(file.read_bytes());other.chmod(0o600);file.unlink()
+                    other=Path(folder).resolve()/"outside";other.write_bytes(file.read_bytes());other.chmod(0o600);file.unlink()
                     if kind=="symlink":file.symlink_to(other)
                     else:file.hardlink_to(other)
                 elif kind=="file-mode":file.chmod(0o777)
                 else:(root/"App").chmod(0o777)
                 with self.assertRaises(ValueError):self.inspect(root,expected)
+    def test_symlinked_parent_is_refused_even_with_exact_known_contents(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder).resolve();root=base/"partial";expected=self.fixture(root)
+            alias=base/"alias";alias.symlink_to(base,target_is_directory=True)
+            with self.assertRaisesRegex(ValueError,"refuses aliases"):self.inspect(alias/"partial",expected)
     def test_file_identity_or_content_change_during_read_is_not_accepted(self):
         with tempfile.TemporaryDirectory() as folder:
-            root=Path(folder)/"partial";expected=self.fixture(root);real=recovery.os.fstat;changed=False
+            root=Path(folder).resolve()/"partial";expected=self.fixture(root);real=recovery.os.fstat;changed=False
             def observe(fd):
                 nonlocal changed
                 info=real(fd)
