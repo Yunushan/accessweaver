@@ -10,6 +10,7 @@ import re
 import shutil
 import signal
 import stat
+import sys
 import subprocess
 import tempfile
 import time
@@ -20,6 +21,7 @@ from macos_installer import BUNDLE_NAME,digest,require
 from macos_deployment import PACKAGE_ID,INCOMING,inspect_deployment,verify_deployment_bundle
 from macos_desktop import DESKTOP_ID,ROOT,BINARY,record_name,package_id,component_name,validate_record,verify_bundle,inspect_component
 from macos_package_archive import flat_members,cpio,inflate
+from macos_product import component_inputs,product_name,inspect_product
 
 REPO=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location("accessweaver_desktop_fixture_support",Path(__file__).with_name("test-macos-installer-lifecycle.py"))
@@ -44,9 +46,9 @@ def root_regular(path,limit):
     return path.read_bytes()
 
 
-def main():
+def main(product_mode=False):
     require(support.platform.system()=="Darwin" and os.geteuid()!=0,"Native ordinary-user desktop driver required")
-    require(os.environ.get("GITHUB_ACTIONS")=="true" and os.environ.get("RUNNER_ENVIRONMENT")=="github-hosted" and os.environ.get("GITHUB_REPOSITORY")=="Yunushan/accessweaver" and os.environ.get("ACCESSWEAVER_DISPOSABLE_MACOS_DESKTOP_PACKAGE_TEST")=="1","Explicit disposable desktop opt-in required")
+    require(os.environ.get("GITHUB_ACTIONS")=="true" and os.environ.get("RUNNER_ENVIRONMENT")=="github-hosted" and os.environ.get("GITHUB_REPOSITORY")=="Yunushan/accessweaver" and os.environ.get("ACCESSWEAVER_DISPOSABLE_MACOS_PRODUCT_PACKAGE_TEST" if product_mode else "ACCESSWEAVER_DISPOSABLE_MACOS_DESKTOP_PACKAGE_TEST")=="1","Explicit disposable desktop opt-in required")
     source=os.environ.get("GITHUB_SHA","");arch=os.environ.get("ACCESSWEAVER_MACOS_INSTALLER_ARCH","")
     require(re.fullmatch("[a-f0-9]{40}",source) is not None and arch in ("amd64","arm64"),"Missing native desktop source/architecture")
     require(subprocess.check_output(["git","rev-parse","HEAD"],cwd=REPO,text=True).strip()==source and not subprocess.check_output(["git","status","--porcelain","--untracked-files=no"],cwd=REPO).strip(),"Clean exact-source checkout required")
@@ -65,6 +67,14 @@ def main():
             require(inspect_component(package.read_bytes(),record,identity,role,json.loads((output/(role+"-SCRIPT-MANIFEST.json")).read_bytes()),item["scriptArchiveOwner"])==item["archiveInspection"],"Public component changed")
             components[role]={"package":package,"sha256":digest(package.read_bytes())};receipt_ids.add(package_id(role,record))
         desktop[version]={"record":record,"registration":registration,"components":components}
+    products={}
+    if product_mode:
+        for version in VERSIONS:
+            output=base/"product"/version;package=output/product_name(version,arch);raw=package.read_bytes();compiler=json.loads((output/"compiler-artifact.json").read_bytes());inputs=component_inputs(version,arch,desktop[version]["record"])
+            packages={name:(core[version]["package"] if role=="core" else desktop[version]["components"][role]["package"]).read_bytes() for role,_,name in inputs}
+            inspected=inspect_product(raw,version,arch,inputs,packages)
+            require(compiler["sourceCommit"]==source and compiler["build"]==core[version]["identity"] and compiler["productSHA256"]==digest(raw) and compiler["archiveInspection"]==inspected and compiler["actualExpandedPayloadAndScriptsVerified"] is True and compiler["productGraphSchemaValidated"] is True,"Product changed after native construction")
+            products[version]={"package":package,"sha256":digest(raw)}
     receipt_paths=[RECEIPTS/(identifier+suffix) for identifier in sorted(receipt_ids) for suffix in (".plist",".bom")]
     for path in (AUTHORITY,INPUT,DESKTOP,APP,Path("/Library/Preferences/AccessWeaver"),*receipt_paths,*support.RECEIPTS):
         no_alias(path);require(not path.exists(),"Existing public/core/managed state must never become a fixture")
@@ -74,7 +84,7 @@ def main():
     marker=user/"preserve";marker.write_bytes(b"unrelated public desktop fixture data");marker_hash=digest(marker.read_bytes())
     parent=Path("/Applications");no_alias(parent);info=parent.stat();parent_identity=(info.st_dev,info.st_ino,info.st_uid,info.st_gid,stat.S_IMODE(info.st_mode))
     parent_acl=run(["/bin/ls","-lde",parent],env,30)[0].stdout.splitlines()[1:]
-    operations=[];selections=[];known_slots={};profile=None;profile_hash=None;stage="open-capabilities";complete=False;cleaned=False;failure=None;failure_line=None;ls=None;deactivation=None
+    operations=[];selections=[];known_slots={};profile=None;profile_hash=None;stage="open-capabilities";complete=False;cleaned=False;failure=None;failure_line=None;ls=None;deactivation=None;current_generation=0;last_installer=None
     def preserved():
         require(digest(marker.read_bytes())==marker_hash and (profile is None or digest(profile.read_bytes())==profile_hash),"Desktop operation changed unrelated data/profile")
         now=parent.stat();require((now.st_dev,now.st_ino,now.st_uid,now.st_gid,stat.S_IMODE(now.st_mode))==parent_identity and run(["/bin/ls","-lde",parent],env,30)[0].stdout.splitlines()[1:]==parent_acl,"Desktop operation changed the Applications container")
@@ -106,25 +116,27 @@ def main():
         for old_version,old_app in known_slots.values():verify_deployment_bundle(old_app,core[old_version]["manifest"],core[old_version]["identity"],core[old_version]["manifestBytes"])
         return app/"Contents/MacOS/accessweaver"
     def install(name,version,role,success=True,generation=None):
-        nonlocal stage
-        stage=name;before=snapshot();candidate=core[version] if role=="core" else desktop[version]["components"][role]
+        nonlocal stage,current_generation,last_installer
+        stage=name;before=snapshot();candidate=core[version] if role=="core" else products[version] if role=="product" else desktop[version]["components"][role]
         package=candidate["package"];expected=candidate["report"]["packageSHA256"] if role=="core" else candidate["sha256"]
         require(digest(package.read_bytes())==expected,"Package changed before desktop acceptance")
         result,elapsed=run(["/usr/bin/sudo","-n","/usr/sbin/installer","-pkg",package,"-target","/"],env,180,codes=tuple(range(256)))
+        last_installer={"name":name,"version":version,"component":role,"exitCode":result.returncode,"packageSHA256":expected}
         if (result.returncode==0)!=success:
             print((result.stdout+result.stderr)[-12000:].decode("utf-8",errors="replace").replace(str(capsule),"[owned-capsule]"),flush=True)
         require((result.returncode==0)==success and digest(package.read_bytes())==expected,"Unexpected desktop component Installer result: "+name)
         if not success:require(snapshot()==before,"Refused desktop operation changed app/record/receipt bytes")
-        if success and role=="core":active(version,generation)
-        if success and role=="metadata":require(root_regular(DESKTOP/record_name(desktop[version]["record"]),64<<10)==desktop[version]["record"],"Installed registration bytes differ")
-        if success and role=="application":verify_bundle(APP,desktop[version]["record"],core[version]["identity"])
+        if success and role in ("core","product"):active(version,generation);current_generation=generation
+        if success and role in ("metadata","product"):require(root_regular(DESKTOP/record_name(desktop[version]["record"]),64<<10)==desktop[version]["record"],"Installed registration bytes differ")
+        if success and role in ("application","product"):verify_bundle(APP,desktop[version]["record"],core[version]["identity"])
         if success:
-            identifier=PACKAGE_ID if role=="core" else package_id(role,desktop[version]["record"])
-            for suffix in (".plist",".bom"):root_regular(RECEIPTS/(identifier+suffix),4<<20)
-            queried,_=run(["/usr/sbin/pkgutil","--pkg-info",identifier],env,30)
-            info=dict(line.split(": ",1) if ": " in line else (line.rstrip(":"),"") for line in queried.stdout.decode().splitlines() if line)
-            location=core[version]["report"]["archiveInspection"]["installLocation"] if role=="core" else ROOT if role=="metadata" else "/Applications"
-            require(info.get("package-id")==identifier and info.get("version")==version and info.get("volume")=="/" and info.get("location") in (location,location.lstrip("/")),"Native public/core receipt identity differs")
+            for receipt_role in (("core","metadata","application") if role=="product" else (role,)):
+                identifier=PACKAGE_ID if receipt_role=="core" else package_id(receipt_role,desktop[version]["record"])
+                for suffix in (".plist",".bom"):root_regular(RECEIPTS/(identifier+suffix),4<<20)
+                queried,_=run(["/usr/sbin/pkgutil","--pkg-info",identifier],env,30)
+                info=dict(line.split(": ",1) if ": " in line else (line.rstrip(":"),"") for line in queried.stdout.decode().splitlines() if line)
+                location=core[version]["report"]["archiveInspection"]["installLocation"] if receipt_role=="core" else ROOT if receipt_role=="metadata" else "/Applications"
+                require(info.get("package-id")==identifier and info.get("version")==version and info.get("volume")=="/" and info.get("location") in (location,location.lstrip("/")),"Native public/core receipt identity differs")
         preserved();operations.append({"nativeReceiptVerified":success,"name":name,"version":version,"component":role,"exitCode":result.returncode,"elapsedMilliseconds":elapsed,"packageSHA256":expected,"refusedStatePreserved":not success,"passed":True})
     def selection(name,version,success=True):
         before=snapshot();result,elapsed=run([APP/"Contents/MacOS"/BINARY,"version","--json"],env,30,codes=tuple(range(256)))
@@ -153,12 +165,17 @@ def main():
     try:
         help_result,_=run(["/usr/bin/open","-h"],env,30,codes=(0,1));help_bytes=help_result.stdout+help_result.stderr
         require(all(option in help_bytes for option in (b"--env",b"--stdout",b"--stderr")),"Native LaunchServices client lacks required private-environment/output capabilities")
-        install("core-clean-install",VERSIONS[0],"core",generation=1)
+        if product_mode:
+            install("app-without-metadata-refused",VERSIONS[0],"application",False)
+            install("product-clean-install",VERSIONS[0],"product",generation=1)
+        else:install("core-clean-install",VERSIONS[0],"core",generation=1)
         exe=active(VERSIONS[0],1);template,_=run([exe,"show","discord-proxy"],env,30);saved=json.loads(template.stdout);saved["id"]="desktop-preserve";saved["name"]="Preserved desktop fixture profile"
         request=capsule/"profile.json";request.write_text(json.dumps(saved),encoding="utf-8");run([exe,"import",request],env,30)
         profile=user/"Library/Application Support/AccessWeaver/profiles/desktop-preserve.json";no_alias(profile);profile_hash=digest(profile.read_bytes())
-        install("app-without-metadata-refused",VERSIONS[0],"application",False)
-        install("metadata-clean-install",VERSIONS[0],"metadata");install("public-app-clean-install",VERSIONS[0],"application");selection("initial-active",VERSIONS[0])
+        if not product_mode:
+            install("app-without-metadata-refused",VERSIONS[0],"application",False)
+            install("metadata-clean-install",VERSIONS[0],"metadata");install("public-app-clean-install",VERSIONS[0],"application")
+        selection("initial-active",VERSIONS[0])
         stage="launchservices-controller";log=capsule/"launchservices.log";core_path=active(VERSIONS[0],1);pid=None;serving=False
         command=["/usr/bin/open","-W","-n","--stdout",str(log),"--stderr",str(log)]
         for key in ("HOME","TMPDIR","ACCESSWEAVER_HOME","ACCESSWEAVER_NO_BROWSER","LANG","LC_ALL","TZ"):command.extend(["--env",key+"="+env[key]])
@@ -195,7 +212,7 @@ def main():
             with opener.open(request,timeout=10) as response:
                 body=response.read((1<<20)+1);require(response.status==200 and len(body)<=1<<20,"Authenticated private profile response exceeds bound")
                 profiles=json.loads(body);require(type(profiles) is list and any(p.get("id")=="desktop-preserve" for p in profiles),"LaunchServices controller did not load private saved profile")
-            install("launchservices-live-core-upgrade-refused",VERSIONS[1],"core",False)
+            install("launchservices-live-product-upgrade-refused" if product_mode else "launchservices-live-core-upgrade-refused",VERSIONS[1],"product" if product_mode else "core",False)
             require(child.poll() is None and kernel_image(pid)==str(core_path) and owner(pid)==os.getuid(),"Refused upgrade disturbed LaunchServices controller")
             ls={"defaultNoArgumentLaunch":True,"kernelImageAndOrdinaryOwnerVerified":True,"dashboardHTTPVerified":True,"privateProfileLockVerified":True,"authenticatedSavedProfileVerified":True,"installerRefusalWhileServingVerified":True,"controllerRemainedRunning":True,"passed":False}
         finally:
@@ -205,22 +222,30 @@ def main():
             stopped=child.wait(timeout=30)
             if serving:require(stopped==0 and kernel_image(pid)!=str(core_path),"Owned LaunchServices controller did not terminate cleanly")
         require(ls is not None,"Missing actual LaunchServices evidence");ls.update({"cleanShutdownVerified":True,"elapsedMilliseconds":int((time.monotonic()-started)*1000),"passed":True})
-        install("core-upgrade-with-public-v1",VERSIONS[1],"core",generation=2);selection("core-upgraded-public-v1",VERSIONS[1])
-        install("metadata-upgrade",VERSIONS[1],"metadata");install("public-app-upgrade",VERSIONS[1],"application");selection("public-upgraded",VERSIONS[1])
-        install("metadata-equal-reinstall",VERSIONS[1],"metadata");install("public-app-equal-reinstall",VERSIONS[1],"application")
-        install("older-metadata-refused",VERSIONS[0],"metadata",False);install("older-public-app-refused",VERSIONS[0],"application",False)
+        if product_mode:
+            install("product-upgrade",VERSIONS[1],"product",generation=2);selection("product-upgraded",VERSIONS[1])
+            install("product-equal-reinstall",VERSIONS[1],"product",generation=3);selection("product-reinstalled",VERSIONS[1])
+            install("older-product-refused",VERSIONS[0],"product",False)
+        else:
+            install("core-upgrade-with-public-v1",VERSIONS[1],"core",generation=2);selection("core-upgraded-public-v1",VERSIONS[1])
+            install("metadata-upgrade",VERSIONS[1],"metadata");install("public-app-upgrade",VERSIONS[1],"application");selection("public-upgraded",VERSIONS[1])
+            install("metadata-equal-reinstall",VERSIONS[1],"metadata");install("public-app-equal-reinstall",VERSIONS[1],"application")
+            install("older-metadata-refused",VERSIONS[0],"metadata",False);install("older-public-app-refused",VERSIONS[0],"application",False)
         for kind,path in (("public-info",APP/"Contents/Info.plist"),("registration",DESKTOP/record_name(desktop[VERSIONS[1]]["record"]))):
             stage="changed-"+kind;original=root_regular(path,64<<10);good=capsule/(kind+"-original");bad=capsule/(kind+"-changed");good.write_bytes(original);bad.write_bytes(original+b" ")
             run(["/usr/bin/sudo","-n","/bin/cp",bad,path],env)
-            install("changed-"+kind+"-core-refused",VERSIONS[1],"core",False)
-            install("changed-"+kind+"-desktop-refused",VERSIONS[1],"application" if kind=="public-info" else "metadata",False)
+            if product_mode:install("changed-"+kind+"-product-refused",VERSIONS[1],"product",False)
+            else:
+                install("changed-"+kind+"-core-refused",VERSIONS[1],"core",False)
+                install("changed-"+kind+"-desktop-refused",VERSIONS[1],"application" if kind=="public-info" else "metadata",False)
             require(path.read_bytes()==original+b" ","Refused update repaired changed input")
             run(["/usr/bin/sudo","-n","/bin/cp",good,path],env);require(path.read_bytes()==original,"Owned original restoration failed")
         stage="public-app-alias";saved_app=capsule/"retained-public-app"
         verify_bundle(APP,desktop[VERSIONS[1]]["record"],core[VERSIONS[1]]["identity"])
         require(not saved_app.exists(),"Owned alias destination already exists");run(["/usr/bin/sudo","-n","/bin/mv",APP,saved_app],env)
         run(["/usr/bin/sudo","-n","/bin/ln","-s",saved_app,APP],env)
-        install("public-alias-core-refused",VERSIONS[1],"core",False);install("public-alias-app-refused",VERSIONS[1],"application",False)
+        if product_mode:install("public-alias-product-refused",VERSIONS[1],"product",False)
+        else:install("public-alias-core-refused",VERSIONS[1],"core",False);install("public-alias-app-refused",VERSIONS[1],"application",False)
         require(APP.is_symlink() and os.readlink(APP)==str(saved_app),"Refusal changed public alias")
         verify_bundle(saved_app,desktop[VERSIONS[1]]["record"],core[VERSIONS[1]]["identity"])
         run(["/usr/bin/sudo","-n","/bin/rm","--",APP],env);require(not APP.exists() and not APP.is_symlink(),"Owned alias remains")
@@ -228,18 +253,21 @@ def main():
         stage="registration-alias";record_path=DESKTOP/record_name(desktop[VERSIONS[1]]["record"]);saved_record=capsule/"retained-registration.json"
         original=root_regular(record_path,64<<10);run(["/usr/bin/sudo","-n","/bin/mv",record_path,saved_record],env)
         run(["/usr/bin/sudo","-n","/bin/ln","-s",saved_record,record_path],env)
-        install("registration-alias-core-refused",VERSIONS[1],"core",False);install("registration-alias-metadata-refused",VERSIONS[1],"metadata",False)
+        if product_mode:install("registration-alias-product-refused",VERSIONS[1],"product",False)
+        else:install("registration-alias-core-refused",VERSIONS[1],"core",False);install("registration-alias-metadata-refused",VERSIONS[1],"metadata",False)
         require(record_path.is_symlink() and os.readlink(record_path)==str(saved_record) and root_regular(saved_record,64<<10)==original,"Registration alias/destination changed")
         run(["/usr/bin/sudo","-n","/bin/rm","--",record_path],env);require(not record_path.exists() and not record_path.is_symlink(),"Registration alias remains")
         run(["/usr/bin/sudo","-n","/bin/mv","-n",saved_record,record_path],env)
-        install("restored-public-reinstall",VERSIONS[1],"application");selection("restored-active",VERSIONS[1])
+        if product_mode:install("restored-product-reinstall",VERSIONS[1],"product",generation=4)
+        else:install("restored-public-reinstall",VERSIONS[1],"application")
+        selection("restored-active",VERSIONS[1])
         stage="deactivation-and-owned-cleanup";candidate=core[VERSIONS[1]];scripts=cpio(inflate(flat_members(candidate["package"].read_bytes())["Scripts"],32<<20,31));helper=capsule/"core-helper";helper.write_bytes(scripts["postinstall"]["data"]);helper.chmod(0o755)
         require(digest(helper.read_bytes())==candidate["report"]["helperSHA256"],"Deactivation helper differs from actual package")
         result,elapsed=run(["/usr/bin/sudo","-n",helper,"deactivate-deployment"],env,60);value=json.loads(result.stdout)
-        require(value["generation"]==3 and value["state"]=="inactive" and value["operationRecordPublished"] is True,"Core deactivation did not retain fence")
-        deactivation={"generation":3,"state":"inactive","operationRecordPublished":True,"exitCode":result.returncode,"elapsedMilliseconds":elapsed}
+        require(value["generation"]==current_generation+1 and value["state"]=="inactive" and value["operationRecordPublished"] is True,"Core deactivation did not retain fence")
+        deactivation={"generation":current_generation+1,"state":"inactive","operationRecordPublished":True,"exitCode":result.returncode,"elapsedMilliseconds":elapsed}
         selection("inactive-refused",VERSIONS[1],False);stage="deactivation-and-owned-cleanup"
-        value=json.loads(root_regular(AUTHORITY/"state/deployment.json",16384));require(value["active"]["id"]=="" and value["pending"]==[] and value["generation"]==3 and value["highWaterVersion"]==VERSIONS[1] and len(known_slots)==2,"Unexpected final owned core state")
+        value=json.loads(root_regular(AUTHORITY/"state/deployment.json",16384));require(value["active"]["id"]=="" and value["pending"]==[] and value["generation"]==current_generation+1 and value["highWaterVersion"]==VERSIONS[1] and len(known_slots)==current_generation,"Unexpected final owned core state")
         for old_version,old_app in known_slots.values():verify_deployment_bundle(old_app,core[old_version]["manifest"],core[old_version]["identity"],core[old_version]["manifestBytes"])
         verify_bundle(APP,desktop[VERSIONS[1]]["record"],core[VERSIONS[1]]["identity"])
         require({p.name for p in DESKTOP.iterdir()}=={record_name(d["record"]) for d in desktop.values()},"Unexpected registration retained during cleanup")
@@ -258,8 +286,19 @@ def main():
             if trace.tb_frame.f_code.co_filename==__file__:failure_line=trace.tb_lineno
             trace=trace.tb_next
     report={"schemaVersion":1,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"selections":selections,"launchServices":ls,"deactivation":deactivation,"corePackageSHA256":{v:core[v]["report"]["packageSHA256"] for v in VERSIONS},"desktopRecordSHA256":{v:digest(desktop[v]["record"]) for v in VERSIONS},"desktopPackageSHA256":{v:{role:c["sha256"] for role,c in desktop[v]["components"].items()} for v in VERSIONS},"actualOrderedComponentsExecuted":complete,"publicAppAndProtectedRegistrationsVerified":complete,"coreUpgradeWithPublicEntryVerified":complete,"actualUserDataAndContainerProtectionPreserved":complete,"ownedFixturesRemoved":cleaned,"installedProductCodeExecutedAsRoot":False,"publisherSignatureVerified":False,"notarized":False,"finderInteractiveQualificationComplete":False,"singleProductDistributionQualified":False,"productUninstallQualified":False,"managedEndpointQualified":False,"productionQualificationComplete":False}
-    (base/"desktop-lifecycle-artifact.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
+    if product_mode:
+        report.update({"lifecycleKind":"single-product","actualSingleProductLifecycleVerified":complete,"productPackageSHA256":{v:p["sha256"] for v,p in products.items()}})
+        if not complete:
+            report["lastInstaller"]=last_installer
+            try:
+                state=json.loads(root_regular(AUTHORITY/"state/deployment.json",16384));active_slot=state.get("active",{});pending=state.get("pending")
+                report["failedProductState"]={"recordAvailable":True,"generation":state.get("generation") if type(state.get("generation")) is int else None,"activeSlotPresent":isinstance(active_slot,dict) and bool(active_slot.get("id")),"pendingCount":len(pending) if type(pending) is list and len(pending)<=8 else None,"highWaterVersion":state.get("highWaterVersion") if state.get("highWaterVersion") in VERSIONS else None}
+            except Exception:report["failedProductState"]={"recordAvailable":False}
+
+    (base/("product-lifecycle-artifact.json" if product_mode else "desktop-lifecycle-artifact.json")).write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     require(complete,"Native public desktop acceptance failed at "+stage+"; owned state retained")
     print(json.dumps({"target":report["target"],"actualInstallerOperations":len(operations),"launchServicesDefaultUI":True,"passed":True,"productionQualificationComplete":False}))
 
-if __name__=="__main__":main()
+if __name__=="__main__":
+    require(sys.argv[1:] in ([],["--product"]),"Expected no arguments or --product")
+    main(product_mode=sys.argv[1:]==["--product"])

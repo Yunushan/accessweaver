@@ -24,7 +24,7 @@ WORKFLOW=REPOSITORY+"/.github/workflows/macos-desktop.yml"
 
 def subjects(arch):
     require(arch in ("amd64","arm64"),"Expected native desktop architecture")
-    result={"desktop-lifecycle-artifact.json":Path("desktop-lifecycle-artifact.json")}
+    result={"desktop-lifecycle-artifact.json":Path("desktop-lifecycle-artifact.json"),"product-lifecycle-artifact.json":Path("product-lifecycle-artifact.json")}
     for name,(version,original) in core_subjects(arch).items():
         if version is not None:result[name]=Path(version)/original
     for version in VERSIONS:
@@ -37,7 +37,7 @@ def subjects(arch):
         name=product_name(version,arch)
         result[name]=Path("product")/version/name;result[name+".cdx.json"]=Path("product")/version/(name+".cdx.json")
         for original in ("DISTRIBUTION.xml","compiler-artifact.json"):result["product-"+version+"-"+original]=Path("product")/version/original
-    require(len(result)==49,"Desktop known subject extent changed")
+    require(len(result)==50,"Desktop known subject extent changed")
     return result
 
 
@@ -61,7 +61,7 @@ def check_metadata(metadata,identity,main):
 
 def validate_contents(root,commit,arch):
     read=lambda name:json.loads((root/name).read_text(encoding="utf-8"))
-    cores,core_bindings,_=validate_packages(root,commit,arch);records={};public_bindings={};outputs=[];identities={}
+    cores,core_bindings,_=validate_packages(root,commit,arch);records={};public_bindings={};outputs=[];identities={};product_bindings={}
     for version in VERSIONS:
         identity=read(version+"-BUILD-INFO.json");identities[version]=identity
         prefix="desktop-"+version+"-";require(read(prefix+"BUILD-INFO.json")==identity,"Public/core build identities differ")
@@ -109,6 +109,7 @@ def validate_contents(root,commit,arch):
         require((root/("product-"+version+"-DISTRIBUTION.xml")).read_bytes()==product_members(product_raw,list(input_packages))["Distribution"],"Retained product distribution bytes differ")
         input_graphs={role:read(name+".cdx.json") for role,_,name in inputs};product_graph=read(product+".cdx.json");validate(product_graph,product_raw,identity)
         require(product_graph==product_sbom(product_raw,identity,inputs,input_packages,input_graphs,tool),"Product compiled/input/member graph differs")
+        product_bindings[version]=digest(product_raw)
         outputs.append({"version":version,"launcher":launcher,"components":inspections,"recordSHA256":digest(encoded),"productArchiveConstruction":product_inspection})
     life=read("desktop-lifecycle-artifact.json")
     require(life.get("schemaVersion")==1 and life.get("sourceCommit")==commit and life.get("target")=="darwin/"+arch and life.get("stage")=="deactivation-and-owned-cleanup" and life.get("failureType") is None and life.get("failureSourceLine") is None and re.fullmatch("[1-9][0-9]{0,19}",str(life.get("runID",""))) is not None,"Desktop native lifecycle identity/completion differs")
@@ -129,7 +130,31 @@ def validate_contents(root,commit,arch):
         require(c.get("expectedCoreBuild")==expected_build and c.get("installationAndUserDataPreserved") is True and c.get("passed") is True and type(c.get("exitCode")) is int and (c["exitCode"]==0 if expected_build is not None else 1<=c["exitCode"]<=255) and type(c.get("elapsedMilliseconds")) is int and 0<=c["elapsedMilliseconds"]<=30000,"Public app selection/refusal differs")
     launched=life.get("launchServices",{});require(all(launched.get(k) is True for k in ("defaultNoArgumentLaunch","kernelImageAndOrdinaryOwnerVerified","dashboardHTTPVerified","privateProfileLockVerified","authenticatedSavedProfileVerified","installerRefusalWhileServingVerified","controllerRemainedRunning","cleanShutdownVerified","passed")) and type(launched.get("elapsedMilliseconds")) is int and 0<=launched["elapsedMilliseconds"]<=300000,"Actual LaunchServices controller acceptance incomplete")
     deactivated=life.get("deactivation",{});require(deactivated.get("generation")==3 and deactivated.get("state")=="inactive" and deactivated.get("operationRecordPublished") is True and deactivated.get("exitCode")==0 and type(deactivated.get("elapsedMilliseconds")) is int and 0<=deactivated["elapsedMilliseconds"]<=60000,"Public/core deactivation fence differs")
-    return {"lifecycleRunID":str(life["runID"]),"corePackages":cores,"desktop":outputs,"actualInstallerOperations":21,"actualCoreDeactivationOperations":1,"publicAppSelectionCases":5,"launchServicesDefaultControllerVerified":True,"productArchiveConstructionVerified":True,"singleProductLifecycleQualified":False,"finderInteractiveQualificationComplete":False,"singleProductDistributionQualified":False,"publisherSignatureVerified":False,"productionQualificationComplete":False}
+    product_life=validate_product_lifecycle(read("product-lifecycle-artifact.json"),commit,arch,core_bindings,records,public_bindings,product_bindings,identities,str(life["runID"]))
+    return {"productLifecycle":product_life,"lifecycleRunID":str(life["runID"]),"corePackages":cores,"desktop":outputs,"actualInstallerOperations":21,"actualCoreDeactivationOperations":1,"publicAppSelectionCases":5,"launchServicesDefaultControllerVerified":True,"productArchiveConstructionVerified":True,"singleProductLifecycleQualified":False,"finderInteractiveQualificationComplete":False,"singleProductDistributionQualified":False,"publisherSignatureVerified":False,"productionQualificationComplete":False}
+
+
+def validate_product_lifecycle(life,commit,arch,cores,records,public,products,identities,run_id):
+    require(life.get("schemaVersion")==1 and life.get("sourceCommit")==commit and life.get("target")=="darwin/"+arch and str(life.get("runID"))==run_id and life.get("lifecycleKind")=="single-product" and life.get("stage")=="deactivation-and-owned-cleanup" and life.get("failureType") is None and life.get("failureSourceLine") is None,"Single product lifecycle identity differs")
+    require(life.get("corePackageSHA256")=={v:c["packageSHA256"] for v,c in cores.items()} and life.get("desktopRecordSHA256")==records and life.get("desktopPackageSHA256")==public and life.get("productPackageSHA256")==products,"Single product lifecycle subjects differ")
+    require(all(life.get(k) is True for k in ("passed","actualSingleProductLifecycleVerified","actualOrderedComponentsExecuted","publicAppAndProtectedRegistrationsVerified","coreUpgradeWithPublicEntryVerified","actualUserDataAndContainerProtectionPreserved","ownedFixturesRemoved")),"Single product lifecycle incomplete")
+    require(all(life.get(k) is False for k in ("installedProductCodeExecutedAsRoot","publisherSignatureVerified","notarized","finderInteractiveQualificationComplete","singleProductDistributionQualified","productUninstallQualified","managedEndpointQualified","productionQualificationComplete")),"Unqualified single product scope changed")
+    old,new=VERSIONS
+    expected=[("app-without-metadata-refused",old,"application",False),("product-clean-install",old,"product",True),("launchservices-live-product-upgrade-refused",new,"product",False),("product-upgrade",new,"product",True),("product-equal-reinstall",new,"product",True),("older-product-refused",old,"product",False),("changed-public-info-product-refused",new,"product",False),("changed-registration-product-refused",new,"product",False),("public-alias-product-refused",new,"product",False),("registration-alias-product-refused",new,"product",False),("restored-product-reinstall",new,"product",True)]
+    operations=life.get("operations");require(type(operations) is list and len(operations)==len(expected),"Single product operation extent differs")
+    for item,(name,version,role,success) in zip(operations,expected):
+        require(item.get("name")==name and item.get("version")==version and item.get("component")==role and item.get("passed") is True and type(item.get("exitCode")) is int and (item["exitCode"]==0 if success else 1<=item["exitCode"]<=255),"Single product operation differs")
+        require(item.get("nativeReceiptVerified") is success and item.get("refusedStatePreserved") is (not success) and type(item.get("elapsedMilliseconds")) is int and 0<=item["elapsedMilliseconds"]<=180000 and item.get("packageSHA256")== (products[version] if role=="product" else public[version][role]),"Single product operation evidence differs")
+    choices=life.get("selections");names=["initial-active","product-upgraded","product-reinstalled","restored-active","inactive-refused"]
+    require(type(choices) is list and [c.get("name") for c in choices]==names,"Single product selection coverage differs")
+    for c in choices:
+        build=identities[old] if c["name"]=="initial-active" else None if c["name"]=="inactive-refused" else identities[new]
+        require(c.get("expectedCoreBuild")==build and c.get("installationAndUserDataPreserved") is True and c.get("passed") is True and type(c.get("exitCode")) is int and (c["exitCode"]==0 if build is not None else 1<=c["exitCode"]<=255) and type(c.get("elapsedMilliseconds")) is int and 0<=c["elapsedMilliseconds"]<=30000,"Single product active selection/refusal differs")
+    launched=life.get("launchServices",{})
+    require(all(launched.get(k) is True for k in ("defaultNoArgumentLaunch","kernelImageAndOrdinaryOwnerVerified","dashboardHTTPVerified","privateProfileLockVerified","authenticatedSavedProfileVerified","installerRefusalWhileServingVerified","controllerRemainedRunning","cleanShutdownVerified","passed")) and type(launched.get("elapsedMilliseconds")) is int and 0<=launched["elapsedMilliseconds"]<=300000,"Single product LaunchServices incomplete")
+    deactivated=life.get("deactivation",{})
+    require(deactivated.get("generation")==5 and deactivated.get("state")=="inactive" and deactivated.get("operationRecordPublished") is True and deactivated.get("exitCode")==0 and type(deactivated.get("elapsedMilliseconds")) is int and 0<=deactivated["elapsedMilliseconds"]<=60000,"Single product deactivation fence differs")
+    return {"actualSingleProductInstallerOperations":10,"actualStandaloneAppRefusals":1,"actualCoreDeactivations":1,"publicAppSelectionCases":5,"privateLaunchServicesControllerVerified":True,"actualSingleProductLifecycleVerified":True,"singleProductDistributionQualified":False,"productionQualificationComplete":False}
 
 
 def limit(name):return 64<<20 if name.endswith(".pkg") else 16<<20 if name.endswith(".zip") or name==PROVENANCE_BUNDLE else 8<<20
