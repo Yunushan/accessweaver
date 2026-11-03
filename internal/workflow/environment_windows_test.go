@@ -25,12 +25,12 @@ func TestNativeDiscoveryIgnoresUntrustedEnvironment(t *testing.T) {
 	root := t.TempDir()
 	fakeRoot := filepath.Join(root, "must-not-create")
 	modules := filepath.Join(root, "modules")
-	for name, command := range map[string]string{"ScheduledTasks": "Get-ScheduledTask", "Microsoft.PowerShell.Utility": "ConvertFrom-Json"} {
+	for name, command := range map[string]string{"ScheduledTasks": "Get-ScheduledTask", "Microsoft.PowerShell.Utility": "ConvertFrom-Json", "Microsoft.PowerShell.Management": "Join-Path"} {
 		module := filepath.Join(modules, name)
 		if err := os.MkdirAll(module, 0700); err != nil {
 			t.Fatal(err)
 		}
-		source := `function ` + command + ` { [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'module-loaded.txt'),'unexpected');throw 'UNTRUSTED_MODULE' };Export-ModuleMember -Function ` + command
+		source := `[IO.File]::WriteAllText([IO.Path]::Combine($PSScriptRoot,'module-loaded.txt'),'unexpected');function ` + command + ` { throw 'UNTRUSTED_MODULE' };Export-ModuleMember -Function ` + command
 		if err := os.WriteFile(filepath.Join(module, name+".psm1"), []byte(source), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -89,7 +89,7 @@ func TestNativeDiscoveryIgnoresUntrustedEnvironment(t *testing.T) {
 	if strings.Contains(string(data), fakeRoot) || !strings.Contains(string(data), strings.ReplaceAll(filepath.Join(expected, "AccessWeaver"), `\`, `\\`)) {
 		t.Fatal("discovery used an environment-selected root")
 	}
-	for _, name := range []string{"ScheduledTasks", "Microsoft.PowerShell.Utility"} {
+	for _, name := range []string{"ScheduledTasks", "Microsoft.PowerShell.Utility", "Microsoft.PowerShell.Management"} {
 		if _, err := os.Stat(filepath.Join(modules, name, "module-loaded.txt")); !os.IsNotExist(err) {
 			t.Fatal("untrusted PowerShell module loaded", name, err)
 		}
@@ -100,7 +100,7 @@ func TestNativeDiscoveryIgnoresUntrustedEnvironment(t *testing.T) {
 }
 
 func nativeDiscoveryPhases(log []byte) []string {
-	timing := regexp.MustCompile(`^(Workflow timing ms: (storage-ready|script-ready|request-ready|environment-ready|launch|first-output|child-exited|shell-input|shell-parse|shell-initialize|shell-utility-ready|shell-request-decoded|shell-network-ready|shell-root-ready|shell-state-ready|shell-catalog-ready|shell-dispatch)|Discovery timing ms: (services|components|applications|conflicts|refresh-task|final-paths|complete)|Task query timing ms: (start|started|capture-ready|exited|timed-out|drained|cleanup|tree-helper-returned|disposed)) [0-9]{1,12}$`)
+	timing := regexp.MustCompile(`^(Workflow timing ms: (storage-ready|script-ready|request-ready|environment-ready|launch|first-output|child-exited|shell-input|shell-parse|shell-initialize|shell-utility-ready|shell-management-ready|shell-request-decoded|shell-network-ready|shell-root-ready|shell-state-ready|shell-catalog-ready|shell-dispatch)|Discovery timing ms: (services|components|applications|conflicts|refresh-task|final-paths|complete)|Task query timing ms: (start|started|capture-ready|exited|timed-out|drained|cleanup|tree-helper-returned|disposed)) [0-9]{1,12}$`)
 	phases := []string{}
 	for _, line := range strings.Split(string(log), "\n") {
 		line = strings.TrimSpace(line)
@@ -156,6 +156,7 @@ func TestNativeDiscoveryPhaseExportOmitsPrivateAndUnknownLines(t *testing.T) {
 		"Workflow timing ms: first-output 3",
 		"Workflow timing ms: shell-parse 4",
 		"Workflow timing ms: shell-utility-ready 10",
+		"Workflow timing ms: shell-management-ready 12",
 		"Workflow timing ms: private-name 5",
 		"Task query timing ms: start 12",
 		"Task query timing ms: private-name 7",
@@ -165,7 +166,7 @@ func TestNativeDiscoveryPhaseExportOmitsPrivateAndUnknownLines(t *testing.T) {
 		"Discovery timing ms: refresh-task 25",
 	}, "\n")
 	phases := nativeDiscoveryPhases([]byte(log))
-	if strings.Join(phases, "|") != "Workflow phase: dispatch|Workflow timing ms: first-output 3|Workflow timing ms: shell-parse 4|Workflow timing ms: shell-utility-ready 10|Task query timing ms: start 12|Discovery timing ms: refresh-task 25" {
+	if strings.Join(phases, "|") != "Workflow phase: dispatch|Workflow timing ms: first-output 3|Workflow timing ms: shell-parse 4|Workflow timing ms: shell-utility-ready 10|Workflow timing ms: shell-management-ready 12|Task query timing ms: start 12|Discovery timing ms: refresh-task 25" {
 		t.Fatal("discovery export retained private, unknown or unbounded diagnostics")
 	}
 }

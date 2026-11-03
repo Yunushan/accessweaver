@@ -3,10 +3,12 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::WriteLine('Workflow phase: initialize')
 if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-initialize {0}' -f $script:workflowClock.ElapsedMilliseconds))}
-# Import the required JSON cmdlets from this stock shell's module directory.
+# Import required JSON and OS cmdlets from this stock shell's module directory.
 # Avoid command discovery across unrelated modules on each fresh workflow process.
 Import-Module -Name ([IO.Path]::Combine($PSHOME,'Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1')) -ErrorAction Stop
 if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-utility-ready {0}' -f $script:workflowClock.ElapsedMilliseconds))}
+Import-Module -Name ([IO.Path]::Combine($PSHOME,'Modules\Microsoft.PowerShell.Management\Microsoft.PowerShell.Management.psd1')) -ErrorAction Stop
+if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-management-ready {0}' -f $script:workflowClock.ElapsedMilliseconds))}
 $inputData = Get-Content -LiteralPath $RequestPath -Raw | ConvertFrom-Json
 $r = $inputData.request
 if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-request-decoded {0}' -f $script:workflowClock.ElapsedMilliseconds))}
@@ -78,6 +80,47 @@ function Wait-ToolCapture($stdout,$stderr) {
     $pending=[Threading.Tasks.Task[]]@(@($stdout,$stderr)|Where-Object {-not $_.done}|ForEach-Object {$_.task})
     if($pending.Length){[void][Threading.Tasks.Task]::WaitAny($pending,10)}else{Start-Sleep -Milliseconds 10}
 }
+# The cleanup utility needs its own deadline: the original tool's timeout has
+# already expired when this path runs. Always retain the owned parent for fallback.
+function Stop-ToolTreeWithHelper([Diagnostics.Process]$process,[Diagnostics.Process]$helper,[ValidateRange(1,5000)][int]$TimeoutMilliseconds=5000) {
+    $started=$false;$failure=$null
+    try {
+        [void]$helper.Start();$started=$true;$helper.StandardInput.Close()
+        $stdout=New-ToolCapture $helper.StandardOutput;$stderr=New-ToolCapture $helper.StandardError
+        $clock=[Diagnostics.Stopwatch]::StartNew()
+        while(-not $helper.HasExited){
+            Receive-ToolCapture $stdout;Receive-ToolCapture $stderr
+            if($clock.ElapsedMilliseconds -ge $TimeoutMilliseconds){throw 'Termination helper exceeded its cleanup deadline'}
+            Wait-ToolCapture $stdout $stderr
+        }
+        if($helper.ExitCode -ne 0){throw 'Termination helper returned a failure exit code'}
+    } catch {$failure=$_.Exception.Message}
+    finally {
+        try {
+            if($started -and -not $helper.HasExited){
+                $helper.Kill()
+                if(-not $helper.WaitForExit(1000)){$failure='Termination helper could not be stopped'}
+            }
+        } catch {$failure='Termination helper cleanup could not be confirmed'}
+        # Kill only the process object we started. Stopping the parent is still
+        # required when tree cleanup fails, but cannot confirm descendant cleanup.
+        try {
+            if(-not $process.HasExited){$process.Kill()}
+            if(-not $process.WaitForExit(2000)){$failure='Owned tool process could not be stopped'}
+        } catch {$failure='Owned tool process cleanup could not be confirmed'}
+    }
+    if($failure){throw ('Tool process tree cleanup is unconfirmed: '+$failure+'; inspect the recovery journal')}
+}
+function Stop-ToolTree([Diagnostics.Process]$process) {
+    $start=[Diagnostics.ProcessStartInfo]::new()
+    $start.FileName=[IO.Path]::Combine($env:SystemRoot,'System32\taskkill.exe')
+    $start.Arguments='/PID '+$process.Id+' /T /F'
+    $start.WorkingDirectory=[IO.Path]::GetDirectoryName($start.FileName)
+    $start.UseShellExecute=$false;$start.CreateNoWindow=$true
+    $start.RedirectStandardInput=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+    $helper=[Diagnostics.Process]::new();$helper.StartInfo=$start
+    try {Stop-ToolTreeWithHelper $process $helper} finally {$helper.Dispose()}
+}
 function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600) {
     if($Timeout -lt 1 -or $Timeout -gt 86400){throw 'Tool timeout must be between 1 and 86400 seconds'}
     $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$program;$start.Arguments=(@($arguments | ForEach-Object {Quote-Arg $_}) -join ' ')
@@ -123,7 +166,7 @@ function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[
         try {
             Trace-TaskQueryStage 'cleanup'
             if($started -and -not $p.HasExited){
-                & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /PID $p.Id /T /F | Out-Null
+                Stop-ToolTree $p
                 Trace-TaskQueryStage 'tree-helper-returned'
                 if(-not $p.WaitForExit(2000)){throw ('Tool process '+$p.Id+' could not be stopped; inspect the recovery journal')}
             }

@@ -80,6 +80,38 @@ Assert $native.outputComplete 'Ordinary native output reaches EOF'
 $clock=[Diagnostics.Stopwatch]::StartNew()
 [void](Native $node @('-e','require("child_process").spawn(process.execPath,["-e","setTimeout(()=>{},12000)"],{stdio:"inherit"});process.exit(0)'))
 Assert ($clock.Elapsed.TotalSeconds -lt 10) 'Exited installer does not wait for a GUI child holding inherited output pipes'
+# Real disposable children exercise cleanup independently of OS utility success.
+# The failed/timed-out helper must stop the held parent and retain uncertainty.
+foreach($mode in @('success','start-failure','failure','timeout')){
+    $parent=[Diagnostics.Process]::new();$helper=[Diagnostics.Process]::new()
+    $parent.StartInfo=[Diagnostics.ProcessStartInfo]::new()
+    $parent.StartInfo.FileName=$node;$parent.StartInfo.Arguments='-e '+(Quote-Arg 'setTimeout(()=>{},60000)')
+    $parent.StartInfo.UseShellExecute=$false;$parent.StartInfo.CreateNoWindow=$true
+    $helper.StartInfo=[Diagnostics.ProcessStartInfo]::new()
+    $helper.StartInfo.FileName=$node;$helper.StartInfo.UseShellExecute=$false;$helper.StartInfo.CreateNoWindow=$true
+    $helper.StartInfo.RedirectStandardInput=$true;$helper.StartInfo.RedirectStandardOutput=$true;$helper.StartInfo.RedirectStandardError=$true
+    try {
+        [void]$parent.Start()
+        $code=switch($mode){
+            'success' {'process.kill('+ $parent.Id +');'}
+            'failure' {'process.exit(23)'}
+            'timeout' {'process.stdout.write("x".repeat(1024*1024));process.stderr.write("y".repeat(1024*1024));setTimeout(()=>{},60000)'}
+        }
+        $helper.StartInfo.Arguments='-e '+(Quote-Arg $code)
+        if($mode -eq 'start-failure'){$helper.StartInfo.FileName=Join-Path $testRoot 'nonexistent-termination-helper.exe'}
+        $clock=[Diagnostics.Stopwatch]::StartNew();$rejected=$false
+        try{Stop-ToolTreeWithHelper $parent $helper -TimeoutMilliseconds 2000}catch{
+            if($_.Exception.Message -notmatch 'tree cleanup is unconfirmed'){throw}
+            $rejected=$true
+        }
+        Assert ($rejected -eq ($mode -ne 'success')) ('Tree cleanup preserves helper outcome: '+$mode)
+        Assert ($clock.Elapsed.TotalSeconds -lt 8 -and $parent.HasExited -and ($mode -eq 'start-failure' -or $helper.HasExited)) ('Tree cleanup is bounded and stops both owned processes: '+$mode)
+    } finally {
+        foreach($child in @($helper,$parent)){
+            try{if(-not $child.HasExited){$child.Kill();[void]$child.WaitForExit(2000)}}catch{}finally{$child.Dispose()}
+        }
+    }
+}
 $native=Native $node @('-e','process.stdout.write("out");process.stderr.write("err")') -Secret
 Assert ($native.stdout -eq 'out' -and $native.stderr -eq 'err' -and $native.outputComplete) 'Both native output streams are drained completely'
 foreach($stream in @('stdout','stderr')){
