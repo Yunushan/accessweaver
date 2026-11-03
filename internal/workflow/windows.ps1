@@ -772,11 +772,34 @@ function Get-RefreshTaskInspection {
     }catch{}
     return @{present=$null;error='Scheduled task inspection failed; status is unknown'}
 }
+function Get-ServiceInspection {
+    $inspection=@{services=[Collections.Generic.List[object]]::new();error=$null}
+    $incomplete='Some services could not be inspected; service inventory is incomplete'
+    $names=@('WireSockAppService','WireSockConnectService','wiresock-client-service','ByeDPI','ProxiFyreService','WinDivert','WinDivert14','NDISRD','zapret','zapret2','GoodbyeDPI','dnscrypt-proxy','CloudflareWARP')
+    $queryErrors=@()
+    try {
+        # Enumerate once, then filter locally. A per-name "not found" result can
+        # conceal a failed lookup; enumeration errors always mean incomplete data.
+        Get-Service -ErrorAction SilentlyContinue -ErrorVariable queryErrors | ForEach-Object {
+            try {
+                $serviceName=[string]$_.Name
+                if([string]::IsNullOrWhiteSpace($serviceName)){throw 'Incomplete service properties'}
+                if($serviceName.StartsWith('AccessWeaver-',[StringComparison]::OrdinalIgnoreCase) -or $serviceName -in $names){
+                    $status=[string]$_.Status
+                    if([string]::IsNullOrWhiteSpace($status)){throw 'Incomplete service properties'}
+                    [void]$inspection.services.Add(@{name=$serviceName;status=$status;owned=$serviceName.StartsWith('AccessWeaver-')})
+                }
+            } catch {$inspection.error=$incomplete}
+        }
+    } catch {$inspection.error=$incomplete}
+    if($queryErrors.Count){$inspection.error=$incomplete}
+    return @{services=@($inspection.services.ToArray());error=$inspection.error}
+}
 function Discover {
     $discoveryClock=[Diagnostics.Stopwatch]::StartNew()
     [Console]::WriteLine('Discovery phase: services')
     [Console]::WriteLine(('Discovery timing ms: services {0}' -f $discoveryClock.ElapsedMilliseconds))
-    $serviceError=$null;$services=@();try{foreach($name in @('AccessWeaver-*','WireSockAppService','WireSockConnectService','wiresock-client-service','ByeDPI','ProxiFyreService','WinDivert','WinDivert14','NDISRD','zapret','zapret2','GoodbyeDPI','dnscrypt-proxy','CloudflareWARP')){foreach($svc in @(Get-Service -Name $name -ErrorAction SilentlyContinue)){$services+=@{name=$svc.Name;status=[string]$svc.Status;owned=$svc.Name.StartsWith('AccessWeaver-')}}}}catch{$serviceError=$_.Exception.Message}
+    $serviceInspection=Get-ServiceInspection;$services=@($serviceInspection.services);$serviceError=$serviceInspection.error
     [Console]::WriteLine('Discovery phase: components')
     [Console]::WriteLine(('Discovery timing ms: components {0}' -f $discoveryClock.ElapsedMilliseconds))
     $assets=@{};foreach($engine in $assetNames.Keys){$assets[$engine]=Find-Source $engine}

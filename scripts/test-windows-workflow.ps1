@@ -14,6 +14,43 @@ $testRoot=Join-Path $projectRoot ('build\workflow-tests-'+[guid]::NewGuid().ToSt
 $root=$testRoot;$script:undo=[Collections.Generic.List[object]]::new();$script:events=[Collections.Generic.List[string]]::new();$script:journalPath=$null
 [void](New-Item -ItemType Directory -Force -Path (Join-Path $testRoot 'backups'))
 function Assert([bool]$condition,[string]$message){if(-not $condition){throw $message};Write-Output ('PASS '+$message)}
+# This real read-only query also checks the legacy Windows PowerShell cmdlet.
+$nativeServiceInspection=Get-ServiceInspection
+Assert ($null -eq $nativeServiceInspection.error -and $nativeServiceInspection.services -is [array]) 'Native service enumeration succeeds with an explicit array result'
+# Returning a partial inventory must retain suppressed errors and keep values
+# emitted before and after a failure. No service is created, started or changed.
+try {
+    function Get-Service {
+        [CmdletBinding()]param()
+        $script:serviceQueryCalls++
+        if($script:serviceQueryMode -eq 'throw'){throw 'PRIVATE_SERVICE_QUERY_DETAIL'}
+        if($script:serviceQueryMode -in @('present','partial')){[pscustomobject]@{Name='AccessWeaver-fixture';Status='Running'}}
+        if($script:serviceQueryMode -in @('denied','partial')){
+            $PSCmdlet.WriteError([Management.Automation.ErrorRecord]::new([UnauthorizedAccessException]::new('PRIVATE_SERVICE_QUERY_DETAIL'),'CouldNotGetService',[Management.Automation.ErrorCategory]::PermissionDenied,$null))
+        }elseif($script:serviceQueryMode -eq 'unknown'){
+            $PSCmdlet.WriteError([Management.Automation.ErrorRecord]::new([InvalidOperationException]::new('PRIVATE_SERVICE_QUERY_DETAIL'),'UnexpectedServiceLookup',[Management.Automation.ErrorCategory]::ObjectNotFound,$null))
+        }elseif($script:serviceQueryMode -eq 'not-found'){
+            $PSCmdlet.WriteError([Management.Automation.ErrorRecord]::new([InvalidOperationException]::new('PRIVATE_SERVICE_QUERY_DETAIL'),'NoServiceFoundForGivenName',[Management.Automation.ErrorCategory]::ObjectNotFound,$null))
+        }elseif($script:serviceQueryMode -eq 'bad-property'){
+            $service=[pscustomobject]@{Name='AccessWeaver-fixture'}
+            $service | Add-Member -MemberType ScriptProperty -Name Status -Value {throw 'PRIVATE_SERVICE_QUERY_DETAIL'}
+            $service
+        }elseif($script:serviceQueryMode -eq 'bad-name'){[pscustomobject]@{Name='';Status='Running'}}
+        if($script:serviceQueryMode -in @('present','partial')){[pscustomobject]@{Name='WireSockAppService';Status='Stopped'}}
+        if($script:serviceQueryMode -in @('present','partial','unrelated-only')){[pscustomobject]@{Name='Unrelated-fixture';Status='Running'}}
+    }
+    foreach($mode in @('present','empty','unrelated-only','denied','unknown','not-found','partial','throw','bad-property','bad-name')){
+        $script:serviceQueryMode=$mode;$script:serviceQueryCalls=0
+        $inspection=Get-ServiceInspection
+        Assert ($script:serviceQueryCalls -eq 1) 'Service discovery performs one unfiltered enumeration'
+        if($mode -in @('present','partial')){
+            Assert ($inspection.services.Count -eq 2 -and $inspection.services[0].name -eq 'AccessWeaver-fixture' -and $inspection.services[0].owned -and $inspection.services[0].status -eq 'Running' -and $inspection.services[1].name -eq 'WireSockAppService' -and -not $inspection.services[1].owned) ($mode+' service inspection preserves selected values and excludes unrelated services')
+        }else{Assert ($inspection.services.Count -eq 0) ($mode+' service inspection does not invent entries')}
+        if($mode -in @('present','empty','unrelated-only')){Assert ($null -eq $inspection.error) ($mode+' service inspection is known')}
+        else{Assert (-not [string]::IsNullOrWhiteSpace($inspection.error)) ($mode+' service inspection remains explicitly incomplete')}
+        Assert (($inspection|ConvertTo-Json -Depth 4) -notmatch 'PRIVATE_SERVICE_QUERY_DETAIL') 'Service inspection omits private error and exception details'
+    }
+} finally {Remove-Item Function:Get-Service}
 # Evaluate only the isolated process-local TLS setup, with no HTTP operations.
 $tlsStatements=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.IfStatementAst] -and $_.Extent.Text.Contains('[Net.ServicePointManager]::SecurityProtocol')})
 Assert ($tlsStatements.Count -eq 1) 'HTTP TLS setup is conditional rather than an eager global initializer'
