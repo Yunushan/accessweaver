@@ -71,7 +71,11 @@ def main(product_mode=False):
     if product_mode:
         for version in VERSIONS:
             output=base/"product"/version;package=output/product_name(version,arch);raw=package.read_bytes();compiler=json.loads((output/"compiler-artifact.json").read_bytes());inputs=component_inputs(version,arch,desktop[version]["record"])
-            packages={name:(core[version]["package"] if role=="core" else desktop[version]["components"][role]["package"]).read_bytes() for role,_,name in inputs}
+            coordinated=base/"product-components"/version;construction=json.loads((coordinated/"compiler-artifact.json").read_bytes())
+            item=construction["components"][0];application=coordinated/component_name(version,arch,"application",product=True);application_raw=application.read_bytes()
+            require(construction["sourceCommit"]==source and construction["build"]==core[version]["identity"] and construction["recordSHA256"]==digest(desktop[version]["record"]) and construction["productCoordination"] is True and construction["coreIdentity"]=={"version":version,"manifestSHA256":core[version]["report"]["manifestSHA256"],"payloadSHA256":core[version]["report"]["payloadSHA256"]},"Product coordinator binding differs")
+            require(item["component"]=="application" and item["helperBuildMetadata"]["Path"]=="github.com/Yunushan/accessweaver/cmd/accessweaver-product-installer" and item["archiveInspection"]==inspect_component(application_raw,desktop[version]["record"],core[version]["identity"],"application",json.loads((coordinated/"application-SCRIPT-MANIFEST.json").read_bytes()),item["scriptArchiveOwner"]),"Product application component changed")
+            packages={name:(core[version]["package"].read_bytes() if role=="core" else application_raw if role=="application" else desktop[version]["components"][role]["package"].read_bytes()) for role,_,name in inputs}
             inspected=inspect_product(raw,version,arch,inputs,packages)
             require(compiler["sourceCommit"]==source and compiler["build"]==core[version]["identity"] and compiler["productSHA256"]==digest(raw) and compiler["archiveInspection"]==inspected and compiler["actualExpandedPayloadAndScriptsVerified"] is True and compiler["productGraphSchemaValidated"] is True,"Product changed after native construction")
             products[version]={"package":package,"sha256":digest(raw)}

@@ -34,16 +34,19 @@ def build(version,arch,go="go"):
     sdk=json.loads(run([go,"env","-json","GOHOSTOS","GOHOSTARCH","GOVERSION"],env=dict(os.environ,GOTOOLCHAIN="local")).stdout)
     require(sdk=={"GOHOSTOS":"darwin","GOHOSTARCH":arch,"GOVERSION":identity["goVersion"]},"Product native SDK differs")
     record=(public/"DESKTOP-RECORD.json").read_bytes();desktop.validate_record(record,identity)
+    coordinated_report=desktop.build(version,arch,go,product_application=True)
+    coordinated=base/"product-components"/version
+    require(coordinated_report["productCoordination"] is True and coordinated_report["recordSHA256"]==digest(record),"Product coordinator record differs")
     inputs=component_inputs(version,arch,record);packages={};graphs={};reports={}
     core_report=json.loads((core/"compiler-artifact.json").read_bytes());public_report=json.loads((public/"compiler-artifact.json").read_bytes())
     require(public_report["sourceCommit"]==identity["commit"] and public_report["recordSHA256"]==digest(record),"Product registration/source differs")
     for role,identifier,name in inputs:
-        directory=core if role=="core" else public;raw=(directory/name).read_bytes();require(0<len(raw)<=64<<20,"Product component budget exceeded")
+        directory=core if role=="core" else coordinated if role=="application" else public;raw=(directory/name).read_bytes();require(0<len(raw)<=64<<20,"Product component budget exceeded")
         if role=="core":
             inspected=inspect_deployment(raw,(core/"INSTALL-MANIFEST.json").read_bytes(),identity,json.loads((core/"SCRIPT-MANIFEST.json").read_bytes()));report=core_report
         else:
-            report=next(c for c in public_report["components"] if c["component"]==role)
-            inspected=inspect_component(raw,record,identity,role,json.loads((public/(role+"-SCRIPT-MANIFEST.json")).read_bytes()),report["scriptArchiveOwner"])
+            report=next(c for c in (coordinated_report if role=="application" else public_report)["components"] if c["component"]==role)
+            inspected=inspect_component(raw,record,identity,role,json.loads((directory/(role+"-SCRIPT-MANIFEST.json")).read_bytes()),report["scriptArchiveOwner"])
         require(inspected==report["archiveInspection"],"Product component changed after native construction")
         graph=json.loads((directory/(name+".cdx.json")).read_bytes());validate(graph,raw,identity)
         packages[name]=raw;graphs[role]=graph;reports[role]=inspected

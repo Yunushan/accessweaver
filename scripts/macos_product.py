@@ -27,7 +27,7 @@ def product_name(version,arch):
 
 def component_inputs(version,arch,record):
     product_name(version,arch)
-    return [("core",PACKAGE_ID,"accessweaver-"+version+"-darwin-"+arch+"-deployment-experimental.pkg")]+[(role,package_id(role,record),component_name(version,arch,role)) for role in ROLES[1:]]
+    return [("core",PACKAGE_ID,"accessweaver-"+version+"-darwin-"+arch+"-deployment-experimental.pkg")]+[(role,package_id(role,record),component_name(version,arch,role,product=role=="application")) for role in ROLES[1:]]
 
 
 def distribution(version,arch,inputs):
@@ -241,10 +241,10 @@ def product_installer_observation(stdout,stderr):
             text=line.decode("utf-8",errors="replace")
             phase=re.search(r"""PackageKit:.*(?:Executing|Running) script ["'](?:\./)?(preinstall|postinstall)["']""",text)
             if phase:events.append({"kind":"script-phase","phase":phase[1]})
-            for prefix in ("desktop package refused: ","installer operation refused: "):
+            for prefix in ("desktop package refused: ","installer operation refused: ","product package refused: "):
                 if prefix not in text:continue
                 message=text.split(prefix,1)[1].strip()
-                event={"kind":"helper-refusal","helper":"desktop" if prefix.startswith("desktop") else "core","messageSHA256":digest(message.encode("utf-8"))}
+                event={"kind":"helper-refusal","helper":"desktop" if prefix.startswith("desktop") else "product" if prefix.startswith("product") else "core","messageSHA256":digest(message.encode("utf-8"))}
                 if message in reasons:event["reason"]=message
                 events.append(event)
             require(len(events)<=64,"Product Installer diagnostic event budget exceeded")

@@ -34,10 +34,14 @@ def subjects(arch):
             result[name]=Path("desktop")/version/name;result[name+".cdx.json"]=Path("desktop")/version/(name+".cdx.json")
         for original in ("BUILD-INFO.json","DESKTOP-RECORD.json","compiler-artifact.json","metadata-SCRIPT-MANIFEST.json","application-SCRIPT-MANIFEST.json","metadata-helper-SBOM.cdx.json","application-helper-SBOM.cdx.json"):
             result["desktop-"+version+"-"+original]=Path("desktop")/version/original
+        name=component_name(version,arch,"application",product=True)
+        result[name]=Path("product-components")/version/name;result[name+".cdx.json"]=Path("product-components")/version/(name+".cdx.json")
+        for original in ("compiler-artifact.json","application-SCRIPT-MANIFEST.json","application-helper-SBOM.cdx.json"):
+            result["product-application-"+version+"-"+original]=Path("product-components")/version/original
         name=product_name(version,arch)
         result[name]=Path("product")/version/name;result[name+".cdx.json"]=Path("product")/version/(name+".cdx.json")
         for original in ("DISTRIBUTION.xml","compiler-artifact.json"):result["product-"+version+"-"+original]=Path("product")/version/original
-    require(len(result)==50,"Desktop known subject extent changed")
+    require(len(result)==60,"Desktop known subject extent changed")
     return result
 
 
@@ -59,6 +63,39 @@ def check_metadata(metadata,identity,main):
     require(metadata.get("GoVersion")==identity["goVersion"] and metadata.get("Path")=="github.com/Yunushan/accessweaver/cmd/"+main and settings.get("GOOS")=="darwin" and settings.get("GOARCH")==identity["arch"] and settings.get("CGO_ENABLED")=="0" and settings.get("-trimpath")=="true" and "-ldflags" not in settings,"Desktop native compiled metadata differs")
 
 
+
+def validate_coordinated_application(root,commit,arch,identity,encoded,record,core,launcher):
+    read=lambda name:json.loads((root/name).read_text(encoding="utf-8"))
+    prefix="product-application-"+identity["version"]+"-";report=read(prefix+"compiler-artifact.json")
+    require(report.get("schemaVersion")==1 and report.get("sourceCommit")==commit and report.get("build")==identity and report.get("recordFile")==record_name(encoded) and report.get("recordSHA256")==digest(encoded) and report.get("productCoordination") is True,"Product application construction identity differs")
+    binding={"version":identity["version"],"manifestSHA256":core["manifestSHA256"],"payloadSHA256":core["payloadSHA256"]}
+    require(report.get("coreIdentity")==binding and report.get("pkgbuild")==core["pkgbuild"],"Product application core/tool binding differs")
+    require(report.get("launcherBinarySHA256")==launcher["binarySHA256"] and report.get("launcherArchiveSHA256")==launcher["archiveSHA256"],"Product application launcher differs")
+    require(all(report.get(k) is True for k in ("nativeBundleConstructionVerified","actualExpandedPayloadAndScriptsVerified","allCompiledAndPackageGraphsSchemaValidated","metadataOutsideAppVerified","packagePayloadWritesAreOSInstallerOnly","unsigned")),"Product application construction incomplete")
+    require(all(report.get(k) is False for k in ("installationExecuted","launchServicesQualified","publisherSignatureVerified","notarized","productUninstallQualified","managedEndpointQualified","productionQualificationComplete")),"Unqualified product application scope changed")
+    items=report.get("components");require(type(items) is list and len(items)==1 and items[0].get("component")=="application","Product application component inventory differs")
+    item=items[0];name=component_name(identity["version"],arch,"application",product=True);raw=(root/name).read_bytes();scripts=read(prefix+"application-SCRIPT-MANIFEST.json")
+    inspected=inspect_component(raw,encoded,identity,"application",scripts,item["scriptArchiveOwner"])
+    require(item.get("file")==name and item.get("bytes")==len(raw) and item.get("sha256")==digest(raw) and item.get("archiveInspection")==inspected and item.get("helperSHA256")==inspected["helperSHA256"],"Actual product application differs")
+    check_metadata(item["helperBuildMetadata"],identity,"accessweaver-product-installer")
+    stamps={"Version":identity["version"],"Commit":commit,"SourceState":"clean","BuiltAt":identity["builtAt"]}
+    flags=["-X github.com/Yunushan/accessweaver/internal/buildinfo."+k+"="+v for k,v in stamps.items()]
+    seals={"sealedDesktopRecordSHA256":digest(encoded),"sealedDesktopComponent":"application","sealedVersion":binding["version"],"sealedManifestSHA256":binding["manifestSHA256"],"sealedPayloadSHA256":binding["payloadSHA256"]}
+    flags.extend("-X github.com/Yunushan/accessweaver/internal/packageupgrade."+k+"="+v for k,v in seals.items())
+    require(item.get("helperLinkerFlags")==" ".join(flags),"Product application dual compiled seals differ")
+    members=flat_members(raw);payload=cpio(inflate(members["Payload"],MAX_BYTES,31));script_data=cpio(inflate(members["Scripts"],32<<20,31))
+    helper=script_data["preinstall"]["data"];helper_graph=read(prefix+"application-helper-SBOM.cdx.json");validate(helper_graph,helper,identity)
+    require(prop_map(helper_graph["metadata"]["component"]).get("accessweaver:main-package")=="./cmd/accessweaver-product-installer","Product helper graph main differs")
+    payload_records=[dict(f,path=BUNDLE_NAME+"/"+f["path"]) for f in record["manifest"]["files"]]
+    graph=read(name+".cdx.json");validate(graph,raw,identity)
+    require(graph==package_sbom(raw,identity,helper_graph,json.loads(record["compiledSBOM"]),payload_records,scripts,report["pkgbuild"]),"Product application compiled/payload graphs differ")
+    for c in [graph["metadata"]["component"]]+graph["components"]:
+        for evidence in json.loads(prop_map(c).get("accessweaver:license-evidence","[]")):
+            path=evidence["path"];require(path in script_data and digest(script_data[path]["data"])==evidence["sha256"],"Product helper notice differs")
+    require(digest(payload[BUNDLE_NAME+"/Contents/MacOS/"+BINARY]["data"])==launcher["binarySHA256"],"Product launcher bytes differ")
+    return inspected
+
+
 def validate_contents(root,commit,arch):
     read=lambda name:json.loads((root/name).read_text(encoding="utf-8"))
     cores,core_bindings,_=validate_packages(root,commit,arch);records={};public_bindings={};outputs=[];identities={};product_bindings={}
@@ -73,6 +110,7 @@ def validate_contents(root,commit,arch):
             require(source.read("SBOM.cdx.json")==record["compiledSBOM"].encode("utf-8"),"Desktop compiled graph raw bytes differ from launcher archive")
         require(all(report.get(k) is True for k in ("nativeBundleConstructionVerified","actualExpandedPayloadAndScriptsVerified","allCompiledAndPackageGraphsSchemaValidated","metadataOutsideAppVerified","packagePayloadWritesAreOSInstallerOnly","unsigned")),"Desktop construction incomplete")
         require(all(report.get(k) is False for k in ("installationExecuted","launchServicesQualified","publisherSignatureVerified","notarized","productUninstallQualified","managedEndpointQualified","productionQualificationComplete")),"Unqualified desktop construction scope changed")
+        require(report.get("productCoordination") is False,"Standalone desktop construction may not select product coordination")
         items=report["components"];require(type(items) is list and [c.get("component") for c in items]==["metadata","application"],"Desktop component inventory differs")
         public_bindings[version]={};inspections=[]
         for role,item in zip(("metadata","application"),items):
@@ -95,11 +133,12 @@ def validate_contents(root,commit,arch):
                     path=evidence["path"];require(path in script_data and digest(script_data[path]["data"])==evidence["sha256"],"Desktop compiled component notice differs")
             if role=="application":require(digest(payload[BUNDLE_NAME+"/Contents/MacOS/"+BINARY]["data"])==launcher["binarySHA256"],"Actual public launcher and standalone archive differ")
             public_bindings[version][role]=digest(raw);inspections.append(inspected)
+        coordinated_inspection=validate_coordinated_application(root,commit,arch,identity,encoded,record,read(version+"-compiler-artifact.json"),launcher)
         product=product_name(version,arch);product_raw=(root/product).read_bytes();product_report=read("product-"+version+"-compiler-artifact.json")
         inputs=component_inputs(version,arch,encoded);input_packages={name:(root/name).read_bytes() for _,_,name in inputs}
         product_inspection=inspect_product(product_raw,version,arch,inputs,input_packages)
         require(product_report.get("schemaVersion")==1 and product_report.get("sourceCommit")==commit and product_report.get("build")==identity and product_report.get("productFile")==product and product_report.get("productBytes")==len(product_raw) and product_report.get("productSHA256")==digest(product_raw) and product_report.get("archiveInspection")==product_inspection,"Actual product construction differs")
-        require(product_report.get("componentInspections")==dict(core=cores[VERSIONS.index(version)],**{i["component"]:i for i in inspections}),"Product component construction differs")
+        require(product_report.get("componentInspections")==dict(core=cores[VERSIONS.index(version)],metadata=inspections[0],application=coordinated_inspection),"Product component construction differs")
         require(all(product_report.get(k) is True for k in ("actualExpandedPayloadAndScriptsVerified","productGraphSchemaValidated","unsigned")),"Product construction incomplete")
         expected_files,_=expanded_inventory((root/("product-"+version+"-DISTRIBUTION.xml")).read_bytes(),input_packages)
         expanded=product_report.get("expandedInspection",{});require(type(expanded.get("files")) is int and expanded["files"]==len(expected_files) and all(expanded.get(k) is True for k in ("payloadAndScriptDirectoryModesVerified","payloadAndScriptFileModesVerified","allExpandedBytesVerified")) and expanded.get("targetExecutionPerformed") is False,"Native expanded product inspection incomplete")

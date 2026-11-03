@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "native-product-batched-preinstall-refusal",
+  "sourceCommit": "f1c23b94ba310abac5e0646bd9a3c6c1c06af379",
+  "workflow": ".github/workflows/macos-desktop.yml",
+  "runID": 41732315821,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/41732315821",
+  "providerArtifactDigestsVerified": true,
+  "sigstoreQualified": false,
+  "nativeProductLifecycleQualified": false,
+  "helperRefusalReasonKnown": true,
+  "sourceCI": {
+    "runID": 41732315808,
+    "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/41732315808",
+    "conclusion": "success",
+    "successfulJobs": 22,
+    "observation": "GitHub REST run/jobs; not Sigstore attestation"
+  },
+  "targets": [
+    {
+      "target": "darwin/amd64",
+      "jobID": 126252535117,
+      "artifact": {
+        "id": 13277356847,
+        "name": "macos-desktop-lifecycle-diagnostics-amd64",
+        "bytes": 3936,
+        "digest": "sha256:dc3ece3100ff088cd5886ef200a1e510b48e197103ff5142c0df8e393874b92f",
+        "providerDigestVerified": true
+      },
+      "componentReport": {
+        "sha256": "35b31eba7799bea2b67676e8ba06f875e4d005e1d2b9ecc500b96fbfcfba4c65",
+        "passed": true,
+        "reportedInstallerOperations": 21,
+        "ownedFixturesRemoved": true,
+        "sigstoreQualified": false
+      },
+      "productReport": {
+        "sha256": "10d2e925d795d09ebf769a9add8d88c9de1d874fb669aac3ee87127339e935b4",
+        "stage": "product-clean-install",
+        "passed": false,
+        "lastInstaller": {
+          "name": "product-clean-install",
+          "version": "0.1.0-alpha",
+          "component": "product",
+          "exitCode": 1,
+          "packageSHA256": "373ca4ef552f9e6698b5c16289f9885d7c002aa1b067fb7fc6b6540a7621ffc8",
+          "diagnostics": {
+            "schemaVersion": 1,
+            "loggingOption": "-dumplog",
+            "streams": [
+              {
+                "stream": "stdout",
+                "bytes": 368,
+                "sha256": "ee895c68eee60374c32094243f23889c67a5c275c9ea872bf3a8ea39a4f1919b",
+                "events": []
+              },
+              {
+                "stream": "stderr",
+                "bytes": 4524,
+                "sha256": "353e66596f7c09f2b02ab41d49325fa3e3bd25cfc3a0cec1aba299fbeaca776d",
+                "events": []
+              }
+            ],
+            "rawLogRetained": false,
+            "diagnosticOnly": true
+          },
+          "packageKitLog": {
+            "available": true,
+            "startOffset": 1643229,
+            "endOffset": 1660418,
+            "observations": {
+              "schemaVersion": 1,
+              "loggingOption": "-dumplog",
+              "streams": [
+                {
+                  "stream": "stdout",
+                  "bytes": 0,
+                  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                  "events": []
+                },
+                {
+                  "stream": "stderr",
+                  "bytes": 17189,
+                  "sha256": "f71d091da1ed608f31be83cd7662cdd35a25af611e0678456cf643dcab1026f9",
+                  "events": [
+                    {
+                      "kind": "script-phase",
+                      "phase": "preinstall"
+                    },
+                    {
+                      "kind": "script-phase",
+                      "phase": "preinstall"
+                    },
+                    {
+                      "kind": "script-phase",
+                      "phase": "preinstall"
+                    },
+                    {
+                      "kind": "helper-refusal",
+                      "helper": "desktop",
+                      "messageSHA256": "5e310da0be922e382dd87bb091a1b636c5baf5a2827c2469ac62a092dba72017",
+                      "reason": "install matching protected desktop metadata before the application component"
+                    }
+                  ]
+                }
+              ],
+              "rawLogRetained": false,
+              "diagnosticOnly": true
+            }
+          }
+        },
+        "failedProductState": {
+          "recordAvailable": true,
+          "generation": 0,
+          "activeSlotPresent": false,
+          "pendingCount": 1,
+          "highWaterVersion": null
+        },
+        "ownedFixturesRemoved": false,
+        "productionQualificationComplete": false
+      }
+    },
+    {
+      "target": "darwin/arm64",
+      "jobID": 126252534588,
+      "artifact": {
+        "id": 13278271897,
+        "name": "macos-desktop-lifecycle-diagnostics-arm64",
+        "bytes": 3936,
+        "digest": "sha256:480cb1b589c159bf1a94a2a3072ea57d6b837e1108f52b525d88dea829fa45eb",
+        "providerDigestVerified": true
+      },
+      "componentReport": {
+        "sha256": "84a5ca893489896f522cded403db78094921d84a24ba2b78d271537e3e1abcaa",
+        "passed": true,
+        "reportedInstallerOperations": 21,
+        "ownedFixturesRemoved": true,
+        "sigstoreQualified": false
+      },
+      "productReport": {
+        "sha256": "984b8d1b5f22072b2adbaa3c76fdfee7955a2253bd4a8076d1e777243ebbb219",
+        "stage": "product-clean-install",
+        "passed": false,
+        "lastInstaller": {
+          "name": "product-clean-install",
+          "version": "0.1.0-alpha",
+          "component": "product",
+          "exitCode": 1,
+          "packageSHA256": "211e300b9f1542c97be052dd5a9e29d646520b02e9756f673e2d6fdbd40b267b",
+          "diagnostics": {
+            "schemaVersion": 1,
+            "loggingOption": "-dumplog",
+            "streams": [
+              {
+                "stream": "stdout",
+                "bytes": 368,
+                "sha256": "49c251ebda3c0f1c565d736ed306a10ab4705d50ad225d098096c0bdd515da08",
+                "events": []
+              },
+              {
+                "stream": "stderr",
+                "bytes": 4522,
+                "sha256": "6d44f5efb5f21a07413c23491089bf26a89e2d4c3ff0509b72270d499e210ba0",
+                "events": []
+              }
+            ],
+            "rawLogRetained": false,
+            "diagnosticOnly": true
+          },
+          "packageKitLog": {
+            "available": true,
+            "startOffset": 2432414,
+            "endOffset": 2449597,
+            "observations": {
+              "schemaVersion": 1,
+              "loggingOption": "-dumplog",
+              "streams": [
+                {
+                  "stream": "stdout",
+                  "bytes": 0,
+                  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                  "events": []
+                },
+                {
+                  "stream": "stderr",
+                  "bytes": 17183,
+                  "sha256": "0f21289bee2ebe893f324b1d7e5508b1bc5f05cf31ec6e565eae023958fba195",
+                  "events": [
+                    {
+                      "kind": "script-phase",
+                      "phase": "preinstall"
+                    },
+                    {
+                      "kind": "script-phase",
+                      "phase": "preinstall"
+                    },
+                    {
+                      "kind": "script-phase",
+                      "phase": "preinstall"
+                    },
+                    {
+                      "kind": "helper-refusal",
+                      "helper": "desktop",
+                      "messageSHA256": "5e310da0be922e382dd87bb091a1b636c5baf5a2827c2469ac62a092dba72017",
+                      "reason": "install matching protected desktop metadata before the application component"
+                    }
+                  ]
+                }
+              ],
+              "rawLogRetained": false,
+              "diagnosticOnly": true
+            }
+          }
+        },
+        "failedProductState": {
+          "recordAvailable": true,
+          "generation": 0,
+          "activeSlotPresent": false,
+          "pendingCount": 1,
+          "highWaterVersion": null
+        },
+        "ownedFixturesRemoved": false,
+        "productionQualificationComplete": false
+      }
+    }
+  ],
+  "limitations": [
+    "Both first product installations failed; no full product lifecycle success is claimed.",
+    "Protected native install-log append windows report three preinstall phases and the strict standalone desktop helper missing-metadata refusal before any active core.",
+    "Separate-component reports passed but this failed run did not reach candidate attestation.",
+    "Only bounded fixed phase/refusal markers and hashes are retained; no raw log text or private data.",
+    "Product fault recovery, signing, uninstall, managed endpoints and production readiness remain unqualified."
+  ],
+  "readinessGatesPromoted": 0,
+  "readinessGatesSHA256": "6aba24860c171a7a3931029589b0e04dac90ed4a6f22da3fc02bd058bf903b0e",
+  "productionQualificationComplete": false
+}

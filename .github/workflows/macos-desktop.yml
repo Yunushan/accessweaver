@@ -68,7 +68,7 @@ jobs:
           CGO_ENABLED: '0'
         run: |
           python3 -m unittest discover -s scripts -p 'test_macos*.py' -v
-          go test ./internal/packageupgrade ./cmd/accessweaver-desktop-installer ./cmd/accessweaver-launcher ./cmd/accessweaver-installer -count=1
+          go test ./internal/packageupgrade ./cmd/accessweaver-desktop-installer ./cmd/accessweaver-product-installer ./cmd/accessweaver-launcher ./cmd/accessweaver-installer -count=1
           go test ./internal/packageupgrade -run '^TestDarwinLauncher' -count=20 -v
       - name: Build and inspect two actual native deployment packages
         env:
@@ -96,7 +96,7 @@ jobs:
         run: |
           mkdir -p "build/macos-desktop-provenance/$PACKAGE_ARCH"
           python3 scripts/verify_macos_desktop_provenance.py "build/macos-desktop-provenance/$PACKAGE_ARCH/candidate" --stage-build-root "build/macos-deployment-checks/$PACKAGE_ARCH" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --architecture "$PACKAGE_ARCH" --run-id "$GITHUB_RUN_ID"
-      - name: Attest all50 independently selected desktop subjects
+      - name: Attest all60 independently selected desktop subjects
         id: provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:

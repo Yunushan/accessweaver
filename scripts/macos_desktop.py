@@ -61,9 +61,10 @@ def package_id(role,encoded):
     return DESKTOP_ID+(".registration."+digest(encoded) if role=="metadata" else "")
 
 
-def component_name(version,arch,role):
+def component_name(version,arch,role,*,product=False):
     version_parts(version);require(arch in ("amd64","arm64") and role in ("metadata","application"),"Invalid desktop component")
-    return "accessweaver-"+version+"-darwin-"+arch+"-desktop-"+role+"-experimental.pkg"
+    require(type(product) is bool and (not product or role=="application"),"Product coordination is application-only")
+    return "accessweaver-"+version+"-darwin-"+arch+"-desktop-"+("product-application" if product else role)+"-experimental.pkg"
 
 
 def validate_record(encoded,identity):

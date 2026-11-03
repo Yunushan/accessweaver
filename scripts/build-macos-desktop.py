@@ -23,7 +23,7 @@ deployment=importlib.util.module_from_spec(spec);spec.loader.exec_module(deploym
 run=deployment.run;encode=deployment.encode
 
 
-def build(version,arch,go="go"):
+def build(version,arch,go="go",*,product_application=False):
     version_parts(version);require(arch in ("amd64","arm64"),"Expected native desktop architecture")
     require(deployment.legacy.platform.system()=="Darwin" and os.geteuid()!=0,"Native ordinary-user Mac desktop builder required")
     base=REPO/"build/macos-deployment-checks"/arch
@@ -37,7 +37,9 @@ def build(version,arch,go="go"):
     require(run(["/usr/sbin/sysctl","-n","sysctl.proc_translated"],codes=(0,1)).stdout.strip()!=b"1","Translated desktop build refused")
     cpu=run(["/usr/sbin/sysctl","-n","hw.optional.arm64"],codes=(0,1)).stdout.strip()
     require(arch==("arm64" if cpu==b"1" else "amd64"),"Cross/emulated desktop build refused")
-    output=base/"desktop"/version;require(not output.exists(),"Desktop output exists; preserve it");output.mkdir(parents=True)
+    require(type(product_application) is bool,"Invalid desktop construction mode")
+    core_report=json.loads((base/version/"compiler-artifact.json").read_bytes())
+    output=base/("product-components" if product_application else "desktop")/version;require(not output.exists(),"Desktop output exists; preserve it");output.mkdir(parents=True)
     stage=Path(tempfile.mkdtemp(prefix="macos-desktop-stage-",dir=REPO/"build"))
     environment=dict(os.environ,GOTOOLCHAIN="local",GOFLAGS="",GOOS="darwin",GOARCH=arch,CGO_ENABLED="0")
     try:
@@ -57,25 +59,29 @@ def build(version,arch,go="go"):
         receipt={"schemaVersion":1,"role":ROLE,"build":identity,"manifest":inventory(app),"compiledSBOM":graph.decode("utf-8"),"noticeRoot":NOTICE_ROOT}
         encoded=(json.dumps(receipt,sort_keys=True,indent=2)+"\n").encode("utf-8");require(len(encoded)<=MAX_RECORD,"Desktop registration exceeds embedded metadata budget")
         validate_record(encoded,identity);verify_bundle(app,encoded,identity)
+        if product_application:require((base/"desktop"/version/"DESKTOP-RECORD.json").read_bytes()==encoded,"Product and standalone public records differ")
         name=record_name(encoded);(output/name).write_bytes(encoded);(output/"DESKTOP-RECORD.json").write_bytes(encoded);encode(output/"BUILD-INFO.json",identity)
         metadata_payload=stage/"metadata-payload";metadata_payload.mkdir();metadata_payload.chmod(0o755)
         (metadata_payload/name).write_bytes(encoded);(metadata_payload/name).chmod(0o644)
         payload.chmod(0o755);reports=[]
         tool=json.loads((base/version/"compiler-artifact.json").read_bytes())["pkgbuild"]
         private=stage/"user";private.mkdir();child_env={"PATH":"/usr/bin:/bin:/usr/sbin:/sbin","HOME":str(private),"TMPDIR":str(private),"LANG":"C","LC_ALL":"C","TZ":"UTC"}
-        for role in ("metadata","application"):
+        for role in (("application",) if product_application else ("metadata","application")):
             scripts=stage/(role+"-scripts");scripts.mkdir();scripts.chmod(0o755)
             helper=stage/("desktop-helper-"+role)
             stamps={"Version":version,"Commit":identity["commit"],"SourceState":"clean","BuiltAt":identity["builtAt"]}
             flags=["-X github.com/Yunushan/accessweaver/internal/buildinfo."+k+"="+v for k,v in stamps.items()]
             flags.extend("-X github.com/Yunushan/accessweaver/internal/packageupgrade."+k+"="+v for k,v in {"sealedDesktopRecordSHA256":digest(encoded),"sealedDesktopComponent":role}.items())
-            run([go,"build","-mod=readonly","-trimpath","-buildvcs=false","-ldflags"," ".join(flags),"-o",helper,"./cmd/accessweaver-desktop-installer"],env=environment)
+            if product_application:
+                flags.extend("-X github.com/Yunushan/accessweaver/internal/packageupgrade."+k+"="+v for k,v in {"sealedVersion":version,"sealedManifestSHA256":core_report["manifestSHA256"],"sealedPayloadSHA256":core_report["payloadSHA256"]}.items())
+            main="accessweaver-product-installer" if product_application else "accessweaver-desktop-installer"
+            run([go,"build","-mod=readonly","-trimpath","-buildvcs=false","-ldflags"," ".join(flags),"-o",helper,"./cmd/"+main],env=environment)
             helper_bytes=helper.read_bytes();helper_info=json.loads(run([go,"version","-m","-json",helper],env=environment).stdout)
-            require(helper_info["GoVersion"]==identity["goVersion"] and helper_info["Path"]=="github.com/Yunushan/accessweaver/cmd/accessweaver-desktop-installer","Desktop helper SDK/main differs")
+            require(helper_info["GoVersion"]==identity["goVersion"] and helper_info["Path"]=="github.com/Yunushan/accessweaver/cmd/"+main,"Desktop helper SDK/main differs")
             settings={v["Key"]:v["Value"] for v in helper_info["Settings"]}
             require(settings.get("GOOS")=="darwin" and settings.get("GOARCH")==arch and settings.get("CGO_ENABLED")=="0" and settings.get("-trimpath")=="true" and "-ldflags" not in settings,"Desktop helper native settings differ")
             require(json.loads(run([helper,"version","--json"],env=child_env,timeout=30).stdout)==identity,"Executed desktop helper identity differs")
-            helper_bom=generate(helper,REPO,"./cmd/accessweaver-desktop-installer",identity,scripts/"licenses",go)
+            helper_bom=generate(helper,REPO,"./cmd/"+main,identity,scripts/"licenses",go)
             for phase in ("preinstall","postinstall"):shutil.copyfile(helper,scripts/phase);(scripts/phase).chmod(0o755)
             for directory,dirs,files in os.walk(scripts):
                 os.chmod(directory,0o755)
@@ -90,7 +96,7 @@ def build(version,arch,go="go"):
                 st=path.lstat();require(st.st_uid==script_owner["uid"] and st.st_gid==script_owner["gid"],"Desktop script tree ownership is not uniform")
             components=stage/(role+"-components.plist")
             with components.open("wb") as stream:plistlib.dump([{"RootRelativeBundlePath":BUNDLE_NAME,"BundleIsRelocatable":False,"BundleHasStrictIdentifier":True,"BundleIsVersionChecked":False,"BundleOverwriteAction":"upgrade"}] if role=="application" else [],stream)
-            target=output/component_name(version,arch,role)
+            target=output/component_name(version,arch,role,product=product_application)
             run(["/usr/bin/pkgbuild","--root",payload if role=="application" else metadata_payload,"--identifier",package_id(role,encoded),"--version",version,"--install-location","/Applications" if role=="application" else ROOT,"--ownership","recommended","--component-plist",components,"--scripts",scripts,target],env=child_env)
             raw=target.read_bytes();inspection=inspect_component(raw,encoded,identity,role,script_manifest,script_owner)
             require(inspection["helperSHA256"]==digest(helper_bytes),"Desktop phase helper differs from actual package")
@@ -117,6 +123,8 @@ def build(version,arch,go="go"):
         graph_path=stage/"launcher-SBOM.cdx.json";graph_path.write_bytes(graph)
         run([validator,"--schemas",REPO/"scripts/sbom/schema",graph_path]+sorted(output.glob("*.cdx.json")),env=child_env)
         report={"schemaVersion":1,"sourceCommit":identity["commit"],"build":identity,"recordFile":name,"recordSHA256":digest(encoded),"launcherArchiveSHA256":inspected["archiveSHA256"],"launcherBinarySHA256":digest(binary),"components":reports,"pkgbuild":tool,"nativeBundleConstructionVerified":True,"actualExpandedPayloadAndScriptsVerified":True,"allCompiledAndPackageGraphsSchemaValidated":True,"metadataOutsideAppVerified":True,"packagePayloadWritesAreOSInstallerOnly":True,"unsigned":True,"installationExecuted":False,"launchServicesQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"productionQualificationComplete":False}
+        report["productCoordination"]=product_application
+        if product_application:report["coreIdentity"]={"version":version,"manifestSHA256":core_report["manifestSHA256"],"payloadSHA256":core_report["payloadSHA256"]}
         encode(output/"compiler-artifact.json",report);return report
     finally:
         require(stage.resolve().parent==(REPO/"build").resolve() and stage.name.startswith("macos-desktop-stage-"),"Unsafe desktop builder cleanup");shutil.rmtree(stage)

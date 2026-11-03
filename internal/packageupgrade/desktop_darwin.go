@@ -180,6 +180,12 @@ func desktopCoreActive() (err error) {
 // fixed-path helper only verifies them; it never creates, deletes, executes or
 // repairs any public application. A failed postinstall preserves actual state.
 func DesktopPackageOperation(phase string) (DesktopPackageResult, error) {
+	return desktopPackageOperation(phase, false)
+}
+
+// coordinated is reachable only after ProductPackageOperation validates both
+// compiled core and public application seals. Standalone components remain strict.
+func desktopPackageOperation(phase string, coordinated bool) (DesktopPackageResult, error) {
 	var result DesktopPackageResult
 	if phase != "preinstall" && phase != "postinstall" {
 		return result, errors.New("unknown desktop package phase")
@@ -237,11 +243,13 @@ func DesktopPackageOperation(phase string) (DesktopPackageResult, error) {
 		return result, errors.New("compiled desktop registration is missing after package copy")
 	}
 	if component == "application" {
-		if selected < 0 {
-			return result, errors.New("install matching protected desktop metadata before the application component")
-		}
-		if e = desktopCoreActive(); e != nil {
-			return result, e
+		if !coordinated {
+			if selected < 0 {
+				return result, errors.New("install matching protected desktop metadata before the application component")
+			}
+			if e = desktopCoreActive(); e != nil {
+				return result, e
+			}
 		}
 		if phase == "postinstall" {
 			if e = verifyDesktopApplication(apps, records[selected]); e != nil {
