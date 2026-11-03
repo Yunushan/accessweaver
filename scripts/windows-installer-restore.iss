@@ -73,10 +73,10 @@ function AWRunBoundedRestoration(const Executable, Parameters, Directory: String
   const Milliseconds: LongWord; var Code: LongWord; var Failure: String): Boolean;
 var Startup: TAWRestoreStartup; Process: TAWRestoreProcess;
     Limits: TAWRestoreLimits; Accounting: TAWRestoreAccounting;
-    Job, Returned, WaitResult: LongWord; Assigned, RootExited, Completed: Boolean;
+    Job, Returned, WaitResult: LongWord; Contained, RootExited, Completed: Boolean;
     Deadline, CleanupDeadline: Int64; CommandLine: String;
 begin
-  Result := False; Completed := False; Assigned := False; RootExited := False;
+  Result := False; Completed := False; Contained := False; RootExited := False;
   Job := 0; Process.Process := 0; Process.Thread := 0; Process.PID := 0; Process.TID := 0;
   Code := 0; Failure := 'AccessWeaver system restoration could not start safely.';
   if (Milliseconds = 0) or (Milliseconds > AWRestorationDeadlineMilliseconds) then Exit;
@@ -139,7 +139,7 @@ begin
     if AWCreateRestoreProcess(Executable, CommandLine, 0, 0, 0, $00000014,
       0, Directory, Startup, Process) = 0 then begin Code := AWRestoreLastError; Exit; end;
     if AWAssignRestoreJob(Job, Process.Process) = 0 then begin Code := AWRestoreLastError; Exit; end;
-    Assigned := True;
+    Contained := True;
     if AWResumeRestoreThread(Process.Thread) = $FFFFFFFF then begin Code := AWRestoreLastError; Exit; end;
     if AWCloseRestoreHandle(Process.Thread) = 0 then begin Code := AWRestoreLastError; Exit; end;
     Process.Thread := 0;
@@ -170,7 +170,7 @@ begin
       process/job, never a process selected by an untrusted or reused PID. }
     if not Completed then begin
       CleanupDeadline := AWRestoreTicks + 5000;
-      if Assigned then begin
+      if Contained then begin
         if AWTerminateRestoreJob(Job, 1460) = 0 then Log('AccessWeaver restoration job termination could not be confirmed.');
       end else if Process.Process <> 0 then begin
         if AWTerminateRestoreProcess(Process.Process, 1460) = 0 then Log('AccessWeaver suspended restoration process termination could not be confirmed.');
@@ -179,7 +179,7 @@ begin
         if AWWaitRestoreProcess(Process.Process, 5000) <> 0 then Log('AccessWeaver restoration process exit could not be confirmed.');
         AWCloseRestoreHandle(Process.Process); Process.Process := 0;
       end;
-      if Assigned then begin
+      if Contained then begin
         repeat
           Returned := 0;
           if AWQueryRestoreJob(Job, 1, Accounting, 48, Returned) = 0 then begin
