@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "bd63466f622e7df206a137f8b0e71a0e91a453ea",
+  "scope": "real pinned native Windows component discovery and help/version startup; no driver, traffic, installer or full platform qualification",
+  "run": 41611643273,
+  "url": "https://github.com/Yunushan/accessweaver/actions/runs/41611643273",
+  "targets": [
+    {
+      "providerArtifactID": 13219067597,
+      "providerSHA256": "93dda93f1a8cfdcdcd2720b8e49255c34a85aab00863532d868618955dc5e2ce",
+      "report": {
+        "commandsRequestedServiceOrDriverChanges": false,
+        "productionQualificationComplete": false,
+        "hostArchitecture": "x64",
+        "relevantServiceStateUnchanged": true,
+        "schemaVersion": 1,
+        "workflowScriptSHA256": "a72b5b5cb6c943d9cb3fb106fb9a9eb6215d65a48fcd19dfbe635ce30bab4fdf",
+        "target": "windows/amd64",
+        "pinsSHA256": "b37a318955ad658063700b970dfd251ee159984d5edfeb0b543d3457cb1b8cc9",
+        "sourceCommit": "bd63466f622e7df206a137f8b0e71a0e91a453ea",
+        "ownedCapsuleRemoved": true,
+        "sourceRef": "refs/heads/main",
+        "networkIsolationVerified": false,
+        "runID": "41611643273",
+        "vendorRoutingQualified": false,
+        "components": [
+          {
+            "discoverySelectedPinnedExecutable": true,
+            "helpOrVersionPassed": true,
+            "elapsedMilliseconds": 314,
+            "asset": "ProxiFyre-v2.6.4-x64.zip",
+            "coffMachine": 34404,
+            "assetSHA256": "c7da1dc5fdf9aaa7828fbf5c2076c4f612cba7889dcac2e3d06dc2e1dee4c3df",
+            "exitCode": 0,
+            "binarySHA256": "beb7ff5b5283f872c610a6c70abfa9a5949f09c50fc766298776e5798a48ccfc",
+            "version": "2.6.4",
+            "childEnvironmentSanitized": true,
+            "engine": "proxifyre",
+            "outputComplete": true,
+            "deadlineMilliseconds": 30000
+          },
+          {
+            "discoverySelectedPinnedExecutable": true,
+            "helpOrVersionPassed": true,
+            "elapsedMilliseconds": 65,
+            "asset": "wgcf_2.3.1_windows_amd64.exe",
+            "coffMachine": 34404,
+            "assetSHA256": "e222fd9443d7cb3264d825a3e86967797fc9c938507c5d93e3cc21e4aed11dcc",
+            "exitCode": 0,
+            "binarySHA256": "e222fd9443d7cb3264d825a3e86967797fc9c938507c5d93e3cc21e4aed11dcc",
+            "version": "2.3.1",
+            "childEnvironmentSanitized": true,
+            "engine": "wgcf",
+            "outputComplete": true,
+            "deadlineMilliseconds": 30000
+          },
+          {
+            "discoverySelectedPinnedExecutable": true,
+            "helpOrVersionPassed": true,
+            "elapsedMilliseconds": 93,
+            "asset": "dnscrypt-proxy-win64-2.1.20.zip",
+            "coffMachine": 34404,
+            "assetSHA256": "9e498cb9bdbae57756db19ce516362ac307e9340a6996214964cfcc7c489abc3",
+            "exitCode": 0,
+            "binarySHA256": "312274e07e0084088f61bd60f57ee5c3dcf4307f5c1f5dbcf374fd6f5d4fc7d0",
+            "version": "2.1.20",
+            "childEnvironmentSanitized": true,
+            "engine": "dnscrypt",
+            "outputComplete": true,
+            "deadlineMilliseconds": 30000
+          }
+        ]
+      }
+    },
+    {
+      "providerArtifactID": 13219133227,
+      "providerSHA256": "7a0d54f8d6f192f5878d83be2e7610dcaa860d816280dc80884c07bfdf95236a",
+      "report": {
+        "workflowScriptSHA256": "a72b5b5cb6c943d9cb3fb106fb9a9eb6215d65a48fcd19dfbe635ce30bab4fdf",
+        "sourceRef": "refs/heads/main",
+        "target": "windows/arm64",
+        "runID": "41611643273",
+        "schemaVersion": 1,
+        "relevantServiceStateUnchanged": true,
+        "sourceCommit": "bd63466f622e7df206a137f8b0e71a0e91a453ea",
+        "hostArchitecture": "arm64",
+        "ownedCapsuleRemoved": true,
+        "pinsSHA256": "b37a318955ad658063700b970dfd251ee159984d5edfeb0b543d3457cb1b8cc9",
+        "commandsRequestedServiceOrDriverChanges": false,
+        "components": [
+          {
+            "childEnvironmentSanitized": true,
+            "version": "2.6.4",
+            "binarySHA256": "2204d5ff324e347ebb0792d115cc0fcf360396ec2ebcf9cd4a1bd8a1c399e850",
+            "helpOrVersionPassed": true,
+            "deadlineMilliseconds": 30000,
+            "exitCode": 0,
+            "asset": "ProxiFyre-v2.6.4-ARM64.zip",
+            "outputComplete": true,
+            "discoverySelectedPinnedExecutable": true,
+            "assetSHA256": "c232a4f438d87599c5e4c465f6d637d6bd24f0e982fff5d5b1d7d9bd1c8afc3c",
+            "elapsedMilliseconds": 440,
+            "engine": "proxifyre",
+            "coffMachine": 43620
+          },
+          {
+            "childEnvironmentSanitized": true,
+            "version": "2.3.1",
+            "binarySHA256": "e1775f9ec51127155fb8fbcf21b33a59249cda88cbf120c2ad9ca76acf5d3206",
+            "helpOrVersionPassed": true,
+            "deadlineMilliseconds": 30000,
+            "exitCode": 0,
+            "asset": "wgcf_2.3.1_windows_arm64.exe",
+            "outputComplete": true,
+            "discoverySelectedPinnedExecutable": true,
+            "assetSHA256": "e1775f9ec51127155fb8fbcf21b33a59249cda88cbf120c2ad9ca76acf5d3206",
+            "elapsedMilliseconds": 182,
+            "engine": "wgcf",
+            "coffMachine": 43620
+          },
+          {
+            "childEnvironmentSanitized": true,
+            "version": "2.1.20",
+            "binarySHA256": "0e72d38a516f23e2203795fd6c52ca9b83b3b15b13b0df673290ab5c4e95d9ef",
+            "helpOrVersionPassed": true,
+            "deadlineMilliseconds": 30000,
+            "exitCode": 0,
+            "asset": "dnscrypt-proxy-winarm-2.1.20.zip",
+            "outputComplete": true,
+            "discoverySelectedPinnedExecutable": true,
+            "assetSHA256": "db327b3a75d5526038468bf7d825a3106704753086b44cb02ae6ef6c69a9a875",
+            "elapsedMilliseconds": 192,
+            "engine": "dnscrypt",
+            "coffMachine": 43620
+          }
+        ],
+        "networkIsolationVerified": false,
+        "productionQualificationComplete": false,
+        "vendorRoutingQualified": false
+      }
+    }
+  ],
+  "positiveCommandsVerified": 6,
+  "rawOutputAndPrivatePathsExcluded": true,
+  "readinessGatesPromoted": 0,
+  "productionQualificationComplete": false,
+  "sourceCI": {
+    "run": 41611643095,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41611643095",
+    "passedJobs": 22,
+    "conclusion": "success"
+  },
+  "archiveQualification": {
+    "run": 41612777938,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41612777938",
+    "stateAtRecord": "in-progress",
+    "successfulArchiveExecutionNotYetEstablished": true
+  }
+}

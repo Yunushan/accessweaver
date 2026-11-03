@@ -185,6 +185,37 @@ try {
     $inputData=$previousComponentInput;$r=$previousComponentRequest;$root=$previousComponentRoot;$assetNames=$previousAssetNames
 }
 
+# Failed real-vendor probes may export only bounded, sanitized error details.
+$vendorTokens=$null;$vendorIssues=$null
+$vendorAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'test-windows-vendor-preflight.ps1'),[ref]$vendorTokens,[ref]$vendorIssues)
+Assert ($vendorIssues.Count -eq 0) 'Vendor preflight parses without executing its hosted-only entrypoint'
+$redactor=@($vendorAst.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'Public-VendorFailureMessages'})
+Assert ($redactor.Count -eq 1) 'Vendor failure redactor has one explicit source definition'
+. ([scriptblock]::Create($redactor[0].Extent.Text))
+try {
+    foreach($case in @(
+        @{raw='ERROR cannot open C:\PRIVATE_FIXTURE\payload\file';expected='<path>'},
+        @{raw='ERROR cannot open \\PRIVATE_FIXTURE\share\file';expected='<path>'},
+        @{raw='ERROR ACCESS_TOKEN=PRIVATE_FIXTURE';expected='<redacted>'},
+        @{raw='ERROR apiKey=PRIVATE_FIXTURE';expected='<redacted>'},
+        @{raw='ERROR password=PRIVATE_FIXTURE';expected='<redacted>'},
+        @{raw='ERROR Authorization: Bearer PRIVATE_FIXTURE';expected='<redacted>'},
+        @{raw='ERROR principal S-1-5-21-1111-2222-3333-4444';expected='<sid>'}
+    )){
+        $safe=@(Public-VendorFailureMessages $case.raw)
+        Assert ($safe.Count -eq 1 -and $safe[0].Contains($case.expected) -and $safe[0] -notmatch 'PRIVATE_FIXTURE|S-1-5-21-') 'Vendor failure detail excludes synthetic paths credentials and account identifiers'
+    }
+    $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+    try {$identityName=$identity.Name} finally {$identity.Dispose()}
+    foreach($name in @($identityName,[Environment]::MachineName)){
+        $safe=@(Public-VendorFailureMessages ('ERROR invalid principal '+$name))
+        Assert ($safe.Count -eq 1 -and -not $safe[0].Contains($name)) 'Vendor failure detail excludes the actual runner principal and machine name'
+    }
+    $safe=@(Public-VendorFailureMessages (((1..8 | ForEach-Object {'ERROR '+('x'*300)+[char]1}) -join [Environment]::NewLine)))
+    Assert ($safe.Count -eq 4 -and @($safe | Where-Object {$_.Length -gt 160 -or $_ -match '[^\x20-\x7e]'}).Count -eq 0) 'Vendor failure detail bounds line count length and printable characters'
+    Assert (@(Public-VendorFailureMessages 'ordinary help output').Count -eq 0) 'Vendor failure detail excludes ordinary non-error output'
+} finally {Remove-Item Function:Public-VendorFailureMessages}
+
 # These real read-only queries cover stock Windows services and device drivers.
 $nativeServiceInspection=Get-ServiceInspection
 Assert ($null -eq $nativeServiceInspection.error -and $nativeServiceInspection.services -is [array]) 'Native service and driver enumeration succeeds with an explicit array result'

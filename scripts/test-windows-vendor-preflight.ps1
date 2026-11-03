@@ -71,13 +71,16 @@ function Expand-PinnedZip([string]$archive,[string]$destination){
     } finally {$zip.Dispose()}
 }
 function Public-VendorFailureMessages([string]$text){
-    $identity=[Security.Principal.WindowsIdentity]::GetCurrent().Name;$machine=[Environment]::MachineName
+    $tokenIdentity=[Security.Principal.WindowsIdentity]::GetCurrent()
+    try {$identity=$tokenIdentity.Name} finally {$tokenIdentity.Dispose()}
+    $machine=[Environment]::MachineName
     $messages=@()
     foreach($line in ($text -split '\r?\n')){
         if($line -notmatch '(?i)exception|error|failed|could not|unable|invalid|not found|unknown|terminated'){continue}
         $safe=$line.Replace($identity,'<account>').Replace($machine,'<machine>')
         $safe=$safe -replace '(?i)[A-Z]:[\\/].*$','<path>' -replace '\\\\.*$','<path>'
-        $safe=$safe -replace '(?i)\b(token|secret|password|credential|account|key)\b.*$','<redacted>'
+        $safe=$safe -replace '(?i)[A-Za-z0-9_-]*(token|secret|password|credential|account|key|authorization|bearer)[A-Za-z0-9_-]*.*$','<redacted>'
+        $safe=$safe -replace '\bS-[0-9]+(?:-[0-9]+){2,}\b','<sid>'
         $safe=$safe -replace '[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}','<id>'
         $safe=($safe -replace '[^\x20-\x7e]',' ').Trim()
         if($safe.Length -gt 160){$safe=$safe.Substring(0,160)}
