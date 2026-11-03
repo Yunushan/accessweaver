@@ -3,7 +3,7 @@
 import argparse
 import io
 import json
-from pathlib import Path
+from pathlib import Path,PurePosixPath
 import re
 import subprocess
 import tempfile
@@ -24,7 +24,7 @@ WORKFLOW=REPOSITORY+"/.github/workflows/macos-desktop.yml"
 
 def subjects(arch):
     require(arch in ("amd64","arm64"),"Expected native desktop architecture")
-    result={"desktop-lifecycle-artifact.json":Path("desktop-lifecycle-artifact.json"),"product-lifecycle-artifact.json":Path("product-lifecycle-artifact.json")}
+    result={"desktop-lifecycle-artifact.json":Path("desktop-lifecycle-artifact.json"),"product-lifecycle-artifact.json":Path("product-lifecycle-artifact.json"),"product-recovery-artifact.json":Path("product-recovery-artifact.json")}
     for name,(version,original) in core_subjects(arch).items():
         if version is not None:result[name]=Path(version)/original
     for version in VERSIONS:
@@ -41,7 +41,7 @@ def subjects(arch):
         name=product_name(version,arch)
         result[name]=Path("product")/version/name;result[name+".cdx.json"]=Path("product")/version/(name+".cdx.json")
         for original in ("DISTRIBUTION.xml","compiler-artifact.json"):result["product-"+version+"-"+original]=Path("product")/version/original
-    require(len(result)==60,"Desktop known subject extent changed")
+    require(len(result)==61,"Desktop known subject extent changed")
     return result
 
 
@@ -170,7 +170,11 @@ def validate_contents(root,commit,arch):
     launched=life.get("launchServices",{});require(all(launched.get(k) is True for k in ("defaultNoArgumentLaunch","kernelImageAndOrdinaryOwnerVerified","dashboardHTTPVerified","privateProfileLockVerified","authenticatedSavedProfileVerified","installerRefusalWhileServingVerified","controllerRemainedRunning","cleanShutdownVerified","passed")) and type(launched.get("elapsedMilliseconds")) is int and 0<=launched["elapsedMilliseconds"]<=300000,"Actual LaunchServices controller acceptance incomplete")
     deactivated=life.get("deactivation",{});require(deactivated.get("generation")==3 and deactivated.get("state")=="inactive" and deactivated.get("operationRecordPublished") is True and deactivated.get("exitCode")==0 and type(deactivated.get("elapsedMilliseconds")) is int and 0<=deactivated["elapsedMilliseconds"]<=60000,"Public/core deactivation fence differs")
     product_life=validate_product_lifecycle(read("product-lifecycle-artifact.json"),commit,arch,core_bindings,records,public_bindings,product_bindings,identities,str(life["runID"]))
-    return {"productLifecycle":product_life,"lifecycleRunID":str(life["runID"]),"corePackages":cores,"desktop":outputs,"actualInstallerOperations":21,"actualCoreDeactivationOperations":1,"publicAppSelectionCases":5,"launchServicesDefaultControllerVerified":True,"productArchiveConstructionVerified":True,"singleProductLifecycleQualified":False,"finderInteractiveQualificationComplete":False,"singleProductDistributionQualified":False,"publisherSignatureVerified":False,"productionQualificationComplete":False}
+    newest=VERSIONS[-1];newest_record=(root/("desktop-"+newest+"-DESKTOP-RECORD.json")).read_bytes()
+    core_input=component_inputs(newest,arch,newest_record)[0][2]
+    recovery_payload=cpio(inflate(flat_members((root/core_input).read_bytes())["Payload"],MAX_BYTES,31))
+    recovery_life=validate_product_recovery(read("product-recovery-artifact.json"),commit,arch,read(newest+"-compiler-artifact.json"),product_bindings[newest],recovery_payload,str(life["runID"]))
+    return {"productWriteFaultRecovery":recovery_life,"productLifecycle":product_life,"lifecycleRunID":str(life["runID"]),"corePackages":cores,"desktop":outputs,"actualInstallerOperations":21,"actualCoreDeactivationOperations":1,"publicAppSelectionCases":5,"launchServicesDefaultControllerVerified":True,"productArchiveConstructionVerified":True,"singleProductLifecycleQualified":False,"finderInteractiveQualificationComplete":False,"singleProductDistributionQualified":False,"publisherSignatureVerified":False,"productionQualificationComplete":False}
 
 
 def validate_product_lifecycle(life,commit,arch,cores,records,public,products,identities,run_id):
@@ -179,12 +183,12 @@ def validate_product_lifecycle(life,commit,arch,cores,records,public,products,id
     require(all(life.get(k) is True for k in ("passed","actualSingleProductLifecycleVerified","actualOrderedComponentsExecuted","publicAppAndProtectedRegistrationsVerified","coreUpgradeWithPublicEntryVerified","actualUserDataAndContainerProtectionPreserved","ownedFixturesRemoved")),"Single product lifecycle incomplete")
     require(all(life.get(k) is False for k in ("installedProductCodeExecutedAsRoot","publisherSignatureVerified","notarized","finderInteractiveQualificationComplete","singleProductDistributionQualified","productUninstallQualified","managedEndpointQualified","productionQualificationComplete")),"Unqualified single product scope changed")
     old,new=VERSIONS
-    expected=[("app-without-metadata-refused",old,"application",False),("product-clean-install",old,"product",True),("launchservices-live-product-upgrade-refused",new,"product",False),("product-upgrade",new,"product",True),("product-equal-reinstall",new,"product",True),("older-product-refused",old,"product",False),("changed-public-info-product-refused",new,"product",False),("changed-registration-product-refused",new,"product",False),("public-alias-product-refused",new,"product",False),("registration-alias-product-refused",new,"product",False),("restored-product-reinstall",new,"product",True)]
+    expected=[("app-without-metadata-refused",old,"application",False),("product-clean-install",old,"product",True),("launchservices-live-product-upgrade-refused",new,"product",False),("product-upgrade",new,"product",True),("product-equal-reinstall",new,"product",True),("older-product-refused",old,"product",False),("changed-public-info-product-refused",new,"product",False),("changed-registration-product-refused",new,"product",False),("public-alias-product-refused",new,"product",False),("registration-alias-product-refused",new,"product",False),("restored-product-reinstall",new,"product",True),("metadata-fault-product-retry",new,"product",True),("controller-fault-product-retry",new,"product",True)]
     operations=life.get("operations");require(type(operations) is list and len(operations)==len(expected),"Single product operation extent differs")
     for item,(name,version,role,success) in zip(operations,expected):
         require(item.get("name")==name and item.get("version")==version and item.get("component")==role and item.get("passed") is True and type(item.get("exitCode")) is int and (item["exitCode"]==0 if success else 1<=item["exitCode"]<=255),"Single product operation differs")
         require(item.get("nativeReceiptVerified") is success and item.get("refusedStatePreserved") is (not success) and type(item.get("elapsedMilliseconds")) is int and 0<=item["elapsedMilliseconds"]<=180000 and item.get("packageSHA256")== (products[version] if role=="product" else public[version][role]),"Single product operation evidence differs")
-    choices=life.get("selections");names=["initial-active","product-upgraded","product-reinstalled","restored-active","inactive-refused"]
+    choices=life.get("selections");names=["initial-active","product-upgraded","product-reinstalled","restored-active","metadata-fault-old-active","metadata-recovery-active","controller-fault-old-active","controller-recovery-active","inactive-refused"]
     require(type(choices) is list and [c.get("name") for c in choices]==names,"Single product selection coverage differs")
     for c in choices:
         build=identities[old] if c["name"]=="initial-active" else None if c["name"]=="inactive-refused" else identities[new]
@@ -192,8 +196,65 @@ def validate_product_lifecycle(life,commit,arch,cores,records,public,products,id
     launched=life.get("launchServices",{})
     require(all(launched.get(k) is True for k in ("defaultNoArgumentLaunch","kernelImageAndOrdinaryOwnerVerified","dashboardHTTPVerified","privateProfileLockVerified","authenticatedSavedProfileVerified","installerRefusalWhileServingVerified","controllerRemainedRunning","cleanShutdownVerified","passed")) and type(launched.get("elapsedMilliseconds")) is int and 0<=launched["elapsedMilliseconds"]<=300000,"Single product LaunchServices incomplete")
     deactivated=life.get("deactivation",{})
-    require(deactivated.get("generation")==5 and deactivated.get("state")=="inactive" and deactivated.get("operationRecordPublished") is True and deactivated.get("exitCode")==0 and type(deactivated.get("elapsedMilliseconds")) is int and 0<=deactivated["elapsedMilliseconds"]<=60000,"Single product deactivation fence differs")
-    return {"actualSingleProductInstallerOperations":10,"actualStandaloneAppRefusals":1,"actualCoreDeactivations":1,"publicAppSelectionCases":5,"privateLaunchServicesControllerVerified":True,"actualSingleProductLifecycleVerified":True,"singleProductDistributionQualified":False,"productionQualificationComplete":False}
+    require(deactivated.get("generation")==7 and deactivated.get("state")=="inactive" and deactivated.get("operationRecordPublished") is True and deactivated.get("exitCode")==0 and type(deactivated.get("elapsedMilliseconds")) is int and 0<=deactivated["elapsedMilliseconds"]<=60000,"Single product deactivation fence differs")
+    return {"actualSingleProductInstallerOperations":12,"actualStandaloneAppRefusals":1,"actualCoreDeactivations":1,"publicAppSelectionCases":9,"privateLaunchServicesControllerVerified":True,"actualSingleProductLifecycleVerified":True,"singleProductDistributionQualified":False,"productionQualificationComplete":False}
+
+
+
+def validate_partial_copy_inventory(value,payload,slot,limit,kind):
+    require(type(value) is dict and set(value)=={"entries","partialFiles","allKnownSourcePrefixesVerified","bytes"} and value.get("allKnownSourcePrefixesVerified") is True,"Partial-copy prefix evidence missing")
+    entries=value.get("entries");require(type(entries) is list and 1<=len(entries)<=4096,"Partial-copy entry extent differs")
+    paths=[r.get("path") for r in entries];require(all(type(p) is str and p in payload for p in paths) and paths==sorted(set(paths)) and "" in paths,"Partial-copy paths differ")
+    partial=[];total=0
+    for row in entries:
+        name=row["path"];expected=payload[name]
+        common={"path","mode","uid","gid","device","inode","links","mtimeNs","ctimeNs","kind"}
+        require(all(type(row.get(k)) is int for k in ("uid","gid","device","inode","links","mtimeNs","ctimeNs")) and row["uid"]==row["gid"]==0 and row["device"]==slot["device"] and row["inode"]>0 and row["links"]>0,"Partial-copy object identity/owner differs")
+        if not name:require(row["inode"]==slot["inode"],"Partial-copy root inode differs")
+        require(all(parent in paths for parent in (str(p) for p in PurePosixPath(name).parents) if parent!="."),"Missing partial-copy parent")
+        if expected["directory"]:
+            require(set(row)==common and row["kind"]=="directory" and row["mode"] in ("0700","0755"),"Partial-copy directory metadata differs")
+        else:
+            require(set(row)==common|{"bytes","expectedBytes","sha256","complete"} and row["kind"]=="file" and row["links"]==1 and row["mode"] in ("0600",format(expected["mode"],"04o")),"Partial-copy file metadata differs")
+            count=row.get("bytes");require(type(count) is int and 0<=count<=len(expected["data"]) and type(row.get("expectedBytes")) is int and row["expectedBytes"]==len(expected["data"]),"Partial-copy file extent differs")
+            require(row.get("sha256")==digest(expected["data"][:count]) and row.get("complete") is (count==len(expected["data"])),"Actual partial bytes differ from authenticated source prefix")
+            total+=count
+            if count<len(expected["data"]):partial.append(name);require(count==limit,"Actual partial file does not match kernel limit")
+    require(total<=MAX_BYTES and type(value.get("bytes")) is int and value["bytes"]==total and value.get("partialFiles")==partial and len(partial)==1,"Partial-copy aggregate differs")
+    require(partial[0] in ("INSTALL-MANIFEST.json","payload-SBOM.cdx.json") if kind=="metadata" else partial[0]=="AccessWeaver.app/Contents/MacOS/accessweaver","Write-fault copy stage differs")
+    return digest(json.dumps(value,sort_keys=True,separators=(",",":")).encode())
+
+
+def validate_product_recovery(value,commit,arch,core,product,payload,run_id):
+    require(value.get("schemaVersion")==1 and value.get("sourceCommit")==commit and value.get("target")=="darwin/"+arch and str(value.get("runID"))==run_id and value.get("version")==VERSIONS[-1] and value.get("stage")=="deactivation-and-owned-cleanup" and value.get("failureType") is None and value.get("failureSourceLine") is None,"Product recovery identity differs")
+    require(value.get("corePackageSHA256")==core["packageSHA256"] and value.get("productPackageSHA256")==product and value.get("helperSHA256")==core["helperSHA256"],"Product recovery subjects differ")
+    require(all(value.get(k) is True for k in ("passed","actualPackageHelperWriteFaultsVerified","explicitAbandonmentAndWholeProductRetryVerified","retainedPartialCopiesPreservedUntilOwnedCleanup","ownedFixturesRemoved")),"Product recovery incomplete")
+    require(all(value.get(k) is False for k in ("installedProductCodeExecutedAsRoot","hostFilesystemPressureApplied","actualInstallerProcessTerminated","actualPowerLossTested","productUninstallQualified","wholeProductInterruptionRecoveryQualified","productionQualificationComplete")),"Unearned product recovery scope")
+    cases=value.get("cases");require(type(cases) is list and len(cases)==2,"Product recovery case extent differs")
+    partial_ids=[];recovered_ids=[]
+    for index,(case,kind,limit) in enumerate(zip(cases,("metadata","controller"),(4096,1<<20))):
+        generation=4+index
+        require(case.get("name")==kind and type(case.get("limitBytes")) is int and case["limitBytes"]==limit and case.get("baseGeneration")==generation and case.get("recoveredGeneration")==generation+1 and case.get("helperSHA256")==core["helperSHA256"],"Product recovery case/generation differs")
+        require(all(case.get(k) is True for k in ("oldActiveCorePreservedDuringFault","publicAppRegistrationsAndReceiptsPreservedDuringFault","privateProfileAndContainerPreserved","wholeProductRetryVerified","passed")),"Product recovery preservation missing")
+        slot=case.get("partialSlot",{});require(set(slot)=={"id","device","inode","identity"} and type(slot.get("id")) is str and re.fullmatch("[a-f0-9]{32}",slot["id"]) is not None and type(slot.get("device")) is int and type(slot.get("inode")) is int and slot["inode"]>0,"Product recovery partial slot differs")
+        require(slot["identity"]=={"version":VERSIONS[-1],"manifestSHA256":core["manifestSHA256"],"payloadSHA256":core["payloadSHA256"]},"Product recovery partial seal differs")
+        recovered=case.get("recoveredSlotID");old=case.get("oldActiveSlotID")
+        require(type(recovered) is str and re.fullmatch("[a-f0-9]{32}",recovered) is not None and type(old) is str and re.fullmatch("[a-f0-9]{32}",old) is not None and recovered not in (slot["id"],old),"Product recovery reused a retained/old slot")
+        if index:require(old==recovered_ids[-1],"Product recovery active-slot sequence differs")
+        partial_ids.append(slot["id"]);recovered_ids.append(recovered)
+        fingerprint=validate_partial_copy_inventory(case.get("partialInventory"),payload,slot,limit,kind)
+        require(all(case.get(k)==fingerprint for k in ("partialFingerprintSHA256","refusedRetryPreservedFingerprintSHA256","abandonmentPreservedFingerprintSHA256","recoveryPreservedFingerprintSHA256")),"Partial copy was changed/lost during recovery")
+        operations=case.get("operations");require(type(operations) is list and [op.get("name") for op in operations]==["prepare","limited-activate","partial-retry-refused","explicit-abandon"],"Recovery helper operation order differs")
+        for operation in operations:require(type(operation.get("elapsedMilliseconds")) is int and 0<=operation["elapsedMilliseconds"]<=60000,"Recovery helper timing differs")
+        for operation,command,state,exit_code,published in ((operations[0],"prepare-deployment","prepared",0,True),(operations[2],"activate-deployment","refused",1,False),(operations[3],"abandon-deployment","abandoned",0,True)):
+            result=operation.get("result",{})
+            require(operation.get("exitCode")==exit_code and result.get("schemaVersion")==1 and result.get("operation")==command and result.get("state")==state and result.get("generation")==generation and result.get("slotID")==slot["id"] and result.get("operationRecordPublished") is published and result.get("version")==VERSIONS[-1] and result.get("manifestSHA256")==core["manifestSHA256"] and result.get("payloadSHA256")==core["payloadSHA256"],"Recovery helper result/seal differs")
+            require(result.get("publisherSignatureVerified") is False and result.get("productionQualificationComplete") is False,"Recovery helper scope differs")
+        fault=operations[1];code=fault.get("exitCode")
+        require(type(code) is int and code in (1,-25,153) and fault.get("fileSizeSignalObserved") is (code in (-25,153)) and fault.get("appliedLimit")=={"schemaVersion":1,"euid":0,"softFileSizeBytes":limit,"hardFileSizeBytes":limit,"coreDumpLimitBytes":0,"scope":"owned-helper-process"},"Actual kernel write limit/exit differs")
+        require(all(type(fault.get(k)) is str and re.fullmatch("[a-f0-9]{64}",fault[k]) is not None for k in ("stdoutSHA256","stderrSHA256")),"Fault output digest missing")
+    require(len(set(partial_ids))==len(set(recovered_ids))==2 and not set(partial_ids)&set(recovered_ids) and value.get("lastHelper")==cases[-1]["operations"][-1],"Recovery slot retention/final helper differs")
+    return {"actualPackageHelperWriteFaultCases":2,"actualRootHelperCommands":8,"explicitAbandonments":2,"actualWholeProductRecoveryReinstalls":2,"retainedPartialCopiesVerified":2,"wholeProductInterruptionRecoveryQualified":False,"productionQualificationComplete":False}
 
 
 def limit(name):return 64<<20 if name.endswith(".pkg") else 16<<20 if name.endswith(".zip") or name==PROVENANCE_BUNDLE else 8<<20

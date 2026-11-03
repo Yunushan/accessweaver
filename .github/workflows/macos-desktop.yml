@@ -85,9 +85,10 @@ jobs:
           ACCESSWEAVER_DISPOSABLE_MACOS_DESKTOP_PACKAGE_TEST: '1'
           ACCESSWEAVER_MACOS_INSTALLER_ARCH: '${{ matrix.arch }}'
         run: python3 scripts/test-macos-desktop-package.py
-      - name: Actual one-command product installation, upgrade, refusal and owned cleanup
+      - name: Actual product installation, upgrade, refusal, write-fault recovery and owned cleanup
         env:
           ACCESSWEAVER_DISPOSABLE_MACOS_PRODUCT_PACKAGE_TEST: '1'
+          ACCESSWEAVER_DISPOSABLE_MACOS_PRODUCT_RECOVERY_TEST: '1'
           ACCESSWEAVER_MACOS_INSTALLER_ARCH: '${{ matrix.arch }}'
         run: python3 scripts/test-macos-desktop-package.py --product
       - name: Validate and stage independently known subjects before attesting
@@ -96,7 +97,7 @@ jobs:
         run: |
           mkdir -p "build/macos-desktop-provenance/$PACKAGE_ARCH"
           python3 scripts/verify_macos_desktop_provenance.py "build/macos-desktop-provenance/$PACKAGE_ARCH/candidate" --stage-build-root "build/macos-deployment-checks/$PACKAGE_ARCH" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --architecture "$PACKAGE_ARCH" --run-id "$GITHUB_RUN_ID"
-      - name: Attest all60 independently selected desktop subjects
+      - name: Attest all61 independently selected desktop subjects
         id: provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -126,6 +127,7 @@ jobs:
           path: |
             build/macos-deployment-checks/${{ matrix.arch }}/desktop-lifecycle-artifact.json
             build/macos-deployment-checks/${{ matrix.arch }}/product-lifecycle-artifact.json
+            build/macos-deployment-checks/${{ matrix.arch }}/product-recovery-artifact.json
           if-no-files-found: warn
           retention-days: 14
       - name: Retain unqualified raw diagnostics on failure

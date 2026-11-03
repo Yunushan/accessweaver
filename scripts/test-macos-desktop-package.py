@@ -49,6 +49,7 @@ def root_regular(path,limit):
 def main(product_mode=False):
     require(support.platform.system()=="Darwin" and os.geteuid()!=0,"Native ordinary-user desktop driver required")
     require(os.environ.get("GITHUB_ACTIONS")=="true" and os.environ.get("RUNNER_ENVIRONMENT")=="github-hosted" and os.environ.get("GITHUB_REPOSITORY")=="Yunushan/accessweaver" and os.environ.get("ACCESSWEAVER_DISPOSABLE_MACOS_PRODUCT_PACKAGE_TEST" if product_mode else "ACCESSWEAVER_DISPOSABLE_MACOS_DESKTOP_PACKAGE_TEST")=="1","Explicit disposable desktop opt-in required")
+    if product_mode:require(os.environ.get("ACCESSWEAVER_DISPOSABLE_MACOS_PRODUCT_RECOVERY_TEST")=="1","Explicit disposable product write-fault opt-in required")
     source=os.environ.get("GITHUB_SHA","");arch=os.environ.get("ACCESSWEAVER_MACOS_INSTALLER_ARCH","")
     require(re.fullmatch("[a-f0-9]{40}",source) is not None and arch in ("amd64","arm64"),"Missing native desktop source/architecture")
     require(subprocess.check_output(["git","rev-parse","HEAD"],cwd=REPO,text=True).strip()==source and not subprocess.check_output(["git","status","--porcelain","--untracked-files=no"],cwd=REPO).strip(),"Clean exact-source checkout required")
@@ -94,6 +95,7 @@ def main(product_mode=False):
     marker=user/"preserve";marker.write_bytes(b"unrelated public desktop fixture data");marker_hash=digest(marker.read_bytes())
     parent=Path("/Applications");no_alias(parent);info=parent.stat();parent_identity=(info.st_dev,info.st_ino,info.st_uid,info.st_gid,stat.S_IMODE(info.st_mode))
     parent_acl=run(["/bin/ls","-lde",parent],env,30)[0].stdout.splitlines()[1:]
+    recovery_cases=[];partial_slots={};last_recovery_helper=None
     operations=[];selections=[];known_slots={};profile=None;profile_hash=None;stage="open-capabilities";complete=False;cleaned=False;failure=None;failure_line=None;ls=None;deactivation=None;current_generation=0;last_installer=None
     def preserved():
         require(digest(marker.read_bytes())==marker_hash and (profile is None or digest(profile.read_bytes())==profile_hash),"Desktop operation changed unrelated data/profile")
@@ -160,6 +162,37 @@ def main(product_mode=False):
         if success:require(json.loads(result.stdout)==expected,"Public entry executed unexpected active core")
         else:require(b"not active" in result.stderr,"Inactive public entry did not refuse")
         preserved();selections.append({"name":name,"expectedCoreBuild":expected,"exitCode":result.returncode,"elapsedMilliseconds":elapsed,"installationAndUserDataPreserved":True,"passed":True})
+    def partial_observation(slot):
+        child_env=dict(env,GITHUB_ACTIONS="true",RUNNER_ENVIRONMENT="github-hosted",RUNNER_OS="macOS",GITHUB_REPOSITORY="Yunushan/accessweaver",GITHUB_SHA=source,GITHUB_WORKSPACE=str(REPO),RUNNER_TEMP=str(temporary),ACCESSWEAVER_DISPOSABLE_MACOS_PRODUCT_RECOVERY_TEST="1",ACCESSWEAVER_MACOS_INSTALLER_ARCH=arch)
+        code="import sys,json;sys.path.insert(0,sys.argv[1]);from macos_product_recovery import inspect_root_slot;print(json.dumps(inspect_root_slot(json.loads(sys.argv[2]))))"
+        command=["/usr/bin/sudo","-n","/usr/bin/env","-i"]+[k+"="+v for k,v in sorted(child_env.items())]+[str(Path(sys.executable).resolve()),"-I","-B","-c",code,str(REPO/"scripts"),json.dumps(slot,separators=(",",":"))]
+        result,_=run(command,env,60);value=json.loads(result.stdout)
+        require(value["allKnownSourcePrefixesVerified"] is True,"Partial copy lacks exact source-prefix verification")
+        return value
+    def recovery_helper(helper,action,name,limit=None):
+        nonlocal last_recovery_helper
+        candidate=core[VERSIONS[1]]
+        require(digest(helper.read_bytes())==candidate["report"]["helperSHA256"],"Recovery helper changed")
+        if limit is None:
+            result,elapsed=run(["/usr/bin/sudo","-n",helper,action],env,60,codes=(0,1))
+            value=json.loads(result.stdout)
+            require(value["version"]==VERSIONS[1] and value["manifestSHA256"]==candidate["report"]["manifestSHA256"] and value["payloadSHA256"]==candidate["report"]["payloadSHA256"],"Recovery helper compiled subject differs")
+            item={"name":name,"exitCode":result.returncode,"elapsedMilliseconds":elapsed,"result":value}
+        else:
+            child_env=dict(env,GITHUB_ACTIONS="true",RUNNER_ENVIRONMENT="github-hosted",RUNNER_OS="macOS",GITHUB_REPOSITORY="Yunushan/accessweaver",GITHUB_SHA=source,GITHUB_WORKSPACE=str(REPO),RUNNER_TEMP=str(temporary),ACCESSWEAVER_DISPOSABLE_MACOS_PRODUCT_RECOVERY_TEST="1",ACCESSWEAVER_MACOS_INSTALLER_ARCH=arch)
+            code="import sys;sys.path.insert(0,sys.argv[1]);from macos_product_recovery import limited_exec;limited_exec(sys.argv[2],int(sys.argv[3]))"
+            command=["/usr/bin/sudo","-n","/usr/bin/env","-i"]+[k+"="+v for k,v in sorted(child_env.items())]+[str(Path(sys.executable).resolve()),"-I","-B","-c",code,str(REPO/"scripts"),str(helper),str(limit)]
+            result,elapsed=support.run(command,env,60,codes=tuple(range(-64,256)))
+            last_recovery_helper={"name":name,"exitCode":result.returncode,"elapsedMilliseconds":elapsed,"stdoutSHA256":digest(result.stdout),"stderrSHA256":digest(result.stderr),"limitBytes":limit}
+            lines=result.stdout.splitlines()
+            if not lines or result.returncode not in (1,-signal.SIGXFSZ,128+signal.SIGXFSZ):print(result.stderr[-4000:].decode("utf-8",errors="replace").replace(str(capsule),"[owned-capsule]"),flush=True)
+            require(lines,"Write-fault executor produced no kernel-limit evidence")
+            applied=json.loads(lines[0])
+            require(applied=={"schemaVersion":1,"euid":0,"softFileSizeBytes":limit,"hardFileSizeBytes":limit,"coreDumpLimitBytes":0,"scope":"owned-helper-process"},"Write-fault limit/owner differs")
+            require(result.returncode in (1,-signal.SIGXFSZ,128+signal.SIGXFSZ),"Unexpected write-fault helper exit")
+            item={"name":name,"exitCode":result.returncode,"elapsedMilliseconds":elapsed,"appliedLimit":applied,"stdoutSHA256":digest(result.stdout),"stderrSHA256":digest(result.stderr),"fileSizeSignalObserved":result.returncode in (-signal.SIGXFSZ,128+signal.SIGXFSZ)}
+        last_recovery_helper=item
+        return item
     libproc=ctypes.CDLL("/usr/lib/libproc.dylib");pidpath=libproc.proc_pidpath;pidpath.argtypes=[ctypes.c_int,ctypes.c_void_p,ctypes.c_uint32];pidpath.restype=ctypes.c_int
     def kernel_image(pid):
         buf=ctypes.create_string_buffer(4096);length=pidpath(pid,buf,len(buf))
@@ -276,6 +309,37 @@ def main(product_mode=False):
         if product_mode:install("restored-product-reinstall",VERSIONS[1],"product",generation=4)
         else:install("restored-public-reinstall",VERSIONS[1],"application")
         selection("restored-active",VERSIONS[1])
+        if product_mode:
+            stage="product-write-fault-recovery";candidate=core[VERSIONS[1]]
+            scripts=cpio(inflate(flat_members(candidate["package"].read_bytes())["Scripts"],32<<20,31));helper=capsule/"core-helper";helper.write_bytes(scripts["postinstall"]["data"]);helper.chmod(0o755)
+            expected_identity={"version":VERSIONS[1],"manifestSHA256":candidate["report"]["manifestSHA256"],"payloadSHA256":candidate["report"]["payloadSHA256"]}
+            for name,limit in (("metadata",4096),("controller",1<<20)):
+                stage=name+"-write-fault";before=snapshot();old_state=json.loads(root_regular(AUTHORITY/"state/deployment.json",16384));base_generation=current_generation
+                case={"name":name,"limitBytes":limit,"oldActiveSlotID":old_state["active"]["id"],"baseGeneration":base_generation,"helperSHA256":candidate["report"]["helperSHA256"],"operations":[],"passed":False};recovery_cases.append(case)
+                prepared=recovery_helper(helper,"prepare-deployment","prepare");case["operations"].append(prepared)
+                state=json.loads(root_regular(AUTHORITY/"state/deployment.json",16384))
+                require(prepared["exitCode"]==0 and prepared["result"]["state"]=="prepared" and prepared["result"]["generation"]==base_generation and prepared["result"]["operationRecordPublished"] is True and len(state["pending"])==1,"Write-fault preparation differs")
+                pending=state["pending"][0];slot=pending["slot"];case["partialSlot"]=slot
+                require(pending["baseGeneration"]==base_generation and slot["id"]==prepared["result"]["slotID"] and slot["identity"]==expected_identity and state["active"]==old_state["active"] and state["highWaterVersion"]==VERSIONS[1],"Write-fault preparation changed active core")
+                prepared_snapshot=snapshot();fault=recovery_helper(helper,"activate-deployment","limited-activate",limit);case["operations"].append(fault)
+                require(snapshot()==prepared_snapshot,"Write-fault helper changed published app/record/receipt state")
+                inventory=partial_observation(slot);case["partialInventory"]=inventory
+                partial=[r for r in inventory["entries"] if r["kind"]=="file" and not r["complete"]]
+                require(len(partial)==1 and partial[0]["bytes"]==limit and (partial[0]["path"] in ("INSTALL-MANIFEST.json","payload-SBOM.cdx.json") if name=="metadata" else partial[0]["path"]=="AccessWeaver.app/Contents/MacOS/accessweaver"),"Kernel limit did not interrupt the expected real copy")
+                fingerprint=digest(json.dumps(inventory,sort_keys=True,separators=(",",":")).encode());case["partialFingerprintSHA256"]=fingerprint
+                refused=recovery_helper(helper,"activate-deployment","partial-retry-refused");case["operations"].append(refused)
+                require(refused["exitCode"]==1 and refused["result"]["state"]=="refused" and refused["result"]["generation"]==base_generation and snapshot()==prepared_snapshot and partial_observation(slot)==inventory,"Partial-copy retry failed to preserve/refuse")
+                case["refusedRetryPreservedFingerprintSHA256"]=fingerprint;selection(name+"-fault-old-active",VERSIONS[1]);preserved()
+                abandoned=recovery_helper(helper,"abandon-deployment","explicit-abandon");case["operations"].append(abandoned)
+                after=json.loads(root_regular(AUTHORITY/"state/deployment.json",16384))
+                require(abandoned["exitCode"]==0 and abandoned["result"]["state"]=="abandoned" and abandoned["result"]["generation"]==base_generation and abandoned["result"]["operationRecordPublished"] is True and after["pending"]==[] and after["active"]==old_state["active"] and after["highWaterVersion"]==VERSIONS[1],"Explicit abandonment changed active core/fence")
+                require(partial_observation(slot)==inventory and {k:v for k,v in snapshot().items() if k!="activeRecord"}=={k:v for k,v in before.items() if k!="activeRecord"},"Abandonment changed retained bytes or public receipts")
+                case["abandonmentPreservedFingerprintSHA256"]=fingerprint;partial_slots[slot["id"]]=(slot,inventory)
+                install(name+"-fault-product-retry",VERSIONS[1],"product",generation=base_generation+1)
+                recovered=json.loads(root_regular(AUTHORITY/"state/deployment.json",16384))
+                require(recovered["active"]["id"] not in (slot["id"],old_state["active"]["id"]) and partial_observation(slot)==inventory,"Product retry reused/changed an abandoned partial copy")
+                selection(name+"-recovery-active",VERSIONS[1]);preserved()
+                case.update({"recoveredGeneration":current_generation,"recoveredSlotID":recovered["active"]["id"],"recoveryPreservedFingerprintSHA256":fingerprint,"oldActiveCorePreservedDuringFault":True,"publicAppRegistrationsAndReceiptsPreservedDuringFault":True,"privateProfileAndContainerPreserved":True,"wholeProductRetryVerified":True,"passed":True})
         stage="deactivation-and-owned-cleanup";candidate=core[VERSIONS[1]];scripts=cpio(inflate(flat_members(candidate["package"].read_bytes())["Scripts"],32<<20,31));helper=capsule/"core-helper";helper.write_bytes(scripts["postinstall"]["data"]);helper.chmod(0o755)
         require(digest(helper.read_bytes())==candidate["report"]["helperSHA256"],"Deactivation helper differs from actual package")
         result,elapsed=run(["/usr/bin/sudo","-n",helper,"deactivate-deployment"],env,60);value=json.loads(result.stdout)
@@ -284,6 +348,8 @@ def main(product_mode=False):
         selection("inactive-refused",VERSIONS[1],False);stage="deactivation-and-owned-cleanup"
         value=json.loads(root_regular(AUTHORITY/"state/deployment.json",16384));require(value["active"]["id"]=="" and value["pending"]==[] and value["generation"]==current_generation+1 and value["highWaterVersion"]==VERSIONS[1] and len(known_slots)==current_generation,"Unexpected final owned core state")
         for old_version,old_app in known_slots.values():verify_deployment_bundle(old_app,core[old_version]["manifest"],core[old_version]["identity"],core[old_version]["manifestBytes"])
+        require({p.name for p in (AUTHORITY/"versions").iterdir()}==set(known_slots)|set(partial_slots),"Unexpected retained version during fixture cleanup")
+        for slot,inventory in partial_slots.values():require(partial_observation(slot)==inventory,"Retained partial copy changed before owned cleanup")
         verify_bundle(APP,desktop[VERSIONS[1]]["record"],core[VERSIONS[1]]["identity"])
         require({p.name for p in DESKTOP.iterdir()}=={record_name(d["record"]) for d in desktop.values()},"Unexpected registration retained during cleanup")
         for d in desktop.values():require(root_regular(DESKTOP/record_name(d["record"]),64<<10)==d["record"],"Retained registration changed")
@@ -310,6 +376,9 @@ def main(product_mode=False):
                 report["failedProductState"]={"recordAvailable":True,"generation":state.get("generation") if type(state.get("generation")) is int else None,"activeSlotPresent":isinstance(active_slot,dict) and bool(active_slot.get("id")),"pendingCount":len(pending) if type(pending) is list and len(pending)<=8 else None,"highWaterVersion":state.get("highWaterVersion") if state.get("highWaterVersion") in VERSIONS else None}
             except Exception:report["failedProductState"]={"recordAvailable":False}
 
+    if product_mode:
+        recovery_report={"schemaVersion":1,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"version":VERSIONS[1],"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"corePackageSHA256":core[VERSIONS[1]]["report"]["packageSHA256"],"productPackageSHA256":products[VERSIONS[1]]["sha256"],"helperSHA256":core[VERSIONS[1]]["report"]["helperSHA256"],"cases":recovery_cases,"lastHelper":last_recovery_helper,"actualPackageHelperWriteFaultsVerified":complete,"explicitAbandonmentAndWholeProductRetryVerified":complete,"retainedPartialCopiesPreservedUntilOwnedCleanup":complete,"ownedFixturesRemoved":cleaned,"installedProductCodeExecutedAsRoot":False,"hostFilesystemPressureApplied":False,"actualInstallerProcessTerminated":False,"actualPowerLossTested":False,"productUninstallQualified":False,"wholeProductInterruptionRecoveryQualified":False,"productionQualificationComplete":False}
+        (base/"product-recovery-artifact.json").write_text(json.dumps(recovery_report,indent=2)+"\n",encoding="utf-8")
     (base/("product-lifecycle-artifact.json" if product_mode else "desktop-lifecycle-artifact.json")).write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     require(complete,"Native public desktop acceptance failed at "+stage+"; owned state retained")
     print(json.dumps({"target":report["target"],"actualInstallerOperations":len(operations),"launchServicesDefaultUI":True,"passed":True,"productionQualificationComplete":False}))
