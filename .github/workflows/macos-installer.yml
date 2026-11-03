@@ -9,6 +9,10 @@ on:
       - scripts/macos_package_archive.py
       - scripts/test_macos_package_archive.py
       - scripts/sbom.py
+      - scripts/verify_release.py
+      - scripts/verify_release_provenance.py
+      - scripts/verify_release_rebuild.py
+      - scripts/release_archive.py
       - scripts/sbom/**
       - cmd/accessweaver/**
       - internal/**
@@ -29,6 +33,10 @@ jobs:
     name: Native package acceptance (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -52,6 +60,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p test_macos_installer.py -v
           python3 -m unittest discover -s scripts -p test_macos_package_archive.py -v
+          python3 -m unittest discover -s scripts -p test_macos_installer_provenance.py -v
           python3 -m unittest discover -s scripts -p test_sbom.py -v
       - name: Build and inspect actual unsigned native package without installation
         env:
@@ -62,6 +71,22 @@ jobs:
           ACCESSWEAVER_DISPOSABLE_MACOS_INSTALLER_TEST: '1'
           ACCESSWEAVER_MACOS_INSTALLER_ARCH: '${{ matrix.arch }}'
         run: python3 scripts/test-macos-installer-lifecycle.py
+      - name: Attest package, inventories and native acceptance reports
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: build/macos-installer-checks/${{ matrix.arch }}/0.1.0-alpha/*
+          create-storage-record: false
+      - name: Verify retained native package provenance and real rejection cases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_DIRECTORY: build/macos-installer-checks/${{ matrix.arch }}/0.1.0-alpha
+          PROVENANCE_REPORT: build/macos-installer-checks/${{ matrix.arch }}/native-provenance.json
+          ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          PACKAGE_ARCH: '${{ matrix.arch }}'
+        run: |
+          cp "$ATTESTATION_BUNDLE" "$PACKAGE_DIRECTORY/BUILD-PROVENANCE.sigstore.json"
+          python3 scripts/verify_macos_installer_provenance.py "$PACKAGE_DIRECTORY" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --version 0.1.0-alpha --architecture "$PACKAGE_ARCH" --check-rejections > "$PROVENANCE_REPORT"
       - name: Retain actual package, SBOM and scoped compiler/inspection evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
