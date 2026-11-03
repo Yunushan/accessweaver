@@ -121,6 +121,8 @@ class InstallerInputTests(unittest.TestCase):
         self.assertLess(script.index('/install -af'),script.index('ssh_host_ed25519_key'))
         self.assertIn('chroot /mnt /usr/sbin/sshd -t',script)
         self.assertLess(script.index('umount -af'),script.index('AW_OPENBSD_PRIVATE_BOOTSTRAP_COMPLETE'))
+        self.assertNotIn('printf ',script)
+        self.assertEqual(probe.bootstrap_steps()[-1],('completion-output','print -r -- AW_OPENBSD_PRIVATE_BOOTSTRAP_COMPLETE'))
 
     def test_media_transform_retains_official_set_signature_and_private_seed(self):
         for arch in ('amd64','arm64'):

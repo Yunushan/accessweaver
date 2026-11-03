@@ -130,6 +130,7 @@ def bootstrap_steps():
         ("server-validation", "chroot /mnt /usr/sbin/sshd -t"),
         ("sync", "sync"),
         ("unmount", "umount -af"),
+        ("completion-output", "print -r -- AW_OPENBSD_PRIVATE_BOOTSTRAP_COMPLETE"),
     )
 
 
@@ -138,7 +139,6 @@ def bootstrap_script():
              "trap 'rc=$?; if ((rc != 0)); then print -u2 -- \"AW_OPENBSD_BOOTSTRAP_FAILED:$stage:$rc\"; fi' EXIT"]
     for stage, command in bootstrap_steps():
         lines.extend(("stage=" + stage, command))
-    lines.append("printf '\\nAW_OPENBSD_PRIVATE_BOOTSTRAP_COMPLETE\\n'")
     return "\n".join(lines) + "\n"
 
 
