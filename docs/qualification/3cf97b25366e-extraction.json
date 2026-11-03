@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "3cf97b25366eedb2643258c0540eb21e8e902d02",
+  "scope": "bounded staged component ZIP extraction, inert native archive contracts and real pinned component help/version startup; no full driver/routing/installer qualification",
+  "sourceCI": {
+    "run": 41617728493,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41617728493",
+    "conclusion": "success",
+    "passedJobs": 22,
+    "windowsJobs": [
+      {
+        "target": "windows/amd64",
+        "job": 125855486441,
+        "run": 41617728493,
+        "conclusion": "success",
+        "nativeJobLogSHA256": "bc8009ec217ea5782d73a0b38c8462c28114a64c2faaa284e5c640cefb0899d0",
+        "fixedArchiveAssertionsVerified": 114,
+        "inertCases": 36,
+        "validCases": 3,
+        "rejectedCases": 33,
+        "vendorCodeExecutedByTheseCases": false
+      },
+      {
+        "target": "windows/arm64",
+        "job": 125855486487,
+        "run": 41617728493,
+        "conclusion": "success",
+        "nativeJobLogSHA256": "b01ac406d5be29aa260a3f8556ec25f18502949e5c2b7b6e586944521a0d0dc0",
+        "fixedArchiveAssertionsVerified": 114,
+        "inertCases": 36,
+        "validCases": 3,
+        "rejectedCases": 33,
+        "vendorCodeExecutedByTheseCases": false
+      }
+    ]
+  },
+  "sourceHashes": {
+    "internal/workflow/windows.ps1": "905eb7016f09dabb66f0d944aa4cf17577f2de358a690feed9fa81b4e8f66eb0",
+    "scripts/test-windows-workflow.ps1": "f9696430c46405d639677a6ad05b6824f35996d75a26ad52c35183a6f3a1a707",
+    "scripts/fixtures/component_archives.py": "68fa3a3c315ef24ab193cc310045f1b2e50e3ca8a3862a66fac54008d6a826c9",
+    "scripts/test-windows-vendor-preflight.ps1": "408d19940bee47d7d63d5108f3bad768cfd193087993557814cc690e855b27cc",
+    "scripts/vendor-windows-pins.json": "b37a318955ad658063700b970dfd251ee159984d5edfeb0b543d3457cb1b8cc9"
+  },
+  "realVendorStartup": {
+    "run": 41617728301,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41617728301",
+    "conclusion": "success",
+    "passedJobs": 2,
+    "targets": [
+      {
+        "providerArtifactID": 13222116802,
+        "providerSHA256": "4e9c8cb1a6ca9483a6a3a33965bcd3de7cc065081d5460ff961427c7af6b3592",
+        "providerBytes": 1081,
+        "report": {
+          "networkIsolationVerified": false,
+          "runID": "41617728301",
+          "target": "windows/amd64",
+          "pinsSHA256": "b37a318955ad658063700b970dfd251ee159984d5edfeb0b543d3457cb1b8cc9",
+          "workflowScriptSHA256": "905eb7016f09dabb66f0d944aa4cf17577f2de358a690feed9fa81b4e8f66eb0",
+          "components": [
+            {
+              "coffMachine": 34404,
+              "helpOrVersionPassed": true,
+              "exitCode": 0,
+              "assetSHA256": "c7da1dc5fdf9aaa7828fbf5c2076c4f612cba7889dcac2e3d06dc2e1dee4c3df",
+              "deadlineMilliseconds": 30000,
+              "engine": "proxifyre",
+              "version": "2.6.4",
+              "discoverySelectedPinnedExecutable": true,
+              "childEnvironmentSanitized": true,
+              "outputComplete": true,
+              "binarySHA256": "beb7ff5b5283f872c610a6c70abfa9a5949f09c50fc766298776e5798a48ccfc",
+              "elapsedMilliseconds": 304,
+              "asset": "ProxiFyre-v2.6.4-x64.zip"
+            },
+            {
+              "coffMachine": 34404,
+              "helpOrVersionPassed": true,
+              "exitCode": 0,
+              "assetSHA256": "e222fd9443d7cb3264d825a3e86967797fc9c938507c5d93e3cc21e4aed11dcc",
+              "deadlineMilliseconds": 30000,
+              "engine": "wgcf",
+              "version": "2.3.1",
+              "discoverySelectedPinnedExecutable": true,
+              "childEnvironmentSanitized": true,
+              "outputComplete": true,
+              "binarySHA256": "e222fd9443d7cb3264d825a3e86967797fc9c938507c5d93e3cc21e4aed11dcc",
+              "elapsedMilliseconds": 61,
+              "asset": "wgcf_2.3.1_windows_amd64.exe"
+            },
+            {
+              "coffMachine": 34404,
+              "helpOrVersionPassed": true,
+              "exitCode": 0,
+              "assetSHA256": "9e498cb9bdbae57756db19ce516362ac307e9340a6996214964cfcc7c489abc3",
+              "deadlineMilliseconds": 30000,
+              "engine": "dnscrypt",
+              "version": "2.1.20",
+              "discoverySelectedPinnedExecutable": true,
+              "childEnvironmentSanitized": true,
+              "outputComplete": true,
+              "binarySHA256": "312274e07e0084088f61bd60f57ee5c3dcf4307f5c1f5dbcf374fd6f5d4fc7d0",
+              "elapsedMilliseconds": 99,
+              "asset": "dnscrypt-proxy-win64-2.1.20.zip"
+            }
+          ],
+          "ownedCapsuleRemoved": true,
+          "hostArchitecture": "x64",
+          "commandsRequestedServiceOrDriverChanges": false,
+          "sourceRef": "refs/heads/main",
+          "relevantServiceStateUnchanged": true,
+          "productionQualificationComplete": false,
+          "vendorRoutingQualified": false,
+          "sourceCommit": "3cf97b25366eedb2643258c0540eb21e8e902d02",
+          "schemaVersion": 1
+        }
+      },
+      {
+        "providerArtifactID": 13220799918,
+        "providerSHA256": "b43b75bff9046d5dfe33ad773fdda0151955cf896966a2be0e6abe54a0770028",
+        "providerBytes": 1090,
+        "report": {
+          "ownedCapsuleRemoved": true,
+          "productionQualificationComplete": false,
+          "sourceRef": "refs/heads/main",
+          "workflowScriptSHA256": "905eb7016f09dabb66f0d944aa4cf17577f2de358a690feed9fa81b4e8f66eb0",
+          "schemaVersion": 1,
+          "vendorRoutingQualified": false,
+          "components": [
+            {
+              "deadlineMilliseconds": 30000,
+              "exitCode": 0,
+              "childEnvironmentSanitized": true,
+              "outputComplete": true,
+              "coffMachine": 43620,
+              "elapsedMilliseconds": 332,
+              "binarySHA256": "2204d5ff324e347ebb0792d115cc0fcf360396ec2ebcf9cd4a1bd8a1c399e850",
+              "engine": "proxifyre",
+              "version": "2.6.4",
+              "discoverySelectedPinnedExecutable": true,
+              "asset": "ProxiFyre-v2.6.4-ARM64.zip",
+              "assetSHA256": "c232a4f438d87599c5e4c465f6d637d6bd24f0e982fff5d5b1d7d9bd1c8afc3c",
+              "helpOrVersionPassed": true
+            },
+            {
+              "deadlineMilliseconds": 30000,
+              "exitCode": 0,
+              "childEnvironmentSanitized": true,
+              "outputComplete": true,
+              "coffMachine": 43620,
+              "elapsedMilliseconds": 158,
+              "binarySHA256": "e1775f9ec51127155fb8fbcf21b33a59249cda88cbf120c2ad9ca76acf5d3206",
+              "engine": "wgcf",
+              "version": "2.3.1",
+              "discoverySelectedPinnedExecutable": true,
+              "asset": "wgcf_2.3.1_windows_arm64.exe",
+              "assetSHA256": "e1775f9ec51127155fb8fbcf21b33a59249cda88cbf120c2ad9ca76acf5d3206",
+              "helpOrVersionPassed": true
+            },
+            {
+              "deadlineMilliseconds": 30000,
+              "exitCode": 0,
+              "childEnvironmentSanitized": true,
+              "outputComplete": true,
+              "coffMachine": 43620,
+              "elapsedMilliseconds": 78,
+              "binarySHA256": "0e72d38a516f23e2203795fd6c52ca9b83b3b15b13b0df673290ab5c4e95d9ef",
+              "engine": "dnscrypt",
+              "version": "2.1.20",
+              "discoverySelectedPinnedExecutable": true,
+              "asset": "dnscrypt-proxy-winarm-2.1.20.zip",
+              "assetSHA256": "db327b3a75d5526038468bf7d825a3106704753086b44cb02ae6ef6c69a9a875",
+              "helpOrVersionPassed": true
+            }
+          ],
+          "relevantServiceStateUnchanged": true,
+          "target": "windows/arm64",
+          "runID": "41617728301",
+          "sourceCommit": "3cf97b25366eedb2643258c0540eb21e8e902d02",
+          "pinsSHA256": "b37a318955ad658063700b970dfd251ee159984d5edfeb0b543d3457cb1b8cc9",
+          "hostArchitecture": "arm64",
+          "networkIsolationVerified": false,
+          "commandsRequestedServiceOrDriverChanges": false
+        }
+      }
+    ]
+  },
+  "limits": {
+    "entries": 4096,
+    "centralDirectoryBytes": 16777216,
+    "compressedArchiveBytes": 2181038080,
+    "expandedBytes": 2147483648
+  },
+  "readinessGatesPromoted": 0,
+  "productionQualificationComplete": false,
+  "remainingQualification": [
+    "full disk/power-loss and filesystem behavior",
+    "driver/routing and installer lifecycle",
+    "publisher signing/notarization",
+    "managed deployment acceptance and operating ownership"
+  ]
+}
