@@ -1,7 +1,32 @@
 import copy
+import json
 import unittest
 
 from verify_macos_desktop_provenance import validate_product_lifecycle,VERSIONS
+from macos_product import product_installer_observation
+
+
+class ProductInstallerDiagnostics(unittest.TestCase):
+    def test_observed_phases_and_fixed_refusal_are_ordered_without_private_log_text(self):
+        raw=(b"PackageKit: Executing script \"./preinstall\" in /private/tmp/secret/path\n"
+             b"package_script_service: ./preinstall: desktop package refused: install matching protected desktop metadata before the application component\n"
+             b"PackageKit: Executing script './postinstall' in /private/tmp/secret/path\n")
+        result=product_installer_observation(b"",raw)
+        events=result["streams"][1]["events"]
+        self.assertEqual([e["kind"] for e in events],["script-phase","helper-refusal","script-phase"])
+        self.assertEqual([e["phase"] for e in events if e["kind"]=="script-phase"],["preinstall","postinstall"])
+        self.assertEqual(events[1]["reason"],"install matching protected desktop metadata before the application component")
+        self.assertNotIn("secret",json.dumps(result));self.assertFalse(result["rawLogRetained"])
+    def test_unrecognized_errors_and_unrelated_output_are_only_hashed(self):
+        raw=b"desktop package refused: open /Users/private/profile: denied\nsecret-token\n"
+        result=product_installer_observation(raw,b"")
+        event=result["streams"][0]["events"][0]
+        self.assertEqual(event["helper"],"desktop");self.assertNotIn("reason",event)
+        for private in ("profile","secret-token","/Users/"):self.assertNotIn(private,json.dumps(result))
+        self.assertEqual(result["streams"][0]["bytes"],len(raw))
+    def test_large_output_and_excessive_events_refuse(self):
+        for stdout,stderr in ((b"x"*((4<<20)+1),b""),(b"",b"desktop package refused: no such file or directory\n"*65)):
+            with self.assertRaises(ValueError):product_installer_observation(stdout,stderr)
 
 
 class SingleProductLifecycleContracts(unittest.TestCase):

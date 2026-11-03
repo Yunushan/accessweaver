@@ -216,3 +216,36 @@ def product_sbom(package,identity,inputs,packages,graphs,tool):
     result["metadata"]["component"]=root;result["metadata"]["tools"]={"components":[{"type":"application","name":"Apple productbuild","version":tool["osBuild"],"hashes":[{"alg":"SHA-256","content":tool["sha256"]}]}]}
     result["components"]=nodes;result["dependencies"]=edges+[{"ref":"application","dependsOn":roots}];result["compositions"]=[{"aggregate":"incomplete","assemblies":["application"]}]
     validate(result,package,identity);return result
+
+
+def product_installer_observation(stdout,stderr):
+    """Retain fixed script phases/refusals, never arbitrary Installer log text."""
+    require(type(stdout) is bytes and type(stderr) is bytes and len(stdout)+len(stderr)<=4<<20,"Product Installer diagnostic exceeds limit")
+    reasons=(
+        "install matching protected desktop metadata before the application component",
+        "compiled desktop registration is missing after package copy",
+        "AccessWeaver is not active; install or repair the application",
+        "desktop downgrade refused by retained registration",
+        "same-version desktop registration differs; preserve and inspect",
+        "legacy receipt exists; explicit migration is required",
+        "legacy, changed or unregistered public app exists; explicit migration or repair is required",
+        "resource temporarily unavailable",
+        "no such file or directory",
+    )
+    streams=[]
+    for name,data in (("stdout",stdout),("stderr",stderr)):
+        events=[]
+        for line in data.splitlines():
+            if len(line)>16384:continue
+            text=line.decode("utf-8",errors="replace")
+            phase=re.search(r"""PackageKit:.*(?:Executing|Running) script ["'](?:\./)?(preinstall|postinstall)["']""",text)
+            if phase:events.append({"kind":"script-phase","phase":phase[1]})
+            for prefix in ("desktop package refused: ","installer operation refused: "):
+                if prefix not in text:continue
+                message=text.split(prefix,1)[1].strip()
+                event={"kind":"helper-refusal","helper":"desktop" if prefix.startswith("desktop") else "core","messageSHA256":digest(message.encode("utf-8"))}
+                if message in reasons:event["reason"]=message
+                events.append(event)
+            require(len(events)<=64,"Product Installer diagnostic event budget exceeded")
+        streams.append({"stream":name,"bytes":len(data),"sha256":digest(data),"events":events})
+    return {"schemaVersion":1,"loggingOption":"-dumplog","streams":streams,"rawLogRetained":False,"diagnosticOnly":True}

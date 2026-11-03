@@ -21,7 +21,7 @@ from macos_installer import BUNDLE_NAME,digest,require
 from macos_deployment import PACKAGE_ID,INCOMING,inspect_deployment,verify_deployment_bundle
 from macos_desktop import DESKTOP_ID,ROOT,BINARY,record_name,package_id,component_name,validate_record,verify_bundle,inspect_component
 from macos_package_archive import flat_members,cpio,inflate
-from macos_product import component_inputs,product_name,inspect_product
+from macos_product import component_inputs,product_name,inspect_product,product_installer_observation
 
 REPO=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location("accessweaver_desktop_fixture_support",Path(__file__).with_name("test-macos-installer-lifecycle.py"))
@@ -81,6 +81,12 @@ def main(product_mode=False):
     temporary=Path(os.environ["RUNNER_TEMP"]);no_alias(temporary)
     capsule=Path(tempfile.mkdtemp(prefix="accessweaver-desktop-package-",dir=temporary));user=capsule/"user";user.mkdir();tmp=capsule/"tmp";tmp.mkdir()
     env={"PATH":"/usr/bin:/bin:/usr/sbin:/sbin","HOME":str(user),"TMPDIR":str(tmp),"LANG":"C","LC_ALL":"C","TZ":"UTC","ACCESSWEAVER_NO_BROWSER":"1","ACCESSWEAVER_HOME":str(user/"Library/Application Support/AccessWeaver")}
+    installer_logging=None
+    if product_mode:
+        help_result,_=run(["/usr/sbin/installer","-help"],env,30,codes=tuple(range(256)))
+        help_bytes=help_result.stdout+help_result.stderr
+        require(re.search(rb"(?<![A-Za-z0-9_-])-dumplog(?![A-Za-z0-9_-])",help_bytes) is not None,"Native Installer does not advertise scoped logging")
+        installer_logging={"option":"-dumplog","nativeHelpSHA256":digest(help_bytes),"nativeHelpBytes":len(help_bytes),"nativeHelpExitCode":help_result.returncode}
     marker=user/"preserve";marker.write_bytes(b"unrelated public desktop fixture data");marker_hash=digest(marker.read_bytes())
     parent=Path("/Applications");no_alias(parent);info=parent.stat();parent_identity=(info.st_dev,info.st_ino,info.st_uid,info.st_gid,stat.S_IMODE(info.st_mode))
     parent_acl=run(["/bin/ls","-lde",parent],env,30)[0].stdout.splitlines()[1:]
@@ -120,10 +126,13 @@ def main(product_mode=False):
         stage=name;before=snapshot();candidate=core[version] if role=="core" else products[version] if role=="product" else desktop[version]["components"][role]
         package=candidate["package"];expected=candidate["report"]["packageSHA256"] if role=="core" else candidate["sha256"]
         require(digest(package.read_bytes())==expected,"Package changed before desktop acceptance")
-        result,elapsed=run(["/usr/bin/sudo","-n","/usr/sbin/installer","-pkg",package,"-target","/"],env,180,codes=tuple(range(256)))
+        result,elapsed=run(["/usr/bin/sudo","-n","/usr/sbin/installer",*(["-dumplog"] if product_mode else []),"-pkg",package,"-target","/"],env,180,codes=tuple(range(256)))
         last_installer={"name":name,"version":version,"component":role,"exitCode":result.returncode,"packageSHA256":expected}
+        if product_mode:
+            last_installer["diagnostics"]=product_installer_observation(result.stdout,result.stderr)
         if (result.returncode==0)!=success:
-            print((result.stdout+result.stderr)[-12000:].decode("utf-8",errors="replace").replace(str(capsule),"[owned-capsule]"),flush=True)
+            if product_mode:print(json.dumps({"lastInstaller":last_installer}),flush=True)
+            else:print((result.stdout+result.stderr)[-12000:].decode("utf-8",errors="replace").replace(str(capsule),"[owned-capsule]"),flush=True)
         require((result.returncode==0)==success and digest(package.read_bytes())==expected,"Unexpected desktop component Installer result: "+name)
         if not success:require(snapshot()==before,"Refused desktop operation changed app/record/receipt bytes")
         if success and role in ("core","product"):active(version,generation);current_generation=generation
@@ -287,7 +296,7 @@ def main(product_mode=False):
             trace=trace.tb_next
     report={"schemaVersion":1,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"selections":selections,"launchServices":ls,"deactivation":deactivation,"corePackageSHA256":{v:core[v]["report"]["packageSHA256"] for v in VERSIONS},"desktopRecordSHA256":{v:digest(desktop[v]["record"]) for v in VERSIONS},"desktopPackageSHA256":{v:{role:c["sha256"] for role,c in desktop[v]["components"].items()} for v in VERSIONS},"actualOrderedComponentsExecuted":complete,"publicAppAndProtectedRegistrationsVerified":complete,"coreUpgradeWithPublicEntryVerified":complete,"actualUserDataAndContainerProtectionPreserved":complete,"ownedFixturesRemoved":cleaned,"installedProductCodeExecutedAsRoot":False,"publisherSignatureVerified":False,"notarized":False,"finderInteractiveQualificationComplete":False,"singleProductDistributionQualified":False,"productUninstallQualified":False,"managedEndpointQualified":False,"productionQualificationComplete":False}
     if product_mode:
-        report.update({"lifecycleKind":"single-product","actualSingleProductLifecycleVerified":complete,"productPackageSHA256":{v:p["sha256"] for v,p in products.items()}})
+        report.update({"lifecycleKind":"single-product","actualSingleProductLifecycleVerified":complete,"productPackageSHA256":{v:p["sha256"] for v,p in products.items()},"installerLogging":installer_logging})
         if not complete:
             report["lastInstaller"]=last_installer
             try:
