@@ -177,9 +177,23 @@ func TestShutdownWaitsForDurableOutcomeAndRejectsNewJobs(t *testing.T) {
 	m := New(t.TempDir())
 	m.platform = "windows"
 	m.requireAdmin = func() error { return nil }
+	executing := make(chan struct{})
 	finishing := make(chan struct{})
 	release := make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := m.Shutdown(ctx); err != nil {
+			t.Error(err)
+		}
+	})
 	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		close(executing)
 		<-ctx.Done()
 		close(finishing)
 		<-release
@@ -191,6 +205,12 @@ func TestShutdownWaitsForDurableOutcomeAndRejectsNewJobs(t *testing.T) {
 	}
 	if _, err = m.Start(p.ID); err != nil {
 		t.Fatal(err)
+	}
+	// This case exercises cleanup after execution has actually begun.
+	select {
+	case <-executing:
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker did not enter execution")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()

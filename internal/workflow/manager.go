@@ -476,23 +476,38 @@ func (m *Manager) Start(id string) (Job, error) {
 		}
 	}
 	delete(m.plans, id)
-	if err := os.MkdirAll(m.root, 0700); err != nil {
-		return Job{}, err
-	}
 	m.cancel = cancel
 	m.job = Job{ID: id, Action: p.Request.Action, State: "running", StartedAt: time.Now().UTC()}
-	if err := m.saveJob(&m.job); err != nil {
-		cancel()
-		m.job.State = "failed"
-		return Job{}, err
-	}
+	job := m.job
 	done := make(chan struct{})
 	m.done = done
+	// Reserve admission and its completion before storage I/O. Controls can
+	// cancel or wait with their own deadline while this private write is
+	// pending; execution requires a durable running record.
+	m.mu.Unlock()
+	initialErr := os.MkdirAll(m.root, 0700)
+	if initialErr == nil {
+		initialErr = m.saveJob(&job)
+	}
+	m.mu.Lock()
+	if initialErr != nil {
+		cancel()
+		job.State = "failed"
+		job.FinishedAt = time.Now().UTC()
+		job.Error = boundedJobError(initialErr.Error())
+		m.job = job
+		close(done)
+		return Job{}, initialErr
+	}
+
 	started = true
-	job := m.job
 	go func() {
 		defer close(done)
-		result, err := m.execute(ctx, filepath.Join(m.root, id), p.Request)
+		var result json.RawMessage
+		err := ctx.Err()
+		if err == nil {
+			result, err = m.execute(ctx, filepath.Join(m.root, id), p.Request)
+		}
 		if cause := context.Cause(ctx); managed.IsPolicyError(cause) {
 			err = errors.Join(cause, err)
 		}
@@ -522,8 +537,8 @@ func (m *Manager) Start(id string) (Job, error) {
 	return m.job, nil
 }
 
-// saveJob owns its argument. The initial running record is protected by mu;
-// the terminal record is private to the worker until persistence completes.
+// saveJob owns its argument. Admission and terminal records stay private to
+// their writer; persistence never holds the manager control mutex.
 func (m *Manager) saveJob(job *Job) error {
 	job.Error = boundedJobError(job.Error)
 	b, e := encodeJob(*job)
