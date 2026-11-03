@@ -1,0 +1,691 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "1f49835b03bf4dbceaf9c6a57f76da50ebbeb657",
+  "scope": "Seven real cryptographic Sigstore subjects per architecture independently authenticated with all five rejection probes repeated, plus Native Intel and Apple Silicon experimental clean-install-only app/pkg construction, Apple expansion and independent in-memory archive/SBOM inspection, disposable actual clean installation, eight isolated app/receipt/alias refusal cases, refusal of an existing-install attempt with real profile/receipt/payload preservation, valid-receipt-only refusal, and verified test fixture cleanup. Cleanup is not a product uninstaller; no broader lifecycle or publisher/MDM qualification.",
+  "run": 41654216983,
+  "url": "https://github.com/Yunushan/accessweaver/actions/runs/41654216983",
+  "passedNativeJobs": 2,
+  "sourceCI": {
+    "run": 41654217159,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41654217159",
+    "passedJobs": 22
+  },
+  "sourceHashes": {
+    "scripts/verify_macos_installer_provenance.py": "c1399b2b3ca82010f30b29d5c9b98284e65efe000aa8044fd82224ea3ba23e1d",
+    "scripts/test_macos_installer_provenance.py": "7dcd6a97cb1a2c8a70c1a21a3cdc1245d7a8f1f0023792e39dce14f5b9121a6a",
+    "scripts/verify_release_provenance.py": "710992cf6bf863ff0ed143fddab4486390ca9f571114561768f2765f755b9315",
+    "scripts/verify_release_rebuild.py": "35040ca1d8e169131ce1d788620861b5393fba8e40693568b8947a0770989c36",
+    "scripts/verify_release.py": "8dc85606cf267bfb1215a004959d5915f391414b697937008519e6aa70005780",
+    "scripts/macos-installer-preinstall.sh": "36048056014ce5c4d083d06c407630ece19514a3986673f1da8f6cce98bfdad9",
+    "scripts/build-macos-installer.py": "7f867821a774a214c0e288eaa1d02d79c38098241a7066fd92ed94167292fb32",
+    "scripts/macos_installer.py": "c1b49745d1e8ac6ed8b1b70de1a6a8e63e043df14f2881bf146d0b72e96af62c",
+    "scripts/macos_package_archive.py": "26e3eba94b58b6010af47670acb798e289a05aef1e9b23c4cdfd59e25b9326c0",
+    "scripts/test_macos_installer.py": "ca47338dafb99140226c248e2b91b12437f404cb974cdcad6dfe1fc09f216a4b",
+    "scripts/test_macos_package_archive.py": "e2a42f22f909565a4dfd770b1f204e5db78c531277f5d30e44634b9c27d05989",
+    "scripts/test-macos-installer-lifecycle.py": "430d14982d24982d4b1255066104b52fbe53cab6d0f587198a08724ae7ffe42b",
+    "scripts/sbom.py": "80adc50c84ea2b4f6911c60b9b74186b2909ec53cc32da83e08f2e97a5ef8d59",
+    "scripts/test_sbom.py": "c74d4568c14ff9f682e6425084359d8ffb4799dd092b953f101f477763de2a3b",
+    ".github/workflows/macos-installer.yml": "7dfce1c8d3dc68e5140fadee81a6af88f11cfc5a350e7ea5fad6cb40e6e460bc",
+    ".github/workflows/ci.yml": "8072b7430157f18dd2406496e822675b132eac6e40852c9415090b05fb39ff77"
+  },
+  "providerArtifacts": [
+    {
+      "name": "macos-installer-inspection-amd64",
+      "id": 13238334274,
+      "bytes": 7100543,
+      "sha256": "43b2a8b9812512ce606114d3fffe7f2b7983f4a7eaec4ea685bc4be45b6e5ee5"
+    },
+    {
+      "name": "macos-installer-inspection-arm64",
+      "id": 13237799527,
+      "bytes": 6650857,
+      "sha256": "30078bd7e948d6be39c949a1a6102beea468801d6015ba9e9918c57e24145ae1"
+    }
+  ],
+  "targets": [
+    {
+      "target": "darwin/amd64",
+      "verifiedCryptographicProvenance": {
+        "schemaVersion": 1,
+        "repository": "Yunushan/accessweaver",
+        "workflow": "Yunushan/accessweaver/.github/workflows/macos-installer.yml",
+        "sourceCommit": "1f49835b03bf4dbceaf9c6a57f76da50ebbeb657",
+        "sourceRef": "refs/heads/main",
+        "target": "darwin/amd64",
+        "subjectsVerified": 7,
+        "hostedRunnerRequired": true,
+        "authenticatedBeforeParsing": true,
+        "subjects": [
+          {
+            "file": "BUILD-INFO.json",
+            "sha256": "d2d5f9e43bcc75fb7c882b9d175795889e2e87cb52dc6c5cc3782c095381a7d6"
+          },
+          {
+            "file": "INSTALL-MANIFEST.json",
+            "sha256": "bda8842c9548bf17954baaf8c2fe9c65cf673f1294e1b75b545e5c422b4ec42c"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg",
+            "sha256": "9f51efab8d53d13eef321ee5926020480af8b79b06d8bbbf5c347c05cbac616f"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg.cdx.json",
+            "sha256": "99ad7f59913b17200aa6cac2bc1d03cbc3f9315688e40c849517157f23103079"
+          },
+          {
+            "file": "compiler-artifact.json",
+            "sha256": "d1c322705f61e5a5d00afa1bafd75d3f7c8b5100275abee0970a633338abb74b"
+          },
+          {
+            "file": "lifecycle-artifact.json",
+            "sha256": "26cff25e4f93de8652cfaba8afd23315752a09eb1e5b1013682634fe69ef17e1"
+          },
+          {
+            "file": "payload-SBOM.cdx.json",
+            "sha256": "ebdbfbf8ced3f5838d6fc714aecbdb0d0be1ffb04c78242f7e41356cfd0ca313"
+          }
+        ],
+        "package": {
+          "packageSHA256": "9f51efab8d53d13eef321ee5926020480af8b79b06d8bbbf5c347c05cbac616f",
+          "payloadSHA256": "a230db6760cd7db06e0d2a4b3b501b7bea5eff57d66d7d2cbee803f563da773d",
+          "macho": {
+            "cpuType": "0x01000007",
+            "minimumOSVersion": "13.0.0"
+          },
+          "isolatedRefusalCases": 8,
+          "nativeInstallationOperations": 3
+        },
+        "publisherSignatureVerified": false,
+        "notarized": false,
+        "productionQualificationComplete": false,
+        "localTargetExecution": false,
+        "rejectionChecks": {
+          "rejected": [
+            "--source-digest",
+            "--source-ref",
+            "--signer-workflow",
+            "--repo",
+            "changed-subject-digest"
+          ],
+          "realBundleVerifiedBeforeAndAfter": true
+        }
+      },
+      "provenanceBundleSHA256": "6c6ab83bde6370d980ad0bd3442cb43ae22c95a364885d9f68d05c96880ae451",
+      "compilerReport": {
+        "schemaVersion": 1,
+        "sourceCommit": "1f49835b03bf4dbceaf9c6a57f76da50ebbeb657",
+        "sourceState": "clean",
+        "target": "darwin/amd64",
+        "payloadBuild": {
+          "version": "0.1.0-alpha",
+          "commit": "1f49835b03bf4dbceaf9c6a57f76da50ebbeb657",
+          "sourceState": "clean",
+          "builtAt": "2026-11-03T14:29:36Z",
+          "goVersion": "go1.27.3",
+          "platform": "darwin",
+          "arch": "amd64"
+        },
+        "payloadSHA256": "a230db6760cd7db06e0d2a4b3b501b7bea5eff57d66d7d2cbee803f563da773d",
+        "macho": {
+          "cpuType": "0x01000007",
+          "minimumOSVersion": "13.0.0"
+        },
+        "packageFile": "accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg",
+        "packageSHA256": "9f51efab8d53d13eef321ee5926020480af8b79b06d8bbbf5c347c05cbac616f",
+        "packageBytes": 7096425,
+        "bundleManifestSHA256": "bda8842c9548bf17954baaf8c2fe9c65cf673f1294e1b75b545e5c422b4ec42c",
+        "bundleInfoSHA256": "0678673fdf2d5abf3e8e64f324de56d87b8b5f5698dacfc10125429bde5f57c6",
+        "preinstallSHA256": "36048056014ce5c4d083d06c407630ece19514a3986673f1da8f6cce98bfdad9",
+        "pkgbuild": {
+          "name": "Apple pkgbuild",
+          "sha256": "aeb329f33f1b37f6719356d720d72db935d5b9456ebc0d64b07688be5d9abc52",
+          "osVersion": "15.7.9",
+          "osBuild": "24G830"
+        },
+        "nativePayloadIdentityVerified": true,
+        "actualExpandedPayloadVerified": true,
+        "archiveInspection": {
+          "packageSHA256": "9f51efab8d53d13eef321ee5926020480af8b79b06d8bbbf5c347c05cbac616f",
+          "payloadSHA256": "a230db6760cd7db06e0d2a4b3b501b7bea5eff57d66d7d2cbee803f563da773d",
+          "bundleInfoSHA256": "0678673fdf2d5abf3e8e64f324de56d87b8b5f5698dacfc10125429bde5f57c6",
+          "bundleManifestSHA256": "bda8842c9548bf17954baaf8c2fe9c65cf673f1294e1b75b545e5c422b4ec42c",
+          "preinstallSHA256": "36048056014ce5c4d083d06c407630ece19514a3986673f1da8f6cce98bfdad9",
+          "macho": {
+            "cpuType": "0x01000007",
+            "minimumOSVersion": "13.0.0"
+          },
+          "payloadFiles": 18,
+          "payloadDirectories": 8,
+          "allPayloadPathsModesOwnershipAndHashesVerified": true,
+          "xarAndCpioIntegrityVerified": true,
+          "localTargetExecution": false,
+          "publisherSignatureVerified": false,
+          "productionQualificationComplete": false
+        },
+        "bundleRelocationDisabled": true,
+        "unsigned": true,
+        "publisherSignatureVerified": false,
+        "notarized": false,
+        "experimentalCleanInstallOnly": true,
+        "installationExecuted": false,
+        "upgradeQualified": false,
+        "downgradeQualified": false,
+        "finderInteractionQualified": false,
+        "managedEndpointQualified": false,
+        "productionQualificationComplete": false
+      },
+      "lifecycleReport": {
+        "schemaVersion": 2,
+        "sourceCommit": "1f49835b03bf4dbceaf9c6a57f76da50ebbeb657",
+        "runID": "41654216983",
+        "target": "darwin/amd64",
+        "packageSHA256": "9f51efab8d53d13eef321ee5926020480af8b79b06d8bbbf5c347c05cbac616f",
+        "payloadSHA256": "a230db6760cd7db06e0d2a4b3b501b7bea5eff57d66d7d2cbee803f563da773d",
+        "operations": [
+          {
+            "operation": "clean-install",
+            "exitCode": 0,
+            "elapsedMilliseconds": 2414,
+            "payloadAndReceiptsVerified": true
+          },
+          {
+            "operation": "existing-install-refused",
+            "exitCode": 1,
+            "elapsedMilliseconds": 1483,
+            "installedFilesAndReceiptBytesPreserved": true,
+            "actualUserProfilePreserved": true
+          },
+          {
+            "operation": "valid-receipt-only-refused",
+            "exitCode": 1,
+            "elapsedMilliseconds": 1337,
+            "receiptBytesPreserved": true,
+            "appNotRecreated": true,
+            "actualUserProfilePreserved": true
+          }
+        ],
+        "preflightRefusalCases": [
+          {
+            "name": "existing-app-directory",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1959,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "existing-app-file",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1384,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "existing-app-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1532,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "dangling-app-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1344,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "partial-plist-receipt",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1329,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "partial-bom-receipt",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1370,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "plist-receipt-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1353,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "bom-receipt-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1387,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          }
+        ],
+        "passed": true,
+        "stage": "owned-fixture-cleanup",
+        "failureType": null,
+        "failureSourceLine": null,
+        "cleanInstallExecuted": true,
+        "actualUserProfilePreservationVerified": true,
+        "ownedFixturesRemoved": true,
+        "unsigned": true,
+        "publisherSignatureVerified": false,
+        "notarized": false,
+        "upgradeQualified": false,
+        "downgradeQualified": false,
+        "productUninstallQualified": false,
+        "finderInteractionQualified": false,
+        "managedEndpointQualified": false,
+        "rebootOrPowerLossQualified": false,
+        "productionQualificationComplete": false
+      },
+      "independentActualPackageInspection": {
+        "packageSHA256": "9f51efab8d53d13eef321ee5926020480af8b79b06d8bbbf5c347c05cbac616f",
+        "payloadSHA256": "a230db6760cd7db06e0d2a4b3b501b7bea5eff57d66d7d2cbee803f563da773d",
+        "bundleInfoSHA256": "0678673fdf2d5abf3e8e64f324de56d87b8b5f5698dacfc10125429bde5f57c6",
+        "bundleManifestSHA256": "bda8842c9548bf17954baaf8c2fe9c65cf673f1294e1b75b545e5c422b4ec42c",
+        "preinstallSHA256": "36048056014ce5c4d083d06c407630ece19514a3986673f1da8f6cce98bfdad9",
+        "macho": {
+          "cpuType": "0x01000007",
+          "minimumOSVersion": "13.0.0"
+        },
+        "payloadFiles": 18,
+        "payloadDirectories": 8,
+        "allPayloadPathsModesOwnershipAndHashesVerified": true,
+        "xarAndCpioIntegrityVerified": true,
+        "localTargetExecution": false,
+        "publisherSignatureVerified": false,
+        "productionQualificationComplete": false
+      },
+      "packageSBOMSHA256": "99ad7f59913b17200aa6cac2bc1d03cbc3f9315688e40c849517157f23103079",
+      "payloadSBOMSHA256": "ebdbfbf8ced3f5838d6fc714aecbdb0d0be1ffb04c78242f7e41356cfd0ca313",
+      "sbomGraphAndSubjectsVerified": true,
+      "localTargetExecution": false
+    },
+    {
+      "target": "darwin/arm64",
+      "verifiedCryptographicProvenance": {
+        "schemaVersion": 1,
+        "repository": "Yunushan/accessweaver",
+        "workflow": "Yunushan/accessweaver/.github/workflows/macos-installer.yml",
+        "sourceCommit": "1f49835b03bf4dbceaf9c6a57f76da50ebbeb657",
+        "sourceRef": "refs/heads/main",
+        "target": "darwin/arm64",
+        "subjectsVerified": 7,
+        "hostedRunnerRequired": true,
+        "authenticatedBeforeParsing": true,
+        "subjects": [
+          {
+            "file": "BUILD-INFO.json",
+            "sha256": "1f8d3499283a5278cabd85f4787232507aeebb63a3d07908c0781b76ff99ed78"
+          },
+          {
+            "file": "INSTALL-MANIFEST.json",
+            "sha256": "44f235ab29d18f404617bb24a4b13c38c8f48d675d76c6407e94d3802fc31e42"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg",
+            "sha256": "56fd02a2fe872acd20fd94e22fa24b7b2a3ed26a3e7f7c835479d2fb715ae079"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg.cdx.json",
+            "sha256": "0c7b14cea3591f019b4b07cd71d397d25c9cdd4104a7b3e67237be3f01336e87"
+          },
+          {
+            "file": "compiler-artifact.json",
+            "sha256": "f00e07dc9fdf1836efd58ad157897badbb3daf8cbba6f262c10bb31c8639293b"
+          },
+          {
+            "file": "lifecycle-artifact.json",
+            "sha256": "0f42a42865c9fd8e3acb6056e8fc5b2eaa6900593906db5881eeb71d0e347c60"
+          },
+          {
+            "file": "payload-SBOM.cdx.json",
+            "sha256": "f34cee9351bd50dcaa2d1cca0dcc5c7894d17740609d13f1453c1d4fab8c60ce"
+          }
+        ],
+        "package": {
+          "packageSHA256": "56fd02a2fe872acd20fd94e22fa24b7b2a3ed26a3e7f7c835479d2fb715ae079",
+          "payloadSHA256": "2b96a1a9bd6a155f4c8636303dfb8cc8cd016d901f2caa5ab41a9c09f028da6c",
+          "macho": {
+            "cpuType": "0x0100000c",
+            "minimumOSVersion": "13.0.0"
+          },
+          "isolatedRefusalCases": 8,
+          "nativeInstallationOperations": 3
+        },
+        "publisherSignatureVerified": false,
+        "notarized": false,
+        "productionQualificationComplete": false,
+        "localTargetExecution": false,
+        "rejectionChecks": {
+          "rejected": [
+            "--source-digest",
+            "--source-ref",
+            "--signer-workflow",
+            "--repo",
+            "changed-subject-digest"
+          ],
+          "realBundleVerifiedBeforeAndAfter": true
+        }
+      },
+      "provenanceBundleSHA256": "6748ff1580aaf166b039d7966a149ba583d4866d85509ea674db5b40ab60b63f",
+      "compilerReport": {
+        "schemaVersion": 1,
+        "sourceCommit": "1f49835b03bf4dbceaf9c6a57f76da50ebbeb657",
+        "sourceState": "clean",
+        "target": "darwin/arm64",
+        "payloadBuild": {
+          "version": "0.1.0-alpha",
+          "commit": "1f49835b03bf4dbceaf9c6a57f76da50ebbeb657",
+          "sourceState": "clean",
+          "builtAt": "2026-11-03T14:29:36Z",
+          "goVersion": "go1.27.3",
+          "platform": "darwin",
+          "arch": "arm64"
+        },
+        "payloadSHA256": "2b96a1a9bd6a155f4c8636303dfb8cc8cd016d901f2caa5ab41a9c09f028da6c",
+        "macho": {
+          "cpuType": "0x0100000c",
+          "minimumOSVersion": "13.0.0"
+        },
+        "packageFile": "accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg",
+        "packageSHA256": "56fd02a2fe872acd20fd94e22fa24b7b2a3ed26a3e7f7c835479d2fb715ae079",
+        "packageBytes": 6647917,
+        "bundleManifestSHA256": "44f235ab29d18f404617bb24a4b13c38c8f48d675d76c6407e94d3802fc31e42",
+        "bundleInfoSHA256": "0678673fdf2d5abf3e8e64f324de56d87b8b5f5698dacfc10125429bde5f57c6",
+        "preinstallSHA256": "36048056014ce5c4d083d06c407630ece19514a3986673f1da8f6cce98bfdad9",
+        "pkgbuild": {
+          "name": "Apple pkgbuild",
+          "sha256": "9fa7537c284dcd0890628d46355442201255c9b509dd5b05374690bfd5fd22b9",
+          "osVersion": "15.8.2",
+          "osBuild": "24H232"
+        },
+        "nativePayloadIdentityVerified": true,
+        "actualExpandedPayloadVerified": true,
+        "archiveInspection": {
+          "packageSHA256": "56fd02a2fe872acd20fd94e22fa24b7b2a3ed26a3e7f7c835479d2fb715ae079",
+          "payloadSHA256": "2b96a1a9bd6a155f4c8636303dfb8cc8cd016d901f2caa5ab41a9c09f028da6c",
+          "bundleInfoSHA256": "0678673fdf2d5abf3e8e64f324de56d87b8b5f5698dacfc10125429bde5f57c6",
+          "bundleManifestSHA256": "44f235ab29d18f404617bb24a4b13c38c8f48d675d76c6407e94d3802fc31e42",
+          "preinstallSHA256": "36048056014ce5c4d083d06c407630ece19514a3986673f1da8f6cce98bfdad9",
+          "macho": {
+            "cpuType": "0x0100000c",
+            "minimumOSVersion": "13.0.0"
+          },
+          "payloadFiles": 18,
+          "payloadDirectories": 8,
+          "allPayloadPathsModesOwnershipAndHashesVerified": true,
+          "xarAndCpioIntegrityVerified": true,
+          "localTargetExecution": false,
+          "publisherSignatureVerified": false,
+          "productionQualificationComplete": false
+        },
+        "bundleRelocationDisabled": true,
+        "unsigned": true,
+        "publisherSignatureVerified": false,
+        "notarized": false,
+        "experimentalCleanInstallOnly": true,
+        "installationExecuted": false,
+        "upgradeQualified": false,
+        "downgradeQualified": false,
+        "finderInteractionQualified": false,
+        "managedEndpointQualified": false,
+        "productionQualificationComplete": false
+      },
+      "lifecycleReport": {
+        "schemaVersion": 2,
+        "sourceCommit": "1f49835b03bf4dbceaf9c6a57f76da50ebbeb657",
+        "runID": "41654216983",
+        "target": "darwin/arm64",
+        "packageSHA256": "56fd02a2fe872acd20fd94e22fa24b7b2a3ed26a3e7f7c835479d2fb715ae079",
+        "payloadSHA256": "2b96a1a9bd6a155f4c8636303dfb8cc8cd016d901f2caa5ab41a9c09f028da6c",
+        "operations": [
+          {
+            "operation": "clean-install",
+            "exitCode": 0,
+            "elapsedMilliseconds": 1275,
+            "payloadAndReceiptsVerified": true
+          },
+          {
+            "operation": "existing-install-refused",
+            "exitCode": 1,
+            "elapsedMilliseconds": 1257,
+            "installedFilesAndReceiptBytesPreserved": true,
+            "actualUserProfilePreserved": true
+          },
+          {
+            "operation": "valid-receipt-only-refused",
+            "exitCode": 1,
+            "elapsedMilliseconds": 1248,
+            "receiptBytesPreserved": true,
+            "appNotRecreated": true,
+            "actualUserProfilePreserved": true
+          }
+        ],
+        "preflightRefusalCases": [
+          {
+            "name": "existing-app-directory",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1989,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "existing-app-file",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1353,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "existing-app-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1311,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "dangling-app-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1302,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "partial-plist-receipt",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1254,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "partial-bom-receipt",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1267,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "plist-receipt-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1294,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "bom-receipt-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1232,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          }
+        ],
+        "passed": true,
+        "stage": "owned-fixture-cleanup",
+        "failureType": null,
+        "failureSourceLine": null,
+        "cleanInstallExecuted": true,
+        "actualUserProfilePreservationVerified": true,
+        "ownedFixturesRemoved": true,
+        "unsigned": true,
+        "publisherSignatureVerified": false,
+        "notarized": false,
+        "upgradeQualified": false,
+        "downgradeQualified": false,
+        "productUninstallQualified": false,
+        "finderInteractionQualified": false,
+        "managedEndpointQualified": false,
+        "rebootOrPowerLossQualified": false,
+        "productionQualificationComplete": false
+      },
+      "independentActualPackageInspection": {
+        "packageSHA256": "56fd02a2fe872acd20fd94e22fa24b7b2a3ed26a3e7f7c835479d2fb715ae079",
+        "payloadSHA256": "2b96a1a9bd6a155f4c8636303dfb8cc8cd016d901f2caa5ab41a9c09f028da6c",
+        "bundleInfoSHA256": "0678673fdf2d5abf3e8e64f324de56d87b8b5f5698dacfc10125429bde5f57c6",
+        "bundleManifestSHA256": "44f235ab29d18f404617bb24a4b13c38c8f48d675d76c6407e94d3802fc31e42",
+        "preinstallSHA256": "36048056014ce5c4d083d06c407630ece19514a3986673f1da8f6cce98bfdad9",
+        "macho": {
+          "cpuType": "0x0100000c",
+          "minimumOSVersion": "13.0.0"
+        },
+        "payloadFiles": 18,
+        "payloadDirectories": 8,
+        "allPayloadPathsModesOwnershipAndHashesVerified": true,
+        "xarAndCpioIntegrityVerified": true,
+        "localTargetExecution": false,
+        "publisherSignatureVerified": false,
+        "productionQualificationComplete": false
+      },
+      "packageSBOMSHA256": "0c7b14cea3591f019b4b07cd71d397d25c9cdd4104a7b3e67237be3f01336e87",
+      "payloadSBOMSHA256": "f34cee9351bd50dcaa2d1cca0dcc5c7894d17740609d13f1453c1d4fab8c60ce",
+      "sbomGraphAndSubjectsVerified": true,
+      "localTargetExecution": false
+    }
+  ],
+  "nativePackageProvenanceAuthenticated": true,
+  "independentlyAuthenticatedSubjects": 14,
+  "realProvenanceRejectionChecksPerTarget": 5,
+  "independentVerificationTool": {
+    "name": "GitHub CLI",
+    "version": "gh version 2.102.0 (2026-09-30)",
+    "sha256": "756724853cc579510b58e65e7a7429ad6b1af29cf99ef19b3a95f3b701c5c580",
+    "authenticodeStatus": "Valid",
+    "publisher": "CN=\"GitHub, Inc.\", O=\"GitHub, Inc.\", L=San Francisco, S=California, C=US",
+    "candidateExecutablesRun": false
+  },
+  "unsigned": true,
+  "cleanInstallationQualifiedForDisposableHosts": true,
+  "isolatedAppAndPartialReceiptRefusalVerified": true,
+  "validReceiptOnlyRefusalVerified": true,
+  "existingInstallRefusalAndPreservationVerified": true,
+  "publisherSigningComplete": false,
+  "notarizationComplete": false,
+  "upgradeQualified": false,
+  "downgradeQualified": false,
+  "productUninstallQualified": false,
+  "finderInteractionQualified": false,
+  "ordinaryManagedUserSessionQualified": false,
+  "managedEndpointQualificationComplete": false,
+  "rebootOrPowerLossQualified": false,
+  "nativeSystemDependencyClosureComplete": false,
+  "productionQualificationComplete": false,
+  "readinessGatesPromoted": 0
+}
