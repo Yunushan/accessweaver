@@ -42,7 +42,10 @@ def snapshot_receipts():
 def fixture_snapshot(path):
     # Leaf aliases are deliberate refusal fixtures; ancestors never may be.
     no_alias(path.parent);info=path.lstat()
-    require(info.st_uid==0 and info.st_gid==0 and (info.st_nlink==1 or stat.S_ISDIR(info.st_mode)) and info.st_size<=4<<20,"Unexpected fixed fixture ownership/type")
+    # macOS creates objects with their parent directory's group. These are
+    # root-owned refusal fixtures, not installed root:wheel payload files.
+    # Capture the actual group and require it unchanged across refusal.
+    require(info.st_uid==0 and info.st_gid in (0,path.parent.stat().st_gid) and (info.st_nlink==1 or stat.S_ISDIR(info.st_mode)) and info.st_size<=4<<20,"Unexpected fixed fixture ownership/type")
     value={"inode":info.st_ino,"mode":info.st_mode,"uid":info.st_uid,"gid":info.st_gid}
     if stat.S_ISLNK(info.st_mode):value["target"]=os.readlink(path)
     elif stat.S_ISDIR(info.st_mode):
@@ -76,6 +79,8 @@ def preflight_refusals(package,capsule,environment,marker,results):
         if kind=="directory":run(["/usr/bin/sudo","-n","/bin/mkdir","-m","755",path],environment)
         elif kind=="file":run(["/usr/bin/sudo","-n","/bin/cp",source,path],environment)
         else:run(["/usr/bin/sudo","-n","/bin/ln","-s",target if kind=="symlink" else capsule/"absent-alias-target",path],environment)
+        observed=path.lstat()
+        results[-1].update({"fixtureUID":observed.st_uid,"fixtureGID":observed.st_gid,"parentGID":path.parent.stat().st_gid})
         before=fixture_snapshot(path)
         refused,elapsed=run(["/usr/bin/sudo","-n","/usr/sbin/installer","-pkg",package,"-target","/"],environment,codes=tuple(range(1,256)))
         require(fixture_snapshot(path)==before,"Refused native package changed existing fixture")
@@ -109,7 +114,7 @@ def main():
     capsule=Path(tempfile.mkdtemp(prefix="accessweaver-macos-installer-",dir=temporary));user=capsule/"user";user.mkdir();private_temp=capsule/"tmp";private_temp.mkdir()
     environment={"PATH":"/usr/bin:/bin:/usr/sbin:/sbin","HOME":str(user),"TMPDIR":str(private_temp),"LANG":"C","LC_ALL":"C","TZ":"UTC","ACCESSWEAVER_NO_BROWSER":"1"}
     marker=user/"preserve.json";marker.write_text('{"preserve":"unrelated"}',encoding="utf-8");marker_hash=digest(marker.read_bytes())
-    complete=False;stage="preflight-refusals";failure=None;operations=[];profile_hash=None;cleaned=False;refusal_cases=[]
+    complete=False;stage="preflight-refusals";failure=None;operations=[];profile_hash=None;cleaned=False;refusal_cases=[];failure_line=None
     try:
         preflight_refusals(package,capsule,environment,marker,refusal_cases)
         stage="install"
@@ -155,8 +160,13 @@ def main():
         require(digest(profile_path.read_bytes())==profile_hash and digest(marker.read_bytes())==marker_hash,"Owned cleanup changed user data")
         require(capsule.resolve().parent==temporary.resolve() and capsule.name.startswith("accessweaver-macos-installer-"),"Unsafe capsule cleanup")
         no_alias(capsule);shutil.rmtree(capsule);cleaned=True;complete=True
-    except Exception as error:failure=type(error).__name__
-    result={"schemaVersion":2,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packageSHA256":report["packageSHA256"],"payloadSHA256":report["payloadSHA256"],"operations":operations,"preflightRefusalCases":refusal_cases,"passed":complete,"stage":stage,"failureType":failure,"cleanInstallExecuted":bool(operations),"actualUserProfilePreservationVerified":complete,"ownedFixturesRemoved":cleaned,"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"upgradeQualified":False,"downgradeQualified":False,"productUninstallQualified":False,"finderInteractionQualified":False,"managedEndpointQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
+    except Exception as error:
+        failure=type(error).__name__
+        trace=error.__traceback__
+        while trace is not None:
+            if trace.tb_frame.f_code.co_filename==__file__:failure_line=trace.tb_lineno
+            trace=trace.tb_next
+    result={"schemaVersion":2,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packageSHA256":report["packageSHA256"],"payloadSHA256":report["payloadSHA256"],"operations":operations,"preflightRefusalCases":refusal_cases,"passed":complete,"stage":stage,"failureType":failure,"failureSourceLine":failure_line,"cleanInstallExecuted":bool(operations),"actualUserProfilePreservationVerified":complete,"ownedFixturesRemoved":cleaned,"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"upgradeQualified":False,"downgradeQualified":False,"productUninstallQualified":False,"finderInteractionQualified":False,"managedEndpointQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
     (output/"lifecycle-artifact.json").write_text(json.dumps(result,indent=2)+"\n",encoding="utf-8")
     require(complete,"Disposable native package acceptance failed at "+stage+"; owned fixture retained on disposable host")
     print(json.dumps({"target":result["target"],"cleanInstallAndExistingRefusalPassed":True,"preflightRefusalCases":len(refusal_cases),"productionQualificationComplete":False}))
