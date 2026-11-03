@@ -81,7 +81,7 @@ function Invoke-PrivateStartup([string]$binary,[string[]]$arguments,[string]$pro
     try {
         foreach($entry in Get-ChildItem Env:){[Environment]::SetEnvironmentVariable($entry.Name,$null,'Process')}
         foreach($name in $allowed.Keys){[Environment]::SetEnvironmentVariable($name,$allowed[$name],'Process')}
-        return (Native $binary $arguments @(0,5,87,126,-532462766,-1073741515,-1073741701) -Secret -Timeout 30)
+        return (Native $binary $arguments ((0..255)+@(-532462766,-1073741515,-1073741701)) -Secret -Timeout 30)
     } finally {
         foreach($entry in Get-ChildItem Env:){[Environment]::SetEnvironmentVariable($entry.Name,$null,'Process')}
         foreach($name in $saved.Keys){[Environment]::SetEnvironmentVariable($name,$saved[$name],'Process')}
@@ -115,9 +115,12 @@ try {
         $stage='process-'+$engine;$clock=[Diagnostics.Stopwatch]::StartNew();$result=Invoke-PrivateStartup $binary $arguments $profile;$clock.Stop();$elapsed=$clock.ElapsedMilliseconds
         $stage='result-'+$engine
         $startupDiagnostic=@{engine=$engine;exitCode=$result.exitCode;outputComplete=$result.outputComplete;stdoutCharacters=$result.stdout.Length;stderrCharacters=$result.stderr.Length;loaderFailureClass='none'}
+        $startupDiagnostic.mixedModeDependencyMarker=(($result.stdout+$result.stderr) -match 'socksify|Socksifier|mixed.mode')
+        $startupDiagnostic.configurationDependencyMarker=(($result.stdout+$result.stderr) -match 'ProxiFyre[.]Configuration')
         if($result.stderr -match 'could not establish its secure native dependency loading policy'){$startupDiagnostic.loaderFailureClass='native-loader-policy'}
         elseif(($result.stdout+$result.stderr) -match 'Could not load file or assembly|FileNotFoundException|BadImageFormatException'){$startupDiagnostic.loaderFailureClass='assembly-load'}
         elseif(($result.stdout+$result.stderr) -match 'You must install|framework.*not found|MSVCP|VCRUNTIME'){$startupDiagnostic.loaderFailureClass='runtime-missing'}
+        elseif(($result.stdout+$result.stderr) -match 'administrator privileges|Administrator console'){$startupDiagnostic.loaderFailureClass='privilege-denial'}
         Require ($result.exitCode -eq 0 -and $result.outputComplete -and $elapsed -le 30000) 'Vendor startup did not complete within its bound'
         $matched=switch($engine){'proxifyre' {$result.stdout -match '(?i)help' -and $result.stdout -match '(?i)install' -and $result.stdout -match '(?i)uninstall'} 'wgcf' {$result.stdout -match 'wgcf is a utility' -and $result.stdout -match 'Available Commands:'} 'dnscrypt' {$result.stdout.Trim() -ceq $pin.version}}
         $stage='output-'+$engine
@@ -127,7 +130,11 @@ try {
         $records+=@{engine=$engine;version=$pin.version;asset=$pin.asset;assetSHA256=$pin.sha256;binarySHA256=$pin.binarySHA256;coffMachine=$plan.machine;discoverySelectedPinnedExecutable=$true;helpOrVersionPassed=$true;exitCode=$result.exitCode;outputComplete=$result.outputComplete;elapsedMilliseconds=$elapsed;deadlineMilliseconds=30000;childEnvironmentSanitized=$true}
     }
     $stage='service-comparison';Require ((Service-Snapshot) -ceq $before) 'Relevant service state changed during help/version probes'
-} catch {$failure=$true;$failureType=$_.Exception.GetType().FullName;if($_.Exception.InnerException){$failureInnerType=$_.Exception.InnerException.GetType().FullName}}
+} catch {
+    $failure=$true;$failureType=$_.Exception.GetType().FullName
+    if($_.Exception.InnerException){$failureInnerType=$_.Exception.InnerException.GetType().FullName}
+    if($_.Exception.Message -match '^Tool failed: (ProxiFyre|wgcf|dnscrypt-proxy)[.]exe [(]exit (-?[0-9]+)[)]$'){$startupDiagnostic=@{toolExitCode=[int]$Matches[2]}}
+}
 finally {
     $resolved=[IO.Path]::GetFullPath($capsule)
     Require ((Split-Path -Parent $resolved) -ieq $temporary -and (Split-Path -Leaf $resolved) -match '^accessweaver-vendor-preflight-[a-f0-9]{32}$') 'Refusing unexpected capsule cleanup target'
