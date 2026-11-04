@@ -64,6 +64,12 @@ func (r *removalIntentStore) removeNextProtectedObjectUsing(ctx context.Context,
 		return zero, errors.Join(e, errors.New("removal progress changed during reconciliation"))
 	}
 	if journal.completed >= limit {
+		if e = r.syncObservedRemovalJournal(raw); e != nil {
+			return zero, e
+		}
+		if bounded.Err() != nil {
+			return zero, errors.New("protected object completion deadline exceeded")
+		}
 		return removalProgress{limit, limit}, nil
 	}
 	if bounded.Err() != nil {

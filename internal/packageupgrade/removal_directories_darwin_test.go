@@ -13,7 +13,7 @@ import (
 	"testing"
 )
 
-const ownedRemovalDirectoryCaseCount = 22
+const ownedRemovalDirectoryCaseCount = 25
 
 func retainedRemovalDirectorySnapshot(t *testing.T, f *ownedRemovalTargetFixture) []byte {
 	t.Helper()
@@ -56,7 +56,7 @@ func completeOwnedRemovalObjects(t *testing.T, f *ownedRemovalTargetFixture) {
 }
 func exerciseOwnedRemovalDirectoryTransactions(t *testing.T, privateBase string) {
 	t.Helper()
-	cases := []string{"complete", "intent-fault", "unlink-fault", "parent-sync-fault", "done-fault", "root-unlink-fault", "partial-intent", "partial-done", "missing-unrecorded-directory", "directory-mode", "replaced-directory", "directory-alias", "replaced-root", "root-alias", "extra-receipt-after-root-removal", "nonempty-directory", "recreated-completed-directory", "missing-other-pending", "extra-core-after-root-removal", "extra-incoming-after-root-removal", "cancelled", "file-phase-retry"}
+	cases := []string{"complete", "intent-fault", "unlink-fault", "parent-sync-fault", "done-fault", "root-unlink-fault", "partial-intent", "partial-done", "missing-unrecorded-directory", "directory-mode", "replaced-directory", "directory-alias", "replaced-root", "root-alias", "extra-receipt-after-root-removal", "nonempty-directory", "recreated-completed-directory", "missing-other-pending", "extra-core-after-root-removal", "extra-incoming-after-root-removal", "cancelled", "file-phase-retry", "completed-file-sync-refusal", "completed-state-sync-refusal", "file-prefix-preserves-directory-tail"}
 	if len(cases) != ownedRemovalDirectoryCaseCount {
 		t.Fatal("directory case count differs")
 	}
@@ -222,6 +222,70 @@ func exerciseOwnedRemovalDirectoryTransactions(t *testing.T, privateBase string)
 				cancel()
 				ctx = cancelled
 				refusal = true
+			case "completed-file-sync-refusal", "completed-state-sync-refusal":
+				step()
+				step()
+				step()
+				syncPhase := "removal-journal-before-file-sync"
+				if kind == "completed-state-sync-refusal" {
+					syncPhase = "removal-journal-before-directory-sync"
+				}
+				failures := 0
+				f.store.observe = func(phase string) error {
+					if phase != syncPhase {
+						return nil
+					}
+					_, _, j, e := readRemovalJournalAt(f.store.current, 0, removalJournalSeed(f.intent.fence), 6)
+					if e != nil {
+						return e
+					}
+					if j.completed == 6 && !j.pending {
+						failures++
+						return errors.New("owned completion sync unavailable")
+					}
+					return nil
+				}
+				got, e := f.intent.removeNextProtectedObjectUsing(ctx, f.resolve, false)
+				f.store.observe = nil
+				if e == nil || got != (removalProgress{}) || failures != 1 {
+					t.Fatal("failed completion sync was acknowledged", got, e, failures)
+				}
+				reopenOwnedRemovalFileIntent(t, f)
+				before := ownedRemovalTargetSnapshot(t, f.base)
+				attempts := 0
+				f.store.observe = func(phase string) error {
+					if phase == syncPhase {
+						attempts++
+						return errors.New("owned retry sync still unavailable")
+					}
+					return nil
+				}
+				got, e = f.intent.removeNextProtectedObjectUsing(ctx, f.resolve, false)
+				f.store.observe = nil
+				if e == nil || got != (removalProgress{}) || attempts != 1 {
+					t.Fatal("readable completion bypassed required sync", got, e, attempts)
+				}
+				if !bytes.Equal(before, ownedRemovalTargetSnapshot(t, f.base)) {
+					t.Fatal("completion sync refusal changed data")
+				}
+			case "file-prefix-preserves-directory-tail":
+				partial()
+				before := ownedRemovalTargetSnapshot(t, f.base)
+				fileSyncs, stateSyncs := 0, 0
+				f.store.observe = func(phase string) error {
+					if phase == "removal-journal-before-file-sync" {
+						fileSyncs++
+					}
+					if phase == "removal-journal-before-directory-sync" {
+						stateSyncs++
+					}
+					return nil
+				}
+				got, e := f.intent.removeNextProtectedFileUsing(ctx, f.resolve)
+				f.store.observe = nil
+				if e != nil || got != (removalProgress{2, 2}) || fileSyncs != 1 || stateSyncs != 1 || !bytes.Equal(before, ownedRemovalTargetSnapshot(t, f.base)) {
+					t.Fatal("file prefix acknowledgment changed the partial directory record", got, e, fileSyncs, stateSyncs)
+				}
 			case "file-phase-retry":
 				step()
 				before := ownedRemovalTargetSnapshot(t, f.base)

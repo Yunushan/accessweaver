@@ -102,7 +102,7 @@ def validate_deployment_transactions(deployment,manifest_hash,payload_hash,versi
     require(type(deployment.get("intactTargetCaseCount")) is int and deployment["intactTargetCaseCount"]==16,"Native intact target verification case count differs")
     require(type(deployment.get("protectedFileJournalCaseCount")) is int and deployment["protectedFileJournalCaseCount"]==18,"Native protected file journal case count differs")
     require(type(deployment.get("protectedFileSIGKILLCaseCount")) is int and deployment["protectedFileSIGKILLCaseCount"]==4,"Native protected file SIGKILL case count differs")
-    require(type(deployment.get("protectedDirectoryJournalCaseCount")) is int and deployment["protectedDirectoryJournalCaseCount"]==22,"Native protected directory journal case count differs")
+    require(type(deployment.get("protectedDirectoryJournalCaseCount")) is int and deployment["protectedDirectoryJournalCaseCount"]==25,"Native protected directory journal case count differs")
     require(type(deployment.get("protectedDirectorySIGKILLCaseCount")) is int and deployment["protectedDirectorySIGKILLCaseCount"]==8,"Native protected directory SIGKILL case count differs")
     directory_killed=deployment.get("protectedDirectorySIGKILLCases")
     directory_phases=["removal-directory-intent-durable","removal-directory-unlinked","removal-directory-parent-durable","removal-directory-done-durable"]

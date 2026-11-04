@@ -42,7 +42,20 @@ func readRemovalJournalAt(dir *os.File, owner uint32, seed string, actions int) 
 // Persist/repair only an exact recognized chain. A partial suffix cannot grant
 // an action. Sync succeeds before any payload unlink is attempted. Even an
 // existing complete pending record is re-synced on restart.
-func (r *removalIntentStore) persistRemovalJournal(expected []byte, appendRecord bool) (raw []byte, journal removalJournal, result error) {
+func (r *removalIntentStore) persistRemovalJournal(expected []byte, appendRecord bool) ([]byte, removalJournal, error) {
+	return r.persistRemovalJournalMode(expected, appendRecord, false)
+}
+
+// A complete readable record may have survived a failed sync. Acknowledgment
+// must sync it again without appending or trimming a later partial record.
+func (r *removalIntentStore) syncObservedRemovalJournal(expected []byte) error {
+	_, _, e := r.persistRemovalJournalMode(expected, false, true)
+	return e
+}
+func (r *removalIntentStore) persistRemovalJournalMode(expected []byte, appendRecord, preserveTail bool) (raw []byte, journal removalJournal, result error) {
+	if preserveTail && appendRecord {
+		return nil, journal, errors.New("invalid removal journal persistence mode")
+	}
 	if e := r.verifyIntentMetadata(); e != nil {
 		return nil, journal, e
 	}
@@ -57,6 +70,9 @@ func (r *removalIntentStore) persistRemovalJournal(expected []byte, appendRecord
 	}
 	var file *os.File
 	created := st.Ino == 0
+	if preserveTail && created {
+		return nil, removalJournal{}, errors.New("cannot acknowledge absent removal progress")
+	}
 	if created {
 		file, e = darwintrust.CreateRegularAt(r.store.current, removalJournalName, 0)
 		if e == nil {
@@ -85,7 +101,10 @@ func (r *removalIntentStore) persistRemovalJournal(expected []byte, appendRecord
 	}
 	raw = append([]byte{}, actual[:journal.validBytes]...)
 	// Truncate only a verified exact prefix of the next canonical record.
-	if len(journal.tail) > 0 {
+	if preserveTail {
+		raw = append([]byte{}, actual...)
+	}
+	if len(journal.tail) > 0 && !preserveTail {
 		if e = file.Truncate(int64(journal.validBytes)); e != nil {
 			return nil, removalJournal{}, e
 		}
@@ -104,11 +123,17 @@ func (r *removalIntentStore) persistRemovalJournal(expected []byte, appendRecord
 		}
 		raw = append(raw, line...)
 	}
+	if e = r.store.phase("removal-journal-before-file-sync"); e != nil {
+		return nil, removalJournal{}, e
+	}
 	if e = fullDeploymentSync(file); e != nil {
 		return nil, removalJournal{}, e
 	}
 	// A prior attempt may have created this name but failed its directory sync.
 	// Re-sync the containing state directory on every retry before unlinking.
+	if e = r.store.phase("removal-journal-before-directory-sync"); e != nil {
+		return nil, removalJournal{}, e
+	}
 	if e = fullDeploymentSync(r.store.current); e != nil {
 		return nil, removalJournal{}, e
 	}
