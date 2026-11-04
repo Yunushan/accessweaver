@@ -5,6 +5,7 @@ package packageupgrade
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"syscall"
 
@@ -72,7 +73,7 @@ func openRemovalAuthorityAt(parent *os.File, owner uint32) (*deploymentStore, er
 		return fail(errors.New("removal coordination file is not empty"))
 	}
 	if e = unix.Flock(int(s.lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); e != nil {
-		return fail(errors.New("removal writer is busy"))
+		return fail(fmt.Errorf("removal writer lease refused: %w", e))
 	}
 	if e = s.checkRoot(); e != nil {
 		return fail(e)
@@ -82,7 +83,7 @@ func openRemovalAuthorityAt(parent *os.File, owner uint32) (*deploymentStore, er
 		return fail(e)
 	}
 	if e = unix.Flock(int(s.runtimeLock.Fd()), unix.LOCK_EX|unix.LOCK_NB); e != nil {
-		return fail(errors.New("removal runtime lease is busy"))
+		return fail(fmt.Errorf("removal runtime lease refused: %w", e))
 	}
 	s.versions, e = deploymentDirectory(s.root, "versions", owner, false)
 	if e != nil {

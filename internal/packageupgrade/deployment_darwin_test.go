@@ -813,11 +813,11 @@ func TestDarwinDeploymentRootCopyRecovery(t *testing.T) {
 		t.Fatal(e)
 	}
 
-	var killedProcessCases, killedDirectoryCases, killedQuarantineCases, killedAppCases []map[string]any
-	// Every suite creates independent targets-N capsules below the protected
-	// bridge. The grouping joins all workers before report/parent cleanup.
-	// Keep the same total 120-second test deadline and all operation deadlines;
-	// the native driver limits parallel subtests to four workers.
+	// Non-spawning suites use independent targets-N capsules and join before
+	// any child is started. Fork can duplicate a reference to an existing flock
+	// until exec closes it; an unrelated child must not hold another fixture's
+	// lease while that fixture checks immediate close/reopen behavior.
+	// Keep the same total 120-second deadline and all operation deadlines.
 	if !t.Run("owned-removal-groups", func(t *testing.T) {
 		t.Run("preparation-intact-files", func(t *testing.T) {
 			t.Parallel()
@@ -834,16 +834,13 @@ func TestDarwinDeploymentRootCopyRecovery(t *testing.T) {
 			t.Parallel()
 			exerciseOwnedQuarantinedAppRemoval(t, bridgeParent)
 		})
-		t.Run("actual-process-kills", func(t *testing.T) {
-			t.Parallel()
-			killedProcessCases = exerciseOwnedRemovalKilledProcesses(t, bridgeParent)
-			killedDirectoryCases = exerciseOwnedRemovalKilledDirectories(t, bridgeParent)
-			killedQuarantineCases = exerciseOwnedRemovalKilledQuarantine(t, bridgeParent)
-			killedAppCases = exerciseOwnedQuarantinedAppKilledProcesses(t, bridgeParent)
-		})
 	}) {
 		t.Fatal("owned removal acceptance did not complete")
 	}
+	killedProcessCases := exerciseOwnedRemovalKilledProcesses(t, bridgeParent)
+	killedDirectoryCases := exerciseOwnedRemovalKilledDirectories(t, bridgeParent)
+	killedQuarantineCases := exerciseOwnedRemovalKilledQuarantine(t, bridgeParent)
+	killedAppCases := exerciseOwnedQuarantinedAppKilledProcesses(t, bridgeParent)
 
 	report := map[string]any{"schemaVersion": 1, "manifestSHA256": identity.ManifestSHA256, "payloadSHA256": identity.PayloadSHA256, "version": identity.Version, "fixedProtectedParentVerified": true, "partialCopyPreservedAndRefused": true, "completeCopyRecovered": true, "concurrentPreparationFenced": true, "postPublicationRemovalRecovered": true, "oldCompleteSlotFencedAfterRemoval": true, "restoredRetryVerified": true, "payloadIsIndependentCopy": true, "detachedManifestPartialCopyPreservedAndRefused": true, "detachedManifestCompleteCopyRecovered": true, "detachedPayloadSBOMPartialCopyPreservedAndRefused": true, "legacyToSchema2BridgeVerified": true, "removalPreparationRecoveryVerified": true, "removalPreparationRecoveryCaseCount": ownedRemovalPreparationCaseCount, "intactRemovalTargetsVerified": true, "ownedTargetRefusalsPreserved": true, "intactTargetCaseCount": 16, "protectedFileJournalVerified": true, "protectedFileJournalCaseCount": ownedRemovalFileCaseCount, "protectedFileSIGKILLVerified": true, "protectedFileSIGKILLCaseCount": len(killedProcessCases), "protectedFileSIGKILLCases": killedProcessCases, "publicAppQuarantineSIGKILLVerified": true, "publicAppQuarantineSIGKILLCaseCount": len(killedQuarantineCases), "publicAppQuarantineSIGKILLCases": killedQuarantineCases, "quarantinedAppSIGKILLVerified": true, "quarantinedAppSIGKILLCaseCount": len(killedAppCases), "quarantinedAppSIGKILLCases": killedAppCases, "quarantinedAppRemovalVerified": true, "quarantinedAppRemovalCaseCount": ownedRemovalAppCaseCount, "publicAppQuarantineVerified": true, "publicAppQuarantineCaseCount": ownedRemovalQuarantineCaseCount, "protectedDirectoryJournalVerified": true, "protectedDirectoryJournalCaseCount": ownedRemovalDirectoryCaseCount, "protectedDirectorySIGKILLVerified": true, "protectedDirectorySIGKILLCaseCount": len(killedDirectoryCases), "protectedDirectorySIGKILLCases": killedDirectoryCases, "detachedPayloadSBOMManifestSHA256": newIdentity.ManifestSHA256, "detachedPayloadSBOMSHA256": digest(sbomData), "copiedCodeExecuted": false, "productionQualificationComplete": false, "finalGeneration": 4}
 	data, _ := json.Marshal(report)

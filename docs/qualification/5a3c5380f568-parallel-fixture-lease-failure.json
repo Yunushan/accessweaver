@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "5a3c5380f568141b6c54959680a598f625b5bab0",
+  "sourceRef": "refs/heads/main",
+  "nativeRunID": 41809419973,
+  "scope": "Provider-bound failed parallel ARM64 fixture and Intel provider success; no complete two-architecture qualification",
+  "failedTarget": {
+    "target": "darwin/arm64",
+    "providerArtifact": {
+      "id": 13311647245,
+      "node_id": "MDg6QXJ0aWZhY3QxMzMxMTY0NzI0NQ==",
+      "name": "macos-installer-inspection-arm64",
+      "size_in_bytes": 6798314,
+      "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13311647245",
+      "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13311647245/zip",
+      "expired": false,
+      "digest": "sha256:eee6d5071037835a0bdf4991355e903a81b5e79a331f09806adaba94058dcdda",
+      "created_at": "2026-11-04T09:46:12Z",
+      "updated_at": "2026-11-04T09:46:12Z",
+      "expires_at": "2026-11-18T09:46:09Z",
+      "workflow_run": {
+        "id": 41809419973,
+        "repository_id": 1441227907,
+        "head_repository_id": 1441227907,
+        "head_branch": "main",
+        "head_sha": "5a3c5380f568141b6c54959680a598f625b5bab0"
+      }
+    },
+    "providerZIPDigestVerified": true,
+    "providerJob": {
+      "id": 126504625950,
+      "runID": 41809419973,
+      "url": "https://github.com/Yunushan/accessweaver/actions/runs/41809419973/job/126504625950",
+      "conclusion": "failure"
+    },
+    "jobLogSHA256": "4ddbc18bb13e6efb26687ed0e45623c0afbc37d0b1011f92a4cfdddaa8e81863",
+    "lifecycleArtifactSHA256": "b70a4c202befcda6092a5ae6ee92b8a4c922bb700caa4846f81ffeeb33648926",
+    "failedCase": "owned-removal-groups/directories-quarantine/public-quarantine-done-fault",
+    "observedAssertion": "removal writer is busy",
+    "underlyingFlockErrnoRetained": false,
+    "separatePreparationSIGKILLInvocationExecuted": false
+  },
+  "intelProviderJob": {
+    "id": 126504628567,
+    "runID": 41809419973,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41809419973/job/126504628567",
+    "conclusion": "success"
+  },
+  "analysis": {
+    "causeEstablished": false,
+    "observed": "A close/reopen check failed while the four independent suites, including child creation, were running concurrently. The fixture failed in 20.68 seconds, not on its total timeout. The lease wrapper discarded the underlying flock errno.",
+    "possibleMechanism": "Apple documents fork/dup references to a single flock. A concurrently forked child may briefly retain another fixture lock before close-on-exec; the existing trace does not prove this happened in the failed case.",
+    "primarySource": "https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/flock.2.html"
+  },
+  "correction": {
+    "fixtureScheduling": "Join the three non-spawning suite groups before running the existing child-spawning SIGKILL cases serially. Set driver parallel limit to three. Keep 120-second total Go/150-second driver and all per-operation/child bounds and assertions.",
+    "leaseDiagnostics": "Preserve the underlying path-free flock errno on both writer/runtime refusals; same exclusive nonblocking operations, no acquisition retry or forced unlock.",
+    "unchangedSourceRerun": false
+  },
+  "boundaries": {
+    "independentArtifactAuthenticationClaimed": false,
+    "actualPreparationSIGKILLQualified": false,
+    "productUninstallQualified": false,
+    "readinessGatePromoted": false,
+    "localCandidateCodeExecuted": false
+  },
+  "limits": [
+    "The lock-reference mechanism is documented, but not established as this failure cause.",
+    "Intel provider success does not qualify ARM64 or explain its failure.",
+    "Fresh exact-source native execution and independent provenance are required; no contended acquisition is retried until an assertion passes."
+  ]
+}

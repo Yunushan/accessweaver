@@ -203,7 +203,7 @@ def deployment_transactions(capsule,environment,identity):
     before=owned_bundle_snapshot();receipts=snapshot_receipts()
     # The outer driver has already required the explicit hosted/disposable
     # opt-in. Pass only fixed fixture guards, not workflow credentials, to root.
-    command=["/usr/bin/sudo","-n","/usr/bin/env","-i","PATH=/usr/bin:/bin:/usr/sbin:/sbin","LANG=C","LC_ALL=C","TZ=UTC","GITHUB_ACTIONS=true","RUNNER_ENVIRONMENT=github-hosted","RUNNER_OS=macOS","ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST=1",binary,"-test.run=^TestDarwinDeploymentRootCopyRecovery$","-test.v","-test.timeout=120s","-test.parallel=4"]
+    command=["/usr/bin/sudo","-n","/usr/bin/env","-i","PATH=/usr/bin:/bin:/usr/sbin:/sbin","LANG=C","LC_ALL=C","TZ=UTC","GITHUB_ACTIONS=true","RUNNER_ENVIRONMENT=github-hosted","RUNNER_OS=macOS","ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST=1",binary,"-test.run=^TestDarwinDeploymentRootCopyRecovery$","-test.v","-test.timeout=120s","-test.parallel=3"]
     result,elapsed=run(command,environment,150,codes=tuple(range(256)))
     if result.returncode:
         # Only this trusted test binary's bounded fixture diagnostics enter the
