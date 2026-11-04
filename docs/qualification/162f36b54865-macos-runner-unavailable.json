@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "162f36b548651d629d17a76d4648e32ef1f66e27",
+  "ciSummary": {
+    "runID": 41880330281,
+    "status": "completed",
+    "conclusion": "failure",
+    "successfulJobs": 21,
+    "cancelledNoRunnerJobs": 1
+  },
+  "jobs": [
+    {
+      "runID": 41880330281,
+      "jobID": 126750786229,
+      "name": "Test (macos-latest)",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41880330281/job/126750786229",
+      "conclusion": "cancelled",
+      "runnerID": 0,
+      "runnerLabels": [
+        "macos-latest"
+      ],
+      "steps": [],
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/162f36b548651d629d17a76d4648e32ef1f66e27/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/162f36b548651d629d17a76d4648e32ef1f66e27/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/162f36b548651d629d17a76d4648e32ef1f66e27/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/162f36b548651d629d17a76d4648e32ef1f66e27/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        }
+      ],
+      "retainedProviderMetadataSHA256": "baf39c5997d9b61188a5f24404bd4f1cf264aca290e535a6a1a4839127bbc7e1"
+    }
+  ],
+  "interpretation": "The one cancelled CI macOS job had no assigned runner or recorded steps. Preserve exact provider runner-acquisition/capacity annotations; this is not a product-test result or proof of cancellation actor or permanent capacity. The other21CI jobs and all8native installer/package jobs passed. The later Windows pass does not explain or remediate historical strict firewall refusals. No unchanged workflow rerun or readiness promotion.",
+  "cryptographicAttestationVerified": false,
+  "readinessStatusChanged": false
+}
