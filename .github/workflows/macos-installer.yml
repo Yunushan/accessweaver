@@ -81,8 +81,18 @@ jobs:
           ACCESSWEAVER_DISPOSABLE_MACOS_INSTALLER_TEST: '1'
           ACCESSWEAVER_MACOS_INSTALLER_ARCH: '${{ matrix.arch }}'
         run: python3 scripts/test-macos-installer-lifecycle.py
-      - name: Attest package, inventories and native acceptance reports
+      - name: Attest package, inventories and native acceptance reports (attempt 1 of 2)
         id: provenance
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: build/macos-installer-checks/${{ matrix.arch }}/0.1.0-alpha/*
+          create-storage-record: false
+      - name: Retry failed attestation once (attempt 2 of 2)
+        id: provenance_retry
+        if: ${{ !cancelled() && steps.provenance.outcome == 'failure' }}
+        timeout-minutes: 3
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: build/macos-installer-checks/${{ matrix.arch }}/0.1.0-alpha/*
@@ -92,10 +102,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PACKAGE_DIRECTORY: build/macos-installer-checks/${{ matrix.arch }}/0.1.0-alpha
           PROVENANCE_REPORT: build/macos-installer-checks/${{ matrix.arch }}/native-provenance.json
-          ATTESTATION_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          ATTESTATION_FIRST_OUTCOME: ${{ steps.provenance.outcome }}
+          ATTESTATION_SECOND_OUTCOME: ${{ steps.provenance_retry.outcome }}
+          ATTESTATION_FIRST_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          ATTESTATION_SECOND_BUNDLE: ${{ steps.provenance_retry.outputs.bundle-path }}
           PACKAGE_ARCH: '${{ matrix.arch }}'
         run: |
-          cp "$ATTESTATION_BUNDLE" "$PACKAGE_DIRECTORY/BUILD-PROVENANCE.sigstore.json"
+          case "$ATTESTATION_FIRST_OUTCOME:$ATTESTATION_SECOND_OUTCOME" in
+            success:skipped) bundle="$ATTESTATION_FIRST_BUNDLE" ;;
+            failure:success) bundle="$ATTESTATION_SECOND_BUNDLE" ;;
+            *) echo "No successful attestation attempt" >&2; exit 1 ;;
+          esac
+          test -n "$bundle"
+          cp "$bundle" "$PACKAGE_DIRECTORY/BUILD-PROVENANCE.sigstore.json"
           python3 scripts/verify_macos_installer_provenance.py "$PACKAGE_DIRECTORY" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --version 0.1.0-alpha --architecture "$PACKAGE_ARCH" --check-rejections > "$PROVENANCE_REPORT"
       - name: Retain actual package, SBOM and scoped compiler/inspection evidence
         if: always()

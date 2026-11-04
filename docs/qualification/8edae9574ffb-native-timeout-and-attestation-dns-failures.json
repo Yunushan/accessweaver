@@ -1,0 +1,377 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "8edae9574ffb1eb819670cf649990962a195cdc6",
+  "sourceRef": "refs/heads/main",
+  "nativeRunID": 41806298207,
+  "scope": "Two distinct provider-bound native qualification failures: Intel aggregate fixture deadline and ARM64 attestation DNS resolution; no independent qualification",
+  "targets": [
+    {
+      "target": "darwin/amd64",
+      "providerJob": {
+        "id": 126494048884,
+        "runID": 41806298207,
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41806298207/job/126494048884",
+        "conclusion": "failure"
+      },
+      "providerArtifact": {
+        "id": 13309848840,
+        "node_id": "MDg6QXJ0aWZhY3QxMzMwOTg0ODg0MA==",
+        "name": "macos-installer-inspection-amd64",
+        "size_in_bytes": 7264034,
+        "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13309848840",
+        "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13309848840/zip",
+        "expired": false,
+        "digest": "sha256:a6536d05dbcdf3d3341f12cd23f19c4dc61a5fed3ca8d8e8649ead47974015b8",
+        "created_at": "2026-11-04T09:21:57Z",
+        "updated_at": "2026-11-04T09:21:57Z",
+        "expires_at": "2026-11-18T09:21:56Z",
+        "workflow_run": {
+          "id": 41806298207,
+          "repository_id": 1441227907,
+          "head_repository_id": 1441227907,
+          "head_branch": "main",
+          "head_sha": "8edae9574ffb1eb819670cf649990962a195cdc6"
+        }
+      },
+      "providerZIPDigestVerified": true,
+      "extractedFileInventory": [
+        {
+          "file": "0.1.0-alpha/BUILD-INFO.json",
+          "bytes": 220,
+          "sha256": "d221f94c36652594c085abd63e0a84aac0678b23f979729b404bc4ca7cf0e01e"
+        },
+        {
+          "file": "0.1.0-alpha/INSTALL-MANIFEST.json",
+          "bytes": 3835,
+          "sha256": "292806bf807ba534d2a526f2d229acd3a59928c3f68527a98b285401b44a9783"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg",
+          "bytes": 7268417,
+          "sha256": "e8529cbaab5e837d5e56e8bdfac7368bdaadced12ddadede3ce06b14c11c8cc9"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg.cdx.json",
+          "bytes": 26397,
+          "sha256": "4799ce01fe4456d4173c5cb4ca31097092dc2bbf3060562e8a81876576e62c19"
+        },
+        {
+          "file": "0.1.0-alpha/compiler-artifact.json",
+          "bytes": 2513,
+          "sha256": "28b848935f754baae7947e94151534c1db78e1622951c30c6821f0f01d38da95"
+        },
+        {
+          "file": "0.1.0-alpha/lifecycle-artifact.json",
+          "bytes": 13094,
+          "sha256": "7a7bccbe07a45afcdae3bcc28393d966a7cd8dc07760ae3ce82ce1b75322c94e"
+        },
+        {
+          "file": "0.1.0-alpha/payload-SBOM.cdx.json",
+          "bytes": 15416,
+          "sha256": "5114f45ea8ef490a0495a0c73926cfe9b0ee2553ed200543a99ba466b126b413"
+        }
+      ],
+      "jobLogSHA256": "e1c6a56c92f44ea23ad510031ccee592e9d51e3ea020ea6b0fdc6235d8438dab",
+      "artifactCryptographicAuthenticationClaimed": false,
+      "failureStage": "protected-deployment-transactions",
+      "observed": "The root fixture reached its 120-second total deadline while the app file done-durable SIGKILL subtest had run for one second. The stack was in remaining-object verification/openat.",
+      "separatePreparationKillInvocationExecuted": false,
+      "operationSpecificFailureEstablished": false
+    },
+    {
+      "target": "darwin/arm64",
+      "providerJob": {
+        "id": 126494048674,
+        "runID": 41806298207,
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41806298207/job/126494048674",
+        "conclusion": "failure"
+      },
+      "providerArtifact": {
+        "id": 13309738713,
+        "node_id": "MDg6QXJ0aWZhY3QxMzMwOTczODcxMw==",
+        "name": "macos-installer-inspection-arm64",
+        "size_in_bytes": 6802060,
+        "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13309738713",
+        "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13309738713/zip",
+        "expired": false,
+        "digest": "sha256:be4fe36e99330c9e594f21191b7011a4b06603ae3747d2443580794c7262cad7",
+        "created_at": "2026-11-04T09:20:04Z",
+        "updated_at": "2026-11-04T09:20:04Z",
+        "expires_at": "2026-11-18T09:20:02Z",
+        "workflow_run": {
+          "id": 41806298207,
+          "repository_id": 1441227907,
+          "head_repository_id": 1441227907,
+          "head_branch": "main",
+          "head_sha": "8edae9574ffb1eb819670cf649990962a195cdc6"
+        }
+      },
+      "providerZIPDigestVerified": true,
+      "extractedFileInventory": [
+        {
+          "file": "0.1.0-alpha/INSTALL-MANIFEST.json",
+          "bytes": 3835,
+          "sha256": "7b025e236b779fd26d96ff4122698e1d6e48e4f9f96bb43a231a9421d955cfd4"
+        },
+        {
+          "file": "0.1.0-alpha/BUILD-INFO.json",
+          "bytes": 220,
+          "sha256": "6bca4b8edab38db7b0b73ef2a07e4fcfb07e666abfd0ef6c777077f603c21f10"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg",
+          "bytes": 6803867,
+          "sha256": "079e69a45f758c0e29eb5a2bfaf1dd54fefbdf4c8dae756fae9cef9c6fbfed06"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg.cdx.json",
+          "bytes": 26397,
+          "sha256": "b3df43e05a2812e0fda219ae8902e410764859323ed78b5665743badc7e8766f"
+        },
+        {
+          "file": "0.1.0-alpha/compiler-artifact.json",
+          "bytes": 2513,
+          "sha256": "b0beb50a95237c6d481659a39d9ead5a62bacd3fe1c179024a2779601512d20d"
+        },
+        {
+          "file": "0.1.0-alpha/lifecycle-artifact.json",
+          "bytes": 55997,
+          "sha256": "3d3448d4357db8f71f7a00ce5005851852a3219d9dcf873e93dcd7a6d4553828"
+        },
+        {
+          "file": "0.1.0-alpha/payload-SBOM.cdx.json",
+          "bytes": 15416,
+          "sha256": "3af14f70354b78d533059dfc0386af4491214d2e712db0bcb7f1713332297735"
+        }
+      ],
+      "jobLogSHA256": "8d306762aeb897304c48594a4dcd2ecd6b71b1600ae664a505a96f1b408f4a82",
+      "artifactCryptographicAuthenticationClaimed": false,
+      "failureStage": "artifact-attestation",
+      "observed": "The source-built native fixture and cleanup completed, then actions/attest failed certificate creation with getaddrinfo ENOTFOUND fulcio.sigstore.dev. No retained Sigstore bundle was produced.",
+      "producerReportedPreparationSIGKILLCases": 10,
+      "producerReportedPreparationSIGKILL": {
+        "caseCount": 10,
+        "cases": [
+          {
+            "activePreimageRetained": true,
+            "bothLeasesReacquired": true,
+            "completedIntentReopenVerified": true,
+            "elapsedMilliseconds": 15,
+            "freshRetryPublished": true,
+            "intentPublishedAtTermination": false,
+            "passed": true,
+            "payloadObjectsRemoved": 0,
+            "phase": "removal-preparation-created",
+            "preparationEvidencePreserved": true,
+            "publishedIntentReopened": false,
+            "reservedRecoveryPublished": false,
+            "retainedDataPreserved": true,
+            "signal": 9,
+            "stageFileCountAtTermination": 0,
+            "stateAtTermination": "external-preparation",
+            "timedOut": false
+          },
+          {
+            "activePreimageRetained": true,
+            "bothLeasesReacquired": true,
+            "completedIntentReopenVerified": true,
+            "elapsedMilliseconds": 16,
+            "freshRetryPublished": true,
+            "intentPublishedAtTermination": false,
+            "passed": true,
+            "payloadObjectsRemoved": 0,
+            "phase": "removal-state-durable",
+            "preparationEvidencePreserved": true,
+            "publishedIntentReopened": false,
+            "reservedRecoveryPublished": false,
+            "retainedDataPreserved": true,
+            "signal": 9,
+            "stageFileCountAtTermination": 1,
+            "stateAtTermination": "external-preparation",
+            "timedOut": false
+          },
+          {
+            "activePreimageRetained": true,
+            "bothLeasesReacquired": true,
+            "completedIntentReopenVerified": true,
+            "elapsedMilliseconds": 18,
+            "freshRetryPublished": true,
+            "intentPublishedAtTermination": false,
+            "passed": true,
+            "payloadObjectsRemoved": 0,
+            "phase": "removal-plan-durable",
+            "preparationEvidencePreserved": true,
+            "publishedIntentReopened": false,
+            "reservedRecoveryPublished": false,
+            "retainedDataPreserved": true,
+            "signal": 9,
+            "stageFileCountAtTermination": 2,
+            "stateAtTermination": "external-preparation",
+            "timedOut": false
+          },
+          {
+            "activePreimageRetained": true,
+            "bothLeasesReacquired": true,
+            "completedIntentReopenVerified": true,
+            "elapsedMilliseconds": 17,
+            "freshRetryPublished": true,
+            "intentPublishedAtTermination": false,
+            "passed": true,
+            "payloadObjectsRemoved": 0,
+            "phase": "removal-marker-durable",
+            "preparationEvidencePreserved": true,
+            "publishedIntentReopened": false,
+            "reservedRecoveryPublished": false,
+            "retainedDataPreserved": true,
+            "signal": 9,
+            "stageFileCountAtTermination": 3,
+            "stateAtTermination": "external-preparation",
+            "timedOut": false
+          },
+          {
+            "activePreimageRetained": true,
+            "bothLeasesReacquired": true,
+            "completedIntentReopenVerified": true,
+            "elapsedMilliseconds": 18,
+            "freshRetryPublished": true,
+            "intentPublishedAtTermination": false,
+            "passed": true,
+            "payloadObjectsRemoved": 0,
+            "phase": "removal-directory-durable",
+            "preparationEvidencePreserved": true,
+            "publishedIntentReopened": false,
+            "reservedRecoveryPublished": false,
+            "retainedDataPreserved": true,
+            "signal": 9,
+            "stageFileCountAtTermination": 3,
+            "stateAtTermination": "external-preparation",
+            "timedOut": false
+          },
+          {
+            "activePreimageRetained": true,
+            "bothLeasesReacquired": true,
+            "completedIntentReopenVerified": true,
+            "elapsedMilliseconds": 19,
+            "freshRetryPublished": true,
+            "intentPublishedAtTermination": false,
+            "passed": true,
+            "payloadObjectsRemoved": 0,
+            "phase": "removal-preparation-durable",
+            "preparationEvidencePreserved": true,
+            "publishedIntentReopened": false,
+            "reservedRecoveryPublished": false,
+            "retainedDataPreserved": true,
+            "signal": 9,
+            "stageFileCountAtTermination": 3,
+            "stateAtTermination": "external-preparation",
+            "timedOut": false
+          },
+          {
+            "activePreimageRetained": true,
+            "bothLeasesReacquired": true,
+            "completedIntentReopenVerified": true,
+            "elapsedMilliseconds": 21,
+            "freshRetryPublished": false,
+            "intentPublishedAtTermination": false,
+            "passed": true,
+            "payloadObjectsRemoved": 0,
+            "phase": "removal-record-reserved",
+            "preparationEvidencePreserved": true,
+            "publishedIntentReopened": false,
+            "reservedRecoveryPublished": true,
+            "retainedDataPreserved": true,
+            "signal": 9,
+            "stageFileCountAtTermination": 3,
+            "stateAtTermination": "reserved-preparation",
+            "timedOut": false
+          },
+          {
+            "activePreimageRetained": true,
+            "bothLeasesReacquired": true,
+            "completedIntentReopenVerified": true,
+            "elapsedMilliseconds": 21,
+            "freshRetryPublished": false,
+            "intentPublishedAtTermination": false,
+            "passed": true,
+            "payloadObjectsRemoved": 0,
+            "phase": "removal-reservation-parent-durable",
+            "preparationEvidencePreserved": true,
+            "publishedIntentReopened": false,
+            "reservedRecoveryPublished": true,
+            "retainedDataPreserved": true,
+            "signal": 9,
+            "stageFileCountAtTermination": 3,
+            "stateAtTermination": "reserved-preparation",
+            "timedOut": false
+          },
+          {
+            "activePreimageRetained": true,
+            "bothLeasesReacquired": true,
+            "completedIntentReopenVerified": true,
+            "elapsedMilliseconds": 28,
+            "freshRetryPublished": false,
+            "intentPublishedAtTermination": true,
+            "passed": true,
+            "payloadObjectsRemoved": 0,
+            "phase": "removal-published",
+            "preparationEvidencePreserved": true,
+            "publishedIntentReopened": true,
+            "reservedRecoveryPublished": false,
+            "retainedDataPreserved": true,
+            "signal": 9,
+            "stageFileCountAtTermination": 3,
+            "stateAtTermination": "published-intent",
+            "timedOut": false
+          },
+          {
+            "activePreimageRetained": true,
+            "bothLeasesReacquired": true,
+            "completedIntentReopenVerified": true,
+            "elapsedMilliseconds": 25,
+            "freshRetryPublished": false,
+            "intentPublishedAtTermination": true,
+            "passed": true,
+            "payloadObjectsRemoved": 0,
+            "phase": "removal-parent-durable",
+            "preparationEvidencePreserved": true,
+            "publishedIntentReopened": true,
+            "reservedRecoveryPublished": false,
+            "retainedDataPreserved": true,
+            "signal": 9,
+            "stageFileCountAtTermination": 3,
+            "stateAtTermination": "published-intent",
+            "timedOut": false
+          }
+        ],
+        "copiedCodeExecuted": false,
+        "packageScriptsIntegrated": false,
+        "productionQualificationComplete": false,
+        "schemaVersion": 1,
+        "testExecutableSHA256": "331277830448e69e2b1b4a922c5ffdb7791650f67bf302515d306088808133ad",
+        "elapsedMilliseconds": 1002,
+        "installedObjectsAndReceiptsPreserved": true,
+        "fixtureParent": "private-exclusive-temporary-directory"
+      },
+      "resolverOrServiceRootCauseEstablished": false
+    }
+  ],
+  "plannedCorrections": {
+    "intel": "Run four independent owned-capsule suite groups concurrently, joining all before report and parent cleanup. Native driver caps parallel subtests at four. Keep 120-second total Go deadline, 150-second driver deadline, operation deadlines and every assertion.",
+    "arm64": "Allow at most two pinned attestation attempts, each limited to three minutes. Retry only a failed signing step and do not retry verification. Select only the successful attempt and retain mandatory seven-subject authentication and real rejection probes.",
+    "unchangedSourceRerun": false
+  },
+  "boundaries": {
+    "actualPreparationSIGKILLQualified": false,
+    "artifactCryptographicAuthenticationClaimed": false,
+    "productUninstallQualified": false,
+    "publisherSignatureVerified": false,
+    "readinessGatePromoted": false,
+    "localCandidateCodeExecuted": false
+  },
+  "limits": [
+    "ARM64 native completion is a provider-bound producer observation; its unsigned failure artifact does not substitute for independently authenticated provenance.",
+    "The Intel timeout is an aggregate fixture budget failure. The stack does not establish an operation-specific hang or explain the filesystem timing.",
+    "The observed ARM64 name-resolution error does not establish a global Sigstore outage or a publisher-certificate problem.",
+    "A later first-attempt signing success will not establish native retry-branch success; that branch needs its own observed failure-then-success evidence."
+  ]
+}

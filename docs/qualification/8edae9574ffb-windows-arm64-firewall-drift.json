@@ -1,0 +1,391 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "8edae9574ffb1eb819670cf649990962a195cdc6",
+  "sourceRef": "refs/heads/main",
+  "scope": "Provider-bound Windows ARM64 failed original-baseline preservation check; observed firewall drift is not attributed",
+  "providerJob": {
+    "id": 126494048543,
+    "runID": 41806298173,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41806298173/job/126494048543",
+    "conclusion": "failure"
+  },
+  "providerArtifact": {
+    "id": 13309884985,
+    "node_id": "MDg6QXJ0aWZhY3QxMzMwOTg4NDk4NQ==",
+    "name": "installer-lifecycle-windows-arm64",
+    "size_in_bytes": 7350,
+    "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13309884985",
+    "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13309884985/zip",
+    "expired": false,
+    "digest": "sha256:6d88e54d2ca4b0f37e84099ec31ee61e584a30040ae560a02797b051b9087f49",
+    "created_at": "2026-11-04T09:27:50Z",
+    "updated_at": "2026-11-04T09:27:50Z",
+    "expires_at": "2026-11-18T09:27:49Z",
+    "workflow_run": {
+      "id": 41806298173,
+      "repository_id": 1441227907,
+      "head_repository_id": 1441227907,
+      "head_branch": "main",
+      "head_sha": "8edae9574ffb1eb819670cf649990962a195cdc6"
+    }
+  },
+  "providerZIPDigestVerified": true,
+  "artifactFile": {
+    "file": "arm64.json",
+    "bytes": 212476,
+    "sha256": "2db9a5d50d128dec4711e7e6a77f3139ea9914554d488c383637ef9d90e39e8f"
+  },
+  "jobLogSHA256": "0fdc7e8d453fe410b2e4f00e8ab48c75af5e040aa2607427677558bd48e079b3",
+  "failure": {
+    "stage": "uninstall",
+    "failureType": "System.Management.Automation.RuntimeException",
+    "failureSourceLine": 616,
+    "assertionFailure": "Installer lifecycle changed selected services, firewall rules or DNS configuration",
+    "lastNative": {
+      "outputComplete": true,
+      "exitCode": 0,
+      "file": "unins000.exe"
+    }
+  },
+  "stateObservationSummary": [
+    {
+      "phase": "baseline",
+      "originalBaselineEqual": true,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 504,
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+        "changes": []
+      }
+    },
+    {
+      "phase": "after-install",
+      "originalBaselineEqual": true,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 504,
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+        "changes": []
+      }
+    },
+    {
+      "phase": "after-upgrade",
+      "originalBaselineEqual": true,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 504,
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+        "changes": []
+      }
+    },
+    {
+      "phase": "after-reinstall",
+      "originalBaselineEqual": true,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 504,
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+        "changes": []
+      }
+    },
+    {
+      "phase": "after-active-setup-uninstall",
+      "originalBaselineEqual": true,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 504,
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+        "changes": []
+      }
+    },
+    {
+      "phase": "after-lifecycle-locks",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": false,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      }
+    },
+    {
+      "phase": "after-refused-downgrade",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      }
+    },
+    {
+      "phase": "after-version-policy",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      }
+    },
+    {
+      "phase": "after-registry-read-boundaries",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      }
+    },
+    {
+      "phase": "after-registry-view-policy",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      }
+    },
+    {
+      "phase": "after-registry-access-policy",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      }
+    },
+    {
+      "phase": "after-restoration-launch-failures",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      }
+    },
+    {
+      "phase": "after-restoration-ownership-contracts",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      }
+    },
+    {
+      "phase": "before-uninstall",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      }
+    },
+    {
+      "phase": "after-uninstall",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      }
+    }
+  ],
+  "observed": {
+    "firstDriftPhase": "after-lifecycle-locks",
+    "addedRuleClassification": "other",
+    "addedRuleIdentitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+    "servicesAndDNSExactAtEveryObservation": true,
+    "uninstallExitCode": 0,
+    "afterUninstallEqualPriorTransition": true,
+    "afterUninstallEqualOriginalBaseline": false
+  },
+  "causeEstablished": false,
+  "boundaries": {
+    "independentArtifactAuthenticationClaimed": false,
+    "windowsARM64LifecycleQualified": false,
+    "fullBaselinePredicateRelaxed": false,
+    "firewallRuleRemovedOrIgnored": false,
+    "readinessGatePromoted": false,
+    "localCandidateCodeExecuted": false
+  },
+  "limits": [
+    "The added firewall rule appeared between the active-setup-uninstall and lifecycle-lock observations. Hashed diagnostics do not establish its process, owner or cause.",
+    "The successful uninstall exit and unchanged final transition do not satisfy original-baseline preservation.",
+    "No raw rule identity/content or private machine data is included. No unchanged assertion retry, baseline rebasing, rule removal or acceptance relaxation is used.",
+    "Later passing runs do not establish the cause of this failed source."
+  ]
+}
