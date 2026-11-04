@@ -7,7 +7,7 @@ import (
 
 // ProductRemovalInspection is a read-only snapshot, never a deletion
 // capability. A future remover must reacquire the leases and revalidate its
-// complete mutation set, including incoming payloads and Installer receipts.
+// complete mutation set. This observation does not authorize later deletion.
 type ProductRemovalInspection struct {
 	SchemaVersion                   int    `json:"schemaVersion"`
 	Operation                       string `json:"operation"`
@@ -20,6 +20,10 @@ type ProductRemovalInspection struct {
 	RetainedCoreCopies              int    `json:"retainedCoreCopies"`
 	RetainedStateRecords            int    `json:"retainedStateRecords"`
 	DesktopRegistrations            int    `json:"desktopRegistrations"`
+	IncomingPayloadCount            int    `json:"incomingPayloadCount"`
+	InstallerReceiptCount           int    `json:"installerReceiptCount"`
+	ReceiptFileCount                int    `json:"receiptFileCount"`
+	InstallerReceiptPathsVerified   bool   `json:"installerReceiptPathsVerified"`
 	InventorySHA256                 string `json:"inventorySHA256"`
 	InventoryScope                  string `json:"inventoryScope"`
 	MutationPerformed               bool   `json:"mutationPerformed"`

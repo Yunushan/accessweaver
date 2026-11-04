@@ -18,6 +18,7 @@ var slotName = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
 const maxRetainedDeployments = 64
 const maxRetainedRecords = 128
+const detachedDeploymentManifest = "INSTALL-MANIFEST.json"
 
 type deploymentIdentity struct {
 	Version        string `json:"version"`

@@ -26,8 +26,6 @@ func verifyDeploymentBundle(app *os.File, identity deploymentIdentity) (Manifest
 	return verifyDeploymentInventory(app, identity, encoded, true, nil)
 }
 
-const detachedDeploymentManifest = "INSTALL-MANIFEST.json"
-
 // Accept only three exact protected layouts: legacy embedded metadata, a
 // legacy detached inventory, or schema2 with both inventory and SBOM detached.
 // Layout alone never grants trust: inventory/core seals are verified below.

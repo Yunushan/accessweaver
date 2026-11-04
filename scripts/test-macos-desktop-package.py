@@ -5,6 +5,7 @@ import fcntl
 import importlib.util
 import json
 import os
+import plistlib
 from pathlib import Path
 import re
 import shutil
@@ -109,7 +110,7 @@ def main(product_mode=False):
             no_alias(path.parent);st=path.lstat();require(stat.S_ISLNK(st.st_mode) and st.st_uid==0 and st.st_nlink==1,"Unexpected alias fixture")
             return {"aliasSHA256":digest(os.readlink(path).encode()),"inode":st.st_ino,"mode":st.st_mode,"uid":st.st_uid,"gid":st.st_gid}
         for path in receipt_paths:
-            if path.exists():result[path.name]=regular(path,4<<20)
+            if path.exists() or path.is_symlink():result[path.name]=alias(path) if path.is_symlink() else regular(path,4<<20)
         if AUTHORITY.exists():result["activeRecord"]=regular(AUTHORITY/"state/deployment.json",16384)
         if DESKTOP.exists():
             no_alias(DESKTOP);names=sorted(p.name for p in DESKTOP.iterdir());require(len(names)<=64,"Desktop registry exceeds budget")
@@ -208,12 +209,13 @@ def main(product_mode=False):
         before=snapshot()
         result,elapsed=run(["/usr/bin/sudo","-n",helper,"inspect-product-removal"],env,60,codes=(0,1))
         last_removal_inspection={"name":name,"helperSHA256":product["helperSHA256"],"exitCode":result.returncode,"elapsedMilliseconds":elapsed,"stdoutSHA256":digest(result.stdout),"stderrSHA256":digest(result.stderr)}
+        if result.returncode!=(0 if success else 1):print(result.stderr[-4000:].decode("utf-8",errors="replace").replace(str(capsule),"[owned-capsule]"),flush=True)
         value=json.loads(result.stdout)
-        require(result.returncode==(0 if success else 1) and value["schemaVersion"]==1 and value["operation"]=="inspect-product-removal" and value["state"]==("inspected" if success else "refused") and value["version"]==version and value["manifestSHA256"]==candidate["report"]["manifestSHA256"] and value["payloadSHA256"]==candidate["report"]["payloadSHA256"] and value["desktopRecordSHA256"]==digest(desktop[version]["record"]) and value["generation"]==generation,"Removal inspection identity/result differs")
-        require(value["inventoryScope"]=="core-history-public-app-registrations" and all(value[k] is False for k in ("mutationPerformed","incomingPayloadsInspected","installerReceiptsInspected","productUninstallQualified","productionQualificationComplete")),"Removal inspection exceeded qualified scope")
+        require(result.returncode==(0 if success else 1) and value["schemaVersion"]==2 and value["operation"]=="inspect-product-removal" and value["state"]==("inspected" if success else "refused") and value["version"]==version and value["manifestSHA256"]==candidate["report"]["manifestSHA256"] and value["payloadSHA256"]==candidate["report"]["payloadSHA256"] and value["desktopRecordSHA256"]==digest(desktop[version]["record"]) and value["generation"]==generation,"Removal inspection identity/result differs")
+        require(value["inventoryScope"]=="core-history-public-app-registrations-incoming-receipts" and all(value[k] is False for k in ("mutationPerformed","productUninstallQualified","productionQualificationComplete")) and all(value[k] is success for k in ("incomingPayloadsInspected","installerReceiptsInspected","installerReceiptPathsVerified")),"Removal inspection exceeded qualified scope")
         if success:
-            require(value["retainedCoreCopies"]==generation and value["desktopRegistrations"]==(1 if version==VERSIONS[0] else 2) and 1<=value["retainedStateRecords"]<=129 and re.fullmatch("[a-f0-9]{64}",value["inventorySHA256"]) is not None,"Removal inventory coverage differs")
-        else:require(value["retainedCoreCopies"]==value["retainedStateRecords"]==value["desktopRegistrations"]==0 and value["inventorySHA256"]=="","Refused removal inspection exposed a completed inventory")
+            require(value["incomingPayloadCount"]==(1 if version==VERSIONS[0] else 2) and value["installerReceiptCount"]==(3 if version==VERSIONS[0] else 4) and value["receiptFileCount"]==2*value["installerReceiptCount"] and value["retainedCoreCopies"]==generation and value["desktopRegistrations"]==(1 if version==VERSIONS[0] else 2) and 1<=value["retainedStateRecords"]<=129 and re.fullmatch("[a-f0-9]{64}",value["inventorySHA256"]) is not None,"Removal inventory coverage differs")
+        else:require(value["incomingPayloadCount"]==value["installerReceiptCount"]==value["receiptFileCount"]==value["retainedCoreCopies"]==value["retainedStateRecords"]==value["desktopRegistrations"]==0 and value["inventorySHA256"]=="","Refused removal inspection exposed a completed inventory")
         require(snapshot()==before,"Removal inspection changed app/record/receipt state")
         for old_version,old_app in known_slots.values():verify_deployment_bundle(old_app,core[old_version]["manifest"],core[old_version]["identity"],core[old_version]["manifestBytes"])
         for slot,inventory in partial_slots.values():require(partial_observation(slot)==inventory,"Removal inspection changed preserved partial evidence")
@@ -347,6 +349,31 @@ def main(product_mode=False):
         selection("restored-active",VERSIONS[1])
         if product_mode:
             removal_inspection("restored-complete",VERSIONS[1],True,4)
+            stage="removal-ownership-refusals";incoming_path=INPUT/core[VERSIONS[1]]["report"]["manifestSHA256"]
+            for kind,path in (("incoming-payload",incoming_path/"INSTALL-MANIFEST.json"),("receipt-metadata",RECEIPTS/(PACKAGE_ID+".plist"))):
+                original=root_regular(path,4<<20);good=capsule/(kind+"-good");bad=capsule/(kind+"-bad");good.write_bytes(original)
+                if kind=="receipt-metadata":
+                    info=plistlib.loads(original);require(info.get("pkg-version")==VERSIONS[1],"Owned receipt version field differs")
+                    info["pkg-version"]="9999.0.0";changed=plistlib.dumps(info,fmt=plistlib.FMT_BINARY,sort_keys=False)
+                else:changed=original+b" "
+                bad.write_bytes(changed);run(["/usr/bin/sudo","-n","/bin/cp",bad,path],env)
+                removal_inspection("changed-"+kind+"-refused",VERSIONS[1],False,4)
+                require(root_regular(path,4<<20)==changed,"Removal inspection repaired changed ownership data")
+                run(["/usr/bin/sudo","-n","/bin/cp",good,path],env);require(root_regular(path,4<<20)==original,"Owned ownership data restoration failed")
+            for kind,path,saved in (("incoming",incoming_path,capsule/"retained-incoming"),("receipt-file",RECEIPTS/(PACKAGE_ID+".bom"),capsule/"retained-core-receipt.bom")):
+                no_alias(path);original_info=path.stat();require(not saved.exists() and not saved.is_symlink(),"Ownership alias destination collides")
+                run(["/usr/bin/sudo","-n","/bin/mv",path,saved],env);run(["/usr/bin/sudo","-n","/bin/ln","-s",saved,path],env)
+                removal_inspection(kind+"-alias-refused",VERSIONS[1],False,4)
+                saved_info=saved.stat();require(path.is_symlink() and os.readlink(path)==str(saved) and (saved_info.st_dev,saved_info.st_ino)==(original_info.st_dev,original_info.st_ino),"Removal inspection changed ownership alias or destination")
+                run(["/usr/bin/sudo","-n","/bin/rm","--",path],env);require(not path.exists() and not path.is_symlink(),"Owned ownership alias remains")
+                run(["/usr/bin/sudo","-n","/bin/mv","-n",saved,path],env);no_alias(path);require(path.stat().st_ino==original_info.st_ino,"Owned ownership identity restoration failed")
+            extra=RECEIPTS/("io.github.yunushan.accessweaver.unknown-removal-qualification.bom");require(not extra.exists() and not extra.is_symlink(),"Unknown receipt fixture collides")
+            fixture=capsule/"unknown-receipt";fixture.write_bytes(b"owned removal receipt qualification")
+            run(["/usr/bin/sudo","-n","/bin/cp",fixture,extra],env);extra_info=extra.stat()
+            removal_inspection("unrecorded-receipt-refused",VERSIONS[1],False,4)
+            require(root_regular(extra,1024)==fixture.read_bytes() and extra.stat().st_ino==extra_info.st_ino,"Removal inspection changed unrecorded receipt")
+            run(["/usr/bin/sudo","-n","/bin/rm","--",extra],env);require(not extra.exists() and not extra.is_symlink(),"Owned unknown receipt remains")
+            removal_inspection("ownership-restored-complete",VERSIONS[1],True,4)
             unknown=AUTHORITY/"versions"/("f"*32);require(not unknown.exists() and not unknown.is_symlink(),"Unknown-slot fixture collides")
             run(["/usr/bin/sudo","-n","/bin/mkdir","-m","755",unknown],env);unknown_info=unknown.stat()
             removal_inspection("unrecorded-copy-refused",VERSIONS[1],False,4)

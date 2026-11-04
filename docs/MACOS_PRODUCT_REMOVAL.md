@@ -1,33 +1,37 @@
 # macOS product removal work
 
-Whole-product uninstall and retained-copy reclamation remain incomplete. The sealed product helper now provides a read-only inspection of the protected core history, retained core copies, public application and desktop registrations. It does not remove or deactivate anything, forget Installer receipts, inspect incoming payloads, or access private user profiles or managed policy.
+Whole-product uninstall and retained-copy reclamation remain incomplete. The sealed product helper provides a read-only ownership inspection of protected core history, retained copies, incoming payloads, the public application, registrations and selected Installer receipts. It removes nothing, advances no generation, forgets no receipt and accesses no private user profile or managed policy.
 
 ## Inspect an exact candidate
 
-Use the external source/ref/workflow/run and architecture pins in [release provenance](RELEASE_PROVENANCE.md). Authenticate every candidate subject before reading reports. The inspection command belongs to the separate product-application helper, accessweaver-product-installer, extracted from that exact authenticated component. The ordinary core helper and standalone desktop helper do not implement it.
+Use the external source/ref/workflow/run and architecture pins in [release provenance](RELEASE_PROVENANCE.md). Authenticate every candidate subject before reading reports. The command belongs to the separate product-application helper, accessweaver-product-installer, extracted from that exact authenticated component. Ordinary core and standalone desktop helpers cannot substitute for it.
 
-Stage the verified helper in private root-owned storage and recheck its actual bytes against the authenticated component before execution. Never execute the installed app, installed core or public launcher as root. The unsigned disposable-host qualification does not supply an approved publisher signature or authorize production distribution.
+Stage the verified helper in private root-owned storage and recheck its bytes against the authenticated component before execution. Never execute an installed app, core or public launcher as root. Disposable unsigned-host qualification does not provide a publisher signature or approve production distribution.
 
 Arrange clean controller shutdown, then invoke the externally verified staged helper:
 
     sudo "$trusted_product_helper" inspect-product-removal
 
-No path, seal, environment override or deletion flag is accepted. Inspection requires both compiled core/desktop seals, the exact active release, no pending deployment, the existing deployment writer lock and an exclusive runtime lease. It refuses a running controller, inactive or differently sealed active release, newer registration, incomplete or noncanonical retained history, unknown or missing retained copy, changed bytes, unsafe ownership/modes or aliases. A preparation referenced only by older history still requires a complete verified copy; abandoning a partial copy does not turn it into removable data.
+No caller path, seal, environment override or deletion flag is accepted. Both compiled core/desktop seals must match the active release. The helper requires no pending deployment, the existing writer lock and an exclusive runtime lease. Canonical protected history must identify every complete retained copy. Abandoning a partial copy does not make its contents removable.
 
-A successful result has operation inspect-product-removal and state inspected. It reports the generation, compiled identity, bounded inventory counts and a SHA256 fingerprint binding the core records/slot identities, registration digests and public app identity. The complete known inventories are checked again before the result is returned. Any error, including a close error, yields refusal.
+## Ownership checks
+
+Schema two additionally requires every incoming directory to match an identity from protected history. Complete manifests, native payloads, detached metadata, paths, ownership and modes are verified through protected descriptors. Unknown, missing, linked, changed or conflicting input remains untouched and causes refusal.
+
+Receipt identifiers are fixed core/application IDs or content-addressed registration IDs. The expected core receipt location comes from the compiled manifest seal; application and registration locations are fixed. Root-owned single-link receipt plist/BOM files must have the expected modes and bounded sizes. Unknown receipts in the product namespace or missing expected receipts cause refusal.
+
+The helper invokes only the fixed system pkgutil for read-only metadata and file-list queries, with a minimal environment and root working directory. Metadata must match the expected ID, version, root volume and exact location. File lists must match the paths derived from the verified incoming, public-app and registration inventories. Unsafe, extra, duplicate or missing paths are refused. Queries share a thirty-second deadline, each query has a five-second limit, and stdout/stderr capture is bounded. Raw tool errors are not returned.
+
+The incoming and receipt snapshots are checked again before returning. The fingerprint binds their root/file identities and hashes as well as protected core history, registration digests and public app identity. It does not replace signature validation or a future deletion transaction.
 
 ## Scope of the result
 
-The fixed inventoryScope is core-history-public-app-registrations. mutationPerformed, incomingPayloadsInspected, installerReceiptsInspected, productUninstallQualified and productionQualificationComplete remain false. A refused inspection reports no completed inventory fingerprint or counts.
+A completed schema-two observation has operation inspect-product-removal, state inspected and inventoryScope core-history-public-app-registrations-incoming-receipts. Incoming/receipt counts, incomingPayloadsInspected, installerReceiptsInspected and installerReceiptPathsVerified describe only completed read-only verification. Every refusal, including close/deadline failure, clears completion flags, counts and fingerprint. mutationPerformed, productUninstallQualified and productionQualificationComplete remain false.
 
-The JSON is an observation, not a saved deletion capability or an authorization token. Files can change after inspection returns and releases its leases. A future remover must reacquire the leases, revalidate its complete mutation set, authenticate incoming payload and receipt ownership, durably record intent and test interrupted removal/retry before deleting any program object. Neither this command nor [explicit copy recovery](MACOS_PRODUCT_RECOVERY.md) supplies that transaction.
+The JSON is an observation, not a saved deletion capability. Files can change after its leases are released. A future remover must revalidate the complete mutation set, publish durable removal intent in a state layout that existing readers refuse, perform identity-bound mutations and prove interrupted removal/retry. It must preserve user profiles, backups, private launch/session data and administrator policy according to its explicit retention contract. Fixture-owned cleanup is not an uninstaller.
 
-User profiles, backups, private launch/session data and administrator policy need explicit retention contracts in that future procedure. Fixture-owned cleanup in native tests is not a product uninstaller.
+## Qualification
 
-## Validation
+The earlier [source-bound record at 7fa9afc17892](qualification/7fa9afc17892-macos-removal-inspection.json) qualifies only schema-one core/history/public-app/registration inspection. It does not qualify these added incoming/receipt checks.
 
-Portable contracts cover protected slot/history consistency, stale identity, pending or inactive state, conflicting inode/seal claims, newer history and capacity bounds. The guarded root-owned native copy fixture adds complete legacy/schema-2 inventories, unknown-copy refusal and unchanged noncanonical history before restoration. The real product fixture runs two complete inspections and fourteen preserving refusals on each native architecture, including serving-controller exclusion and partial-copy preservation. Its helper digests bind to the actual independently authenticated product components.
-
-Fresh exact-source native results and independent all-subject authentication are required before claiming this implementation passed native acceptance. Signing, uninstall, interrupted removal recovery and managed endpoint acceptance remain separate open requirements.
-
-At source 7fa9afc17892a0dddd8b53cd6c9ec18ab23230c2, [both native desktop jobs](https://github.com/Yunushan/accessweaver/actions/runs/41747312753) and [all 22 CI jobs](https://github.com/Yunushan/accessweaver/actions/runs/41747313048) passed. The [independently authenticated record](qualification/7fa9afc17892-macos-removal-inspection.json) retains 122 authenticated subjects, ten real rejection checks, twenty passive binary metadata inspections, four complete removal observations and 28 preserving refusals. It also references the separate unresolved Windows ARM64 state-comparison failure at the same source. This qualifies the scoped read-only macOS inspection on disposable hosts; it does not implement or qualify deletion, incoming/receipt inspection, interrupted uninstall, publisher signing or managed deployment.
+Portable tests cover receipt ID/version/volume/location binding, exact file-list sets, aliases/traversal, duplicate identities, extent bounds and bounded-output cancellation. The disposable product fixture requires twenty-two packaged-helper inspections per architecture: three complete observations and nineteen preserving refusals, including incoming/receipt changes, aliases, an unknown receipt and successful restoration. Existing live-controller, stale helper, public/registration and partial-copy cases remain required. Fresh native outcomes and independent all-subject authentication must qualify the new scope before any readiness claim.
