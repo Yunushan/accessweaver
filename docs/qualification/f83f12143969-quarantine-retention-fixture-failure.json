@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "f83f12143969865128bd610ae5b5d78fcaf45820",
+  "sourceRef": "refs/heads/main",
+  "nativeRunID": 41785074781,
+  "result": "failed",
+  "scope": "First owned public-app quarantine case failed its retained-data comparison after successful quarantine and protected-object completion checks; remaining quarantine cases did not execute",
+  "targets": [
+    {
+      "target": "darwin/amd64",
+      "providerJob": {
+        "id": 126425245398,
+        "runID": 41785074781,
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41785074781/job/126425245398",
+        "conclusion": "failure",
+        "startedAt": "2026-11-04T06:22:25Z",
+        "completedAt": "2026-11-04T06:24:38Z"
+      },
+      "providerLog": {
+        "bytes": 45262,
+        "sha256": "0c8f2accd674bd5766679bc0aa9a8e776159b0f70d7ccf241ba67cb4489e7efb",
+        "failureLines": [
+          "2026-11-04T06:24:31.1404970Z     removal_quarantine_darwin_test.go:358: quarantine/removal changed retained data"
+        ]
+      },
+      "quarantineCasesReached": 1,
+      "quarantineSuitePassed": false
+    },
+    {
+      "target": "darwin/arm64",
+      "providerJob": {
+        "id": 126425245259,
+        "runID": 41785074781,
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41785074781/job/126425245259",
+        "conclusion": "failure",
+        "startedAt": "2026-11-04T06:22:25Z",
+        "completedAt": "2026-11-04T06:23:53Z"
+      },
+      "providerLog": {
+        "bytes": 45465,
+        "sha256": "ac0f7bb716b1674fb6d2b3f549daf5fdf26e52d871ead2f5d51b63930cc4af42",
+        "failureLines": [
+          "2026-11-04T06:23:44.2897530Z     removal_quarantine_darwin_test.go:358: quarantine/removal changed retained data"
+        ]
+      },
+      "quarantineCasesReached": 1,
+      "quarantineSuitePassed": false
+    }
+  ],
+  "candidateAttestationAuthenticationPerformed": false,
+  "productionQualificationComplete": false,
+  "diagnosis": {
+    "cause": "The new quarantine fixture used retainedRemovalFixtureSnapshot, the file-only retention baseline, while completing directory/root removals. The versions and incoming parent directories legitimately change ordinary metadata after their recorded child roots disappear.",
+    "correction": "Use the existing retainedRemovalDirectorySnapshot baseline, which excludes only those two retained parent metadata entries. The engine still checks their frozen device/inode, owners/modes and full child namespaces. Retained history, unrelated data and other paths remain compared. Add changed-path-only failure diagnostics.",
+    "productSafetyPredicatesChanged": false,
+    "freshNativeExecutionRequired": true,
+    "quarantineSIGKILLQualified": false
+  },
+  "sourceFiles": [
+    {
+      "file": "internal/packageupgrade/removal_quarantine_darwin_test.go",
+      "sha256": "3f80bd8fa1c7046211e3ad9edd6cfb3e40f7bb0532c75bd1f19f3dbbf5d02d09"
+    },
+    {
+      "file": "internal/packageupgrade/removal_directories_darwin_test.go",
+      "sha256": "86b792134084ec12e96f739be04a803e67582332c5e8227968007ec9c9a5f343"
+    },
+    {
+      "file": "internal/packageupgrade/removal_files_darwin_test.go",
+      "sha256": "6e70a8d8da6f70536336a660869b1966d67755ea3745247afa10a0ae7d311589"
+    },
+    {
+      "file": "internal/packageupgrade/deployment_darwin_test.go",
+      "sha256": "66b5b4560033832d9b94b51656a6b29f14b5edd94523f509c756cf900ad499ba"
+    },
+    {
+      "file": "scripts/test-macos-installer-lifecycle.py",
+      "sha256": "5098a4d1af2d1f3e701b702a1bbc01ea043d4ee9be14d63baa1c8ef8d96ee39c"
+    },
+    {
+      "file": ".github/workflows/macos-installer.yml",
+      "sha256": "0e828948325f8be82c6afd00508b24142f5a8f9c2cbf6ac73787d7c1d19188cb"
+    }
+  ],
+  "limits": [
+    "A failed source is not accepted as native quarantine qualification. No static positive summary was emitted after the failed child test.",
+    "Remaining quarantine cases, actual quarantine SIGKILL, reboot/power loss, publisher signing/notarization and whole-product uninstall are unqualified.",
+    "All fifty readiness gate statuses remain unchanged."
+  ]
+}

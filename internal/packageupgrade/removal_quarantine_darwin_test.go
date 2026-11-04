@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"testing"
@@ -19,7 +20,7 @@ const ownedRemovalQuarantineCaseCount = 28
 func retainedRemovalQuarantineSnapshot(t *testing.T, f *ownedRemovalTargetFixture) []byte {
 	t.Helper()
 	values := map[string]string{}
-	if e := json.Unmarshal(retainedRemovalFixtureSnapshot(t, f), &values); e != nil {
+	if e := json.Unmarshal(retainedRemovalDirectorySnapshot(t, f), &values); e != nil {
 		t.Fatal(e)
 	}
 	for name := range values {
@@ -354,8 +355,27 @@ func exerciseOwnedRemovalQuarantine(t *testing.T, privateBase string) {
 				t.Fatal("quarantined completion not idempotent", got, e)
 			}
 			complete() // Quarantine completion remains idempotent after payload progress.
-			if !bytes.Equal(retained, retainedRemovalQuarantineSnapshot(t, f)) {
-				t.Fatal("quarantine/removal changed retained data")
+			if after := retainedRemovalQuarantineSnapshot(t, f); !bytes.Equal(retained, after) {
+				beforeValues, afterValues := map[string]string{}, map[string]string{}
+				if e := json.Unmarshal(retained, &beforeValues); e != nil {
+					t.Fatal(e)
+				}
+				if e := json.Unmarshal(after, &afterValues); e != nil {
+					t.Fatal(e)
+				}
+				changed := []string{}
+				for name, value := range beforeValues {
+					if afterValues[name] != value {
+						changed = append(changed, name)
+					}
+				}
+				for name := range afterValues {
+					if _, ok := beforeValues[name]; !ok {
+						changed = append(changed, name)
+					}
+				}
+				sort.Strings(changed)
+				t.Fatal("quarantine/removal changed retained paths", changed)
 			}
 			if data, e := os.ReadFile(filepath.Join(movedPath, "owned-public")); e != nil || string(data) != "owned public bytes" {
 				t.Fatal("quarantined app payload changed", e)
