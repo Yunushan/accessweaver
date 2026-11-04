@@ -35,6 +35,10 @@ func exerciseOwnedQuarantinedAppRemoval(t *testing.T, privateBase string) {
 	}
 	for _, kind := range cases {
 		if !t.Run("quarantined-app-removal-"+kind, func(t *testing.T) {
+			// Each case owns a separate targets-* tree, intent and lease and
+			// spawns no child. Share the existing -test.parallel budget; the
+			// enclosing group joins every case before emitting its report.
+			t.Parallel()
 			f := newOwnedRemovalTargetFixture(t, privateBase, true, true)
 			retained := retainedRemovalQuarantineSnapshot(t, f)
 			ctx := context.Background()

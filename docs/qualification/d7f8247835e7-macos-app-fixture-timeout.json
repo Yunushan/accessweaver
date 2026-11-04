@@ -1,0 +1,303 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "d7f8247835e7342bc0e3f7b634d3f197deb99e6c",
+  "runID": 41906487061,
+  "jobID": 126842401183,
+  "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41906487061/job/126842401183",
+  "jobConclusion": "failure",
+  "failedStep": {
+    "name": "Disposable clean installation and isolated app/receipt refusal",
+    "status": "completed",
+    "conclusion": "failure",
+    "number": 6,
+    "started_at": "2026-11-04T20:28:01Z",
+    "completed_at": "2026-11-04T20:30:54Z"
+  },
+  "subsequentSteps": [
+    {
+      "name": "Attest package, inventories and native acceptance reports (attempt 1 of 2)",
+      "status": "completed",
+      "conclusion": "skipped",
+      "number": 7,
+      "started_at": "2026-11-04T20:30:54Z",
+      "completed_at": "2026-11-04T20:30:54Z"
+    },
+    {
+      "name": "Retry failed attestation once (attempt 2 of 2)",
+      "status": "completed",
+      "conclusion": "skipped",
+      "number": 8,
+      "started_at": "2026-11-04T20:30:54Z",
+      "completed_at": "2026-11-04T20:30:54Z"
+    },
+    {
+      "name": "Verify retained native package provenance and real rejection cases",
+      "status": "completed",
+      "conclusion": "skipped",
+      "number": 9,
+      "started_at": "2026-11-04T20:30:54Z",
+      "completed_at": "2026-11-04T20:30:54Z"
+    },
+    {
+      "name": "Retain actual package, SBOM and scoped compiler/inspection evidence",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 10,
+      "started_at": "2026-11-04T20:30:54Z",
+      "completed_at": "2026-11-04T20:30:57Z"
+    }
+  ],
+  "receivedEvidence": {
+    "providerJobMetadataSHA256": "f9081af913e4f4feb9a70a5906d0752bade11fa7c1f23d4954c280338c35aeb2",
+    "providerJobLogBytes": 39144,
+    "providerJobLogSHA256": "184d7249db3a658598a9831eaa118ff4318bcefd5f91bd8bc0d8ba08c42f3714",
+    "providerLogDigestAvailable": false,
+    "archiveBytes": 7339358,
+    "archiveSHA256": "f34fae93a73ab9d0051fbd082d44438966627cd9d54ce37e873dd8aedd15e66d",
+    "providerArchiveDigestVerified": true,
+    "reportEntry": "0.1.0-alpha/lifecycle-artifact.json",
+    "reportBytes": 13095,
+    "reportSHA256": "03abcd2b4c374328a3ff578314bc8e131909a9791f47a8175df63937e9f3e635",
+    "cryptographicAttestationVerified": false
+  },
+  "lifecycleObservation": {
+    "stage": "protected-deployment-transactions",
+    "failureType": "ValueError",
+    "failureSourceLine": 213,
+    "passed": false,
+    "ownedFixturesRemoved": false,
+    "cleanInstallExecuted": true,
+    "protectedDeploymentTransactionsPresent": false,
+    "packageSubjectsIndependentlyAuthenticated": false
+  },
+  "nativeTestObservation": {
+    "failure": "Go test process exceeded its 120-second total deadline",
+    "runningTest": "TestDarwinDeploymentRootCopyRecovery",
+    "runningGroup": "owned-removal-groups/quarantined-app",
+    "groupElapsedSeconds": 106,
+    "lastEnteredCase": "quarantined-app-removal-prefix-preserves-partial-app-record",
+    "lastCaseReportedElapsedSeconds": 0,
+    "stack": "os.File.Sync -> fullDeploymentSync (deployment_darwin.go:84) -> persistQuarantine (removal_quarantine_darwin.go:125) -> quarantinePublicAppUsing -> common case setup (removal_app_darwin_test.go:42)",
+    "caseSpecificAssertionReached": false,
+    "deadlockEstablished": false,
+    "fullFSyncItselfBlockedEstablished": false
+  },
+  "sourceReview": {
+    "appCases": 32,
+    "appCasesPreviouslySequential": true,
+    "perCaseExclusiveTemporaryTree": "targets-*",
+    "perCaseStoreIntentAndLease": true,
+    "processGlobalMutationOrChildSpawnInAppCasesFound": false,
+    "enclosingGroupJoinsBeforeReportAndOuterCleanup": true
+  },
+  "correction": {
+    "file": "internal/packageupgrade/removal_app_darwin_test.go",
+    "change": "Schedule each independent non-spawning app-removal subtest using t.Parallel before creating its private fixture. Reuse the existing global parallel limit.",
+    "existingParallelLimit": 3,
+    "goTestTimeoutSeconds": 120,
+    "sharedDriverTimeoutSeconds": 150,
+    "caseListAndAllExistingAssertionsByteIdentical": true,
+    "originalSourceSHA256": "9c8d65bcba7584954fdbc9eb25791fcc4fab6546fce3cb04977d619905a0a456",
+    "correctedSourceSHA256": "707f874b93dbb0990192ef1ac09f5be2b79399473693e76e71b76871306c1e0e",
+    "productionDurabilityChecksChanged": false,
+    "separateKillProcessChanged": false,
+    "freshNativeValidation": "Required on both architectures; not established by local compilation or pure tests."
+  },
+  "hostedCohort": [
+    {
+      "runID": 41906487061,
+      "name": "Native macOS experimental package acceptance",
+      "conclusion": "failure",
+      "providerRunURL": "https://github.com/Yunushan/accessweaver/actions/runs/41906487061",
+      "jobs": [
+        {
+          "id": 126842400693,
+          "name": "Native package acceptance (arm64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842401183,
+          "name": "Native package acceptance (amd64)",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "runID": 41906487218,
+      "name": "CI",
+      "conclusion": "success",
+      "providerRunURL": "https://github.com/Yunushan/accessweaver/actions/runs/41906487218",
+      "jobs": [
+        {
+          "id": 126842401294,
+          "name": "Race detector (Linux/arm64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842401736,
+          "name": "browser / Real browser (firefox)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842401791,
+          "name": "Test (ubuntu-24.04-arm)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842401803,
+          "name": "Race detector (Linux)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842401933,
+          "name": "Test (macos-15-intel)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402078,
+          "name": "browser / Real browser (webkit)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402105,
+          "name": "Test (macos-latest)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402136,
+          "name": "Go vulnerability checks",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402272,
+          "name": "browser / Real browser (chromium)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402274,
+          "name": "Cross-build (freebsd/amd64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402276,
+          "name": "Cross-build (darwin/amd64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402313,
+          "name": "Test (windows-latest)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402318,
+          "name": "Test (ubuntu-latest)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402319,
+          "name": "Cross-build (freebsd/arm64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402367,
+          "name": "Test (windows-11-arm)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402396,
+          "name": "Cross-build (linux/arm64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402443,
+          "name": "Cross-build (openbsd/arm64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402454,
+          "name": "Cross-build (openbsd/amd64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402455,
+          "name": "Cross-build (windows/arm64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402507,
+          "name": "Cross-build (windows/amd64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402573,
+          "name": "Cross-build (linux/amd64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402599,
+          "name": "Cross-build (darwin/arm64)",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "runID": 41906487046,
+      "name": "Native versioned macOS deployment acceptance",
+      "conclusion": "success",
+      "providerRunURL": "https://github.com/Yunushan/accessweaver/actions/runs/41906487046",
+      "jobs": [
+        {
+          "id": 126842400604,
+          "name": "Versioned package lifecycle (amd64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842401074,
+          "name": "Versioned package lifecycle (arm64)",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "runID": 41906487148,
+      "name": "Native public macOS desktop acceptance",
+      "conclusion": "success",
+      "providerRunURL": "https://github.com/Yunushan/accessweaver/actions/runs/41906487148",
+      "jobs": [
+        {
+          "id": 126842401283,
+          "name": "Public desktop lifecycle (amd64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842401505,
+          "name": "Public desktop lifecycle (arm64)",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "runID": 41906487156,
+      "name": "Windows installer lifecycle acceptance",
+      "conclusion": "success",
+      "providerRunURL": "https://github.com/Yunushan/accessweaver/actions/runs/41906487156",
+      "jobs": [
+        {
+          "id": 126842401482,
+          "name": "Native installer lifecycle (amd64)",
+          "conclusion": "success"
+        },
+        {
+          "id": 126842402167,
+          "name": "Native installer lifecycle (arm64)",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "interpretation": "The timeout interrupted common setup for a newly entered case after the app group had run 106 seconds. The stack and source support cumulative serial fixture work as a scheduling concern; they do not establish a deadlock, a failed case-specific assertion or an underlying filesystem cause. Failure evidence remains failure. Provider archive transport digest verification is not cryptographic subject authentication; attestation/provenance steps were skipped. Only the bounded JSON report entry was read from the archive; package/binary entries were neither extracted nor executed.",
+  "workflowRerunPerformed": false,
+  "targetExecutionPerformedLocally": false,
+  "productionQualificationComplete": false,
+  "readinessStatusChanged": false
+}
