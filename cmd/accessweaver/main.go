@@ -110,32 +110,13 @@ func execute(args []string) error {
 		return systemCommand(args[1:], root)
 	case "ui":
 		manager := engine.NewManager(root)
-		apiServer, err := api.New(store, manager, web.Assets)
+		server, err := api.New(store, manager, web.Assets)
 		if err != nil {
 			return err
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		addr, err := apiServer.Serve(ctx)
-		if err != nil {
-			return err
-		}
-		launcher, err := uiaccess.New(addr, apiServer.Token)
-		if err != nil {
-			stop()
-			apiServer.Wait()
-			return err
-		}
-		defer launcher.Close()
-		fmt.Println("AccessWeaver is running at", addr)
-		fmt.Println("Open this private launch file in your browser:", launcher.URL)
-		fmt.Println("Local interface only. Press Ctrl+C to exit. No external engines started automatically.")
-		if os.Getenv("ACCESSWEAVER_NO_BROWSER") != "1" {
-			openBrowser(launcher.URL)
-		}
-		<-ctx.Done()
-		apiServer.Wait()
-		return nil
+		return serveDesktop(ctx, server, os.Stdout)
 	case "engines":
 		for _, e := range engine.Catalog() {
 			fmt.Printf("%-14s %-10s platforms=%-30s  %s\n", e.ID, e.Kind, strings.Join(e.Platforms, ","), e.Source)

@@ -136,7 +136,7 @@ Saved profiles can be exported as authenticated, password-encrypted archives and
 
 Windows, Linux and macOS have partial signed administrator-policy enforcement; [managed configuration](docs/MANAGED_CONFIGURATION.md) documents its protected source, platform-specific install/update/rotation commands, current limits and unfinished recovery/qualification.
 
-The [audit commands](docs/AUDIT_EVENTS.md) verify segments against independently retained checkpoints and support explicit, revision-checked Linux profile imports with durable intent/outcome records and consented read-only JSONL export. Controller/admin coverage, other desktop storage and collector integration remain unfinished.
+The [audit commands](docs/AUDIT_EVENTS.md) verify segments against independently retained checkpoints and support explicit, revision-checked Linux profile imports with durable intent/outcome records, consented read-only JSONL export and an explicit profile-editing desktop that requires audit records for saves/deletes. Broader controller/admin coverage, mandatory managed admission, other desktop storage and collector integration remain unfinished.
 
 CI is configured to run unit tests on Linux, Windows and macOS, a Linux race check, and ten cross-build targets. A workflow configuration is not evidence that a run passed: see [Actions](https://github.com/Yunushan/accessweaver/actions) for results. BSD cross-compilation does not execute tests on BSD.
 

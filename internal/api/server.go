@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Yunushan/accessweaver/internal/audit"
 	"github.com/Yunushan/accessweaver/internal/buildinfo"
 	"github.com/Yunushan/accessweaver/internal/diagnostics"
 	"github.com/Yunushan/accessweaver/internal/engine"
@@ -28,16 +29,17 @@ import (
 )
 
 type Server struct {
-	Policy      *managed.Guard
-	Store       *profile.Store
-	Manager     *engine.Manager
-	Workflows   *workflow.Manager
-	UI          fs.FS
-	Token       string
-	mutations   mutationGate
-	historyRead sync.Mutex
-	statusRead  sync.Mutex
-	done        chan struct{}
+	Policy       *managed.Guard
+	Store        *profile.Store
+	Manager      *engine.Manager
+	Workflows    *workflow.Manager
+	UI           fs.FS
+	Token        string
+	profileAudit *audit.Recorder
+	mutations    mutationGate
+	historyRead  sync.Mutex
+	statusRead   sync.Mutex
+	done         chan struct{}
 }
 
 func New(store *profile.Store, manager *engine.Manager, static fs.FS) (*Server, error) {
@@ -67,6 +69,10 @@ func fail(w http.ResponseWriter, status int, message string) {
 
 func failProfile(w http.ResponseWriter, err error, fallback int) {
 	status := fallback
+	if errors.Is(err, audit.ErrRecorderUnavailable) || errors.Is(err, audit.ErrRecordedUncertain) {
+		fail(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
 	if errors.Is(err, profile.ErrConflict) {
 		status = http.StatusConflict
 	}
@@ -88,7 +94,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/support", s.support)
 	s.workflowRoutes(mux)
 	mux.HandleFunc("GET /api/bootstrap", func(w http.ResponseWriter, r *http.Request) {
-		JSON(w, 200, map[string]any{"version": buildinfo.Version, "platform": runtime.GOOS, "arch": runtime.GOARCH, "build": buildinfo.Current()})
+		JSON(w, 200, map[string]any{"version": buildinfo.Version, "platform": runtime.GOOS, "arch": runtime.GOARCH, "build": buildinfo.Current(), "profileEditingOnly": s.profileAudit != nil})
 	})
 	mux.HandleFunc("GET /api/v1/engines", func(w http.ResponseWriter, r *http.Request) { JSON(w, 200, engine.Catalog()) })
 	mux.HandleFunc("GET /api/v1/profiles", func(w http.ResponseWriter, r *http.Request) {
@@ -121,7 +127,7 @@ func (s *Server) Handler() http.Handler {
 			fail(w, 409, "stop active profile before editing")
 			return
 		}
-		if err := s.Store.SaveIfUnchangedContext(r.Context(), p); err != nil {
+		if err := s.profileChange(r.Context(), "profile.write", func(ctx context.Context) error { return s.Store.SaveIfUnchangedContext(ctx, p) }); err != nil {
 			failProfile(w, err, http.StatusBadRequest)
 			return
 		}
@@ -149,7 +155,9 @@ func (s *Server) Handler() http.Handler {
 			fail(w, 409, "stop active profile before deleting")
 			return
 		}
-		if err := s.Store.DeleteIfUnchangedContext(r.Context(), id, input.ExpectedUpdatedAt); err != nil {
+		if err := s.profileChange(r.Context(), "profile.delete", func(ctx context.Context) error {
+			return s.Store.DeleteIfUnchangedContext(ctx, id, input.ExpectedUpdatedAt)
+		}); err != nil {
 			failProfile(w, err, http.StatusBadRequest)
 			return
 		}
@@ -266,6 +274,10 @@ func (s *Server) Handler() http.Handler {
 			// the credential: the OS-private browser launcher delivers it instead.
 			if s.Token == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-AccessWeaver-Token")), []byte(s.Token)) != 1 {
 				fail(w, 403, "missing or invalid session token; open the private browser launch file")
+				return
+			}
+			if !s.profileAuditAllows(r) {
+				fail(w, http.StatusForbidden, "this desktop session supports profile editing and previews only")
 				return
 			}
 			if r.Method != "GET" && r.Method != "HEAD" {

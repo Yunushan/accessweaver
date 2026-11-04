@@ -17,11 +17,12 @@ const auditUsage = "Audit verification and explicit local recording:\n" +
 	"  accessweaver audit initialize --directory EXISTING_PRIVATE_DIRECTORY\n" +
 	"  accessweaver audit import --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --profile JSON_FILE\n" +
 	"  accessweaver audit export --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --consent metadata-only\n" +
+	"  accessweaver audit ui --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE\n" +
 	"Local recording/export currently requires Linux amd64/arm64; verify is portable and read-only.\n" +
 	"Export is a read-only snapshot; separate export-access recording and collector acknowledgments remain incomplete.\n" +
 	"Retain complete checkpoints through an independently trusted channel.\n" +
 	"Self-selected checkpoints do not authenticate a producer or detect a rewritten history.\n" +
-	"Only audit import records a reviewed profile import; controller/admin coverage and collectors remain incomplete.\n" +
+	"Audit import records reviewed imports; audit ui records profile saves/deletes and refuses other desktop actions. Administrator coverage and collectors remain incomplete.\n" +
 	"See docs/AUDIT_EVENTS.md for the format, limits and remaining integration work.\n"
 
 func auditCommand(args []string) error {
@@ -40,6 +41,9 @@ func auditCommand(args []string) error {
 	}
 	if len(args) > 0 && args[0] == "export" {
 		return auditExportCommand(args, os.Stdout)
+	}
+	if len(args) > 0 && args[0] == "ui" {
+		return auditUICommand(args, os.Stdout, os.Stderr)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

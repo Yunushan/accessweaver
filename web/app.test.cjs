@@ -376,3 +376,22 @@ test('journal hints invalidate a changed recovery review and preserve an unchang
  env.put('jobFixture',{id:'completed',action:'install',state:'failed',result:{journal:'C:\\journals\\replacement.json'}});env.run('renderSystemJob(jobFixture)');
  assert.equal(env.get('system-journal').value,'replacement.json');assert.equal(env.run('systemUI.plan'),null);assert.equal(env.get('system-consent').checked,false);assert.equal(env.get('system-apply').disabled,true);
 });
+
+
+test('audited profile desktop displays limits and disables execution while preserving editing',async()=>{
+ const env=environment();env.run('state.token="fixture";state.offline=false;state.loading=false');
+ env.context.fetch=async path=>({ok:true,json:async()=>path==='/api/bootstrap'?{platform:'linux',profileEditingOnly:true}:path==='/api/v1/runtime'?{state:'stopped'}:[]});
+ const core=await env.run('readCore()');env.put('coreFixture',core);env.run('Object.assign(state,coreFixture);renderHero()');
+ assert.equal(env.run('state.profileEditingOnly'),true);
+ assert.equal(env.get('profile-audit-notice').hidden,false);
+ assert.match(env.get('profile-audit-notice').textContent,/saves and deletes require audit/);
+ assert.equal(env.get('probe-submit').disabled,true);assert.equal(env.get('launch-confirm').disabled,true);assert.equal(env.get('export-support').disabled,true);
+ env.run('navigate("system")');assert.equal(env.run('state.view'),'profiles');
+ env.put('fixture',baseProfile());const card=env.run('profileCard(fixture,true)');
+ assert.match(card,/data-profile-action="run"[^>]*disabled/);
+ assert.doesNotMatch(card,/data-profile-action="edit"[^>]*disabled/);
+});
+test('audited desktop never saves profiles to browser fallback after partial connection',async()=>{
+ const env=environment();env.run('state.profileEditingOnly=true');env.put('fixture',baseProfile());
+ await assert.rejects(env.run('persist(fixture)'));assert.equal(env.data.get('aw.profiles'),undefined);
+});
