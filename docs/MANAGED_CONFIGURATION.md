@@ -24,6 +24,8 @@ Initialize and independently enroll a private stream for the intended operator/b
 
 This flag governs application profile mutations. It does not require audit for engine/workflow/admin actions, exports or reads; authenticate a collector/producer; enforce durable acknowledgments/retention; or protect profile files from direct writes by their OS owner or an administrator. The in-process producer and native policy/storage code remain trusted, and callbacks must not fork or reuse an intent for unrelated operations. Endpoint permissions and administrative controls must address direct filesystem access separately. Full enterprise audit and native managed-endpoint qualification remain incomplete; no readiness gate is promoted by the restriction.
 
+The source-built disposable Linux acceptance fixture includes an ordinary-user CLI roundtrip against the real enrolled fixed machine-policy source. It retains the original denial/revocation/corruption cases and a separate fifteen-second worker budget. Treat the fixture definition and local compilation as preparation; inspect its exact new hosted result before claiming native required-audit acceptance. Collector enrollment, broad action coverage, packaged endpoint behavior and other target qualification remain separate.
+
 ## Offline administrator workflow
 
 Keep signing keys outside the source checkout and managed endpoints, on a protected signing workstation. Only unencrypted Ed25519 PKCS#8 PEM input is currently supported; HSM, encrypted-key and signing-service integration remain work. This utility does not generate or change key-file permissions. An existing organization key may be used, or [OpenSSL `genpkey`](https://docs.openssl.org/3.5/man1/openssl-genpkey/) can create an offline Ed25519 key:

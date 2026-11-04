@@ -237,15 +237,20 @@ func TestDisposableLinuxManagedPolicyNative(t *testing.T) {
 	if status, err := managed.MachineStatus(); err != nil || !status.Valid {
 		t.Fatal("masked named ACL write incorrectly treated as effective", status, err)
 	}
+	auditWorkerRoot := filepath.Join(fixtureRoot, "recorded-profile-worker")
 	runProbe := func(mode string, afterReady ...func()) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		child := exec.CommandContext(ctx, probePath, "-test.run=^TestDisposableLinuxManagedPolicyNative$", "-test.v")
 		child.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 65534, Gid: 65534, Groups: []uint32{}}}
-		child.Env = []string{"PATH=/usr/bin:/bin", "TMPDIR=/tmp", "GITHUB_ACTIONS=true", "RUNNER_ENVIRONMENT=github-hosted", "RUNNER_OS=Linux", "ACCESSWEAVER_DISPOSABLE_LINUX_POLICY_TEST=1", "ACCESSWEAVER_LINUX_POLICY_PROBE=1", "ACCESSWEAVER_LINUX_POLICY_PROFILE=" + profilePath, "ACCESSWEAVER_LINUX_POLICY_EXPECT=" + mode}
+		child.Env = []string{"PATH=/usr/bin:/bin", "TMPDIR=/tmp", "GITHUB_ACTIONS=true", "RUNNER_ENVIRONMENT=github-hosted", "RUNNER_OS=Linux", "ACCESSWEAVER_DISPOSABLE_LINUX_POLICY_TEST=1", "ACCESSWEAVER_LINUX_POLICY_PROBE=1", "ACCESSWEAVER_LINUX_POLICY_PROFILE=" + profilePath, "ACCESSWEAVER_LINUX_POLICY_EXPECT=" + mode, "ACCESSWEAVER_LINUX_POLICY_AUDIT_ROOT=" + auditWorkerRoot}
 		if len(afterReady) == 0 {
+			marker := "ordinary-user policy and launch checks passed"
+			if mode == "required-audit" {
+				marker = "ordinary-user required-audit checks passed"
+			}
 			output, err := child.CombinedOutput()
-			if err != nil || ctx.Err() != nil || !bytes.Contains(output, []byte("ordinary-user policy and launch checks passed")) {
+			if err != nil || ctx.Err() != nil || !bytes.Contains(output, []byte(marker)) {
 				t.Fatalf("ordinary-user probe: %s %v", output, err)
 			}
 			return
@@ -350,7 +355,40 @@ func TestDisposableLinuxManagedPolicyNative(t *testing.T) {
 	if err := os.WriteFile(policyPath, installed, 0644); err != nil {
 		t.Fatal(err)
 	}
-	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "platform": "linux", "arch": runtime.GOARCH, "goVersion": runtime.Version(), "rootOwnedMachineSource": true, "activeOrdinaryUserUpdateStopsEngine": true, "unsafeSourceStopsEngine": true, "initialReplacementDenied": true, "ordinaryUserCannotWritePolicyOrEngine": true, "ordinaryUserProfileChangesDenied": true, "approvedOrdinaryUserFixtureStarted": true, "callerEnvironmentNotInherited": true, "namedACLWriteMaskedByMode": true, "effectiveNamedACLWriteFailsClosed": true, "changedEngineHashDenied": true, "writableDirectoryFailsClosed": true, "invalidValueFailsClosed": true, "cleanupScheduled": true, "productionQualificationComplete": false}
+	// Keep all earlier denial, revocation and damaged-source cases intact. A
+	// separately signed newer policy now permits profile changes only through
+	// a real recorded operation in a fresh ordinary-user source fixture.
+	policy.Revision = 3
+	policy.AllowProfileChanges = true
+	policy.RequireProfileAudit = true
+	requiredBytes, err := json.Marshal(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requiredEnvelope, err := managed.Sign(requiredBytes, private, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, err := managed.Update(requiredEnvelope); err != nil || !result.Committed || result.Revision != 3 {
+		t.Fatal("required-audit native update", result, err)
+	}
+	// Publication can replace the root. Cleanup must retain its exact new
+	// identity rather than deleting an unverified changed directory.
+	owned, err = os.Lstat(policyDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(auditWorkerRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(auditWorkerRoot, 65534, 65534); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(auditWorkerRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	runProbe("required-audit")
+	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "platform": "linux", "arch": runtime.GOARCH, "goVersion": runtime.Version(), "rootOwnedMachineSource": true, "activeOrdinaryUserUpdateStopsEngine": true, "unsafeSourceStopsEngine": true, "initialReplacementDenied": true, "ordinaryUserCannotWritePolicyOrEngine": true, "ordinaryUserProfileChangesDenied": true, "approvedOrdinaryUserFixtureStarted": true, "callerEnvironmentNotInherited": true, "namedACLWriteMaskedByMode": true, "effectiveNamedACLWriteFailsClosed": true, "changedEngineHashDenied": true, "writableDirectoryFailsClosed": true, "invalidValueFailsClosed": true, "requiredProfileAuditRevision": 3, "ordinaryUserRequiredAuditRoundTrip": true, "unrecordedCLIImportAndRestoreDenied": true, "requiredAuditStaleHeadPreserved": true, "requiredAuditVerifiedRecords": 2, "requiredAuditProbeUID": 65534, "cleanupScheduled": true, "productionQualificationComplete": false}
 	data, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -405,6 +443,11 @@ func linuxOrdinaryPolicyProbe(t *testing.T) {
 	p, err := profile.Decode(bytes.NewReader(data))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if os.Getenv("ACCESSWEAVER_LINUX_POLICY_EXPECT") == "required-audit" {
+		linuxRequiredProfileAuditProbe(t, p)
+		fmt.Println("ordinary-user required-audit checks passed")
+		return
 	}
 	store, err := profile.NewStore(t.TempDir())
 	if err != nil {
