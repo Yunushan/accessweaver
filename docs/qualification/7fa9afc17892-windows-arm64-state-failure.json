@@ -1,0 +1,394 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "provider-bound-windows-arm64-installer-state-failure",
+  "sourceCommit": "7fa9afc17892a0dddd8b53cd6c9ec18ab23230c2",
+  "workflow": "Yunushan/accessweaver/.github/workflows/installer-lifecycle.yml",
+  "runID": 41747312842,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/41747312842",
+  "failedJob": {
+    "id": 126303453154,
+    "status": "completed",
+    "conclusion": "failure",
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41747312842/job/126303453154"
+  },
+  "providerArtifact": {
+    "id": 13284817050,
+    "name": "installer-lifecycle-windows-arm64",
+    "size_in_bytes": 5066,
+    "digest": "sha256:6f7e731d9e0e3bc88cd02fe7532e86990daa625bdfc6570ffa28733ce6782690",
+    "created_at": "2026-11-04T00:40:15Z"
+  },
+  "providerZIPDigestVerified": true,
+  "diagnosticSubject": {
+    "file": "arm64.json",
+    "bytes": 65465,
+    "sha256": "833b2caca326c532e3256c2ce61dca04da2d1509bc6ab5840dd5ffea532c861d"
+  },
+  "SigstoreAuthenticated": false,
+  "failure": {
+    "stage": "uninstall",
+    "type": "System.Management.Automation.RuntimeException",
+    "sourceLine": 607,
+    "assertion": "Installer lifecycle changed selected services, firewall rules or DNS configuration",
+    "lastNative": {
+      "outputComplete": true,
+      "exitCode": 0,
+      "file": "unins000.exe"
+    },
+    "lastCompletedOperation": "refused-uninstall"
+  },
+  "observations": {
+    "deltaWasAbsentAfterReinstall": true,
+    "sameDeltaPresentBeforeAndAfterUninstall": true,
+    "servicesAndDNSMatchedBaseline": true,
+    "firewallRowsBefore": 506,
+    "firewallRowsAfter": 507,
+    "addedFirewallRows": 1,
+    "addedRowClassification": "other",
+    "causeDetermined": false,
+    "causalAttributionToUninstallerEstablished": false,
+    "earliestObservedChangeWindow": "after-reinstall to before-uninstall",
+    "retainedStateObservations": [
+      {
+        "phase": "baseline",
+        "comparison": {
+          "exactMatch": true,
+          "beforeSHA256": "a16d14a378d4a8c2a7a4b710b96bdf3c65c2cb6e90fdfe4519e623d8e694c9d6",
+          "afterSHA256": "a16d14a378d4a8c2a7a4b710b96bdf3c65c2cb6e90fdfe4519e623d8e694c9d6",
+          "domains": {
+            "services": {
+              "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "serializedEqual": true,
+              "beforeRows": 0,
+              "afterRows": 0,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            },
+            "firewall": {
+              "beforeSHA256": "07695ea571c9b6dd2e6064d927133ce2ffec5d4cc9979043d17057341c04125d",
+              "afterSHA256": "07695ea571c9b6dd2e6064d927133ce2ffec5d4cc9979043d17057341c04125d",
+              "serializedEqual": true,
+              "beforeRows": 506,
+              "afterRows": 506,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            },
+            "dns": {
+              "beforeSHA256": "3f0cc4f77939decb04164359c9edd4e1eca6df454c171a08d8e8eeb40f82c8f7",
+              "afterSHA256": "3f0cc4f77939decb04164359c9edd4e1eca6df454c171a08d8e8eeb40f82c8f7",
+              "serializedEqual": true,
+              "beforeRows": 6,
+              "afterRows": 6,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            }
+          }
+        }
+      },
+      {
+        "phase": "after-install",
+        "comparison": {
+          "exactMatch": true,
+          "beforeSHA256": "a16d14a378d4a8c2a7a4b710b96bdf3c65c2cb6e90fdfe4519e623d8e694c9d6",
+          "afterSHA256": "a16d14a378d4a8c2a7a4b710b96bdf3c65c2cb6e90fdfe4519e623d8e694c9d6",
+          "domains": {
+            "services": {
+              "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "serializedEqual": true,
+              "beforeRows": 0,
+              "afterRows": 0,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            },
+            "firewall": {
+              "beforeSHA256": "07695ea571c9b6dd2e6064d927133ce2ffec5d4cc9979043d17057341c04125d",
+              "afterSHA256": "07695ea571c9b6dd2e6064d927133ce2ffec5d4cc9979043d17057341c04125d",
+              "serializedEqual": true,
+              "beforeRows": 506,
+              "afterRows": 506,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            },
+            "dns": {
+              "beforeSHA256": "3f0cc4f77939decb04164359c9edd4e1eca6df454c171a08d8e8eeb40f82c8f7",
+              "afterSHA256": "3f0cc4f77939decb04164359c9edd4e1eca6df454c171a08d8e8eeb40f82c8f7",
+              "serializedEqual": true,
+              "beforeRows": 6,
+              "afterRows": 6,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            }
+          }
+        }
+      },
+      {
+        "phase": "after-upgrade",
+        "comparison": {
+          "exactMatch": true,
+          "beforeSHA256": "a16d14a378d4a8c2a7a4b710b96bdf3c65c2cb6e90fdfe4519e623d8e694c9d6",
+          "afterSHA256": "a16d14a378d4a8c2a7a4b710b96bdf3c65c2cb6e90fdfe4519e623d8e694c9d6",
+          "domains": {
+            "services": {
+              "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "serializedEqual": true,
+              "beforeRows": 0,
+              "afterRows": 0,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            },
+            "firewall": {
+              "beforeSHA256": "07695ea571c9b6dd2e6064d927133ce2ffec5d4cc9979043d17057341c04125d",
+              "afterSHA256": "07695ea571c9b6dd2e6064d927133ce2ffec5d4cc9979043d17057341c04125d",
+              "serializedEqual": true,
+              "beforeRows": 506,
+              "afterRows": 506,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            },
+            "dns": {
+              "beforeSHA256": "3f0cc4f77939decb04164359c9edd4e1eca6df454c171a08d8e8eeb40f82c8f7",
+              "afterSHA256": "3f0cc4f77939decb04164359c9edd4e1eca6df454c171a08d8e8eeb40f82c8f7",
+              "serializedEqual": true,
+              "beforeRows": 6,
+              "afterRows": 6,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            }
+          }
+        }
+      },
+      {
+        "phase": "after-reinstall",
+        "comparison": {
+          "exactMatch": true,
+          "beforeSHA256": "a16d14a378d4a8c2a7a4b710b96bdf3c65c2cb6e90fdfe4519e623d8e694c9d6",
+          "afterSHA256": "a16d14a378d4a8c2a7a4b710b96bdf3c65c2cb6e90fdfe4519e623d8e694c9d6",
+          "domains": {
+            "services": {
+              "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "serializedEqual": true,
+              "beforeRows": 0,
+              "afterRows": 0,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            },
+            "firewall": {
+              "beforeSHA256": "07695ea571c9b6dd2e6064d927133ce2ffec5d4cc9979043d17057341c04125d",
+              "afterSHA256": "07695ea571c9b6dd2e6064d927133ce2ffec5d4cc9979043d17057341c04125d",
+              "serializedEqual": true,
+              "beforeRows": 506,
+              "afterRows": 506,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            },
+            "dns": {
+              "beforeSHA256": "3f0cc4f77939decb04164359c9edd4e1eca6df454c171a08d8e8eeb40f82c8f7",
+              "afterSHA256": "3f0cc4f77939decb04164359c9edd4e1eca6df454c171a08d8e8eeb40f82c8f7",
+              "serializedEqual": true,
+              "beforeRows": 6,
+              "afterRows": 6,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            }
+          }
+        }
+      },
+      {
+        "phase": "before-uninstall",
+        "comparison": {
+          "exactMatch": false,
+          "beforeSHA256": "a16d14a378d4a8c2a7a4b710b96bdf3c65c2cb6e90fdfe4519e623d8e694c9d6",
+          "afterSHA256": "9ebbec73183fc26540a4e3e176122d6d25af53bda5fbe81d05c93e1d6760a5ef",
+          "domains": {
+            "services": {
+              "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "serializedEqual": true,
+              "beforeRows": 0,
+              "afterRows": 0,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            },
+            "firewall": {
+              "beforeSHA256": "07695ea571c9b6dd2e6064d927133ce2ffec5d4cc9979043d17057341c04125d",
+              "afterSHA256": "99828c832f2fe05473cd780c9e9a5f1e3edd125c276658a7eea26fdbf6d0780b",
+              "serializedEqual": false,
+              "beforeRows": 506,
+              "afterRows": 507,
+              "added": 1,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [
+                {
+                  "identitySHA256": "df3b5ae88188ed98049fbee0c1d165fc4a2eea6881669e93ed157ee1a32d5eb8",
+                  "kind": "added",
+                  "classification": "other",
+                  "beforeSHA256": null,
+                  "afterSHA256": "4b16aca9abfe1b406b1cf4b5dd62a040ebe21eb59ab1e68bfe269eb1a24fb62e",
+                  "fields": []
+                }
+              ],
+              "changesTruncated": false
+            },
+            "dns": {
+              "beforeSHA256": "3f0cc4f77939decb04164359c9edd4e1eca6df454c171a08d8e8eeb40f82c8f7",
+              "afterSHA256": "3f0cc4f77939decb04164359c9edd4e1eca6df454c171a08d8e8eeb40f82c8f7",
+              "serializedEqual": true,
+              "beforeRows": 6,
+              "afterRows": 6,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            }
+          }
+        }
+      },
+      {
+        "phase": "after-uninstall",
+        "comparison": {
+          "exactMatch": false,
+          "beforeSHA256": "a16d14a378d4a8c2a7a4b710b96bdf3c65c2cb6e90fdfe4519e623d8e694c9d6",
+          "afterSHA256": "9ebbec73183fc26540a4e3e176122d6d25af53bda5fbe81d05c93e1d6760a5ef",
+          "domains": {
+            "services": {
+              "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "serializedEqual": true,
+              "beforeRows": 0,
+              "afterRows": 0,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            },
+            "firewall": {
+              "beforeSHA256": "07695ea571c9b6dd2e6064d927133ce2ffec5d4cc9979043d17057341c04125d",
+              "afterSHA256": "99828c832f2fe05473cd780c9e9a5f1e3edd125c276658a7eea26fdbf6d0780b",
+              "serializedEqual": false,
+              "beforeRows": 506,
+              "afterRows": 507,
+              "added": 1,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [
+                {
+                  "identitySHA256": "df3b5ae88188ed98049fbee0c1d165fc4a2eea6881669e93ed157ee1a32d5eb8",
+                  "kind": "added",
+                  "classification": "other",
+                  "beforeSHA256": null,
+                  "afterSHA256": "4b16aca9abfe1b406b1cf4b5dd62a040ebe21eb59ab1e68bfe269eb1a24fb62e",
+                  "fields": []
+                }
+              ],
+              "changesTruncated": false
+            },
+            "dns": {
+              "beforeSHA256": "3f0cc4f77939decb04164359c9edd4e1eca6df454c171a08d8e8eeb40f82c8f7",
+              "afterSHA256": "3f0cc4f77939decb04164359c9edd4e1eca6df454c171a08d8e8eeb40f82c8f7",
+              "serializedEqual": true,
+              "beforeRows": 6,
+              "afterRows": 6,
+              "added": 0,
+              "removed": 0,
+              "changed": 0,
+              "rowSerializationChanges": 0,
+              "recordOrderingChanged": false,
+              "changes": [],
+              "changesTruncated": false
+            }
+          }
+        }
+      }
+    ]
+  },
+  "scope": {
+    "overallNativeAcceptancePassed": false,
+    "actualUserProfilePreservationVerified": false,
+    "ownedFixturesRemoved": false,
+    "productionQualificationComplete": false,
+    "unchangedAssertionRetried": false,
+    "finalStateAssertionRelaxed": false
+  },
+  "nextRequired": "Trace selected state around intervening fixture families, retaining the original baseline and exact final-state assertion; do not assume the added rule is harmless or generated by the uninstaller.",
+  "readinessGatesPromoted": 0
+}
