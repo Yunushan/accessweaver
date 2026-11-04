@@ -185,6 +185,8 @@ For explicit intent/outcome recording of Linux install, update, key rotation and
 
 ## Disposable hosted Linux acceptance
 
+The [33c7737 source-built hosted results](qualification/33c7737d97cd-linux-recorded-policy-audit.json) verify the explicit administrator policy-update producer and its two-record consented export on Linux amd64/arm64, followed by the existing independent UID/GID 65534 required-profile-audit roundtrip. Other administrative producers, packaged endpoints and collector-backed deployment remain separate acceptance requirements.
+
 `test-linux-managed-policy.sh` compiles static test executables as the ordinary runner user, then invokes only the scoped native cases with sudo on a fresh GitHub-hosted Linux runner. It requires `ACCESSWEAVER_DISPOSABLE_LINUX_POLICY_TEST=1`, the hosted Linux context and absence of existing policy/coordination state. Never enable that flag on a workstation or self-hosted runner. Ordinary unit tests use private temporary directories and read-only source inspection; they do not install `/etc` policy.
 
 The test creates only its owned policy/coordination state and an inert ELF fixture under a unique `/etc/accessweaver-policy-test-...` directory. A child with UID/GID 65534 and no supplementary groups must read policy, fail policy/binary writes and profile changes, reject unauthorized update/rotation, and start only the approved fixture with the fixed environment. A real named-user ACL grants write but masks it off for the positive case; enabling that mask write must block authority. Tests also reject tampered executable bytes, writable policy directories and invalid installed JSON.
