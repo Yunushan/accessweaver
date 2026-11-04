@@ -70,3 +70,55 @@ function New-InstallerStateCheckpoint([string]$Phase,[string]$Baseline,[string]$
         transition=(Compare-InstallerState $Previous $Current)
     }
 }
+
+# Metadata only from the already returned Get-NetFirewallRule objects. No extra
+# native query, origin/process inference, rule mutation or acceptance predicate.
+function Get-InstallerCapturedFirewallMetadata($Rule) {
+    if($null -eq $Rule){return [ordered]@{present=$false}}
+    $fields=[ordered]@{}
+    foreach($name in @('PolicyStoreSourceType','PolicyStoreSource','Owner','Group','Profile','PrimaryStatus','EnforcementStatus')){
+        $property=$Rule.PSObject.Properties[$name]
+        if($null -eq $property){$fields[$name]=[ordered]@{present=$false};continue}
+        if($null -eq $property.Value){$fields[$name]=[ordered]@{present=$true;isNull=$true};continue}
+        $value=[string]$property.Value
+        if($value.Length -gt 4096){$fields[$name]=[ordered]@{present=$true;omitted=$true};continue}
+        $bytes=[Text.UTF8Encoding]::new($false).GetByteCount($value)
+        if($bytes -gt 4096){$fields[$name]=[ordered]@{present=$true;omitted=$true};continue}
+        $fields[$name]=[ordered]@{present=$true;utf8Bytes=$bytes;sha256=(Get-InstallerStateTextHash $value)}
+    }
+    $sourceClass='unclassified'
+    $source=$Rule.PSObject.Properties['PolicyStoreSourceType']
+    if($null -eq $source){$sourceClass='absent'}
+    elseif($null -ne $source.Value -and @('Local','GroupPolicy','Dynamic','Generated','Hardcoded') -ccontains ([string]$source.Value)){$sourceClass=[string]$source.Value}
+    return [ordered]@{present=$true;policySourceClass=$sourceClass;fields=$fields}
+}
+function New-InstallerCapturedFirewallMap([object[]]$Rules) {
+    if($Rules.Count -gt 10000){throw 'Captured firewall metadata exceeds row budget'}
+    $map=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+    foreach($rule in $Rules){
+        if($null -eq $rule){throw 'Captured firewall metadata requires complete rows'}
+        $name=[string]$rule.Name
+        if([string]::IsNullOrEmpty($name) -or $name.Length -gt 4096){throw 'Captured firewall identity is unavailable or excessive'}
+        $key=Get-InstallerStateTextHash $name
+        if($map.ContainsKey($key)){throw 'Captured firewall identities are ambiguous'}
+        $map.Add($key,$rule)
+    }
+    return ,$map
+}
+function New-InstallerFirewallOrigins([string]$Phase,[object[]]$Changes,[object[]]$BeforeRules,[object[]]$AfterRules,[int]$Remaining) {
+    if($Phase -cnotmatch '^[a-z][a-z0-9-]{0,79}$' -or $Remaining -lt 0 -or $Remaining -gt 16 -or $Changes.Count -gt 32){throw 'Invalid captured firewall metadata budget'}
+    if($Remaining -eq 0 -or $Changes.Count -eq 0){return ,@()}
+    $before=New-InstallerCapturedFirewallMap $BeforeRules
+    $after=New-InstallerCapturedFirewallMap $AfterRules
+    $records=[Collections.Generic.List[object]]::new()
+    foreach($change in $Changes){
+        if($records.Count -ge $Remaining){break}
+        $identity=[string]$change.identitySHA256;$kind=[string]$change.kind
+        if($identity -cnotmatch '^[a-f0-9]{64}$' -or @('added','removed','changed','row-serialization') -cnotcontains $kind){throw 'Invalid captured firewall change identity'}
+        $old=$null;$next=$null
+        if($before.ContainsKey($identity)){$old=$before[$identity]}
+        if($after.ContainsKey($identity)){$next=$after[$identity]}
+        $records.Add([ordered]@{phase=$Phase;identitySHA256=$identity;kind=$kind;before=(Get-InstallerCapturedFirewallMetadata $old);after=(Get-InstallerCapturedFirewallMetadata $next)})
+    }
+    return ,@($records.ToArray())
+}

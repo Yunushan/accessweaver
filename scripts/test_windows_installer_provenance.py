@@ -1,5 +1,5 @@
 import copy
-from verify_windows_installer_provenance import PHASES,validate_state_observations
+from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics
 import os
 from pathlib import Path
 import subprocess
@@ -109,6 +109,21 @@ class WindowsStateObservationContracts(unittest.TestCase):
             elif kind=="missing-domain":item["transition"]["domains"].pop("dns")
             elif kind=="unknown-envelope":item["privatePath"]="/private"
             with self.subTest(kind=kind),self.assertRaises(ValueError):validate_state_observations(observations)
+
+
+class CapturedFirewallOriginContracts(unittest.TestCase):
+    def fixture(self):
+        return {"schemaVersion":1,"source":"captured-rule-properties","maxRecords":16,"maxPropertyBytes":4096,"records":[],"truncated":False,"unavailable":False,"extraNativeQueriesPerformed":False,"processOriginEstablished":False}
+
+    def test_qualified_unchanged_state_requires_complete_empty_bounded_metadata(self):
+        self.assertEqual(validate_firewall_origin_diagnostics(self.fixture()),{"nativeFirewallOriginRecordsVerified":0})
+
+    def test_missing_private_unbounded_incomplete_or_mutating_metadata_refuses(self):
+        invalid=[None,{},dict(self.fixture(),privateRuleName="private")]
+        for key,value in (("schemaVersion",True),("schemaVersion",2),("source","native-query"),("maxRecords",17),("maxPropertyBytes",4097),("records",[{}]),("records",{}),("truncated",True),("unavailable",True),("extraNativeQueriesPerformed",True),("processOriginEstablished",True)):
+            invalid.append(dict(self.fixture(),**{key:value}))
+        for value in invalid:
+            with self.subTest(value=value),self.assertRaises(ValueError):validate_firewall_origin_diagnostics(value)
 
 
 if __name__=='__main__':unittest.main()

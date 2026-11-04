@@ -82,9 +82,17 @@ def validate_state_observations(observations):
     return {"nativeStateCheckpointsVerified":len(PHASES),"nativeStateComparisonsVerified":2*len(PHASES)}
 
 
+def validate_firewall_origin_diagnostics(value):
+    expected={"schemaVersion":1,"source":"captured-rule-properties","maxRecords":16,"maxPropertyBytes":4096,"records":[],"truncated":False,"unavailable":False,"extraNativeQueriesPerformed":False,"processOriginEstablished":False}
+    require(type(value) is dict and set(value)==set(expected),"Incomplete captured firewall metadata envelope")
+    for key,wanted in expected.items():
+        require(type(value[key]) is type(wanted) and value[key]==wanted,"Qualified unchanged state must have complete empty captured firewall metadata")
+    return {"nativeFirewallOriginRecordsVerified":0}
+
+
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(report.get("schemaVersion")==8 and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(report.get("schemaVersion")==9 and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -93,6 +101,7 @@ def validate_contents(root,commit,ref,arch,versions):
     require(re.fullmatch(r"[1-9][0-9]{0,19}",str(report.get("runID",""))) is not None,"Missing native invocation identity")
     require(report.get("stateDiagnosticsSourceSHA256")==digest(Path(__file__).with_name("windows-installer-state.ps1").read_bytes()),"State diagnostics differ from approved verifier source")
     state_counts=validate_state_observations(report.get("stateObservations"))
+    origin_counts=validate_firewall_origin_diagnostics(report.get("firewallOriginDiagnostics"))
     operations=report.get("operations",[])
     expected=["install","upgrade","reinstall","refused-downgrade","refused-uninstall","uninstall"]
     require([o.get("operation") for o in operations]==expected,"Native lifecycle operation coverage differs")
@@ -114,7 +123,7 @@ def validate_contents(root,commit,ref,arch,versions):
         require(payload.get("version")==version and payload.get("hashes")==[{"alg":"SHA-256","content":build["payloadSha256"]}],"Installer SBOM payload subject differs")
         require(compiler.get("version")=="6.7.1" and prop_map(compiler).get("accessweaver:compiler-sha256")==build["compilerSHA256"],"Installer SBOM compiler subject differs")
         candidates.append({"file":name,"sha256":digest(binary),"bytes":len(binary),"payloadSHA256":build["payloadSha256"],"payloadTarget":"windows/"+arch,"bootstrapPEMachine":"0x014c","sbomSHA256":digest((root/(name+".cdx.json")).read_bytes())})
-    return {"candidates":candidates,**state_counts,"nativeLifecycleOperationsVerified":len(expected),"nativeRunID":str(report["runID"]),"nativeDependencyClosureComplete":False}
+    return {"candidates":candidates,**state_counts,**origin_counts,"nativeLifecycleOperationsVerified":len(expected),"nativeRunID":str(report["runID"]),"nativeDependencyClosureComplete":False}
 
 def stage(build_root,destination,commit,ref,arch,versions):
     validate_identity(commit,ref);names=subject_names(arch,versions)

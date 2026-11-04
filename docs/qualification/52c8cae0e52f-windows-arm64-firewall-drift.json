@@ -1,0 +1,431 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "52c8cae0e52f7f5c8474da21c0fdafeff7744dc3",
+  "sourceRef": "refs/heads/main",
+  "scope": "Provider-bound failed Windows ARM64 original-baseline preservation; firewall origin/cause remains unknown",
+  "providerJob": {
+    "id": 126573710447,
+    "runID": 41829789374,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41829789374/job/126573710447",
+    "conclusion": "failure"
+  },
+  "providerArtifact": {
+    "id": 13322428303,
+    "node_id": "MDg6QXJ0aWZhY3QxMzMyMjQyODMwMw==",
+    "name": "installer-lifecycle-windows-arm64",
+    "size_in_bytes": 7402,
+    "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13322428303",
+    "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13322428303/zip",
+    "expired": false,
+    "digest": "sha256:1fcc7ae9ddaf2b7903f5da2a50e3b68718f5a2f420fd9c3145cdc0414eb749c4",
+    "created_at": "2026-11-04T12:40:16Z",
+    "updated_at": "2026-11-04T12:40:16Z",
+    "expires_at": "2026-11-18T12:40:16Z",
+    "workflow_run": {
+      "id": 41829789374,
+      "repository_id": 1441227907,
+      "head_repository_id": 1441227907,
+      "head_branch": "main",
+      "head_sha": "52c8cae0e52f7f5c8474da21c0fdafeff7744dc3"
+    }
+  },
+  "providerZIPDigestVerified": true,
+  "artifactFile": {
+    "file": "arm64.json",
+    "bytes": 213703,
+    "sha256": "73e03f541009f2ca5f45c76f1c568a277b4b24eb69f4fd4b92057af5397c5564"
+  },
+  "jobLogSHA256": "8e434b9598289a1c42e9f092a50601770dc32a1586179e5c4b9af0f4e08aeecb",
+  "failure": {
+    "stage": "uninstall",
+    "failureType": "System.Management.Automation.RuntimeException",
+    "failureSourceLine": 616,
+    "assertionFailure": "Installer lifecycle changed selected services, firewall rules or DNS configuration",
+    "lastNative": {
+      "outputComplete": true,
+      "exitCode": 0,
+      "file": "unins000.exe"
+    }
+  },
+  "stateObservationSummary": [
+    {
+      "phase": "baseline",
+      "originalBaselineEqual": true,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 504,
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+        "changes": []
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    },
+    {
+      "phase": "after-install",
+      "originalBaselineEqual": true,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 504,
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+        "changes": []
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    },
+    {
+      "phase": "after-upgrade",
+      "originalBaselineEqual": true,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 504,
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+        "changes": []
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    },
+    {
+      "phase": "after-reinstall",
+      "originalBaselineEqual": true,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 504,
+        "added": 0,
+        "removed": 0,
+        "changed": 0,
+        "changes": []
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    },
+    {
+      "phase": "after-active-setup-uninstall",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": false,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    },
+    {
+      "phase": "after-lifecycle-locks",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    },
+    {
+      "phase": "after-refused-downgrade",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    },
+    {
+      "phase": "after-version-policy",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    },
+    {
+      "phase": "after-registry-read-boundaries",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    },
+    {
+      "phase": "after-registry-view-policy",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    },
+    {
+      "phase": "after-registry-access-policy",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    },
+    {
+      "phase": "after-restoration-launch-failures",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    },
+    {
+      "phase": "after-restoration-ownership-contracts",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    },
+    {
+      "phase": "before-uninstall",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    },
+    {
+      "phase": "after-uninstall",
+      "originalBaselineEqual": false,
+      "priorTransitionEqual": true,
+      "originalBaselineSHA256": "14822b0fa401efbda2b897a2a4405ab32e48c1e41e9a691bf88611afba4017ca",
+      "observedSHA256": "bb29c3b8fe7498a53c99c392ba5c4f3166e17800aa5d107a5a1c1e58ff18987d",
+      "firewall": {
+        "beforeRows": 504,
+        "afterRows": 505,
+        "added": 1,
+        "removed": 0,
+        "changed": 0,
+        "changes": [
+          {
+            "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+            "kind": "added",
+            "classification": "other",
+            "beforeSHA256": null,
+            "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+            "fields": []
+          }
+        ]
+      },
+      "servicesUnchanged": true,
+      "dnsUnchanged": true
+    }
+  ],
+  "historicalComparison": {
+    "record": "8edae9574ffb-windows-arm64-firewall-drift.json",
+    "sameAddedRuleAndRowHash": true,
+    "scope": "Compared hashed selected Name/Enabled/Direction/Action row only; no process/policy/owner origin was retained; sameness does not establish cause"
+  },
+  "qualification": {
+    "ciJobsPassed": 22,
+    "nativeJobsPassed": 7,
+    "nativeJobsFailed": 1,
+    "completedPrincipalOperations": 5,
+    "uninstallerExitCode": 0,
+    "statePreservationPassed": false,
+    "ownedFixtureCleanupCompleted": false,
+    "cryptographicAttestationVerified": false,
+    "publisherSignatureVerified": false,
+    "productionQualificationComplete": false
+  },
+  "interpretation": [
+    "The first observed difference is after-active-setup-uninstall, following baseline/clean install/upgrade/reinstall matches. This is an observation interval, not causal attribution.",
+    "One non-product-prefix firewall rule was added, changing504 to505 rows; service and DNS selected state remained equal. All later transition comparisons matched the prior observation, while the original-baseline mismatch remained through final uninstall.",
+    "The final uninstaller returned0 and finished output capture, but the lifecycle failed its original-baseline preservation assertion; cleanup and final success flags were not completed.",
+    "The failed source/job is not rerun unchanged. No firewall rule is deleted, ignored, rebased or exempted and no original comparison is relaxed.",
+    "The subsequent source adds bounded metadata from already captured firewall rule objects to help distinguish policy/owner origin; it adds no native query and grants no mutation authority. Actual native observation of that diagnostic branch remains required."
+  ],
+  "providerZIPBase64": "UEsDBBQACAAIAAdlZF0AAAAAAAAAAAAAAAAKAAAAYXJtNjQuanNvbu1dy3LjOJbdd0T/g0PrVjZAggBYu6zMqpiKqK6qzsyqxXT0Ak+bUzLpJik73R39ZbOYT5pfmKEetkxZEkFKtiSfu7SlewDicXHPwaX+97//519//MPFxcXFqDJX7lr95soqK/LRNxcX8k/L/xTT0rgPxfV1Vjf/GCWRkUY54pLIC58YyQSzKqKGeKu8814IxqyJR089fHJ+9vXS+erPV07Z6s/XKssfPlVO8x8+zj7BqIxSIdNYsIf/1qq8dHP8uyy3xV31Z1Ve88cPmOL6Jpu4cqULI/5OvKOPzahV7X7WlStvVZ0VedV85m/zf262f+36wMz3zZWq3AxTq8pNstwtYXd8sWm2KrNq3uJOYM+5cV+Vqf+ianPVuKnLqesE/5wr7XxRus//8T5K+KxHlMko0sQrRqjz2qpIy1SoSDFGEqXjyDFpqGPUpYqnVHspOaXK6+YLwqhuT+K5pihfu/IoWmKLZq5WQ8ZozWczETPj9up0HWVtOJlPYmMVlSbSShFD4oRpnfhUxc5olzhLI6WZlY5SraSITeQppZxGJNIpS3o/xN1tbY/3ETe1cmWmJtk/nf3uH1M1GbrqdgPOx/FTcTebL+TAg/ASONY6e2CM0l0XtwdHMVcqvzx8X4q7z4tJNwtfH2aohx6l0pmitD+X1pVZfvnhsadeTaoDTnfz2Lu//fEPh4JZtb8fvDNfymluVL3y/A6B+O999WPks9LdqcnkhQMUkdIpzYwmxgjuIkaNZzKRWqQ+TqyKE+VTT1niLYmJIiJVRnojbBobGrP+UX53W9sB6oib+soBKiHshULUYZEQpIJQEKQOawhSLRvZ/WZlT3yv505RGqeWRda4SCcpF5anRltLWUSSVEWxE1IpabxlNlZOMCepSBPuVKSUpPQg+/162nSUrXzBgNSKRfxwT/3AEAeNPgcPPAePOS8ebl4h0rxskDlIfHmx0PLvPfjr46NbNBvVpcqrrM7A9T7TFHC9w1HA9R6kqeB6B+MgjQ5CQRp9WEMa3TJwvWttBde7GRBcb08MBKnBqAhSg+1UgxS4XnC9a1jgeru4B9cbDgiuN9zOn+vd9Z3d4S70SvFs9xlneVU3CRruFYNr3uoTXHO7reCaNwOCa+6BgTR+MCrS+MF2qmk8uOZ2W8E1bwYE19wTA0FqMCqC1GA71SAFrhlc8xoWuOYu7sE1hwOCaw638+eaca8YXO9Wn+B6220F17sZEFxvDwyk0YNRkUYPtlNNo8H1ttsKrnczILjenhgIUoNREaQG26kGKXC94HrXsMD1dnEPrjccEFxvuJ0/1/ta94qnN5elsnhfMbjmHT7BNbfbCq55MyC45h4YSOMHoyKNH2ynmsaDa263FVzzZkBwzT0xEKQGoyJIDbZTDVLgmsE1r2GBa+7iHlxzOCC45nA7f64Z94rB9W71Ca633VZwvZsBwfX2wEAaPRgVafRgO9U0Glxvu63gejcDguvtiYEgNRgVQWqwnWqQAtcLrncNC1xvF/fgesMBwfWG2/lzva91r7h0eGMx2OZOPsE2t9sKtnkzINjmHhhI5AejIpEfbKeayINtbrcVbPNmQLDNPTEQpAajIkgNtlMNUmCbwTavYYFt7uIebHM4INjmcDt/thk3i8H1bvUJrrfdVnC9mwHB9fbAQBo9GBVp9GA71TQaXG+7reB6NwOC6+2JgSA1GBVBarCdapAC1wuudw0LXG8X9+B6wwHB9Ybb+XO9r3WzWJk6u3XjytXTm/E0P4JrxoPWwTFzz1pHqYm19E6wVKokNmlq4jTSKjHMx5RzR4UkRKnEUiJUoqihLpHeU5lKYcE9HzehC+55MyC45x4YSOsHoyKtH2ynmtaDe263tR2g0oRHxPtUaW+kY8ayVForCKUxSxzh2qSMcCltLKmiRMaKxIKKKDbEeM2ilw1QB16yr0c+Jy8QpSiiVBeUtxylDgPStoPtxM/ZKLMur7P6fmXTi7RXTHDjUxlHSZKQKJU04lT7xCXcCE/jSBAu44TyyBDluRJOEScZkzpl8eE2vWd78HuW23m6PlvKLwtuJqqqMp8ZtbxeNirqK1e+cDPaMTafTiYv24J25PQiSo0VMiHKWOpFmigfOx5xpY3iyvHIpp56zoS3MtHaxo5FJrFMW6ai6KUnkc/cxL7kafQZ+/tL4e6DwttpOG63DCoaVLR1LKhoXdxDRQsHhIoWbuevor1ixQRkK8hWDyiQrQ7SVMhWg3EgWwWhvGVCEHl0d4NsBdkKstXekCBbBaG85Sh1GJC2QbYK6wFkK8hWg5sP2WrfhuN2yyBbQbZax4Js1cU9ZKtwQMhW4Xb+stVrFX9NMu/MvZm48aQwv1eo+oJ8tsMn5LN2WyGfbQaEfNYDA8TkYNSjICaRz3c3yGeQzyCf7Q0J8lkQyluOUocBaRvks7AeQD6DfDa4+ZDP9m04brcM8hnks3UsyGdd3EM+CweEfBZu5y+fvWLV135/J+f1tCKoVsNRoFodpKlQrQbjQLUKQnnLfCDS6O528qrVEUtBp61avezv5BxSSnp50QpBqhMKgtRhDUGqZeB6wfWuY4Hr7eIeXG84ILjecDt/rve1SiVK56eVs2Nb3OWXpbIOxRIoltjhE7Rzu62gnTcDgnbugYGMfjAqMvrBdqoZPYol2m09bdoZxRI9kFAsEYTylqPUYUDahmKJsB6gWALFEoObj2KJfRuO2y2DgAYBbR0LAloX9xDQwgEhoIXb+QtoKJZAscRWn1Ct2m2FarUZEKpVDwzwgYNRj4IPRBrd3U5etTpiKei0VSsUS4QjIUgFoSBIHdYQpFoGrhdc7zoWuN4u7sH1hgOC6w238+d6X6tY4taVVVbk45tikpl7VEqgUmKHT3DO7baCc94MCM65BwbS+cGoSOcH26mm86iUaLf1tDlnVEr0QEKlRBDKW45ShwFpGyolwnqASglUSgxuPiol9m04brcM6hnUs3UsqGdd3EM9CweEehZu56+eoVIClRJbfUK1arcVqtVmQKhWPTDABw5GPQo+EGl0dzt51eqIpaDTVq1QKRGOhCAVhIIgdVhDkGoZuF5wvetY4Hq7uAfXGw4Irjfczp/rfa1KidJdZlVd3o9Lp+xYF9PcqjJzFWomUDOxwyfY53ZbwT5vBgT73AMDif1gVCT2g+1UE3vUTLTbetrsM2omeiChZiII5S1HqcOAtA01E2E9QM0EaiYGNx81E/s2HLdbBh0NOto6FnS0Lu6ho4UDQkcLt/PX0VAzgZqJrT6hWrXbCtVqMyBUqx4Y4AMHox4FH4g0urudvGp1xFLQaatWqJkIR0KQCkJBkDqsIUi1DFwvuN51LHC9XdyD6w0HBNcbbufP9b56zcRt5u7wGxOol+jmE8xzu61gnjcDgnnugYGkfjAqkvrBdqpJPeol2m09beYZ9RI9kFAvEYTylqPUYUDahnqJsB6gXgL1EoObj3qJfRuO2y2DhgYNbR0LGloX99DQwgGhoYXb+WtoqJdAvcRWn1Ct2m2FarUZEKpVDwzwgYNRj4IPRBrd3U5etTpiKei0VSvUS4QjIUgFoSBIHdYQpFoGrhdc7zoWuN4u7sH1hgOC6w238+d6X71eQhnjqgoVE6iY6OYT3HO7reCeNwOCe+6BgbR+MCrS+sF2qmk9KibabT1t7hkVEz2QUDERhPKWo9RhQNqGiomwHqBiAhUTg5uPiol9G47bLYOKBhVtHQsqWhf3UNHCAaGihdv5q2iomEDFxFafUK3abYVqtRkQqlUPDPCBg1GPgg9EGt3dTl61OmIp6LRVK1RMhCMhSAWhIEgd1hCkWgauF1zvOha43i7uwfWGA4LrDbfz53pfr2KiqotyNvXHEzXNzdXYq2wyLV2FsgmUTezwCQK63VYQ0JsBQUD3wEBuPxgVuf1gO9XcHmUT7baeNgGNsokeSCibCEJ5y1HqMCBtQ9lEWA9QNoGyicHNR9nEvg3H7ZZBSoOUto4FKa2Le0hp4YCQ0sLt/KU0lE2gbGKrT6hW7bZCtdoMCNWqBwb4wMGoR8EHIo3ubievWh2xFHTaqhXKJsKREKSCUBCkDmsIUi0D1wuudx0LXG8X9+B6wwHB9Ybb+XO9x1A2UdzlrqyuspuxKfK6VKZG6QRKJ3b5BAndbitI6M2AIKF7YCC/H4yK/H6wnWp+j9KJdltPm4RG6UQPJJROBKG85Sh1GJC2oXQirAconUDpxODmo3Ri34bjdssgp0FOW8eCnNbFPeS0cEDIaeF2/nIaSidQOrHVJ1SrdluhWm0GhGrVAwN84GDUo+ADkUZ3t5NXrY5YCjpt1QqlE+FICFJBKAhShzUEqZaB6wXXu44FrreLe3C94YDgesPt/Lnely+dmO9w42me5VXd5GiokkCVxHaf4JvbbQXfvBkQfHMPDKTyg1GRyg+2U03lUSXRbutp882okuiBhCqJIJS3HKUOA9I2VEmE9QBVEqiSGNx8VEns23DcbhmUMyhn61hQzrq4h3IWDgjlLNzOXzlDlQSqJLb6hGrVbitUq82AUK16YIAPHIx6FHwg0ujudvKq1RFLQaetWqFKIhwJQSoIBUHqsIYg1TJwveB617HA9XZxD643HBBcb7idP9f78lUS8x+YQJEEiiS6+gTd3G4r6ObNgKCbe2Agkx+Mikx+sJ1qJo8iiXZbT5tuRpFEDyQUSQShvOUodRiQtqFIIqwHKJJAkcTg5qNIYt+G43bLIJxBOFvHgnDWxT2Es3BACGfhdv7CGYokUCSx1SdUq3ZboVptBoRq1QMDfOBg1KPgA5FGd7eTV62OWAo6bdUKRRLhSAhSQSgIUoc1BKmWgesF17uOBa63i3twveGA4HrD7fy53p1FEts+sHzmo6pWtfuYqcu8qOrMVJ+LaWmeMLERI4zwmHDOPXGWa0upVSJWllIZa596m8QuEqkjnlhhpJHaOB+nsTXOi+XGPtLT7FGEf6ZJm6PprM4imzyJN05zzxglRlodc6ESLxiNhJMkSpSNjFGmubyitHZCxmmS2igW1sckIT4VXm+JN6NFEYgrv72v54tAMs4I23KJbHSj7ieFsp+v1LKFlnCaUuuIscxKKy1VVgpKUiIsI0mSSCecoYmJIx6n0hNpYm0E0VGkLffbLkKObl1ZLW+kkHf0HRmryc3V1q8sGvhtMwo9Di89IJ/3Y4rr66yeuUkiI41yxCWRFz4xkglmVUQN8VZ5570QjFkTfFtkVM0ncTO1Z0Bm4lQe7KWZsPX7eVMjEvExpWPCvtDomzj6Jpb/Gezwsvht5SFeFvRdJN6F9+5mompflNczL3dZbpvzQKgTVc5lm5Eqrzkbdf/2llP06KZ0N2VhXFU5+9nV05vVBSuoZFI4oh2n3luhGW8ulsU2pYkiTGiXeKESI7SUkWLe+CSxREirLOFmm47yuGBX8IRxnnPO04iKiHkfpzKOlY2cJNzyyPlY+dgLL7SMY09jnqaploRrzriTdhtN8nCt7vtssrpVJjxNfMIZo14lkionEqKoF7EyVDIifJpQpn0UK0FcwmXT68h7bwiNWJySTl38SV0vStZM86DvnLp15XhlRY4XU2I8G9lx1YzDO/fVPT/GG4bzyDfjWKRhm3Gj2jDJUyK9jSXzlsYJT7lMiIlZo9OlREQmSVjSDEdsGjGHUNuMm5UJcSGbMX35zXg35PN+zmIzjr8hDJvxesu2bMbcRRFPtNNEC2GVZT6Kk4hHVCaW8SghLFGeJHFkjdCapZG1OiKRddRF1outc/u5zTiSVNJIEmuFsp6QxMQ+sooKHWujUydlSgWPhZLamDRh2qY8TSMuBZWeedZjM6aWWJFqyrQ2NiVMKelST12ScKJl0zXGDRGMOKJSb4nWCVHWRpJJz603Azdj2mszXvvrwzm9uHHlLN3ccV19+07y6GbW6m7VziPrlJ1kuftLNplklTNFPj/HU0kI2ZHzjtzXrP5QWNchPx65ibqpnG3jRJTuqN9Ybqjvc/vJXWZVPe/kb67MfDbP/RreZ6OPLetoxwMN6d6g5zjNSzdpEtnZTvpL6ZqrHI9d6/dkKY/SvTzZHU6eTrvpzWWp7IY1cPGWh0PEO8quDjEcpVvuAwcYkOVWaZvt+Uvpwh/Vyoju2gWGbVTPjwmLdn3xoYuLA8X7hqQNPJqtDYmfVs6ObXGXz9fKjq83h/KJq93qpFh70gcYXlPkdVk0obA1Iz+5WmX58Y3yQdYtI3Gv4X1838jmoXn2Pw/Hgknmnbk3E/djYX7/oKqu1WzdEo5R2Z5OeR2moYzyxxNSnd26+QlorCeF+b0Kfd9K0DR5+M7QHegR/PnBj1nHuwBPnuZvajJ1Vd+mLKJAa0h2freDAtpjYgzrSnuCPMzo5SSZzZiTmCDXylxlufvkTHHryvvZDvNe91g0m7aZXaeDBwc3ZeGzyXpHznOGnNY2cuhZEtPobc8SrXJb5M6uTJRFwMX8aHYR1lGmPtP5YTPvXenyevy7K3M3GRf6v5ypMUeeJD3ydObIpib0GMiuK+NhMpVu4lT1ZK9Rk0lD+IUdWzbwASzteMlnKAG2tO23Cp5PO77PvtbTJ1fWVCxU3IhgXjnGUhKryCjnrOdCcZloL0nETJqqhl72NjWaEadNSjhPYmMehLBmaO3U1A3K6iuGlIsNEwmJ0zhOpRSKUSmkFFZQlXrjFVEyZZH1jEmnvUl5olWitGRcGfrofiGj/FJMMnO//+xpf5lHj72mEyMQOt0rde3GpijduKqVnuyiJR47sGGbofEL7hPnNxy5u3Pl+KZ0i21o6HBEAsMxYDiy/FZNMjteqrNDR4NjNAaMxsQpm+WX43+6shg4FJwzDMWAobjOqqoZiv0sDC4kRmPAaNyVRX45ru9vBscL1iFedDtQLvK8+09O2e4HsY5v+R6SH6xMYvU1u55ej6u6uYY9bhT/m7prvtgjy9icFMhuydlSZlhXOrpfHB+5rzfO1M5+F95+P88Lfv3yPeUPl7cSunMr3dvb3fc77u7rjcqbRK92pZq84vgntFtSiPHfy/g3DMtYT+2lq5drP4gq6rHxbxp6wYeu/O79f27gO7Z+w8DvPM4e4cBXTe3Yqw97crrDTmNK5KmNvMtvs7LIrxuSuHQztti4cV7UiyDwCnOA0R0XtZbfP8Y5QHYe2LsVK62eEr+dNjT+alx5/FRVF/OzcuejZJfpNbpePIvZsI69yibT0o3vsvpqbK6am9xdntGozq5dMa1/LC5X2dnOIXlU6GZMZ937OOAmzNLbXe7sp6Ko3+f2Q9OJZtDDrpMtPO0nURpNK1e9N/VUTX6Zk7+/5g/XbYMcPazmZqCcHT9eVRpbVxmXW5XX49lt9I7rebMuL7p9PXQ9rU7lTWMdk85jvScxra/ms3OT77EIq+ns4jUW4cLTCy3C7g/qUTqYj5SfTlZXYlHeXKk86GS1aRUmadTp4kN4KtZlGSZvcxE2RdZ7Wnyde95h7cX8fNdeeABcNOtpBJw/uL2svJiQeFs93qoHhMCtHwhbfc3cLce1K6+zfNYlxMGFp6Ndi8vBWr393cTB2UjODqPVfPxK100n2bgo027P/K2vyC3/X8k7H3r8o5rm5irgrshF0I++9FGJLvb4GBfesty6G5c3lZW/lIV2P6nm5u13ZVnMpn3HC6bPuvpcq7IOpaHnrooyu8xyNfmwWnTy8f2HHz/NxqdXTzetnqQb3bJwsiBMBjymBZvwy8Mv0k5mE20lZgdUFS++PHP2s+49C4ZdrLvYp3p6sfdgs/DZdLCZQr/mixdHfZw2XO+n5ljU63fXFpuFs4+z9NM0b+Jsn0C28LmmpK8c5cLurV5cPKnaWlSQDO708jF+uHLm9/c3N5PMzO6H9XCVPy6inhnCuqPZauz0zY4vCTy3HZ3G6RvY1LtWRlxs2dQDnxT29d3OXmdfD2zkQbf1evmWuoNv7IEt3LKv99+N97qtN+sRO/tb39mD9gbs7FtcYGff74FdTZrXQ2FnD3OEnX33zh7wEwSnuq1HIX3csK2HuMCevtsZ9nT31ZnpTG6xLs+wtYc5mq3Jbvv6zk+1GHo3Z+fXC1K19JZzbqVnJHVUpkrxSMci4nGinfKOxVIRQVNNo9R6yRKtaCKtjHmsuHt4GeyqEvBzI9mECQGdI9DILNWvD0Xus+b8EPzQG9n3cvHKzUUZSfdZObpRzXsjw0FnQtaTi4O80+Wo+bfLoqgH9tqUbjY8X7JrV/Wesc8KdpPm7SNrql3AQ13cjvzhWl0+KZdOaMKES3iSGJakqRGGWGojZRNKOE08TXnzRkzSTFcvHU9J88NOPBXGCUtDhrVcEVdnzRjwiGZq5fRm7SZMwGTJJ/ezZfQ5u8zVZOB86z1lZj5mT6P/w1iZFu3hJUQ3ledWGqYVj+KUM64YjXgsqPemeQmq8Epwb7yMtI8ElTzhxhJBuY581Ol9sDv3yufEzNmz//J4feCLq545FC4319mn1/dWSuJYKcqMI84nUtnYy6SZtI75VCTei5glhButjZJcCBtL7VPBLNOcpPThlbvLYv/FMXL1bbXUKy0koYRzIaT2xkQsjThpXEU+Zc1mHjkmPNE0sWlsk9TymCkXWysi0tq93bIP7Z86ULFl3NqIpooyJkzzswdOijhSVOlYauIlFZHkylPevLyWmFQKRYQxaWzM409/tnC+zXJV3h9gvS9xZoccZeq1DlFhjNRaGpmmKo2I01zGhjEniUqod8qqmKUs0vFsRBTXJlGMU+W8T1O3EWitR1pqR7QxPLLSiUTHkihOuCScGsc55bFtfiKXMM4T6RLDTczTxMZKCR6px1//ebjh/Vvm7vZdB7iv5GzlVUPXOrucFtNqfJu5u+rwBSJ7OshvrKxNu71grPdbX/ZV57H/oYyjsc7qcRORxvPXKiyKlU9+UHe+wHT5/d6Duu0Da7Ub72fXgEPOzR1PzcvT1QAqYn+J8mpj9pLULjKov04Xr3uaBp21Vt5+Nc9YF7F2/Lu7D01ZN1codf1Bsl702lAeZI/c3OgfzSh8dHmmJj88EmuT+zbLs9vdjmPb2up5JrVVnkQxTXkqBU2EdppFiVTcyViT5nc4qKXG6SSlsU0TQqLERTLhUmgpmuPG+vFrjvTk/MUTnRJD40ixRKaGi0gxolRqEqYjwYilXntlY0Gs5CbSknKjvNDCEp4+nvAWW+ryGPGwCTz8stLyE+vdNDSNSOx94qzSyiXSxiyKifU6pWkipJFECs2I9zGTjrA4bk4zEdMkNkmS2MduPiS2T864j8ny2tskl6zgl+aNCc0nPt9Xtbt+9xeVq0vXFAm+ez+ti+vZzHq34Jm++9qUh6+87GLpZX5I+zHLZ774w6IZNe0qm298P//gDOqHZVJx8fDKrYvFbnJRucmM77xoJl1mXPWni+WvJ1+U04mrLory4uNPny9MkxpdThcvIF7iTVRVz6nS0dZfIBkV0/pmWn9Ycgg710rXAosZT/X4yAkhu3+mpnkH6FRNfq0asmx1P1h73dmT0Z3TKY9VnZ9VntVNaW+rN6PlM/08f6TfL57nx58+zwoqH7byNYTZ1eXFtK0+Pf7I4ZMPTfMqu1x/KfboZqonWXW1yIMbFxt7UjpdFPWGRO3hdeEb/m9KVV39XP5S3Lnyx6KqNnzs1uW2KD+W2a0rfy4/FdM6yy//OlWT55u02DiyIl98xsxrL1cmzOKH9/5/t/s/UEsHCBpyHf9kHAAAx0IDAFBLAQItAxQACAAIAAdlZF0ach3/ZBwAAMdCAwAKAAAAAAAAAAAAIAC2gQAAAABhcm02NC5qc29uUEsFBgAAAAABAAEAOAAAAJwcAAAAAA=="
+}

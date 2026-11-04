@@ -40,3 +40,67 @@ foreach($phase in @('', '../private/path', 'private phase', ('x'*81))){
     Assert-State $rejected 'Unbounded or path-like phase was accepted'
 }
 Write-Output 'Original-baseline, changed-transition, prior-drift, restoration and privacy diagnostics passed.'
+
+# Captured-object metadata is independently bounded and never queries the OS.
+function Get-NetFirewallRule {throw 'Unexpected native firewall query in pure diagnostics'}
+function Get-NetFirewallApplicationFilter {throw 'Unexpected native application query in pure diagnostics'}
+$rule=[pscustomobject]@{Name='private-rule-name';PolicyStoreSourceType='Local';PolicyStoreSource='private-policy-store';Owner='S-1-5-21-private-owner';Group='private-group';Profile='Any';PrimaryStatus='OK';EnforcementStatus='Full'}
+$added=@{identitySHA256=(Get-InstallerStateTextHash $rule.Name);kind='added'}
+$origins=New-InstallerFirewallOrigins 'after-family' @($added) @() @($rule) 16
+Assert-State ($origins.Count -eq 1 -and -not $origins[0].before.present -and $origins[0].after.present -and $origins[0].after.policySourceClass -ceq 'Local') 'Captured addition metadata was lost'
+$public=ConvertTo-Json -InputObject $origins -Depth 16
+foreach($private in @('private-rule-name','private-policy-store','S-1-5-21-private-owner','private-group')){Assert-State (-not $public.Contains($private)) 'Raw captured firewall metadata escaped'}
+Assert-State ($origins[0].after.fields.Owner.sha256 -ceq (Get-InstallerStateTextHash $rule.Owner)) 'Captured owner fingerprint differs'
+$removed=@{identitySHA256=$added.identitySHA256;kind='removed'}
+$reverse=New-InstallerFirewallOrigins 'after-family' @($removed) @($rule) @() 16
+Assert-State ($reverse.Count -eq 1 -and $reverse[0].before.present -and -not $reverse[0].after.present) 'Captured removal metadata was lost'
+$noOrigins=New-InstallerFirewallOrigins 'after-family' @() @($rule) @($rule) 16
+Assert-State ($noOrigins.Count -eq 0) 'Unchanged state emitted origin records'
+$limited=New-InstallerFirewallOrigins 'after-family' (@($added)*32) @() @($rule) 3
+Assert-State ($limited.Count -eq 3) 'Captured record budget was not enforced'
+$none=New-InstallerFirewallOrigins 'after-family' @($added) @() @($rule) 0
+Assert-State ($none.Count -eq 0) 'Zero remaining metadata budget was ignored'
+$large=[pscustomobject]@{Name='private-large-rule';Owner=('x'*4097);Group=([string][char]0x754c)*2000;PolicyStoreSourceType='private-unrecognized-origin'}
+$bounded=Get-InstallerCapturedFirewallMetadata $large
+Assert-State ($bounded.fields.Owner.omitted -and $bounded.fields.Group.omitted -and $bounded.policySourceClass -ceq 'unclassified' -and -not $bounded.fields.Profile.present) 'Byte/missing/unrecognized metadata bounds differ'
+$public=$bounded | ConvertTo-Json -Depth 16
+Assert-State (-not $public.Contains('private-unrecognized-origin') -and -not $public.Contains('private-large-rule')) 'Unrecognized metadata escaped'
+foreach($case in @(
+    @{phase='../private';changes=@($added);before=@();after=@($rule);remaining=16},
+    @{phase='after-family';changes=@($added);before=@();after=@($rule);remaining=17},
+    @{phase='after-family';changes=(@($added)*33);before=@();after=@($rule);remaining=16},
+    @{phase='after-family';changes=@($added);before=@();after=@($rule,$rule);remaining=16},
+    @{phase='after-family';changes=@(@{identitySHA256='private';kind='added'});before=@();after=@($rule);remaining=16},
+    @{phase='after-family';changes=@(@{identitySHA256=$added.identitySHA256;kind='private'});before=@();after=@($rule);remaining=16}
+)){
+    $rejected=$false;try{$null=New-InstallerFirewallOrigins $case.phase $case.changes $case.before $case.after $case.remaining}catch{$rejected=$true}
+    Assert-State $rejected 'Malformed or excessive captured metadata was accepted'
+}
+Write-Output 'Captured firewall source/owner privacy, no-query behavior and independent record/string bounds passed.'
+
+# Execute only the fixture's checkpoint function with a synthetic snapshot
+# provider. This checks global frame bounds and retained comparisons, without
+# sourcing the installer body or querying/changing any operating-system state.
+$tokens=$null;$parseErrors=$null
+$sourceAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'test-windows-installer-lifecycle.ps1'),[ref]$tokens,[ref]$parseErrors)
+Assert-State (-not $parseErrors.Count) 'Lifecycle source did not parse'
+$checkpointNodes=@($sourceAst.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'State-Checkpoint'})
+Assert-State ($checkpointNodes.Count -eq 1) 'Expected exactly one lifecycle checkpoint function'
+. ([scriptblock]::Create($checkpointNodes[0].Extent.Text))
+$script:syntheticFrame=0
+function State-Snapshot {
+    $script:syntheticFrame++
+    $script:stateFirewallRules=@([pscustomobject]@{Name=('private-captured-'+$script:syntheticFrame);PolicyStoreSourceType='Local';Owner='private-owner'})
+    $selected=@($script:stateFirewallRules | Select-Object Name)
+    return (ConvertTo-Json -InputObject @{services=@();firewall=$selected;dns=@()} -Compress -Depth 8)
+}
+$script:stateBaseline=$empty;$script:statePrevious=$empty;$script:statePreviousFirewallRules=@();$script:stateObservations=@();$script:firewallOriginObservations=@();$script:firewallOriginTruncated=$false;$script:firewallOriginUnavailable=$false
+foreach($frame in 1..18){$null=State-Checkpoint ('after-family-'+$frame)}
+Assert-State ($script:firewallOriginObservations.Count -eq 16 -and $script:firewallOriginTruncated -and -not $script:firewallOriginUnavailable) 'Global origin budget or diagnostic completeness changed'
+Assert-State ($script:stateObservations.Count -eq 18) 'Diagnostic limits removed state checkpoints'
+foreach($observation in $script:stateObservations){
+    Assert-State (-not $observation.comparison.exactMatch -and -not $observation.transition.exactMatch -and $observation.comparison.beforeSHA256 -ceq (Get-InstallerStateTextHash $empty)) 'Origin diagnostics weakened or rebased original comparisons'
+}
+$public=ConvertTo-Json -InputObject $script:firewallOriginObservations -Depth 16
+Assert-State (-not $public.Contains('private-captured-') -and -not $public.Contains('private-owner')) 'Checkpoint integration disclosed raw origin metadata'
+Write-Output 'Checkpoint integration preserves comparisons and global origin limits with synthetic snapshots only.'
