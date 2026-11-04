@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"sort"
+	"strings"
 )
 
 const removalJournalName = "progress.jsonl"
 const maxRemovalJournalLine = 512
 const maxRemovalJournalBytes = (2*maxRemovalPlanObjects + 1) * maxRemovalJournalLine
 
-// Only regular files inside protected core/incoming roots are eligible.
-// Public apps, registrations, receipts and every directory remain untouched.
+// File actions form the exact protected transaction prefix. Only core/incoming
+// targets are eligible; public apps, registrations, receipts and authority stay.
 type removalFileAction struct{ root, object int }
 
 func removalFileActions(plan removalPlan) ([]removalFileAction, error) {
@@ -31,6 +33,45 @@ func removalFileActions(plan removalPlan) ([]removalFileAction, error) {
 	}
 	if len(actions) == 0 {
 		return nil, errors.New("removal journal has no protected file actions")
+	}
+	return actions, nil
+}
+
+// The existing file action sequence remains the exact prefix. Directories
+// follow in deterministic postorder, including each protected root last.
+// A previously completed file journal is a prefix, never whole-product success.
+func removalProtectedActions(plan removalPlan) ([]removalFileAction, error) {
+	actions, e := removalFileActions(plan)
+	if e != nil {
+		return nil, e
+	}
+	for i, root := range plan.Roots {
+		if root.Kind != "core" && root.Kind != "incoming" {
+			continue
+		}
+		directories := []removalFileAction{}
+		for j, object := range root.Objects {
+			if object.Kind == "directory" {
+				directories = append(directories, removalFileAction{i, j})
+			}
+		}
+		depth := func(name string) int {
+			if name == "." {
+				return -1
+			}
+			return strings.Count(name, "/")
+		}
+		sort.Slice(directories, func(a, b int) bool {
+			left, right := root.Objects[directories[a].object].Path, root.Objects[directories[b].object].Path
+			if depth(left) != depth(right) {
+				return depth(left) > depth(right)
+			}
+			return left < right
+		})
+		actions = append(actions, directories...)
+	}
+	if len(actions) > maxRemovalPlanObjects {
+		return nil, errors.New("protected removal action budget exceeded")
 	}
 	return actions, nil
 }

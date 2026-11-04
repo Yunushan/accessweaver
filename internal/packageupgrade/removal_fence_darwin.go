@@ -246,7 +246,7 @@ func readRemovalBundle(dir *os.File, owner uint32) (removalFence, removalPlan, [
 	if e = fence.validatePlan(after, plan); e != nil {
 		return fail(e)
 	}
-	actions, e := removalFileActions(plan)
+	actions, e := removalProtectedActions(plan)
 	if e != nil {
 		return fail(e)
 	}

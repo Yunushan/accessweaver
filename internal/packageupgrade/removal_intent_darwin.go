@@ -13,7 +13,7 @@ import (
 )
 
 // Reopening validates protected intent/progress metadata, not payload absence.
-// The private protected-file transaction separately reconciles every remaining
+// The private protected-object transaction separately reconciles every remaining
 // target before using an exact pending journal action. No public remover exists.
 type removalIntentStore struct {
 	store *deploymentStore

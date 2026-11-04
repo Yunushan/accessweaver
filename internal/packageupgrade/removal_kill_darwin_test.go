@@ -23,6 +23,13 @@ import (
 const removalKillBaseEnv = "ACCESSWEAVER_OWNED_REMOVAL_KILL_BASE"
 const removalKillPhaseEnv = "ACCESSWEAVER_OWNED_REMOVAL_KILL_PHASE"
 
+var removalDirectoryKillPhases = []string{
+	"removal-directory-intent-durable",
+	"removal-directory-unlinked",
+	"removal-directory-parent-durable",
+	"removal-directory-done-durable",
+}
+
 var removalKillPhases = []string{
 	"removal-file-intent-durable",
 	"removal-file-unlinked",
@@ -110,7 +117,7 @@ func TestDarwinRemovalFileKilledChild(t *testing.T) {
 		t.Fatal("killed child requires an opted-in disposable hosted root fixture")
 	}
 	known := false
-	for _, allowed := range removalKillPhases {
+	for _, allowed := range append(append([]string{}, removalKillPhases...), removalDirectoryKillPhases...) {
 		if phase == allowed {
 			known = true
 		}
@@ -139,7 +146,12 @@ func TestDarwinRemovalFileKilledChild(t *testing.T) {
 		}
 		return errors.New("SIGKILL did not terminate the owned child")
 	}
-	if _, e = intent.removeNextProtectedFileUsing(context.Background(), fixture.resolve); e != nil {
+	if strings.HasPrefix(phase, "removal-directory-") {
+		_, e = intent.removeNextProtectedObjectUsing(context.Background(), fixture.resolve, false)
+	} else {
+		_, e = intent.removeNextProtectedFileUsing(context.Background(), fixture.resolve)
+	}
+	if e != nil {
 		t.Fatal(e)
 	}
 	t.Fatal("owned child completed without reaching its kill boundary")
@@ -148,6 +160,12 @@ func TestDarwinRemovalFileKilledChild(t *testing.T) {
 // The trusted source-built test binary is the only executed child. No installed
 // product, app bundle, core payload or public launcher runs as root.
 func exerciseOwnedRemovalKilledProcesses(t *testing.T, privateBase string) []map[string]any {
+	return exerciseOwnedRemovalKillCases(t, privateBase, false)
+}
+func exerciseOwnedRemovalKilledDirectories(t *testing.T, privateBase string) []map[string]any {
+	return exerciseOwnedRemovalKillCases(t, privateBase, true)
+}
+func exerciseOwnedRemovalKillCases(t *testing.T, privateBase string, directory bool) []map[string]any {
 	t.Helper()
 	if !ownedRemovalKillHost() {
 		t.Fatal("process-kill fixture requires opted-in disposable hosted root")
@@ -156,89 +174,136 @@ func exerciseOwnedRemovalKilledProcesses(t *testing.T, privateBase string) []map
 	if e != nil {
 		t.Fatal(e)
 	}
+	phases, targets := removalKillPhases, []string{"file"}
+	if directory {
+		phases, targets = removalDirectoryKillPhases, []string{"nested-directory", "protected-root"}
+	}
 	records := []map[string]any{}
-	for _, phase := range removalKillPhases {
-		if !t.Run("protected-file-sigkill-"+phase, func(t *testing.T) {
-			f := newOwnedRemovalTargetFixture(t, privateBase, true)
-			retained := retainedRemovalFixtureSnapshot(t, f)
-			identity, seal := f.intent.fence.Target.Identity, f.intent.fence.DesktopRecordSHA256
-			if e := f.intent.Close(); e != nil {
-				t.Fatal(e)
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-			defer cancel()
-			command := exec.CommandContext(ctx, executable, "-test.run=^TestDarwinRemovalFileKilledChild$", "-test.v", "-test.timeout=15s")
-			command.Env = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "LANG=C", "LC_ALL=C", "TZ=UTC", "GITHUB_ACTIONS=true", "RUNNER_ENVIRONMENT=github-hosted", "RUNNER_OS=macOS", "ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST=1", removalKillBaseEnv + "=" + f.base, removalKillPhaseEnv + "=" + phase}
-			// Expected output is one framework RUN line plus the fixed marker.
-			// The writer rejects excess output rather than accumulating it.
-			output := &ownedRemovalKillOutput{}
-			command.Stdout = output
-			command.Stderr = output
-			started := time.Now()
-			e := command.Run()
-			elapsed := time.Since(started).Milliseconds()
-			contextError := ctx.Err()
-			cancel()
-			var exit *exec.ExitError
-			if contextError != nil || !errors.As(e, &exit) {
-				t.Fatal("owned child did not terminate at its boundary", e, contextError, string(output.data))
-			}
-			status, ok := exit.Sys().(syscall.WaitStatus)
-			if !ok || !status.Signaled() || status.Signal() != syscall.SIGKILL || bytes.Count(output.data, []byte("OWNED-REMOVAL-SIGKILL "+phase+"\n")) != 1 {
-				t.Fatal("owned child signal/marker differs", e)
-			}
-			parent, e := os.Open(f.base)
-			if e != nil {
-				t.Fatal(e)
-			}
-			f.intent, e = openRemovalIntentAt(parent, 0, identity, seal)
-			if e != nil {
-				t.Fatal("killed-child reopen failed", e)
-			}
-			f.store = f.intent.store
-			journalRaw, _, journal, e := readRemovalJournalAt(f.store.current, 0, removalJournalSeed(f.intent.fence), 2)
-			if e != nil || journal.entries < 1 || journal.entries > 2 {
-				t.Fatal("killed-child progress differs", journal, e)
-			}
-			if phase == "removal-file-done-durable" {
-				if journal.completed != 1 || journal.pending {
-					t.Fatal("durable completion lost", journal)
+	for _, target := range targets {
+		for _, phase := range phases {
+			if !t.Run("protected-sigkill-"+target+"-"+phase, func(t *testing.T) {
+				f := newOwnedRemovalTargetFixture(t, privateBase, true)
+				retainedSnapshot := func() []byte {
+					if directory {
+						return retainedRemovalDirectorySnapshot(t, f)
+					}
+					return retainedRemovalFixtureSnapshot(t, f)
 				}
-			} else if journal.completed != 0 || !journal.pending {
-				t.Fatal("pending intent lost", journal)
-			}
-			_, statErr := os.Lstat(f.coreFile)
-			if phase == "removal-file-intent-durable" {
-				if statErr != nil {
-					t.Fatal("child removed file before its boundary", statErr)
+				retained := retainedSnapshot()
+				initialCompleted, journalActions := 0, 2
+				objectPath := f.coreFile
+				if directory {
+					completeOwnedRemovalFiles(t, f)
+					initialCompleted, journalActions = 2, 6
+					objectPath = filepath.Dir(f.coreFile)
+					if target == "protected-root" {
+						got, e := f.intent.removeNextProtectedObjectUsing(context.Background(), f.resolve, false)
+						if e != nil || got.completed != 3 {
+							t.Fatal("root kill precondition failed", got, e)
+						}
+						initialCompleted = 3
+						objectPath = filepath.Dir(objectPath)
+					}
 				}
-			} else if !os.IsNotExist(statErr) {
-				t.Fatal("child did not unlink its exact file", statErr)
-			}
-			for i := 0; i < 2; i++ {
-				got, e := f.intent.removeNextProtectedFileUsing(context.Background(), f.resolve)
+				identity, seal := f.intent.fence.Target.Identity, f.intent.fence.DesktopRecordSHA256
+				if e := f.intent.Close(); e != nil {
+					t.Fatal(e)
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+				defer cancel()
+				command := exec.CommandContext(ctx, executable, "-test.run=^TestDarwinRemovalFileKilledChild$", "-test.v", "-test.timeout=15s")
+				command.Env = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "LANG=C", "LC_ALL=C", "TZ=UTC", "GITHUB_ACTIONS=true", "RUNNER_ENVIRONMENT=github-hosted", "RUNNER_OS=macOS", "ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST=1", removalKillBaseEnv + "=" + f.base, removalKillPhaseEnv + "=" + phase}
+				output := &ownedRemovalKillOutput{}
+				command.Stdout = output
+				command.Stderr = output
+				started := time.Now()
+				e := command.Run()
+				elapsed := time.Since(started).Milliseconds()
+				contextError := ctx.Err()
+				cancel()
+				var exit *exec.ExitError
+				if contextError != nil || !errors.As(e, &exit) {
+					t.Fatal("owned child did not terminate at its boundary", e, contextError, string(output.data))
+				}
+				status, ok := exit.Sys().(syscall.WaitStatus)
+				if !ok || !status.Signaled() || status.Signal() != syscall.SIGKILL || bytes.Count(output.data, []byte("OWNED-REMOVAL-SIGKILL "+phase+"\n")) != 1 {
+					t.Fatal("owned child signal/marker differs", e)
+				}
+				parent, e := os.Open(f.base)
 				if e != nil {
-					t.Fatal("killed-child retry failed", got, e)
+					t.Fatal(e)
 				}
-				if got.completed == 2 {
-					break
+				f.intent, e = openRemovalIntentAt(parent, 0, identity, seal)
+				if e != nil {
+					t.Fatal("killed-child reopen failed", e)
 				}
+				f.store = f.intent.store
+				journalRaw, _, journal, e := readRemovalJournalAt(f.store.current, 0, removalJournalSeed(f.intent.fence), journalActions)
+				expectedCompleted := initialCompleted
+				done := strings.HasSuffix(phase, "-done-durable")
+				if done {
+					expectedCompleted++
+				}
+				if e != nil || journal.completed != expectedCompleted || journal.pending == done || journal.entries != 2*expectedCompleted+intBool(!done) {
+					t.Fatal("killed-child progress differs", journal, e)
+				}
+				_, statErr := os.Lstat(objectPath)
+				present := strings.HasSuffix(phase, "-intent-durable")
+				if present && statErr != nil || !present && !os.IsNotExist(statErr) {
+					t.Fatal("child target state differs", target, statErr)
+				}
+				if directory {
+					completeOwnedRemovalObjects(t, f)
+				} else {
+					for i := 0; i < 2; i++ {
+						got, e := f.intent.removeNextProtectedFileUsing(context.Background(), f.resolve)
+						if e != nil {
+							t.Fatal("killed-child retry failed", got, e)
+						}
+						if got.completed == 2 {
+							break
+						}
+					}
+				}
+				reopenOwnedRemovalFileIntent(t, f)
+				before := ownedRemovalTargetSnapshot(t, f.base)
+				var got removalProgress
+				if directory {
+					got, e = f.intent.removeNextProtectedObjectUsing(context.Background(), f.resolve, false)
+				} else {
+					got, e = f.intent.removeNextProtectedFileUsing(context.Background(), f.resolve)
+				}
+				expectedTotal := 2
+				if directory {
+					expectedTotal = 6
+				}
+				if e != nil || got != (removalProgress{expectedTotal, expectedTotal}) {
+					t.Fatal("killed-child completion differs", got, e)
+				}
+				if !bytes.Equal(before, ownedRemovalTargetSnapshot(t, f.base)) || !bytes.Equal(retained, retainedSnapshot()) {
+					t.Fatal("killed-child retry changed retained data")
+				}
+				record := map[string]any{"target": target, "phase": phase, "signal": int(status.Signal()), "elapsedMilliseconds": elapsed, "timedOut": contextError != nil, "journalSHA256AtTermination": removalDigest(journalRaw), "completedActionsAtTermination": journal.completed, "pendingAtTermination": journal.pending, "bothLeasesReacquired": true, "completedRetryIdempotent": true, "retainedDataPreserved": true, "passed": true}
+				if directory {
+					record["directoryPresentAtTermination"] = statErr == nil
+					record["completedObjectsAfterRetry"] = got.completed
+				} else {
+					record["filePresentAtTermination"] = statErr == nil
+					record["completedFilesAfterRetry"] = got.completed
+				}
+				records = append(records, record)
+			}) {
+				t.Fatalf("owned SIGKILL case failed: %s %s", target, phase)
 			}
-			reopenOwnedRemovalFileIntent(t, f)
-			before := ownedRemovalTargetSnapshot(t, f.base)
-			got, e := f.intent.removeNextProtectedFileUsing(context.Background(), f.resolve)
-			if e != nil || got != (removalFileProgress{2, 2}) {
-				t.Fatal("killed-child completion differs", got, e)
-			}
-			if !bytes.Equal(before, ownedRemovalTargetSnapshot(t, f.base)) || !bytes.Equal(retained, retainedRemovalFixtureSnapshot(t, f)) {
-				t.Fatal("killed-child retry changed retained data")
-			}
-			records = append(records, map[string]any{"phase": phase, "signal": int(status.Signal()), "elapsedMilliseconds": elapsed, "timedOut": contextError != nil, "journalSHA256AtTermination": removalDigest(journalRaw), "completedActionsAtTermination": journal.completed, "pendingAtTermination": journal.pending, "filePresentAtTermination": statErr == nil, "completedFilesAfterRetry": got.completed, "bothLeasesReacquired": true, "completedRetryIdempotent": true, "retainedDataPreserved": true, "passed": true})
-		}) {
-			t.Fatalf("owned SIGKILL case failed: %s", phase)
 		}
 	}
 	return records
+}
+func intBool(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 type ownedRemovalKillOutput struct{ data []byte }

@@ -71,15 +71,18 @@ class NativePackageProvenanceTests(unittest.TestCase):
             self.assertTrue(result['realBundleVerifiedBeforeAndAfter']);self.assertTrue(all('--deny-self-hosted-runners' in c for c in calls))
 
     def test_deployment_report_is_bound_to_copied_subjects_and_fixed_scope(self):
-        value={"schemaVersion":1,"manifestSHA256":"a"*64,"payloadSHA256":"b"*64,"version":VERSION,"finalGeneration":4,"testExecutableSHA256":"c"*64,"detachedPayloadSBOMManifestSHA256":"d"*64,"detachedPayloadSBOMSHA256":"e"*64,"elapsedMilliseconds":123,"intactTargetCaseCount":16,"protectedFileJournalCaseCount":18,"protectedFileSIGKILLCaseCount":4,"fixtureParent":"private-exclusive-temporary-directory","copiedCodeExecuted":False,"packageScriptsIntegrated":False,"productionQualificationComplete":False}
-        checks=("fixedProtectedParentVerified","partialCopyPreservedAndRefused","completeCopyRecovered","concurrentPreparationFenced","postPublicationRemovalRecovered","oldCompleteSlotFencedAfterRemoval","restoredRetryVerified","payloadIsIndependentCopy","detachedManifestPartialCopyPreservedAndRefused","detachedManifestCompleteCopyRecovered","detachedPayloadSBOMPartialCopyPreservedAndRefused","legacyToSchema2BridgeVerified","intactRemovalTargetsVerified","ownedTargetRefusalsPreserved","protectedFileJournalVerified","protectedFileSIGKILLVerified","installedObjectsAndReceiptsPreserved")
+        value={"schemaVersion":1,"manifestSHA256":"a"*64,"payloadSHA256":"b"*64,"version":VERSION,"finalGeneration":4,"testExecutableSHA256":"c"*64,"detachedPayloadSBOMManifestSHA256":"d"*64,"detachedPayloadSBOMSHA256":"e"*64,"elapsedMilliseconds":123,"intactTargetCaseCount":16,"protectedFileJournalCaseCount":18,"protectedFileSIGKILLCaseCount":4,"protectedDirectoryJournalCaseCount":22,"protectedDirectorySIGKILLCaseCount":8,"fixtureParent":"private-exclusive-temporary-directory","copiedCodeExecuted":False,"packageScriptsIntegrated":False,"productionQualificationComplete":False}
+        checks=("fixedProtectedParentVerified","partialCopyPreservedAndRefused","completeCopyRecovered","concurrentPreparationFenced","postPublicationRemovalRecovered","oldCompleteSlotFencedAfterRemoval","restoredRetryVerified","payloadIsIndependentCopy","detachedManifestPartialCopyPreservedAndRefused","detachedManifestCompleteCopyRecovered","detachedPayloadSBOMPartialCopyPreservedAndRefused","legacyToSchema2BridgeVerified","intactRemovalTargetsVerified","ownedTargetRefusalsPreserved","protectedFileJournalVerified","protectedFileSIGKILLVerified","protectedDirectoryJournalVerified","protectedDirectorySIGKILLVerified","installedObjectsAndReceiptsPreserved")
         value.update({key:True for key in checks})
         phases=["removal-file-intent-durable","removal-file-unlinked","removal-file-parent-durable","removal-file-done-durable"]
         value["protectedFileSIGKILLCases"]=[{"phase":phase,"signal":9,"elapsedMilliseconds":123,"timedOut":False,"journalSHA256AtTermination":"f"*64,"completedActionsAtTermination":int(i==3),"pendingAtTermination":i!=3,"filePresentAtTermination":i==0,"completedFilesAfterRetry":2,"bothLeasesReacquired":True,"completedRetryIdempotent":True,"retainedDataPreserved":True,"passed":True} for i,phase in enumerate(phases)]
 
+
+        directory_phases=["removal-directory-intent-durable","removal-directory-unlinked","removal-directory-parent-durable","removal-directory-done-durable"]
+        value["protectedDirectorySIGKILLCases"]=[{"target":target,"phase":phase,"signal":9,"elapsedMilliseconds":123,"timedOut":False,"journalSHA256AtTermination":"f"*64,"completedActionsAtTermination":base+int(i==3),"pendingAtTermination":i!=3,"directoryPresentAtTermination":i==0,"completedObjectsAfterRetry":6,"bothLeasesReacquired":True,"completedRetryIdempotent":True,"retainedDataPreserved":True,"passed":True} for target,base in (("nested-directory",2),("protected-root",3)) for i,phase in enumerate(directory_phases)]
         def validate(record):validate_deployment_transactions(record,"a"*64,"b"*64,VERSION)
         validate(value)
-        for key,bad in [(key,False) for key in checks]+[("schemaVersion",True),("manifestSHA256","0"*64),("payloadSHA256","0"*64),("version","0.1.1-alpha"),("finalGeneration",5),("testExecutableSHA256","unknown"),("copiedCodeExecuted",True),("packageScriptsIntegrated",True),("productionQualificationComplete",True),("fixtureParent","/Applications"),("elapsedMilliseconds",True),("elapsedMilliseconds",-1),("elapsedMilliseconds",150001),("intactTargetCaseCount",True),("intactTargetCaseCount",15),("protectedFileJournalCaseCount",True),("protectedFileJournalCaseCount",17),("protectedFileSIGKILLCaseCount",True),("protectedFileSIGKILLCaseCount",3)]:
+        for key,bad in [(key,False) for key in checks]+[("schemaVersion",True),("manifestSHA256","0"*64),("payloadSHA256","0"*64),("version","0.1.1-alpha"),("finalGeneration",5),("testExecutableSHA256","unknown"),("copiedCodeExecuted",True),("packageScriptsIntegrated",True),("productionQualificationComplete",True),("fixtureParent","/Applications"),("elapsedMilliseconds",True),("elapsedMilliseconds",-1),("elapsedMilliseconds",150001),("intactTargetCaseCount",True),("intactTargetCaseCount",15),("protectedFileJournalCaseCount",True),("protectedFileJournalCaseCount",17),("protectedFileSIGKILLCaseCount",True),("protectedFileSIGKILLCaseCount",3),("protectedDirectoryJournalCaseCount",True),("protectedDirectoryJournalCaseCount",21),("protectedDirectorySIGKILLCaseCount",True),("protectedDirectorySIGKILLCaseCount",7)]:
             with self.subTest(key=key):
                 changed=dict(value);changed[key]=bad
                 with self.assertRaises(ValueError):validate(changed)
@@ -90,6 +93,17 @@ class NativePackageProvenanceTests(unittest.TestCase):
                 with self.assertRaises(ValueError):validate(changed)
         for bad in ([],value["protectedFileSIGKILLCases"][:3],list(reversed(value["protectedFileSIGKILLCases"]))):
             changed=dict(value);changed["protectedFileSIGKILLCases"]=bad
+            with self.assertRaises(ValueError):validate(changed)
+
+        for index in range(8):
+            case=value["protectedDirectorySIGKILLCases"][index]
+            corrupt=[("target","unknown"),("phase","unknown"),("signal",True),("signal",15),("timedOut",True),("completedActionsAtTermination",True),("completedActionsAtTermination",-1),("pendingAtTermination",not case["pendingAtTermination"]),("directoryPresentAtTermination",not case["directoryPresentAtTermination"]),("completedObjectsAfterRetry",True),("completedObjectsAfterRetry",5),("bothLeasesReacquired",False),("completedRetryIdempotent",False),("retainedDataPreserved",False),("passed",False),("elapsedMilliseconds",True),("elapsedMilliseconds",20001),("journalSHA256AtTermination","bad")]
+            for key,bad in corrupt:
+                changed=dict(value);changed["protectedDirectorySIGKILLCases"]=[dict(c) for c in value["protectedDirectorySIGKILLCases"]];changed["protectedDirectorySIGKILLCases"][index][key]=bad
+                with self.subTest(directory_index=index,directory_key=key):
+                    with self.assertRaises(ValueError):validate(changed)
+        for bad in ([],value["protectedDirectorySIGKILLCases"][:7],list(reversed(value["protectedDirectorySIGKILLCases"]))):
+            changed=dict(value);changed["protectedDirectorySIGKILLCases"]=bad
             with self.assertRaises(ValueError):validate(changed)
         for key in value:
             changed=dict(value);del changed[key]

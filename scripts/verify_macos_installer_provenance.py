@@ -95,13 +95,27 @@ def validate_contents(root,package,commit,version,arch):
 def validate_deployment_transactions(deployment,manifest_hash,payload_hash,version):
     require(type(deployment) is dict,"Missing native protected deployment transactions")
     require(type(deployment.get("schemaVersion")) is int and deployment["schemaVersion"]==1 and deployment.get("manifestSHA256")==manifest_hash and deployment.get("payloadSHA256")==payload_hash and deployment.get("version")==version and type(deployment.get("finalGeneration")) is int and deployment["finalGeneration"]==4,"Native protected deployment identity differs")
-    for key in ("fixedProtectedParentVerified","partialCopyPreservedAndRefused","completeCopyRecovered","concurrentPreparationFenced","postPublicationRemovalRecovered","oldCompleteSlotFencedAfterRemoval","restoredRetryVerified","payloadIsIndependentCopy","detachedManifestPartialCopyPreservedAndRefused","detachedManifestCompleteCopyRecovered","detachedPayloadSBOMPartialCopyPreservedAndRefused","legacyToSchema2BridgeVerified","intactRemovalTargetsVerified","ownedTargetRefusalsPreserved","protectedFileJournalVerified","protectedFileSIGKILLVerified","installedObjectsAndReceiptsPreserved"):
+    for key in ("fixedProtectedParentVerified","partialCopyPreservedAndRefused","completeCopyRecovered","concurrentPreparationFenced","postPublicationRemovalRecovered","oldCompleteSlotFencedAfterRemoval","restoredRetryVerified","payloadIsIndependentCopy","detachedManifestPartialCopyPreservedAndRefused","detachedManifestCompleteCopyRecovered","detachedPayloadSBOMPartialCopyPreservedAndRefused","legacyToSchema2BridgeVerified","intactRemovalTargetsVerified","ownedTargetRefusalsPreserved","protectedFileJournalVerified","protectedFileSIGKILLVerified","protectedDirectoryJournalVerified","protectedDirectorySIGKILLVerified","installedObjectsAndReceiptsPreserved"):
         require(deployment.get(key) is True,"Native protected deployment transaction did not pass")
     require(deployment.get("copiedCodeExecuted") is False and deployment.get("packageScriptsIntegrated") is False and deployment.get("productionQualificationComplete") is False and deployment.get("fixtureParent")=="private-exclusive-temporary-directory" and re.fullmatch("[a-f0-9]{64}",deployment.get("testExecutableSHA256","")) is not None,"Native protected deployment scope differs")
     require(all(type(deployment.get(k)) is str and re.fullmatch("[a-f0-9]{64}",deployment[k]) is not None for k in ("detachedPayloadSBOMManifestSHA256","detachedPayloadSBOMSHA256")),"Native detached metadata seal evidence differs")
     require(type(deployment.get("intactTargetCaseCount")) is int and deployment["intactTargetCaseCount"]==16,"Native intact target verification case count differs")
     require(type(deployment.get("protectedFileJournalCaseCount")) is int and deployment["protectedFileJournalCaseCount"]==18,"Native protected file journal case count differs")
     require(type(deployment.get("protectedFileSIGKILLCaseCount")) is int and deployment["protectedFileSIGKILLCaseCount"]==4,"Native protected file SIGKILL case count differs")
+    require(type(deployment.get("protectedDirectoryJournalCaseCount")) is int and deployment["protectedDirectoryJournalCaseCount"]==22,"Native protected directory journal case count differs")
+    require(type(deployment.get("protectedDirectorySIGKILLCaseCount")) is int and deployment["protectedDirectorySIGKILLCaseCount"]==8,"Native protected directory SIGKILL case count differs")
+    directory_killed=deployment.get("protectedDirectorySIGKILLCases")
+    directory_phases=["removal-directory-intent-durable","removal-directory-unlinked","removal-directory-parent-durable","removal-directory-done-durable"]
+    expected_directory_cases=[(target,phase) for target in ("nested-directory","protected-root") for phase in directory_phases]
+    require(type(directory_killed) is list and len(directory_killed)==8,"Native directory SIGKILL evidence missing")
+    for case,(target,phase) in zip(directory_killed,expected_directory_cases):
+        require(type(case) is dict and case.get("target")==target and case.get("phase")==phase and type(case.get("signal")) is int and case["signal"]==9 and case.get("timedOut") is False,"Native directory child signal/target differs")
+        done=phase==directory_phases[-1]
+        completed=(2 if target=="nested-directory" else 3)+int(done)
+        require(type(case.get("completedActionsAtTermination")) is int and case["completedActionsAtTermination"]==completed and case.get("pendingAtTermination") is (not done) and case.get("directoryPresentAtTermination") is (phase==directory_phases[0]),"Native directory killed-child boundary state differs")
+        require(type(case.get("completedObjectsAfterRetry")) is int and case["completedObjectsAfterRetry"]==6 and all(case.get(k) is True for k in ("bothLeasesReacquired","completedRetryIdempotent","retainedDataPreserved","passed")),"Native directory killed-child recovery did not pass")
+        require(type(case.get("elapsedMilliseconds")) is int and 0<=case["elapsedMilliseconds"]<=20000 and re.fullmatch("[a-f0-9]{64}",case.get("journalSHA256AtTermination","")) is not None,"Native directory child timing/journal binding differs")
+
     killed=deployment.get("protectedFileSIGKILLCases")
     phases=["removal-file-intent-durable","removal-file-unlinked","removal-file-parent-durable","removal-file-done-durable"]
     require(type(killed) is list and len(killed)==len(phases),"Native SIGKILL case evidence missing")

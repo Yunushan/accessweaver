@@ -13,10 +13,11 @@ import (
 	"time"
 
 	"github.com/Yunushan/accessweaver/internal/darwintrust"
+	"golang.org/x/sys/unix"
 )
 
 // This is a bounded read-only intact observation, not a mutation capability.
-// Journaled known absences are handled only by the separate file transaction.
+// Journaled known absences are handled only by the separate protected-object transaction.
 type removalTargetVerification struct {
 	roots, files, directories int
 	planSHA256                string
@@ -104,7 +105,10 @@ func (r *removalIntentStore) verifyIntentMetadata() error {
 	}
 	return sameDeploymentEntry(s.root, "state", s.current, s.owner)
 }
-func (r *removalIntentStore) verifyIntactTarget(ctx context.Context, expected removalPlanRoot, resolve removalParentResolver) (result error) {
+func (r *removalIntentStore) verifyIntactTarget(ctx context.Context, expected removalPlanRoot, resolve removalParentResolver) error {
+	return r.verifyTargetWithNamespace(ctx, expected, r.plan, resolve)
+}
+func (r *removalIntentStore) verifyTargetWithNamespace(ctx context.Context, expected removalPlanRoot, namespace removalPlan, resolve removalParentResolver) (result error) {
 	if ctx.Err() != nil {
 		return errors.New("removal target verification deadline exceeded")
 	}
@@ -128,9 +132,19 @@ func (r *removalIntentStore) verifyIntactTarget(ctx context.Context, expected re
 		return errors.New("removal target parent identity changed")
 	}
 	if expected.Kind == "core" || expected.Kind == "incoming" {
-		if e = verifyRemovalTargetNamespace(parent.file, expected.Kind, r.plan); e != nil {
+		if e = verifyRemovalTargetNamespace(parent.file, expected.Kind, namespace); e != nil {
 			return e
 		}
+	}
+	if len(expected.Objects) == 0 {
+		if expected.Kind != "core" && expected.Kind != "incoming" {
+			return errors.New("ineligible removal root absence")
+		}
+		var st unix.Stat_t
+		if e = unix.Fstatat(int(parent.file.Fd()), expected.Key, &st, unix.AT_SYMLINK_NOFOLLOW); !errors.Is(e, unix.ENOENT) {
+			return errors.New("journaled removal root is not absent")
+		}
+		return errors.Join(parent.check(), verifyRemovalTargetNamespace(parent.file, expected.Kind, namespace))
 	}
 	root, e := deploymentDirectory(parent.file, expected.Key, 0, false)
 	if e != nil {
@@ -172,7 +186,7 @@ func (r *removalIntentStore) verifyIntactTarget(ctx context.Context, expected re
 		return e
 	}
 	if expected.Kind == "core" || expected.Kind == "incoming" {
-		return verifyRemovalTargetNamespace(parent.file, expected.Kind, r.plan)
+		return verifyRemovalTargetNamespace(parent.file, expected.Kind, namespace)
 	}
 	if expected.Kind == "receipts" {
 		return verifyRemovalTargetNamespace(root, "receipts", r.plan)
@@ -193,7 +207,7 @@ func verifyRemovalTargetNamespace(dir *os.File, kind string, plan removalPlan) e
 			expected[root.Key] = true
 		}
 	}
-	if len(expected) == 0 || kind != "core" && kind != "incoming" && kind != "receipts" {
+	if (len(expected) == 0 && kind == "receipts") || kind != "core" && kind != "incoming" && kind != "receipts" {
 		return errors.New("invalid complete removal namespace")
 	}
 	limit := len(expected)
