@@ -69,6 +69,9 @@ func execute(args []string) error {
 	if args[0] == "managed" {
 		return managedCommand(args[1:])
 	}
+	if args[0] == "audit" {
+		return auditCommand(args[1:])
+	}
 	root, err := profile.DefaultRoot()
 	if err != nil {
 		return err
@@ -252,6 +255,7 @@ func usage() {
   accessweaver doctor [options] [HOST]
                                   Direct/proxy TCP/TLS or explicit UDP/STUN checks
   accessweaver run ID              Explicitly start one engine in foreground
+  accessweaver audit verify        Check an event segment against trusted checkpoints
   accessweaver managed             Review/sign/verify administrator policy documents
   accessweaver system              Show Windows installation/repair commands
   accessweaver version [--json]    Print runtime and source build identity

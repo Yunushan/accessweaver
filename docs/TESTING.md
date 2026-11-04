@@ -716,6 +716,10 @@ At source 380712555532f2cbaa8d1a736acb0a3fce43ec1e, all 22 CI jobs and both lega
 
 The fixture now identifies exactly one scalar string matching the expected package ID and exactly one matching its expected version, refuses missing/ambiguous fields, changes only that version, and verifies every other decoded field is preserved. This changes no production receipt parser, ownership predicate or refusal requirement: the actual native helper must still refuse the substituted receipt and accept exact fixture restoration. Synthetic binary/XML dictionaries with different key spellings and missing/ambiguous/oversized inputs bring the POSIX macOS contract suite to 73 passing methods. Fresh source-bound native outcomes and independent provenance remain required; the failed source is retained and was not rerun unchanged. All fifty readiness statuses remain unchanged.
 
+## Audit format and checkpoint verification
+
+The [audit event contract](AUDIT_EVENTS.md) defines a bounded canonical JSONL format and read-only audit verify CLI. Tests cover trusted endpoint matching, retained suffixes, complete-chain rewrites, omissions/reordering/duplicates/splices, producer metadata binding, ambiguous JSON, secret-shaped free-text refusals, exact record capacity, cancellation and blocked-read deadlines. An independent Python SHA-256/JSON golden vector checks encoding compatibility. These checks do not implement live event recording, protected storage, collector integration or OS actor authentication; enterprise.audit remains missing.
+
 ## Private macOS removal acceptance
 
 The [removal and APFS history](qualification/REMOVAL_HISTORY.md) retains all chronological implementation notes, exact-source qualification records and failed-source observations. [Product removal contracts](MACOS_PRODUCT_REMOVAL.md) describe the private ownership, plan, barrier, quarantine and journal invariants.

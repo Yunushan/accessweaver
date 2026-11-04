@@ -79,7 +79,7 @@ def build(version,arch,go="go"):
         for name in ("LICENSE","README.md","README.tr.md","THIRD_PARTY.md","SECURITY.md"):
             shutil.copyfile(REPO/name,resources/name)
         docs=resources/"docs";docs.mkdir()
-        for name in ("MACOS_MANAGED_POLICY.md","MANAGED_CONFIGURATION.md","RELEASE_PROVENANCE.md"):
+        for name in ("MACOS_MANAGED_POLICY.md","MANAGED_CONFIGURATION.md","RELEASE_PROVENANCE.md","AUDIT_EVENTS.md"):
             shutil.copyfile(REPO/"docs"/name,docs/name)
         notices=resources/"licenses"
         bom=generate(binary,REPO,"./cmd/accessweaver",identity,notices,go)

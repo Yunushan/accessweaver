@@ -136,6 +136,8 @@ Saved profiles can be exported as authenticated, password-encrypted archives and
 
 Windows, Linux and macOS have partial signed administrator-policy enforcement; [managed configuration](docs/MANAGED_CONFIGURATION.md) documents its protected source, platform-specific install/update/rotation commands, current limits and unfinished recovery/qualification.
 
+The [audit verifier](docs/AUDIT_EVENTS.md) checks exported event segments against independently retained checkpoints. Live enterprise audit recording and collector integration remain unfinished.
+
 CI is configured to run unit tests on Linux, Windows and macOS, a Linux race check, and ten cross-build targets. A workflow configuration is not evidence that a run passed: see [Actions](https://github.com/Yunushan/accessweaver/actions) for results. BSD cross-compilation does not execute tests on BSD.
 
 Release archives contain the standalone application, documentation and license notices. They exclude third-party engines and are **unsigned alpha builds**. Checksums detect file changes; they are not publisher signatures. Hosted release builds additionally provide [signed build provenance](docs/RELEASE_PROVENANCE.md), verified against a separately trusted source commit/ref; Windows/macOS publisher signing remains unfinished. [Testing](docs/TESTING.md) · [Contributing](CONTRIBUTING.md) · [Architecture](docs/ARCHITECTURE.md) · [Release process](GITHUB_SETUP.md)
