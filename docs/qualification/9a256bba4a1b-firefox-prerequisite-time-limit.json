@@ -1,0 +1,636 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "9a256bba4a1b3ccc1752bf6262df4385c82c6db4",
+  "runID": 41914744536,
+  "jobID": 126871323838,
+  "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41914744536/job/126871323838",
+  "jobName": "browser / Real browser (firefox)",
+  "jobStatus": "completed",
+  "jobConclusion": "failure",
+  "jobStartedAt": "2026-11-04T21:18:40Z",
+  "jobCompletedAt": "2026-11-04T21:24:27Z",
+  "failedSteps": [
+    {
+      "name": "Install Linux browser prerequisites",
+      "number": 7,
+      "status": "completed",
+      "conclusion": "failure",
+      "started_at": "2026-11-04T21:19:12Z",
+      "completed_at": "2026-11-04T21:24:24Z",
+      "providerDurationSeconds": 312.0
+    }
+  ],
+  "steps": [
+    {
+      "name": "Set up job",
+      "number": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:18:41Z",
+      "completed_at": "2026-11-04T21:18:42Z",
+      "providerDurationSeconds": 1.0
+    },
+    {
+      "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "number": 2,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:18:42Z",
+      "completed_at": "2026-11-04T21:18:43Z",
+      "providerDurationSeconds": 1.0
+    },
+    {
+      "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+      "number": 3,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:18:43Z",
+      "completed_at": "2026-11-04T21:18:51Z",
+      "providerDurationSeconds": 8.0
+    },
+    {
+      "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+      "number": 4,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:18:51Z",
+      "completed_at": "2026-11-04T21:18:55Z",
+      "providerDurationSeconds": 4.0
+    },
+    {
+      "name": "Build the real controller",
+      "number": 5,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:18:55Z",
+      "completed_at": "2026-11-04T21:19:10Z",
+      "providerDurationSeconds": 15.0
+    },
+    {
+      "name": "Install locked test dependencies and check known advisories",
+      "number": 6,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:19:10Z",
+      "completed_at": "2026-11-04T21:19:12Z",
+      "providerDurationSeconds": 2.0
+    },
+    {
+      "name": "Install Linux browser prerequisites",
+      "number": 7,
+      "status": "completed",
+      "conclusion": "failure",
+      "started_at": "2026-11-04T21:19:12Z",
+      "completed_at": "2026-11-04T21:24:24Z",
+      "providerDurationSeconds": 312.0
+    },
+    {
+      "name": "Install the pinned browser",
+      "number": 8,
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-04T21:24:24Z",
+      "completed_at": "2026-11-04T21:24:24Z",
+      "providerDurationSeconds": 0.0
+    },
+    {
+      "name": "Exercise the dashboard with an isolated local controller",
+      "number": 9,
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-04T21:24:24Z",
+      "completed_at": "2026-11-04T21:24:24Z",
+      "providerDurationSeconds": 0.0
+    },
+    {
+      "name": "Retain test results without private controller state",
+      "number": 10,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:24:24Z",
+      "completed_at": "2026-11-04T21:24:24Z",
+      "providerDurationSeconds": 0.0
+    },
+    {
+      "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+      "number": 18,
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-04T21:24:24Z",
+      "completed_at": "2026-11-04T21:24:24Z",
+      "providerDurationSeconds": 0.0
+    },
+    {
+      "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+      "number": 19,
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-04T21:24:24Z",
+      "completed_at": "2026-11-04T21:24:24Z",
+      "providerDurationSeconds": 0.0
+    },
+    {
+      "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "number": 20,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:24:24Z",
+      "completed_at": "2026-11-04T21:24:25Z",
+      "providerDurationSeconds": 1.0
+    },
+    {
+      "name": "Complete job",
+      "number": 21,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:24:25Z",
+      "completed_at": "2026-11-04T21:24:25Z",
+      "providerDurationSeconds": 0.0
+    }
+  ],
+  "stageObservations": {
+    "Install Linux browser prerequisites": {
+      "providerStep": {
+        "name": "Install Linux browser prerequisites",
+        "number": 7,
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-11-04T21:19:12Z",
+        "completed_at": "2026-11-04T21:24:24Z",
+        "providerDurationSeconds": 312.0
+      },
+      "timestampedWindowLines": 175,
+      "windowIncludesProviderTerminalSecond": true,
+      "fixedMarkers": {
+        "dependency-installer": {
+          "count": 1,
+          "firstTimestamp": "2026-11-04T21:19:12.6377902Z",
+          "lastTimestamp": "2026-11-04T21:19:12.6377902Z"
+        },
+        "privilege-switch-notice": {
+          "count": 1,
+          "firstTimestamp": "2026-11-04T21:19:12.6475913Z",
+          "lastTimestamp": "2026-11-04T21:19:12.6475913Z"
+        },
+        "apt-index-or-package-fetch": {
+          "count": 55,
+          "firstTimestamp": "2026-11-04T21:19:12.7479696Z",
+          "lastTimestamp": "2026-11-04T21:23:53.1506754Z"
+        },
+        "apt-download-summary": {
+          "count": 1,
+          "firstTimestamp": "2026-11-04T21:19:16.8530340Z",
+          "lastTimestamp": "2026-11-04T21:19:16.8530340Z"
+        },
+        "apt-reading-package-lists": {
+          "count": 2,
+          "firstTimestamp": "2026-11-04T21:19:18.1012362Z",
+          "lastTimestamp": "2026-11-04T21:19:18.1361164Z"
+        },
+        "apt-dependency-tree": {
+          "count": 1,
+          "firstTimestamp": "2026-11-04T21:19:18.4535300Z",
+          "lastTimestamp": "2026-11-04T21:19:18.4535300Z"
+        },
+        "apt-package-selection": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-unpacking": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-setup": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-error": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-lock-contention": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "firefox-download": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "ffmpeg-download": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-download-failure": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "network-timeout-or-reset": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "unsupported-platform-warning": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "action-timeout-diagnostic": {
+          "count": 1,
+          "firstTimestamp": "2026-11-04T21:24:24.6248400Z",
+          "lastTimestamp": "2026-11-04T21:24:24.6248400Z"
+        },
+        "operation-cancelled-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "dependency-installer-exit-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "playwright-test-runner-start": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "playwright-test-result": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        }
+      },
+      "aptStatusMarkers": {
+        "Hit": {
+          "count": 1,
+          "firstTimestamp": "2026-11-04T21:19:12.7858553Z",
+          "lastTimestamp": "2026-11-04T21:19:12.7858553Z"
+        },
+        "Get": {
+          "count": 54,
+          "firstTimestamp": "2026-11-04T21:19:12.7479696Z",
+          "lastTimestamp": "2026-11-04T21:23:53.1506754Z"
+        },
+        "Ign": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Err": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        }
+      },
+      "aptFetchHostMarkers": {
+        "packages.microsoft.com": {
+          "count": 3,
+          "firstTimestamp": "2026-11-04T21:19:12.7743983Z",
+          "lastTimestamp": "2026-11-04T21:19:12.8825274Z"
+        },
+        "azure.archive.ubuntu.com": {
+          "count": 50,
+          "firstTimestamp": "2026-11-04T21:19:12.7858553Z",
+          "lastTimestamp": "2026-11-04T21:23:53.1506754Z"
+        }
+      }
+    },
+    "Install the pinned browser": {
+      "providerStep": {
+        "name": "Install the pinned browser",
+        "number": 8,
+        "status": "completed",
+        "conclusion": "skipped",
+        "started_at": "2026-11-04T21:24:24Z",
+        "completed_at": "2026-11-04T21:24:24Z",
+        "providerDurationSeconds": 0.0
+      },
+      "timestampedWindowLines": 0,
+      "windowIncludesProviderTerminalSecond": true,
+      "fixedMarkers": {
+        "dependency-installer": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "privilege-switch-notice": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-index-or-package-fetch": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-download-summary": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-reading-package-lists": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-dependency-tree": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-selection": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-unpacking": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-setup": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-error": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-lock-contention": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "firefox-download": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "ffmpeg-download": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-download-failure": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "network-timeout-or-reset": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "unsupported-platform-warning": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "action-timeout-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "operation-cancelled-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "dependency-installer-exit-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "playwright-test-runner-start": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "playwright-test-result": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        }
+      },
+      "aptStatusMarkers": {
+        "Hit": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Get": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Ign": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Err": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        }
+      },
+      "aptFetchHostMarkers": {}
+    },
+    "Exercise the dashboard with an isolated local controller": {
+      "providerStep": {
+        "name": "Exercise the dashboard with an isolated local controller",
+        "number": 9,
+        "status": "completed",
+        "conclusion": "skipped",
+        "started_at": "2026-11-04T21:24:24Z",
+        "completed_at": "2026-11-04T21:24:24Z",
+        "providerDurationSeconds": 0.0
+      },
+      "timestampedWindowLines": 0,
+      "windowIncludesProviderTerminalSecond": true,
+      "fixedMarkers": {
+        "dependency-installer": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "privilege-switch-notice": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-index-or-package-fetch": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-download-summary": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-reading-package-lists": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-dependency-tree": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-selection": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-unpacking": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-setup": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-error": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-lock-contention": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "firefox-download": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "ffmpeg-download": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-download-failure": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "network-timeout-or-reset": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "unsupported-platform-warning": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "action-timeout-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "operation-cancelled-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "dependency-installer-exit-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "playwright-test-runner-start": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "playwright-test-result": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        }
+      },
+      "aptStatusMarkers": {
+        "Hit": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Get": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Ign": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Err": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        }
+      },
+      "aptFetchHostMarkers": {}
+    }
+  },
+  "browserTestsExecution": "not-run-workflow-step-skipped",
+  "retainedJobMetadataSHA256": "29eeb17be9d35d4013dc688078c6ee1662c4e935261446e879eed7d6687321db",
+  "retainedLogBytes": 37744,
+  "retainedLogSHA256": "eeb82cd4db672c395b838d038e8b4ba3e06d8296157bd23372a27b8020e4a6cb",
+  "providerLogDigestAvailable": false,
+  "cryptographicAttestationVerified": false,
+  "interpretation": "Exact provider terminal steps/times and bounded fixed log markers are independent CI QA observations. APT hosts, counts and timestamps omit raw lines and URL paths/queries; markers alone do not establish a mirror, network, platform or package-manager cause. Browser-install and dashboard skipped states are distinct from tests that executed and failed. The raw log stays in this ignored local folder. No rerun, workflow/pin/runner/browser-matrix/deadline change or target download/execution.",
+  "targetDownloadPerformed": false,
+  "targetExecutionPerformed": false,
+  "workflowRerunPerformed": false,
+  "trackedSourceModified": false,
+  "readinessStatusChanged": false,
+  "candidateCorrection": {
+    "method": "Use the official matching Playwright browser/dependency image pinned by OCI digest, with explicit UID1001 and read-only image checks. Remove redundant per-job APT/browser installation. Keep ubuntu-latest, the complete three-browser matrix, all tool/package/action pins and the 20-minute job configuration.",
+    "image": {
+      "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f",
+      "tag": "v1.64.1-noble",
+      "manifestSHA256": "sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f",
+      "manifestBytes": 705,
+      "linuxAmd64ManifestSHA256": "sha256:ee15712262f017b8157421b212b12099146645f44b1bc5c0514cbbe6a229b1d0",
+      "linuxAmd64ConfigSHA256": "sha256:a0d7b2b49ffa0e99787a00b7ec2af46eca58020082713f002ca9f0f1cfd1a017",
+      "configRedirectHosts": [
+        "westeurope.data.mcr.microsoft.com"
+      ],
+      "browserPath": "/ms-playwright",
+      "tagVersion": "1.64.1",
+      "imageDefaultUser": "",
+      "requiredWorkflowUser": "1001",
+      "compressedLayerBytes": 990220611,
+      "metadataOnly": true,
+      "imageDownloaded": false,
+      "containerExecutedLocally": false,
+      "publisherSignatureVerified": false,
+      "metadataCorrection": "Public config has no DOCKER_IMAGE_NAME environment entry; an initial assertion assumed it. Saved config now reflects actual fields. Registry tag/digest and later CI locked-package/browser-path checks bind intended version; no optional environment field is invented."
+    },
+    "officialInstructions": [
+      "https://playwright.dev/docs/ci",
+      "https://playwright.dev/docs/next/docker"
+    ],
+    "freshHostedAcceptanceRequired": true,
+    "underlyingNetworkOrMirrorCauseEstablished": false,
+    "imagePulledOrExecutedLocally": false
+  }
+}
