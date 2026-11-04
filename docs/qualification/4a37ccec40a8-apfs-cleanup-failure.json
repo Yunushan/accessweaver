@@ -1,0 +1,219 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "provider-bound-native-APFS-cleanup-failure",
+  "sourceCommit": "4a37ccec40a8c5fdd9b2b30f22c3203de8748885",
+  "runID": 41767490629,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/41767490629",
+  "failedJob": {
+    "id": 126369214554,
+    "name": "Test (macos-15-intel)",
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41767490629/job/126369214554",
+    "conclusion": "failure"
+  },
+  "providerArtifact": {
+    "id": 13293302802,
+    "name": "darwin-storage-fault-check-amd64",
+    "size_in_bytes": 1834,
+    "digest": "sha256:f5f2c76418b5ec3e47652221c3cf541fa46fd657b8ad399efc63067425f52d0c"
+  },
+  "providerZIPDigestVerified": true,
+  "candidateAttestationAuthenticationPerformed": false,
+  "jobLogSHA256": "8ee23c78c7e8195525e3bab026e6c9bf1b3ad213e24e5ae2f2562b1fea4b32f4",
+  "failureExcerpt": "Traceback (most recent call last):\n2026-11-04T03:35:18.5134770Z   File \"[workspace]/scripts/test-darwin-storage.py\", line 266, in <module>\n2026-11-04T03:35:18.5136720Z     main()\n2026-11-04T03:35:18.5137550Z     ~~~~^^\n2026-11-04T03:35:18.5139360Z   File \"[workspace]/scripts/test-darwin-storage.py\", line 261, in main\n2026-11-04T03:35:18.5141170Z     raise failure\n2026-11-04T03:35:18.5142740Z   File \"[workspace]/scripts/test-darwin-storage.py\", line 232, in main\n2026-11-04T03:35:18.5145100Z     record[\"normalDetachAttempts\"] = detach_owned(image, mount, base_device, volume_device)\n2026-11-04T03:35:18.5147860Z                                      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n2026-11-04T03:35:18.5149740Z   File \"[workspace]/scripts/test-darwin-storage.py\", line 64, in detach_owned\n2026-11-04T03:35:18.5151470Z     if association(snapshot, image, mount) != (expected_base, expected_volume):\n2026-11-04T03:35:18.5152620Z        ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^\n2026-11-04T03:35:18.5153990Z   File \"[workspace]/scripts/test-darwin-storage.py\", line 31, in association\n2026-11-04T03:35:18.5155770Z     raise RuntimeError(\"Expected an exact mounted volume and image base device\")\n2026-11-04T03:35:18.5157280Z RuntimeError: Expected an exact mounted volume and image base device\n2026-11-04T03:35:18.5358960Z ",
+  "reports": {
+    "apfs-exhaustion-amd64.json": {
+      "arch": "amd64",
+      "cases": [
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 529190912,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "install",
+          "priorPairUnchanged": true,
+          "record": "installation.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        },
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 528953344,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "install",
+          "priorPairUnchanged": true,
+          "record": "acceptance.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        },
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 528629760,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "update",
+          "priorPairUnchanged": true,
+          "record": "installation.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        },
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 528396288,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "update",
+          "priorPairUnchanged": true,
+          "record": "acceptance.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        },
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 528232448,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "rotate",
+          "priorPairUnchanged": true,
+          "record": "installation.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        },
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 527998976,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "rotate",
+          "priorPairUnchanged": true,
+          "record": "acceptance.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        },
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 527900672,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "recover",
+          "priorPairUnchanged": true,
+          "record": "installation.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        },
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 527663104,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "recover",
+          "priorPairUnchanged": true,
+          "record": "acceptance.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        }
+      ],
+      "deviceDiffersFromHost": true,
+      "effectiveUID": 0,
+      "filesystem": "apfs",
+      "fullStorageFaultQualificationComplete": false,
+      "goVersion": "go1.27.3",
+      "mountFlags": 76583448,
+      "platform": "darwin",
+      "powerLossQualified": false,
+      "productionQualificationComplete": false,
+      "rootMachinePolicyChanged": false,
+      "schemaVersion": 1,
+      "sourceCommit": "4a37ccec40a8c5fdd9b2b30f22c3203de8748885",
+      "volumeBytes": 536829952
+    },
+    "image-lifecycle-amd64.json": {
+      "schemaVersion": 1,
+      "sourceCommit": "4a37ccec40a8c5fdd9b2b30f22c3203de8748885",
+      "arch": "amd64",
+      "imageVirtualBytes": 536870912,
+      "nativeToolHelp": {
+        "create": {
+          "sha256": "60325e582f6721bb7b3482815ea50436e477983eee05f0d7a7d17683e3f0bdb9",
+          "bytes": 3611,
+          "statusCode": 0,
+          "basicHelpListsRequestedFlag": true
+        },
+        "attach": {
+          "sha256": "b05d957e3744182417a7f820e5ecbe2b9030d0d5b6883e701a96a5ea541b1cad",
+          "bytes": 1091,
+          "statusCode": 0,
+          "basicHelpListsRequestedFlag": false
+        }
+      },
+      "productionQualificationComplete": false,
+      "attached": true,
+      "detached": false,
+      "ownedImageRemoved": false,
+      "rootMachinePolicyChanged": false,
+      "hostVolumePressureApplied": false,
+      "imageDevice": "/dev/disk2",
+      "volumeDevice": "/dev/disk3s1",
+      "onlyOwnedImageRootProtectionSet": true,
+      "nativeCasesPassed": 8,
+      "cleanupFailed": true
+    },
+    "native-tools-amd64.json": {
+      "schemaVersion": 1,
+      "sourceCommit": "4a37ccec40a8c5fdd9b2b30f22c3203de8748885",
+      "arch": "amd64",
+      "sdk": {
+        "GOARCH": "amd64",
+        "GOHOSTARCH": "amd64",
+        "GOHOSTOS": "darwin",
+        "GOOS": "darwin",
+        "GOVERSION": "go1.27.3"
+      },
+      "nativeHelp": {
+        "create": {
+          "sha256": "60325e582f6721bb7b3482815ea50436e477983eee05f0d7a7d17683e3f0bdb9",
+          "bytes": 3611,
+          "statusCode": 0,
+          "basicHelpListsRequestedFlag": true
+        },
+        "attach": {
+          "sha256": "b05d957e3744182417a7f820e5ecbe2b9030d0d5b6883e701a96a5ea541b1cad",
+          "bytes": 1091,
+          "statusCode": 0,
+          "basicHelpListsRequestedFlag": false
+        }
+      },
+      "productionQualificationComplete": false
+    }
+  },
+  "sourceFiles": [
+    {
+      "path": "scripts/test-darwin-storage.py",
+      "sha256": "3067a070a20513dd8e8f2e26fdc07c22134f29925f158a91a19f333e02d264c2",
+      "unchangedFrom2296": true
+    },
+    {
+      "path": "internal/managed/storage_full_darwin_test.go",
+      "sha256": "2baa6648e39ea98e4450ba07fd20a157cfc80065a1c29265073d9d6c5e1c12a5",
+      "unchangedFrom2296": true
+    }
+  ],
+  "classification": {
+    "nativeENOSPCCasesPassed": 8,
+    "ownedImageCleanupComplete": false,
+    "failure": "The exact mounted-volume/base-device association was absent during detach revalidation.",
+    "intermediateMappingRetained": false,
+    "underlyingMappingChangeCauseEstablished": false,
+    "unchangedSourceRetried": false,
+    "nativePressureAssertionsRelaxed": false,
+    "fullProductionReadinessProven": false
+  }
+}

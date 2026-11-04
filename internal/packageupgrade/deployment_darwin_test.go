@@ -735,6 +735,20 @@ func TestDarwinDeploymentRootCopyRecovery(t *testing.T) {
 		t.Fatal("owned active runtime baseline differs", e)
 	}
 	metadataPlan := removalMetadataPlanFixture(t, bridge)
+	// Persist actual sealed core inventories in this otherwise metadata-only
+	// fixture, then verify them again through the saved-target path.
+	for i := range metadataPlan.Roots {
+		root := &metadataPlan.Roots[i]
+		if root.Kind != "core" {
+			continue
+		}
+		actual, e := captureRemovalBundle(context.Background(), bridge.versions, root.Key, "core", root.Identity)
+		if e != nil {
+			t.Fatal(e)
+		}
+		*root = actual
+	}
+
 	fence, inactive, e := newRemovalFence(bridge.state, strings.Repeat("d", 64), digest(againJSON), metadataPlan)
 	if e != nil {
 		t.Fatal(e)
@@ -781,11 +795,27 @@ func TestDarwinDeploymentRootCopyRecovery(t *testing.T) {
 	if intent.fence != fence || sameRemovalPlans(intent.plan, metadataPlan) != nil || intent.store.state.Generation != inactive.Generation {
 		t.Fatal("reopened intent metadata differs")
 	}
+	for _, root := range intent.plan.Roots {
+		if root.Kind != "core" {
+			continue
+		}
+		resolve := func(kind string) (removalTargetParent, error) {
+			if kind != "core" {
+				return removalTargetParent{}, errors.New("unexpected copied-core role")
+			}
+			return removalTargetParent{intent.store.versions, false, intent.store.checkRoot}, nil
+		}
+		if e = intent.verifyIntactTarget(context.Background(), root, resolve); e != nil {
+			t.Fatal("saved actual core target differs", e)
+		}
+	}
 	if e = intent.Close(); e != nil {
 		t.Fatal(e)
 	}
 
-	report := map[string]any{"schemaVersion": 1, "manifestSHA256": identity.ManifestSHA256, "payloadSHA256": identity.PayloadSHA256, "version": identity.Version, "fixedProtectedParentVerified": true, "partialCopyPreservedAndRefused": true, "completeCopyRecovered": true, "concurrentPreparationFenced": true, "postPublicationRemovalRecovered": true, "oldCompleteSlotFencedAfterRemoval": true, "restoredRetryVerified": true, "payloadIsIndependentCopy": true, "detachedManifestPartialCopyPreservedAndRefused": true, "detachedManifestCompleteCopyRecovered": true, "detachedPayloadSBOMPartialCopyPreservedAndRefused": true, "legacyToSchema2BridgeVerified": true, "detachedPayloadSBOMManifestSHA256": newIdentity.ManifestSHA256, "detachedPayloadSBOMSHA256": digest(sbomData), "copiedCodeExecuted": false, "productionQualificationComplete": false, "finalGeneration": 4}
+	exerciseOwnedRemovalTargetVerification(t, bridgeParent)
+
+	report := map[string]any{"schemaVersion": 1, "manifestSHA256": identity.ManifestSHA256, "payloadSHA256": identity.PayloadSHA256, "version": identity.Version, "fixedProtectedParentVerified": true, "partialCopyPreservedAndRefused": true, "completeCopyRecovered": true, "concurrentPreparationFenced": true, "postPublicationRemovalRecovered": true, "oldCompleteSlotFencedAfterRemoval": true, "restoredRetryVerified": true, "payloadIsIndependentCopy": true, "detachedManifestPartialCopyPreservedAndRefused": true, "detachedManifestCompleteCopyRecovered": true, "detachedPayloadSBOMPartialCopyPreservedAndRefused": true, "legacyToSchema2BridgeVerified": true, "intactRemovalTargetsVerified": true, "ownedTargetRefusalsPreserved": true, "intactTargetCaseCount": 16, "detachedPayloadSBOMManifestSHA256": newIdentity.ManifestSHA256, "detachedPayloadSBOMSHA256": digest(sbomData), "copiedCodeExecuted": false, "productionQualificationComplete": false, "finalGeneration": 4}
 	data, _ := json.Marshal(report)
 	t.Log("DEPLOYMENT-RESULT " + string(data))
 }

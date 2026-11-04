@@ -98,6 +98,68 @@ class NormalDetachTests(ImageFixture,unittest.TestCase):
                 storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1")
             self.assertEqual(command.call_count,1)
 
+class PartialDetachObservationTests(ImageFixture,unittest.TestCase):
+    def test_partial_original_binding_only_observes_disappearance(self):
+        partial=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}];observations=[]
+        with patch.object(storage,"info",side_effect=[self.info(partial),{"images":[]}]),patch.object(storage,"command") as command,patch.object(storage.time,"sleep"):
+            self.assertEqual(storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1",
+                known_devices={"/dev/disk20","/dev/disk21s1"},observations=observations),0)
+            command.assert_not_called()
+        self.assertEqual(observations[0]["exactMountCount"],0)
+        self.assertTrue(observations[0]["safeKnownMapping"])
+        self.assertEqual(observations[-1]["ownedImageCount"],0)
+
+    def test_busy_then_partial_never_issues_another_detach_without_full_binding(self):
+        from subprocess import CompletedProcess
+        partial=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}]
+        with patch.object(storage,"info",side_effect=[self.info(),self.info(partial),{"images":[]}]),patch.object(storage,"command",return_value=CompletedProcess([],16,b"",b"Resource busy")) as command,patch.object(storage.time,"sleep"):
+            self.assertEqual(storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1"),1)
+            self.assertEqual(command.call_count,1)
+
+    def test_busy_partial_then_restored_full_binding_permits_normal_retry(self):
+        from subprocess import CompletedProcess
+        partial=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}];observations=[]
+        def command(*args,**kwargs):
+            self.assertEqual(observations[-1]["exactMountCount"],1)
+            self.assertTrue(observations[-1]["basePresent"])
+            return CompletedProcess([],16,b"",b"Resource busy") if len(calls)==0 else CompletedProcess([],0,b"",b"")
+        calls=[]
+        def invoke(*args,**kwargs):
+            result=command(*args,**kwargs);calls.append(args);return result
+        with patch.object(storage,"info",side_effect=[self.info(),self.info(partial),self.info(),{"images":[]}]),patch.object(storage,"command",side_effect=invoke),patch.object(storage.time,"sleep"):
+            self.assertEqual(storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1",observations=observations),2)
+        self.assertEqual(len(calls),2)
+
+    def test_partial_mapping_does_not_extend_original_deadline(self):
+        partial=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}]
+        with patch.object(storage.time,"monotonic",side_effect=[0,0,0,30]),patch.object(storage,"info",return_value=self.info(partial)),patch.object(storage,"command") as command,patch.object(storage.time,"sleep"):
+            with self.assertRaisesRegex(RuntimeError,"detach deadline"):
+                storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1",known_devices={"/dev/disk20","/dev/disk21s1"})
+            command.assert_not_called()
+
+    def test_unknown_devices_mounts_duplicate_or_conflicting_ownership_refuse(self):
+        wrong=[{"dev-entry":"/dev/disk30"},{"dev-entry":"/dev/disk21s1"}]
+        relocated=[self.entities[0],dict(self.entities[1],**{"mount-point":"/private/unknown-secret"})]
+        collision=self.info();collision["images"].append({"image-path":"/private/other-secret","system-entities":[{"dev-entry":"/dev/disk20"}]})
+        malformed=[{"dev-entry":[]}]
+        for snapshot in (self.info(wrong),self.info(relocated),{"images":self.info()["images"]*2},collision,self.info(malformed)):
+            observations=[]
+            with self.subTest(snapshot=snapshot),patch.object(storage,"info",return_value=snapshot),patch.object(storage,"command") as command:
+                with self.assertRaises(RuntimeError):
+                    storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1",known_devices={"/dev/disk20","/dev/disk21s1"},observations=observations)
+                command.assert_not_called()
+                import json
+                self.assertNotIn("secret",json.dumps(observations))
+                self.assertNotIn(str(self.image),json.dumps(observations))
+
+    def test_observations_retain_only_last_eight_bounded_frames(self):
+        partial=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}];observations=[]
+        with patch.object(storage,"info",side_effect=[self.info(partial)]*12+[{"images":[]}]),patch.object(storage,"command") as command,patch.object(storage.time,"sleep"):
+            self.assertEqual(storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1",known_devices={"/dev/disk20","/dev/disk21s1"},observations=observations),0)
+            command.assert_not_called()
+        self.assertEqual(len(observations),8)
+        self.assertTrue(all(set(frame)=={"phase","ownedImageCount","deviceLabels","basePresent","volumePresent","exactMountCount","unexpectedMountCount","conflictingDeviceAssociation","safeKnownMapping"} for frame in observations))
+
 class NativeHelpEvidenceTests(unittest.TestCase):
     def test_minimal_help_retains_missing_flag_as_information(self):
         from subprocess import CompletedProcess

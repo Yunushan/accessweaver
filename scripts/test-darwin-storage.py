@@ -50,19 +50,70 @@ def info(timeout=90):
     return plistlib.loads(command([HDIUTIL, "info", "-plist"], timeout=timeout).stdout)
 
 
-def detach_owned(image, mount, expected_base, expected_volume, maximum_wait=30):
-    """Rebind busy retries; after accepted detach only observe bounded completion."""
+def observed_owned_mapping(snapshot, image, mount, expected_base, expected_volume, known_devices, observations, phase):
+    """Only a full original binding permits detach; partial bindings are observed."""
+    owned = [item for item in snapshot.get("images", []) if item.get("image-path") == str(image)]
+    entities = owned[0].get("system-entities", []) if len(owned) == 1 else []
+    devices = [entry.get("dev-entry") for entry in entities if isinstance(entry, dict)]
+    mounts = [(entry.get("dev-entry"), entry.get("mount-point")) for entry in entities
+              if isinstance(entry, dict) and entry.get("mount-point") not in (None, "")]
+    conflicting = any(entry.get("dev-entry") in devices
+                      for item in snapshot.get("images", []) if item.get("image-path") != str(image)
+                      for entry in item.get("system-entities", []) if isinstance(entry, dict))
+    safe = (len(owned) == 1 and len(entities) <= 32 and len(devices) == len(entities)
+            and all(isinstance(d, str) and DEVICE.fullmatch(d) and d in known_devices for d in devices)
+            and len(set(devices)) == len(devices)
+            and all(d == expected_volume and m == str(mount) for d, m in mounts)
+            and len(mounts) <= 1 and not conflicting)
+    # No image paths, arbitrary mount paths, tool output or other-image names.
+    observations.append({"phase": phase, "ownedImageCount": min(len(owned), 9),
+                         "deviceLabels": [d for d in devices[:32] if isinstance(d, str) and DEVICE.fullmatch(d)],
+                         "basePresent": expected_base in devices, "volumePresent": expected_volume in devices,
+                         "exactMountCount": sum(d == expected_volume and m == str(mount) for d, m in mounts),
+                         "unexpectedMountCount": min(sum(d != expected_volume or m != str(mount) for d, m in mounts), 33),
+                         "conflictingDeviceAssociation": conflicting, "safeKnownMapping": safe})
+    del observations[:-8]
+    if not owned:
+        return None
+    if not safe:
+        suffix = "after accepted detach" if phase == "accepted-pending" else "before detach"
+        raise RuntimeError("Owned image device mapping changed " + suffix)
+    return expected_base in devices and mounts == [(expected_volume, str(mount))]
+
+
+def detach_owned(image, mount, expected_base, expected_volume, maximum_wait=30, *, known_devices=None, observations=None):
+    """Detach only a full binding; observe partial/stale mappings without guessing."""
     deadline = time.monotonic() + maximum_wait
     attempts = 0
+    observations = [] if observations is None else observations
+    known = None if known_devices is None else frozenset(known_devices)
+    if known is not None and (not 1 <= len(known) <= 32 or expected_base not in known or expected_volume not in known
+                              or any(not isinstance(d, str) or DEVICE.fullmatch(d) is None for d in known)):
+        raise RuntimeError("Invalid original owned image device set")
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise RuntimeError("Owned image remained busy through the detach deadline")
         snapshot = info(timeout=min(5, remaining))
-        if not any(item.get("image-path") == str(image) for item in snapshot.get("images", [])):
+        owned = [item for item in snapshot.get("images", []) if item.get("image-path") == str(image)]
+        if not owned:
+            observed_owned_mapping(snapshot, image, mount, expected_base, expected_volume, known or (),
+                                   observations, "before-detach")
             return attempts
-        if association(snapshot, image, mount) != (expected_base, expected_volume):
-            raise RuntimeError("Owned image device mapping changed before detach")
+        if known is None:
+            if association(snapshot, image, mount) != (expected_base, expected_volume):
+                raise RuntimeError("Owned image device mapping changed before detach")
+            known = frozenset(entry.get("dev-entry") for entry in owned[0].get("system-entities", []))
+        full = observed_owned_mapping(snapshot, image, mount, expected_base, expected_volume, known,
+                                      observations, "before-detach")
+        if not full:
+            # A partial mapping is NOT authority for another detach. Wait only
+            # for disappearance or restoration of the complete original binding.
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError("Owned image partial mapping exceeded detach deadline")
+            time.sleep(min(0.5, remaining))
+            continue
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise RuntimeError("Owned image detach deadline exceeded")
@@ -70,24 +121,16 @@ def detach_owned(image, mount, expected_base, expected_volume, maximum_wait=30):
         result = command([HDIUTIL, "detach", expected_base], timeout=min(maximum_wait, remaining), check=False,
                          env=dict(os.environ, LANG="C", LC_ALL="C"))
         if result.returncode == 0:
-            # Disk Arbitration may still report the accepted image association.
-            # Never issue another detach: its device number may already be reused.
-            # Observe only disappearance of this exact image within the ORIGINAL
-            # deadline, refusing reassignment or unexpected mount/device identity.
-            owned = next(item for item in snapshot["images"] if item.get("image-path") == str(image))
-            devices = {e["dev-entry"] for e in owned.get("system-entities", []) if "dev-entry" in e}
+            # Never detach again after acceptance, even if a stale image row
+            # remains. Its device number may already have been reused.
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise RuntimeError("Owned image remains associated after detach deadline")
-                observed = [item for item in info(timeout=min(5, remaining)).get("images", []) if item.get("image-path") == str(image)]
-                if not observed:
+                full = observed_owned_mapping(info(timeout=min(5, remaining)), image, mount,
+                                              expected_base, expected_volume, known, observations, "accepted-pending")
+                if full is None:
                     return attempts
-                if len(observed) != 1 or any(
-                    e.get("dev-entry") not in devices or e.get("mount-point") not in (None, "", str(mount))
-                    for e in observed[0].get("system-entities", [])
-                ):
-                    raise RuntimeError("Owned image device mapping changed after accepted detach")
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise RuntimeError("Owned image remains associated after detach deadline")
@@ -177,6 +220,8 @@ def main():
     failure = None
     attached = False
     image_stat = None
+    bound_mapping = None
+    bound_devices = None
     def interrupted(_number, _frame):
         raise KeyboardInterrupt("Disposable storage test interrupted")
     signal.signal(signal.SIGTERM, interrupted)
@@ -191,7 +236,11 @@ def main():
         command([HDIUTIL, "attach", "-plist", "-nobrowse", "-owners", "on",
                  "-mountpoint", str(mount), str(image)])
         attached = True
-        base_device, volume_device = association(info(), image, mount)
+        initial = info()
+        base_device, volume_device = association(initial, image, mount)
+        bound_mapping = (base_device, volume_device)
+        owned = next(item for item in initial["images"] if item.get("image-path") == str(image))
+        bound_devices = {entry.get("dev-entry") for entry in owned.get("system-entities", [])}
         record.update(attached=True, imageDevice=base_device, volumeDevice=volume_device)
         mounted = mount.stat()
         volume = os.statvfs(mount)
@@ -224,12 +273,19 @@ def main():
         failure = error
     finally:
         try:
-            associated = image.exists() and any(i.get("image-path") == str(image) for i in info().get("images", []))
+            bound = info()
+            associated = image.exists() and any(i.get("image-path") == str(image) for i in bound.get("images", []))
             if attached or associated:
-                # Rebind the exact device to our image before detaching. Never force
-                # eject an unidentified/busy device and never recurse into a mount.
-                base_device, volume_device = association(info(), image, mount)
-                record["normalDetachAttempts"] = detach_owned(image, mount, base_device, volume_device)
+                # Preserve the ORIGINAL binding, not a newly assigned device.
+                # A failed attach without a binding still needs an exact mounted
+                # association before any detach can be considered.
+                if bound_mapping is None:
+                    bound_mapping = association(bound, image, mount)
+                    owned = next(item for item in bound["images"] if item.get("image-path") == str(image))
+                    bound_devices = {entry.get("dev-entry") for entry in owned.get("system-entities", [])}
+                observations = record.setdefault("detachMappingObservations", [])
+                record["normalDetachAttempts"] = detach_owned(image, mount, *bound_mapping,
+                                                              known_devices=bound_devices, observations=observations)
                 if any(i.get("image-path") == str(image) for i in info().get("images", [])):
                     raise RuntimeError("Owned image remains attached")
                 record["detached"] = True
