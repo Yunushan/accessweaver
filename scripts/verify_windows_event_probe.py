@@ -14,7 +14,7 @@ SHA=re.compile(r"[a-f0-9]{64}")
 DEPENDENCIES=("scripts/test-windows-installer-event-native.ps1","scripts/windows-installer-event-fixture.ps1","scripts/test-windows-installer-lifecycle.ps1","scripts/windows-installer-state.ps1","scripts/windows-installer-native-state.ps1","scripts/windows-installer-event-state.ps1","internal/workflow/windows.ps1")
 TRUE_FIELDS=("probeComplete","ownedTemporaryDirectoryRemoved","ruleCreationAttempted","ownedRuleCreated","ownedRuleDisabled","ownershipGuardVerified","ownedRuleRemoved","baselineRestored","controlledDriftRefused","adapterCalled","nativeAttemptSentinelPreserved","nativeReturnSentinelPreserved")
 FALSE_FIELDS=("eventLogConfigurationChanged","unrelatedStateMutationAttempted","ownershipComparisonAtomic","installerExecutionPerformed","processOriginEstablished","productionQualificationComplete")
-FIELDS={"schemaVersion","sourceCommit","sourceRef","runID","target","powershellVersion","failureCategory","nativeReadCompleted","localStore","ruleIdentitySHA256","ownershipSHA256","controlledComparison","baselineComparison","firewallEventDiagnostics","reportMaxBytes","dependenciesSHA256",*TRUE_FIELDS,*FALSE_FIELDS}
+FIELDS={"schemaVersion","sourceCommit","sourceRef","runID","target","powershellVersion","failureCategory","nativeReadCompleted","localStore","ruleIdentitySHA256","ownershipSHA256","controlledComparison","baselineComparison","firewallEventDiagnostics","adapterFailure","reportMaxBytes","dependenciesSHA256",*TRUE_FIELDS,*FALSE_FIELDS}
 
 def require(ok):
     if not ok:raise ValueError("Native event probe contract differs")
@@ -58,6 +58,19 @@ def validate_diagnostics(v,identity):
         else:require(cls in ('core','setup','uninstaller','other','service-host-basename'))
     return v['status']=='captured'
 
+ADAPTER_STAGES=('none','preparation','native-invocation','native-output','json-decode','envelope-validation')
+NATIVE_FAILURE_CATEGORIES=('none','tool-timeout','tool-exit','other-native-error')
+
+def validate_adapter_failure(v,diagnostics):
+    require(type(v) is dict and set(v)=={'stage','nativeFailureCategory'})
+    stage,category=v['stage'],v['nativeFailureCategory']
+    require(type(stage) is str and stage in ADAPTER_STAGES and type(category) is str and category in NATIVE_FAILURE_CATEGORIES)
+    if diagnostics['status']=='captured':require(stage=='none' and category=='none')
+    else:
+        require(stage!='none' and diagnostics['queryAttempted'] is (stage!='preparation'))
+        require((category!='none')==(stage=='native-invocation'))
+    return {'stage':stage,'nativeFailureCategory':category}
+
 DOMAIN_FIELDS={'beforeSHA256','afterSHA256','serializedEqual','beforeRows','afterRows','added','removed','changed','rowSerializationChanges','recordOrderingChanged','changes','changesTruncated'}
 def validate_comparison(v,identity,controlled,baseline=None):
     require(type(v) is dict and set(v)=={'exactMatch','beforeSHA256','afterSHA256','domains'})
@@ -81,7 +94,7 @@ def validate_comparison(v,identity,controlled,baseline=None):
 
 def validate_probe(v,commit,ref,arch,run,root):
     require(type(v) is dict and set(v)==FIELDS)
-    require(type(v['schemaVersion']) is int and v['schemaVersion']==1 and v['sourceCommit']==commit and re.fullmatch(r'[a-f0-9]{40}',commit) is not None)
+    require(type(v['schemaVersion']) is int and v['schemaVersion']==2 and v['sourceCommit']==commit and re.fullmatch(r'[a-f0-9]{40}',commit) is not None)
     require(v['sourceRef']==ref and re.fullmatch(r'refs/heads/[A-Za-z0-9_./-]+',ref) is not None and '..' not in ref and '//' not in ref)
     require(type(v['runID']) is str and v['runID']==run and re.fullmatch(r'[1-9][0-9]{0,19}',run) is not None)
     require(arch in ('amd64','arm64') and v['target']=='windows/'+arch)
@@ -92,10 +105,11 @@ def validate_probe(v,commit,ref,arch,run,root):
     validate_comparison(v['baselineComparison'],v['ruleIdentitySHA256'],False)
     validate_comparison(v['controlledComparison'],v['ruleIdentitySHA256'],True,v['baselineComparison'])
     captured=validate_diagnostics(v['firewallEventDiagnostics'],v['ruleIdentitySHA256'])
+    failure=validate_adapter_failure(v['adapterFailure'],v['firewallEventDiagnostics'])
     require(type(v['nativeReadCompleted']) is bool and v['nativeReadCompleted']==captured)
     require(type(v['dependenciesSHA256']) is dict and set(v['dependenciesSHA256'])==set(DEPENDENCIES))
     for name in DEPENDENCIES:require(v['dependenciesSHA256'][name]==hashlib.sha256((root/name).read_bytes()).hexdigest())
-    return {'sourceCommit':commit,'target':v['target'],'controlledDriftAndCleanupVerified':True,'nativeReadCompleted':captured,'diagnosticStatus':v['firewallEventDiagnostics']['status'],'correlatedRecords':len(v['firewallEventDiagnostics']['records']),'processOriginEstablished':False,'cryptographicProvenanceAuthenticated':False,'productionQualificationComplete':False}
+    return {'sourceCommit':commit,'target':v['target'],'controlledDriftAndCleanupVerified':True,'nativeReadCompleted':captured,'diagnosticStatus':v['firewallEventDiagnostics']['status'],'adapterFailure':failure,'correlatedRecords':len(v['firewallEventDiagnostics']['records']),'processOriginEstablished':False,'cryptographicProvenanceAuthenticated':False,'productionQualificationComplete':False}
 
 def unique(pairs):
     out={}

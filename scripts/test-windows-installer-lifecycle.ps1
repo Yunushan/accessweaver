@@ -135,11 +135,14 @@ function State-Checkpoint([string]$Phase) {
     $script:statePrevious=$snapshot
     return $snapshot
 }
-function Read-FirewallEventDiagnostic {
+function Read-FirewallEventDiagnostic([ref]$FailureObservation) {
+    # Optional fixed metadata describes the failure boundary, not child launch
+    # or a completed event-log read. Keep the existing event envelope unchanged.
+    if($null -ne $FailureObservation){$FailureObservation.Value=[ordered]@{stage='none';nativeFailureCategory='none'}}
     $result=New-InstallerFirewallEventDiagnostic
     if($script:firewallOriginObservations.Count -eq 0){return $result}
     $result.status='unavailable';$result.unavailable=$true
-    $attempted=$false;$startText=$null;$endText=$null
+    $attempted=$false;$startText=$null;$endText=$null;$failureStage='preparation'
     $clock=[Diagnostics.Stopwatch]::StartNew()
     try {
         $identities=@($script:firewallOriginObservations | ForEach-Object {$_.identitySHA256} | Sort-Object -Unique)
@@ -155,10 +158,12 @@ function Read-FirewallEventDiagnostic {
         $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($body))
         $shell=Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe'
         # Do not use Native-Record: retain the original uninstaller attempt.
-        $attempted=$true
+        $attempted=$true;$failureStage='native-invocation'
         $native=Invoke-Isolated $shell @('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',$encoded) @(0) 10
+        $failureStage='native-output'
         if($native.exitCode -ne 0 -or -not $native.outputComplete -or $native.stdout.Length -gt 65536 -or -not [string]::IsNullOrWhiteSpace($native.stderr)){throw 'Event diagnostic output unavailable'}
-        $value=$native.stdout | ConvertFrom-Json
+        $failureStage='json-decode';$value=$native.stdout | ConvertFrom-Json
+        $failureStage='envelope-validation'
         # PowerShell 7 may materialize ISO strings as DateTime; 5.1 leaves
         # strings. Preserve the exact UTC roundtrip value in either runtime.
         foreach($name in @('windowStartUtc','windowEndUtc')){
@@ -171,6 +176,9 @@ function Read-FirewallEventDiagnostic {
         if(($expected -join '|') -cne ($actual -join '|') -or $value.status -cne 'captured' -or $value.windowStartUtc -cne $startText -or $value.windowEndUtc -cne $endText -or -not $value.queryAttempted -or $value.eventLogConfigurationChanged -or $value.extraFirewallRuleQueriesPerformed -or $value.processOriginEstablished){throw 'Event diagnostic envelope differs'}
         $result=$value
     } catch { # Retain fixed unavailable metadata, never native XML/errors/output.
+        $nativeFailureCategory='none'
+        if($failureStage -ceq 'native-invocation'){$nativeFailureCategory=Get-InstallerNativeFailureCategory $shell $_.Exception.Message}
+        if($null -ne $FailureObservation){$FailureObservation.Value=[ordered]@{stage=$failureStage;nativeFailureCategory=$nativeFailureCategory}}
         $result=New-InstallerFirewallEventDiagnostic;$result.status='unavailable';$result.unavailable=$true;$result.queryAttempted=$attempted;$result.windowStartUtc=$startText;$result.windowEndUtc=$endText
     } finally {$clock.Stop()}
     $result.queryElapsedMilliseconds=$clock.ElapsedMilliseconds

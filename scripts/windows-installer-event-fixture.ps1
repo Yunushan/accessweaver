@@ -119,3 +119,20 @@ function Assert-InstallerEventFixtureDiagnostic($Value,[string]$Identity,[dateti
         }
     }
 }
+function Assert-InstallerEventFixtureAdapterFailure($Observation,$Diagnostic) {
+    if(-not (Test-InstallerEventFixtureKeys $Observation @('stage','nativeFailureCategory')) -or $Observation.stage -isnot [string] -or $Observation.nativeFailureCategory -isnot [string] -or @('none','preparation','native-invocation','native-output','json-decode','envelope-validation') -cnotcontains $Observation.stage -or @('none','tool-timeout','tool-exit','other-native-error') -cnotcontains $Observation.nativeFailureCategory){throw 'Event fixture adapter failure metadata differs'}
+    if($Diagnostic.queryAttempted -isnot [bool] -or @('not-needed','captured','unavailable') -cnotcontains $Diagnostic.status){throw 'Event fixture adapter status differs'}
+    if($Diagnostic.status -cne 'unavailable'){
+        if($Observation.stage -cne 'none' -or $Observation.nativeFailureCategory -cne 'none' -or ($Diagnostic.status -ceq 'captured' -and -not $Diagnostic.queryAttempted) -or ($Diagnostic.status -ceq 'not-needed' -and $Diagnostic.queryAttempted)){throw 'Event fixture successful adapter retained a failure'}
+        return
+    }
+    if($Observation.stage -ceq 'none' -or $Diagnostic.queryAttempted -ne ($Observation.stage -cne 'preparation') -or (($Observation.stage -ceq 'native-invocation') -ne ($Observation.nativeFailureCategory -cne 'none'))){throw 'Event fixture unavailable adapter failure differs'}
+}
+function Set-InstallerEventFixtureDiagnosticObservation([ref]$Diagnostic,[ref]$AdapterFailure,$CandidateDiagnostic,$CandidateFailure,[string]$Identity,[datetime]$Start) {
+    # Retain only closed fixed failure metadata before the successful-probe
+    # guard. A failed preparation keeps the safe default event envelope.
+    Assert-InstallerEventFixtureAdapterFailure $CandidateFailure $CandidateDiagnostic
+    $AdapterFailure.Value=[ordered]@{stage=$CandidateFailure.stage;nativeFailureCategory=$CandidateFailure.nativeFailureCategory}
+    Assert-InstallerEventFixtureDiagnostic $CandidateDiagnostic $Identity $Start
+    $Diagnostic.Value=$CandidateDiagnostic
+}

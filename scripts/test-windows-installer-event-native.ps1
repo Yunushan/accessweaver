@@ -71,7 +71,7 @@ $script:lastNativeAttempt=$attemptSentinel;$script:lastNative=$returnSentinel
 $attemptHash=Get-InstallerStateValueHash $attemptSentinel;$returnHash=Get-InstallerStateValueHash $returnSentinel
 $stage='prepare';$failure=$null;$baseline=$null;$controlled=$null;$restored=$null;$ownership=$null;$capsuleOwned=$false
 $created=$false;$creationAttempted=$false;$disabled=$false;$guardVerified=$false;$removed=$false;$tempRemoved=$false;$refused=$false;$adapterCalled=$false;$attemptPreserved=$false;$returnPreserved=$false;$baselineRestored=$false
-$diagnostic=New-InstallerFirewallEventDiagnostic
+$diagnostic=New-InstallerFirewallEventDiagnostic;$adapterFailure=[ordered]@{stage='none';nativeFailureCategory='none'}
 try {
     if(Test-Path -LiteralPath $capsule){throw 'Native event probe capsule already exists'}
     [void][IO.Directory]::CreateDirectory($capsule,(Private-DirectorySecurity));No-Reparse $capsule
@@ -101,9 +101,9 @@ try {
     if(-not $refused){throw 'Native event probe did not refuse controlled drift'}
     $script:firewallOriginObservations=@(New-InstallerFirewallOrigins 'controlled-event-probe' @($controlled.domains.firewall.changes) $beforeRules $script:stateFirewallRules 16)
     if($script:firewallOriginObservations.Count -ne 1 -or $script:firewallOriginObservations[0].identitySHA256 -cne $ownership.identitySHA256){throw 'Native event probe captured identity differs'}
-    $stage='diagnostic';$adapterCalled=$true;$candidateDiagnostic=Read-FirewallEventDiagnostic
-    Assert-InstallerEventFixtureDiagnostic $candidateDiagnostic $ownership.identitySHA256 $script:firewallEventWindowStartUtc
-    $diagnostic=$candidateDiagnostic
+    $stage='diagnostic';$adapterCalled=$true;$candidateAdapterFailure=$null
+    $candidateDiagnostic=Read-FirewallEventDiagnostic -FailureObservation ([ref]$candidateAdapterFailure)
+    Set-InstallerEventFixtureDiagnosticObservation ([ref]$diagnostic) ([ref]$adapterFailure) $candidateDiagnostic $candidateAdapterFailure $ownership.identitySHA256 $script:firewallEventWindowStartUtc
     $attemptPreserved=([object]::ReferenceEquals($attemptSentinel,$script:lastNativeAttempt) -and (Get-InstallerStateValueHash $script:lastNativeAttempt) -ceq $attemptHash)
     $returnPreserved=([object]::ReferenceEquals($returnSentinel,$script:lastNative) -and (Get-InstallerStateValueHash $script:lastNative) -ceq $returnHash)
     if(-not $attemptPreserved -or -not $returnPreserved -or $script:assertionFailure -cne $expectedFailure){throw 'Native event probe replaced the original failure context'}
@@ -142,7 +142,7 @@ finally {
     }
 }
 $complete=($null -eq $failure -and $creationAttempted -and $created -and $disabled -and $guardVerified -and $removed -and $tempRemoved -and $baselineRestored -and $refused -and $adapterCalled -and $attemptPreserved -and $returnPreserved)
-$record=[ordered]@{schemaVersion=1;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);powershellVersion=$PSVersionTable.PSVersion.ToString();probeComplete=$complete;failureCategory=$failure;ruleCreationAttempted=$creationAttempted;ownedRuleCreated=$created;ownedRuleDisabled=$disabled;ownershipGuardVerified=$guardVerified;ownedRuleRemoved=$removed;ownedTemporaryDirectoryRemoved=$tempRemoved;baselineRestored=$baselineRestored;controlledDriftRefused=$refused;adapterCalled=$adapterCalled;nativeReadCompleted=($diagnostic.status -ceq 'captured');nativeAttemptSentinelPreserved=$attemptPreserved;nativeReturnSentinelPreserved=$returnPreserved;localStore='PersistentStore';ruleIdentitySHA256=(Get-InstallerStateTextHash $ruleName);ownershipSHA256=$(if($ownership){$ownership.sha256}else{$null});controlledComparison=$controlled;baselineComparison=$restored;firewallEventDiagnostics=$diagnostic;dependenciesSHA256=$dependencies;eventLogConfigurationChanged=$false;unrelatedStateMutationAttempted=$false;ownershipComparisonAtomic=$false;installerExecutionPerformed=$false;processOriginEstablished=$false;productionQualificationComplete=$false;reportMaxBytes=131072}
+$record=[ordered]@{schemaVersion=2;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);powershellVersion=$PSVersionTable.PSVersion.ToString();probeComplete=$complete;failureCategory=$failure;ruleCreationAttempted=$creationAttempted;ownedRuleCreated=$created;ownedRuleDisabled=$disabled;ownershipGuardVerified=$guardVerified;ownedRuleRemoved=$removed;ownedTemporaryDirectoryRemoved=$tempRemoved;baselineRestored=$baselineRestored;controlledDriftRefused=$refused;adapterCalled=$adapterCalled;nativeReadCompleted=($diagnostic.status -ceq 'captured');nativeAttemptSentinelPreserved=$attemptPreserved;nativeReturnSentinelPreserved=$returnPreserved;localStore='PersistentStore';ruleIdentitySHA256=(Get-InstallerStateTextHash $ruleName);ownershipSHA256=$(if($ownership){$ownership.sha256}else{$null});controlledComparison=$controlled;baselineComparison=$restored;firewallEventDiagnostics=$diagnostic;adapterFailure=$adapterFailure;dependenciesSHA256=$dependencies;eventLogConfigurationChanged=$false;unrelatedStateMutationAttempted=$false;ownershipComparisonAtomic=$false;installerExecutionPerformed=$false;processOriginEstablished=$false;productionQualificationComplete=$false;reportMaxBytes=131072}
 $json=(ConvertTo-Json -InputObject $record -Depth 20 -Compress)+[Environment]::NewLine
 if([Text.UTF8Encoding]::new($false).GetByteCount($json) -gt 131072){throw 'Native event probe public report exceeds budget'}
 $reportDirectory=Join-Path $project 'build\installer-event-checks';No-Reparse $reportDirectory

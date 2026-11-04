@@ -47,7 +47,20 @@ $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseF
 Assert-Event (-not $issues.Count) 'Lifecycle source parse failed'
 $nodes=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'Read-FirewallEventDiagnostic'})
 Assert-Event ($nodes.Count -eq 1) 'Expected one event adapter';. ([scriptblock]::Create($nodes[0].Extent.Text))
-$script:firewallOriginObservations=@();$script:firewallEventWindowStartUtc=$start;$script:syntheticChildCalls=0;$script:lastNativeAttempt=@{preserve='uninstaller'};$original=$script:lastNativeAttempt
+$script:firewallOriginObservations=@();$script:firewallEventWindowStartUtc=$start;$script:syntheticChildCalls=0
+$script:lastNativeAttempt=@{preserve='uninstaller'};$original=$script:lastNativeAttempt
+$script:lastNative=@{preserve='returned-uninstaller'};$returnedOriginal=$script:lastNative
+$script:assertionFailure='PRIVATE_ORIGINAL_ASSERTION';$script:assertionFailureLine=123
+$originalAttemptHash=Get-InstallerStateValueHash $original;$originalReturnHash=Get-InstallerStateValueHash $returnedOriginal
+$eventEnvelopeKeys=(@((New-InstallerFirewallEventDiagnostic).Keys | Sort-Object) -join '|')
+function Assert-AdapterObservation($Diagnostic,$Observation,[string]$Stage,[string]$Category){
+    $keys=(@($Observation.Keys | Sort-Object) -join '|')
+    Assert-Event ($keys -ceq 'nativeFailureCategory|stage' -and $Observation.stage -ceq $Stage -and $Observation.nativeFailureCategory -ceq $Category) 'Adapter failure boundary/classification differs'
+    $diagnosticKeys=if($Diagnostic -is [Collections.IDictionary]){@($Diagnostic.Keys | Sort-Object)}else{@($Diagnostic.PSObject.Properties.Name | Sort-Object)}
+    Assert-Event (($diagnosticKeys -join '|') -ceq $eventEnvelopeKeys) 'Existing event envelope shape changed'
+    Assert-Event (-not ((ConvertTo-Json -InputObject @{diagnostic=$Diagnostic;adapterFailure=$Observation} -Depth 12).Contains('PRIVATE'))) 'Adapter failure metadata leaked private data'
+    Assert-Event ([object]::ReferenceEquals($original,$script:lastNativeAttempt) -and [object]::ReferenceEquals($returnedOriginal,$script:lastNative) -and (Get-InstallerStateValueHash $script:lastNativeAttempt) -ceq $originalAttemptHash -and (Get-InstallerStateValueHash $script:lastNative) -ceq $originalReturnHash -and $script:assertionFailure -ceq 'PRIVATE_ORIGINAL_ASSERTION' -and $script:assertionFailureLine -eq 123) 'Event adapter replaced original native/failure context'
+}
 function Invoke-Isolated([string]$binary,[string[]]$arguments,[int[]]$codes,[int]$Timeout){
     $script:syntheticChildCalls++
     Assert-Event ($Timeout -eq 10 -and $arguments[0] -ceq '-NoLogo' -and $arguments -notcontains '-ExecutionPolicy' -and $arguments -notcontains '-Command' -and $codes.Count -eq 1 -and $codes[0] -eq 0) 'Child timeout/policy/exit admission changed'
@@ -56,22 +69,50 @@ function Invoke-Isolated([string]$binary,[string[]]$arguments,[int[]]$codes,[int
     Assert-Event (-not $childIssues.Count) 'Encoded child command did not parse'
     Assert-Event ($body.Contains('Read-InstallerFirewallEventLog') -and -not $body.Contains('Set-WinEvent') -and -not $body.Contains('wevtutil') -and -not $body.Contains('PRIVATE_RULE_ID')) 'Unsafe child command/data boundary'
     if($script:syntheticChildMode -ceq 'throw'){throw 'PRIVATE_CHILD_ERROR'}
+    if($script:syntheticChildMode -ceq 'timeout'){throw ('Timed out: '+[IO.Path]::GetFileName($binary))}
+    if($script:syntheticChildMode -ceq 'exit'){throw ('Tool failed: '+[IO.Path]::GetFileName($binary)+' (exit 1)')}
+    if($script:syntheticChildMode -ceq 'cleanup'){throw 'Tool process tree cleanup is unconfirmed: PRIVATE_CLEANUP_ERROR'}
+    if($script:syntheticChildMode -ceq 'stderr'){return @{exitCode=0;outputComplete=$true;stdout='';stderr='PRIVATE_CHILD_ERROR'}}
+    if($script:syntheticChildMode -ceq 'oversized'){return @{exitCode=0;outputComplete=$true;stdout=('x'*65537);stderr=''}}
     if($script:syntheticChildMode -ceq 'incomplete'){return @{exitCode=0;outputComplete=$false;stdout='PRIVATE_CHILD_OUTPUT';stderr=''}}
     if($script:syntheticChildMode -ceq 'malformed'){return @{exitCode=0;outputComplete=$true;stdout='PRIVATE_CHILD_OUTPUT';stderr=''}}
     $value=New-InstallerFirewallEventDiagnostic;$value.status='captured';$value.queryAttempted=$true;$value.windowStartUtc=$script:firewallEventWindowStartUtc.ToString('o')
     $match=[regex]::Match($body,'\$end=\[datetime\]::ParseExact\(''([^'']+)''');Assert-Event $match.Success 'Child end-time argument lost';$value.windowEndUtc=$match.Groups[1].Value
     if($script:syntheticChildMode -ceq 'stale'){$value.windowStartUtc='PRIVATE_OLD_WINDOW'}
+    if($script:syntheticChildMode -ceq 'private-envelope'){$value.privatePath='PRIVATE_CHILD_PATH'}
     return @{exitCode=0;outputComplete=$true;stdout=(ConvertTo-Json -InputObject $value -Depth 12 -Compress);stderr=''}
 }
-$nothing=Read-FirewallEventDiagnostic
-Assert-Event ($nothing.status -ceq 'not-needed' -and $script:syntheticChildCalls -eq 0) 'Unchanged state launched event query'
+$observation=[ordered]@{stage='PRIVATE_STALE';nativeFailureCategory='PRIVATE_STALE'};$priorObservation=$observation
+$nothing=Read-FirewallEventDiagnostic -FailureObservation ([ref]$observation)
+Assert-Event ($nothing.status -ceq 'not-needed' -and $script:syntheticChildCalls -eq 0 -and -not [object]::ReferenceEquals($priorObservation,$observation)) 'Unchanged state launched event query or retained stale observation'
+Assert-AdapterObservation $nothing $observation 'none' 'none'
 $script:firewallOriginObservations=@(@{identitySHA256=$identity});$script:firewallEventWindowStartUtc=[datetime]::UtcNow.AddMinutes(-10);$script:syntheticChildMode='success'
-$captured=Read-FirewallEventDiagnostic
-Assert-Event ($captured.status -ceq 'captured' -and $script:syntheticChildCalls -eq 1 -and [object]::ReferenceEquals($original,$script:lastNativeAttempt)) 'Event query replaced original native attempt'
-foreach($mode in @('throw','incomplete','malformed','stale')){$script:syntheticChildMode=$mode;$unavailable=Read-FirewallEventDiagnostic;Assert-Event ($unavailable.status -ceq 'unavailable' -and $unavailable.unavailable -and $unavailable.queryAttempted -and -not ((ConvertTo-Json $unavailable -Depth 12).Contains('PRIVATE'))) 'Unavailable query leaked or masked status'}
+$captured=Read-FirewallEventDiagnostic -FailureObservation ([ref]$observation)
+Assert-Event ($captured.status -ceq 'captured' -and $script:syntheticChildCalls -eq 1) 'Synthetic successful query was not captured'
+Assert-AdapterObservation $captured $observation 'none' 'none'
+foreach($case in @(@{mode='throw';stage='native-invocation';category='other-native-error'},@{mode='timeout';stage='native-invocation';category='tool-timeout'},@{mode='exit';stage='native-invocation';category='tool-exit'},@{mode='cleanup';stage='native-invocation';category='other-native-error'},@{mode='incomplete';stage='native-output';category='none'},@{mode='stderr';stage='native-output';category='none'},@{mode='oversized';stage='native-output';category='none'},@{mode='malformed';stage='json-decode';category='none'},@{mode='stale';stage='envelope-validation';category='none'},@{mode='private-envelope';stage='envelope-validation';category='none'})){
+    $script:syntheticChildMode=$case.mode;$observation=[ordered]@{stage='PRIVATE_STALE';nativeFailureCategory='PRIVATE_STALE'}
+    $unavailable=Read-FirewallEventDiagnostic -FailureObservation ([ref]$observation)
+    Assert-Event ($unavailable.status -ceq 'unavailable' -and $unavailable.unavailable -and $unavailable.queryAttempted) 'Unavailable query masked status'
+    Assert-AdapterObservation $unavailable $observation $case.stage $case.category
+    $priorObservation=$observation;$script:syntheticChildMode='success'
+    $captured=Read-FirewallEventDiagnostic -FailureObservation ([ref]$observation)
+    Assert-Event ($captured.status -ceq 'captured' -and -not [object]::ReferenceEquals($priorObservation,$observation)) 'Successful query retained stale failure metadata'
+    Assert-AdapterObservation $captured $observation 'none' 'none'
+}
+# The optional observation leaves the existing caller and event envelope intact.
+$legacy=Read-FirewallEventDiagnostic
+Assert-Event ($legacy.status -ceq 'captured') 'Existing no-observation caller changed'
 # Quoted source paths must remain data in the encoded command as well.
-$project=$project+"' quoted project";$script:syntheticChildMode='success';$quoted=Read-FirewallEventDiagnostic
+$project=$project+"' quoted project";$script:syntheticChildMode='success';$quoted=Read-FirewallEventDiagnostic -FailureObservation ([ref]$observation)
 Assert-Event ($quoted.status -ceq 'captured') 'Quoted project path broke child command data binding'
-$prior=$script:syntheticChildCalls;$script:firewallEventWindowStartUtc=[datetime]::MinValue;$unavailable=Read-FirewallEventDiagnostic
+Assert-AdapterObservation $quoted $observation 'none' 'none'
+$prior=$script:syntheticChildCalls;$script:firewallEventWindowStartUtc=[datetime]::MinValue
+$unavailable=Read-FirewallEventDiagnostic -FailureObservation ([ref]$observation)
 Assert-Event ($unavailable.unavailable -and -not $unavailable.queryAttempted -and $script:syntheticChildCalls -eq $prior) 'Invalid query input claimed dispatch'
-Write-Output 'Synthetic event XML, privacy, DTD, correlation, query/frame bounds and failure adapter checks passed; no native queries/processes or system changes.'
+Assert-AdapterObservation $unavailable $observation 'preparation' 'none'
+$priorObservation=$observation;$script:firewallOriginObservations=@()
+$nothing=Read-FirewallEventDiagnostic -FailureObservation ([ref]$observation)
+Assert-Event ($nothing.status -ceq 'not-needed' -and $script:syntheticChildCalls -eq $prior -and -not [object]::ReferenceEquals($priorObservation,$observation)) 'Early return retained preparation failure or dispatched'
+Assert-AdapterObservation $nothing $observation 'none' 'none'
+Write-Output 'Synthetic event XML, privacy, DTD, correlation, query/frame bounds and fixed failure-stage/reset/context adapter checks passed; no native queries/processes or system changes.'

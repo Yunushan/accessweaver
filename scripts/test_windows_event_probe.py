@@ -5,7 +5,7 @@ import tempfile
 import os
 from unittest.mock import patch
 import unittest
-from verify_windows_event_probe import DEPENDENCIES,TRUE_FIELDS,FALSE_FIELDS,validate_probe,utc,unique,read_report
+from verify_windows_event_probe import DEPENDENCIES,TRUE_FIELDS,FALSE_FIELDS,validate_probe,validate_adapter_failure,utc,unique,read_report
 
 class ProbeContracts(unittest.TestCase):
     def setUp(self):
@@ -18,18 +18,46 @@ class ProbeContracts(unittest.TestCase):
         baseline={'exactMatch':True,'beforeSHA256':h,'afterSHA256':h,'domains':{k:copy.deepcopy(domain) for k in ('services','firewall','dns')}}
         control=copy.deepcopy(baseline);control.update(exactMatch=False,afterSHA256='1'*64);d=control['domains']['firewall'];d.update(afterSHA256='1'*64,serializedEqual=False,afterRows=3,added=1,changes=[{'identitySHA256':identity,'kind':'added','classification':'other','beforeSHA256':None,'afterSHA256':'2'*64,'fields':[]}])
         diag={'schemaVersion':1,'source':'existing-local-firewall-event-log','status':status,'queryAttempted':True,'queryDeadlineMilliseconds':10000,'queryElapsedMilliseconds':1,'maxEvents':128,'maxRecords':16,'maxXmlBytes':65536,'maxFieldBytes':4096,'windowStartUtc':'2026-11-04T00:00:00.0000000Z','windowEndUtc':'2026-11-04T00:00:00.0000002Z','eventsExamined':0,'invalidEvents':0,'eventsLimitReached':False,'records':[],'recordsTruncated':False,'unavailable':status=='unavailable','eventLogConfigurationChanged':False,'extraFirewallRuleQueriesPerformed':False,'processOriginEstablished':False}
-        return {'schemaVersion':1,'sourceCommit':'a'*40,'sourceRef':'refs/heads/main','runID':'7','target':'windows/amd64','powershellVersion':'5.1.26100.1','failureCategory':None,'nativeReadCompleted':status=='captured','localStore':'PersistentStore','ruleIdentitySHA256':identity,'ownershipSHA256':'d'*64,'controlledComparison':control,'baselineComparison':baseline,'firewallEventDiagnostics':diag,'reportMaxBytes':131072,'dependenciesSHA256':{n:hashlib.sha256((self.root/n).read_bytes()).hexdigest() for n in DEPENDENCIES},**dict.fromkeys(TRUE_FIELDS,True),**dict.fromkeys(FALSE_FIELDS,False)}
+        return {'schemaVersion':2,'sourceCommit':'a'*40,'sourceRef':'refs/heads/main','runID':'7','target':'windows/amd64','powershellVersion':'5.1.26100.1','failureCategory':None,'nativeReadCompleted':status=='captured','localStore':'PersistentStore','ruleIdentitySHA256':identity,'ownershipSHA256':'d'*64,'controlledComparison':control,'baselineComparison':baseline,'firewallEventDiagnostics':diag,'adapterFailure':{'stage':'none' if status=='captured' else 'native-invocation','nativeFailureCategory':'none' if status=='captured' else 'other-native-error'},'reportMaxBytes':131072,'dependenciesSHA256':{n:hashlib.sha256((self.root/n).read_bytes()).hexdigest() for n in DEPENDENCIES},**dict.fromkeys(TRUE_FIELDS,True),**dict.fromkeys(FALSE_FIELDS,False)}
     def check(self,value):return validate_probe(value,'a'*40,'refs/heads/main','amd64','7',self.root)
     def test_captured_and_unavailable_are_truthfully_distinct(self):
         for status in ('captured','unavailable'):
             v=self.fixture(status);r=self.check(v);self.assertEqual(r['nativeReadCompleted'],status=='captured');self.assertFalse(r['processOriginEstablished']);self.assertFalse(r['cryptographicProvenanceAuthenticated'])
+    def test_fixed_adapter_failure_stages_and_native_categories(self):
+        for stage in ('native-invocation','native-output','json-decode','envelope-validation'):
+            categories=('tool-timeout','tool-exit','other-native-error') if stage=='native-invocation' else ('none',)
+            for category in categories:
+                v=self.fixture('unavailable');failure={'stage':stage,'nativeFailureCategory':category};v['adapterFailure']=failure
+                with self.subTest(stage=stage,category=category):self.assertEqual(self.check(v)['adapterFailure'],failure)
+        # Preparation is meaningful failure evidence but not an attestable completed
+        # probe: the original controlled-probe admission still requires a query attempt.
+        v=self.fixture('unavailable');v['adapterFailure']={'stage':'preparation','nativeFailureCategory':'none'};v['firewallEventDiagnostics']['queryAttempted']=False
+        self.assertEqual(validate_adapter_failure(v['adapterFailure'],v['firewallEventDiagnostics']),v['adapterFailure'])
+        with self.assertRaises(ValueError):self.check(v)
+    def test_adapter_failure_privacy_types_and_status_consistency_refuse(self):
+        invalid=[None,[],{},True,{'stage':'none'},{'stage':'none','nativeFailureCategory':'none','rawError':'PRIVATE'},
+                 {'stage':'PRIVATE','nativeFailureCategory':'none'},{'stage':'native-invocation','nativeFailureCategory':'PRIVATE'},
+                 {'stage':True,'nativeFailureCategory':'none'},{'stage':['none'],'nativeFailureCategory':'none'},
+                 {'stage':'none','nativeFailureCategory':False},{'stage':'none','nativeFailureCategory':['none']}]
+        for status in ('captured','unavailable'):
+            for failure in invalid:
+                v=self.fixture(status);v['adapterFailure']=failure
+                with self.subTest(status=status,failure=failure),self.assertRaises(ValueError):self.check(v)
+        for status,stage,category in [('captured','native-invocation','tool-timeout'),('captured','none','tool-exit'),
+                                      ('unavailable','none','none'),('unavailable','native-invocation','none'),
+                                      ('unavailable','native-output','tool-timeout'),('unavailable','json-decode','tool-exit'),
+                                      ('unavailable','envelope-validation','other-native-error'),('unavailable','preparation','none')]:
+            v=self.fixture(status);v['adapterFailure']={'stage':stage,'nativeFailureCategory':category}
+            with self.subTest(status=status,stage=stage,category=category),self.assertRaises(ValueError):self.check(v)
+        v=self.fixture('unavailable');v['firewallEventDiagnostics']['queryAttempted']=False
+        with self.assertRaises(ValueError):self.check(v)
     def test_missing_extra_raw_and_mutated_scope_fields_refuse(self):
         good=self.fixture();cases=[None,{},dict(good,rawRuleName='PRIVATE')]
         for k in good:
             v=copy.deepcopy(good);v.pop(k);cases.append(v)
         for k in TRUE_FIELDS:cases.append(dict(good,**{k:False}))
         for k in FALSE_FIELDS:cases.append(dict(good,**{k:True}))
-        for k,v in [('schemaVersion',True),('runID',7),('target','windows/arm64'),('localStore','ActiveStore'),('powershellVersion','7.6.5'),('failureCategory','PRIVATE'),('ownershipSHA256','PRIVATE'),('nativeReadCompleted',False),('reportMaxBytes',131073)]:cases.append(dict(good,**{k:v}))
+        for k,v in [('schemaVersion',True),('schemaVersion',1),('runID',7),('target','windows/arm64'),('localStore','ActiveStore'),('powershellVersion','7.6.5'),('failureCategory','PRIVATE'),('ownershipSHA256','PRIVATE'),('nativeReadCompleted',False),('reportMaxBytes',131073)]:cases.append(dict(good,**{k:v}))
         for value in cases:
             with self.subTest(value=value),self.assertRaises(ValueError):self.check(value)
     def test_source_dependencies_and_identity_are_exact(self):

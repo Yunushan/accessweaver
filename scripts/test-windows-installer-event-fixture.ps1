@@ -66,6 +66,34 @@ Assert-InstallerEventFixtureDiagnostic $diag $ownership.identitySHA256 $start
 $record.fields.ModifyingUser.privatePath='PRIVATE_PATH';Assert-FixtureRefused {Assert-InstallerEventFixtureDiagnostic $diag $ownership.identitySHA256 $start};$record.fields.ModifyingUser.Remove('privatePath')
 $record.identitySHA256='d'*64;Assert-FixtureRefused {Assert-InstallerEventFixtureDiagnostic $diag $ownership.identitySHA256 $start};$record.identitySHA256=$ownership.identitySHA256
 $record.recordId='18446744073709551616';Assert-FixtureRefused {Assert-InstallerEventFixtureDiagnostic $diag $ownership.identitySHA256 $start}
+$capturedFailure=[ordered]@{stage='none';nativeFailureCategory='none'}
+Assert-InstallerEventFixtureAdapterFailure $capturedFailure $parsed
+Assert-InstallerEventFixtureAdapterFailure ((ConvertTo-Json $capturedFailure -Compress) | ConvertFrom-Json) $parsed
+$notNeeded=New-InstallerFirewallEventDiagnostic;Assert-InstallerEventFixtureAdapterFailure $capturedFailure $notNeeded
+foreach($stage in @('native-output','json-decode','envelope-validation')){Assert-InstallerEventFixtureAdapterFailure ([ordered]@{stage=$stage;nativeFailureCategory='none'}) $unavailable}
+foreach($category in @('tool-timeout','tool-exit','other-native-error')){Assert-InstallerEventFixtureAdapterFailure ([ordered]@{stage='native-invocation';nativeFailureCategory=$category}) $unavailable}
+$preparation=(ConvertTo-Json $unavailable -Depth 12 -Compress) | ConvertFrom-Json;$preparation.queryAttempted=$false
+Assert-InstallerEventFixtureAdapterFailure ([ordered]@{stage='preparation';nativeFailureCategory='none'}) $preparation
+# Preparation is representable as a failed report, but the passing probe still
+# requires actual adapter dispatch and a valid request window.
+Assert-FixtureRefused {Assert-InstallerEventFixtureDiagnostic $preparation $ownership.identitySHA256 $start}
+foreach($failure in @($null,[ordered]@{stage='PRIVATE_PATH';nativeFailureCategory='none'},[ordered]@{stage='none';nativeFailureCategory='PRIVATE_ERROR'},[ordered]@{stage='none';nativeFailureCategory='none';privatePath='PRIVATE_PATH'},[ordered]@{stage=@('none');nativeFailureCategory='none'},[ordered]@{stage='native-output';nativeFailureCategory='tool-timeout'},[ordered]@{stage='native-invocation';nativeFailureCategory='none'},[ordered]@{stage='none';nativeFailureCategory='none'},[ordered]@{stage='preparation';nativeFailureCategory='none'})){
+    Assert-FixtureRefused {Assert-InstallerEventFixtureAdapterFailure $failure $unavailable}
+}
+foreach($failure in @([ordered]@{stage='native-invocation';nativeFailureCategory='tool-timeout'},[ordered]@{stage='native-output';nativeFailureCategory='none'})){Assert-FixtureRefused {Assert-InstallerEventFixtureAdapterFailure $failure $parsed}}
+Assert-FixtureRefused {Assert-InstallerEventFixtureAdapterFailure ([ordered]@{stage='native-output';nativeFailureCategory='none'}) $preparation}
+# Exercise the exact in-memory retention path called by the hosted probe.
+$retainedDiagnostic=New-InstallerFirewallEventDiagnostic;$retainedFailure=[ordered]@{stage='none';nativeFailureCategory='none'}
+$safeDefaultHash=Get-InstallerStateValueHash $retainedDiagnostic
+$privatePreparation=(ConvertTo-Json $preparation -Depth 12 -Compress) | ConvertFrom-Json
+$privatePreparation | Add-Member NoteProperty privatePath 'PRIVATE_UNVALIDATED_CANDIDATE'
+Assert-FixtureRefused {Set-InstallerEventFixtureDiagnosticObservation ([ref]$retainedDiagnostic) ([ref]$retainedFailure) $privatePreparation ([ordered]@{stage='preparation';nativeFailureCategory='none'}) $ownership.identitySHA256 $start}
+Assert-Fixture ($retainedFailure.stage -ceq 'preparation' -and $retainedFailure.nativeFailureCategory -ceq 'none' -and (Get-InstallerStateValueHash $retainedDiagnostic) -ceq $safeDefaultHash) 'Failed probe lost its fixed preparation boundary or published candidate data'
+Assert-Fixture (-not ((ConvertTo-Json -InputObject @{firewallEventDiagnostics=$retainedDiagnostic;adapterFailure=$retainedFailure} -Depth 12).Contains('PRIVATE'))) 'Failed probe retention leaked private candidate data'
+Assert-FixtureRefused {Set-InstallerEventFixtureDiagnosticObservation ([ref]$retainedDiagnostic) ([ref]$retainedFailure) $privatePreparation ([ordered]@{stage='preparation';nativeFailureCategory='none';privatePath='PRIVATE_FAILURE'}) $ownership.identitySHA256 $start}
+Assert-Fixture ($retainedFailure.stage -ceq 'preparation' -and (Get-InstallerStateValueHash $retainedDiagnostic) -ceq $safeDefaultHash) 'Invalid failure metadata replaced retained probe data'
+Set-InstallerEventFixtureDiagnosticObservation ([ref]$retainedDiagnostic) ([ref]$retainedFailure) $parsed $capturedFailure $ownership.identitySHA256 $start
+Assert-Fixture ($retainedDiagnostic.status -ceq 'captured' -and $retainedFailure.stage -ceq 'none' -and $retainedFailure.nativeFailureCategory -ceq 'none') 'Accepted probe observation did not reset its fixed failure boundary'
 $tokens=$null;$issues=$null;$null=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'test-windows-installer-event-native.ps1'),[ref]$tokens,[ref]$issues)
 Assert-Fixture (-not $issues.Count) 'Native probe source did not parse'
-Write-Output 'Pure ownership replacement, provider/filter binding, baseline drift/restoration, diagnostic privacy/caps and native source parse checks passed; no native query or mutation.'
+Write-Output 'Pure ownership replacement, provider/filter binding, baseline drift/restoration, diagnostic privacy/caps, adapter failure metadata and native source parse checks passed; no native query or mutation.'
