@@ -25,6 +25,7 @@ run_native() {
 }
 run_native "$PWD/build/linux-managed-policy.test" -test.run='^TestDisposableLinuxManagedPolicyNative$' -test.v
 run_native "$PWD/build/linux-policy-transactions.test" -test.run='^TestDisposableLinuxPolicyTransactions$' -test.v
+run_native "$PWD/build/linux-managed-policy.test" -test.run='^TestDisposableLinuxRecordedPolicyTransactions$' -test.v
 if sudo -n test -e /etc/accessweaver || sudo -n test -L /etc/accessweaver || sudo -n test -e /etc/.accessweaver-policy.lock || sudo -n test -L /etc/.accessweaver-policy.lock; then
   echo 'Native policy test did not remove its source.' >&2
   exit 1
