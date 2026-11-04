@@ -1,6 +1,6 @@
 # Audit events, local profile imports and checkpoint verification
 
-AccessWeaver provides a bounded event-chain format, a read-only segment verifier and an explicit Linux profile-import path with protected local intent/outcome recording. Broader user/administrator action coverage, protected storage on the other desktop platforms, retention acknowledgments and collector integration remain unfinished. The enterprise audit readiness gate remains missing.
+AccessWeaver provides a bounded event-chain format, a read-only segment verifier and an explicit Linux profile-import path with protected local intent/outcome recording, and consented read-only JSONL export. Broader user/administrator action coverage, protected storage on the other desktop platforms, retention acknowledgments and collector integration remain unfinished. The enterprise audit readiness gate remains missing.
 
 ## Verify a segment
 
@@ -35,7 +35,24 @@ Capacity for both records is required before dispatch. If the intent cannot be p
 
 Input snapshots share a 15-second read budget and cap each checkpoint at 1,024 bytes and the profile at 1 MiB. Native filesystem calls, fsync and stdout writes can still block until the OS returns; the contexts do not impose a hard whole-command deadline. A successful stdout write is an observation, not durable collector acknowledgment or proof of external checkpoint retention. Failed commands can emit valid checkpoints for refusal/uncertainty records, so checkpoint output alone is not an import-success result. Interrupted/partial output must not replace a previously retained complete checkpoint. Initialization/output failures and unknown journal tails require independent reconciliation, with no destructive reset supplied by these commands.
 
-Only this explicit audit import path records live profile-import actions. The ordinary import command, controller, engines, workflows, administrator policy operations, backup/support exports and audit export still require integrated event producers and managed enforcement. The other desktop storage backends, collector transport/acknowledgment, consent-aware segment export and cross-stream upgrade/recovery acceptance remain required. These commands do not close the enterprise audit gate.
+Only this explicit audit import path records live profile-import actions. The ordinary import command, controller, engines, workflows, administrator policy operations, backup/support exports and audit export still require integrated event producers and managed enforcement. The other desktop storage backends, collector transport/acknowledgment, managed export-access recording and cross-stream upgrade/recovery acceptance remain required. These commands do not close the enterprise audit gate.
+
+## Export a verified segment with explicit consent
+
+Linux amd64/arm64 can export the local journal's canonical event records directly to a JSONL file or an existing trusted log-agent pipe. Every invocation must include the exact consent value metadata-only. Missing, repeated, unknown or different consent/options refuse before input is read. The output contains actor/source linkage, event times, operation IDs and action/outcome metadata; treat it as security-sensitive even though profile contents and raw principal/key/error values are excluded.
+
+```text
+accessweaver audit export --directory /home/operator/.accessweaver-import-audit --from trusted-genesis.json --to trusted-head.json --consent metadata-only > new-events.jsonl
+accessweaver audit verify --events new-events.jsonl --from trusted-genesis.json --to trusted-head.json
+```
+
+Use a new output destination. Export requires the independently authenticated complete genesis and exact retained head, verifies the entire bounded stream before emitting bytes, and excludes the journal's first genesis line. Its output is the canonical event JSONL accepted by audit verify, with no status wrapper or added fields. Existing collectors can parse those records with their JSON-line input and the separately enrolled producer/checkpoint association. No collector address, credentials, network client, transport authentication, ingestion test or durable acknowledgment is configured by this command.
+
+The source is opened read-only and held under a shared nonblocking OS lock, which refuses a cooperating active writer. The same protected-directory ancestry, owner/private mode, local persistent filesystem, single-link and stable-file checks apply. Source handles close before stdout writes; the export describes the requested retained endpoint, not freshness after that snapshot. Extra/partial/lost records, stale endpoints, cancellation or changed bindings produce no success prefix. A later stdout failure can leave partial destination output; it must still pass exact ending-checkpoint verification before use.
+
+Historical archives can be exported after a build change or loss of the private actor key: the key is unnecessary for verification and no key content is read or recreated. For direct regular-file stdout, a metadata-only O_PATH identity probe helps refuse output that aliases the actor key or source journal; the CLI also refuses direct aliases of either checkpoint input. Arbitrary writer wrappers or downstream pipes must not forward data back into those inputs. Shell redirection can truncate a file before the program starts, so the command cannot repair damage from choosing an existing input as the destination. No append, sync, deletion, key creation, profile operation or automatic repair is performed by the snapshot reader.
+
+The read/verification context is cooperative and uses a 15-second budget; native filesystem and stdout calls are not subject to a hard whole-command deadline. Export never infers/authenticates an endpoint from disk, enrolls a new actor, acknowledges collection or advances retention. It does not append an audit.export event to a historical source. Separate authenticated export-access logging and managed enforcement, collector enrollment/transport/acknowledgment, retention, other desktop backends and packaged endpoint acceptance remain required before enterprise audit qualification.
 
 ## Canonical version-one format
 
@@ -92,7 +109,7 @@ Portable tests independently check the HMAC vector, key/principal/OS separation,
 
 ## Linux journal storage component
 
-The internal Linux amd64/arm64 journal stores one genesis checkpoint and up to 4,096 canonical event records in events.journal, bounded by 1,024 bytes plus 8 MiB. The explicit audit initialize/import CLI uses this storage. Controller and privileged policy producers remain unconnected. The existing audit verify command still reads exported JSONL; the journal includes its genesis line and is not itself that export format.
+The internal Linux amd64/arm64 journal stores one genesis checkpoint and up to 4,096 canonical event records in events.journal, bounded by 1,024 bytes plus 8 MiB. The explicit audit initialize/import CLI uses this storage, with read-only snapshots exposed by audit export. Controller and privileged policy producers remain unconnected. The existing audit verify command still reads exported JSONL; the journal includes its genesis line and is not itself that export format.
 
 A trusted caller must supply an already opened directory with protected ancestor bindings, effective-UID ownership and mode 0700 on persistent ext4, XFS or Btrfs storage. The component borrows that handle, retains its own descriptor, and exclusively creates or opens a private mode-0600, single-link file relative to it. Existing content/permissions are never repaired. Symlinks, extra hard links, changed file identity, unexpected ownership/modes, nonpersistent storage and excessive input refuse. Root and same-UID processes remain within the storage trust boundary; local hashes do not authenticate them.
 
@@ -108,4 +125,4 @@ Linux race tests cover real storage/reopen, concurrent writers, stale endpoints,
 
 The pure Append function prepares one record and its successor checkpoint. It performs no I/O; the Linux journal supplies one storage implementation. A live durable producer must commit the record before advancing a saved head and preserve ambiguous interrupted writes for reconciliation. It must enforce protected ownership/ACLs, bounded admission and storage, retention tied to collector acknowledgment, independently pinned checkpoints and accurate asynchronous outcomes. Required-audit failures must have explicit behavior before operations are dispatched; a result-write failure after an operation cannot be treated as proof that the operation did not occur.
 
-Controller/CLI/privileged-helper coverage, enrollment of OS-derived actor attribution, consent-aware export, collector deployment and hostile-input/crash/full-disk/native acceptance across the supported desktop matrix remain required. [NIST SP 800-92](https://csrc.nist.gov/pubs/sp/800/92/final) provides the enterprise log-management context for those operational requirements. This protocol and CLI add no readiness score credit.
+Controller/CLI/privileged-helper coverage, enrollment of OS-derived actor attribution, managed consent/export-access coverage, collector deployment and hostile-input/crash/full-disk/native acceptance across the supported desktop matrix remain required. [NIST SP 800-92](https://csrc.nist.gov/pubs/sp/800/92/final) provides the enterprise log-management context for those operational requirements. This protocol and CLI add no readiness score credit.

@@ -2,7 +2,10 @@
 
 package audit
 
-import "context"
+import (
+	"context"
+	"io"
+)
 
 func LocalRecordingSupported() bool { return false }
 
@@ -11,4 +14,8 @@ func InitializeLocalJournal(directory string) (Checkpoint, error) {
 }
 func OpenLocalJournal(ctx context.Context, directory string, genesis, head Checkpoint) (LocalJournal, error) {
 	return nil, ErrLocalStorageUnsupported
+}
+
+func ExportLocalSegment(ctx context.Context, directory string, genesis, head Checkpoint, out io.Writer) error {
+	return ErrLocalStorageUnsupported
 }

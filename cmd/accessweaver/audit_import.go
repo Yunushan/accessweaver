@@ -27,7 +27,7 @@ var (
 
 func auditPaths(args []string, action string, keys ...string) (map[string]string, error) {
 	if len(args) != 1+2*len(keys) || args[0] != action {
-		return nil, errors.New("invalid audit recording options; use audit help")
+		return nil, errors.New("invalid audit options; use audit help")
 	}
 	allowed := map[string]bool{}
 	for _, key := range keys {
@@ -36,7 +36,7 @@ func auditPaths(args []string, action string, keys ...string) (map[string]string
 	paths := map[string]string{}
 	for i := 1; i < len(args); i += 2 {
 		if !allowed[args[i]] || paths[args[i]] != "" || args[i+1] == "" {
-			return nil, errors.New("audit recording requires unique nonempty named options")
+			return nil, errors.New("audit commands require unique nonempty named options")
 		}
 		paths[args[i]] = args[i+1]
 	}

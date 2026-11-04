@@ -5,7 +5,9 @@ import (
 	"errors"
 )
 
-var ErrLocalStorageUnsupported = errors.New("protected local audit recording is unavailable on this target")
+var ErrLocalStorageUnsupported = errors.New("protected local audit storage is unavailable on this target")
+var ErrExportDestination = errors.New("audit export output must not alias the source journal, actor key or checkpoint inputs")
+var ErrExportOutput = errors.New("audit export output unavailable or partial; inspect the output before using it")
 
 // LocalJournal records for an OS-derived, locally initialized producer. Opening
 // it does not authenticate enrollment or establish collector acknowledgment.
