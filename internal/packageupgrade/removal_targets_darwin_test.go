@@ -153,7 +153,12 @@ func newOwnedRemovalTargetFixture(t *testing.T, privateBase string, nested ...bo
 	}
 	f.publicRoot = filepath.Join(apps, "AccessWeaver.app")
 	mkdir(f.publicRoot)
-	f.publicFile = filepath.Join(f.publicRoot, "owned-public")
+	publicLeaf := "owned-public"
+	if len(nested) > 1 && nested[1] {
+		mkdir(filepath.Join(f.publicRoot, "owned-public-dir"))
+		publicLeaf = "owned-public-dir/owned-public"
+	}
+	f.publicFile = filepath.Join(f.publicRoot, publicLeaf)
 	write(f.publicFile, []byte("owned public bytes"), 0644)
 	f.registrationRoot = filepath.Join(base, desktopRoot)
 	mkdir(f.registrationRoot)
@@ -194,7 +199,7 @@ func newOwnedRemovalTargetFixture(t *testing.T, privateBase string, nested ...bo
 			data[inputLeaf] = []byte("owned incoming bytes")
 		case "public":
 			key = "AccessWeaver.app"
-			data["owned-public"] = []byte("owned public bytes")
+			data[publicLeaf] = []byte("owned public bytes")
 		case "registrations":
 			key = desktopRoot
 			data["desktop-"+seal+".json"] = registration

@@ -246,11 +246,12 @@ func readRemovalBundle(dir *os.File, owner uint32) (removalFence, removalPlan, [
 	if e = fence.validatePlan(after, plan); e != nil {
 		return fail(e)
 	}
-	actions, e := removalProtectedActions(plan)
+	actions, e := removalAllActions(plan)
 	if e != nil {
 		return fail(e)
 	}
-	if _, _, _, e = readRemovalJournalAt(dir, owner, removalJournalSeed(fence), len(actions)); e != nil {
+	_, _, progress, e := readRemovalJournalAt(dir, owner, removalJournalSeed(fence), len(actions))
+	if e != nil {
 		return fail(e)
 	}
 	_, _, quarantine, e := readRemovalQuarantineAt(dir, owner, fence, plan)
@@ -263,8 +264,12 @@ func readRemovalBundle(dir *os.File, owner uint32) (removalFence, removalPlan, [
 			hasMoved = true
 		}
 	}
-	if hasMoved && !quarantine.pending && quarantine.completed != 1 || quarantine.completed == 1 && !hasMoved {
-		return fail(errors.New("quarantined entry differs from recorded move intent"))
+	started, mayBeAbsent, completed, e := removalQuarantinedRootState(plan, progress)
+	if e != nil {
+		return fail(e)
+	}
+	if started && quarantine.completed != 1 || hasMoved && !quarantine.pending && quarantine.completed != 1 || quarantine.completed == 1 && !hasMoved && !mayBeAbsent || completed && hasMoved {
+		return fail(errors.New("quarantined entry differs from recorded move/removal intent"))
 	}
 	return fence, plan, record, nil
 }

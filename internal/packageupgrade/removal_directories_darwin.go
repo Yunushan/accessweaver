@@ -13,6 +13,9 @@ import (
 // protected parent. No caller path or recursive removal operation is accepted.
 func removalObjectName(root removalPlanRoot, object removalPlanObject) string {
 	if object.Path == "." {
+		if root.Kind == "public" {
+			return removalQuarantineName
+		}
 		return root.Key
 	}
 	return path.Base(object.Path)

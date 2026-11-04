@@ -18,10 +18,27 @@ from macos_package_archive import inspect as inspect_flat_package
 
 REPO=Path(__file__).resolve().parent.parent
 
+def tool_failure_diagnostic(args,result):
+    """Bounded nonsecret observations; pattern matches do not establish cause."""
+    name=Path(str(args[0])).name
+    tool=name if name in {"go","git","pkgbuild","pkgutil","productbuild","sysctl","sw_vers"} else "other"
+    patterns={"storage-full":b"no space left on device","resource-unavailable":b"resource temporarily unavailable",
+              "signal-killed":b"signal: killed","network-timeout":b"i/o timeout","tls-timeout":b"tls handshake timeout",
+              "network-connect":b"dial tcp","truncated-stream":b"unexpected eof","source-diagnostic":b"undefined:",
+              "source-syntax":b"syntax error","module-integrity":b"checksum mismatch","module-readonly":b"updates to go.mod needed"}
+    prefix=(result.stdout[:65536]+result.stderr[:65536]).lower()
+    observed=sorted(key for key,value in patterns.items() if value in prefix)
+    digest=hashlib.sha256();digest.update(result.stdout);digest.update(result.stderr)
+    scope="sbom-tools" if any(str(value)==str(REPO/"scripts/sbom-tools") for value in args[1:]) else "unspecified"
+    return {"schemaVersion":1,"tool":tool,"scope":scope,"exitCode":result.returncode,
+            "stdoutBytes":len(result.stdout),"stderrBytes":len(result.stderr),"combinedOutputSHA256":digest.hexdigest(),
+            "observedPatterns":observed,"classificationBytes":len(prefix),"rawOutputIncluded":False,"causeEstablished":False}
+
 def run(args,cwd=None,env=None,timeout=180,codes=(0,)):
     result=subprocess.run([str(v) for v in args],cwd=cwd or REPO,env=env,capture_output=True,timeout=timeout)
     require(len(result.stdout)+len(result.stderr)<=16<<20,"Native tool output exceeds limit")
-    require(result.returncode in codes,"Native package tool failed: "+Path(str(args[0])).name)
+    if result.returncode not in codes:
+        raise ValueError("Native package tool failed: "+json.dumps(tool_failure_diagnostic(args,result),sort_keys=True,separators=(",",":")))
     return result
 
 def encode(path,value):path.write_text(json.dumps(value,indent=2,ensure_ascii=True)+"\n",encoding="utf-8")

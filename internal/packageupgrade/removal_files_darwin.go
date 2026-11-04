@@ -47,18 +47,31 @@ func (r *removalIntentStore) removeNextQuarantinedProtectedObjectUsing(ctx conte
 
 // Each call mutates at most one recorded object. Directory actions use only
 // nonrecursive rmdir after every recorded child has durable completion.
-func (r *removalIntentStore) removeNextProtectedObjectUsing(ctx context.Context, resolve removalParentResolver, filesOnly bool) (result removalProgress, failure error) {
+func (r *removalIntentStore) removeNextProtectedObjectUsing(ctx context.Context, resolve removalParentResolver, filesOnly bool) (removalProgress, error) {
+	return r.removeNextRemovalObjectUsing(ctx, resolve, filesOnly, false)
+}
+func (r *removalIntentStore) removeNextRemovalObjectUsing(ctx context.Context, resolve removalParentResolver, filesOnly, includeApp bool) (result removalProgress, failure error) {
 	zero := removalProgress{}
 	if r == nil || r.store == nil || r.store.owner != 0 || r.store.current == nil || r.store.runtimeLock == nil || resolve == nil {
 		return zero, errors.New("protected object removal requires an open leased root intent")
 	}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	actions, e := removalProtectedActions(r.plan)
+	actions, e := removalAllActions(r.plan)
 	if e != nil {
 		return zero, e
 	}
 	limit := len(actions)
+	if !includeApp {
+		protected, e := removalProtectedActions(r.plan)
+		if e != nil {
+			return zero, e
+		}
+		limit = len(protected)
+	}
+	if includeApp && filesOnly {
+		return zero, errors.New("invalid removal action scope")
+	}
 	if filesOnly {
 		files, e := removalFileActions(r.plan)
 		if e != nil {
@@ -94,6 +107,12 @@ func (r *removalIntentStore) removeNextProtectedObjectUsing(ctx context.Context,
 	phase := "removal-file"
 	if object.Kind == "directory" {
 		phase = "removal-directory"
+	}
+	if r.plan.Roots[action.root].Kind == "public" {
+		phase = "removal-app-file"
+		if object.Kind == "directory" {
+			phase = "removal-app-directory"
+		}
 	}
 	raw, journal, e = r.persistRemovalJournal(raw, !journal.pending)
 	if e != nil {
@@ -220,8 +239,18 @@ func (r *removalIntentStore) openRemovalObjectParent(action removalFileAction, r
 		return nil, errors.New("invalid protected removal action")
 	}
 	root := r.plan.Roots[action.root]
-	if root.Kind != "core" && root.Kind != "incoming" || action.object < 0 || action.object >= len(root.Objects) || (root.Objects[action.object].Kind != "file" && root.Objects[action.object].Kind != "directory") {
+	if root.Kind != "core" && root.Kind != "incoming" && root.Kind != "public" || action.object < 0 || action.object >= len(root.Objects) || (root.Objects[action.object].Kind != "file" && root.Objects[action.object].Kind != "directory") {
 		return nil, errors.New("ineligible protected removal object")
+	}
+	if root.Kind == "public" {
+		_, _, quarantine, e := readRemovalQuarantineAt(r.store.current, 0, r.fence, r.plan)
+		if e != nil || quarantine.completed != 1 {
+			return nil, errors.Join(e, errors.New("public object requires completed quarantine"))
+		}
+		root, resolve, e = r.quarantineTarget()
+		if e != nil {
+			return nil, e
+		}
 	}
 	parent, e := resolve(root.Kind)
 	if e != nil {
@@ -320,7 +349,7 @@ func (r *removalIntentStore) openRemovalObjectParent(action removalFileAction, r
 	}
 	return current, nil
 }
-func (r *removalIntentStore) verifyRemainingObjects(ctx context.Context, resolve removalParentResolver, actions []removalFileAction, journal removalJournal) error {
+func (r *removalIntentStore) removalAbsences(resolve removalParentResolver, actions []removalFileAction, journal removalJournal) (map[removalFileAction]bool, error) {
 	absent := map[removalFileAction]bool{}
 	for i := 0; i < journal.completed; i++ {
 		absent[actions[i]] = true
@@ -329,7 +358,7 @@ func (r *removalIntentStore) verifyRemainingObjects(ctx context.Context, resolve
 		action := actions[journal.completed]
 		dir, e := r.openRemovalObjectParent(action, resolve)
 		if e != nil {
-			return e
+			return nil, e
 		}
 		var st unix.Stat_t
 		e = unix.Fstatat(int(dir.Fd()), removalObjectName(r.plan.Roots[action.root], r.plan.Roots[action.root].Objects[action.object]), &st, unix.AT_SYMLINK_NOFOLLOW)
@@ -339,9 +368,17 @@ func (r *removalIntentStore) verifyRemainingObjects(ctx context.Context, resolve
 			e = nil
 		}
 		if e = errors.Join(e, closeErr); e != nil {
-			return e
+			return nil, e
 		}
 	}
+	return absent, nil
+}
+func (r *removalIntentStore) verifyRemainingObjects(ctx context.Context, resolve removalParentResolver, actions []removalFileAction, journal removalJournal) error {
+	absent, e := r.removalAbsences(resolve, actions, journal)
+	if e != nil {
+		return e
+	}
+
 	namespace := r.plan
 	namespace.Roots = make([]removalPlanRoot, 0, len(r.plan.Roots))
 	for i, root := range r.plan.Roots {

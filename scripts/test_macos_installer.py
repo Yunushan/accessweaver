@@ -101,3 +101,34 @@ class MacPackageContracts(unittest.TestCase):
             with self.assertRaises(ValueError):macos_package(pkg,payload,changed,{"sha256":"d"*64,"osVersion":"15.0","osBuild":"24A1"})
 
 if __name__=="__main__":unittest.main()
+
+
+class NativeBuildDiagnosticTests(unittest.TestCase):
+    def builder(self):
+        spec=importlib.util.spec_from_file_location("native_build_diagnostics",Path(__file__).with_name("build-macos-installer.py"))
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
+    def test_failed_tool_retains_exit_size_hash_and_known_patterns_without_private_text(self):
+        from subprocess import CompletedProcess
+        from unittest.mock import patch
+        import hashlib
+        builder=self.builder();stdout=b"private-user-name";stderr=b"dial tcp private.internal:443: i/o timeout /private/secret-token"
+        result=CompletedProcess([],1,stdout,stderr)
+        with patch.object(builder.subprocess,"run",return_value=result):
+            with self.assertRaises(ValueError) as raised:builder.run(["/private/tools/go","-C",builder.REPO/"scripts/sbom-tools","build"])
+        message=str(raised.exception);record=json.loads(message.split(": ",1)[1])
+        self.assertEqual(record["tool"],"go");self.assertEqual(record["scope"],"sbom-tools");self.assertEqual(record["exitCode"],1)
+        self.assertEqual(record["stdoutBytes"],len(stdout));self.assertEqual(record["stderrBytes"],len(stderr));self.assertEqual(record["combinedOutputSHA256"],hashlib.sha256(stdout+stderr).hexdigest())
+        self.assertEqual(record["observedPatterns"],["network-connect","network-timeout"])
+        self.assertIs(record["causeEstablished"],False);self.assertIs(record["rawOutputIncluded"],False)
+        for private in ("private-user-name","private.internal","secret-token","/private/tools"):self.assertNotIn(private,message)
+    def test_unknown_tool_and_large_output_keep_report_and_classification_bounded(self):
+        from subprocess import CompletedProcess
+        builder=self.builder();result=CompletedProcess([],-9,b"x"*100000,b"y"*100000+b"signal: killed")
+        record=builder.tool_failure_diagnostic(["/private/secret-tool"],result)
+        self.assertEqual(record["tool"],"other");self.assertEqual(record["classificationBytes"],131072);self.assertEqual(record["observedPatterns"],[])
+        self.assertLess(len(json.dumps(record)),1024);self.assertNotIn("secret-tool",json.dumps(record));self.assertEqual(record["exitCode"],-9)
+    def test_expected_nonzero_tool_result_is_returned_unchanged(self):
+        from subprocess import CompletedProcess
+        from unittest.mock import patch
+        builder=self.builder();result=CompletedProcess([],1,b"",b"unsigned")
+        with patch.object(builder.subprocess,"run",return_value=result):self.assertIs(builder.run(["pkgutil","--check-signature"],codes=(0,1)),result)

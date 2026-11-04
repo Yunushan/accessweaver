@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+  "sourceRef": "refs/heads/main",
+  "result": "failed",
+  "scope": "Intel versioned package builder failed during the Go build of the SBOM schema validator, before versioned lifecycle execution",
+  "providerJob": {
+    "id": 126436963752,
+    "runID": 41788770802,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41788770802/job/126436963752",
+    "conclusion": "failure"
+  },
+  "providerLog": {
+    "bytes": 48784,
+    "sha256": "12b7e7242d90610070b5804333e6f3446f585c48a10a688a128c745f7d87408d",
+    "failureLines": [
+      "2026-11-04T06:59:34.6918010Z ValueError: Native package tool failed: go"
+    ]
+  },
+  "underlyingCauseEstablished": false,
+  "toolExitCodeRetained": false,
+  "toolOutputRetained": false,
+  "versionedLifecycleExecuted": false,
+  "diagnosticArtifactUploaded": false,
+  "sourceFiles": [
+    {
+      "file": "scripts/build-macos-installer.py",
+      "sha256": "7f867821a774a214c0e288eaa1d02d79c38098241a7066fd92ed94167292fb32"
+    },
+    {
+      "file": "scripts/build-macos-deployment.py",
+      "sha256": "08ae5c20c4b9abe690c67feaf465d3aae9c14bb04d464322b901add1bb95ee2b"
+    },
+    {
+      "file": ".github/workflows/macos-deployment.yml",
+      "sha256": "49d912ace261b661c84ac8df05dfcc86b9f6e963b874c575b7a9ad3bf40ed93b"
+    }
+  ],
+  "followup": "Record bounded tool/known-scope/exit/byte-count/output-hash/known-pattern observations without raw output or private paths. Pattern matches are observations, not a cause claim. No unchanged native assertion retry.",
+  "limits": [
+    "The discarded code/stdout/stderr cannot be recovered from the generic failure. A successful build on another host does not establish this failure cause.",
+    "The failed versioned job is not overridden by the successful separately authenticated quarantine test candidates.",
+    "No readiness gate is promoted."
+  ]
+}

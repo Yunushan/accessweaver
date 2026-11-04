@@ -59,7 +59,7 @@ func (r *removalIntentStore) persistRemovalJournalMode(expected []byte, appendRe
 	if e := r.verifyIntentMetadata(); e != nil {
 		return nil, journal, e
 	}
-	actions, e := removalProtectedActions(r.plan)
+	actions, e := removalAllActions(r.plan)
 	if e != nil {
 		return nil, journal, e
 	}

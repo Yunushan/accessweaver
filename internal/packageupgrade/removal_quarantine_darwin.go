@@ -417,7 +417,7 @@ func (r *removalIntentStore) requirePublicQuarantine(ctx context.Context, resolv
 	if e = r.checkPublicAbsent(resolve); e != nil {
 		return e
 	}
-	if e = r.verifyQuarantineTree(ctx); e != nil {
+	if e = r.verifyRemainingQuarantinedApp(ctx, resolve); e != nil {
 		return e
 	}
 	// A readable done record may have survived failed synchronization.

@@ -118,12 +118,16 @@ func (r *removalIntentStore) verifyTargetWithNamespace(ctx context.Context, expe
 			if e = r.checkPublicAbsent(resolve); e != nil {
 				return e
 			}
-			if matches, e := r.quarantineRootMatches(); e != nil || !matches {
-				return errors.Join(e, errors.New("quarantined public root changed"))
+			if len(expected.Objects) > 0 {
+				if matches, e := r.quarantineRootMatches(); e != nil || !matches {
+					return errors.Join(e, errors.New("quarantined public root changed"))
+				}
 			}
 			defer func() { result = errors.Join(result, r.checkPublicAbsent(resolve)) }()
 			var protected removalParentResolver
+			remaining := expected.Objects
 			expected, protected, e = r.quarantineTarget()
+			expected.Objects = remaining
 			if e != nil {
 				return e
 			}
@@ -161,12 +165,16 @@ func (r *removalIntentStore) verifyTargetAtNamespace(ctx context.Context, expect
 		}
 	}
 	if len(expected.Objects) == 0 {
-		if expected.Kind != "core" && expected.Kind != "incoming" {
+		quarantined := expected.Kind == "public" && expected.Key == removalQuarantineName
+		if expected.Kind != "core" && expected.Kind != "incoming" && !quarantined {
 			return errors.New("ineligible removal root absence")
 		}
 		var st unix.Stat_t
 		if e = unix.Fstatat(int(parent.file.Fd()), expected.Key, &st, unix.AT_SYMLINK_NOFOLLOW); !errors.Is(e, unix.ENOENT) {
 			return errors.New("journaled removal root is not absent")
+		}
+		if quarantined {
+			return parent.check()
 		}
 		return errors.Join(parent.check(), verifyRemovalTargetNamespace(parent.file, expected.Kind, namespace))
 	}

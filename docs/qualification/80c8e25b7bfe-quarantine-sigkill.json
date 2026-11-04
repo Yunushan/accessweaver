@@ -1,0 +1,2769 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+  "sourceRef": "refs/heads/main",
+  "scope": "Four actual quarantine SIGKILL boundaries per hosted architecture with exact app locations, journal state and idempotent protected-object completion",
+  "nativeRunID": 41788770964,
+  "authenticatedSubjects": 14,
+  "negativeProvenanceProbes": 10,
+  "nativePublicAppQuarantineCases": 56,
+  "nativeDirectoryReturnedErrorAndRefusalCases": 50,
+  "actualNativeDirectorySIGKILLCases": 16,
+  "actualNativeFileSIGKILLCases": 8,
+  "nativeFileReturnedErrorAndRefusalCases": 36,
+  "nativeIntactTargetCases": 32,
+  "targets": [
+    {
+      "target": "darwin/amd64",
+      "providerArtifact": {
+        "id": 13302352927,
+        "node_id": "MDg6QXJ0aWZhY3QxMzMwMjM1MjkyNw==",
+        "name": "macos-installer-inspection-amd64",
+        "size_in_bytes": 7274705,
+        "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13302352927",
+        "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13302352927/zip",
+        "expired": false,
+        "digest": "sha256:4aa432fbcc290cf7413dca880e9f2964fabcb69462e320f14a1156c1bc09be00",
+        "created_at": "2026-11-04T06:58:58Z",
+        "updated_at": "2026-11-04T06:58:58Z",
+        "expires_at": "2026-11-18T06:58:57Z",
+        "workflow_run": {
+          "id": 41788770964,
+          "repository_id": 1441227907,
+          "head_repository_id": 1441227907,
+          "head_branch": "main",
+          "head_sha": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50"
+        }
+      },
+      "providerJob": {
+        "id": 126436963700,
+        "runID": 41788770964,
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41788770964/job/126436963700",
+        "conclusion": "success"
+      },
+      "providerZIPDigestVerified": true,
+      "extractedFileInventory": [
+        {
+          "file": "0.1.0-alpha/BUILD-INFO.json",
+          "bytes": 220,
+          "sha256": "3b1422ae0b804ce8d661d799080160aac16f05d145d755341aec3fd9a86c04ef"
+        },
+        {
+          "file": "0.1.0-alpha/BUILD-PROVENANCE.sigstore.json",
+          "bytes": 12059,
+          "sha256": "26908260486a111ccd0c44fcf677b7ee6d13bcb450b0d645da70fca5f7647243"
+        },
+        {
+          "file": "0.1.0-alpha/INSTALL-MANIFEST.json",
+          "bytes": 3835,
+          "sha256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg",
+          "bytes": 7268259,
+          "sha256": "72e7198021a2309b52e41fb0f3015232241a6240175e07abacf38994bfd016b9"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg.cdx.json",
+          "bytes": 26397,
+          "sha256": "772fef4a2f8cc1d237d67e6ebb4f3e05df08839d4315465e2c9b4398adf2bd18"
+        },
+        {
+          "file": "0.1.0-alpha/compiler-artifact.json",
+          "bytes": 2513,
+          "sha256": "21f25c61e17d981dd4077335b3c2ec731b2e101ad86b2bd5d689a2a4a7c9a121"
+        },
+        {
+          "file": "0.1.0-alpha/lifecycle-artifact.json",
+          "bytes": 40809,
+          "sha256": "4baee0f423280dfc7fb61e3d18d5f868f8496decb7f5af5ff17309bf36683ffc"
+        },
+        {
+          "file": "0.1.0-alpha/payload-SBOM.cdx.json",
+          "bytes": 15416,
+          "sha256": "5c9a252fc7d0c49ed66cb79d872bdfc7fe3c6455170a969a04c3b652de6e43eb"
+        },
+        {
+          "file": "native-provenance.json",
+          "bytes": 1829,
+          "sha256": "b61984be6080a12ac6c5497290e84d55c056ddf8ba7d842fca3eb29639b6b3fc"
+        }
+      ],
+      "independentVerification": {
+        "schemaVersion": 1,
+        "repository": "Yunushan/accessweaver",
+        "workflow": "Yunushan/accessweaver/.github/workflows/macos-installer.yml",
+        "sourceCommit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+        "sourceRef": "refs/heads/main",
+        "target": "darwin/amd64",
+        "subjectsVerified": 7,
+        "hostedRunnerRequired": true,
+        "authenticatedBeforeParsing": true,
+        "subjects": [
+          {
+            "file": "BUILD-INFO.json",
+            "sha256": "3b1422ae0b804ce8d661d799080160aac16f05d145d755341aec3fd9a86c04ef"
+          },
+          {
+            "file": "INSTALL-MANIFEST.json",
+            "sha256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg",
+            "sha256": "72e7198021a2309b52e41fb0f3015232241a6240175e07abacf38994bfd016b9"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg.cdx.json",
+            "sha256": "772fef4a2f8cc1d237d67e6ebb4f3e05df08839d4315465e2c9b4398adf2bd18"
+          },
+          {
+            "file": "compiler-artifact.json",
+            "sha256": "21f25c61e17d981dd4077335b3c2ec731b2e101ad86b2bd5d689a2a4a7c9a121"
+          },
+          {
+            "file": "lifecycle-artifact.json",
+            "sha256": "4baee0f423280dfc7fb61e3d18d5f868f8496decb7f5af5ff17309bf36683ffc"
+          },
+          {
+            "file": "payload-SBOM.cdx.json",
+            "sha256": "5c9a252fc7d0c49ed66cb79d872bdfc7fe3c6455170a969a04c3b652de6e43eb"
+          }
+        ],
+        "package": {
+          "packageSHA256": "72e7198021a2309b52e41fb0f3015232241a6240175e07abacf38994bfd016b9",
+          "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+          "macho": {
+            "cpuType": "0x01000007",
+            "minimumOSVersion": "13.0.0"
+          },
+          "isolatedRefusalCases": 8,
+          "nativeInstallationOperations": 3
+        },
+        "publisherSignatureVerified": false,
+        "notarized": false,
+        "productionQualificationComplete": false,
+        "localTargetExecution": false,
+        "rejectionChecks": {
+          "rejected": [
+            "--source-digest",
+            "--source-ref",
+            "--signer-workflow",
+            "--repo",
+            "changed-subject-digest"
+          ],
+          "realBundleVerifiedBeforeAndAfter": true
+        },
+        "independentAuthenticationCalls": 7,
+        "independentTool": {
+          "version": "gh version 2.102.0 (2026-09-30)",
+          "signerSubject": "CN=\"GitHub, Inc.\", O=\"GitHub, Inc.\", L=San Francisco, S=California, C=US",
+          "path": "C:\\Program Files\\GitHub CLI\\gh.exe",
+          "signerThumbprint": "E02B58DF37FE75CD487B29DAA774841D99298579",
+          "signatureStatus": "Valid",
+          "sha256": "756724853cc579510b58e65e7a7429ad6b1af29cf99ef19b3a95f3b701c5c580"
+        },
+        "elapsedMilliseconds": 64761
+      },
+      "producerIndependentReportsAgreeWithExactKeysAndJSONTypes": true,
+      "lifecycleArtifact": {
+        "schemaVersion": 2,
+        "sourceCommit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+        "runID": "41788770964",
+        "target": "darwin/amd64",
+        "packageSHA256": "72e7198021a2309b52e41fb0f3015232241a6240175e07abacf38994bfd016b9",
+        "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+        "operations": [
+          {
+            "operation": "clean-install",
+            "exitCode": 0,
+            "elapsedMilliseconds": 1223,
+            "payloadAndReceiptsVerified": true
+          },
+          {
+            "operation": "existing-install-refused",
+            "exitCode": 1,
+            "elapsedMilliseconds": 1266,
+            "installedFilesAndReceiptBytesPreserved": true,
+            "actualUserProfilePreserved": true
+          },
+          {
+            "operation": "valid-receipt-only-refused",
+            "exitCode": 1,
+            "elapsedMilliseconds": 1313,
+            "receiptBytesPreserved": true,
+            "appNotRecreated": true,
+            "actualUserProfilePreserved": true
+          }
+        ],
+        "preflightRefusalCases": [
+          {
+            "name": "existing-app-directory",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 2045,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "existing-app-file",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1275,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "existing-app-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1340,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "dangling-app-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1389,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "partial-plist-receipt",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1253,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "partial-bom-receipt",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1284,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "plist-receipt-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1321,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "bom-receipt-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1278,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          }
+        ],
+        "nativeUpgradePreflightCases": [
+          {
+            "name": "newer-release-preflight",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 0,
+            "elapsedMilliseconds": 144,
+            "verifiedDecision": {
+              "incomingVersion": "0.1.1-alpha",
+              "installedBuild": {
+                "version": "0.1.0-alpha",
+                "commit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+                "sourceState": "clean",
+                "builtAt": "2026-11-04T06:55:47Z",
+                "goVersion": "go1.27.3",
+                "platform": "darwin",
+                "arch": "amd64"
+              },
+              "mode": "upgrade",
+              "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+              "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+              "receiptSHA256": {
+                ".bom": "cd68c301f9bf4d5dd0420dc355866ca60dfd0ed757e9bb5266997726fca4faa7",
+                ".plist": "19f432d4ef502ea2f51113129a500433715b5b319137f7bb373e68e6e10393ae"
+              },
+              "completeProtectedInventoryVerified": true,
+              "mutationPerformed": false,
+              "upgradeExecuted": false,
+              "productionQualificationComplete": false
+            },
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "same-release-preflight",
+            "passed": true,
+            "incomingVersion": "0.1.0-alpha",
+            "exitCode": 0,
+            "elapsedMilliseconds": 151,
+            "verifiedDecision": {
+              "incomingVersion": "0.1.0-alpha",
+              "installedBuild": {
+                "version": "0.1.0-alpha",
+                "commit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+                "sourceState": "clean",
+                "builtAt": "2026-11-04T06:55:47Z",
+                "goVersion": "go1.27.3",
+                "platform": "darwin",
+                "arch": "amd64"
+              },
+              "mode": "reinstall",
+              "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+              "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+              "receiptSHA256": {
+                ".bom": "cd68c301f9bf4d5dd0420dc355866ca60dfd0ed757e9bb5266997726fca4faa7",
+                ".plist": "19f432d4ef502ea2f51113129a500433715b5b319137f7bb373e68e6e10393ae"
+              },
+              "completeProtectedInventoryVerified": true,
+              "mutationPerformed": false,
+              "upgradeExecuted": false,
+              "productionQualificationComplete": false
+            },
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "older-release-refused",
+            "passed": true,
+            "incomingVersion": "0.0.9",
+            "exitCode": 1,
+            "elapsedMilliseconds": 107,
+            "refusalDiagnosticSHA256": "c897f25044fd18c617628561cd263803b845e530f5e791de97df2af490f4beaf",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "ordinary-user-refused",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 1,
+            "elapsedMilliseconds": 10,
+            "refusalDiagnosticSHA256": "b3a560bd28ce107c77a7d96a3c4a10430f7f814b6f52ef84687649c0a0e2d87b",
+            "refusalCategory": "root-required",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "changed-core-refused",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 1,
+            "elapsedMilliseconds": 64,
+            "refusalDiagnosticSHA256": "2312600595d5a2524dd30d37bfc118623287a1e3fbca44dfa2b29179f842a92b",
+            "refusalCategory": "inventory",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "unexpected-file-refused",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 1,
+            "elapsedMilliseconds": 105,
+            "refusalDiagnosticSHA256": "8ebc56d911002bebcf8030c19d3ce3aaea03b7dc78fe4de117e6f0b31a169e9f",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "writable-file-refused",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 1,
+            "elapsedMilliseconds": 110,
+            "refusalDiagnosticSHA256": "2193b23d4cb3e3d16994ac1fd3c1fd5737fd42ea30238a3ebc7bf404901ad41b",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "file-alias-refused",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 1,
+            "elapsedMilliseconds": 106,
+            "refusalDiagnosticSHA256": "2193b23d4cb3e3d16994ac1fd3c1fd5737fd42ea30238a3ebc7bf404901ad41b",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "acl-mutation-grant-refused",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 1,
+            "elapsedMilliseconds": 99,
+            "refusalDiagnosticSHA256": "901ab5b2b68cb8c57879bf79c1b7c10d47f686c7affd664ee3e611c664e9ea67",
+            "refusalCategory": "acl",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "missing-bom-receipt-refused",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 1,
+            "elapsedMilliseconds": 83,
+            "refusalDiagnosticSHA256": "8a0ec514763e570c4a1f69de3b3ced828cf346a1f9c59f74c7c45fa241eeb82f",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "restored-state-preflight",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 0,
+            "elapsedMilliseconds": 146,
+            "verifiedDecision": {
+              "incomingVersion": "0.1.1-alpha",
+              "installedBuild": {
+                "version": "0.1.0-alpha",
+                "commit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+                "sourceState": "clean",
+                "builtAt": "2026-11-04T06:55:47Z",
+                "goVersion": "go1.27.3",
+                "platform": "darwin",
+                "arch": "amd64"
+              },
+              "mode": "upgrade",
+              "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+              "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+              "receiptSHA256": {
+                ".bom": "cd68c301f9bf4d5dd0420dc355866ca60dfd0ed757e9bb5266997726fca4faa7",
+                ".plist": "19f432d4ef502ea2f51113129a500433715b5b319137f7bb373e68e6e10393ae"
+              },
+              "completeProtectedInventoryVerified": true,
+              "mutationPerformed": false,
+              "upgradeExecuted": false,
+              "productionQualificationComplete": false
+            },
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          }
+        ],
+        "nativeUpgradePreflightHelpers": [
+          {
+            "build": {
+              "version": "0.1.1-alpha",
+              "commit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+              "sourceState": "clean",
+              "builtAt": "2026-11-04T06:55:47Z",
+              "goVersion": "go1.27.3",
+              "platform": "darwin",
+              "arch": "amd64"
+            },
+            "sha256": "b119c117bc9ae70939b3e54e2cb691673502099d3b6a584ef76c0e1849006bc7"
+          },
+          {
+            "build": {
+              "version": "0.1.0-alpha",
+              "commit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+              "sourceState": "clean",
+              "builtAt": "2026-11-04T06:55:47Z",
+              "goVersion": "go1.27.3",
+              "platform": "darwin",
+              "arch": "amd64"
+            },
+            "sha256": "1deec19a9a7d06d9ce85548203e9c00274e44cc16cc856bf74a34047bd2d4ef5"
+          },
+          {
+            "build": {
+              "version": "0.0.9",
+              "commit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+              "sourceState": "clean",
+              "builtAt": "2026-11-04T06:55:47Z",
+              "goVersion": "go1.27.3",
+              "platform": "darwin",
+              "arch": "amd64"
+            },
+            "sha256": "b494447b7d9a48560014929843b4f3997f8d08fb38a2960254cfed173393b73d"
+          }
+        ],
+        "nativeUpgradeExecuted": false,
+        "protectedDeploymentTransactions": {
+          "completeCopyRecovered": true,
+          "concurrentPreparationFenced": true,
+          "copiedCodeExecuted": false,
+          "detachedManifestCompleteCopyRecovered": true,
+          "detachedManifestPartialCopyPreservedAndRefused": true,
+          "detachedPayloadSBOMManifestSHA256": "856cc0a3c38944ab6491c5741902aeee3f1d61b6e63351a0484f6ce98d3d6075",
+          "detachedPayloadSBOMPartialCopyPreservedAndRefused": true,
+          "detachedPayloadSBOMSHA256": "5c9a252fc7d0c49ed66cb79d872bdfc7fe3c6455170a969a04c3b652de6e43eb",
+          "finalGeneration": 4,
+          "fixedProtectedParentVerified": true,
+          "intactRemovalTargetsVerified": true,
+          "intactTargetCaseCount": 16,
+          "legacyToSchema2BridgeVerified": true,
+          "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+          "oldCompleteSlotFencedAfterRemoval": true,
+          "ownedTargetRefusalsPreserved": true,
+          "partialCopyPreservedAndRefused": true,
+          "payloadIsIndependentCopy": true,
+          "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+          "postPublicationRemovalRecovered": true,
+          "productionQualificationComplete": false,
+          "protectedDirectoryJournalCaseCount": 25,
+          "protectedDirectoryJournalVerified": true,
+          "protectedDirectorySIGKILLCaseCount": 8,
+          "protectedDirectorySIGKILLCases": [
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 2,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": true,
+              "elapsedMilliseconds": 40,
+              "journalSHA256AtTermination": "d465349205777a62c03f7b7db741ad2b75f2dddfc8315b56a37aa5cdb9e2c88a",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-directory-intent-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "nested-directory",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 2,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": false,
+              "elapsedMilliseconds": 38,
+              "journalSHA256AtTermination": "caae7c32ca371fb5864abdc9e23d2d883d00d4789bc721976e9434661f74ff8a",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-directory-unlinked",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "nested-directory",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 2,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": false,
+              "elapsedMilliseconds": 43,
+              "journalSHA256AtTermination": "a2dd3d2eae35aef6d0da7628020c4f0303b8fa34c9e7e32b398357240da40712",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-directory-parent-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "nested-directory",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 3,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": false,
+              "elapsedMilliseconds": 48,
+              "journalSHA256AtTermination": "c7a7e81a1d61c96bc06be8b1a215efd1641d00af1a9a1f06693b83848da07fcf",
+              "passed": true,
+              "pendingAtTermination": false,
+              "phase": "removal-directory-done-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "nested-directory",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 3,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": true,
+              "elapsedMilliseconds": 35,
+              "journalSHA256AtTermination": "0fa7b85cbed3feb3477734ccaee0dc0569cd70d04cae2eb7aea75272ac078e8f",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-directory-intent-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "protected-root",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 3,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": false,
+              "elapsedMilliseconds": 39,
+              "journalSHA256AtTermination": "1feba4fc50fe8fe469d4cb82af77cad445cbca8b7c3d5239fa9782d7d17bf679",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-directory-unlinked",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "protected-root",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 3,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": false,
+              "elapsedMilliseconds": 45,
+              "journalSHA256AtTermination": "b0839de394c31e4e56f19600331f7a4deee39c78d49101cb425a9db62cd0486f",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-directory-parent-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "protected-root",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 4,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": false,
+              "elapsedMilliseconds": 46,
+              "journalSHA256AtTermination": "5ef5d79d64f0495500a6e07c0c59e50f2aa0a05f8c13f080c653a99bfb9d0f5d",
+              "passed": true,
+              "pendingAtTermination": false,
+              "phase": "removal-directory-done-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "protected-root",
+              "timedOut": false
+            }
+          ],
+          "protectedDirectorySIGKILLVerified": true,
+          "protectedFileJournalCaseCount": 18,
+          "protectedFileJournalVerified": true,
+          "protectedFileSIGKILLCaseCount": 4,
+          "protectedFileSIGKILLCases": [
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 0,
+              "completedFilesAfterRetry": 2,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 38,
+              "filePresentAtTermination": true,
+              "journalSHA256AtTermination": "f29c2e710a6495b7ee37cd6d8f92a649e2562f29b03a8ef46adb6a86db288020",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-file-intent-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "file",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 0,
+              "completedFilesAfterRetry": 2,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 37,
+              "filePresentAtTermination": false,
+              "journalSHA256AtTermination": "10e60bb75fde191576c5665a1bb101ba62e0b2b1b335c382085f0d4316b76f1c",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-file-unlinked",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "file",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 0,
+              "completedFilesAfterRetry": 2,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 44,
+              "filePresentAtTermination": false,
+              "journalSHA256AtTermination": "d01c6b256eedbc719b62175af7d80e94e1146293511750dbda1bb864569f6205",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-file-parent-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "file",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 1,
+              "completedFilesAfterRetry": 2,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 82,
+              "filePresentAtTermination": false,
+              "journalSHA256AtTermination": "bd98882ce1499b9af8b4af1a6ef29fda8c5971e246662049cc4bcf7cbff1e12d",
+              "passed": true,
+              "pendingAtTermination": false,
+              "phase": "removal-file-done-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "file",
+              "timedOut": false
+            }
+          ],
+          "protectedFileSIGKILLVerified": true,
+          "publicAppQuarantineCaseCount": 28,
+          "publicAppQuarantineSIGKILLCaseCount": 4,
+          "publicAppQuarantineSIGKILLCases": [
+            {
+              "bothLeasesReacquired": true,
+              "completedProtectedObjectsAfterRetry": 6,
+              "completedQuarantineActionsAtTermination": 0,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 44,
+              "journalSHA256AtTermination": "74ff1c680430a9c8019fb47a3f70707d1ebc954a3a9cfd21a757d18ebcae5b8e",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-quarantine-intent-durable",
+              "protectedObjectsRemovedAtTermination": 0,
+              "publicAppPresentAtTermination": true,
+              "quarantinedAppPresentAtTermination": false,
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedProtectedObjectsAfterRetry": 6,
+              "completedQuarantineActionsAtTermination": 0,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 59,
+              "journalSHA256AtTermination": "2afa8e0cecda43b95c7ae79c968587cf3c41b4045542ad116186bf31125f43de",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-quarantine-renamed",
+              "protectedObjectsRemovedAtTermination": 0,
+              "publicAppPresentAtTermination": false,
+              "quarantinedAppPresentAtTermination": true,
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedProtectedObjectsAfterRetry": 6,
+              "completedQuarantineActionsAtTermination": 0,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 72,
+              "journalSHA256AtTermination": "cf2925f6b736723e7fd2ae45c6c1f60fa9a0c0b0bfcefda02c542b9464409a1e",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-quarantine-parents-durable",
+              "protectedObjectsRemovedAtTermination": 0,
+              "publicAppPresentAtTermination": false,
+              "quarantinedAppPresentAtTermination": true,
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedProtectedObjectsAfterRetry": 6,
+              "completedQuarantineActionsAtTermination": 1,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 85,
+              "journalSHA256AtTermination": "846b7658a3cccf8308f9402b9a318776017228ec1b9ea117d6c17b72f5d9a8cd",
+              "passed": true,
+              "pendingAtTermination": false,
+              "phase": "removal-quarantine-done-durable",
+              "protectedObjectsRemovedAtTermination": 0,
+              "publicAppPresentAtTermination": false,
+              "quarantinedAppPresentAtTermination": true,
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "timedOut": false
+            }
+          ],
+          "publicAppQuarantineSIGKILLVerified": true,
+          "publicAppQuarantineVerified": true,
+          "restoredRetryVerified": true,
+          "schemaVersion": 1,
+          "version": "0.1.0-alpha",
+          "testExecutableSHA256": "2b294586483e5833e1040f1080e74f0dd924f89b3fa6b98a9cb3847997961354",
+          "elapsedMilliseconds": 32884,
+          "installedObjectsAndReceiptsPreserved": true,
+          "fixtureParent": "private-exclusive-temporary-directory",
+          "packageScriptsIntegrated": false
+        },
+        "fixedDeploymentHelper": {
+          "schemaVersion": 1,
+          "build": {
+            "version": "0.1.0-alpha",
+            "commit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+            "sourceState": "clean",
+            "builtAt": "2026-11-04T06:55:47Z",
+            "goVersion": "go1.27.3",
+            "platform": "darwin",
+            "arch": "amd64"
+          },
+          "helperSHA256": "4aa2817af2f682eca4e5baa59cb480298fb329a5077cd2075767e5b75a27cc89",
+          "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+          "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+          "cases": [
+            {
+              "name": "activation-without-authority-refused",
+              "operation": "activate-deployment",
+              "exitCode": 1,
+              "elapsedMilliseconds": 31,
+              "passed": true,
+              "result": null,
+              "recordPreserved": true
+            },
+            {
+              "name": "unsealed-helper-refused",
+              "operation": "prepare-deployment",
+              "exitCode": 1,
+              "elapsedMilliseconds": 27,
+              "passed": true,
+              "result": null,
+              "recordPreserved": true
+            },
+            {
+              "name": "prepared",
+              "operation": "prepare-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 233,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "prepare-deployment",
+                "generation": 0,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "7cbd5b45a12bc46b137d9d1fa604613e",
+                "state": "prepared",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            },
+            {
+              "name": "prepare-retry-idempotent",
+              "operation": "prepare-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 48,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "prepare-deployment",
+                "generation": 0,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "7cbd5b45a12bc46b137d9d1fa604613e",
+                "state": "prepared",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "changed-incoming-refused",
+              "operation": "activate-deployment",
+              "exitCode": 1,
+              "elapsedMilliseconds": 106,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 0,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "7cbd5b45a12bc46b137d9d1fa604613e",
+                "state": "refused",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "activated",
+              "operation": "activate-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 426,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 1,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "7cbd5b45a12bc46b137d9d1fa604613e",
+                "state": "active",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            },
+            {
+              "name": "activation-retry-idempotent",
+              "operation": "activate-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 135,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 1,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "7cbd5b45a12bc46b137d9d1fa604613e",
+                "state": "active",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "active-survives-staging-removal",
+              "operation": "activate-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 141,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 1,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "7cbd5b45a12bc46b137d9d1fa604613e",
+                "state": "active",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "reinstall-prepared",
+              "operation": "prepare-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 49,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "prepare-deployment",
+                "generation": 1,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "41755df9fe883990be56a87a091eae91",
+                "state": "prepared",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            },
+            {
+              "name": "missing-incoming-refused",
+              "operation": "activate-deployment",
+              "exitCode": 1,
+              "elapsedMilliseconds": 34,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 1,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "41755df9fe883990be56a87a091eae91",
+                "state": "refused",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "deactivated-with-pending",
+              "operation": "deactivate-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 143,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "deactivate-deployment",
+                "generation": 2,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "7cbd5b45a12bc46b137d9d1fa604613e",
+                "state": "inactive",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            },
+            {
+              "name": "stale-activation-fenced",
+              "operation": "activate-deployment",
+              "exitCode": 1,
+              "elapsedMilliseconds": 26,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 2,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "41755df9fe883990be56a87a091eae91",
+                "state": "refused",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "stale-prepare-fenced",
+              "operation": "prepare-deployment",
+              "exitCode": 1,
+              "elapsedMilliseconds": 24,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "prepare-deployment",
+                "generation": 2,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "41755df9fe883990be56a87a091eae91",
+                "state": "refused",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "stale-preparation-abandoned",
+              "operation": "abandon-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 36,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "abandon-deployment",
+                "generation": 2,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "41755df9fe883990be56a87a091eae91",
+                "state": "abandoned",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            },
+            {
+              "name": "abandon-retry-refused",
+              "operation": "abandon-deployment",
+              "exitCode": 1,
+              "elapsedMilliseconds": 24,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "abandon-deployment",
+                "generation": 2,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "",
+                "state": "refused",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "restored-retry-prepared",
+              "operation": "prepare-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 35,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "prepare-deployment",
+                "generation": 2,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "a425ab11db284e60fe7e83070ab7b8ed",
+                "state": "prepared",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            },
+            {
+              "name": "restored-retry-activated",
+              "operation": "activate-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 456,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 3,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "a425ab11db284e60fe7e83070ab7b8ed",
+                "state": "active",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            },
+            {
+              "name": "restored-activation-idempotent",
+              "operation": "activate-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 122,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 3,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "a425ab11db284e60fe7e83070ab7b8ed",
+                "state": "active",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "final-deactivation",
+              "operation": "deactivate-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 138,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "deactivate-deployment",
+                "generation": 4,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "a4581011deeb8a7ea3912740e38caa20761ab9c53eb44ceb5ec3e26917badba2",
+                "payloadSHA256": "39afdee4769e72077c4af463bd1145e6d2d30e9a713a4f58eab3b247eadf9616",
+                "slotID": "a425ab11db284e60fe7e83070ab7b8ed",
+                "state": "inactive",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            }
+          ],
+          "rootAndLegacyRefusalsPreservedAbsentAuthority": true,
+          "ordinaryUserActiveRuntimeVerified": true,
+          "stagingRemovalPreservedActiveCopy": true,
+          "detachedManifestBridgeVerified": true,
+          "ownedFixedFixtureCleanupVerified": true,
+          "installedCodeExecutedAsRoot": false,
+          "actualApplePackageUpgradeExecuted": false,
+          "packageScriptsIntegrated": false,
+          "productionQualificationComplete": false
+        },
+        "passed": true,
+        "stage": "owned-fixture-cleanup",
+        "failureType": null,
+        "failureSourceLine": null,
+        "cleanInstallExecuted": true,
+        "actualUserProfilePreservationVerified": true,
+        "ownedFixturesRemoved": true,
+        "unsigned": true,
+        "publisherSignatureVerified": false,
+        "notarized": false,
+        "upgradeQualified": false,
+        "downgradeQualified": false,
+        "productUninstallQualified": false,
+        "finderInteractionQualified": false,
+        "managedEndpointQualified": false,
+        "rebootOrPowerLossQualified": false,
+        "productionQualificationComplete": false
+      }
+    },
+    {
+      "target": "darwin/arm64",
+      "providerArtifact": {
+        "id": 13302228849,
+        "node_id": "MDg6QXJ0aWZhY3QxMzMwMjIyODg0OQ==",
+        "name": "macos-installer-inspection-arm64",
+        "size_in_bytes": 6809344,
+        "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13302228849",
+        "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13302228849/zip",
+        "expired": false,
+        "digest": "sha256:d9f521f8f69a371a80459a06bd45eb4984cfe4d7288583eda0b71523edcf24da",
+        "created_at": "2026-11-04T07:01:14Z",
+        "updated_at": "2026-11-04T07:01:14Z",
+        "expires_at": "2026-11-18T07:01:12Z",
+        "workflow_run": {
+          "id": 41788770964,
+          "repository_id": 1441227907,
+          "head_repository_id": 1441227907,
+          "head_branch": "main",
+          "head_sha": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50"
+        }
+      },
+      "providerJob": {
+        "id": 126436964071,
+        "runID": 41788770964,
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41788770964/job/126436964071",
+        "conclusion": "success"
+      },
+      "providerZIPDigestVerified": true,
+      "extractedFileInventory": [
+        {
+          "file": "0.1.0-alpha/BUILD-INFO.json",
+          "bytes": 220,
+          "sha256": "c0a37e4f98037feac2661b832b12bbbb6d74f61ce0f77af20ce6bf4eedca8e6f"
+        },
+        {
+          "file": "0.1.0-alpha/BUILD-PROVENANCE.sigstore.json",
+          "bytes": 12051,
+          "sha256": "ee9181b762bc12b9a4acaeed247257a85e32bfbaa14715f141dd125177286c46"
+        },
+        {
+          "file": "0.1.0-alpha/INSTALL-MANIFEST.json",
+          "bytes": 3835,
+          "sha256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg",
+          "bytes": 6803683,
+          "sha256": "41fc1507ba87cf39f8dc8347de0d2cdcb8e3b786ee0fb8b641ba583c0b990320"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg.cdx.json",
+          "bytes": 26397,
+          "sha256": "d71b270907b524791b6b5e0e8f479e9f34bd448c766c0d2699c2c2df0866914a"
+        },
+        {
+          "file": "0.1.0-alpha/compiler-artifact.json",
+          "bytes": 2513,
+          "sha256": "fb8141777892a6978db91f9cb9090c54b78b18d59122253f4c034ec07f566c74"
+        },
+        {
+          "file": "0.1.0-alpha/lifecycle-artifact.json",
+          "bytes": 40795,
+          "sha256": "919f697ac4e946f7b28aeef44b2521b352a8eba9881d7b76779573fc4d367d92"
+        },
+        {
+          "file": "0.1.0-alpha/payload-SBOM.cdx.json",
+          "bytes": 15416,
+          "sha256": "a351025bbade9dad6cb4a3e63fc3b646de2fe3dccaa510a52a4b875bf55597c1"
+        },
+        {
+          "file": "native-provenance.json",
+          "bytes": 1829,
+          "sha256": "5b57a00da83bcbf1aaaf3d7dc68ccfcce70249e4654faeef852844448ce13693"
+        }
+      ],
+      "independentVerification": {
+        "schemaVersion": 1,
+        "repository": "Yunushan/accessweaver",
+        "workflow": "Yunushan/accessweaver/.github/workflows/macos-installer.yml",
+        "sourceCommit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+        "sourceRef": "refs/heads/main",
+        "target": "darwin/arm64",
+        "subjectsVerified": 7,
+        "hostedRunnerRequired": true,
+        "authenticatedBeforeParsing": true,
+        "subjects": [
+          {
+            "file": "BUILD-INFO.json",
+            "sha256": "c0a37e4f98037feac2661b832b12bbbb6d74f61ce0f77af20ce6bf4eedca8e6f"
+          },
+          {
+            "file": "INSTALL-MANIFEST.json",
+            "sha256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg",
+            "sha256": "41fc1507ba87cf39f8dc8347de0d2cdcb8e3b786ee0fb8b641ba583c0b990320"
+          },
+          {
+            "file": "accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg.cdx.json",
+            "sha256": "d71b270907b524791b6b5e0e8f479e9f34bd448c766c0d2699c2c2df0866914a"
+          },
+          {
+            "file": "compiler-artifact.json",
+            "sha256": "fb8141777892a6978db91f9cb9090c54b78b18d59122253f4c034ec07f566c74"
+          },
+          {
+            "file": "lifecycle-artifact.json",
+            "sha256": "919f697ac4e946f7b28aeef44b2521b352a8eba9881d7b76779573fc4d367d92"
+          },
+          {
+            "file": "payload-SBOM.cdx.json",
+            "sha256": "a351025bbade9dad6cb4a3e63fc3b646de2fe3dccaa510a52a4b875bf55597c1"
+          }
+        ],
+        "package": {
+          "packageSHA256": "41fc1507ba87cf39f8dc8347de0d2cdcb8e3b786ee0fb8b641ba583c0b990320",
+          "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+          "macho": {
+            "cpuType": "0x0100000c",
+            "minimumOSVersion": "13.0.0"
+          },
+          "isolatedRefusalCases": 8,
+          "nativeInstallationOperations": 3
+        },
+        "publisherSignatureVerified": false,
+        "notarized": false,
+        "productionQualificationComplete": false,
+        "localTargetExecution": false,
+        "rejectionChecks": {
+          "rejected": [
+            "--source-digest",
+            "--source-ref",
+            "--signer-workflow",
+            "--repo",
+            "changed-subject-digest"
+          ],
+          "realBundleVerifiedBeforeAndAfter": true
+        },
+        "independentAuthenticationCalls": 7,
+        "independentTool": {
+          "version": "gh version 2.102.0 (2026-09-30)",
+          "signerSubject": "CN=\"GitHub, Inc.\", O=\"GitHub, Inc.\", L=San Francisco, S=California, C=US",
+          "path": "C:\\Program Files\\GitHub CLI\\gh.exe",
+          "signerThumbprint": "E02B58DF37FE75CD487B29DAA774841D99298579",
+          "signatureStatus": "Valid",
+          "sha256": "756724853cc579510b58e65e7a7429ad6b1af29cf99ef19b3a95f3b701c5c580"
+        },
+        "elapsedMilliseconds": 65883
+      },
+      "producerIndependentReportsAgreeWithExactKeysAndJSONTypes": true,
+      "lifecycleArtifact": {
+        "schemaVersion": 2,
+        "sourceCommit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+        "runID": "41788770964",
+        "target": "darwin/arm64",
+        "packageSHA256": "41fc1507ba87cf39f8dc8347de0d2cdcb8e3b786ee0fb8b641ba583c0b990320",
+        "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+        "operations": [
+          {
+            "operation": "clean-install",
+            "exitCode": 0,
+            "elapsedMilliseconds": 2398,
+            "payloadAndReceiptsVerified": true
+          },
+          {
+            "operation": "existing-install-refused",
+            "exitCode": 1,
+            "elapsedMilliseconds": 1364,
+            "installedFilesAndReceiptBytesPreserved": true,
+            "actualUserProfilePreserved": true
+          },
+          {
+            "operation": "valid-receipt-only-refused",
+            "exitCode": 1,
+            "elapsedMilliseconds": 1263,
+            "receiptBytesPreserved": true,
+            "appNotRecreated": true,
+            "actualUserProfilePreserved": true
+          }
+        ],
+        "preflightRefusalCases": [
+          {
+            "name": "existing-app-directory",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1783,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "existing-app-file",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 2404,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "existing-app-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1395,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "dangling-app-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 80,
+            "parentGID": 80,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1438,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "partial-plist-receipt",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1322,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "partial-bom-receipt",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1334,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "plist-receipt-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1479,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          },
+          {
+            "name": "bom-receipt-symlink",
+            "passed": true,
+            "fixtureUID": 0,
+            "fixtureGID": 0,
+            "parentGID": 0,
+            "exitCode": 1,
+            "elapsedMilliseconds": 1358,
+            "fixtureIdentityAndBytesPreserved": true,
+            "aliasDestinationAndUnrelatedDataPreserved": true,
+            "noAdditionalAppOrReceiptCreated": true,
+            "ownedFixtureRemoved": true
+          }
+        ],
+        "nativeUpgradePreflightCases": [
+          {
+            "name": "newer-release-preflight",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 0,
+            "elapsedMilliseconds": 73,
+            "verifiedDecision": {
+              "incomingVersion": "0.1.1-alpha",
+              "installedBuild": {
+                "version": "0.1.0-alpha",
+                "commit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+                "sourceState": "clean",
+                "builtAt": "2026-11-04T06:55:47Z",
+                "goVersion": "go1.27.3",
+                "platform": "darwin",
+                "arch": "arm64"
+              },
+              "mode": "upgrade",
+              "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+              "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+              "receiptSHA256": {
+                ".bom": "8079aa2f210d6eec65b3d2635fbfc90b9251a2a79ed546ec934fd4113a6c28b4",
+                ".plist": "447d3fd74206f5937bc86cceb969823e3ed5bf99e9045832df4f1bdb92486d74"
+              },
+              "completeProtectedInventoryVerified": true,
+              "mutationPerformed": false,
+              "upgradeExecuted": false,
+              "productionQualificationComplete": false
+            },
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "same-release-preflight",
+            "passed": true,
+            "incomingVersion": "0.1.0-alpha",
+            "exitCode": 0,
+            "elapsedMilliseconds": 68,
+            "verifiedDecision": {
+              "incomingVersion": "0.1.0-alpha",
+              "installedBuild": {
+                "version": "0.1.0-alpha",
+                "commit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+                "sourceState": "clean",
+                "builtAt": "2026-11-04T06:55:47Z",
+                "goVersion": "go1.27.3",
+                "platform": "darwin",
+                "arch": "arm64"
+              },
+              "mode": "reinstall",
+              "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+              "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+              "receiptSHA256": {
+                ".bom": "8079aa2f210d6eec65b3d2635fbfc90b9251a2a79ed546ec934fd4113a6c28b4",
+                ".plist": "447d3fd74206f5937bc86cceb969823e3ed5bf99e9045832df4f1bdb92486d74"
+              },
+              "completeProtectedInventoryVerified": true,
+              "mutationPerformed": false,
+              "upgradeExecuted": false,
+              "productionQualificationComplete": false
+            },
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "older-release-refused",
+            "passed": true,
+            "incomingVersion": "0.0.9",
+            "exitCode": 1,
+            "elapsedMilliseconds": 55,
+            "refusalDiagnosticSHA256": "c897f25044fd18c617628561cd263803b845e530f5e791de97df2af490f4beaf",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "ordinary-user-refused",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 1,
+            "elapsedMilliseconds": 9,
+            "refusalDiagnosticSHA256": "b3a560bd28ce107c77a7d96a3c4a10430f7f814b6f52ef84687649c0a0e2d87b",
+            "refusalCategory": "root-required",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "changed-core-refused",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 1,
+            "elapsedMilliseconds": 29,
+            "refusalDiagnosticSHA256": "2312600595d5a2524dd30d37bfc118623287a1e3fbca44dfa2b29179f842a92b",
+            "refusalCategory": "inventory",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "unexpected-file-refused",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 1,
+            "elapsedMilliseconds": 38,
+            "refusalDiagnosticSHA256": "8ebc56d911002bebcf8030c19d3ce3aaea03b7dc78fe4de117e6f0b31a169e9f",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "writable-file-refused",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 1,
+            "elapsedMilliseconds": 39,
+            "refusalDiagnosticSHA256": "2193b23d4cb3e3d16994ac1fd3c1fd5737fd42ea30238a3ebc7bf404901ad41b",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "file-alias-refused",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 1,
+            "elapsedMilliseconds": 41,
+            "refusalDiagnosticSHA256": "2193b23d4cb3e3d16994ac1fd3c1fd5737fd42ea30238a3ebc7bf404901ad41b",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "acl-mutation-grant-refused",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 1,
+            "elapsedMilliseconds": 42,
+            "refusalDiagnosticSHA256": "901ab5b2b68cb8c57879bf79c1b7c10d47f686c7affd664ee3e611c664e9ea67",
+            "refusalCategory": "acl",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "missing-bom-receipt-refused",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 1,
+            "elapsedMilliseconds": 41,
+            "refusalDiagnosticSHA256": "8a0ec514763e570c4a1f69de3b3ced828cf346a1f9c59f74c7c45fa241eeb82f",
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          },
+          {
+            "name": "restored-state-preflight",
+            "passed": true,
+            "incomingVersion": "0.1.1-alpha",
+            "exitCode": 0,
+            "elapsedMilliseconds": 72,
+            "verifiedDecision": {
+              "incomingVersion": "0.1.1-alpha",
+              "installedBuild": {
+                "version": "0.1.0-alpha",
+                "commit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+                "sourceState": "clean",
+                "builtAt": "2026-11-04T06:55:47Z",
+                "goVersion": "go1.27.3",
+                "platform": "darwin",
+                "arch": "arm64"
+              },
+              "mode": "upgrade",
+              "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+              "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+              "receiptSHA256": {
+                ".bom": "8079aa2f210d6eec65b3d2635fbfc90b9251a2a79ed546ec934fd4113a6c28b4",
+                ".plist": "447d3fd74206f5937bc86cceb969823e3ed5bf99e9045832df4f1bdb92486d74"
+              },
+              "completeProtectedInventoryVerified": true,
+              "mutationPerformed": false,
+              "upgradeExecuted": false,
+              "productionQualificationComplete": false
+            },
+            "installedObjectsAndReceiptsPreserved": true,
+            "actualUserProfilePreserved": true,
+            "installedCodeExecutedAsRoot": false,
+            "upgradeExecuted": false
+          }
+        ],
+        "nativeUpgradePreflightHelpers": [
+          {
+            "build": {
+              "version": "0.1.1-alpha",
+              "commit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+              "sourceState": "clean",
+              "builtAt": "2026-11-04T06:55:47Z",
+              "goVersion": "go1.27.3",
+              "platform": "darwin",
+              "arch": "arm64"
+            },
+            "sha256": "6ede0e2329d1ad22386b924008fc4d446565c7b035dea5237f4262b4e84b61ac"
+          },
+          {
+            "build": {
+              "version": "0.1.0-alpha",
+              "commit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+              "sourceState": "clean",
+              "builtAt": "2026-11-04T06:55:47Z",
+              "goVersion": "go1.27.3",
+              "platform": "darwin",
+              "arch": "arm64"
+            },
+            "sha256": "15c66b3780d8634d8325413676e302bd1b1c966e9cf2924f325e44c50f5d63bf"
+          },
+          {
+            "build": {
+              "version": "0.0.9",
+              "commit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+              "sourceState": "clean",
+              "builtAt": "2026-11-04T06:55:47Z",
+              "goVersion": "go1.27.3",
+              "platform": "darwin",
+              "arch": "arm64"
+            },
+            "sha256": "548424ee5b78bf04c8fa6ebfeca2503b56c936fd85d7d62910a1df95d512f37e"
+          }
+        ],
+        "nativeUpgradeExecuted": false,
+        "protectedDeploymentTransactions": {
+          "completeCopyRecovered": true,
+          "concurrentPreparationFenced": true,
+          "copiedCodeExecuted": false,
+          "detachedManifestCompleteCopyRecovered": true,
+          "detachedManifestPartialCopyPreservedAndRefused": true,
+          "detachedPayloadSBOMManifestSHA256": "e33dc3baedc2a62b4215f57aa15c76c0f57efddc40bc47c7b10ff91ada2ee1e0",
+          "detachedPayloadSBOMPartialCopyPreservedAndRefused": true,
+          "detachedPayloadSBOMSHA256": "a351025bbade9dad6cb4a3e63fc3b646de2fe3dccaa510a52a4b875bf55597c1",
+          "finalGeneration": 4,
+          "fixedProtectedParentVerified": true,
+          "intactRemovalTargetsVerified": true,
+          "intactTargetCaseCount": 16,
+          "legacyToSchema2BridgeVerified": true,
+          "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+          "oldCompleteSlotFencedAfterRemoval": true,
+          "ownedTargetRefusalsPreserved": true,
+          "partialCopyPreservedAndRefused": true,
+          "payloadIsIndependentCopy": true,
+          "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+          "postPublicationRemovalRecovered": true,
+          "productionQualificationComplete": false,
+          "protectedDirectoryJournalCaseCount": 25,
+          "protectedDirectoryJournalVerified": true,
+          "protectedDirectorySIGKILLCaseCount": 8,
+          "protectedDirectorySIGKILLCases": [
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 2,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": true,
+              "elapsedMilliseconds": 19,
+              "journalSHA256AtTermination": "b5bfcf844374737f4ad4b6ba4d8aeb2227838d259ff739a929171e7be1b55e22",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-directory-intent-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "nested-directory",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 2,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": false,
+              "elapsedMilliseconds": 22,
+              "journalSHA256AtTermination": "bef06e2aee83e2878b07ee502f651d8d587001919d80307cc28a76fa03b1670c",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-directory-unlinked",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "nested-directory",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 2,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": false,
+              "elapsedMilliseconds": 38,
+              "journalSHA256AtTermination": "96ca0277231b3a10e07d6c371da6085c3084a1c5c795268175c7449a826f6803",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-directory-parent-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "nested-directory",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 3,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": false,
+              "elapsedMilliseconds": 32,
+              "journalSHA256AtTermination": "3d4d45add4e9a2e7ceecf760628ed8159ed186d804bdea129196db02a8bf8f0e",
+              "passed": true,
+              "pendingAtTermination": false,
+              "phase": "removal-directory-done-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "nested-directory",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 3,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": true,
+              "elapsedMilliseconds": 18,
+              "journalSHA256AtTermination": "fae2d42a8e57b2cee85c4fce86dd04e9279d2f357f0361169acd53c8265ecb58",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-directory-intent-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "protected-root",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 3,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": false,
+              "elapsedMilliseconds": 21,
+              "journalSHA256AtTermination": "2d895f8bb1d49183015fcf1fa90a79e8d6e099387c1a2b670e42791b1a425b56",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-directory-unlinked",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "protected-root",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 3,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": false,
+              "elapsedMilliseconds": 21,
+              "journalSHA256AtTermination": "3c0d736c2205653f917612ff12ba1508070ec3fa6b7ca961ef3d6dd73685a33a",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-directory-parent-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "protected-root",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 4,
+              "completedObjectsAfterRetry": 6,
+              "completedRetryIdempotent": true,
+              "directoryPresentAtTermination": false,
+              "elapsedMilliseconds": 24,
+              "journalSHA256AtTermination": "bab5b92c19122f8368dfa2ee4cd00e40c1622399542e89a57cea9cd066a03ee1",
+              "passed": true,
+              "pendingAtTermination": false,
+              "phase": "removal-directory-done-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "protected-root",
+              "timedOut": false
+            }
+          ],
+          "protectedDirectorySIGKILLVerified": true,
+          "protectedFileJournalCaseCount": 18,
+          "protectedFileJournalVerified": true,
+          "protectedFileSIGKILLCaseCount": 4,
+          "protectedFileSIGKILLCases": [
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 0,
+              "completedFilesAfterRetry": 2,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 35,
+              "filePresentAtTermination": true,
+              "journalSHA256AtTermination": "cac431c5c73fc0d0f96253726fda5cafb3aef9e0f3a5dd945c078101afd27e8f",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-file-intent-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "file",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 0,
+              "completedFilesAfterRetry": 2,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 21,
+              "filePresentAtTermination": false,
+              "journalSHA256AtTermination": "4474cdc794d179bc43c9d31a8b478dcb7e30cd84b1125e044cda14029ff274fe",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-file-unlinked",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "file",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 0,
+              "completedFilesAfterRetry": 2,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 23,
+              "filePresentAtTermination": false,
+              "journalSHA256AtTermination": "cecd9c7251c19b7b5f3f75877da3955859be8c2dac4bae5b2d63fb0fc3f58b2a",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-file-parent-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "file",
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedActionsAtTermination": 1,
+              "completedFilesAfterRetry": 2,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 23,
+              "filePresentAtTermination": false,
+              "journalSHA256AtTermination": "f6072e65750fa5eef36011fd3dc9fb9c1710891df1beb6dba645096dac314c4d",
+              "passed": true,
+              "pendingAtTermination": false,
+              "phase": "removal-file-done-durable",
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "target": "file",
+              "timedOut": false
+            }
+          ],
+          "protectedFileSIGKILLVerified": true,
+          "publicAppQuarantineCaseCount": 28,
+          "publicAppQuarantineSIGKILLCaseCount": 4,
+          "publicAppQuarantineSIGKILLCases": [
+            {
+              "bothLeasesReacquired": true,
+              "completedProtectedObjectsAfterRetry": 6,
+              "completedQuarantineActionsAtTermination": 0,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 23,
+              "journalSHA256AtTermination": "9b0c37cd69158fba9142b8a40542afee125c224b8f9cb2b9f4582d842085a5f6",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-quarantine-intent-durable",
+              "protectedObjectsRemovedAtTermination": 0,
+              "publicAppPresentAtTermination": true,
+              "quarantinedAppPresentAtTermination": false,
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedProtectedObjectsAfterRetry": 6,
+              "completedQuarantineActionsAtTermination": 0,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 32,
+              "journalSHA256AtTermination": "2c9cb2c546e639be186ce7c75c073b1c001ae827a0c424d7ad5038197dbba8fe",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-quarantine-renamed",
+              "protectedObjectsRemovedAtTermination": 0,
+              "publicAppPresentAtTermination": false,
+              "quarantinedAppPresentAtTermination": true,
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedProtectedObjectsAfterRetry": 6,
+              "completedQuarantineActionsAtTermination": 0,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 41,
+              "journalSHA256AtTermination": "3d1fecc5ad21c8bf54e171addd77ca427b65f2b5bf6b6f17434c78a2aa9b1abc",
+              "passed": true,
+              "pendingAtTermination": true,
+              "phase": "removal-quarantine-parents-durable",
+              "protectedObjectsRemovedAtTermination": 0,
+              "publicAppPresentAtTermination": false,
+              "quarantinedAppPresentAtTermination": true,
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "timedOut": false
+            },
+            {
+              "bothLeasesReacquired": true,
+              "completedProtectedObjectsAfterRetry": 6,
+              "completedQuarantineActionsAtTermination": 1,
+              "completedRetryIdempotent": true,
+              "elapsedMilliseconds": 43,
+              "journalSHA256AtTermination": "6150ad075efc6cdfa3496f34f03e0124b1dc4f41cf9f86ff5c0e716776247466",
+              "passed": true,
+              "pendingAtTermination": false,
+              "phase": "removal-quarantine-done-durable",
+              "protectedObjectsRemovedAtTermination": 0,
+              "publicAppPresentAtTermination": false,
+              "quarantinedAppPresentAtTermination": true,
+              "retainedDataPreserved": true,
+              "signal": 9,
+              "timedOut": false
+            }
+          ],
+          "publicAppQuarantineSIGKILLVerified": true,
+          "publicAppQuarantineVerified": true,
+          "restoredRetryVerified": true,
+          "schemaVersion": 1,
+          "version": "0.1.0-alpha",
+          "testExecutableSHA256": "a78dfe6bc5fcb3f5fef4b82d4e12db423547a1351623b9b44af4cff26d1936e8",
+          "elapsedMilliseconds": 18130,
+          "installedObjectsAndReceiptsPreserved": true,
+          "fixtureParent": "private-exclusive-temporary-directory",
+          "packageScriptsIntegrated": false
+        },
+        "fixedDeploymentHelper": {
+          "schemaVersion": 1,
+          "build": {
+            "version": "0.1.0-alpha",
+            "commit": "80c8e25b7bfece1ad2cdbd533cb15c8aede99b50",
+            "sourceState": "clean",
+            "builtAt": "2026-11-04T06:55:47Z",
+            "goVersion": "go1.27.3",
+            "platform": "darwin",
+            "arch": "arm64"
+          },
+          "helperSHA256": "8d32cab13ec14e7a4b29782756e405418d2e6320891a94de108f43d899239022",
+          "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+          "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+          "cases": [
+            {
+              "name": "activation-without-authority-refused",
+              "operation": "activate-deployment",
+              "exitCode": 1,
+              "elapsedMilliseconds": 20,
+              "passed": true,
+              "result": null,
+              "recordPreserved": true
+            },
+            {
+              "name": "unsealed-helper-refused",
+              "operation": "prepare-deployment",
+              "exitCode": 1,
+              "elapsedMilliseconds": 21,
+              "passed": true,
+              "result": null,
+              "recordPreserved": true
+            },
+            {
+              "name": "prepared",
+              "operation": "prepare-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 41,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "prepare-deployment",
+                "generation": 0,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "70c8d4aee9191a450bd52a0e0ddd1eda",
+                "state": "prepared",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            },
+            {
+              "name": "prepare-retry-idempotent",
+              "operation": "prepare-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 27,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "prepare-deployment",
+                "generation": 0,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "70c8d4aee9191a450bd52a0e0ddd1eda",
+                "state": "prepared",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "changed-incoming-refused",
+              "operation": "activate-deployment",
+              "exitCode": 1,
+              "elapsedMilliseconds": 114,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 0,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "70c8d4aee9191a450bd52a0e0ddd1eda",
+                "state": "refused",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "activated",
+              "operation": "activate-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 118,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 1,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "70c8d4aee9191a450bd52a0e0ddd1eda",
+                "state": "active",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            },
+            {
+              "name": "activation-retry-idempotent",
+              "operation": "activate-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 41,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 1,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "70c8d4aee9191a450bd52a0e0ddd1eda",
+                "state": "active",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "active-survives-staging-removal",
+              "operation": "activate-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 44,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 1,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "70c8d4aee9191a450bd52a0e0ddd1eda",
+                "state": "active",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "reinstall-prepared",
+              "operation": "prepare-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 28,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "prepare-deployment",
+                "generation": 1,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "9397b397516af5b0f1b3d5ff1a9b9c74",
+                "state": "prepared",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            },
+            {
+              "name": "missing-incoming-refused",
+              "operation": "activate-deployment",
+              "exitCode": 1,
+              "elapsedMilliseconds": 25,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 1,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "9397b397516af5b0f1b3d5ff1a9b9c74",
+                "state": "refused",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "deactivated-with-pending",
+              "operation": "deactivate-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 87,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "deactivate-deployment",
+                "generation": 2,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "70c8d4aee9191a450bd52a0e0ddd1eda",
+                "state": "inactive",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            },
+            {
+              "name": "stale-activation-fenced",
+              "operation": "activate-deployment",
+              "exitCode": 1,
+              "elapsedMilliseconds": 21,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 2,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "9397b397516af5b0f1b3d5ff1a9b9c74",
+                "state": "refused",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "stale-prepare-fenced",
+              "operation": "prepare-deployment",
+              "exitCode": 1,
+              "elapsedMilliseconds": 30,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "prepare-deployment",
+                "generation": 2,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "9397b397516af5b0f1b3d5ff1a9b9c74",
+                "state": "refused",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "stale-preparation-abandoned",
+              "operation": "abandon-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 30,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "abandon-deployment",
+                "generation": 2,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "9397b397516af5b0f1b3d5ff1a9b9c74",
+                "state": "abandoned",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            },
+            {
+              "name": "abandon-retry-refused",
+              "operation": "abandon-deployment",
+              "exitCode": 1,
+              "elapsedMilliseconds": 19,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "abandon-deployment",
+                "generation": 2,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "",
+                "state": "refused",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "restored-retry-prepared",
+              "operation": "prepare-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 24,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "prepare-deployment",
+                "generation": 2,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "8c94dfde335fa25975defaefc0f24cd5",
+                "state": "prepared",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            },
+            {
+              "name": "restored-retry-activated",
+              "operation": "activate-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 122,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 3,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "8c94dfde335fa25975defaefc0f24cd5",
+                "state": "active",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            },
+            {
+              "name": "restored-activation-idempotent",
+              "operation": "activate-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 47,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "activate-deployment",
+                "generation": 3,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "8c94dfde335fa25975defaefc0f24cd5",
+                "state": "active",
+                "operationRecordPublished": false,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": true
+            },
+            {
+              "name": "final-deactivation",
+              "operation": "deactivate-deployment",
+              "exitCode": 0,
+              "elapsedMilliseconds": 57,
+              "passed": true,
+              "result": {
+                "schemaVersion": 1,
+                "operation": "deactivate-deployment",
+                "generation": 4,
+                "version": "0.1.0-alpha",
+                "manifestSHA256": "9417fcba3b23384099e7147a9e92eeb70e31fc0f6a94457899bb842781d966e6",
+                "payloadSHA256": "1d12c2a75eb98000f3e47e514d60b8453d5a986306af2dcc67cd5ac1b3ac2478",
+                "slotID": "8c94dfde335fa25975defaefc0f24cd5",
+                "state": "inactive",
+                "operationRecordPublished": true,
+                "publisherSignatureVerified": false,
+                "productionQualificationComplete": false
+              },
+              "recordPreserved": false
+            }
+          ],
+          "rootAndLegacyRefusalsPreservedAbsentAuthority": true,
+          "ordinaryUserActiveRuntimeVerified": true,
+          "stagingRemovalPreservedActiveCopy": true,
+          "detachedManifestBridgeVerified": true,
+          "ownedFixedFixtureCleanupVerified": true,
+          "installedCodeExecutedAsRoot": false,
+          "actualApplePackageUpgradeExecuted": false,
+          "packageScriptsIntegrated": false,
+          "productionQualificationComplete": false
+        },
+        "passed": true,
+        "stage": "owned-fixture-cleanup",
+        "failureType": null,
+        "failureSourceLine": null,
+        "cleanInstallExecuted": true,
+        "actualUserProfilePreservationVerified": true,
+        "ownedFixturesRemoved": true,
+        "unsigned": true,
+        "publisherSignatureVerified": false,
+        "notarized": false,
+        "upgradeQualified": false,
+        "downgradeQualified": false,
+        "productUninstallQualified": false,
+        "finderInteractionQualified": false,
+        "managedEndpointQualified": false,
+        "rebootOrPowerLossQualified": false,
+        "productionQualificationComplete": false
+      }
+    }
+  ],
+  "ci": {
+    "runID": 41788770776,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41788770776",
+    "conclusion": "success",
+    "successfulJobs": 22,
+    "jobs": [
+      {
+        "id": 126436963459,
+        "name": "Race detector (Linux)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963653,
+        "name": "Test (macos-15-intel)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963690,
+        "name": "Race detector (Linux/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963724,
+        "name": "Go vulnerability checks",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963758,
+        "name": "Test (ubuntu-latest)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963789,
+        "name": "Cross-build (linux/amd64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963815,
+        "name": "Test (ubuntu-24.04-arm)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963834,
+        "name": "browser / Real browser (chromium)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963863,
+        "name": "Cross-build (linux/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963866,
+        "name": "Test (windows-latest)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963875,
+        "name": "Test (windows-11-arm)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963890,
+        "name": "Test (macos-latest)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963925,
+        "name": "Cross-build (darwin/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963940,
+        "name": "Cross-build (freebsd/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963990,
+        "name": "Cross-build (openbsd/amd64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963997,
+        "name": "Cross-build (windows/amd64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436964006,
+        "name": "browser / Real browser (webkit)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436964018,
+        "name": "Cross-build (freebsd/amd64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436964029,
+        "name": "Cross-build (darwin/amd64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436964037,
+        "name": "browser / Real browser (firefox)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436964108,
+        "name": "Cross-build (windows/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436964112,
+        "name": "Cross-build (openbsd/arm64)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "implementationSource": [
+    {
+      "path": "internal/packageupgrade/removal_quarantine_kill_darwin_test.go",
+      "sha256": "8360cfa898a62cd1cd5b740c2868d5b1626b8e879795e888f72de5b119a3f45d"
+    },
+    {
+      "path": "internal/packageupgrade/removal_kill_darwin_test.go",
+      "sha256": "afaf83c2372ddc80732ed196309db263602896213ea2aa44dbdfb9dd996f7d6f"
+    },
+    {
+      "path": "internal/packageupgrade/deployment_darwin_test.go",
+      "sha256": "96a7e0a17830bb1b069c053a5ce20e6e12eb89251e6764e87b5c0ea2bbf20e4c"
+    },
+    {
+      "path": "scripts/verify_macos_installer_provenance.py",
+      "sha256": "8093b5e3f154739fc69f43fde8716d2d7b9ac0d54cda48045419f4e4fdfb4211"
+    },
+    {
+      "path": "scripts/test_macos_installer_provenance.py",
+      "sha256": "c1a2e69d211470fe30884d15ae4ae6767a8f8d35aef8ddc25063e95b97d2ad3c"
+    },
+    {
+      "path": ".github/workflows/macos-installer.yml",
+      "sha256": "0e828948325f8be82c6afd00508b24142f5a8f9c2cbf6ac73787d7c1d19188cb"
+    }
+  ],
+  "boundaries": {
+    "privateQuarantineReturnedErrorAndRaceCasesQualified": true,
+    "actualQuarantineSIGKILLQualified": true,
+    "publicAppPayloadDeleted": false,
+    "registrationsRemoved": false,
+    "receiptsForgotten": false,
+    "actualDeviceSyncFailureQualified": false,
+    "rebootOrPowerLossQualified": false,
+    "generalInstallerSIGKILLQualified": false,
+    "productUninstallQualified": false,
+    "localCandidateCodeExecuted": false,
+    "installedCodeExecutedAsRoot": false,
+    "fullCIPassed": true,
+    "publisherSignatureVerified": false,
+    "notarized": false,
+    "productionQualificationComplete": false,
+    "readinessGatePromoted": false,
+    "quarantinedAppDeletionQualified": false
+  },
+  "retainedPriorFailureEvidence": "f83f12143969-quarantine-retention-fixture-failure.json",
+  "actualNativeQuarantineSIGKILLCases": 8,
+  "relatedNativeProviderJobs": {
+    "successfulJobs": 7,
+    "failedJobs": 1,
+    "jobs": [
+      {
+        "id": 126436963431,
+        "runID": 41788770802,
+        "name": "Versioned package lifecycle (arm64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41788770802/job/126436963431",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963752,
+        "runID": 41788770802,
+        "name": "Versioned package lifecycle (amd64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41788770802/job/126436963752",
+        "conclusion": "failure"
+      },
+      {
+        "id": 126436963700,
+        "runID": 41788770964,
+        "name": "Native package acceptance (amd64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41788770964/job/126436963700",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436964071,
+        "runID": 41788770964,
+        "name": "Native package acceptance (arm64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41788770964/job/126436964071",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963110,
+        "runID": 41788770766,
+        "name": "Public desktop lifecycle (amd64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41788770766/job/126436963110",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963502,
+        "runID": 41788770766,
+        "name": "Public desktop lifecycle (arm64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41788770766/job/126436963502",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963161,
+        "runID": 41788770740,
+        "name": "Native installer lifecycle (arm64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41788770740/job/126436963161",
+        "conclusion": "success"
+      },
+      {
+        "id": 126436963420,
+        "runID": 41788770740,
+        "name": "Native installer lifecycle (amd64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41788770740/job/126436963420",
+        "conclusion": "success"
+      }
+    ],
+    "failureEvidence": "80c8e25b7bfe-versioned-sbom-build-failure.json"
+  },
+  "limits": [
+    "Actual signal-nine qualification covers the private quarantine transaction only, not the later quarantined app deletion implementation.",
+    "The separate failed Intel versioned build remains failed; its discarded compiler diagnostics leave the cause unestablished.",
+    "No actual device error, reboot/power loss, general Installer termination, full product uninstall, publisher signing/notarization or complete managed endpoint qualification is established.",
+    "All fifty readiness gate statuses remain unchanged."
+  ]
+}
