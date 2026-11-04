@@ -183,4 +183,112 @@ class HostedGuardTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):storage.main()
                 command.assert_not_called()
 
+
+
+class UnmountedOriginalBindingTests(ImageFixture,unittest.TestCase):
+    def test_complete_unmounted_binding_requires_original_filesystem_identities(self):
+        from subprocess import CompletedProcess
+        unmounted=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}]
+        observations=[];diagnostics={};original=("image","mount","capsule")
+        with patch.object(storage,"info",side_effect=[self.info(unmounted),{"images":[]}]),patch.object(storage,"command",return_value=CompletedProcess([],0,b"",b"")) as command,patch.object(storage,"check_owned_cleanup_identity") as check:
+            self.assertEqual(storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1",known_devices={"/dev/disk20","/dev/disk21s1"},observations=observations,owned_identity=original,diagnostics=diagnostics),1)
+            self.assertEqual(command.call_args.args[0],[storage.HDIUTIL,"detach","/dev/disk20"])
+            self.assertTrue(all(call.kwargs["unmounted"] is True for call in check.call_args_list))
+            self.assertEqual(check.call_count,2)
+        self.assertEqual(diagnostics["normalDetachAttempts"],1)
+        self.assertEqual(diagnostics["unmountedOriginalBindingDetachAttempts"],1)
+        self.assertTrue(diagnostics["normalDetachAccepted"])
+        self.assertEqual(diagnostics["normalDetachObservations"][0]["outcome"],"accepted")
+
+    def test_busy_mounted_then_complete_unmounted_binding_permits_identity_checked_normal_retry(self):
+        from subprocess import CompletedProcess
+        unmounted=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}]
+        diagnostics={}
+        with patch.object(storage,"info",side_effect=[self.info(),self.info(unmounted),{"images":[]}]),patch.object(storage,"command",side_effect=[CompletedProcess([],16,b"",b"Resource busy"),CompletedProcess([],0,b"",b"")]) as command,patch.object(storage,"check_owned_cleanup_identity"),patch.object(storage.time,"sleep"):
+            self.assertEqual(storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1",owned_identity=("image","mount","capsule"),diagnostics=diagnostics),2)
+        self.assertEqual(command.call_count,2)
+        self.assertEqual([case["outcome"] for case in diagnostics["normalDetachObservations"]],["busy","accepted"])
+        self.assertEqual([case["unmountedOriginalBinding"] for case in diagnostics["normalDetachObservations"]],[False,True])
+
+    def test_subset_of_original_devices_stays_observe_only_even_with_identity(self):
+        partial=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}]
+        with patch.object(storage,"info",side_effect=[self.info(partial),{"images":[]}]),patch.object(storage,"command") as command,patch.object(storage,"check_owned_cleanup_identity") as check,patch.object(storage.time,"sleep"):
+            self.assertEqual(storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1",known_devices={"/dev/disk20","/dev/disk20s1","/dev/disk21","/dev/disk21s1"},owned_identity=("image","mount","capsule")),0)
+            command.assert_not_called();check.assert_not_called()
+
+    def test_changed_owned_identity_refuses_unmounted_detach(self):
+        unmounted=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}]
+        with patch.object(storage,"info",return_value=self.info(unmounted)),patch.object(storage,"command") as command,patch.object(storage,"check_owned_cleanup_identity",side_effect=RuntimeError("identity changed")):
+            with self.assertRaisesRegex(RuntimeError,"identity changed"):
+                storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1",known_devices={"/dev/disk20","/dev/disk21s1"},owned_identity=("image","mount","capsule"))
+            command.assert_not_called()
+
+    def test_accepted_unmounted_detach_only_observes_until_disappearance(self):
+        from subprocess import CompletedProcess
+        unmounted=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}]
+        with patch.object(storage,"info",side_effect=[self.info(unmounted),self.info(unmounted),{"images":[]}]),patch.object(storage,"command",return_value=CompletedProcess([],0,b"",b"")) as command,patch.object(storage,"check_owned_cleanup_identity"),patch.object(storage.time,"sleep"):
+            self.assertEqual(storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1",known_devices={"/dev/disk20","/dev/disk21s1"},owned_identity=("image","mount","capsule")),1)
+            self.assertEqual(command.call_count,1)
+
+    def test_failed_detach_retains_attempt_count_and_bounded_nonsecret_result(self):
+        from subprocess import CompletedProcess
+        diagnostics={}
+        with patch.object(storage,"info",return_value=self.info()),patch.object(storage,"command",return_value=CompletedProcess([],1,b"",b"failure /private/owned-secret")):
+            with self.assertRaises(RuntimeError):
+                storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1",diagnostics=diagnostics)
+        self.assertEqual(diagnostics["normalDetachAttempts"],1)
+        self.assertFalse(diagnostics["normalDetachAccepted"])
+        self.assertEqual(diagnostics["normalDetachObservations"][0]["exitCode"],1)
+        import json
+        self.assertNotIn("secret",json.dumps(diagnostics))
+
+
+    def test_detach_failure_diagnostics_keep_only_last_eight_results(self):
+        from subprocess import CompletedProcess
+        diagnostics={}
+        with patch.object(storage,"info",side_effect=[self.info()]*20+[{"images":[]}]),patch.object(storage,"command",return_value=CompletedProcess([],16,b"",b"Resource busy")),patch.object(storage.time,"sleep"):
+            self.assertEqual(storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1",diagnostics=diagnostics),20)
+        self.assertEqual(diagnostics["normalDetachAttempts"],20)
+        self.assertEqual(len(diagnostics["normalDetachObservations"]),8)
+        self.assertEqual([case["attempt"] for case in diagnostics["normalDetachObservations"]],list(range(13,21)))
+
+    def test_timed_out_normal_command_retains_started_attempt(self):
+        from subprocess import TimeoutExpired
+        diagnostics={}
+        with patch.object(storage,"info",return_value=self.info()),patch.object(storage,"command",side_effect=TimeoutExpired("hdiutil",1)):
+            with self.assertRaises(TimeoutExpired):
+                storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1",diagnostics=diagnostics)
+        self.assertEqual(diagnostics["normalDetachAttempts"],1)
+        self.assertEqual(diagnostics["normalDetachObservations"][0]["outcome"],"timeout")
+        self.assertFalse(diagnostics["normalDetachAccepted"])
+
+    def test_identity_revalidation_never_extends_original_deadline(self):
+        unmounted=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}]
+        with patch.object(storage.time,"monotonic",side_effect=[0,0,0,30]),patch.object(storage,"info",return_value=self.info(unmounted)),patch.object(storage,"check_owned_cleanup_identity"),patch.object(storage,"command") as command:
+            with self.assertRaisesRegex(RuntimeError,"detach deadline"):
+                storage.detach_owned(self.image,self.mount,"/dev/disk20","/dev/disk21s1",known_devices={"/dev/disk20","/dev/disk21s1"},owned_identity=("image","mount","capsule"))
+            command.assert_not_called()
+
+class OwnedCleanupIdentityTests(ImageFixture,unittest.TestCase):
+    def original(self):
+        from types import SimpleNamespace
+        import stat
+        return (SimpleNamespace(st_dev=1,st_ino=20,st_uid=501,st_mode=stat.S_IFREG|0o600,st_nlink=1),
+                SimpleNamespace(st_dev=1,st_ino=21,st_uid=501,st_mode=stat.S_IFDIR|0o700,st_nlink=2),
+                SimpleNamespace(st_dev=1,st_ino=22,st_uid=501,st_mode=stat.S_IFDIR|0o700,st_nlink=2))
+    def test_exact_original_regular_image_capsule_and_unmounted_host_directory(self):
+        original=self.original();actual={self.image:original[0],self.mount:original[1],self.image.parent:original[2]}
+        with patch.object(Path,"lstat",lambda path:actual[path]),patch.object(storage.os,"geteuid",return_value=501,create=True):
+            storage.check_owned_cleanup_identity(self.image,self.mount,original,unmounted=True)
+    def test_replaced_linked_foreign_writable_or_symlink_objects_are_refused(self):
+        from types import SimpleNamespace
+        import stat
+        for index,field,value in [(0,"st_ino",99),(0,"st_nlink",2),(0,"st_uid",502),(0,"st_mode",stat.S_IFREG|0o666),
+                                  (1,"st_ino",99),(1,"st_dev",2),(1,"st_mode",stat.S_IFLNK|0o777),
+                                  (2,"st_ino",99),(2,"st_mode",stat.S_IFDIR|0o777)]:
+            original=self.original();changed=list(original);fields=dict(vars(changed[index]));fields[field]=value;changed[index]=SimpleNamespace(**fields)
+            actual={self.image:changed[0],self.mount:changed[1],self.image.parent:changed[2]}
+            with self.subTest(index=index,field=field),patch.object(Path,"lstat",lambda path:actual[path]),patch.object(storage.os,"geteuid",return_value=501,create=True):
+                with self.assertRaises(RuntimeError):storage.check_owned_cleanup_identity(self.image,self.mount,original,unmounted=True)
+
 if __name__=="__main__":unittest.main()
