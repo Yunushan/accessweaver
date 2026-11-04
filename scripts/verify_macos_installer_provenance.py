@@ -92,6 +92,24 @@ def validate_contents(root,package,commit,version,arch):
     return {"packageSHA256":digest(binary),"payloadSHA256":digest(core),"macho":actual["macho"],"isolatedRefusalCases":8,"nativeInstallationOperations":3}
 
 
+def validate_preparation_sigkill(value,test_executable):
+    require(type(value) is dict,"Native preparation SIGKILL evidence missing")
+    require(type(value.get("schemaVersion")) is int and value["schemaVersion"]==1 and type(value.get("caseCount")) is int and value["caseCount"]==10,"Native preparation SIGKILL extent differs")
+    require(type(test_executable) is str and value.get("testExecutableSHA256")==test_executable and re.fullmatch("[a-f0-9]{64}",test_executable) is not None and value.get("installedObjectsAndReceiptsPreserved") is True and value.get("fixtureParent")=="private-exclusive-temporary-directory","Native preparation SIGKILL executable/scope differs")
+    require(all(value.get(k) is False for k in ("copiedCodeExecuted","packageScriptsIntegrated","productionQualificationComplete")),"Native preparation SIGKILL scope differs")
+    require(type(value.get("elapsedMilliseconds")) is int and 0<=value["elapsedMilliseconds"]<=150000,"Native preparation SIGKILL timing differs")
+    phases=["removal-preparation-created","removal-state-durable","removal-plan-durable","removal-marker-durable","removal-directory-durable","removal-preparation-durable","removal-record-reserved","removal-reservation-parent-durable","removal-published","removal-parent-durable"]
+    cases=value.get("cases");require(type(cases) is list and len(cases)==10,"Native preparation SIGKILL cases missing")
+    for index,(case,phase) in enumerate(zip(cases,phases)):
+        require(type(case) is dict and case.get("phase")==phase and type(case.get("signal")) is int and case["signal"]==9 and case.get("timedOut") is False,"Native preparation signal/phase differs")
+        outside=index<6;published=index>=8
+        state="external-preparation" if outside else "published-intent" if published else "reserved-preparation"
+        require(case.get("stateAtTermination")==state and type(case.get("stageFileCountAtTermination")) is int and case["stageFileCountAtTermination"]==min(index,3) and case.get("intentPublishedAtTermination") is published,"Native preparation boundary state differs")
+        require(case.get("freshRetryPublished") is outside and case.get("reservedRecoveryPublished") is (not outside and not published) and case.get("publishedIntentReopened") is published,"Native preparation recovery route differs")
+        require(type(case.get("payloadObjectsRemoved")) is int and case["payloadObjectsRemoved"]==0 and all(case.get(k) is True for k in ("bothLeasesReacquired","completedIntentReopenVerified","activePreimageRetained","preparationEvidencePreserved","retainedDataPreserved","passed")),"Native preparation recovery/preservation did not pass")
+        require(type(case.get("elapsedMilliseconds")) is int and 0<=case["elapsedMilliseconds"]<=20000,"Native preparation child timing differs")
+
+
 def validate_deployment_transactions(deployment,manifest_hash,payload_hash,version):
     require(type(deployment) is dict,"Missing native protected deployment transactions")
     require(type(deployment.get("schemaVersion")) is int and deployment["schemaVersion"]==1 and deployment.get("manifestSHA256")==manifest_hash and deployment.get("payloadSHA256")==payload_hash and deployment.get("version")==version and type(deployment.get("finalGeneration")) is int and deployment["finalGeneration"]==4,"Native protected deployment identity differs")
@@ -100,6 +118,7 @@ def validate_deployment_transactions(deployment,manifest_hash,payload_hash,versi
     require(deployment.get("copiedCodeExecuted") is False and deployment.get("packageScriptsIntegrated") is False and deployment.get("productionQualificationComplete") is False and deployment.get("fixtureParent")=="private-exclusive-temporary-directory" and re.fullmatch("[a-f0-9]{64}",deployment.get("testExecutableSHA256","")) is not None,"Native protected deployment scope differs")
     require(all(type(deployment.get(k)) is str and re.fullmatch("[a-f0-9]{64}",deployment[k]) is not None for k in ("detachedPayloadSBOMManifestSHA256","detachedPayloadSBOMSHA256")),"Native detached metadata seal evidence differs")
     require(type(deployment.get("removalPreparationRecoveryCaseCount")) is int and deployment["removalPreparationRecoveryCaseCount"]==28,"Native removal preparation recovery case count differs")
+    validate_preparation_sigkill(deployment.get("removalPreparationSIGKILL"),deployment["testExecutableSHA256"])
     require(type(deployment.get("intactTargetCaseCount")) is int and deployment["intactTargetCaseCount"]==16,"Native intact target verification case count differs")
     require(type(deployment.get("protectedFileJournalCaseCount")) is int and deployment["protectedFileJournalCaseCount"]==18,"Native protected file journal case count differs")
     require(type(deployment.get("protectedFileSIGKILLCaseCount")) is int and deployment["protectedFileSIGKILLCaseCount"]==4,"Native protected file SIGKILL case count differs")

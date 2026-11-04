@@ -216,6 +216,21 @@ def deployment_transactions(capsule,environment,identity):
     require(value["manifestSHA256"]==digest((APP/"Contents/Resources/INSTALL-MANIFEST.json").read_bytes()) and value["payloadSHA256"]==digest((APP/"Contents/MacOS/accessweaver").read_bytes()) and value["version"]==identity["version"],"Copied deployment subjects differ from installed package")
     require(owned_bundle_snapshot()==before and snapshot_receipts()==receipts,"Deployment transaction fixture changed installed app/receipts")
     value.update({"testExecutableSHA256":digest(binary.read_bytes()),"elapsedMilliseconds":elapsed,"installedObjectsAndReceiptsPreserved":True,"fixtureParent":"private-exclusive-temporary-directory","packageScriptsIntegrated":False})
+    # Keep the existing transaction deadline unchanged. The new preparation
+    # child cases use the same source-built executable in a separate bounded
+    # guarded invocation, with the same explicit environment whitelist.
+    preparation_command=list(command)
+    preparation_command[preparation_command.index("-test.run=^TestDarwinDeploymentRootCopyRecovery$")]="-test.run=^TestDarwinRemovalPreparationRootKilledRecovery$"
+    preparation,preparation_elapsed=run(preparation_command,environment,150,codes=tuple(range(256)))
+    if preparation.returncode:
+        print(deployment_failure_diagnostic(preparation.stdout+b"\nNative fixture stderr:\n"+preparation.stderr),flush=True)
+    require(preparation.returncode==0,"Native preparation SIGKILL fixture failed")
+    preparation_lines=[line.split("REMOVAL-PREPARATION-RESULT ",1)[1] for line in preparation.stdout.decode("utf-8").splitlines() if "REMOVAL-PREPARATION-RESULT " in line]
+    require(len(preparation_lines)==1 and b"--- PASS: TestDarwinRemovalPreparationRootKilledRecovery" in preparation.stdout,"Native preparation SIGKILL test did not execute to completion")
+    require(digest(binary.read_bytes())==value["testExecutableSHA256"] and owned_bundle_snapshot()==before and snapshot_receipts()==receipts,"Preparation SIGKILL fixture changed source executable or installed objects/receipts")
+    preparation_value=json.loads(preparation_lines[0])
+    preparation_value.update({"testExecutableSHA256":value["testExecutableSHA256"],"elapsedMilliseconds":preparation_elapsed,"installedObjectsAndReceiptsPreserved":True,"fixtureParent":"private-exclusive-temporary-directory"})
+    value["removalPreparationSIGKILL"]=preparation_value
     return value
 
 

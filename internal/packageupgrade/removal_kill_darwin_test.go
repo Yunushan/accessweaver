@@ -137,12 +137,22 @@ func TestDarwinRemovalFileKilledChild(t *testing.T) {
 			known = true
 		}
 	}
+	preparing := false
+	for _, allowed := range removalPreparationKillPhases {
+		if phase == allowed {
+			known, preparing = true, true
+		}
+	}
 	if !known {
 		t.Fatal("unknown killed-child phase")
 	}
 	parent, e := openOwnedRemovalKillCapsule(base)
 	if e != nil {
 		t.Fatal(e)
+	}
+	if preparing {
+		runOwnedRemovalPreparationKilledChild(t, parent, base, phase)
+		t.Fatal("preparation child returned without its kill boundary")
 	}
 	identity := deploymentFixtureSlot(1, "0.1.1-alpha").Identity
 	intent, e := openRemovalIntentAt(parent, 0, identity, removalDigest([]byte("owned synthetic registration")))
@@ -151,7 +161,24 @@ func TestDarwinRemovalFileKilledChild(t *testing.T) {
 	}
 	defer intent.Close()
 	fixture := &ownedRemovalTargetFixture{base: base, store: intent.store, intent: intent}
-	intent.store.observe = func(actual string) error {
+	intent.store.observe = ownedRemovalKillObserver(phase)
+	if strings.HasPrefix(phase, "removal-app-") {
+		_, e = intent.removeNextQuarantinedAppObjectUsing(context.Background(), fixture.resolve)
+	} else if strings.HasPrefix(phase, "removal-quarantine-") {
+		e = intent.quarantinePublicAppUsing(context.Background(), fixture.resolve)
+	} else if strings.HasPrefix(phase, "removal-directory-") {
+		_, e = intent.removeNextProtectedObjectUsing(context.Background(), fixture.resolve, false)
+	} else {
+		_, e = intent.removeNextProtectedFileUsing(context.Background(), fixture.resolve)
+	}
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Fatal("owned child completed without reaching its kill boundary")
+}
+
+func ownedRemovalKillObserver(phase string) func(string) error {
+	return func(actual string) error {
 		if actual != phase {
 			return nil
 		}
@@ -166,19 +193,6 @@ func TestDarwinRemovalFileKilledChild(t *testing.T) {
 		time.Sleep(time.Second)
 		return errors.New("SIGKILL did not terminate the owned child")
 	}
-	if strings.HasPrefix(phase, "removal-app-") {
-		_, e = intent.removeNextQuarantinedAppObjectUsing(context.Background(), fixture.resolve)
-	} else if strings.HasPrefix(phase, "removal-quarantine-") {
-		e = intent.quarantinePublicAppUsing(context.Background(), fixture.resolve)
-	} else if strings.HasPrefix(phase, "removal-directory-") {
-		_, e = intent.removeNextProtectedObjectUsing(context.Background(), fixture.resolve, false)
-	} else {
-		_, e = intent.removeNextProtectedFileUsing(context.Background(), fixture.resolve)
-	}
-	if e != nil {
-		t.Fatal(e)
-	}
-	t.Fatal("owned child completed without reaching its kill boundary")
 }
 
 // The trusted source-built test binary is the only executed child. No installed

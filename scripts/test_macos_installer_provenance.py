@@ -4,10 +4,19 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-from verify_macos_installer_provenance import BUNDLE_NAME,WORKFLOW,check_rejections,subject_names,verification_command,verify,validate_deployment_transactions,validate_fixed_deployment_helper
+from verify_macos_installer_provenance import BUNDLE_NAME,WORKFLOW,check_rejections,subject_names,verification_command,verify,validate_deployment_transactions,validate_fixed_deployment_helper,validate_preparation_sigkill
 COMMIT='a'*40
 REF='refs/heads/main'
 VERSION='0.1.0-alpha'
+
+def preparation_kill_fixture():
+    phases=["removal-preparation-created","removal-state-durable","removal-plan-durable","removal-marker-durable","removal-directory-durable","removal-preparation-durable","removal-record-reserved","removal-reservation-parent-durable","removal-published","removal-parent-durable"]
+    cases=[]
+    for index,phase in enumerate(phases):
+        outside=index<6;published=index>=8
+        cases.append({"phase":phase,"signal":9,"elapsedMilliseconds":123,"timedOut":False,"stateAtTermination":"external-preparation" if outside else "published-intent" if published else "reserved-preparation","stageFileCountAtTermination":min(index,3),"intentPublishedAtTermination":published,"freshRetryPublished":outside,"reservedRecoveryPublished":not outside and not published,"publishedIntentReopened":published,"bothLeasesReacquired":True,"completedIntentReopenVerified":True,"activePreimageRetained":True,"preparationEvidencePreserved":True,"payloadObjectsRemoved":0,"retainedDataPreserved":True,"passed":True})
+    return {"schemaVersion":1,"caseCount":10,"cases":cases,"copiedCodeExecuted":False,"packageScriptsIntegrated":False,"productionQualificationComplete":False,"testExecutableSHA256":"c"*64,"elapsedMilliseconds":123,"installedObjectsAndReceiptsPreserved":True,"fixtureParent":"private-exclusive-temporary-directory"}
+
 
 class NativePackageProvenanceTests(unittest.TestCase):
     def fixture(self,root):
@@ -70,10 +79,36 @@ class NativePackageProvenanceTests(unittest.TestCase):
             self.assertEqual(calls[0],calls[-1]);self.assertEqual(len(result['rejected']),5)
             self.assertTrue(result['realBundleVerifiedBeforeAndAfter']);self.assertTrue(all('--deny-self-hosted-runners' in c for c in calls))
 
+    def test_preparation_sigkill_requires_exact_phases_signal_routes_and_preservation(self):
+        value=preparation_kill_fixture()
+        validate=lambda v:validate_preparation_sigkill(v,"c"*64)
+        validate(value)
+        for key in value:
+            changed=dict(value);del changed[key]
+            with self.subTest(missing=key):
+                with self.assertRaises(ValueError):validate(changed)
+        for key,bad in (("schemaVersion",True),("caseCount",True),("caseCount",9),("copiedCodeExecuted",True),("packageScriptsIntegrated",True),("productionQualificationComplete",True),("testExecutableSHA256","d"*64),("installedObjectsAndReceiptsPreserved",False),("fixtureParent","/Applications"),("elapsedMilliseconds",True),("elapsedMilliseconds",150001),("cases",None),("cases",value["cases"][:9]),("cases",list(reversed(value["cases"])))):
+            changed=dict(value);changed[key]=bad
+            with self.subTest(key=key):
+                with self.assertRaises(ValueError):validate(changed)
+        for index,case in enumerate(value["cases"]):
+            for key in case:
+                changed=dict(value);changed["cases"]=[dict(c) for c in value["cases"]];del changed["cases"][index][key]
+                with self.subTest(index=index,missing=key):
+                    with self.assertRaises(ValueError):validate(changed)
+            corrupt=[("phase","unknown"),("signal",True),("signal",15),("timedOut",True),("stateAtTermination","unknown"),("stageFileCountAtTermination",True),("stageFileCountAtTermination",-1),("payloadObjectsRemoved",True),("payloadObjectsRemoved",1),("elapsedMilliseconds",True),("elapsedMilliseconds",20001)]
+            corrupt += [(key,not case[key]) for key in ("intentPublishedAtTermination","freshRetryPublished","reservedRecoveryPublished","publishedIntentReopened","bothLeasesReacquired","completedIntentReopenVerified","activePreimageRetained","preparationEvidencePreserved","retainedDataPreserved","passed")]
+            for key,bad in corrupt:
+                changed=dict(value);changed["cases"]=[dict(c) for c in value["cases"]];changed["cases"][index][key]=bad
+                with self.subTest(index=index,key=key):
+                    with self.assertRaises(ValueError):validate(changed)
+        with self.assertRaises(ValueError):validate(None)
+
     def test_deployment_report_is_bound_to_copied_subjects_and_fixed_scope(self):
         value={"schemaVersion":1,"manifestSHA256":"a"*64,"payloadSHA256":"b"*64,"version":VERSION,"finalGeneration":4,"testExecutableSHA256":"c"*64,"detachedPayloadSBOMManifestSHA256":"d"*64,"detachedPayloadSBOMSHA256":"e"*64,"elapsedMilliseconds":123,"removalPreparationRecoveryCaseCount":28,"intactTargetCaseCount":16,"protectedFileJournalCaseCount":18,"protectedFileSIGKILLCaseCount":4,"publicAppQuarantineSIGKILLCaseCount":4,"quarantinedAppSIGKILLCaseCount":12,"quarantinedAppRemovalCaseCount":32,"publicAppQuarantineCaseCount":28,"protectedDirectoryJournalCaseCount":25,"protectedDirectorySIGKILLCaseCount":8,"fixtureParent":"private-exclusive-temporary-directory","copiedCodeExecuted":False,"packageScriptsIntegrated":False,"productionQualificationComplete":False}
         checks=("fixedProtectedParentVerified","partialCopyPreservedAndRefused","completeCopyRecovered","concurrentPreparationFenced","postPublicationRemovalRecovered","oldCompleteSlotFencedAfterRemoval","restoredRetryVerified","payloadIsIndependentCopy","detachedManifestPartialCopyPreservedAndRefused","detachedManifestCompleteCopyRecovered","detachedPayloadSBOMPartialCopyPreservedAndRefused","legacyToSchema2BridgeVerified","removalPreparationRecoveryVerified","intactRemovalTargetsVerified","ownedTargetRefusalsPreserved","protectedFileJournalVerified","protectedFileSIGKILLVerified","publicAppQuarantineSIGKILLVerified","quarantinedAppSIGKILLVerified","quarantinedAppRemovalVerified","publicAppQuarantineVerified","protectedDirectoryJournalVerified","protectedDirectorySIGKILLVerified","installedObjectsAndReceiptsPreserved")
         value.update({key:True for key in checks})
+        value["removalPreparationSIGKILL"]=preparation_kill_fixture()
         phases=["removal-file-intent-durable","removal-file-unlinked","removal-file-parent-durable","removal-file-done-durable"]
         value["protectedFileSIGKILLCases"]=[{"phase":phase,"signal":9,"elapsedMilliseconds":123,"timedOut":False,"journalSHA256AtTermination":"f"*64,"completedActionsAtTermination":int(i==3),"pendingAtTermination":i!=3,"filePresentAtTermination":i==0,"completedFilesAfterRetry":2,"bothLeasesReacquired":True,"completedRetryIdempotent":True,"retainedDataPreserved":True,"passed":True} for i,phase in enumerate(phases)]
 
