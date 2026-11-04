@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "e96349071d346aa7283056cddb834bd85bc69288",
+  "runID": 41875960850,
+  "jobs": [
+    {
+      "jobID": 126735293779,
+      "name": "Native installer lifecycle (amd64)",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41875960850/job/126735293779",
+      "conclusion": "failure",
+      "failedStep": "Pure event correlation diagnostics",
+      "installerStep": "skipped",
+      "retainedJobLogBytes": 27946,
+      "retainedJobLogSHA256": "5223dfbbea86f437cee40be3a7a7b50abc3e5dcc8602b768e8a52d42035d9e10",
+      "exactFailureExcerptUTF8": "2026-11-04T17:16:57.2195261Z Unable to find type [ulong].\r\n2026-11-04T17:16:57.2195919Z At D:\\a\\accessweaver\\accessweaver\\scripts\\windows-installer-event-state.ps1:35 char:159\r\n2026-11-04T17:16:57.2196612Z + ... .InnerText,[ref]$eventId) -or $eventId -lt 1 -or -not [ulong]::TryPar ...\r\n2026-11-04T17:16:57.2197203Z +                                                           ~~~~~~~\r\n2026-11-04T17:16:57.2197696Z     + CategoryInfo          : InvalidOperation: (ulong:TypeName) [], ParentContainsErrorRecordException\r\n2026-11-04T17:16:57.2197989Z     + FullyQualifiedErrorId : TypeNotFound\r\n2026-11-04T17:16:57.2198301Z  \r\n2026-11-04T17:16:57.2370985Z ##[error]Process completed with exit code 1.\r\n",
+      "exactFailureExcerptBase64": "MjAyNi0xMS0wNFQxNzoxNjo1Ny4yMTk1MjYxWiBVbmFibGUgdG8gZmluZCB0eXBlIFt1bG9uZ10uDQoyMDI2LTExLTA0VDE3OjE2OjU3LjIxOTU5MTlaIEF0IEQ6XGFcYWNjZXNzd2VhdmVyXGFjY2Vzc3dlYXZlclxzY3JpcHRzXHdpbmRvd3MtaW5zdGFsbGVyLWV2ZW50LXN0YXRlLnBzMTozNSBjaGFyOjE1OQ0KMjAyNi0xMS0wNFQxNzoxNjo1Ny4yMTk2NjEyWiArIC4uLiAuSW5uZXJUZXh0LFtyZWZdJGV2ZW50SWQpIC1vciAkZXZlbnRJZCAtbHQgMSAtb3IgLW5vdCBbdWxvbmddOjpUcnlQYXIgLi4uDQoyMDI2LTExLTA0VDE3OjE2OjU3LjIxOTcyMDNaICsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIH5+fn5+fn4NCjIwMjYtMTEtMDRUMTc6MTY6NTcuMjE5NzY5NlogICAgICsgQ2F0ZWdvcnlJbmZvICAgICAgICAgIDogSW52YWxpZE9wZXJhdGlvbjogKHVsb25nOlR5cGVOYW1lKSBbXSwgUGFyZW50Q29udGFpbnNFcnJvclJlY29yZEV4Y2VwdGlvbg0KMjAyNi0xMS0wNFQxNzoxNjo1Ny4yMTk3OTg5WiAgICAgKyBGdWxseVF1YWxpZmllZEVycm9ySWQgOiBUeXBlTm90Rm91bmQNCjIwMjYtMTEtMDRUMTc6MTY6NTcuMjE5ODMwMVogIA0KMjAyNi0xMS0wNFQxNzoxNjo1Ny4yMzcwOTg1WiAjI1tlcnJvcl1Qcm9jZXNzIGNvbXBsZXRlZCB3aXRoIGV4aXQgY29kZSAxLg0K",
+      "exactFailureExcerptSHA256": "b1da8b1e1666749a0e0ce3c5e25fb10f2fe4fc472d205846c3c9206f81be7b3a"
+    },
+    {
+      "jobID": 126735294665,
+      "name": "Native installer lifecycle (arm64)",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41875960850/job/126735294665",
+      "conclusion": "failure",
+      "failedStep": "Pure event correlation diagnostics",
+      "installerStep": "skipped",
+      "retainedJobLogBytes": 27694,
+      "retainedJobLogSHA256": "50bd21e93e090a2d8e0595e4d65abbba3e28a437a576d41b15f2c32cd0684c54",
+      "exactFailureExcerptUTF8": "2026-11-04T17:18:59.3109350Z Unable to find type [ulong].\r\n2026-11-04T17:18:59.3109862Z At C:\\a\\accessweaver\\accessweaver\\scripts\\windows-installer-event-state.ps1:35 char:159\r\n2026-11-04T17:18:59.3110434Z + ... .InnerText,[ref]$eventId) -or $eventId -lt 1 -or -not [ulong]::TryPar ...\r\n2026-11-04T17:18:59.3110815Z +                                                           ~~~~~~~\r\n2026-11-04T17:18:59.3111344Z     + CategoryInfo          : InvalidOperation: (ulong:TypeName) [], ParentContainsErrorRecordException\r\n2026-11-04T17:18:59.3112340Z     + FullyQualifiedErrorId : TypeNotFound\r\n2026-11-04T17:18:59.3112646Z  \r\n2026-11-04T17:18:59.3454371Z ##[error]Process completed with exit code 1.\r\n",
+      "exactFailureExcerptBase64": "MjAyNi0xMS0wNFQxNzoxODo1OS4zMTA5MzUwWiBVbmFibGUgdG8gZmluZCB0eXBlIFt1bG9uZ10uDQoyMDI2LTExLTA0VDE3OjE4OjU5LjMxMDk4NjJaIEF0IEM6XGFcYWNjZXNzd2VhdmVyXGFjY2Vzc3dlYXZlclxzY3JpcHRzXHdpbmRvd3MtaW5zdGFsbGVyLWV2ZW50LXN0YXRlLnBzMTozNSBjaGFyOjE1OQ0KMjAyNi0xMS0wNFQxNzoxODo1OS4zMTEwNDM0WiArIC4uLiAuSW5uZXJUZXh0LFtyZWZdJGV2ZW50SWQpIC1vciAkZXZlbnRJZCAtbHQgMSAtb3IgLW5vdCBbdWxvbmddOjpUcnlQYXIgLi4uDQoyMDI2LTExLTA0VDE3OjE4OjU5LjMxMTA4MTVaICsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIH5+fn5+fn4NCjIwMjYtMTEtMDRUMTc6MTg6NTkuMzExMTM0NFogICAgICsgQ2F0ZWdvcnlJbmZvICAgICAgICAgIDogSW52YWxpZE9wZXJhdGlvbjogKHVsb25nOlR5cGVOYW1lKSBbXSwgUGFyZW50Q29udGFpbnNFcnJvclJlY29yZEV4Y2VwdGlvbg0KMjAyNi0xMS0wNFQxNzoxODo1OS4zMTEyMzQwWiAgICAgKyBGdWxseVF1YWxpZmllZEVycm9ySWQgOiBUeXBlTm90Rm91bmQNCjIwMjYtMTEtMDRUMTc6MTg6NTkuMzExMjY0NlogIA0KMjAyNi0xMS0wNFQxNzoxODo1OS4zNDU0MzcxWiAjI1tlcnJvcl1Qcm9jZXNzIGNvbXBsZXRlZCB3aXRoIGV4aXQgY29kZSAxLg0K",
+      "exactFailureExcerptSHA256": "afa1cfb0eb1481bd92422a5242995b1578285b7154edb66a199e1d6d5163d02c"
+    }
+  ],
+  "nativeInstallerExecuted": false,
+  "lifecycleArtifactsCreated": 0,
+  "interpretation": "Both Windows hosted jobs failed the new pure synthetic event test on Windows PowerShell 5.1 because its type resolver does not recognize [ulong]. The exact helper location is line 35. Both actual installer steps were skipped and no lifecycle artifact exists. System.UInt64 is the explicit CLR replacement; local PowerShell 7 success does not qualify corrected PowerShell 5.1 or native execution. This is a fixture compatibility defect introduced by e963490, not evidence about previous native firewall drift. No unchanged rerun or readiness promotion.",
+  "cryptographicAttestationVerified": false,
+  "readinessStatusChanged": false
+}

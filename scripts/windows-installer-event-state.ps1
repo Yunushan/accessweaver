@@ -32,7 +32,7 @@ function Convert-InstallerFirewallEvent([string]$Xml,[string[]]$Identities,[date
     if($provider.Count -ne 1 -or $channel.Count -ne 1 -or $provider[0].GetAttribute('Name') -cne 'Microsoft-Windows-Windows Firewall With Advanced Security' -or $channel[0].InnerText -cne 'Microsoft-Windows-Windows Firewall With Advanced Security/Firewall'){return $null}
     $times=$document.SelectNodes('/e:Event/e:System/e:TimeCreated',$ns);$ids=$document.SelectNodes('/e:Event/e:System/e:EventID',$ns);$records=$document.SelectNodes('/e:Event/e:System/e:EventRecordID',$ns)
     $eventId=0;[uint64]$recordId=0
-    if($times.Count -ne 1 -or $ids.Count -ne 1 -or $records.Count -ne 1 -or -not [int]::TryParse($ids[0].InnerText,[ref]$eventId) -or $eventId -lt 1 -or -not [ulong]::TryParse($records[0].InnerText,[ref]$recordId) -or $recordId -lt 1){throw 'Incomplete event identity'}
+    if($times.Count -ne 1 -or $ids.Count -ne 1 -or $records.Count -ne 1 -or -not [int]::TryParse($ids[0].InnerText,[ref]$eventId) -or $eventId -lt 1 -or -not [System.UInt64]::TryParse($records[0].InnerText,[ref]$recordId) -or $recordId -lt 1){throw 'Incomplete event identity'}
     $occurred=[Xml.XmlConvert]::ToDateTime($times[0].GetAttribute('SystemTime'),[Xml.XmlDateTimeSerializationMode]::Utc)
     if($occurred -lt $Start -or $occurred -gt $End){return $null}
     $fields=[Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
