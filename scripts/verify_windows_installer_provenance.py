@@ -21,7 +21,7 @@ WORKFLOW=REPOSITORY+"/.github/workflows/installer-lifecycle.yml"
 DEFAULT_VERSIONS=("0.1.0-alpha","0.1.1-alpha")
 RELEASE=re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?")
 SHA=re.compile(r"[a-f0-9]{64}")
-PHASES=["baseline","after-install","after-upgrade","after-reinstall","before-uninstall","after-uninstall"]
+PHASES=["baseline","after-install","after-upgrade","after-reinstall","after-active-setup-uninstall","after-lifecycle-locks","after-refused-downgrade","after-version-policy","after-registry-read-boundaries","after-registry-view-policy","after-registry-access-policy","after-restoration-launch-failures","after-restoration-ownership-contracts","before-uninstall","after-uninstall"]
 
 def require(ok,message):
     if not ok:raise ValueError(message)
@@ -60,9 +60,29 @@ def validate_build(identity,commit,arch,version):
     require(isinstance(identity["builtAt"],str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",identity["builtAt"]) is not None,"Invalid canonical build timestamp")
     datetime.datetime.strptime(identity["builtAt"],"%Y-%m-%dT%H:%M:%SZ")
 
+
+def validate_state_observations(observations):
+    require(type(observations) is list and len(observations)==len(PHASES) and all(type(o) is dict for o in observations),"Incomplete native state checkpoints")
+    require([o.get("phase") for o in observations]==PHASES,"Expected all fifteen ordered native state checkpoints")
+    baseline=observations[0].get("comparison")
+    require(type(baseline) is dict and type(baseline.get("domains")) is dict and set(baseline["domains"])=={"services","firewall","dns"},"Incomplete native state baseline")
+    for observation in observations:
+        require(set(observation)=={"phase","comparison","transition"},"Incomplete native state checkpoint envelope")
+        for key in ("comparison","transition"):
+            comparison=observation.get(key)
+            require(type(comparison) is dict and set(comparison)=={"exactMatch","beforeSHA256","afterSHA256","domains"},"Incomplete native state comparison")
+            require(comparison.get("exactMatch") is True and type(comparison.get("beforeSHA256")) is str and comparison.get("beforeSHA256")==comparison.get("afterSHA256")==baseline.get("beforeSHA256") and SHA.fullmatch(comparison["beforeSHA256"]) is not None,"Native state checkpoint changed")
+            require(type(comparison.get("domains")) is dict and set(comparison["domains"])=={"services","firewall","dns"},"Incomplete native state domains")
+            for name,domain in comparison["domains"].items():
+                initial=baseline["domains"][name]
+                require(type(domain) is dict and type(initial) is dict and set(domain)=={"beforeSHA256","afterSHA256","serializedEqual","beforeRows","afterRows","added","removed","changed","rowSerializationChanges","recordOrderingChanged","changes","changesTruncated"},"Invalid native state domain")
+                require(domain.get("serializedEqual") is True and type(domain.get("beforeSHA256")) is str and domain.get("beforeSHA256")==domain.get("afterSHA256")==initial.get("beforeSHA256") and SHA.fullmatch(domain["beforeSHA256"]) is not None,"Native state domain changed")
+                require(type(domain.get("beforeRows")) is int and type(domain.get("afterRows")) is int and domain["beforeRows"]==domain["afterRows"]==initial.get("beforeRows") and 0<=domain["beforeRows"]<=10000,"Native state row count differs")
+                require(all(type(domain.get(k)) is int and domain[k]==0 for k in ("added","removed","changed","rowSerializationChanges")) and domain.get("recordOrderingChanged") is False and domain.get("changes")==[] and domain.get("changesTruncated") is False,"Native state diagnostics report a change")
+
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(report.get("schemaVersion")==7 and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(report.get("schemaVersion")==8 and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -70,18 +90,7 @@ def validate_contents(root,commit,ref,arch,versions):
         require(report.get(key) is False,"Unqualified native scope changed")
     require(re.fullmatch(r"[1-9][0-9]{0,19}",str(report.get("runID",""))) is not None,"Missing native invocation identity")
     require(report.get("stateDiagnosticsSourceSHA256")==digest(Path(__file__).with_name("windows-installer-state.ps1").read_bytes()),"State diagnostics differ from approved verifier source")
-    observations=report.get("stateObservations",[])
-    require([o.get("phase") for o in observations]==PHASES,"Expected all six native state checkpoints")
-    baseline=observations[0]["comparison"]
-    for observation in observations:
-        comparison=observation["comparison"]
-        require(comparison.get("exactMatch") is True and comparison.get("beforeSHA256")==comparison.get("afterSHA256")==baseline.get("beforeSHA256") and SHA.fullmatch(comparison["beforeSHA256"]) is not None,"Native state checkpoint changed")
-        require(set(comparison["domains"])=={"services","firewall","dns"},"Incomplete native state domains")
-        for name,domain in comparison["domains"].items():
-            initial=baseline["domains"][name]
-            require(domain.get("serializedEqual") is True and domain.get("beforeSHA256")==domain.get("afterSHA256")==initial["beforeSHA256"] and SHA.fullmatch(domain["beforeSHA256"]) is not None,"Native state domain changed")
-            require(type(domain.get("beforeRows")) is int and domain["beforeRows"]==domain.get("afterRows")==initial["beforeRows"] and 0<=domain["beforeRows"]<=10000,"Native state row count differs")
-            require(all(domain.get(k)==0 for k in ("added","removed","changed","rowSerializationChanges")) and domain.get("recordOrderingChanged") is False and domain.get("changesTruncated") is False and domain.get("changes")==[],"Native state difference was not empty")
+    validate_state_observations(report.get("stateObservations"))
     operations=report.get("operations",[])
     expected=["install","upgrade","reinstall","refused-downgrade","refused-uninstall","uninstall"]
     require([o.get("operation") for o in operations]==expected,"Native lifecycle operation coverage differs")

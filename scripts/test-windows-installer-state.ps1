@@ -22,3 +22,21 @@ Assert-State ($reverse.domains.firewall.added -eq 1 -and $reverse.domains.dns.ad
 $bad='{"services":[],"firewall":[{"Name":"same"},{"Name":"same"}],"dns":[]}'
 $rejected=$false;try{$null=Compare-InstallerState $bad $empty}catch{$rejected=$true};Assert-State $rejected 'Duplicate row identity was accepted'
 Write-Output 'Synthetic exact-state difference, privacy and representation diagnostics passed.'
+
+# A prior drift is retained against the original baseline, even if the next
+# operation preserves it. Restoring baseline must still expose a transition.
+$first=New-InstallerStateCheckpoint 'after-family' $baseline $baseline $firewall
+Assert-State (-not $first.comparison.exactMatch -and -not $first.transition.exactMatch) 'Initial family drift was not localized'
+$unchanged=New-InstallerStateCheckpoint 'before-uninstall' $baseline $firewall $firewall
+Assert-State (-not $unchanged.comparison.exactMatch -and $unchanged.transition.exactMatch) 'Prior drift was silently rebased or attributed to an unchanged transition'
+$restored=New-InstallerStateCheckpoint 'after-restore' $baseline $firewall $baseline
+Assert-State ($restored.comparison.exactMatch -and -not $restored.transition.exactMatch) 'Transient mutation vanished when baseline was restored'
+foreach($observation in @($first,$unchanged,$restored)){
+    $public=$observation | ConvertTo-Json -Depth 16
+    foreach($private in @('private-rule-name','192.0.2.99','192.0.2.100')){Assert-State (-not $public.Contains($private)) 'Raw state escaped transition diagnostics'}
+}
+foreach($phase in @('', '../private/path', 'private phase', ('x'*81))){
+    $rejected=$false;try{$null=New-InstallerStateCheckpoint $phase $baseline $baseline $baseline}catch{$rejected=$true}
+    Assert-State $rejected 'Unbounded or path-like phase was accepted'
+}
+Write-Output 'Original-baseline, changed-transition, prior-drift, restoration and privacy diagnostics passed.'

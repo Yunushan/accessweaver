@@ -1,3 +1,5 @@
+import copy
+from verify_windows_installer_provenance import PHASES,validate_state_observations
 import os
 from pathlib import Path
 import subprocess
@@ -73,5 +75,39 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command,0 if len(calls) in (1,7) else 1)
             with patch('verify_windows_installer_provenance.subprocess.run',side_effect=run):result=check_rejections(root/'amd64.json',root/BUNDLE_NAME,COMMIT,REF,'trusted-gh')
             self.assertEqual(calls[0],calls[-1]);self.assertEqual(len(result['rejected']),5);self.assertTrue(result['realBundleVerifiedBeforeAndAfter'])
+
+
+
+class WindowsStateObservationContracts(unittest.TestCase):
+    def fixture(self):
+        comparison={"exactMatch":True,"beforeSHA256":"a"*64,"afterSHA256":"a"*64,"domains":{}}
+        for name in ("services","firewall","dns"):
+            comparison["domains"][name]={"beforeSHA256":"b"*64,"afterSHA256":"b"*64,"serializedEqual":True,"beforeRows":1,"afterRows":1,"added":0,"removed":0,"changed":0,"rowSerializationChanges":0,"recordOrderingChanged":False,"changes":[],"changesTruncated":False}
+        return [{"phase":phase,"comparison":copy.deepcopy(comparison),"transition":copy.deepcopy(comparison)} for phase in PHASES]
+
+    def test_all_fifteen_original_baseline_and_transition_comparisons_are_required(self):
+        self.assertEqual(len(PHASES),15)
+        self.assertIn("after-restoration-launch-failures",PHASES)
+        validate_state_observations(self.fixture())
+
+    def test_missing_reordered_rebased_transient_private_or_incomplete_observations_refuse(self):
+        for kind in ("missing","reordered","missing-transition","null","prior-drift","transient-restored","rebased","row-count-bool","counter-bool","changed-rule","raw-private-field","changed-hash","missing-domain","unknown-envelope"):
+            observations=self.fixture();item=observations[8]
+            if kind=="missing":observations.pop(8)
+            elif kind=="reordered":observations[8],observations[9]=observations[9],observations[8]
+            elif kind=="missing-transition":item.pop("transition")
+            elif kind=="null":item["comparison"]=None
+            elif kind=="prior-drift":item["comparison"]["exactMatch"]=False
+            elif kind=="transient-restored":item["transition"]["exactMatch"]=False
+            elif kind=="rebased":item["comparison"]["beforeSHA256"]=item["comparison"]["afterSHA256"]="c"*64
+            elif kind=="row-count-bool":item["transition"]["domains"]["firewall"]["beforeRows"]=True
+            elif kind=="counter-bool":item["transition"]["domains"]["firewall"]["added"]=False
+            elif kind=="changed-rule":item["transition"]["domains"]["firewall"]["added"]=1
+            elif kind=="raw-private-field":item["comparison"]["domains"]["firewall"]["privateRuleName"]="private"
+            elif kind=="changed-hash":item["transition"]["domains"]["firewall"]["afterSHA256"]="c"*64
+            elif kind=="missing-domain":item["transition"]["domains"].pop("dns")
+            elif kind=="unknown-envelope":item["privatePath"]="/private"
+            with self.subTest(kind=kind),self.assertRaises(ValueError):validate_state_observations(observations)
+
 
 if __name__=='__main__':unittest.main()

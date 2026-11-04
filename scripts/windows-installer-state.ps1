@@ -59,3 +59,14 @@ function Compare-InstallerState([string]$Before,[string]$After) {
     }
     return [ordered]@{exactMatch=($Before -ceq $After);beforeSHA256=(Get-InstallerStateTextHash $Before);afterSHA256=(Get-InstallerStateTextHash $After);domains=$domains}
 }
+
+function New-InstallerStateCheckpoint([string]$Phase,[string]$Baseline,[string]$Previous,[string]$Current) {
+    if($Phase -cnotmatch '^[a-z][a-z0-9-]{0,79}$'){throw 'Installer state checkpoint has an invalid fixed phase'}
+    # Both comparisons retain hashes/field names only. Keep the original
+    # baseline even when a previous observation already differs from it.
+    return [ordered]@{
+        phase=$Phase
+        comparison=(Compare-InstallerState $Baseline $Current)
+        transition=(Compare-InstallerState $Previous $Current)
+    }
+}
