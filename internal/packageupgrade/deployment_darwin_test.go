@@ -673,8 +673,47 @@ func TestDarwinDeploymentRootCopyRecovery(t *testing.T) {
 	if e = bridge.verifySlot(newSlot); e != nil {
 		t.Fatal(e)
 	}
+	// Publish only private metadata in this owned fixture. The production
+	// runtime reader must refuse the pair even after the writer lease closes;
+	// both payload copies remain intact. No installed code is executed.
+
+	selectedBefore, _, e := readActiveRuntime(bridge.root, "")
+	if e != nil || selectedBefore != newSlot {
+		t.Fatal("owned active runtime baseline differs", e)
+	}
+	fence, inactive, e := newRemovalFence(bridge.state, strings.Repeat("d", 64), digest(againJSON))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if published, e := bridge.publishRemovalFence(fence); !published || e != nil {
+		t.Fatal("owned removal barrier publication", e)
+	}
+	observedFence, inactiveRaw, e := readRemovalFencePair(bridge.current, 0)
+	wantInactive, _ := encodeDeployment(inactive)
+	if e != nil || observedFence != fence || !bytes.Equal(inactiveRaw, wantInactive) {
+		t.Fatal("owned removal pair differs", e)
+	}
+	if _, _, e = readActiveRuntime(bridge.root, ""); e == nil || !strings.Contains(e.Error(), "retained deployment evidence capacity exhausted; preserve and inspect") {
+		t.Fatal("production runtime reader did not refuse removal pair", e)
+	}
+	if e = bridge.verifySlot(oldSlot); e != nil {
+		t.Fatal("removal barrier changed retained legacy copy", e)
+	}
+	if e = bridge.verifySlot(newSlot); e != nil {
+		t.Fatal("removal barrier changed active copy", e)
+	}
 	if e = bridge.Close(); e != nil {
 		t.Fatal(e)
+	}
+
+	closedRoot, e := os.Open(filepath.Join(bridgeParent, deploymentRoot))
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, _, readErr := readActiveRuntime(closedRoot, "")
+	closeErr := closedRoot.Close()
+	if readErr == nil || !strings.Contains(readErr.Error(), "retained deployment evidence capacity exhausted; preserve and inspect") || closeErr != nil {
+		t.Fatal("runtime reader accepted removal intent after writer closed", readErr, closeErr)
 	}
 
 	report := map[string]any{"schemaVersion": 1, "manifestSHA256": identity.ManifestSHA256, "payloadSHA256": identity.PayloadSHA256, "version": identity.Version, "fixedProtectedParentVerified": true, "partialCopyPreservedAndRefused": true, "completeCopyRecovered": true, "concurrentPreparationFenced": true, "postPublicationRemovalRecovered": true, "oldCompleteSlotFencedAfterRemoval": true, "restoredRetryVerified": true, "payloadIsIndependentCopy": true, "detachedManifestPartialCopyPreservedAndRefused": true, "detachedManifestCompleteCopyRecovered": true, "detachedPayloadSBOMPartialCopyPreservedAndRefused": true, "legacyToSchema2BridgeVerified": true, "detachedPayloadSBOMManifestSHA256": newIdentity.ManifestSHA256, "detachedPayloadSBOMSHA256": digest(sbomData), "copiedCodeExecuted": false, "productionQualificationComplete": false, "finalGeneration": 4}
