@@ -704,7 +704,14 @@ func (f *nativeAuditFixture) finish(t *testing.T) {
 		"scope":                       f.scope, "productionQualificationComplete": false,
 	}
 	data, err := json.MarshalIndent(report, "", "  ")
-	folder := filepath.Join("build", "windows-audit-storage-checks")
+	// go test runs the binary from its package directory, not the checkout
+	// root. Pin the receipt destination to the hosted workspace explicitly.
+	workspace := os.Getenv("GITHUB_WORKSPACE")
+	if !filepath.IsAbs(workspace) || filepath.Clean(workspace) != workspace {
+		t.Error("native storage evidence requires an absolute canonical workspace")
+		return
+	}
+	folder := filepath.Join(workspace, "build", "windows-audit-storage-checks")
 	if err != nil || os.MkdirAll(folder, 0755) != nil || os.WriteFile(filepath.Join(folder, f.reportName+"-"+runtime.GOARCH+".json"), append(data, '\n'), 0644) != nil {
 		t.Error("could not retain bounded native storage acceptance evidence")
 	}

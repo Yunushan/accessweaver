@@ -1,0 +1,428 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "488300e862e389606e08259c2f4af28cea8f712d",
+  "runID": 41928952548,
+  "scope": "First source-built hosted Windows audit-storage acceptance; assertion steps passed but receipt artifact publication failed on both architectures",
+  "jobs": [
+    {
+      "arch": "amd64",
+      "jobID": 126920632780,
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41928952548/job/126920632780",
+      "jobConclusion": "failure",
+      "assertionStepConclusion": "success",
+      "artifactStepConclusion": "failure",
+      "receivedLogBytes": 34192,
+      "receivedLogSHA256": "0db018c27f1ccf9d8c481408f7cdfcb07c5bb5c4227dfa323a04cfd03fa597f7",
+      "passMarkersIncludingParentAndSubtests": [
+        {
+          "test": "TestWindowsJournalCommitReadbackReopenAndConcurrency",
+          "durationSeconds": 0.16
+        },
+        {
+          "test": "TestWindowsJournalNativeByteRangeLocks",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve",
+          "durationSeconds": 0.27
+        },
+        {
+          "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/disk-full",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/partial",
+          "durationSeconds": 0.04
+        },
+        {
+          "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/short-no-error",
+          "durationSeconds": 0.04
+        },
+        {
+          "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/sync",
+          "durationSeconds": 0.06
+        },
+        {
+          "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/acknowledged-without-write",
+          "durationSeconds": 0.05
+        },
+        {
+          "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/wrong-bytes",
+          "durationSeconds": 0.05
+        },
+        {
+          "test": "TestWindowsJournalCommitOrderingAndCancellationAfterFlush",
+          "durationSeconds": 0.04
+        },
+        {
+          "test": "TestWindowsJournalInvalidCanceledAndFullAdmissionsDoNotWrite",
+          "durationSeconds": 0.21
+        },
+        {
+          "test": "TestWindowsJournalIndependentEndpointsAndPartialInitialization",
+          "durationSeconds": 0.07
+        },
+        {
+          "test": "TestWindowsJournalPrewriteCorruptionPoisonsWithoutMutation",
+          "durationSeconds": 0.09
+        },
+        {
+          "test": "TestWindowsJournalPrewriteCorruptionPoisonsWithoutMutation/append",
+          "durationSeconds": 0.05
+        },
+        {
+          "test": "TestWindowsJournalPrewriteCorruptionPoisonsWithoutMutation/snapshot",
+          "durationSeconds": 0.04
+        },
+        {
+          "test": "TestWindowsJournalIdentityMismatchBeforeAndAfterWrite",
+          "durationSeconds": 0.07
+        },
+        {
+          "test": "TestWindowsJournalIdentityMismatchBeforeAndAfterWrite/before_write",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalIdentityMismatchBeforeAndAfterWrite/after_write",
+          "durationSeconds": 0.05
+        },
+        {
+          "test": "TestWindowsJournalCloseCachesFailureAndBorrowsDirectory",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalZeroValueUnavailable",
+          "durationSeconds": 0.0
+        },
+        {
+          "test": "TestWindowsJournalInterruptedWriterChild",
+          "durationSeconds": 0.0
+        },
+        {
+          "test": "TestWindowsJournalKilledWriterPreservesBytesAndReleasesLock",
+          "durationSeconds": 0.14
+        },
+        {
+          "test": "TestWindowsJournalKilledWriterPreservesBytesAndReleasesLock/partial",
+          "durationSeconds": 0.07
+        },
+        {
+          "test": "TestWindowsJournalKilledWriterPreservesBytesAndReleasesLock/complete",
+          "durationSeconds": 0.07
+        },
+        {
+          "test": "TestWindowsLocalNativeRoundTripAndExactHead",
+          "durationSeconds": 0.11
+        },
+        {
+          "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport",
+          "durationSeconds": 0.46
+        },
+        {
+          "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/missing",
+          "durationSeconds": 0.11
+        },
+        {
+          "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/changed",
+          "durationSeconds": 0.09
+        },
+        {
+          "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/short",
+          "durationSeconds": 0.09
+        },
+        {
+          "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/zero",
+          "durationSeconds": 0.09
+        },
+        {
+          "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/build",
+          "durationSeconds": 0.09
+        },
+        {
+          "test": "TestWindowsLocalNativePostCommitKeyChangeSuppressesHead",
+          "durationSeconds": 0.1
+        },
+        {
+          "test": "TestWindowsLocalNativePartialInitializationPreserved",
+          "durationSeconds": 0.02
+        },
+        {
+          "test": "TestWindowsLocalNativePartialInitializationPreserved/.actor-key",
+          "durationSeconds": 0.01
+        },
+        {
+          "test": "TestWindowsLocalNativePartialInitializationPreserved/events.journal",
+          "durationSeconds": 0.01
+        },
+        {
+          "test": "TestWindowsLocalNativePartialInitializationPreserved/unrelated",
+          "durationSeconds": 0.01
+        },
+        {
+          "test": "TestWindowsLocalNativeExportOutputAliases",
+          "durationSeconds": 0.33
+        },
+        {
+          "test": "TestWindowsLocalNativeExportOutputAliases/.actor-key",
+          "durationSeconds": 0.08
+        },
+        {
+          "test": "TestWindowsLocalNativeExportOutputAliases/.actor-key:alias-output",
+          "durationSeconds": 0.08
+        },
+        {
+          "test": "TestWindowsLocalNativeExportOutputAliases/events.journal",
+          "durationSeconds": 0.08
+        },
+        {
+          "test": "TestWindowsLocalNativeExportOutputAliases/events.journal:alias-output",
+          "durationSeconds": 0.08
+        },
+        {
+          "test": "TestWindowsLocalNativeExportRefusalsAndClosedBeforeOutput",
+          "durationSeconds": 0.09
+        },
+        {
+          "test": "TestWindowsLocalNativeHistoricalRegularOutputWithoutReadableKey",
+          "durationSeconds": 0.16
+        },
+        {
+          "test": "TestWindowsLocalNativeHistoricalRegularOutputWithoutReadableKey/missing",
+          "durationSeconds": 0.08
+        },
+        {
+          "test": "TestWindowsLocalNativeHistoricalRegularOutputWithoutReadableKey/unreadable-content",
+          "durationSeconds": 0.08
+        },
+        {
+          "test": "TestWindowsLocalNativeHistoricalKeyHardlinkOutputRefused",
+          "durationSeconds": 0.08
+        },
+        {
+          "test": "TestDisposableWindowsAuditStorageNative",
+          "durationSeconds": 0.2
+        }
+      ],
+      "skipMarkers": 0,
+      "failureMarkers": 0,
+      "controlledReceiptsRetained": false
+    },
+    {
+      "arch": "arm64",
+      "jobID": 126920632745,
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41928952548/job/126920632745",
+      "jobConclusion": "failure",
+      "assertionStepConclusion": "success",
+      "artifactStepConclusion": "failure",
+      "receivedLogBytes": 33950,
+      "receivedLogSHA256": "d638b63b48fe5df33464b50eae2dc03d59302d0b531be117aa31987909a53fba",
+      "passMarkersIncludingParentAndSubtests": [
+        {
+          "test": "TestWindowsJournalCommitReadbackReopenAndConcurrency",
+          "durationSeconds": 0.11
+        },
+        {
+          "test": "TestWindowsJournalNativeByteRangeLocks",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve",
+          "durationSeconds": 0.17
+        },
+        {
+          "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/disk-full",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/partial",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/short-no-error",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/sync",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/acknowledged-without-write",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/wrong-bytes",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalCommitOrderingAndCancellationAfterFlush",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalInvalidCanceledAndFullAdmissionsDoNotWrite",
+          "durationSeconds": 0.17
+        },
+        {
+          "test": "TestWindowsJournalIndependentEndpointsAndPartialInitialization",
+          "durationSeconds": 0.05
+        },
+        {
+          "test": "TestWindowsJournalPrewriteCorruptionPoisonsWithoutMutation",
+          "durationSeconds": 0.06
+        },
+        {
+          "test": "TestWindowsJournalPrewriteCorruptionPoisonsWithoutMutation/append",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalPrewriteCorruptionPoisonsWithoutMutation/snapshot",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalIdentityMismatchBeforeAndAfterWrite",
+          "durationSeconds": 0.05
+        },
+        {
+          "test": "TestWindowsJournalIdentityMismatchBeforeAndAfterWrite/before_write",
+          "durationSeconds": 0.02
+        },
+        {
+          "test": "TestWindowsJournalIdentityMismatchBeforeAndAfterWrite/after_write",
+          "durationSeconds": 0.03
+        },
+        {
+          "test": "TestWindowsJournalCloseCachesFailureAndBorrowsDirectory",
+          "durationSeconds": 0.02
+        },
+        {
+          "test": "TestWindowsJournalZeroValueUnavailable",
+          "durationSeconds": 0.0
+        },
+        {
+          "test": "TestWindowsJournalInterruptedWriterChild",
+          "durationSeconds": 0.0
+        },
+        {
+          "test": "TestWindowsJournalKilledWriterPreservesBytesAndReleasesLock",
+          "durationSeconds": 0.13
+        },
+        {
+          "test": "TestWindowsJournalKilledWriterPreservesBytesAndReleasesLock/partial",
+          "durationSeconds": 0.07
+        },
+        {
+          "test": "TestWindowsJournalKilledWriterPreservesBytesAndReleasesLock/complete",
+          "durationSeconds": 0.06
+        },
+        {
+          "test": "TestWindowsLocalNativeRoundTripAndExactHead",
+          "durationSeconds": 0.08
+        },
+        {
+          "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport",
+          "durationSeconds": 0.56
+        },
+        {
+          "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/missing",
+          "durationSeconds": 0.07
+        },
+        {
+          "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/changed",
+          "durationSeconds": 0.07
+        },
+        {
+          "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/short",
+          "durationSeconds": 0.07
+        },
+        {
+          "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/zero",
+          "durationSeconds": 0.07
+        },
+        {
+          "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/build",
+          "durationSeconds": 0.27
+        },
+        {
+          "test": "TestWindowsLocalNativePostCommitKeyChangeSuppressesHead",
+          "durationSeconds": 0.08
+        },
+        {
+          "test": "TestWindowsLocalNativePartialInitializationPreserved",
+          "durationSeconds": 0.02
+        },
+        {
+          "test": "TestWindowsLocalNativePartialInitializationPreserved/.actor-key",
+          "durationSeconds": 0.01
+        },
+        {
+          "test": "TestWindowsLocalNativePartialInitializationPreserved/events.journal",
+          "durationSeconds": 0.01
+        },
+        {
+          "test": "TestWindowsLocalNativePartialInitializationPreserved/unrelated",
+          "durationSeconds": 0.01
+        },
+        {
+          "test": "TestWindowsLocalNativeExportOutputAliases",
+          "durationSeconds": 0.25
+        },
+        {
+          "test": "TestWindowsLocalNativeExportOutputAliases/.actor-key",
+          "durationSeconds": 0.06
+        },
+        {
+          "test": "TestWindowsLocalNativeExportOutputAliases/.actor-key:alias-output",
+          "durationSeconds": 0.06
+        },
+        {
+          "test": "TestWindowsLocalNativeExportOutputAliases/events.journal",
+          "durationSeconds": 0.07
+        },
+        {
+          "test": "TestWindowsLocalNativeExportOutputAliases/events.journal:alias-output",
+          "durationSeconds": 0.06
+        },
+        {
+          "test": "TestWindowsLocalNativeExportRefusalsAndClosedBeforeOutput",
+          "durationSeconds": 0.08
+        },
+        {
+          "test": "TestWindowsLocalNativeHistoricalRegularOutputWithoutReadableKey",
+          "durationSeconds": 0.13
+        },
+        {
+          "test": "TestWindowsLocalNativeHistoricalRegularOutputWithoutReadableKey/missing",
+          "durationSeconds": 0.07
+        },
+        {
+          "test": "TestWindowsLocalNativeHistoricalRegularOutputWithoutReadableKey/unreadable-content",
+          "durationSeconds": 0.07
+        },
+        {
+          "test": "TestWindowsLocalNativeHistoricalKeyHardlinkOutputRefused",
+          "durationSeconds": 0.07
+        },
+        {
+          "test": "TestDisposableWindowsAuditStorageNative",
+          "durationSeconds": 0.15
+        }
+      ],
+      "skipMarkers": 0,
+      "failureMarkers": 0,
+      "controlledReceiptsRetained": false
+    }
+  ],
+  "cause": "Go test runs the test binary with cmd.Dir=a.Package.Dir (pinned Go src/cmd/go/internal/test/test.go:1673). Fixture finish used build/windows-audit-storage-checks relative to internal/audit while upload expected the workspace-root build directory.",
+  "correction": "Anchor controlled receipt destination to the absolute canonical GITHUB_WORKSPACE; preserve all storage, privacy, journal, local/export assertions, opt-ins, native architectures, SDK and deadlines.",
+  "limits": {
+    "testImageReceiptsAvailable": false,
+    "providerArtifactDigestsAvailable": false,
+    "logDigestIsCryptographicAuthentication": false,
+    "nativeQualificationComplete": false,
+    "productionQualificationComplete": false,
+    "publicWindowsRecordingEnabled": false,
+    "readinessGatePromoted": false,
+    "workflowRerunPerformed": false,
+    "localWindowsExecutionPerformed": false
+  },
+  "interpretation": "Each assertion step passed with 47 parent/subtest PASS markers and no failure/skip markers, including real different-account privacy and exact-identity cleanup assertions in the reviewed source. Missing controlled receipts prevent completing the planned artifact/test-image qualification. Original jobs remain failed; correction requires a new-source run, not an unchanged rerun."
+}
