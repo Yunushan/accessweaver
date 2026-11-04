@@ -95,12 +95,23 @@ def validate_contents(root,package,commit,version,arch):
 def validate_deployment_transactions(deployment,manifest_hash,payload_hash,version):
     require(type(deployment) is dict,"Missing native protected deployment transactions")
     require(type(deployment.get("schemaVersion")) is int and deployment["schemaVersion"]==1 and deployment.get("manifestSHA256")==manifest_hash and deployment.get("payloadSHA256")==payload_hash and deployment.get("version")==version and type(deployment.get("finalGeneration")) is int and deployment["finalGeneration"]==4,"Native protected deployment identity differs")
-    for key in ("fixedProtectedParentVerified","partialCopyPreservedAndRefused","completeCopyRecovered","concurrentPreparationFenced","postPublicationRemovalRecovered","oldCompleteSlotFencedAfterRemoval","restoredRetryVerified","payloadIsIndependentCopy","detachedManifestPartialCopyPreservedAndRefused","detachedManifestCompleteCopyRecovered","detachedPayloadSBOMPartialCopyPreservedAndRefused","legacyToSchema2BridgeVerified","intactRemovalTargetsVerified","ownedTargetRefusalsPreserved","protectedFileJournalVerified","installedObjectsAndReceiptsPreserved"):
+    for key in ("fixedProtectedParentVerified","partialCopyPreservedAndRefused","completeCopyRecovered","concurrentPreparationFenced","postPublicationRemovalRecovered","oldCompleteSlotFencedAfterRemoval","restoredRetryVerified","payloadIsIndependentCopy","detachedManifestPartialCopyPreservedAndRefused","detachedManifestCompleteCopyRecovered","detachedPayloadSBOMPartialCopyPreservedAndRefused","legacyToSchema2BridgeVerified","intactRemovalTargetsVerified","ownedTargetRefusalsPreserved","protectedFileJournalVerified","protectedFileSIGKILLVerified","installedObjectsAndReceiptsPreserved"):
         require(deployment.get(key) is True,"Native protected deployment transaction did not pass")
     require(deployment.get("copiedCodeExecuted") is False and deployment.get("packageScriptsIntegrated") is False and deployment.get("productionQualificationComplete") is False and deployment.get("fixtureParent")=="private-exclusive-temporary-directory" and re.fullmatch("[a-f0-9]{64}",deployment.get("testExecutableSHA256","")) is not None,"Native protected deployment scope differs")
     require(all(type(deployment.get(k)) is str and re.fullmatch("[a-f0-9]{64}",deployment[k]) is not None for k in ("detachedPayloadSBOMManifestSHA256","detachedPayloadSBOMSHA256")),"Native detached metadata seal evidence differs")
     require(type(deployment.get("intactTargetCaseCount")) is int and deployment["intactTargetCaseCount"]==16,"Native intact target verification case count differs")
     require(type(deployment.get("protectedFileJournalCaseCount")) is int and deployment["protectedFileJournalCaseCount"]==18,"Native protected file journal case count differs")
+    require(type(deployment.get("protectedFileSIGKILLCaseCount")) is int and deployment["protectedFileSIGKILLCaseCount"]==4,"Native protected file SIGKILL case count differs")
+    killed=deployment.get("protectedFileSIGKILLCases")
+    phases=["removal-file-intent-durable","removal-file-unlinked","removal-file-parent-durable","removal-file-done-durable"]
+    require(type(killed) is list and len(killed)==len(phases),"Native SIGKILL case evidence missing")
+    for case,phase in zip(killed,phases):
+        require(type(case) is dict and case.get("phase")==phase and type(case.get("signal")) is int and case["signal"]==9 and case.get("timedOut") is False,"Native child did not die by the requested SIGKILL")
+        completed=1 if phase==phases[-1] else 0
+        require(type(case.get("completedActionsAtTermination")) is int and case["completedActionsAtTermination"]==completed and case.get("pendingAtTermination") is (completed==0) and case.get("filePresentAtTermination") is (phase==phases[0]),"Native killed-child boundary state differs")
+        require(type(case.get("completedFilesAfterRetry")) is int and case["completedFilesAfterRetry"]==2 and all(case.get(k) is True for k in ("bothLeasesReacquired","completedRetryIdempotent","retainedDataPreserved","passed")),"Native killed-child recovery did not pass")
+        require(type(case.get("elapsedMilliseconds")) is int and 0<=case["elapsedMilliseconds"]<=20000 and re.fullmatch("[a-f0-9]{64}",case.get("journalSHA256AtTermination","")) is not None,"Native killed-child timing/journal binding differs")
+
     require(type(deployment.get("elapsedMilliseconds")) is int and 0<=deployment["elapsedMilliseconds"]<=150000,"Native protected deployment timing differs")
 
 

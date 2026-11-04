@@ -1,0 +1,267 @@
+//go:build darwin && (amd64 || arm64)
+
+package packageupgrade
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/Yunushan/accessweaver/internal/darwintrust"
+	"golang.org/x/sys/unix"
+)
+
+const removalKillBaseEnv = "ACCESSWEAVER_OWNED_REMOVAL_KILL_BASE"
+const removalKillPhaseEnv = "ACCESSWEAVER_OWNED_REMOVAL_KILL_PHASE"
+
+var removalKillPhases = []string{
+	"removal-file-intent-durable",
+	"removal-file-unlinked",
+	"removal-file-parent-durable",
+	"removal-file-done-durable",
+}
+
+func ownedRemovalKillHost() bool {
+	return os.Geteuid() == 0 && os.Getenv("ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST") == "1" &&
+		os.Getenv("GITHUB_ACTIONS") == "true" && os.Getenv("RUNNER_ENVIRONMENT") == "github-hosted" && os.Getenv("RUNNER_OS") == "macOS"
+}
+
+// This is a test-only path. It accepts exactly the new root-owned fixture
+// capsule shape created by the guarded parent test. Every component below
+// sticky /private/tmp opens without following links and requires root ownership,
+// protected permissions and the normal APFS/ACL checks.
+func openOwnedRemovalKillCapsule(base string) (result *os.File, failure error) {
+	if filepath.Clean(base) != base || !strings.HasPrefix(base, "/private/tmp/") {
+		return nil, errors.New("invalid killed-child fixture path")
+	}
+	parts := strings.Split(strings.TrimPrefix(base, "/private/tmp/"), "/")
+	if len(parts) != 3 || !regexp.MustCompile("^accessweaver-deployment-[0-9]+$").MatchString(parts[0]) || parts[1] != "schema2-bridge" || !regexp.MustCompile("^targets-[0-9]+$").MatchString(parts[2]) {
+		return nil, errors.New("unrecognized killed-child capsule")
+	}
+	private, e := darwintrust.OpenRootDirectory("/private")
+	if e != nil {
+		return nil, e
+	}
+	fd, e := unix.Openat(int(private.Fd()), "tmp", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	closeErr := private.Close()
+	if e != nil || closeErr != nil {
+		if e == nil {
+			unix.Close(fd)
+		}
+		return nil, errors.Join(e, closeErr)
+	}
+	current := os.NewFile(uintptr(fd), "fixed-sticky-tmp")
+	info, e := current.Stat()
+	if e == nil {
+		st := info.Sys().(*syscall.Stat_t)
+		if st.Uid != 0 || st.Mode&07777 != 01777 {
+			e = errors.New("temporary parent protection differs")
+		}
+	}
+	if e == nil {
+		e = darwintrust.CheckPersistent(current)
+	}
+	if e != nil {
+		return nil, errors.Join(e, current.Close())
+	}
+	for i, part := range parts {
+		next, e := darwintrust.OpenDirectoryAt(current, part, 0)
+		closeErr := current.Close()
+		if e != nil || closeErr != nil {
+			if next != nil {
+				closeErr = errors.Join(closeErr, next.Close())
+			}
+			return nil, errors.Join(e, closeErr)
+		}
+		current = next
+		info, e := current.Stat()
+		mode := os.FileMode(0700)
+		if i == 1 {
+			mode = 0755
+		}
+		if e == nil && info.Mode().Perm() != mode {
+			e = errors.New("owned capsule mode differs")
+		}
+		if e != nil {
+			return nil, errors.Join(e, current.Close())
+		}
+	}
+	return current, nil
+}
+
+// Only the parent root fixture selects this test and supplies the private
+// capsule and one fixed phase. The child has no inherited workflow credentials.
+// SIGKILL prevents Go defers, store.Close and ordinary error handling.
+func TestDarwinRemovalFileKilledChild(t *testing.T) {
+	base, phase := os.Getenv(removalKillBaseEnv), os.Getenv(removalKillPhaseEnv)
+	if base == "" && phase == "" {
+		t.Skip("guarded child only")
+	}
+	if !ownedRemovalKillHost() {
+		t.Fatal("killed child requires an opted-in disposable hosted root fixture")
+	}
+	known := false
+	for _, allowed := range removalKillPhases {
+		if phase == allowed {
+			known = true
+		}
+	}
+	if !known {
+		t.Fatal("unknown killed-child phase")
+	}
+	parent, e := openOwnedRemovalKillCapsule(base)
+	if e != nil {
+		t.Fatal(e)
+	}
+	identity := deploymentFixtureSlot(1, "0.1.1-alpha").Identity
+	intent, e := openRemovalIntentAt(parent, 0, identity, removalDigest([]byte("owned synthetic registration")))
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer intent.Close()
+	fixture := &ownedRemovalTargetFixture{base: base, store: intent.store, intent: intent}
+	intent.store.observe = func(actual string) error {
+		if actual != phase {
+			return nil
+		}
+		fmt.Println("OWNED-REMOVAL-SIGKILL " + phase)
+		if e := unix.Kill(os.Getpid(), unix.SIGKILL); e != nil {
+			return e
+		}
+		return errors.New("SIGKILL did not terminate the owned child")
+	}
+	if _, e = intent.removeNextProtectedFileUsing(context.Background(), fixture.resolve); e != nil {
+		t.Fatal(e)
+	}
+	t.Fatal("owned child completed without reaching its kill boundary")
+}
+
+// The trusted source-built test binary is the only executed child. No installed
+// product, app bundle, core payload or public launcher runs as root.
+func exerciseOwnedRemovalKilledProcesses(t *testing.T, privateBase string) []map[string]any {
+	t.Helper()
+	if !ownedRemovalKillHost() {
+		t.Fatal("process-kill fixture requires opted-in disposable hosted root")
+	}
+	executable, e := os.Executable()
+	if e != nil {
+		t.Fatal(e)
+	}
+	records := []map[string]any{}
+	for _, phase := range removalKillPhases {
+		if !t.Run("protected-file-sigkill-"+phase, func(t *testing.T) {
+			f := newOwnedRemovalTargetFixture(t, privateBase, true)
+			retained := retainedRemovalFixtureSnapshot(t, f)
+			identity, seal := f.intent.fence.Target.Identity, f.intent.fence.DesktopRecordSHA256
+			if e := f.intent.Close(); e != nil {
+				t.Fatal(e)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			command := exec.CommandContext(ctx, executable, "-test.run=^TestDarwinRemovalFileKilledChild$", "-test.v", "-test.timeout=15s")
+			command.Env = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "LANG=C", "LC_ALL=C", "TZ=UTC", "GITHUB_ACTIONS=true", "RUNNER_ENVIRONMENT=github-hosted", "RUNNER_OS=macOS", "ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST=1", removalKillBaseEnv + "=" + f.base, removalKillPhaseEnv + "=" + phase}
+			// Expected output is one framework RUN line plus the fixed marker.
+			// The writer rejects excess output rather than accumulating it.
+			output := &ownedRemovalKillOutput{}
+			command.Stdout = output
+			command.Stderr = output
+			started := time.Now()
+			e := command.Run()
+			elapsed := time.Since(started).Milliseconds()
+			contextError := ctx.Err()
+			cancel()
+			var exit *exec.ExitError
+			if contextError != nil || !errors.As(e, &exit) {
+				t.Fatal("owned child did not terminate at its boundary", e, contextError, string(output.data))
+			}
+			status, ok := exit.Sys().(syscall.WaitStatus)
+			if !ok || !status.Signaled() || status.Signal() != syscall.SIGKILL || bytes.Count(output.data, []byte("OWNED-REMOVAL-SIGKILL "+phase+"\n")) != 1 {
+				t.Fatal("owned child signal/marker differs", e)
+			}
+			parent, e := os.Open(f.base)
+			if e != nil {
+				t.Fatal(e)
+			}
+			f.intent, e = openRemovalIntentAt(parent, 0, identity, seal)
+			if e != nil {
+				t.Fatal("killed-child reopen failed", e)
+			}
+			f.store = f.intent.store
+			journalRaw, _, journal, e := readRemovalJournalAt(f.store.current, 0, removalJournalSeed(f.intent.fence), 2)
+			if e != nil || journal.entries < 1 || journal.entries > 2 {
+				t.Fatal("killed-child progress differs", journal, e)
+			}
+			if phase == "removal-file-done-durable" {
+				if journal.completed != 1 || journal.pending {
+					t.Fatal("durable completion lost", journal)
+				}
+			} else if journal.completed != 0 || !journal.pending {
+				t.Fatal("pending intent lost", journal)
+			}
+			_, statErr := os.Lstat(f.coreFile)
+			if phase == "removal-file-intent-durable" {
+				if statErr != nil {
+					t.Fatal("child removed file before its boundary", statErr)
+				}
+			} else if !os.IsNotExist(statErr) {
+				t.Fatal("child did not unlink its exact file", statErr)
+			}
+			for i := 0; i < 2; i++ {
+				got, e := f.intent.removeNextProtectedFileUsing(context.Background(), f.resolve)
+				if e != nil {
+					t.Fatal("killed-child retry failed", got, e)
+				}
+				if got.completed == 2 {
+					break
+				}
+			}
+			reopenOwnedRemovalFileIntent(t, f)
+			before := ownedRemovalTargetSnapshot(t, f.base)
+			got, e := f.intent.removeNextProtectedFileUsing(context.Background(), f.resolve)
+			if e != nil || got != (removalFileProgress{2, 2}) {
+				t.Fatal("killed-child completion differs", got, e)
+			}
+			if !bytes.Equal(before, ownedRemovalTargetSnapshot(t, f.base)) || !bytes.Equal(retained, retainedRemovalFixtureSnapshot(t, f)) {
+				t.Fatal("killed-child retry changed retained data")
+			}
+			records = append(records, map[string]any{"phase": phase, "signal": int(status.Signal()), "elapsedMilliseconds": elapsed, "timedOut": contextError != nil, "journalSHA256AtTermination": removalDigest(journalRaw), "completedActionsAtTermination": journal.completed, "pendingAtTermination": journal.pending, "filePresentAtTermination": statErr == nil, "completedFilesAfterRetry": got.completed, "bothLeasesReacquired": true, "completedRetryIdempotent": true, "retainedDataPreserved": true, "passed": true})
+		}) {
+			t.Fatalf("owned SIGKILL case failed: %s", phase)
+		}
+	}
+	return records
+}
+
+type ownedRemovalKillOutput struct{ data []byte }
+
+func (w *ownedRemovalKillOutput) Write(data []byte) (int, error) {
+	if len(w.data)+len(data) > 4096 {
+		return 0, errors.New("owned child output exceeds bound")
+	}
+	w.data = append(w.data, data...)
+	return len(data), nil
+}
+
+// Invalid selectors refuse before opening any directory. The normal package
+// tests never opt into a child or mutate a fixture.
+func TestDarwinRemovalKilledChildPathRefusals(t *testing.T) {
+	for _, base := range []string{"/", "/tmp/accessweaver-deployment-1/schema2-bridge/targets-1", "/private/tmp/other-1/schema2-bridge/targets-1", "/private/tmp/accessweaver-deployment-1/other/targets-1", "/private/tmp/accessweaver-deployment-1/schema2-bridge/other-1", "/private/tmp/accessweaver-deployment-1/schema2-bridge/targets-1/child", "/private/tmp/accessweaver-deployment-1/schema2-bridge/../targets-1", "/private/tmp/accessweaver-deployment-x/schema2-bridge/targets-1", "/private/tmp/accessweaver-deployment-1/schema2-bridge/targets-x"} {
+		file, e := openOwnedRemovalKillCapsule(base)
+		if file != nil {
+			file.Close()
+			t.Fatal("invalid selector opened a capsule")
+		}
+		if e == nil {
+			t.Fatal("invalid selector accepted")
+		}
+	}
+}

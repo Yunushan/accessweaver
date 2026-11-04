@@ -241,7 +241,11 @@ func newOwnedRemovalTargetFixture(t *testing.T, privateBase string, nested ...bo
 		t.Fatal(e)
 	}
 	f.store = f.intent.store
-	t.Cleanup(func() { f.intent.Close() })
+	t.Cleanup(func() {
+		if f.intent != nil {
+			f.intent.Close()
+		}
+	})
 	return f
 }
 func exerciseOwnedRemovalTargetVerification(t *testing.T, privateBase string) {
