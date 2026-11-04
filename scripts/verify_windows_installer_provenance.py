@@ -90,6 +90,14 @@ def validate_firewall_origin_diagnostics(value):
     return {"nativeFirewallOriginRecordsVerified":0}
 
 
+def validate_firewall_event_diagnostics(value):
+    expected={"schemaVersion":1,"source":"existing-local-firewall-event-log","status":"not-needed","queryAttempted":False,"queryDeadlineMilliseconds":10000,"queryElapsedMilliseconds":0,"maxEvents":128,"maxRecords":16,"maxXmlBytes":65536,"maxFieldBytes":4096,"windowStartUtc":None,"windowEndUtc":None,"eventsExamined":0,"invalidEvents":0,"eventsLimitReached":False,"records":[],"recordsTruncated":False,"unavailable":False,"eventLogConfigurationChanged":False,"extraFirewallRuleQueriesPerformed":False,"processOriginEstablished":False}
+    require(type(value) is dict and set(value)==set(expected),"Incomplete firewall event diagnostic envelope")
+    for key,wanted in expected.items():
+        require(type(value[key]) is type(wanted) and value[key]==wanted,"Qualified unchanged state must not run or claim event correlation")
+    return {"nativeFirewallEventQueriesVerified":0}
+
+
 def validate_native_attempt(value):
     expected={"schemaVersion","toolClass","timeoutMilliseconds","elapsedMilliseconds","invocationReturned","operationAccepted","exitCode","outputComplete","failureCategory"}
     require(type(value) is dict and set(value)==expected,"Incomplete native-attempt metadata")
@@ -100,7 +108,7 @@ def validate_native_attempt(value):
 
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion")==10 and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion")==11 and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -109,6 +117,8 @@ def validate_contents(root,commit,ref,arch,versions):
     require(re.fullmatch(r"[1-9][0-9]{0,19}",str(report.get("runID",""))) is not None,"Missing native invocation identity")
     require(report.get("stateDiagnosticsSourceSHA256")==digest(Path(__file__).with_name("windows-installer-state.ps1").read_bytes()),"State diagnostics differ from approved verifier source")
     require(report.get("nativeDiagnosticsSourceSHA256")==digest(Path(__file__).with_name("windows-installer-native-state.ps1").read_bytes()),"Native-attempt diagnostics differ from approved verifier source")
+    require(report.get("eventDiagnosticsSourceSHA256")==digest(Path(__file__).with_name("windows-installer-event-state.ps1").read_bytes()),"Event diagnostics differ from approved verifier source")
+    event_counts=validate_firewall_event_diagnostics(report.get("firewallEventDiagnostics"))
     attempt_counts=validate_native_attempt(report.get("lastNativeAttempt"))
     state_counts=validate_state_observations(report.get("stateObservations"))
     origin_counts=validate_firewall_origin_diagnostics(report.get("firewallOriginDiagnostics"))
@@ -133,7 +143,7 @@ def validate_contents(root,commit,ref,arch,versions):
         require(payload.get("version")==version and payload.get("hashes")==[{"alg":"SHA-256","content":build["payloadSha256"]}],"Installer SBOM payload subject differs")
         require(compiler.get("version")=="6.7.1" and prop_map(compiler).get("accessweaver:compiler-sha256")==build["compilerSHA256"],"Installer SBOM compiler subject differs")
         candidates.append({"file":name,"sha256":digest(binary),"bytes":len(binary),"payloadSHA256":build["payloadSha256"],"payloadTarget":"windows/"+arch,"bootstrapPEMachine":"0x014c","sbomSHA256":digest((root/(name+".cdx.json")).read_bytes())})
-    return {"candidates":candidates,**state_counts,**origin_counts,**attempt_counts,"nativeLifecycleOperationsVerified":len(expected),"nativeRunID":str(report["runID"]),"nativeDependencyClosureComplete":False}
+    return {"candidates":candidates,**state_counts,**origin_counts,**event_counts,**attempt_counts,"nativeLifecycleOperationsVerified":len(expected),"nativeRunID":str(report["runID"]),"nativeDependencyClosureComplete":False}
 
 def stage(build_root,destination,commit,ref,arch,versions):
     validate_identity(commit,ref);names=subject_names(arch,versions)

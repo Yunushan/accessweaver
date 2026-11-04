@@ -1,0 +1,268 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "33c7737d97cdca0d28ff3c20fead0bfa97b9704b",
+  "ciSummary": {
+    "runID": 41869491377,
+    "status": "completed",
+    "conclusion": "failure",
+    "successfulJobs": 21,
+    "cancelledNoRunnerJobs": 1
+  },
+  "jobs": [
+    {
+      "runID": 41869491087,
+      "jobID": 126712348289,
+      "name": "Native package acceptance (arm64)",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41869491087/job/126712348289",
+      "conclusion": "cancelled",
+      "runnerID": 0,
+      "runnerLabels": [
+        "macos-15"
+      ],
+      "steps": [],
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        }
+      ],
+      "retainedProviderMetadataSHA256": "803025a4c8b41a523b9d3dab302ae7979d42728be3738a63ae01d0eb15a942d5"
+    },
+    {
+      "runID": 41869491377,
+      "jobID": 126712348611,
+      "name": "Test (macos-latest)",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41869491377/job/126712348611",
+      "conclusion": "cancelled",
+      "runnerID": 0,
+      "runnerLabels": [
+        "macos-latest"
+      ],
+      "steps": [],
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        }
+      ],
+      "retainedProviderMetadataSHA256": "ed60740c0b62bc58593d9b49e3db82236e0b2ffb49bb5e952387062c6ba07469"
+    },
+    {
+      "runID": 41869491058,
+      "jobID": 126712347024,
+      "name": "Public desktop lifecycle (arm64)",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41869491058/job/126712347024",
+      "conclusion": "cancelled",
+      "runnerID": 0,
+      "runnerLabels": [
+        "macos-15"
+      ],
+      "steps": [],
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        }
+      ],
+      "retainedProviderMetadataSHA256": "77541f79c0137ec0bb97890ce5dd7b19adad0be6bfb12fcb3da02b45e6c2eb5b"
+    },
+    {
+      "runID": 41869491868,
+      "jobID": 126712352884,
+      "name": "Versioned package lifecycle (arm64)",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41869491868/job/126712352884",
+      "conclusion": "cancelled",
+      "runnerID": 0,
+      "runnerLabels": [
+        "macos-15"
+      ],
+      "steps": [],
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/33c7737d97cdca0d28ff3c20fead0bfa97b9704b/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        }
+      ],
+      "retainedProviderMetadataSHA256": "0e901d8131ba8b5e73bafb120426dbbd0ba15aced474db010d0b26716713bb48"
+    }
+  ],
+  "interpretation": "All four cancelled macOS jobs had no assigned runner or recorded steps. Each provider annotation reports failure to acquire a hosted runner and includes ARM64 capacity notices. No product-test result, cancellation actor or permanent capacity availability is inferred. The other twenty-one CI jobs passed, as did the three Intel native macOS jobs and both Windows installer jobs. That later Windows pass neither explains nor remediates the earlier source-bound strict firewall refusals. No unchanged job rerun, workflow weakening or readiness promotion.",
+  "cryptographicAttestationVerified": false,
+  "readinessStatusChanged": false
+}

@@ -1,5 +1,5 @@
 import copy
-from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_native_attempt
+from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_native_attempt
 import os
 from pathlib import Path
 import subprocess
@@ -139,6 +139,23 @@ class NativeAttemptContracts(unittest.TestCase):
             invalid.append(dict(self.fixture(),**{key:value}))
         for value in invalid:
             with self.subTest(value=value),self.assertRaises(ValueError):validate_native_attempt(value)
+
+
+class FirewallEventDiagnosticContracts(unittest.TestCase):
+    def fixture(self):
+        return {"schemaVersion":1,"source":"existing-local-firewall-event-log","status":"not-needed","queryAttempted":False,"queryDeadlineMilliseconds":10000,"queryElapsedMilliseconds":0,"maxEvents":128,"maxRecords":16,"maxXmlBytes":65536,"maxFieldBytes":4096,"windowStartUtc":None,"windowEndUtc":None,"eventsExamined":0,"invalidEvents":0,"eventsLimitReached":False,"records":[],"recordsTruncated":False,"unavailable":False,"eventLogConfigurationChanged":False,"extraFirewallRuleQueriesPerformed":False,"processOriginEstablished":False}
+
+    def test_success_requires_no_event_query_or_origin_claim(self):
+        self.assertEqual(validate_firewall_event_diagnostics(self.fixture()),{"nativeFirewallEventQueriesVerified":0})
+
+    def test_missing_extra_private_unbounded_or_mutating_event_metadata_refuses(self):
+        invalid=[None,{},dict(self.fixture(),privateRuleName="private")]
+        for key in self.fixture():
+            value=self.fixture();value.pop(key);invalid.append(value)
+        for key,value in (("schemaVersion",True),("status","captured"),("queryAttempted",True),("queryDeadlineMilliseconds",10001),("queryElapsedMilliseconds",True),("maxEvents",129),("maxRecords",17),("maxXmlBytes",65537),("maxFieldBytes",4097),("windowStartUtc","private"),("windowEndUtc","private"),("eventsExamined",1),("invalidEvents",1),("eventsLimitReached",True),("records",[{}]),("recordsTruncated",True),("unavailable",True),("eventLogConfigurationChanged",True),("extraFirewallRuleQueriesPerformed",True),("processOriginEstablished",True)):
+            invalid.append(dict(self.fixture(),**{key:value}))
+        for value in invalid:
+            with self.subTest(value=value),self.assertRaises(ValueError):validate_firewall_event_diagnostics(value)
 
 
 if __name__=='__main__':unittest.main()

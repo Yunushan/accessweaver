@@ -68,6 +68,9 @@ jobs:
       - name: Pure state comparison diagnostics
         shell: powershell
         run: ./scripts/test-windows-installer-state.ps1
+      - name: Pure event correlation diagnostics
+        shell: powershell
+        run: ./scripts/test-windows-installer-event-state.ps1
       - name: Exercise actual unsigned installer on a disposable native host
         shell: powershell
         env:
