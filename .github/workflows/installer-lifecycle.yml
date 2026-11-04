@@ -8,6 +8,8 @@ on:
       - scripts/*windows-installer*
       - scripts/verify_windows_installer_provenance.py
       - scripts/test_windows_installer_provenance.py
+      - scripts/verify_windows_event_probe.py
+      - scripts/test_windows_event_probe.py
       - scripts/verify_release.py
       - scripts/verify_release_provenance.py
       - scripts/verify_release_rebuild.py
@@ -71,6 +73,41 @@ jobs:
       - name: Pure event correlation diagnostics
         shell: powershell
         run: ./scripts/test-windows-installer-event-state.ps1
+      - name: Pure controlled event fixture contracts
+        shell: powershell
+        run: |
+          ./scripts/test-windows-installer-event-fixture.ps1
+          python -m unittest discover -s scripts -p test_windows_event_probe.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Controlled event fixture contracts failed' }
+      - name: Controlled native event diagnostic and owned cleanup
+        shell: powershell
+        env:
+          ACCESSWEAVER_DISPOSABLE_INSTALLER_EVENT_TEST: '1'
+        run: ./scripts/test-windows-installer-event-native.ps1 -Architecture '${{ matrix.arch }}'
+      - name: Validate controlled native probe before attesting
+        shell: powershell
+        run: |
+          python scripts/verify_windows_event_probe.py 'build/installer-event-checks/${{ matrix.arch }}.json' --source-commit "$env:GITHUB_SHA" --source-ref "$env:GITHUB_REF" --architecture '${{ matrix.arch }}' --run-id "$env:GITHUB_RUN_ID"
+          if ($LASTEXITCODE -ne 0) { throw 'Controlled native probe validation failed' }
+      - name: Attest the separate controlled native event report
+        id: event-provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: build/installer-event-checks/${{ matrix.arch }}.json
+          create-storage-record: false
+      - name: Retain controlled probe provenance bundle
+        shell: powershell
+        env:
+          EVENT_BUNDLE: ${{ steps.event-provenance.outputs.bundle-path }}
+        run: Copy-Item -LiteralPath $env:EVENT_BUNDLE -Destination 'build/installer-event-checks/BUILD-PROVENANCE.sigstore.json' -ErrorAction Stop
+      - name: Retain controlled native event evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer-event-probe-windows-${{ matrix.arch }}
+          path: build/installer-event-checks/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Exercise actual unsigned installer on a disposable native host
         shell: powershell
         env:
