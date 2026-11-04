@@ -57,10 +57,7 @@ func auditInitializeCommand(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if out == nil {
-		return errAuditInitializeAdmission
-	}
-	if file, ok := out.(*os.File); ok && file == nil {
+	if auditWriterUnavailable(out) {
 		return errAuditInitializeAdmission
 	}
 	checkpoint, err := audit.InitializeLocalJournal(paths["--directory"])
@@ -82,10 +79,7 @@ func auditImportCommand(args []string, out io.Writer) (failure error) {
 	if !audit.LocalRecordingSupported() {
 		return audit.ErrLocalStorageUnsupported
 	}
-	if out == nil {
-		return errAuditImportAdmission
-	}
-	if file, ok := out.(*os.File); ok && file == nil {
+	if auditWriterUnavailable(out) {
 		return errAuditImportAdmission
 	}
 	restoreOutputPipes := observeAuditOutputPipes()
@@ -94,8 +88,9 @@ func auditImportCommand(args []string, out io.Writer) (failure error) {
 	defer stop()
 	inputCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	inputs := &auditInputSession{}
 	readCheckpoint := func(path string) (audit.Checkpoint, error) {
-		data, err := readAuditInput(inputCtx, path, audit.MaxCheckpointBytes)
+		data, err := inputs.read(inputCtx, path, audit.MaxCheckpointBytes)
 		if err != nil {
 			return audit.Checkpoint{}, err
 		}
@@ -109,13 +104,12 @@ func auditImportCommand(args []string, out io.Writer) (failure error) {
 	if err != nil {
 		return err
 	}
-	data, err := readAuditInput(inputCtx, paths["--profile"], 1<<20)
+	data, err := inputs.read(inputCtx, paths["--profile"], 1<<20)
 	if err != nil {
 		return err
 	}
 	defer clear(data)
-	required := []string{paths["--from"], paths["--to"], paths["--profile"], filepath.Join(paths["--directory"], "events.journal"), filepath.Join(paths["--directory"], ".actor-key")}
-	if err := checkRecordedPolicyOutput(out, required, nil); err != nil {
+	if err := checkAuditOutputAliases(inputCtx, []io.Writer{out}, inputs.bindings, auditStorageReferences(paths["--directory"])); err != nil {
 		return errAuditImportAdmission
 	}
 	journal, err := audit.OpenLocalJournal(inputCtx, paths["--directory"], from, to)

@@ -13,6 +13,8 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/Yunushan/accessweaver/internal/fileidentity"
+
 	"golang.org/x/sys/windows"
 )
 
@@ -581,45 +583,19 @@ func windowsAuditOutputIdentity(file *os.File) (identity windowsAuditIdentity, r
 		}
 		runtime.KeepAlive(file)
 	}()
-	connection, err := file.SyscallConn()
+	state, err := fileidentity.FromFile(file)
 	if err != nil {
 		return windowsAuditIdentity{}, false, ErrExportOutput
 	}
-	var queryErr error
-	err = connection.Control(func(raw uintptr) {
-		handle := windows.Handle(raw)
-		kind, err := windows.GetFileType(handle)
-		if err != nil {
-			queryErr = ErrExportOutput
-			return
-		}
-		if kind == windows.FILE_TYPE_PIPE || kind == windows.FILE_TYPE_CHAR {
-			return
-		}
-		if kind != windows.FILE_TYPE_DISK {
-			queryErr = ErrExportOutput
-			return
-		}
-		var info windows.ByHandleFileInformation
-		if windows.GetFileInformationByHandle(handle, &info) != nil ||
-			info.FileAttributes&(windows.FILE_ATTRIBUTE_DIRECTORY|windows.FILE_ATTRIBUTE_DEVICE|windows.FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
-			queryErr = ErrExportOutput
-			return
-		}
-		var native struct {
-			Volume uint64
-			ID     [16]byte
-		}
-		if windows.GetFileInformationByHandleEx(handle, windows.FileIdInfo, (*byte)(unsafe.Pointer(&native)), uint32(unsafe.Sizeof(native))) != nil || native.ID == ([16]byte{}) {
-			queryErr = ErrExportOutput
-			return
-		}
-		identity, regular = windowsAuditIdentity{native.Volume, native.ID}, true
-	})
-	if err != nil || queryErr != nil {
+	switch state.Kind {
+	case fileidentity.Regular:
+		return windowsAuditIdentity{state.ID.Volume, state.ID.FileID}, true, nil
+	case fileidentity.Other:
+		// The native Windows helper returns Other only for pipes and consoles.
+		return windowsAuditIdentity{}, false, nil
+	default:
 		return windowsAuditIdentity{}, false, ErrExportOutput
 	}
-	return identity, regular, nil
 }
 
 // Close always attempts every owned close, including under an impersonated

@@ -39,8 +39,9 @@ func auditUICommand(args []string, out, info io.Writer) (failure error) {
 	defer stop()
 	inputCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	inputs := &auditInputSession{}
 	decode := func(path string) (audit.Checkpoint, error) {
-		data, err := readAuditInput(inputCtx, path, audit.MaxCheckpointBytes)
+		data, err := inputs.read(inputCtx, path, audit.MaxCheckpointBytes)
 		if err != nil {
 			return audit.Checkpoint{}, err
 		}
@@ -56,7 +57,7 @@ func auditUICommand(args []string, out, info io.Writer) (failure error) {
 	}
 	// Compare direct regular-file destinations before any checkpoint write. A
 	// caller must also prevent wrappers/pipes from forwarding into these inputs.
-	if err := checkAuditUIOutputs(out, info, []string{paths["--from"], paths["--to"], filepath.Join(paths["--directory"], "events.journal"), filepath.Join(paths["--directory"], ".actor-key")}); err != nil {
+	if err := checkAuditOutputAliases(inputCtx, []io.Writer{out, info}, inputs.bindings, auditStorageReferences(paths["--directory"])); err != nil {
 		return err
 	}
 	journal, err := audit.OpenLocalJournal(inputCtx, paths["--directory"], from, to)
@@ -110,36 +111,7 @@ func auditUICommand(args []string, out, info io.Writer) (failure error) {
 	return serveDesktop(ctx, server, info)
 }
 func checkAuditUIOutputs(out, info io.Writer, inputs []string) error {
-	var directOutputs []os.FileInfo
-	for _, writer := range []io.Writer{out, info} {
-		file, ok := writer.(*os.File)
-		if !ok {
-			continue
-		}
-		output, err := file.Stat()
-		if err != nil {
-			return errors.New("audit desktop output unavailable")
-		}
-		if !output.Mode().IsRegular() {
-			continue
-		}
-		for _, previous := range directOutputs {
-			if os.SameFile(previous, output) {
-				return errors.New("audit checkpoint and desktop startup outputs must use separate destinations")
-			}
-		}
-		directOutputs = append(directOutputs, output)
-		for _, path := range inputs {
-			input, err := os.Stat(path)
-			if err != nil {
-				return errors.New("audit desktop input unavailable or changed")
-			}
-			if os.SameFile(input, output) {
-				return errors.New("audit desktop outputs must not alias its journal, actor key or checkpoint inputs")
-			}
-		}
-	}
-	return nil
+	return checkAuditOutputAliases(context.Background(), []io.Writer{out, info}, nil, auditFileReferences(inputs, nil, true))
 }
 func serveDesktop(ctx context.Context, server *api.Server, info io.Writer) error {
 	ctx, cancel := context.WithCancel(ctx)

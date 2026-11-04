@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -122,8 +121,9 @@ func auditPolicyCommand(args []string, out io.Writer) (failure error) {
 	defer stop()
 	inputCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	inputs := &auditInputSession{}
 	decode := func(path string) (audit.Checkpoint, error) {
-		data, err := readAuditInput(inputCtx, path, audit.MaxCheckpointBytes)
+		data, err := inputs.read(inputCtx, path, audit.MaxCheckpointBytes)
 		if err != nil {
 			return audit.Checkpoint{}, err
 		}
@@ -137,15 +137,14 @@ func auditPolicyCommand(args []string, out io.Writer) (failure error) {
 	if err != nil {
 		return err
 	}
-	data, err := readAuditInput(inputCtx, request.paths["--input"], request.limit)
+	data, err := inputs.read(inputCtx, request.paths["--input"], request.limit)
 	if err != nil {
 		return err
 	}
 	defer clear(data)
-	required := []string{request.paths["--from"], request.paths["--to"], request.paths["--input"], filepath.Join(directory, "events.journal"), filepath.Join(directory, ".actor-key")}
-	optional := []string{"/etc/accessweaver/installation.json", "/etc/accessweaver/acceptance.json", "/etc/.accessweaver-policy.lock"}
-	if err := checkRecordedPolicyOutput(out, required, optional); err != nil {
-		return err
+	refs := append(auditStorageReferences(directory), auditFileReferences(nil, auditAuthorityFilePaths(), true)...)
+	if err := checkAuditOutputAliases(inputCtx, []io.Writer{out}, inputs.bindings, refs); err != nil {
+		return errAuditPolicyOutput
 	}
 	journal, err := audit.OpenLocalJournal(inputCtx, directory, from, to)
 	if err != nil {
@@ -189,28 +188,8 @@ func executeRecordedPolicy(ctx context.Context, journal audit.LocalJournal, from
 }
 
 func checkRecordedPolicyOutput(out io.Writer, required, optional []string) error {
-	file, ok := out.(*os.File)
-	if !ok {
-		return nil
-	} // Pipe/writer forwarding is the caller's responsibility.
-	info, err := file.Stat()
-	if err != nil {
+	if err := checkAuditOutputAliases(context.Background(), []io.Writer{out}, nil, auditFileReferences(required, optional, true)); err != nil {
 		return errAuditPolicyOutput
-	}
-	if !info.Mode().IsRegular() {
-		return nil
-	}
-	for index, path := range append(append([]string{}, required...), optional...) {
-		input, err := os.Stat(path)
-		if err != nil {
-			if index >= len(required) && os.IsNotExist(err) {
-				continue
-			}
-			return errAuditPolicyOutput
-		}
-		if os.SameFile(info, input) {
-			return errAuditPolicyOutput
-		}
 	}
 	return nil
 }

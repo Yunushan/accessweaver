@@ -37,6 +37,15 @@ jobs:
           architecture: ${{ matrix.sdkarch }}
       - name: Verify native host and SDK identity
         run: node scripts/check-native-environment.cjs
+      - name: Native file identity and bound input output admission
+        env:
+          ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_STORAGE_TEST: '1'
+        shell: pwsh
+        run: |
+          go test ./internal/fileidentity -run '^TestDisposableWindowsFileIdentityNative$' -count=1 -v -timeout=4m
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test ./cmd/accessweaver -run '^TestWindowsAudit(AliasMetadata|InputSnapshot)$' -count=1 -v -timeout=4m
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Protected storage, journal, key and historical export acceptance
         env:
           ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_STORAGE_TEST: '1'
@@ -44,6 +53,14 @@ jobs:
         run: |
           go test ./internal/audit -run '^(TestDisposableWindowsAuditStorageNative|TestWindowsJournal.*|TestWindowsLocal.*)$' -count=1 -v -timeout=10m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain controlled identity and input receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-audit-identity-inputs-${{ matrix.goarch }}
+          path: build/windows-audit-identity-input-checks/
+          if-no-files-found: error
+          retention-days: 14
       - name: Retain controlled native storage receipts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

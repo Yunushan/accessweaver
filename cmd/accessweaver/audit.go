@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/Yunushan/accessweaver/internal/audit"
+	"github.com/Yunushan/accessweaver/internal/fileidentity"
 )
 
 const auditUsage = "Audit verification and explicit local recording:\n" +
@@ -63,9 +65,13 @@ func auditCommand(args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	result, err := verifyAuditArguments(ctx, args, readAuditInput)
+	inputs := &auditInputSession{}
+	result, err := verifyAuditArguments(ctx, args, inputs.read)
 	if err != nil {
 		return err
+	}
+	if err := checkAuditOutputAliases(ctx, []io.Writer{os.Stdout}, inputs.bindings, nil); err != nil {
+		return errors.New("audit verification output unavailable or aliases an input")
 	}
 	if err := printJSON(result); err != nil {
 		return errors.New("audit verification output unavailable")
@@ -115,63 +121,113 @@ func verifyAuditArguments(ctx context.Context, args []string, read auditInputRea
 }
 
 // Each read runs in one worker so a blocked filesystem cannot hold the CLI
-// beyond the shared 15-second input/verification budget. Reads are sequential: a timeout
-// ends the command, leaving at most one outstanding worker until process exit.
-// The worker owns its descriptor and never writes or repairs an input.
-func readAuditInput(ctx context.Context, path string, limit int64) ([]byte, error) {
-	return readAuditInputUsing(ctx, func() ([]byte, error) { return snapshotAuditInput(path, limit) })
+// beyond the shared 15-second budget. Reads remain sequential: a timeout ends
+// the command with at most one worker retaining its descriptor until OS return.
+// That worker never writes or repairs an input and clears abandoned bytes.
+type auditInputSnapshot struct {
+	data    []byte
+	binding auditInputBinding
 }
-func readAuditInputUsing(ctx context.Context, read func() ([]byte, error)) ([]byte, error) {
-	if err := ctx.Err(); err != nil {
+
+type auditInputSession struct{ bindings []auditInputBinding }
+
+func (s *auditInputSession) read(ctx context.Context, path string, limit int64) ([]byte, error) {
+	snapshot, err := readAuditInputSnapshotUsing(ctx, func() (auditInputSnapshot, error) { return snapshotAuditInputBound(path, limit) })
+	if err != nil {
 		return nil, err
 	}
-	type result struct {
-		data []byte
-		err  error
+	s.bindings = append(s.bindings, snapshot.binding)
+	return snapshot.data, nil
+}
+
+func readAuditInput(ctx context.Context, path string, limit int64) ([]byte, error) {
+	snapshot, err := readAuditInputSnapshotUsing(ctx, func() (auditInputSnapshot, error) { return snapshotAuditInputBound(path, limit) })
+	return snapshot.data, err
+}
+func readAuditInputUsing(ctx context.Context, read func() ([]byte, error)) ([]byte, error) {
+	snapshot, err := readAuditInputSnapshotUsing(ctx, func() (auditInputSnapshot, error) {
+		data, err := read()
+		return auditInputSnapshot{data: data}, err
+	})
+	return snapshot.data, err
+}
+func readAuditInputSnapshotUsing(ctx context.Context, read func() (auditInputSnapshot, error)) (auditInputSnapshot, error) {
+	if err := ctx.Err(); err != nil {
+		return auditInputSnapshot{}, err
 	}
-	done := make(chan result, 1)
-	go func() { data, err := read(); done <- result{data, err} }()
+	type result struct {
+		snapshot auditInputSnapshot
+		err      error
+	}
+	// No buffered late result can retain private bytes after caller cancellation.
+	done := make(chan result)
+	go func() {
+		snapshot, err := read()
+		select {
+		case done <- result{snapshot, err}:
+		case <-ctx.Done():
+			clear(snapshot.data)
+		}
+	}()
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return auditInputSnapshot{}, ctx.Err()
 	case r := <-done:
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			clear(r.snapshot.data)
+			return auditInputSnapshot{}, err
 		}
-		return r.data, r.err
+		if r.err != nil {
+			clear(r.snapshot.data)
+			return auditInputSnapshot{}, r.err
+		}
+		return r.snapshot, nil
 	}
 }
-func snapshotAuditInput(path string, limit int64) (data []byte, failure error) {
+func snapshotAuditInput(path string, limit int64) ([]byte, error) {
+	snapshot, err := snapshotAuditInputBound(path, limit)
+	return snapshot.data, err
+}
+func sameAuditInputState(a, b fileidentity.State) bool {
+	return a.Kind == fileidentity.Regular && b.Kind == fileidentity.Regular && a.ID == b.ID && a.Size == b.Size && a.Modified.Equal(b.Modified)
+}
+func snapshotAuditInputBound(path string, limit int64) (snapshot auditInputSnapshot, failure error) {
 	refuse := errors.New("audit input must be an unchanged bounded regular file")
-	before, err := os.Lstat(path)
-	if err != nil || !before.Mode().IsRegular() || before.Size() < 0 || before.Size() > limit {
-		return nil, refuse
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	before, err := fileidentity.FromPath(path, false)
+	if err != nil || before.Kind != fileidentity.Regular || before.Size < 0 || before.Size > limit {
+		return auditInputSnapshot{}, refuse
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, refuse
+		return auditInputSnapshot{}, refuse
 	}
+	var payload []byte
 	defer func() {
 		if file.Close() != nil {
-			data = nil
 			failure = refuse
 		}
+		if failure != nil {
+			clear(payload)
+			snapshot = auditInputSnapshot{}
+		}
 	}()
-	opened, err := file.Stat()
-	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(before, opened) || opened.Size() != before.Size() || !opened.ModTime().Equal(before.ModTime()) {
-		return nil, refuse
+	opened, err := fileidentity.FromFile(file)
+	if err != nil || !sameAuditInputState(before, opened) {
+		return auditInputSnapshot{}, refuse
 	}
-	data, err = io.ReadAll(io.LimitReader(file, limit+1))
-	if err != nil || int64(len(data)) > limit || int64(len(data)) != opened.Size() {
-		return nil, refuse
+	payload, err = io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil || int64(len(payload)) > limit || int64(len(payload)) != opened.Size {
+		return auditInputSnapshot{}, refuse
 	}
-	after, err := file.Stat()
-	if err != nil || !os.SameFile(opened, after) || after.Size() != opened.Size() || !after.ModTime().Equal(opened.ModTime()) {
-		return nil, refuse
+	after, err := fileidentity.FromFile(file)
+	if err != nil || !sameAuditInputState(opened, after) {
+		return auditInputSnapshot{}, refuse
 	}
-	named, err := os.Lstat(path)
-	if err != nil || !named.Mode().IsRegular() || !os.SameFile(after, named) || named.Size() != after.Size() || !named.ModTime().Equal(after.ModTime()) {
-		return nil, refuse
+	named, err := fileidentity.FromPath(path, false)
+	if err != nil || !sameAuditInputState(after, named) {
+		return auditInputSnapshot{}, refuse
 	}
-	return data, nil
+	return auditInputSnapshot{data: payload, binding: auditInputBinding{path: path, state: after}}, nil
 }

@@ -45,21 +45,10 @@ func auditExportArguments(ctx context.Context, args []string, read auditInputRea
 	if err != nil {
 		return err
 	}
-	if file, ok := out.(*os.File); ok {
-		output, err := file.Stat()
-		if err != nil {
-			return audit.ErrExportOutput
-		}
-		if output.Mode().IsRegular() {
-			for _, path := range []string{paths["--from"], paths["--to"]} {
-				input, err := os.Stat(path)
-				if err != nil {
-					return errors.New("audit checkpoint input changed before export")
-				}
-				if os.SameFile(input, output) {
-					return audit.ErrExportDestination
-				}
-			}
+	if file, direct := out.(*os.File); direct {
+		refs := auditFileReferences([]string{paths["--from"], paths["--to"]}, nil, false)
+		if err := checkAuditOutputAliases(ctx, []io.Writer{file}, nil, refs); err != nil {
+			return audit.ErrExportDestination
 		}
 	}
 	return export(ctx, paths["--directory"], from, to, out)
@@ -67,5 +56,11 @@ func auditExportArguments(ctx context.Context, args []string, read auditInputRea
 func auditExportCommand(args []string, out io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return auditExportArguments(ctx, args, readAuditInput, audit.ExportLocalSegment, out)
+	inputs := &auditInputSession{}
+	return auditExportArguments(ctx, args, inputs.read, func(ctx context.Context, directory string, from, to audit.Checkpoint, destination io.Writer) error {
+		if err := checkAuditOutputAliases(ctx, []io.Writer{destination}, inputs.bindings, nil); err != nil {
+			return audit.ErrExportDestination
+		}
+		return audit.ExportLocalSegment(ctx, directory, from, to, destination)
+	}, out)
 }

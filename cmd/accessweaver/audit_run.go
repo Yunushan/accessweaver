@@ -56,8 +56,9 @@ func auditRunCommand(args []string, observations, notice io.Writer) (failure err
 	defer stop()
 	inputCtx, cancelInput := context.WithTimeout(ctx, 15*time.Second)
 	defer cancelInput()
+	inputs := &auditInputSession{}
 	decode := func(path string) (audit.Checkpoint, error) {
-		data, err := readAuditInput(inputCtx, path, audit.MaxCheckpointBytes)
+		data, err := inputs.read(inputCtx, path, audit.MaxCheckpointBytes)
 		if err != nil {
 			return audit.Checkpoint{}, err
 		}
@@ -71,7 +72,7 @@ func auditRunCommand(args []string, observations, notice io.Writer) (failure err
 	if err != nil {
 		return err
 	}
-	data, err := readAuditInput(inputCtx, paths["--profile"], 1<<20)
+	data, err := inputs.read(inputCtx, paths["--profile"], 1<<20)
 	if err != nil {
 		return err
 	}
@@ -92,13 +93,14 @@ func auditRunCommand(args []string, observations, notice io.Writer) (failure err
 		return errAuditRunAdmission
 	}
 	controllerPath := filepath.Join(root, ".controller.lock")
-	required := []string{paths["--from"], paths["--to"], paths["--profile"], filepath.Join(paths["--directory"], "events.journal"), filepath.Join(paths["--directory"], ".actor-key")}
-	optional := []string{"/etc/accessweaver/installation.json", "/etc/accessweaver/acceptance.json", "/etc/.accessweaver-policy.lock", controllerPath, filepath.Join(root, ".profiles.lock")}
+	var required []string
+	optional := append(auditAuthorityFilePaths(), controllerPath, filepath.Join(root, ".profiles.lock"))
 	if p.ConfigPath != "" {
 		optional = append(optional, p.ConfigPath)
 	}
-	if err := checkRecordedEngineOutputs(observations, notice, required, optional); err != nil {
-		return err
+	refs := append(auditStorageReferences(paths["--directory"]), auditFileReferences(required, optional, true)...)
+	if err := checkAuditOutputAliases(inputCtx, []io.Writer{observations, notice}, inputs.bindings, refs); err != nil {
+		return errAuditRunOutput
 	}
 	journal, err := audit.OpenLocalJournal(inputCtx, paths["--directory"], from, to)
 	if err != nil {
@@ -137,8 +139,9 @@ func auditRunCommand(args []string, observations, notice io.Writer) (failure err
 	optional = append(optional, plan.GeneratedFiles...)
 	// Compare under controller ownership, including newly created coordination
 	// files and the currently resolved executable/config/generated inputs.
-	if err := checkRecordedEngineOutputs(observations, notice, required, optional); err != nil {
-		return err
+	refs = append(auditStorageReferences(paths["--directory"]), auditFileReferences(required, optional, true)...)
+	if err := checkAuditOutputAliases(inputCtx, []io.Writer{observations, notice}, inputs.bindings, refs); err != nil {
+		return errAuditRunOutput
 	}
 	if inputCtx.Err() != nil {
 		return errAuditRunAdmission
@@ -156,16 +159,8 @@ func auditRunCommand(args []string, observations, notice io.Writer) (failure err
 }
 
 func checkRecordedEngineOutputs(observations, notice io.Writer, required, optional []string) error {
-	if observations == nil || notice == nil {
+	if err := checkAuditOutputAliases(context.Background(), []io.Writer{observations, notice}, nil, auditFileReferences(required, optional, true)); err != nil {
 		return errAuditRunOutput
-	}
-	if err := checkAuditUIOutputs(observations, notice, required); err != nil {
-		return errAuditRunOutput
-	}
-	for _, destination := range []io.Writer{observations, notice} {
-		if err := checkRecordedPolicyOutput(destination, required, optional); err != nil {
-			return errAuditRunOutput
-		}
 	}
 	return nil
 }

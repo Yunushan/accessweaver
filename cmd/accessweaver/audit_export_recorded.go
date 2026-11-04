@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -44,8 +43,9 @@ func auditRecordedExportCommand(args []string, out, observations io.Writer) (fai
 	defer stop()
 	inputCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	inputs := &auditInputSession{}
 	decode := func(path string) (audit.Checkpoint, error) {
-		data, err := readAuditInput(inputCtx, path, audit.MaxCheckpointBytes)
+		data, err := inputs.read(inputCtx, path, audit.MaxCheckpointBytes)
 		if err != nil {
 			return audit.Checkpoint{}, err
 		}
@@ -59,17 +59,9 @@ func auditRecordedExportCommand(args []string, out, observations io.Writer) (fai
 	if err != nil {
 		return err
 	}
-	required := []string{paths["--from"], paths["--to"], filepath.Join(paths["--directory"], "events.journal"), filepath.Join(paths["--directory"], ".actor-key")}
-	if err := checkAuditUIOutputs(out, observations, required); err != nil {
+	refs := append(auditStorageReferences(paths["--directory"]), auditFileReferences(nil, auditAuthorityFilePaths(), true)...)
+	if err := checkAuditOutputAliases(inputCtx, []io.Writer{out, observations}, inputs.bindings, refs); err != nil {
 		return audit.ErrExportDestination
-	}
-	// Also protect existing fixed machine authority when this explicit command is
-	// separately run by an administrator. This grants no machine policy access.
-	optional := []string{"/etc/accessweaver/installation.json", "/etc/accessweaver/acceptance.json", "/etc/.accessweaver-policy.lock"}
-	for _, destination := range []io.Writer{out, observations} {
-		if err := checkRecordedPolicyOutput(destination, required, optional); err != nil {
-			return audit.ErrExportDestination
-		}
 	}
 	journal, err := audit.OpenLocalJournal(inputCtx, paths["--directory"], from, to)
 	if err != nil {
