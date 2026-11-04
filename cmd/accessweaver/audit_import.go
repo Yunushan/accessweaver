@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"io"
 	"os"
@@ -132,61 +130,31 @@ type importOutcome struct {
 // checkpoint before mutation and attempts the result even after cancellation.
 // Checkpoint output is an observation channel, not collector acknowledgment.
 func executeRecordedImport(ctx context.Context, journal audit.LocalJournal, from, to audit.Checkpoint, out io.Writer, operation func(context.Context) importOutcome) (bool, error) {
-	if err := ctx.Err(); err != nil {
-		return false, err
-	}
-	existing, actualFrom, actualTo, err := journal.Snapshot(ctx)
-	clear(existing)
-	if err != nil || actualFrom != from || actualTo != to || to.Sequence > audit.MaxSegmentRecords-2 {
-		return false, errAuditImportAdmission
-	}
-	var id [16]byte
-	if _, err := rand.Read(id[:]); err != nil {
-		return false, errAuditImportAdmission
-	}
-	event := audit.Event{OccurredAt: time.Now().UTC(), OperationID: hex.EncodeToString(id[:]), Action: "profile.import", Outcome: "intent"}
-	intent, err := journal.Append(ctx, event)
+	// The command retains journal ownership and closes it after this synchronous
+	// borrowed recorder scope returns; no recorder or callback escapes the scope.
+	recorder, err := audit.NewRecorder(ctx, journal, from, to, out)
 	if err != nil {
 		return false, errAuditImportAdmission
 	}
-	complete := func(outcome string) (audit.Checkpoint, error) {
-		resultCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
-		defer cancel()
-		result := event
-		result.OccurredAt = time.Now().UTC()
-		result.Outcome = outcome
-		return journal.Append(resultCtx, result)
-	}
-	if writeAuditCheckpoint(out, intent) != nil {
-		// No mutation is dispatched. A failed observation channel gets no further
-		// writes. Preserve a local refusal if storage still permits it.
-		_, _ = complete("refused")
-		return false, errAuditImportAdmission
-	}
-	result := importOutcome{outcome: "canceled", failure: errAuditImportRefused}
-	if ctx.Err() == nil {
-		result = callImportOperation(ctx, operation)
-	}
-	if result.outcome != "completed" && result.outcome != "refused" && result.outcome != "canceled" && result.outcome != "indeterminate" || (result.outcome == "completed" && result.failure != nil) {
-		result = importOutcome{outcome: "indeterminate", mutationStarted: result.mutationStarted, failure: errAuditImportUncertain}
-	}
-	head, err := complete(result.outcome)
-	if err != nil {
-		return result.mutationStarted, errAuditImportUncertain
-	}
-	if writeAuditCheckpoint(out, head) != nil {
-		if result.mutationStarted {
-			return true, errAuditImportUncertain
+	started := false
+	err = recorder.Execute(ctx, "profile.import", func(recordedCtx context.Context) audit.OperationResult {
+		result := callImportOperation(recordedCtx, operation)
+		started = result.mutationStarted
+		if result.outcome != "completed" && result.failure == nil {
+			result.failure = errAuditImportRefused
 		}
-		return false, errAuditImportAdmission
+		return audit.OperationResult{Outcome: result.outcome, Err: result.failure}
+	})
+	if errors.Is(err, audit.ErrRecorderUnavailable) {
+		return started, errAuditImportAdmission
 	}
-	if result.outcome == "indeterminate" {
-		return result.mutationStarted, errAuditImportUncertain
+	if errors.Is(err, audit.ErrRecordedUncertain) {
+		return started, errAuditImportUncertain
 	}
-	if result.outcome != "completed" {
-		return result.mutationStarted, errAuditImportRefused
+	if err != nil {
+		return started, errAuditImportRefused
 	}
-	return result.mutationStarted, nil
+	return started, nil
 }
 func callImportOperation(ctx context.Context, operation func(context.Context) importOutcome) (result importOutcome) {
 	// An unexpected panic must leave a redacted indeterminate result, rather than
@@ -208,7 +176,7 @@ func importReviewedProfile(ctx context.Context, data []byte) importOutcome {
 	if err != nil {
 		return refuse()
 	}
-	if managed.NewGuard(nil).ProfileChanges() != nil {
+	if managed.NewGuard(nil).ProfileMutation(ctx, "write") != nil {
 		return refuse()
 	}
 	root, err := profile.DefaultRoot()

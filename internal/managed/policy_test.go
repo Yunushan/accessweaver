@@ -233,3 +233,36 @@ func TestPinnedDownloadRulesRejectAmbiguousSources(t *testing.T) {
 		t.Fatal("duplicate download authority accepted")
 	}
 }
+
+func TestRequiredProfileAuditBindsSignedBytesAndRejectsAmbiguousBooleans(t *testing.T) {
+	payload, public, private, now := fixture(t)
+	required := bytes.Replace(payload, []byte(`"allowProfileChanges":false`), []byte(`"allowProfileChanges":true,"requireProfileAudit":true`), 1)
+	signed, err := Sign(required, private, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewed, err := Verify(signed, public, now, 0)
+	if err != nil || !reviewed.Policy.RequireProfileAudit {
+		t.Fatal("signed requirement lost", err)
+	}
+	var envelope Envelope
+	if err := json.Unmarshal(signed, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	changed := bytes.Replace(required, []byte(`"requireProfileAudit":true`), []byte(`"requireProfileAudit":false`), 1)
+	envelope.Payload = base64.StdEncoding.EncodeToString(changed)
+	tampered, _ := json.Marshal(envelope)
+	if _, err := Verify(tampered, public, now, 0); err == nil {
+		t.Fatal("audit requirement stripped without a new signature")
+	}
+	for _, value := range []string{`null`, `0`, `"true"`, `true,"requireProfileAudit":false`, `true,"RequireProfileAudit":false`} {
+		invalid := bytes.Replace(required, []byte(`"requireProfileAudit":true`), []byte(`"requireProfileAudit":`+value), 1)
+		if _, err := Sign(invalid, private, now); err == nil {
+			t.Fatal("ambiguous audit requirement accepted", value)
+		}
+	}
+	legacy, err := DecodePolicy(payload, now, 0)
+	if err != nil || legacy.RequireProfileAudit {
+		t.Fatal("legacy policy default changed", err)
+	}
+}

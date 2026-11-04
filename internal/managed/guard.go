@@ -1,9 +1,11 @@
 package managed
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
+	"github.com/Yunushan/accessweaver/internal/audit"
 	"github.com/Yunushan/accessweaver/internal/nativepath"
 )
 
@@ -23,13 +25,25 @@ func (g *Guard) authority() (*Authority, error) {
 	}
 	return g.load()
 }
-func (g *Guard) ProfileChanges() error {
+
+// ProfileChanges handles legacy/bulk paths that have no connected producer.
+func (g *Guard) ProfileChanges() error { return g.ProfileMutation(context.Background(), "") }
+
+// ProfileMutation rechecks protected signed policy at the store boundary. A
+// live capability is supplied only by the synchronous recorder callback, never
+// a request field. Unknown/bulk mutation classes cannot satisfy required audit.
+func (g *Guard) ProfileMutation(ctx context.Context, mutation string) error {
 	a, err := g.authority()
 	if err != nil {
 		return err
 	}
-	if a != nil && !a.verified.Policy.AllowProfileChanges {
-		return fmt.Errorf("%w: profile changes are disabled", ErrDenied)
+	if a != nil {
+		if !a.verified.Policy.AllowProfileChanges {
+			return fmt.Errorf("%w: profile changes are disabled", ErrDenied)
+		}
+		if a.verified.Policy.RequireProfileAudit && !audit.ProfileIntentActive(ctx, mutation) {
+			return fmt.Errorf("%w: profile changes require an active recorded operation", ErrDenied)
+		}
 	}
 	return nil
 }

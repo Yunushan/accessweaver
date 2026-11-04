@@ -209,3 +209,21 @@ func TestAuditRecordingArgumentsRefuseAmbiguityAndUnsupportedTargets(t *testing.
 		}
 	}
 }
+
+func TestRecordedImportCarriesOnlyItsActiveWriteIntent(t *testing.T) {
+	j := newRecordedImportJournal(t)
+	var retained context.Context
+	started, err := executeRecordedImport(context.Background(), j, j.start, j.head, &bytes.Buffer{}, func(ctx context.Context) importOutcome {
+		retained = ctx
+		if !audit.ProfileIntentActive(ctx, "write") || audit.ProfileIntentActive(ctx, "delete") {
+			t.Fatal("import did not carry its recorded write authority")
+		}
+		return importOutcome{outcome: "completed", mutationStarted: true}
+	})
+	if err != nil || !started || retained == nil {
+		t.Fatal("recorded import failed", err)
+	}
+	if audit.ProfileIntentActive(retained, "write") {
+		t.Fatal("import authority survived its operation")
+	}
+}

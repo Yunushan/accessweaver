@@ -37,6 +37,7 @@ type Policy struct {
 	AllowDownloads      bool           `json:"allowDownloads"`
 	AllowDiagnostics    bool           `json:"allowDiagnostics"`
 	AllowProfileChanges bool           `json:"allowProfileChanges"`
+	RequireProfileAudit bool           `json:"requireProfileAudit,omitempty"`
 	Launches            []LaunchRule   `json:"launches"`
 	Workflows           []WorkflowRule `json:"workflows"`
 }
@@ -236,6 +237,11 @@ func strictJSON(data []byte, limit int, target any) error {
 		}
 		delimiter, composite := token.(json.Delim)
 		if !composite {
+			if shape.Kind() == reflect.Bool {
+				if _, ok := token.(bool); !ok {
+					return errors.New("managed boolean fields require true or false")
+				}
+			}
 			return nil
 		}
 		switch delimiter {

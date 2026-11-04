@@ -236,3 +236,37 @@ func TestRecorderConcurrentCompletePairsAndBoundedCapacity(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRecorderProfileIntentAuthorityIsActionBoundAndRevoked(t *testing.T) {
+	for _, action := range []string{"profile.write", "profile.import", "profile.delete"} {
+		t.Run(action, func(t *testing.T) {
+			_, r, _ := recorderFixture(t)
+			var retained context.Context
+			forged := context.WithValue(context.Background(), "profileIntent", true)
+			if ProfileIntentActive(forged, "write") {
+				t.Fatal("request-like context forged an intent")
+			}
+			err := r.Execute(context.Background(), action, func(ctx context.Context) OperationResult {
+				retained = ctx
+				if ProfileIntentActive(ctx, "write") != (action != "profile.delete") || ProfileIntentActive(ctx, "delete") != (action == "profile.delete") || ProfileIntentActive(ctx, "bulk") {
+					t.Fatal("intent action binding differs")
+				}
+				return OperationResult{Outcome: "completed"}
+			})
+			if err != nil || retained == nil {
+				t.Fatal("recorded callback failed", err)
+			}
+			if ProfileIntentActive(retained, "write") || ProfileIntentActive(retained, "delete") {
+				t.Fatal("capability survived its callback")
+			}
+		})
+	}
+	_, r, _ := recorderFixture(t)
+	var retained context.Context
+	if err := r.Execute(context.Background(), "profile.write", func(ctx context.Context) OperationResult { retained = ctx; panic("PRIVATE") }); !errors.Is(err, ErrRecordedUncertain) {
+		t.Fatal("panic not indeterminate", err)
+	}
+	if ProfileIntentActive(retained, "write") {
+		t.Fatal("panic retained an active intent")
+	}
+}

@@ -166,7 +166,7 @@ func (s *Store) SaveIfUnchanged(p Profile) error {
 }
 
 func (s *Store) SaveIfUnchangedContext(ctx context.Context, p Profile) error {
-	if err := s.guard.ProfileChanges(); err != nil {
+	if err := s.guard.ProfileMutation(ctx, "write"); err != nil {
 		return err
 	}
 	if err := p.Validate(); err != nil {
@@ -187,11 +187,12 @@ func (s *Store) SaveIfUnchangedContext(ctx context.Context, p Profile) error {
 	} else if p.UpdatedAt.IsZero() || !p.UpdatedAt.Equal(current.UpdatedAt) {
 		return ErrConflict
 	}
-	return s.saveLocked(p)
+	return s.saveLockedContext(ctx, p)
 }
 
-func (s *Store) saveLocked(p Profile) error {
-	if err := s.guard.ProfileChanges(); err != nil {
+func (s *Store) saveLocked(p Profile) error { return s.saveLockedContext(context.Background(), p) }
+func (s *Store) saveLockedContext(ctx context.Context, p Profile) error {
+	if err := s.guard.ProfileMutation(ctx, "write"); err != nil {
 		return err
 	}
 	p.UpdatedAt = time.Now().UTC()
@@ -234,7 +235,7 @@ func (s *Store) DeleteIfUnchanged(id string, expected time.Time) error {
 }
 
 func (s *Store) DeleteIfUnchangedContext(ctx context.Context, id string, expected time.Time) error {
-	if err := s.guard.ProfileChanges(); err != nil {
+	if err := s.guard.ProfileMutation(ctx, "delete"); err != nil {
 		return err
 	}
 	lock, err := s.lock(ctx)
@@ -256,7 +257,7 @@ func (s *Store) DeleteIfUnchangedContext(ctx context.Context, id string, expecte
 	if err != nil {
 		return err
 	}
-	if err := s.guard.ProfileChanges(); err != nil {
+	if err := s.guard.ProfileMutation(ctx, "delete"); err != nil {
 		return err
 	}
 	return os.Remove(file)

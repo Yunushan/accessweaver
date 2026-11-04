@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "91d6be18affe030168e93286174a50d12e5f24a8",
+  "runID": "41851052355",
+  "jobID": 126647139718,
+  "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41851052355/job/126647139718",
+  "artifactID": 13335603068,
+  "zipBytes": 8397,
+  "zipSHA256": "940cc18c211449b7122713ebdcde08e0011a6556be5f92d526c734fed8e5b075",
+  "providerDigestVerified": true,
+  "cryptographicAttestationVerified": false,
+  "reportName": "arm64.json",
+  "reportSHA256": "47e9c7730de9a77cc6989d417d0ea5321087730129f51f8e446e11163c1edc8a",
+  "stage": "uninstall",
+  "assertionFailure": "Installer lifecycle changed selected services, firewall rules or DNS configuration",
+  "lastNativeAttempt": {
+    "schemaVersion": 1,
+    "toolClass": "uninstaller",
+    "timeoutMilliseconds": 180000,
+    "elapsedMilliseconds": 33119,
+    "invocationReturned": true,
+    "operationAccepted": true,
+    "exitCode": 0,
+    "outputComplete": true,
+    "failureCategory": "none"
+  },
+  "capturedFirewallOrigins": {
+    "schemaVersion": 1,
+    "source": "captured-rule-properties",
+    "maxRecords": 16,
+    "maxPropertyBytes": 4096,
+    "records": [
+      {
+        "phase": "after-active-setup-uninstall",
+        "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+        "kind": "added",
+        "before": {
+          "present": false
+        },
+        "after": {
+          "present": true,
+          "policySourceClass": "Local",
+          "fields": {
+            "PolicyStoreSourceType": {
+              "present": true,
+              "utf8Bytes": 5,
+              "sha256": "8c31e6e7223097e2e4847773c47a4efab6aaf79deeecc92a7759891c74976dde"
+            },
+            "PolicyStoreSource": {
+              "present": true,
+              "utf8Bytes": 15,
+              "sha256": "841899562fdd8078d76f4a4632dc924386f09fe17df7b691cc3be64db83c7daf"
+            },
+            "Owner": {
+              "present": true,
+              "utf8Bytes": 45,
+              "sha256": "755ff1a468d51ad27ebd4c593f525a34fd1da63d55cb96967506a8990956547d"
+            },
+            "Group": {
+              "present": true,
+              "utf8Bytes": 136,
+              "sha256": "7a577e55b1e9980b3002ef0c2ca3b358082e9ac1b195b7e9c94ab5c89a850fe5"
+            },
+            "Profile": {
+              "present": true,
+              "utf8Bytes": 23,
+              "sha256": "ae6fde526a8191d7ee9aefe7579ef7a8fac1ffd5a2e57eb2a12fe0de886c44aa"
+            },
+            "PrimaryStatus": {
+              "present": true,
+              "utf8Bytes": 2,
+              "sha256": "565339bc4d33d72817b583024112eb7f5cdf3e5eef0252d6ec1b9c9a94e12bb3"
+            },
+            "EnforcementStatus": {
+              "present": true,
+              "utf8Bytes": 13,
+              "sha256": "b0c3a89d19d2fb737c5c09d74dd2a43479ed525adc70cbf08867852a06d68af0"
+            }
+          }
+        }
+      }
+    ],
+    "truncated": false,
+    "unavailable": false,
+    "extraNativeQueriesPerformed": false,
+    "processOriginEstablished": false
+  },
+  "changedTransitions": [
+    {
+      "phase": "after-active-setup-uninstall",
+      "domains": {
+        "services": {
+          "beforeSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "afterSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "serializedEqual": true,
+          "beforeRows": 0,
+          "afterRows": 0,
+          "added": 0,
+          "removed": 0,
+          "changed": 0,
+          "rowSerializationChanges": 0,
+          "recordOrderingChanged": false,
+          "changes": [],
+          "changesTruncated": false
+        },
+        "firewall": {
+          "beforeSHA256": "088eab4cb0cc76e241cf4858b79f35da35af9f145fd030a079ac8fc7d93c134a",
+          "afterSHA256": "95620ff9abfc8e4cd498dd7011345e06bc940688d381a1083a0371723c0cfb42",
+          "serializedEqual": false,
+          "beforeRows": 504,
+          "afterRows": 505,
+          "added": 1,
+          "removed": 0,
+          "changed": 0,
+          "rowSerializationChanges": 0,
+          "recordOrderingChanged": false,
+          "changes": [
+            {
+              "identitySHA256": "2bfa476cf983255502981261bf5e56c7f132706835162c0af6a7ea0e8448b943",
+              "kind": "added",
+              "classification": "other",
+              "beforeSHA256": null,
+              "afterSHA256": "f729cd7850acd1f795af3e626abca6ae62d9f1f647fd85bbd3e42c5d4bd4a223",
+              "fields": []
+            }
+          ],
+          "changesTruncated": false
+        },
+        "dns": {
+          "beforeSHA256": "42939d42dce2b5967d69cbdd142059a23e78aa8cfd4d3ae74e817956ea2aa811",
+          "afterSHA256": "42939d42dce2b5967d69cbdd142059a23e78aa8cfd4d3ae74e817956ea2aa811",
+          "serializedEqual": true,
+          "beforeRows": 6,
+          "afterRows": 6,
+          "added": 0,
+          "removed": 0,
+          "changed": 0,
+          "rowSerializationChanges": 0,
+          "recordOrderingChanged": false,
+          "changes": [],
+          "changesTruncated": false
+        }
+      }
+    }
+  ],
+  "stateObservationCount": 15,
+  "ownedFixturesRemoved": false,
+  "jobLogSHA256": "a0c3621dc0d4d34980ed2933c1d4fdbcb18259d3203c4f32f44f77fa86c2ca34",
+  "retainedProviderZIPBase64": "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",
+  "interpretation": "A single selected firewall rule was added after active-setup-uninstall, with the same identity fingerprint retained in prior 8eda/52c8cae failures. Original-baseline mismatches persisted through final uninstall, while later transitions matched prior snapshots. New source-bound diagnostics record Local policy source plus bounded property hashes, with no additional native query or established originating process. The uninstaller attempt returned zero with complete capture in33119ms, so this observed refusal is a state-preservation assertion, not a failed or timed-out native call. No raw rule/owner/group/store values were exported. No origin/cause/remedy, baseline exemption, rule deletion, parser relaxation or readiness pass is established. The unchanged failed source is not rerun.",
+  "readinessStatusChanged": false
+}

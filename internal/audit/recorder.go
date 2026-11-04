@@ -20,9 +20,11 @@ type OperationResult struct {
 	Err     error
 }
 
-// Recorder owns one exclusively locked journal and its checkpoint observation
-// channel. Do not copy it after construction. NewRecorder transfers ownership only on success. Close waits for an
-// active operation before closing storage. No native I/O has a hard deadline.
+// Recorder serializes one exclusively locked journal and its observation
+// channel. Do not copy it. Keep the journal exclusive for the entire recorder
+// scope. Close waits for an active callback before closing storage; a strictly
+// synchronous borrowed scope may instead let its caller close the journal after
+// Execute returns. Native I/O has no hard deadline.
 // Output is not collector acknowledgment. A failed append/output poisons this
 // recorder; it never retries, repairs, adopts an unknown tail or replaces it.
 type Recorder struct {
@@ -52,7 +54,7 @@ func NewRecorder(ctx context.Context, journal LocalJournal, from, to Checkpoint,
 // must independently bound admission and must not recursively call Execute.
 // Only the synchronous profile producers are connected by this version.
 func (r *Recorder) Execute(ctx context.Context, action string, operation func(context.Context) OperationResult) error {
-	if r == nil || r.token == nil || operation == nil || (action != "profile.write" && action != "profile.delete") {
+	if r == nil || r.token == nil || operation == nil || (action != "profile.write" && action != "profile.delete" && action != "profile.import") {
 		return ErrRecorderUnavailable
 	}
 	if ctx.Err() != nil {
@@ -92,7 +94,7 @@ func (r *Recorder) Execute(ctx context.Context, action string, operation func(co
 	}
 	result := OperationResult{Outcome: "canceled", Err: context.Canceled}
 	if ctx.Err() == nil {
-		result = callRecordedOperation(ctx, operation)
+		result = callWithProfileIntent(ctx, action, operation)
 	}
 	if (result.Outcome != "completed" && result.Outcome != "refused" && result.Outcome != "canceled" && result.Outcome != "indeterminate") || (result.Outcome == "completed" && result.Err != nil) || (result.Outcome != "completed" && result.Err == nil) {
 		result = OperationResult{Outcome: "indeterminate", Err: ErrRecordedUncertain}
