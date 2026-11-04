@@ -319,7 +319,39 @@
       "retainedProviderMetadataSHA256": "1928336593e6bd5fabeae8dbbdd3e1702119f0ce601bbe58a3a337f0c88957af"
     }
   ],
-  "interpretation": "Three cancelled macOS jobs have no assigned runner or recorded steps; exact acquisition/capacity annotations are retained, including the Intel-labelled case without an ARM-capacity annotation. The assigned Firefox job was cancelled after the provider reported the20-minute execution limit while browser prerequisites were being installed. No dependency-network cause, cancellation actor or permanent capacity is inferred. The other21CI jobs and bothWindows installer jobs passed. No unchanged rerun, deadline extension or readiness promotion.",
+  "interpretation": "Three cancelled macOS jobs have no assigned runner or recorded steps; exact acquisition/capacity annotations are retained, including the Intel-labelled case without an ARM-capacity annotation. Firefox prerequisites succeeded in1012seconds, including an APT-reported16min38s package fetch; its dashboard step then ran174seconds and was cancelled at the provider20-minute whole-job limit. The raw log records29explicit passes out of39declared tests without a final summary, so the remaining10outcomes are unresolved and complete browser acceptance is not established. No underlying network/mirror cause, cancellation actor or permanent capacity is inferred. Other21CI jobs and bothWindows installer jobs passed. No unchanged rerun, deadline extension or readiness promotion.",
   "cryptographicAttestationVerified": false,
-  "readinessStatusChanged": false
+  "readinessStatusChanged": false,
+  "interpretationCorrection": {
+    "previousInterpretation": "Three cancelled macOS jobs have no assigned runner or recorded steps; exact acquisition/capacity annotations are retained, including the Intel-labelled case without an ARM-capacity annotation. The assigned Firefox job was cancelled after the provider reported the20-minute execution limit while browser prerequisites were being installed. No dependency-network cause, cancellation actor or permanent capacity is inferred. The other21CI jobs and bothWindows installer jobs passed. No unchanged rerun, deadline extension or readiness promotion.",
+    "basis": "Exact retained provider step timestamps and later bounded original job-log inspection; original provider/embedded metadata remains unchanged.",
+    "retainedProviderMetadataSHA256": "1928336593e6bd5fabeae8dbbdd3e1702119f0ce601bbe58a3a337f0c88957af",
+    "prerequisiteStep": {
+      "name": "Install the pinned browser and Linux prerequisites",
+      "status": "completed",
+      "conclusion": "success",
+      "number": 7,
+      "started_at": "2026-11-04T18:15:55Z",
+      "completed_at": "2026-11-04T18:32:47Z"
+    },
+    "dashboardStep": {
+      "name": "Exercise the dashboard with an isolated local controller",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "number": 8,
+      "started_at": "2026-11-04T18:32:47Z",
+      "completed_at": "2026-11-04T18:35:41Z"
+    },
+    "prerequisiteElapsedSeconds": 1012,
+    "dashboardElapsedSeconds": 174,
+    "retainedLogBytes": 65610,
+    "retainedLogSHA256": "7eb14399e2986a47939795aecc83fe2c85ce62e77e51d30bc3787996273d2e2b",
+    "exactSafeAPTFetchSummaryUTF8": "2026-11-04T18:32:38.6834084Z Fetched 48.8 MB in 16min 38s (48.9 kB/s)\n",
+    "declaredTests": 39,
+    "explicitPassedAssertions": 29,
+    "remainingOutcomesUnresolved": 10,
+    "finalPlaywrightSummaryPresent": false,
+    "providerLogDigestAvailable": false,
+    "cryptographicAttestationVerified": false
+  }
 }

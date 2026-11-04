@@ -38,11 +38,18 @@ jobs:
         run: |
           npm ci --ignore-scripts
           npm audit --audit-level=moderate
-      - name: Install the pinned browser and Linux prerequisites
+      - name: Install Linux browser prerequisites
+        timeout-minutes: 5
         working-directory: scripts/browser-tests
         env:
           BROWSER: ${{ matrix.browser }}
-        run: ./node_modules/.bin/playwright install --with-deps "$BROWSER"
+        run: ./node_modules/.bin/playwright install-deps "$BROWSER"
+      - name: Install the pinned browser
+        timeout-minutes: 5
+        working-directory: scripts/browser-tests
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: ./node_modules/.bin/playwright install "$BROWSER"
       - name: Exercise the dashboard with an isolated local controller
         working-directory: scripts/browser-tests
         env:

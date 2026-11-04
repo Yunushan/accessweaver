@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "2dc0590f50902db80197e272fa6d4af27fb8c32d",
+  "runID": 41900891799,
+  "jobID": 126822679918,
+  "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41900891799/job/126822679918",
+  "jobConclusion": "cancelled",
+  "prerequisiteStep": {
+    "name": "Install the pinned browser and Linux prerequisites",
+    "status": "completed",
+    "conclusion": "cancelled",
+    "number": 7,
+    "started_at": "2026-11-04T19:52:04Z",
+    "completed_at": "2026-11-04T20:11:44Z"
+  },
+  "dashboardStep": {
+    "name": "Exercise the dashboard with an isolated local controller",
+    "status": "completed",
+    "conclusion": "skipped",
+    "number": 8,
+    "started_at": "2026-11-04T20:11:44Z",
+    "completed_at": "2026-11-04T20:11:44Z"
+  },
+  "timeLimitAnnotation": {
+    "level": "failure",
+    "message": "The job has exceeded the maximum execution time of 20m0s"
+  },
+  "retainedLogBytes": 38896,
+  "retainedLogSHA256": "18deaf5d7f5e3ebe6b6f936036c6603c0b1bafd716735a728244698646dc1753",
+  "exactSafeAPTFetchSummaryUTF8": "2026-11-04T20:11:43.8112952Z Fetched 48.8 MB in 19min 24s (41.9 kB/s)\n",
+  "fixedMarkerObservations": {
+    "dependency-installer": {
+      "count": 1,
+      "firstTimestamp": "2026-11-04T19:52:05.1619473Z",
+      "lastTimestamp": "2026-11-04T19:52:05.1619473Z"
+    },
+    "apt-index-or-package-fetch": {
+      "count": 58,
+      "firstTimestamp": "2026-11-04T19:52:05.4012138Z",
+      "lastTimestamp": "2026-11-04T20:11:36.9316346Z"
+    },
+    "apt-download-summary": {
+      "count": 2,
+      "firstTimestamp": "2026-11-04T19:52:17.4655631Z",
+      "lastTimestamp": "2026-11-04T20:11:43.8112952Z"
+    },
+    "apt-package-setup": {
+      "count": 0,
+      "firstTimestamp": null,
+      "lastTimestamp": null
+    },
+    "firefox-download": {
+      "count": 0,
+      "firstTimestamp": null,
+      "lastTimestamp": null
+    },
+    "ffmpeg-download": {
+      "count": 0,
+      "firstTimestamp": null,
+      "lastTimestamp": null
+    },
+    "browser-download-failure": {
+      "count": 0,
+      "firstTimestamp": null,
+      "lastTimestamp": null
+    },
+    "network-timeout": {
+      "count": 0,
+      "firstTimestamp": null,
+      "lastTimestamp": null
+    },
+    "unsupported-platform-warning": {
+      "count": 0,
+      "firstTimestamp": null,
+      "lastTimestamp": null
+    }
+  },
+  "successfulComparisonJobs": [
+    {
+      "sourceCommit": "a18844bd99b910d2a5dcda3bdd9984d78f2e6c85",
+      "jobID": 126801354322,
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354322",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Install the pinned browser and Linux prerequisites",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T19:13:43Z",
+          "completedAt": "2026-11-04T19:14:06Z",
+          "elapsedSeconds": 23
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T19:14:06Z",
+          "completedAt": "2026-11-04T19:18:36Z",
+          "elapsedSeconds": 270
+        }
+      ]
+    },
+    {
+      "sourceCommit": "824d48b39c7f4b6d501a96c6407f9f11de1c0a39",
+      "jobID": 126816380421,
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41899085942/job/126816380421",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Install the pinned browser and Linux prerequisites",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T19:40:23Z",
+          "completedAt": "2026-11-04T19:40:49Z",
+          "elapsedSeconds": 26
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T19:40:49Z",
+          "completedAt": "2026-11-04T19:45:10Z",
+          "elapsedSeconds": 261
+        }
+      ]
+    }
+  ],
+  "interpretation": "The current source has21successful CI jobs and oneFirefox job cancelled by its20-minute limit during prerequisites; dashboard execution was skipped. APT itself reports fetching48.8MB over19min24s. No browserdownload marker is present in the retained prerequisite window; this does not prove an underlying network/mirror cause. The earlier d713 cancellation had a different chronology: prerequisites completed and29explicit dashboard assertions passed before whole-job cancellation. Keep these outcomes distinct.",
+  "workflowChange": "Preserve all3browsers/ubuntu-latest/pinnedtools and20mjobcap. Split equivalent locked install-deps and install invocations into separately named5min steps; this bounds infrastructure delay and preserves test time without making slow infrastructure a passing acceptance result. Fresh hosted validation remains required.",
+  "providerLogDigestAvailable": false,
+  "cryptographicAttestationVerified": false,
+  "workflowRerunPerformed": false,
+  "productionQualificationComplete": false,
+  "readinessStatusChanged": false
+}
