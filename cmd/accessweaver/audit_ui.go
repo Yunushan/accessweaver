@@ -153,7 +153,7 @@ func serveDesktop(ctx context.Context, server *api.Server, info io.Writer) error
 		return err
 	}
 	defer launcher.Close()
-	if _, err := fmt.Fprintln(info, "AccessWeaver is running at", addr, "\nOpen this private launch file in your browser:", launcher.URL, "\nLocal interface only. Press Ctrl+C to exit. No external engines started automatically."); err != nil {
+	if _, err := fmt.Fprintf(info, "AccessWeaver is running at %s\nOpen this private launch file in your browser: %s\nLocal interface only. Press Ctrl+C to exit. No external engines started automatically.\n", addr, launcher.URL); err != nil {
 		return errors.New("desktop startup output unavailable")
 	}
 	if os.Getenv("ACCESSWEAVER_NO_BROWSER") != "1" {

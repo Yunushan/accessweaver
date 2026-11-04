@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "56152b6a461c3502600833e6e5b98de2f83c80d4",
+  "runID": 41849152823,
+  "providerRunURL": "https://github.com/Yunushan/accessweaver/actions/runs/41849152823",
+  "failedStep": "Native Unix controller ownership and shutdown",
+  "jobs": [
+    {
+      "jobID": 126640456773,
+      "jobName": "Test (ubuntu-latest)",
+      "jobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41849152823/job/126640456773",
+      "logBytes": 44358,
+      "logSHA256": "746e2e1d04b05cf56a0b6517144e593172dad2f4878d7e57661f65b8717b6ba2",
+      "retainedControllerReport": {
+        "passed": false,
+        "platform": "Linux",
+        "checks": [
+          "duplicate UI rejected while the first controller remains active",
+          "first controller survives duplicate launch",
+          "CLI import rejected while UI owns the root",
+          "rejected import preserves saved profiles",
+          "read-only CLI remains available"
+        ],
+        "binarySha256": "78ad4c8a680e3b81ad4d1271f046c8497c7db2c7692bc46d85b513a8fe241e87",
+        "error": "private owner bootstrap bypasses proxies without disclosing a credential"
+      }
+    },
+    {
+      "jobID": 126640456989,
+      "jobName": "Test (macos-15-intel)",
+      "jobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41849152823/job/126640456989",
+      "logBytes": 82937,
+      "logSHA256": "ee6bbfdb004d7263553a5edac722fd9ce81c15b0fc90a319f5cb9e75560ab2d5",
+      "retainedControllerReport": {
+        "passed": false,
+        "platform": "Darwin",
+        "checks": [
+          "duplicate UI rejected while the first controller remains active",
+          "first controller survives duplicate launch",
+          "CLI import rejected while UI owns the root",
+          "rejected import preserves saved profiles",
+          "read-only CLI remains available"
+        ],
+        "binarySha256": "e9a4666e8daa7163046a999c5d71a28d8477857414aa3612faa7d52cb0d5d856",
+        "error": "private owner bootstrap bypasses proxies without disclosing a credential"
+      }
+    },
+    {
+      "jobID": 126640457027,
+      "jobName": "Test (ubuntu-24.04-arm)",
+      "jobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41849152823/job/126640457027",
+      "logBytes": 44419,
+      "logSHA256": "607bcfe5f23db854e3b600dc75643c4910473f0e70aa6c9b685b6671808c55b8",
+      "retainedControllerReport": {
+        "passed": false,
+        "platform": "Linux",
+        "checks": [
+          "duplicate UI rejected while the first controller remains active",
+          "first controller survives duplicate launch",
+          "CLI import rejected while UI owns the root",
+          "rejected import preserves saved profiles",
+          "read-only CLI remains available"
+        ],
+        "binarySha256": "5cfab6210c497ab4d7fe417356ca29ecc5b97c5a4da9379451f882d310bd8734",
+        "error": "private owner bootstrap bypasses proxies without disclosing a credential"
+      }
+    },
+    {
+      "jobID": 126640457269,
+      "jobName": "Test (macos-latest)",
+      "jobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41849152823/job/126640457269",
+      "logBytes": 80534,
+      "logSHA256": "a934b5d2333e51b3cdde196e7d2a0dafe54c25c84204215a7a3a92f70a466dbd",
+      "retainedControllerReport": {
+        "passed": false,
+        "platform": "Darwin",
+        "checks": [
+          "duplicate UI rejected while the first controller remains active",
+          "first controller survives duplicate launch",
+          "CLI import rejected while UI owns the root",
+          "rejected import preserves saved profiles",
+          "read-only CLI remains available"
+        ],
+        "binarySha256": "aab97968650e0327085e82059ce745e6f0d225944ac52e76b9d23b57a213a899",
+        "error": "private owner bootstrap bypasses proxies without disclosing a credential"
+      }
+    }
+  ],
+  "diagnosis": "The serveDesktop refactor used fmt.Fprintln with newline-leading arguments. Its automatic spaces added a trailing space to both emitted URLs. test-linux-session.py requires an exact IPv4 loopback URL and refused the altered listener string before its owner bootstrap. All four retained reports stopped at the same assertion.",
+  "sourceReproduction": {
+    "test": "TestDesktopStartupOutputSupportsPrivateOwnerBootstrap",
+    "beforeFix": "Fails: startup listener is not a canonical loopback URL",
+    "scope": "Trusted unelevated WSL source Go fixture using the actual controller listener and private launcher, no candidate product executable or external engine launched"
+  },
+  "repair": "Use an explicit format string preserving the three original complete startup lines, while retaining output-error handling and shared desktop shutdown. No parser relaxation or credential guard change.",
+  "qualification": "Provider/source-bound job logs and reported binary digests retained locally; no independent artifact-attestation claim. The four failed jobs are not rerun and remain failures. A later source needs its own native acceptance.",
+  "readinessStatusChanged": false
+}
