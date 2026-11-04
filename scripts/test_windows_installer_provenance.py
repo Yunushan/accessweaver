@@ -88,7 +88,8 @@ class WindowsStateObservationContracts(unittest.TestCase):
     def test_all_fifteen_original_baseline_and_transition_comparisons_are_required(self):
         self.assertEqual(len(PHASES),15)
         self.assertIn("after-restoration-launch-failures",PHASES)
-        validate_state_observations(self.fixture())
+        result=validate_state_observations(self.fixture())
+        self.assertEqual(result,{"nativeStateCheckpointsVerified":15,"nativeStateComparisonsVerified":30})
 
     def test_missing_reordered_rebased_transient_private_or_incomplete_observations_refuse(self):
         for kind in ("missing","reordered","missing-transition","null","prior-drift","transient-restored","rebased","row-count-bool","counter-bool","changed-rule","raw-private-field","changed-hash","missing-domain","unknown-envelope"):

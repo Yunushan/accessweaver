@@ -79,6 +79,8 @@ def validate_state_observations(observations):
                 require(domain.get("serializedEqual") is True and type(domain.get("beforeSHA256")) is str and domain.get("beforeSHA256")==domain.get("afterSHA256")==initial.get("beforeSHA256") and SHA.fullmatch(domain["beforeSHA256"]) is not None,"Native state domain changed")
                 require(type(domain.get("beforeRows")) is int and type(domain.get("afterRows")) is int and domain["beforeRows"]==domain["afterRows"]==initial.get("beforeRows") and 0<=domain["beforeRows"]<=10000,"Native state row count differs")
                 require(all(type(domain.get(k)) is int and domain[k]==0 for k in ("added","removed","changed","rowSerializationChanges")) and domain.get("recordOrderingChanged") is False and domain.get("changes")==[] and domain.get("changesTruncated") is False,"Native state diagnostics report a change")
+    return {"nativeStateCheckpointsVerified":len(PHASES),"nativeStateComparisonsVerified":2*len(PHASES)}
+
 
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
@@ -90,7 +92,7 @@ def validate_contents(root,commit,ref,arch,versions):
         require(report.get(key) is False,"Unqualified native scope changed")
     require(re.fullmatch(r"[1-9][0-9]{0,19}",str(report.get("runID",""))) is not None,"Missing native invocation identity")
     require(report.get("stateDiagnosticsSourceSHA256")==digest(Path(__file__).with_name("windows-installer-state.ps1").read_bytes()),"State diagnostics differ from approved verifier source")
-    validate_state_observations(report.get("stateObservations"))
+    state_counts=validate_state_observations(report.get("stateObservations"))
     operations=report.get("operations",[])
     expected=["install","upgrade","reinstall","refused-downgrade","refused-uninstall","uninstall"]
     require([o.get("operation") for o in operations]==expected,"Native lifecycle operation coverage differs")
@@ -112,7 +114,7 @@ def validate_contents(root,commit,ref,arch,versions):
         require(payload.get("version")==version and payload.get("hashes")==[{"alg":"SHA-256","content":build["payloadSha256"]}],"Installer SBOM payload subject differs")
         require(compiler.get("version")=="6.7.1" and prop_map(compiler).get("accessweaver:compiler-sha256")==build["compilerSHA256"],"Installer SBOM compiler subject differs")
         candidates.append({"file":name,"sha256":digest(binary),"bytes":len(binary),"payloadSHA256":build["payloadSha256"],"payloadTarget":"windows/"+arch,"bootstrapPEMachine":"0x014c","sbomSHA256":digest((root/(name+".cdx.json")).read_bytes())})
-    return {"candidates":candidates,"nativeStateCheckpointsVerified":6,"nativeLifecycleOperationsVerified":6,"nativeDependencyClosureComplete":False}
+    return {"candidates":candidates,**state_counts,"nativeLifecycleOperationsVerified":len(expected),"nativeRunID":str(report["runID"]),"nativeDependencyClosureComplete":False}
 
 def stage(build_root,destination,commit,ref,arch,versions):
     validate_identity(commit,ref);names=subject_names(arch,versions)
