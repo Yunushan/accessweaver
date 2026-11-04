@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "3dd33464cddcfc9ac5fd29c87fc89985ef637764",
+  "sourceRef": "refs/heads/main",
+  "nativeRunID": 41801522984,
+  "scope": "Provider-bound failed ARM64 signal assertion with bounded parent diagnostics, alongside Intel provider success; no full native qualification",
+  "failedTarget": {
+    "target": "darwin/arm64",
+    "providerArtifact": {
+      "id": 13307867981,
+      "node_id": "MDg6QXJ0aWZhY3QxMzMwNzg2Nzk4MQ==",
+      "name": "macos-installer-inspection-arm64",
+      "size_in_bytes": 6798296,
+      "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13307867981",
+      "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13307867981/zip",
+      "expired": false,
+      "digest": "sha256:668628a506a8b947c7fbaa61f15c4bd14902411dea030bfca9fe769745d3d3f8",
+      "created_at": "2026-11-04T08:44:15Z",
+      "updated_at": "2026-11-04T08:44:15Z",
+      "expires_at": "2026-11-18T08:44:12Z",
+      "workflow_run": {
+        "id": 41801522984,
+        "repository_id": 1441227907,
+        "head_repository_id": 1441227907,
+        "head_branch": "main",
+        "head_sha": "3dd33464cddcfc9ac5fd29c87fc89985ef637764"
+      }
+    },
+    "providerZIPDigestVerified": true,
+    "providerJob": {
+      "id": 126478184902,
+      "runID": 41801522984,
+      "url": "https://github.com/Yunushan/accessweaver/actions/runs/41801522984/job/126478184902",
+      "conclusion": "failure"
+    },
+    "jobLogSHA256": "3965a667cc1a1059fec5e788b030970776682a43d54c6a15dd797d98a6a81041",
+    "observedAssertion": "owned child signal/marker differs exit status 1",
+    "failedCase": "file removal-file-done-durable",
+    "childDiagnosticIncludedInAssertion": false
+  },
+  "intelProviderJob": {
+    "id": 126478184392,
+    "runID": 41801522984,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41801522984/job/126478184392",
+    "conclusion": "success"
+  },
+  "diagnosis": {
+    "causeEstablished": false,
+    "observed": "The new bounded parent capture retained the assertion. A guarded child returned status 1 instead of the required SIGKILL/marker. This branch omitted the already captured child output, leaving the cause unknown.",
+    "nextChange": "Include the existing bounded 4096-byte child output on signal/marker failures in file/directory, quarantine and app fixtures, retaining all signal, marker, deadline and ownership predicates.",
+    "failedSourceRerun": false
+  },
+  "boundaries": {
+    "artifactCryptographicAuthenticationClaimed": false,
+    "completeTwoArchitectureQualification": false,
+    "productionPredicateChanged": false,
+    "productUninstallQualified": false,
+    "readinessGatePromoted": false,
+    "localCandidateCodeExecuted": false
+  },
+  "limits": [
+    "Intel provider success does not explain ARM64 failure or independently authenticate the Intel candidate.",
+    "The observed failure differs from the preceding source and does not establish a shared cause.",
+    "Parent diagnostic selection now works; the child status alone cannot identify the underlying refusal."
+  ]
+}

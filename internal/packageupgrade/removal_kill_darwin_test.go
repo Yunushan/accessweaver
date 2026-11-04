@@ -246,7 +246,7 @@ func exerciseOwnedRemovalKillCases(t *testing.T, privateBase string, directory b
 				}
 				status, ok := exit.Sys().(syscall.WaitStatus)
 				if !ok || !status.Signaled() || status.Signal() != syscall.SIGKILL || bytes.Count(output.data, []byte("OWNED-REMOVAL-SIGKILL "+phase+"\n")) != 1 {
-					t.Fatal("owned child signal/marker differs", e)
+					t.Fatal("owned child signal/marker differs", e, string(output.data))
 				}
 				parent, e := os.Open(f.base)
 				if e != nil {
