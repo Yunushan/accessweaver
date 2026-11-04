@@ -112,8 +112,9 @@ func retainedOwnedPreparationTargets(t *testing.T, f *ownedRemovalTargetFixture)
 	return raw
 }
 
-// A separate guarded invocation keeps each native test process under its
-// existing 120-second deadline. The larger transaction fixture is unchanged.
+// All process-kill cases have their own guarded process with a 120-second
+// deadline. The driver runs it alongside the non-spawning copy/recovery fixture
+// under one shared 150-second wall-clock budget, requiring both to pass.
 func TestDarwinRemovalPreparationRootKilledRecovery(t *testing.T) {
 	if os.Getenv("ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST") != "1" {
 		t.Skip("requires opted-in hosted native package driver")
@@ -154,6 +155,12 @@ func TestDarwinRemovalPreparationRootKilledRecovery(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	// Child creation is isolated from the other test process's non-spawning
+	// fixture leases. All existing kill cases and preparation cases remain.
+	killedProcessCases := exerciseOwnedRemovalKilledProcesses(t, bridge)
+	killedDirectoryCases := exerciseOwnedRemovalKilledDirectories(t, bridge)
+	killedQuarantineCases := exerciseOwnedRemovalKilledQuarantine(t, bridge)
+	killedAppCases := exerciseOwnedQuarantinedAppKilledProcesses(t, bridge)
 	records := []map[string]any{}
 	for index, phase := range removalPreparationKillPhases {
 		if !t.Run("preparation-sigkill-"+phase, func(t *testing.T) {
@@ -364,7 +371,12 @@ func TestDarwinRemovalPreparationRootKilledRecovery(t *testing.T) {
 	if len(records) != 10 {
 		t.Fatal("preparation SIGKILL case extent differs")
 	}
-	encoded, e := json.Marshal(map[string]any{"schemaVersion": 1, "caseCount": len(records), "cases": records, "copiedCodeExecuted": false, "packageScriptsIntegrated": false, "productionQualificationComplete": false})
+	report := map[string]any{"schemaVersion": 1, "caseCount": len(records), "cases": records, "copiedCodeExecuted": false, "packageScriptsIntegrated": false, "productionQualificationComplete": false,
+		"protectedFileSIGKILLVerified": true, "protectedFileSIGKILLCaseCount": len(killedProcessCases), "protectedFileSIGKILLCases": killedProcessCases,
+		"publicAppQuarantineSIGKILLVerified": true, "publicAppQuarantineSIGKILLCaseCount": len(killedQuarantineCases), "publicAppQuarantineSIGKILLCases": killedQuarantineCases,
+		"quarantinedAppSIGKILLVerified": true, "quarantinedAppSIGKILLCaseCount": len(killedAppCases), "quarantinedAppSIGKILLCases": killedAppCases,
+		"protectedDirectorySIGKILLVerified": true, "protectedDirectorySIGKILLCaseCount": len(killedDirectoryCases), "protectedDirectorySIGKILLCases": killedDirectoryCases}
+	encoded, e := json.Marshal(report)
 	if e != nil {
 		t.Fatal(e)
 	}

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Guarded driver-free clean-install acceptance on disposable hosted Macs only."""
 import json
+from concurrent.futures import ThreadPoolExecutor
 import os
 from pathlib import Path
 import platform
@@ -195,6 +196,24 @@ def deployment_failure_diagnostic(output):
     return "Native fixture assertions:\n"+bounded(assertions,7900)+"\nNative fixture tail:\n"+bounded(text,4000,True)
 
 
+def run_deployment_fixture_pair(command,preparation_command,environment):
+    # The parent owns no Go fixture leases. Each root process has independent
+    # descriptors/capsules; its own child forks cannot retain the other's locks.
+    started=time.monotonic()
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        copy_pending=workers.submit(run,command,environment,150,codes=tuple(range(256)))
+        kill_pending=workers.submit(run,preparation_command,environment,150,codes=tuple(range(256)))
+        result,copy_elapsed=copy_pending.result()
+        preparation,preparation_elapsed=kill_pending.result()
+    elapsed=int((time.monotonic()-started)*1000)
+    for output in (result,preparation):
+        if output.returncode:
+            print(deployment_failure_diagnostic(output.stdout+b"\nNative fixture stderr:\n"+output.stderr),flush=True)
+    require(elapsed<=150000,"Native fixture pair exceeded the shared driver deadline")
+    require(result.returncode==0 and preparation.returncode==0,"Native protected deployment/kill fixture pair failed")
+    return result,copy_elapsed,preparation,preparation_elapsed,elapsed
+
+
 def deployment_transactions(capsule,environment,identity):
     go=shutil.which("go");require(go is not None,"Native SDK missing for deployment transactions")
     compiler_environment=dict(os.environ,GOTOOLCHAIN="local",GOFLAGS="",GOOS="darwin",GOARCH=identity["arch"],CGO_ENABLED="0")
@@ -204,32 +223,25 @@ def deployment_transactions(capsule,environment,identity):
     # The outer driver has already required the explicit hosted/disposable
     # opt-in. Pass only fixed fixture guards, not workflow credentials, to root.
     command=["/usr/bin/sudo","-n","/usr/bin/env","-i","PATH=/usr/bin:/bin:/usr/sbin:/sbin","LANG=C","LC_ALL=C","TZ=UTC","GITHUB_ACTIONS=true","RUNNER_ENVIRONMENT=github-hosted","RUNNER_OS=macOS","ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST=1",binary,"-test.run=^TestDarwinDeploymentRootCopyRecovery$","-test.v","-test.timeout=120s","-test.parallel=3"]
-    result,elapsed=run(command,environment,150,codes=tuple(range(256)))
-    if result.returncode:
-        # Only this trusted test binary's bounded fixture diagnostics enter the
-        # job log. No inherited credentials or user profile contents are input.
-        print(deployment_failure_diagnostic(result.stdout+b"\nNative fixture stderr:\n"+result.stderr),flush=True)
-    require(result.returncode==0,"Native protected deployment transaction fixture failed")
+    preparation_command=list(command)
+    preparation_command[preparation_command.index("-test.run=^TestDarwinDeploymentRootCopyRecovery$")]="-test.run=^TestDarwinRemovalPreparationRootKilledRecovery$"
+    executable_sha=digest(binary.read_bytes())
+    result,copy_elapsed,preparation,preparation_elapsed,elapsed=run_deployment_fixture_pair(command,preparation_command,environment)
     lines=[line.split("DEPLOYMENT-RESULT ",1)[1] for line in result.stdout.decode("utf-8").splitlines() if "DEPLOYMENT-RESULT " in line]
     require(len(lines)==1 and b"--- PASS: TestDarwinDeploymentRootCopyRecovery" in result.stdout,"Native deployment test did not execute to completion")
     value=json.loads(lines[0])
     require(value["manifestSHA256"]==digest((APP/"Contents/Resources/INSTALL-MANIFEST.json").read_bytes()) and value["payloadSHA256"]==digest((APP/"Contents/MacOS/accessweaver").read_bytes()) and value["version"]==identity["version"],"Copied deployment subjects differ from installed package")
     require(owned_bundle_snapshot()==before and snapshot_receipts()==receipts,"Deployment transaction fixture changed installed app/receipts")
-    value.update({"testExecutableSHA256":digest(binary.read_bytes()),"elapsedMilliseconds":elapsed,"installedObjectsAndReceiptsPreserved":True,"fixtureParent":"private-exclusive-temporary-directory","packageScriptsIntegrated":False})
-    # Keep the existing transaction deadline unchanged. The new preparation
-    # child cases use the same source-built executable in a separate bounded
-    # guarded invocation, with the same explicit environment whitelist.
-    preparation_command=list(command)
-    preparation_command[preparation_command.index("-test.run=^TestDarwinDeploymentRootCopyRecovery$")]="-test.run=^TestDarwinRemovalPreparationRootKilledRecovery$"
-    preparation,preparation_elapsed=run(preparation_command,environment,150,codes=tuple(range(256)))
-    if preparation.returncode:
-        print(deployment_failure_diagnostic(preparation.stdout+b"\nNative fixture stderr:\n"+preparation.stderr),flush=True)
-    require(preparation.returncode==0,"Native preparation SIGKILL fixture failed")
+    value.update({"testExecutableSHA256":executable_sha,"elapsedMilliseconds":elapsed,"rootFixtureElapsedMilliseconds":copy_elapsed,"installedObjectsAndReceiptsPreserved":True,"fixtureParent":"private-exclusive-temporary-directory","packageScriptsIntegrated":False})
     preparation_lines=[line.split("REMOVAL-PREPARATION-RESULT ",1)[1] for line in preparation.stdout.decode("utf-8").splitlines() if "REMOVAL-PREPARATION-RESULT " in line]
     require(len(preparation_lines)==1 and b"--- PASS: TestDarwinRemovalPreparationRootKilledRecovery" in preparation.stdout,"Native preparation SIGKILL test did not execute to completion")
     require(digest(binary.read_bytes())==value["testExecutableSHA256"] and owned_bundle_snapshot()==before and snapshot_receipts()==receipts,"Preparation SIGKILL fixture changed source executable or installed objects/receipts")
     preparation_value=json.loads(preparation_lines[0])
-    preparation_value.update({"testExecutableSHA256":value["testExecutableSHA256"],"elapsedMilliseconds":preparation_elapsed,"installedObjectsAndReceiptsPreserved":True,"fixtureParent":"private-exclusive-temporary-directory"})
+    # Only these existing, independently validated kill fields may merge;
+    # the other process cannot replace copied payload or deployment identity.
+    killed_fields=[prefix+suffix for prefix in ("protectedFile","protectedDirectory","publicAppQuarantine","quarantinedApp") for suffix in ("SIGKILLVerified","SIGKILLCaseCount","SIGKILLCases")]
+    value.update({key:preparation_value.pop(key) for key in killed_fields})
+    preparation_value.update({"testExecutableSHA256":value["testExecutableSHA256"],"elapsedMilliseconds":preparation_elapsed,"installedObjectsAndReceiptsPreserved":True,"fixtureParent":"private-exclusive-temporary-directory","invocationScope":"file-directory-quarantine-app-and-preparation-kills"})
     value["removalPreparationSIGKILL"]=preparation_value
     return value
 

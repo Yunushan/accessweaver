@@ -97,6 +97,7 @@ def validate_preparation_sigkill(value,test_executable):
     require(type(value.get("schemaVersion")) is int and value["schemaVersion"]==1 and type(value.get("caseCount")) is int and value["caseCount"]==10,"Native preparation SIGKILL extent differs")
     require(type(test_executable) is str and value.get("testExecutableSHA256")==test_executable and re.fullmatch("[a-f0-9]{64}",test_executable) is not None and value.get("installedObjectsAndReceiptsPreserved") is True and value.get("fixtureParent")=="private-exclusive-temporary-directory","Native preparation SIGKILL executable/scope differs")
     require(all(value.get(k) is False for k in ("copiedCodeExecuted","packageScriptsIntegrated","productionQualificationComplete")),"Native preparation SIGKILL scope differs")
+    require(value.get("invocationScope")=="file-directory-quarantine-app-and-preparation-kills","Native controlled kill invocation scope differs")
     require(type(value.get("elapsedMilliseconds")) is int and 0<=value["elapsedMilliseconds"]<=150000,"Native preparation SIGKILL timing differs")
     phases=["removal-preparation-created","removal-state-durable","removal-plan-durable","removal-marker-durable","removal-directory-durable","removal-preparation-durable","removal-record-reserved","removal-reservation-parent-durable","removal-published","removal-parent-durable"]
     cases=value.get("cases");require(type(cases) is list and len(cases)==10,"Native preparation SIGKILL cases missing")
@@ -119,6 +120,8 @@ def validate_deployment_transactions(deployment,manifest_hash,payload_hash,versi
     require(all(type(deployment.get(k)) is str and re.fullmatch("[a-f0-9]{64}",deployment[k]) is not None for k in ("detachedPayloadSBOMManifestSHA256","detachedPayloadSBOMSHA256")),"Native detached metadata seal evidence differs")
     require(type(deployment.get("removalPreparationRecoveryCaseCount")) is int and deployment["removalPreparationRecoveryCaseCount"]==28,"Native removal preparation recovery case count differs")
     validate_preparation_sigkill(deployment.get("removalPreparationSIGKILL"),deployment["testExecutableSHA256"])
+    require(type(deployment.get("rootFixtureElapsedMilliseconds")) is int and 0<=deployment["rootFixtureElapsedMilliseconds"]<=150000,"Native copy fixture timing differs")
+    require(type(deployment.get("elapsedMilliseconds")) is int and max(deployment["rootFixtureElapsedMilliseconds"],deployment["removalPreparationSIGKILL"]["elapsedMilliseconds"])<=deployment["elapsedMilliseconds"]<=150000,"Native paired fixture timing differs")
     require(type(deployment.get("intactTargetCaseCount")) is int and deployment["intactTargetCaseCount"]==16,"Native intact target verification case count differs")
     require(type(deployment.get("protectedFileJournalCaseCount")) is int and deployment["protectedFileJournalCaseCount"]==18,"Native protected file journal case count differs")
     require(type(deployment.get("protectedFileSIGKILLCaseCount")) is int and deployment["protectedFileSIGKILLCaseCount"]==4,"Native protected file SIGKILL case count differs")

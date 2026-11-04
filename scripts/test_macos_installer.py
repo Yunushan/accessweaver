@@ -13,6 +13,39 @@ from sbom import macos_package,sha,validate
 from macos_deployment import verify_deployment_bundle,detached_payload_manifest,PAYLOAD_SBOM
 
 class MacPackageContracts(unittest.TestCase):
+    def lifecycle_driver(self):
+        spec=importlib.util.spec_from_file_location("paired_native_lifecycle_driver",Path(__file__).with_name("test-macos-installer-lifecycle.py"))
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
+    def test_fixture_pair_starts_both_concurrently_and_retains_result_identity_and_bounds(self):
+        from subprocess import CompletedProcess
+        from threading import Barrier
+        from unittest.mock import patch
+        driver=self.lifecycle_driver();barrier=Barrier(2);calls=[]
+        def run(command,env,timeout,codes):
+            calls.append((command,env,timeout,codes));barrier.wait(timeout=2)
+            return CompletedProcess(command,0,command[0].encode(),b""),5
+        with patch.object(driver,"run",side_effect=run):
+            root,root_ms,kills,kills_ms,total=driver.run_deployment_fixture_pair(["root"],["kills"],{"guard":"fixed"})
+        self.assertEqual((root.stdout,kills.stdout,root_ms,kills_ms),(b"root",b"kills",5,5))
+        self.assertEqual(len(calls),2);self.assertTrue(all(c[1]=={"guard":"fixed"} and c[2]==150 and c[3]==tuple(range(256)) for c in calls))
+        self.assertLessEqual(total,150000)
+    def test_fixture_pair_refuses_either_failure_and_shared_budget_overrun(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from subprocess import CompletedProcess,TimeoutExpired
+        from unittest.mock import patch
+        driver=self.lifecycle_driver()
+        for failed in ("root","kills"):
+            def run(command,*args,**kwargs):return CompletedProcess(command,int(command[0]==failed),b"fixture.go:9: refused\n",b""),1
+            with patch.object(driver,"run",side_effect=run),redirect_stdout(StringIO()):
+                with self.assertRaises(ValueError):driver.run_deployment_fixture_pair(["root"],["kills"],{})
+        with patch.object(driver,"run",return_value=(CompletedProcess([],0,b"",b""),1)),patch.object(driver.time,"monotonic",side_effect=[0,151]):
+            with self.assertRaises(ValueError):driver.run_deployment_fixture_pair(["root"],["kills"],{})
+        def timeout(command,*args,**kwargs):
+            if command[0]=="kills":raise TimeoutExpired(command,150)
+            return CompletedProcess(command,0,b"",b""),1
+        with patch.object(driver,"run",side_effect=timeout):
+            with self.assertRaises(TimeoutExpired):driver.run_deployment_fixture_pair(["root"],["kills"],{})
     def test_native_fixture_failure_keeps_early_assertion_and_final_status_within_budget(self):
         spec=importlib.util.spec_from_file_location("native_lifecycle_diagnostics",Path(__file__).with_name("test-macos-installer-lifecycle.py"))
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)

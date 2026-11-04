@@ -814,9 +814,8 @@ func TestDarwinDeploymentRootCopyRecovery(t *testing.T) {
 	}
 
 	// Non-spawning suites use independent targets-N capsules and join before
-	// any child is started. Fork can duplicate a reference to an existing flock
-	// until exec closes it; an unrelated child must not hold another fixture's
-	// lease while that fixture checks immediate close/reopen behavior.
+	// this process reports. Kill cases run in another source-built test process
+	// so their forks cannot inherit these fixtures' existing lease descriptors.
 	// Keep the same total 120-second deadline and all operation deadlines.
 	if !t.Run("owned-removal-groups", func(t *testing.T) {
 		t.Run("preparation-intact-files", func(t *testing.T) {
@@ -837,12 +836,8 @@ func TestDarwinDeploymentRootCopyRecovery(t *testing.T) {
 	}) {
 		t.Fatal("owned removal acceptance did not complete")
 	}
-	killedProcessCases := exerciseOwnedRemovalKilledProcesses(t, bridgeParent)
-	killedDirectoryCases := exerciseOwnedRemovalKilledDirectories(t, bridgeParent)
-	killedQuarantineCases := exerciseOwnedRemovalKilledQuarantine(t, bridgeParent)
-	killedAppCases := exerciseOwnedQuarantinedAppKilledProcesses(t, bridgeParent)
 
-	report := map[string]any{"schemaVersion": 1, "manifestSHA256": identity.ManifestSHA256, "payloadSHA256": identity.PayloadSHA256, "version": identity.Version, "fixedProtectedParentVerified": true, "partialCopyPreservedAndRefused": true, "completeCopyRecovered": true, "concurrentPreparationFenced": true, "postPublicationRemovalRecovered": true, "oldCompleteSlotFencedAfterRemoval": true, "restoredRetryVerified": true, "payloadIsIndependentCopy": true, "detachedManifestPartialCopyPreservedAndRefused": true, "detachedManifestCompleteCopyRecovered": true, "detachedPayloadSBOMPartialCopyPreservedAndRefused": true, "legacyToSchema2BridgeVerified": true, "removalPreparationRecoveryVerified": true, "removalPreparationRecoveryCaseCount": ownedRemovalPreparationCaseCount, "intactRemovalTargetsVerified": true, "ownedTargetRefusalsPreserved": true, "intactTargetCaseCount": 16, "protectedFileJournalVerified": true, "protectedFileJournalCaseCount": ownedRemovalFileCaseCount, "protectedFileSIGKILLVerified": true, "protectedFileSIGKILLCaseCount": len(killedProcessCases), "protectedFileSIGKILLCases": killedProcessCases, "publicAppQuarantineSIGKILLVerified": true, "publicAppQuarantineSIGKILLCaseCount": len(killedQuarantineCases), "publicAppQuarantineSIGKILLCases": killedQuarantineCases, "quarantinedAppSIGKILLVerified": true, "quarantinedAppSIGKILLCaseCount": len(killedAppCases), "quarantinedAppSIGKILLCases": killedAppCases, "quarantinedAppRemovalVerified": true, "quarantinedAppRemovalCaseCount": ownedRemovalAppCaseCount, "publicAppQuarantineVerified": true, "publicAppQuarantineCaseCount": ownedRemovalQuarantineCaseCount, "protectedDirectoryJournalVerified": true, "protectedDirectoryJournalCaseCount": ownedRemovalDirectoryCaseCount, "protectedDirectorySIGKILLVerified": true, "protectedDirectorySIGKILLCaseCount": len(killedDirectoryCases), "protectedDirectorySIGKILLCases": killedDirectoryCases, "detachedPayloadSBOMManifestSHA256": newIdentity.ManifestSHA256, "detachedPayloadSBOMSHA256": digest(sbomData), "copiedCodeExecuted": false, "productionQualificationComplete": false, "finalGeneration": 4}
+	report := map[string]any{"schemaVersion": 1, "manifestSHA256": identity.ManifestSHA256, "payloadSHA256": identity.PayloadSHA256, "version": identity.Version, "fixedProtectedParentVerified": true, "partialCopyPreservedAndRefused": true, "completeCopyRecovered": true, "concurrentPreparationFenced": true, "postPublicationRemovalRecovered": true, "oldCompleteSlotFencedAfterRemoval": true, "restoredRetryVerified": true, "payloadIsIndependentCopy": true, "detachedManifestPartialCopyPreservedAndRefused": true, "detachedManifestCompleteCopyRecovered": true, "detachedPayloadSBOMPartialCopyPreservedAndRefused": true, "legacyToSchema2BridgeVerified": true, "removalPreparationRecoveryVerified": true, "removalPreparationRecoveryCaseCount": ownedRemovalPreparationCaseCount, "intactRemovalTargetsVerified": true, "ownedTargetRefusalsPreserved": true, "intactTargetCaseCount": 16, "protectedFileJournalVerified": true, "protectedFileJournalCaseCount": ownedRemovalFileCaseCount, "quarantinedAppRemovalVerified": true, "quarantinedAppRemovalCaseCount": ownedRemovalAppCaseCount, "publicAppQuarantineVerified": true, "publicAppQuarantineCaseCount": ownedRemovalQuarantineCaseCount, "protectedDirectoryJournalVerified": true, "protectedDirectoryJournalCaseCount": ownedRemovalDirectoryCaseCount, "detachedPayloadSBOMManifestSHA256": newIdentity.ManifestSHA256, "detachedPayloadSBOMSHA256": digest(sbomData), "copiedCodeExecuted": false, "productionQualificationComplete": false, "finalGeneration": 4}
 	data, _ := json.Marshal(report)
 	t.Log("DEPLOYMENT-RESULT " + string(data))
 }
