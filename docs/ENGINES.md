@@ -28,6 +28,10 @@ The executable must be a regular file with an allowed engine/platform basename. 
 
 The application manages one foreground child at a time. Daemon/service modes are rejected. POSIX shutdown sends a termination signal to the process group, then escalates if necessary. Windows stops the foreground child with process termination; it does not provide graceful vendor service control or guarantee cleanup of descendants, drivers, routes or network-lock state.
 
+A successful start confirms process launch. The foreground CLI waits for that specific launch to finish, preserving immediate failures and policy-revocation errors even if another launch later begins. A stop request is separate from an accepted signal and a terminal process result. An accepted stop signal does not prove it caused the exit or restored network state. Stop retains its three-second graceful wait and one-second forced wait; native launch, signal and output calls have no hard whole-command deadline.
+
+The CLI registers shutdown signals before launch. If its launch notice fails or is only partly written, it attempts to stop the owned process before returning a fixed notice error and any stop failure. A closed standard-output pipe follows the same path, with the previous SIGPIPE behavior restored afterward. Source tests use inert children, including actual closed-pipe cleanup and reaping; they do not qualify vendor networking or Windows descendant cleanup.
+
 ## Domain rules
 
 | Adapter | Include list | Exclude list | Meaning and limits |

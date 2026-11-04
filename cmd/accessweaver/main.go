@@ -14,7 +14,6 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/Yunushan/accessweaver/internal/api"
 	"github.com/Yunushan/accessweaver/internal/buildinfo"
@@ -193,34 +192,70 @@ func execute(args []string) error {
 		if err != nil {
 			return err
 		}
-		manager := engine.NewManager(root)
-		if err := manager.Start(p); err != nil {
-			return err
-		}
-		fmt.Println("Process launched. This does not guarantee functional routing or connection.")
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		ticker := time.NewTicker(700 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				st := manager.Snapshot()
-				if st.State == "error" {
-					return fmt.Errorf("engine exited: %s", st.LastError)
-				}
-				if st.State == "stopped" {
-					return nil
-				}
-			case <-ctx.Done():
-				return manager.Stop()
-			}
-		}
+		return runForegroundEngine(ctx, p, engine.NewManager(root), os.Stdout)
 	default:
 		return fmt.Errorf("unknown command %q; use help", args[0])
 	}
 	return nil
 }
+
+type foregroundEngineRun interface {
+	Done() <-chan struct{}
+	Wait(context.Context) (engine.RunResult, error)
+}
+
+var errEngineLaunchOutput = errors.New("engine launch notice could not be written")
+
+func runForegroundEngine(ctx context.Context, p profile.Profile, manager *engine.Manager, out io.Writer) error {
+	stopOutput := observeAuditOutputPipes()
+	defer stopOutput()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	run, err := manager.StartTracked(p)
+	if err != nil {
+		return err
+	}
+	const notice = "Process launched. This does not guarantee functional routing or connection.\n"
+	if n, err := io.WriteString(out, notice); err != nil || n != len(notice) {
+		// A notice-output failure must not abandon an already launched process.
+		return errors.Join(errEngineLaunchOutput, manager.Stop())
+	}
+	return waitForegroundEngine(ctx, run, manager.Stop)
+}
+
+// Waiting follows this exact launch. A user shutdown explicitly stops the owned
+// process; cancellation of a Run.Wait by itself never terminates that process.
+func waitForegroundEngine(ctx context.Context, run foregroundEngineRun, stop func() error) error {
+	result, err := run.Wait(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			return err
+		}
+		if err := stop(); err != nil {
+			return err
+		}
+		// A successful owned Stop normally observes this launch's completion.
+		// Check it explicitly before using an uncanceled wait: a timeout or an
+		// invalid stop implementation must never introduce an unbounded wait.
+		select {
+		case <-run.Done():
+			result, err = run.Wait(context.Background())
+			if err != nil {
+				return err
+			}
+		default:
+			return errors.New("engine stop returned without terminal observation")
+		}
+	}
+	if result.Reason == engine.RunFailed || result.Reason == engine.RunPolicyRevoked {
+		return fmt.Errorf("engine exited: %w", errors.Join(result.PolicyErr, result.WaitErr))
+	}
+	return nil
+}
+
 func usage() {
 	fmt.Printf(`AccessWeaver %s — local-first network access manager
 

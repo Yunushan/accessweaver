@@ -35,6 +35,8 @@ Profiles belong to the AccessWeaver store. External configuration files, VPN cre
 
 POSIX lifecycle uses a process group and bounded termination. Windows lifecycle currently terminates the foreground process; graceful console control, service ownership and network-state rollback need platform-specific implementation. Each configuration root has a controller lock for UI/foreground execution and CLI import, with a separate profile-operation lock. Windows administrative workflows use a machine-wide mutex; user application operations do not share that mutex. These controls do not form a universal singleton across all roots and modes.
 
+The engine manager retains a separate copy-safe handle for each accepted launch. It publishes that launch's terminal reason, actual process-wait error and policy cause before closing its completion channel; later launches cannot replace the result. Cancelling a handle wait does not terminate the process. Initial and forced stop dispatches resolve before terminal classification without holding the status mutex over signal calls; failed signals cannot suppress an unexpected exit. Native process startup retains its existing status-lock/closing atomicity and native-I/O limitations. These lifecycle observations support future asynchronous audit producers; they do not connect engine/workflow actions to the synchronous recorder or complete the enterprise audit gate. See [engine ownership](ENGINES.md).
+
 Offline browser mode stores profiles in local storage. It shares the editor presentation, but has no core API and cannot provide engine process management or network diagnostics. Import/export is the explicit bridge to the desktop store.
 
 ## Next architectural work

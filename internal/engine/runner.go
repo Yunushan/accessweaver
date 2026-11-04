@@ -39,17 +39,82 @@ func (m *Manager) Summary() Summary {
 	return Summary{State: m.state.State, Engine: m.state.Engine, ErrorPresent: m.state.LastError != "", LogLines: len(m.log)}
 }
 
+// RunReason describes the observed terminal state of one launched process.
+// A stop signal accepted before publication does not prove it caused the exit.
+type RunReason string
+
+const (
+	RunExited        RunReason = "exited"
+	RunFailed        RunReason = "failed"
+	RunStopped       RunReason = "stopped"
+	RunPolicyRevoked RunReason = "policy-revoked"
+)
+
+var ErrRunUnavailable = errors.New("engine launch handle is unavailable")
+
+// RunResult retains the actual cmd.Wait error separately from policy revocation.
+// It contains process errors for the local caller, not audit or support metadata.
+type RunResult struct {
+	Reason    RunReason
+	WaitErr   error
+	PolicyErr error
+}
+
+// Run identifies exactly one successful launch, even after another launch starts.
+// Its terminal result is published once, before Done closes. Copies of a handle
+// share the same launch and terminal result.
+type Run struct {
+	state *runState
+}
+
+type runState struct {
+	done         chan struct{}
+	result       RunResult
+	stopAccepted bool          // guarded by the manager mutex
+	stopPending  chan struct{} // guarded by the manager mutex
+}
+
+// Done is nil for a nil or zero Run. It signals terminal observation, not merely
+// launch acceptance or a stop request.
+func (r *Run) Done() <-chan struct{} {
+	if r == nil {
+		return nil
+	}
+	if r.state == nil {
+		return nil
+	}
+	return r.state.done
+}
+
+// Wait cancels only this wait; it never signals the owned process. A published
+// terminal result takes precedence over an already canceled waiting context.
+func (r *Run) Wait(ctx context.Context) (RunResult, error) {
+	if r == nil || r.state == nil || r.state.done == nil {
+		return RunResult{}, ErrRunUnavailable
+	}
+	select {
+	case <-r.state.done:
+		return r.state.result, nil
+	default:
+	}
+	select {
+	case <-r.state.done:
+		return r.state.result, nil
+	case <-ctx.Done():
+		return RunResult{}, ctx.Err()
+	}
+}
+
 type Manager struct {
-	guard    *managed.Guard
-	opMu     sync.Mutex // Serializes prepare/start/stop, including generated files.
-	mu       sync.Mutex
-	cmd      *exec.Cmd
-	done     chan struct{}
-	state    Snapshot
-	log      []string
-	root     string
-	stopping bool
-	closing  bool
+	guard   *managed.Guard
+	opMu    sync.Mutex // Serializes prepare/start/stop, including generated files.
+	mu      sync.Mutex
+	cmd     *exec.Cmd
+	run     *runState
+	state   Snapshot
+	log     []string
+	root    string
+	closing bool
 }
 
 func NewManager(root string) *Manager { return NewManagerWithGuard(root, managed.NewGuard(nil)) }
@@ -101,30 +166,43 @@ func (w logWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
+// Start preserves the launch-acceptance contract for existing controller callers.
 func (m *Manager) Start(p profile.Profile) error {
+	_, err := m.StartTracked(p)
+	return err
+}
+
+// StartTracked returns a handle only after the owned process starts successfully.
+// Successful launch is not a connectivity or service-readiness observation.
+func (m *Manager) StartTracked(p profile.Profile) (*Run, error) {
+	return m.startTracked(p, nil)
+}
+
+// observedWait is an in-process test observer; it cannot alter process waiting.
+func (m *Manager) startTracked(p profile.Profile, observedWait func()) (*Run, error) {
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
 	m.mu.Lock()
 	if m.closing {
 		m.mu.Unlock()
-		return errors.New("engine manager is shutting down")
+		return nil, errors.New("engine manager is shutting down")
 	}
 	if m.cmd != nil {
 		m.mu.Unlock()
-		return errors.New("another engine is running; stop it before starting a new one")
+		return nil, errors.New("another engine is running; stop it before starting a new one")
 	}
 	m.mu.Unlock()
 	bin, args, err := prepareWithGuard(p, m.root, m.guard)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	environment, authorization, err := launchPolicyAuthorization(m.guard, p, bin)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ctx, cancel, err := authorization.Context(context.Background())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	started := false
 	defer func() {
@@ -145,84 +223,136 @@ func (m *Manager) Start(p profile.Profile) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closing {
-		return errors.New("engine manager is shutting down")
+		return nil, errors.New("engine manager is shutting down")
 	}
 	if m.cmd != nil {
-		return errors.New("another engine started concurrently")
+		return nil, errors.New("another engine started concurrently")
 	}
 	if err := cmd.Start(); err != nil {
 		if cause := context.Cause(ctx); managed.IsPolicyError(cause) {
 			err = errors.Join(cause, err)
 		}
-		return fmt.Errorf("engine start failed: %w", err)
+		return nil, fmt.Errorf("engine start failed: %w", err)
 	}
 	started = true
 	m.cmd = cmd
-	m.stopping = false
-	m.done = make(chan struct{})
+	run := &runState{done: make(chan struct{})}
+	m.run = run
 	m.state = Snapshot{State: "running", ProfileID: p.ID, Engine: p.Engine, PID: cmd.Process.Pid, StartedAt: time.Now().UTC()}
 	m.log = nil
 	m.addLogLocked("Engine process launched; service/network connectivity is NOT yet verified")
-	done := m.done
 	go func() {
-		err := cmd.Wait()
+		waitErr := cmd.Wait()
 		cause := context.Cause(ctx)
 		policyFailure := managed.IsPolicyError(cause)
-		if policyFailure {
-			err = errors.Join(cause, err)
-		}
 		cancel()
+		if observedWait != nil {
+			observedWait()
+		}
 		m.mu.Lock()
+		// A signal can make Wait return before the signal call returns. Resolve
+		// its actual dispatch result outside the mutex before classifying exit.
+		// Recheck under the mutex: another stop attempt may have begun.
+		for run.stopPending != nil {
+			pending := run.stopPending
+			m.mu.Unlock()
+			<-pending
+			m.mu.Lock()
+		}
+		result := RunResult{Reason: RunExited, WaitErr: waitErr}
+		if policyFailure {
+			result.Reason = RunPolicyRevoked
+			result.PolicyErr = cause
+		} else if run.stopAccepted {
+			result.Reason = RunStopped
+		} else if waitErr != nil {
+			result.Reason = RunFailed
+		}
+		failed := result.Reason == RunFailed || result.Reason == RunPolicyRevoked
+		terminalErr := errors.Join(result.PolicyErr, result.WaitErr)
 		if m.cmd == cmd {
 			m.cmd = nil
 			m.state.State = "stopped"
 			m.state.PID = 0
-			if err != nil && (!m.stopping || policyFailure) {
+			if failed {
 				m.state.State = "error"
-				m.state.LastError = err.Error()
+				m.state.LastError = terminalErr.Error()
 			}
 		}
-		if err != nil && (!m.stopping || policyFailure) {
-			m.addLogLocked("Engine process exited: " + err.Error())
+		if failed {
+			m.addLogLocked("Engine process exited: " + terminalErr.Error())
 		} else {
 			m.addLogLocked("Engine process exited normally")
 		}
-		close(done)
+		run.result = result
+		close(run.done)
 		m.mu.Unlock()
 	}()
-	return nil
+	return &Run{state: run}, nil
 }
 func (m *Manager) Stop() error {
+	return m.stop(interruptProcess, killProcess, 3*time.Second, time.Second)
+}
+
+// The seams permit deterministic source tests without altering native defaults.
+func (m *Manager) stop(interrupt, kill func(*os.Process) error, grace, forceWait time.Duration) error {
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
 	m.mu.Lock()
 	cmd := m.cmd
-	done := m.done
-	if cmd != nil {
-		m.stopping = true
-		m.state.State = "stopping"
-	}
+	run := m.run
 	m.mu.Unlock()
 	if cmd == nil {
 		return nil
 	}
-	if err := interruptProcess(cmd.Process); err != nil {
-		if err = killProcess(cmd.Process); err != nil && !errors.Is(err, os.ErrProcessDone) {
-			return err
+	signalErr := m.dispatchStop(cmd, run, func(process *os.Process) error {
+		if err := interrupt(process); err != nil {
+			return kill(process)
 		}
+		return nil
+	})
+	if signalErr != nil && !errors.Is(signalErr, os.ErrProcessDone) {
+		return signalErr
 	}
 	select {
-	case <-done:
+	case <-run.done:
 		return nil
-	case <-time.After(3 * time.Second):
-		_ = killProcess(cmd.Process)
+	case <-time.After(grace):
+		_ = m.dispatchStop(cmd, run, kill)
 		select {
-		case <-done:
+		case <-run.done:
 			return nil
-		case <-time.After(time.Second):
+		case <-time.After(forceWait):
 			return errors.New("engine did not exit within timeout")
 		}
 	}
+}
+
+// Caller holds opMu. Native calls stay outside mu. Publication waits for their
+// resolved result, including escalation, and cannot confuse an accepted signal
+// with a failed attempt. Native signal calls themselves have no hard deadline.
+func (m *Manager) dispatchStop(cmd *exec.Cmd, run *runState, signal func(*os.Process) error) error {
+	m.mu.Lock()
+	if m.cmd != cmd || m.run != run {
+		m.mu.Unlock()
+		return os.ErrProcessDone
+	}
+	pending := make(chan struct{})
+	run.stopPending = pending
+	m.state.State = "stopping"
+	m.mu.Unlock()
+	err := signal(cmd.Process)
+	m.mu.Lock()
+	if err == nil {
+		run.stopAccepted = true
+	}
+	run.stopPending = nil
+	if m.cmd == cmd && !run.stopAccepted {
+		m.state.State = "running"
+	}
+	close(pending)
+	m.mu.Unlock()
+	return err
 }
 func (m *Manager) Shutdown(ctx context.Context) error {
 	m.mu.Lock()
