@@ -18,9 +18,10 @@ import (
 )
 
 var (
-	errAuditImportAdmission = errors.New("required audit or checkpoint output unavailable; profile import was not started; preserve the journal before retrying")
-	errAuditImportRefused   = errors.New("profile import refused; review its input, policy, controller and saved revision")
-	errAuditImportUncertain = errors.New("profile import or its audit result is uncertain; preserve the journal and inspect profile state before retrying")
+	errAuditInitializeAdmission = errors.New("audit initialization output unavailable; initialization was not started")
+	errAuditImportAdmission     = errors.New("required audit or checkpoint output unavailable; profile import was not started; preserve the journal before retrying")
+	errAuditImportRefused       = errors.New("profile import refused; review its input, policy, controller and saved revision")
+	errAuditImportUncertain     = errors.New("profile import or its audit result is uncertain; preserve the journal and inspect profile state before retrying")
 )
 
 func auditPaths(args []string, action string, keys ...string) (map[string]string, error) {
@@ -56,6 +57,12 @@ func auditInitializeCommand(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if out == nil {
+		return errAuditInitializeAdmission
+	}
+	if file, ok := out.(*os.File); ok && file == nil {
+		return errAuditInitializeAdmission
+	}
 	checkpoint, err := audit.InitializeLocalJournal(paths["--directory"])
 	if err != nil {
 		return err
@@ -74,6 +81,12 @@ func auditImportCommand(args []string, out io.Writer) (failure error) {
 	}
 	if !audit.LocalRecordingSupported() {
 		return audit.ErrLocalStorageUnsupported
+	}
+	if out == nil {
+		return errAuditImportAdmission
+	}
+	if file, ok := out.(*os.File); ok && file == nil {
+		return errAuditImportAdmission
 	}
 	restoreOutputPipes := observeAuditOutputPipes()
 	defer restoreOutputPipes()
@@ -101,6 +114,10 @@ func auditImportCommand(args []string, out io.Writer) (failure error) {
 		return err
 	}
 	defer clear(data)
+	required := []string{paths["--from"], paths["--to"], paths["--profile"], filepath.Join(paths["--directory"], "events.journal"), filepath.Join(paths["--directory"], ".actor-key")}
+	if err := checkRecordedPolicyOutput(out, required, nil); err != nil {
+		return errAuditImportAdmission
+	}
 	journal, err := audit.OpenLocalJournal(inputCtx, paths["--directory"], from, to)
 	if err != nil {
 		return err
