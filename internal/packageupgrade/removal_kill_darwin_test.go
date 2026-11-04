@@ -23,6 +23,13 @@ import (
 const removalKillBaseEnv = "ACCESSWEAVER_OWNED_REMOVAL_KILL_BASE"
 const removalKillPhaseEnv = "ACCESSWEAVER_OWNED_REMOVAL_KILL_PHASE"
 
+var removalQuarantineKillPhases = []string{
+	"removal-quarantine-intent-durable",
+	"removal-quarantine-renamed",
+	"removal-quarantine-parents-durable",
+	"removal-quarantine-done-durable",
+}
+
 var removalDirectoryKillPhases = []string{
 	"removal-directory-intent-durable",
 	"removal-directory-unlinked",
@@ -117,7 +124,7 @@ func TestDarwinRemovalFileKilledChild(t *testing.T) {
 		t.Fatal("killed child requires an opted-in disposable hosted root fixture")
 	}
 	known := false
-	for _, allowed := range append(append([]string{}, removalKillPhases...), removalDirectoryKillPhases...) {
+	for _, allowed := range append(append(append([]string{}, removalKillPhases...), removalDirectoryKillPhases...), removalQuarantineKillPhases...) {
 		if phase == allowed {
 			known = true
 		}
@@ -146,7 +153,9 @@ func TestDarwinRemovalFileKilledChild(t *testing.T) {
 		}
 		return errors.New("SIGKILL did not terminate the owned child")
 	}
-	if strings.HasPrefix(phase, "removal-directory-") {
+	if strings.HasPrefix(phase, "removal-quarantine-") {
+		e = intent.quarantinePublicAppUsing(context.Background(), fixture.resolve)
+	} else if strings.HasPrefix(phase, "removal-directory-") {
 		_, e = intent.removeNextProtectedObjectUsing(context.Background(), fixture.resolve, false)
 	} else {
 		_, e = intent.removeNextProtectedFileUsing(context.Background(), fixture.resolve)
