@@ -1270,7 +1270,8 @@
         "managedEndpointQualified": false,
         "rebootOrPowerLossQualified": false,
         "productionQualificationComplete": false
-      }
+      },
+      "authenticatedSubjectDigestsMatchExtractedTransport": true
     },
     {
       "target": "darwin/arm64",
@@ -2529,7 +2530,8 @@
         "managedEndpointQualified": false,
         "rebootOrPowerLossQualified": false,
         "productionQualificationComplete": false
-      }
+      },
+      "authenticatedSubjectDigestsMatchExtractedTransport": true
     }
   ],
   "ci": {

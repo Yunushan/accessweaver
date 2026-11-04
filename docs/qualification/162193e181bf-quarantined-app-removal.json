@@ -1272,7 +1272,8 @@
         "managedEndpointQualified": false,
         "rebootOrPowerLossQualified": false,
         "productionQualificationComplete": false
-      }
+      },
+      "authenticatedSubjectDigestsMatchExtractedTransport": true
     },
     {
       "target": "darwin/arm64",
@@ -2533,7 +2534,8 @@
         "managedEndpointQualified": false,
         "rebootOrPowerLossQualified": false,
         "productionQualificationComplete": false
-      }
+      },
+      "authenticatedSubjectDigestsMatchExtractedTransport": true
     }
   ],
   "ci": {
@@ -2746,5 +2748,67 @@
     "All fifty readiness gate statuses remain unchanged."
   ],
   "nativeQuarantinedAppRemovalCases": 64,
-  "retainedBuildFailureEvidence": "80c8e25b7bfe-versioned-sbom-build-failure.json"
+  "retainedBuildFailureEvidence": "80c8e25b7bfe-versioned-sbom-build-failure.json",
+  "relatedNativePackageAndInstallerProviderJobs": {
+    "successfulJobs": 8,
+    "jobs": [
+      {
+        "id": 126444634836,
+        "runID": 41791165553,
+        "name": "Versioned package lifecycle (arm64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41791165553/job/126444634836",
+        "conclusion": "success"
+      },
+      {
+        "id": 126444635109,
+        "runID": 41791165553,
+        "name": "Versioned package lifecycle (amd64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41791165553/job/126444635109",
+        "conclusion": "success"
+      },
+      {
+        "id": 126444634588,
+        "runID": 41791165520,
+        "name": "Native package acceptance (amd64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41791165520/job/126444634588",
+        "conclusion": "success"
+      },
+      {
+        "id": 126444635107,
+        "runID": 41791165520,
+        "name": "Native package acceptance (arm64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41791165520/job/126444635107",
+        "conclusion": "success"
+      },
+      {
+        "id": 126444634512,
+        "runID": 41791165523,
+        "name": "Native installer lifecycle (arm64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41791165523/job/126444634512",
+        "conclusion": "success"
+      },
+      {
+        "id": 126444634885,
+        "runID": 41791165523,
+        "name": "Native installer lifecycle (amd64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41791165523/job/126444634885",
+        "conclusion": "success"
+      },
+      {
+        "id": 126444634823,
+        "runID": 41791165550,
+        "name": "Public desktop lifecycle (amd64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41791165550/job/126444634823",
+        "conclusion": "success"
+      },
+      {
+        "id": 126444635247,
+        "runID": 41791165550,
+        "name": "Public desktop lifecycle (arm64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41791165550/job/126444635247",
+        "conclusion": "success"
+      }
+    ],
+    "scope": "Provider status for six related jobs; independent seven-subject authentication is claimed only for the two experimental package candidates above."
+  }
 }
