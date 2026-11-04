@@ -1,0 +1,1002 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "d8794c1dd65d2672f6825025741b19d09096a03d",
+  "sourceRef": "refs/heads/main",
+  "scope": "Controlled image creation diagnostics and exact native unmounted-image cleanup; both native creates succeeded on their first attempt",
+  "nativeRunID": 41787274903,
+  "providerZIPDigestsVerified": true,
+  "candidateAttestationAuthenticationPerformed": false,
+  "nativeENOSPCCases": 16,
+  "controlledUnmountedImageCases": 2,
+  "targets": [
+    {
+      "target": "darwin/amd64",
+      "providerArtifact": {
+        "id": 13301398625,
+        "node_id": "MDg6QXJ0aWZhY3QxMzMwMTM5ODYyNQ==",
+        "name": "darwin-storage-fault-check-amd64",
+        "size_in_bytes": 2917,
+        "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13301398625",
+        "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13301398625/zip",
+        "expired": false,
+        "digest": "sha256:8ec9e23e5dc1459f15367b56502eb864acb59691ee1d1a57459db4b95a579836",
+        "created_at": "2026-11-04T06:45:44Z",
+        "updated_at": "2026-11-04T06:45:44Z",
+        "expires_at": "2026-11-18T06:45:43Z",
+        "workflow_run": {
+          "id": 41787274903,
+          "repository_id": 1441227907,
+          "head_repository_id": 1441227907,
+          "head_branch": "main",
+          "head_sha": "d8794c1dd65d2672f6825025741b19d09096a03d"
+        }
+      },
+      "providerJob": {
+        "id": 126432181889,
+        "name": "Test (macos-15-intel)",
+        "runID": 41787274903,
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41787274903/job/126432181889",
+        "conclusion": "success"
+      },
+      "extractedFiles": [
+        {
+          "file": "apfs-exhaustion-amd64.json",
+          "bytes": 3336,
+          "sha256": "c5b1c747a3d64ebed8d537bb8113bc8862a5a6fe63e87dc2ffd9eea89b28ee45"
+        },
+        {
+          "file": "image-lifecycle-amd64.json",
+          "bytes": 6263,
+          "sha256": "a3b845a0bd5098815113a5743258644d7aa8c2e4174bc12106b69d81b432d93a"
+        },
+        {
+          "file": "native-tools-amd64.json",
+          "bytes": 1088,
+          "sha256": "68d6084cae525f3312e6e1119958b4877c87d6a1ddbd3c7fb0e28e82843322f0"
+        }
+      ],
+      "reports": {
+        "apfs-exhaustion-amd64.json": {
+          "arch": "amd64",
+          "cases": [
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 529190912,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "install",
+              "priorPairUnchanged": true,
+              "record": "installation.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            },
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 528953344,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "install",
+              "priorPairUnchanged": true,
+              "record": "acceptance.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            },
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 528629760,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "update",
+              "priorPairUnchanged": true,
+              "record": "installation.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            },
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 528396288,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "update",
+              "priorPairUnchanged": true,
+              "record": "acceptance.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            },
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 528232448,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "rotate",
+              "priorPairUnchanged": true,
+              "record": "installation.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            },
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 527998976,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "rotate",
+              "priorPairUnchanged": true,
+              "record": "acceptance.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            },
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 527900672,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "recover",
+              "priorPairUnchanged": true,
+              "record": "installation.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            },
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 527663104,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "recover",
+              "priorPairUnchanged": true,
+              "record": "acceptance.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            }
+          ],
+          "deviceDiffersFromHost": true,
+          "effectiveUID": 0,
+          "filesystem": "apfs",
+          "fullStorageFaultQualificationComplete": false,
+          "goVersion": "go1.27.3",
+          "mountFlags": 76583448,
+          "platform": "darwin",
+          "powerLossQualified": false,
+          "productionQualificationComplete": false,
+          "rootMachinePolicyChanged": false,
+          "schemaVersion": 1,
+          "sourceCommit": "d8794c1dd65d2672f6825025741b19d09096a03d",
+          "volumeBytes": 536829952
+        },
+        "image-lifecycle-amd64.json": {
+          "schemaVersion": 2,
+          "sourceCommit": "d8794c1dd65d2672f6825025741b19d09096a03d",
+          "arch": "amd64",
+          "passed": true,
+          "controlledUnmountedImageRequired": true,
+          "imageVirtualBytes": 536870912,
+          "nativeToolHelp": {
+            "create": {
+              "sha256": "60325e582f6721bb7b3482815ea50436e477983eee05f0d7a7d17683e3f0bdb9",
+              "bytes": 3611,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": true
+            },
+            "attach": {
+              "sha256": "b05d957e3744182417a7f820e5ecbe2b9030d0d5b6883e701a96a5ea541b1cad",
+              "bytes": 1091,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": false
+            },
+            "detach": {
+              "sha256": "beed565c84fe62cb110ef891f6b98aa6ac3c6fed5231532ce2e2ba7b7762ee87",
+              "bytes": 282,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": false
+            },
+            "unmount": {
+              "sha256": "af79ad99fdfe2894f791188b862af68d07a3e0e3608cbded49e7bc0d5d162811",
+              "bytes": 343,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": false
+            }
+          },
+          "productionQualificationComplete": false,
+          "attached": true,
+          "detached": true,
+          "ownedImageRemoved": true,
+          "rootMachinePolicyChanged": false,
+          "hostVolumePressureApplied": false,
+          "imageDevice": "/dev/disk2",
+          "volumeDevice": "/dev/disk3s1",
+          "onlyOwnedImageRootProtectionSet": true,
+          "nativeCasesPassed": 8,
+          "originalDeviceLabels": [
+            "/dev/disk2",
+            "/dev/disk2s1",
+            "/dev/disk3",
+            "/dev/disk3s1"
+          ],
+          "originalDeviceLabelsComplete": true,
+          "detachMappingObservations": [
+            {
+              "phase": "before-detach",
+              "ownedImageCount": 1,
+              "deviceLabels": [
+                "/dev/disk2",
+                "/dev/disk2s1",
+                "/dev/disk3",
+                "/dev/disk3s1"
+              ],
+              "basePresent": true,
+              "volumePresent": true,
+              "exactMountCount": 1,
+              "unexpectedMountCount": 0,
+              "conflictingDeviceAssociation": false,
+              "safeKnownMapping": true
+            },
+            {
+              "phase": "accepted-pending",
+              "ownedImageCount": 0,
+              "deviceLabels": [],
+              "basePresent": false,
+              "volumePresent": false,
+              "exactMountCount": 0,
+              "unexpectedMountCount": 0,
+              "conflictingDeviceAssociation": false,
+              "safeKnownMapping": false
+            }
+          ],
+          "normalDetachAttempts": 1,
+          "normalDetachAccepted": true,
+          "unmountedOriginalBindingDetachAttempts": 0,
+          "normalDetachObservations": [
+            {
+              "attempt": 1,
+              "unmountedOriginalBinding": false,
+              "originalFilesystemIdentityRechecked": true,
+              "outcome": "accepted",
+              "exitCode": 0,
+              "outputBytes": 17,
+              "outputSHA256": "8e7424d5bae883508e399372acd069c965cf7a3d8d04f370bb4d33df3325d734"
+            }
+          ],
+          "controlledUnmountedImage": {
+            "schemaVersion": 1,
+            "sourceCommit": "d8794c1dd65d2672f6825025741b19d09096a03d",
+            "arch": "amd64",
+            "imageVirtualBytes": 134217728,
+            "controlledIntervention": true,
+            "hostVolumePressureApplied": false,
+            "rootMachinePolicyChanged": false,
+            "productionQualificationComplete": false,
+            "passed": true,
+            "attached": true,
+            "detached": true,
+            "ownedImageRemoved": true,
+            "capsuleRemoved": true,
+            "stage": "controlled-owned-image-cleanup",
+            "imageCreateAttempts": 1,
+            "imageCreateSucceeded": true,
+            "imageCreateObservations": [
+              {
+                "attempt": 1,
+                "outcome": "accepted",
+                "retryEligible": false,
+                "exitCode": 0,
+                "outputBytes": 122,
+                "outputSHA256": "d7c705e050fb7607cfc1be520a6852a1db589e9e64f10feea0e5940a2b20db2a",
+                "exactBusySignal": false,
+                "imageEntryPresent": true
+              }
+            ],
+            "imageDevice": "/dev/disk2",
+            "volumeDevice": "/dev/disk3s1",
+            "originalDeviceLabels": [
+              "/dev/disk2",
+              "/dev/disk2s1",
+              "/dev/disk3",
+              "/dev/disk3s1"
+            ],
+            "originalDeviceLabelsComplete": true,
+            "mountedVolumeBytes": 134176768,
+            "mountedOnDifferentDevice": true,
+            "unmountMappingObservations": [
+              {
+                "phase": "controlled-before-unmount",
+                "ownedImageCount": 1,
+                "deviceLabels": [
+                  "/dev/disk2",
+                  "/dev/disk2s1",
+                  "/dev/disk3",
+                  "/dev/disk3s1"
+                ],
+                "basePresent": true,
+                "volumePresent": true,
+                "exactMountCount": 1,
+                "unexpectedMountCount": 0,
+                "conflictingDeviceAssociation": false,
+                "safeKnownMapping": true
+              },
+              {
+                "phase": "controlled-after-unmount",
+                "ownedImageCount": 1,
+                "deviceLabels": [
+                  "/dev/disk2",
+                  "/dev/disk2s1",
+                  "/dev/disk3",
+                  "/dev/disk3s1"
+                ],
+                "basePresent": true,
+                "volumePresent": true,
+                "exactMountCount": 0,
+                "unexpectedMountCount": 0,
+                "conflictingDeviceAssociation": false,
+                "safeKnownMapping": true
+              }
+            ],
+            "normalUnmountRequests": 1,
+            "normalUnmountExitCode": 0,
+            "normalUnmountOutputBytes": 39,
+            "normalUnmountOutputSHA256": "4de7778722f5a8a4970050d44ddedc189bc4931a3f895c8760753308fb382e87",
+            "originalUnmountedBindingVerified": true,
+            "detachMappingObservations": [
+              {
+                "phase": "before-detach",
+                "ownedImageCount": 1,
+                "deviceLabels": [
+                  "/dev/disk2",
+                  "/dev/disk2s1",
+                  "/dev/disk3",
+                  "/dev/disk3s1"
+                ],
+                "basePresent": true,
+                "volumePresent": true,
+                "exactMountCount": 0,
+                "unexpectedMountCount": 0,
+                "conflictingDeviceAssociation": false,
+                "safeKnownMapping": true
+              },
+              {
+                "phase": "accepted-pending",
+                "ownedImageCount": 0,
+                "deviceLabels": [],
+                "basePresent": false,
+                "volumePresent": false,
+                "exactMountCount": 0,
+                "unexpectedMountCount": 0,
+                "conflictingDeviceAssociation": false,
+                "safeKnownMapping": false
+              }
+            ],
+            "normalDetachAttempts": 1,
+            "normalDetachAccepted": true,
+            "unmountedOriginalBindingDetachAttempts": 1,
+            "normalDetachObservations": [
+              {
+                "attempt": 1,
+                "unmountedOriginalBinding": true,
+                "originalFilesystemIdentityRechecked": true,
+                "outcome": "accepted",
+                "exitCode": 0,
+                "outputBytes": 17,
+                "outputSHA256": "8e7424d5bae883508e399372acd069c965cf7a3d8d04f370bb4d33df3325d734"
+              }
+            ]
+          }
+        },
+        "native-tools-amd64.json": {
+          "schemaVersion": 1,
+          "sourceCommit": "d8794c1dd65d2672f6825025741b19d09096a03d",
+          "arch": "amd64",
+          "sdk": {
+            "GOARCH": "amd64",
+            "GOHOSTARCH": "amd64",
+            "GOHOSTOS": "darwin",
+            "GOOS": "darwin",
+            "GOVERSION": "go1.27.3"
+          },
+          "nativeHelp": {
+            "create": {
+              "sha256": "60325e582f6721bb7b3482815ea50436e477983eee05f0d7a7d17683e3f0bdb9",
+              "bytes": 3611,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": true
+            },
+            "attach": {
+              "sha256": "b05d957e3744182417a7f820e5ecbe2b9030d0d5b6883e701a96a5ea541b1cad",
+              "bytes": 1091,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": false
+            },
+            "detach": {
+              "sha256": "beed565c84fe62cb110ef891f6b98aa6ac3c6fed5231532ce2e2ba7b7762ee87",
+              "bytes": 282,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": false
+            },
+            "unmount": {
+              "sha256": "af79ad99fdfe2894f791188b862af68d07a3e0e3608cbded49e7bc0d5d162811",
+              "bytes": 343,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": false
+            }
+          },
+          "productionQualificationComplete": false
+        }
+      }
+    },
+    {
+      "target": "darwin/arm64",
+      "providerArtifact": {
+        "id": 13301752108,
+        "node_id": "MDg6QXJ0aWZhY3QxMzMwMTc1MjEwOA==",
+        "name": "darwin-storage-fault-check-arm64",
+        "size_in_bytes": 2919,
+        "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13301752108",
+        "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13301752108/zip",
+        "expired": false,
+        "digest": "sha256:de432fb95223f8fc8e42ea3c31a185b5e5c6f8563581a417e404e3dca964d1f5",
+        "created_at": "2026-11-04T06:44:37Z",
+        "updated_at": "2026-11-04T06:44:37Z",
+        "expires_at": "2026-11-18T06:44:36Z",
+        "workflow_run": {
+          "id": 41787274903,
+          "repository_id": 1441227907,
+          "head_repository_id": 1441227907,
+          "head_branch": "main",
+          "head_sha": "d8794c1dd65d2672f6825025741b19d09096a03d"
+        }
+      },
+      "providerJob": {
+        "id": 126432181938,
+        "name": "Test (macos-latest)",
+        "runID": 41787274903,
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41787274903/job/126432181938",
+        "conclusion": "success"
+      },
+      "extractedFiles": [
+        {
+          "file": "apfs-exhaustion-arm64.json",
+          "bytes": 3336,
+          "sha256": "08b862becea5c2275b247eaa624da3f544e3fb26f01be993565ec3801d4dc0e0"
+        },
+        {
+          "file": "image-lifecycle-arm64.json",
+          "bytes": 6263,
+          "sha256": "444cd7e4170d913608959f7c36a07b611bbb3149768799326e8a5bcfe0d13020"
+        },
+        {
+          "file": "native-tools-arm64.json",
+          "bytes": 1088,
+          "sha256": "d4a4dbccc80951f7c15856c259228015e8df20b112a20eba79a260475c80194f"
+        }
+      ],
+      "reports": {
+        "apfs-exhaustion-arm64.json": {
+          "arch": "arm64",
+          "cases": [
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 529190912,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "install",
+              "priorPairUnchanged": true,
+              "record": "installation.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            },
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 528953344,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "install",
+              "priorPairUnchanged": true,
+              "record": "acceptance.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            },
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 528629760,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "update",
+              "priorPairUnchanged": true,
+              "record": "installation.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            },
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 528396288,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "update",
+              "priorPairUnchanged": true,
+              "record": "acceptance.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            },
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 528232448,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "rotate",
+              "priorPairUnchanged": true,
+              "record": "installation.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            },
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 527994880,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "rotate",
+              "priorPairUnchanged": true,
+              "record": "acceptance.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            },
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 527900672,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "recover",
+              "priorPairUnchanged": true,
+              "record": "installation.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            },
+            {
+              "explicitSignedRetryCommitted": true,
+              "fillerBytes": 527663104,
+              "knownAbortCleaned": false,
+              "nativeENOSPCObserved": true,
+              "operation": "recover",
+              "priorPairUnchanged": true,
+              "record": "acceptance.json",
+              "retainedStagePresent": true,
+              "retainedStagePreserved": true,
+              "unpublished": true
+            }
+          ],
+          "deviceDiffersFromHost": true,
+          "effectiveUID": 0,
+          "filesystem": "apfs",
+          "fullStorageFaultQualificationComplete": false,
+          "goVersion": "go1.27.3",
+          "mountFlags": 76583448,
+          "platform": "darwin",
+          "powerLossQualified": false,
+          "productionQualificationComplete": false,
+          "rootMachinePolicyChanged": false,
+          "schemaVersion": 1,
+          "sourceCommit": "d8794c1dd65d2672f6825025741b19d09096a03d",
+          "volumeBytes": 536829952
+        },
+        "image-lifecycle-arm64.json": {
+          "schemaVersion": 2,
+          "sourceCommit": "d8794c1dd65d2672f6825025741b19d09096a03d",
+          "arch": "arm64",
+          "passed": true,
+          "controlledUnmountedImageRequired": true,
+          "imageVirtualBytes": 536870912,
+          "nativeToolHelp": {
+            "create": {
+              "sha256": "60325e582f6721bb7b3482815ea50436e477983eee05f0d7a7d17683e3f0bdb9",
+              "bytes": 3611,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": true
+            },
+            "attach": {
+              "sha256": "b05d957e3744182417a7f820e5ecbe2b9030d0d5b6883e701a96a5ea541b1cad",
+              "bytes": 1091,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": false
+            },
+            "detach": {
+              "sha256": "beed565c84fe62cb110ef891f6b98aa6ac3c6fed5231532ce2e2ba7b7762ee87",
+              "bytes": 282,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": false
+            },
+            "unmount": {
+              "sha256": "af79ad99fdfe2894f791188b862af68d07a3e0e3608cbded49e7bc0d5d162811",
+              "bytes": 343,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": false
+            }
+          },
+          "productionQualificationComplete": false,
+          "attached": true,
+          "detached": true,
+          "ownedImageRemoved": true,
+          "rootMachinePolicyChanged": false,
+          "hostVolumePressureApplied": false,
+          "imageDevice": "/dev/disk7",
+          "volumeDevice": "/dev/disk8s1",
+          "onlyOwnedImageRootProtectionSet": true,
+          "nativeCasesPassed": 8,
+          "originalDeviceLabels": [
+            "/dev/disk7",
+            "/dev/disk7s1",
+            "/dev/disk8",
+            "/dev/disk8s1"
+          ],
+          "originalDeviceLabelsComplete": true,
+          "detachMappingObservations": [
+            {
+              "phase": "before-detach",
+              "ownedImageCount": 1,
+              "deviceLabels": [
+                "/dev/disk7",
+                "/dev/disk7s1",
+                "/dev/disk8",
+                "/dev/disk8s1"
+              ],
+              "basePresent": true,
+              "volumePresent": true,
+              "exactMountCount": 1,
+              "unexpectedMountCount": 0,
+              "conflictingDeviceAssociation": false,
+              "safeKnownMapping": true
+            },
+            {
+              "phase": "accepted-pending",
+              "ownedImageCount": 0,
+              "deviceLabels": [],
+              "basePresent": false,
+              "volumePresent": false,
+              "exactMountCount": 0,
+              "unexpectedMountCount": 0,
+              "conflictingDeviceAssociation": false,
+              "safeKnownMapping": false
+            }
+          ],
+          "normalDetachAttempts": 1,
+          "normalDetachAccepted": true,
+          "unmountedOriginalBindingDetachAttempts": 0,
+          "normalDetachObservations": [
+            {
+              "attempt": 1,
+              "unmountedOriginalBinding": false,
+              "originalFilesystemIdentityRechecked": true,
+              "outcome": "accepted",
+              "exitCode": 0,
+              "outputBytes": 17,
+              "outputSHA256": "e2e7e4de75aa32d2268acd6fb9074177fbb16c94025e0b863e444f72f183a2e4"
+            }
+          ],
+          "controlledUnmountedImage": {
+            "schemaVersion": 1,
+            "sourceCommit": "d8794c1dd65d2672f6825025741b19d09096a03d",
+            "arch": "arm64",
+            "imageVirtualBytes": 134217728,
+            "controlledIntervention": true,
+            "hostVolumePressureApplied": false,
+            "rootMachinePolicyChanged": false,
+            "productionQualificationComplete": false,
+            "passed": true,
+            "attached": true,
+            "detached": true,
+            "ownedImageRemoved": true,
+            "capsuleRemoved": true,
+            "stage": "controlled-owned-image-cleanup",
+            "imageCreateAttempts": 1,
+            "imageCreateSucceeded": true,
+            "imageCreateObservations": [
+              {
+                "attempt": 1,
+                "outcome": "accepted",
+                "retryEligible": false,
+                "exitCode": 0,
+                "outputBytes": 122,
+                "outputSHA256": "030b12c8f143e89d1e0793ca5febf44b965050ca94722d2f0c7d571ee9d0bd75",
+                "exactBusySignal": false,
+                "imageEntryPresent": true
+              }
+            ],
+            "imageDevice": "/dev/disk7",
+            "volumeDevice": "/dev/disk8s1",
+            "originalDeviceLabels": [
+              "/dev/disk7",
+              "/dev/disk7s1",
+              "/dev/disk8",
+              "/dev/disk8s1"
+            ],
+            "originalDeviceLabelsComplete": true,
+            "mountedVolumeBytes": 134176768,
+            "mountedOnDifferentDevice": true,
+            "unmountMappingObservations": [
+              {
+                "phase": "controlled-before-unmount",
+                "ownedImageCount": 1,
+                "deviceLabels": [
+                  "/dev/disk7",
+                  "/dev/disk7s1",
+                  "/dev/disk8",
+                  "/dev/disk8s1"
+                ],
+                "basePresent": true,
+                "volumePresent": true,
+                "exactMountCount": 1,
+                "unexpectedMountCount": 0,
+                "conflictingDeviceAssociation": false,
+                "safeKnownMapping": true
+              },
+              {
+                "phase": "controlled-after-unmount",
+                "ownedImageCount": 1,
+                "deviceLabels": [
+                  "/dev/disk7",
+                  "/dev/disk7s1",
+                  "/dev/disk8",
+                  "/dev/disk8s1"
+                ],
+                "basePresent": true,
+                "volumePresent": true,
+                "exactMountCount": 0,
+                "unexpectedMountCount": 0,
+                "conflictingDeviceAssociation": false,
+                "safeKnownMapping": true
+              }
+            ],
+            "normalUnmountRequests": 1,
+            "normalUnmountExitCode": 0,
+            "normalUnmountOutputBytes": 39,
+            "normalUnmountOutputSHA256": "586f7f0a055e51dd2e36953313b36c00968fd1feee410b9c1fa58ab22dc08b29",
+            "originalUnmountedBindingVerified": true,
+            "detachMappingObservations": [
+              {
+                "phase": "before-detach",
+                "ownedImageCount": 1,
+                "deviceLabels": [
+                  "/dev/disk7",
+                  "/dev/disk7s1",
+                  "/dev/disk8",
+                  "/dev/disk8s1"
+                ],
+                "basePresent": true,
+                "volumePresent": true,
+                "exactMountCount": 0,
+                "unexpectedMountCount": 0,
+                "conflictingDeviceAssociation": false,
+                "safeKnownMapping": true
+              },
+              {
+                "phase": "accepted-pending",
+                "ownedImageCount": 0,
+                "deviceLabels": [],
+                "basePresent": false,
+                "volumePresent": false,
+                "exactMountCount": 0,
+                "unexpectedMountCount": 0,
+                "conflictingDeviceAssociation": false,
+                "safeKnownMapping": false
+              }
+            ],
+            "normalDetachAttempts": 1,
+            "normalDetachAccepted": true,
+            "unmountedOriginalBindingDetachAttempts": 1,
+            "normalDetachObservations": [
+              {
+                "attempt": 1,
+                "unmountedOriginalBinding": true,
+                "originalFilesystemIdentityRechecked": true,
+                "outcome": "accepted",
+                "exitCode": 0,
+                "outputBytes": 17,
+                "outputSHA256": "e2e7e4de75aa32d2268acd6fb9074177fbb16c94025e0b863e444f72f183a2e4"
+              }
+            ]
+          }
+        },
+        "native-tools-arm64.json": {
+          "schemaVersion": 1,
+          "sourceCommit": "d8794c1dd65d2672f6825025741b19d09096a03d",
+          "arch": "arm64",
+          "sdk": {
+            "GOARCH": "arm64",
+            "GOHOSTARCH": "arm64",
+            "GOHOSTOS": "darwin",
+            "GOOS": "darwin",
+            "GOVERSION": "go1.27.3"
+          },
+          "nativeHelp": {
+            "create": {
+              "sha256": "60325e582f6721bb7b3482815ea50436e477983eee05f0d7a7d17683e3f0bdb9",
+              "bytes": 3611,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": true
+            },
+            "attach": {
+              "sha256": "b05d957e3744182417a7f820e5ecbe2b9030d0d5b6883e701a96a5ea541b1cad",
+              "bytes": 1091,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": false
+            },
+            "detach": {
+              "sha256": "beed565c84fe62cb110ef891f6b98aa6ac3c6fed5231532ce2e2ba7b7762ee87",
+              "bytes": 282,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": false
+            },
+            "unmount": {
+              "sha256": "af79ad99fdfe2894f791188b862af68d07a3e0e3608cbded49e7bc0d5d162811",
+              "bytes": 343,
+              "statusCode": 0,
+              "basicHelpListsRequestedFlag": false
+            }
+          },
+          "productionQualificationComplete": false
+        }
+      }
+    }
+  ],
+  "sourceFiles": [
+    {
+      "file": "scripts/test-darwin-storage.py",
+      "sha256": "4258343ecae288a23aa538b8f72e5a215455f6a2052df7e7afece0cbcea3b0e0"
+    },
+    {
+      "file": "scripts/test_darwin_storage.py",
+      "sha256": "d06c9f81c953c326ab08b2d7b9fc8d09cbd1fd7ca30c4681f2e6719a770f6d66"
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "sha256": "fe73a853b941a2db467a374fdb50b0aa16d0a6df1285ff2768980e9b805b4a2e"
+    },
+    {
+      "file": "internal/managed/storage_full_darwin_test.go",
+      "sha256": "2baa6648e39ea98e4450ba07fd20a157cfc80065a1c29265073d9d6c5e1c12a5"
+    }
+  ],
+  "ci": {
+    "runID": 41787274903,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41787274903",
+    "conclusion": "success",
+    "successfulJobs": 22,
+    "jobs": [
+      {
+        "id": 126432181713,
+        "name": "Race detector (Linux/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432181889,
+        "name": "Test (macos-15-intel)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432181930,
+        "name": "Cross-build (windows/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432181938,
+        "name": "Test (macos-latest)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432181984,
+        "name": "Race detector (Linux)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182009,
+        "name": "Test (windows-11-arm)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182058,
+        "name": "Cross-build (openbsd/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182069,
+        "name": "Test (windows-latest)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182076,
+        "name": "Cross-build (windows/amd64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182083,
+        "name": "Go vulnerability checks",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182098,
+        "name": "Cross-build (darwin/amd64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182107,
+        "name": "Test (ubuntu-latest)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182142,
+        "name": "Cross-build (linux/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182147,
+        "name": "Test (ubuntu-24.04-arm)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182156,
+        "name": "browser / Real browser (firefox)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182195,
+        "name": "Cross-build (freebsd/amd64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182203,
+        "name": "browser / Real browser (webkit)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182224,
+        "name": "Cross-build (linux/amd64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182227,
+        "name": "browser / Real browser (chromium)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182237,
+        "name": "Cross-build (darwin/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432182242,
+        "name": "Cross-build (openbsd/amd64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126432183050,
+        "name": "Cross-build (freebsd/arm64)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "limits": [
+    "Both native creates succeeded on attempt one. The busy retry branch is covered by nine deterministic portable methods, not actual native busy-then-success execution.",
+    "The observed prior busy creation cause and partial-file presence remain unknown. Later passes do not establish that cause.",
+    "Provider ZIP digests and exact-source native successful jobs verified; candidate Sigstore attestation authentication is not performed for these diagnostic JSON artifacts.",
+    "No actual power loss, reboot, general Installer interruption, product uninstall, publisher signing/notarization or production qualification is established.",
+    "All fifty readiness gate statuses remain unchanged."
+  ],
+  "retainedFailureEvidence": [
+    "3937c21c00e7-controlled-image-create-busy-failure.json",
+    "5edc7071ff70-apfs-unmounted-binding-failure.json",
+    "4a37ccec40a8-apfs-cleanup-failure.json"
+  ],
+  "nativeBusyCreateRetryExecuted": false,
+  "portableAPFSMethodsPassed": 50,
+  "portableControlledCreationMethods": 9
+}
