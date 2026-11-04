@@ -12,11 +12,14 @@ import (
 	"github.com/Yunushan/accessweaver/internal/audit"
 )
 
-const auditUsage = "Checkpoint-matched audit segment verification (read-only):\n" +
+const auditUsage = "Audit verification and explicit local recording:\n" +
 	"  accessweaver audit verify --events JSONL_FILE --from CHECKPOINT_FILE --to CHECKPOINT_FILE\n" +
-	"Retain both complete checkpoints through an independently trusted channel.\n" +
+	"  accessweaver audit initialize --directory EXISTING_PRIVATE_DIRECTORY\n" +
+	"  accessweaver audit import --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --profile JSON_FILE\n" +
+	"Recording currently requires Linux amd64/arm64; verify is read-only on all supported targets.\n" +
+	"Retain complete checkpoints through an independently trusted channel.\n" +
 	"Self-selected checkpoints do not authenticate a producer or detect a rewritten history.\n" +
-	"This command does not enable event recording or configure a log collector.\n" +
+	"Only audit import records a reviewed profile import; controller/admin coverage and collectors remain incomplete.\n" +
 	"See docs/AUDIT_EVENTS.md for the format, limits and remaining integration work.\n"
 
 func auditCommand(args []string) error {
@@ -26,6 +29,12 @@ func auditCommand(args []string) error {
 			return errors.New("audit help output unavailable")
 		}
 		return nil
+	}
+	if len(args) > 0 && args[0] == "initialize" {
+		return auditInitializeCommand(args, os.Stdout)
+	}
+	if len(args) > 0 && args[0] == "import" {
+		return auditImportCommand(args, os.Stdout)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
