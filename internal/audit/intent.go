@@ -38,3 +38,9 @@ func callWithProfileIntent(ctx context.Context, action string, operation func(co
 	defer intent.active.Store(false)
 	return callRecordedOperation(context.WithValue(ctx, profileIntentKey{}, intent), operation)
 }
+
+// Mask any outer profile scope when another synchronous producer is nested.
+// This does not revoke the outer callback's own still-active capability.
+func callWithoutProfileIntent(ctx context.Context, operation func(context.Context) OperationResult) OperationResult {
+	return callRecordedOperation(context.WithValue(ctx, profileIntentKey{}, (*profileIntent)(nil)), operation)
+}

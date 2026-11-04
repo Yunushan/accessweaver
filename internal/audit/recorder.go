@@ -52,9 +52,9 @@ func NewRecorder(ctx context.Context, journal LocalJournal, from, to Checkpoint,
 
 // Execute serializes complete intent/operation/result transactions. Callers
 // must independently bound admission and must not recursively call Execute.
-// Only the synchronous profile producers are connected by this version.
+// Only the synchronous profile and explicit policy producers are connected.
 func (r *Recorder) Execute(ctx context.Context, action string, operation func(context.Context) OperationResult) error {
-	if r == nil || r.token == nil || operation == nil || (action != "profile.write" && action != "profile.delete" && action != "profile.import") {
+	if r == nil || r.token == nil || operation == nil || !recordedSynchronousAction(action) {
 		return ErrRecorderUnavailable
 	}
 	if ctx.Err() != nil {
@@ -94,7 +94,12 @@ func (r *Recorder) Execute(ctx context.Context, action string, operation func(co
 	}
 	result := OperationResult{Outcome: "canceled", Err: context.Canceled}
 	if ctx.Err() == nil {
-		result = callWithProfileIntent(ctx, action, operation)
+		switch action {
+		case "profile.write", "profile.delete", "profile.import":
+			result = callWithProfileIntent(ctx, action, operation)
+		default:
+			result = callWithoutProfileIntent(ctx, operation)
+		}
 	}
 	if (result.Outcome != "completed" && result.Outcome != "refused" && result.Outcome != "canceled" && result.Outcome != "indeterminate") || (result.Outcome == "completed" && result.Err != nil) || (result.Outcome != "completed" && result.Err == nil) {
 		result = OperationResult{Outcome: "indeterminate", Err: ErrRecordedUncertain}
@@ -149,4 +154,14 @@ func (r *Recorder) Close() error {
 		return ErrRecordedUncertain
 	}
 	return nil
+}
+
+// Keep asynchronous, read/export and unsupported administrative actions out of
+// this synchronous producer contract even though the chain can encode them.
+func recordedSynchronousAction(action string) bool {
+	switch action {
+	case "profile.write", "profile.delete", "profile.import", "policy.install", "policy.update", "policy.rotate", "policy.recover":
+		return true
+	}
+	return false
 }

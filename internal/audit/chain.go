@@ -109,7 +109,7 @@ func validEvent(e Event) bool {
 	}
 	switch e.Action {
 	case "profile.write", "profile.delete", "profile.import", "engine.start", "engine.stop",
-		"workflow.submit", "workflow.cancel", "workflow.complete", "policy.install",
+		"workflow.submit", "workflow.cancel", "workflow.complete", "policy.install", "policy.update", "policy.rotate",
 		"policy.remove", "policy.recover", "backup.create", "backup.restore",
 		"support.export", "audit.export":
 	default:

@@ -18,11 +18,15 @@ const auditUsage = "Audit verification and explicit local recording:\n" +
 	"  accessweaver audit import --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --profile JSON_FILE\n" +
 	"  accessweaver audit export --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --consent metadata-only\n" +
 	"  accessweaver audit ui --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE\n" +
+	"  accessweaver audit policy-install --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --input INSTALLATION.json --public-key BASE64\n" +
+	"  accessweaver audit policy-update --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --input ENVELOPE.json\n" +
+	"  accessweaver audit policy-rotate --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --input ROTATION.json\n" +
+	"  accessweaver audit policy-recover --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --input RECOVERY.json --public-key BASE64 --minimum-revision N\n" +
 	"Local recording/export currently requires Linux amd64/arm64; verify is portable and read-only.\n" +
 	"Export is a read-only snapshot; separate export-access recording and collector acknowledgments remain incomplete.\n" +
 	"Retain complete checkpoints through an independently trusted channel.\n" +
 	"Self-selected checkpoints do not authenticate a producer or detect a rewritten history.\n" +
-	"Audit import records reviewed imports; audit ui records profile saves/deletes and refuses other desktop actions. Administrator coverage and collectors remain incomplete.\n" +
+	"Audit import records reviewed imports; audit ui records profile saves/deletes and refuses other desktop actions. Explicit policy transactions are recorded; other administrator coverage and collectors remain incomplete.\n" +
 	"See docs/AUDIT_EVENTS.md for the format, limits and remaining integration work.\n"
 
 func auditCommand(args []string) error {
@@ -41,6 +45,9 @@ func auditCommand(args []string) error {
 	}
 	if len(args) > 0 && args[0] == "export" {
 		return auditExportCommand(args, os.Stdout)
+	}
+	if len(args) > 0 && recordedPolicyOperation(args[0]) != "" {
+		return auditPolicyCommand(args, os.Stdout)
 	}
 	if len(args) > 0 && args[0] == "ui" {
 		return auditUICommand(args, os.Stdout, os.Stderr)

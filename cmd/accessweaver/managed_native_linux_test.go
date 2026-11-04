@@ -369,8 +369,9 @@ func TestDisposableLinuxManagedPolicyNative(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result, err := managed.Update(requiredEnvelope); err != nil || !result.Committed || result.Revision != 3 {
-		t.Fatal("required-audit native update", result, err)
+	linuxRecordedPolicyUpdateProbe(t, fixtureRoot, requiredEnvelope)
+	if status, err := managed.MachineStatus(); err != nil || !status.Valid || status.Revision != 3 {
+		t.Fatal("recorded required-audit native update", status, err)
 	}
 	// Publication can replace the root. Cleanup must retain its exact new
 	// identity rather than deleting an unverified changed directory.
@@ -388,7 +389,7 @@ func TestDisposableLinuxManagedPolicyNative(t *testing.T) {
 		t.Fatal(err)
 	}
 	runProbe("required-audit")
-	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "platform": "linux", "arch": runtime.GOARCH, "goVersion": runtime.Version(), "rootOwnedMachineSource": true, "activeOrdinaryUserUpdateStopsEngine": true, "unsafeSourceStopsEngine": true, "initialReplacementDenied": true, "ordinaryUserCannotWritePolicyOrEngine": true, "ordinaryUserProfileChangesDenied": true, "approvedOrdinaryUserFixtureStarted": true, "callerEnvironmentNotInherited": true, "namedACLWriteMaskedByMode": true, "effectiveNamedACLWriteFailsClosed": true, "changedEngineHashDenied": true, "writableDirectoryFailsClosed": true, "invalidValueFailsClosed": true, "requiredProfileAuditRevision": 3, "ordinaryUserRequiredAuditRoundTrip": true, "unrecordedCLIImportAndRestoreDenied": true, "requiredAuditStaleHeadPreserved": true, "requiredAuditVerifiedRecords": 2, "requiredAuditProbeUID": 65534, "cleanupScheduled": true, "productionQualificationComplete": false}
+	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "platform": "linux", "arch": runtime.GOARCH, "goVersion": runtime.Version(), "rootOwnedMachineSource": true, "activeOrdinaryUserUpdateStopsEngine": true, "unsafeSourceStopsEngine": true, "initialReplacementDenied": true, "ordinaryUserCannotWritePolicyOrEngine": true, "ordinaryUserProfileChangesDenied": true, "approvedOrdinaryUserFixtureStarted": true, "callerEnvironmentNotInherited": true, "namedACLWriteMaskedByMode": true, "effectiveNamedACLWriteFailsClosed": true, "changedEngineHashDenied": true, "writableDirectoryFailsClosed": true, "invalidValueFailsClosed": true, "administratorPolicyUpdateRecorded": true, "administratorPolicyAuditVerifiedRecords": 2, "administratorPolicyAuditActorClass": "administrator", "requiredProfileAuditRevision": 3, "ordinaryUserRequiredAuditRoundTrip": true, "unrecordedCLIImportAndRestoreDenied": true, "requiredAuditStaleHeadPreserved": true, "requiredAuditVerifiedRecords": 2, "requiredAuditProbeUID": 65534, "cleanupScheduled": true, "productionQualificationComplete": false}
 	data, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		t.Fatal(err)

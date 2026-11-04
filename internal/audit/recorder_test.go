@@ -270,3 +270,60 @@ func TestRecorderProfileIntentAuthorityIsActionBoundAndRevoked(t *testing.T) {
 		t.Fatal("panic retained an active intent")
 	}
 }
+
+func TestRecorderPolicyActionsDoNotGrantProfileCapabilities(t *testing.T) {
+	for _, action := range []string{"policy.install", "policy.update", "policy.rotate", "policy.recover"} {
+		t.Run(action, func(t *testing.T) {
+			j, r, _ := recorderFixture(t)
+			var retained context.Context
+			if err := r.Execute(context.Background(), action, func(ctx context.Context) OperationResult {
+				retained = ctx
+				if ProfileIntentActive(ctx, "write") || ProfileIntentActive(ctx, "delete") {
+					t.Error("policy acquired profile capability")
+				}
+				return OperationResult{Outcome: "completed"}
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if retained == nil || len(j.events) != 2 || j.events[1].Outcome != "completed" || ProfileIntentActive(retained, "write") {
+				t.Fatal("policy result or capability lifetime differs")
+			}
+		})
+	}
+	for _, action := range []string{"engine.start", "workflow.submit", "audit.export", "policy.remove", "policy.arbitrary"} {
+		j, r, _ := recorderFixture(t)
+		if err := r.Execute(context.Background(), action, func(context.Context) OperationResult {
+			t.Error("unsupported synchronous producer admitted")
+			return OperationResult{Outcome: "completed"}
+		}); !errors.Is(err, ErrRecorderUnavailable) || j.calls != 0 {
+			t.Fatal("unsupported producer changed journal", err)
+		}
+	}
+}
+
+func TestNestedPolicyProducerMasksAnOuterProfileCapability(t *testing.T) {
+	_, outer, _ := recorderFixture(t)
+	_, inner, _ := recorderFixture(t)
+	var inherited context.Context
+	if err := outer.Execute(context.Background(), "profile.write", func(ctx context.Context) OperationResult {
+		if !ProfileIntentActive(ctx, "write") {
+			t.Error("outer profile scope unavailable")
+		}
+		err := inner.Execute(ctx, "policy.update", func(policyCtx context.Context) OperationResult {
+			inherited = policyCtx
+			if ProfileIntentActive(policyCtx, "write") || ProfileIntentActive(policyCtx, "delete") {
+				t.Error("policy inherited profile authority")
+			}
+			return OperationResult{Outcome: "completed"}
+		})
+		if err != nil || !ProfileIntentActive(ctx, "write") {
+			t.Error("policy revoked the outer scope", err)
+		}
+		return OperationResult{Outcome: "completed"}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if inherited == nil || ProfileIntentActive(inherited, "write") {
+		t.Fatal("masked nested scope differs")
+	}
+}

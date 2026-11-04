@@ -181,6 +181,8 @@ Current profile/diagnostic/foreground guards consume this Linux authority. Appro
 
 Managed Linux children receive only fixed `PATH=/usr/bin:/bin`, `LANG=C`, `LC_ALL=C` and `TZ=UTC`, with no caller-selected home/configuration, loader, shell or runtime variables. Vendor executables still require dependency/configuration qualification and OS deployment controls; this is not a sandbox against arbitrary same-user code or execution in a different OS namespace. Native routing, services and privilege-separated operations remain separate requirements.
 
+For explicit intent/outcome recording of Linux install, update, key rotation and signed recovery, use the [recorded policy transaction commands](AUDIT_EVENTS.md#record-an-explicit-policy-transaction). They wrap these same native operations without changing privilege or trust. Ordinary managed commands and endpoint-management writes are not automatically audited; a native error may follow publication and remains uncertain. Keep the administrator journal outside the fixed policy directory, retain checkpoints independently, and inspect state before any retry. Broad mandatory audit and collector integration remain incomplete.
+
 ## Disposable hosted Linux acceptance
 
 `test-linux-managed-policy.sh` compiles static test executables as the ordinary runner user, then invokes only the scoped native cases with sudo on a fresh GitHub-hosted Linux runner. It requires `ACCESSWEAVER_DISPOSABLE_LINUX_POLICY_TEST=1`, the hosted Linux context and absence of existing policy/coordination state. Never enable that flag on a workstation or self-hosted runner. Ordinary unit tests use private temporary directories and read-only source inspection; they do not install `/etc` policy.

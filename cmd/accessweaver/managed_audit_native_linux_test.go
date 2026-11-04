@@ -151,3 +151,52 @@ func linuxRequiredProfileAuditProbe(t *testing.T, p profile.Profile) {
 		t.Fatal("profile/fixture data escaped native audit output")
 	}
 }
+
+// Only the existing opted-in hosted root setup calls this source fixture. Its
+// journal belongs to the administrator process, separate from the user stream.
+func linuxRecordedPolicyUpdateProbe(t *testing.T, fixtureRoot string, envelope []byte) {
+	t.Helper()
+	linuxNativeContext(t)
+	if os.Getuid() != 0 || os.Geteuid() != 0 || os.Getgid() != 0 || os.Getegid() != 0 {
+		t.Fatal("recorded policy setup requires hosted root fixture")
+	}
+	directory := filepath.Join(fixtureRoot, "administrator-journal")
+	if err := os.Mkdir(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	data, err := captureAuditExecute(t, []string{"initialize", "--directory", directory})
+	if err != nil {
+		t.Fatal("administrator journal initialization", err)
+	}
+	initialized := decodeCheckpointObservations(t, data)
+	if len(initialized) != 1 || initialized[0].Sequence != 0 || initialized[0].Producer.ActorClass != "administrator" {
+		t.Fatal("administrator genesis differs")
+	}
+	start := initialized[0]
+	from, to, input := filepath.Join(fixtureRoot, "administrator-genesis.json"), filepath.Join(fixtureRoot, "administrator-head.json"), filepath.Join(fixtureRoot, "administrator-update.json")
+	writeRetainedCheckpoint(t, from, start)
+	writeRetainedCheckpoint(t, to, start)
+	if err := os.WriteFile(input, envelope, 0600); err != nil {
+		t.Fatal(err)
+	}
+	data, err = captureAuditExecute(t, []string{"policy-update", "--directory", directory, "--from", from, "--to", to, "--input", input})
+	if err != nil {
+		t.Fatal("recorded native policy update", err)
+	}
+	observations := decodeCheckpointObservations(t, data)
+	if len(observations) != 2 || observations[0].Sequence != 1 || observations[1].Sequence != 2 {
+		t.Fatal("administrator intent/result checkpoints differ")
+	}
+	writeRetainedCheckpoint(t, to, observations[1])
+	exported, err := captureAuditExecute(t, []string{"export", "--directory", directory, "--from", from, "--to", to, "--consent", "metadata-only"})
+	if err != nil {
+		t.Fatal("administrator metadata export", err)
+	}
+	verified, err := audit.VerifySegment(context.Background(), bytes.NewReader(exported), start, observations[1])
+	if err != nil || verified.Records != 2 {
+		t.Fatal("administrator policy segment verification", err)
+	}
+	if bytes.Contains(exported, []byte(fixtureRoot)) || bytes.Contains(exported, envelope) {
+		t.Fatal("administrator input escaped metadata")
+	}
+}
