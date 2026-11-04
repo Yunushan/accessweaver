@@ -4,6 +4,7 @@ package packageupgrade
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Yunushan/accessweaver/internal/darwintrust"
 )
@@ -672,6 +674,57 @@ func TestDarwinDeploymentRootCopyRecovery(t *testing.T) {
 	}
 	if e = bridge.verifySlot(newSlot); e != nil {
 		t.Fatal(e)
+	}
+	// Capture actual copied files against their sealed catalog. Restoration
+	// preserves contents but must produce a different timestamp-bound plan.
+	firstTree, e := captureRemovalBundle(context.Background(), bridge.versions, newSlot.ID, "core", newSlot.Identity)
+	if e != nil {
+		t.Fatal("native removal object capture", e)
+	}
+	secondTree, e := captureRemovalBundle(context.Background(), bridge.versions, newSlot.ID, "core", newSlot.Identity)
+	firstTreeJSON, _ := json.Marshal(firstTree)
+	secondTreeJSON, _ := json.Marshal(secondTree)
+	if e != nil || !bytes.Equal(firstTreeJSON, secondTreeJSON) {
+		t.Fatal("stable removal tree differs", e)
+	}
+	cancelled, cancelCapture := context.WithCancel(context.Background())
+	cancelCapture()
+	if _, e = captureRemovalBundle(cancelled, bridge.versions, newSlot.ID, "core", newSlot.Identity); e == nil {
+		t.Fatal("cancelled removal capture accepted")
+	}
+	buildPath := filepath.Join(bridgeParent, deploymentRoot, "versions", newSlot.ID, "AccessWeaver.app", "Contents", "Resources", "BUILD-INFO.json")
+	originalBuild, e := os.ReadFile(buildPath)
+	if e != nil {
+		t.Fatal(e)
+	}
+	buildInfo, e := os.Stat(buildPath)
+	if e != nil {
+		t.Fatal(e)
+	}
+	changedBuild := append(append([]byte{}, originalBuild...), ' ')
+	if e = os.WriteFile(buildPath, changedBuild, 0644); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = captureRemovalBundle(context.Background(), bridge.versions, newSlot.ID, "core", newSlot.Identity); e == nil {
+		t.Fatal("changed sealed removal file accepted")
+	}
+	preservedBuild, e := os.ReadFile(buildPath)
+	if e != nil || !bytes.Equal(preservedBuild, changedBuild) {
+		t.Fatal("removal capture repaired changed fixture", e)
+	}
+	if e = os.WriteFile(buildPath, originalBuild, 0644); e != nil {
+		t.Fatal(e)
+	}
+	if e = os.Chtimes(buildPath, buildInfo.ModTime(), buildInfo.ModTime().Add(2*time.Second)); e != nil {
+		t.Fatal(e)
+	}
+	restoredTree, e := captureRemovalBundle(context.Background(), bridge.versions, newSlot.ID, "core", newSlot.Identity)
+	restoredTreeJSON, _ := json.Marshal(restoredTree)
+	if e != nil || bytes.Equal(firstTreeJSON, restoredTreeJSON) {
+		t.Fatal("restored file metadata was not bound", e)
+	}
+	if e = bridge.verifySlot(newSlot); e != nil {
+		t.Fatal("restored payload differs", e)
 	}
 	// Publish only private metadata in this owned fixture. The production
 	// runtime reader must refuse the pair even after the writer lease closes;

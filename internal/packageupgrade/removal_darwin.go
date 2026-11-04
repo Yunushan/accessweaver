@@ -189,6 +189,10 @@ func InspectProductRemoval() (result ProductRemovalInspection, err error) {
 	if e != nil {
 		return result, e
 	}
+	plan, e := s.buildRemovalPlan(queryContext, identity, seal, core, inputs, receipts, apps, app, registry, records, encoded, selected)
+	if e != nil {
+		return result, e
+	}
 	// The public parent can be writable by administrators; bind the app identity
 	// held across inspection, not just an equal self-description in a new object.
 	if e = sameDeploymentEntry(apps, "AccessWeaver.app", app, 0); e != nil {
@@ -248,6 +252,13 @@ func InspectProductRemoval() (result ProductRemovalInspection, err error) {
 	if !bytes.Equal(before, after) {
 		return result, errors.New("removal receipt inventory changed")
 	}
+	checkedPlan, e := s.buildRemovalPlan(queryContext, identity, seal, checked, checkedInputs, checkedReceipts, apps, app, registry, records, encoded, selected)
+	if e != nil {
+		return result, e
+	}
+	if e = sameRemovalPlans(plan, checkedPlan); e != nil {
+		return result, e
+	}
 	if queryContext.Err() != nil {
 		return result, errors.New("removal receipt inspection deadline exceeded")
 	}
@@ -269,9 +280,13 @@ func InspectProductRemoval() (result ProductRemovalInspection, err error) {
 		Desktop      []string                `json:"desktop"`
 		PublicDevice uint64                  `json:"publicDevice"`
 		PublicInode  uint64                  `json:"publicInode"`
-	}{s.state.Generation, core, inputs, receipts, hashes, uint64(st.Dev), st.Ino})
+		Plan         removalPlan             `json:"plan"`
+	}{s.state.Generation, core, inputs, receipts, hashes, uint64(st.Dev), st.Ino, plan})
 	if e != nil {
 		return result, e
+	}
+	if queryContext.Err() != nil {
+		return result, errors.New("removal plan inspection deadline exceeded")
 	}
 	result.State = "inspected"
 	result.RetainedCoreCopies = len(core.Slots)

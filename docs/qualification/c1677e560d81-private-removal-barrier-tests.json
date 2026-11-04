@@ -1,0 +1,2897 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "provider-job-status-for-private-owned-fixture-tests",
+  "sourceCommit": "c1677e560d8133e479314b0d8e565817d90b2e41",
+  "sourceRef": "refs/heads/main",
+  "scope": "Private atomic inactive-state/removal-intent pair and owned fixture tests. Both Darwin unit-test jobs and guarded root-copy package fixtures passed at this exact source. No command, deletion or receipt forgetting reaches the private primitive.",
+  "sourceFiles": [
+    {
+      "path": "internal/packageupgrade/removal_fence.go",
+      "sha256": "da79fabfe878feb8cfeb3ed7cf11c7c558bd5ee0ed81341226df9428211e78aa"
+    },
+    {
+      "path": "internal/packageupgrade/removal_fence_darwin.go",
+      "sha256": "50150ba7cfb47ddab3594c9dfe374c6ff9b0bf3c77ebfa1a29878a06516aa172"
+    },
+    {
+      "path": "internal/packageupgrade/removal_fence_test.go",
+      "sha256": "aa365c38c1d5648a8407a251bb0d5531f7f4e20999d76d3a43eb074fc5f05c64"
+    },
+    {
+      "path": "internal/packageupgrade/removal_fence_darwin_test.go",
+      "sha256": "2946a9b033d2426a618607248e2a702c1f5ea1c52bb4b7d4b82cae7ffad4803f"
+    },
+    {
+      "path": "internal/packageupgrade/deployment_darwin_test.go",
+      "sha256": "2679749a99767a60f378b12de412d09f4823fbc8ddb508c73b81e3c8141f781f"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "fe73a853b941a2db467a374fdb50b0aa16d0a6df1285ff2768980e9b805b4a2e"
+    },
+    {
+      "path": ".github/workflows/macos-installer.yml",
+      "sha256": "0e828948325f8be82c6afd00508b24142f5a8f9c2cbf6ac73787d7c1d19188cb"
+    },
+    {
+      "path": "scripts/test-macos-installer-lifecycle.py",
+      "sha256": "5098a4d1af2d1f3e701b702a1bbc01ea043d4ee9be14d63baa1c8ef8d96ee39c"
+    }
+  ],
+  "providerRuns": [
+    {
+      "runID": 41758768373,
+      "url": "https://github.com/Yunushan/accessweaver/actions/runs/41758768373",
+      "name": "CI",
+      "sourceCommit": "c1677e560d8133e479314b0d8e565817d90b2e41",
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 126341145533,
+          "name": "Race detector (Linux)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify native race SDK identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run go test -race ./... -count=1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341145725,
+          "name": "Go vulnerability checks",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify pinned scanner and workflow validator",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify optional fixture dependencies and compile (no guest execution)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build fixture SBOMs and validate pinned CycloneDX schemas",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain fixture SBOM evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Check known vulnerabilities for all core targets and fixture environments",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain scanner evidence, including failed reports",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341145758,
+          "name": "Test (ubuntu-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify native host and SDK identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Check native identity rejection cases",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Static analysis",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Unit tests",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native Windows discovery timings",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Race macOS paired policy storage",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native macOS trust and paired storage without CGO",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS trust preflight",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Fuzz private workflow metadata encoding",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Measure native concurrent profile inventory",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain source-bound profile benchmark evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build core",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify executed native CLI identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native platform identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable macOS cross-user session ACL regression",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS session ACL evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native Unix controller ownership and shutdown",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native Linux cross-user session isolation",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "JavaScript syntax",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native signed recovery interoperability",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain recovery interoperability evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native encrypted backup interoperability",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native backup evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Portable archive metadata regression checks",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Windows workflow contracts (no system changes)",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Compile unsigned Windows installer (no installation)",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain Windows installer compilation evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable macOS managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable macOS APFS exhaustion acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS APFS exhaustion evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable Linux managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain Linux managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable Windows managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Browser logic and fixture cleanup tests",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Go formatting",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341145781,
+          "name": "Race detector (Linux/arm64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify native race SDK identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run go test -race ./... -count=1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341145918,
+          "name": "Cross-build (freebsd/amd64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Cross-build core (does not run the target)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341145987,
+          "name": "Test (macos-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify native host and SDK identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Check native identity rejection cases",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Static analysis",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Unit tests",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native Windows discovery timings",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Race macOS paired policy storage",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native macOS trust and paired storage without CGO",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain macOS trust preflight",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Fuzz private workflow metadata encoding",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Measure native concurrent profile inventory",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain source-bound profile benchmark evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build core",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify executed native CLI identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native platform identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable macOS cross-user session ACL regression",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain macOS session ACL evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native Unix controller ownership and shutdown",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native Linux cross-user session isolation",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "JavaScript syntax",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native signed recovery interoperability",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain recovery interoperability evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native encrypted backup interoperability",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native backup evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Portable archive metadata regression checks",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Windows workflow contracts (no system changes)",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Compile unsigned Windows installer (no installation)",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain Windows installer compilation evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable macOS managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain macOS managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable macOS APFS exhaustion acceptance",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain macOS APFS exhaustion evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable Linux managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain Linux managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable Windows managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Browser logic and fixture cleanup tests",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Go formatting",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146007,
+          "name": "Cross-build (openbsd/arm64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Cross-build core (does not run the target)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146031,
+          "name": "Cross-build (darwin/arm64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Cross-build core (does not run the target)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146040,
+          "name": "Test (macos-15-intel)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify native host and SDK identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Check native identity rejection cases",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Static analysis",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Unit tests",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native Windows discovery timings",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Race macOS paired policy storage",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native macOS trust and paired storage without CGO",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain macOS trust preflight",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Fuzz private workflow metadata encoding",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Measure native concurrent profile inventory",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain source-bound profile benchmark evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build core",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify executed native CLI identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native platform identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable macOS cross-user session ACL regression",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain macOS session ACL evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native Unix controller ownership and shutdown",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native Linux cross-user session isolation",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "JavaScript syntax",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native signed recovery interoperability",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain recovery interoperability evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native encrypted backup interoperability",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native backup evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Portable archive metadata regression checks",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Windows workflow contracts (no system changes)",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Compile unsigned Windows installer (no installation)",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain Windows installer compilation evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable macOS managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain macOS managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable macOS APFS exhaustion acceptance",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain macOS APFS exhaustion evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable Linux managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain Linux managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable Windows managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Browser logic and fixture cleanup tests",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Go formatting",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146041,
+          "name": "Test (ubuntu-24.04-arm)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify native host and SDK identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Check native identity rejection cases",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Static analysis",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Unit tests",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native Windows discovery timings",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Race macOS paired policy storage",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native macOS trust and paired storage without CGO",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS trust preflight",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Fuzz private workflow metadata encoding",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Measure native concurrent profile inventory",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain source-bound profile benchmark evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build core",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify executed native CLI identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native platform identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable macOS cross-user session ACL regression",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS session ACL evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native Unix controller ownership and shutdown",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native Linux cross-user session isolation",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "JavaScript syntax",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native signed recovery interoperability",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain recovery interoperability evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native encrypted backup interoperability",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native backup evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Portable archive metadata regression checks",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Windows workflow contracts (no system changes)",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Compile unsigned Windows installer (no installation)",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain Windows installer compilation evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable macOS managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable macOS APFS exhaustion acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS APFS exhaustion evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable Linux managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain Linux managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable Windows managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Browser logic and fixture cleanup tests",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Go formatting",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146076,
+          "name": "Test (windows-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify native host and SDK identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Check native identity rejection cases",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Static analysis",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Unit tests",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native Windows discovery timings",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Race macOS paired policy storage",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native macOS trust and paired storage without CGO",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS trust preflight",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Fuzz private workflow metadata encoding",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Measure native concurrent profile inventory",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain source-bound profile benchmark evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build core",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify executed native CLI identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native platform identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable macOS cross-user session ACL regression",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS session ACL evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native Unix controller ownership and shutdown",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native Linux cross-user session isolation",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "JavaScript syntax",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native signed recovery interoperability",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain recovery interoperability evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native encrypted backup interoperability",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native backup evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Portable archive metadata regression checks",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Windows workflow contracts (no system changes)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Compile unsigned Windows installer (no installation)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain Windows installer compilation evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable macOS managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable macOS APFS exhaustion acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS APFS exhaustion evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable Linux managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain Linux managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable Windows managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Browser logic and fixture cleanup tests",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Go formatting",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146086,
+          "name": "Cross-build (linux/amd64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Cross-build core (does not run the target)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146089,
+          "name": "Cross-build (darwin/amd64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Cross-build core (does not run the target)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146091,
+          "name": "Cross-build (windows/amd64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Cross-build core (does not run the target)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146101,
+          "name": "Cross-build (windows/arm64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Cross-build core (does not run the target)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146123,
+          "name": "Cross-build (openbsd/amd64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Cross-build core (does not run the target)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146133,
+          "name": "Cross-build (linux/arm64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Cross-build core (does not run the target)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146209,
+          "name": "browser / Real browser (firefox)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build the real controller",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install locked test dependencies and check known advisories",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install the pinned browser and Linux prerequisites",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Exercise the dashboard with an isolated local controller",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain test results without private controller state",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146266,
+          "name": "browser / Real browser (chromium)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build the real controller",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install locked test dependencies and check known advisories",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install the pinned browser and Linux prerequisites",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Exercise the dashboard with an isolated local controller",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain test results without private controller state",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146273,
+          "name": "browser / Real browser (webkit)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build the real controller",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install locked test dependencies and check known advisories",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Install the pinned browser and Linux prerequisites",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Exercise the dashboard with an isolated local controller",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain test results without private controller state",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146285,
+          "name": "Test (windows-11-arm)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify native host and SDK identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Check native identity rejection cases",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Static analysis",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Unit tests",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native Windows discovery timings",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Race macOS paired policy storage",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native macOS trust and paired storage without CGO",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS trust preflight",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Fuzz private workflow metadata encoding",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Measure native concurrent profile inventory",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain source-bound profile benchmark evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build core",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify executed native CLI identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native platform identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable macOS cross-user session ACL regression",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS session ACL evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native Unix controller ownership and shutdown",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native Linux cross-user session isolation",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "JavaScript syntax",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Native signed recovery interoperability",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain recovery interoperability evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native encrypted backup interoperability",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native backup evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Portable archive metadata regression checks",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Windows workflow contracts (no system changes)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Compile unsigned Windows installer (no installation)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain Windows installer compilation evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable macOS managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable macOS APFS exhaustion acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain macOS APFS exhaustion evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable Linux managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain Linux managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Disposable Windows managed-policy acceptance",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain managed-policy acceptance evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Browser logic and fixture cleanup tests",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Go formatting",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146435,
+          "name": "Cross-build (freebsd/arm64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Cross-build core (does not run the target)",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "runID": 41758768367,
+      "url": "https://github.com/Yunushan/accessweaver/actions/runs/41758768367",
+      "name": "Native macOS experimental package acceptance",
+      "sourceCommit": "c1677e560d8133e479314b0d8e565817d90b2e41",
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 126341145655,
+          "name": "Native package acceptance (arm64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native bundle/package contracts",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build and inspect actual unsigned native package without installation",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable clean installation and isolated app/receipt refusal",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Attest package, inventories and native acceptance reports",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify retained native package provenance and real rejection cases",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain actual package, SBOM and scoped compiler/inspection evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146067,
+          "name": "Native package acceptance (amd64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native bundle/package contracts",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build and inspect actual unsigned native package without installation",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Disposable clean installation and isolated app/receipt refusal",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Attest package, inventories and native acceptance reports",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify retained native package provenance and real rejection cases",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain actual package, SBOM and scoped compiler/inspection evidence",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "runID": 41758768429,
+      "url": "https://github.com/Yunushan/accessweaver/actions/runs/41758768429",
+      "name": "Native versioned macOS deployment acceptance",
+      "sourceCommit": "c1677e560d8133e479314b0d8e565817d90b2e41",
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 126341145326,
+          "name": "Versioned package lifecycle (amd64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Package archive, graph, trust ordering and default CLI guards",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build and inspect two actual native deployment packages",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Actual install, upgrade, refusal, retry and owned cleanup",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Validate and stage independently known subjects before attesting",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Attest both actual packages, inventories and native lifecycle",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Authenticate every subject and reject changed identity/digest",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain authenticated deployment subjects and verification",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain unqualified raw diagnostics on failure",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341145731,
+          "name": "Versioned package lifecycle (arm64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Package archive, graph, trust ordering and default CLI guards",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build and inspect two actual native deployment packages",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Actual install, upgrade, refusal, retry and owned cleanup",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Validate and stage independently known subjects before attesting",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Attest both actual packages, inventories and native lifecycle",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Authenticate every subject and reject changed identity/digest",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain authenticated deployment subjects and verification",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain unqualified raw diagnostics on failure",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "runID": 41758768398,
+      "url": "https://github.com/Yunushan/accessweaver/actions/runs/41758768398",
+      "name": "Native public macOS desktop acceptance",
+      "sourceCommit": "c1677e560d8133e479314b0d8e565817d90b2e41",
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 126341145753,
+          "name": "Public desktop lifecycle (amd64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Public role, archive, graph and authentication-order contracts",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build and inspect two actual native deployment packages",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Actual public components, LaunchServices, refusal, retry and owned cleanup",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Actual product installation, upgrade, refusal, write-fault recovery and owned cleanup",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Validate and stage independently known subjects before attesting",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Attest all61 independently selected desktop subjects",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Authenticate every subject and reject changed identity/digest",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain authenticated public desktop subjects and verification",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain bounded unqualified lifecycle observations on failure",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain unqualified raw diagnostics on failure",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146022,
+          "name": "Public desktop lifecycle (arm64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Public role, archive, graph and authentication-order contracts",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build and inspect two actual native deployment packages",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Actual public components, LaunchServices, refusal, retry and owned cleanup",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Actual product installation, upgrade, refusal, write-fault recovery and owned cleanup",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Validate and stage independently known subjects before attesting",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Attest all61 independently selected desktop subjects",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Authenticate every subject and reject changed identity/digest",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain authenticated public desktop subjects and verification",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain bounded unqualified lifecycle observations on failure",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Retain unqualified raw diagnostics on failure",
+              "status": "completed",
+              "conclusion": "skipped"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "runID": 41758768360,
+      "url": "https://github.com/Yunushan/accessweaver/actions/runs/41758768360",
+      "name": "Windows installer lifecycle acceptance",
+      "sourceCommit": "c1677e560d8133e479314b0d8e565817d90b2e41",
+      "status": "completed",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "id": 126341145802,
+          "name": "Native installer lifecycle (amd64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Pure provenance contracts",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Pure state comparison diagnostics",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Exercise actual unsigned installer on a disposable native host",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Stage and validate all native subjects before signing",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Attest installer, SBOM and actual native acceptance subjects",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain and authenticate the real native provenance bundle",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native installer provenance and verification results",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain the actual unsigned installer candidates and validated SBOMs",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain scoped public lifecycle result",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 126341146215,
+          "name": "Native installer lifecycle (arm64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Pure provenance contracts",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Pure state comparison diagnostics",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Exercise actual unsigned installer on a disposable native host",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Stage and validate all native subjects before signing",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Attest installer, SBOM and actual native acceptance subjects",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain and authenticate the real native provenance bundle",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain native installer provenance and verification results",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain the actual unsigned installer candidates and validated SBOMs",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain scoped public lifecycle result",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "successfulRuns": 5,
+    "successfulCIJobs": 22,
+    "successfulNativePackageOrInstallerJobs": 8
+  },
+  "boundaries": {
+    "candidateArtifactAuthenticationPerformedForThisRecord": false,
+    "independentOwnershipQualification": "87d6a161bc23-macos-removal-ownership.json",
+    "perObjectPlanImplementationIncluded": false,
+    "actualPowerLossOrSIGKILLTested": false,
+    "productUninstallQualified": false,
+    "publisherSigningQualified": false,
+    "productionQualificationComplete": false
+  },
+  "readiness": {
+    "gatesPromoted": 0,
+    "gateManifestSHA256": "6aba24860c171a7a3931029589b0e04dac90ed4a6f22da3fc02bd058bf903b0e",
+    "full50GateAnd10TargetScopeRetained": true
+  }
+}
