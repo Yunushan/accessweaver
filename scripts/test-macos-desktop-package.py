@@ -5,7 +5,6 @@ import fcntl
 import importlib.util
 import json
 import os
-import plistlib
 from pathlib import Path
 import re
 import shutil
@@ -22,6 +21,7 @@ from macos_installer import BUNDLE_NAME,digest,require
 from macos_deployment import PACKAGE_ID,INCOMING,inspect_deployment,verify_deployment_bundle
 from macos_desktop import DESKTOP_ID,ROOT,BINARY,record_name,package_id,component_name,validate_record,verify_bundle,inspect_component
 from macos_package_archive import flat_members,cpio,inflate
+from macos_product_recovery import receipt_version_fixture
 from macos_product import component_inputs,product_name,inspect_product,product_installer_observation,product_install_log_window
 
 REPO=Path(__file__).resolve().parent.parent
@@ -353,8 +353,7 @@ def main(product_mode=False):
             for kind,path in (("incoming-payload",incoming_path/"INSTALL-MANIFEST.json"),("receipt-metadata",RECEIPTS/(PACKAGE_ID+".plist"))):
                 original=root_regular(path,4<<20);good=capsule/(kind+"-good");bad=capsule/(kind+"-bad");good.write_bytes(original)
                 if kind=="receipt-metadata":
-                    info=plistlib.loads(original);require(info.get("pkg-version")==VERSIONS[1],"Owned receipt version field differs")
-                    info["pkg-version"]="9999.0.0";changed=plistlib.dumps(info,fmt=plistlib.FMT_BINARY,sort_keys=False)
+                    changed=receipt_version_fixture(original,PACKAGE_ID,VERSIONS[1])
                 else:changed=original+b" "
                 bad.write_bytes(changed);run(["/usr/bin/sudo","-n","/bin/cp",bad,path],env)
                 removal_inspection("changed-"+kind+"-refused",VERSIONS[1],False,4)

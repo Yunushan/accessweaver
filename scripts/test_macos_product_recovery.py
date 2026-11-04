@@ -116,3 +116,23 @@ class RecoveryArtifactContracts(unittest.TestCase):
                 elif kind=="profile":case["privateProfileAndContainerPreserved"]=False
                 else:value["actualPowerLossTested"]=True
                 with self.assertRaises(ValueError):validate_product_recovery(value,*args)
+
+class NativeReceiptFixtureContracts(unittest.TestCase):
+    def test_native_field_names_are_discovered_uniquely_and_other_fields_preserved(self):
+        import plistlib
+        for names in (("PackageIdentifier","PackageVersion"),("package-id","pkg-version"),("Identifier","Version")):
+            with self.subTest(names=names):
+                original={names[0]:"io.github.yunushan.accessweaver.deployment",names[1]:"0.1.1-alpha","InstallDate":12345,"InstallPrefixPath":"/Library/Application Support/AccessWeaver Incoming"}
+                for fmt in (plistlib.FMT_BINARY,plistlib.FMT_XML):
+                    raw=plistlib.dumps(original,fmt=fmt);changed=recovery.receipt_version_fixture(raw,original[names[0]],original[names[1]])
+                    decoded=plistlib.loads(changed)
+                    self.assertEqual(decoded,{**original,names[1]:"9999.0.0"})
+                    self.assertEqual(plistlib.loads(raw),original)
+    def test_missing_ambiguous_or_unbounded_receipt_fixture_is_refused(self):
+        import plistlib
+        package_id="io.github.yunushan.accessweaver.deployment";release="0.1.1-alpha"
+        for content in ({},{"ID":package_id},{"Version":release},{"ID":package_id,"Version":release,"AnotherVersion":release},{"ID":package_id,"OtherID":package_id,"Version":release},{"ID":package_id,"Nested":{"Version":release}},["not-a-dictionary"]):
+            with self.subTest(content=content),self.assertRaises(ValueError):
+                recovery.receipt_version_fixture(plistlib.dumps(content),package_id,release)
+        for raw in (b"",b"x"*((4<<20)+1)):
+            with self.assertRaises(ValueError):recovery.receipt_version_fixture(raw,package_id,release)

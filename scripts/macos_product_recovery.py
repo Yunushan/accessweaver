@@ -103,3 +103,23 @@ def limited_exec(helper,limit):
     require(resource.getrlimit(resource.RLIMIT_FSIZE)==(limit,limit),"Kernel file-size limit not applied")
     print(json.dumps({"schemaVersion":1,"euid":os.geteuid(),"softFileSizeBytes":limit,"hardFileSizeBytes":limit,"coreDumpLimitBytes":resource.getrlimit(resource.RLIMIT_CORE)[0],"scope":"owned-helper-process"}),flush=True)
     os.execv(helper,[str(helper),"activate-deployment"])
+
+def receipt_version_fixture(data,package_id,release):
+    """Change one uniquely identified version in an owned native receipt.
+
+    This is fixture-only. Production receipt queries/ownership checks never
+    infer a target from plist values and never write these files.
+    """
+    import plistlib
+    require(type(data) is bytes and 0<len(data)<=4<<20,"Owned receipt fixture exceeds byte budget")
+    require(type(package_id) is str and type(release) is str and package_id and release and package_id!=release and release!="9999.0.0","Owned receipt fixture identity differs")
+    before=plistlib.loads(data)
+    require(type(before) is dict and 1<=len(before)<=128 and all(type(k) is str and 0<len(k)<=256 for k in before),"Owned receipt fixture dictionary differs")
+    identifiers=[k for k,v in before.items() if type(v) is str and v==package_id]
+    versions=[k for k,v in before.items() if type(v) is str and v==release]
+    require(len(identifiers)==len(versions)==1 and identifiers[0]!=versions[0],"Owned receipt fixture fields are absent or ambiguous")
+    changed=dict(before);changed[versions[0]]="9999.0.0"
+    encoded=plistlib.dumps(changed,fmt=plistlib.FMT_BINARY,sort_keys=False)
+    after=plistlib.loads(encoded)
+    require(after==changed and {k:v for k,v in after.items() if k!=versions[0]}=={k:v for k,v in before.items() if k!=versions[0]},"Receipt fixture changed another field")
+    return encoded
