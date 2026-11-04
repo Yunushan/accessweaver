@@ -116,6 +116,8 @@ func auditPolicyCommand(args []string, out io.Writer) (failure error) {
 	if directory == "/etc/accessweaver" || strings.HasPrefix(directory, "/etc/accessweaver/") {
 		return errAuditPolicyInput
 	}
+	restoreOutputPipes := observeAuditOutputPipes()
+	defer restoreOutputPipes()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	inputCtx, cancel := context.WithTimeout(ctx, 15*time.Second)

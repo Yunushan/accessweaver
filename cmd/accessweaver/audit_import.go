@@ -60,6 +60,8 @@ func auditInitializeCommand(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	restoreOutputPipes := observeAuditOutputPipes()
+	defer restoreOutputPipes()
 	if writeAuditCheckpoint(out, checkpoint) != nil {
 		return errors.New("audit initialization output unavailable; preserve the initialized directory and recover its genesis independently")
 	}
@@ -73,6 +75,8 @@ func auditImportCommand(args []string, out io.Writer) (failure error) {
 	if !audit.LocalRecordingSupported() {
 		return audit.ErrLocalStorageUnsupported
 	}
+	restoreOutputPipes := observeAuditOutputPipes()
+	defer restoreOutputPipes()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	inputCtx, cancel := context.WithTimeout(ctx, 15*time.Second)

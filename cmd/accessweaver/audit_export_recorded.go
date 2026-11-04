@@ -38,6 +38,8 @@ func auditRecordedExportCommand(args []string, out, observations io.Writer) (fai
 	if out == nil || observations == nil {
 		return audit.ErrRecorderUnavailable
 	}
+	restoreOutputPipes := observeAuditOutputPipes()
+	defer restoreOutputPipes()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	inputCtx, cancel := context.WithTimeout(ctx, 15*time.Second)

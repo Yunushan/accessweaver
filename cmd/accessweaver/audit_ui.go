@@ -33,6 +33,8 @@ func auditUICommand(args []string, out, info io.Writer) (failure error) {
 	if err := uiaccess.RequireUnelevated(); err != nil {
 		return err
 	}
+	restoreOutputPipes := observeAuditOutputPipes()
+	defer restoreOutputPipes()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	inputCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
