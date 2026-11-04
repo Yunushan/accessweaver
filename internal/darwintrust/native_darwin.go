@@ -232,3 +232,32 @@ func RenameDirectories(parent *os.File, from, to string, exchange bool) error {
 		return nil
 	})
 }
+
+// RenameEntryNoReplace moves one named entry between held directories. It never
+// replaces a destination and has no copy/delete fallback. The caller must hold
+// its leases, check both parents, and verify the moved vnode before traversal.
+// A raced symlink is moved as an entry, never followed by this operation.
+func RenameEntryNoReplace(fromParent *os.File, from string, toParent *os.File, to string) error {
+	if fromParent == nil || toParent == nil || !validName(from) || !validName(to) {
+		return errors.New("exclusive rename requires held parents and single entry names")
+	}
+	fromPointer, err := unix.BytePtrFromString(from)
+	if err != nil {
+		return err
+	}
+	toPointer, err := unix.BytePtrFromString(to)
+	if err != nil {
+		return err
+	}
+	defer runtime.KeepAlive(fromPointer)
+	defer runtime.KeepAlive(toPointer)
+	return withNativeFD(fromParent, func(api *nativeAPI, fromFD int32) error {
+		return withNativeFD(toParent, func(_ *nativeAPI, toFD int32) error {
+			value, _, code := purego.SyscallN(api.rename, uintptr(fromFD), uintptr(unsafe.Pointer(fromPointer)), uintptr(toFD), uintptr(unsafe.Pointer(toPointer)), uintptr(unix.RENAME_EXCL))
+			if int32(value) != 0 {
+				return nativeError("move entry without replacement", code)
+			}
+			return nil
+		})
+	})
+}

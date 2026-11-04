@@ -166,15 +166,15 @@ func readRemovalBundle(dir *os.File, owner uint32) (removalFence, removalPlan, [
 	if e := deploymentObject(dir, true, owner, 0755); e != nil {
 		return fail(e)
 	}
-	entries, e := deploymentEntries(dir, owner, 4)
+	entries, e := deploymentEntries(dir, owner, 6)
 	if e != nil {
 		return fail(e)
 	}
-	if len(entries) != 3 && len(entries) != 4 {
+	if len(entries) < 3 || len(entries) > 6 {
 		return fail(errors.New("removal bundle is incomplete"))
 	}
 	for _, entry := range entries {
-		if entry.Name() != deploymentRecord && entry.Name() != removalFenceName && entry.Name() != removalPlanName && entry.Name() != removalJournalName {
+		if entry.Name() != deploymentRecord && entry.Name() != removalFenceName && entry.Name() != removalPlanName && entry.Name() != removalJournalName && entry.Name() != removalQuarantineJournalName && entry.Name() != removalQuarantineName {
 			return fail(errors.New("unknown removal bundle object"))
 		}
 	}
@@ -252,6 +252,19 @@ func readRemovalBundle(dir *os.File, owner uint32) (removalFence, removalPlan, [
 	}
 	if _, _, _, e = readRemovalJournalAt(dir, owner, removalJournalSeed(fence), len(actions)); e != nil {
 		return fail(e)
+	}
+	_, _, quarantine, e := readRemovalQuarantineAt(dir, owner, fence, plan)
+	if e != nil {
+		return fail(e)
+	}
+	hasMoved := false
+	for _, entry := range entries {
+		if entry.Name() == removalQuarantineName {
+			hasMoved = true
+		}
+	}
+	if hasMoved && !quarantine.pending && quarantine.completed != 1 || quarantine.completed == 1 && !hasMoved {
+		return fail(errors.New("quarantined entry differs from recorded move intent"))
 	}
 	return fence, plan, record, nil
 }

@@ -22,13 +22,27 @@ type removalFileProgress = removalProgress
 // Directory removal, public-app quarantine, receipts and finalization are
 // deliberately outside this primitive's action set.
 func (r *removalIntentStore) removeNextProtectedFile(ctx context.Context) (removalFileProgress, error) {
-	return r.removeNextProtectedFileUsing(ctx, r.fixedTargetParent)
+	return r.removeNextQuarantinedProtectedObjectUsing(ctx, r.fixedTargetParent, true)
 }
 func (r *removalIntentStore) removeNextProtectedFileUsing(ctx context.Context, resolve removalParentResolver) (removalFileProgress, error) {
 	return r.removeNextProtectedObjectUsing(ctx, resolve, true)
 }
 func (r *removalIntentStore) removeNextProtectedObject(ctx context.Context) (removalProgress, error) {
-	return r.removeNextProtectedObjectUsing(ctx, r.fixedTargetParent, false)
+	return r.removeNextQuarantinedProtectedObjectUsing(ctx, r.fixedTargetParent, false)
+}
+
+// Fixed production-facing primitives require completed quarantine first.
+// The lower-level resolver method remains private for isolated owned fixtures.
+func (r *removalIntentStore) removeNextQuarantinedProtectedObjectUsing(ctx context.Context, resolve removalParentResolver, filesOnly bool) (removalProgress, error) {
+	if r == nil || r.store == nil || r.store.owner != 0 || r.store.current == nil || r.store.runtimeLock == nil || resolve == nil {
+		return removalProgress{}, errors.New("protected removal requires an open root intent")
+	}
+	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if e := r.requirePublicQuarantine(bounded, resolve); e != nil {
+		return removalProgress{}, e
+	}
+	return r.removeNextProtectedObjectUsing(bounded, resolve, filesOnly)
 }
 
 // Each call mutates at most one recorded object. Directory actions use only

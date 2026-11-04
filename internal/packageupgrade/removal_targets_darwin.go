@@ -109,6 +109,30 @@ func (r *removalIntentStore) verifyIntactTarget(ctx context.Context, expected re
 	return r.verifyTargetWithNamespace(ctx, expected, r.plan, resolve)
 }
 func (r *removalIntentStore) verifyTargetWithNamespace(ctx context.Context, expected removalPlanRoot, namespace removalPlan, resolve removalParentResolver) (result error) {
+	if expected.Kind == "public" {
+		_, _, journal, e := readRemovalQuarantineAt(r.store.current, 0, r.fence, r.plan)
+		if e != nil {
+			return e
+		}
+		if journal.completed == 1 {
+			if e = r.checkPublicAbsent(resolve); e != nil {
+				return e
+			}
+			if matches, e := r.quarantineRootMatches(); e != nil || !matches {
+				return errors.Join(e, errors.New("quarantined public root changed"))
+			}
+			defer func() { result = errors.Join(result, r.checkPublicAbsent(resolve)) }()
+			var protected removalParentResolver
+			expected, protected, e = r.quarantineTarget()
+			if e != nil {
+				return e
+			}
+			return r.verifyTargetAtNamespace(ctx, expected, namespace, protected)
+		}
+	}
+	return r.verifyTargetAtNamespace(ctx, expected, namespace, resolve)
+}
+func (r *removalIntentStore) verifyTargetAtNamespace(ctx context.Context, expected removalPlanRoot, namespace removalPlan, resolve removalParentResolver) (result error) {
 	if ctx.Err() != nil {
 		return errors.New("removal target verification deadline exceeded")
 	}
@@ -151,6 +175,16 @@ func (r *removalIntentStore) verifyTargetWithNamespace(ctx context.Context, expe
 		return e
 	}
 	defer func() { result = errors.Join(result, root.Close()) }()
+	// Reject a raced root before reading any child. The public parent is
+	// administrator-writable; a trusted directory alone is not the saved vnode.
+	rootInfo, e := root.Stat()
+	if e != nil {
+		return e
+	}
+	rootStat := rootInfo.Sys().(*syscall.Stat_t)
+	if uint64(rootStat.Dev) != expected.Objects[0].Device || rootStat.Ino != expected.Objects[0].Inode {
+		return errors.New("removal target root changed before traversal")
+	}
 	if expected.Kind == "receipts" {
 		if e = verifyRemovalTargetNamespace(root, "receipts", r.plan); e != nil {
 			return e
@@ -279,7 +313,8 @@ func (r *removalIntentStore) fixedTargetParent(kind string) (removalTargetParent
 		if e != nil {
 			return removalTargetParent{}, e
 		}
-		// The administrator-writable Applications exception remains read-only.
+		// Read-only tree inspection uses this parent. The separate quarantine
+		// transaction permits only a journaled exclusive move, never deletion here.
 		return removalTargetParent{file, true, func() error { return sameRemovalTargetParent(file, applications) }}, nil
 	case "registrations":
 		return removalTargetParent{s.parent, false, func() error {
