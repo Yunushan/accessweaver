@@ -18,8 +18,15 @@ func execute(name string, args []string) error {
 	if len(args) == 2 && args[0] == "version" && args[1] == "--json" {
 		return json.NewEncoder(os.Stdout).Encode(buildinfo.Current())
 	}
+	if len(args) == 1 && args[0] == "inspect-product-removal" {
+		result, e := packageupgrade.InspectProductRemoval()
+		if result.Operation != "" {
+			e = errors.Join(e, json.NewEncoder(os.Stdout).Encode(result))
+		}
+		return e
+	}
 	if name != "preinstall" && name != "postinstall" {
-		return errors.New("usage: accessweaver-product-installer version --json; package phases require Apple's Installer")
+		return errors.New("usage: accessweaver-product-installer version --json | inspect-product-removal; package phases require Apple's Installer")
 	}
 	if len(args) < 3 || len(args) > 8 || args[2] != "/" {
 		return errors.New("product package phase requires the system root target")

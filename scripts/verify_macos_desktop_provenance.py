@@ -98,7 +98,7 @@ def validate_coordinated_application(root,commit,arch,identity,encoded,record,co
 
 def validate_contents(root,commit,arch):
     read=lambda name:json.loads((root/name).read_text(encoding="utf-8"))
-    cores,core_bindings,_=validate_packages(root,commit,arch);records={};public_bindings={};outputs=[];identities={};product_bindings={}
+    cores,core_bindings,_=validate_packages(root,commit,arch);records={};public_bindings={};outputs=[];identities={};product_bindings={};product_helpers={}
     for version in VERSIONS:
         identity=read(version+"-BUILD-INFO.json");identities[version]=identity
         prefix="desktop-"+version+"-";require(read(prefix+"BUILD-INFO.json")==identity,"Public/core build identities differ")
@@ -134,6 +134,7 @@ def validate_contents(root,commit,arch):
             if role=="application":require(digest(payload[BUNDLE_NAME+"/Contents/MacOS/"+BINARY]["data"])==launcher["binarySHA256"],"Actual public launcher and standalone archive differ")
             public_bindings[version][role]=digest(raw);inspections.append(inspected)
         coordinated_inspection=validate_coordinated_application(root,commit,arch,identity,encoded,record,read(version+"-compiler-artifact.json"),launcher)
+        product_helpers[version]=coordinated_inspection["helperSHA256"]
         product=product_name(version,arch);product_raw=(root/product).read_bytes();product_report=read("product-"+version+"-compiler-artifact.json")
         inputs=component_inputs(version,arch,encoded);input_packages={name:(root/name).read_bytes() for _,_,name in inputs}
         product_inspection=inspect_product(product_raw,version,arch,inputs,input_packages)
@@ -170,12 +171,37 @@ def validate_contents(root,commit,arch):
     launched=life.get("launchServices",{});require(all(launched.get(k) is True for k in ("defaultNoArgumentLaunch","kernelImageAndOrdinaryOwnerVerified","dashboardHTTPVerified","privateProfileLockVerified","authenticatedSavedProfileVerified","installerRefusalWhileServingVerified","controllerRemainedRunning","cleanShutdownVerified","passed")) and type(launched.get("elapsedMilliseconds")) is int and 0<=launched["elapsedMilliseconds"]<=300000,"Actual LaunchServices controller acceptance incomplete")
     deactivated=life.get("deactivation",{});require(deactivated.get("generation")==3 and deactivated.get("state")=="inactive" and deactivated.get("operationRecordPublished") is True and deactivated.get("exitCode")==0 and type(deactivated.get("elapsedMilliseconds")) is int and 0<=deactivated["elapsedMilliseconds"]<=60000,"Public/core deactivation fence differs")
     product_life=validate_product_lifecycle(read("product-lifecycle-artifact.json"),commit,arch,core_bindings,records,public_bindings,product_bindings,identities,str(life["runID"]))
+    removal_life=validate_product_removal_inspections(read("product-lifecycle-artifact.json").get("removalInspections"),{v:read(v+"-compiler-artifact.json") for v in VERSIONS},records,product_helpers)
     newest=VERSIONS[-1];newest_record=(root/("desktop-"+newest+"-DESKTOP-RECORD.json")).read_bytes()
     core_input=component_inputs(newest,arch,newest_record)[0][2]
     recovery_payload=cpio(inflate(flat_members((root/core_input).read_bytes())["Payload"],MAX_BYTES,31))
     recovery_life=validate_product_recovery(read("product-recovery-artifact.json"),commit,arch,read(newest+"-compiler-artifact.json"),product_bindings[newest],recovery_payload,str(life["runID"]))
-    return {"productWriteFaultRecovery":recovery_life,"productLifecycle":product_life,"lifecycleRunID":str(life["runID"]),"corePackages":cores,"desktop":outputs,"actualInstallerOperations":21,"actualCoreDeactivationOperations":1,"publicAppSelectionCases":5,"launchServicesDefaultControllerVerified":True,"productArchiveConstructionVerified":True,"singleProductLifecycleQualified":False,"finderInteractiveQualificationComplete":False,"singleProductDistributionQualified":False,"publisherSignatureVerified":False,"productionQualificationComplete":False}
+    return {"productRemovalInspection":removal_life,"productWriteFaultRecovery":recovery_life,"productLifecycle":product_life,"lifecycleRunID":str(life["runID"]),"corePackages":cores,"desktop":outputs,"actualInstallerOperations":21,"actualCoreDeactivationOperations":1,"publicAppSelectionCases":5,"launchServicesDefaultControllerVerified":True,"productArchiveConstructionVerified":True,"singleProductLifecycleQualified":False,"finderInteractiveQualificationComplete":False,"singleProductDistributionQualified":False,"publisherSignatureVerified":False,"productionQualificationComplete":False}
 
+
+
+def validate_product_removal_inspections(items,cores,records,helpers):
+    old,new=VERSIONS
+    expected=[("initial-complete",old,True,1),("serving-controller-refused",old,False,0),("older-helper-refused",old,False,3),("changed-public-info-refused",new,False,3),("changed-registration-refused",new,False,3),("public-alias-refused",new,False,3),("registration-alias-refused",new,False,3),("restored-complete",new,True,4),("unrecorded-copy-refused",new,False,4)]
+    for index,kind in enumerate(("metadata","controller")):
+        expected.extend([(kind+"-pending-copy-refused",new,False,4+index),(kind+"-abandoned-copy-refused",new,False,4+index),(kind+"-retained-copy-refused",new,False,5+index)])
+    expected.append(("inactive-core-refused",new,False,7))
+    require(type(items) is list and len(items)==len(expected),"Removal inspection case extent differs")
+    result_keys={"schemaVersion","operation","state","version","manifestSHA256","payloadSHA256","desktopRecordSHA256","generation","retainedCoreCopies","retainedStateRecords","desktopRegistrations","inventorySHA256","inventoryScope","mutationPerformed","incomingPayloadsInspected","installerReceiptsInspected","productUninstallQualified","productionQualificationComplete"}
+    fingerprints=[]
+    for item,(name,version,success,generation) in zip(items,expected):
+        require(type(item) is dict and set(item)=={"name","helperSHA256","exitCode","elapsedMilliseconds","result","installationAndPrivateDataPreserved","passed"},"Removal inspection envelope differs")
+        require(item.get("name")==name and item.get("helperSHA256")==helpers[version] and type(item.get("exitCode")) is int and item["exitCode"]==(0 if success else 1) and type(item.get("elapsedMilliseconds")) is int and 0<=item["elapsedMilliseconds"]<=60000 and item.get("installationAndPrivateDataPreserved") is True and item.get("passed") is True,"Removal inspection did not bind helper/outcome/preservation")
+        value=item.get("result");require(type(value) is dict and set(value)==result_keys,"Removal inspection result shape differs")
+        require(type(value.get("schemaVersion")) is int and value["schemaVersion"]==1 and value.get("operation")=="inspect-product-removal" and value.get("state")==("inspected" if success else "refused") and value.get("version")==version and value.get("manifestSHA256")==cores[version]["manifestSHA256"] and value.get("payloadSHA256")==cores[version]["payloadSHA256"] and value.get("desktopRecordSHA256")==records[version],"Removal inspection compiled identity differs")
+        require(all(type(value.get(k)) is int for k in ("generation","retainedCoreCopies","retainedStateRecords","desktopRegistrations")) and value["generation"]==generation,"Removal inspection generation/count type differs")
+        require(value.get("inventoryScope")=="core-history-public-app-registrations" and all(value.get(k) is False for k in ("mutationPerformed","incomingPayloadsInspected","installerReceiptsInspected","productUninstallQualified","productionQualificationComplete")),"Removal inspection scope changed")
+        if success:
+            require(value["retainedCoreCopies"]==generation and value["desktopRegistrations"]==(1 if version==old else 2) and 1<=value["retainedStateRecords"]<=129 and type(value.get("inventorySHA256")) is str and re.fullmatch("[a-f0-9]{64}",value["inventorySHA256"]) is not None,"Completed removal inventory differs")
+            fingerprints.append(value["inventorySHA256"])
+        else:require(value["retainedCoreCopies"]==value["retainedStateRecords"]==value["desktopRegistrations"]==0 and value["inventorySHA256"]=="","Refused removal inventory was presented as complete")
+    require(len(set(fingerprints))==2,"Distinct removal inventories reused a fingerprint")
+    return {"actualPackagedHelperInspectionCommands":len(expected),"completeInventories":2,"preservingRefusals":len(expected)-2,"fixedScope":"core-history-public-app-registrations","deletionPerformed":False,"productUninstallQualified":False,"productionQualificationComplete":False}
 
 def validate_product_lifecycle(life,commit,arch,cores,records,public,products,identities,run_id):
     require(life.get("schemaVersion")==1 and life.get("sourceCommit")==commit and life.get("target")=="darwin/"+arch and str(life.get("runID"))==run_id and life.get("lifecycleKind")=="single-product" and life.get("stage")=="deactivation-and-owned-cleanup" and life.get("failureType") is None and life.get("failureSourceLine") is None,"Single product lifecycle identity differs")

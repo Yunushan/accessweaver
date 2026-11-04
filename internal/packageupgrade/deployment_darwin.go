@@ -21,8 +21,6 @@ const deploymentParent = "/Library/Application Support"
 const deploymentRoot = "AccessWeaver"
 const deploymentRecord = "deployment.json"
 const deploymentLock = ".deployment.lock"
-const maxRetainedDeployments = 64
-const maxRetainedRecords = 128
 
 var recordName = regexp.MustCompile(`^\.record-[a-f0-9]{32}$`)
 

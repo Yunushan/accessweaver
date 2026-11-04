@@ -16,6 +16,9 @@ const maxDeploymentRecord = 16384
 
 var slotName = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
+const maxRetainedDeployments = 64
+const maxRetainedRecords = 128
+
 type deploymentIdentity struct {
 	Version        string `json:"version"`
 	ManifestSHA256 string `json:"manifestSHA256"`

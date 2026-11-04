@@ -615,6 +615,64 @@ func TestDarwinDeploymentRootCopyRecovery(t *testing.T) {
 	if e = bridge.verifySlot(newSlot); e != nil {
 		t.Fatal(e)
 	}
+
+	// Removal inspection is deliberately stricter than launch/activation: every
+	// retained copy must be complete and bound by protected canonical history.
+	inspection, e := bridge.removalCore(newIdentity)
+	if e != nil || len(inspection.Slots) != 2 || len(inspection.Records) < 2 {
+		t.Fatal("complete removal inventory", inspection, e)
+	}
+	beforeInspection := append([]byte{}, bridge.encoded...)
+	unknown := filepath.Join(bridgeParent, deploymentRoot, "versions", strings.Repeat("f", 32))
+	if e = os.Mkdir(unknown, 0755); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = bridge.removalCore(newIdentity); e == nil {
+		t.Fatal("unrecorded removal copy accepted")
+	}
+	if _, e = os.Stat(unknown); e != nil {
+		t.Fatal("unknown removal copy was changed", e)
+	}
+	if e = os.Remove(unknown); e != nil {
+		t.Fatal(e)
+	} // Exact empty test-created directory.
+	for _, record := range inspection.Records {
+		if record.Name == "state" {
+			continue
+		}
+		historyPath := filepath.Join(bridgeParent, deploymentRoot, record.Name, deploymentRecord)
+		original, e := os.ReadFile(historyPath)
+		if e != nil {
+			t.Fatal(e)
+		}
+		changed := append(append([]byte{}, original...), ' ')
+		if e = os.WriteFile(historyPath, changed, 0644); e != nil {
+			t.Fatal(e)
+		}
+		if _, e = bridge.removalCore(newIdentity); e == nil {
+			t.Fatal("noncanonical removal history accepted")
+		}
+		preserved, e := os.ReadFile(historyPath)
+		if e != nil || !bytes.Equal(preserved, changed) {
+			t.Fatal("removal inspection repaired history", e)
+		}
+		if e = os.WriteFile(historyPath, original, 0644); e != nil {
+			t.Fatal(e)
+		}
+		break
+	}
+	againInspection, e := bridge.removalCore(newIdentity)
+	firstJSON, _ := json.Marshal(inspection)
+	againJSON, _ := json.Marshal(againInspection)
+	if e != nil || !bytes.Equal(firstJSON, againJSON) || !bytes.Equal(beforeInspection, bridge.encoded) {
+		t.Fatal("read-only removal inventory changed", e)
+	}
+	if e = bridge.verifySlot(oldSlot); e != nil {
+		t.Fatal(e)
+	}
+	if e = bridge.verifySlot(newSlot); e != nil {
+		t.Fatal(e)
+	}
 	if e = bridge.Close(); e != nil {
 		t.Fatal(e)
 	}
