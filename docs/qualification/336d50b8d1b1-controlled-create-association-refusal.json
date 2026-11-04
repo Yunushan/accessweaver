@@ -1,0 +1,459 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "336d50b8d1b1dbadd426af1d6dca4bc6343df561",
+  "sourceRef": "refs/heads/main",
+  "scope": "Retained Intel APFS controlled-image creation refusal after eight completed native ENOSPC preservation/retry cases; no complete CI qualification",
+  "providerArtifact": {
+    "id": 13317803307,
+    "node_id": "MDg6QXJ0aWZhY3QxMzMxNzgwMzMwNw==",
+    "name": "darwin-storage-fault-check-amd64",
+    "size_in_bytes": 2683,
+    "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13317803307",
+    "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13317803307/zip",
+    "expired": false,
+    "digest": "sha256:d17fbccea227173ec6e73f26cb6a8df2e239f6fd9dfd7ddad54afc924c89cd66",
+    "created_at": "2026-11-04T11:45:50Z",
+    "updated_at": "2026-11-04T11:45:50Z",
+    "expires_at": "2026-11-18T11:45:48Z",
+    "workflow_run": {
+      "id": 41822913570,
+      "repository_id": 1441227907,
+      "head_repository_id": 1441227907,
+      "head_branch": "main",
+      "head_sha": "336d50b8d1b1dbadd426af1d6dca4bc6343df561"
+    }
+  },
+  "transportVerification": {
+    "sourceCommit": "336d50b8d1b1dbadd426af1d6dca4bc6343df561",
+    "runID": 41822913570,
+    "jobID": 126550268431,
+    "artifactID": 13317803307,
+    "zipBytes": 2683,
+    "providerDigestVerified": true,
+    "jobLogBytes": 145095,
+    "jobLogSHA256": "144dd49091cf6a6f8c0ce83d4540ec7826944e42ae799014695273608f6c69f0",
+    "cryptographicAttestationVerified": false
+  },
+  "inputReports": [
+    {
+      "file": "apfs-exhaustion-amd64.json",
+      "bytes": 3336,
+      "sha256": "fee9a6335553d9942503f367c2f2a759e5121fef4774cad2e9975fa44447c07b",
+      "data": {
+        "arch": "amd64",
+        "cases": [
+          {
+            "explicitSignedRetryCommitted": true,
+            "fillerBytes": 529190912,
+            "knownAbortCleaned": false,
+            "nativeENOSPCObserved": true,
+            "operation": "install",
+            "priorPairUnchanged": true,
+            "record": "installation.json",
+            "retainedStagePresent": true,
+            "retainedStagePreserved": true,
+            "unpublished": true
+          },
+          {
+            "explicitSignedRetryCommitted": true,
+            "fillerBytes": 528953344,
+            "knownAbortCleaned": false,
+            "nativeENOSPCObserved": true,
+            "operation": "install",
+            "priorPairUnchanged": true,
+            "record": "acceptance.json",
+            "retainedStagePresent": true,
+            "retainedStagePreserved": true,
+            "unpublished": true
+          },
+          {
+            "explicitSignedRetryCommitted": true,
+            "fillerBytes": 528629760,
+            "knownAbortCleaned": false,
+            "nativeENOSPCObserved": true,
+            "operation": "update",
+            "priorPairUnchanged": true,
+            "record": "installation.json",
+            "retainedStagePresent": true,
+            "retainedStagePreserved": true,
+            "unpublished": true
+          },
+          {
+            "explicitSignedRetryCommitted": true,
+            "fillerBytes": 528396288,
+            "knownAbortCleaned": false,
+            "nativeENOSPCObserved": true,
+            "operation": "update",
+            "priorPairUnchanged": true,
+            "record": "acceptance.json",
+            "retainedStagePresent": true,
+            "retainedStagePreserved": true,
+            "unpublished": true
+          },
+          {
+            "explicitSignedRetryCommitted": true,
+            "fillerBytes": 528232448,
+            "knownAbortCleaned": false,
+            "nativeENOSPCObserved": true,
+            "operation": "rotate",
+            "priorPairUnchanged": true,
+            "record": "installation.json",
+            "retainedStagePresent": true,
+            "retainedStagePreserved": true,
+            "unpublished": true
+          },
+          {
+            "explicitSignedRetryCommitted": true,
+            "fillerBytes": 527998976,
+            "knownAbortCleaned": false,
+            "nativeENOSPCObserved": true,
+            "operation": "rotate",
+            "priorPairUnchanged": true,
+            "record": "acceptance.json",
+            "retainedStagePresent": true,
+            "retainedStagePreserved": true,
+            "unpublished": true
+          },
+          {
+            "explicitSignedRetryCommitted": true,
+            "fillerBytes": 527900672,
+            "knownAbortCleaned": false,
+            "nativeENOSPCObserved": true,
+            "operation": "recover",
+            "priorPairUnchanged": true,
+            "record": "installation.json",
+            "retainedStagePresent": true,
+            "retainedStagePreserved": true,
+            "unpublished": true
+          },
+          {
+            "explicitSignedRetryCommitted": true,
+            "fillerBytes": 527663104,
+            "knownAbortCleaned": false,
+            "nativeENOSPCObserved": true,
+            "operation": "recover",
+            "priorPairUnchanged": true,
+            "record": "acceptance.json",
+            "retainedStagePresent": true,
+            "retainedStagePreserved": true,
+            "unpublished": true
+          }
+        ],
+        "deviceDiffersFromHost": true,
+        "effectiveUID": 0,
+        "filesystem": "apfs",
+        "fullStorageFaultQualificationComplete": false,
+        "goVersion": "go1.27.3",
+        "mountFlags": 76583448,
+        "platform": "darwin",
+        "powerLossQualified": false,
+        "productionQualificationComplete": false,
+        "rootMachinePolicyChanged": false,
+        "schemaVersion": 1,
+        "sourceCommit": "336d50b8d1b1dbadd426af1d6dca4bc6343df561",
+        "volumeBytes": 536829952
+      }
+    },
+    {
+      "file": "image-lifecycle-amd64.json",
+      "bytes": 3700,
+      "sha256": "fd57e376f47d3b104871e44d44b536acaf3bf2413025be93a132ef2ea6bb2a2c",
+      "data": {
+        "schemaVersion": 2,
+        "sourceCommit": "336d50b8d1b1dbadd426af1d6dca4bc6343df561",
+        "arch": "amd64",
+        "passed": false,
+        "controlledUnmountedImageRequired": true,
+        "imageVirtualBytes": 536870912,
+        "nativeToolHelp": {
+          "create": {
+            "sha256": "60325e582f6721bb7b3482815ea50436e477983eee05f0d7a7d17683e3f0bdb9",
+            "bytes": 3611,
+            "statusCode": 0,
+            "basicHelpListsRequestedFlag": true
+          },
+          "attach": {
+            "sha256": "b05d957e3744182417a7f820e5ecbe2b9030d0d5b6883e701a96a5ea541b1cad",
+            "bytes": 1091,
+            "statusCode": 0,
+            "basicHelpListsRequestedFlag": false
+          },
+          "detach": {
+            "sha256": "beed565c84fe62cb110ef891f6b98aa6ac3c6fed5231532ce2e2ba7b7762ee87",
+            "bytes": 282,
+            "statusCode": 0,
+            "basicHelpListsRequestedFlag": false
+          },
+          "unmount": {
+            "sha256": "af79ad99fdfe2894f791188b862af68d07a3e0e3608cbded49e7bc0d5d162811",
+            "bytes": 343,
+            "statusCode": 0,
+            "basicHelpListsRequestedFlag": false
+          }
+        },
+        "productionQualificationComplete": false,
+        "attached": true,
+        "detached": true,
+        "ownedImageRemoved": true,
+        "rootMachinePolicyChanged": false,
+        "hostVolumePressureApplied": false,
+        "imageDevice": "/dev/disk2",
+        "volumeDevice": "/dev/disk3s1",
+        "onlyOwnedImageRootProtectionSet": true,
+        "nativeCasesPassed": 8,
+        "originalDeviceLabels": [
+          "/dev/disk2",
+          "/dev/disk2s1",
+          "/dev/disk3",
+          "/dev/disk3s1"
+        ],
+        "originalDeviceLabelsComplete": true,
+        "detachMappingObservations": [
+          {
+            "phase": "before-detach",
+            "ownedImageCount": 1,
+            "deviceLabels": [
+              "/dev/disk2",
+              "/dev/disk2s1",
+              "/dev/disk3",
+              "/dev/disk3s1"
+            ],
+            "basePresent": true,
+            "volumePresent": true,
+            "exactMountCount": 1,
+            "unexpectedMountCount": 0,
+            "conflictingDeviceAssociation": false,
+            "safeKnownMapping": true
+          },
+          {
+            "phase": "accepted-pending",
+            "ownedImageCount": 0,
+            "deviceLabels": [],
+            "basePresent": false,
+            "volumePresent": false,
+            "exactMountCount": 0,
+            "unexpectedMountCount": 0,
+            "conflictingDeviceAssociation": false,
+            "safeKnownMapping": false
+          }
+        ],
+        "normalDetachAttempts": 1,
+        "normalDetachAccepted": true,
+        "unmountedOriginalBindingDetachAttempts": 0,
+        "normalDetachObservations": [
+          {
+            "attempt": 1,
+            "unmountedOriginalBinding": false,
+            "originalFilesystemIdentityRechecked": true,
+            "outcome": "accepted",
+            "exitCode": 0,
+            "outputBytes": 17,
+            "outputSHA256": "8e7424d5bae883508e399372acd069c965cf7a3d8d04f370bb4d33df3325d734"
+          }
+        ],
+        "controlledUnmountedImage": {
+          "schemaVersion": 1,
+          "sourceCommit": "336d50b8d1b1dbadd426af1d6dca4bc6343df561",
+          "arch": "amd64",
+          "imageVirtualBytes": 134217728,
+          "controlledIntervention": true,
+          "hostVolumePressureApplied": false,
+          "rootMachinePolicyChanged": false,
+          "productionQualificationComplete": false,
+          "passed": false,
+          "attached": false,
+          "detached": false,
+          "ownedImageRemoved": false,
+          "capsuleRemoved": false,
+          "stage": "create-owned-empty-image",
+          "imageCreateAttempts": 1,
+          "imageCreateSucceeded": false,
+          "imageCreateObservations": [
+            {
+              "attempt": 1,
+              "outcome": "refused",
+              "retryEligible": false,
+              "exitCode": 1,
+              "outputBytes": 39,
+              "outputSHA256": "119b4f02e74433bfb0cc9b166bd642bc217eb901090a90f8f73a52c1d526ac2c",
+              "exactBusySignal": true,
+              "imageEntryPresent": false
+            }
+          ],
+          "failureType": "RuntimeError",
+          "cleanupFailed": true
+        },
+        "failureStage": "controlled-unmounted-image",
+        "failureType": "RuntimeError"
+      }
+    },
+    {
+      "file": "native-tools-amd64.json",
+      "bytes": 1088,
+      "sha256": "2da163d48ab2bf5edd73fa8ecdfeca22249c68ad1977f4e7f14a94ea0d74c6fe",
+      "data": {
+        "schemaVersion": 1,
+        "sourceCommit": "336d50b8d1b1dbadd426af1d6dca4bc6343df561",
+        "arch": "amd64",
+        "sdk": {
+          "GOARCH": "amd64",
+          "GOHOSTARCH": "amd64",
+          "GOHOSTOS": "darwin",
+          "GOOS": "darwin",
+          "GOVERSION": "go1.27.3"
+        },
+        "nativeHelp": {
+          "create": {
+            "sha256": "60325e582f6721bb7b3482815ea50436e477983eee05f0d7a7d17683e3f0bdb9",
+            "bytes": 3611,
+            "statusCode": 0,
+            "basicHelpListsRequestedFlag": true
+          },
+          "attach": {
+            "sha256": "b05d957e3744182417a7f820e5ecbe2b9030d0d5b6883e701a96a5ea541b1cad",
+            "bytes": 1091,
+            "statusCode": 0,
+            "basicHelpListsRequestedFlag": false
+          },
+          "detach": {
+            "sha256": "beed565c84fe62cb110ef891f6b98aa6ac3c6fed5231532ce2e2ba7b7762ee87",
+            "bytes": 282,
+            "statusCode": 0,
+            "basicHelpListsRequestedFlag": false
+          },
+          "unmount": {
+            "sha256": "af79ad99fdfe2894f791188b862af68d07a3e0e3608cbded49e7bc0d5d162811",
+            "bytes": 343,
+            "statusCode": 0,
+            "basicHelpListsRequestedFlag": false
+          }
+        },
+        "productionQualificationComplete": false
+      }
+    }
+  ],
+  "ci": {
+    "runID": 41822913570,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41822913570",
+    "conclusion": "failure",
+    "successfulJobs": 21,
+    "failedJob": {
+      "id": 126550268431,
+      "name": "Test (macos-15-intel)",
+      "url": "https://github.com/Yunushan/accessweaver/actions/runs/41822913570/job/126550268431",
+      "failedStep": "Disposable macOS APFS exhaustion acceptance"
+    }
+  },
+  "relatedNativeProviderJobs": {
+    "successfulJobs": 8,
+    "jobs": [
+      {
+        "id": 126550266827,
+        "runID": 41822913473,
+        "name": "Native package acceptance (amd64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41822913473/job/126550266827",
+        "conclusion": "success"
+      },
+      {
+        "id": 126550267249,
+        "runID": 41822913473,
+        "name": "Native package acceptance (arm64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41822913473/job/126550267249",
+        "conclusion": "success"
+      },
+      {
+        "id": 126550267786,
+        "runID": 41822913484,
+        "name": "Versioned package lifecycle (arm64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41822913484/job/126550267786",
+        "conclusion": "success"
+      },
+      {
+        "id": 126550268149,
+        "runID": 41822913484,
+        "name": "Versioned package lifecycle (amd64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41822913484/job/126550268149",
+        "conclusion": "success"
+      },
+      {
+        "id": 126550268201,
+        "runID": 41822913475,
+        "name": "Public desktop lifecycle (arm64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41822913475/job/126550268201",
+        "conclusion": "success"
+      },
+      {
+        "id": 126550268683,
+        "runID": 41822913475,
+        "name": "Public desktop lifecycle (amd64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41822913475/job/126550268683",
+        "conclusion": "success"
+      },
+      {
+        "id": 126550267052,
+        "runID": 41822913490,
+        "name": "Native installer lifecycle (arm64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41822913490/job/126550267052",
+        "conclusion": "success"
+      },
+      {
+        "id": 126550267187,
+        "runID": 41822913490,
+        "name": "Native installer lifecycle (amd64)",
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41822913490/job/126550267187",
+        "conclusion": "success"
+      }
+    ],
+    "independentCandidateAuthenticationClaimed": false
+  },
+  "observed": {
+    "completedIntelENOSPCCases": 8,
+    "priorPolicyPairsUnchanged": true,
+    "retainedStagesPreserved": true,
+    "explicitSignedRetriesCommitted": true,
+    "originalPressureImageDetachedAndRemoved": true,
+    "controlledImageCreateAttempts": 1,
+    "exactBusySignal": true,
+    "imageEntryPresentAtFailure": false,
+    "retryEligible": false,
+    "controlledCleanupFailed": true,
+    "controlledCapsuleRemoved": false,
+    "exception": "Preserving associated controlled creation image"
+  },
+  "unknowns": [
+    "The failed source did not retain the matching association devices, mount counts or lifetime. The underlying cause of Resource busy and the origin of the image-path association are not established.",
+    "The separate cleanup failure phase was not retained. No cleanup success or ownership authority is inferred from the matching path."
+  ],
+  "implementationSource": [
+    {
+      "path": "scripts/test-darwin-storage.py",
+      "sha256": "4258343ecae288a23aa538b8f72e5a215455f6a2052df7e7afece0cbcea3b0e0"
+    },
+    {
+      "path": "scripts/test_darwin_storage.py",
+      "sha256": "d06c9f81c953c326ab08b2d7b9fc8d09cbd1fd7ca30c4681f2e6719a770f6d66"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "f9d17a8d4050cf3d1adc6b2d87717a2e4c03077a02e1939d5548c5d5b0371cfc"
+    },
+    {
+      "path": "internal/managed/storage_full_darwin_test.go",
+      "sha256": "2baa6648e39ea98e4450ba07fd20a157cfc80065a1c29265073d9d6c5e1c12a5"
+    }
+  ],
+  "limits": {
+    "cryptographicAttestationVerified": false,
+    "fullCIPassed": false,
+    "originalFailedJobRerun": false,
+    "retryOrCleanupPreconditionsRelaxed": false,
+    "hostVolumePressureApplied": false,
+    "rootMachinePolicyChanged": false,
+    "powerLossQualified": false,
+    "productionQualificationComplete": false,
+    "readinessGatePromoted": false
+  },
+  "followUp": "Add bounded observations to existing before-create/after-busy/cleanup info snapshots and fixed cleanup failure phases. No new native command, retry permission, wait, forced detach, deletion authority, deadline extension or passing-result fallback is introduced.",
+  "retainedProviderZIPBase64": "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",
+  "retainedZIPScope": "Exact bounded three-JSON provider ZIP retained for inspection after provider expiration; digest/source binding is provider evidence, not a cryptographic attestation."
+}

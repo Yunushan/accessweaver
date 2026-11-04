@@ -18,6 +18,15 @@ on:
       - scripts/fixtures/installer-restoration/**
       - internal/**
       - cmd/accessweaver/**
+      - web/**
+      - docs/**
+      - LICENSE
+      - README.md
+      - README.tr.md
+      - THIRD_PARTY.md
+      - SECURITY.md
+      - go.mod
+      - go.sum
       - .github/workflows/installer-lifecycle.yml
 
 permissions:

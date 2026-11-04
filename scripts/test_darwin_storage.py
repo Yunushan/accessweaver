@@ -384,7 +384,7 @@ class ControlledUnmountProtocolTests(ImageFixture,unittest.TestCase):
             self.assertEqual(command.call_count,1)
         self.assertNotIn("originalUnmountedBindingVerified",record)
 
-if __name__=="__main__":unittest.main()
+
 
 
 class ControlledImageCreationTests(unittest.TestCase):
@@ -430,6 +430,9 @@ class ControlledImageCreationTests(unittest.TestCase):
         self.assertIs(record["imageCreateObservations"][0]["retryEligible"],True)
         self.assertEqual(record["imageCreateObservations"][1]["outcome"],"accepted")
         self.assertEqual(len(self.calls),2)
+        self.assertEqual([row["phase"] for row in record["imageCreationMappingObservations"]],
+                         ["before-create","after-busy","before-create"])
+        self.assertTrue(all(row["matchingImageCount"]==0 for row in record["imageCreationMappingObservations"]))
         for args,kwargs in self.calls:
             self.assertEqual(args[0],[storage.HDIUTIL,"create","-size","128m","-type","SPARSE","-fs","APFS","-volname","AWUnmounted-"+self.capsule.name,str(self.image)])
             self.assertFalse(kwargs["check"]);self.assertGreater(kwargs["timeout"],0);self.assertLessEqual(kwargs["timeout"],30)
@@ -475,6 +478,11 @@ class ControlledImageCreationTests(unittest.TestCase):
         self.context([busy]);record={}
         with self.assertRaisesRegex(RuntimeError,"Preserving associated"):self.create(record)
         self.assertEqual(len(self.calls),1)
+        self.sleep.assert_not_called()
+        observations=record["imageCreationMappingObservations"]
+        self.assertEqual([row["phase"] for row in observations],["before-create","after-busy"])
+        self.assertEqual([row["matchingImageCount"] for row in observations],[0,1])
+        self.assertFalse(observations[-1]["creationIdentityRecorded"])
     def test_busy_does_not_extend_the_original_deadline(self):
         def busy():self.now=30;return self.busy()
         self.context([busy]);record={}
@@ -493,3 +501,61 @@ class ControlledImageCreationTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):self.create({"imageCreateObservations":[]})
         with self.assertRaises(RuntimeError):storage.create_controlled_image(self.image.with_name("other"),self.mount,self.capsule_stat,self.mount_stat,{})
         self.assertEqual(self.calls,[])
+
+
+class ControlledCreationMappingTests(unittest.TestCase):
+    def test_existing_snapshot_captures_only_bounded_matching_metadata(self):
+        import json
+        image=Path("/PRIVATE_OWNER/pressure.sparseimage");mount=image.parent/"PRIVATE_MOUNT"
+        snapshot={"images":[
+            {"image-path":str(image),"system-entities":[{"dev-entry":"/dev/disk20"},
+                {"dev-entry":"/dev/disk21s1","mount-point":str(mount)},
+                {"dev-entry":"PRIVATE_DEVICE","mount-point":"/PRIVATE_OTHER"}]},
+            {"image-path":str(image),"system-entities":[{"dev-entry":"/dev/disk30"}]},
+            {"image-path":"/unrelated","system-entities":[{"dev-entry":"/dev/disk99"}]}]}
+        record={}
+        with patch.object(storage,"info") as info,patch.object(storage,"command") as command:
+            storage.observe_controlled_creation_mapping(snapshot,image,mount,record,"after-busy")
+            info.assert_not_called();command.assert_not_called()
+        row=record["imageCreationMappingObservations"][0]
+        self.assertEqual(row,{"phase":"after-busy","matchingImageCount":2,"systemEntityCount":4,
+            "deviceLabels":["/dev/disk20","/dev/disk21s1","/dev/disk30"],"deviceLabelsTruncated":False,
+            "unrecognizedDeviceEntryCount":1,"expectedMountCount":1,"otherMountCount":1,
+            "malformedMapping":False,"creationIdentityRecorded":False})
+        self.assertNotIn("PRIVATE",json.dumps(record));self.assertNotIn("/unrelated",json.dumps(record))
+
+    def test_samples_and_labels_have_independent_bounds_without_raw_paths(self):
+        import json
+        image=Path("/PRIVATE_OWNER/pressure.sparseimage");mount=image.parent/"PRIVATE_MOUNT"
+        entities=[{"dev-entry":"/dev/disk"+str(i),"mount-point":"/PRIVATE_OTHER"} for i in range(80)]
+        entities += [{"dev-entry":"/dev/disk"+"9"*80},{"dev-entry":"PRIVATE_DEVICE"}]
+        snapshot={"images":[{"image-path":str(image),"system-entities":entities}]}
+        record={}
+        for _ in range(9):
+            storage.observe_controlled_creation_mapping(snapshot,image,mount,record,"cleanup",creation_identity_recorded=True)
+        rows=record["imageCreationMappingObservations"]
+        self.assertEqual(len(rows),8);self.assertIs(record["imageCreationMappingObservationsTruncated"],True)
+        for row in rows:
+            self.assertEqual(len(row["deviceLabels"]),32);self.assertIs(row["deviceLabelsTruncated"],True)
+            self.assertEqual(row["unrecognizedDeviceEntryCount"],2)
+            self.assertTrue(row["creationIdentityRecorded"])
+        encoded=json.dumps(record)
+        self.assertLess(len(encoded.encode()),32768);self.assertNotIn("PRIVATE",encoded)
+
+    def test_malformed_mapping_retains_observation_without_copying_raw_values(self):
+        import json
+        image=Path("/PRIVATE_OWNER/pressure.sparseimage");mount=image.parent/"PRIVATE_MOUNT"
+        for snapshot in (None,{"images":"PRIVATE_VALUE"},{"images":[None]},
+                {"images":[{"image-path":str(image),"system-entities":"PRIVATE_VALUE"}]}):
+            with self.subTest(snapshot=snapshot):
+                record={}
+                storage.observe_controlled_creation_mapping(snapshot,image,mount,record,"before-create")
+                self.assertIs(record["imageCreationMappingObservations"][0]["malformedMapping"],True)
+                self.assertNotIn("PRIVATE",json.dumps(record))
+        record={}
+        with self.assertRaisesRegex(RuntimeError,"observation phase"):
+            storage.observe_controlled_creation_mapping({},image,mount,record,"PRIVATE_PHASE")
+        self.assertEqual(record,{})
+
+
+if __name__=="__main__":unittest.main()

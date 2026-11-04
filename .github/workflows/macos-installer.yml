@@ -27,6 +27,7 @@ on:
       - docs/MACOS_MANAGED_POLICY.md
       - docs/MANAGED_CONFIGURATION.md
       - docs/RELEASE_PROVENANCE.md
+      - docs/AUDIT_EVENTS.md
       - go.mod
       - go.sum
       - .github/workflows/macos-installer.yml

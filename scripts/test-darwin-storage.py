@@ -269,6 +269,53 @@ def unmount_owned_volume(image, mount, base_device, volume_device, known_devices
         time.sleep(min(0.1, remaining))
 
 
+def observe_controlled_creation_mapping(snapshot, image, mount, record, phase, creation_identity_recorded=False):
+    """Bounded diagnostics only; a path match never grants detach/delete authority."""
+    if phase not in ("before-create", "after-busy", "cleanup"):
+        raise RuntimeError("Invalid controlled creation observation phase")
+    observations = record.setdefault("imageCreationMappingObservations", [])
+    if len(observations) >= 8:
+        record["imageCreationMappingObservationsTruncated"] = True
+        return
+    malformed = not isinstance(snapshot, dict) or not isinstance(snapshot.get("images", []), list)
+    images = snapshot.get("images", []) if not malformed else []
+    malformed = malformed or any(not isinstance(row, dict) for row in images)
+    matches = [row for row in images if isinstance(row, dict) and row.get("image-path") == str(image)]
+    labels = set()
+    entries = unknown = expected_mounts = other_mounts = 0
+    truncated = False
+    for row in matches:
+        entities = row.get("system-entities", [])
+        if not isinstance(entities, list):
+            malformed = True
+            continue
+        entries += len(entities)
+        for entity in entities:
+            if not isinstance(entity, dict):
+                malformed = True
+                continue
+            label = entity.get("dev-entry")
+            if label is not None:
+                if isinstance(label, str) and len(label) <= 64 and DEVICE.fullmatch(label):
+                    if label not in labels and len(labels) >= 32:
+                        truncated = True
+                    elif len(labels) < 32:
+                        labels.add(label)
+                else:
+                    unknown += 1
+            mounted = entity.get("mount-point")
+            if mounted == str(mount):
+                expected_mounts += 1
+            elif mounted:
+                other_mounts += 1
+    observations.append({"phase": phase, "matchingImageCount": len(matches),
+                         "systemEntityCount": entries, "deviceLabels": sorted(labels),
+                         "deviceLabelsTruncated": truncated, "unrecognizedDeviceEntryCount": unknown,
+                         "expectedMountCount": expected_mounts, "otherMountCount": other_mounts,
+                         "malformedMapping": malformed,
+                         "creationIdentityRecorded": creation_identity_recorded})
+
+
 def create_controlled_image(image, mount, capsule_identity, host_mount, record):
     """Retry only a precise busy precondition with an unchanged empty capsule."""
     require_disposable_host()
@@ -285,7 +332,7 @@ def create_controlled_image(image, mount, capsule_identity, host_mount, record):
         if value <= 0:
             raise RuntimeError("Controlled image creation deadline exceeded")
         return value
-    def clean_capsule():
+    def clean_capsule(phase):
         for name, expected in ((capsule, capsule_identity), (mount, host_mount)):
             current = guarded_directory(name, os.geteuid())
             if (current.st_dev != expected.st_dev or current.st_ino != expected.st_ino
@@ -294,11 +341,12 @@ def create_controlled_image(image, mount, capsule_identity, host_mount, record):
         if os.path.lexists(image) or set(itertools.islice(capsule.iterdir(), 3)) != {mount}:
             raise RuntimeError("Preserving partial or unknown controlled creation objects")
         snapshot = info(timeout=min(5, remaining()))
+        observe_controlled_creation_mapping(snapshot, image, mount, record, phase)
         if any(row.get("image-path") == str(image) for row in snapshot.get("images", [])):
             raise RuntimeError("Preserving associated controlled creation image")
     for attempt in range(1, 4):
         remaining()
-        clean_capsule()
+        clean_capsule("before-create")
         row = {"attempt": attempt, "outcome": "started", "retryEligible": False}
         record["imageCreateObservations"].append(row)
         record["imageCreateAttempts"] = attempt
@@ -323,7 +371,7 @@ def create_controlled_image(image, mount, capsule_identity, host_mount, record):
             raise RuntimeError("Controlled image creation failed; bounded diagnostics retained")
         # Neither a partial file nor an association may be overwritten, deleted,
         # reused or retried. Revalidate before waiting and before the next call.
-        clean_capsule()
+        clean_capsule("after-busy")
         row["retryEligible"] = True
         if attempt == 3:
             raise RuntimeError("Controlled image creation remained busy through its attempt limit")
@@ -392,18 +440,24 @@ def controlled_unmounted_image(parent, source, arch, record):
         failure = error
         record["failureType"] = type(error).__name__
     finally:
+        cleanup_phase = "inspect-association"
         try:
             snapshot = info(timeout=5)
+            observe_controlled_creation_mapping(snapshot, image, mount, record, "cleanup",
+                                                creation_identity_recorded=image_identity is not None)
             associated = any(row.get("image-path") == str(image) for row in snapshot.get("images", []))
+            cleanup_phase = "verify-original-binding"
             if attached or associated:
                 if binding is None or known is None or image_identity is None:
                     raise RuntimeError("Preserving controlled image without its original binding")
+                cleanup_phase = "detach-owned-image"
                 record["normalDetachAttempts"] = detach_owned(image, mount, *binding, known_devices=known,
                     owned_identity=(image_identity, host_mount, capsule_identity),
                     observations=record.setdefault("detachMappingObservations", []), diagnostics=record)
                 if any(row.get("image-path") == str(image) for row in info(timeout=5).get("images", [])):
                     raise RuntimeError("Controlled image remains associated")
                 record["detached"] = True
+            cleanup_phase = "verify-created-image"
             if image.exists():
                 if image_identity is None:
                     raise RuntimeError("Preserving controlled image without creation identity")
@@ -414,6 +468,7 @@ def controlled_unmounted_image(parent, source, arch, record):
                     raise RuntimeError("Refusing controlled mounted image deletion")
                 image.unlink()
                 record["ownedImageRemoved"] = True
+            cleanup_phase = "verify-owned-directories"
             current = guarded_directory(capsule, os.geteuid())
             if (capsule.parent != parent or current.st_dev != capsule_identity.st_dev
                     or current.st_ino != capsule_identity.st_ino or image_identity is None):
@@ -427,6 +482,8 @@ def controlled_unmounted_image(parent, source, arch, record):
             record["capsuleRemoved"] = True
         except BaseException as error:
             record["cleanupFailed"] = True
+            record["cleanupFailurePhase"] = cleanup_phase
+            record["cleanupFailureType"] = type(error).__name__
             if failure is None:
                 failure = error
                 record["failureType"] = type(error).__name__

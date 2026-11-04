@@ -27,6 +27,11 @@ on:
       - README.md
       - README.tr.md
       - THIRD_PARTY.md
+      - SECURITY.md
+      - docs/MACOS_MANAGED_POLICY.md
+      - docs/MANAGED_CONFIGURATION.md
+      - docs/RELEASE_PROVENANCE.md
+      - docs/AUDIT_EVENTS.md
       - .github/workflows/macos-desktop.yml
 
 permissions:
