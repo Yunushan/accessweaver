@@ -159,6 +159,11 @@ func TestDarwinRemovalFileKilledChild(t *testing.T) {
 		if e := unix.Kill(os.Getpid(), unix.SIGKILL); e != nil {
 			return e
 		}
+		// A self-signal can be delivered to another thread. Keep this exact
+		// boundary and both leases until delivery instead of racing an ordinary
+		// test exit. Go's runtime SignalExitStatus fixture uses the same wait.
+		// The parent still requires actual SIGKILL, one marker and no timeout.
+		time.Sleep(time.Second)
 		return errors.New("SIGKILL did not terminate the owned child")
 	}
 	if strings.HasPrefix(phase, "removal-app-") {
