@@ -1,0 +1,1482 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "004174e6a61900d04ac5247e0c4e85373ff5d54d",
+  "runID": 41920343251,
+  "scope": "Exact-source real-controller browser suite acceptance on disposable hosted Linux, all three original projects and all 39 cases per project.",
+  "sourceProofReceipt": {
+    "sourceCommit": "004174e6a61900d04ac5247e0c4e85373ff5d54d",
+    "baselineCommit": "d3d4c8f83b45d93ed1856652622f40c1b37af460",
+    "fullSuiteUnchanged": true,
+    "expectedTestCountPerBrowser": 39,
+    "sourceProofMethod": "Exact immutable Git blob byte comparison; 15 direct cases and four explicitly expanded language/theme families contribute 24 cases. No JavaScript or product code executed locally.",
+    "workflowImage": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f",
+    "files": [
+      {
+        "path": "scripts/browser-tests/desktop.spec.cjs",
+        "bytes": 35302,
+        "sha256": "3bd78cde079c1e9452b87acdc7723155acdde9b1ab3b9c6dc891c5c34020b65d",
+        "gitBlobID": "c65de96b646c9ed2a17e4460780bc9a26441c1d9",
+        "unchangedFromBaseline": true
+      },
+      {
+        "path": "scripts/browser-tests/playwright.config.cjs",
+        "bytes": 997,
+        "sha256": "2ebb908e8712a6a6921858c1cf5614e088b3324bbd4eee890114a1d52dfa5704",
+        "gitBlobID": "81d9dfd99eb39ba6ba88e7319aaa0fca79961289",
+        "unchangedFromBaseline": true
+      },
+      {
+        "path": "scripts/browser-tests/package.json",
+        "bytes": 335,
+        "sha256": "84587e9f6726d83783e2009f1737090af9152ac2445d713cd87c81e125604953",
+        "gitBlobID": "a738169baa45f69fcbd65fb1230f9d75c882ca9f",
+        "unchangedFromBaseline": true
+      },
+      {
+        "path": "scripts/browser-tests/package-lock.json",
+        "bytes": 2644,
+        "sha256": "8be62d9880021ca910c493d5540682379b6bc5f0b907707a7579dc4f74fbbd6a",
+        "gitBlobID": "aee83e2aece174854c3dd9e2a88fc193d7e02236",
+        "unchangedFromBaseline": true
+      },
+      {
+        "path": "scripts/browser-tests/accessibility.cjs",
+        "bytes": 4413,
+        "sha256": "e67299785de8ec1c60ad83f4f75abfaba1f2a2d7d7dd086a0438b174acf5ccb4",
+        "gitBlobID": "7f007f19146d5803c6b434c1a2a3da0dd2324985",
+        "unchangedFromBaseline": true
+      },
+      {
+        "path": "scripts/browser-tests/accessibility-report.cjs",
+        "bytes": 999,
+        "sha256": "82685184cb593f1bf112984014c700c3b249496d9fd73570bc9afef185cdf5b6",
+        "gitBlobID": "3c430806505c0cf0e81a1725ae92fba9a2c20820",
+        "unchangedFromBaseline": true
+      },
+      {
+        "path": "scripts/browser-tests/check-image-environment.cjs",
+        "bytes": 2331,
+        "sha256": "033952cf22c02aa4648da3ce4cb2ef8e655256ce2f997cd3b37e3a17926c82ec",
+        "gitBlobID": "0e6e93286cedce5543e1ca9b6a5427d195335733",
+        "unchangedFromBaseline": true
+      },
+      {
+        "path": ".github/workflows/browser.yml",
+        "bytes": 3510,
+        "sha256": "922b727461c2106f9c1968414d2979bf0c75fbcbfc4f2e7591038fee7ba82da6",
+        "gitBlobID": "42a5174647fffcbbb26973f49c46971f8a8147d2",
+        "unchangedFromBaseline": null
+      }
+    ],
+    "expectedTests": [
+      {
+        "title": "private launcher authenticates the UI and removes the credential from its address",
+        "sourceLine": 89
+      },
+      {
+        "title": "create, reload, export and collision import preserve the saved profile",
+        "sourceLine": 98
+      },
+      {
+        "title": "a stale tab preserves its draft and cannot overwrite a newer save",
+        "sourceLine": 114
+      },
+      {
+        "title": "invalid JSON stays editable and an unavailable engine cannot be launched",
+        "sourceLine": 127
+      },
+      {
+        "title": "modal keyboard focus and persisted preferences work in the real DOM",
+        "sourceLine": 139
+      },
+      {
+        "title": "machine review exports the exact request while unavailable apply stays disabled",
+        "sourceLine": 176
+      },
+      {
+        "title": "support export excludes private profile contents and leaves the runtime stopped",
+        "sourceLine": 197
+      },
+      {
+        "title": "diagnostics selects an explicit proxy path and STUN target without sending probe traffic",
+        "sourceLine": 222
+      },
+      {
+        "title": "keyboard users can skip navigation and scroll launch review with visible focus",
+        "sourceLine": 281
+      },
+      {
+        "title": "keyboard users can read maintenance review and retained history without applying operations",
+        "sourceLine": 301
+      },
+      {
+        "title": "reduced motion applies to navigation and explicit editor preview scrolling",
+        "sourceLine": 323
+      },
+      {
+        "title": "keyboard focus returns to the same card control after saves and engine creation",
+        "sourceLine": 355
+      },
+      {
+        "title": "narrow navigation excludes closed links and supports keyboard opening and Escape",
+        "sourceLine": 367
+      },
+      {
+        "title": "large retained history has a bounded preview and complete private exports",
+        "sourceLine": 387
+      },
+      {
+        "title": "optional workflow metadata cannot stop polling or replace reviewed inputs",
+        "sourceLine": 425
+      },
+      {
+        "title": "narrow navigation preserves layout and drawer state in en",
+        "sourceLine": 158
+      },
+      {
+        "title": "narrow navigation preserves layout and drawer state in tr",
+        "sourceLine": 158
+      },
+      {
+        "title": "narrow navigation preserves layout and drawer state in ru",
+        "sourceLine": 158
+      },
+      {
+        "title": "narrow navigation preserves layout and drawer state in es",
+        "sourceLine": 158
+      },
+      {
+        "title": "accessibility views in en/dark",
+        "sourceLine": 240
+      },
+      {
+        "title": "accessibility views in en/light",
+        "sourceLine": 240
+      },
+      {
+        "title": "accessibility views in tr/dark",
+        "sourceLine": 240
+      },
+      {
+        "title": "accessibility views in tr/light",
+        "sourceLine": 240
+      },
+      {
+        "title": "accessibility views in ru/dark",
+        "sourceLine": 240
+      },
+      {
+        "title": "accessibility views in ru/light",
+        "sourceLine": 240
+      },
+      {
+        "title": "accessibility views in es/dark",
+        "sourceLine": 240
+      },
+      {
+        "title": "accessibility views in es/light",
+        "sourceLine": 240
+      },
+      {
+        "title": "accessibility dialogs in en/dark",
+        "sourceLine": 254
+      },
+      {
+        "title": "accessibility dialogs in en/light",
+        "sourceLine": 254
+      },
+      {
+        "title": "accessibility dialogs in tr/dark",
+        "sourceLine": 254
+      },
+      {
+        "title": "accessibility dialogs in tr/light",
+        "sourceLine": 254
+      },
+      {
+        "title": "accessibility dialogs in ru/dark",
+        "sourceLine": 254
+      },
+      {
+        "title": "accessibility dialogs in ru/light",
+        "sourceLine": 254
+      },
+      {
+        "title": "accessibility dialogs in es/dark",
+        "sourceLine": 254
+      },
+      {
+        "title": "accessibility dialogs in es/light",
+        "sourceLine": 254
+      },
+      {
+        "title": "320 CSS pixel reflow includes modal controls in en",
+        "sourceLine": 335
+      },
+      {
+        "title": "320 CSS pixel reflow includes modal controls in tr",
+        "sourceLine": 335
+      },
+      {
+        "title": "320 CSS pixel reflow includes modal controls in ru",
+        "sourceLine": 335
+      },
+      {
+        "title": "320 CSS pixel reflow includes modal controls in es",
+        "sourceLine": 335
+      }
+    ]
+  },
+  "sourceFiles": [
+    {
+      "path": "scripts/browser-tests/desktop.spec.cjs",
+      "bytes": 35302,
+      "sha256": "3bd78cde079c1e9452b87acdc7723155acdde9b1ab3b9c6dc891c5c34020b65d",
+      "gitBlobID": "c65de96b646c9ed2a17e4460780bc9a26441c1d9",
+      "unchangedFromBaseline": true
+    },
+    {
+      "path": "scripts/browser-tests/playwright.config.cjs",
+      "bytes": 997,
+      "sha256": "2ebb908e8712a6a6921858c1cf5614e088b3324bbd4eee890114a1d52dfa5704",
+      "gitBlobID": "81d9dfd99eb39ba6ba88e7319aaa0fca79961289",
+      "unchangedFromBaseline": true
+    },
+    {
+      "path": "scripts/browser-tests/package.json",
+      "bytes": 335,
+      "sha256": "84587e9f6726d83783e2009f1737090af9152ac2445d713cd87c81e125604953",
+      "gitBlobID": "a738169baa45f69fcbd65fb1230f9d75c882ca9f",
+      "unchangedFromBaseline": true
+    },
+    {
+      "path": "scripts/browser-tests/package-lock.json",
+      "bytes": 2644,
+      "sha256": "8be62d9880021ca910c493d5540682379b6bc5f0b907707a7579dc4f74fbbd6a",
+      "gitBlobID": "aee83e2aece174854c3dd9e2a88fc193d7e02236",
+      "unchangedFromBaseline": true
+    },
+    {
+      "path": "scripts/browser-tests/accessibility.cjs",
+      "bytes": 4413,
+      "sha256": "e67299785de8ec1c60ad83f4f75abfaba1f2a2d7d7dd086a0438b174acf5ccb4",
+      "gitBlobID": "7f007f19146d5803c6b434c1a2a3da0dd2324985",
+      "unchangedFromBaseline": true
+    },
+    {
+      "path": "scripts/browser-tests/accessibility-report.cjs",
+      "bytes": 999,
+      "sha256": "82685184cb593f1bf112984014c700c3b249496d9fd73570bc9afef185cdf5b6",
+      "gitBlobID": "3c430806505c0cf0e81a1725ae92fba9a2c20820",
+      "unchangedFromBaseline": true
+    },
+    {
+      "path": "scripts/browser-tests/check-image-environment.cjs",
+      "bytes": 2331,
+      "sha256": "033952cf22c02aa4648da3ce4cb2ef8e655256ce2f997cd3b37e3a17926c82ec",
+      "gitBlobID": "0e6e93286cedce5543e1ca9b6a5427d195335733",
+      "unchangedFromBaseline": true
+    },
+    {
+      "path": ".github/workflows/browser.yml",
+      "bytes": 3510,
+      "sha256": "922b727461c2106f9c1968414d2979bf0c75fbcbfc4f2e7591038fee7ba82da6",
+      "gitBlobID": "42a5174647fffcbbb26973f49c46971f8a8147d2",
+      "unchangedFromBaseline": null
+    }
+  ],
+  "browsers": [
+    {
+      "browser": "chromium",
+      "jobID": 126890861636,
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41920343251/job/126890861636",
+      "requiredSteps": [
+        {
+          "name": "Initialize containers",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:54:06Z",
+          "completedAt": "2026-11-04T21:54:32Z",
+          "providerDurationSeconds": 26.0
+        },
+        {
+          "name": "Check ordinary-user container paths",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:54:33Z",
+          "completedAt": "2026-11-04T21:54:33Z",
+          "providerDurationSeconds": 0.0
+        },
+        {
+          "name": "Build the real controller",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:54:50Z",
+          "completedAt": "2026-11-04T21:55:05Z",
+          "providerDurationSeconds": 15.0
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:55:05Z",
+          "completedAt": "2026-11-04T21:55:06Z",
+          "providerDurationSeconds": 1.0
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:55:06Z",
+          "completedAt": "2026-11-04T21:55:06Z",
+          "providerDurationSeconds": 0.0
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:55:06Z",
+          "completedAt": "2026-11-04T21:58:02Z",
+          "providerDurationSeconds": 176.0
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:58:02Z",
+          "completedAt": "2026-11-04T21:58:04Z",
+          "providerDurationSeconds": 2.0
+        }
+      ],
+      "artifactID": 13367531030,
+      "artifactName": "desktop-browser-chromium",
+      "providerDigestVerifiedBeforeZIPParsing": true,
+      "zipBytes": 37387,
+      "zipSHA256": "952d0769b6457b219ba1b6af68ff86b339a547d4d727df772626664516131456",
+      "archiveEntries": 1,
+      "expandedBytes": 644183,
+      "otherArchiveContentsOpened": false,
+      "stats": {
+        "startTime": "2026-11-04T21:55:07.691Z",
+        "duration": 174519.15899999999,
+        "expected": 39,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 0
+      },
+      "tests": [
+        {
+          "title": "private launcher authenticates the UI and removes the credential from its address",
+          "sourceLine": 89,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 634
+        },
+        {
+          "title": "create, reload, export and collision import preserve the saved profile",
+          "sourceLine": 98,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1417
+        },
+        {
+          "title": "a stale tab preserves its draft and cannot overwrite a newer save",
+          "sourceLine": 114,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1942
+        },
+        {
+          "title": "invalid JSON stays editable and an unavailable engine cannot be launched",
+          "sourceLine": 127,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1422
+        },
+        {
+          "title": "modal keyboard focus and persisted preferences work in the real DOM",
+          "sourceLine": 139,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 917
+        },
+        {
+          "title": "narrow navigation preserves layout and drawer state in en",
+          "sourceLine": 158,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1348
+        },
+        {
+          "title": "narrow navigation preserves layout and drawer state in tr",
+          "sourceLine": 158,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1450
+        },
+        {
+          "title": "narrow navigation preserves layout and drawer state in ru",
+          "sourceLine": 158,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1417
+        },
+        {
+          "title": "narrow navigation preserves layout and drawer state in es",
+          "sourceLine": 158,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 2454
+        },
+        {
+          "title": "machine review exports the exact request while unavailable apply stays disabled",
+          "sourceLine": 176,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 755
+        },
+        {
+          "title": "support export excludes private profile contents and leaves the runtime stopped",
+          "sourceLine": 197,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1526
+        },
+        {
+          "title": "diagnostics selects an explicit proxy path and STUN target without sending probe traffic",
+          "sourceLine": 222,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 725
+        },
+        {
+          "title": "accessibility views in en/dark",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7386
+        },
+        {
+          "title": "accessibility dialogs in en/dark",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7534
+        },
+        {
+          "title": "accessibility views in en/light",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7241
+        },
+        {
+          "title": "accessibility dialogs in en/light",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7655
+        },
+        {
+          "title": "accessibility views in tr/dark",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7279
+        },
+        {
+          "title": "accessibility dialogs in tr/dark",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7552
+        },
+        {
+          "title": "accessibility views in tr/light",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7410
+        },
+        {
+          "title": "accessibility dialogs in tr/light",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7482
+        },
+        {
+          "title": "accessibility views in ru/dark",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7252
+        },
+        {
+          "title": "accessibility dialogs in ru/dark",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7424
+        },
+        {
+          "title": "accessibility views in ru/light",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7478
+        },
+        {
+          "title": "accessibility dialogs in ru/light",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7675
+        },
+        {
+          "title": "accessibility views in es/dark",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7439
+        },
+        {
+          "title": "accessibility dialogs in es/dark",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7768
+        },
+        {
+          "title": "accessibility views in es/light",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7341
+        },
+        {
+          "title": "accessibility dialogs in es/light",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7534
+        },
+        {
+          "title": "keyboard users can skip navigation and scroll launch review with visible focus",
+          "sourceLine": 281,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 949
+        },
+        {
+          "title": "keyboard users can read maintenance review and retained history without applying operations",
+          "sourceLine": 301,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 981
+        },
+        {
+          "title": "reduced motion applies to navigation and explicit editor preview scrolling",
+          "sourceLine": 323,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 735
+        },
+        {
+          "title": "320 CSS pixel reflow includes modal controls in en",
+          "sourceLine": 335,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 6075
+        },
+        {
+          "title": "320 CSS pixel reflow includes modal controls in tr",
+          "sourceLine": 335,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 6154
+        },
+        {
+          "title": "320 CSS pixel reflow includes modal controls in ru",
+          "sourceLine": 335,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 6475
+        },
+        {
+          "title": "320 CSS pixel reflow includes modal controls in es",
+          "sourceLine": 335,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 6120
+        },
+        {
+          "title": "keyboard focus returns to the same card control after saves and engine creation",
+          "sourceLine": 355,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1578
+        },
+        {
+          "title": "narrow navigation excludes closed links and supports keyboard opening and Escape",
+          "sourceLine": 367,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 433
+        },
+        {
+          "title": "large retained history has a bounded preview and complete private exports",
+          "sourceLine": 387,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 4407
+        },
+        {
+          "title": "optional workflow metadata cannot stop polling or replace reviewed inputs",
+          "sourceLine": 425,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 3054
+        }
+      ],
+      "projectName": "chromium",
+      "testCount": 39,
+      "reportBytes": 644183,
+      "reportSHA256": "940b893218fa85634a8bfb823961ccdded7c55000f5dc4663c9de26ab6a6e679"
+    },
+    {
+      "browser": "firefox",
+      "jobID": 126890861772,
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41920343251/job/126890861772",
+      "requiredSteps": [
+        {
+          "name": "Initialize containers",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:54:06Z",
+          "completedAt": "2026-11-04T21:54:32Z",
+          "providerDurationSeconds": 26.0
+        },
+        {
+          "name": "Check ordinary-user container paths",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:54:32Z",
+          "completedAt": "2026-11-04T21:54:32Z",
+          "providerDurationSeconds": 0.0
+        },
+        {
+          "name": "Build the real controller",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:54:47Z",
+          "completedAt": "2026-11-04T21:55:02Z",
+          "providerDurationSeconds": 15.0
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:55:02Z",
+          "completedAt": "2026-11-04T21:55:03Z",
+          "providerDurationSeconds": 1.0
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:55:03Z",
+          "completedAt": "2026-11-04T21:55:04Z",
+          "providerDurationSeconds": 1.0
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:55:04Z",
+          "completedAt": "2026-11-04T21:59:25Z",
+          "providerDurationSeconds": 261.0
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:59:25Z",
+          "completedAt": "2026-11-04T21:59:27Z",
+          "providerDurationSeconds": 2.0
+        }
+      ],
+      "artifactID": 13367032469,
+      "artifactName": "desktop-browser-firefox",
+      "providerDigestVerifiedBeforeZIPParsing": true,
+      "zipBytes": 37790,
+      "zipSHA256": "ce836d50e7e20e55890b32e4d7e35d2742ca3c4a5e10700e0e43e45fa26388c6",
+      "archiveEntries": 1,
+      "expandedBytes": 656768,
+      "otherArchiveContentsOpened": false,
+      "stats": {
+        "startTime": "2026-11-04T21:55:04.959Z",
+        "duration": 260470.64500000002,
+        "expected": 39,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 0
+      },
+      "tests": [
+        {
+          "title": "private launcher authenticates the UI and removes the credential from its address",
+          "sourceLine": 89,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 3620
+        },
+        {
+          "title": "create, reload, export and collision import preserve the saved profile",
+          "sourceLine": 98,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1660
+        },
+        {
+          "title": "a stale tab preserves its draft and cannot overwrite a newer save",
+          "sourceLine": 114,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 2642
+        },
+        {
+          "title": "invalid JSON stays editable and an unavailable engine cannot be launched",
+          "sourceLine": 127,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1900
+        },
+        {
+          "title": "modal keyboard focus and persisted preferences work in the real DOM",
+          "sourceLine": 139,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1653
+        },
+        {
+          "title": "narrow navigation preserves layout and drawer state in en",
+          "sourceLine": 158,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 5183
+        },
+        {
+          "title": "narrow navigation preserves layout and drawer state in tr",
+          "sourceLine": 158,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 5157
+        },
+        {
+          "title": "narrow navigation preserves layout and drawer state in ru",
+          "sourceLine": 158,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 5026
+        },
+        {
+          "title": "narrow navigation preserves layout and drawer state in es",
+          "sourceLine": 158,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 5045
+        },
+        {
+          "title": "machine review exports the exact request while unavailable apply stays disabled",
+          "sourceLine": 176,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1742
+        },
+        {
+          "title": "support export excludes private profile contents and leaves the runtime stopped",
+          "sourceLine": 197,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1976
+        },
+        {
+          "title": "diagnostics selects an explicit proxy path and STUN target without sending probe traffic",
+          "sourceLine": 222,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1169
+        },
+        {
+          "title": "accessibility views in en/dark",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 10761
+        },
+        {
+          "title": "accessibility dialogs in en/dark",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 10680
+        },
+        {
+          "title": "accessibility views in en/light",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 10999
+        },
+        {
+          "title": "accessibility dialogs in en/light",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 10826
+        },
+        {
+          "title": "accessibility views in tr/dark",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 10837
+        },
+        {
+          "title": "accessibility dialogs in tr/dark",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 10697
+        },
+        {
+          "title": "accessibility views in tr/light",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 10990
+        },
+        {
+          "title": "accessibility dialogs in tr/light",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 12048
+        },
+        {
+          "title": "accessibility views in ru/dark",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 10687
+        },
+        {
+          "title": "accessibility dialogs in ru/dark",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 10771
+        },
+        {
+          "title": "accessibility views in ru/light",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 10768
+        },
+        {
+          "title": "accessibility dialogs in ru/light",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 11651
+        },
+        {
+          "title": "accessibility views in es/dark",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 10773
+        },
+        {
+          "title": "accessibility dialogs in es/dark",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 11246
+        },
+        {
+          "title": "accessibility views in es/light",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 10910
+        },
+        {
+          "title": "accessibility dialogs in es/light",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 11225
+        },
+        {
+          "title": "keyboard users can skip navigation and scroll launch review with visible focus",
+          "sourceLine": 281,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 3097
+        },
+        {
+          "title": "keyboard users can read maintenance review and retained history without applying operations",
+          "sourceLine": 301,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 2473
+        },
+        {
+          "title": "reduced motion applies to navigation and explicit editor preview scrolling",
+          "sourceLine": 323,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1046
+        },
+        {
+          "title": "320 CSS pixel reflow includes modal controls in en",
+          "sourceLine": 335,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 6632
+        },
+        {
+          "title": "320 CSS pixel reflow includes modal controls in tr",
+          "sourceLine": 335,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 6632
+        },
+        {
+          "title": "320 CSS pixel reflow includes modal controls in ru",
+          "sourceLine": 335,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 6754
+        },
+        {
+          "title": "320 CSS pixel reflow includes modal controls in es",
+          "sourceLine": 335,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 6761
+        },
+        {
+          "title": "keyboard focus returns to the same card control after saves and engine creation",
+          "sourceLine": 355,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 2094
+        },
+        {
+          "title": "narrow navigation excludes closed links and supports keyboard opening and Escape",
+          "sourceLine": 367,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 936
+        },
+        {
+          "title": "large retained history has a bounded preview and complete private exports",
+          "sourceLine": 387,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 5845
+        },
+        {
+          "title": "optional workflow metadata cannot stop polling or replace reviewed inputs",
+          "sourceLine": 425,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 3681
+        }
+      ],
+      "projectName": "firefox",
+      "testCount": 39,
+      "reportBytes": 656768,
+      "reportSHA256": "6131545fc4e59e09b42008552667d3d561fe73ee82fface85467bc44684ed7e4"
+    },
+    {
+      "browser": "webkit",
+      "jobID": 126890861778,
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41920343251/job/126890861778",
+      "requiredSteps": [
+        {
+          "name": "Initialize containers",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:54:06Z",
+          "completedAt": "2026-11-04T21:54:31Z",
+          "providerDurationSeconds": 25.0
+        },
+        {
+          "name": "Check ordinary-user container paths",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:54:31Z",
+          "completedAt": "2026-11-04T21:54:32Z",
+          "providerDurationSeconds": 1.0
+        },
+        {
+          "name": "Build the real controller",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:54:47Z",
+          "completedAt": "2026-11-04T21:55:02Z",
+          "providerDurationSeconds": 15.0
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:55:02Z",
+          "completedAt": "2026-11-04T21:55:03Z",
+          "providerDurationSeconds": 1.0
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:55:03Z",
+          "completedAt": "2026-11-04T21:55:04Z",
+          "providerDurationSeconds": 1.0
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:55:04Z",
+          "completedAt": "2026-11-04T21:58:58Z",
+          "providerDurationSeconds": 234.0
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "conclusion": "success",
+          "startedAt": "2026-11-04T21:58:58Z",
+          "completedAt": "2026-11-04T21:59:00Z",
+          "providerDurationSeconds": 2.0
+        }
+      ],
+      "artifactID": 13367222212,
+      "artifactName": "desktop-browser-webkit",
+      "providerDigestVerifiedBeforeZIPParsing": true,
+      "zipBytes": 36640,
+      "zipSHA256": "0b6149c7f485489ec0bdf4c45af451263ae5a82b679e40edddebe1a381780351",
+      "archiveEntries": 1,
+      "expandedBytes": 644165,
+      "otherArchiveContentsOpened": false,
+      "stats": {
+        "startTime": "2026-11-04T21:55:04.949Z",
+        "duration": 233604.069,
+        "expected": 39,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 0
+      },
+      "tests": [
+        {
+          "title": "private launcher authenticates the UI and removes the credential from its address",
+          "sourceLine": 89,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1495
+        },
+        {
+          "title": "create, reload, export and collision import preserve the saved profile",
+          "sourceLine": 98,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 5574
+        },
+        {
+          "title": "a stale tab preserves its draft and cannot overwrite a newer save",
+          "sourceLine": 114,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 3407
+        },
+        {
+          "title": "invalid JSON stays editable and an unavailable engine cannot be launched",
+          "sourceLine": 127,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 2461
+        },
+        {
+          "title": "modal keyboard focus and persisted preferences work in the real DOM",
+          "sourceLine": 139,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 2138
+        },
+        {
+          "title": "narrow navigation preserves layout and drawer state in en",
+          "sourceLine": 158,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 3378
+        },
+        {
+          "title": "narrow navigation preserves layout and drawer state in tr",
+          "sourceLine": 158,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 3249
+        },
+        {
+          "title": "narrow navigation preserves layout and drawer state in ru",
+          "sourceLine": 158,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 3070
+        },
+        {
+          "title": "narrow navigation preserves layout and drawer state in es",
+          "sourceLine": 158,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 3288
+        },
+        {
+          "title": "machine review exports the exact request while unavailable apply stays disabled",
+          "sourceLine": 176,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1408
+        },
+        {
+          "title": "support export excludes private profile contents and leaves the runtime stopped",
+          "sourceLine": 197,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 2203
+        },
+        {
+          "title": "diagnostics selects an explicit proxy path and STUN target without sending probe traffic",
+          "sourceLine": 222,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1331
+        },
+        {
+          "title": "accessibility views in en/dark",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 8924
+        },
+        {
+          "title": "accessibility dialogs in en/dark",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 9755
+        },
+        {
+          "title": "accessibility views in en/light",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 8912
+        },
+        {
+          "title": "accessibility dialogs in en/light",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 9726
+        },
+        {
+          "title": "accessibility views in tr/dark",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 9144
+        },
+        {
+          "title": "accessibility dialogs in tr/dark",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 10001
+        },
+        {
+          "title": "accessibility views in tr/light",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 9250
+        },
+        {
+          "title": "accessibility dialogs in tr/light",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 10038
+        },
+        {
+          "title": "accessibility views in ru/dark",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 9034
+        },
+        {
+          "title": "accessibility dialogs in ru/dark",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 9995
+        },
+        {
+          "title": "accessibility views in ru/light",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 9218
+        },
+        {
+          "title": "accessibility dialogs in ru/light",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 9940
+        },
+        {
+          "title": "accessibility views in es/dark",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 9048
+        },
+        {
+          "title": "accessibility dialogs in es/dark",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 9459
+        },
+        {
+          "title": "accessibility views in es/light",
+          "sourceLine": 240,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 8975
+        },
+        {
+          "title": "accessibility dialogs in es/light",
+          "sourceLine": 254,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 9525
+        },
+        {
+          "title": "keyboard users can skip navigation and scroll launch review with visible focus",
+          "sourceLine": 281,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1693
+        },
+        {
+          "title": "keyboard users can read maintenance review and retained history without applying operations",
+          "sourceLine": 301,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1643
+        },
+        {
+          "title": "reduced motion applies to navigation and explicit editor preview scrolling",
+          "sourceLine": 323,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1410
+        },
+        {
+          "title": "320 CSS pixel reflow includes modal controls in en",
+          "sourceLine": 335,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7557
+        },
+        {
+          "title": "320 CSS pixel reflow includes modal controls in tr",
+          "sourceLine": 335,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7436
+        },
+        {
+          "title": "320 CSS pixel reflow includes modal controls in ru",
+          "sourceLine": 335,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7694
+        },
+        {
+          "title": "320 CSS pixel reflow includes modal controls in es",
+          "sourceLine": 335,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 7378
+        },
+        {
+          "title": "keyboard focus returns to the same card control after saves and engine creation",
+          "sourceLine": 355,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 2335
+        },
+        {
+          "title": "narrow navigation excludes closed links and supports keyboard opening and Escape",
+          "sourceLine": 367,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 1178
+        },
+        {
+          "title": "large retained history has a bounded preview and complete private exports",
+          "sourceLine": 387,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 5632
+        },
+        {
+          "title": "optional workflow metadata cannot stop polling or replace reviewed inputs",
+          "sourceLine": 425,
+          "status": "passed",
+          "outcome": "expected",
+          "retry": 0,
+          "durationMilliseconds": 3513
+        }
+      ],
+      "projectName": "webkit",
+      "testCount": 39,
+      "reportBytes": 644165,
+      "reportSHA256": "5f39cd43f97a79dc78f8a3e00c8f0e892cb17996a77713baf57f527325e45989"
+    }
+  ],
+  "totalPassedTests": 117,
+  "cohortExpandedBytes": 1945116,
+  "limits": {
+    "archiveMaximumBytes": 16777216,
+    "expandedCohortMaximumBytes": 67108864,
+    "archiveMaximumEntries": 512,
+    "rootReportMaximumBytes": 4194304,
+    "metadataMaximumBytesPerRequest": 2097152,
+    "automaticRetry": false,
+    "otherArchiveFilesOpenedOrExtracted": false,
+    "rawReportPublicationAllowed": false,
+    "providerDigestIsCryptographicAuthentication": false,
+    "cryptographicAttestationVerified": false,
+    "publisherSignatureVerified": false,
+    "targetExecutionPerformedLocally": false,
+    "containerExecutedLocally": false,
+    "workflowRerunPerformed": false,
+    "productionQualificationComplete": false,
+    "readinessGatePromoted": false,
+    "sealedSecurityScanExtended": false
+  },
+  "interpretation": "Current provider job/step success and digest-bound report bytes agree on 39 passed cases per original browser, no skips, unexpected failures, flakes or retries. Controlled titles, statuses, durations and counts are retained here. Raw report bytes/base64, provider metadata and ZIPs remain private ignored evidence. Transport digests do not independently authenticate a publisher or qualify installed products, persistence, vendor networking, all readiness gates or desktop targets."
+}

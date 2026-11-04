@@ -1,0 +1,54 @@
+name: Windows audit storage qualification
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Native Windows audit storage (${{ matrix.goarch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            goarch: amd64
+            sdkarch: x64
+          - os: windows-11-arm
+            goarch: arm64
+            sdkarch: arm64
+    env:
+      GO_VERSION: '1.27.3'
+      GOTOOLCHAIN: local
+      ACCESSWEAVER_EXPECT_GOOS: windows
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+          architecture: ${{ matrix.sdkarch }}
+      - name: Verify native host and SDK identity
+        run: node scripts/check-native-environment.cjs
+      - name: Protected storage, journal, key and historical export acceptance
+        env:
+          ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_STORAGE_TEST: '1'
+        shell: pwsh
+        run: |
+          go test ./internal/audit -run '^(TestDisposableWindowsAuditStorageNative|TestWindowsJournal.*|TestWindowsLocal.*)$' -count=1 -v -timeout=10m
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain controlled native storage receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-audit-storage-${{ matrix.goarch }}
+          path: build/windows-audit-storage-checks/
+          if-no-files-found: error
+          retention-days: 14

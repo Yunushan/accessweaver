@@ -20,6 +20,8 @@ env:
 jobs:
   browser:
     uses: ./.github/workflows/browser.yml
+  windows-audit-storage:
+    uses: ./.github/workflows/windows-audit-storage.yml
   vulnerabilities:
     name: Go vulnerability checks
     runs-on: ubuntu-latest
@@ -323,7 +325,7 @@ jobs:
       contents: read
       id-token: write
       attestations: write
-    needs: [verify, vulnerabilities, browser]
+    needs: [verify, vulnerabilities, browser, windows-audit-storage]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

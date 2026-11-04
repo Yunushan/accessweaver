@@ -2,6 +2,8 @@
 
 AccessWeaver provides a bounded event-chain format, a read-only segment verifier and an explicit Linux profile-import path with protected local intent/outcome recording, consented read-only JSONL export, an explicit profile-editing desktop with required recording and explicit recorded policy transactions. A separate [recorded-export command](RECORDED_AUDIT_EXPORT.md) adds access intent/outcome around a current stream snapshot. An explicit [recorded foreground engine run](RECORDED_ENGINE_RUN.md) separates launch acceptance from the actual terminal wait. Broader user/administrator action coverage, protected storage on the other desktop platforms, retention acknowledgments and collector integration remain unfinished. The enterprise audit readiness gate remains missing.
 
+A connected [Windows local audit backend](WINDOWS_AUDIT_STORAGE.md) now exists behind unexported entry points. Public Windows recording/export remains unsupported pending hosted native acceptance and CLI/managed qualification; no readiness gate is promoted.
+
 ## Verify a segment
 
 Retain the complete starting and ending checkpoints through an independently trusted administrative or collector channel. Then run:

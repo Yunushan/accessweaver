@@ -16,22 +16,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const journalName = "events.journal"
-const MaxJournalBytes = MaxCheckpointBytes + MaxSegmentBytes
-
-var (
-	ErrJournalBusy        = errors.New("audit journal is locked by another writer")
-	ErrJournalStorage     = errors.New("audit journal storage or retained checkpoints differ")
-	ErrJournalUnavailable = errors.New("audit journal is closed or requires reconciliation")
-	ErrJournalUncertain   = errors.New("audit journal write durability is uncertain; preserve storage and reconcile independently")
-	ErrJournalFull        = errors.New("audit journal is full; independently acknowledged retention is required")
-)
-
-type journalCommitter interface {
-	WriteAt([]byte, int64) (int, error)
-	Sync() error
-}
-
 // LinuxJournal is a bounded, single-stream storage component, not a live event
 // producer. It holds an exclusive OS lock until Close. It never rotates,
 // truncates, repairs, deletes or silently adopts an unacknowledged tail.
@@ -234,16 +218,6 @@ func (j *LinuxJournal) checkCommittedSize(expected int64) error {
 	}
 	info, err := j.file.Stat()
 	if err != nil || info.Size() != expected {
-		return ErrJournalUncertain
-	}
-	return nil
-}
-func commitJournalBytes(disk journalCommitter, data []byte, offset int64) error {
-	n, err := disk.WriteAt(data, offset)
-	if err != nil || n != len(data) {
-		return ErrJournalUncertain
-	}
-	if disk.Sync() != nil {
 		return ErrJournalUncertain
 	}
 	return nil

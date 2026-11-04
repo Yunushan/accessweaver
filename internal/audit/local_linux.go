@@ -20,10 +20,6 @@ import (
 
 func LocalRecordingSupported() bool { return true }
 
-const actorKeyName = ".actor-key"
-const actorKeyPrefix = "AccessWeaver audit actor key v1\n"
-const actorKeyFileBytes = len(actorKeyPrefix) + 32
-
 // Open from / without following links or trusting writable/foreign ancestors.
 // The final directory must already exist, be private, owned by the executing
 // UID, and have persistent local storage. No path is created or repaired.

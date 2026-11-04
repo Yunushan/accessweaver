@@ -19,6 +19,8 @@ env:
 jobs:
   browser:
     uses: ./.github/workflows/browser.yml
+  windows-audit-storage:
+    uses: ./.github/workflows/windows-audit-storage.yml
   vulnerabilities:
     name: Go vulnerability checks
     runs-on: ubuntu-latest
