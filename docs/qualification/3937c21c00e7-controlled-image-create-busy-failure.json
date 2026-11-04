@@ -1,0 +1,336 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "3937c21c00e74994e786a06d011be17171b32a25",
+  "sourceRef": "refs/heads/main",
+  "result": "failed",
+  "scope": "Intel controlled empty-image creation failed before attach/unmount/detach; original pressure case and cleanup passed",
+  "providerArtifact": {
+    "id": 13301830381,
+    "node_id": "MDg6QXJ0aWZhY3QxMzMwMTgzMDM4MQ==",
+    "name": "darwin-storage-fault-check-amd64",
+    "size_in_bytes": 2551,
+    "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13301830381",
+    "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13301830381/zip",
+    "expired": false,
+    "digest": "sha256:946a8c23497a72157b0cdd37551b7086525773bc18010cd06b66651b757c0808",
+    "created_at": "2026-11-04T06:32:51Z",
+    "updated_at": "2026-11-04T06:32:51Z",
+    "expires_at": "2026-11-18T06:32:50Z",
+    "workflow_run": {
+      "id": 41785893323,
+      "repository_id": 1441227907,
+      "head_repository_id": 1441227907,
+      "head_branch": "main",
+      "head_sha": "3937c21c00e74994e786a06d011be17171b32a25"
+    }
+  },
+  "providerZIPDigestVerified": true,
+  "providerJob": {
+    "id": 126427842911,
+    "runID": 41785893323,
+    "url": "https://github.com/Yunushan/accessweaver/actions/runs/41785893323/job/126427842911",
+    "conclusion": "failure"
+  },
+  "providerLog": {
+    "bytes": 141166,
+    "sha256": "f3e721bac7341bff0763b2aaa5230ae5917f794d0413781d5fc2927fcfa25258",
+    "failureLines": [
+      "2026-11-04T06:32:49.4254580Z RuntimeError: Native command failed: /usr/bin/hdiutil create: hdiutil: create failed - Resource busy"
+    ]
+  },
+  "reports": {
+    "image-lifecycle-amd64.json": {
+      "schemaVersion": 2,
+      "sourceCommit": "3937c21c00e74994e786a06d011be17171b32a25",
+      "arch": "amd64",
+      "passed": false,
+      "controlledUnmountedImageRequired": true,
+      "imageVirtualBytes": 536870912,
+      "nativeToolHelp": {
+        "create": {
+          "sha256": "60325e582f6721bb7b3482815ea50436e477983eee05f0d7a7d17683e3f0bdb9",
+          "bytes": 3611,
+          "statusCode": 0,
+          "basicHelpListsRequestedFlag": true
+        },
+        "attach": {
+          "sha256": "b05d957e3744182417a7f820e5ecbe2b9030d0d5b6883e701a96a5ea541b1cad",
+          "bytes": 1091,
+          "statusCode": 0,
+          "basicHelpListsRequestedFlag": false
+        },
+        "detach": {
+          "sha256": "beed565c84fe62cb110ef891f6b98aa6ac3c6fed5231532ce2e2ba7b7762ee87",
+          "bytes": 282,
+          "statusCode": 0,
+          "basicHelpListsRequestedFlag": false
+        },
+        "unmount": {
+          "sha256": "af79ad99fdfe2894f791188b862af68d07a3e0e3608cbded49e7bc0d5d162811",
+          "bytes": 343,
+          "statusCode": 0,
+          "basicHelpListsRequestedFlag": false
+        }
+      },
+      "productionQualificationComplete": false,
+      "attached": true,
+      "detached": true,
+      "ownedImageRemoved": true,
+      "rootMachinePolicyChanged": false,
+      "hostVolumePressureApplied": false,
+      "imageDevice": "/dev/disk2",
+      "volumeDevice": "/dev/disk3s1",
+      "onlyOwnedImageRootProtectionSet": true,
+      "nativeCasesPassed": 8,
+      "originalDeviceLabels": [
+        "/dev/disk2",
+        "/dev/disk2s1",
+        "/dev/disk3",
+        "/dev/disk3s1"
+      ],
+      "originalDeviceLabelsComplete": true,
+      "detachMappingObservations": [
+        {
+          "phase": "before-detach",
+          "ownedImageCount": 1,
+          "deviceLabels": [
+            "/dev/disk2",
+            "/dev/disk2s1",
+            "/dev/disk3",
+            "/dev/disk3s1"
+          ],
+          "basePresent": true,
+          "volumePresent": true,
+          "exactMountCount": 1,
+          "unexpectedMountCount": 0,
+          "conflictingDeviceAssociation": false,
+          "safeKnownMapping": true
+        },
+        {
+          "phase": "accepted-pending",
+          "ownedImageCount": 0,
+          "deviceLabels": [],
+          "basePresent": false,
+          "volumePresent": false,
+          "exactMountCount": 0,
+          "unexpectedMountCount": 0,
+          "conflictingDeviceAssociation": false,
+          "safeKnownMapping": false
+        }
+      ],
+      "normalDetachAttempts": 1,
+      "normalDetachAccepted": true,
+      "unmountedOriginalBindingDetachAttempts": 0,
+      "normalDetachObservations": [
+        {
+          "attempt": 1,
+          "unmountedOriginalBinding": false,
+          "originalFilesystemIdentityRechecked": true,
+          "outcome": "accepted",
+          "exitCode": 0,
+          "outputBytes": 17,
+          "outputSHA256": "8e7424d5bae883508e399372acd069c965cf7a3d8d04f370bb4d33df3325d734"
+        }
+      ],
+      "controlledUnmountedImage": {
+        "schemaVersion": 1,
+        "sourceCommit": "3937c21c00e74994e786a06d011be17171b32a25",
+        "arch": "amd64",
+        "imageVirtualBytes": 134217728,
+        "controlledIntervention": true,
+        "hostVolumePressureApplied": false,
+        "rootMachinePolicyChanged": false,
+        "productionQualificationComplete": false,
+        "passed": false,
+        "attached": false,
+        "detached": false,
+        "ownedImageRemoved": false,
+        "capsuleRemoved": false,
+        "stage": "create-owned-empty-image",
+        "failureType": "RuntimeError",
+        "cleanupFailed": true
+      },
+      "failureStage": "controlled-unmounted-image",
+      "failureType": "RuntimeError"
+    },
+    "apfs-exhaustion-amd64.json": {
+      "arch": "amd64",
+      "cases": [
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 529190912,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "install",
+          "priorPairUnchanged": true,
+          "record": "installation.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        },
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 528953344,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "install",
+          "priorPairUnchanged": true,
+          "record": "acceptance.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        },
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 528629760,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "update",
+          "priorPairUnchanged": true,
+          "record": "installation.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        },
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 528396288,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "update",
+          "priorPairUnchanged": true,
+          "record": "acceptance.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        },
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 528232448,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "rotate",
+          "priorPairUnchanged": true,
+          "record": "installation.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        },
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 527998976,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "rotate",
+          "priorPairUnchanged": true,
+          "record": "acceptance.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        },
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 527900672,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "recover",
+          "priorPairUnchanged": true,
+          "record": "installation.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        },
+        {
+          "explicitSignedRetryCommitted": true,
+          "fillerBytes": 527663104,
+          "knownAbortCleaned": false,
+          "nativeENOSPCObserved": true,
+          "operation": "recover",
+          "priorPairUnchanged": true,
+          "record": "acceptance.json",
+          "retainedStagePresent": true,
+          "retainedStagePreserved": true,
+          "unpublished": true
+        }
+      ],
+      "deviceDiffersFromHost": true,
+      "effectiveUID": 0,
+      "filesystem": "apfs",
+      "fullStorageFaultQualificationComplete": false,
+      "goVersion": "go1.27.3",
+      "mountFlags": 76583448,
+      "platform": "darwin",
+      "powerLossQualified": false,
+      "productionQualificationComplete": false,
+      "rootMachinePolicyChanged": false,
+      "schemaVersion": 1,
+      "sourceCommit": "3937c21c00e74994e786a06d011be17171b32a25",
+      "volumeBytes": 536829952
+    },
+    "native-tools-amd64.json": {
+      "schemaVersion": 1,
+      "sourceCommit": "3937c21c00e74994e786a06d011be17171b32a25",
+      "arch": "amd64",
+      "sdk": {
+        "GOARCH": "amd64",
+        "GOHOSTARCH": "amd64",
+        "GOHOSTOS": "darwin",
+        "GOOS": "darwin",
+        "GOVERSION": "go1.27.3"
+      },
+      "nativeHelp": {
+        "create": {
+          "sha256": "60325e582f6721bb7b3482815ea50436e477983eee05f0d7a7d17683e3f0bdb9",
+          "bytes": 3611,
+          "statusCode": 0,
+          "basicHelpListsRequestedFlag": true
+        },
+        "attach": {
+          "sha256": "b05d957e3744182417a7f820e5ecbe2b9030d0d5b6883e701a96a5ea541b1cad",
+          "bytes": 1091,
+          "statusCode": 0,
+          "basicHelpListsRequestedFlag": false
+        },
+        "detach": {
+          "sha256": "beed565c84fe62cb110ef891f6b98aa6ac3c6fed5231532ce2e2ba7b7762ee87",
+          "bytes": 282,
+          "statusCode": 0,
+          "basicHelpListsRequestedFlag": false
+        },
+        "unmount": {
+          "sha256": "af79ad99fdfe2894f791188b862af68d07a3e0e3608cbded49e7bc0d5d162811",
+          "bytes": 343,
+          "statusCode": 0,
+          "basicHelpListsRequestedFlag": false
+        }
+      },
+      "productionQualificationComplete": false
+    }
+  },
+  "sourceFiles": [
+    {
+      "file": "scripts/test-darwin-storage.py",
+      "sha256": "6862b4a411329f2e84620139b1d907d33e03a70423ad3300ce8ed06d8083635e"
+    },
+    {
+      "file": "scripts/test_darwin_storage.py",
+      "sha256": "f6591f4ed9ceedab70cf09943ff6b3121c3ff0395312e5e55ed3a4094fcc7986"
+    },
+    {
+      "file": "internal/managed/storage_full_darwin_test.go",
+      "sha256": "2baa6648e39ea98e4450ba07fd20a157cfc80065a1c29265073d9d6c5e1c12a5"
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "sha256": "fe73a853b941a2db467a374fdb50b0aa16d0a6df1285ff2768980e9b805b4a2e"
+    }
+  ],
+  "limits": [
+    "No native controlled unmounted path executed in this failed Intel job.",
+    "The old report did not retain the create return code, per-attempt diagnostics or whether a partial image file existed. cleanupFailed alone does not establish which object remained.",
+    "The observed tool message does not establish the underlying host contention cause. Historical passing runs do not explain it.",
+    "No workflow or assertion was retried unchanged. Candidate attestations were not authenticated for these diagnostic JSON artifacts.",
+    "Private quarantine qualification is retained separately; full CI failed. No readiness gate is promoted."
+  ],
+  "followup": "Add bounded exact-busy-only creation retries under one deadline only when the original capsule/mount identities, exact empty namespace, image absence and absence of an image association are revalidated. Preserve partial files/unknown objects and retain bounded status/hash diagnostics."
+}

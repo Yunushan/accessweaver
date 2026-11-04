@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Bounded APFS pressure only on an explicitly opted-in disposable hosted Mac."""
 import hashlib
+import itertools
 import json
 import os
 from pathlib import Path
@@ -268,6 +269,68 @@ def unmount_owned_volume(image, mount, base_device, volume_device, known_devices
         time.sleep(min(0.1, remaining))
 
 
+def create_controlled_image(image, mount, capsule_identity, host_mount, record):
+    """Retry only a precise busy precondition with an unchanged empty capsule."""
+    require_disposable_host()
+    capsule = image.parent
+    if (image.name != "pressure.sparseimage" or mount != capsule / "mount"
+            or not capsule.name.startswith("apfs-unmounted-")
+            or capsule.parent != Path(os.environ.get("GITHUB_WORKSPACE", "")) / "build" / "storage-capsules"
+            or "imageCreateObservations" in record):
+        raise RuntimeError("Invalid controlled creation authority or reused evidence")
+    deadline = time.monotonic() + 30
+    record.update(imageCreateAttempts=0, imageCreateSucceeded=False, imageCreateObservations=[])
+    def remaining():
+        value = deadline - time.monotonic()
+        if value <= 0:
+            raise RuntimeError("Controlled image creation deadline exceeded")
+        return value
+    def clean_capsule():
+        for name, expected in ((capsule, capsule_identity), (mount, host_mount)):
+            current = guarded_directory(name, os.geteuid())
+            if (current.st_dev != expected.st_dev or current.st_ino != expected.st_ino
+                    or stat.S_IMODE(current.st_mode) != stat.S_IMODE(expected.st_mode)):
+                raise RuntimeError("Controlled creation object identity changed")
+        if os.path.lexists(image) or set(itertools.islice(capsule.iterdir(), 3)) != {mount}:
+            raise RuntimeError("Preserving partial or unknown controlled creation objects")
+        snapshot = info(timeout=min(5, remaining()))
+        if any(row.get("image-path") == str(image) for row in snapshot.get("images", [])):
+            raise RuntimeError("Preserving associated controlled creation image")
+    for attempt in range(1, 4):
+        remaining()
+        clean_capsule()
+        row = {"attempt": attempt, "outcome": "started", "retryEligible": False}
+        record["imageCreateObservations"].append(row)
+        record["imageCreateAttempts"] = attempt
+        try:
+            result = command([HDIUTIL, "create", "-size", "128m", "-type", "SPARSE", "-fs", "APFS",
+                              "-volname", "AWUnmounted-" + capsule.name, str(image)],
+                             timeout=remaining(), check=False,
+                             env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LANG": "C", "LC_ALL": "C", "TZ": "UTC"})
+        except subprocess.TimeoutExpired:
+            row["outcome"] = "timeout"
+            raise
+        output = result.stdout + result.stderr
+        busy = result.returncode == 1 and output.strip() == b"hdiutil: create failed - Resource busy"
+        row.update(outcome="accepted" if result.returncode == 0 else "refused", exitCode=result.returncode,
+                   outputBytes=len(output), outputSHA256=hashlib.sha256(output).hexdigest(), exactBusySignal=busy,
+                   imageEntryPresent=os.path.lexists(image))
+        if result.returncode == 0:
+            remaining()
+            record["imageCreateSucceeded"] = True
+            return
+        if not busy:
+            raise RuntimeError("Controlled image creation failed; bounded diagnostics retained")
+        # Neither a partial file nor an association may be overwritten, deleted,
+        # reused or retried. Revalidate before waiting and before the next call.
+        clean_capsule()
+        row["retryEligible"] = True
+        if attempt == 3:
+            raise RuntimeError("Controlled image creation remained busy through its attempt limit")
+        time.sleep(min(0.25 * attempt, remaining()))
+    raise RuntimeError("Controlled image creation did not complete")
+
+
 def controlled_unmounted_image(parent, source, arch, record):
     """Use a separate empty 128 MiB image; never apply pressure or execute code."""
     require_disposable_host()
@@ -299,8 +362,7 @@ def controlled_unmounted_image(parent, source, arch, record):
     failure = None
     try:
         record["stage"] = "create-owned-empty-image"
-        command([HDIUTIL, "create", "-size", "128m", "-type", "SPARSE", "-fs", "APFS",
-                 "-volname", "AWUnmounted-" + capsule.name, str(image)], timeout=30)
+        create_controlled_image(image, mount, capsule_identity, host_mount, record)
         image_identity = image.lstat()
         original = (image_identity, host_mount, capsule_identity)
         check_owned_cleanup_identity(image, mount, original, unmounted=True)

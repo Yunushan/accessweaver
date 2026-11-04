@@ -385,3 +385,111 @@ class ControlledUnmountProtocolTests(ImageFixture,unittest.TestCase):
         self.assertNotIn("originalUnmountedBindingVerified",record)
 
 if __name__=="__main__":unittest.main()
+
+
+class ControlledImageCreationTests(unittest.TestCase):
+    def setUp(self):
+        from types import SimpleNamespace
+        import stat
+        self.capsule=Path("/owned-workspace/build/storage-capsules/apfs-unmounted-fixture")
+        self.image=self.capsule/"pressure.sparseimage";self.mount=self.capsule/"mount"
+        self.capsule_stat=SimpleNamespace(st_dev=1,st_ino=2,st_uid=501,st_mode=stat.S_IFDIR|0o700)
+        self.mount_stat=SimpleNamespace(st_dev=1,st_ino=3,st_uid=501,st_mode=stat.S_IFDIR|0o700)
+        self.actual={self.capsule:self.capsule_stat,self.mount:self.mount_stat}
+        self.present=False;self.associated=False;self.extra=False;self.now=0;self.calls=[]
+    def busy(self):
+        from subprocess import CompletedProcess
+        return CompletedProcess([],1,b"",b"hdiutil: create failed - Resource busy\n")
+    def done(self):
+        from subprocess import CompletedProcess
+        return CompletedProcess([],0,b"created",b"")
+    def context(self,results):
+        from contextlib import ExitStack
+        stack=ExitStack();self.addCleanup(stack.close);remaining=list(results)
+        def command(*args,**kwargs):
+            self.calls.append((args,kwargs));value=remaining.pop(0)
+            if isinstance(value,BaseException):raise value
+            if callable(value):value=value()
+            if value.returncode==0:self.present=True
+            return value
+        self.host=stack.enter_context(patch.object(storage,"require_disposable_host"))
+        stack.enter_context(patch.dict(os.environ,{"GITHUB_WORKSPACE":"/owned-workspace"}))
+        stack.enter_context(patch.object(storage.os,"geteuid",return_value=501,create=True))
+        stack.enter_context(patch.object(storage,"guarded_directory",side_effect=lambda path,owner:self.actual[path]))
+        stack.enter_context(patch.object(storage.os.path,"lexists",side_effect=lambda path:self.present))
+        stack.enter_context(patch.object(Path,"iterdir",lambda path:iter([self.mount]+([self.capsule/"unknown"] if self.extra else []))))
+        stack.enter_context(patch.object(storage,"info",side_effect=lambda **kwargs:{"images":[{"image-path":str(self.image)}] if self.associated else []}))
+        stack.enter_context(patch.object(storage,"command",side_effect=command))
+        stack.enter_context(patch.object(storage.time,"monotonic",side_effect=lambda:self.now))
+        self.sleep=stack.enter_context(patch.object(storage.time,"sleep"))
+    def create(self,record):
+        storage.create_controlled_image(self.image,self.mount,self.capsule_stat,self.mount_stat,record)
+    def test_busy_without_leftovers_then_success_keeps_exact_command_and_bounded_diagnostics(self):
+        self.context([self.busy(),self.done()]);record={};self.create(record)
+        self.assertEqual(record["imageCreateAttempts"],2);self.assertIs(record["imageCreateSucceeded"],True)
+        self.assertIs(record["imageCreateObservations"][0]["retryEligible"],True)
+        self.assertEqual(record["imageCreateObservations"][1]["outcome"],"accepted")
+        self.assertEqual(len(self.calls),2)
+        for args,kwargs in self.calls:
+            self.assertEqual(args[0],[storage.HDIUTIL,"create","-size","128m","-type","SPARSE","-fs","APFS","-volname","AWUnmounted-"+self.capsule.name,str(self.image)])
+            self.assertFalse(kwargs["check"]);self.assertGreater(kwargs["timeout"],0);self.assertLessEqual(kwargs["timeout"],30)
+            self.assertEqual(kwargs["env"]["LC_ALL"],"C");self.assertNotIn("-ov",args[0])
+    def test_persistent_busy_has_three_attempts_and_one_original_deadline(self):
+        self.context([self.busy()]*3);record={}
+        with self.assertRaisesRegex(RuntimeError,"attempt limit"):self.create(record)
+        self.assertEqual(record["imageCreateAttempts"],3);self.assertEqual(len(self.calls),3);self.assertEqual(self.sleep.call_count,2)
+        self.assertIs(record["imageCreateSucceeded"],False)
+    def test_wrong_exit_code_or_extra_output_or_nonbusy_error_is_never_retried(self):
+        from subprocess import CompletedProcess
+        import json
+        for code,out in [(16,b"hdiutil: create failed - Resource busy"),(1,b"Resource busy /private/secret"),(1,b"hdiutil: create failed - Resource busy\nextra"),(2,b"failure /private/secret")]:
+            with self.subTest(code=code,out=out):
+                self.setUp();self.context([CompletedProcess([],code,b"",out)]);record={}
+                with self.assertRaises(RuntimeError):self.create(record)
+                self.assertEqual(len(self.calls),1);self.assertNotIn("secret",json.dumps(record))
+    def test_partial_image_or_unknown_capsule_entry_is_preserved_without_retry(self):
+        for kind in ("image","extra"):
+            with self.subTest(kind=kind):
+                self.setUp()
+                def busy():
+                    if kind=="image":self.present=True
+                    else:self.extra=True
+                    return self.busy()
+                self.context([busy]);record={}
+                with self.assertRaisesRegex(RuntimeError,"Preserving partial"):self.create(record)
+                self.assertEqual(len(self.calls),1);self.assertFalse(record["imageCreateObservations"][0]["retryEligible"])
+                self.assertTrue(self.present if kind=="image" else self.extra)
+    def test_changed_capsule_or_host_mount_identity_refuses_retry(self):
+        from types import SimpleNamespace
+        for name in ("capsule","mount"):
+            with self.subTest(name=name):
+                self.setUp()
+                def busy():
+                    key=self.capsule if name=="capsule" else self.mount
+                    self.actual[key]=SimpleNamespace(**dict(vars(self.actual[key]),st_ino=99));return self.busy()
+                self.context([busy]);record={}
+                with self.assertRaisesRegex(RuntimeError,"identity changed"):self.create(record)
+                self.assertEqual(len(self.calls),1)
+    def test_association_after_failed_creation_is_preserved_without_retry(self):
+        def busy():self.associated=True;return self.busy()
+        self.context([busy]);record={}
+        with self.assertRaisesRegex(RuntimeError,"Preserving associated"):self.create(record)
+        self.assertEqual(len(self.calls),1)
+    def test_busy_does_not_extend_the_original_deadline(self):
+        def busy():self.now=30;return self.busy()
+        self.context([busy]);record={}
+        with self.assertRaisesRegex(RuntimeError,"deadline"):self.create(record)
+        self.assertEqual(len(self.calls),1);self.sleep.assert_not_called()
+    def test_timed_out_creation_records_one_started_attempt_and_does_not_retry(self):
+        from subprocess import TimeoutExpired
+        self.context([TimeoutExpired("hdiutil",30)]);record={}
+        with self.assertRaises(TimeoutExpired):self.create(record)
+        self.assertEqual(len(self.calls),1);self.assertEqual(record["imageCreateObservations"],[{"attempt":1,"outcome":"timeout","retryEligible":False}])
+    def test_missing_host_optin_reused_evidence_and_wrong_names_launch_nothing(self):
+        self.context([]);record={};self.host.side_effect=RuntimeError("host refused")
+        with self.assertRaises(RuntimeError):self.create(record)
+        self.assertEqual(record,{})
+        self.host.side_effect=None
+        with self.assertRaises(RuntimeError):self.create({"imageCreateObservations":[]})
+        with self.assertRaises(RuntimeError):storage.create_controlled_image(self.image.with_name("other"),self.mount,self.capsule_stat,self.mount_stat,{})
+        self.assertEqual(self.calls,[])
