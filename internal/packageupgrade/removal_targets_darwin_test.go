@@ -84,6 +84,9 @@ func newOwnedRemovalTargetFixture(t *testing.T, privateBase string) *ownedRemova
 	if e != nil {
 		t.Fatal(e)
 	}
+	if e = os.Chown(base, 0, 0); e != nil {
+		t.Fatal(e)
+	}
 	s := deploymentFixtureStore(t, base, nil)
 	f := &ownedRemovalTargetFixture{base: base, store: s}
 	mkdir := func(name string) {
@@ -91,10 +94,16 @@ func newOwnedRemovalTargetFixture(t *testing.T, privateBase string) *ownedRemova
 		if e := os.Mkdir(name, 0755); e != nil {
 			t.Fatal(e)
 		}
+		if e := os.Chown(name, 0, 0); e != nil {
+			t.Fatal(e)
+		}
 	}
 	write := func(name string, data []byte, mode os.FileMode) {
 		t.Helper()
 		if e := os.WriteFile(name, data, mode); e != nil {
+			t.Fatal(e)
+		}
+		if e := os.Chown(name, 0, 0); e != nil {
 			t.Fatal(e)
 		}
 		if e := os.Chmod(name, mode); e != nil {
@@ -224,7 +233,7 @@ func newOwnedRemovalTargetFixture(t *testing.T, privateBase string) *ownedRemova
 func exerciseOwnedRemovalTargetVerification(t *testing.T, privateBase string) {
 	t.Helper()
 	for _, kind := range []string{"complete", "cancelled", "missing-root", "missing-file", "changed-file", "restored-bytes", "replaced-file", "file-alias", "root-alias", "hardlink", "file-mode", "parent-replaced", "extra-core", "extra-incoming", "extra-registration", "extra-receipt"} {
-		t.Run("intact-targets-"+kind, func(t *testing.T) {
+		passed := t.Run("intact-targets-"+kind, func(t *testing.T) {
 			f := newOwnedRemovalTargetFixture(t, privateBase)
 			baseline, e := f.intent.verifyIntactTargetsUsing(context.Background(), f.resolve)
 			if e != nil || baseline.roots != 5 || baseline.files != 10 || baseline.directories != 5 || baseline.planSHA256 != f.intent.fence.PlanSHA256 {
@@ -327,6 +336,9 @@ func exerciseOwnedRemovalTargetVerification(t *testing.T, privateBase string) {
 				t.Fatal(e)
 			}
 		})
+		if !passed {
+			t.Fatalf("owned intact-target case failed: %s", kind)
+		}
 	}
 }
 

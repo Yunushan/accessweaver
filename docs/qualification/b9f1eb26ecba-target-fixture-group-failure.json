@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "provider-bound-owned-target-fixture-setup-failure",
+  "sourceCommit": "b9f1eb26ecba8975e8c01f3a8fe224c4ba577476",
+  "runID": 41771126401,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/41771126401",
+  "targets": [
+    {
+      "target": "darwin/arm64",
+      "jobID": 126380797400,
+      "jobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41771126401/job/126380797400",
+      "conclusion": "failure",
+      "jobLogSHA256": "37aab143e575c533ea17953d71e7073a19a33f8617478b5a7a5f1680cd916f7c",
+      "fixtureSetupFailures": 16,
+      "error": "deployment object is not root:wheel",
+      "targetCaseVerificationReached": false,
+      "rootSummaryEmittedDespiteFailedSubtests": {
+        "completeCopyRecovered": true,
+        "concurrentPreparationFenced": true,
+        "copiedCodeExecuted": false,
+        "detachedManifestCompleteCopyRecovered": true,
+        "detachedManifestPartialCopyPreservedAndRefused": true,
+        "detachedPayloadSBOMManifestSHA256": "57156cb294e3f996a1da4eb305095e711e79661e2be367c978d23b987f7f9203",
+        "detachedPayloadSBOMPartialCopyPreservedAndRefused": true,
+        "detachedPayloadSBOMSHA256": "0e5cd7e79cdd55a9cdee6964fbac0cff22611df0c6959b1845a951bb46c661dc",
+        "finalGeneration": 4,
+        "fixedProtectedParentVerified": true,
+        "intactRemovalTargetsVerified": true,
+        "intactTargetCaseCount": 16,
+        "legacyToSchema2BridgeVerified": true,
+        "manifestSHA256": "81af8577e4248f82e42013fd9abc53e29b345c8f057d4015474b867f751a47f4",
+        "oldCompleteSlotFencedAfterRemoval": true,
+        "ownedTargetRefusalsPreserved": true,
+        "partialCopyPreservedAndRefused": true,
+        "payloadIsIndependentCopy": true,
+        "payloadSHA256": "d033eff9096678e4697530816a86b1f261581ac727f9c5a71483175de99c4a55",
+        "postPublicationRemovalRecovered": true,
+        "productionQualificationComplete": false,
+        "restoredRetryVerified": true,
+        "schemaVersion": 1,
+        "version": "0.1.0-alpha"
+      },
+      "summaryAcceptedAsSuccessfulEvidence": false
+    },
+    {
+      "target": "darwin/amd64",
+      "jobID": 126380797735,
+      "jobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41771126401/job/126380797735",
+      "conclusion": "failure",
+      "jobLogSHA256": "70e2ed3d7368035f1d00c04811d6813c55f7db78372cfa341af4a4c334197155",
+      "fixtureSetupFailures": 16,
+      "error": "deployment object is not root:wheel",
+      "targetCaseVerificationReached": false,
+      "rootSummaryEmittedDespiteFailedSubtests": {
+        "completeCopyRecovered": true,
+        "concurrentPreparationFenced": true,
+        "copiedCodeExecuted": false,
+        "detachedManifestCompleteCopyRecovered": true,
+        "detachedManifestPartialCopyPreservedAndRefused": true,
+        "detachedPayloadSBOMManifestSHA256": "71c9624af01acf5868eccd5bbdf74915743ec899b18e732f5623ccdf4ce19ce1",
+        "detachedPayloadSBOMPartialCopyPreservedAndRefused": true,
+        "detachedPayloadSBOMSHA256": "508b777d6317080b5e459cc07eae48b0c792863de2e02cfd21cc6d54799e2eb7",
+        "finalGeneration": 4,
+        "fixedProtectedParentVerified": true,
+        "intactRemovalTargetsVerified": true,
+        "intactTargetCaseCount": 16,
+        "legacyToSchema2BridgeVerified": true,
+        "manifestSHA256": "71f649be22b183a62f4d5d927f710e99c4cc2ef54d1251599d7a36cfac273390",
+        "oldCompleteSlotFencedAfterRemoval": true,
+        "ownedTargetRefusalsPreserved": true,
+        "partialCopyPreservedAndRefused": true,
+        "payloadIsIndependentCopy": true,
+        "payloadSHA256": "f19aeb1b6e05a7eb38afa367f743878a635bbf69754ff5f57c46d96d2e163b23",
+        "postPublicationRemovalRecovered": true,
+        "productionQualificationComplete": false,
+        "restoredRetryVerified": true,
+        "schemaVersion": 1,
+        "version": "0.1.0-alpha"
+      },
+      "summaryAcceptedAsSuccessfulEvidence": false
+    }
+  ],
+  "providerArtifactsNotDownloaded": [
+    {
+      "id": 13294947306,
+      "name": "macos-installer-inspection-amd64",
+      "size_in_bytes": 7261910,
+      "digest": "sha256:fbc1c58da8d6accea7e66941b8e07922aefed21c00f8943df0102a8eb0fbf420"
+    },
+    {
+      "id": 13294872448,
+      "name": "macos-installer-inspection-arm64",
+      "size_in_bytes": 6798363,
+      "digest": "sha256:c1814389acaa4063830c79c513fbc8656ea3f6924109528473a74498a5f7899a"
+    }
+  ],
+  "sourceFiles": [
+    {
+      "path": "internal/packageupgrade/removal_targets_darwin_test.go",
+      "sha256": "eb7b3552609fe2a06f30a31d118989d1f32f172c8039d23be000065024b81675"
+    },
+    {
+      "path": "internal/packageupgrade/removal_targets_darwin.go",
+      "sha256": "78459ef08abb2929b53d86a4e1ecb6b677c8ac5ec4280cbf8eb9d1bee76d0529"
+    },
+    {
+      "path": "internal/packageupgrade/deployment_darwin_test.go",
+      "sha256": "101151c419315b0d30365634726dbc050c1ac84b76abf316b3a8415fade5bf11"
+    }
+  ],
+  "classification": {
+    "productionOwnershipCheckRelaxed": false,
+    "unchangedSourceRetried": false,
+    "nativeTargetQualificationComplete": false,
+    "fixtureObjectsExplicitlyRootWheelBeforeFix": false,
+    "fix": "Explicit root:wheel ownership on every fixture directory/file; administrator group remains only on the Applications-style parent. Fail the parent immediately on any failed case, before emitting a positive summary.",
+    "noDeletionOrUninstallQualified": true
+  }
+}
