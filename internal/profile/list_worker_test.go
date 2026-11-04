@@ -35,7 +35,7 @@ func TestAbandonedInventoryWorkerOwnsSlotUntilNativeReadReturns(t *testing.T) {
 			close(entered)
 			<-release // Deliberately cannot cooperate with cancellation, like native I/O.
 			return []Profile{original}, nil
-		})
+		}, 5*time.Second)
 		result <- listed{rows, err}
 	}()
 	select {
@@ -98,7 +98,20 @@ func TestAbandonedInventoryWorkerOwnsSlotUntilNativeReadReturns(t *testing.T) {
 	}
 }
 
-func TestPublishedInventoryCannotBeJoinedBeforeCleanupCompletes(t *testing.T) {
+// Done is observed only when ListContext waits for the finishing transaction.
+// It provides a deterministic wait marker without sleeping or changing the store.
+type inventoryWaitContext struct {
+	context.Context
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (c *inventoryWaitContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.entered) })
+	return c.Context.Done()
+}
+
+func TestHealthyFinishingInventoryWaitsForFreshTransaction(t *testing.T) {
 	store, original := listingFixture(t)
 	lock, err := store.lock(context.Background())
 	if err != nil {
@@ -111,19 +124,31 @@ func TestPublishedInventoryCannotBeJoinedBeforeCleanupCompletes(t *testing.T) {
 	store.listMu.Lock()
 	store.listing = read
 	store.listMu.Unlock()
-	result := make(chan listed, 1)
+	first := make(chan listed, 1)
 	reader, stop := context.WithTimeout(context.Background(), 3*time.Second)
 	defer stop()
-	go func() { rows, err := store.ListContext(reader); result <- listed{rows, err} }()
+	go func() { rows, err := store.ListContext(reader); first <- listed{rows, err} }()
 	waitListing(t, store, 1)
-	// Stage the real locked snapshot, then hold the cleanup function used by
-	// the production completion path. The slot must outlive that native call.
 	store.publishList(read, []Profile{original}, nil)
 	closing, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	var releaseOnce sync.Once
 	releaseClose := func() { releaseOnce.Do(func() { close(release) }) }
+	updated := original
+	updated.Name = "Committed while previous read finishes"
+	var cleanupErr error
 	go func() {
-		store.completeList(read, func() error { close(closing); <-release; return lock.Close() })
+		store.completeList(read, func() error {
+			close(closing)
+			<-release
+			if err := lock.Close(); err != nil {
+				cleanupErr = err
+				return err
+			}
+			// This legitimate writer commits after unlock but before the old reader's
+			// completion notification. A later caller must not receive its old snapshot.
+			cleanupErr = store.Save(updated)
+			return cleanupErr
+		})
 		close(finished)
 	}()
 	t.Cleanup(func() {
@@ -139,24 +164,57 @@ func TestPublishedInventoryCannotBeJoinedBeforeCleanupCompletes(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("cleanup did not enter native close")
 	}
-	for range 8 {
-		retry, stop := context.WithTimeout(context.Background(), time.Second)
-		answer := make(chan listed, 1)
-		go func() { rows, err := store.ListContext(retry); answer <- listed{rows, err} }()
-		select {
-		case got := <-answer:
-			stop()
-			if !errors.Is(got.err, ErrStoreBusy) || got.profiles != nil {
-				t.Fatal("published read was joined before native cleanup", got.err)
-			}
-		case <-time.After(time.Second):
-			stop()
-			t.Fatal("cleanup held the inventory control mutex")
-		}
+	lateCtx, stopLate := context.WithTimeout(context.Background(), 3*time.Second)
+	defer stopLate()
+	waiting := &inventoryWaitContext{Context: lateCtx, entered: make(chan struct{})}
+	late := make(chan listed, 1)
+	go func() { rows, err := store.ListContext(waiting); late <- listed{rows, err} }()
+	select {
+	case <-waiting.entered:
+	case got := <-late:
+		t.Fatal("healthy cleanup returned instead of waiting", got.err)
+	case <-time.After(time.Second):
+		t.Fatal("cleanup held the inventory control mutex")
+	}
+	store.listMu.Lock()
+	unjoined := store.listing == read && read.waiters == 1
+	store.listMu.Unlock()
+	if !unjoined {
+		t.Fatal("late reader joined the finished snapshot or replaced its worker")
 	}
 	select {
-	case <-result:
-		t.Fatal("reader woke before cleanup returned")
+	case got := <-late:
+		t.Fatal("late reader returned before cleanup", got.err)
+	default:
+	}
+	// Cancellation remains independent of the original reader and cleanup.
+	canceled, stopCanceled := context.WithCancel(context.Background())
+	cancelWaiting := &inventoryWaitContext{Context: canceled, entered: make(chan struct{})}
+	cancelResult := make(chan error, 1)
+	go func() { _, err := store.ListContext(cancelWaiting); cancelResult <- err }()
+	select {
+	case <-cancelWaiting.entered:
+	case <-time.After(time.Second):
+		stopCanceled()
+		t.Fatal("cancelable caller did not wait")
+	}
+	stopCanceled()
+	select {
+	case err := <-cancelResult:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("cleanup waiting lost cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancellation waited for native cleanup")
+	}
+	// The deterministic budget seam avoids a five-second unit-test sleep while
+	// exercising the same bounded admission branch used by the public method.
+	if rows, err := store.listContext(context.Background(), store.listLocked, 0); !errors.Is(err, ErrStoreBusy) || !errors.Is(err, context.DeadlineExceeded) || rows != nil {
+		t.Fatal("stuck healthy cleanup admitted a worker or waited without a budget", err)
+	}
+	select {
+	case <-first:
+		t.Fatal("original reader woke before cleanup returned")
 	default:
 	}
 	releaseClose()
@@ -165,21 +223,23 @@ func TestPublishedInventoryCannotBeJoinedBeforeCleanupCompletes(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("cleanup did not finish")
 	}
+	if cleanupErr != nil {
+		t.Fatal(cleanupErr)
+	}
 	select {
-	case got := <-result:
+	case got := <-first:
 		if got.err != nil || len(got.profiles) != 1 || got.profiles[0].Name != original.Name {
-			t.Fatal("original reader lost its consistent snapshot", got.err)
+			t.Fatal("original read lost its consistent snapshot", got.err)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("cleaned reader was not notified")
+		t.Fatal("original reader was not notified")
 	}
-	updated := original
-	updated.Name = "New transaction after cleanup"
-	if err := store.Save(updated); err != nil {
-		t.Fatal(err)
-	}
-	rows, err := store.List()
-	if err != nil || len(rows) != 1 || rows[0].Name != updated.Name {
-		t.Fatal("completed slot leaked a stale result", err)
+	select {
+	case got := <-late:
+		if got.err != nil || len(got.profiles) != 1 || got.profiles[0].Name != updated.Name {
+			t.Fatal("healthy later reader failed or reused the finished snapshot", got.err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("healthy later reader did not start a fresh transaction")
 	}
 }

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "d02c3bcc0aa8fafaa9cad0864637269406483c94",
+  "runID": 41891787260,
+  "jobID": 126790800659,
+  "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41891787260/job/126790800659",
+  "failedStep": "Unit tests",
+  "failedTest": "TestListsStayFreshAcrossConcurrentCompletedWrites",
+  "failure": "Healthy concurrent inventory read returned ErrStoreBusy during finalization",
+  "sourceLocation": "internal/profile/list_test.go:251",
+  "logBytes": 35868,
+  "logSHA256": "08091a3e03b547c66b7e788b30045c144d20c54afce85ad54c5806154a0a6a95",
+  "exactFailureExcerptUTF8": "2026-11-04T18:55:29.8230078Z --- FAIL: TestListsStayFreshAcrossConcurrentCompletedWrites (0.08s)\n2026-11-04T18:55:29.8230687Z     list_test.go:251: profile store busy; wait for the other operation and retry\n2026-11-04T18:55:29.8231028Z FAIL\n2026-11-04T18:55:29.8231474Z FAIL\tgithub.com/Yunushan/accessweaver/internal/profile\t0.391s\n",
+  "exactFailureExcerptBase64": "MjAyNi0xMS0wNFQxODo1NToyOS44MjMwMDc4WiAtLS0gRkFJTDogVGVzdExpc3RzU3RheUZyZXNoQWNyb3NzQ29uY3VycmVudENvbXBsZXRlZFdyaXRlcyAoMC4wOHMpCjIwMjYtMTEtMDRUMTg6NTU6MjkuODIzMDY4N1ogICAgIGxpc3RfdGVzdC5nbzoyNTE6IHByb2ZpbGUgc3RvcmUgYnVzeTsgd2FpdCBmb3IgdGhlIG90aGVyIG9wZXJhdGlvbiBhbmQgcmV0cnkKMjAyNi0xMS0wNFQxODo1NToyOS44MjMxMDI4WiBGQUlMCjIwMjYtMTEtMDRUMTg6NTU6MjkuODIzMTQ3NFogRkFJTAlnaXRodWIuY29tL1l1bnVzaGFuL2FjY2Vzc3dlYXZlci9pbnRlcm5hbC9wcm9maWxlCTAuMzkxcwo=",
+  "exactFailureExcerptSHA256": "ae19c9ef1da66b5aa4cfb43e3adba182b39fb46e9ef43f5a9b64a9825365357b",
+  "interpretation": "A real regression in6026b4b: healthy finishing work became an unnecessary busy refusal. Preserve abandoned-worker bounding, but healthy finalization must use a bounded cancellable cleanup-admission wait and retry a fresh transaction without sharing an old snapshot. Do not weaken the existing concurrent freshness test, add blind client retry there, increase deadlines or rerun unchanged CI. Corrected exact-source acceptance remains pending.",
+  "readinessStatusChanged": false,
+  "productionQualificationComplete": false
+}
