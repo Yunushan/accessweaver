@@ -166,15 +166,15 @@ func readRemovalBundle(dir *os.File, owner uint32) (removalFence, removalPlan, [
 	if e := deploymentObject(dir, true, owner, 0755); e != nil {
 		return fail(e)
 	}
-	entries, e := deploymentEntries(dir, owner, 3)
+	entries, e := deploymentEntries(dir, owner, 4)
 	if e != nil {
 		return fail(e)
 	}
-	if len(entries) != 3 {
+	if len(entries) != 3 && len(entries) != 4 {
 		return fail(errors.New("removal bundle is incomplete"))
 	}
 	for _, entry := range entries {
-		if entry.Name() != deploymentRecord && entry.Name() != removalFenceName && entry.Name() != removalPlanName {
+		if entry.Name() != deploymentRecord && entry.Name() != removalFenceName && entry.Name() != removalPlanName && entry.Name() != removalJournalName {
 			return fail(errors.New("unknown removal bundle object"))
 		}
 	}
@@ -244,6 +244,13 @@ func readRemovalBundle(dir *os.File, owner uint32) (removalFence, removalPlan, [
 		return fail(e)
 	}
 	if e = fence.validatePlan(after, plan); e != nil {
+		return fail(e)
+	}
+	actions, e := removalFileActions(plan)
+	if e != nil {
+		return fail(e)
+	}
+	if _, _, _, e = readRemovalJournalAt(dir, owner, removalJournalSeed(fence), len(actions)); e != nil {
 		return fail(e)
 	}
 	return fence, plan, record, nil

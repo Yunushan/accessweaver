@@ -86,7 +86,7 @@ func removalFileStillAt(parent *os.File, name string, want syscall.Stat_t) (resu
 // unexpected file. The partial-root exception is limited to the receipt DB.
 func captureRemovalTree(ctx context.Context, parent, root *os.File, kind, key string, identity deploymentIdentity, catalog removalCatalog) (removalPlanRoot, error) {
 	result := removalPlanRoot{Kind: kind, Key: key, Identity: identity, Objects: []removalPlanObject{}}
-	if len(catalog) == 0 || len(catalog) > MaxFiles+3 {
+	if len(catalog) > MaxFiles+3 {
 		return result, errors.New("removal catalog exceeds extent")
 	}
 	parentInfo, e := parent.Stat()

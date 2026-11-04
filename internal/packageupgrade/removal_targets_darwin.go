@@ -15,8 +15,8 @@ import (
 	"github.com/Yunushan/accessweaver/internal/darwintrust"
 )
 
-// This is a bounded read-only observation, not a mutation capability. No
-// absence is accepted before a durable deletion journal is implemented.
+// This is a bounded read-only intact observation, not a mutation capability.
+// Journaled known absences are handled only by the separate file transaction.
 type removalTargetVerification struct {
 	roots, files, directories int
 	planSHA256                string

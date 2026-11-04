@@ -12,9 +12,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// This handle validates protected intent metadata only. A future mutation
-// engine must separately reconcile every payload/receipt object and known
-// absence. Neither constructor nor returned handle authorizes deletion.
+// Reopening validates protected intent/progress metadata, not payload absence.
+// The private protected-file transaction separately reconciles every remaining
+// target before using an exact pending journal action. No public remover exists.
 type removalIntentStore struct {
 	store *deploymentStore
 	fence removalFence

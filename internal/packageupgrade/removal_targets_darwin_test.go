@@ -21,6 +21,7 @@ import (
 )
 
 type ownedRemovalTargetFixture struct {
+	coreFile, incomingFile                                                              string
 	base                                                                                string
 	store                                                                               *deploymentStore
 	intent                                                                              *removalIntentStore
@@ -78,7 +79,7 @@ func (f *ownedRemovalTargetFixture) resolve(kind string) (removalTargetParent, e
 
 // Every tree is real owned filesystem data. Synthetic non-code payloads test
 // exact saved-object relationships without pretending to be a shipping app.
-func newOwnedRemovalTargetFixture(t *testing.T, privateBase string) *ownedRemovalTargetFixture {
+func newOwnedRemovalTargetFixture(t *testing.T, privateBase string, nested ...bool) *ownedRemovalTargetFixture {
 	t.Helper()
 	base, e := os.MkdirTemp(privateBase, "targets-")
 	if e != nil {
@@ -113,7 +114,13 @@ func newOwnedRemovalTargetFixture(t *testing.T, privateBase string) *ownedRemova
 	slot := deploymentFixtureSlot(1, "0.1.1-alpha")
 	corePath := filepath.Join(base, deploymentRoot, "versions", slot.ID)
 	mkdir(corePath)
-	write(filepath.Join(corePath, "owned-core"), []byte("owned core bytes"), 0644)
+	coreLeaf, inputLeaf := "owned-core", "owned-input"
+	if len(nested) > 0 && nested[0] {
+		mkdir(filepath.Join(corePath, "owned-core-dir"))
+		coreLeaf, inputLeaf = "owned-core-dir/owned-core", "owned-input-dir/owned-input"
+	}
+	f.coreFile = filepath.Join(corePath, coreLeaf)
+	write(f.coreFile, []byte("owned core bytes"), 0644)
 	info, e := os.Stat(corePath)
 	if e != nil {
 		t.Fatal(e)
@@ -131,7 +138,11 @@ func newOwnedRemovalTargetFixture(t *testing.T, privateBase string) *ownedRemova
 	mkdir(f.incomingParent)
 	f.incomingRoot = filepath.Join(f.incomingParent, slot.Identity.ManifestSHA256)
 	mkdir(f.incomingRoot)
-	write(filepath.Join(f.incomingRoot, "owned-input"), []byte("owned incoming bytes"), 0644)
+	if len(nested) > 0 && nested[0] {
+		mkdir(filepath.Join(f.incomingRoot, "owned-input-dir"))
+	}
+	f.incomingFile = filepath.Join(f.incomingRoot, inputLeaf)
+	write(f.incomingFile, []byte("owned incoming bytes"), 0644)
 	apps := filepath.Join(base, "owned-applications")
 	mkdir(apps)
 	if e = os.Chown(apps, 0, 80); e != nil {
@@ -176,11 +187,11 @@ func newOwnedRemovalTargetFixture(t *testing.T, privateBase string) *ownedRemova
 		case "core":
 			key = slot.ID
 			identity = slot.Identity
-			data["owned-core"] = []byte("owned core bytes")
+			data[coreLeaf] = []byte("owned core bytes")
 		case "incoming":
 			key = slot.Identity.ManifestSHA256
 			identity = slot.Identity
-			data["owned-input"] = []byte("owned incoming bytes")
+			data[inputLeaf] = []byte("owned incoming bytes")
 		case "public":
 			key = "AccessWeaver.app"
 			data["owned-public"] = []byte("owned public bytes")
@@ -197,6 +208,9 @@ func newOwnedRemovalTargetFixture(t *testing.T, privateBase string) *ownedRemova
 		}
 		catalog := removalCatalog{}
 		for name, raw := range data {
+			for dir := filepath.Dir(name); dir != "."; dir = filepath.Dir(dir) {
+				catalog[dir] = removalCatalogEntry{directory: true}
+			}
 			catalog[name] = removalCatalogEntry{file: File{name, int64(len(raw)), removalDigest(raw), "0644"}}
 		}
 		tree, captureErr := captureRemovalTree(context.Background(), parent, root, role, key, identity, catalog)
