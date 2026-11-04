@@ -1,6 +1,6 @@
 # Audit event format and checkpoint verification
 
-AccessWeaver now provides a bounded event-chain format and a read-only verifier for exported segments. Live user/administrator event recording, protected durable storage, retention acknowledgments and collector integration remain unfinished. The enterprise audit readiness gate remains missing.
+AccessWeaver now provides a bounded event-chain format and a read-only verifier for exported segments. Live user/administrator event recording, protected storage on the other desktop platforms, retention acknowledgments and collector integration remain unfinished. The enterprise audit readiness gate remains missing.
 
 ## Verify a segment
 
@@ -57,8 +57,22 @@ accessweaver audit verify --events internal/audit/testdata/events.jsonl --from i
 
 Run this repository example from a source checkout. It checks format interoperability. Its self-contained synthetic checkpoints are not evidence of a deployed audit trail.
 
+## Linux journal storage component
+
+The internal Linux amd64/arm64 journal stores one genesis checkpoint and up to 4,096 canonical event records in events.journal, bounded by 1,024 bytes plus 8 MiB. It is not connected to the CLI, controller or privileged policy producers. The existing audit verify command still reads exported JSONL; the journal includes its genesis line and is not itself that export format.
+
+A trusted caller must supply an already opened directory with protected ancestor bindings, effective-UID ownership and mode 0700 on persistent ext4, XFS or Btrfs storage. The component borrows that handle, retains its own descriptor, and exclusively creates or opens a private mode-0600, single-link file relative to it. Existing content/permissions are never repaired. Symlinks, extra hard links, changed file identity, unexpected ownership/modes, nonpersistent storage and excessive input refuse. Root and same-UID processes remain within the storage trust boundary; local hashes do not authenticate them.
+
+The writer holds a nonblocking exclusive OS lock for its lifetime and serializes threads. It validates the complete existing stream against its retained head before each append. Initialization syncs both the genesis file and containing directory. Append reports a new checkpoint only after an exact write, file fsync and a final file/entry check. Cancellation is checked before mutation; once a write starts, its actual durability outcome is reported even if the context is canceled. Filesystem calls, mutex acquisition and fsync do not have a deadline supplied by this API. A future live producer must supply bounded admission and explicit required-audit behavior.
+
+A failed/short write or failed sync returns no checkpoint, makes that handle unavailable for further append/snapshot, and preserves every existing byte. Such an error does not prove a record is absent. Reopening requires the independently retained complete genesis and expected ending checkpoint. Partial data, an extra complete record or missing records refuse. The implementation never infers a trusted new head from an unknown tail, truncates it, starts a replacement stream, retries an uncertain append or removes the journal. An administrator must reconcile uncertain state independently; an explicitly reconciled complete endpoint is verified and synced before reopening succeeds. Keeping the checkpoints beside the journal would not create an independent trust channel.
+
+Snapshot returns a bounded copy with both endpoints after full verification. It grants no export consent or collector acknowledgment. At capacity the journal refuses new events. Rotation, deletion, acknowledgment persistence and retention are deliberately unavailable until the collector protocol can authorize them.
+
+Linux race tests cover real storage/reopen, concurrent writers, stale endpoints, alias/mode/content replacement, full capacity, injected ENOSPC/partial writes/sync errors, cancellation and volatile-filesystem refusal. Two source-built subprocess fixtures are killed after actual half/complete writes before fsync; both preserve prior and unacknowledged bytes, and reopening with the old endpoint refuses. These process interruptions are not reboot or power-loss tests. Use a private persistent native directory for TMPDIR when running the journal tests; WSL's memory-backed /tmp is correctly refused. Native hosted Linux amd64/arm64 runs, hardware durability and the other desktop storage implementations remain separate acceptance requirements.
+
 ## Remaining implementation and acceptance
 
-The pure Append function prepares one record and its successor checkpoint. It performs no I/O. A durable producer must commit the record before advancing a saved head and preserve ambiguous interrupted writes for reconciliation. It must enforce protected ownership/ACLs, bounded admission and storage, retention tied to collector acknowledgment, independently pinned checkpoints and accurate asynchronous outcomes. Required-audit failures must have explicit behavior before operations are dispatched; a result-write failure after an operation cannot be treated as proof that the operation did not occur.
+The pure Append function prepares one record and its successor checkpoint. It performs no I/O; the Linux journal supplies one storage implementation. A live durable producer must commit the record before advancing a saved head and preserve ambiguous interrupted writes for reconciliation. It must enforce protected ownership/ACLs, bounded admission and storage, retention tied to collector acknowledgment, independently pinned checkpoints and accurate asynchronous outcomes. Required-audit failures must have explicit behavior before operations are dispatched; a result-write failure after an operation cannot be treated as proof that the operation did not occur.
 
 Controller/CLI/privileged-helper coverage, OS-derived actor attribution, consent-aware export, collector deployment and hostile-input/crash/full-disk/native acceptance across the supported desktop matrix remain required. [NIST SP 800-92](https://csrc.nist.gov/pubs/sp/800/92/final) provides the enterprise log-management context for those operational requirements. This protocol and CLI add no readiness score credit.
