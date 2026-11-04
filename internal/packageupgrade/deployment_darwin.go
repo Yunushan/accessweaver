@@ -4,13 +4,10 @@ package packageupgrade
 
 import (
 	"bytes"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"syscall"
 
 	"github.com/Yunushan/accessweaver/internal/darwintrust"
@@ -21,8 +18,6 @@ const deploymentParent = "/Library/Application Support"
 const deploymentRoot = "AccessWeaver"
 const deploymentRecord = "deployment.json"
 const deploymentLock = ".deployment.lock"
-
-var recordName = regexp.MustCompile(`^\.record-[a-f0-9]{32}$`)
 
 // All constructors are private. The sealed CLI uses the fixed root authority;
 // Apple package phases use the same authority. Only owned
@@ -96,13 +91,6 @@ func fullDeploymentSync(f *os.File) error {
 	var syncErr error
 	e = raw.Control(func(fd uintptr) { _, syncErr = unix.FcntlInt(fd, unix.F_FULLFSYNC, 0) })
 	return errors.Join(e, syncErr)
-}
-func randomDeploymentName() (string, error) {
-	var value [16]byte
-	if _, e := rand.Read(value[:]); e != nil {
-		return "", e
-	}
-	return hex.EncodeToString(value[:]), nil
 }
 func sameDeploymentEntry(parent *os.File, name string, held *os.File, owner uint32) error {
 	actual, e := darwintrust.OpenDirectoryAt(parent, name, owner)

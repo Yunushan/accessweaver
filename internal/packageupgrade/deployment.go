@@ -2,6 +2,8 @@ package packageupgrade
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"math"
@@ -13,6 +15,8 @@ import (
 // The generation is a removal fence as well as an activation sequence number.
 const maxDeploymentPending = 8
 const maxDeploymentRecord = 16384
+
+var recordName = regexp.MustCompile(`^\.record-[a-f0-9]{32}$`)
 
 var slotName = regexp.MustCompile(`^[a-f0-9]{32}$`)
 
@@ -214,4 +218,12 @@ func (s deploymentState) abandon(id string) (deploymentState, error) {
 		}
 	}
 	return s, errors.New("pending deployment does not exist")
+}
+
+func randomDeploymentName() (string, error) {
+	var value [16]byte
+	if _, e := rand.Read(value[:]); e != nil {
+		return "", e
+	}
+	return hex.EncodeToString(value[:]), nil
 }

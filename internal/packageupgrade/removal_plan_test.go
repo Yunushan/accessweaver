@@ -44,7 +44,8 @@ func removalPlanFixture() removalPlan {
 		}
 	}
 	sort.Slice(receipts.Objects[1:], func(i, j int) bool { return receipts.Objects[1+i].Path < receipts.Objects[1+j].Path })
-	p := removalPlan{1, 7, active, seal, []removalPlanRoot{core, incoming, public, registry, receipts}}
+	beforeRaw, _ := encodeDeployment(removalFenceState())
+	p := removalPlan{SchemaVersion: 2, Generation: 7, Active: active, DesktopRecordSHA256: seal, Authority: removalPlanAuthority{1, 9000, 1, 9001, 1, 9002}, History: []removalRecord{{Name: "state", Device: 1, Inode: 999001, SHA256: removalDigest(beforeRaw)}}, Roots: []removalPlanRoot{core, incoming, public, registry, receipts}}
 	sort.Slice(p.Roots, func(i, j int) bool {
 		return p.Roots[i].Kind+"\x00"+p.Roots[i].Key < p.Roots[j].Kind+"\x00"+p.Roots[j].Key
 	})
@@ -64,7 +65,7 @@ func TestRemovalPlanCanonicalFullRolesAndBindings(t *testing.T) {
 	if e != nil || !bytes.Equal(raw, roundtrip) {
 		t.Fatal("plan roundtrip differs", e)
 	}
-	for _, kind := range []string{"scope", "missing-role", "duplicate-root", "root-order", "active-inode", "incoming-seal", "unknown-object", "cross-device", "duplicate-vnode", "missing-parent", "alias-path", "traversal", "absolute", "file-mode", "directory-hash", "negative-bytes", "bad-hash", "registration-seal", "extra-receipt", "missing-receipt", "selected-registration", "object-order", "object-capacity"} {
+	for _, kind := range []string{"scope", "missing-role", "duplicate-root", "root-order", "active-inode", "incoming-seal", "unknown-object", "cross-device", "duplicate-vnode", "missing-parent", "alias-path", "traversal", "absolute", "file-mode", "directory-hash", "negative-bytes", "bad-hash", "registration-seal", "extra-receipt", "missing-receipt", "selected-registration", "object-order", "object-capacity", "history-missing", "history-preimage", "history-alias", "authority-missing", "authority-alias"} {
 		t.Run(kind, func(t *testing.T) {
 			changed := removalPlanFixture()
 			core := &changed.Roots[0]
@@ -121,6 +122,16 @@ func TestRemovalPlanCanonicalFullRolesAndBindings(t *testing.T) {
 				changed.DesktopRecordSHA256 = strings.Repeat("a", 64)
 			case "object-order":
 				core.Objects[1], core.Objects[2] = core.Objects[2], core.Objects[1]
+			case "authority-missing":
+				changed.Authority.WriterInode = 0
+			case "authority-alias":
+				changed.Authority.WriterInode = changed.Authority.RuntimeInode
+			case "history-missing":
+				changed.History = nil
+			case "history-preimage":
+				changed.History[0].SHA256 = strings.Repeat("f", 64)
+			case "history-alias":
+				changed.History[0].Inode = changed.Active.Inode
 			case "object-capacity":
 				public.Objects = make([]removalPlanObject, MaxFiles+5)
 			}

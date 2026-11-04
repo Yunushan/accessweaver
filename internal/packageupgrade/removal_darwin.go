@@ -13,12 +13,6 @@ import (
 	"time"
 )
 
-type removalRecord struct {
-	Name   string `json:"name"`
-	Device uint64 `json:"device"`
-	Inode  uint64 `json:"inode"`
-	SHA256 string `json:"sha256"`
-}
 type removalCoreSnapshot struct {
 	Records []removalRecord  `json:"records"`
 	Slots   []deploymentSlot `json:"slots"`

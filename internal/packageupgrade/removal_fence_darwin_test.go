@@ -11,8 +11,8 @@ import (
 	"testing"
 )
 
-func TestDarwinRemovalFencePublicationPreservesOldStateUntilAtomicPair(t *testing.T) {
-	for _, phase := range []string{"removal-record-reserved", "removal-state-durable", "removal-marker-durable", "removal-directory-durable", "removal-published", "removal-parent-durable", "complete"} {
+func TestDarwinRemovalFencePublicationPreservesOldStateUntilAtomicBundle(t *testing.T) {
+	for _, phase := range []string{"removal-record-reserved", "removal-state-durable", "removal-plan-durable", "removal-marker-durable", "removal-directory-durable", "removal-published", "removal-parent-durable", "complete"} {
 		t.Run(phase, func(t *testing.T) {
 			parent := t.TempDir()
 			s := deploymentFixtureStore(t, parent, nil)
@@ -21,7 +21,8 @@ func TestDarwinRemovalFencePublicationPreservesOldStateUntilAtomicPair(t *testin
 				t.Fatal(e)
 			}
 			original := append([]byte{}, s.encoded...)
-			fence, _, e := newRemovalFence(before, strings.Repeat("d", 64), strings.Repeat("e", 64))
+			plan := removalMetadataPlanFixture(t, s)
+			fence, _, e := newRemovalFence(before, strings.Repeat("d", 64), strings.Repeat("e", 64), plan)
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -31,7 +32,7 @@ func TestDarwinRemovalFencePublicationPreservesOldStateUntilAtomicPair(t *testin
 				}
 				return nil
 			}
-			published, e := s.publishRemovalFence(fence)
+			published, e := s.publishRemovalFence(fence, plan)
 			expected := phase == "removal-published" || phase == "removal-parent-durable" || phase == "complete"
 			if published != expected || (e == nil) != (phase == "complete") {
 				t.Fatal("publication outcome lost", published, e)
@@ -40,11 +41,11 @@ func TestDarwinRemovalFencePublicationPreservesOldStateUntilAtomicPair(t *testin
 				if _, e = s.readRecord(s.current); e == nil {
 					t.Fatal("legacy single-file reader accepted removal intent pair")
 				}
-				read, raw, e := readRemovalFencePair(s.current, s.owner)
-				if e != nil || read != fence || !bytes.Equal(raw, s.encoded) || s.state.Generation != 8 || s.state.Active != (deploymentSlot{}) {
+				read, plan, raw, e := readRemovalBundle(s.current, s.owner)
+				if e != nil || read != fence || plan.Generation != 7 || plan.Active != fence.Target || !bytes.Equal(raw, s.encoded) || s.state.Generation != 8 || s.state.Active != (deploymentSlot{}) {
 					t.Fatal("published pair cannot be reconciled", e)
 				}
-				if again, e := s.publishRemovalFence(fence); again || e == nil {
+				if again, e := s.publishRemovalFence(fence, plan); again || e == nil {
 					t.Fatal("old active barrier could publish again")
 				}
 			} else {
@@ -84,7 +85,8 @@ func TestDarwinRemovalFenceChangedPreimageRefusesBeforeReservation(t *testing.T)
 	if _, e := s.commit(removalFenceState()); e != nil {
 		t.Fatal(e)
 	}
-	fence, _, e := newRemovalFence(s.state, strings.Repeat("d", 64), strings.Repeat("e", 64))
+	plan := removalMetadataPlanFixture(t, s)
+	fence, _, e := newRemovalFence(s.state, strings.Repeat("d", 64), strings.Repeat("e", 64), plan)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -97,7 +99,7 @@ func TestDarwinRemovalFenceChangedPreimageRefusesBeforeReservation(t *testing.T)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if published, e := s.publishRemovalFence(fence); published || e == nil {
+	if published, e := s.publishRemovalFence(fence, plan); published || e == nil {
 		t.Fatal("changed preimage published")
 	}
 	after, e := os.ReadDir(filepath.Join(parent, deploymentRoot))
@@ -110,19 +112,20 @@ func TestDarwinRemovalFenceChangedPreimageRefusesBeforeReservation(t *testing.T)
 	}
 }
 
-func TestDarwinRemovalFenceReaderRefusesChangedIncompleteAndAliasedPairs(t *testing.T) {
-	for _, kind := range []string{"marker-mode", "marker-hardlink", "marker-alias", "marker-noncanonical", "marker-oversize", "state-truncated", "unknown-entry", "missing-marker"} {
+func TestDarwinRemovalFenceReaderRefusesChangedIncompleteAndAliasedBundles(t *testing.T) {
+	for _, kind := range []string{"marker-mode", "marker-hardlink", "marker-alias", "marker-noncanonical", "marker-oversize", "state-truncated", "unknown-entry", "missing-marker", "missing-plan", "plan-hash", "plan-alias"} {
 		t.Run(kind, func(t *testing.T) {
 			parent := t.TempDir()
 			s := deploymentFixtureStore(t, parent, nil)
 			if _, e := s.commit(removalFenceState()); e != nil {
 				t.Fatal(e)
 			}
-			fence, _, e := newRemovalFence(s.state, strings.Repeat("d", 64), strings.Repeat("e", 64))
+			plan := removalMetadataPlanFixture(t, s)
+			fence, _, e := newRemovalFence(s.state, strings.Repeat("d", 64), strings.Repeat("e", 64), plan)
 			if e != nil {
 				t.Fatal(e)
 			}
-			if published, e := s.publishRemovalFence(fence); !published || e != nil {
+			if published, e := s.publishRemovalFence(fence, plan); !published || e != nil {
 				t.Fatal(e)
 			}
 			state := filepath.Join(parent, deploymentRoot, "state")
@@ -148,6 +151,22 @@ func TestDarwinRemovalFenceReaderRefusesChangedIncompleteAndAliasedPairs(t *test
 				e = os.WriteFile(filepath.Join(state, deploymentRecord), []byte("{"), 0644)
 			case "unknown-entry":
 				e = os.WriteFile(filepath.Join(state, "unknown"), []byte("preserve"), 0644)
+			case "missing-plan":
+				e = os.Remove(filepath.Join(state, removalPlanName))
+			case "plan-hash":
+				originalRaw, _ := encodeRemovalPlan(plan)
+				changed, _ := decodeRemovalPlan(originalRaw)
+				changed.Roots[0].Objects[2].MtimeNs++
+				var raw []byte
+				if raw, e = encodeRemovalPlan(changed); e == nil {
+					e = os.WriteFile(filepath.Join(state, removalPlanName), raw, 0644)
+				}
+			case "plan-alias":
+				planPath := filepath.Join(state, removalPlanName)
+				backup := filepath.Join(parent, "owned-plan-backup")
+				if e = os.Rename(planPath, backup); e == nil {
+					e = os.Symlink(backup, planPath)
+				}
 			case "missing-marker":
 				e = os.Remove(marker) // Exact file created by this owned fixture.
 			}
@@ -158,7 +177,7 @@ func TestDarwinRemovalFenceReaderRefusesChangedIncompleteAndAliasedPairs(t *test
 			if e != nil {
 				t.Fatal(e)
 			}
-			if _, _, e := readRemovalFencePair(s.current, s.owner); e == nil {
+			if _, _, _, e := readRemovalBundle(s.current, s.owner); e == nil {
 				t.Fatal("unsafe removal pair accepted")
 			}
 			after, e := os.Lstat(state)

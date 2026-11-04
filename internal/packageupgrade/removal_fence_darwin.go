@@ -13,9 +13,10 @@ import (
 )
 
 // Only private owned fixtures currently reach this primitive. It intentionally
-// remains unavailable to CLI/package phases until the deletion/recovery engine
-// and its complete plan are implemented. Both existing leases must be held.
-func (s *deploymentStore) publishRemovalFence(f removalFence) (published bool, result error) {
+// remains unavailable to CLI/package phases until deletion/reconciliation
+// is implemented. Both existing leases must be held. The caller must use a
+// freshly verified plan; this function publishes metadata, not deletion authority.
+func (s *deploymentStore) publishRemovalFence(f removalFence, plan removalPlan) (published bool, result error) {
 	if s == nil || s.current == nil || s.lock == nil || s.runtimeLock == nil {
 		return false, errors.New("removal barrier requires an open leased store")
 	}
@@ -27,12 +28,29 @@ func (s *deploymentStore) publishRemovalFence(f removalFence) (published bool, r
 	if e != nil {
 		return false, e
 	}
+	if e = f.validatePlan(next, plan); e != nil {
+		return false, e
+	}
+	planRaw, e := encodeRemovalPlan(plan)
+	if e != nil {
+		return false, e
+	}
 	marker, e := encodeRemovalFence(f, next)
 	if e != nil {
 		return false, e
 	}
 	if f.Target != s.state.Active || f.BaseGeneration != s.state.Generation || removalDigest(s.encoded) != f.BeforeRecordSHA256 || len(s.state.Pending) != 0 {
 		return false, errors.New("removal barrier preimage differs")
+	}
+	if e = verifyRemovalPlanAuthority(s, plan.Authority); e != nil {
+		return false, e
+	}
+	before, history, e := verifyRemovalPlanHistory(s, plan, "", "")
+	if e != nil {
+		return false, e
+	}
+	if e = verifyRemovalPlanSlots(s, plan, before, history); e != nil {
+		return false, e
 	}
 	check := func() error {
 		if e := s.checkRoot(); e != nil {
@@ -66,11 +84,7 @@ func (s *deploymentStore) publishRemovalFence(f removalFence) (published bool, r
 	if count >= maxRetainedRecords {
 		return false, errors.New("removal barrier history capacity exhausted")
 	}
-	nonce, e := randomDeploymentName()
-	if e != nil {
-		return false, e
-	}
-	name := ".record-" + nonce
+	name := f.DisplacedRecord
 	staged, e := darwintrust.CreateDirectoryAt(s.root, name, s.owner)
 	if e != nil {
 		return false, e
@@ -87,7 +101,7 @@ func (s *deploymentStore) publishRemovalFence(f removalFence) (published bool, r
 		name  string
 		data  []byte
 		phase string
-	}{{deploymentRecord, encoded, "removal-state-durable"}, {removalFenceName, marker, "removal-marker-durable"}} {
+	}{{deploymentRecord, encoded, "removal-state-durable"}, {removalPlanName, planRaw, "removal-plan-durable"}, {removalFenceName, marker, "removal-marker-durable"}} {
 		file, e := darwintrust.CreateRegularAt(staged, item.name, s.owner)
 		if e != nil {
 			return false, e
@@ -109,17 +123,23 @@ func (s *deploymentStore) publishRemovalFence(f removalFence) (published bool, r
 	if e = s.phase("removal-directory-durable"); e != nil {
 		return false, e
 	}
-	observed, actual, e := readRemovalFencePair(staged, s.owner)
+	observed, observedPlan, actual, e := readRemovalBundle(staged, s.owner)
 	if e != nil {
 		return false, e
 	}
-	if observed != f || !bytes.Equal(actual, encoded) {
+	if observed != f || !bytes.Equal(actual, encoded) || sameRemovalPlans(plan, observedPlan) != nil {
 		return false, errors.New("staged removal barrier changed")
 	}
 	if e = sameDeploymentEntry(s.root, name, staged, s.owner); e != nil {
 		return false, e
 	}
 	if e = check(); e != nil {
+		return false, e
+	}
+	if _, _, e = verifyRemovalPlanHistory(s, plan, "", name); e != nil {
+		return false, e
+	}
+	if e = verifyRemovalPlanAuthority(s, plan.Authority); e != nil {
 		return false, e
 	}
 	if e = darwintrust.RenameDirectories(s.root, name, "state", true); e != nil {
@@ -139,29 +159,31 @@ func (s *deploymentStore) publishRemovalFence(f removalFence) (published bool, r
 	}
 	return true, s.phase("removal-parent-durable")
 }
-func readRemovalFencePair(dir *os.File, owner uint32) (removalFence, []byte, error) {
+func readRemovalBundle(dir *os.File, owner uint32) (removalFence, removalPlan, []byte, error) {
 	var zero removalFence
+	var noPlan removalPlan
+	fail := func(e error) (removalFence, removalPlan, []byte, error) { return zero, noPlan, nil, e }
 	if e := deploymentObject(dir, true, owner, 0755); e != nil {
-		return zero, nil, e
+		return fail(e)
 	}
-	entries, e := deploymentEntries(dir, owner, 2)
+	entries, e := deploymentEntries(dir, owner, 3)
 	if e != nil {
-		return zero, nil, e
+		return fail(e)
 	}
-	if len(entries) != 2 {
-		return zero, nil, errors.New("removal barrier pair is incomplete")
+	if len(entries) != 3 {
+		return fail(errors.New("removal bundle is incomplete"))
 	}
 	for _, entry := range entries {
-		if entry.Name() != deploymentRecord && entry.Name() != removalFenceName {
-			return zero, nil, errors.New("unknown removal barrier object")
+		if entry.Name() != deploymentRecord && entry.Name() != removalFenceName && entry.Name() != removalPlanName {
+			return fail(errors.New("unknown removal bundle object"))
 		}
 	}
-	read := func(name string) ([]byte, error) {
+	read := func(name string) (result []byte, err error) {
 		file, e := darwintrust.OpenRegularAt(dir, name, owner)
 		if e != nil {
 			return nil, e
 		}
-		defer file.Close()
+		defer func() { err = errors.Join(err, file.Close()) }()
 		if e = deploymentObject(file, false, owner, 0644); e != nil {
 			return nil, e
 		}
@@ -169,10 +191,14 @@ func readRemovalFencePair(dir *os.File, owner uint32) (removalFence, []byte, err
 		if e != nil {
 			return nil, e
 		}
-		if before.Size() <= 0 || before.Size() > maxDeploymentRecord {
-			return nil, errors.New("removal barrier file exceeds budget")
+		limit := int64(maxDeploymentRecord)
+		if name == removalPlanName {
+			limit = maxRemovalPlanBytes
 		}
-		data, e := io.ReadAll(io.LimitReader(file, maxDeploymentRecord+1))
+		if before.Size() <= 0 || before.Size() > limit {
+			return nil, errors.New("removal bundle file exceeds budget")
+		}
+		data, e := io.ReadAll(io.LimitReader(file, limit+1))
 		if e != nil {
 			return nil, e
 		}
@@ -181,18 +207,44 @@ func readRemovalFencePair(dir *os.File, owner uint32) (removalFence, []byte, err
 			return nil, e
 		}
 		if !sameState(*before.Sys().(*syscall.Stat_t), *after.Sys().(*syscall.Stat_t)) || int64(len(data)) != before.Size() {
-			return nil, errors.New("removal barrier changed while reading")
+			return nil, errors.New("removal bundle changed while reading")
+		}
+		named, e := darwintrust.OpenRegularAt(dir, name, owner)
+		if e != nil {
+			return nil, e
+		}
+		namedInfo, statErr := named.Stat()
+		closeErr := named.Close()
+		if e = errors.Join(statErr, closeErr); e != nil {
+			return nil, e
+		}
+		if !sameState(*before.Sys().(*syscall.Stat_t), *namedInfo.Sys().(*syscall.Stat_t)) {
+			return nil, errors.New("removal bundle file name changed")
 		}
 		return data, nil
 	}
 	record, e := read(deploymentRecord)
 	if e != nil {
-		return zero, nil, e
+		return fail(e)
 	}
 	marker, e := read(removalFenceName)
 	if e != nil {
-		return zero, nil, e
+		return fail(e)
 	}
-	fence, _, e := decodeRemovalFence(marker, record)
-	return fence, record, e
+	planRaw, e := read(removalPlanName)
+	if e != nil {
+		return fail(e)
+	}
+	fence, after, e := decodeRemovalFence(marker, record)
+	if e != nil {
+		return fail(e)
+	}
+	plan, e := decodeRemovalPlan(planRaw)
+	if e != nil {
+		return fail(e)
+	}
+	if e = fence.validatePlan(after, plan); e != nil {
+		return fail(e)
+	}
+	return fence, plan, record, nil
 }

@@ -734,16 +734,17 @@ func TestDarwinDeploymentRootCopyRecovery(t *testing.T) {
 	if e != nil || selectedBefore != newSlot {
 		t.Fatal("owned active runtime baseline differs", e)
 	}
-	fence, inactive, e := newRemovalFence(bridge.state, strings.Repeat("d", 64), digest(againJSON))
+	metadataPlan := removalMetadataPlanFixture(t, bridge)
+	fence, inactive, e := newRemovalFence(bridge.state, strings.Repeat("d", 64), digest(againJSON), metadataPlan)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if published, e := bridge.publishRemovalFence(fence); !published || e != nil {
+	if published, e := bridge.publishRemovalFence(fence, metadataPlan); !published || e != nil {
 		t.Fatal("owned removal barrier publication", e)
 	}
-	observedFence, inactiveRaw, e := readRemovalFencePair(bridge.current, 0)
+	observedFence, persistedPlan, inactiveRaw, e := readRemovalBundle(bridge.current, 0)
 	wantInactive, _ := encodeDeployment(inactive)
-	if e != nil || observedFence != fence || !bytes.Equal(inactiveRaw, wantInactive) {
+	if e != nil || observedFence != fence || sameRemovalPlans(metadataPlan, persistedPlan) != nil || !bytes.Equal(inactiveRaw, wantInactive) {
 		t.Fatal("owned removal pair differs", e)
 	}
 	if _, _, e = readActiveRuntime(bridge.root, ""); e == nil || !strings.Contains(e.Error(), "retained deployment evidence capacity exhausted; preserve and inspect") {
@@ -767,6 +768,21 @@ func TestDarwinDeploymentRootCopyRecovery(t *testing.T) {
 	closeErr := closedRoot.Close()
 	if readErr == nil || !strings.Contains(readErr.Error(), "retained deployment evidence capacity exhausted; preserve and inspect") || closeErr != nil {
 		t.Fatal("runtime reader accepted removal intent after writer closed", readErr, closeErr)
+	}
+
+	removalParent, e := os.Open(bridgeParent)
+	if e != nil {
+		t.Fatal(e)
+	}
+	intent, e := openRemovalIntentAt(removalParent, 0, newIdentity, strings.Repeat("d", 64))
+	if e != nil {
+		t.Fatal("owned intent metadata reopening", e)
+	}
+	if intent.fence != fence || sameRemovalPlans(intent.plan, metadataPlan) != nil || intent.store.state.Generation != inactive.Generation {
+		t.Fatal("reopened intent metadata differs")
+	}
+	if e = intent.Close(); e != nil {
+		t.Fatal(e)
 	}
 
 	report := map[string]any{"schemaVersion": 1, "manifestSHA256": identity.ManifestSHA256, "payloadSHA256": identity.PayloadSHA256, "version": identity.Version, "fixedProtectedParentVerified": true, "partialCopyPreservedAndRefused": true, "completeCopyRecovered": true, "concurrentPreparationFenced": true, "postPublicationRemovalRecovered": true, "oldCompleteSlotFencedAfterRemoval": true, "restoredRetryVerified": true, "payloadIsIndependentCopy": true, "detachedManifestPartialCopyPreservedAndRefused": true, "detachedManifestCompleteCopyRecovered": true, "detachedPayloadSBOMPartialCopyPreservedAndRefused": true, "legacyToSchema2BridgeVerified": true, "detachedPayloadSBOMManifestSHA256": newIdentity.ManifestSHA256, "detachedPayloadSBOMSHA256": digest(sbomData), "copiedCodeExecuted": false, "productionQualificationComplete": false, "finalGeneration": 4}

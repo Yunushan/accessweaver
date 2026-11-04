@@ -12,14 +12,32 @@ const maxRemovalPlanBytes = 2 << 20
 const maxRemovalPlanObjects = 16384
 
 // A plan is private data, not a deletion capability. Roots are fixed roles;
-// caller paths, profiles, policy, backups and authority history are excluded.
-// Actual mutation/retry must revalidate these identities under both leases.
+// mutation roots exclude caller paths, profiles, policy, backups and authority
+// history. Separate history/coordination bindings support restart validation.
+// Actual mutation/retry must reconcile these identities under both leases.
+type removalRecord struct {
+	Name   string `json:"name"`
+	Device uint64 `json:"device"`
+	Inode  uint64 `json:"inode"`
+	SHA256 string `json:"sha256"`
+}
+
+type removalPlanAuthority struct {
+	RootDevice    uint64 `json:"rootDevice"`
+	RootInode     uint64 `json:"rootInode"`
+	WriterDevice  uint64 `json:"writerDevice"`
+	WriterInode   uint64 `json:"writerInode"`
+	RuntimeDevice uint64 `json:"runtimeDevice"`
+	RuntimeInode  uint64 `json:"runtimeInode"`
+}
 type removalPlan struct {
-	SchemaVersion       int               `json:"schemaVersion"`
-	Generation          uint64            `json:"generation"`
-	Active              deploymentSlot    `json:"active"`
-	DesktopRecordSHA256 string            `json:"desktopRecordSHA256"`
-	Roots               []removalPlanRoot `json:"roots"`
+	SchemaVersion       int                  `json:"schemaVersion"`
+	Generation          uint64               `json:"generation"`
+	Active              deploymentSlot       `json:"active"`
+	DesktopRecordSHA256 string               `json:"desktopRecordSHA256"`
+	Authority           removalPlanAuthority `json:"authority"`
+	History             []removalRecord      `json:"history"`
+	Roots               []removalPlanRoot    `json:"roots"`
 }
 type removalPlanRoot struct {
 	Kind         string              `json:"kind"`
@@ -42,15 +60,52 @@ type removalPlanObject struct {
 }
 
 func (p removalPlan) validate() error {
-	if p.SchemaVersion != 1 || p.Generation == 0 || !hash.MatchString(p.DesktopRecordSHA256) || len(p.Roots) < 5 || len(p.Roots) > 2*maxRetainedDeployments+3 {
+	if p.SchemaVersion != 2 || p.Generation == 0 || !hash.MatchString(p.DesktopRecordSHA256) || len(p.Roots) < 5 || len(p.Roots) > 2*maxRetainedDeployments+3 {
 		return errors.New("invalid removal plan identity or extent")
 	}
 	if e := p.Active.validate(); e != nil {
 		return e
 	}
+	if len(p.History) == 0 || len(p.History) > maxRetainedRecords+1 {
+		return errors.New("invalid removal history extent")
+	}
+	before := deploymentState{SchemaVersion: 1, Generation: p.Generation, HighWaterVersion: p.Active.Identity.Version, Active: p.Active, Pending: []deploymentPending{}}
+	beforeRaw, e := encodeDeployment(before)
+	if e != nil {
+		return e
+	}
+	authorityVnodes := map[[2]uint64]bool{}
+	for _, vnode := range [][2]uint64{{p.Authority.RootDevice, p.Authority.RootInode}, {p.Authority.WriterDevice, p.Authority.WriterInode}, {p.Authority.RuntimeDevice, p.Authority.RuntimeInode}} {
+		if vnode[1] == 0 || vnode[0] != p.Authority.RootDevice || authorityVnodes[vnode] {
+			return errors.New("invalid removal authority identities")
+		}
+		authorityVnodes[vnode] = true
+	}
+	historyNames := map[string]bool{}
+	historyVnodes := authorityVnodes
+	lastHistory := ""
+	foundState := false
+	for _, record := range p.History {
+		vnode := [2]uint64{record.Device, record.Inode}
+		if (record.Name != "state" && !recordName.MatchString(record.Name)) || record.Name <= lastHistory || record.Inode == 0 || record.Device != p.Authority.RootDevice || !hash.MatchString(record.SHA256) || historyNames[record.Name] || historyVnodes[vnode] {
+			return errors.New("invalid removal history binding")
+		}
+		lastHistory = record.Name
+		historyNames[record.Name] = true
+		historyVnodes[vnode] = true
+		if record.Name == "state" {
+			foundState = true
+			if record.SHA256 != removalDigest(beforeRaw) {
+				return errors.New("removal current history preimage differs")
+			}
+		}
+	}
+	if !foundState {
+		return errors.New("removal current history is absent")
+	}
 	cores := map[string]deploymentIdentity{}
 	incoming := map[string]deploymentIdentity{}
-	vnodes := map[[2]uint64]bool{}
+	vnodes := historyVnodes
 	registry := map[string]bool{}
 	receipts := map[string]bool{}
 	counts := map[string]int{}

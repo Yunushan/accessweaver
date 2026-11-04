@@ -245,8 +245,16 @@ func (s *deploymentStore) buildRemovalPlan(ctx context.Context, identity deploym
 	if e := s.checkRoot(); e != nil {
 		return result, e
 	}
-	result = removalPlan{SchemaVersion: 1, Generation: s.state.Generation, Active: s.state.Active, DesktopRecordSHA256: desktopSeal, Roots: []removalPlanRoot{}}
-	objects, metadataBytes := 0, 1024
+	authority, e := captureRemovalPlanAuthority(s)
+	if e != nil {
+		return result, e
+	}
+	result = removalPlan{SchemaVersion: 2, Generation: s.state.Generation, Active: s.state.Active, DesktopRecordSHA256: desktopSeal, Authority: authority, History: append([]removalRecord{}, core.Records...), Roots: []removalPlanRoot{}}
+	header, e := json.Marshal(result)
+	if e != nil {
+		return result, e
+	}
+	objects, metadataBytes := 0, len(header)
 	appendTree := func(tree removalPlanRoot) error {
 		objects += len(tree.Objects)
 		encoded, e := json.Marshal(tree)
