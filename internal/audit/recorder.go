@@ -52,7 +52,7 @@ func NewRecorder(ctx context.Context, journal LocalJournal, from, to Checkpoint,
 
 // Execute serializes complete intent/operation/result transactions. Callers
 // must independently bound admission and must not recursively call Execute.
-// Only the synchronous profile and explicit policy producers are connected.
+// Only synchronous profile, explicit policy and recorded-export producers are connected.
 func (r *Recorder) Execute(ctx context.Context, action string, operation func(context.Context) OperationResult) error {
 	if r == nil || r.token == nil || operation == nil || !recordedSynchronousAction(action) {
 		return ErrRecorderUnavailable
@@ -156,11 +156,11 @@ func (r *Recorder) Close() error {
 	return nil
 }
 
-// Keep asynchronous, read/export and unsupported administrative actions out of
+// Keep asynchronous, other export and unsupported administrative actions out of
 // this synchronous producer contract even though the chain can encode them.
 func recordedSynchronousAction(action string) bool {
 	switch action {
-	case "profile.write", "profile.delete", "profile.import", "policy.install", "policy.update", "policy.rotate", "policy.recover":
+	case "profile.write", "profile.delete", "profile.import", "policy.install", "policy.update", "policy.rotate", "policy.recover", "audit.export":
 		return true
 	}
 	return false

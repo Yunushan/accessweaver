@@ -236,7 +236,7 @@ func usage() {
   accessweaver doctor [options] [HOST]
                                   Direct/proxy TCP/TLS or explicit UDP/STUN checks
   accessweaver run ID              Explicitly start one engine in foreground
-  accessweaver audit help          Verify segments, record Linux imports or export audit JSONL
+  accessweaver audit help          Verify segments, record Linux actions or export audit JSONL
   accessweaver managed             Review/sign/verify administrator policy documents
   accessweaver system              Show Windows installation/repair commands
   accessweaver version [--json]    Print runtime and source build identity

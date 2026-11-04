@@ -309,7 +309,51 @@ func TestDisposableLinuxRecordedPolicyTransactions(t *testing.T) {
 			t.Fatal("native authority input escaped audit metadata")
 		}
 	}
-	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "platform": "linux", "arch": runtime.GOARCH, "goVersion": runtime.Version(), "recordedNativePolicyInstall": true, "recordedNativePolicyUpdate": true, "recordedNativePolicyRotation": true, "recordedNativeDamagedSourceRecovery": true, "staleHeadPreservesJournalAndNativePair": true, "invalidRotationPreservesNativePair": true, "wrongRecoveryKeyAndFloorPreserveNativePair": true, "recoveryReplayPreservesNativePair": true, "nativeRefusalsRecordedAsIndeterminate": true, "metadataExportActionsAndOutcomesVerified": true, "administratorActorClass": "administrator", "verifiedRecords": 16, "completedTransactions": 4, "indeterminateNativeRefusals": 4, "lastRevision": 13, "independentRecoveryFloor": 12, "cleanupScheduled": true, "productionQualificationComplete": false}
+
+	// Record a real export of the sixteen transaction records. The access pair
+	// must be excluded from that artifact and present in the next archive.
+	recorded, accessObserved, err := captureRecordedExportCLI(t, []string{"export-recorded", "--directory", directory, "--from", from, "--to", to, "--consent", "metadata-only"})
+	if err != nil || !bytes.Equal(recorded, exported) {
+		t.Fatal("native recorded export changed prior transaction segment", err)
+	}
+	accessPair := decodeCheckpointObservations(t, accessObserved)
+	if len(accessPair) != 2 || accessPair[0].Sequence != 17 || accessPair[1].Sequence != 18 || accessPair[0].Producer != genesis.Producer || accessPair[1].Producer != genesis.Producer {
+		t.Fatal("native export access checkpoints differ")
+	}
+	head = accessPair[1]
+	writeRetainedCheckpoint(t, to, head)
+	full, err := captureAuditExecute(t, []string{"export", "--directory", directory, "--from", from, "--to", to, "--consent", "metadata-only"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accessVerified, err := audit.VerifySegment(context.Background(), bytes.NewReader(full), genesis, head)
+	if err != nil || accessVerified.Records != 18 {
+		t.Fatal("native access-inclusive segment differs", err)
+	}
+	fullLines := bytes.Split(bytes.TrimSuffix(full, []byte{'\n'}), []byte{'\n'})
+	if len(fullLines) != 18 {
+		t.Fatal("native access event count differs")
+	}
+	var exportIntent, exportResult struct {
+		Event audit.Event `json:"event"`
+	}
+	if err := json.Unmarshal(fullLines[16], &exportIntent); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(fullLines[17], &exportResult); err != nil {
+		t.Fatal(err)
+	}
+	if exportIntent.Event.Action != "audit.export" || exportResult.Event.Action != "audit.export" || exportIntent.Event.Outcome != "intent" || exportResult.Event.Outcome != "completed" || exportIntent.Event.OperationID != exportResult.Event.OperationID || seen[exportIntent.Event.OperationID] {
+		t.Fatal("native recorded export action/outcome pairing differs")
+	}
+	for _, output := range [][]byte{recorded, accessObserved, full} {
+		for _, private := range [][]byte{[]byte(root), damage, installation, rotation, recovery} {
+			if bytes.Contains(output, private) {
+				t.Fatal("native export access leaked private input")
+			}
+		}
+	}
+	evidence := map[string]any{"sourceCommit": os.Getenv("GITHUB_SHA"), "platform": "linux", "arch": runtime.GOARCH, "goVersion": runtime.Version(), "recordedNativePolicyInstall": true, "recordedNativePolicyUpdate": true, "recordedNativePolicyRotation": true, "recordedNativeDamagedSourceRecovery": true, "staleHeadPreservesJournalAndNativePair": true, "invalidRotationPreservesNativePair": true, "wrongRecoveryKeyAndFloorPreserveNativePair": true, "recoveryReplayPreservesNativePair": true, "nativeRefusalsRecordedAsIndeterminate": true, "metadataExportActionsAndOutcomesVerified": true, "administratorActorClass": "administrator", "verifiedRecords": 18, "policyTransactionVerifiedRecords": 16, "recordedAuditExport": true, "recordedAuditExportVerifiedRecords": 2, "recordedAuditExportOutcome": "completed", "lastObservedAuditSequence": 18, "completedTransactions": 4, "indeterminateNativeRefusals": 4, "lastRevision": 13, "independentRecoveryFloor": 12, "cleanupScheduled": true, "productionQualificationComplete": false}
 	data, err = json.MarshalIndent(evidence, "", "  ")
 	if err != nil {
 		t.Fatal(err)

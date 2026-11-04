@@ -271,8 +271,8 @@ func TestRecorderProfileIntentAuthorityIsActionBoundAndRevoked(t *testing.T) {
 	}
 }
 
-func TestRecorderPolicyActionsDoNotGrantProfileCapabilities(t *testing.T) {
-	for _, action := range []string{"policy.install", "policy.update", "policy.rotate", "policy.recover"} {
+func TestRecorderNonProfileActionsDoNotGrantProfileCapabilities(t *testing.T) {
+	for _, action := range []string{"policy.install", "policy.update", "policy.rotate", "policy.recover", "audit.export"} {
 		t.Run(action, func(t *testing.T) {
 			j, r, _ := recorderFixture(t)
 			var retained context.Context
@@ -290,7 +290,7 @@ func TestRecorderPolicyActionsDoNotGrantProfileCapabilities(t *testing.T) {
 			}
 		})
 	}
-	for _, action := range []string{"engine.start", "workflow.submit", "audit.export", "policy.remove", "policy.arbitrary"} {
+	for _, action := range []string{"engine.start", "workflow.submit", "support.export", "policy.remove", "policy.arbitrary"} {
 		j, r, _ := recorderFixture(t)
 		if err := r.Execute(context.Background(), action, func(context.Context) OperationResult {
 			t.Error("unsupported synchronous producer admitted")
@@ -325,5 +325,27 @@ func TestNestedPolicyProducerMasksAnOuterProfileCapability(t *testing.T) {
 	}
 	if inherited == nil || ProfileIntentActive(inherited, "write") {
 		t.Fatal("masked nested scope differs")
+	}
+}
+
+func TestNestedRecordedExportMasksOuterProfileCapability(t *testing.T) {
+	_, outer, _ := recorderFixture(t)
+	_, inner, _ := recorderFixture(t)
+	if err := outer.Execute(context.Background(), "profile.write", func(ctx context.Context) OperationResult {
+		if !ProfileIntentActive(ctx, "write") {
+			t.Error("outer intent missing")
+		}
+		err := inner.Execute(ctx, "audit.export", func(exportCtx context.Context) OperationResult {
+			if ProfileIntentActive(exportCtx, "write") || ProfileIntentActive(exportCtx, "delete") {
+				t.Error("export inherited profile authority")
+			}
+			return OperationResult{Outcome: "completed"}
+		})
+		if err != nil || !ProfileIntentActive(ctx, "write") {
+			t.Error("export damaged outer scope", err)
+		}
+		return OperationResult{Outcome: "completed"}
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
