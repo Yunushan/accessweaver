@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -55,7 +57,12 @@ class NativePackageProvenanceTests(unittest.TestCase):
                     if len(calls)==failed_call:raise subprocess.CalledProcessError(1,args[0],stderr=b'private child response')
                     return subprocess.CompletedProcess(args[0],0)
                 with patch('verify_macos_installer_provenance.subprocess.run',side_effect=run),patch('verify_macos_installer_provenance.validate_contents') as contents:
-                    with self.assertRaisesRegex(ValueError,'cryptographic'):verify(root,COMMIT,REF,VERSION,'amd64')
+                    with self.assertRaisesRegex(ValueError,'cryptographic') as error:verify(root,COMMIT,REF,VERSION,'amd64')
+                    metadata=json.loads(str(error.exception).split(": ",1)[1])
+                    self.assertEqual(metadata['phase'],'subject-authentication')
+                    self.assertEqual(metadata['returncode'],1)
+                    self.assertEqual(metadata['stderrSHA256'],hashlib.sha256(b'private child response').hexdigest())
+                    self.assertNotIn('private child response',str(error.exception))
                     contents.assert_not_called();self.assertEqual(len(calls),failed_call)
     def test_bad_inventory_and_wrong_target_fail_before_authentication(self):
         for kind in ('extra','missing','hardlink','wrong-target'):
@@ -78,6 +85,23 @@ class NativePackageProvenanceTests(unittest.TestCase):
             with patch('verify_macos_installer_provenance.subprocess.run',side_effect=run):result=check_rejections(root/package,root/BUNDLE_NAME,COMMIT,REF,'trusted-gh')
             self.assertEqual(calls[0],calls[-1]);self.assertEqual(len(result['rejected']),5)
             self.assertTrue(result['realBundleVerifiedBeforeAndAfter']);self.assertTrue(all('--deny-self-hosted-runners' in c for c in calls))
+
+    def test_probe_failures_identify_phase_without_output_or_retries(self):
+        secret=b"private child response token=secret /private/path"
+        for failed_call,phase,expected in ((1,"positive-control-before",True),(3,"--source-ref",False),(7,"positive-control-after",True)):
+            with self.subTest(phase=phase),tempfile.TemporaryDirectory() as folder:
+                root=Path(folder);package,_=self.fixture(root);calls=[]
+                def run(command,**kwargs):
+                    calls.append(command)
+                    normal=0 if len(calls) in (1,7) else 1
+                    return subprocess.CompletedProcess(command,1-normal if len(calls)==failed_call else normal,stdout=secret,stderr=secret)
+                with patch('verify_macos_installer_provenance.subprocess.run',side_effect=run):
+                    with self.assertRaises(ValueError) as error:check_rejections(root/package,root/BUNDLE_NAME,COMMIT,REF,'trusted-gh')
+                prefix,metadata=str(error.exception).split(": ",1)
+                value=json.loads(metadata)
+                self.assertIn("cryptographic",prefix)
+                self.assertEqual(value,{"phase":phase,"expectedSuccess":expected,"returncode":1 if expected else 0,"stdoutBytes":len(secret),"stderrBytes":len(secret),"stdoutSHA256":hashlib.sha256(secret).hexdigest(),"stderrSHA256":hashlib.sha256(secret).hexdigest()})
+                self.assertEqual(len(calls),failed_call);self.assertNotIn(secret.decode(),str(error.exception))
 
     def test_preparation_sigkill_requires_exact_phases_signal_routes_and_preservation(self):
         value=preparation_kill_fixture()

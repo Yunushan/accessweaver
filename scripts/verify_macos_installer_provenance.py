@@ -30,11 +30,24 @@ def verification_command(path,bundle,commit,ref,gh="gh"):
     return command
 
 
+class ProvenanceCommandFailure(ValueError):
+    """Safe process metadata only; never expose child output or credentials."""
+
+
+def provenance_failure(result, phase, expected_success):
+    summary={"phase":phase,"expectedSuccess":expected_success,"returncode":result.returncode}
+    for name, data in (("stdout",result.stdout),("stderr",result.stderr)):
+        if data is None:data=b""
+        if isinstance(data,str):data=data.encode("utf-8")
+        summary[name+"Bytes"]=len(data);summary[name+"SHA256"]=digest(data)
+    return ProvenanceCommandFailure("Native package cryptographic provenance verification failed: "+json.dumps(summary,sort_keys=True,separators=(",",":")))
+
+
 def authenticate(path,bundle,commit,ref,gh):
     try:
         subprocess.run(verification_command(path,bundle,commit,ref,gh),check=True,capture_output=True,timeout=120)
     except subprocess.CalledProcessError as error:
-        raise ValueError("Native package cryptographic provenance verification failed") from error
+        raise provenance_failure(error,"subject-authentication",True) from error
 
 
 def validate_contents(root,package,commit,version,arch):
@@ -225,16 +238,16 @@ def validate_fixed_deployment_helper(value,identity,manifest_hash,payload_hash):
 
 def check_rejections(path,bundle,commit,ref,gh):
     base=verification_command(path,bundle,commit,ref,gh)
-    def run(command,success):
+    def run(command,success,phase):
         result=subprocess.run(command,capture_output=True,timeout=120)
-        require((result.returncode==0)==success,"Unexpected native package provenance rejection outcome")
-    run(base,True);rejected=[]
+        if (result.returncode==0)!=success:raise provenance_failure(result,phase,success)
+    run(base,True,"positive-control-before");rejected=[]
     for flag,value in (("--source-digest","0"*len(commit)),("--source-ref","refs/tags/invalid-native-package-probe"),("--signer-workflow",REPOSITORY+"/.github/workflows/ci.yml"),("--repo","octocat/Hello-World")):
-        command=list(base);command[command.index(flag)+1]=value;run(command,False);rejected.append(flag)
+        command=list(base);command[command.index(flag)+1]=value;run(command,False,flag);rejected.append(flag)
     with tempfile.TemporaryDirectory(prefix="accessweaver-native-provenance-negative-") as temporary:
         changed=Path(temporary)/path.name;changed.write_bytes(path.read_bytes()+b"changed")
-        command=list(base);command[3]=str(changed.resolve());run(command,False);rejected.append("changed-subject-digest")
-    run(base,True)
+        command=list(base);command[3]=str(changed.resolve());run(command,False,"changed-subject-digest");rejected.append("changed-subject-digest")
+    run(base,True,"positive-control-after")
     return {"rejected":rejected,"realBundleVerifiedBeforeAndAfter":True}
 
 
@@ -263,7 +276,8 @@ def main():
         result=verify(args.directory,args.source_commit,args.source_ref,args.version,args.architecture,args.gh,args.check_rejections)
         print(json.dumps(result));return 0
     except (ValueError,OSError,KeyError,TypeError,subprocess.SubprocessError) as error:
-        print("Native package provenance verification failed ("+type(error).__name__+")",file=sys.stderr)
+        message=str(error) if isinstance(error,ProvenanceCommandFailure) else "Native package provenance verification failed ("+type(error).__name__+")"
+        print(message,file=sys.stderr)
         return 1
 
 if __name__=="__main__":sys.exit(main())
