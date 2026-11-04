@@ -57,6 +57,12 @@ func (r *removalIntentStore) removeNextRemovalObjectUsing(ctx context.Context, r
 	}
 	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	if bounded.Err() != nil {
+		return zero, errors.New("removal deadline exceeded")
+	}
+	if e := r.syncRemovalBarrier(); e != nil {
+		return zero, e
+	}
 	actions, e := removalAllActions(r.plan)
 	if e != nil {
 		return zero, e

@@ -231,6 +231,15 @@ func newOwnedRemovalTargetFixture(t *testing.T, privateBase string, nested ...bo
 	if e != nil {
 		t.Fatal(e)
 	}
+	if len(nested) > 2 && nested[2] {
+		f.intent = &removalIntentStore{store: s, fence: fence, plan: plan}
+		t.Cleanup(func() {
+			if f.intent != nil {
+				f.intent.Close()
+			}
+		})
+		return f
+	}
 	if published, e := s.publishRemovalFence(fence, plan); !published || e != nil {
 		t.Fatal(e)
 	}

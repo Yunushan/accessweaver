@@ -28,7 +28,7 @@ func (s *deploymentStore) publishRemovalFence(f removalFence, plan removalPlan) 
 	if e != nil {
 		return false, e
 	}
-	if e = f.validatePlan(next, plan); e != nil {
+	if e = s.checkRemovalPreimage(f, plan, ""); e != nil {
 		return false, e
 	}
 	planRaw, e := encodeRemovalPlan(plan)
@@ -37,38 +37,6 @@ func (s *deploymentStore) publishRemovalFence(f removalFence, plan removalPlan) 
 	}
 	marker, e := encodeRemovalFence(f, next)
 	if e != nil {
-		return false, e
-	}
-	if f.Target != s.state.Active || f.BaseGeneration != s.state.Generation || removalDigest(s.encoded) != f.BeforeRecordSHA256 || len(s.state.Pending) != 0 {
-		return false, errors.New("removal barrier preimage differs")
-	}
-	if e = verifyRemovalPlanAuthority(s, plan.Authority); e != nil {
-		return false, e
-	}
-	before, history, e := verifyRemovalPlanHistory(s, plan, "", "")
-	if e != nil {
-		return false, e
-	}
-	if e = verifyRemovalPlanSlots(s, plan, before, history); e != nil {
-		return false, e
-	}
-	check := func() error {
-		if e := s.checkRoot(); e != nil {
-			return e
-		}
-		if e := sameDeploymentEntry(s.root, "state", s.current, s.owner); e != nil {
-			return e
-		}
-		actual, e := s.readRecord(s.current)
-		if e != nil {
-			return e
-		}
-		if !bytes.Equal(actual, s.encoded) {
-			return errors.New("removal barrier record changed")
-		}
-		return nil
-	}
-	if e = check(); e != nil {
 		return false, e
 	}
 	entries, e := deploymentEntries(s.root, s.owner, maxRetainedRecords+4)
@@ -84,17 +52,26 @@ func (s *deploymentStore) publishRemovalFence(f removalFence, plan removalPlan) 
 	if count >= maxRetainedRecords {
 		return false, errors.New("removal barrier history capacity exhausted")
 	}
-	name := f.DisplacedRecord
-	staged, e := darwintrust.CreateDirectoryAt(s.root, name, s.owner)
+	preparation, e := s.openRemovalPreparationDirectory()
+	if e != nil {
+		return false, e
+	}
+	defer func() { result = errors.Join(result, preparation.Close()) }()
+	staged, e := darwintrust.CreateDirectoryAt(preparation, f.DisplacedRecord, s.owner)
 	if e != nil {
 		return false, e
 	}
 	defer func() {
-		if staged != nil {
+		if !published {
 			result = errors.Join(result, staged.Close())
 		}
 	}()
-	if e = s.phase("removal-record-reserved"); e != nil {
+	if s.owner == 0 {
+		if e = staged.Chown(0, 0); e != nil {
+			return false, e
+		}
+	}
+	if e = s.phase("removal-preparation-created"); e != nil {
 		return false, e
 	}
 	for _, item := range []struct {
@@ -105,6 +82,11 @@ func (s *deploymentStore) publishRemovalFence(f removalFence, plan removalPlan) 
 		file, e := darwintrust.CreateRegularAt(staged, item.name, s.owner)
 		if e != nil {
 			return false, e
+		}
+		if s.owner == 0 {
+			if e = file.Chown(0, 0); e != nil {
+				return false, errors.Join(e, file.Close())
+			}
 		}
 		n, writeErr := file.Write(item.data)
 		if writeErr == nil && n != len(item.data) {
@@ -130,34 +112,40 @@ func (s *deploymentStore) publishRemovalFence(f removalFence, plan removalPlan) 
 	if observed != f || !bytes.Equal(actual, encoded) || sameRemovalPlans(plan, observedPlan) != nil {
 		return false, errors.New("staged removal barrier changed")
 	}
-	if e = sameDeploymentEntry(s.root, name, staged, s.owner); e != nil {
+	if e = fullDeploymentSync(preparation); e != nil {
 		return false, e
 	}
-	if e = check(); e != nil {
+	if e = s.phase("removal-preparation-durable"); e != nil {
 		return false, e
 	}
-	if _, _, e = verifyRemovalPlanHistory(s, plan, "", name); e != nil {
+	if e = s.checkRemovalPreimage(f, plan, ""); e != nil {
 		return false, e
 	}
-	if e = verifyRemovalPlanAuthority(s, plan.Authority); e != nil {
+	if e = deploymentObject(preparation, true, s.owner, 0700); e != nil {
 		return false, e
 	}
-	if e = darwintrust.RenameDirectories(s.root, name, "state", true); e != nil {
+	if e = sameDeploymentEntry(s.parent, removalPreparationRoot, preparation, s.owner); e != nil {
 		return false, e
 	}
-	old := s.current
-	s.current = staged
-	staged = nil
-	s.state = next
-	s.encoded = encoded
-	closeErr := old.Close()
-	if e = s.phase("removal-published"); e != nil {
-		return true, errors.Join(e, closeErr)
+	if e = sameDeploymentEntry(preparation, f.DisplacedRecord, staged, s.owner); e != nil {
+		return false, e
 	}
-	if e = errors.Join(fullDeploymentSync(s.root), closeErr); e != nil {
-		return true, e
+	// Only a complete durable bundle can enter authority history. This exclusive
+	// move never overwrites an old record or falls back to copy/delete.
+	if e = darwintrust.RenameEntryNoReplace(preparation, f.DisplacedRecord, s.root, f.DisplacedRecord); e != nil {
+		return false, e
 	}
-	return true, s.phase("removal-parent-durable")
+	if e = s.phase("removal-record-reserved"); e != nil {
+		return false, e
+	}
+	if e = errors.Join(fullDeploymentSync(preparation), fullDeploymentSync(s.root)); e != nil {
+		return false, e
+	}
+	if e = s.phase("removal-reservation-parent-durable"); e != nil {
+		return false, e
+	}
+	published, e = s.publishPreparedRemoval(f, plan, staged)
+	return published, e
 }
 func readRemovalBundle(dir *os.File, owner uint32) (removalFence, removalPlan, []byte, error) {
 	var zero removalFence

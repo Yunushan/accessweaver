@@ -26,15 +26,11 @@ func (r *removalIntentStore) Close() error { return r.store.Close() }
 // Parent ownership transfers on every path. No coordination or metadata file
 // is created. Runtime callers will use fixed compiled seals/root; alternate
 // parent/owner inputs are private owned-fixture facilities.
-func openRemovalIntentAt(parent *os.File, owner uint32, identity deploymentIdentity, desktopSHA string) (*removalIntentStore, error) {
+// Opens existing authority and both existing exclusive leases only. It never
+// creates coordination/state objects or accepts their replacement.
+func openRemovalAuthorityAt(parent *os.File, owner uint32) (*deploymentStore, error) {
 	s := &deploymentStore{parent: parent, owner: owner}
-	fail := func(e error) (*removalIntentStore, error) { return nil, errors.Join(e, s.Close()) }
-	if e := identity.validate(); e != nil {
-		return fail(e)
-	}
-	if !hash.MatchString(desktopSHA) {
-		return fail(errors.New("invalid compiled removal desktop seal"))
-	}
+	fail := func(e error) (*deploymentStore, error) { return nil, errors.Join(e, s.Close()) }
 	if _, e := darwintrust.Check(parent, true, owner); e != nil {
 		return fail(e)
 	}
@@ -96,6 +92,21 @@ func openRemovalIntentAt(parent *os.File, owner uint32, identity deploymentIdent
 	if e != nil {
 		return fail(e)
 	}
+	return s, nil
+}
+
+func openRemovalIntentAt(parent *os.File, owner uint32, identity deploymentIdentity, desktopSHA string) (*removalIntentStore, error) {
+	if e := identity.validate(); e != nil {
+		return nil, errors.Join(e, parent.Close())
+	}
+	if !hash.MatchString(desktopSHA) {
+		return nil, errors.Join(errors.New("invalid compiled removal desktop seal"), parent.Close())
+	}
+	s, e := openRemovalAuthorityAt(parent, owner)
+	if e != nil {
+		return nil, e
+	}
+	fail := func(e error) (*removalIntentStore, error) { return nil, errors.Join(e, s.Close()) }
 	fence, plan, encoded, e := readRemovalBundle(s.current, owner)
 	if e != nil {
 		return fail(e)

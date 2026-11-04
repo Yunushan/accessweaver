@@ -266,7 +266,7 @@ func (r *removalIntentStore) quarantinePublicAppUsing(ctx context.Context, resol
 	if bounded.Err() != nil {
 		return errors.New("public quarantine deadline exceeded")
 	}
-	if e := r.verifyIntentMetadata(); e != nil {
+	if e := r.syncRemovalBarrier(); e != nil {
 		return e
 	}
 	raw, _, journal, e := readRemovalQuarantineAt(r.store.current, 0, r.fence, r.plan)

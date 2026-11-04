@@ -12,7 +12,7 @@ import (
 )
 
 func TestDarwinRemovalFencePublicationPreservesOldStateUntilAtomicBundle(t *testing.T) {
-	for _, phase := range []string{"removal-record-reserved", "removal-state-durable", "removal-plan-durable", "removal-marker-durable", "removal-directory-durable", "removal-published", "removal-parent-durable", "complete"} {
+	for _, phase := range []string{"removal-preparation-created", "removal-state-durable", "removal-plan-durable", "removal-marker-durable", "removal-directory-durable", "removal-preparation-durable", "removal-record-reserved", "removal-reservation-parent-durable", "removal-published", "removal-parent-durable", "complete"} {
 		t.Run(phase, func(t *testing.T) {
 			parent := t.TempDir()
 			s := deploymentFixtureStore(t, parent, nil)
