@@ -1,0 +1,252 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "a18844bd99b910d2a5dcda3bdd9984d78f2e6c85",
+  "sourceRef": "refs/heads/main",
+  "runs": [
+    {
+      "runID": 41894803047,
+      "name": "CI",
+      "providerRunURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047",
+      "status": "completed",
+      "conclusion": "success",
+      "successfulJobCount": 22,
+      "jobs": [
+        {
+          "jobID": 126801353589,
+          "name": "Go vulnerability checks",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801353589",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801353678,
+          "name": "Race detector (Linux/arm64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801353678",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801353783,
+          "name": "Test (windows-11-arm)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801353783",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801353844,
+          "name": "Test (ubuntu-latest)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801353844",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801353853,
+          "name": "Cross-build (darwin/amd64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801353853",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801353937,
+          "name": "Race detector (Linux)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801353937",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801353968,
+          "name": "Test (ubuntu-24.04-arm)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801353968",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354009,
+          "name": "Test (macos-15-intel)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354009",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354041,
+          "name": "Test (windows-latest)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354041",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354080,
+          "name": "Cross-build (linux/amd64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354080",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354152,
+          "name": "Cross-build (windows/arm64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354152",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354164,
+          "name": "Test (macos-latest)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354164",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354207,
+          "name": "Cross-build (freebsd/amd64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354207",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354233,
+          "name": "Cross-build (freebsd/arm64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354233",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354256,
+          "name": "browser / Real browser (chromium)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354256",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354271,
+          "name": "browser / Real browser (webkit)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354271",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354274,
+          "name": "Cross-build (windows/amd64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354274",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354290,
+          "name": "Cross-build (linux/arm64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354290",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354322,
+          "name": "browser / Real browser (firefox)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354322",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354325,
+          "name": "Cross-build (openbsd/arm64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354325",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354336,
+          "name": "Cross-build (darwin/arm64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354336",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801354387,
+          "name": "Cross-build (openbsd/amd64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801354387",
+          "conclusion": "success"
+        }
+      ],
+      "providerRunAttempt": 1
+    },
+    {
+      "runID": 41894802912,
+      "name": "Native macOS experimental package acceptance",
+      "providerRunURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894802912",
+      "status": "completed",
+      "conclusion": "success",
+      "successfulJobCount": 2,
+      "jobs": [
+        {
+          "jobID": 126801353317,
+          "name": "Native package acceptance (amd64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894802912/job/126801353317",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801353519,
+          "name": "Native package acceptance (arm64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894802912/job/126801353519",
+          "conclusion": "success"
+        }
+      ],
+      "providerRunAttempt": 1
+    },
+    {
+      "runID": 41894802958,
+      "name": "Windows installer lifecycle acceptance",
+      "providerRunURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894802958",
+      "status": "completed",
+      "conclusion": "success",
+      "successfulJobCount": 2,
+      "jobs": [
+        {
+          "jobID": 126801352470,
+          "name": "Native installer lifecycle (amd64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894802958/job/126801352470",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126801353005,
+          "name": "Native installer lifecycle (arm64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894802958/job/126801353005",
+          "conclusion": "success"
+        }
+      ],
+      "providerRunAttempt": 1
+    },
+    {
+      "runID": 41894802990,
+      "name": "Native versioned macOS deployment acceptance",
+      "providerRunURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894802990",
+      "status": "completed",
+      "conclusion": "success",
+      "successfulJobCount": 2,
+      "jobs": [
+        {
+          "jobID": 126802337315,
+          "name": "Versioned package lifecycle (arm64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894802990/job/126802337315",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126802338246,
+          "name": "Versioned package lifecycle (amd64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894802990/job/126802338246",
+          "conclusion": "success"
+        }
+      ],
+      "providerRunAttempt": 1
+    },
+    {
+      "runID": 41894803090,
+      "name": "Native public macOS desktop acceptance",
+      "providerRunURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803090",
+      "status": "completed",
+      "conclusion": "success",
+      "successfulJobCount": 2,
+      "jobs": [
+        {
+          "jobID": 126802338450,
+          "name": "Public desktop lifecycle (amd64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803090/job/126802338450",
+          "conclusion": "success"
+        },
+        {
+          "jobID": 126802338902,
+          "name": "Public desktop lifecycle (arm64)",
+          "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803090/job/126802338902",
+          "conclusion": "success"
+        }
+      ],
+      "providerRunAttempt": 1
+    }
+  ],
+  "successfulCIJobs": 22,
+  "successfulSeparateNativeInstallerPackageJobs": 8,
+  "providerSnapshotSHA256": "8b3150a750a9d09815583e2519364dae0fdacc0ab007a4edbb7ab187febc658f",
+  "scope": "All five exact-source provider workflow runs completed successfully. CI has22successful jobs, including unchanged inventory freshness coverage on native LinuxARM and separate ARM race coverage. Four additional native acceptance workflows have8successful unsigned Windows installer/macOS package jobs. This record observes provider run/job conclusions only; it does not independently authenticate candidate/report artifact subjects or establish installed-product, signing, managed-endpoint, reboot/power-loss or vendor-network qualification.",
+  "workflowRerunPerformed": false,
+  "nativeMutationPerformedLocally": false,
+  "cryptographicArtifactAttestationVerifiedHere": false,
+  "publisherSignatureVerified": false,
+  "productionQualificationComplete": false,
+  "readinessStatusChanged": false
+}

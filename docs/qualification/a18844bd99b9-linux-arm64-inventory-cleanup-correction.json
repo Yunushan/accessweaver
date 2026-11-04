@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "a18844bd99b910d2a5dcda3bdd9984d78f2e6c85",
+  "fixCommit": "e516b68",
+  "failedSourceCommit": "d02c3bcc0aa8fafaa9cad0864637269406483c94",
+  "failureRecord": "d02c3bcc0aa8-linux-arm64-inventory-finalization-regression.json",
+  "runID": 41894803047,
+  "providerRunURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047",
+  "runStatusAtCollection": "in_progress",
+  "runConclusionAtCollection": null,
+  "jobs": [
+    {
+      "jobID": 126801353968,
+      "name": "Test (ubuntu-24.04-arm)",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801353968",
+      "status": "completed",
+      "conclusion": "success",
+      "acceptanceStep": {
+        "name": "Unit tests",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 7,
+        "started_at": "2026-11-04T19:14:20Z",
+        "completed_at": "2026-11-04T19:14:31Z"
+      }
+    },
+    {
+      "jobID": 126801353678,
+      "name": "Race detector (Linux/arm64)",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41894803047/job/126801353678",
+      "status": "completed",
+      "conclusion": "success",
+      "acceptanceStep": {
+        "name": "Run go test -race ./... -count=1",
+        "status": "completed",
+        "conclusion": "success",
+        "number": 5,
+        "started_at": "2026-11-04T19:14:08Z",
+        "completed_at": "2026-11-04T19:14:55Z"
+      }
+    }
+  ],
+  "sourceSHA256": {
+    "internal/profile/list.go": "37b37a221c0d62d370b5922e9044555ea7121be2c94beac8b376b20bee12aa5b",
+    "internal/profile/list_worker_test.go": "04d8abf4893bda148923be2ae348ae1b271b74f389cc3230829baa690cefbd8a",
+    "internal/profile/list_test.go": "f7023e1028afaa41f8d4d9625c729d8333ec4f139f34d870e0dda8ef8aa162dd"
+  },
+  "originalFreshnessTestUnchanged": true,
+  "interpretation": "Corrected-source whole native LinuxARM unit and race jobs passed. Unit tests ran the package suite containing the unchanged TestListsStayFreshAcrossConcurrentCompletedWrites that failed on d02. No test-specific rerun, retry or weakened freshness assertion was used. OverallCI was still inprogress at collection; this is source-built hosted test evidence, not signed installed-product/managed-endpoint qualification.",
+  "cryptographicAttestationVerified": false,
+  "readinessStatusChanged": false,
+  "productionQualificationComplete": false,
+  "subsequentCompletedCohortRecord": "a18844bd99b9-hosted-cohort.json"
+}
