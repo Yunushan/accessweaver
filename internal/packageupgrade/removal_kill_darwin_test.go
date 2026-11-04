@@ -23,6 +23,13 @@ import (
 const removalKillBaseEnv = "ACCESSWEAVER_OWNED_REMOVAL_KILL_BASE"
 const removalKillPhaseEnv = "ACCESSWEAVER_OWNED_REMOVAL_KILL_PHASE"
 
+var removalAppFileKillPhases = []string{
+	"removal-app-file-intent-durable", "removal-app-file-unlinked", "removal-app-file-parent-durable", "removal-app-file-done-durable",
+}
+var removalAppDirectoryKillPhases = []string{
+	"removal-app-directory-intent-durable", "removal-app-directory-unlinked", "removal-app-directory-parent-durable", "removal-app-directory-done-durable",
+}
+
 var removalQuarantineKillPhases = []string{
 	"removal-quarantine-intent-durable",
 	"removal-quarantine-renamed",
@@ -124,7 +131,8 @@ func TestDarwinRemovalFileKilledChild(t *testing.T) {
 		t.Fatal("killed child requires an opted-in disposable hosted root fixture")
 	}
 	known := false
-	for _, allowed := range append(append(append([]string{}, removalKillPhases...), removalDirectoryKillPhases...), removalQuarantineKillPhases...) {
+	allowedPhases := append(append(append(append(append([]string{}, removalKillPhases...), removalDirectoryKillPhases...), removalQuarantineKillPhases...), removalAppFileKillPhases...), removalAppDirectoryKillPhases...)
+	for _, allowed := range allowedPhases {
 		if phase == allowed {
 			known = true
 		}
@@ -153,7 +161,9 @@ func TestDarwinRemovalFileKilledChild(t *testing.T) {
 		}
 		return errors.New("SIGKILL did not terminate the owned child")
 	}
-	if strings.HasPrefix(phase, "removal-quarantine-") {
+	if strings.HasPrefix(phase, "removal-app-") {
+		_, e = intent.removeNextQuarantinedAppObjectUsing(context.Background(), fixture.resolve)
+	} else if strings.HasPrefix(phase, "removal-quarantine-") {
 		e = intent.quarantinePublicAppUsing(context.Background(), fixture.resolve)
 	} else if strings.HasPrefix(phase, "removal-directory-") {
 		_, e = intent.removeNextProtectedObjectUsing(context.Background(), fixture.resolve, false)
