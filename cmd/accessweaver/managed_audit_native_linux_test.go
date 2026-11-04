@@ -19,7 +19,8 @@ import (
 
 // Called only by the explicitly opted-in hosted native policy worker after the
 // root setup fixture enrolls revision3. The source-built worker runs as UID/GID
-// 65534; no installed product, engine or browser is executed by this probe.
+// 65534; its separate engine probe executes only the approved source-built inert
+// ELF fixture. No installed product or browser is executed.
 func linuxRequiredProfileAuditProbe(t *testing.T, p profile.Profile) {
 	t.Helper()
 	linuxNativeContext(t)
@@ -150,6 +151,7 @@ func linuxRequiredProfileAuditProbe(t *testing.T, p profile.Profile) {
 	if bytes.Contains(exported, []byte(p.ID)) || bytes.Contains(exported, []byte(p.Name)) || bytes.Contains(exported, []byte(base)) {
 		t.Fatal("profile/fixture data escaped native audit output")
 	}
+	linuxRecordedManagedEngineProbe(t, p, base)
 }
 
 // Only the existing opted-in hosted root setup calls this source fixture. Its
