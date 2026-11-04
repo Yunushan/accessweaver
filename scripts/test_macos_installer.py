@@ -13,6 +13,24 @@ from sbom import macos_package,sha,validate
 from macos_deployment import verify_deployment_bundle,detached_payload_manifest,PAYLOAD_SBOM
 
 class MacPackageContracts(unittest.TestCase):
+    def test_native_fixture_failure_keeps_early_assertion_and_final_status_within_budget(self):
+        spec=importlib.util.spec_from_file_location("native_lifecycle_diagnostics",Path(__file__).with_name("test-macos-installer-lifecycle.py"))
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        assertion="    removal_quarantine_kill_darwin_test.go:91: expected refusal preserved /private/tmp/accessweaver-deployment-123/schema2-bridge/targets-456\n"
+        summary="    --- PASS: many-other-subtests "+"x"*80+"\n"
+        output=assertion+summary*500+"--- FAIL: TestDarwinDeploymentRootCopyRecovery\nFAIL\n"
+        diagnostic=module.deployment_failure_diagnostic(output.encode())
+        self.assertIn("expected refusal preserved [owned-fixture]/schema2-bridge/targets-456",diagnostic)
+        self.assertIn("--- FAIL: TestDarwinDeploymentRootCopyRecovery\nFAIL",diagnostic)
+        self.assertNotIn("accessweaver-deployment-123",diagnostic)
+        self.assertLessEqual(len(diagnostic.encode()),12000)
+    def test_native_fixture_diagnostic_bounds_invalid_utf8_and_output_without_assertions(self):
+        spec=importlib.util.spec_from_file_location("native_lifecycle_diagnostic_limits",Path(__file__).with_name("test-macos-installer-lifecycle.py"))
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        for output in (b"",b"prefix"+b"x"*50000+b"final status",b"fixture.go:42: "+b"\xff"*50000+b"\nFAIL\n"):
+            diagnostic=module.deployment_failure_diagnostic(output)
+            self.assertLessEqual(len(diagnostic.encode()),12000)
+            if output:self.assertTrue(diagnostic.endswith(("final status","FAIL\n")))
     def image(self,arch="amd64"):
         cpu={"amd64":0x1000007,"arm64":0x100000c}[arch]
         return struct.pack("<8I",0xfeedfacf,cpu,0,2,1,16,0,0)+struct.pack("<4I",0x24,16,0x000d0000,0)
@@ -100,7 +118,6 @@ class MacPackageContracts(unittest.TestCase):
             changed=copy.deepcopy(manifest);changed["files"][0]["path"]="../escape"
             with self.assertRaises(ValueError):macos_package(pkg,payload,changed,{"sha256":"d"*64,"osVersion":"15.0","osBuild":"24A1"})
 
-if __name__=="__main__":unittest.main()
 
 
 class NativeBuildDiagnosticTests(unittest.TestCase):
@@ -132,3 +149,5 @@ class NativeBuildDiagnosticTests(unittest.TestCase):
         from unittest.mock import patch
         builder=self.builder();result=CompletedProcess([],1,b"",b"unsigned")
         with patch.object(builder.subprocess,"run",return_value=result):self.assertIs(builder.run(["pkgutil","--check-signature"],codes=(0,1)),result)
+
+if __name__=="__main__":unittest.main()

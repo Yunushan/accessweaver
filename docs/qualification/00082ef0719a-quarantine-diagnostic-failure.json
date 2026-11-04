@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "00082ef0719a4fb006234950889c7b2a6b3ee229",
+  "sourceRef": "refs/heads/main",
+  "nativeRunID": 41800247406,
+  "scope": "Provider-bound failed native fixture with incomplete diagnostic capture; no full qualification",
+  "targets": [
+    {
+      "target": "darwin/amd64",
+      "providerJob": {
+        "id": 126473961315,
+        "runID": 41800247406,
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41800247406/job/126473961315",
+        "conclusion": "failure"
+      },
+      "providerArtifact": {
+        "id": 13308145383,
+        "node_id": "MDg6QXJ0aWZhY3QxMzMwODE0NTM4Mw==",
+        "name": "macos-installer-inspection-amd64",
+        "size_in_bytes": 7264063,
+        "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13308145383",
+        "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13308145383/zip",
+        "expired": false,
+        "digest": "sha256:7c2081295b7ee393819b0fb1742468086ea4197af932e4e87d08a1cc90c9acb3",
+        "created_at": "2026-11-04T08:37:19Z",
+        "updated_at": "2026-11-04T08:37:19Z",
+        "expires_at": "2026-11-18T08:37:16Z",
+        "workflow_run": {
+          "id": 41800247406,
+          "repository_id": 1441227907,
+          "head_repository_id": 1441227907,
+          "head_branch": "main",
+          "head_sha": "00082ef0719a4fb006234950889c7b2a6b3ee229"
+        }
+      },
+      "providerZIPDigestVerified": true,
+      "extractedFileInventory": [
+        {
+          "file": "0.1.0-alpha/BUILD-INFO.json",
+          "bytes": 220,
+          "sha256": "0455b759b2afea24d7dad9a2f952785865d045cce991915f6097c2dac5507314"
+        },
+        {
+          "file": "0.1.0-alpha/INSTALL-MANIFEST.json",
+          "bytes": 3835,
+          "sha256": "4c115021ff5b322dc3b24012a2f68850bad1a1323d31537834932a76f6e661d8"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg",
+          "bytes": 7268413,
+          "sha256": "c3a7ac28a4775b948a294b76974512b891cff9823d245ac5091dd8acd311e5e1"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg.cdx.json",
+          "bytes": 26397,
+          "sha256": "942360ceaa4033860fcbf09f92fab44c2a9eb8fd274b6f865792e3dff0239eaa"
+        },
+        {
+          "file": "0.1.0-alpha/compiler-artifact.json",
+          "bytes": 2513,
+          "sha256": "a28021660e85c1d566aecae32d011e05303fff9591fdaa672e87e78c203db191"
+        },
+        {
+          "file": "0.1.0-alpha/lifecycle-artifact.json",
+          "bytes": 13095,
+          "sha256": "944473e174aa67614486175ed4f31976fdbc8f9c91d171a2234aabc603f682e9"
+        },
+        {
+          "file": "0.1.0-alpha/payload-SBOM.cdx.json",
+          "bytes": 15416,
+          "sha256": "2c40d7e937044d1a390ffe015b3f74a82e740ddbd9bc1a239f6f9d7e1e40069a"
+        }
+      ],
+      "jobLogSHA256": "786eb99e92af50033d5a70bc83ba4b41cace2a1f7358b3f74d065cb10a80619c",
+      "failedSubtest": null,
+      "lastObservedSubtest": "public-quarantine-sigkill-removal-quarantine-parents-durable",
+      "assertionDetailsRetained": false,
+      "lifecycleFailureStage": "protected-deployment-transactions",
+      "lifecycleFailureType": "ValueError",
+      "lifecycleFailureSourceLine": 196
+    },
+    {
+      "target": "darwin/arm64",
+      "providerJob": {
+        "id": 126473961125,
+        "runID": 41800247406,
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41800247406/job/126473961125",
+        "conclusion": "failure"
+      },
+      "providerArtifact": {
+        "id": 13307805825,
+        "node_id": "MDg6QXJ0aWZhY3QxMzMwNzgwNTgyNQ==",
+        "name": "macos-installer-inspection-arm64",
+        "size_in_bytes": 6798261,
+        "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13307805825",
+        "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13307805825/zip",
+        "expired": false,
+        "digest": "sha256:c8d18569ba7d97a6afcb5c42760775c6ce8b7904d96759e0f94859c20d36f942",
+        "created_at": "2026-11-04T08:34:15Z",
+        "updated_at": "2026-11-04T08:34:15Z",
+        "expires_at": "2026-11-18T08:34:13Z",
+        "workflow_run": {
+          "id": 41800247406,
+          "repository_id": 1441227907,
+          "head_repository_id": 1441227907,
+          "head_branch": "main",
+          "head_sha": "00082ef0719a4fb006234950889c7b2a6b3ee229"
+        }
+      },
+      "providerZIPDigestVerified": true,
+      "extractedFileInventory": [
+        {
+          "file": "0.1.0-alpha/BUILD-INFO.json",
+          "bytes": 220,
+          "sha256": "da09d78bd07191518040cba77950db8eb7fb55be168edb0690422022eb549db3"
+        },
+        {
+          "file": "0.1.0-alpha/INSTALL-MANIFEST.json",
+          "bytes": 3835,
+          "sha256": "3d99d4400bfd72ef97748644b711f8e546ffcd9c6854b5df10bc72df427d7c68"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg",
+          "bytes": 6803856,
+          "sha256": "16e6e1a21f6ab8651a536278f8ccdca2ea77577904ad6e414ae7cadb25af5d60"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg.cdx.json",
+          "bytes": 26397,
+          "sha256": "eb122e160bf3b876f18ea5cf060568acdef52f35779d1e2f653efbd1c29b403e"
+        },
+        {
+          "file": "0.1.0-alpha/compiler-artifact.json",
+          "bytes": 2513,
+          "sha256": "d5d37987065ae573743819193e7858b9d732419ce1d6a6156d277c2aa0411b0b"
+        },
+        {
+          "file": "0.1.0-alpha/lifecycle-artifact.json",
+          "bytes": 13085,
+          "sha256": "46da2ca699040ea1cf61d99d6ceefe831015455e05d796fe7ff1732cfb1acd35"
+        },
+        {
+          "file": "0.1.0-alpha/payload-SBOM.cdx.json",
+          "bytes": 15416,
+          "sha256": "aad687b046fd3ee688f077e2624baa04e4a5373d58ba26acdb266dabe5efb131"
+        }
+      ],
+      "jobLogSHA256": "eb2687bd3e2ce18534d669fa32db53608b88a8ed901b8c919264a83aa15bcabb",
+      "failedSubtest": "public-quarantine-sigkill-removal-quarantine-intent-durable",
+      "lastObservedSubtest": null,
+      "assertionDetailsRetained": false,
+      "lifecycleFailureStage": "protected-deployment-transactions",
+      "lifecycleFailureType": "ValueError",
+      "lifecycleFailureSourceLine": 196
+    }
+  ],
+  "diagnosis": {
+    "causeEstablished": false,
+    "observed": "ARM64 failed the first quarantine SIGKILL subtest, but its assertion was truncated before the retained summary tail. Intel output ended while the quarantine parent-durability case was running, with no retained failed-subtest assertion. The old driver omitted stderr and retained only the stdout tail. Neither underlying cause is established.",
+    "nextChange": "Retain early Go assertions and final status from stdout and stderr within a 12000-byte diagnostic budget. No production predicate is changed based on the missing diagnostic.",
+    "failedSourceRerun": false
+  },
+  "boundaries": {
+    "artifactCryptographicAuthenticationClaimed": false,
+    "nativePreparationSuiteQualified": false,
+    "quarantineSIGKILLRegressionPassed": false,
+    "productUninstallQualified": false,
+    "readinessGatePromoted": false,
+    "localCandidateCodeExecuted": false
+  },
+  "limits": [
+    "Provider ZIP digest validation identifies failure artifacts; no Sigstore authentication is claimed for these failed candidates.",
+    "Intel and ARM64 failure causes are not assumed identical.",
+    "Passing subtest summaries do not qualify the incomplete overall native fixture."
+  ]
+}

@@ -177,6 +177,24 @@ def upgrade_preflight(capsule,environment,identity,manifest,profile_path,marker,
     no_alias(backup);require(not receipt.exists() and digest(backup.read_bytes())==original_receipt[1]["sha256"],"Owned receipt backup changed");run(["/usr/bin/sudo","-n","/bin/mv",backup,receipt],environment);require(snapshot_receipts()==original_receipt,"Owned receipt fixture was not restored")
     verify_bundle(APP,manifest,identity);check("restored-state-preflight","0.1.1-alpha","upgrade")
 
+def deployment_failure_diagnostic(output):
+    # Go prints assertion details before its potentially long subtest summary.
+    # Keep those details as well as the final status within the existing 12 KB
+    # diagnostic budget. Input is only the guarded source-built fixture output.
+    text=output.decode("utf-8",errors="replace")
+    text=re.sub(r"/private/tmp/accessweaver-deployment-[^\s/:]+","[owned-fixture]",text)
+    lines=text.splitlines();selected=set()
+    for index,line in enumerate(lines):
+        if re.search(r"\b[A-Za-z0-9_]+\.go:[0-9]+:|--- FAIL:|^panic:|^fatal error:",line):
+            selected.update(range(index,min(index+4,len(lines))))
+    def bounded(value,limit,tail=False):
+        data=value.encode("utf-8")
+        return (data[-limit:] if tail else data[:limit]).decode("utf-8",errors="ignore")
+    if not selected:return bounded(text,12000,True)
+    assertions="\n".join(lines[index] for index in sorted(selected))
+    return "Native fixture assertions:\n"+bounded(assertions,7900)+"\nNative fixture tail:\n"+bounded(text,4000,True)
+
+
 def deployment_transactions(capsule,environment,identity):
     go=shutil.which("go");require(go is not None,"Native SDK missing for deployment transactions")
     compiler_environment=dict(os.environ,GOTOOLCHAIN="local",GOFLAGS="",GOOS="darwin",GOARCH=identity["arch"],CGO_ENABLED="0")
@@ -190,9 +208,7 @@ def deployment_transactions(capsule,environment,identity):
     if result.returncode:
         # Only this trusted test binary's bounded fixture diagnostics enter the
         # job log. No inherited credentials or user profile contents are input.
-        diagnostic=result.stdout.decode("utf-8",errors="replace")[-12000:]
-        diagnostic=re.sub(r"/private/tmp/accessweaver-deployment-[^\s/:]+","[owned-fixture]",diagnostic)
-        print(diagnostic,flush=True)
+        print(deployment_failure_diagnostic(result.stdout+b"\nNative fixture stderr:\n"+result.stderr),flush=True)
     require(result.returncode==0,"Native protected deployment transaction fixture failed")
     lines=[line.split("DEPLOYMENT-RESULT ",1)[1] for line in result.stdout.decode("utf-8").splitlines() if "DEPLOYMENT-RESULT " in line]
     require(len(lines)==1 and b"--- PASS: TestDarwinDeploymentRootCopyRecovery" in result.stdout,"Native deployment test did not execute to completion")
