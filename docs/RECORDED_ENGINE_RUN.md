@@ -1,0 +1,39 @@
+# Recorded foreground engine run
+
+The explicit Linux amd64/arm64 command records one reviewed foreground engine lifecycle in the current protected local audit stream. It uses the normal managed launch guard and engine manager. It does not import, save or seed profiles, enable engines in the profile-editing audited desktop, or make engine auditing mandatory. The enterprise audit gate remains incomplete.
+
+```text
+accessweaver audit run --directory /home/operator/.accessweaver-audit --from trusted-genesis.json --to trusted-head.json --profile reviewed-profile.json --consent metadata-only
+```
+
+Use a separately initialized, independently enrolled stream and its exact retained genesis/latest head. Opening and every append retain the existing protected directory, actor key, OS/build/source identity and single-writer requirements. A changed source/build, actor or key needs independent enrollment in another stream with the original journal preserved. The command does not infer a head, reset storage, repair permissions, rotate history or supply collector enrollment or acknowledgment. See [the audit contract](AUDIT_EVENTS.md).
+
+Profile input is one unchanged regular JSON file capped at 1 MiB; checkpoints are capped at 1,024 bytes. Consent must be exactly metadata-only. Read-only preview, normal policy authorization and direct-output alias checks must pass before the producer dispatches engine preparation. Known protected inputs include checkpoints, profile input, journal/key, executable, configuration, generated inputs, existing machine authority and controller/profile coordination files. The controller root follows the normal ACCESSWEAVER_HOME/default selection. Opening that scope may create its directories and lock file, but no saved profiles or built-ins are written.
+
+Canonical checkpoint lines alone go to stdout; the fixed launch notice and command errors go to stderr. Capture them in separate, private, newly created destinations. Direct regular-file outputs cannot alias each other or known protected inputs, including hard-link/symlink aliases. A shell redirect can truncate a file before this command starts; the command cannot undo that. Merged or forwarded pipes/writer wrappers and additional files referenced through arbitrary upstream arguments remain the caller's responsibility. The engine remains an external program with the controller's permissions and its own file/network behavior.
+
+## Intent, acceptance and terminal observation
+
+Before dispatch, the command verifies the stream and requires room for three records. Its exclusive journal writer lock prevents another producer from consuming those slots. One fresh operation ID identifies engine.start intent, accepted and actual terminal observation. Events contain no profile fields, IDs/names, PID, executable/configuration path, arguments, output or error details.
+
+A durable intent and completely written intent checkpoint are required before StartTracked can prepare generated inputs or launch a child. Cancellation before that dispatch can record canceled. An unobserved intent prevents dispatch and attempts a local refused outcome when storage permits. A startup error after dispatch is indeterminate because preparation can already have changed generated files; it is not proof that nothing happened. Such pre-acceptance outcomes can use fewer than the three reserved slots.
+
+Launch acceptance is distinct from termination. A returned handle records accepted even when the child has already exited; the terminal record follows it. The command waits on that exact launch, preserving its result across later manager state changes. An actual clean process wait records completed. A nonzero/signaled wait or observed policy revocation records failed. Unknown or inconsistent terminal observation records indeterminate. Neither completed nor a successful launch establishes working routing, connectivity or useful vendor work.
+
+An accepted stop signal is an observation, not proof it caused the exit. RunStopped therefore does not become canceled. For example, a successful user shutdown can return success to the CLI while its audit terminal outcome is failed because the actual process wait reports signal termination. After launch acceptance, the producer never records refused or canceled as if preparation/launch had not happened. Separate engine.stop actions are not recorded by this command.
+
+## Output loss, shutdown and ownership
+
+An accepted append failure makes the journal uncertain: stop and drain the exact launch, preserve storage and append nothing further. Failed/short accepted-checkpoint output triggers the same owned cleanup; a terminal record is still attempted locally if storage remains healthy, without retrying the failed checkpoint channel. Failed/short notice output also stops/drains the child and preserves healthy terminal checkpoint output. Post-launch output loss still returns command uncertainty even when the local terminal record is complete. A failed terminal append/output or owning Close returns uncertainty after effects, never an operation-not-dispatched result. There is no automatic retry or rollback.
+
+Interrupt/SIGTERM handling and scoped SIGPIPE observation are active before launch. The existing three-second graceful and one-second forced stop waits remain unchanged. A stop error/timeout does not establish exit or rollback. The command retains journal/controller ownership and foreground-drains the exact launch until actual termination before final recording and Close. If no terminal result arrives, this explicit scope remains open; externally forcing it to exit creates an interrupted/uncertain operation requiring independent reconciliation. No detached reaper or timed worker can continue appending after Close. The journal's one owning Close is attempted before controller ownership is released; a failed Close remains uncertainty.
+
+Input/journal-opening admission has a cooperative 15-second context. The borrowed producer has a separate cooperative 15-second snapshot/verification/intent context, canceled before the engine lifetime. Post-dispatch records use fresh cooperative 15-second contexts independent of caller cancellation. Native file reads, locking, writes, fsync, process startup, signals and output can block until the OS returns. These contexts are not a hard whole-command or shutdown deadline. The existing input reader can leave one read-only worker blocked after an input timeout until process exit; it never owns a journal mutation or launched child.
+
+Successful local writes prove no durable external checkpoint retention, recipient delivery or collector acknowledgment. Preserve every complete observation, including refusal/uncertainty heads; partial output must not overwrite independently retained checkpoints. Actor metadata identifies the executing process claim, not a human requester.
+
+## Validation and remaining scope
+
+Deterministic source tests cover record reservation/order, output/storage/cancellation failures, exact-launch drain and cleanup ownership. Linux source tests use actual protected journals and inert copied test executables, including real closed stdout/stderr descriptors, child reaping and SIGPIPE restoration. These fixtures open no network listener and change no system network state. Hosted exact-source and signed installed-product/managed-endpoint acceptance remain separate requirements.
+
+This adds one explicit foreground lifecycle producer. Arbitrary controller launches, workflow jobs, separate stop transactions, backup/support access, other desktop journal backends, collector transport/retention and broad mandatory enforcement remain unfinished. The [profile-editing audited desktop](AUDIT_EVENTS.md#edit-profiles-in-a-recorded-desktop-session) remains restricted. All fifty readiness gates and ten desktop targets stay in scope; this command does not promote a gate or readiness percentage.

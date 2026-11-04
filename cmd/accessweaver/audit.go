@@ -19,12 +19,14 @@ const auditUsage = "Audit verification and explicit local recording:\n" +
 	"  accessweaver audit export --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --consent metadata-only\n" +
 	"  accessweaver audit export-recorded --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --consent metadata-only\n" +
 	"  accessweaver audit ui --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE\n" +
+	"  accessweaver audit run --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --profile JSON_FILE --consent metadata-only\n" +
 	"  accessweaver audit policy-install --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --input INSTALLATION.json --public-key BASE64\n" +
 	"  accessweaver audit policy-update --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --input ENVELOPE.json\n" +
 	"  accessweaver audit policy-rotate --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --input ROTATION.json\n" +
 	"  accessweaver audit policy-recover --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --input RECOVERY.json --public-key BASE64 --minimum-revision N\n" +
 	"Local recording/export currently requires Linux amd64/arm64; verify is portable and read-only.\n" +
 	"Export is a read-only snapshot. Export-recorded adds access intent/outcome; its checkpoints go to stderr, events to stdout. Neither supplies collector acknowledgment.\n" +
+	"Run records one guarded foreground lifecycle: checkpoints to stdout, launch notice to stderr; clean process exit is not connectivity qualification.\n" +
 	"Retain complete checkpoints through an independently trusted channel.\n" +
 	"Self-selected checkpoints do not authenticate a producer or detect a rewritten history.\n" +
 	"Audit import records reviewed imports; audit ui records profile saves/deletes and refuses other desktop actions. Explicit policy transactions are recorded; other administrator coverage and collectors remain incomplete.\n" +
@@ -55,6 +57,9 @@ func auditCommand(args []string) error {
 	}
 	if len(args) > 0 && args[0] == "ui" {
 		return auditUICommand(args, os.Stdout, os.Stderr)
+	}
+	if len(args) > 0 && args[0] == "run" {
+		return auditRunCommand(args, os.Stdout, os.Stderr)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

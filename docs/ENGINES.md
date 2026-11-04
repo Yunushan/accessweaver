@@ -32,6 +32,8 @@ A successful start confirms process launch. The foreground CLI waits for that sp
 
 The CLI registers shutdown signals before launch. If its launch notice fails or is only partly written, it attempts to stop the owned process before returning a fixed notice error and any stop failure. A closed standard-output pipe follows the same path, with the previous SIGPIPE behavior restored afterward. Source tests use inert children, including actual closed-pipe cleanup and reaping; they do not qualify vendor networking or Windows descendant cleanup.
 
+The separate [recorded foreground command](RECORDED_ENGINE_RUN.md) adds explicit consented Linux launch/terminal audit records while preserving normal launch permissions and the engine manager. It does not enable engines in the profile-editing audited desktop or make ordinary runs recorded.
+
 ## Domain rules
 
 | Adapter | Include list | Exclude list | Meaning and limits |
