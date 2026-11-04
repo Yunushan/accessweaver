@@ -291,4 +291,97 @@ class OwnedCleanupIdentityTests(ImageFixture,unittest.TestCase):
             with self.subTest(index=index,field=field),patch.object(Path,"lstat",lambda path:actual[path]),patch.object(storage.os,"geteuid",return_value=501,create=True):
                 with self.assertRaises(RuntimeError):storage.check_owned_cleanup_identity(self.image,self.mount,original,unmounted=True)
 
+
+
+class ControlledUnmountProtocolTests(ImageFixture,unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.original=("image","mount","capsule")
+        self.known={"/dev/disk20","/dev/disk21s1"}
+    def invoke(self,record):
+        return storage.unmount_owned_volume(self.image,self.mount,"/dev/disk20","/dev/disk21s1",self.known,self.original,record)
+    def test_normal_unmount_uses_only_verified_volume_then_checks_original_unmounted_binding(self):
+        from subprocess import CompletedProcess
+        after=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}];record={}
+        with patch.object(storage,"require_disposable_host"),patch.object(storage,"info",side_effect=[self.info(),self.info(after)]),patch.object(storage,"check_owned_cleanup_identity") as identity,patch.object(storage,"command",return_value=CompletedProcess([],0,b"unmounted",b"")) as command:
+            self.invoke(record)
+            self.assertEqual(command.call_count,1)
+            self.assertEqual(command.call_args.args[0],[storage.HDIUTIL,"unmount","/dev/disk21s1"])
+            self.assertEqual(command.call_args.kwargs["timeout"],30)
+            self.assertEqual([call.kwargs["unmounted"] for call in identity.call_args_list],[False,True])
+        self.assertTrue(record["originalUnmountedBindingVerified"])
+        self.assertEqual(record["normalUnmountExitCode"],0)
+
+    def test_missing_host_optin_never_queries_or_launches_native_commands(self):
+        with patch.dict(os.environ,{},clear=True),patch.object(storage,"info") as info,patch.object(storage,"command") as command,patch.object(storage.tempfile,"mkdtemp") as create:
+            with self.assertRaises(RuntimeError):self.invoke({})
+            with self.assertRaises(RuntimeError):storage.controlled_unmounted_image(Path("/owned"),"a"*40,"amd64",{})
+            info.assert_not_called();command.assert_not_called();create.assert_not_called()
+
+
+    def test_controlled_case_refuses_foreign_parent_source_and_target_before_creating_anything(self):
+        source="a"*40;workspace=Path("owned-test-workspace").resolve()
+        valid={"GITHUB_WORKSPACE":str(workspace),"GITHUB_SHA":source,"ACCESSWEAVER_EXPECT_GOARCH":"amd64"}
+        for parent,commit,arch in ((workspace/"outside",source,"amd64"),(workspace/"build"/"storage-capsules","b"*40,"amd64"),(workspace/"build"/"storage-capsules",source,"arm64")):
+            with self.subTest(parent=parent,commit=commit,arch=arch),patch.dict(os.environ,valid,clear=True),patch.object(storage,"require_disposable_host"),patch.object(storage,"guarded_directory") as guard,patch.object(storage.tempfile,"mkdtemp") as create,patch.object(storage,"command") as command:
+                with self.assertRaisesRegex(RuntimeError,"source, target or parent"):storage.controlled_unmounted_image(parent,commit,arch,{})
+                guard.assert_not_called();create.assert_not_called();command.assert_not_called()
+
+    def test_controlled_evidence_cannot_reuse_a_previous_result(self):
+        with patch.object(storage,"require_disposable_host"),patch.object(storage.tempfile,"mkdtemp") as create,patch.object(storage,"command") as command:
+            with self.assertRaisesRegex(RuntimeError,"evidence must be new"):
+                storage.controlled_unmounted_image(Path("/owned"),"a"*40,"amd64",{"passed":True})
+            create.assert_not_called();command.assert_not_called()
+
+    def test_changed_initial_device_mapping_or_filesystem_identity_never_unmounts(self):
+        wrong=self.info([{"dev-entry":"/dev/disk30"},self.entities[1]])
+        for changed in (True,False):
+            with self.subTest(changed_mapping=changed),patch.object(storage,"require_disposable_host"),patch.object(storage,"info",return_value=wrong if changed else self.info()),patch.object(storage,"check_owned_cleanup_identity",side_effect=RuntimeError("changed")) as check,patch.object(storage,"command") as command:
+                with self.assertRaises(RuntimeError):self.invoke({})
+                command.assert_not_called()
+
+    def test_failed_normal_unmount_is_not_retried_or_forced(self):
+        from subprocess import CompletedProcess
+        record={}
+        with patch.object(storage,"require_disposable_host"),patch.object(storage,"info",return_value=self.info()),patch.object(storage,"check_owned_cleanup_identity"),patch.object(storage,"command",return_value=CompletedProcess([],16,b"",b"busy /private/secret")) as command:
+            with self.assertRaisesRegex(RuntimeError,"normal unmount did not succeed"):self.invoke(record)
+            self.assertEqual(command.call_count,1)
+        self.assertEqual(record["normalUnmountExitCode"],16)
+        self.assertNotIn("originalUnmountedBindingVerified",record)
+        import json
+        self.assertNotIn("secret",json.dumps(record))
+
+    def test_disappeared_reassigned_or_foreign_mounted_association_cannot_qualify_the_path(self):
+        from subprocess import CompletedProcess
+        wrong=self.info([{"dev-entry":"/dev/disk30"},{"dev-entry":"/dev/disk21s1"}])
+        foreign=self.info([self.entities[0],dict(self.entities[1],**{"mount-point":"/other"})])
+        for after in ({"images":[]},wrong,foreign):
+            record={}
+            with self.subTest(after=after),patch.object(storage,"require_disposable_host"),patch.object(storage,"info",side_effect=[self.info(),after]),patch.object(storage,"check_owned_cleanup_identity"),patch.object(storage,"command",return_value=CompletedProcess([],0,b"",b"")) as command:
+                with self.assertRaises(RuntimeError):self.invoke(record)
+                self.assertEqual(command.call_count,1)
+            self.assertNotIn("originalUnmountedBindingVerified",record)
+
+    def test_changed_host_mount_vnode_after_unmount_refuses_qualification(self):
+        from subprocess import CompletedProcess
+        after=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}];record={}
+        with patch.object(storage,"require_disposable_host"),patch.object(storage,"info",side_effect=[self.info(),self.info(after)]),patch.object(storage,"check_owned_cleanup_identity",side_effect=[None,RuntimeError("changed host mount")]),patch.object(storage,"command",return_value=CompletedProcess([],0,b"",b"")):
+            with self.assertRaisesRegex(RuntimeError,"changed host mount"):self.invoke(record)
+        self.assertNotIn("originalUnmountedBindingVerified",record)
+
+    def test_stale_mounted_observation_waits_without_launching_another_unmount(self):
+        from subprocess import CompletedProcess
+        after=[{"dev-entry":"/dev/disk20"},{"dev-entry":"/dev/disk21s1"}]
+        with patch.object(storage,"require_disposable_host"),patch.object(storage,"info",side_effect=[self.info(),self.info(),self.info(after)]),patch.object(storage,"check_owned_cleanup_identity"),patch.object(storage,"command",return_value=CompletedProcess([],0,b"",b"")) as command,patch.object(storage.time,"sleep") as sleep:
+            self.invoke({})
+            self.assertEqual(command.call_count,1);self.assertEqual(sleep.call_count,1)
+
+    def test_observation_deadline_is_not_extended_and_partial_state_is_not_qualified(self):
+        from subprocess import CompletedProcess
+        record={}
+        with patch.object(storage,"require_disposable_host"),patch.object(storage.time,"monotonic",side_effect=[0,30]),patch.object(storage,"info",return_value=self.info()),patch.object(storage,"check_owned_cleanup_identity"),patch.object(storage,"command",return_value=CompletedProcess([],0,b"",b"")) as command:
+            with self.assertRaisesRegex(RuntimeError,"observation deadline"):self.invoke(record)
+            self.assertEqual(command.call_count,1)
+        self.assertNotIn("originalUnmountedBindingVerified",record)
+
 if __name__=="__main__":unittest.main()

@@ -214,12 +214,177 @@ def help_evidence(result, requested_flag):
             "basicHelpListsRequestedFlag": requested_flag in body}
 
 
-def main():
+def require_disposable_host():
     if (os.environ.get("ACCESSWEAVER_DISPOSABLE_DARWIN_STORAGE_TEST") != "1" or
         os.environ.get("GITHUB_ACTIONS") != "true" or
         os.environ.get("RUNNER_ENVIRONMENT") != "github-hosted" or
         os.environ.get("RUNNER_OS") != "macOS" or platform.system() != "Darwin" or os.geteuid() == 0):
         raise RuntimeError("Refusing storage pressure outside an ordinary-user disposable hosted Mac")
+
+
+def unmount_owned_volume(image, mount, base_device, volume_device, known_devices, original, record):
+    """A controlled test intervention, not a retry/force cleanup operation."""
+    require_disposable_host()
+    observations = record.setdefault("unmountMappingObservations", [])
+    known = frozenset(known_devices)
+    if (not BASE_DEVICE.fullmatch(base_device) or not DEVICE.fullmatch(volume_device) or base_device == volume_device
+            or not 1 <= len(known) <= 32 or base_device not in known or volume_device not in known
+            or any(not isinstance(d, str) or DEVICE.fullmatch(d) is None for d in known)):
+        raise RuntimeError("Invalid controlled unmount device set")
+    if observed_owned_mapping(info(timeout=5), image, mount, base_device, volume_device, known,
+                              observations, "controlled-before-unmount") is not True:
+        raise RuntimeError("Controlled unmount requires the original mounted association")
+    frame = observations[-1]
+    if len(frame["deviceLabels"]) != len(known) or set(frame["deviceLabels"]) != known:
+        raise RuntimeError("Controlled unmount requires every original device")
+    check_owned_cleanup_identity(image, mount, original, unmounted=False)
+    record["normalUnmountRequests"] = 1
+    result = command([HDIUTIL, "unmount", volume_device], timeout=30, check=False,
+                     env=dict(os.environ, LANG="C", LC_ALL="C"))
+    output = result.stdout + result.stderr
+    record.update(normalUnmountExitCode=result.returncode, normalUnmountOutputBytes=len(output),
+                  normalUnmountOutputSHA256=hashlib.sha256(output).hexdigest())
+    if result.returncode != 0:
+        raise RuntimeError("Controlled normal unmount did not succeed")
+    deadline = time.monotonic() + 30
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("Controlled unmount observation deadline exceeded")
+        full = observed_owned_mapping(info(timeout=min(5, remaining)), image, mount, base_device,
+                                      volume_device, known, observations, "controlled-after-unmount")
+        if full is None:
+            raise RuntimeError("Controlled unmount unexpectedly detached the image")
+        frame = observations[-1]
+        if (not full and frame["basePresent"] and frame["volumePresent"]
+                and frame["exactMountCount"] == 0 and len(frame["deviceLabels"]) == len(known)
+                and set(frame["deviceLabels"]) == known):
+            check_owned_cleanup_identity(image, mount, original, unmounted=True)
+            record["originalUnmountedBindingVerified"] = True
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError("Controlled unmount observation deadline exceeded")
+        time.sleep(min(0.1, remaining))
+
+
+def controlled_unmounted_image(parent, source, arch, record):
+    """Use a separate empty 128 MiB image; never apply pressure or execute code."""
+    require_disposable_host()
+    if type(record) is not dict or record:
+        raise RuntimeError("Controlled image evidence must be new")
+    workspace = Path(os.environ.get("GITHUB_WORKSPACE", "")).resolve()
+    if (not re.fullmatch(r"[a-f0-9]{40}", source) or source != os.environ.get("GITHUB_SHA")
+            or arch not in ("amd64", "arm64") or arch != os.environ.get("ACCESSWEAVER_EXPECT_GOARCH")
+            or parent != workspace / "build" / "storage-capsules" or parent.resolve() != parent):
+        raise RuntimeError("Invalid controlled image source, target or parent")
+    guarded_directory(parent, os.geteuid())
+    if shutil.disk_usage(workspace).free < 1 << 30:
+        raise RuntimeError("Insufficient reserve for the controlled owned image")
+    capsule = Path(tempfile.mkdtemp(prefix="apfs-unmounted-", dir=parent)).resolve()
+    if capsule.parent != parent or not capsule.name.startswith("apfs-unmounted-"):
+        raise RuntimeError("Controlled capsule escaped its reserved parent")
+    capsule_identity = guarded_directory(capsule, os.geteuid())
+    image, mount = capsule / "pressure.sparseimage", capsule / "mount"
+    mount.mkdir(mode=0o700)
+    host_mount = mount.lstat()
+    record.update(schemaVersion=1, sourceCommit=source, arch=arch, imageVirtualBytes=128 << 20,
+                  controlledIntervention=True, hostVolumePressureApplied=False,
+                  rootMachinePolicyChanged=False, productionQualificationComplete=False,
+                  passed=False, attached=False, detached=False, ownedImageRemoved=False, capsuleRemoved=False)
+    image_identity = None
+    binding = None
+    known = None
+    attached = False
+    failure = None
+    try:
+        record["stage"] = "create-owned-empty-image"
+        command([HDIUTIL, "create", "-size", "128m", "-type", "SPARSE", "-fs", "APFS",
+                 "-volname", "AWUnmounted-" + capsule.name, str(image)], timeout=30)
+        image_identity = image.lstat()
+        original = (image_identity, host_mount, capsule_identity)
+        check_owned_cleanup_identity(image, mount, original, unmounted=True)
+        record["stage"] = "attach-owned-empty-image"
+        command([HDIUTIL, "attach", "-plist", "-nobrowse", "-owners", "on",
+                 "-mountpoint", str(mount), str(image)], timeout=30)
+        attached = True
+        record["attached"] = True
+        snapshot = info(timeout=5)
+        binding = association(snapshot, image, mount)
+        record.update(imageDevice=binding[0], volumeDevice=binding[1])
+        owned = next(row for row in snapshot["images"] if row.get("image-path") == str(image))
+        known = {entry.get("dev-entry") for entry in owned.get("system-entities", [])}
+        if (not 1 <= len(known) <= 32 or any(not isinstance(d, str) or not DEVICE.fullmatch(d) for d in known)):
+            raise RuntimeError("Controlled image device labels are invalid")
+        record["originalDeviceLabels"] = sorted(known)
+        record["originalDeviceLabelsComplete"] = True
+        mounted = mount.stat()
+        volume = os.statvfs(mount)
+        if mounted.st_dev == image_identity.st_dev or volume.f_frsize <= 0 or not 0 < volume.f_blocks * volume.f_frsize <= 256 << 20:
+            raise RuntimeError("Controlled image mount extent differs")
+        record["mountedVolumeBytes"] = volume.f_blocks * volume.f_frsize
+        record["mountedOnDifferentDevice"] = True
+        record["stage"] = "normal-owned-volume-unmount"
+        unmount_owned_volume(image, mount, *binding, known, original, record)
+    except BaseException as error:
+        failure = error
+        record["failureType"] = type(error).__name__
+    finally:
+        try:
+            snapshot = info(timeout=5)
+            associated = any(row.get("image-path") == str(image) for row in snapshot.get("images", []))
+            if attached or associated:
+                if binding is None or known is None or image_identity is None:
+                    raise RuntimeError("Preserving controlled image without its original binding")
+                record["normalDetachAttempts"] = detach_owned(image, mount, *binding, known_devices=known,
+                    owned_identity=(image_identity, host_mount, capsule_identity),
+                    observations=record.setdefault("detachMappingObservations", []), diagnostics=record)
+                if any(row.get("image-path") == str(image) for row in info(timeout=5).get("images", [])):
+                    raise RuntimeError("Controlled image remains associated")
+                record["detached"] = True
+            if image.exists():
+                if image_identity is None:
+                    raise RuntimeError("Preserving controlled image without creation identity")
+                if any(row.get("image-path") == str(image) for row in info(timeout=5).get("images", [])):
+                    raise RuntimeError("Refusing associated controlled image deletion")
+                check_owned_cleanup_identity(image, mount, (image_identity, host_mount, capsule_identity), unmounted=True)
+                if attached and not record["detached"]:
+                    raise RuntimeError("Refusing controlled mounted image deletion")
+                image.unlink()
+                record["ownedImageRemoved"] = True
+            current = guarded_directory(capsule, os.geteuid())
+            if (capsule.parent != parent or current.st_dev != capsule_identity.st_dev
+                    or current.st_ino != capsule_identity.st_ino or image_identity is None):
+                raise RuntimeError("Controlled capsule identity differs")
+            current_mount = guarded_directory(mount, os.geteuid())
+            if (current_mount.st_dev != host_mount.st_dev or current_mount.st_ino != host_mount.st_ino
+                    or stat.S_IMODE(current_mount.st_mode) != stat.S_IMODE(host_mount.st_mode)):
+                raise RuntimeError("Controlled host mount identity differs")
+            mount.rmdir()
+            capsule.rmdir()
+            record["capsuleRemoved"] = True
+        except BaseException as error:
+            record["cleanupFailed"] = True
+            if failure is None:
+                failure = error
+                record["failureType"] = type(error).__name__
+    accepted = [row for row in record.get("normalDetachObservations", [])
+                if row.get("outcome") == "accepted" and row.get("exitCode") == 0
+                and row.get("unmountedOriginalBinding") is True
+                and row.get("originalFilesystemIdentityRechecked") is True]
+    if failure is None and (record.get("originalUnmountedBindingVerified") is not True
+            or record.get("normalUnmountExitCode") != 0 or not accepted
+            or record.get("normalDetachAccepted") is not True
+            or not all(record.get(k) is True for k in ("detached", "ownedImageRemoved", "capsuleRemoved"))):
+        failure = RuntimeError("Controlled unmounted detach path did not execute to completion")
+        record["failureType"] = type(failure).__name__
+    if failure is not None:
+        raise failure
+    record.update(passed=True, stage="controlled-owned-image-cleanup")
+
+
+def main():
+    require_disposable_host()
     repo = Path(__file__).resolve().parents[1]
     if Path(os.environ.get("GITHUB_WORKSPACE", "")).resolve() != repo:
         raise RuntimeError("Unexpected hosted workspace")
@@ -245,7 +410,7 @@ def main():
     if tools.exists():
         raise RuntimeError("Refusing existing native tool evidence")
     help_hashes = {}
-    for verb, required in [("create", b"-fs"), ("attach", b"-owners"), ("detach", b"dev_name")]:
+    for verb, required in [("create", b"-fs"), ("attach", b"-owners"), ("detach", b"dev_name"), ("unmount", b"volume")]:
         help_hashes[verb] = help_evidence(command([HDIUTIL, verb, "-help"], check=False), required)
     tools.write_text(json.dumps({"schemaVersion": 1, "sourceCommit": source, "arch": arch,
                                 "sdk": sdk, "nativeHelp": help_hashes,
@@ -268,7 +433,8 @@ def main():
     binary = capsule / "managed-storage.test"
     build_env = dict(os.environ, CGO_ENABLED="0")
     command(["go", "test", "-c", "-o", str(binary), "./internal/managed"], timeout=180, env=build_env)
-    record = {"schemaVersion": 1, "sourceCommit": source, "arch": arch,
+    record = {"schemaVersion": 2, "sourceCommit": source, "arch": arch,
+              "passed": False, "controlledUnmountedImageRequired": True,
               "imageVirtualBytes": 512 << 20, "nativeToolHelp": help_hashes, "productionQualificationComplete": False,
               "attached": False, "detached": False, "ownedImageRemoved": False,
               "rootMachinePolicyChanged": False, "hostVolumePressureApplied": False}
@@ -372,9 +538,21 @@ def main():
             else:
                 print("Storage fixture cleanup failed: " + str(cleanup_error), file=sys.stderr)
         lifecycle.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    if failure is None:
+        controlled = record.setdefault("controlledUnmountedImage", {})
+        try:
+            controlled_unmounted_image(parent, source, arch, controlled)
+            if controlled.get("passed") is not True:
+                raise RuntimeError("Controlled owned-image qualification did not complete")
+        except BaseException as error:
+            failure = error
+            record.update(failureStage="controlled-unmounted-image", failureType=type(error).__name__)
+        finally:
+            record["passed"] = failure is None and controlled.get("passed") is True
+            lifecycle.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     if failure is not None:
         raise failure
-    print("Eight native APFS ENOSPC cases passed; exact owned image detached and removed")
+    print("Eight native APFS ENOSPC cases and controlled owned unmounted-image detach passed")
 
 
 if __name__ == "__main__":
