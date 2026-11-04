@@ -16,6 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+      # Docker populates this isolated anonymous volume from the image's /etc.
+      # Its machine-policy parent must use qualified persistent storage.
+      volumes:
+        - /etc
       options: --user 1001 --init --shm-size=1gb
     timeout-minutes: 20
     strategy:
@@ -38,6 +42,18 @@ jobs:
               exit 1
             fi
           done
+          if [ ! -d /etc ] || [ -L /etc ] || [ "$(stat -c '%u' -- /etc)" != 0 ] || [ -w /etc ]; then
+            printf '%s\n' 'Browser container /etc must be a real root-owned directory that UID 1001 cannot write.' >&2
+            exit 1
+          fi
+          policy_filesystem="$(stat -f -c '%t' -- /etc)"
+          case "$policy_filesystem" in
+            ef53|58465342|9123683e) ;;
+            *)
+              printf 'Browser container /etc filesystem %s is unsupported; require ext4, XFS or Btrfs.\n' "$policy_filesystem" >&2
+              exit 1
+              ;;
+          esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

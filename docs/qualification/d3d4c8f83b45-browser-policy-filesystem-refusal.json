@@ -1,0 +1,961 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "d3d4c8f83b45d93ed1856652622f40c1b37af460",
+  "runID": 41918352360,
+  "jobID": 126883935810,
+  "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41918352360/job/126883935810",
+  "jobName": "browser / Real browser (chromium)",
+  "jobStatus": "completed",
+  "jobConclusion": "failure",
+  "jobStartedAt": "2026-11-04T21:41:02Z",
+  "jobCompletedAt": "2026-11-04T21:42:57Z",
+  "failedSteps": [
+    {
+      "name": "Exercise the dashboard with an isolated local controller",
+      "number": 10,
+      "status": "completed",
+      "conclusion": "failure",
+      "started_at": "2026-11-04T21:42:17Z",
+      "completed_at": "2026-11-04T21:42:50Z",
+      "providerDurationSeconds": 33.0
+    }
+  ],
+  "steps": [
+    {
+      "name": "Set up job",
+      "number": 1,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:41:03Z",
+      "completed_at": "2026-11-04T21:41:05Z",
+      "providerDurationSeconds": 2.0
+    },
+    {
+      "name": "Initialize containers",
+      "number": 2,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:41:05Z",
+      "completed_at": "2026-11-04T21:41:37Z",
+      "providerDurationSeconds": 32.0
+    },
+    {
+      "name": "Check ordinary-user container paths",
+      "number": 3,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:41:37Z",
+      "completed_at": "2026-11-04T21:41:38Z",
+      "providerDurationSeconds": 1.0
+    },
+    {
+      "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "number": 4,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:41:38Z",
+      "completed_at": "2026-11-04T21:41:43Z",
+      "providerDurationSeconds": 5.0
+    },
+    {
+      "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+      "number": 5,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:41:43Z",
+      "completed_at": "2026-11-04T21:41:55Z",
+      "providerDurationSeconds": 12.0
+    },
+    {
+      "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+      "number": 6,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:41:55Z",
+      "completed_at": "2026-11-04T21:42:00Z",
+      "providerDurationSeconds": 5.0
+    },
+    {
+      "name": "Build the real controller",
+      "number": 7,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:42:00Z",
+      "completed_at": "2026-11-04T21:42:15Z",
+      "providerDurationSeconds": 15.0
+    },
+    {
+      "name": "Install locked test dependencies and check known advisories",
+      "number": 8,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:42:15Z",
+      "completed_at": "2026-11-04T21:42:16Z",
+      "providerDurationSeconds": 1.0
+    },
+    {
+      "name": "Verify the pinned preinstalled browser environment",
+      "number": 9,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:42:16Z",
+      "completed_at": "2026-11-04T21:42:17Z",
+      "providerDurationSeconds": 1.0
+    },
+    {
+      "name": "Exercise the dashboard with an isolated local controller",
+      "number": 10,
+      "status": "completed",
+      "conclusion": "failure",
+      "started_at": "2026-11-04T21:42:17Z",
+      "completed_at": "2026-11-04T21:42:50Z",
+      "providerDurationSeconds": 33.0
+    },
+    {
+      "name": "Retain test results without private controller state",
+      "number": 11,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:42:50Z",
+      "completed_at": "2026-11-04T21:42:53Z",
+      "providerDurationSeconds": 3.0
+    },
+    {
+      "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+      "number": 19,
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-04T21:42:53Z",
+      "completed_at": "2026-11-04T21:42:53Z",
+      "providerDurationSeconds": 0.0
+    },
+    {
+      "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+      "number": 20,
+      "status": "completed",
+      "conclusion": "skipped",
+      "started_at": "2026-11-04T21:42:53Z",
+      "completed_at": "2026-11-04T21:42:53Z",
+      "providerDurationSeconds": 0.0
+    },
+    {
+      "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "number": 21,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:42:53Z",
+      "completed_at": "2026-11-04T21:42:53Z",
+      "providerDurationSeconds": 0.0
+    },
+    {
+      "name": "Stop containers",
+      "number": 22,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:42:53Z",
+      "completed_at": "2026-11-04T21:42:53Z",
+      "providerDurationSeconds": 0.0
+    },
+    {
+      "name": "Complete job",
+      "number": 23,
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-11-04T21:42:53Z",
+      "completed_at": "2026-11-04T21:42:53Z",
+      "providerDurationSeconds": 0.0
+    }
+  ],
+  "stageObservations": {
+    "Check ordinary-user container paths": {
+      "providerStep": {
+        "name": "Check ordinary-user container paths",
+        "number": 3,
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-04T21:41:37Z",
+        "completed_at": "2026-11-04T21:41:38Z",
+        "providerDurationSeconds": 1.0
+      },
+      "timestampedWindowLines": 50,
+      "windowIncludesProviderTerminalSecond": true,
+      "fixedMarkers": {
+        "browser-executable-missing": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-host-dependencies-missing": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-launch-error-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-page-context-closed": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-sandbox-error": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "permission-denied-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "controller-launcher-readiness-failure": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "private-parent-refusal": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "test-assertion-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "test-timeout-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "page-script-error-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "npm-error-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "workflow-error-annotation": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "dependency-installer": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "privilege-switch-notice": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-index-or-package-fetch": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-download-summary": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-reading-package-lists": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-dependency-tree": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-selection": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-unpacking": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-setup": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-error": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-lock-contention": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "firefox-download": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "ffmpeg-download": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-download-failure": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "network-timeout-or-reset": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "unsupported-platform-warning": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "action-timeout-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "operation-cancelled-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "dependency-installer-exit-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "playwright-test-runner-start": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "playwright-test-result": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        }
+      },
+      "aptStatusMarkers": {
+        "Hit": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Get": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Ign": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Err": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        }
+      },
+      "aptFetchHostMarkers": {}
+    },
+    "Verify the pinned preinstalled browser environment": {
+      "providerStep": {
+        "name": "Verify the pinned preinstalled browser environment",
+        "number": 9,
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-04T21:42:16Z",
+        "completed_at": "2026-11-04T21:42:17Z",
+        "providerDurationSeconds": 1.0
+      },
+      "timestampedWindowLines": 28,
+      "windowIncludesProviderTerminalSecond": true,
+      "fixedMarkers": {
+        "browser-executable-missing": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-host-dependencies-missing": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-launch-error-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-page-context-closed": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-sandbox-error": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "permission-denied-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "controller-launcher-readiness-failure": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "private-parent-refusal": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "test-assertion-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "test-timeout-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "page-script-error-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "npm-error-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "workflow-error-annotation": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "dependency-installer": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "privilege-switch-notice": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-index-or-package-fetch": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-download-summary": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-reading-package-lists": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-dependency-tree": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-selection": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-unpacking": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-setup": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-error": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-lock-contention": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "firefox-download": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "ffmpeg-download": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-download-failure": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "network-timeout-or-reset": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "unsupported-platform-warning": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "action-timeout-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "operation-cancelled-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "dependency-installer-exit-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "playwright-test-runner-start": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "playwright-test-result": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        }
+      },
+      "aptStatusMarkers": {
+        "Hit": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Get": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Ign": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Err": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        }
+      },
+      "aptFetchHostMarkers": {}
+    },
+    "Exercise the dashboard with an isolated local controller": {
+      "providerStep": {
+        "name": "Exercise the dashboard with an isolated local controller",
+        "number": 10,
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-11-04T21:42:17Z",
+        "completed_at": "2026-11-04T21:42:50Z",
+        "providerDurationSeconds": 33.0
+      },
+      "timestampedWindowLines": 895,
+      "windowIncludesProviderTerminalSecond": true,
+      "fixedMarkers": {
+        "browser-executable-missing": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-host-dependencies-missing": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-launch-error-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-page-context-closed": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-sandbox-error": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "permission-denied-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "controller-launcher-readiness-failure": {
+          "count": 117,
+          "firstTimestamp": "2026-11-04T21:42:50.4133641Z",
+          "lastTimestamp": "2026-11-04T21:42:50.4664571Z"
+        },
+        "private-parent-refusal": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "test-assertion-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "test-timeout-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "page-script-error-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "npm-error-reference": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "workflow-error-annotation": {
+          "count": 1,
+          "firstTimestamp": "2026-11-04T21:42:50.4733592Z",
+          "lastTimestamp": "2026-11-04T21:42:50.4733592Z"
+        },
+        "dependency-installer": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "privilege-switch-notice": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-index-or-package-fetch": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-download-summary": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-reading-package-lists": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-dependency-tree": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-selection": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-unpacking": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-package-setup": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-error": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "apt-lock-contention": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "firefox-download": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "ffmpeg-download": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "browser-download-failure": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "network-timeout-or-reset": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "unsupported-platform-warning": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "action-timeout-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "operation-cancelled-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "dependency-installer-exit-diagnostic": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "playwright-test-runner-start": {
+          "count": 1,
+          "firstTimestamp": "2026-11-04T21:42:18.0156142Z",
+          "lastTimestamp": "2026-11-04T21:42:18.0156142Z"
+        },
+        "playwright-test-result": {
+          "count": 1,
+          "firstTimestamp": "2026-11-04T21:42:50.4670689Z",
+          "lastTimestamp": "2026-11-04T21:42:50.4670689Z"
+        }
+      },
+      "aptStatusMarkers": {
+        "Hit": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Get": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Ign": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        },
+        "Err": {
+          "count": 0,
+          "firstTimestamp": null,
+          "lastTimestamp": null
+        }
+      },
+      "aptFetchHostMarkers": {}
+    }
+  },
+  "browserTestsExecution": "playwright-runner-start-observed-result-still-requires-log-review",
+  "retainedJobMetadataSHA256": "ed7e2eb737999ae1425406724dcb358c5e3bb1c922333446f5657210959d0260",
+  "retainedLogBytes": 136075,
+  "retainedLogSHA256": "49b70b1e0d262e5af7a19ccf1437da01d66c4b96f252052ce845d70daf775289",
+  "providerLogDigestAvailable": false,
+  "cryptographicAttestationVerified": false,
+  "interpretation": "Exact provider terminal steps/times and bounded fixed log markers are independent CI QA observations. APT hosts, counts and timestamps omit raw lines and URL paths/queries; markers alone do not establish a mirror, network, platform or package-manager cause. Container preflight, image verification and dashboard skipped states are distinct from tests that executed and failed. Fixed error references do not expose raw messages, paths, URLs, session tokens or profile lines. The raw log stays in this ignored local folder. No rerun, workflow/pin/runner/browser-matrix/deadline change or target download/execution.",
+  "targetDownloadPerformed": false,
+  "targetExecutionPerformed": false,
+  "workflowRerunPerformed": false,
+  "trackedSourceModified": false,
+  "readinessStatusChanged": false,
+  "actualFixtureFailure": {
+    "declaredTests": 39,
+    "failedTests": 39,
+    "failurePhase": "controller fixture setup before private launcher and dashboard assertions",
+    "fixedUnderlyingError": "managed machine policy is unavailable; ask the administrator to repair its configuration: machine policy needs qualified persistent storage; filesystem 0x794c7630 is unsupported",
+    "earliestReportedLogLine": 418,
+    "fixtureSource": "scripts/browser-tests/desktop.spec.cjs:32",
+    "logEstablishedMachinePolicyPersistenceRefusal": true,
+    "workspaceParentRefusalObserved": false,
+    "sourceChain": [
+      "cmd/accessweaver/main.go:103",
+      "internal/profile/store.go:298",
+      "internal/managed/machine.go:87",
+      "internal/managed/acceptance_store_linux.go:81",
+      "internal/managed/machine_linux.go:74",
+      "internal/linuxtrust/files_linux.go:130"
+    ],
+    "supportedMachinePolicyFilesystemMagic": [
+      "0xef53",
+      "0x58465342",
+      "0x9123683e"
+    ]
+  },
+  "candidateCorrection": {
+    "method": "Give the fixed /etc machine-policy parent a fresh anonymous Docker volume initialized with image /etc contents. Check actual root ownership, ordinary-user non-writability and permitted backing filesystem before tests. Keep native machine-policy and session guards intact.",
+    "hostEtcBoundIntoContainer": false,
+    "productionFilesystemWhitelistChanged": false,
+    "rootFallbackOrPermissionRepairAdded": false,
+    "localContainerOrVMExecuted": false,
+    "freshFullBrowserMatrixRequired": true,
+    "volumeCleanupClaim": "The disposable hosted environment owns the anonymous volume; explicit volume deletion or installed-product durability is not qualified by this change.",
+    "officialPrimarySources": [
+      "https://docs.docker.com/engine/storage/volumes/",
+      "https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/run-jobs-in-a-container"
+    ]
+  },
+  "cohortCIObservation": {
+    "sourceCommit": "d3d4c8f83b45d93ed1856652622f40c1b37af460",
+    "status": "completed",
+    "conclusion": "failure",
+    "jobs": [
+      {
+        "id": 126883935016,
+        "name": "Race detector (Linux/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935314,
+        "name": "Race detector (Linux)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935318,
+        "name": "Go vulnerability checks",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935519,
+        "name": "Test (ubuntu-24.04-arm)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935560,
+        "name": "Test (ubuntu-latest)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935575,
+        "name": "browser / Real browser (firefox)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 126883935594,
+        "name": "Test (macos-15-intel)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935610,
+        "name": "Cross-build (linux/amd64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935650,
+        "name": "Test (windows-latest)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935652,
+        "name": "Cross-build (openbsd/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935697,
+        "name": "Cross-build (darwin/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935719,
+        "name": "Test (windows-11-arm)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935779,
+        "name": "Cross-build (windows/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935799,
+        "name": "Test (macos-latest)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935810,
+        "name": "browser / Real browser (chromium)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 126883935844,
+        "name": "Cross-build (freebsd/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935918,
+        "name": "Cross-build (windows/amd64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935940,
+        "name": "Cross-build (linux/arm64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883935986,
+        "name": "Cross-build (darwin/amd64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883936051,
+        "name": "Cross-build (openbsd/amd64)",
+        "conclusion": "success"
+      },
+      {
+        "id": 126883936233,
+        "name": "browser / Real browser (webkit)",
+        "conclusion": "failure"
+      },
+      {
+        "id": 126883936248,
+        "name": "Cross-build (freebsd/amd64)",
+        "conclusion": "success"
+      }
+    ],
+    "causeScope": "Detailed log diagnosis here covers Chromium only; Firefox/WebKit provider failures are not independently attributed by this record."
+  }
+}
