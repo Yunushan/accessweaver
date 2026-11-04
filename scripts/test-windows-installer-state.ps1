@@ -104,3 +104,62 @@ foreach($observation in $script:stateObservations){
 $public=ConvertTo-Json -InputObject $script:firewallOriginObservations -Depth 16
 Assert-State (-not $public.Contains('private-captured-') -and -not $public.Contains('private-owner')) 'Checkpoint integration disclosed raw origin metadata'
 Write-Output 'Checkpoint integration preserves comparisons and global origin limits with synthetic snapshots only.'
+
+
+# Exercise the actual Native-Record wrapper with a fully synthetic invocation.
+# Parse/import its function only; never source the disposable installer body.
+. (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1')
+$nativeNodes=@($sourceAst.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'Native-Record'})
+Assert-State ($nativeNodes.Count -eq 1) 'Expected exactly one native record wrapper'
+. ([scriptblock]::Create($nativeNodes[0].Extent.Text))
+function Require([bool]$ok,[string]$message){if(-not $ok){throw $message}}
+$script:syntheticNativeMode='success';$script:syntheticNativeCalls=0
+function Invoke-Isolated([string]$binary,[string[]]$arguments,[int[]]$codes,[int]$Timeout){
+    $script:syntheticNativeCalls++
+    Assert-State ($Timeout -eq 180 -and $codes -contains 255 -and $codes -contains 3010 -and $codes -contains 1641) 'Wrapper changed timeout or diagnostic exit-code admission'
+    Assert-State ($script:lastNativeAttempt.toolClass -ceq 'uninstaller' -and -not $script:lastNativeAttempt.invocationReturned -and $script:lastNativeAttempt.failureCategory -ceq 'in-progress' -and $null -eq $script:lastNativeAttempt.exitCode) 'Current native attempt was not reset before invocation'
+    switch($script:syntheticNativeMode){
+        'timeout' {throw ('Timed out: '+[IO.Path]::GetFileName($binary))}
+        'tool-exit' {throw ('Tool failed: '+[IO.Path]::GetFileName($binary)+' (exit -1)')}
+        'other' {throw 'PRIVATE_NATIVE_ERROR PRIVATE_ARGUMENT_TOKEN C:\private-input'}
+        'large' {throw ('PRIVATE_NATIVE_ERROR'+('x'*8192))}
+        'invalid' {return @{exitCode='PRIVATE_INVALID_VALUE';outputComplete=$true}}
+        'missing' {return $null}
+        'exit' {return @{exitCode=7;outputComplete=$true;stdout='PRIVATE_TOOL_OUTPUT'}}
+        'incomplete' {return @{exitCode=0;outputComplete=$false;stderr='PRIVATE_TOOL_OUTPUT'}}
+        default {return @{exitCode=0;outputComplete=$true;stdout='PRIVATE_TOOL_OUTPUT'}}
+    }
+}
+$privateBinary=Join-Path ([IO.Path]::GetTempPath()) 'PRIVATE_DIRECTORY\unins000.exe'
+$null=Native-Record $privateBinary @('PRIVATE_ARGUMENT_TOKEN')
+$prior=$script:lastNative
+Assert-State ($script:lastNativeAttempt.operationAccepted -and $script:lastNativeAttempt.failureCategory -ceq 'none') 'Successful attempt was not retained'
+foreach($case in @(
+    @{mode='timeout';category='tool-timeout';returned=$false;code=$null;complete=$null},
+    @{mode='tool-exit';category='tool-exit';returned=$false;code=$null;complete=$null},
+    @{mode='other';category='other-native-error';returned=$false;code=$null;complete=$null},
+    @{mode='large';category='other-native-error';returned=$false;code=$null;complete=$null},
+    @{mode='invalid';category='invalid-native-result';returned=$true;code=$null;complete=$null},
+    @{mode='missing';category='invalid-native-result';returned=$true;code=$null;complete=$null},
+    @{mode='exit';category='unexpected-exit';returned=$true;code=7;complete=$true},
+    @{mode='incomplete';category='incomplete-output';returned=$true;code=0;complete=$false}
+)){
+    $script:syntheticNativeMode=$case.mode;$failed=$false
+    try{$null=Native-Record $privateBinary @('PRIVATE_ARGUMENT_TOKEN')}catch{$failed=$true}
+    Assert-State $failed 'Synthetic native failure was swallowed'
+    $attempt=$script:lastNativeAttempt
+    Assert-State ($attempt.invocationReturned -eq $case.returned -and -not $attempt.operationAccepted -and $attempt.failureCategory -ceq $case.category -and $attempt.exitCode -eq $case.code -and $attempt.outputComplete -eq $case.complete) 'Failed-attempt metadata differs'
+    Assert-State ($attempt.elapsedMilliseconds -ge 0 -and $attempt.timeoutMilliseconds -eq 180000 -and $attempt.schemaVersion -eq 1) 'Failed-attempt timing or version was lost'
+    $public=$attempt | ConvertTo-Json -Compress
+    Assert-State ($public.Length -le 512) 'Native-attempt metadata is unbounded'
+    foreach($private in @('PRIVATE_','unins000.exe','C:\private-input')){Assert-State (-not $public.Contains($private)) 'Private native material escaped the diagnostic envelope'}
+    if(-not $case.returned){Assert-State ([object]::ReferenceEquals($prior,$script:lastNative)) 'A thrown invocation pretended to return a new native result'}
+}
+Assert-State ($script:syntheticNativeCalls -eq 9) 'Synthetic wrapper coverage differs'
+foreach($case in @(@{name='accessweaver.exe';wanted='core'},@{name='accessweaver-0.1.0-alpha-windows-arm64-setup.exe';wanted='setup'},@{name='unins009.exe';wanted='uninstaller'},@{name='PRIVATE_PROGRAM.exe';wanted='other'})){
+    Assert-State ((Get-InstallerNativeToolClass $case.name) -ceq $case.wanted) 'Native tool classification differs'
+}
+foreach($message in @('Timed out: PRIVATE_OTHER.exe','Tool failed: unins000.exe (exit 9999999999)','PRIVATE_NATIVE_ERROR')){
+    Assert-State ((Get-InstallerNativeFailureCategory $privateBinary $message) -ceq 'other-native-error') 'Unrecognized native error was attributed to a timeout or exit'
+}
+Write-Output 'Synthetic native-attempt reset, exception, privacy and unchanged deadline checks passed; no processes launched.'

@@ -1,5 +1,5 @@
 import copy
-from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics
+from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_native_attempt
 import os
 from pathlib import Path
 import subprocess
@@ -124,6 +124,21 @@ class CapturedFirewallOriginContracts(unittest.TestCase):
             invalid.append(dict(self.fixture(),**{key:value}))
         for value in invalid:
             with self.subTest(value=value),self.assertRaises(ValueError):validate_firewall_origin_diagnostics(value)
+
+
+class NativeAttemptContracts(unittest.TestCase):
+    def fixture(self):
+        return {"schemaVersion":1,"toolClass":"uninstaller","timeoutMilliseconds":180000,"elapsedMilliseconds":1200,"invocationReturned":True,"operationAccepted":True,"exitCode":0,"outputComplete":True,"failureCategory":"none"}
+
+    def test_success_requires_current_final_attempt_with_original_deadline(self):
+        self.assertEqual(validate_native_attempt(self.fixture()),{"finalNativeAttemptVerified":True})
+
+    def test_missing_stale_private_failed_or_relaxed_attempt_refuses(self):
+        invalid=[None,{},dict(self.fixture(),privatePath="private")]
+        for key,value in (("schemaVersion",True),("schemaVersion",2),("toolClass","core"),("toolClass","PRIVATE_PROGRAM"),("timeoutMilliseconds",True),("timeoutMilliseconds",180001),("elapsedMilliseconds",True),("elapsedMilliseconds",-1),("elapsedMilliseconds",180000),("invocationReturned",False),("invocationReturned",1),("operationAccepted",False),("exitCode",False),("exitCode",1),("outputComplete",False),("failureCategory","tool-timeout"),("failureCategory","other-native-error")):
+            invalid.append(dict(self.fixture(),**{key:value}))
+        for value in invalid:
+            with self.subTest(value=value),self.assertRaises(ValueError):validate_native_attempt(value)
 
 
 if __name__=='__main__':unittest.main()

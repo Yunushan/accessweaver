@@ -13,6 +13,7 @@ $project=[IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 if((git -C $project rev-parse HEAD).Trim() -cne $source -or $LASTEXITCODE -ne 0 -or (git -C $project status --porcelain --untracked-files=no)){throw 'Expected a clean exact-source checkout'}
 . (Join-Path $PSScriptRoot 'windows-installer-common.ps1')
 . (Join-Path $PSScriptRoot 'windows-installer-state.ps1')
+. (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1')
 $tokens=$null;$issues=$null
 $workflow=Join-Path $project 'internal\workflow\windows.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($workflow,[ref]$tokens,[ref]$issues)
@@ -83,11 +84,32 @@ function Invoke-Isolated([string]$binary,[string[]]$arguments,[int[]]$codes=@(0)
     }
 }
 function Native-Record([string]$binary,[string[]]$arguments,[int[]]$codes=@(0),[int]$Timeout=180){
-    $clock=[Diagnostics.Stopwatch]::StartNew();$r=Invoke-Isolated $binary $arguments ((0..255)+@(3010,1641)) $Timeout;$clock.Stop()
-    $script:lastNative=@{file=[IO.Path]::GetFileName($binary);exitCode=$r.exitCode;outputComplete=$r.outputComplete}
-    Require ($codes -contains $r.exitCode) 'Installer operation returned an unexpected exit code'
-    Require $r.outputComplete 'Native installer process left incomplete output capture'
-    return @{result=$r;milliseconds=$clock.ElapsedMilliseconds}
+    # Reset before invocation: lastNative describes only the last returned call
+    # and can otherwise misleadingly survive a later native exception.
+    $attempt=[ordered]@{schemaVersion=1;toolClass=(Get-InstallerNativeToolClass $binary);timeoutMilliseconds=([long]$Timeout*1000);elapsedMilliseconds=0L;invocationReturned=$false;operationAccepted=$false;exitCode=$null;outputComplete=$null;failureCategory='in-progress'}
+    $script:lastNativeAttempt=$attempt
+    $clock=[Diagnostics.Stopwatch]::StartNew()
+    try {
+        $r=Invoke-Isolated $binary $arguments ((0..255)+@(3010,1641)) $Timeout
+        $attempt.invocationReturned=$true
+        if($null -eq $r -or $r -isnot [Collections.IDictionary] -or $r.exitCode -isnot [int] -or $r.outputComplete -isnot [bool]){
+            $attempt.failureCategory='invalid-native-result'
+            throw 'Native installer result is incomplete'
+        }
+        $attempt.exitCode=$r.exitCode;$attempt.outputComplete=$r.outputComplete
+        $script:lastNative=@{file=[IO.Path]::GetFileName($binary);exitCode=$r.exitCode;outputComplete=$r.outputComplete}
+        $attempt.failureCategory='unexpected-exit'
+        Require ($codes -contains $r.exitCode) 'Installer operation returned an unexpected exit code'
+        $attempt.failureCategory='incomplete-output'
+        Require $r.outputComplete 'Native installer process left incomplete output capture'
+        $attempt.operationAccepted=$true;$attempt.failureCategory='none'
+        return @{result=$r;milliseconds=$clock.ElapsedMilliseconds}
+    } catch {
+        if(-not $attempt.invocationReturned){$attempt.failureCategory=Get-InstallerNativeFailureCategory $binary $_.Exception.Message}
+        throw
+    } finally {
+        $clock.Stop();$attempt.elapsedMilliseconds=$clock.ElapsedMilliseconds
+    }
 }
 function State-Snapshot {
     $inspection=Get-ServiceInspection;Require ($null -eq $inspection.error) 'Service inspection was incomplete'
@@ -170,7 +192,7 @@ $reportDirectory=Join-Path $project 'build\installer-lifecycle-checks';[void][IO
 $reportPath=Join-Path $reportDirectory ($Architecture+'.json')
 $script:stateObservations=@();$script:stateBaseline=$null;$script:statePrevious=$null;$script:assertionFailureLine=$null
 $script:stateFirewallRules=@();$script:statePreviousFirewallRules=@();$script:firewallOriginObservations=@();$script:firewallOriginTruncated=$false;$script:firewallOriginUnavailable=$false
-$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null;$registryReadCases=@();$registryViewCases=@();$registryAccessCases=@();$failureSourceLine=$null;$registryFixtureSHA256=$null;$productRegistrySHA256=$null;$restorationCases=@();$productRestoreSHA256=$null;$restoreFixtureSourceSHA256=$null;$restoreFixtureBinarySHA256=$null;$restoreContractSourceSHA256=$null;$restoreContractBinarySHA256=$null;$restorationOwnerCases=@();$restoreOwnerFixtureSHA256=$null;$restorationLaunchCases=@();$restoreLaunchFixtureSHA256=$null
+$stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$script:lastNativeAttempt=$null;$complete=$false;$builds=@();$observations=@();$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null;$registryReadCases=@();$registryViewCases=@();$registryAccessCases=@();$failureSourceLine=$null;$registryFixtureSHA256=$null;$productRegistrySHA256=$null;$restorationCases=@();$productRestoreSHA256=$null;$restoreFixtureSourceSHA256=$null;$restoreFixtureBinarySHA256=$null;$restoreContractSourceSHA256=$null;$restoreContractBinarySHA256=$null;$restorationOwnerCases=@();$restoreOwnerFixtureSHA256=$null;$restorationLaunchCases=@();$restoreLaunchFixtureSHA256=$null
 try {
     foreach($version in @('0.1.0-alpha','0.1.1-alpha')){
         $null=@(& (Join-Path $PSScriptRoot 'test-windows-installer.ps1') -ExpectedCompilerVersion '6.7.1' -TargetArch $Architecture -Version $version)
@@ -636,7 +658,7 @@ try {
     $complete=$true
 } catch {$failureType=$_.Exception.GetType().FullName;$failureSourceLine=$_.InvocationInfo.ScriptLineNumber;if($null -ne $script:assertionFailureLine){$failureSourceLine=$script:assertionFailureLine}}
 $originDiagnostics=[ordered]@{schemaVersion=1;source='captured-rule-properties';maxRecords=16;maxPropertyBytes=4096;records=@($script:firewallOriginObservations);truncated=$script:firewallOriginTruncated;unavailable=$script:firewallOriginUnavailable;extraNativeQueriesPerformed=$false;processOriginEstablished=$false}
-$record=[ordered]@{schemaVersion=9;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=10;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'

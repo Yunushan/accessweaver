@@ -90,9 +90,17 @@ def validate_firewall_origin_diagnostics(value):
     return {"nativeFirewallOriginRecordsVerified":0}
 
 
+def validate_native_attempt(value):
+    expected={"schemaVersion","toolClass","timeoutMilliseconds","elapsedMilliseconds","invocationReturned","operationAccepted","exitCode","outputComplete","failureCategory"}
+    require(type(value) is dict and set(value)==expected,"Incomplete native-attempt metadata")
+    require(type(value.get("schemaVersion")) is int and value["schemaVersion"]==1 and value.get("toolClass")=="uninstaller","Final native attempt was not the uninstaller")
+    require(type(value.get("timeoutMilliseconds")) is int and value["timeoutMilliseconds"]==180000 and type(value.get("elapsedMilliseconds")) is int and 0<=value["elapsedMilliseconds"]<180000,"Final native attempt exceeded its original deadline")
+    require(value.get("invocationReturned") is True and value.get("operationAccepted") is True and type(value.get("exitCode")) is int and value["exitCode"]==0 and value.get("outputComplete") is True and value.get("failureCategory")=="none","Final native attempt did not complete successfully")
+    return {"finalNativeAttemptVerified":True}
+
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(report.get("schemaVersion")==9 and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion")==10 and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -100,6 +108,8 @@ def validate_contents(root,commit,ref,arch,versions):
         require(report.get(key) is False,"Unqualified native scope changed")
     require(re.fullmatch(r"[1-9][0-9]{0,19}",str(report.get("runID",""))) is not None,"Missing native invocation identity")
     require(report.get("stateDiagnosticsSourceSHA256")==digest(Path(__file__).with_name("windows-installer-state.ps1").read_bytes()),"State diagnostics differ from approved verifier source")
+    require(report.get("nativeDiagnosticsSourceSHA256")==digest(Path(__file__).with_name("windows-installer-native-state.ps1").read_bytes()),"Native-attempt diagnostics differ from approved verifier source")
+    attempt_counts=validate_native_attempt(report.get("lastNativeAttempt"))
     state_counts=validate_state_observations(report.get("stateObservations"))
     origin_counts=validate_firewall_origin_diagnostics(report.get("firewallOriginDiagnostics"))
     operations=report.get("operations",[])
@@ -123,7 +133,7 @@ def validate_contents(root,commit,ref,arch,versions):
         require(payload.get("version")==version and payload.get("hashes")==[{"alg":"SHA-256","content":build["payloadSha256"]}],"Installer SBOM payload subject differs")
         require(compiler.get("version")=="6.7.1" and prop_map(compiler).get("accessweaver:compiler-sha256")==build["compilerSHA256"],"Installer SBOM compiler subject differs")
         candidates.append({"file":name,"sha256":digest(binary),"bytes":len(binary),"payloadSHA256":build["payloadSha256"],"payloadTarget":"windows/"+arch,"bootstrapPEMachine":"0x014c","sbomSHA256":digest((root/(name+".cdx.json")).read_bytes())})
-    return {"candidates":candidates,**state_counts,**origin_counts,"nativeLifecycleOperationsVerified":len(expected),"nativeRunID":str(report["runID"]),"nativeDependencyClosureComplete":False}
+    return {"candidates":candidates,**state_counts,**origin_counts,**attempt_counts,"nativeLifecycleOperationsVerified":len(expected),"nativeRunID":str(report["runID"]),"nativeDependencyClosureComplete":False}
 
 def stage(build_root,destination,commit,ref,arch,versions):
     validate_identity(commit,ref);names=subject_names(arch,versions)
