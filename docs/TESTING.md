@@ -738,3 +738,6 @@ At 00988a3ee192545a078da145d959a2aea6032774, [independent app SIGKILL evidence](
 
 
 The next private removal qualification covers [interrupted preparation and barrier durability](MACOS_PRODUCT_REMOVAL.md#interrupted-preparation-and-barrier-durability): protected external staging, complete reserved-bundle recovery and synchronization before mutation/completion. Its 28 added owned cases use returned errors and synchronization hooks; actual preparation process kills and whole-product uninstall remain unqualified. Fresh source-bound native evidence is required.
+
+
+At a86527ede0f0c24b79d0798b2ee48fce00810eec, [both native preparation fixtures failed in the lease-contention assertion](qualification/a86527ede0f0-preparation-fixture-shadow-failure.json). Each host passed nineteen preceding preparation cases. The retry published successfully, but a block-local error variable left the outer assertion reading the expected earlier busy error. The correction assigns the retry error in the existing scope; it changes no production ownership or recovery predicate. Both failed provider ZIPs and job-log hashes are retained. The failed source is not rerun, and later preparation/removal cases remain unqualified until fresh source-bound execution completes.

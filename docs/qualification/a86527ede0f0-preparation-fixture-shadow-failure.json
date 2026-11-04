@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "a86527ede0f0c24b79d0798b2ee48fce00810eec",
+  "sourceRef": "refs/heads/main",
+  "nativeRunID": 41799256697,
+  "scope": "Provider-bound failed native preparation fixture; no artifact attestation or full qualification",
+  "targets": [
+    {
+      "target": "darwin/amd64",
+      "providerJob": {
+        "id": 126470708649,
+        "runID": 41799256697,
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41799256697/job/126470708649",
+        "conclusion": "failure"
+      },
+      "providerArtifact": {
+        "id": 13307306312,
+        "node_id": "MDg6QXJ0aWZhY3QxMzMwNzMwNjMxMg==",
+        "name": "macos-installer-inspection-amd64",
+        "size_in_bytes": 7264139,
+        "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13307306312",
+        "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13307306312/zip",
+        "expired": false,
+        "digest": "sha256:84125f81c5adc6f0bcf5e69f07bb8e26d7a5fa8630fc7e38b1ebb7b5b9f9df03",
+        "created_at": "2026-11-04T08:27:09Z",
+        "updated_at": "2026-11-04T08:27:09Z",
+        "expires_at": "2026-11-18T08:27:08Z",
+        "workflow_run": {
+          "id": 41799256697,
+          "repository_id": 1441227907,
+          "head_repository_id": 1441227907,
+          "head_branch": "main",
+          "head_sha": "a86527ede0f0c24b79d0798b2ee48fce00810eec"
+        }
+      },
+      "providerZIPDigestVerified": true,
+      "extractedFileInventory": [
+        {
+          "file": "0.1.0-alpha/BUILD-INFO.json",
+          "bytes": 220,
+          "sha256": "ab43e49535690fa64c9fb91cad1676f0e0e418736ad7210e4d459ab1264efac4"
+        },
+        {
+          "file": "0.1.0-alpha/INSTALL-MANIFEST.json",
+          "bytes": 3835,
+          "sha256": "75871f0df096fa9490390afd5d24bcb3f51ac3a05d66afcb1dd70a72d813824a"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg",
+          "bytes": 7268430,
+          "sha256": "5e6d7f51822ffae04b6f03622445a67c770b670fd33de260593912bd32427304"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-amd64-experimental.pkg.cdx.json",
+          "bytes": 26397,
+          "sha256": "5fb4a340b39a108b03463f4e4685028144f588e1e306bff6c599e8164547c9f4"
+        },
+        {
+          "file": "0.1.0-alpha/compiler-artifact.json",
+          "bytes": 2513,
+          "sha256": "495050239c2b0cb1a5dfdb6f640ff8d8c4f238790c74b3a789738f2e94811182"
+        },
+        {
+          "file": "0.1.0-alpha/lifecycle-artifact.json",
+          "bytes": 13095,
+          "sha256": "b2b657a016bc4d4a141ab2375b7b8a2ecd3e1927887083a32a86abd13291f296"
+        },
+        {
+          "file": "0.1.0-alpha/payload-SBOM.cdx.json",
+          "bytes": 15416,
+          "sha256": "8c503917ebf69e035e38e15bea5aa0a3f0291c343142a8c431455a723a4377c7"
+        }
+      ],
+      "jobLogSHA256": "e3aa92e2ba00c795a0e7334a6256478bb0df215fe53e9d21fdbd355173b811c2",
+      "observedFailure": "complete preparation did not recover true removal runtime lease is busy",
+      "precedingPreparationSubtestsPassed": 19,
+      "lifecycleFailureStage": "protected-deployment-transactions",
+      "lifecycleFailureType": "ValueError",
+      "lifecycleFailureSourceLine": 196
+    },
+    {
+      "target": "darwin/arm64",
+      "providerJob": {
+        "id": 126470709226,
+        "runID": 41799256697,
+        "url": "https://github.com/Yunushan/accessweaver/actions/runs/41799256697/job/126470709226",
+        "conclusion": "failure"
+      },
+      "providerArtifact": {
+        "id": 13307420578,
+        "node_id": "MDg6QXJ0aWZhY3QxMzMwNzQyMDU3OA==",
+        "name": "macos-installer-inspection-arm64",
+        "size_in_bytes": 6798177,
+        "url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13307420578",
+        "archive_download_url": "https://api.github.com/repos/Yunushan/accessweaver/actions/artifacts/13307420578/zip",
+        "expired": false,
+        "digest": "sha256:922c7a466e55dde27cd51a54c1bf0cb71aaac02d31e695664c7ef6d7f6fdfd89",
+        "created_at": "2026-11-04T08:25:47Z",
+        "updated_at": "2026-11-04T08:25:47Z",
+        "expires_at": "2026-11-18T08:25:44Z",
+        "workflow_run": {
+          "id": 41799256697,
+          "repository_id": 1441227907,
+          "head_repository_id": 1441227907,
+          "head_branch": "main",
+          "head_sha": "a86527ede0f0c24b79d0798b2ee48fce00810eec"
+        }
+      },
+      "providerZIPDigestVerified": true,
+      "extractedFileInventory": [
+        {
+          "file": "0.1.0-alpha/BUILD-INFO.json",
+          "bytes": 220,
+          "sha256": "900f1e5e367f19a631c25066fd6848fb9d8a09f69025b551fc6e1d86ab74bcca"
+        },
+        {
+          "file": "0.1.0-alpha/INSTALL-MANIFEST.json",
+          "bytes": 3835,
+          "sha256": "d460a0f14c3483787fbcb3f965854e1d475f524dcb5d63b4f891ee6d227fba52"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg",
+          "bytes": 6803863,
+          "sha256": "cb43b1e293e9bfe17cb7830e6300eaf2402401a0f8106179793367cf1dd53152"
+        },
+        {
+          "file": "0.1.0-alpha/accessweaver-0.1.0-alpha-darwin-arm64-experimental.pkg.cdx.json",
+          "bytes": 26397,
+          "sha256": "6a6e8a04b58668e66ec332cd1d9058c8dcf6ff304af54c3b68d2a36a2fb16274"
+        },
+        {
+          "file": "0.1.0-alpha/compiler-artifact.json",
+          "bytes": 2513,
+          "sha256": "3962977f7f6286a3ce8456d84c867ae21267cc32c4c6b39d0210b11b4953cb7a"
+        },
+        {
+          "file": "0.1.0-alpha/lifecycle-artifact.json",
+          "bytes": 13085,
+          "sha256": "ac66a5e54e9ea2a9c415d24b91e1ccbb621a77fd57ea24420a6073c756fc6ee1"
+        },
+        {
+          "file": "0.1.0-alpha/payload-SBOM.cdx.json",
+          "bytes": 15416,
+          "sha256": "5493d74113bb2582c14582cc1064cb61ad1c4cb646476616db058f0198ef6398"
+        }
+      ],
+      "jobLogSHA256": "01e551da8a79f7d85f5a7417fbe9d8cf8e2f67d3af79b0cf05541828d4216ccd",
+      "observedFailure": "complete preparation did not recover true removal runtime lease is busy",
+      "precedingPreparationSubtestsPassed": 19,
+      "lifecycleFailureStage": "protected-deployment-transactions",
+      "lifecycleFailureType": "ValueError",
+      "lifecycleFailureSourceLine": 196
+    }
+  ],
+  "diagnosis": {
+    "establishedFromSourceAndBothNativeLogs": true,
+    "cause": "The refusal block redeclared parent and e. Its successful retry updated recovered/published but left the outer e holding the expected initial runtime-lease contention error, so the success assertion failed with published=true.",
+    "fix": "Assign parent and e in the existing scope before retry, so the assertion observes the retry error.",
+    "productionPredicateChanged": false,
+    "failedSourceRerun": false
+  },
+  "boundaries": {
+    "nativePreparationSuiteComplete": false,
+    "laterPreparationCasesExecuted": false,
+    "artifactCryptographicAuthenticationClaimed": false,
+    "productUninstallQualified": false,
+    "readinessGatePromoted": false,
+    "localCandidateCodeExecuted": false
+  },
+  "limits": [
+    "The nineteen preceding passing subtests on each host do not qualify the full 28-case preparation suite or the remaining removal fixtures.",
+    "Provider ZIP digest validation identifies failure artifacts; these failed candidates have no retained Sigstore bundle and are not claimed independently authenticated.",
+    "Fresh exact-source native qualification is required for the correction."
+  ]
+}

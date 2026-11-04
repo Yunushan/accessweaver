@@ -354,7 +354,7 @@ func exerciseOwnedRemovalPreparation(t *testing.T, privateBase string) {
 				if e := reader.Close(); e != nil {
 					t.Fatal(e)
 				}
-				parent, e := os.Open(f.base)
+				parent, e = os.Open(f.base)
 				if e != nil {
 					t.Fatal(e)
 				}
