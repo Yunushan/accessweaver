@@ -1,0 +1,325 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "d7137bb354528bff8438008f907de6cd1b2473dc",
+  "ciSummary": {
+    "runID": 41885303038,
+    "status": "completed",
+    "conclusion": "cancelled",
+    "successfulJobs": 21,
+    "cancelledJobs": 1
+  },
+  "jobs": [
+    {
+      "runID": 41885303285,
+      "jobID": 126768030689,
+      "name": "Versioned package lifecycle (arm64)",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41885303285/job/126768030689",
+      "conclusion": "cancelled",
+      "runnerID": 0,
+      "runnerLabels": [
+        "macos-15"
+      ],
+      "steps": [],
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/d7137bb354528bff8438008f907de6cd1b2473dc/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/d7137bb354528bff8438008f907de6cd1b2473dc/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/d7137bb354528bff8438008f907de6cd1b2473dc/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/d7137bb354528bff8438008f907de6cd1b2473dc/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        }
+      ],
+      "retainedProviderMetadataSHA256": "51a72a8a7544869fcdceaf60c220fdbb70dd5870b48630c8bded0f82e96dd0b9"
+    },
+    {
+      "runID": 41885303231,
+      "jobID": 126768031306,
+      "name": "Native package acceptance (arm64)",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41885303231/job/126768031306",
+      "conclusion": "cancelled",
+      "runnerID": 0,
+      "runnerLabels": [
+        "macos-15"
+      ],
+      "steps": [],
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/d7137bb354528bff8438008f907de6cd1b2473dc/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/d7137bb354528bff8438008f907de6cd1b2473dc/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/d7137bb354528bff8438008f907de6cd1b2473dc/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/d7137bb354528bff8438008f907de6cd1b2473dc/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        }
+      ],
+      "retainedProviderMetadataSHA256": "dc57c94a2025095f09dd3ca9062ad7c41f3bec05d8d38b1141f6338d1d9ba154"
+    },
+    {
+      "runID": 41885303106,
+      "jobID": 126768032732,
+      "name": "Public desktop lifecycle (amd64)",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41885303106/job/126768032732",
+      "conclusion": "cancelled",
+      "runnerID": 0,
+      "runnerLabels": [
+        "macos-15-intel"
+      ],
+      "steps": [],
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/d7137bb354528bff8438008f907de6cd1b2473dc/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+          "raw_details": ""
+        }
+      ],
+      "retainedProviderMetadataSHA256": "02f82afd3f15fab61d74e5f2b04399f2a251dd9a4e48f95e27813bf686fb244e"
+    },
+    {
+      "runID": 41885303038,
+      "jobID": 126768030694,
+      "name": "browser / Real browser (firefox)",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41885303038/job/126768030694",
+      "conclusion": "cancelled",
+      "runnerID": 1000138616,
+      "runnerLabels": [
+        "ubuntu-latest"
+      ],
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-04T18:15:27Z",
+          "completed_at": "2026-11-04T18:15:28Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-04T18:15:28Z",
+          "completed_at": "2026-11-04T18:15:30Z"
+        },
+        {
+          "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-04T18:15:30Z",
+          "completed_at": "2026-11-04T18:15:38Z"
+        },
+        {
+          "name": "Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-04T18:15:38Z",
+          "completed_at": "2026-11-04T18:15:43Z"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-04T18:15:43Z",
+          "completed_at": "2026-11-04T18:15:54Z"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-04T18:15:54Z",
+          "completed_at": "2026-11-04T18:15:55Z"
+        },
+        {
+          "name": "Install the pinned browser and Linux prerequisites",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-04T18:15:55Z",
+          "completed_at": "2026-11-04T18:32:47Z"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "number": 8,
+          "started_at": "2026-11-04T18:32:47Z",
+          "completed_at": "2026-11-04T18:35:41Z"
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-04T18:35:41Z",
+          "completed_at": "2026-11-04T18:35:41Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 16,
+          "started_at": "2026-11-04T18:35:41Z",
+          "completed_at": "2026-11-04T18:35:41Z"
+        },
+        {
+          "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 17,
+          "started_at": "2026-11-04T18:35:41Z",
+          "completed_at": "2026-11-04T18:35:41Z"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-11-04T18:35:41Z",
+          "completed_at": "2026-11-04T18:35:41Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-11-04T18:35:41Z",
+          "completed_at": "2026-11-04T18:35:41Z"
+        }
+      ],
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/d7137bb354528bff8438008f907de6cd1b2473dc/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job has exceeded the maximum execution time of 20m0s",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/d7137bb354528bff8438008f907de6cd1b2473dc/.github",
+          "start_line": 45,
+          "start_column": null,
+          "end_line": 45,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The operation was canceled.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/Yunushan/accessweaver/blob/d7137bb354528bff8438008f907de6cd1b2473dc/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\"",
+          "raw_details": ""
+        }
+      ],
+      "retainedProviderMetadataSHA256": "1928336593e6bd5fabeae8dbbdd3e1702119f0ce601bbe58a3a337f0c88957af"
+    }
+  ],
+  "interpretation": "Three cancelled macOS jobs have no assigned runner or recorded steps; exact acquisition/capacity annotations are retained, including the Intel-labelled case without an ARM-capacity annotation. The assigned Firefox job was cancelled after the provider reported the20-minute execution limit while browser prerequisites were being installed. No dependency-network cause, cancellation actor or permanent capacity is inferred. The other21CI jobs and bothWindows installer jobs passed. No unchanged rerun, deadline extension or readiness promotion.",
+  "cryptographicAttestationVerified": false,
+  "readinessStatusChanged": false
+}
