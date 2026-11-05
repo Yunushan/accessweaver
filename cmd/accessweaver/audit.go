@@ -26,7 +26,7 @@ const auditUsage = "Audit verification and explicit local recording:\n" +
 	"  accessweaver audit policy-update --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --input ENVELOPE.json\n" +
 	"  accessweaver audit policy-rotate --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --input ROTATION.json\n" +
 	"  accessweaver audit policy-recover --directory DIRECTORY --from GENESIS_FILE --to HEAD_FILE --input RECOVERY.json --public-key BASE64 --minimum-revision N\n" +
-	"Local recording/export currently requires Linux amd64/arm64; verify is portable and read-only.\n" +
+	"Local recording/export requires Linux amd64/arm64 or local NTFS on Windows amd64/arm64; recorded policy commands require Linux.\nVerify is portable and read-only.\n" +
 	"Export is a read-only snapshot. Export-recorded adds access intent/outcome; its checkpoints go to stderr, events to stdout. Neither supplies collector acknowledgment.\n" +
 	"Run records one guarded foreground lifecycle: checkpoints to stdout, launch notice to stderr; clean process exit is not connectivity qualification.\n" +
 	"Retain complete checkpoints through an independently trusted channel.\n" +

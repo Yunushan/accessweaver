@@ -1,6 +1,6 @@
 # Recorded foreground engine run
 
-The explicit Linux amd64/arm64 command records one reviewed foreground engine lifecycle in the current protected local audit stream. It uses the normal managed launch guard and engine manager. It does not import, save or seed profiles, enable engines in the profile-editing audited desktop, or make engine auditing mandatory. The enterprise audit gate remains incomplete.
+The explicit Linux/Windows amd64/arm64 command records one reviewed foreground engine lifecycle in the current protected local audit stream. It uses the normal managed launch guard and engine manager. It does not import, save or seed profiles, enable engines in the profile-editing audited desktop, or make engine auditing mandatory. The enterprise audit gate remains incomplete.
 
 ```text
 accessweaver audit run --directory /home/operator/.accessweaver-audit --from trusted-genesis.json --to trusted-head.json --profile reviewed-profile.json --consent metadata-only
@@ -42,3 +42,5 @@ This adds one explicit foreground lifecycle producer. Arbitrary controller launc
 
 
 At exact source `9a256bba4a1b3ccc1752bf6262df4385c82c6db4`, [both hosted Linux managed-policy fixtures passed](qualification/9a256bba4a1b-linux-recorded-managed-engine.json). Their steps took 11 seconds on AMD64 and 12 seconds on ARM64, retaining the original worker budget. Received report bytes confirm the separate three-record completed engine lifecycle, unchanged two-record profile and eighteen-record policy/export streams, stale-head preservation, unapproved-profile refusal, metadata redaction, no profile seeding and released ownership. Provider ZIP digests and report hashes bind the retained transport; these CI reports are not independently authenticated signed-product evidence. The original collector refusal of an additional existing recovery-interop entry and its bounded cached-data continuation are retained. Enterprise audit remains incomplete.
+
+Windows uses the [protected local NTFS backend and public-candidate qualification](WINDOWS_AUDIT_STORAGE.md). Windows engine stop uses process termination; an accepted process killed during stop has a failed terminal outcome rather than an invented canceled result. Native command/managed acceptance remains pending for this candidate.

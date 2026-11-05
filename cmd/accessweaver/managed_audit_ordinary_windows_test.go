@@ -24,6 +24,7 @@ import (
 	"unsafe"
 
 	"github.com/Yunushan/accessweaver/internal/audit"
+	"github.com/Yunushan/accessweaver/internal/buildinfo"
 	"github.com/Yunushan/accessweaver/internal/fileidentity"
 	"github.com/Yunushan/accessweaver/internal/nativepath"
 	"github.com/Yunushan/accessweaver/internal/uiaccess"
@@ -86,6 +87,9 @@ var ordinaryUnfinishedIO []*ordinaryPending
 var ordinaryCloseFailure bool
 
 type ordinaryFixture struct {
+	commands, policyInstalled, policyRemoved, privateChildRemoved        bool
+	childSlot                                                            string
+	cleanupPolicy                                                        func() error
 	cases                                                                []ordinaryCase
 	objects                                                              []ordinaryObject
 	account                                                              []uint16
@@ -109,7 +113,7 @@ var ordinaryCaseNames = []string{
 	"private-windowstation-desktop", "suspended-primary-token", "bound-loaded-profile",
 	"held-job-before-resume", "pid-bound-pipe", "worker-primary-token",
 	"worker-loaded-profile-hkcu", "worker-native-image",
-	"worker-isolated-console-interrupt", "worker-public-recording-unsupported",
+	"worker-isolated-console-interrupt", "worker-public-recording-support-contract",
 	"worker-exit", "exact-owned-cleanup",
 }
 
@@ -819,7 +823,7 @@ func (f *ordinaryFixture) verifyProcessImage() error {
 		return errOrdinary
 	}
 	actual := windows.UTF16ToString(name[:size])
-	if !filepath.IsAbs(actual) || filepath.Clean(actual) != actual || !strings.EqualFold(actual, f.image) || len(f.objects) != 2 || !strings.EqualFold(f.objects[1].path, f.image) {
+	if !filepath.IsAbs(actual) || filepath.Clean(actual) != actual || !strings.EqualFold(actual, f.image) || len(f.objects) < 2 || !strings.EqualFold(f.objects[1].path, f.image) {
 		return errOrdinary
 	}
 	handle, err := ordinarySameObject(f.objects[1], windows.GENERIC_READ)
@@ -860,7 +864,11 @@ func (f *ordinaryFixture) launch() error {
 	cwd, _ := windows.UTF16PtrFromString(f.root)
 	desktopUTF, _ := windows.UTF16PtrFromString(desktop)
 	// Credentials never enter this command line, environment or diagnostics.
-	command, _ := windows.UTF16FromString(syscall.EscapeArg(f.image) + " " + ordinaryWorkerArgument + " " + strconv.Itoa(os.Getpid()))
+	workerArgument := ordinaryWorkerArgument
+	if f.commands {
+		workerArgument = ordinaryCommandWorkerArgument
+	}
+	command, _ := windows.UTF16FromString(syscall.EscapeArg(f.image) + " " + workerArgument + " " + strconv.Itoa(os.Getpid()))
 	domain := []uint16{'.', 0}
 	startup := windows.StartupInfo{Cb: uint32(unsafe.Sizeof(windows.StartupInfo{})), Desktop: desktopUTF, Flags: windows.STARTF_USESHOWWINDOW, ShowWindow: windows.SW_HIDE}
 	var process windows.ProcessInformation
@@ -930,7 +938,7 @@ func (f *ordinaryFixture) launch() error {
 	}
 	sa := windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
 	name, _ := windows.UTF16PtrFromString(ordinaryPipeName(uint32(os.Getpid()), f.pid))
-	f.pipe, err = windows.CreateNamedPipe(name, windows.PIPE_ACCESS_DUPLEX|windows.FILE_FLAG_OVERLAPPED|windows.FILE_FLAG_FIRST_PIPE_INSTANCE, windows.PIPE_TYPE_MESSAGE|windows.PIPE_READMODE_MESSAGE|windows.PIPE_REJECT_REMOTE_CLIENTS, 1, 128, 128, 0, &sa)
+	f.pipe, err = windows.CreateNamedPipe(name, windows.PIPE_ACCESS_DUPLEX|windows.FILE_FLAG_OVERLAPPED|windows.FILE_FLAG_FIRST_PIPE_INSTANCE, windows.PIPE_TYPE_MESSAGE|windows.PIPE_READMODE_MESSAGE|windows.PIPE_REJECT_REMOTE_CLIENTS, 1, 256, 256, 0, &sa)
 	runtime.KeepAlive(sd)
 	if err != nil {
 		return errOrdinary
@@ -1026,34 +1034,52 @@ func (f *ordinaryFixture) exchange() error {
 		if windows.GetNamedPipeClientProcessId(f.pipe, &client) != nil || client != f.pid {
 			return errOrdinary
 		}
-		request := make([]byte, 72)
+		request := make([]byte, 136)
 		copy(request, ordinaryMagic[:])
 		if _, err := rand.Read(request[8:40]); err != nil {
 			return errOrdinary
 		}
-		copy(request[40:], f.imageHash[:])
+		copy(request[40:72], f.imageHash[:])
+		copy(request[72:], os.Getenv("GITHUB_SHA"))
 		if ordinaryPipeIO(f.pipe, "write", request, 20*time.Second) != nil {
 			return errOrdinary
 		}
-		reply := make([]byte, 48)
-		if ordinaryPipeIO(f.pipe, "read", reply, 20*time.Second) != nil || !bytes.Equal(reply[:8], ordinaryMagic[:]) || !bytes.Equal(reply[8:40], request[8:40]) {
+		reply := make([]byte, 56)
+		budget := 20 * time.Second
+		if f.commands {
+			budget = 120 * time.Second
+		}
+		if ordinaryPipeIO(f.pipe, "read", reply, budget) != nil || !bytes.Equal(reply[:8], ordinaryMagic[:]) || !bytes.Equal(reply[8:40], request[8:40]) {
 			return errOrdinary
 		}
-		flags := binary.LittleEndian.Uint64(reply[40:])
-		if flags&^uint64(31) != 0 {
+		executed, passed := binary.LittleEndian.Uint64(reply[40:48]), binary.LittleEndian.Uint64(reply[48:56])
+		expectedMask := uint64(31)
+		if f.commands {
+			expectedMask |= ((1 << len(ordinaryCommandCaseNames)) - 1) << 5
+		}
+		if executed&^expectedMask != 0 || passed&^executed != 0 {
 			return errOrdinary
 		}
-		for bit, id := range []string{"worker-primary-token", "worker-loaded-profile-hkcu", "worker-native-image", "worker-isolated-console-interrupt", "worker-public-recording-unsupported"} {
-			if err := f.check(id, func() error {
-				if flags&(1<<bit) == 0 {
+		names := []string{"worker-primary-token", "worker-loaded-profile-hkcu", "worker-native-image", "worker-isolated-console-interrupt", "worker-public-recording-support-contract"}
+		if f.commands {
+			names = append(names, ordinaryCommandCaseNames...)
+		}
+		var failure error
+		for bit, id := range names {
+			if executed&(1<<bit) == 0 {
+				failure = errOrdinary
+				continue
+			}
+			if f.check(id, func() error {
+				if passed&(1<<bit) == 0 {
 					return errOrdinary
 				}
 				return nil
-			}); err != nil {
-				return err
+			}) != nil {
+				failure = errOrdinary
 			}
 		}
-		return nil
+		return failure
 	})
 }
 func ordinaryHKCU(sid string) (valid bool) {
@@ -1147,7 +1173,7 @@ func ordinaryConsoleInterrupt() bool {
 		return false
 	}
 }
-func runOrdinaryWindowsWorker(arguments []string) (exitCode int) {
+func runOrdinaryWindowsWorker(arguments []string, commands bool) (exitCode int) {
 	if len(arguments) != 1 || !ordinaryNative() {
 		return 91
 	}
@@ -1179,7 +1205,7 @@ func runOrdinaryWindowsWorker(arguments []string) (exitCode int) {
 	if windows.SetNamedPipeHandleState(pipe, &mode, nil, nil) != nil {
 		return 93
 	}
-	request := make([]byte, 72)
+	request := make([]byte, 136)
 	if ordinaryPipeIO(pipe, "read", request, 20*time.Second) != nil || !bytes.Equal(request[:8], ordinaryMagic[:]) {
 		return 94
 	}
@@ -1215,17 +1241,30 @@ func runOrdinaryWindowsWorker(arguments []string) (exitCode int) {
 	_, initializeErr := audit.InitializeLocalJournal("")
 	journal, openErr := audit.OpenLocalJournal(context.Background(), "", audit.Checkpoint{}, audit.Checkpoint{})
 	exportErr := audit.ExportLocalSegment(context.Background(), "", audit.Checkpoint{}, audit.Checkpoint{}, &output)
-	commandErr := auditInitializeCommand([]string{"initialize", "--directory", "UNUSED-UNSUPPORTED-FIXTURE"}, &output)
-	if !audit.LocalRecordingSupported() && errors.Is(initializeErr, audit.ErrLocalStorageUnsupported) && journal == nil && errors.Is(openErr, audit.ErrLocalStorageUnsupported) && errors.Is(exportErr, audit.ErrLocalStorageUnsupported) && errors.Is(commandErr, audit.ErrLocalStorageUnsupported) && output.Len() == 0 {
+	commandErr := auditInitializeCommand([]string{"initialize", "--directory", "INVALID-PRIVATE-DIRECTORY"}, &output)
+	linked := buildinfo.Current()
+	expectedCommit := strings.TrimRight(string(request[72:136]), "\x00")
+	if audit.LocalRecordingSupported() && initializeErr != nil && !errors.Is(initializeErr, audit.ErrLocalStorageUnsupported) && journal == nil && openErr != nil && !errors.Is(openErr, audit.ErrLocalStorageUnsupported) && exportErr != nil && !errors.Is(exportErr, audit.ErrLocalStorageUnsupported) && commandErr != nil && output.Len() == 0 && linked.Commit == expectedCommit && linked.SourceState == "clean" {
 		flags |= 16
 	}
-	reply := make([]byte, 48)
+	executed := uint64(31)
+	if commands && flags == 31 {
+		commandExecuted, commandPassed := runWindowsCommandCases(request[8:40])
+		executed |= commandExecuted << 5
+		flags |= commandPassed << 5
+	}
+	reply := make([]byte, 56)
 	copy(reply, request[:40])
-	binary.LittleEndian.PutUint64(reply[40:], flags)
+	binary.LittleEndian.PutUint64(reply[40:48], executed)
+	binary.LittleEndian.PutUint64(reply[48:56], flags)
 	if ordinaryPipeIO(pipe, "write", reply, 20*time.Second) != nil {
 		return 96
 	}
-	if flags != 31 || len(ordinaryUnfinishedIO) != 0 {
+	expectedMask := uint64(31)
+	if commands {
+		expectedMask |= ((1 << len(ordinaryCommandCaseNames)) - 1) << 5
+	}
+	if flags != expectedMask || executed != expectedMask || len(ordinaryUnfinishedIO) != 0 || ordinaryCloseFailure {
 		exitCode = 97
 	}
 	return exitCode
@@ -1294,6 +1333,30 @@ func (f *ordinaryFixture) finish() {
 	if !f.processesEmpty {
 		f.cleanupOK = false
 	}
+	f.privateChildRemoved = true
+	if f.childSlot != "" {
+		entries, err := os.ReadDir(f.childSlot)
+		f.privateChildRemoved = err == nil && len(entries) == 0
+		if f.commands {
+			for _, result := range f.cases {
+				for _, id := range ordinaryCommandCaseNames {
+					if result.ID == id && (!result.Executed || !result.Passed) {
+						f.privateChildRemoved = false
+					}
+				}
+			}
+		}
+		if !f.privateChildRemoved {
+			f.cleanupOK = false
+		}
+	}
+	f.policyRemoved = true
+	if f.cleanupPolicy != nil {
+		if !f.processesEmpty || f.cleanupPolicy() != nil {
+			f.policyRemoved = false
+			f.cleanupOK = false
+		}
+	}
 	// LOGON_WITH_PROFILE has no owned PROFILEINFO.hProfile to unload. Wait for
 	// the service's hive reference to disappear; never force-unload a user hive.
 	if f.sid != "" {
@@ -1305,7 +1368,7 @@ func (f *ordinaryFixture) finish() {
 			time.Sleep(100 * time.Millisecond)
 		}
 		unloaded := ordinaryRegistryAbsent(windows.HKEY_USERS, f.sid) && ordinaryRegistryAbsent(windows.HKEY_USERS, f.sid+"_Classes")
-		if f.profileCaptured && f.processesEmpty && unloaded {
+		if f.profileCaptured && f.processesEmpty && f.privateChildRemoved && unloaded {
 			actualSID, sidErr := ordinaryAccountSID(f.account)
 			bound, pathErr := ordinaryRegistryString(windows.HKEY_LOCAL_MACHINE, ordinaryProfileKey+"\\"+f.sid, "ProfileImagePath", true)
 			safe := sidErr == nil && actualSID == f.sid && pathErr == nil && strings.EqualFold(bound, f.profile) && strings.EqualFold(filepath.Dir(bound), f.profilesRoot)
@@ -1340,7 +1403,7 @@ func (f *ordinaryFixture) finish() {
 		f.profileRemoved = !f.accountCreated
 	}
 	if f.accountCreated {
-		if f.profileRemoved && f.processesEmpty {
+		if f.profileRemoved && f.processesEmpty && f.privateChildRemoved {
 			actual, err := ordinaryAccountSID(f.account)
 			if err == nil && f.sid != "" && actual == f.sid {
 				status, _, _ := ordinaryNet.NewProc("NetUserDel").Call(0, uintptr(unsafe.Pointer(&f.account[0])))
@@ -1465,8 +1528,12 @@ func (f *ordinaryFixture) report(t *testing.T) {
 	if !ordinaryDigits(runAttempt) {
 		runAttempt = ""
 	}
+	receiptName, scope := "ordinary", "native-ordinary-process-launch-profile-public-backend-supported"
+	if f.commands {
+		receiptName, scope = "commands", "native-ordinary-windows-audit-commands-required-policy"
+	}
 	report := map[string]any{
-		"schemaVersion": 1, "scope": "native-ordinary-process-launch-profile-public-backend-disabled",
+		"schemaVersion": 1, "scope": scope,
 		"sourceCommit": sourceCommit, "githubRunID": runID, "githubRunAttempt": runAttempt,
 		"goVersion": runtime.Version(), "platform": runtime.GOOS, "arch": runtime.GOARCH,
 		"runnerArch": os.Getenv("RUNNER_ARCH"), "runnerEnvironment": os.Getenv("RUNNER_ENVIRONMENT"),
@@ -1478,6 +1545,7 @@ func (f *ordinaryFixture) report(t *testing.T) {
 		"profileAbsentBeforeLaunch": f.profileAbsentBefore, "profileBoundBeforeResume": f.profileCaptured, "profileRemoved": f.profileRemoved,
 		"ownedProcessesExited": f.processExited, "ownedJobActiveProcessesAtEnd": map[bool]int{true: 0, false: -1}[f.processesEmpty],
 		"stagingRemoved": f.stagingRemoved, "privateDesktopObjectsClosed": f.guiClosed, "allHandlesClosed": f.handlesClosed,
+		"privateChildWorkspaceRemoved": f.privateChildRemoved, "requiredAuditPolicyEnrolled": f.policyInstalled, "requiredAuditPolicyRemoved": f.policyRemoved,
 		"cleanupComplete": f.cleanupOK, "passed": passed, "productionQualificationComplete": false,
 	}
 	data, err := json.MarshalIndent(report, "", "  ")
@@ -1491,7 +1559,7 @@ func (f *ordinaryFixture) report(t *testing.T) {
 		t.Error("ordinary Windows receipt directory unavailable")
 		return
 	}
-	file, err := os.OpenFile(filepath.Join(folder, "ordinary-"+runtime.GOARCH+".json"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	file, err := os.OpenFile(filepath.Join(folder, receiptName+"-"+runtime.GOARCH+".json"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 	if err != nil {
 		t.Error("ordinary Windows receipt unavailable")
 		return

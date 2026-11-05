@@ -58,7 +58,35 @@ jobs:
           ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_ORDINARY_TEST: '1'
         shell: pwsh
         run: |
-          go test ./cmd/accessweaver -run '^TestDisposableWindowsAuditOrdinaryProcess$' -count=1 -v -timeout=4m
+          if ($env:GITHUB_SHA -cnotmatch '^(?:[0-9a-f]{40}|[0-9a-f]{64})$') { throw 'Source commit unavailable' }
+          $sourceCommit = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sourceCommit -cne $env:GITHUB_SHA) { throw 'Source commit mismatch' }
+          git -c core.fsmonitor=false diff --quiet --no-ext-diff
+          if ($LASTEXITCODE -ne 0) { throw 'Tracked source differs from the declared commit' }
+          git -c core.fsmonitor=false diff --cached --quiet --no-ext-diff
+          if ($LASTEXITCODE -ne 0) { throw 'Staged source differs from the declared commit' }
+          $sourceStatus = @(git -c core.fsmonitor=false status --porcelain=v1 --untracked-files=normal)
+          if ($LASTEXITCODE -ne 0 -or $sourceStatus.Count -ne 0) { throw 'Source tree is not clean' }
+          $sourceFlags = "-X github.com/Yunushan/accessweaver/internal/buildinfo.Commit=$sourceCommit -X github.com/Yunushan/accessweaver/internal/buildinfo.SourceState=clean"
+          go test ./cmd/accessweaver -run '^TestDisposableWindowsAuditOrdinaryProcess$' -count=1 -v -timeout=4m -ldflags $sourceFlags
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Ordinary process recorded commands and required policy acceptance
+        env:
+          ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_ORDINARY_TEST: '1'
+          ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_COMMANDS_TEST: '1'
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_SHA -cnotmatch '^(?:[0-9a-f]{40}|[0-9a-f]{64})$') { throw 'Source commit unavailable' }
+          $sourceCommit = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $sourceCommit -cne $env:GITHUB_SHA) { throw 'Source commit mismatch' }
+          git -c core.fsmonitor=false diff --quiet --no-ext-diff
+          if ($LASTEXITCODE -ne 0) { throw 'Tracked source differs from the declared commit' }
+          git -c core.fsmonitor=false diff --cached --quiet --no-ext-diff
+          if ($LASTEXITCODE -ne 0) { throw 'Staged source differs from the declared commit' }
+          $sourceStatus = @(git -c core.fsmonitor=false status --porcelain=v1 --untracked-files=normal)
+          if ($LASTEXITCODE -ne 0 -or $sourceStatus.Count -ne 0) { throw 'Source tree is not clean' }
+          $sourceFlags = "-X github.com/Yunushan/accessweaver/internal/buildinfo.Commit=$sourceCommit -X github.com/Yunushan/accessweaver/internal/buildinfo.SourceState=clean"
+          go test ./cmd/accessweaver -run '^TestDisposableWindowsAuditCommands$' -count=1 -v -timeout=4m -ldflags $sourceFlags
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain controlled identity and input receipts
         if: always()

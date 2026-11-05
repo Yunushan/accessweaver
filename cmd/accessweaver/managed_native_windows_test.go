@@ -36,14 +36,15 @@ var nativePolicyDLL = syscall.NewLazyDLL("advapi32.dll")
 // This branch exists only in the test binary copied as an inert approved engine.
 // The production executable has no fixture mode or environment bypass.
 func TestMain(m *testing.M) {
-	if len(os.Args) > 1 && os.Args[1] == ordinaryWorkerArgument {
-		os.Exit(runOrdinaryWindowsWorker(os.Args[2:]))
+	if len(os.Args) > 1 && (os.Args[1] == ordinaryWorkerArgument || os.Args[1] == ordinaryCommandWorkerArgument) {
+		os.Exit(runOrdinaryWindowsWorker(os.Args[2:], os.Args[1] == ordinaryCommandWorkerArgument))
 	}
 	if os.Getenv("ACCESSWEAVER_MANAGED_ENGINE_FIXTURE") == "1" {
 		fmt.Println("approved inert policy fixture")
 		time.Sleep(5 * time.Second)
 		os.Exit(0)
 	}
+	ordinaryInertWindowsEngine()
 	os.Exit(m.Run())
 }
 
