@@ -143,6 +143,12 @@ func darwinAuditOpenFixtureScope(t *testing.T, path string) *darwinAuditDirector
 	t.Helper()
 	d, err := openDarwinAuditDirectory(path)
 	if err != nil || d == nil {
+		var rejection *darwinAuditRejection
+		if errors.As(err, &rejection) {
+			if code := rejection.rejectionCode(); code != "" {
+				t.Fatalf("ordinary private native audit directory admission failed: %s", code)
+			}
+		}
 		t.Fatal("ordinary private native audit directory admission failed")
 	}
 	t.Cleanup(func() {
@@ -752,4 +758,35 @@ func TestDarwinAuditStorageNativeFlagsAndUnsafeAncestorPreserved(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestDarwinAuditStorageRejectionCodeContract(t *testing.T) {
+	err := darwinAuditRejected(darwinAuditRejectFstat)
+	if err == nil || err.Error() != ErrJournalStorage.Error() || !errors.Is(err, ErrJournalStorage) {
+		t.Fatal("private rejection changed the generic storage error contract")
+	}
+	var rejection *darwinAuditRejection
+	if !errors.As(err, &rejection) || rejection.rejectionCode() != "fstat" {
+		t.Fatal("known rejection lost its fixed diagnostic code")
+	}
+	// The fixture extracts only the closed code, including through wrapping;
+	// the raw error text and native operation details are never printed.
+	var wrapped *darwinAuditRejection
+	if !errors.As(errors.Join(errors.New("fixed fixture wrapper"), err), &wrapped) || wrapped.rejectionCode() != "fstat" {
+		t.Fatal("wrapped rejection lost its fixed diagnostic code")
+	}
+	for _, unknown := range []darwinAuditRejectionCode{0, 255} {
+		err := darwinAuditRejected(unknown)
+		var rejected *darwinAuditRejection
+		if err != ErrJournalStorage || !errors.Is(err, ErrJournalStorage) || errors.As(err, &rejected) {
+			t.Fatal("unknown rejection code escaped the generic refusal")
+		}
+		if (&darwinAuditRejection{code: unknown}).rejectionCode() != "" {
+			t.Fatal("unknown private rejection produced a printable code")
+		}
+	}
+	var missing *darwinAuditRejection
+	if missing.rejectionCode() != "" {
+		t.Fatal("absent private rejection produced a printable code")
+	}
 }

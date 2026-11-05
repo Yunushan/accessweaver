@@ -24,6 +24,161 @@ const darwinAuditComponentBytes = 255
 // Private final objects always require Flags==0; no flags are ever cleared.
 const darwinAuditAncestorFlags = unix.UF_NODUMP | unix.UF_HIDDEN | unix.SF_RESTRICTED | unix.SF_FIRMLINK
 
+// Rejection codes describe only fixed source branches. Their public error
+// text and sentinel identity stay generic; no observed metadata is retained.
+type darwinAuditRejectionCode uint8
+
+const (
+	darwinAuditRejectNilDescriptor darwinAuditRejectionCode = iota + 1
+	darwinAuditRejectSyscallConnection
+	darwinAuditRejectControl
+	darwinAuditRejectNativeOperation
+	darwinAuditRejectFstat
+	darwinAuditRejectFstatfs
+	darwinAuditRejectFilesystemName
+	darwinAuditRejectFilesystemNonlocal
+	darwinAuditRejectFilesystemIgnoreOwnership
+	darwinAuditRejectFilesystemAutomounted
+	darwinAuditRejectZeroInode
+	darwinAuditRejectDirectoryType
+	darwinAuditRejectDirectoryLink
+	darwinAuditRejectDirectoryOwner
+	darwinAuditRejectDirectoryMode
+	darwinAuditRejectPrivateDirectoryFlags
+	darwinAuditRejectAncestorNoUnlink
+	darwinAuditRejectAncestorFlags
+	darwinAuditRejectFirmlinkOwner
+	darwinAuditRejectAncestorACL
+	darwinAuditRejectPrivateACL
+	darwinAuditRejectMetadataIdentity
+	darwinAuditRejectMetadataFilesystem
+	darwinAuditRejectMetadataSize
+	darwinAuditRejectMetadataTimes
+	darwinAuditRejectMetadataSecurity
+	darwinAuditRejectMetadataOther
+	darwinAuditRejectRootOpen
+	darwinAuditRejectRootRetain
+	darwinAuditRejectPath
+	darwinAuditRejectFstatat
+	darwinAuditRejectOpenat
+	darwinAuditRejectOpenRetain
+	darwinAuditRejectOpenedIdentity
+	darwinAuditRejectScopeState
+	darwinAuditRejectParentBinding
+	darwinAuditRejectSavedBinding
+	darwinAuditRejectReopenedState
+	darwinAuditRejectProbeClose
+	darwinAuditRejectOwnedClose
+)
+
+type darwinAuditRejection struct{ code darwinAuditRejectionCode }
+
+func (*darwinAuditRejection) Error() string { return ErrJournalStorage.Error() }
+func (*darwinAuditRejection) Unwrap() error { return ErrJournalStorage }
+func (rejection *darwinAuditRejection) rejectionCode() string {
+	if rejection == nil {
+		return ""
+	}
+	switch rejection.code {
+	case darwinAuditRejectNilDescriptor:
+		return "nil-descriptor"
+	case darwinAuditRejectSyscallConnection:
+		return "syscall-connection"
+	case darwinAuditRejectControl:
+		return "descriptor-control"
+	case darwinAuditRejectNativeOperation:
+		return "native-operation"
+	case darwinAuditRejectFstat:
+		return "fstat"
+	case darwinAuditRejectFstatfs:
+		return "fstatfs"
+	case darwinAuditRejectFilesystemName:
+		return "filesystem-name"
+	case darwinAuditRejectFilesystemNonlocal:
+		return "filesystem-nonlocal"
+	case darwinAuditRejectFilesystemIgnoreOwnership:
+		return "filesystem-ignore-ownership"
+	case darwinAuditRejectFilesystemAutomounted:
+		return "filesystem-automounted"
+	case darwinAuditRejectZeroInode:
+		return "zero-inode"
+	case darwinAuditRejectDirectoryType:
+		return "directory-type"
+	case darwinAuditRejectDirectoryLink:
+		return "directory-link"
+	case darwinAuditRejectDirectoryOwner:
+		return "directory-owner"
+	case darwinAuditRejectDirectoryMode:
+		return "directory-mode"
+	case darwinAuditRejectPrivateDirectoryFlags:
+		return "private-directory-flags"
+	case darwinAuditRejectAncestorNoUnlink:
+		return "ancestor-nounlink"
+	case darwinAuditRejectAncestorFlags:
+		return "ancestor-flags"
+	case darwinAuditRejectFirmlinkOwner:
+		return "firmlink-owner"
+	case darwinAuditRejectAncestorACL:
+		return "ancestor-acl"
+	case darwinAuditRejectPrivateACL:
+		return "private-acl"
+	case darwinAuditRejectMetadataIdentity:
+		return "metadata-identity"
+	case darwinAuditRejectMetadataFilesystem:
+		return "metadata-filesystem"
+	case darwinAuditRejectMetadataSize:
+		return "metadata-size"
+	case darwinAuditRejectMetadataTimes:
+		return "metadata-times"
+	case darwinAuditRejectMetadataSecurity:
+		return "metadata-security"
+	case darwinAuditRejectMetadataOther:
+		return "metadata-other"
+	case darwinAuditRejectRootOpen:
+		return "root-open"
+	case darwinAuditRejectRootRetain:
+		return "root-retain"
+	case darwinAuditRejectPath:
+		return "path"
+	case darwinAuditRejectFstatat:
+		return "fstatat"
+	case darwinAuditRejectOpenat:
+		return "openat"
+	case darwinAuditRejectOpenRetain:
+		return "open-retain"
+	case darwinAuditRejectOpenedIdentity:
+		return "opened-identity"
+	case darwinAuditRejectScopeState:
+		return "scope-state"
+	case darwinAuditRejectParentBinding:
+		return "parent-binding"
+	case darwinAuditRejectSavedBinding:
+		return "saved-binding"
+	case darwinAuditRejectReopenedState:
+		return "reopened-state"
+	case darwinAuditRejectProbeClose:
+		return "probe-close"
+	case darwinAuditRejectOwnedClose:
+		return "owned-close"
+	default:
+		return ""
+	}
+}
+func darwinAuditRejected(code darwinAuditRejectionCode) error {
+	rejection := &darwinAuditRejection{code: code}
+	if rejection.rejectionCode() == "" {
+		return ErrJournalStorage
+	}
+	return rejection
+}
+func darwinAuditStorageRejection(err error) error {
+	var rejection *darwinAuditRejection
+	if errors.As(err, &rejection) && rejection.rejectionCode() != "" {
+		return rejection
+	}
+	return ErrJournalStorage
+}
+
 type darwinAuditIdentity struct {
 	dev int32
 	ino uint64
@@ -80,7 +235,7 @@ type darwinAuditDirectory struct {
 
 func parseDarwinAuditPath(path string) ([]string, error) {
 	if !utf8.ValidString(path) || len(path) == 0 || len(path) > darwinAuditPathBytes || !filepath.IsAbs(path) || filepath.Clean(path) != path || strings.IndexByte(path, 0) >= 0 {
-		return nil, ErrJournalStorage
+		return nil, darwinAuditRejected(darwinAuditRejectPath)
 	}
 	if path == "/" {
 		return nil, nil
@@ -103,16 +258,23 @@ func darwinAuditChild(name string) bool { return name == actorKeyName || name ==
 // native errors and private names are never returned through this boundary.
 func darwinAuditControl(file *os.File, operation func(int) error) error {
 	if file == nil {
-		return ErrJournalStorage
+		return darwinAuditRejected(darwinAuditRejectNilDescriptor)
 	}
 	raw, err := file.SyscallConn()
 	if err != nil {
-		return ErrJournalStorage
+		return darwinAuditRejected(darwinAuditRejectSyscallConnection)
 	}
 	var result error
 	controlErr := raw.Control(func(fd uintptr) { result = operation(int(fd)) })
 	if result != nil || controlErr != nil {
-		return ErrJournalStorage
+		if result != nil {
+			var rejection *darwinAuditRejection
+			if errors.As(result, &rejection) && rejection.rejectionCode() != "" {
+				return rejection
+			}
+			return darwinAuditRejected(darwinAuditRejectNativeOperation)
+		}
+		return darwinAuditRejected(darwinAuditRejectControl)
 	}
 	return nil
 }
@@ -125,8 +287,11 @@ func darwinAuditMetadata(file *os.File) (state darwinAuditFileState, failure err
 	failure = darwinAuditControl(file, func(fd int) error {
 		var stat unix.Stat_t
 		var fs unix.Statfs_t
-		if unix.Fstat(fd, &stat) != nil || unix.Fstatfs(fd, &fs) != nil {
-			return ErrJournalStorage
+		if unix.Fstat(fd, &stat) != nil {
+			return darwinAuditRejected(darwinAuditRejectFstat)
+		}
+		if unix.Fstatfs(fd, &fs) != nil {
+			return darwinAuditRejected(darwinAuditRejectFstatfs)
 		}
 		state = darwinAuditStatState(&stat)
 		state.filesystem = darwinAuditFilesystem{id: fs.Fsid.Val, kind: fs.Type, flags: fs.Flags, subtype: fs.Fssubtype, owner: fs.Owner}
@@ -134,7 +299,19 @@ func darwinAuditMetadata(file *os.File) (state darwinAuditFileState, failure err
 			state.filesystem.name[i] = byte(value)
 		}
 		if strings.TrimRight(string(state.filesystem.name[:]), "\x00") != "apfs" || fs.Flags&unix.MNT_LOCAL == 0 || fs.Flags&(unix.MNT_IGNORE_OWNERSHIP|unix.MNT_AUTOMOUNTED) != 0 || state.id.ino == 0 {
-			return ErrJournalStorage
+			if strings.TrimRight(string(state.filesystem.name[:]), "\x00") != "apfs" {
+				return darwinAuditRejected(darwinAuditRejectFilesystemName)
+			}
+			if fs.Flags&unix.MNT_LOCAL == 0 {
+				return darwinAuditRejected(darwinAuditRejectFilesystemNonlocal)
+			}
+			if fs.Flags&unix.MNT_IGNORE_OWNERSHIP != 0 {
+				return darwinAuditRejected(darwinAuditRejectFilesystemIgnoreOwnership)
+			}
+			if fs.Flags&unix.MNT_AUTOMOUNTED != 0 {
+				return darwinAuditRejected(darwinAuditRejectFilesystemAutomounted)
+			}
+			return darwinAuditRejected(darwinAuditRejectZeroInode)
 		}
 		return nil
 	})
@@ -154,11 +331,64 @@ func darwinAuditDirectorySecurity(state darwinAuditFileState, owner uint32, priv
 	return state.flags & ^uint32(darwinAuditAncestorFlags) == 0 && (state.flags&unix.SF_FIRMLINK == 0 || state.uid == 0)
 }
 
+// Call only after darwinAuditDirectorySecurity has rejected this observation.
+func darwinAuditDirectoryRejection(state darwinAuditFileState, owner uint32, private bool) error {
+	if state.mode&unix.S_IFMT != unix.S_IFDIR {
+		return darwinAuditRejected(darwinAuditRejectDirectoryType)
+	}
+	if state.links == 0 {
+		return darwinAuditRejected(darwinAuditRejectDirectoryLink)
+	}
+	if (state.uid != 0 && state.uid != owner) || (private && state.uid != owner) {
+		return darwinAuditRejected(darwinAuditRejectDirectoryOwner)
+	}
+	if state.mode&(0022|unix.S_ISUID|unix.S_ISGID) != 0 || (private && state.mode&07777 != 0700) {
+		return darwinAuditRejected(darwinAuditRejectDirectoryMode)
+	}
+	if private && state.flags != 0 {
+		return darwinAuditRejected(darwinAuditRejectPrivateDirectoryFlags)
+	}
+	unsupported := state.flags & ^uint32(darwinAuditAncestorFlags)
+	if unsupported == unix.SF_NOUNLINK {
+		return darwinAuditRejected(darwinAuditRejectAncestorNoUnlink)
+	}
+	if unsupported != 0 {
+		return darwinAuditRejected(darwinAuditRejectAncestorFlags)
+	}
+	if state.flags&unix.SF_FIRMLINK != 0 && state.uid != 0 {
+		return darwinAuditRejected(darwinAuditRejectFirmlinkOwner)
+	}
+	return ErrJournalStorage
+}
+
+// Call only after the exact metadata equality comparison has failed.
+func darwinAuditMetadataRejection(before, after darwinAuditFileState) error {
+	if before.id != after.id {
+		return darwinAuditRejected(darwinAuditRejectMetadataIdentity)
+	}
+	if before.filesystem != after.filesystem {
+		return darwinAuditRejected(darwinAuditRejectMetadataFilesystem)
+	}
+	if before.size != after.size {
+		return darwinAuditRejected(darwinAuditRejectMetadataSize)
+	}
+	if before.modified != after.modified || before.changed != after.changed {
+		return darwinAuditRejected(darwinAuditRejectMetadataTimes)
+	}
+	if before.mode != after.mode || before.links != after.links || before.uid != after.uid || before.gid != after.gid || before.flags != after.flags || before.generation != after.generation {
+		return darwinAuditRejected(darwinAuditRejectMetadataSecurity)
+	}
+	return darwinAuditRejected(darwinAuditRejectMetadataOther)
+}
+
 func darwinAuditInspectDirectory(file *os.File, owner uint32, private bool) (darwinAuditDirectoryState, error) {
 	var zero darwinAuditDirectoryState
 	before, err := darwinAuditMetadata(file)
 	if err != nil || !darwinAuditDirectorySecurity(before, owner, private) {
-		return zero, ErrJournalStorage
+		if err != nil {
+			return zero, darwinAuditStorageRejection(err)
+		}
+		return zero, darwinAuditDirectoryRejection(before, owner, private)
 	}
 	if private {
 		err = darwintrust.CheckEmptyACL(file)
@@ -166,11 +396,17 @@ func darwinAuditInspectDirectory(file *os.File, owner uint32, private bool) (dar
 		err = darwintrust.CheckReadOnlyACL(file)
 	}
 	if err != nil {
-		return zero, ErrJournalStorage
+		if private {
+			return zero, darwinAuditRejected(darwinAuditRejectPrivateACL)
+		}
+		return zero, darwinAuditRejected(darwinAuditRejectAncestorACL)
 	}
 	after, err := darwinAuditMetadata(file)
 	if err != nil || after != before {
-		return zero, ErrJournalStorage
+		if err != nil {
+			return zero, darwinAuditStorageRejection(err)
+		}
+		return zero, darwinAuditMetadataRejection(before, after)
 	}
 	return darwinAuditDirectoryState{id: after.id, filesystem: after.filesystem, mode: after.mode, uid: after.uid, gid: after.gid, flags: after.flags, generation: after.generation}, nil
 }
@@ -180,7 +416,10 @@ func darwinAuditOpenAt(parent *os.File, name string, flags int, mode uint32) (fi
 	failure = darwinAuditControl(parent, func(parentFD int) error {
 		var err error
 		fd, err = unix.Openat(parentFD, name, flags, mode)
-		return err
+		if err != nil {
+			return darwinAuditRejected(darwinAuditRejectOpenat)
+		}
+		return nil
 	})
 	if fd >= 0 {
 		file = os.NewFile(uintptr(fd), "audit-bound-object")
@@ -191,7 +430,10 @@ func darwinAuditOpenAt(parent *os.File, name string, flags int, mode uint32) (fi
 		} else if fd >= 0 {
 			_ = unix.Close(fd)
 		}
-		return nil, ErrJournalStorage
+		if failure != nil {
+			return nil, darwinAuditStorageRejection(failure)
+		}
+		return nil, darwinAuditRejected(darwinAuditRejectOpenRetain)
 	}
 	return file, nil
 }
@@ -200,7 +442,7 @@ func darwinAuditNamedState(parent *os.File, name string) (state darwinAuditFileS
 	failure = darwinAuditControl(parent, func(fd int) error {
 		var stat unix.Stat_t
 		if unix.Fstatat(fd, name, &stat, unix.AT_SYMLINK_NOFOLLOW) != nil {
-			return ErrJournalStorage
+			return darwinAuditRejected(darwinAuditRejectFstatat)
 		}
 		state = darwinAuditStatState(&stat)
 		return nil
@@ -231,18 +473,21 @@ func openDarwinAuditDirectory(path string) (result *darwinAuditDirectory, failur
 			if closeErr == ErrProcessIdentity {
 				failure = ErrProcessIdentity
 			} else if closeErr != nil && failure != ErrProcessIdentity {
-				failure = ErrJournalStorage
+				var first *darwinAuditRejection
+				if !errors.As(failure, &first) || first.rejectionCode() == "" {
+					failure = darwinAuditStorageRejection(closeErr)
+				}
 			}
 		}
 	}()
 	fd, err := unix.Open("/", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return nil, ErrJournalStorage
+		return nil, darwinAuditRejected(darwinAuditRejectRootOpen)
 	}
 	root := os.NewFile(uintptr(fd), "audit-fixed-root")
 	if root == nil {
 		_ = unix.Close(fd)
-		return nil, ErrJournalStorage
+		return nil, darwinAuditRejected(darwinAuditRejectRootRetain)
 	}
 	d.ancestors = append(d.ancestors, darwinAuditDirectoryBinding{file: root, name: "/"})
 	for index := 0; index <= len(parts); index++ {
@@ -258,7 +503,10 @@ func openDarwinAuditDirectory(path string) (result *darwinAuditDirectory, failur
 		}
 		before, err := darwinAuditNamedState(binding.file, parts[index])
 		if err != nil || !darwinAuditDirectorySecurity(before, d.owner, index+1 == len(parts)) {
-			return nil, ErrJournalStorage
+			if err != nil {
+				return nil, darwinAuditStorageRejection(err)
+			}
+			return nil, darwinAuditDirectoryRejection(before, d.owner, index+1 == len(parts))
 		}
 		child, err := darwinAuditOpenAt(binding.file, parts[index], unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err != nil {
@@ -268,7 +516,10 @@ func openDarwinAuditDirectory(path string) (result *darwinAuditDirectory, failur
 		d.ancestors = append(d.ancestors, darwinAuditDirectoryBinding{file: child, parent: binding.file, name: parts[index]})
 		opened, err := darwinAuditMetadata(child)
 		if err != nil || opened.id != before.id {
-			return nil, ErrJournalStorage
+			if err != nil {
+				return nil, darwinAuditStorageRejection(err)
+			}
+			return nil, darwinAuditRejected(darwinAuditRejectOpenedIdentity)
 		}
 	}
 	if err := d.checkBindingLocked(); err != nil {
@@ -289,38 +540,47 @@ func (d *darwinAuditDirectory) checkPrincipalLocked() error {
 func (d *darwinAuditDirectory) reopenBindingLocked(binding darwinAuditDirectoryBinding, private bool) (*os.File, error) {
 	if binding.parent == nil {
 		if binding.name != "/" {
-			return nil, ErrJournalStorage
+			return nil, darwinAuditRejected(darwinAuditRejectParentBinding)
 		}
 		fd, err := unix.Open("/", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err != nil {
-			return nil, ErrJournalStorage
+			return nil, darwinAuditRejected(darwinAuditRejectRootOpen)
 		}
 		file := os.NewFile(uintptr(fd), "audit-root-probe")
 		if file == nil {
 			_ = unix.Close(fd)
-			return nil, ErrJournalStorage
+			return nil, darwinAuditRejected(darwinAuditRejectRootRetain)
 		}
 		return file, nil
 	}
 	before, err := darwinAuditNamedState(binding.parent, binding.name)
 	if err != nil || !darwinAuditDirectorySecurity(before, d.owner, private) || before.id != binding.state.id {
-		return nil, ErrJournalStorage
+		if err != nil {
+			return nil, darwinAuditStorageRejection(err)
+		}
+		if !darwinAuditDirectorySecurity(before, d.owner, private) {
+			return nil, darwinAuditDirectoryRejection(before, d.owner, private)
+		}
+		return nil, darwinAuditRejected(darwinAuditRejectOpenedIdentity)
 	}
 	return darwinAuditOpenAt(binding.parent, binding.name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 }
 
 func (d *darwinAuditDirectory) checkBindingLocked() error {
 	if d.closed || d.dir == nil || len(d.ancestors) == 0 || d.dir != d.ancestors[len(d.ancestors)-1].file {
-		return ErrJournalStorage
+		return darwinAuditRejected(darwinAuditRejectScopeState)
 	}
 	for index, binding := range d.ancestors {
 		private := index == len(d.ancestors)-1
 		if index == 0 && (binding.parent != nil || binding.name != "/") || index > 0 && binding.parent != d.ancestors[index-1].file {
-			return ErrJournalStorage
+			return darwinAuditRejected(darwinAuditRejectParentBinding)
 		}
 		state, err := darwinAuditInspectDirectory(binding.file, d.owner, private)
 		if err != nil || state != binding.state {
-			return ErrJournalStorage
+			if err != nil {
+				return darwinAuditStorageRejection(err)
+			}
+			return darwinAuditRejected(darwinAuditRejectSavedBinding)
 		}
 		probe, err := d.reopenBindingLocked(binding, private)
 		if err != nil {
@@ -329,7 +589,13 @@ func (d *darwinAuditDirectory) checkBindingLocked() error {
 		named, statErr := darwinAuditInspectDirectory(probe, d.owner, private)
 		closeErr := probe.Close()
 		if statErr != nil || closeErr != nil || named != binding.state {
-			return ErrJournalStorage
+			if statErr != nil {
+				return darwinAuditStorageRejection(statErr)
+			}
+			if closeErr != nil {
+				return darwinAuditRejected(darwinAuditRejectProbeClose)
+			}
+			return darwinAuditRejected(darwinAuditRejectReopenedState)
 		}
 	}
 	return nil
@@ -552,13 +818,15 @@ func (d *darwinAuditDirectory) Close() error {
 	}
 	if d.checkPrincipalLocked() != nil {
 		d.closeErr = ErrProcessIdentity
-	} else if d.dir != nil && d.checkBindingLocked() != nil {
-		d.closeErr = ErrJournalStorage
+	} else if d.dir != nil {
+		if err := d.checkBindingLocked(); err != nil {
+			d.closeErr = darwinAuditStorageRejection(err)
+		}
 	}
 	d.closed = true
 	for index := len(d.ancestors) - 1; index >= 0; index-- {
 		if d.ancestors[index].file != nil && d.ancestors[index].file.Close() != nil && d.closeErr == nil {
-			d.closeErr = ErrJournalStorage
+			d.closeErr = darwinAuditRejected(darwinAuditRejectOwnedClose)
 		}
 	}
 	d.dir = nil
