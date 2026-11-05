@@ -279,7 +279,26 @@ function Approved-DownloadHash([string]$url,[string]$hash) {
 }
 function Read-RemoteJSON([string]$Uri,[hashtable]$Headers) {
     Require-DownloadPermission
-    Invoke-RestMethod -Uri $Uri -Headers $Headers
+    $memory=[IO.MemoryStream]::new()
+    try {
+        $budget=New-ComponentDownloadBudget -MaximumBytes 8MB -TimeoutMilliseconds 60000
+        Invoke-ComponentDownloadDotNet $Uri $memory $budget $Headers
+        [void](Get-ComponentDownloadRemaining $budget)
+        try {
+            $bytes=$memory.ToArray()
+            try {$text=[Text.UTF8Encoding]::new($false,$true).GetString($bytes)}finally {if($bytes){[Array]::Clear($bytes,0,$bytes.Length)}}
+            if($text.Length -gt 0 -and $text[0] -eq [char]0xfeff){$text=$text.Substring(1)}
+            # Validate the original single JSON value before wrapping: invalid
+            # sibling text must never become valid envelope properties.
+            ConvertFrom-Json -InputObject $text -ErrorAction Stop | Out-Null
+            [void](Get-ComponentDownloadRemaining $budget)
+            # A fixed envelope preserves [], one-item arrays and null on both
+            # PS5.1 and PS7, whose pipeline enumeration otherwise differs.
+            $envelope=ConvertFrom-Json -InputObject ('{"value":'+$text+'}')
+        }catch {if(Test-ComponentDownloadTerminal $_){throw};Throw-ComponentDownloadFailure 'protocol'}
+        [void](Get-ComponentDownloadRemaining $budget)
+        return ,$envelope.value
+    }finally {$memory.Dispose()}
 }
 function Allowed-Download([string]$url) {
     $uri=[uri]$url
@@ -289,26 +308,297 @@ function Allowed-Download([string]$url) {
     if ($uri.Host -in @('www.wiresock.net','wiresock.net','discord.com','dl.discordapp.net','download.discordapp.net','aka.ms','download.visualstudio.microsoft.com')) {return}
     throw 'URL is not an allowlisted component download source'
 }
+function Throw-ComponentDownloadFailure([string]$Code) {
+    $messages=@{
+        limit='Component download exceeds its byte limit'
+        deadline='Component download exceeded its shared deadline'
+        storage='Component download staging write or close failed'
+        cleanup='Component download cleanup could not be confirmed'
+        'cleanup-observation'='Component download cleanup encountered a failure'
+        protocol='Component download response was incomplete or unsupported'
+        transport='Component download transport failed'
+    }
+    if(-not $messages.ContainsKey($Code)){$Code='protocol'}
+    $failure=[InvalidOperationException]::new($messages[$Code])
+    $failure.Data['AccessWeaverComponentDownloadTerminal']=($Code -ne 'transport')
+    throw $failure
+}
+function Test-ComponentDownloadTerminal($Failure) {
+    $exception=$Failure.Exception
+    if(-not $exception -and $Failure -is [Exception]){$exception=$Failure}
+    while($exception){
+        if($exception.Data['AccessWeaverComponentDownloadTerminal'] -eq $true){return $true}
+        $exception=$exception.InnerException
+    }
+    return $false
+}
+function New-ComponentDownloadBudget([long]$MaximumBytes=(2147483648L+32MB),[int]$TimeoutMilliseconds=600000) {
+    if($MaximumBytes -lt 0 -or $MaximumBytes -gt (2147483648L+32MB) -or $TimeoutMilliseconds -lt 1 -or $TimeoutMilliseconds -gt 600000){throw 'Invalid component download budget'}
+    return @{Clock=[Diagnostics.Stopwatch]::StartNew();MaximumBytes=$MaximumBytes;TimeoutMilliseconds=$TimeoutMilliseconds;Written=0L}
+}
+function Get-ComponentDownloadRemaining($Budget) {
+    $remaining=[long]$Budget.TimeoutMilliseconds-$Budget.Clock.ElapsedMilliseconds
+    if($remaining -le 0){Throw-ComponentDownloadFailure 'deadline'}
+    return [int]$remaining
+}
+function Wait-ComponentDownloadTask([Threading.Tasks.Task]$Task,$Budget,[scriptblock]$Abort) {
+    $expired=$false
+    while(-not $Task.IsCompleted){
+        $remaining=[long]$Budget.TimeoutMilliseconds-$Budget.Clock.ElapsedMilliseconds
+        if($remaining -le 0){$expired=$true;break}
+        [Threading.Thread]::Sleep([int][Math]::Min(10,$remaining))
+    }
+    if($expired){
+        # Abort cancels the underlying operation; it does not substitute for
+        # observing its completion. Never release/reuse an in-flight buffer.
+        $cleanupFailed=$false
+        try {& $Abort}catch {$cleanupFailed=$true}
+        try {
+            $late=$Task.GetAwaiter().GetResult()
+            if($late -is [IDisposable]){try {$late.Dispose()}catch {$cleanupFailed=$true}}
+        }catch {
+            $exception=$_.Exception
+            while($exception){
+                if($exception -is [Net.WebException] -and $exception.Response){try {$exception.Response.Close()}catch {$cleanupFailed=$true}}
+                $exception=$exception.InnerException
+            }
+        }
+        if($cleanupFailed){Throw-ComponentDownloadFailure 'cleanup'}
+        Throw-ComponentDownloadFailure 'deadline'
+    }
+    return $Task.GetAwaiter().GetResult()
+}
+function Write-ComponentDownloadChunk([IO.Stream]$Output,[byte[]]$Buffer,[int]$Count,$Budget) {
+    [void](Get-ComponentDownloadRemaining $Budget)
+    if($Count -lt 0 -or $Count -gt $Buffer.Length){Throw-ComponentDownloadFailure 'protocol'}
+    if([long]$Count -gt $Budget.MaximumBytes-$Budget.Written){Throw-ComponentDownloadFailure 'limit'}
+    if($Count -eq 0){return}
+    # Charge BEFORE admitting the write, independently of headers/framing.
+    $Budget.Written+=[long]$Count
+    try {
+        $task=$Output.WriteAsync($Buffer,0,$Count)
+        [void](Wait-ComponentDownloadTask $task $Budget {$Output.Dispose()})
+    }catch {
+        if(Test-ComponentDownloadTerminal $_){throw}
+        Throw-ComponentDownloadFailure 'storage'
+    }
+}
+function Receive-ComponentDownloadStream([IO.Stream]$Source,[IO.Stream]$Output,$Budget) {
+    $buffer=[byte[]]::new(65536)
+    while($true){
+        [void](Get-ComponentDownloadRemaining $Budget)
+        $task=$Source.ReadAsync($buffer,0,$buffer.Length)
+        $count=Wait-ComponentDownloadTask $task $Budget {$Source.Dispose()}
+        if($count -eq 0){break}
+        Write-ComponentDownloadChunk $Output $buffer $count $Budget
+    }
+}
+function Assert-ComponentDownloadLength([long]$Declared,$Budget,[long]$Actual=-1) {
+    if($Declared -gt $Budget.MaximumBytes){Throw-ComponentDownloadFailure 'limit'}
+    if($Declared -lt -1 -or ($Actual -ge 0 -and $Declared -ge 0 -and $Actual -ne $Declared)){Throw-ComponentDownloadFailure 'protocol'}
+}
+function Set-ComponentDownloadHeaders($Request,[hashtable]$Headers) {
+    foreach($key in $Headers.Keys){
+        if([string]::Equals($key,'User-Agent',[StringComparison]::OrdinalIgnoreCase)){
+            $Request.UserAgent=[string]$Headers[$key]
+        }elseif([string]::Equals($key,'Accept',[StringComparison]::OrdinalIgnoreCase)){
+            $Request.Accept=[string]$Headers[$key]
+        }else{
+            $Request.Headers[[string]$key]=[string]$Headers[$key]
+        }
+    }
+}
+function Invoke-ComponentDownloadDotNet([string]$Url,[IO.Stream]$Output,$Budget,[hashtable]$Headers=@{}) {
+    $current=[uri]$Url
+    for($redirects=0;$redirects -le 5;$redirects++){
+        if($current.Scheme -ne 'https' -or $current.UserInfo -or $current.Fragment){Throw-ComponentDownloadFailure 'protocol'}
+        $request=$null;$response=$null;$stream=$null;$pending=$null;$cleanupFailed=$false
+        try {
+            $remaining=Get-ComponentDownloadRemaining $Budget
+            $request=[Net.HttpWebRequest]::CreateHttp($current)
+            $request.Method='GET';$request.AllowAutoRedirect=$false
+            Set-ComponentDownloadHeaders $request $Headers
+            $request.Timeout=$remaining;$request.ReadWriteTimeout=$remaining
+            $pending=$request.GetResponseAsync()
+            $response=Wait-ComponentDownloadTask $pending $Budget {$request.Abort()}
+            $pending=$null
+            [void](Get-ComponentDownloadRemaining $Budget)
+            $status=[int]$response.StatusCode
+            if($status -in @(301,302,303,307,308)){
+                if($redirects -eq 5 -or -not $response.Headers['Location']){Throw-ComponentDownloadFailure 'protocol'}
+                $current=[uri]::new($current,[string]$response.Headers['Location'])
+                continue
+            }
+            if($status -ne 200){Throw-ComponentDownloadFailure 'protocol'}
+            Assert-ComponentDownloadLength $response.ContentLength $Budget
+            $stream=$response.GetResponseStream()
+            Receive-ComponentDownloadStream $stream $Output $Budget
+            Assert-ComponentDownloadLength $response.ContentLength $Budget $Budget.Written
+            [void](Get-ComponentDownloadRemaining $Budget)
+            return
+        }catch {
+            # Error responses also own a response stream. Never retain a native
+            # response merely because GetResponseAsync completed with an error.
+            $exception=$_.Exception
+            while($exception){
+                if($exception -is [Net.WebException] -and $exception.Response){try {$exception.Response.Close()}catch {$cleanupFailed=$true}}
+                $exception=$exception.InnerException
+            }
+            if(Test-ComponentDownloadTerminal $_){throw}
+            Throw-ComponentDownloadFailure 'transport'
+        }finally {
+            # Wait-ComponentDownloadTask joins after Abort before returning.
+            if($stream){try {$stream.Dispose()}catch {$cleanupFailed=$true}}
+            if($response){try {$response.Close()}catch {$cleanupFailed=$true}}
+            if($cleanupFailed){Throw-ComponentDownloadFailure 'cleanup'}
+        }
+    }
+    Throw-ComponentDownloadFailure 'protocol'
+}
+function New-ComponentDownloadCurlStart([string]$Url,$Budget,[switch]$Proxy) {
+    $curl=Join-Path $env:SystemRoot 'System32\curl.exe'
+    if(-not (Test-Path -LiteralPath $curl)){Throw-ComponentDownloadFailure 'transport'}
+    $seconds=([double](Get-ComponentDownloadRemaining $Budget)/1000).ToString('0.000',[Globalization.CultureInfo]::InvariantCulture)
+    $arguments=@('--disable','--globoff','--fail','--location','--max-redirs','5','--proto','=https','--proto-redir','=https','--connect-timeout','30','--max-time',$seconds,'--silent','--show-error','--output','-')
+    if($Proxy){$arguments+=@('--socks5-hostname','127.0.0.1:1080')}
+    $arguments+=@($Url)
+    $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$curl
+    $start.Arguments=(@($arguments|ForEach-Object {Native-Argument $_}) -join ' ')
+    $start.WorkingDirectory=Split-Path -Parent $curl
+    $start.UseShellExecute=$false;$start.CreateNoWindow=$true
+    $start.RedirectStandardInput=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+    return $start
+}
+function New-ComponentDownloadCurlProcess([Diagnostics.ProcessStartInfo]$StartInfo) {
+    $process=[Diagnostics.Process]::new()
+    $process.StartInfo=$StartInfo
+    return $process
+}
+function Wait-ComponentDownloadProcessExit($Process) {
+    $waitFailed=$false
+    while($true){
+        try {[void]$Process.WaitForExit();return $waitFailed}catch {
+            # Reobserve only this same cached process object. A failed native
+            # wait cannot release its owner/staging scope or admit another kill.
+            if(-not $waitFailed){
+                try {[Console]::Error.WriteLine('Component download cleanup is unconfirmed; waiting for the owned process.')}catch {}
+            }
+            $waitFailed=$true
+            [Threading.Thread]::Sleep(200)
+        }
+    }
+}
+function Invoke-ComponentDownloadCurl([string]$Url,[IO.Stream]$Output,$Budget,[switch]$Proxy) {
+    $start=New-ComponentDownloadCurlStart $Url $Budget -Proxy:$Proxy
+    $process=New-ComponentDownloadCurlProcess $start
+    $started=$false;$heldHandle=[IntPtr]::Zero;$stdout=$null;$stderr=$null
+    $readOut=$null;$readErr=$null;$failure=$null;$cleanupFailed=$false;$waitFault=$false
+    try {
+        [void](Get-ComponentDownloadRemaining $Budget)
+        [void]$process.Start();$started=$true
+        # Process.Handle pins this accepted Windows process object across every
+        # exit query, helper operation and actual Wait. No PID reopening/kills.
+        $heldHandle=$process.Handle
+        if($heldHandle -eq [IntPtr]::Zero){Throw-ComponentDownloadFailure 'cleanup'}
+        $process.StandardInput.Close()
+        $stdout=$process.StandardOutput.BaseStream;$stderr=$process.StandardError.BaseStream
+        $outBuffer=[byte[]]::new(65536);$errBuffer=[byte[]]::new(4096)
+        $readOut=$stdout.ReadAsync($outBuffer,0,$outBuffer.Length)
+        $readErr=$stderr.ReadAsync($errBuffer,0,$errBuffer.Length)
+        $outDone=$false;$errDone=$false
+        while(-not ($outDone -and $errDone -and $process.HasExited)){
+            [void](Get-ComponentDownloadRemaining $Budget)
+            if(-not $outDone -and $readOut.IsCompleted){
+                $count=$readOut.GetAwaiter().GetResult();$readOut=$null
+                if($count -eq 0){$outDone=$true}else{
+                    Write-ComponentDownloadChunk $Output $outBuffer $count $Budget
+                    $readOut=$stdout.ReadAsync($outBuffer,0,$outBuffer.Length)
+                }
+            }
+            if(-not $errDone -and $readErr.IsCompleted){
+                $count=$readErr.GetAwaiter().GetResult();$readErr=$null
+                # Drain/discard stderr fairly: never retain private URL/tool text.
+                if($count -eq 0){$errDone=$true}else{$readErr=$stderr.ReadAsync($errBuffer,0,$errBuffer.Length)}
+            }
+            if(-not ($outDone -and $errDone -and $process.HasExited)){
+                [Threading.Thread]::Sleep([Math]::Min(10,(Get-ComponentDownloadRemaining $Budget)))
+            }
+        }
+        try {$process.WaitForExit()}catch {$waitFault=$true;throw}
+        if($process.ExitCode -ne 0){Throw-ComponentDownloadFailure 'transport'}
+        [void](Get-ComponentDownloadRemaining $Budget)
+    }catch {$failure=$_}finally {
+        if($started){
+            # A failed transfer cannot release an accepted curl or pending pipe
+            # read. Keep its exact cached handle until Kill/Wait and I/O join.
+            if($failure){
+                if($heldHandle -eq [IntPtr]::Zero){$cleanupFailed=$true}else{
+                    try {if(-not $process.HasExited){$process.Kill()}}catch {$cleanupFailed=$true}
+                }
+            }
+            if($stdout){try {$stdout.Dispose()}catch {$cleanupFailed=$true}}
+            if($stderr){try {$stderr.Dispose()}catch {$cleanupFailed=$true}}
+            foreach($pendingRead in @($readOut,$readErr)){
+                if($pendingRead){try {$pendingRead.GetAwaiter().GetResult()|Out-Null}catch {if(-not $failure){$cleanupFailed=$true}}}
+            }
+            $finalWaitFault=Wait-ComponentDownloadProcessExit $process
+            $waitFault=$waitFault -or $finalWaitFault
+        }
+        try {$process.Dispose()}catch {$cleanupFailed=$true}
+    }
+    if($cleanupFailed){Throw-ComponentDownloadFailure 'cleanup'}
+    if($waitFault){Throw-ComponentDownloadFailure 'cleanup-observation'}
+    if($failure){if(Test-ComponentDownloadTerminal $failure){throw $failure};Throw-ComponentDownloadFailure 'transport'}
+}
+function Save-ComponentDownloadAttempt([string]$Url,[string]$Path,$Budget,[switch]$Curl,[switch]$Proxy) {
+    $output=$null;$owned=$false;$complete=$false;$failure=$null;$cleanupFailed=$false
+    try {
+        [void](Get-ComponentDownloadRemaining $Budget)
+        try {$output=[IO.FileStream]::new($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None,65536,[IO.FileOptions]::Asynchronous)}catch {Throw-ComponentDownloadFailure 'storage'}
+        $owned=$true;$Budget.Written=0L
+        if($Curl){Invoke-ComponentDownloadCurl $Url $output $Budget -Proxy:$Proxy}else{Invoke-ComponentDownloadDotNet $Url $output $Budget}
+        [void](Get-ComponentDownloadRemaining $Budget)
+        try {$output.Flush($true)}catch {Throw-ComponentDownloadFailure 'storage'}
+        [void](Get-ComponentDownloadRemaining $Budget)
+        try {$output.Dispose();$output=$null}catch {Throw-ComponentDownloadFailure 'storage'}
+        $complete=$true
+    }catch {$failure=$_
+    }finally {
+        if($output){try {$output.Dispose()}catch {$cleanupFailed=$true}}
+        if($owned -and -not $complete){try {[IO.File]::Delete($Path)}catch {$cleanupFailed=$true}}
+    }
+    if($cleanupFailed){Throw-ComponentDownloadFailure 'cleanup'}
+    if($failure){throw $failure}
+}
 function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signed) {
     $hash=Approved-DownloadHash $url $hash
     Allowed-Download $url
     if (-not $Signed -and $hash -notmatch '^[a-fA-F0-9]{64}$'){throw 'A SHA-256 from the release asset digest or an independently verified source is required'}
     $extension=if($Signed){'.exe'}else{[IO.Path]::GetExtension(([uri]$url).AbsolutePath)}
     $temp=Join-Path $root ('downloads\'+[guid]::NewGuid().ToString('N')+$extension)
-    $curl=Join-Path $env:SystemRoot 'System32\curl.exe'
-    $curlArgs=@('--fail','--location','--max-redirs','5','--proto','=https','--proto-redir','=https','--connect-timeout','30','--max-time','600','--output',$temp)
-    if($script:repairProxyReady){
-        if(-not (Test-Path -LiteralPath $curl)){throw 'Windows curl is required for the repair proxy download'}
-        [void](Native $curl ($curlArgs+@('--socks5-hostname','127.0.0.1:1080',$url)) -Timeout 650)
-    }else{try{Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $temp}catch{
-        # Modern Windows curl uses the OS TLS implementation and can reach
-        # endpoints that reject the older .NET Framework HTTP stack.
-        if(-not (Test-Path -LiteralPath $curl)){throw}
-        [void](Native $curl ($curlArgs+@($url)) -Timeout 650)
-    }}
-    if ($hash -and (Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash -ne $hash) {Remove-Item -LiteralPath $temp;throw 'Downloaded component SHA-256 mismatch'}
-    if ($Signed) {$signature=Get-AuthenticodeSignature -LiteralPath $temp;if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Discord|Microsoft|NT Kernel|WireSock'){throw 'Installer publisher signature could not be verified'}}
-    Copy-Checked $temp $destination;Remove-Item -LiteralPath $temp
+    $budget=New-ComponentDownloadBudget
+    $owned=$false
+    try {
+        if($script:repairProxyReady){
+            Save-ComponentDownloadAttempt $url $temp $budget -Curl -Proxy
+        }else{
+            try {Save-ComponentDownloadAttempt $url $temp $budget}catch {
+                if(Test-ComponentDownloadTerminal $_){throw}
+                [void](Get-ComponentDownloadRemaining $budget)
+                # Fresh exclusive staging after confirmed primary-partial removal;
+                # fallback shares the original clock, never a new timeout.
+                Save-ComponentDownloadAttempt $url $temp $budget -Curl
+            }
+        }
+        $owned=$true
+        [void](Get-ComponentDownloadRemaining $budget)
+        if ($hash -and (Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash -ne $hash) {throw 'Downloaded component SHA-256 mismatch'}
+        if ($Signed) {$signature=Get-AuthenticodeSignature -LiteralPath $temp;if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Discord|Microsoft|NT Kernel|WireSock'){throw 'Installer publisher signature could not be verified'}}
+        [void](Get-ComponentDownloadRemaining $budget)
+        Copy-Checked $temp $destination
+    }finally {
+        if($owned){try {[IO.File]::Delete($temp)}catch {Throw-ComponentDownloadFailure 'cleanup'}}
+    }
     Event ('Verified download: '+[IO.Path]::GetFileName($destination))
 }
 function Assert-ComponentZipBudget([IO.Stream]$stream) {

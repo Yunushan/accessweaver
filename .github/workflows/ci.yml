@@ -281,6 +281,17 @@ jobs:
         if: runner.os == 'Windows'
         shell: powershell
         run: ./scripts/test-windows-workflow.ps1
+      - name: Windows component acquisition contracts (PowerShell 7)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test-windows-component-downloads.ps1
+      - name: Windows component acquisition contracts (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $stockShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          & $stockShell -NoProfile -NonInteractive -File ./scripts/test-windows-component-downloads.ps1 -RequireWindowsPowerShell
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Compile unsigned Windows installer (no installation)
         if: runner.os == 'Windows'
         shell: powershell
