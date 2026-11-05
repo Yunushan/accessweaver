@@ -1000,8 +1000,9 @@ func (w *windowsCommandWorker) historicalRoundTrip() error {
 		return errOrdinary
 	}
 	absent := filepath.Join(s.base, "verify-must-not-create")
-	os.Setenv("ACCESSWEAVER_HOME", absent)
-	_, _, err = s.command([]string{"audit", "verify", "--events", filepath.Join(s.base, "export.jsonl"), "--from", filepath.Join(s.base, "genesis.json"), "--to", filepath.Join(s.base, "head.json")}, nil, nil)
+	verifyWorker := *s
+	verifyWorker.state = absent
+	_, _, err = verifyWorker.command([]string{"audit", "verify", "--events", filepath.Join(s.base, "export.jsonl"), "--from", filepath.Join(s.base, "genesis.json"), "--to", filepath.Join(s.base, "head.json")}, nil, nil)
 	os.Setenv("ACCESSWEAVER_HOME", s.state)
 	if err != nil || !s.preserved(before) {
 		return errOrdinary
@@ -1564,7 +1565,7 @@ func TestDisposableWindowsAuditCommands(t *testing.T) {
 const windowsRunLaunchNotice = "Process launched. This does not guarantee functional routing or connection.\n"
 
 func windowsRunArguments(w *windowsCommandWorker, input string) []string {
-	return []string{"run", "--directory", w.directory,
+	return []string{"audit", "run", "--directory", w.directory,
 		"--from", filepath.Join(w.base, "genesis.json"), "--to", filepath.Join(w.base, "head.json"),
 		"--profile", input, "--consent", "metadata-only"}
 }
