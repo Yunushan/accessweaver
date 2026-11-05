@@ -1,0 +1,993 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "1bc1eacfc92e4738a88528e2ff6620ebbd4916ad",
+  "runID": 41937900255,
+  "scope": "Initial full native file identity integration; both Windows unit and dedicated metadata jobs failed",
+  "jobs": [
+    {
+      "arch": "amd64",
+      "kind": "native-identity",
+      "jobID": 126950937472,
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41937900255/job/126950937472",
+      "jobConclusion": "failure",
+      "steps": [
+        {
+          "name": "Native file identity and bound input output admission",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Protected storage, journal, key and historical export acceptance",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain controlled identity and input receipts",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain controlled native storage receipts",
+          "conclusion": "failure"
+        }
+      ],
+      "receivedLogBytes": 29244,
+      "receivedLogSHA256": "13044473292b0fee62789a4c425da80c50e3d32c52b0cb6aba90ba5a605aa2d6",
+      "controlledTestMarkers": {
+        "passed": [
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/write-only-and-append-only-borrowed-outputs",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/every-thread-impersonation-level-refuses",
+            "durationSeconds": 0.0
+          }
+        ],
+        "failed": [
+          {
+            "test": "TestDisposableWindowsFileIdentityNative",
+            "durationSeconds": 0.02
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/full-native-id-aliases-and-borrowed-lifetime",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/metadata-only-access-and-ads-base-identity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/relative-absolute-directory-and-nofollow-links",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/directories-pipes-and-fixed-errors",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/owned-metadata-probes-close-on-success-and-failure",
+            "durationSeconds": 0.0
+          }
+        ]
+      }
+    },
+    {
+      "arch": "arm64",
+      "kind": "native-identity",
+      "jobID": 126950937588,
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41937900255/job/126950937588",
+      "jobConclusion": "failure",
+      "steps": [
+        {
+          "name": "Native file identity and bound input output admission",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Protected storage, journal, key and historical export acceptance",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain controlled identity and input receipts",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain controlled native storage receipts",
+          "conclusion": "failure"
+        }
+      ],
+      "receivedLogBytes": 29032,
+      "receivedLogSHA256": "26d3f8f7c8f5f6c21ff6d0cc95c31aa7d5934d5494e85e2c13c881b241d6ce0c",
+      "controlledTestMarkers": {
+        "passed": [
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/write-only-and-append-only-borrowed-outputs",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/every-thread-impersonation-level-refuses",
+            "durationSeconds": 0.0
+          }
+        ],
+        "failed": [
+          {
+            "test": "TestDisposableWindowsFileIdentityNative",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/full-native-id-aliases-and-borrowed-lifetime",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/metadata-only-access-and-ads-base-identity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/relative-absolute-directory-and-nofollow-links",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/directories-pipes-and-fixed-errors",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/owned-metadata-probes-close-on-success-and-failure",
+            "durationSeconds": 0.0
+          }
+        ]
+      }
+    },
+    {
+      "arch": "amd64",
+      "kind": "windows-unit",
+      "jobID": 126950937292,
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41937900255/job/126950937292",
+      "jobConclusion": "failure",
+      "steps": [
+        {
+          "name": "Unit tests",
+          "conclusion": "failure"
+        }
+      ],
+      "receivedLogBytes": 82700,
+      "receivedLogSHA256": "74459a007e8faaadb8789f740953cfe83e40a55b4ca9afa39225485e282180ca",
+      "controlledTestMarkers": {
+        "passed": [],
+        "failed": [
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent",
+            "durationSeconds": 0.05
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/intent-write",
+            "durationSeconds": 0.02
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/intent-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/short-observation",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/pre-canceled",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/cancel-before-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/invalid-snapshot",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/stale-head",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/nil-events",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/nil-observations",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedExportReservesBothAccessRecordsAtCapacity",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/complete",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/cancel-during-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/zero-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/partial-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/short-nil-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/invalid-count",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/panic",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/result-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/result-observation",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedImportNeverDispatchesWithoutDurableObservedIntentAndCapacity",
+            "durationSeconds": 0.02
+          },
+          {
+            "test": "TestRecordedImportNeverDispatchesWithoutDurableObservedIntentAndCapacity/intent-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportNeverDispatchesWithoutDurableObservedIntentAndCapacity/intent-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportNeverDispatchesWithoutDurableObservedIntentAndCapacity/short-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportNeverDispatchesWithoutDurableObservedIntentAndCapacity/capacity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportNeverDispatchesWithoutDurableObservedIntentAndCapacity/canceled",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportResultFailureAndOutputFailureRemainUncertain",
+            "durationSeconds": 0.02
+          },
+          {
+            "test": "TestRecordedImportResultFailureAndOutputFailureRemainUncertain/result-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportResultFailureAndOutputFailureRemainUncertain/result-output",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedImportResultFailureAndOutputFailureRemainUncertain/operation-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportResultFailureAndOutputFailureRemainUncertain/panic",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportCancellationAfterIntentOrMutationRecordsActualOutcome",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedImportCancellationAfterIntentOrMutationRecordsActualOutcome/before-dispatch",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportCancellationAfterIntentOrMutationRecordsActualOutcome/after-mutation",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedImportCarriesOnlyItsActiveWriteIntent",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission",
+            "durationSeconds": 0.25
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/completed",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/committed-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/precommit-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/missing-commit",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/wrong-operation",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/panic",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/cancel-during",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/cancel-before",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/intent-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/intent-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/short-output",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/result-write",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/result-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/capacity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/pre-canceled",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/completed",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/committed-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/precommit-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/missing-commit",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/wrong-operation",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/panic",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/cancel-during",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/cancel-before",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/intent-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/intent-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/short-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/result-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/result-output",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/capacity",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/pre-canceled",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/completed",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/committed-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/precommit-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/missing-commit",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/wrong-operation",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/panic",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/cancel-during",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/cancel-before",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/intent-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/intent-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/short-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/result-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/result-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/capacity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/pre-canceled",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/completed",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/committed-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/precommit-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/missing-commit",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/wrong-operation",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/panic",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/cancel-during",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/cancel-before",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/intent-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/intent-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/short-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/result-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/result-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/capacity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/pre-canceled",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyCheckpointOutputCannotAliasProtectedInputs",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestAuditCLIVerifiesWithoutCreatingProfilesOrChangingInputs",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestAuditInputSnapshotsRefuseAliasesAndLimitsWithoutRepair",
+            "durationSeconds": 0.0
+          }
+        ]
+      }
+    },
+    {
+      "arch": "arm64",
+      "kind": "windows-unit",
+      "jobID": 126950937550,
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41937900255/job/126950937550",
+      "jobConclusion": "failure",
+      "steps": [
+        {
+          "name": "Unit tests",
+          "conclusion": "failure"
+        }
+      ],
+      "receivedLogBytes": 79798,
+      "receivedLogSHA256": "0c9601141165275a014ccc7488b23e33004447144ad9f656f24a7de81d2261ea",
+      "controlledTestMarkers": {
+        "passed": [],
+        "failed": [
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent",
+            "durationSeconds": 0.03
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/intent-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/intent-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/short-observation",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/pre-canceled",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/cancel-before-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/invalid-snapshot",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/stale-head",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/nil-events",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportRequiresVerifiedSnapshotAndDurableObservedIntent/nil-observations",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedExportReservesBothAccessRecordsAtCapacity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome",
+            "durationSeconds": 0.02
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/complete",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/cancel-during-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/zero-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/partial-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/short-nil-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/invalid-count",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/panic",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/result-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedExportWritesOnlyPriorSnapshotAndAccurateSynchronousOutcome/result-observation",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportNeverDispatchesWithoutDurableObservedIntentAndCapacity",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedImportNeverDispatchesWithoutDurableObservedIntentAndCapacity/intent-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportNeverDispatchesWithoutDurableObservedIntentAndCapacity/intent-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportNeverDispatchesWithoutDurableObservedIntentAndCapacity/short-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportNeverDispatchesWithoutDurableObservedIntentAndCapacity/capacity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportNeverDispatchesWithoutDurableObservedIntentAndCapacity/canceled",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportResultFailureAndOutputFailureRemainUncertain",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedImportResultFailureAndOutputFailureRemainUncertain/result-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportResultFailureAndOutputFailureRemainUncertain/result-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportResultFailureAndOutputFailureRemainUncertain/operation-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportResultFailureAndOutputFailureRemainUncertain/panic",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportCancellationAfterIntentOrMutationRecordsActualOutcome",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportCancellationAfterIntentOrMutationRecordsActualOutcome/before-dispatch",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportCancellationAfterIntentOrMutationRecordsActualOutcome/after-mutation",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedImportCarriesOnlyItsActiveWriteIntent",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission",
+            "durationSeconds": 0.22
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/completed",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/committed-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/precommit-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/missing-commit",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/wrong-operation",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/panic",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/cancel-during",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/cancel-before",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/intent-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/intent-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/short-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/result-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/result-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/capacity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/install/pre-canceled",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/completed",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/committed-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/precommit-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/missing-commit",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/wrong-operation",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/panic",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/cancel-during",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/cancel-before",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/intent-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/intent-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/short-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/result-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/result-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/capacity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/update/pre-canceled",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/completed",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/committed-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/precommit-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/missing-commit",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/wrong-operation",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/panic",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/cancel-during",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/cancel-before",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/intent-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/intent-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/short-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/result-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/result-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/capacity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/rotate/pre-canceled",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/completed",
+            "durationSeconds": 0.08
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/committed-error",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/precommit-error",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/missing-commit",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/wrong-operation",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/panic",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/cancel-during",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/cancel-before",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/intent-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/intent-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/short-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/result-write",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/result-output",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/capacity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyNativeOutcomeAndDurableAdmission/recover/pre-canceled",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestRecordedPolicyCheckpointOutputCannotAliasProtectedInputs",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestAuditCLIVerifiesWithoutCreatingProfilesOrChangingInputs",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestAuditInputSnapshotsRefuseAliasesAndLimitsWithoutRepair",
+            "durationSeconds": 0.0
+          }
+        ]
+      }
+    }
+  ],
+  "observations": [
+    "Borrowed native file and write/append-only output identity cases passed. Positive pathname probes failed on both architectures.",
+    "The dedicated step failed before command-bound metadata and protected storage qualification; later missing storage artifacts reflect the skipped storage step.",
+    "Failure messages and PASS/FAIL test markers are retained without raw logs, paths, identities or private data."
+  ],
+  "candidateCorrection": "Remove the unjustified requirement for a separator after the numeric HarddiskVolume device name: exact volume-root names are also valid. Add drive-root borrowed/native identity parity and fixed-label diagnostics. Whether this resolves the observed runtime failure remains unverified until a fresh source-bound run.",
+  "limits": {
+    "nativeQualificationComplete": false,
+    "productionQualificationComplete": false,
+    "publicWindowsRecordingEnabled": false,
+    "readinessGatePromoted": false,
+    "logsAreCryptographicAttestation": false,
+    "workflowRerunPerformed": false,
+    "localNativeExecutionPerformed": false
+  }
+}

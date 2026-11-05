@@ -218,6 +218,19 @@ func identityWindowsHandleCount(t *testing.T) uint32 {
 	}
 	return count
 }
+func TestWindowsLocalDiskNameAdmission(t *testing.T) {
+	for _, name := range []string{`\Device\HarddiskVolume1`, `\Device\HarddiskVolume1\`, `\Device\HarddiskVolume123\input.txt`} {
+		if !localNativeDiskPath(name) {
+			t.Fatal("ordinary native disk root or child name refused")
+		}
+	}
+	for _, name := range []string{"", `\Device\HarddiskVolume`, `\Device\HarddiskVolume\`, `\Device\HarddiskVolume1evil`, `\Device\HarddiskVolume1evil\input`, `\Device\Mup\server\share`, `\Device\NamedPipe\input`, `\??\C:\input`, `C:\input`} {
+		if localNativeDiskPath(name) {
+			t.Fatal("nonlocal or ambiguous native disk name admitted")
+		}
+	}
+}
+
 func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 	requireDisposableWindowsIdentityHost(t)
 	t.Cleanup(func() { reportDisposableWindowsIdentity(t) })
@@ -236,6 +249,25 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 	if err != nil || opened.Kind != Regular || opened.ID.FileID == ([16]byte{}) || opened.Size != int64(len(content)) {
 		t.Fatal("borrowed disk handle lacks native identity")
 	}
+
+	t.Run("drive-root-native-and-ordinary-handle-parity", func(t *testing.T) {
+		root := filepath.VolumeName(directory) + `\`
+		file, err := os.Open(root)
+		if err != nil {
+			t.Fatal("ordinary drive-root metadata handle unavailable")
+		}
+		defer func() {
+			if file.Close() != nil {
+				t.Error("ordinary drive-root handle close failed")
+			}
+		}()
+		borrowed, borrowedErr := FromFile(file)
+		named, namedErr := FromPath(root, false)
+		if borrowedErr != nil || namedErr != nil || borrowed.Kind != Directory || named.Kind != Directory || borrowed.ID != named.ID {
+			identityWindowsRootDiagnostic(t, root)
+			t.Fatal("drive-root identity differs between ordinary and native metadata handles")
+		}
+	})
 
 	t.Run("full-native-id-aliases-and-borrowed-lifetime", func(t *testing.T) {
 		var identity windowsIDInfo
@@ -563,4 +595,67 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 			t.Fatal("restored process identity did not retain borrowed object")
 		}
 	})
+}
+
+func identityWindowsRootDiagnostic(t *testing.T, root string) {
+	t.Helper()
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	principal, principalErr := principalSnapshot()
+	if principalErr != nil {
+		t.Log("root contract: own-process-context=false")
+		return
+	}
+	context := windowsContext{principal}
+	drive, err := windows.UTF16PtrFromString(root[:2])
+	if err != nil {
+		t.Log("root contract: drive-encoding=false")
+		return
+	}
+	var mapping [windowsPathLimit]uint16
+	n, err := windows.QueryDosDevice(drive, &mapping[0], uint32(len(mapping)))
+	if err != nil || n == 0 || n > uint32(len(mapping)) {
+		t.Log("root contract: mapping-query=false")
+		return
+	}
+	target := windows.UTF16ToString(mapping[:n])
+	if !localNativeDiskPath(target) || strings.Contains(strings.TrimPrefix(target, `\Device\HarddiskVolume`), `\`) {
+		t.Log("root contract: direct-local-mapping=false")
+		return
+	}
+	name, err := windows.NewNTUnicodeString(target + `\`)
+	if err != nil {
+		t.Log("root contract: native-name-encoding=false")
+		return
+	}
+	attrs := windows.OBJECT_ATTRIBUTES{ObjectName: name, Attributes: windows.OBJ_CASE_INSENSITIVE}
+	attrs.Length = uint32(unsafe.Sizeof(attrs))
+	var handle windows.Handle
+	var status windows.IO_STATUS_BLOCK
+	err = windows.NtCreateFile(&handle, windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE, &attrs, &status, nil, 0,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, windows.FILE_OPEN,
+		windows.FILE_DIRECTORY_FILE|windows.FILE_OPEN_REPARSE_POINT|windows.FILE_SYNCHRONOUS_IO_NONALERT|windows.FILE_OPEN_NO_RECALL, 0, 0)
+	runtime.KeepAlive(name)
+	if handle != 0 && handle != windows.InvalidHandle {
+		defer func() {
+			if context.close(handle) != nil {
+				t.Error("diagnostic root close failed")
+			}
+		}()
+	}
+	if err != nil {
+		t.Logf("root contract: native-open=false access-denied=%t invalid-parameter=%t name-invalid=%t", errors.Is(err, windows.STATUS_ACCESS_DENIED), errors.Is(err, windows.STATUS_INVALID_PARAMETER), errors.Is(err, windows.STATUS_OBJECT_NAME_INVALID))
+		return
+	}
+	t.Logf("root contract: native-open=true opened-status=%t opened-information=%t", status.Status == 0, status.Information == 1)
+	var kind uint32
+	kind, err = windows.GetFileType(handle)
+	t.Logf("root contract: disk-type=%t", err == nil && kind == windows.FILE_TYPE_DISK)
+	t.Logf("root contract: local-opened-name=%t", context.localDisk(handle) == nil)
+	var metadata windows.ByHandleFileInformation
+	err = windows.GetFileInformationByHandle(handle, &metadata)
+	t.Logf("root contract: legacy-metadata=%t directory=%t", err == nil, metadata.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0)
+	var id windowsIDInfo
+	err = windows.GetFileInformationByHandleEx(handle, windows.FileIdInfo, (*byte)(unsafe.Pointer(&id)), uint32(unsafe.Sizeof(id)))
+	t.Logf("root contract: full-id-query=%t nonzero-id=%t", err == nil, id.FileID != ([16]byte{}))
 }

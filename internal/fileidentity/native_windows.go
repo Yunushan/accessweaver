@@ -202,6 +202,9 @@ func localNativeDiskPath(path string) bool {
 	}
 	remainder := strings.TrimPrefix(path, prefix)
 	end := strings.IndexByte(remainder, '\\')
+	if end < 0 {
+		end = len(remainder)
+	}
 	if end < 1 {
 		return false
 	}
