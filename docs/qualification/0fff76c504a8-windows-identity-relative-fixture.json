@@ -1,0 +1,495 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "0fff76c504a8713dfa7ed844cd9e6d3886689ef8",
+  "sourceRef": "refs/heads/main",
+  "runID": 41940946199,
+  "runAttempt": 1,
+  "scope": "Source-built Windows root-open correction observations with an amd64 cross-volume relative-path fixture failure; no cohort qualification",
+  "cachedRunStatus": "in_progress",
+  "cachedRunConclusion": null,
+  "jobs": [
+    {
+      "arch": "amd64",
+      "kind": "native-identity-and-storage",
+      "jobID": 126961291390,
+      "runID": 41940946199,
+      "headSHA": "0fff76c504a8713dfa7ed844cd9e6d3886689ef8",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41940946199/job/126961291390",
+      "jobStatus": "completed",
+      "jobConclusion": "failure",
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native file identity and bound input output admission",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Protected storage, journal, key and historical export acceptance",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain controlled identity and input receipts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain controlled native storage receipts",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ],
+      "receivedLogBytes": 29105,
+      "receivedLogSHA256": "a4ed101c1a066696b9166fa5de9d1566d8f18a2f427752a081f969afcfe6c9f6",
+      "controlledTestMarkers": {
+        "passed": [
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/drive-root-native-and-ordinary-handle-parity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/metadata-only-access-and-ads-base-identity",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/write-only-and-append-only-borrowed-outputs",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/relative-absolute-directory-and-nofollow-links",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/directories-pipes-and-fixed-errors",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/owned-metadata-probes-close-on-success-and-failure",
+            "durationSeconds": 0.08
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/every-thread-impersonation-level-refuses",
+            "durationSeconds": 0.0
+          }
+        ],
+        "failed": [
+          {
+            "test": "TestDisposableWindowsFileIdentityNative",
+            "durationSeconds": 0.15
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/full-native-id-aliases-and-borrowed-lifetime",
+            "durationSeconds": 0.0
+          }
+        ]
+      },
+      "skipMarkerCount": 0,
+      "driveRootBorrowedNativeParityPassed": true,
+      "controlledFixtureFailure": {
+        "fixedFailureCode": "fixture-relative-path-unavailable",
+        "onlyFailingSubtest": "TestDisposableWindowsFileIdentityNative/full-native-id-aliases-and-borrowed-lifetime",
+        "processWorkingDirectoryAndTemporaryFixtureOnDifferentVolumes": true,
+        "relativePathComputationBeforeAliasProbeLoop": true,
+        "rawErrorOrPathsExported": false
+      }
+    },
+    {
+      "arch": "arm64",
+      "kind": "native-identity-and-storage",
+      "jobID": 126961291426,
+      "runID": 41940946199,
+      "headSHA": "0fff76c504a8713dfa7ed844cd9e6d3886689ef8",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41940946199/job/126961291426",
+      "jobStatus": "completed",
+      "jobConclusion": "success",
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native file identity and bound input output admission",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Protected storage, journal, key and historical export acceptance",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain controlled identity and input receipts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain controlled native storage receipts",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "receivedLogBytes": 45995,
+      "receivedLogSHA256": "c1b6a0028841cdfad7d099a2ecd24cd25afa7ef1ad813db6c4c2ec2a61086bcd",
+      "controlledTestMarkers": {
+        "passed": [
+          {
+            "test": "TestDisposableWindowsFileIdentityNative",
+            "durationSeconds": 0.13
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/drive-root-native-and-ordinary-handle-parity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/full-native-id-aliases-and-borrowed-lifetime",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/metadata-only-access-and-ads-base-identity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/write-only-and-append-only-borrowed-outputs",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/relative-absolute-directory-and-nofollow-links",
+            "durationSeconds": 0.03
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/directories-pipes-and-fixed-errors",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/owned-metadata-probes-close-on-success-and-failure",
+            "durationSeconds": 0.07
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/every-thread-impersonation-level-refuses",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata",
+            "durationSeconds": 0.06
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/bound-direct-and-hard-link",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/bound-direct-and-hard-link/direct",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/bound-direct-and-hard-link/hard-link",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/retained-identity-after-name-replacement",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/pairwise-output-identities",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/binding-size-modified-and-absence",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/binding-size-modified-and-absence/size",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/binding-size-modified-and-absence/modified",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/binding-size-modified-and-absence/absent",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/references-and-optional-absence",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/explicit-leaf-link-policy",
+            "durationSeconds": 0.02
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/unusable-output-and-borrowed-pipes",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot",
+            "durationSeconds": 0.09
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/actual-read-retains-original-object",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/verify-dispatcher-preserves-every-input-output-alias",
+            "durationSeconds": 0.08
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/verify-dispatcher-preserves-every-input-output-alias/from/direct",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/verify-dispatcher-preserves-every-input-output-alias/from/hard-link",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/verify-dispatcher-preserves-every-input-output-alias/to/direct",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/verify-dispatcher-preserves-every-input-output-alias/to/hard-link",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/verify-dispatcher-preserves-every-input-output-alias/events/direct",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/verify-dispatcher-preserves-every-input-output-alias/events/hard-link",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsJournalCommitReadbackReopenAndConcurrency",
+            "durationSeconds": 0.15
+          },
+          {
+            "test": "TestWindowsJournalNativeByteRangeLocks",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve",
+            "durationSeconds": 0.23
+          },
+          {
+            "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/disk-full",
+            "durationSeconds": 0.03
+          },
+          {
+            "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/partial",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/short-no-error",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/sync",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/acknowledged-without-write",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/wrong-bytes",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestWindowsJournalCommitOrderingAndCancellationAfterFlush",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestWindowsJournalInvalidCanceledAndFullAdmissionsDoNotWrite",
+            "durationSeconds": 0.18
+          },
+          {
+            "test": "TestWindowsJournalIndependentEndpointsAndPartialInitialization",
+            "durationSeconds": 0.06
+          },
+          {
+            "test": "TestWindowsJournalPrewriteCorruptionPoisonsWithoutMutation",
+            "durationSeconds": 0.09
+          },
+          {
+            "test": "TestWindowsJournalPrewriteCorruptionPoisonsWithoutMutation/append",
+            "durationSeconds": 0.05
+          },
+          {
+            "test": "TestWindowsJournalPrewriteCorruptionPoisonsWithoutMutation/snapshot",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestWindowsJournalIdentityMismatchBeforeAndAfterWrite",
+            "durationSeconds": 0.07
+          },
+          {
+            "test": "TestWindowsJournalIdentityMismatchBeforeAndAfterWrite/before_write",
+            "durationSeconds": 0.03
+          },
+          {
+            "test": "TestWindowsJournalIdentityMismatchBeforeAndAfterWrite/after_write",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestWindowsJournalCloseCachesFailureAndBorrowsDirectory",
+            "durationSeconds": 0.03
+          },
+          {
+            "test": "TestWindowsJournalZeroValueUnavailable",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsJournalInterruptedWriterChild",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsJournalKilledWriterPreservesBytesAndReleasesLock",
+            "durationSeconds": 0.16
+          },
+          {
+            "test": "TestWindowsJournalKilledWriterPreservesBytesAndReleasesLock/partial",
+            "durationSeconds": 0.09
+          },
+          {
+            "test": "TestWindowsJournalKilledWriterPreservesBytesAndReleasesLock/complete",
+            "durationSeconds": 0.07
+          },
+          {
+            "test": "TestWindowsLocalNativeRoundTripAndExactHead",
+            "durationSeconds": 0.1
+          },
+          {
+            "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport",
+            "durationSeconds": 0.46
+          },
+          {
+            "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/missing",
+            "durationSeconds": 0.09
+          },
+          {
+            "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/changed",
+            "durationSeconds": 0.09
+          },
+          {
+            "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/short",
+            "durationSeconds": 0.09
+          },
+          {
+            "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/zero",
+            "durationSeconds": 0.09
+          },
+          {
+            "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/build",
+            "durationSeconds": 0.09
+          },
+          {
+            "test": "TestWindowsLocalNativePostCommitKeyChangeSuppressesHead",
+            "durationSeconds": 0.11
+          },
+          {
+            "test": "TestWindowsLocalNativePartialInitializationPreserved",
+            "durationSeconds": 0.02
+          },
+          {
+            "test": "TestWindowsLocalNativePartialInitializationPreserved/.actor-key",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsLocalNativePartialInitializationPreserved/events.journal",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsLocalNativePartialInitializationPreserved/unrelated",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsLocalNativeExportOutputAliases",
+            "durationSeconds": 0.35
+          },
+          {
+            "test": "TestWindowsLocalNativeExportOutputAliases/.actor-key",
+            "durationSeconds": 0.09
+          },
+          {
+            "test": "TestWindowsLocalNativeExportOutputAliases/.actor-key:alias-output",
+            "durationSeconds": 0.08
+          },
+          {
+            "test": "TestWindowsLocalNativeExportOutputAliases/events.journal",
+            "durationSeconds": 0.09
+          },
+          {
+            "test": "TestWindowsLocalNativeExportOutputAliases/events.journal:alias-output",
+            "durationSeconds": 0.09
+          },
+          {
+            "test": "TestWindowsLocalNativeExportRefusalsAndClosedBeforeOutput",
+            "durationSeconds": 0.1
+          },
+          {
+            "test": "TestWindowsLocalNativeHistoricalRegularOutputWithoutReadableKey",
+            "durationSeconds": 0.53
+          },
+          {
+            "test": "TestWindowsLocalNativeHistoricalRegularOutputWithoutReadableKey/missing",
+            "durationSeconds": 0.45
+          },
+          {
+            "test": "TestWindowsLocalNativeHistoricalRegularOutputWithoutReadableKey/unreadable-content",
+            "durationSeconds": 0.09
+          },
+          {
+            "test": "TestWindowsLocalNativeHistoricalKeyHardlinkOutputRefused",
+            "durationSeconds": 0.09
+          },
+          {
+            "test": "TestDisposableWindowsAuditStorageNative",
+            "durationSeconds": 0.21
+          }
+        ],
+        "failed": []
+      },
+      "skipMarkerCount": 0,
+      "driveRootBorrowedNativeParityPassed": true
+    }
+  ],
+  "completedWindowsUnitJobsFromCachedMetadata": [
+    {
+      "jobID": 126961291464,
+      "name": "Test (windows-latest)",
+      "runID": 41940946199,
+      "headSHA": "0fff76c504a8713dfa7ed844cd9e6d3886689ef8",
+      "status": "completed",
+      "conclusion": "success",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41940946199/job/126961291464",
+      "logsFetched": false
+    }
+  ],
+  "observations": [
+    "Drive-root borrowed/native identity parity passed on both architectures after the type-neutral root-open correction. The prior STATUS_INVALID_PARAMETER root failure did not recur in these parity assertions.",
+    "The amd64 native identity fixture passed seven subtests and failed only full-native-id-aliases-and-borrowed-lifetime, with its parent also marked failed. Its fixed failure label identifies fixture relative-path construction before the alias probe loop.",
+    "The pinned fixture computed a relative path from the process working directory to a temporary file; the hosted checkout and temporary fixture were on different volumes. This fixture precondition failure prevented that subtest from exercising its alias probe loop.",
+    "The arm64 native job completed successfully, including SDK verification, all native identity assertions, command alias and input-snapshot assertions, protected storage assertions, and both receipt upload steps. Its fixed PASS markers and successful provider steps are log observations rather than validated artifact contents.",
+    "The amd64 storage step was skipped after the metadata fixture failure. The whole-cohort collector requires both jobs and all required steps to succeed, so it was not executed and no artifact metadata or archives were requested for qualification.",
+    "Only allowlisted fixed PASS/FAIL markers, boolean fixture observations, source-bound provider fields and log byte counts/digests are retained here. Raw logs, paths, errors, account identities and private payloads are excluded."
+  ],
+  "candidateCorrection": "Use t.Chdir(directory) inside the alias/lifetime subtest before os.Getwd and filepath.Rel so the relative alias is constructed on the fixture volume. Preserve every alias, identity, size, offset and borrowed-lifetime assertion. This test-only correction requires a fresh source-bound hosted run.",
+  "limits": {
+    "sourceBuiltFixtureObservationOnly": true,
+    "artifactContentsValidated": false,
+    "artifactMetadataRequested": false,
+    "artifactArchivesDownloaded": false,
+    "wholeCohortCollectorExecuted": false,
+    "nativeQualificationComplete": false,
+    "productionQualificationComplete": false,
+    "publicWindowsRecordingEnabled": false,
+    "readinessGatePromoted": false,
+    "logsAreCryptographicAttestation": false,
+    "workflowRerunPerformed": false,
+    "localNativeExecutionPerformed": false
+  }
+}

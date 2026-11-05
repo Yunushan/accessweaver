@@ -286,6 +286,9 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 		if os.Link(path, alias) != nil {
 			t.Fatal("fixture hard link creation failed")
 		}
+		// The hosted checkout and temporary directory may use different
+		// drives. Exercise a real relative path from this fixture directory.
+		t.Chdir(directory)
 		working, err := os.Getwd()
 		if err != nil {
 			t.Fatal("fixture working directory unavailable")
