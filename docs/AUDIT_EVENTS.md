@@ -4,6 +4,8 @@ AccessWeaver provides a bounded event-chain format, a read-only segment verifier
 
 The connected [Windows local audit backend](WINDOWS_AUDIT_STORAGE.md) has dual-architecture source-built storage, identity and genuine ordinary-process prerequisite qualification. The public Windows entry-point candidate now includes real CLI/UI/foreground-run and signed managed required-audit acceptance; those results remain pending. Recorded policy administration remains Linux-only. No readiness gate is promoted.
 
+The [Darwin storage foundation](DARWIN_AUDIT_STORAGE.md) adds internal private-object admission. macOS recording remains unsupported until its journal and actual recorded-command paths pass native qualification.
+
 ## Verify a segment
 
 Retain the complete starting and ending checkpoints through an independently trusted administrative or collector channel. Then run:

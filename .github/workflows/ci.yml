@@ -135,6 +135,7 @@ jobs:
       - name: Unit tests
         env:
           ACCESSWEAVER_NATIVE_DISCOVERY_REPORT_DIR: ${{ github.workspace }}/build/native-discovery-checks
+          ACCESSWEAVER_DISPOSABLE_DARWIN_AUDIT_TEST: ${{ runner.os == 'macOS' && '1' || '' }}
         run: go test ./... -count=1
       - name: Native Windows audit identity refusal (own-token fixture)
         if: runner.os == 'Windows'
@@ -155,7 +156,9 @@ jobs:
       - name: Native macOS trust and paired storage without CGO
         if: runner.os == 'macOS'
         shell: bash
-        run: CGO_ENABLED=0 go test ./internal/darwintrust ./internal/managed -run '^TestDarwin' -count=1 -v
+        env:
+          ACCESSWEAVER_DISPOSABLE_DARWIN_AUDIT_TEST: '1'
+        run: CGO_ENABLED=0 go test ./internal/darwintrust ./internal/managed ./internal/audit -run '^TestDarwin' -count=1 -v
       - name: Retain macOS trust preflight
         if: runner.os == 'macOS' && always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
