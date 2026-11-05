@@ -385,6 +385,16 @@ func waitServerEngineShutdown(initial context.Context, shutdown func(context.Con
 	return shutdown(context.Background())
 }
 
+// Workflow shutdown already owns its reserved generation. A caller budget only
+// diagnoses an unresolved wait; the background call joins that same completion.
+func waitServerWorkflowShutdown(initial context.Context, shutdown func(context.Context) error, pending func()) error {
+	initialErr := shutdown(initial)
+	if initial.Err() != nil && errors.Is(initialErr, initial.Err()) {
+		pending()
+	}
+	return shutdown(context.Background())
+}
+
 func (s *Server) Serve(ctx context.Context) (string, error) {
 	if err := uiaccess.RequireUnelevated(); err != nil {
 		return "", err
@@ -399,6 +409,12 @@ func (s *Server) Serve(ctx context.Context) (string, error) {
 // serveListener takes ownership of this already-created loopback listener. The
 // public Serve path always performs the native unelevated admission first.
 func (s *Server) serveListener(ctx context.Context, listener net.Listener) (string, error) {
+	return s.serveListenerWithWorkflowShutdown(ctx, listener, s.Workflows.Shutdown)
+}
+
+// This private composition takes the workflow join as an operation, while the
+// production listener path above always binds the actual workflow manager.
+func (s *Server) serveListenerWithWorkflowShutdown(ctx context.Context, listener net.Listener, workflowShutdown func(context.Context) error) (string, error) {
 	s.lifecycleMu.Lock()
 	if s.shutdown != nil {
 		s.lifecycleMu.Unlock()
@@ -421,7 +437,7 @@ func (s *Server) serveListener(ctx context.Context, listener net.Listener) (stri
 		defer cancelLifetime()
 		<-lifetime.Done()
 		gate.closeAdmission()
-		// Start engine ownership shutdown before waiting for HTTP handlers: an
+		// Begin both manager shutdowns before waiting for HTTP handlers: an
 		// admitted start/stop request must not prevent manager closing or drain.
 		engineDone := make(chan error, 1)
 		go func() {
@@ -429,7 +445,12 @@ func (s *Server) serveListener(ctx context.Context, listener net.Listener) (stri
 			defer cancelEngine()
 			engineDone <- waitServerEngineShutdown(engineContext, s.Manager.Shutdown, func() bool { return s.Manager.Snapshot().LifecyclePending }, state.markPending)
 		}()
-		s.Workflows.Cancel()
+		workflowDone := make(chan error, 1)
+		go func() {
+			workflowContext, cancelWorkflow := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancelWorkflow()
+			workflowDone <- waitServerWorkflowShutdown(workflowContext, workflowShutdown, state.markPending)
+		}()
 		httpContext, cancelHTTP := context.WithTimeout(context.Background(), 5*time.Second)
 		httpErr := server.Shutdown(httpContext)
 		if httpErr != nil {
@@ -437,17 +458,13 @@ func (s *Server) serveListener(ctx context.Context, listener net.Listener) (stri
 			httpErr = errors.Join(httpErr, server.Close())
 		}
 		cancelHTTP()
-		workflowContext, cancelWorkflow := context.WithTimeout(context.Background(), 8*time.Second)
-		// Workflow/vendor lifetime recovery remains a separate boundary. Retain
-		// its existing bounded wait; do not claim it proves full workflow cleanup.
-		_ = s.Workflows.Shutdown(workflowContext)
-		cancelWorkflow()
+
 		gate.wait()
 		serveErr := <-served
 		if errors.Is(serveErr, http.ErrServerClosed) {
 			serveErr = nil
 		}
-		state.err = errors.Join(httpErr, serveErr, <-engineDone)
+		state.err = errors.Join(httpErr, serveErr, <-engineDone, <-workflowDone)
 	}()
 	return addr, nil
 }
@@ -458,8 +475,8 @@ func (s *Server) shutdownState() *serverShutdownState {
 	return s.shutdown
 }
 
-// Done closes only after admitted handlers, HTTP serving and the exact engine
-// shutdown worker have finished. A caller timeout cannot close this channel.
+// Done closes only after admitted handlers, HTTP serving and both manager
+// shutdown workers have finished. A caller timeout cannot close this channel.
 func (s *Server) Done() <-chan struct{} {
 	if state := s.shutdownState(); state != nil {
 		return state.done
@@ -468,8 +485,8 @@ func (s *Server) Done() <-chan struct{} {
 }
 
 // ShutdownPending reports one observed unresolved desktop shutdown after an HTTP
-// shutdown error, fixed engine fault or engine diagnostic budget. Done may race
-// it and remains the terminal proof.
+// shutdown error, fixed engine fault or manager diagnostic budget. Done may
+// race it and remains the terminal proof.
 func (s *Server) ShutdownPending() <-chan struct{} {
 	if state := s.shutdownState(); state != nil {
 		return state.pending

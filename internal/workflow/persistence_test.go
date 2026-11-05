@@ -238,7 +238,13 @@ func TestTerminalPersistenceDoesNotBlockControlOrClaimCompletion(t *testing.T) {
 			unblock()
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if err := m.Shutdown(ctx); err != nil {
+			if err := m.Shutdown(ctx); failWrite {
+				// Worker completion does not make a failed terminal write
+				// durable. Preserve that typed failure in the shutdown result.
+				if !errors.Is(err, ErrWorkflowPersistence) {
+					t.Fatal("terminal persistence failure was erased by shutdown")
+				}
+			} else if err != nil {
 				t.Fatal(err)
 			}
 			job := m.Snapshot()

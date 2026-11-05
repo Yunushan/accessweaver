@@ -131,6 +131,8 @@ type Manager struct {
 	job          Job
 	cancel       context.CancelFunc
 	done         chan struct{}
+	completion   *workflowCompletion
+	shutdown     *workflowShutdown
 	closing      bool
 	execute      func(context.Context, string, Request) (json.RawMessage, error)
 	persist      func(string, []byte) error
@@ -479,8 +481,9 @@ func (m *Manager) Start(id string) (Job, error) {
 	m.cancel = cancel
 	m.job = Job{ID: id, Action: p.Request.Action, State: "running", StartedAt: time.Now().UTC()}
 	job := m.job
-	done := make(chan struct{})
-	m.done = done
+	completion := &workflowCompletion{done: make(chan struct{})}
+	done := completion.done
+	m.done, m.completion = done, completion
 	// Reserve admission and its completion before storage I/O. Controls can
 	// cancel or wait with their own deadline while this private write is
 	// pending; execution requires a durable running record.
@@ -491,29 +494,46 @@ func (m *Manager) Start(id string) (Job, error) {
 	}
 	m.mu.Lock()
 	if initialErr != nil {
+		// Keep a cancellation or policy co-cause observed during admission,
+		// before internal cleanup cancels the context itself. The private job
+		// display and Start return retain the original storage error text.
+		admissionCause := initialErr
+		if cause := context.Cause(ctx); cause != nil {
+			admissionCause = errors.Join(admissionCause, cause)
+		}
 		cancel()
 		job.State = "failed"
 		job.FinishedAt = time.Now().UTC()
 		job.Error = boundedJobError(initialErr.Error())
 		m.job = job
+		completion.err = workflowFinalFailure(workflowFailure(ErrWorkflowAdmission, workflowCause(ErrWorkflowPersistence, admissionCause)))
 		close(done)
 		return Job{}, initialErr
 	}
 
 	started = true
 	go func() {
-		defer close(done)
 		var result json.RawMessage
 		err := ctx.Err()
 		if err == nil {
 			result, err = m.execute(ctx, filepath.Join(m.root, id), p.Request)
 		}
-		if cause := context.Cause(ctx); managed.IsPolicyError(cause) {
+		cause := context.Cause(ctx)
+		if managed.IsPolicyError(cause) {
 			err = errors.Join(cause, err)
 		}
-		if resultErr := validateResult(result); resultErr != nil {
+		// Only a plain cooperative cancellation, already explicitly requested
+		// when the worker observes completion, may be clean for shutdown. Never erase a
+		// wrapped/joined failure merely because errors.Is finds Canceled.
+		m.mu.Lock()
+		cooperative := completion.cancelRequested && err == context.Canceled && ctx.Err() == context.Canceled && cause == context.Canceled
+		m.mu.Unlock()
+		terminalErr := workflowFailure(ErrWorkflowExecution, err)
+		resultErr := validateResult(result)
+		if resultErr != nil {
 			result = nil
 			err = errors.Join(err, resultErr)
+			terminalErr = errors.Join(terminalErr, workflowFailure(ErrWorkflowResult, resultErr))
 		}
 		cancel()
 		// Keep the published job running until its terminal write finishes.
@@ -526,12 +546,19 @@ func (m *Manager) Start(id string) (Job, error) {
 			job.State = "failed"
 			job.Error = err.Error()
 		}
-		if e := m.saveJob(&job); e != nil {
+		persistErr := m.saveJob(&job)
+		if persistErr != nil {
 			job.State = "failed"
-			job.Error = boundedJobError("persist result: " + e.Error() + "; " + job.Error)
+			job.Error = boundedJobError("persist result: " + persistErr.Error() + "; " + job.Error)
+			terminalErr = errors.Join(terminalErr, workflowFailure(ErrWorkflowPersistence, persistErr))
+		}
+		if cooperative && resultErr == nil && persistErr == nil {
+			terminalErr = nil
 		}
 		m.mu.Lock()
 		m.job = job
+		completion.err = workflowFinalFailure(terminalErr)
+		close(done)
 		m.mu.Unlock()
 	}()
 	return m.job, nil
@@ -554,36 +581,80 @@ func (m *Manager) Snapshot() Job {
 	j.Result = append(json.RawMessage(nil), j.Result...)
 	return j
 }
+
+// TerminalError observes only the completed current reservation matching jobID.
+// It never waits for completion, cancels work, closes admission or loads history.
+func (m *Manager) TerminalError(jobID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.job.ID != jobID || m.completion == nil {
+		return ErrWorkflowOutcomeUnavailable
+	}
+	select {
+	case <-m.completion.done:
+		return m.completion.err
+	default:
+		return ErrWorkflowOutcomeUnavailable
+	}
+}
+
 func (m *Manager) Cancel() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.cancel != nil {
+		if m.completion != nil {
+			select {
+			case <-m.completion.done:
+			default:
+				m.completion.cancelRequested = true
+			}
+		}
 		m.cancel()
 	}
 }
 
-// Shutdown rejects new jobs and waits for cancellation and durable outcome recording.
-// A timeout does not claim that vendor cleanup or rollback completed.
+// Shutdown rejects new jobs and retains the generation active or reserved at
+// the first call through outcome publication and attempted final persistence.
+// Caller cancellation ends only that wait. Repeated calls share its typed final
+// result; an unchanged inactive historical failure is not a shutdown failure.
+// Completion never proves vendor rollback or complete external tree cleanup.
 func (m *Manager) Shutdown(ctx context.Context) error {
 	m.mu.Lock()
 	m.closing = true
-	if m.cancel != nil {
-		m.cancel()
+	if m.shutdown == nil {
+		m.shutdown = &workflowShutdown{}
+		if completion := m.completion; completion != nil {
+			select {
+			case <-completion.done:
+				// This generation was already inactive at first shutdown.
+			default:
+				m.shutdown.completion = completion
+				completion.cancelRequested = true
+				if m.cancel != nil {
+					m.cancel()
+				}
+			}
+		}
 	}
-	done := m.done
+	completion := m.shutdown.completion
 	m.mu.Unlock()
-	if done == nil {
+	if completion == nil {
 		return nil
 	}
 	select {
-	case <-done:
-		return nil
+	case <-completion.done:
+		return completion.err
+	default:
+	}
+	select {
+	case <-completion.done:
+		return completion.err
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
 
-func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error) {
+func execute(ctx context.Context, dir string, r Request) (result json.RawMessage, failure error) {
 	started := time.Now()
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -602,7 +673,12 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	if err != nil {
 		return nil, err
 	}
-	defer log.Close()
+	logClosed := false
+	defer func() {
+		if !logClosed {
+			failure = errors.Join(failure, log.Close())
+		}
+	}()
 	phase := func(name string) error {
 		_, err := fmt.Fprintf(log, "Workflow timing ms: %s %d\n", name, time.Since(started).Milliseconds())
 		return err
@@ -667,6 +743,7 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	cmd.Stdin = strings.NewReader(program)
 	cmd.WaitDelay = 2 * time.Second
 	configureCommand(cmd)
+	cancellation := captureCommandCancellation(cmd)
 	output := &startupLog{writer: log, started: started}
 	cmd.Stdout = output
 	cmd.Stderr = output
@@ -675,7 +752,11 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	}
 	// Finish persistence before interpreting a successful child result.
 	runErr := cmd.Run()
-	err = errors.Join(runErr, phase("child-exited"), log.Close())
+	// Run has joined the context watcher, so every configured Cancel outcome
+	// is now available even if Wait preferred the process ExitError over it.
+	cleanupErr := cancellation.failure()
+	err = errors.Join(runErr, cleanupErr, phase("child-exited"), log.Close())
+	logClosed = true
 	if err != nil {
 		if contextErr := ctx.Err(); contextErr != nil {
 			err = errors.Join(err, contextErr)
@@ -683,10 +764,10 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 	}
 	result, readErr := readWorkflowFile(input.ResultPath, maxResultBytes)
 	if readErr != nil {
-		return nil, errors.Join(err, fmt.Errorf("read workflow result: %w", readErr))
+		return nil, errors.Join(err, workflowCause(ErrWorkflowResult, fmt.Errorf("read workflow result: %w", readErr)))
 	}
 	if resultErr := validateResult(result); resultErr != nil {
-		return nil, errors.Join(err, resultErr)
+		return nil, errors.Join(err, workflowCause(ErrWorkflowResult, resultErr))
 	}
 	if err != nil {
 		var outcome struct {
@@ -702,7 +783,7 @@ func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error
 		Error string `json:"error"`
 	}
 	if e := json.Unmarshal(result, &outcome); e != nil {
-		return nil, e
+		return nil, workflowCause(ErrWorkflowResult, e)
 	}
 	if !outcome.OK {
 		return result, errors.New(outcome.Error)

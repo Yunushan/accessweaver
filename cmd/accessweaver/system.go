@@ -105,6 +105,8 @@ func systemCommand(args []string, root string) error {
 		if args[0] == "apply" && (len(args) != 3 || args[2] != "--confirm") {
 			return errors.New("preview the request, then use system apply REQUEST.json --confirm")
 		}
+		restoreOutput := observeAuditOutputPipes()
+		defer restoreOutput()
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		if err := ctx.Err(); err != nil {
@@ -123,39 +125,69 @@ func systemCommand(args []string, root string) error {
 type systemWorkflow interface {
 	Snapshot() workflow.Job
 	Shutdown(context.Context) error
+	TerminalError(string) error
 }
 
-// Cancellation must wait for the manager's terminal history write, just as UI
-// shutdown does. A bounded timeout reports uncertainty without inventing success.
+// Cancellation retains the manager through its terminal history write. The
+// bounded diagnostic wait never permits abandoning a reserved or active job.
 func waitSystemWorkflow(ctx context.Context, manager systemWorkflow, shutdownTimeout time.Duration, emit func(workflow.Job) error) error {
+	return waitSystemWorkflowWithFeedback(ctx, manager, shutdownTimeout, emit, os.Stderr)
+}
+
+func waitSystemWorkflowWithFeedback(ctx context.Context, manager systemWorkflow, shutdownTimeout time.Duration, emit func(workflow.Job) error, feedback io.Writer) error {
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		if ctx.Err() != nil {
-			return cancelSystemWorkflow(ctx, manager, shutdownTimeout, emit)
+			return cancelSystemWorkflowWithFeedback(ctx, manager, shutdownTimeout, emit, feedback)
 		}
 		job := manager.Snapshot()
 		if job.State != "running" {
-			return errors.Join(emit(job), systemJobError(job))
+			return errors.Join(emit(job), systemWorkflowTerminalError(manager, job))
 		}
 		select {
 		case <-ctx.Done():
-			return cancelSystemWorkflow(ctx, manager, shutdownTimeout, emit)
+			return cancelSystemWorkflowWithFeedback(ctx, manager, shutdownTimeout, emit, feedback)
 		case <-ticker.C:
 		}
 	}
 }
 
+var errSystemShutdownOutput = errors.New("workflow shutdown notice could not be written")
+
 func cancelSystemWorkflow(ctx context.Context, manager systemWorkflow, timeout time.Duration, emit func(workflow.Job) error) error {
-	shutdown, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	err := manager.Shutdown(shutdown)
-	job := manager.Snapshot()
-	outputErr := emit(job)
-	if err != nil {
-		return errors.Join(fmt.Errorf("workflow cancellation did not finish: %w; inspect the recovery journal before retrying", err), ctx.Err(), outputErr)
+	return cancelSystemWorkflowWithFeedback(ctx, manager, timeout, emit, os.Stderr)
+}
+
+func cancelSystemWorkflowWithFeedback(ctx context.Context, manager systemWorkflow, timeout time.Duration, emit func(workflow.Job) error, feedback io.Writer) error {
+	initial, cancel := context.WithTimeout(context.Background(), timeout)
+	initialErr := manager.Shutdown(initial)
+	var outputErr error
+	if initial.Err() != nil && errors.Is(initialErr, initial.Err()) && manager.Snapshot().State == "running" {
+		const notice = "Workflow shutdown is not confirmed. Waiting for the owned job and final status record; keep this command active.\n"
+		if n, err := io.WriteString(feedback, notice); err != nil || n != len(notice) {
+			outputErr = errSystemShutdownOutput
+		}
 	}
-	return errors.Join(errors.New("workflow cancellation requested; inspect the recorded outcome and recovery journal before retrying"), ctx.Err(), systemJobError(job), outputErr)
+	cancel()
+	// The background join observes the same captured generation and cached
+	// result. Diagnostic cancellation or a failed notice cannot release it.
+	finalErr := manager.Shutdown(context.Background())
+	job := manager.Snapshot()
+	if finalErr == nil {
+		finalErr = systemWorkflowTerminalError(manager, job)
+	}
+	return errors.Join(errors.New("workflow cancellation requested; inspect the recorded outcome and recovery journal before retrying"), ctx.Err(), finalErr, emit(job), outputErr)
+}
+
+// Exact current-job lookup preserves typed failures even when the job finished
+// before shutdown began. The display fallback describes plain cooperative
+// cancellation; it is never used to reconstruct a retained failure category.
+func systemWorkflowTerminalError(manager systemWorkflow, job workflow.Job) error {
+	if err := manager.TerminalError(job.ID); err != nil {
+		return err
+	}
+	return systemJobError(job)
 }
 
 func systemJobError(job workflow.Job) error {
