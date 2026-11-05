@@ -1,4 +1,4 @@
-//go:build (!linux && !windows) || (!amd64 && !arm64)
+//go:build (!linux && !windows && !darwin) || (!amd64 && !arm64)
 
 package audit
 

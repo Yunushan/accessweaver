@@ -1,6 +1,8 @@
 # Record an explicit audit export
 
-Linux and Windows amd64/arm64 offer a separate export-recorded command for a current, privately enrolled stream. It records access intent and a synchronous output outcome in that same protected journal. Ordinary audit export remains a read-only archive operation, including when the old actor key has been lost. Neither command enforces machine-wide export policy or authenticates a recipient.
+The macOS public command candidate is awaiting ordinary-process native qualification; see the [Darwin acceptance boundary](DARWIN_AUDIT_STORAGE.md).
+
+Linux, Windows and macOS amd64/arm64 offer a separate export-recorded command for a current, privately enrolled stream. It records access intent and a synchronous output outcome in that same protected journal. Ordinary audit export remains a read-only archive operation, including when the old actor key has been lost. Neither command enforces machine-wide export policy or authenticates a recipient.
 
 ```sh
 (

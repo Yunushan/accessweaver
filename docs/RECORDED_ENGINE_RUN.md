@@ -1,6 +1,8 @@
 # Recorded foreground engine run
 
-The explicit Linux/Windows amd64/arm64 command records one reviewed foreground engine lifecycle in the current protected local audit stream. It uses the normal managed launch guard and engine manager. It does not import, save or seed profiles, enable engines in the profile-editing audited desktop, or make engine auditing mandatory. The enterprise audit gate remains incomplete.
+The macOS public command candidate is awaiting ordinary-process native qualification; see the [Darwin acceptance boundary](DARWIN_AUDIT_STORAGE.md).
+
+The explicit Linux/Windows/macOS amd64/arm64 command records one reviewed foreground engine lifecycle in the current protected local audit stream. It uses the normal managed launch guard and engine manager. It does not import, save or seed profiles, enable engines in the profile-editing audited desktop, or make engine auditing mandatory. The enterprise audit gate remains incomplete.
 
 ```text
 accessweaver audit run --directory /home/operator/.accessweaver-audit --from trusted-genesis.json --to trusted-head.json --profile reviewed-profile.json --consent metadata-only

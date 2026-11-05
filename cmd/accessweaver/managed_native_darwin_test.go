@@ -33,6 +33,9 @@ import (
 
 // Test-only inert Mach-O fixture. Production builds have no basename fixture mode.
 func TestMain(m *testing.M) {
+	if len(os.Args) == 2 && os.Args[1] == darwinOrdinaryWorkerArg {
+		os.Exit(ordinaryDarwinWorker())
+	}
 	if filepath.Base(os.Args[0]) == "ciadpi" {
 		for _, entry := range os.Environ() {
 			key, _, _ := strings.Cut(entry, "=")
@@ -43,6 +46,9 @@ func TestMain(m *testing.M) {
 		}
 		if os.Getenv("PATH") != "/usr/bin:/bin:/usr/sbin:/sbin" {
 			os.Exit(99)
+		}
+		if handled, exitCode := ordinaryDarwinInertEngine(); handled {
+			os.Exit(exitCode)
 		}
 		fmt.Println("inert managed Darwin fixture ready")
 		time.Sleep(5 * time.Second)

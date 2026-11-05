@@ -680,25 +680,46 @@ func TestDarwinLocalNativeCloseAttemptsOwnedScopeAfterFirstFailure(t *testing.T)
 	}
 }
 
-func TestDarwinLocalPrivateSliceKeepsPublicDarwinUnsupported(t *testing.T) {
+func TestDarwinPublicLocalWrappersRoundTrip(t *testing.T) {
 	fixture := newDarwinLocalFixture(t, false)
-	if LocalRecordingSupported() {
-		t.Fatal("private local slice unexpectedly enabled public Darwin recording")
+	if !LocalRecordingSupported() {
+		t.Fatal("native Darwin public recording capability is unavailable")
 	}
-	if start, err := InitializeLocalJournal(fixture.path); start != (Checkpoint{}) || !errors.Is(err, ErrLocalStorageUnsupported) {
-		t.Fatal("public initialization bypassed unsupported Darwin boundary")
+	start, err := InitializeLocalJournal(fixture.path)
+	if err != nil || start.Sequence != 0 || !validProducer(start.Producer) {
+		t.Fatal("public Darwin journal initialization failed")
 	}
-	if opened, err := OpenLocalJournal(context.Background(), fixture.path, Checkpoint{}, Checkpoint{}); opened != nil || !errors.Is(err, ErrLocalStorageUnsupported) {
-		if opened != nil {
-			opened.Close()
+	journal, err := OpenLocalJournal(context.Background(), fixture.path, start, start)
+	if err != nil || journal == nil {
+		t.Fatal("public Darwin journal opening failed")
+	}
+	t.Cleanup(func() {
+		if journal.Close() != nil {
+			t.Error("public Darwin journal cleanup failed")
 		}
-		t.Fatal("public opening bypassed unsupported Darwin boundary")
+	})
+	head, err := journal.Append(context.Background(), fixtureEvent(0))
+	if err != nil {
+		t.Fatal("public Darwin journal append failed")
+	}
+	data, from, to, err := journal.Snapshot(context.Background())
+	if err != nil || from != start || to != head {
+		t.Fatal("public Darwin snapshot endpoints differ")
+	}
+	if _, err := VerifySegment(context.Background(), bytes.NewReader(data), start, head); err != nil {
+		t.Fatal("public Darwin event segment failed verification")
 	}
 	var output bytes.Buffer
-	if err := ExportLocalSegment(context.Background(), fixture.path, Checkpoint{}, Checkpoint{}, &output); !errors.Is(err, ErrLocalStorageUnsupported) || output.Len() != 0 {
-		t.Fatal("public export bypassed unsupported Darwin boundary")
+	if err := ExportLocalSegment(context.Background(), fixture.path, start, head, &output); !errors.Is(err, ErrJournalBusy) || output.Len() != 0 {
+		t.Fatal("public Darwin export bypassed a held writer")
 	}
-	if entries, err := os.ReadDir(fixture.path); err != nil || len(entries) != 0 {
-		t.Fatal("unsupported public Darwin call mutated private fixture")
+	if journal.Close() != nil {
+		t.Fatal("public Darwin journal close failed")
+	}
+	if err := ExportLocalSegment(context.Background(), fixture.path, start, head, &output); err != nil || !bytes.Equal(output.Bytes(), data) {
+		t.Fatal("public Darwin historical export differs from retained snapshot")
+	}
+	if got, err := InitializeLocalJournal(fixture.path); err == nil || got != (Checkpoint{}) {
+		t.Fatal("public Darwin initialization replaced existing storage")
 	}
 }

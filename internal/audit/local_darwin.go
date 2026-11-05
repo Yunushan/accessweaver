@@ -11,9 +11,8 @@ import (
 	"sync"
 )
 
-// This current-producer adapter is internal only. The public Darwin wrappers
-// remain unsupported until their separate command/export/managed qualification.
-// It owns dir and journal; journal borrows dir. A key is a pseudonymization
+// The current-producer adapter owns dir and journal; journal borrows dir.
+// A key is a pseudonymization
 // secret, not a signature, account authentication or collector acknowledgment.
 // Existing and uncertain objects are never repaired, replaced or deleted.
 func initializeDarwinLocalJournal(directory string) (result Checkpoint, failure error) {
