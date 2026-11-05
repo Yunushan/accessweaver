@@ -49,6 +49,7 @@ var ordinaryCommandCaseNames = []string{
 	"current-recorded-export-key-boundary", "actual-output-alias-admission",
 	"full-journal-reservation-refusal", "approved-recorded-foreground-run",
 	"recorded-foreground-output-cancellation-drain",
+	"private-command-workspace-cleanup",
 }
 
 func windowsCommandReadSource(w *windowsCommandWorker, path string) ([]byte, error) {
@@ -1433,8 +1434,11 @@ func runWindowsCommandCases(nonce []byte) (executed, passed uint64) {
 	}
 	// No arbitrary enumeration is adopted for deletion. Unexpected operation
 	// outputs remain in their private directory and make exact cleanup fail.
-	if root.close() != nil {
-		passed = 0
+	// Preserve each operation's result and report cleanup as its own fixed case.
+	cleanupBit := uint64(1) << len(operations)
+	executed |= cleanupBit
+	if root.close() == nil {
+		passed |= cleanupBit
 	}
 	return executed, passed
 }

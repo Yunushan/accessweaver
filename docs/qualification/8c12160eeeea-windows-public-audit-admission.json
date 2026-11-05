@@ -567,5 +567,17 @@
     "rawLogsExported": false,
     "workflowRerunPerformed": false,
     "localNativeExecutionPerformed": false
+  },
+  "interpretationCorrection": {
+    "supersedes": "Any earlier first-command-group failure or later-eight-unexecuted inference from fixed failure labels alone.",
+    "reason": "The reporter prints the same label for unexecuted and failed cases. Child cleanup failure also clears every command pass bit. These labels do not locate the failed operation or establish execution distribution.",
+    "observedBoundary": "AMD command fixture failed after metadata/storage/bootstrap succeeded; ARM metadata fixture failed before those later steps.",
+    "commandExecutionDistribution": "unknown from available logs; structured failed-receipt inspection awaits explicit authorization",
+    "sourceAccessFinding": "The child-slot LIST_DIRECTORY omission is independently supported by source access masks; its relationship to the observed AMD command failure remains unconfirmed.",
+    "originalInferenceRetainedForTraceability": true,
+    "qualificationPromoted": false,
+    "providerArtifactRequestPerformed": false,
+    "userAuthorizationRequested": true,
+    "automaticApprovalRejectedPrivateDiagnosticRead": true
   }
 }

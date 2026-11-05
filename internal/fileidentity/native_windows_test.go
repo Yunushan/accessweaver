@@ -549,6 +549,10 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 				t.Fatal("fixture missing identity warmup changed error")
 			}
 		}
+		// Go's pinned runtime/mgc.go GC implementation completes sweeping to
+		// prepare a relatively stable test state. Complete one cycle before
+		// the baseline while keeping automatic GC and the measured check intact.
+		runtime.GC()
 		beforeThreads, _ := runtime.ThreadCreateProfile(nil)
 		beforeGC := readGCCycles()
 		before := identityWindowsHandleCount(t)

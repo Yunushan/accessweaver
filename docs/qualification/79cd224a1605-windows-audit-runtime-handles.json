@@ -1,0 +1,579 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "79cd224a1605ea2ca2009d4dfeaf9485573ecb70",
+  "sourceRef": "refs/heads/main",
+  "runID": 41952684380,
+  "runAttempt": 1,
+  "scope": "Controlled failed source-built Windows public audit candidate; distinct amd64 metadata runtime-handle and arm64 command admission failures",
+  "cachedRunStatus": "in_progress",
+  "cachedRunConclusion": null,
+  "sourcePublicRecordingSupported": true,
+  "jobs": [
+    {
+      "arch": "amd64",
+      "jobID": 127000086128,
+      "runID": 41952684380,
+      "headSHA": "79cd224a1605ea2ca2009d4dfeaf9485573ecb70",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41952684380/job/127000086128",
+      "jobStatus": "completed",
+      "jobConclusion": "failure",
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native file identity and bound input output admission",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Protected storage, journal, key and historical export acceptance",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Ordinary process identity, profile and cleanup acceptance",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Ordinary process recorded commands and required policy acceptance",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain controlled identity and input receipts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain controlled native storage receipts",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain controlled ordinary process receipts",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ],
+      "receivedLogBytes": 30407,
+      "receivedLogSHA256": "7602083d67c0e7b8d0b175dfe912b6f66274060943d53afcd9fa305c82589afe",
+      "controlledTestMarkers": {
+        "passed": [
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/drive-root-native-and-ordinary-handle-parity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/full-native-id-aliases-and-borrowed-lifetime",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/metadata-only-access-and-ads-base-identity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/write-only-and-append-only-borrowed-outputs",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/relative-absolute-directory-and-nofollow-links",
+            "durationSeconds": 0.03
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/directories-pipes-and-fixed-errors",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/every-thread-impersonation-level-refuses",
+            "durationSeconds": 0.0
+          }
+        ],
+        "failed": [
+          {
+            "test": "TestDisposableWindowsFileIdentityNative",
+            "durationSeconds": 0.21
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/owned-metadata-probes-close-on-success-and-failure",
+            "durationSeconds": 0.15
+          }
+        ]
+      },
+      "fixedCaseFailureLabels": [],
+      "controlledFailure": {
+        "stage": "file-identity-metadata",
+        "fixedFailureCode": "owned-metadata-probe-handles-accumulated",
+        "failedSubtest": "TestDisposableWindowsFileIdentityNative/owned-metadata-probes-close-on-success-and-failure",
+        "storageExecuted": false,
+        "ordinaryBootstrapExecuted": false,
+        "actualCommandsExecuted": false,
+        "rootCauseConfirmed": false
+      },
+      "metadataProbeAggregateCounts": {
+        "handlesBefore": 119,
+        "handlesAfter": 125,
+        "threadCreateRecordsBefore": 8,
+        "threadCreateRecordsAfter": 9,
+        "gcCyclesBefore": 0,
+        "gcCyclesAfter": 1
+      }
+    },
+    {
+      "arch": "arm64",
+      "jobID": 127000085858,
+      "runID": 41952684380,
+      "headSHA": "79cd224a1605ea2ca2009d4dfeaf9485573ecb70",
+      "providerJobURL": "https://github.com/Yunushan/accessweaver/actions/runs/41952684380/job/127000085858",
+      "jobStatus": "completed",
+      "jobConclusion": "failure",
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native file identity and bound input output admission",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Protected storage, journal, key and historical export acceptance",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Ordinary process identity, profile and cleanup acceptance",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Ordinary process recorded commands and required policy acceptance",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Retain controlled identity and input receipts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain controlled native storage receipts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain controlled ordinary process receipts",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "receivedLogBytes": 55181,
+      "receivedLogSHA256": "3625d19420eafc6b982a120c77964280fb0dcfd38a57108b7e97fc5e9d094130",
+      "controlledTestMarkers": {
+        "passed": [
+          {
+            "test": "TestDisposableWindowsFileIdentityNative",
+            "durationSeconds": 0.19
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/drive-root-native-and-ordinary-handle-parity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/full-native-id-aliases-and-borrowed-lifetime",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/metadata-only-access-and-ads-base-identity",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/write-only-and-append-only-borrowed-outputs",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/relative-absolute-directory-and-nofollow-links",
+            "durationSeconds": 0.03
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/directories-pipes-and-fixed-errors",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/owned-metadata-probes-close-on-success-and-failure",
+            "durationSeconds": 0.14
+          },
+          {
+            "test": "TestDisposableWindowsFileIdentityNative/every-thread-impersonation-level-refuses",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata",
+            "durationSeconds": 0.07
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/bound-direct-and-hard-link",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/bound-direct-and-hard-link/direct",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/bound-direct-and-hard-link/hard-link",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/retained-identity-after-name-replacement",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/pairwise-output-identities",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/binding-size-modified-and-absence",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/binding-size-modified-and-absence/size",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/binding-size-modified-and-absence/modified",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/binding-size-modified-and-absence/absent",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/references-and-optional-absence",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/explicit-leaf-link-policy",
+            "durationSeconds": 0.02
+          },
+          {
+            "test": "TestWindowsAuditAliasMetadata/unusable-output-and-borrowed-pipes",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot",
+            "durationSeconds": 0.1
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/actual-read-retains-original-object",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/verify-dispatcher-preserves-every-input-output-alias",
+            "durationSeconds": 0.08
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/verify-dispatcher-preserves-every-input-output-alias/from/direct",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/verify-dispatcher-preserves-every-input-output-alias/from/hard-link",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/verify-dispatcher-preserves-every-input-output-alias/to/direct",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/verify-dispatcher-preserves-every-input-output-alias/to/hard-link",
+            "durationSeconds": 0.02
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/verify-dispatcher-preserves-every-input-output-alias/events/direct",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsAuditInputSnapshot/verify-dispatcher-preserves-every-input-output-alias/events/hard-link",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsJournalCommitReadbackReopenAndConcurrency",
+            "durationSeconds": 0.2
+          },
+          {
+            "test": "TestWindowsJournalNativeByteRangeLocks",
+            "durationSeconds": 0.05
+          },
+          {
+            "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve",
+            "durationSeconds": 0.43
+          },
+          {
+            "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/disk-full",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/partial",
+            "durationSeconds": 0.05
+          },
+          {
+            "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/short-no-error",
+            "durationSeconds": 0.05
+          },
+          {
+            "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/sync",
+            "durationSeconds": 0.19
+          },
+          {
+            "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/acknowledged-without-write",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestWindowsJournalUncertainWritesPoisonAndPreserve/wrong-bytes",
+            "durationSeconds": 0.05
+          },
+          {
+            "test": "TestWindowsJournalCommitOrderingAndCancellationAfterFlush",
+            "durationSeconds": 0.05
+          },
+          {
+            "test": "TestWindowsJournalInvalidCanceledAndFullAdmissionsDoNotWrite",
+            "durationSeconds": 0.19
+          },
+          {
+            "test": "TestWindowsJournalIndependentEndpointsAndPartialInitialization",
+            "durationSeconds": 0.08
+          },
+          {
+            "test": "TestWindowsJournalPrewriteCorruptionPoisonsWithoutMutation",
+            "durationSeconds": 0.13
+          },
+          {
+            "test": "TestWindowsJournalPrewriteCorruptionPoisonsWithoutMutation/append",
+            "durationSeconds": 0.07
+          },
+          {
+            "test": "TestWindowsJournalPrewriteCorruptionPoisonsWithoutMutation/snapshot",
+            "durationSeconds": 0.06
+          },
+          {
+            "test": "TestWindowsJournalIdentityMismatchBeforeAndAfterWrite",
+            "durationSeconds": 0.09
+          },
+          {
+            "test": "TestWindowsJournalIdentityMismatchBeforeAndAfterWrite/before_write",
+            "durationSeconds": 0.03
+          },
+          {
+            "test": "TestWindowsJournalIdentityMismatchBeforeAndAfterWrite/after_write",
+            "durationSeconds": 0.05
+          },
+          {
+            "test": "TestWindowsJournalCloseCachesFailureAndBorrowsDirectory",
+            "durationSeconds": 0.04
+          },
+          {
+            "test": "TestWindowsJournalZeroValueUnavailable",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsJournalInterruptedWriterChild",
+            "durationSeconds": 0.0
+          },
+          {
+            "test": "TestWindowsJournalKilledWriterPreservesBytesAndReleasesLock",
+            "durationSeconds": 0.56
+          },
+          {
+            "test": "TestWindowsJournalKilledWriterPreservesBytesAndReleasesLock/partial",
+            "durationSeconds": 0.1
+          },
+          {
+            "test": "TestWindowsJournalKilledWriterPreservesBytesAndReleasesLock/complete",
+            "durationSeconds": 0.46
+          },
+          {
+            "test": "TestWindowsLocalNativeRoundTripAndExactHead",
+            "durationSeconds": 0.12
+          },
+          {
+            "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport",
+            "durationSeconds": 0.63
+          },
+          {
+            "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/missing",
+            "durationSeconds": 0.11
+          },
+          {
+            "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/changed",
+            "durationSeconds": 0.12
+          },
+          {
+            "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/short",
+            "durationSeconds": 0.12
+          },
+          {
+            "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/zero",
+            "durationSeconds": 0.13
+          },
+          {
+            "test": "TestWindowsLocalNativeKeyLossAndHistoricalExport/build",
+            "durationSeconds": 0.15
+          },
+          {
+            "test": "TestWindowsLocalNativePostCommitKeyChangeSuppressesHead",
+            "durationSeconds": 0.14
+          },
+          {
+            "test": "TestWindowsLocalNativePartialInitializationPreserved",
+            "durationSeconds": 0.02
+          },
+          {
+            "test": "TestWindowsLocalNativePartialInitializationPreserved/unrelated",
+            "durationSeconds": 0.01
+          },
+          {
+            "test": "TestWindowsLocalNativeExportOutputAliases",
+            "durationSeconds": 0.42
+          },
+          {
+            "test": "TestWindowsLocalNativeExportRefusalsAndClosedBeforeOutput",
+            "durationSeconds": 0.12
+          },
+          {
+            "test": "TestWindowsLocalNativeHistoricalRegularOutputWithoutReadableKey",
+            "durationSeconds": 0.22
+          },
+          {
+            "test": "TestWindowsLocalNativeHistoricalRegularOutputWithoutReadableKey/missing",
+            "durationSeconds": 0.11
+          },
+          {
+            "test": "TestWindowsLocalNativeHistoricalRegularOutputWithoutReadableKey/unreadable-content",
+            "durationSeconds": 0.11
+          },
+          {
+            "test": "TestWindowsLocalNativeHistoricalKeyHardlinkOutputRefused",
+            "durationSeconds": 0.25
+          },
+          {
+            "test": "TestDisposableWindowsAuditStorageNative",
+            "durationSeconds": 0.27
+          },
+          {
+            "test": "TestDisposableWindowsAuditOrdinaryProcess",
+            "durationSeconds": 16.42
+          }
+        ],
+        "failed": [
+          {
+            "test": "TestDisposableWindowsAuditCommands",
+            "durationSeconds": 19.91
+          }
+        ]
+      },
+      "fixedCaseFailureLabels": [
+        "pid-bound-pipe",
+        "worker-exit",
+        "exact-owned-cleanup",
+        "signed-required-audit-admission",
+        "initialize-import-retained-head",
+        "audited-private-http-desktop",
+        "read-only-export-verify",
+        "current-recorded-export-key-boundary",
+        "actual-output-alias-admission",
+        "full-journal-reservation-refusal",
+        "approved-recorded-foreground-run",
+        "recorded-foreground-output-cancellation-drain"
+      ],
+      "controlledFailure": {
+        "stage": "actual-command-groups",
+        "firstAttemptedCommandGroup": "signed-required-audit-admission",
+        "firstCommandGroupPassed": false,
+        "laterCommandGroupsNotExecuted": [
+          "initialize-import-retained-head",
+          "audited-private-http-desktop",
+          "read-only-export-verify",
+          "current-recorded-export-key-boundary",
+          "actual-output-alias-admission",
+          "full-journal-reservation-refusal",
+          "approved-recorded-foreground-run",
+          "recorded-foreground-output-cancellation-drain"
+        ],
+        "executionInterpretationBasis": "Fixed case labels combined with the pinned driver executed/pass bitmask and first-failure stop behavior.",
+        "workerBaseCheckFailureLabelsObserved": false,
+        "cleanupIncompleteFixedLabelObserved": true,
+        "commandFixturePassed": false,
+        "rootCauseConfirmed": false
+      },
+      "metadataProbeAggregateCounts": {
+        "handlesBefore": 120,
+        "handlesAfter": 120,
+        "threadCreateRecordsBefore": 8,
+        "threadCreateRecordsAfter": 8,
+        "gcCyclesBefore": 0,
+        "gcCyclesAfter": 1
+      }
+    }
+  ],
+  "observations": [
+    "The amd64 job failed the native metadata handle-count subtest. Seven other metadata subtests passed; storage, ordinary bootstrap and actual commands were skipped. Missing storage and ordinary receipts caused their retention steps to fail.",
+    "The amd64 measured interval observed six additional process handles, one additional runtime thread-create record and the first completed GC cycle. The fixed 32-pair setup warmup had not completed a GC cycle before the baseline.",
+    "The arm64 metadata subtest passed with unchanged handle and thread-create counts, while the first GC cycle completed during measurement. Storage and ordinary bootstrap also passed. Its actual-command fixture failed at the first signed-required-audit-admission group; the first-failure driver left eight later groups unexecuted.",
+    "The arm64 command worker base checks emitted no fixed failure labels. The failed exchange, worker exit and conservative cleanup remain failures. The child-slot listing correction in this source did not establish successful command admission.",
+    "Only fixed PASS/FAIL test names, fixed case labels, aggregate numeric diagnostics, public provider source/run/job/step fields and log byte counts/digests are exported. No raw log lines, paths, SIDs, account names, keys, policy contents or private payloads are included.",
+    "Both failed native jobs prevent the prepared whole-cohort collector from running. Successful individual steps or uploads do not qualify their artifact contents or authorize an 84-report collection."
+  ],
+  "sourceAudit": {
+    "fixedWarmupSuccessMissingPairs": 32,
+    "measuredSuccessMissingPairs": 32,
+    "allowedAdditionalHandleCount": 1,
+    "measuredLoopAndFailureThresholdUnchanged": true,
+    "forcedGCInPinnedTest": false,
+    "runtimeThreadHandleExplanation": {
+      "possibleHandlesPerInitializedRuntimeThread": 6,
+      "basis": "The pinned Windows runtime may allocate two semaphore events, a duplicated thread handle, two timer handles and one wait-completion handle for an initialized runtime thread. The observed amd64 increments are consistent with that allocation pattern, but do not attribute individual handles or prove the root cause.",
+      "runtimeCauseConfirmed": false
+    },
+    "followupGCSetupRuntimeVerified": false,
+    "arm64CommandAdmissionCauseConfirmed": false
+  },
+  "limits": {
+    "sourceBuiltFailureProofOnly": true,
+    "nativeQualificationComplete": false,
+    "actualCommandQualificationComplete": false,
+    "productionQualificationComplete": false,
+    "readinessGatePromoted": false,
+    "cryptographicAuthenticationEstablished": false,
+    "powerLossQualificationEstablished": false,
+    "publicationAuthorized": false,
+    "wholeCohortCollectorExecuted": false,
+    "artifactMetadataRequestedForThisProof": false,
+    "artifactArchivesDownloadedForThisProof": false,
+    "rawLogsExported": false,
+    "workflowRerunPerformed": false,
+    "localNativeExecutionPerformed": false
+  },
+  "interpretationCorrection": {
+    "supersedesOriginalInference": true,
+    "originalInferencePreservedForTraceability": true,
+    "affectedFields": [
+      "jobs[1].controlledFailure.firstAttemptedCommandGroup",
+      "jobs[1].controlledFailure.firstCommandGroupPassed",
+      "jobs[1].controlledFailure.laterCommandGroupsNotExecuted",
+      "jobs[1].controlledFailure.executionInterpretationBasis",
+      "observations[2]"
+    ],
+    "correction": "The fixed failure labels do not establish which command groups executed or which operation failed. The report emits the same fixed label for unexecuted and failed cases, while a worker cleanup failure clears all command-group pass bits. The original first-group-failed and later-eight-unexecuted interpretation is unsupported by the retained logs and must not be used as evidence.",
+    "commandGroupExecutionDistributionConfirmed": false,
+    "commandGroupOperationFailureLocationConfirmed": false,
+    "commandReceiptArtifactReadPerformed": false,
+    "commandReceiptArtifactReadApprovalBlocked": true,
+    "basis": "Pinned runWindowsCommandCases clears passed to zero if root.close fails; ordinaryFixture.report uses one failed label when either Executed or Passed is false.",
+    "qualificationPromoted": false
+  }
+}
