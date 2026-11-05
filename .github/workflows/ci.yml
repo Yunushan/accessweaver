@@ -292,6 +292,28 @@ jobs:
           $stockShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
           & $stockShell -NoProfile -NonInteractive -File ./scripts/test-windows-component-downloads.ps1 -RequireWindowsPowerShell
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Windows workflow result writer contracts (PowerShell 7)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $interop = Join-Path $env:RUNNER_TEMP ('workflow-result-ps7-'+[guid]::NewGuid().ToString('N'))
+          [void][IO.Directory]::CreateDirectory($interop)
+          ./scripts/test-windows-workflow-results.ps1 -InteropDirectory $interop
+          $env:ACCESSWEAVER_WORKER_RESULT_INTEROP = $interop
+          go test ./internal/workflow -run '^TestWorkerReportPowerShellInterop$' -count=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Windows workflow result writer contracts (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $stockShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $interop = Join-Path $env:RUNNER_TEMP ('workflow-result-ps51-'+[guid]::NewGuid().ToString('N'))
+          [void][IO.Directory]::CreateDirectory($interop)
+          & $stockShell -NoProfile -NonInteractive -File ./scripts/test-windows-workflow-results.ps1 -RequireWindowsPowerShell -InteropDirectory $interop
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:ACCESSWEAVER_WORKER_RESULT_INTEROP = $interop
+          go test ./internal/workflow -run '^TestWorkerReportPowerShellInterop$' -count=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Compile unsigned Windows installer (no installation)
         if: runner.os == 'Windows'
         shell: powershell

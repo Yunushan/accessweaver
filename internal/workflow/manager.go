@@ -702,16 +702,27 @@ func execute(ctx context.Context, dir string, r Request) (result json.RawMessage
 	// Unavailable host identity stays unknown. Read-only workflows may proceed,
 	// but driver prerequisite selection must refuse it without an x64 fallback.
 	nativeArchitecture, _ := nativepath.WindowsArchitecture()
+	resultTokenBytes := make([]byte, 24)
+	if _, err := rand.Read(resultTokenBytes); err != nil {
+		return nil, err
+	}
+	resultToken := hex.EncodeToString(resultTokenBytes)
 	input := struct {
 		NativeArchitecture string                 `json:"nativeArchitecture"`
 		Request            Request                `json:"request"`
 		Controller         string                 `json:"controller"`
 		ResultPath         string                 `json:"resultPath"`
+		ResultToken        string                 `json:"resultToken"`
 		ISPHook            string                 `json:"ispHook"`
 		ManagedPolicy      bool                   `json:"managedPolicy"`
 		AllowDownloads     bool                   `json:"allowDownloads"`
 		Downloads          []managed.DownloadRule `json:"downloads"`
-	}{nativeArchitecture, r, executable, filepath.Join(dir, "result.json"), string(hook), permission.Managed, permission.AllowDownloads, permission.Downloads}
+	}{
+		NativeArchitecture: nativeArchitecture, Request: r, Controller: executable,
+		ResultPath: filepath.Join(dir, "result.json"), ResultToken: resultToken,
+		ISPHook: string(hook), ManagedPolicy: permission.Managed,
+		AllowDownloads: permission.AllowDownloads, Downloads: permission.Downloads,
+	}
 	b, _ := json.Marshal(input)
 	requestPath := filepath.Join(dir, "request.json")
 	if err := profile.AtomicWrite(requestPath, b); err != nil {
@@ -770,6 +781,12 @@ func execute(ctx context.Context, dir string, r Request) (result json.RawMessage
 	if resultErr := validateResult(result); resultErr != nil {
 		return nil, errors.Join(err, workflowCause(ErrWorkflowResult, resultErr))
 	}
+	report, reportErr := decodeWorkerReport(result, input.ResultToken)
+	if reportErr != nil {
+		// Never publish an unrelated or stale file as this launch's result.
+		return nil, errors.Join(err, workflowCause(ErrWorkflowResult, reportErr))
+	}
+	err = errors.Join(err, report.failure())
 	if err != nil {
 		var outcome struct {
 			Error string `json:"error"`

@@ -1368,6 +1368,126 @@ function Recover-Operation {
     $errors=@(Rollback);if($errors.Count){throw ($errors -join '; ')}
     Event 'Selected operation recovered'
 }
+function Throw-WorkflowResultFailure([string]$Code) {
+    $known=@('result-too-large','result-serialization','result-depth','result-encoding')
+    if($Code -cnotin $known){$Code='result-serialization'}
+    $failure=[InvalidOperationException]::new('Workflow result reporting failed; inspect process.log and the recovery journal')
+    $failure.Data['AccessWeaverWorkflowResultFailure']=$Code
+    throw $failure
+}
+function Get-WorkflowResultFailureCode($Failure) {
+    $exception=$Failure.Exception
+    if(-not $exception -and $Failure -is [Exception]){$exception=$Failure}
+    while($exception){
+        $code=$exception.Data['AccessWeaverWorkflowResultFailure']
+        if($code -cin @('result-too-large','result-serialization','result-depth','result-encoding')){return [string]$code}
+        $exception=$exception.InnerException
+    }
+    return 'result-serialization'
+}
+function Assert-WorkflowResultToken([string]$ResultToken) {
+    if($ResultToken -cnotmatch '\A[a-f0-9]{48}\z'){throw 'Workflow result report binding is unavailable'}
+}
+function Assert-WorkflowResultDepth($Value,[int]$Depth=0) {
+    if($null -eq $Value -or $Value -is [DBNull]){return}
+    $type=$Value.GetType()
+    # Serializer scalar types remain scalar even below the aggregate depth.
+    if($type.IsPrimitive -or $type.IsEnum -or $Value -is [string] -or $Value -is [decimal] -or $Value -is [DateTime] -or $Value -is [DateTimeOffset] -or $Value -is [Guid] -or $Value -is [uri] -or $type.FullName -eq 'System.Numerics.BigInteger'){return}
+    if($Depth -gt 16){Throw-WorkflowResultFailure 'result-depth'}
+    if($Value -is [Collections.IDictionary]){
+        foreach($entry in $Value.GetEnumerator()){Assert-WorkflowResultDepth $entry.Value ($Depth+1)}
+    }elseif($Value -is [Collections.IEnumerable]){
+        foreach($entry in $Value){Assert-WorkflowResultDepth $entry ($Depth+1)}
+    }else{
+        foreach($property in $Value.PSObject.Properties){
+            if($property.IsGettable){Assert-WorkflowResultDepth $property.Value ($Depth+1)}
+        }
+    }
+}
+function ConvertTo-WorkflowResultBytes([Collections.IDictionary]$Result,[string]$ResultToken,[int]$MaximumBytes=32MB) {
+    Assert-WorkflowResultToken $ResultToken
+    if($MaximumBytes -lt 1 -or $MaximumBytes -gt 32MB){throw 'Invalid workflow result byte limit'}
+    $report=@{}
+    try {
+        foreach($key in $Result.Keys){
+            if($key -isnot [string]){Throw-WorkflowResultFailure 'result-serialization'}
+            if($key -ine 'reportVersion' -and $key -ine 'resultToken'){$report[$key]=$Result[$key]}
+        }
+        $report.reportVersion=1;$report.resultToken=$ResultToken
+        # PS5.1 silently stringifies aggregates deeper than -Depth. Preflight
+        # complements newer shells' warnings without rewriting JSON semantics.
+        Assert-WorkflowResultDepth $report
+        $json=ConvertTo-Json -InputObject $report -Depth 16 -ErrorAction Stop -WarningAction Stop
+    }catch {Throw-WorkflowResultFailure (Get-WorkflowResultFailureCode $_)}
+    $utf8=[Text.UTF8Encoding]::new($false,$true)
+    try {$length=$utf8.GetByteCount($json)}catch {Throw-WorkflowResultFailure 'result-encoding'}
+    if($length -gt $MaximumBytes){Throw-WorkflowResultFailure 'result-too-large'}
+    try {$bytes=$utf8.GetBytes($json)}catch {Throw-WorkflowResultFailure 'result-encoding'}
+    return ,$bytes
+}
+function New-WorkflowResultStream([string]$Path) {
+    return [IO.FileStream]::new($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+}
+function Write-WorkflowResultStream($Stream,[byte[]]$Bytes,[int]$MaximumBytes=32MB) {
+    if($MaximumBytes -lt 1 -or $MaximumBytes -gt 32MB){throw 'Invalid workflow result byte limit'}
+    if($null -eq $Bytes -or $Bytes.Length -gt $MaximumBytes){Throw-WorkflowResultFailure 'result-too-large'}
+    # The complete UTF-8 byte count is checked before the first data write.
+    [void]$Stream.Write($Bytes,0,$Bytes.Length)
+    [void]$Stream.Flush($true)
+}
+function Move-WorkflowResultFile([string]$Source,[string]$Destination) {
+    # The two-argument Move refuses every preexisting destination; no replace.
+    [IO.File]::Move($Source,$Destination)
+}
+function Write-WorkflowResultBytes([string]$Path,[byte[]]$Bytes,[int]$MaximumBytes=32MB) {
+    if($MaximumBytes -lt 1 -or $MaximumBytes -gt 32MB){throw 'Invalid workflow result byte limit'}
+    if($null -eq $Bytes -or $Bytes.Length -gt $MaximumBytes){Throw-WorkflowResultFailure 'result-too-large'}
+    $temporary=Join-Path (Split-Path -Parent $Path) ('.accessweaver-result-'+[guid]::NewGuid().ToString('N')+'.tmp')
+    $stream=$null;$closeAttempted=$false;$failed=$false
+    try {
+        $stream=New-WorkflowResultStream $temporary
+        Write-WorkflowResultStream $stream $Bytes $MaximumBytes
+        $closeAttempted=$true
+        [void]$stream.Dispose();$stream=$null
+        Move-WorkflowResultFile $temporary $Path
+    }catch {$failed=$true}finally {
+        if($stream -and -not $closeAttempted){
+            $closeAttempted=$true
+            try {[void]$stream.Dispose()}catch {$failed=$true}
+        }
+        # Never delete uncertain staging or an unknown/preexisting destination.
+        # The caller's token cannot turn an older result into this operation.
+    }
+    if($failed){throw 'Workflow result publication failed; preserve staging and recovery evidence'}
+}
+function New-WorkflowResultFailureReport([Collections.IDictionary]$Result,[string]$ResultToken,[string]$Code) {
+    Assert-WorkflowResultToken $ResultToken
+    if($Code -cnotin @('result-too-large','result-serialization','result-depth','result-encoding')){$Code='result-serialization'}
+    $journal=$null
+    if($Result['journal'] -is [string]){
+        try {
+            if([Text.UTF8Encoding]::new($false,$true).GetByteCount($Result['journal']) -le 4096){$journal=$Result['journal']}
+        }catch {}
+    }
+    $reboot=$Result['rebootRequired'] -is [bool] -and $Result['rebootRequired']
+    return @{reportVersion=1;resultToken=$ResultToken;ok=$false;error='Workflow result reporting failed; inspect process.log and the recovery journal';reportingFailure=$Code;events=@();data=$null;rebootRequired=[bool]$reboot;journal=$journal}
+}
+function Publish-WorkflowResult([string]$Path,[Collections.IDictionary]$Result,[string]$ResultToken,[int]$MaximumBytes=32MB) {
+    Assert-WorkflowResultToken $ResultToken
+    $normal=$true
+    try {$bytes=ConvertTo-WorkflowResultBytes $Result $ResultToken $MaximumBytes}catch {
+        $normal=$false;$Result['ok']=$false
+        $fallback=New-WorkflowResultFailureReport $Result $ResultToken (Get-WorkflowResultFailureCode $_)
+        try {$bytes=ConvertTo-WorkflowResultBytes $fallback $ResultToken $MaximumBytes}catch {
+            if((Get-WorkflowResultFailureCode $_) -cne 'result-too-large' -or $null -eq $fallback.journal){throw}
+            # Preserve context when it fits, otherwise omit the whole path.
+            $fallback.journal=$null
+            $bytes=ConvertTo-WorkflowResultBytes $fallback $ResultToken $MaximumBytes
+        }
+    }
+    Write-WorkflowResultBytes $Path $bytes $MaximumBytes
+    return $normal
+}
 $result=@{ok=$false;events=@();data=$null;rebootRequired=$false;journal=$null}
 try {
     [Console]::WriteLine('Workflow phase: dispatch')
@@ -1413,6 +1533,8 @@ try {
     if($script:mutex){if($script:ownsMutex){$script:mutex.ReleaseMutex()};$script:mutex.Dispose()}
     if($result.ok -and $script:pendingUninstaller){try{Start-Process -FilePath $script:pendingUninstaller -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -WindowStyle Hidden}catch{$result.ok=$false;$result.error=$_.Exception.Message;$script:journalState='failed';Save-Journal}}
     $result.events=@($script:events.ToArray());$result.rebootRequired=$script:rebootRequired;$result.journal=$script:journalPath
-    [IO.File]::WriteAllText($inputData.resultPath,($result|ConvertTo-Json -Depth 16),[Text.UTF8Encoding]::new($false))
+    try {
+        if(-not (Publish-WorkflowResult $inputData.resultPath $result $inputData.resultToken)){$result.ok=$false}
+    }catch {$result.ok=$false;throw}
 }
 if(-not $result.ok){exit 1}
