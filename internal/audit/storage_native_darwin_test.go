@@ -26,6 +26,8 @@ type darwinAuditNativeFixture struct {
 	dev        int32
 	ino        uint64
 	uid        uint32
+	// Preserve the owned root when a journal worker's cleanup is unconfirmed.
+	preserve bool
 }
 
 func darwinAuditNativeHome(t *testing.T) string {
@@ -75,6 +77,10 @@ func newDarwinAuditNativeFixture(t *testing.T) *darwinAuditNativeFixture {
 	}
 	f := &darwinAuditNativeFixture{home: home, root: root, dev: stat.Dev, ino: stat.Ino, uid: stat.Uid}
 	t.Cleanup(func() {
+		if f.preserve {
+			t.Error("native audit fixture cleanup is unconfirmed; owned root preserved")
+			return
+		}
 		// An unexpected replacement is preserved. Never recursively remove a
 		// changed root or any computed path outside the captured direct home.
 		current, err := os.Lstat(f.root)
