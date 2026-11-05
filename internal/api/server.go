@@ -39,7 +39,8 @@ type Server struct {
 	mutations    mutationGate
 	historyRead  sync.Mutex
 	statusRead   sync.Mutex
-	done         chan struct{}
+	lifecycleMu  sync.Mutex
+	shutdown     *serverShutdownState
 }
 
 func New(store *profile.Store, manager *engine.Manager, static fs.FS) (*Server, error) {
@@ -328,6 +329,62 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
 
 	return nil
 }
+
+// serverShutdownState publishes its result before done closes. Pending is only
+// a diagnostic observation; it never substitutes for owned completion.
+type serverShutdownState struct {
+	done        chan struct{}
+	pending     chan struct{}
+	pendingOnce sync.Once
+	err         error
+}
+
+func (s *serverShutdownState) markPending() {
+	s.pendingOnce.Do(func() { close(s.pending) })
+}
+
+// Admission closes under the same mutex as Add, before any counter wait. Late
+// requests cannot enter profile, workflow or engine handlers during shutdown.
+type serverHandlerGate struct {
+	mu     sync.Mutex
+	closed bool
+	active sync.WaitGroup
+}
+
+func (g *serverHandlerGate) wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g.mu.Lock()
+		if g.closed {
+			g.mu.Unlock()
+			fail(w, http.StatusServiceUnavailable, "desktop shutdown in progress")
+			return
+		}
+		g.active.Add(1)
+		g.mu.Unlock()
+		defer g.active.Done()
+		next.ServeHTTP(w, r)
+	})
+}
+func (g *serverHandlerGate) closeAdmission() {
+	g.mu.Lock()
+	g.closed = true
+	g.mu.Unlock()
+}
+func (g *serverHandlerGate) wait() { g.active.Wait() }
+
+// The first context bounds only a diagnostic wait. Both calls observe the same
+// Manager shutdown worker; the background join cannot repeat Stop or cleanup.
+func waitServerEngineShutdown(initial context.Context, shutdown func(context.Context) error, pendingFault func() bool, pending func()) error {
+	if pendingFault() {
+		pending()
+	}
+	initialErr := shutdown(initial)
+	if initial.Err() != nil && errors.Is(initialErr, initial.Err()) {
+		pending()
+	}
+	return shutdown(context.Background())
+}
+
 func (s *Server) Serve(ctx context.Context) (string, error) {
 	if err := uiaccess.RequireUnelevated(); err != nil {
 		return "", err
@@ -336,32 +393,96 @@ func (s *Server) Serve(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return s.serveListener(ctx, listener)
+}
+
+// serveListener takes ownership of this already-created loopback listener. The
+// public Serve path always performs the native unelevated admission first.
+func (s *Server) serveListener(ctx context.Context, listener net.Listener) (string, error) {
+	s.lifecycleMu.Lock()
+	if s.shutdown != nil {
+		s.lifecycleMu.Unlock()
+		return "", errors.Join(errors.New("desktop server already started"), listener.Close())
+	}
+	state := &serverShutdownState{done: make(chan struct{}), pending: make(chan struct{})}
+	s.shutdown = state
+	s.lifecycleMu.Unlock()
 	addr := "http://" + listener.Addr().String()
-	s.done = make(chan struct{})
-	server := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 75 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32 << 10}
+	gate := &serverHandlerGate{}
+	server := &http.Server{Handler: gate.wrap(s.Handler()), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 75 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32 << 10}
+	lifetime, cancelLifetime := context.WithCancel(ctx)
+	served := make(chan error, 1)
 	go func() {
-		defer close(s.done)
-		<-ctx.Done()
+		served <- server.Serve(listener)
+		cancelLifetime()
+	}()
+	go func() {
+		defer close(state.done)
+		defer cancelLifetime()
+		<-lifetime.Done()
+		gate.closeAdmission()
+		// Start engine ownership shutdown before waiting for HTTP handlers: an
+		// admitted start/stop request must not prevent manager closing or drain.
+		engineDone := make(chan error, 1)
+		go func() {
+			engineContext, cancelEngine := context.WithTimeout(context.Background(), 6*time.Second)
+			defer cancelEngine()
+			engineDone <- waitServerEngineShutdown(engineContext, s.Manager.Shutdown, func() bool { return s.Manager.Snapshot().LifecyclePending }, state.markPending)
+		}()
 		s.Workflows.Cancel()
-		c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := server.Shutdown(c); err != nil {
-			_ = server.Close()
+		httpContext, cancelHTTP := context.WithTimeout(context.Background(), 5*time.Second)
+		httpErr := server.Shutdown(httpContext)
+		if httpErr != nil {
+			state.markPending()
+			httpErr = errors.Join(httpErr, server.Close())
 		}
-		cancel()
+		cancelHTTP()
 		workflowContext, cancelWorkflow := context.WithTimeout(context.Background(), 8*time.Second)
+		// Workflow/vendor lifetime recovery remains a separate boundary. Retain
+		// its existing bounded wait; do not claim it proves full workflow cleanup.
 		_ = s.Workflows.Shutdown(workflowContext)
 		cancelWorkflow()
-		engineContext, cancelEngine := context.WithTimeout(context.Background(), 6*time.Second)
-		defer cancelEngine()
-		_ = s.Manager.Shutdown(engineContext)
+		gate.wait()
+		serveErr := <-served
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			serveErr = nil
+		}
+		state.err = errors.Join(httpErr, serveErr, <-engineDone)
 	}()
-	go func() { _ = server.Serve(listener) }()
 	return addr, nil
 }
 
-// Wait blocks until HTTP and engine shutdown have finished after cancellation.
-func (s *Server) Wait() {
-	if s.done != nil {
-		<-s.done
+func (s *Server) shutdownState() *serverShutdownState {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	return s.shutdown
+}
+
+// Done closes only after admitted handlers, HTTP serving and the exact engine
+// shutdown worker have finished. A caller timeout cannot close this channel.
+func (s *Server) Done() <-chan struct{} {
+	if state := s.shutdownState(); state != nil {
+		return state.done
 	}
+	return nil
+}
+
+// ShutdownPending reports one observed unresolved desktop shutdown after an HTTP
+// shutdown error, fixed engine fault or engine diagnostic budget. Done may race
+// it and remains the terminal proof.
+func (s *Server) ShutdownPending() <-chan struct{} {
+	if state := s.shutdownState(); state != nil {
+		return state.pending
+	}
+	return nil
+}
+
+// Wait retains the whole server scope until owned completion and returns its
+// stored final error. Before Serve starts there is no owned scope to drain.
+func (s *Server) Wait() error {
+	if state := s.shutdownState(); state != nil {
+		<-state.done
+		return state.err
+	}
+	return nil
 }

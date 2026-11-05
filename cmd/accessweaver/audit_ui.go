@@ -114,25 +114,80 @@ func checkAuditUIOutputs(out, info io.Writer, inputs []string) error {
 	return checkAuditOutputAliases(context.Background(), []io.Writer{out, info}, nil, auditFileReferences(inputs, nil, true))
 }
 func serveDesktop(ctx context.Context, server *api.Server, info io.Writer) error {
+	return serveDesktopWithFeedback(ctx, server, info, os.Stderr)
+}
+
+func serveDesktopWithFeedback(ctx context.Context, server *api.Server, info, feedback io.Writer) (failure error) {
+	restoreOutput := observeAuditOutputPipes()
+	defer restoreOutput()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	addr, err := server.Serve(ctx)
 	if err != nil {
 		return err
 	}
-	// Always wait for shutdown, including startup/launcher/output errors.
-	defer func() { cancel(); server.Wait() }()
+	// Startup output/launcher failures retain controller and runtime ownership
+	// until admitted HTTP work and the exact engine shutdown are observed.
+	defer func() {
+		cancel()
+		failure = errors.Join(failure, waitDesktopShutdown(server, feedback))
+	}()
 	launcher, err := uiaccess.New(addr, server.Token)
 	if err != nil {
 		return err
 	}
 	defer launcher.Close()
-	if _, err := fmt.Fprintf(info, "AccessWeaver is running at %s\nOpen this private launch file in your browser: %s\nLocal interface only. Press Ctrl+C to exit. No external engines started automatically.\n", addr, launcher.URL); err != nil {
+	notice := fmt.Sprintf("AccessWeaver is running at %s\nOpen this private launch file in your browser: %s\nLocal interface only. Press Ctrl+C to exit. No external engines started automatically.\n", addr, launcher.URL)
+	if n, err := io.WriteString(info, notice); err != nil || n != len(notice) {
 		return errors.New("desktop startup output unavailable")
 	}
 	if os.Getenv("ACCESSWEAVER_NO_BROWSER") != "1" {
 		openBrowser(launcher.URL)
 	}
-	<-ctx.Done()
+	select {
+	case <-ctx.Done():
+	case <-server.Done():
+		// Unexpected listener failure also completes through the owned shutdown
+		// path; the deferred Wait joins its actual error before scope release.
+	}
 	return nil
+}
+
+// A shutdown budget expiring is feedback, not permission to release the desktop
+// scope. The server retains the sole manager shutdown worker and exact Run.
+type desktopShutdown interface {
+	Done() <-chan struct{}
+	ShutdownPending() <-chan struct{}
+	Wait() error
+}
+
+var errDesktopShutdownOutput = errors.New("desktop shutdown notice could not be written")
+
+func waitDesktopShutdown(server desktopShutdown, feedback io.Writer) error {
+	if server == nil || server.Done() == nil {
+		return errors.New("desktop shutdown observation unavailable")
+	}
+	done := server.Done()
+	select {
+	case <-done:
+		return server.Wait()
+	default:
+	}
+	select {
+	case <-done:
+		return server.Wait()
+	case <-server.ShutdownPending():
+		select {
+		case <-done:
+			return server.Wait()
+		default:
+		}
+		const notice = "Desktop shutdown is not confirmed. Waiting for owned work; keep this command active.\n"
+		var outputErr error
+		if n, err := io.WriteString(feedback, notice); err != nil || n != len(notice) {
+			outputErr = errDesktopShutdownOutput
+		}
+		<-done
+		return errors.Join(outputErr, server.Wait())
+	}
 }

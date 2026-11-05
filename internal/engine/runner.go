@@ -129,18 +129,30 @@ func (r *Run) Fault() <-chan struct{} {
 	return r.state.owner.faultSignal()
 }
 
+// managerShutdown is created once under Manager.mu. The captured generation is
+// completed by one worker; err is published before done closes.
+type managerShutdown struct {
+	done     chan struct{}
+	entryRun *runState
+	run      *runState
+	err      error
+}
+
 type Manager struct {
-	guard           *managed.Guard
-	opMu            sync.Mutex // Serializes prepare/start/stop, including generated files.
-	mu              sync.Mutex
-	cmd             *exec.Cmd
-	run             *runState
-	state           Snapshot
-	log             []string
-	root            string
-	closing         bool
-	prepareLifetime lifetimeFactory
-	output          io.Writer
+	guard                 *managed.Guard
+	opMu                  sync.Mutex // Serializes prepare/start/stop, including generated files.
+	mu                    sync.Mutex
+	cmd                   *exec.Cmd
+	run                   *runState
+	state                 Snapshot
+	log                   []string
+	root                  string
+	closing               bool
+	shutdown              *managerShutdown
+	prepareLifetime       lifetimeFactory
+	output                io.Writer
+	afterStart            func() // Private source-test observer, fixed before Start.
+	beforeShutdownCapture func() // Private source-test observer, fixed before Shutdown.
 }
 
 func NewManager(root string) *Manager { return NewManagerWithGuard(root, managed.NewGuard(nil)) }
@@ -303,6 +315,11 @@ func (m *Manager) startTracked(p profile.Profile, observedWait func()) (*Run, er
 		return nil, errors.Join(fmt.Errorf("engine start failed: %w", err), closeErr)
 	}
 	started = true
+	if m.afterStart != nil {
+		// The real child already executed. The observer cannot replace it, and
+		// publication must still proceed if Shutdown sets closing meanwhile.
+		m.afterStart()
+	}
 	// Successful Start is always an accepted, nonnil owned Run. Even a concurrent
 	// Shutdown or observer failure cannot erase a child that already executed.
 	m.mu.Lock()
@@ -371,6 +388,12 @@ func (m *Manager) stop(interrupt, kill func(*os.Process) error, grace, forceWait
 	}
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
+	return m.stopLocked(interrupt, kill, grace, forceWait)
+}
+
+// stopLocked shares the normal stop path with the sole shutdown worker. Its
+// caller holds opMu; native calls and terminal waits never hold Manager.mu.
+func (m *Manager) stopLocked(interrupt, kill func(*os.Process) error, grace, forceWait time.Duration) error {
 	if err := m.pendingLifetimeError(); err != nil {
 		return err
 	}
@@ -473,18 +496,75 @@ func (m *Manager) RetryCleanup(handle *Run) error {
 	return handle.state.owner.retryCleanup()
 }
 
+// Shutdown rejects new starts and joins one retained shutdown worker. A caller
+// timeout cancels only that caller's wait. Even after a failed stop, the worker
+// keeps the exact active generation until its real terminal result is observed.
 func (m *Manager) Shutdown(ctx context.Context) error {
 	m.mu.Lock()
 	m.closing = true
+	shutdown := m.shutdown
+	startWorker := shutdown == nil
+	if startWorker {
+		shutdown = &managerShutdown{done: make(chan struct{}), entryRun: m.run}
+		// Capture before a concurrent Stop can finish and clear this active run.
+		// Inactive historical runs must not contaminate a no-engine shutdown.
+		if m.cmd != nil {
+			shutdown.run = m.run
+		}
+		m.shutdown = shutdown
+	}
 	m.mu.Unlock()
-	done := make(chan error, 1)
-	go func() { done <- m.Stop() }()
+	if startWorker {
+		go m.finishShutdown(shutdown)
+	}
+	// A previously published terminal result takes precedence over an already
+	// canceled caller context, just as Run.Wait does.
 	select {
-	case err := <-done:
-		return err
+	case <-shutdown.done:
+		return shutdown.err
+	default:
+	}
+	select {
+	case <-shutdown.done:
+		return shutdown.err
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (m *Manager) finishShutdown(shutdown *managerShutdown) {
+	if m.beforeShutdownCapture != nil {
+		m.beforeShutdownCapture()
+	}
+	m.opMu.Lock()
+	m.mu.Lock()
+	// An in-flight successful Start may publish and even terminate after
+	// Shutdown set closing, before this worker acquires opMu. Capture a changed
+	// generation even if cmd is already nil; unchanged inactive history stays
+	// excluded. Closing prevents any later launch replacing that generation.
+	if shutdown.run == nil && (m.cmd != nil || m.run != shutdown.entryRun) {
+		shutdown.run = m.run
+	}
+	m.mu.Unlock()
+	stopErr := m.stopLocked(interruptProcess, killProcess, 3*time.Second, time.Second)
+	m.opMu.Unlock()
+
+	// Recovery of a known retained owner remains explicit and generation-bound.
+	// Never hold opMu while draining: RetryCleanup needs it, and ownership loss
+	// deliberately leaves this worker and the exact Run pending indefinitely.
+	var result RunResult
+	var waitErr error
+	if shutdown.run != nil {
+		result, waitErr = (&Run{state: shutdown.run}).Wait(context.Background())
+	}
+	terminalErr := errors.Join(result.PolicyErr, result.LifecycleErr)
+	if result.Reason == RunFailed || result.Reason == RunPolicyRevoked {
+		terminalErr = errors.Join(terminalErr, result.WaitErr)
+	}
+	// Expected accepted-stop signal exits remain local success. The actual
+	// WaitErr in RunResult is never changed or discarded from the Run itself.
+	shutdown.err = errors.Join(stopErr, waitErr, terminalErr)
+	close(shutdown.done)
 }
 
 func (m *Manager) Preview(p profile.Profile) (LaunchPlan, error) {

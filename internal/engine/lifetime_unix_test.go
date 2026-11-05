@@ -275,6 +275,8 @@ ready:
 }
 
 type lifetimeFixture struct {
+	launchPending                                    bool
+	afterStart                                       func()
 	guard                                            *managed.Guard
 	authorization                                    chan context.Context
 	t                                                *testing.T
@@ -343,6 +345,7 @@ func (f *lifetimeFixture) launch(mode string, decorate func(*ownedProcess), obse
 		f.manager.guard = f.guard
 	}
 	f.manager.output = f.output
+	f.manager.afterStart = f.afterStart
 	f.manager.prepareLifetime = func(cmd *exec.Cmd) (processLifetime, error) {
 		cmd.ExtraFiles = []*os.File{f.requestRead, f.replyWrite}
 		lifetime, err := prepareProcessLifetime(cmd)
@@ -396,6 +399,13 @@ func (f *lifetimeFixture) identity() (pid, sid, pgid int) {
 	return int(binary.BigEndian.Uint64(data[0:8])), int(binary.BigEndian.Uint64(data[8:16])), int(binary.BigEndian.Uint64(data[16:24]))
 }
 func (f *lifetimeFixture) close() {
+	if f.launchPending {
+		// An unjoined launcher may still publish f.run or replace endpoints.
+		// Preserve every object and avoid racing that goroutine during cleanup.
+		f.preserve = true
+		f.t.Error("lifetime launch completion unconfirmed; fixture preserved")
+		return
+	}
 	if f.run != nil {
 		if f.manager != nil {
 			_ = f.manager.RetryCleanup(f.run)
