@@ -46,6 +46,7 @@ jobs:
           go -C scripts/security-tools install github.com/rhysd/actionlint/cmd/actionlint
           "$GOBIN/actionlint" -shellcheck= -pyflakes=
           python3 -m unittest discover -s scripts -p test_vulnerability_report.py -v
+          python3 -m unittest discover -s scripts -p test_darwin_audit_command_capture.py -v
       - name: Verify optional fixture dependencies and compile (no guest execution)
         run: |
           go -C scripts/fixtures/wgpeer mod download

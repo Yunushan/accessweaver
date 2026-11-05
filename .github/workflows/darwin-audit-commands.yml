@@ -41,6 +41,8 @@ jobs:
           architecture: ${{ matrix.sdkarch }}
       - name: Verify native host and SDK identity
         run: node scripts/check-native-environment.cjs
+      - name: Check command capture source binding
+        run: python3 -m unittest discover -s scripts -p test_darwin_audit_command_capture.py -v
       - name: Verify source dependencies
         run: |
           go mod download

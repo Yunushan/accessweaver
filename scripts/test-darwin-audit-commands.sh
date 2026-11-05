@@ -7,8 +7,8 @@ fail() { printf '%s\n' 'Ordinary Darwin audit source fixture refused.' >&2; exit
 source_commit=$(git rev-parse HEAD 2>/dev/null) || fail
 [[ "$source_commit" =~ ^[0-9a-f]{40}$ && "$source_commit" == "${GITHUB_SHA:-}" && -z "$(git status --porcelain --untracked-files=normal 2>/dev/null)" ]] || fail
 [[ "$(go env GOHOSTOS 2>/dev/null)" == darwin && "$(go version 2>/dev/null)" == "go version go${GO_VERSION:-} darwin/"* ]] || fail
-sdk_arch=$(go env GOHOSTARCH 2>/dev/null)
-case "$sdk_arch:${RUNNER_ARCH:-}:$(uname -m)" in amd64:X64:x86_64|arm64:ARM64:arm64) ;; *) fail ;; esac
+expected_arch=$(go env GOHOSTARCH 2>/dev/null)
+case "$expected_arch:${RUNNER_ARCH:-}:$(uname -m)" in amd64:X64:x86_64|arm64:ARM64:arm64) ;; *) fail ;; esac
 policy=/Library/Preferences/AccessWeaver
 coordination=/Library/Preferences/.accessweaver-policy.lock
 if sudo -n test -e "$policy" 2>/dev/null || sudo -n test -L "$policy" 2>/dev/null || sudo -n test -e "$coordination" 2>/dev/null || sudo -n test -L "$coordination" 2>/dev/null; then fail; fi
@@ -20,9 +20,9 @@ CGO_ENABLED=0 go test -trimpath -c -ldflags "-X github.com/Yunushan/accessweaver
 [[ "$(git rev-parse HEAD 2>/dev/null)" == "$source_commit" && -z "$(git status --porcelain --untracked-files=normal 2>/dev/null)" ]] || fail
 # Discard raw subprocess output in memory. Only source-fixed labels are emitted;
 # there is no private report/log file, artifact upload or payload collection.
-python3 - "$source_commit" "$sdk_arch" <<'PY'
+python3 - "$source_commit" "$expected_arch" <<'PY'
 import os, subprocess, sys
-source, arch = sys.argv[1:]
+source_commit, expected_arch = sys.argv[1:]
 labels = {
     'ordinary Darwin audit hosted source context unavailable',
     'ordinary Darwin audit source identity unavailable',
@@ -49,18 +49,18 @@ for stage in ('host-context','source-binding','protected-ancestry','protected-so
 # observations never leave the anonymous reply or appear in projected output.
 alias_cases = ['scope-setup']
 for action in ('import','ui','export-recorded','run'):
-    sources=['checkpoint-start','checkpoint-end','storage-secret','storage-stream']
+    alias_source_kinds=['checkpoint-start','checkpoint-end','storage-secret','storage-stream']
     roles=('output',) if action=='import' else ('output','notice')
-    if action in ('import','run'): sources.append('reviewed-profile')
-    for source in sources:
+    if action in ('import','run'): alias_source_kinds.append('reviewed-profile')
+    for alias_source_kind in alias_source_kinds:
         for variant in ('direct','hardlink','case'):
-            for role in roles: alias_cases.append('-'.join((action,source,variant,role)))
-for source in ('engine-image','policy-document','policy-acceptance'):
-    for role in ('output','notice'): alias_cases.append('run-'+source+'-direct-'+role)
-for source in ('controller-scope','profile-scope'):
-    alias_cases.append('run-'+source+'-setup')
+            for role in roles: alias_cases.append('-'.join((action,alias_source_kind,variant,role)))
+for alias_source_kind in ('engine-image','policy-document','policy-acceptance'):
+    for role in ('output','notice'): alias_cases.append('run-'+alias_source_kind+'-direct-'+role)
+for alias_source_kind in ('controller-scope','profile-scope'):
+    alias_cases.append('run-'+alias_source_kind+'-setup')
     for variant in ('direct','hardlink','case'):
-        for role in ('output','notice'): alias_cases.append('run-'+source+'-'+variant+'-'+role)
+        for role in ('output','notice'): alias_cases.append('run-'+alias_source_kind+'-'+variant+'-'+role)
 alias_cases += ['run-policy-coordination-open','run-policy-coordination-direct-output','run-policy-coordination-direct-notice',
     'run-launch-config-setup','run-launch-config-direct-output','run-launch-config-direct-notice','run-launch-config-restore']
 alias_cases += [action+'-pairwise' for action in ('ui','export-recorded','run')]
@@ -75,7 +75,7 @@ for name in cases:
 command = ['/usr/bin/sudo','-n','/usr/bin/env','-i','PATH=/usr/bin:/bin:/usr/sbin:/sbin',
     'LANG=C','LC_ALL=C','TZ=UTC','GOTOOLCHAIN=local','GITHUB_ACTIONS=true',
     'RUNNER_ENVIRONMENT=github-hosted','RUNNER_OS=macOS',
-    'RUNNER_ARCH='+os.environ['RUNNER_ARCH'],'GITHUB_SHA='+source,
+    'RUNNER_ARCH='+os.environ['RUNNER_ARCH'],'GITHUB_SHA='+source_commit,
     'GO_VERSION='+os.environ['GO_VERSION'],
     'ACCESSWEAVER_DISPOSABLE_DARWIN_POLICY_TEST=1',
     'ACCESSWEAVER_DISPOSABLE_DARWIN_AUDIT_COMMANDS_TEST=1',
