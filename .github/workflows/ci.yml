@@ -150,9 +150,11 @@ jobs:
           path: build/native-discovery-checks/
           if-no-files-found: ignore
           retention-days: 14
-      - name: Race macOS paired policy storage
+      - name: Race macOS paired policy and audit storage
         if: runner.os == 'macOS'
-        run: go test -race ./internal/managed -run '^TestDarwin' -count=1
+        env:
+          ACCESSWEAVER_DISPOSABLE_DARWIN_AUDIT_TEST: '1'
+        run: go test -race ./internal/managed ./internal/audit -run '^TestDarwin' -count=1
       - name: Native macOS trust and paired storage without CGO
         if: runner.os == 'macOS'
         shell: bash

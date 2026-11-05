@@ -132,14 +132,21 @@ jobs:
           node --test scripts/check-native-environment.test.cjs scripts/check-packaged-evidence.test.cjs scripts/check-profile-benchmark.test.cjs
           node --check scripts/test-packaged-diagnostics.cjs
       - run: go vet ./...
-      - run: go test ./... -count=1
-      - name: Race macOS paired policy storage
+      - name: Unit tests
+        env:
+          ACCESSWEAVER_DISPOSABLE_DARWIN_AUDIT_TEST: ${{ runner.os == 'macOS' && '1' || '' }}
+        run: go test ./... -count=1
+      - name: Race macOS paired policy and audit storage
         if: runner.os == 'macOS'
-        run: go test -race ./internal/managed -run '^TestDarwin' -count=1
+        env:
+          ACCESSWEAVER_DISPOSABLE_DARWIN_AUDIT_TEST: '1'
+        run: go test -race ./internal/managed ./internal/audit -run '^TestDarwin' -count=1
       - name: Native macOS trust and paired storage without CGO
         if: runner.os == 'macOS'
         shell: bash
-        run: CGO_ENABLED=0 go test ./internal/darwintrust ./internal/managed -run '^TestDarwin' -count=1 -v
+        env:
+          ACCESSWEAVER_DISPOSABLE_DARWIN_AUDIT_TEST: '1'
+        run: CGO_ENABLED=0 go test ./internal/darwintrust ./internal/managed ./internal/audit -run '^TestDarwin' -count=1 -v
       - name: Disposable macOS cross-user session ACL regression
         if: runner.os == 'macOS'
         shell: bash
