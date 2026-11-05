@@ -4,7 +4,7 @@ AccessWeaver provides a bounded event-chain format, a read-only segment verifier
 
 The connected [Windows local audit backend](WINDOWS_AUDIT_STORAGE.md) has dual-architecture source-built storage, identity and genuine ordinary-process prerequisite qualification. The public Windows entry-point candidate now includes real CLI/UI/foreground-run and signed managed required-audit acceptance; those results remain pending. Recorded policy administration remains Linux-only. No readiness gate is promoted.
 
-The [Darwin backend](DARWIN_AUDIT_STORAGE.md) provides private APFS storage, journal, current-producer checks and historical export. Its configured source fixtures passed on both native architectures. The public macOS recorded-command candidate still requires ordinary-process CLI/UI/run and signed-policy acceptance; source support does not qualify an installed endpoint.
+The [Darwin backend](DARWIN_AUDIT_STORAGE.md) provides private APFS storage, journal, current-producer checks and historical export. Its configured source fixtures passed on both native architectures. Its ordinary-process recorded CLI/UI/run and signed required-policy scenarios passed at [exact source 176aac5](qualification/176aac593fb9-darwin-recorded-commands.json); this hosted source-fixture result does not qualify an installed endpoint or later process-owner changes.
 
 ## Verify a segment
 

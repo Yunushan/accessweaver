@@ -218,37 +218,105 @@ func runForegroundEngine(ctx context.Context, p profile.Profile, manager *engine
 	if err != nil {
 		return err
 	}
-	const notice = "Process launched. This does not guarantee functional routing or connection.\n"
-	if n, err := io.WriteString(out, notice); err != nil || n != len(notice) {
-		// A notice-output failure must not abandon an already launched process.
-		return errors.Join(errEngineLaunchOutput, manager.Stop())
-	}
-	return waitForegroundEngine(ctx, run, manager.Stop)
+	return finishAcceptedForegroundEngine(ctx, run, manager.Stop, out, os.Stderr)
 }
 
-// Waiting follows this exact launch. A user shutdown explicitly stops the owned
-// process; cancellation of a Run.Wait by itself never terminates that process.
+// Notice output is part of this foreground scope. Once accepted, even a failed
+// notice must retain the exact launch until terminal observation.
+func finishAcceptedForegroundEngine(ctx context.Context, run foregroundEngineRun, stop func() error, out, feedback io.Writer) error {
+	const notice = "Process launched. This does not guarantee functional routing or connection.\n"
+	if n, err := io.WriteString(out, notice); err != nil || n != len(notice) {
+		return errors.Join(errEngineLaunchOutput, observeForegroundEngine(context.Background(), run, stop, feedback, true))
+	}
+	return observeForegroundEngine(ctx, run, stop, feedback, false)
+}
+
+// Waiting follows this exact launch. A stop error is not terminal observation:
+// retain ownership and wait for Done even after cancellation or output failure.
 func waitForegroundEngine(ctx context.Context, run foregroundEngineRun, stop func() error) error {
-	result, err := run.Wait(ctx)
-	if err != nil {
-		if ctx.Err() == nil {
-			return err
-		}
-		if err := stop(); err != nil {
-			return err
-		}
-		// A successful owned Stop normally observes this launch's completion.
-		// Check it explicitly before using an uncanceled wait: a timeout or an
-		// invalid stop implementation must never introduce an unbounded wait.
+	return observeForegroundEngine(ctx, run, stop, os.Stderr, false)
+}
+
+// Fault notifications carry no terminal proof. They only provide fixed local
+// feedback while this foreground scope continues to own the pending launch.
+type foregroundEngineFault interface {
+	PendingError() error
+	Fault() <-chan struct{}
+}
+
+func observeForegroundEngine(ctx context.Context, run foregroundEngineRun, stop func() error, feedback io.Writer, stopImmediately bool) error {
+	if ctx == nil || run == nil || run.Done() == nil || stop == nil {
+		return engine.ErrRunUnavailable
+	}
+	done := run.Done()
+	var fault <-chan struct{}
+	if source, ok := run.(foregroundEngineFault); ok {
+		fault = source.Fault()
+	}
+	warned := false
+	warn := func() {
 		select {
-		case <-run.Done():
-			result, err = run.Wait(context.Background())
-			if err != nil {
-				return err
-			}
+		case <-done:
+			return
 		default:
-			return errors.New("engine stop returned without terminal observation")
 		}
+		if !warned {
+			warned = true
+			_, _ = io.WriteString(feedback, "Engine shutdown is not confirmed. Waiting for the owned launch; this command remains active.\n")
+		}
+	}
+	ctxDone := ctx.Done()
+	var stopErr error
+	requestStop := func() {
+		select {
+		case <-done:
+			ctxDone = nil
+			return
+		default:
+		}
+		stopErr = stop()
+		warn()
+		ctxDone = nil // Cancellation cannot abandon an accepted launch.
+	}
+	if stopImmediately {
+		requestStop()
+	}
+	if source, ok := run.(foregroundEngineFault); ok && source.PendingError() != nil {
+		warn()
+	}
+	terminal := func() error {
+		result, waitErr := run.Wait(context.Background())
+		return errors.Join(stopErr, waitErr, foregroundEngineTerminal(result))
+	}
+	for {
+		// Prefer an already published observation over concurrent cancellation.
+		select {
+		case <-done:
+			return terminal()
+		default:
+		}
+		select {
+		case <-done:
+			return terminal()
+		case <-ctxDone:
+			select {
+			case <-done:
+				return terminal()
+			default:
+			}
+			requestStop()
+		case <-fault:
+			if source, ok := run.(foregroundEngineFault); ok && source.PendingError() != nil {
+				warn()
+			}
+			fault = nil
+		}
+	}
+}
+
+func foregroundEngineTerminal(result engine.RunResult) error {
+	if result.LifecycleErr != nil {
+		return fmt.Errorf("engine lifecycle: %w", errors.Join(result.LifecycleErr, result.PolicyErr, result.WaitErr))
 	}
 	if result.Reason == engine.RunFailed || result.Reason == engine.RunPolicyRevoked {
 		return fmt.Errorf("engine exited: %w", errors.Join(result.PolicyErr, result.WaitErr))

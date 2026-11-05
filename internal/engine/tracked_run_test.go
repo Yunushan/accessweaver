@@ -236,8 +236,7 @@ func TestTrackedRunResolvesSignalsBeforePublishingImmediateExit(t *testing.T) {
 			p, root := trackedFixture(t)
 			manager := NewManager(root)
 			t.Cleanup(func() { _ = manager.Stop() })
-			waited := make(chan struct{})
-			run, err := manager.startTracked(p, func() { close(waited) })
+			run, err := manager.StartTracked(p)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -255,12 +254,8 @@ func TestTrackedRunResolvesSignalsBeforePublishingImmediateExit(t *testing.T) {
 				if err := killProcess(process); err != nil {
 					return err
 				}
-				select {
-				case <-waited:
-				case <-time.After(5 * time.Second):
-					return errors.New("fixture process was not reaped")
-				}
-				// cmd.Wait has returned while the signal result is unresolved.
+				// Native dispatch has completed, but its accepted/error result is
+				// unresolved. A Unix owner must keep the child unreaped here.
 				select {
 				case <-run.Done():
 					earlyPublication = true
@@ -272,8 +267,19 @@ func TestTrackedRunResolvesSignalsBeforePublishingImmediateExit(t *testing.T) {
 			if earlyPublication {
 				t.Fatal("terminal result published before signal outcome resolved")
 			}
-			if outcome == "failed" && !errors.Is(err, failure) {
-				t.Fatal("failed signal dispatch was hidden", err)
+			if outcome == "failed" {
+				if runtime.GOOS == "windows" {
+					if !errors.Is(err, failure) {
+						t.Fatal("failed signal dispatch was hidden", err)
+					}
+				} else {
+					if !errors.Is(err, ErrProcessCleanupPending) || !errors.Is(run.PendingError(), ErrProcessCleanupPending) {
+						t.Fatal("failed signal lost retained cleanup fault")
+					}
+					if err := manager.RetryCleanup(run); err != nil {
+						t.Fatal("failed signal cleanup retry failed")
+					}
+				}
 			}
 			if outcome != "failed" && err != nil {
 				t.Fatal(err)
@@ -304,11 +310,44 @@ func TestTrackedRunFailedSignalRestoresRunningAndStopTimeoutRetainsOwnership(t *
 	waitTrackedReady(t)
 	failure := errors.New("fixture signal refused")
 	refuse := func(*os.Process) error { return failure }
-	if err := manager.stop(refuse, refuse, 0, 0); !errors.Is(err, failure) {
-		t.Fatal("failed stop did not preserve signal error", err)
-	}
-	if state := manager.Snapshot(); state.State != "running" || state.PID == 0 {
-		t.Fatal("failed stop falsely changed running state", state)
+	stopErr := manager.stop(refuse, refuse, 0, 0)
+	if runtime.GOOS == "windows" {
+		if !errors.Is(stopErr, failure) {
+			t.Fatal("failed stop did not preserve signal error", stopErr)
+		}
+		if state := manager.Snapshot(); state.State != "running" || state.PID == 0 {
+			t.Fatal("failed stop falsely changed running state", state)
+		}
+	} else {
+		if !errors.Is(stopErr, ErrProcessCleanupPending) {
+			t.Fatal("failed force did not retain cleanup ownership")
+		}
+		if state := manager.Snapshot(); state.State != "error" || state.PID != 0 || state.LastError != ErrProcessCleanupPending.Error() {
+			t.Fatal("failed force was not reported immediately")
+		}
+		select {
+		case <-run.Done():
+			t.Fatal("failed force published completion")
+		default:
+		}
+		if next, err := manager.StartTracked(p); err == nil || next != nil {
+			t.Fatal("failed force released launch ownership")
+		}
+		if err := manager.RetryCleanup(run); err != nil {
+			t.Fatal("retained force could not be retried")
+		}
+		result := waitTracked(t, run)
+		if result.Reason != RunFailed || result.WaitErr == nil || !errors.Is(result.LifecycleErr, ErrProcessLifecycle) {
+			t.Fatal("force recovery lost real wait or sticky uncertainty")
+		}
+		if err := os.Remove(os.Getenv("ACCESSWEAVER_FIXTURE_RECORD")); err != nil {
+			t.Fatal("completed fixture readiness removal failed")
+		}
+		run, err = manager.StartTracked(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		waitTrackedReady(t)
 	}
 	var interrupts, kills int
 	if err := manager.stop(func(*os.Process) error { interrupts++; return nil }, func(*os.Process) error { kills++; return nil }, 0, 0); err == nil || !strings.Contains(err.Error(), "within timeout") {
@@ -337,8 +376,7 @@ func TestTrackedRunForcedSignalResolvesBeforePublishingExit(t *testing.T) {
 	p, root := trackedFixture(t)
 	manager := NewManager(root)
 	t.Cleanup(func() { _ = manager.Stop() })
-	waited := make(chan struct{})
-	run, err := manager.startTracked(p, func() { close(waited) })
+	run, err := manager.StartTracked(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,11 +391,6 @@ func TestTrackedRunForcedSignalResolvesBeforePublishingExit(t *testing.T) {
 		}
 		if err := killProcess(process); err != nil {
 			return err
-		}
-		select {
-		case <-waited:
-		case <-time.After(5 * time.Second):
-			return errors.New("fixture escalation did not reap process")
 		}
 		select {
 		case <-run.Done():

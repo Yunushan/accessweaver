@@ -21,8 +21,9 @@ import (
 //
 // launch/stop are trusted in-process adapters, never request-selected callbacks.
 // An accepted launch must return a nonnil handle with nonnil Done; Manager's
-// StartTracked guarantees this, and returns nil on all startup errors. A startup
-// error can still follow generated-file changes. Callback panics are not caught:
+// StartTracked guarantees this after process creation. Only pre-start failures
+// refuse a launch; later lifecycle uncertainty belongs to the accepted Run. A
+// pre-start error can still follow generated-file changes. Callback panics are not caught:
 // a panic without an exact handle cannot be recovered as proof of cleanup.
 //
 // Native storage/output/signal operations have no hard deadline. In particular,
@@ -177,7 +178,7 @@ func stopAndDrainRecordedEngine(run foregroundEngineRun, stop func() error) (eng
 // local CLI can still treat that owned stop as successful. Never emit canceled
 // or refused after acceptance, or serialize process/policy error text.
 func recordedEngineTerminal(result engine.RunResult, waitErr error) (string, error) {
-	if waitErr != nil {
+	if waitErr != nil || result.LifecycleErr != nil {
 		return "indeterminate", audit.ErrRecordedUncertain
 	}
 	switch result.Reason {

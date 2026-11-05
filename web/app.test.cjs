@@ -395,3 +395,49 @@ test('audited desktop never saves profiles to browser fallback after partial con
  const env=environment();env.run('state.profileEditingOnly=true');env.put('fixture',baseProfile());
  await assert.rejects(env.run('persist(fixture)'));assert.equal(env.data.get('aw.profiles'),undefined);
 });
+
+test('pending engine shutdown is localized and preserves editing, logs and support',()=>{
+  const titles={en:'Shutdown unconfirmed',tr:'Kapanış doğrulanmadı',ru:'Завершение не подтверждено',es:'Cierre sin confirmar'};
+  for(const lang of Object.keys(titles)){
+    const env=environment();env.put('fixture',baseProfile());env.put('languageFixture',lang);
+    env.run('state.lang=languageFixture;state.offline=false;state.loading=false;state.coreAuthenticated=true;state.token="fixture";state.platform="linux";state.profiles=[fixture];state.runtime={state:"running",profileId:fixture.id,engine:"byedpi",pid:321,lifecyclePending:true,lastError:"PRIVATE_NATIVE_FAULT"};renderHero()');
+    assert.equal(env.get('hero-status').textContent,titles[lang]);
+    assert.equal(env.get('status-badge').textContent,env.run('t("shutdownPendingBadge")'));
+    assert.equal(env.get('running-engine').textContent,'—');
+    assert.equal(env.get('hero-primary').disabled,true);
+    assert.equal(env.get('show-logs').disabled,false);assert.equal(env.get('export-support').disabled,false);
+    assert.doesNotMatch(env.get('hero-description').textContent,/PRIVATE|321/);
+    const card=env.run('profileCard(fixture,true)');
+    assert.match(card.match(/<button[^>]*data-profile-action="run"[^>]*>/)[0],/\bdisabled\b/);
+    for(const control of card.matchAll(/<button[^>]*data-profile-action="edit"[^>]*>/g))assert.doesNotMatch(control[0],/\bdisabled\b/);
+    env.run('showEditor(fixture)');assert.equal(env.run('state.editing.profile.id'),baseProfile().id);
+  }
+});
+
+test('pending lifecycle invalidates an open launch review and blocks direct launch handlers',async()=>{
+  const env=environment();env.put('fixture',baseProfile());
+  env.run('state.offline=false;state.loading=false;state.launch={profile:fixture,ready:true};state.runtime={state:"error",lifecyclePending:true};apiRequest=async()=>{throw new Error("unexpected launch API")};renderHero()');
+  assert.equal(env.run('state.launch.ready'),false);assert.equal(env.get('launch-confirm').disabled,true);
+  assert.equal(env.get('launch-plan').textContent,env.run('t("shutdownPendingDesc")'));
+  await assert.rejects(env.run('reviewLaunch(fixture)'),/Starting another engine is blocked/);
+  await env.run('confirmLaunch()');
+  assert.equal(env.run('state.busy'),false);
+});
+
+test('a late launch preview cannot reenable launch during pending cleanup',async()=>{
+  const env=environment();env.put('fixture',baseProfile());
+  env.run('state.offline=false;state.loading=false;apiRequest=async path=>path.startsWith("/api/v1/profiles/")?fixture:new Promise(resolve=>{globalThis.finishPreview=resolve})');
+  const review=env.run('reviewLaunch(fixture)');await Promise.resolve();
+  assert.equal(typeof env.context.finishPreview,'function');
+  env.run('state.runtime={state:"error",lifecyclePending:true};renderHero()');
+  env.context.finishPreview({ready:true,args:[],warnings:[],issues:[]});await review;
+  assert.equal(env.run('state.launch.ready'),false);assert.equal(env.get('launch-confirm').disabled,true);
+  assert.equal(env.get('launch-plan').textContent,env.run('t("shutdownPendingDesc")'));
+});
+
+test('a pending-lifecycle change refreshes profile controls even when status and PID stay unchanged',async()=>{
+  const env=environment();env.run('state.offline=false;state.loading=false;state.runtime={state:"error",profileId:"test-profile",pid:0,lifecyclePending:false};globalThis.profileUpdates=0;renderProfiles=()=>{profileUpdates++};apiRequest=async()=>({state:"error",profileId:"test-profile",pid:0,lifecyclePending:true})');
+  await env.run('pollStatus()');assert.equal(env.context.profileUpdates,1);assert.equal(env.get('hero-primary').disabled,true);
+  env.run('apiRequest=async()=>({state:"error",profileId:"test-profile",pid:0,lifecyclePending:false})');
+  await env.run('pollStatus()');assert.equal(env.context.profileUpdates,2);assert.equal(env.get('hero-primary').disabled,false);
+});

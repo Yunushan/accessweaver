@@ -4,6 +4,8 @@ The foreground profile runner launches separately installed tools and translates
 
 Use the upstream documentation for the **exact binary version you install**. No engine version is bundled or end-to-end certified in this alpha. The references below were reviewed on 2026-10-31.
 
+Foreground Unix launches run in a private session. Shutdown retains exact-launch ownership through process observation and output drain; unresolved cleanup keeps the manager occupied. Review [engine lifetime and recovery](ENGINE_LIFETIME.md) before integrating tools that daemonize or change process groups.
+
 ## Supported commands
 
 | ID | Executable by platform | Adapter behavior |

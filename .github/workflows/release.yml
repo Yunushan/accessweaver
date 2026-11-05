@@ -139,6 +139,13 @@ jobs:
         env:
           ACCESSWEAVER_DISPOSABLE_DARWIN_AUDIT_TEST: ${{ runner.os == 'macOS' && '1' || '' }}
         run: go test ./... -count=1
+      - name: Race native macOS engine lifecycle
+        if: runner.os == 'macOS'
+        run: go test -race ./internal/engine ./cmd/accessweaver -count=1
+      - name: Native macOS engine lifecycle without CGO
+        if: runner.os == 'macOS'
+        shell: bash
+        run: CGO_ENABLED=0 go test ./internal/engine ./cmd/accessweaver -count=1
       - name: Race macOS paired policy and audit storage
         if: runner.os == 'macOS'
         env:

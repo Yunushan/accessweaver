@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,13 +17,14 @@ import (
 )
 
 type Snapshot struct {
-	State     string    `json:"state"`
-	ProfileID string    `json:"profileId,omitempty"`
-	Engine    string    `json:"engine,omitempty"`
-	PID       int       `json:"pid,omitempty"`
-	StartedAt time.Time `json:"startedAt,omitempty"`
-	LastError string    `json:"lastError,omitempty"`
-	Log       []string  `json:"log"`
+	State            string    `json:"state"`
+	ProfileID        string    `json:"profileId,omitempty"`
+	Engine           string    `json:"engine,omitempty"`
+	PID              int       `json:"pid,omitempty"`
+	StartedAt        time.Time `json:"startedAt,omitempty"`
+	LastError        string    `json:"lastError,omitempty"`
+	LifecyclePending bool      `json:"lifecyclePending,omitempty"`
+	Log              []string  `json:"log"`
 }
 
 // Summary excludes user identifiers, paths and child output from support metadata.
@@ -36,7 +38,11 @@ type Summary struct {
 func (m *Manager) Summary() Summary {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return Summary{State: m.state.State, Engine: m.state.Engine, ErrorPresent: m.state.LastError != "", LogLines: len(m.log)}
+	state, errorPresent := m.state.State, m.state.LastError != ""
+	if m.cmd != nil && m.run != nil && m.run.owner != nil && m.run.owner.pendingError() != nil {
+		state, errorPresent = "error", true
+	}
+	return Summary{State: state, Engine: m.state.Engine, ErrorPresent: errorPresent, LogLines: len(m.log)}
 }
 
 // RunReason describes the observed terminal state of one launched process.
@@ -52,12 +58,14 @@ const (
 
 var ErrRunUnavailable = errors.New("engine launch handle is unavailable")
 
-// RunResult retains the actual cmd.Wait error separately from policy revocation.
+// RunResult retains the actual cmd.Wait error separately from policy revocation
+// and lifecycle observation or cleanup uncertainty.
 // It contains process errors for the local caller, not audit or support metadata.
 type RunResult struct {
-	Reason    RunReason
-	WaitErr   error
-	PolicyErr error
+	Reason       RunReason
+	WaitErr      error
+	PolicyErr    error
+	LifecycleErr error
 }
 
 // Run identifies exactly one successful launch, even after another launch starts.
@@ -68,6 +76,7 @@ type Run struct {
 }
 
 type runState struct {
+	owner        processLifetime
 	done         chan struct{}
 	result       RunResult
 	stopAccepted bool          // guarded by the manager mutex
@@ -105,16 +114,33 @@ func (r *Run) Wait(ctx context.Context) (RunResult, error) {
 	}
 }
 
+// PendingError is a fixed nonterminal fault, not an exit result. A caller must
+// still retain and drain this exact Run; no new numeric-PID action is authorized.
+func (r *Run) PendingError() error {
+	if r == nil || r.state == nil || r.state.owner == nil {
+		return nil
+	}
+	return r.state.owner.pendingError()
+}
+func (r *Run) Fault() <-chan struct{} {
+	if r == nil || r.state == nil || r.state.owner == nil {
+		return nil
+	}
+	return r.state.owner.faultSignal()
+}
+
 type Manager struct {
-	guard   *managed.Guard
-	opMu    sync.Mutex // Serializes prepare/start/stop, including generated files.
-	mu      sync.Mutex
-	cmd     *exec.Cmd
-	run     *runState
-	state   Snapshot
-	log     []string
-	root    string
-	closing bool
+	guard           *managed.Guard
+	opMu            sync.Mutex // Serializes prepare/start/stop, including generated files.
+	mu              sync.Mutex
+	cmd             *exec.Cmd
+	run             *runState
+	state           Snapshot
+	log             []string
+	root            string
+	closing         bool
+	prepareLifetime lifetimeFactory
+	output          io.Writer
 }
 
 func NewManager(root string) *Manager { return NewManagerWithGuard(root, managed.NewGuard(nil)) }
@@ -125,6 +151,14 @@ func (m *Manager) Snapshot() Snapshot {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s := m.state
+	if m.cmd != nil && m.run != nil && m.run.owner != nil {
+		if fault := m.run.owner.pendingError(); fault != nil {
+			s.State = "error"
+			s.LastError = fault.Error()
+			s.PID = 0
+			s.LifecyclePending = true
+		}
+	}
 	s.Log = append([]string{}, m.log...)
 	return s
 }
@@ -146,7 +180,7 @@ func (m *Manager) addLogLocked(line string) {
 		return
 	}
 	if len(line) > 2000 {
-		line = line[:2000] + "…"
+		line = line[:2000] + "\u2026"
 	}
 	m.log = append(m.log, time.Now().Format("15:04:05")+"  "+line)
 	if len(m.log) > 150 {
@@ -180,8 +214,14 @@ func (m *Manager) StartTracked(p profile.Profile) (*Run, error) {
 
 // observedWait is an in-process test observer; it cannot alter process waiting.
 func (m *Manager) startTracked(p profile.Profile, observedWait func()) (*Run, error) {
+	if err := m.pendingLifetimeError(); err != nil {
+		return nil, err
+	}
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
+	if err := m.pendingLifetimeError(); err != nil {
+		return nil, err
+	}
 	m.mu.Lock()
 	if m.closing {
 		m.mu.Unlock()
@@ -210,39 +250,69 @@ func (m *Manager) startTracked(p profile.Profile, observedWait func()) (*Run, er
 			cancel()
 		}
 	}()
-	// External executables are only started following an explicit user action.
-	cmd := exec.CommandContext(ctx, bin, args...)
+
+	// A plain Unix command has no hidden context watcher or delayed PID kill.
+	// Windows retains its existing CommandContext/handle behavior.
+	cmd := newEngineCommand(ctx, bin, args)
 	cmd.Dir = filepath.Dir(bin)
 	cmd.WaitDelay = 2 * time.Second
 	configureProcess(cmd)
-	// Revoke the same owned foreground process/group as normal termination.
-	cmd.Cancel = func() error { return killProcess(cmd.Process) }
-	cmd.Stdout = logWriter{m}
-	cmd.Stderr = logWriter{m}
+	output := m.output
+	if output == nil {
+		output = logWriter{m}
+	}
+	cmd.Stdout, cmd.Stderr = output, output
 	cmd.Env = environment
+	factory := m.prepareLifetime
+	if factory == nil {
+		factory = prepareProcessLifetime
+	}
+	owner, err := factory(cmd)
+	if err != nil {
+		return nil, err
+	}
+	run := &runState{done: make(chan struct{}), owner: owner}
+	owner.setFaultHandler(func(fault error) {
+		m.mu.Lock()
+		if m.run == run && m.cmd == cmd {
+			m.state.State = "error"
+			m.state.LastError = fault.Error()
+			m.state.PID = 0
+		}
+		m.mu.Unlock()
+	})
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.closing {
-		return nil, errors.New("engine manager is shutting down")
+	closing, occupied := m.closing, m.cmd != nil
+	m.mu.Unlock()
+	if closing || occupied || ctx.Err() != nil {
+		closeErr := owner.abortStart()
+		if closing {
+			return nil, errors.Join(errors.New("engine manager is shutting down"), closeErr)
+		}
+		if occupied {
+			return nil, errors.Join(errors.New("another engine is running; stop it before starting a new one"), closeErr)
+		}
+		return nil, errors.Join(ctx.Err(), closeErr)
 	}
-	if m.cmd != nil {
-		return nil, errors.New("another engine started concurrently")
-	}
+	// Never hold Manager.mu across Start: child output uses that mutex.
 	if err := cmd.Start(); err != nil {
+		closeErr := owner.abortStart()
 		if cause := context.Cause(ctx); managed.IsPolicyError(cause) {
 			err = errors.Join(cause, err)
 		}
-		return nil, fmt.Errorf("engine start failed: %w", err)
+		return nil, errors.Join(fmt.Errorf("engine start failed: %w", err), closeErr)
 	}
 	started = true
-	m.cmd = cmd
-	run := &runState{done: make(chan struct{})}
-	m.run = run
+	// Successful Start is always an accepted, nonnil owned Run. Even a concurrent
+	// Shutdown or observer failure cannot erase a child that already executed.
+	m.mu.Lock()
+	m.cmd, m.run = cmd, run
 	m.state = Snapshot{State: "running", ProfileID: p.ID, Engine: p.Engine, PID: cmd.Process.Pid, StartedAt: time.Now().UTC()}
 	m.log = nil
 	m.addLogLocked("Engine process launched; service/network connectivity is NOT yet verified")
+	m.mu.Unlock()
 	go func() {
-		waitErr := cmd.Wait()
+		waitErr, lifecycleErr := owner.wait(ctx)
 		cause := context.Cause(ctx)
 		policyFailure := managed.IsPolicyError(cause)
 		cancel()
@@ -250,26 +320,25 @@ func (m *Manager) startTracked(p profile.Profile, observedWait func()) (*Run, er
 			observedWait()
 		}
 		m.mu.Lock()
-		// A signal can make Wait return before the signal call returns. Resolve
-		// its actual dispatch result outside the mutex before classifying exit.
-		// Recheck under the mutex: another stop attempt may have begun.
 		for run.stopPending != nil {
 			pending := run.stopPending
 			m.mu.Unlock()
 			<-pending
 			m.mu.Lock()
 		}
-		result := RunResult{Reason: RunExited, WaitErr: waitErr}
+		result := RunResult{Reason: RunExited, WaitErr: waitErr, LifecycleErr: lifecycleErr}
 		if policyFailure {
 			result.Reason = RunPolicyRevoked
 			result.PolicyErr = cause
+		} else if lifecycleErr != nil {
+			result.Reason = RunFailed
 		} else if run.stopAccepted {
 			result.Reason = RunStopped
 		} else if waitErr != nil {
 			result.Reason = RunFailed
 		}
 		failed := result.Reason == RunFailed || result.Reason == RunPolicyRevoked
-		terminalErr := errors.Join(result.PolicyErr, result.WaitErr)
+		terminalErr := errors.Join(result.PolicyErr, result.WaitErr, result.LifecycleErr)
 		if m.cmd == cmd {
 			m.cmd = nil
 			m.state.State = "stopped"
@@ -290,14 +359,21 @@ func (m *Manager) startTracked(p profile.Profile, observedWait func()) (*Run, er
 	}()
 	return &Run{state: run}, nil
 }
+
 func (m *Manager) Stop() error {
 	return m.stop(interruptProcess, killProcess, 3*time.Second, time.Second)
 }
 
 // The seams permit deterministic source tests without altering native defaults.
 func (m *Manager) stop(interrupt, kill func(*os.Process) error, grace, forceWait time.Duration) error {
+	if err := m.pendingLifetimeError(); err != nil {
+		return err
+	}
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
+	if err := m.pendingLifetimeError(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	cmd := m.cmd
 	run := m.run
@@ -307,6 +383,9 @@ func (m *Manager) stop(interrupt, kill func(*os.Process) error, grace, forceWait
 	}
 	signalErr := m.dispatchStop(cmd, run, func(process *os.Process) error {
 		if err := interrupt(process); err != nil {
+			if processOwnershipLost(err) {
+				return err
+			}
 			return kill(process)
 		}
 		return nil
@@ -318,7 +397,10 @@ func (m *Manager) stop(interrupt, kill func(*os.Process) error, grace, forceWait
 	case <-run.done:
 		return nil
 	case <-time.After(grace):
-		_ = m.dispatchStop(cmd, run, kill)
+		forceErr := m.dispatchStop(cmd, run, kill)
+		if errors.Is(forceErr, ErrProcessCleanupPending) || errors.Is(forceErr, ErrProcessOwnershipLost) {
+			return forceErr
+		}
 		select {
 		case <-run.done:
 			return nil
@@ -341,19 +423,56 @@ func (m *Manager) dispatchStop(cmd *exec.Cmd, run *runState, signal func(*os.Pro
 	run.stopPending = pending
 	m.state.State = "stopping"
 	m.mu.Unlock()
-	err := signal(cmd.Process)
+	err := run.owner.dispatch(signal)
 	m.mu.Lock()
 	if err == nil {
 		run.stopAccepted = true
 	}
 	run.stopPending = nil
 	if m.cmd == cmd && !run.stopAccepted {
-		m.state.State = "running"
+		if fault := run.owner.pendingError(); fault != nil {
+			m.state.State = "error"
+			m.state.LastError = fault.Error()
+			m.state.PID = 0
+		} else {
+			m.state.State = "running"
+		}
 	}
 	close(pending)
 	m.mu.Unlock()
 	return err
 }
+func (m *Manager) pendingLifetimeError() error {
+	m.mu.Lock()
+	run := m.run
+	active := m.cmd != nil
+	m.mu.Unlock()
+	if active && run != nil && run.owner != nil {
+		return run.owner.pendingError()
+	}
+	return nil
+}
+
+// RetryCleanup is an explicit, generation-bound recovery for known retained
+// identity only. Success authorizes waiting for this Run, not a replacement.
+func (m *Manager) RetryCleanup(handle *Run) error {
+	if handle == nil || handle.state == nil {
+		return ErrRunUnavailable
+	}
+	if errors.Is(handle.PendingError(), ErrProcessOwnershipLost) {
+		return ErrProcessOwnershipLost
+	}
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	m.mu.Lock()
+	current := m.run == handle.state && m.cmd != nil
+	m.mu.Unlock()
+	if !current {
+		return ErrRunUnavailable
+	}
+	return handle.state.owner.retryCleanup()
+}
+
 func (m *Manager) Shutdown(ctx context.Context) error {
 	m.mu.Lock()
 	m.closing = true

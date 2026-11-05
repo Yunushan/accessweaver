@@ -153,6 +153,13 @@ jobs:
           path: build/native-discovery-checks/
           if-no-files-found: ignore
           retention-days: 14
+      - name: Race native macOS engine lifecycle
+        if: runner.os == 'macOS'
+        run: go test -race ./internal/engine ./cmd/accessweaver -count=1
+      - name: Native macOS engine lifecycle without CGO
+        if: runner.os == 'macOS'
+        shell: bash
+        run: CGO_ENABLED=0 go test ./internal/engine ./cmd/accessweaver -count=1
       - name: Race macOS paired policy and audit storage
         if: runner.os == 'macOS'
         env:

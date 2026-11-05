@@ -453,3 +453,50 @@ test('optional workflow metadata cannot stop polling or replace reviewed inputs'
  journal='replacement.json';await page.locator('.nav-item[data-view="dashboard"]').click();await page.locator('.nav-item[data-view="system"]').click();
  await expect(page.locator('#system-journal')).toHaveValue('replacement.json');await expect(page.locator('#system-consent')).not.toBeChecked();await expect(page.locator('#system-apply')).toBeDisabled();expect(errors).toEqual([]);
 });
+
+// Only static application assets and synthetic API replies are used here. The
+// core fixture is deliberately absent, so this case starts no native product.
+test('pending lifecycle blocks launch while retaining profile editing and local inspection',async({page})=>{
+  const origin='http://127.0.0.1:43101';
+  const profile={version:1,id:'pending-fixture',name:'Pending fixture',description:'',category:'Custom',engine:'byedpi',binary:'',sha256:'',args:[],routing:{includeDomains:[],excludeDomains:[],applications:[]},probe:{host:'example.com',port:443,tls:true,timeoutSeconds:5},notes:'',updatedAt:'2026-11-01T00:00:00Z'};
+  const engine={id:'byedpi',name:'ByeDPI',kind:'proxy',platforms:['linux'],includes:true,excludes:true,integration:'managed',source:'https://example.invalid',notes:'Synthetic UI fixture'};
+  const assets=new Map();
+  for(const [route,file,type] of [['/','index.html','text/html'],['/app.js','app.js','text/javascript'],['/locales.js','locales.js','text/javascript'],['/system.js','system.js','text/javascript'],['/app.css','app.css','text/css']])assets.set(route,{body:await fs.readFile(path.join(repo,'web',file)),contentType:type});
+  let pending=false,starts=0;
+  await page.route('**/*',async route=>{
+    const target=new URL(route.request().url());
+    if(target.origin!==origin){await route.abort();return;}
+    const asset=assets.get(target.pathname);if(asset){await route.fulfill(asset);return;}
+    let json;
+    if(target.pathname==='/api/bootstrap')json={platform:'linux',version:'synthetic-ui-fixture'};
+    else if(target.pathname==='/api/v1/engines')json=[engine];
+    else if(target.pathname==='/api/v1/profiles')json=[profile];
+    else if(target.pathname==='/api/v1/profiles/'+profile.id)json=profile;
+    else if(target.pathname==='/api/v1/runtime')json={state:pending?'error':'stopped',profileId:profile.id,engine:'byedpi',pid:0,lifecyclePending:pending,log:[]};
+    else if(target.pathname==='/api/v1/preview')json={ready:true,args:[],issues:[],warnings:[]};
+    else if(target.pathname==='/api/v1/start'){starts++;await route.fulfill({status:500,json:{error:'unexpected synthetic launch'}});return;}
+    else {await route.fulfill({status:404,json:{error:'synthetic route unavailable'}});return;}
+    await route.fulfill({json});
+  });
+  await page.goto(origin+'/#accessweaver-session='+'a'.repeat(43));
+  await expect(page.locator('#hero-status')).toHaveText('Ready when you are');
+  await profiles(page);await action(page,'run',profile.id).click();
+  await expect(page.locator('#launch-confirm')).toBeEnabled();
+  pending=true;await page.evaluate(()=>pollStatus());
+  await expect(page.locator('#launch-confirm')).toBeDisabled();
+  await expect(page.locator('#launch-plan')).toContainText('Starting another engine is blocked');
+  await expect(page.locator('#hero-status')).toHaveText('Shutdown unconfirmed');
+  await expect(page.locator('#status-badge')).toHaveText('SHUTDOWN UNCONFIRMED');
+  await expect(page.locator('#running-engine')).toHaveText('—');
+  await expect(page.locator('#hero-primary')).toBeDisabled();
+  await page.locator('#launch-edit').click();await expect(page.locator('#editor-modal')).toBeVisible();
+  await expect(page.locator('#p-name')).toHaveValue(profile.name);
+  await page.locator('#close-editor').click();
+  await expect(action(page,'run',profile.id)).toBeDisabled();
+  await expect(action(page,'edit',profile.id)).toBeEnabled();
+  await page.locator('.nav-item[data-view="settings"]').click();
+  await expect(page.locator('#export-support')).toBeEnabled();
+  await expect(page.locator('#show-logs')).toBeEnabled();await page.locator('#show-logs').click();
+  await expect(page.locator('#logs-modal')).toBeVisible();await page.locator('#close-logs').click();
+  expect(starts).toBe(0);
+});

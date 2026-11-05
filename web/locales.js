@@ -96,6 +96,9 @@ logsVolatile|Показаны последние записи из памяти 
 copyLogs|Копировать журнал|Copiar registros
 ready|Готово к настройке|Listo para configurar
 readyDesc|Выберите профиль. Ничего не запускается автоматически.|Elige un perfil. Nada se inicia automáticamente.
+shutdownPending|Завершение не подтверждено|Cierre sin confirmar
+shutdownPendingDesc|Остановка предыдущего движка не подтверждена. Запуск другого движка заблокирован. Можно редактировать профили и просматривать журналы.|No se ha confirmado que el motor anterior esté detenido. El inicio de otro motor está bloqueado. Puedes seguir editando perfiles y consultar los registros.
+shutdownPendingBadge|ЗАВЕРШЕНИЕ НЕ ПОДТВЕРЖДЕНО|CIERRE SIN CONFIRMAR
 running|Процесс запущен|Proceso en ejecución
 runningDesc|Процесс движка активен. Маршрутизацию и связь нужно проверить отдельно.|El proceso está activo. Verifica la conexión y el enrutamiento por separado.
 offline|Автономный редактор|Editor sin conexión

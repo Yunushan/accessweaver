@@ -361,6 +361,7 @@ func TestRecordedEngineLifecycleCancellationBeforeLaunchAndPreparationFailure(t 
 
 func TestRecordedEngineLifecycleActualTerminalMetadataAndImmediateExitOrder(t *testing.T) {
 	privateExit := errors.New("PRIVATE_CHILD_WAIT")
+	privateLifecycle := errors.New("PRIVATE_LIFECYCLE_FAULT")
 	for _, tc := range []struct {
 		name    string
 		result  engine.RunResult
@@ -368,6 +369,9 @@ func TestRecordedEngineLifecycleActualTerminalMetadataAndImmediateExitOrder(t *t
 		want    error
 	}{
 		{"clean", engine.RunResult{Reason: engine.RunExited}, "completed", nil},
+		{"lifecycle-clean", engine.RunResult{Reason: engine.RunExited, LifecycleErr: privateLifecycle}, "indeterminate", audit.ErrRecordedUncertain},
+		{"lifecycle-stopped", engine.RunResult{Reason: engine.RunStopped, LifecycleErr: privateLifecycle}, "indeterminate", audit.ErrRecordedUncertain},
+		{"lifecycle-policy", engine.RunResult{Reason: engine.RunPolicyRevoked, PolicyErr: managed.ErrUnavailable, WaitErr: privateExit, LifecycleErr: privateLifecycle}, "indeterminate", audit.ErrRecordedUncertain},
 		{"failure", engine.RunResult{Reason: engine.RunFailed, WaitErr: privateExit}, "failed", privateExit},
 		{"policy", engine.RunResult{Reason: engine.RunPolicyRevoked, WaitErr: privateExit, PolicyErr: managed.ErrUnavailable}, "failed", managed.ErrUnavailable},
 		{"stopped-nonzero", engine.RunResult{Reason: engine.RunStopped, WaitErr: privateExit}, "failed", nil},
@@ -406,6 +410,9 @@ func TestRecordedEngineLifecycleActualTerminalMetadataAndImmediateExitOrder(t *t
 				t.Fatal("local terminal error lost", err, tc.want)
 			}
 			assertEngineLifecycleEvents(t, j, "intent", "accepted", tc.outcome)
+			if tc.result.LifecycleErr != nil && (err == nil || strings.Contains(err.Error(), "PRIVATE")) {
+				t.Fatal("lifecycle uncertainty was lost or disclosed", err)
+			}
 			assertEngineCheckpointStream(t, out, 3)
 			if data, calls := notice.view(); calls != 1 || !bytes.Contains(data, []byte("Process launched")) {
 				t.Fatal("separate launch notice missing", calls, string(data))
