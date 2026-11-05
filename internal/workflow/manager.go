@@ -742,20 +742,21 @@ func execute(ctx context.Context, dir string, r Request) (result json.RawMessage
 	cmd.Dir = systemDirectory
 	cmd.Stdin = strings.NewReader(program)
 	cmd.WaitDelay = 2 * time.Second
-	configureCommand(cmd)
-	cancellation := captureCommandCancellation(cmd)
 	output := &startupLog{writer: log, started: started}
 	cmd.Stdout = output
 	cmd.Stderr = output
 	if err := phase("launch"); err != nil {
 		return nil, err
 	}
-	// Finish persistence before interpreting a successful child result.
-	runErr := cmd.Run()
-	// Run has joined the context watcher, so every configured Cancel outcome
+	owner := configureCommand(cmd)
+	cancellation := captureCommandCancellation(cmd)
+	// Bind ownership before the consuming Wait; retain it through cancellation
+	// and output completion, then finish persistence before result validation.
+	runErr := runWorkflowCommand(cmd, owner)
+	// Wait has joined the context watcher, so every configured Cancel outcome
 	// is now available even if Wait preferred the process ExitError over it.
 	cleanupErr := cancellation.failure()
-	err = errors.Join(runErr, cleanupErr, phase("child-exited"), log.Close())
+	err = errors.Join(runErr, cleanupErr, workflowFailure(ErrWorkflowPersistence, output.failure()), phase("child-exited"), log.Close())
 	logClosed = true
 	if err != nil {
 		if contextErr := ctx.Err(); contextErr != nil {

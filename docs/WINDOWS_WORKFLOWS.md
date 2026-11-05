@@ -75,7 +75,7 @@ Components, private profiles, service configuration, backups and persistent logs
 
 The Windows installer registers a normal uninstaller. It restores owned system changes before deleting the application and aborts deletion when restoration fails. Portable users can run `uninstall`, stop the core, then remove the portable directory. Protected recovery data is retained for review.
 
-Cancellation requests termination of the owned worker tree. A helper failure leaves descendant cleanup unconfirmed even if the parent exits; that failure is retained separately from the process exit status. Sudden termination can bypass PowerShell cleanup, so inspect the journal before retrying. The recovery action accepts only a protected journal filename:
+Cancellation requests termination of the owned worker tree. Before the consuming child wait, the controller reserves that exact process identity with a verified, noninherited duplicate handle. Cancellation waits for binding, and the reservation remains held through helper completion and actual child wait/output drain. A binding failure refuses numeric tree dispatch, retains cleanup uncertainty and still waits the accepted child; the controller never reopens the worker by numeric ID. The service host likewise retains stop-pending status and its log while cleanup or the actual wait remains unresolved. A helper failure leaves descendant cleanup unconfirmed even if the parent exits; that failure is retained separately from the process exit status. Sudden termination can bypass PowerShell cleanup, so inspect the journal before retrying. The recovery action accepts only a protected journal filename:
 
 ```json
 {"action":"recover","journalId":"workflow-0123456789abcdef0123456789abcdef.json"}

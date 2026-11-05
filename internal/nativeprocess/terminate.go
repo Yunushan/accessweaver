@@ -35,6 +35,12 @@ func terminateWithCommand(process *os.Process, spec terminationCommand, timeout 
 	if process == nil {
 		return nil
 	}
+	return terminateCommand(spec, timeout, func() error { return killOwned(process) })
+}
+
+// The native owner supplies a fallback for its exact retained object handle.
+// Keep the original helper deadline and output-drain policy unchanged.
+func terminateCommand(spec terminationCommand, timeout time.Duration, fallback func() error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, spec.executable, spec.args...)
@@ -43,7 +49,7 @@ func terminateWithCommand(process *os.Process, spec terminationCommand, timeout 
 	configureTerminator(cmd)
 	if err := cmd.Run(); err != nil {
 		helperErr := fmt.Errorf("terminate process tree: %w", errors.Join(err, ctx.Err()))
-		return errors.Join(helperErr, killOwned(process))
+		return errors.Join(helperErr, fallback())
 	}
 	return nil
 }

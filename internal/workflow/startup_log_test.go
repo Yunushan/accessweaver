@@ -91,3 +91,29 @@ func TestStartupLogConcurrentStreamsEmitOneTimingMarker(t *testing.T) {
 		t.Fatal("concurrent capture lost or duplicated output")
 	}
 }
+
+func TestStartupLogRetainsDataWriteErrorAndShortWrite(t *testing.T) {
+	for _, short := range []bool{false, true} {
+		sentinel := errors.New("PRIVATE_CHILD_OUTPUT_FAILURE")
+		if short {
+			sentinel = io.ErrShortWrite
+		}
+		calls := 0
+		log := &startupLog{writer: startupWriterFunc(func(p []byte) (int, error) {
+			calls++
+			if calls == 1 {
+				return len(p), nil
+			} // First-output timing succeeds.
+			if short {
+				return len(p) - 1, nil
+			}
+			return 0, sentinel
+		}), started: time.Now()}
+		if _, err := log.Write([]byte("child-output")); !errors.Is(err, sentinel) {
+			t.Fatal("child output failure was erased")
+		}
+		if !errors.Is(log.failure(), sentinel) {
+			t.Fatal("child output uncertainty was not retained independently")
+		}
+	}
+}

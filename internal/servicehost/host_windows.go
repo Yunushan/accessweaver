@@ -65,80 +65,78 @@ func Run(file string) error {
 	}
 	stop := make(chan struct{})
 	var once sync.Once
-	var handle uintptr
-	status := func(state, accepted, exit uint32) {
-		s := serviceStatus{Type: 0x10, State: state, Accepted: accepted, Win32Exit: exit, WaitHint: 10000}
-		setStatus.Call(handle, uintptr(unsafe.Pointer(&s)))
-	}
 	handler := syscall.NewCallback(func(control, event uint32, data, context uintptr) uintptr {
 		if control == 1 || control == 5 {
 			once.Do(func() { close(stop) })
 		}
 		return 0
 	})
+	entered, completed := make(chan struct{}), make(chan struct{})
+	var serviceErr error // Published before completed closes.
 	main := syscall.NewCallback(func(argc uint32, argv uintptr) uintptr {
-		handle, _, _ = register.Call(uintptr(unsafe.Pointer(name)), handler, 0)
+		close(entered)
+		defer close(completed)
+		handle, _, registerErr := register.Call(uintptr(unsafe.Pointer(name)), handler, 0)
 		if handle == 0 {
+			serviceErr = fmt.Errorf("register service control handler: %w", registerErr)
 			return 0
 		}
-		status(2, 0, 0)
-		log, e := logfile.Open(cfg.LogPath, 8<<20, 2)
-		if e != nil {
-			status(1, 0, 1)
-			return 0
-		}
-		defer log.Close()
-		finish := func(exit uint32) {
-			if log.Close() != nil {
-				exit = 1
+		status := func(state, checkpoint, exit uint32) error {
+			s := serviceStatus{Type: 0x10, State: state, Win32Exit: exit, Checkpoint: checkpoint}
+			if state == serviceStateRunning {
+				s.Accepted = 5
 			}
-			status(1, 0, exit)
+			if state == serviceStateStartPending || state == serviceStateStopPending {
+				s.WaitHint = 10000
+			}
+			ok, _, statusErr := setStatus.Call(handle, uintptr(unsafe.Pointer(&s)))
+			if ok == 0 {
+				return fmt.Errorf("report service status: %w", statusErr)
+			}
+			return nil
+		}
+		if err := status(serviceStateStartPending, 1, 0); err != nil {
+			serviceErr = errors.Join(err, status(serviceStateStopped, 0, 1))
+			return 0
+		}
+		log, err := logfile.Open(cfg.LogPath, 8<<20, 2)
+		if err != nil {
+			serviceErr = errors.Join(err, status(serviceStateStopped, 0, 1))
+			return 0
 		}
 		cmd := exec.Command(cfg.Binary, cfg.Args...)
 		cmd.Dir = cfg.Directory
-		cmd.Stdout = log
-		cmd.Stderr = log
+		output := &serviceCommandOutput{writer: log}
+		cmd.Stdout = output
+		cmd.Stderr = output
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 		cmd.WaitDelay = 2 * time.Second
-		if e = cmd.Start(); e != nil {
-			fmt.Fprintln(log, e)
-			finish(1)
-			return 0
-		}
-		status(4, 5, 0)
-		done := make(chan error, 1)
-		go func() { done <- cmd.Wait() }()
-		select {
-		case e = <-done:
-			if e != nil {
-				fmt.Fprintln(log, e)
-				finish(1)
-			} else {
-				finish(0)
-			}
-		case <-stop:
-			status(3, 0, 0)
-			stopErr := nativeprocess.TerminateTree(cmd.Process)
-			select {
-			case <-done:
-			case <-time.After(3 * time.Second):
-				stopErr = errors.Join(stopErr, errors.New("owned engine did not exit within stop deadline; process cleanup incomplete"))
-			}
-			if stopErr != nil {
-				fmt.Fprintln(log, stopErr)
-				finish(1)
-			} else {
-				finish(0)
-			}
-		}
+		owner := nativeprocess.NewTreeOwner()
+		// This is a plain Command: no context watcher can bypass this owner.
+		// Bind duplicates the actual process handle before the sole Wait starts.
+		result := runServiceChild(stop, serviceChildOperations{
+			start:  cmd.Start,
+			bind:   func() error { return owner.Bind(cmd.Process) },
+			wait:   func() error { return waitServiceCommandOutput(cmd.Wait, output) },
+			cancel: owner.Cancel,
+			close:  owner.Close,
+		}, status, log)
+		serviceErr = result.err
 		return 0
 	})
 	entries := []tableEntry{{name, main}, {nil, 0}}
 	ok, _, callErr := dispatcher.Call(uintptr(unsafe.Pointer(&entries[0])))
-	if ok == 0 {
-		return fmt.Errorf("connect service dispatcher: %w", callErr)
+	// STOPPED can release the dispatcher before the callback returns. Join its
+	// final error publication; no callback-owned state may outlive Run.
+	select {
+	case <-entered:
+		<-completed
+	default:
 	}
-	return nil
+	if ok == 0 {
+		return errors.Join(fmt.Errorf("connect service dispatcher: %w", callErr), serviceErr)
+	}
+	return serviceErr
 }
 func inside(file, root string) bool {
 	a, e := filepath.Abs(file)

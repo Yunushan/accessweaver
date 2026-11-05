@@ -12,9 +12,11 @@ import (
 	"github.com/Yunushan/accessweaver/internal/nativeprocess"
 )
 
-func configureCommand(cmd *exec.Cmd) {
+func configureCommand(cmd *exec.Cmd) commandOwner {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	cmd.Cancel = func() error { return nativeprocess.TerminateTree(cmd.Process) }
+	owner := nativeprocess.NewTreeOwner()
+	cmd.Cancel = owner.Cancel
+	return owner
 }
 
 func requireAdministrator() error {
