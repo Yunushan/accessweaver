@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/metrics"
 	"strconv"
 	"strings"
 	"testing"
@@ -528,11 +529,28 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 	})
 
 	t.Run("owned-metadata-probes-close-on-success-and-failure", func(t *testing.T) {
-		// Warm up procedure/descriptor caches before comparing native handle
-		// counts. Each pass opens ancestors plus a leaf or missing-leaf probe.
-		if _, err := FromPath(path, true); err != nil {
-			t.Fatal("fixture identity warmup failed")
+		// Warm the fixed runtime metric before a full equivalent probe batch.
+		// Process-wide handle counts also include runtime thread resources;
+		// the numeric diagnostics below do not change the measured assertion.
+		gcSamples := [1]metrics.Sample{{Name: "/gc/cycles/total:gc-cycles"}}
+		readGCCycles := func() uint64 {
+			metrics.Read(gcSamples[:])
+			if gcSamples[0].Value.Kind() != metrics.KindUint64 {
+				t.Fatal("fixture GC-cycle metric unavailable")
+			}
+			return gcSamples[0].Value.Uint64()
 		}
+		_ = readGCCycles()
+		for iteration := 0; iteration < 32; iteration++ {
+			if _, err := FromPath(path, true); err != nil {
+				t.Fatal("fixture identity warmup failed")
+			}
+			if _, err := FromPath(filepath.Join(directory, "missing-probe"), true); err != os.ErrNotExist {
+				t.Fatal("fixture missing identity warmup changed error")
+			}
+		}
+		beforeThreads, _ := runtime.ThreadCreateProfile(nil)
+		beforeGC := readGCCycles()
 		before := identityWindowsHandleCount(t)
 		for iteration := 0; iteration < 32; iteration++ {
 			if _, err := FromPath(path, true); err != nil {
@@ -543,6 +561,9 @@ func TestDisposableWindowsFileIdentityNative(t *testing.T) {
 			}
 		}
 		after := identityWindowsHandleCount(t)
+		afterThreads, _ := runtime.ThreadCreateProfile(nil)
+		afterGC := readGCCycles()
+		t.Logf("metadata probe aggregate counts: handles-before=%d handles-after=%d thread-create-records-before=%d thread-create-records-after=%d GC-cycles-before=%d GC-cycles-after=%d", before, after, beforeThreads, afterThreads, beforeGC, afterGC)
 		if after > before+1 {
 			t.Fatal("owned metadata probe handles accumulated")
 		}

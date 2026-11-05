@@ -264,7 +264,7 @@ func stageRequiredWindowsPolicy(f *ordinaryFixture) (*ordinaryPolicyFixture, err
 	}
 	clear(input)
 	slot := filepath.Join(f.root, "child-slot")
-	sd, err := windows.SecurityDescriptorFromString("O:BAD:P(A;;FA;;;BA)(A;;FA;;;SY)(A;;0x001200a4;;;" + f.sid + ")")
+	sd, err := windows.SecurityDescriptorFromString("O:BAD:P(A;;FA;;;BA)(A;;FA;;;SY)(A;;0x001200a5;;;" + f.sid + ")")
 	if err != nil {
 		return p, errOrdinary
 	}
