@@ -97,14 +97,26 @@ func withNativeFD(file *os.File, operation func(*nativeAPI, int32) error) error 
 // must separately verify ownership, POSIX permissions and object identity.
 func CheckReadOnlyACL(file *os.File) error { return checkACL(file) }
 
+// CheckEmptyACL accepts only an absent or validated zero-entry extended ACL on
+// the held descriptor. Every ACE is rejected, including owner and deny entries.
+// This ACL condition alone does not prove confidentiality: callers must separately
+// verify ownership, POSIX permissions, object type and stable object identity.
+func CheckEmptyACL(file *os.File) error { return withNativeFD(file, checkEmptyACLWithRetry) }
+
 func checkACL(file *os.File) error { return withNativeFD(file, checkACLWithRetry) }
 
 // Only interrupted read-only inspections repeat. Persistent interruptions and
 // all other errors remain blocking; writes/publication are not retried here.
 func checkACLWithRetry(api *nativeAPI, fd int32) error {
+	return checkACLWithRetryPolicy(api, fd, false)
+}
+func checkEmptyACLWithRetry(api *nativeAPI, fd int32) error {
+	return checkACLWithRetryPolicy(api, fd, true)
+}
+func checkACLWithRetryPolicy(api *nativeAPI, fd int32, requireEmpty bool) error {
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
-		err = checkACLDescriptor(api, fd)
+		err = checkACLDescriptorPolicy(api, fd, requireEmpty)
 		if !errors.Is(err, syscall.EINTR) {
 			return err
 		}
@@ -114,7 +126,10 @@ func checkACLWithRetry(api *nativeAPI, fd int32) error {
 	}
 	return err
 }
-func checkACLDescriptor(api *nativeAPI, fd int32) (result error) {
+func checkACLDescriptor(api *nativeAPI, fd int32) error {
+	return checkACLDescriptorPolicy(api, fd, false)
+}
+func checkACLDescriptorPolicy(api *nativeAPI, fd int32, requireEmpty bool) (result error) {
 	acl, code := api.aclGetFD(fd, aclTypeExtended)
 	if acl == 0 {
 		// Apple reports a missing FILESEC_ACL property as ENOENT on a held valid
@@ -143,6 +158,9 @@ func checkACLDescriptor(api *nativeAPI, fd int32) (result error) {
 				return nil
 			}
 			return nativeError("read extended ACL entry", code)
+		}
+		if requireEmpty {
+			return errors.New("extended ACL has entries")
 		}
 		if index == 128 {
 			return errors.New("extended ACL exceeds 128 entries")
