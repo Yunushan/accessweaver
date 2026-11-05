@@ -18,6 +18,51 @@ function validateRecoveryEvidence(recovery){
  for(const key of ['goToWebCrypto','webCryptoToGo','emptySourceGoToWebCrypto','emptySourceWebCryptoToGo','missingSnapshotRejected','replacementPolicySignatureVerified','binarySourceBytesPreserved','wrongKeyAndFloorRejected','changedSourceRejected','expiryRejected','crossProtocolSignatureRejected','changedSignatureRejected','validReviewBeforeAndAfterRejections'])assert.equal(recovery[key],true);
  assert.equal(recovery.machinePolicyMutationAttempted,false);
 }
+function validateDiagnosticsEvidence(report,expected){
+ assert(report&&typeof report==='object'&&!Array.isArray(report),'diagnostics evidence must be an object');
+ assert.deepEqual(Object.keys(report).sort(),['arch','binarySha256','build','checks','loopbackOnly','platform','productionQualificationComplete','settingsChanged','sourceCommit'],'unexpected diagnostics success schema');
+ const platform={windows:'win32',linux:'linux',darwin:'darwin'}[expected.goos];assert(platform,'unsupported diagnostics target');
+ assert.equal(report.platform,platform,'diagnostics evidence differs from native platform');assert.equal(report.arch,expected.goarch);
+ assert.equal(report.sourceCommit,expected.commit);assert.equal(typeof report.binarySha256,'string');assert.match(report.binarySha256,/^[0-9a-f]{64}$/);
+ assert.equal(report.loopbackOnly,true);assert.equal(report.settingsChanged,false);assert.equal(report.productionQualificationComplete,false);
+ const checks=[
+  ['direct loopback TCP','direct','tcp'],
+  ['untrusted TLS certificate','direct','tcp'],
+  ['socks5 tunnel','socks5','tcp'],
+  ['http-connect tunnel','http-connect','tcp'],
+  ['HTTP proxy refusal','http-connect','tcp'],
+  ['direct UDP/STUN','direct','stun'],
+  ['mismatched STUN transaction','direct','stun'],
+  ['bounded UDP timeout','direct','stun'],
+  ['SOCKS5 UDP association','socks5','stun'],
+ ].map(([name,path,transport])=>({name,passed:true,path,transport}));
+ assert(Array.isArray(report.checks),'diagnostics checks must be an array');
+ assert.deepEqual(report.checks,checks,'diagnostics checks must match every fixed successful tuple in order');
+}
+function validateUnixControllerEvidence(report,goos,binarySha256){
+ assert(report&&typeof report==='object'&&!Array.isArray(report),'controller evidence must be an object');
+ assert.deepEqual(Object.keys(report).sort(),['binarySha256','checks','passed','platform'],'unexpected controller success schema');
+ const platform={linux:'Linux',darwin:'Darwin'}[goos];assert(platform,'unsupported Unix controller target');
+ assert.equal(report.platform,platform,'controller evidence differs from native target');
+ assert.equal(report.passed,true,'controller did not report success');
+ assert.equal(typeof report.binarySha256,'string');assert.match(report.binarySha256,/^[0-9a-f]{64}$/);
+ assert.equal(report.binarySha256,binarySha256,'controller binary differs from authenticated archive');
+ const checks=[
+  'duplicate UI rejected while the first controller remains active',
+  'first controller survives duplicate launch',
+  'CLI import rejected while UI owns the root',
+  'rejected import preserves saved profiles',
+  'read-only CLI remains available',
+  'private owner bootstrap bypasses proxies without disclosing a credential',
+  'controller shuts down gracefully',
+  'shutdown removes the private launch credential',
+  'CLI import succeeds after controller shutdown',
+  'post-shutdown import preserves profile contents',
+  'released coordination file remains in place',
+ ];
+ assert(Array.isArray(report.checks),'controller checks must be an array');
+ assert.deepEqual(report.checks,checks,'controller checks must match every fixed successful case in order');
+}
 function validateWindowsDiscoveryEvidence(report){
  assert.equal(report.schemaVersion,1);assert.equal(report.deadlineMilliseconds,45000);
  assert(Number.isSafeInteger(report.probeElapsedMilliseconds)&&report.probeElapsedMilliseconds>=0&&report.probeElapsedMilliseconds<=45000,'discovery exceeded its unchanged deadline');
@@ -48,17 +93,17 @@ function main(){
  const recovery=read('build/managed-policy-checks/recovery-interop-'+nodePlatform+'.json');matchReceipt(receipt,recovery,expected);
  validateRecoveryEvidence(recovery);
  const diagnostics=read('build/packaged-native-checks/diagnostics-'+expected.goos+'-'+expected.goarch+'.json');matchReceipt(receipt,diagnostics,expected);
- assert.equal(diagnostics.loopbackOnly,true);assert.equal(diagnostics.settingsChanged,false);assert.equal(diagnostics.checks.length,9);assert(diagnostics.checks.every(c=>c.passed===true));
+ validateDiagnosticsEvidence(diagnostics,expected);
  if(expected.goos==='windows'){
   const discovery=read('build/packaged-native-checks/discovery-windows-'+expected.goarch+'.json');matchReceipt(receipt,discovery,expected);
   for(const key of ['archiveSha256','manifestSha256','bundleSha256'])assert.equal(discovery[key],receipt[key]);
   validateWindowsDiscoveryEvidence(discovery);
  }
  if(expected.goos!=='windows'){
-  const controller=read('build/packaged-native-checks/controller.json');assert.equal(controller.binarySha256,receipt.binarySha256);assert.equal(controller.passed,true);assert(controller.checks.length>=11);
+  const controller=read('build/packaged-native-checks/controller.json');validateUnixControllerEvidence(controller,expected.goos,receipt.binarySha256);
  }
  const result={schemaVersion:1,sourceCommit:expected.commit,sourceRef:expected.ref,target:receipt.target,binarySha256:receipt.binarySha256,archiveSha256:receipt.archiveSha256,build:receipt.build,authenticatedCandidateExecuted:true,backupAndRecoveryVerified:true,loopbackDiagnosticsVerified:true,unixControllerVerified:expected.goos!=='windows',windowsDiscoveryVerified:expected.goos==='windows',publisherSignatureVerified:false,productionQualificationComplete:false};
  fs.writeFileSync('build/packaged-native-checks/acceptance.json',JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify(result));
 }
-module.exports={matchReceipt,validateRecoveryEvidence,validateWindowsDiscoveryEvidence};
+module.exports={matchReceipt,validateRecoveryEvidence,validateDiagnosticsEvidence,validateUnixControllerEvidence,validateWindowsDiscoveryEvidence};
 if(require.main===module){try{main()}catch(error){console.error(error.message);process.exitCode=1;}}
