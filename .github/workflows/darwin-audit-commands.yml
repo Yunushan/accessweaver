@@ -45,6 +45,16 @@ jobs:
         run: |
           go mod download
           go mod verify
+      - name: Native audit and trust foundations without CGO
+        shell: bash
+        env:
+          ACCESSWEAVER_DISPOSABLE_DARWIN_AUDIT_TEST: '1'
+        run: CGO_ENABLED=0 go test ./internal/audit ./internal/darwintrust -run '^TestDarwin' -count=1
+      - name: Native audit foundations with race detection
+        shell: bash
+        env:
+          ACCESSWEAVER_DISPOSABLE_DARWIN_AUDIT_TEST: '1'
+        run: go test -race ./internal/audit -run '^TestDarwin' -count=1
       - name: Ordinary recorded commands and signed required-policy acceptance
         shell: bash
         env:

@@ -23,7 +23,6 @@ jobs:
   windows-audit-storage:
     uses: ./.github/workflows/windows-audit-storage.yml
   darwin-audit-commands:
-    needs: verify
     uses: ./.github/workflows/darwin-audit-commands.yml
   vulnerabilities:
     name: Go vulnerability checks
