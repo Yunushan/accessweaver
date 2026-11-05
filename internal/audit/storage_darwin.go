@@ -22,7 +22,7 @@ const darwinAuditComponentBytes = 255
 // Directory ancestry may cross the protected System/Data firmlink boundary.
 // These flags are allowed only on ancestors and are retained in each binding.
 // Private final objects always require Flags==0; no flags are ever cleared.
-const darwinAuditAncestorFlags = unix.UF_NODUMP | unix.UF_HIDDEN | unix.SF_RESTRICTED | unix.SF_FIRMLINK
+const darwinAuditAncestorFlags = unix.UF_NODUMP | unix.UF_HIDDEN | unix.SF_RESTRICTED | unix.SF_FIRMLINK | unix.SF_NOUNLINK
 
 // Rejection codes describe only fixed source branches. Their public error
 // text and sentinel identity stay generic; no observed metadata is retained.
@@ -45,7 +45,7 @@ const (
 	darwinAuditRejectDirectoryOwner
 	darwinAuditRejectDirectoryMode
 	darwinAuditRejectPrivateDirectoryFlags
-	darwinAuditRejectAncestorNoUnlink
+	darwinAuditRejectAncestorNoUnlink // Historical d80122f code; protected ancestors now admit this flag.
 	darwinAuditRejectAncestorFlags
 	darwinAuditRejectFirmlinkOwner
 	darwinAuditRejectAncestorACL
@@ -349,9 +349,7 @@ func darwinAuditDirectoryRejection(state darwinAuditFileState, owner uint32, pri
 		return darwinAuditRejected(darwinAuditRejectPrivateDirectoryFlags)
 	}
 	unsupported := state.flags & ^uint32(darwinAuditAncestorFlags)
-	if unsupported == unix.SF_NOUNLINK {
-		return darwinAuditRejected(darwinAuditRejectAncestorNoUnlink)
-	}
+
 	if unsupported != 0 {
 		return darwinAuditRejected(darwinAuditRejectAncestorFlags)
 	}

@@ -790,3 +790,41 @@ func TestDarwinAuditStorageRejectionCodeContract(t *testing.T) {
 		t.Fatal("absent private rejection produced a printable code")
 	}
 }
+
+func TestDarwinAuditStorageProtectedAncestorNoUnlinkPolicy(t *testing.T) {
+	const owner = uint32(1001)
+	ancestor := darwinAuditFileState{mode: unix.S_IFDIR | 0700, links: 1, uid: owner, flags: unix.SF_NOUNLINK}
+	for _, uid := range []uint32{0, owner} {
+		trusted := ancestor
+		trusted.uid = uid
+		if !darwinAuditDirectorySecurity(trusted, owner, false) {
+			t.Fatal("protected no-unlink flag rejected an otherwise trusted ancestor")
+		}
+	}
+	if darwinAuditDirectorySecurity(ancestor, owner, true) {
+		t.Fatal("ancestor compatibility admitted a flagged private directory")
+	}
+	foreign := ancestor
+	foreign.uid = owner + 1
+	writable := ancestor
+	writable.mode |= 0020
+	unsupported := ancestor
+	unsupported.flags |= unix.UF_COMPRESSED
+	userFirmlink := ancestor
+	userFirmlink.flags |= unix.SF_FIRMLINK
+	for _, refused := range []darwinAuditFileState{foreign, writable, unsupported, userFirmlink} {
+		if darwinAuditDirectorySecurity(refused, owner, false) {
+			t.Fatal("no-unlink compatibility bypassed an ancestor authority restriction")
+		}
+	}
+	rootFirmlink := userFirmlink
+	rootFirmlink.uid = 0
+	if !darwinAuditDirectorySecurity(rootFirmlink, owner, false) {
+		t.Fatal("protected root-owned firmlink ancestor rejected")
+	}
+	directory := &darwinAuditDirectory{owner: owner, ancestors: []darwinAuditDirectoryBinding{{state: darwinAuditDirectoryState{id: darwinAuditIdentity{dev: 1, ino: 2}}}}}
+	privateFile := darwinAuditFileState{id: darwinAuditIdentity{dev: 1, ino: 3}, mode: unix.S_IFREG | 0600, links: 1, uid: owner, flags: unix.SF_NOUNLINK}
+	if directory.privateFileSecurity(privateFile, actorKeyName) || directory.privateFileSecurity(privateFile, journalName) {
+		t.Fatal("ancestor compatibility admitted a flagged private data file")
+	}
+}
