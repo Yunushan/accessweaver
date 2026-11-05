@@ -326,7 +326,7 @@ func nativeMissing(err error) bool {
 		errors.Is(err, windows.STATUS_NO_SUCH_FILE) || errors.Is(err, windows.ERROR_FILE_NOT_FOUND) || errors.Is(err, windows.ERROR_PATH_NOT_FOUND)
 }
 
-func (context windowsContext) open(parent windows.Handle, name string, directory bool) (windows.Handle, error) {
+func (context windowsContext) open(parent windows.Handle, name string) (windows.Handle, error) {
 	objectName, err := windows.NewNTUnicodeString(name)
 	if err != nil {
 		return windows.InvalidHandle, ErrUnavailable
@@ -335,10 +335,10 @@ func (context windowsContext) open(parent windows.Handle, name string, directory
 	attributes.Length = uint32(unsafe.Sizeof(attributes))
 	var handle windows.Handle = windows.InvalidHandle
 	var status windows.IO_STATUS_BLOCK
+	// FILE_DIRECTORY_FILE is incompatible with FILE_OPEN_NO_RECALL. Open
+	// metadata without a type restriction, then check the returned handle
+	// before using a root or intermediate component as a directory.
 	options := uint32(windows.FILE_OPEN_REPARSE_POINT | windows.FILE_SYNCHRONOUS_IO_NONALERT | windows.FILE_OPEN_NO_RECALL)
-	if directory {
-		options |= windows.FILE_DIRECTORY_FILE
-	}
 	err = context.call(func() error {
 		return windows.NtCreateFile(&handle, windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE, &attributes, &status, nil, 0,
 			windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, windows.FILE_OPEN, options, 0, 0)
@@ -420,7 +420,7 @@ func fromPath(path string, followLinks bool) (result State, failure error) {
 				return windows.InvalidHandle, nil, ErrUnavailable
 			}
 			if localNativeDiskPath(target+`\`) && !strings.Contains(strings.TrimPrefix(target, `\Device\HarddiskVolume`), `\`) {
-				handle, err := context.open(0, target+`\`, true)
+				handle, err := context.open(0, target+`\`)
 				if err != nil {
 					return windows.InvalidHandle, nil, err
 				}
@@ -482,7 +482,7 @@ func fromPath(path string, followLinks bool) (result State, failure error) {
 		if err != nil {
 			return State{}, ErrUnavailable
 		}
-		handle, err := context.open(stack[len(stack)-1], component, false)
+		handle, err := context.open(stack[len(stack)-1], component)
 		if err != nil {
 			return State{}, err
 		}

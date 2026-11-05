@@ -634,7 +634,7 @@ func identityWindowsRootDiagnostic(t *testing.T, root string) {
 	var status windows.IO_STATUS_BLOCK
 	err = windows.NtCreateFile(&handle, windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE, &attrs, &status, nil, 0,
 		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, windows.FILE_OPEN,
-		windows.FILE_DIRECTORY_FILE|windows.FILE_OPEN_REPARSE_POINT|windows.FILE_SYNCHRONOUS_IO_NONALERT|windows.FILE_OPEN_NO_RECALL, 0, 0)
+		windows.FILE_OPEN_REPARSE_POINT|windows.FILE_SYNCHRONOUS_IO_NONALERT|windows.FILE_OPEN_NO_RECALL, 0, 0)
 	runtime.KeepAlive(name)
 	if handle != 0 && handle != windows.InvalidHandle {
 		defer func() {
