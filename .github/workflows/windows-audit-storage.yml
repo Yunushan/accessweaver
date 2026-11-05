@@ -53,6 +53,13 @@ jobs:
         run: |
           go test ./internal/audit -run '^(TestDisposableWindowsAuditStorageNative|TestWindowsJournal.*|TestWindowsLocal.*)$' -count=1 -v -timeout=10m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Ordinary process identity, profile and cleanup acceptance
+        env:
+          ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_ORDINARY_TEST: '1'
+        shell: pwsh
+        run: |
+          go test ./cmd/accessweaver -run '^TestDisposableWindowsAuditOrdinaryProcess$' -count=1 -v -timeout=4m
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain controlled identity and input receipts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -67,5 +74,13 @@ jobs:
         with:
           name: windows-audit-storage-${{ matrix.goarch }}
           path: build/windows-audit-storage-checks/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain controlled ordinary process receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-audit-ordinary-${{ matrix.goarch }}
+          path: build/windows-audit-ordinary-checks/
           if-no-files-found: error
           retention-days: 14
