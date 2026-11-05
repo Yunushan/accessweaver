@@ -123,6 +123,8 @@ type darwinOrdinaryReply struct {
 	Image         bool
 	Backend       bool
 	Lifecycle     bool
+	AliasCase     uint16
+	AliasCheck    string
 	Authenticated bool `json:"-"`
 }
 
@@ -541,6 +543,7 @@ func ordinaryDarwinWorker() int {
 			signal.Notify(darwinOrdinaryHoldReady, syscall.SIGUSR2)
 			defer signal.Stop(darwinOrdinaryHoldReady)
 			reply.Executed, reply.Passed = runDarwinCommandCases(request)
+			reply.AliasCase, reply.AliasCheck = darwinCommandAliasDiagnostic()
 		}
 	}
 	if lifetime != nil && lifetime.Close() != nil {
@@ -1098,6 +1101,16 @@ func (f *ordinaryDarwinFixture) close() error {
 	}
 	return result
 }
+
+// Diagnostics are source-owned labels only. Never print a wire string before
+// validating its closed vocabulary and binding it to the failed alias case.
+func darwinOrdinaryAliasReplyValid(reply darwinOrdinaryReply) bool {
+	if reply.AliasCase == 0 {
+		return reply.AliasCheck == ""
+	}
+	return reply.Executed&(1<<5) != 0 && reply.Passed&(1<<5) == 0 && len(reply.AliasCheck) <= 32 && darwinCommandAliasCaseLabel(reply.AliasCase) != "" && darwinCommandAliasCheckKnown(reply.AliasCheck)
+}
+
 func (f *ordinaryDarwinFixture) run() (reply darwinOrdinaryReply, failure error) {
 	f.phase = darwinOrdinaryCheckStaging
 	if f.checkOwned() != nil {
@@ -1154,7 +1167,7 @@ func (f *ordinaryDarwinFixture) run() (reply darwinOrdinaryReply, failure error)
 		readErr = errDarwinOrdinary
 	}
 	mask := uint64(1)<<uint(len(darwinCommandCaseIDs)) - 1
-	validReply := reply.Version == 1 && reply.Nonce == f.request.Nonce && reply.PID == f.request.WorkerPID && reply.Executed & ^mask == 0 && reply.Passed & ^reply.Executed == 0
+	validReply := reply.Version == 1 && reply.Nonce == f.request.Nonce && reply.PID == f.request.WorkerPID && reply.Executed & ^mask == 0 && reply.Passed & ^reply.Executed == 0 && darwinOrdinaryAliasReplyValid(reply)
 	if writeErr != nil || readErr != nil || endpointErr != nil || !validReply {
 		// Kill is issued before the sole Wait begins; no released/reused PID race.
 		_ = child.Process.Kill()
@@ -1260,6 +1273,10 @@ func TestDisposableDarwinAuditCommands(t *testing.T) {
 	}
 	reply, runErr := fixture.run()
 	if reply.Authenticated {
+		if reply.AliasCase != 0 {
+			t.Errorf("ordinary Darwin audit alias case: %s", darwinCommandAliasCaseLabel(reply.AliasCase))
+			t.Errorf("ordinary Darwin audit alias check: %s", reply.AliasCheck)
+		}
 		if !reply.Identity {
 			t.Error("ordinary Darwin audit worker identity unavailable")
 		}
@@ -1312,5 +1329,26 @@ func TestDarwinOrdinaryProtocolRejectsAmbiguity(t *testing.T) {
 	discard := &darwinOrdinaryDiscard{remaining: 3}
 	if n, err := discard.Write([]byte("1234")); n != 4 || err != nil || discard.clean() {
 		t.Fatal("ordinary Darwin subprocess output bound lost")
+	}
+}
+
+func TestDarwinOrdinaryAliasReplyRequiresClosedFailedCase(t *testing.T) {
+	valid := darwinOrdinaryReply{Executed: 1 << 5, AliasCase: 1, AliasCheck: "setup"}
+	if !darwinOrdinaryAliasReplyValid(valid) || !darwinOrdinaryAliasReplyValid(darwinOrdinaryReply{}) {
+		t.Fatal("ordinary Darwin closed alias diagnostic refused")
+	}
+	invalid := []darwinOrdinaryReply{
+		{AliasCheck: "setup"},
+		{Executed: 1 << 5, AliasCase: 1},
+		{Executed: 1 << 5, AliasCase: 65535, AliasCheck: "setup"},
+		{Executed: 1 << 5, AliasCase: 1, AliasCheck: "unreviewed-diagnostic"},
+		{Executed: 1 << 5, AliasCase: 1, AliasCheck: strings.Repeat("x", 33)},
+		{AliasCase: 1, AliasCheck: "setup"},
+		{Executed: 1 << 5, Passed: 1 << 5, AliasCase: 1, AliasCheck: "setup"},
+	}
+	for _, reply := range invalid {
+		if darwinOrdinaryAliasReplyValid(reply) {
+			t.Fatal("ordinary Darwin unbound alias diagnostic admitted")
+		}
 	}
 }

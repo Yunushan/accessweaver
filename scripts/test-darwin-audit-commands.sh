@@ -45,6 +45,30 @@ cases = (
 )
 for stage in ('host-context','source-binding','protected-ancestry','protected-source-staging','private-home','policy-preflight','required-policy-install','required-policy-bindings','worker-launch','worker-ipc','signal-lifetime-gate','worker-drain','owned-cleanup','unknown-bootstrap'):
     labels.add('ordinary Darwin audit bootstrap failed: '+stage)
+# Match only the source-defined alias contexts/checks; ordinals and raw
+# observations never leave the anonymous reply or appear in projected output.
+alias_cases = ['scope-setup']
+for action in ('import','ui','export-recorded','run'):
+    sources=['checkpoint-start','checkpoint-end','storage-secret','storage-stream']
+    roles=('output',) if action=='import' else ('output','notice')
+    if action in ('import','run'): sources.append('reviewed-profile')
+    for source in sources:
+        for variant in ('direct','hardlink','case'):
+            for role in roles: alias_cases.append('-'.join((action,source,variant,role)))
+for source in ('engine-image','policy-document','policy-acceptance'):
+    for role in ('output','notice'): alias_cases.append('run-'+source+'-direct-'+role)
+for source in ('controller-scope','profile-scope'):
+    alias_cases.append('run-'+source+'-setup')
+    for variant in ('direct','hardlink','case'):
+        for role in ('output','notice'): alias_cases.append('run-'+source+'-'+variant+'-'+role)
+alias_cases += ['run-policy-coordination-open','run-policy-coordination-direct-output','run-policy-coordination-direct-notice',
+    'run-launch-config-setup','run-launch-config-direct-output','run-launch-config-direct-notice','run-launch-config-restore']
+alias_cases += [action+'-pairwise' for action in ('ui','export-recorded','run')]
+alias_checks = ('setup','source-snapshot','source-read','source-identity','hardlink-create','hardlink-identity','case-identity','source-open',
+    'watchdog','output-identity','output-close','alias-remove','source-rebind','command-result','output-bytes','source-preservation','products',
+    'permission','config-read','config-encode','config-write','config-restore','pairwise-open','pairwise-content')
+for label in alias_cases: labels.add('ordinary Darwin audit alias case: '+label)
+for label in alias_checks: labels.add('ordinary Darwin audit alias check: '+label)
 for name in cases:
     labels.add('ordinary Darwin audit command case failed: '+name)
     labels.add('ordinary Darwin audit command case not executed: '+name)

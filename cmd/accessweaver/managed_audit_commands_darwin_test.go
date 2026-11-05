@@ -45,6 +45,77 @@ var darwinCommandCaseIDs = []string{
 }
 var darwinCommandCloseFailure bool
 
+// Alias diagnostics contain only closed source-known case/check labels. They
+// retain the first failed assertion and never contain native observations.
+var darwinCommandAliasFailure struct {
+	caseIndex uint16
+	check     string
+}
+var darwinCommandAliasCaseIDs = func() []string {
+	ids := []string{"scope-setup"}
+	for _, action := range []string{"import", "ui", "export-recorded", "run"} {
+		sources := []string{"checkpoint-start", "checkpoint-end", "storage-secret", "storage-stream"}
+		roles := []string{"output", "notice"}
+		if action == "import" {
+			roles = roles[:1]
+		}
+		if action == "import" || action == "run" {
+			sources = append(sources, "reviewed-profile")
+		}
+		for _, source := range sources {
+			for _, variant := range []string{"direct", "hardlink", "case"} {
+				for _, role := range roles {
+					ids = append(ids, action+"-"+source+"-"+variant+"-"+role)
+				}
+			}
+		}
+	}
+	for _, source := range []string{"engine-image", "policy-document", "policy-acceptance"} {
+		for _, role := range []string{"output", "notice"} {
+			ids = append(ids, "run-"+source+"-direct-"+role)
+		}
+	}
+	for _, source := range []string{"controller-scope", "profile-scope"} {
+		ids = append(ids, "run-"+source+"-setup")
+		for _, variant := range []string{"direct", "hardlink", "case"} {
+			for _, role := range []string{"output", "notice"} {
+				ids = append(ids, "run-"+source+"-"+variant+"-"+role)
+			}
+		}
+	}
+	ids = append(ids, "run-policy-coordination-open", "run-policy-coordination-direct-output", "run-policy-coordination-direct-notice",
+		"run-launch-config-setup", "run-launch-config-direct-output", "run-launch-config-direct-notice", "run-launch-config-restore")
+	for _, action := range []string{"ui", "export-recorded", "run"} {
+		ids = append(ids, action+"-pairwise")
+	}
+	return ids
+}()
+
+func darwinCommandAliasCaseLabel(index uint16) string {
+	if index == 0 || int(index) > len(darwinCommandAliasCaseIDs) {
+		return ""
+	}
+	return darwinCommandAliasCaseIDs[index-1]
+}
+func darwinCommandAliasCheckKnown(check string) bool {
+	switch check {
+	case "setup", "source-snapshot", "source-read", "source-identity", "hardlink-create", "hardlink-identity", "case-identity", "source-open",
+		"watchdog", "output-identity", "output-close", "alias-remove", "source-rebind", "command-result", "output-bytes", "source-preservation", "products",
+		"permission", "config-read", "config-encode", "config-write", "config-restore", "pairwise-open", "pairwise-content":
+		return true
+	}
+	return false
+}
+func darwinAliasRefuse(index uint16, check string) error {
+	if darwinCommandAliasFailure.caseIndex == 0 && darwinCommandAliasCaseLabel(index) != "" && darwinCommandAliasCheckKnown(check) {
+		darwinCommandAliasFailure.caseIndex, darwinCommandAliasFailure.check = index, check
+	}
+	return errDarwinOrdinary
+}
+func darwinCommandAliasDiagnostic() (uint16, string) {
+	return darwinCommandAliasFailure.caseIndex, darwinCommandAliasFailure.check
+}
+
 const darwinCommandPolicy = "/Library/Preferences/AccessWeaver/installation.json"
 const darwinCommandAcceptance = "/Library/Preferences/AccessWeaver/acceptance.json"
 const darwinCommandCoordination = "/Library/Preferences/.accessweaver-policy.lock"
@@ -1718,19 +1789,19 @@ func darwinAliasExpected(action string) error {
 		return errAuditOutputAlias
 	}
 }
-func darwinAliasAttempt(w *darwinCommandWorker, action, source, variant string, role int) error {
+func darwinAliasAttempt(w *darwinCommandWorker, action, source, variant string, role int, caseIndex uint16) error {
 	before := w.sources()
 	if before == nil {
-		return errDarwinOrdinary
+		return darwinAliasRefuse(caseIndex, "source-snapshot")
 	}
 	extra, err := darwinCommandReadSource(w, source)
 	if err != nil {
-		return errDarwinOrdinary
+		return darwinAliasRefuse(caseIndex, "source-read")
 	}
 	defer clear(extra)
 	sourceState, err := fileidentity.FromPath(source, false)
 	if err != nil || sourceState.Kind != fileidentity.Regular {
-		return errDarwinOrdinary
+		return darwinAliasRefuse(caseIndex, "source-identity")
 	}
 	before[source] = bytes.Clone(extra)
 	path := source
@@ -1755,12 +1826,12 @@ func darwinAliasAttempt(w *darwinCommandWorker, action, source, variant string, 
 		w.manifest().counter++
 		created = filepath.Join(w.base, "output-hardlink-"+strconv.FormatUint(uint64(w.manifest().counter), 10))
 		if os.Link(source, created) != nil {
-			return errDarwinOrdinary
+			return darwinAliasRefuse(caseIndex, "hardlink-create")
 		}
 		path = created
 		state, err := fileidentity.FromPath(created, false)
 		if err != nil || state.ID != sourceState.ID {
-			return errDarwinOrdinary
+			return darwinAliasRefuse(caseIndex, "hardlink-identity")
 		}
 		createdID = state.ID
 	case "case":
@@ -1770,16 +1841,16 @@ func darwinAliasAttempt(w *darwinCommandWorker, action, source, variant string, 
 			return nil
 		}
 		if err != nil || changed.ID != sourceState.ID {
-			return errDarwinOrdinary
+			return darwinAliasRefuse(caseIndex, "case-identity")
 		}
 	case "direct":
 	default:
-		return errDarwinOrdinary
+		return darwinAliasRefuse(caseIndex, "setup")
 	}
 	file, err := os.Open(path)
 	if err != nil {
 		_ = removeAlias()
-		return errDarwinOrdinary
+		return darwinAliasRefuse(caseIndex, "source-open")
 	}
 	id, idErr := fileidentity.FromFile(file)
 	var out, notice []byte
@@ -1796,17 +1867,42 @@ func darwinAliasAttempt(w *darwinCommandWorker, action, source, variant string, 
 	}
 	removeErr := removeAlias()
 	afterState, stateErr := fileidentity.FromPath(source, false)
-	if watchdog || idErr != nil || id.ID != sourceState.ID || closeErr != nil || removeErr != nil || stateErr != nil || afterState.ID != sourceState.ID ||
-		!errors.Is(commandErr, darwinAliasExpected(action)) || len(out) != 0 || len(notice) != 0 || !w.preserved(before) || w.recordProducts() != nil {
-		return errDarwinOrdinary
+	if watchdog {
+		return darwinAliasRefuse(caseIndex, "watchdog")
+	}
+	if idErr != nil || id.ID != sourceState.ID {
+		return darwinAliasRefuse(caseIndex, "output-identity")
+	}
+	if closeErr != nil {
+		return darwinAliasRefuse(caseIndex, "output-close")
+	}
+	if removeErr != nil {
+		return darwinAliasRefuse(caseIndex, "alias-remove")
+	}
+	if stateErr != nil || afterState.ID != sourceState.ID {
+		return darwinAliasRefuse(caseIndex, "source-rebind")
+	}
+	if !errors.Is(commandErr, darwinAliasExpected(action)) {
+		return darwinAliasRefuse(caseIndex, "command-result")
+	}
+	if len(out) != 0 || len(notice) != 0 {
+		return darwinAliasRefuse(caseIndex, "output-bytes")
+	}
+	if !w.preserved(before) {
+		return darwinAliasRefuse(caseIndex, "source-preservation")
+	}
+	if w.recordProducts() != nil {
+		return darwinAliasRefuse(caseIndex, "products")
 	}
 	return nil
 }
 
 func (w *darwinCommandWorker) aliasAdmission() error {
+	caseIndex := uint16(1)
+	nextCase := func() uint16 { caseIndex++; return caseIndex }
 	child, err := w.newStream("aliases")
 	if err != nil {
-		return errDarwinOrdinary
+		return darwinAliasRefuse(caseIndex, "setup")
 	}
 	common := []string{filepath.Join(child.base, "genesis.json"), filepath.Join(child.base, "head.json"), filepath.Join(child.directory, ".actor-key"), filepath.Join(child.directory, "events.journal")}
 	for _, action := range []string{"import", "ui", "export-recorded", "run"} {
@@ -1821,7 +1917,11 @@ func (w *darwinCommandWorker) aliasAdmission() error {
 		for _, source := range sources {
 			for _, variant := range []string{"direct", "hardlink", "case"} {
 				for role := 0; role < roles; role++ {
-					if child.ctx.Err() != nil || darwinAliasAttempt(child, action, source, variant, role) != nil {
+					index := nextCase()
+					if child.ctx.Err() != nil {
+						return darwinAliasRefuse(index, "setup")
+					}
+					if darwinAliasAttempt(child, action, source, variant, role, index) != nil {
 						return errDarwinOrdinary
 					}
 				}
@@ -1830,23 +1930,24 @@ func (w *darwinCommandWorker) aliasAdmission() error {
 	}
 	for _, source := range []string{child.engine, darwinCommandPolicy, darwinCommandAcceptance} {
 		for role := 0; role < 2; role++ {
-			if darwinAliasAttempt(child, "run", source, "direct", role) != nil {
+			if darwinAliasAttempt(child, "run", source, "direct", role, nextCase()) != nil {
 				return errDarwinOrdinary
 			}
 		}
 	}
 	for _, name := range []string{".controller.lock", ".profiles.lock"} {
+		setupCase := nextCase()
 		path := filepath.Join(child.state, name)
 		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
 			if child.ownFile(path, nil) != nil {
-				return errDarwinOrdinary
+				return darwinAliasRefuse(setupCase, "setup")
 			}
 		} else if err != nil || child.record(path) != nil {
-			return errDarwinOrdinary
+			return darwinAliasRefuse(setupCase, "setup")
 		}
 		for _, variant := range []string{"direct", "hardlink", "case"} {
 			for role := 0; role < 2; role++ {
-				if darwinAliasAttempt(child, "run", path, variant, role) != nil {
+				if darwinAliasAttempt(child, "run", path, variant, role, nextCase()) != nil {
 					return errDarwinOrdinary
 				}
 			}
@@ -1854,54 +1955,65 @@ func (w *darwinCommandWorker) aliasAdmission() error {
 	}
 	// A private root-owned coordination file grants no ordinary read descriptor.
 	// Its permission refusal is separate from actual forwarded alias acceptance.
+	coordinationCase := nextCase()
 	coordination, coordinationErr := os.Open(darwinCommandCoordination)
 	if coordinationErr == nil {
 		if coordination.Close() != nil {
-			return errDarwinOrdinary
+			return darwinAliasRefuse(coordinationCase, "output-close")
 		}
 		for role := 0; role < 2; role++ {
-			if darwinAliasAttempt(child, "run", darwinCommandCoordination, "direct", role) != nil {
+			if darwinAliasAttempt(child, "run", darwinCommandCoordination, "direct", role, nextCase()) != nil {
 				return errDarwinOrdinary
 			}
 		}
 	} else if !errors.Is(coordinationErr, os.ErrPermission) {
-		return errDarwinOrdinary
+		return darwinAliasRefuse(coordinationCase, "permission")
+	} else {
+		// The two known direct-alias cases require a readable descriptor.
+		// Reserve their fixed ordinals when the private source denies it.
+		caseIndex += 2
 	}
 	// Config is an explicit first-pass protected input even though this changed
 	// fixture profile is not a signed launch rule. No engine may be launched.
+	configCase := nextCase()
 	configPath := filepath.Join(child.base, "unapproved-config.json")
 	if child.ownFile(configPath, []byte("{}")) != nil {
-		return errDarwinOrdinary
+		return darwinAliasRefuse(configCase, "setup")
 	}
 	original, err := darwinCommandReadDefault(child.profilePath)
 	if err != nil {
-		return errDarwinOrdinary
+		return darwinAliasRefuse(configCase, "config-read")
 	}
 	configured := child.p
 	configured.ConfigPath = configPath
 	configuredBytes, err := json.Marshal(configured)
-	if err != nil || child.put(child.profilePath, configuredBytes) != nil {
-		return errDarwinOrdinary
+	if err != nil {
+		return darwinAliasRefuse(configCase, "config-encode")
+	}
+	if child.put(child.profilePath, configuredBytes) != nil {
+		return darwinAliasRefuse(configCase, "config-write")
 	}
 	for role := 0; role < 2; role++ {
-		if darwinAliasAttempt(child, "run", configPath, "direct", role) != nil {
+		if darwinAliasAttempt(child, "run", configPath, "direct", role, nextCase()) != nil {
 			return errDarwinOrdinary
 		}
 	}
+	restoreCase := nextCase()
 	if child.put(child.profilePath, original) != nil {
-		return errDarwinOrdinary
+		return darwinAliasRefuse(restoreCase, "config-restore")
 	}
 	// Pairwise forwarding targets are independently rejected before any bytes.
 	for _, action := range []string{"ui", "export-recorded", "run"} {
+		pairwiseCase := nextCase()
 		root := child.manifest()
 		root.counter++
 		path := filepath.Join(child.base, "pairwise-"+strconv.FormatUint(uint64(root.counter), 10))
 		if child.ownFile(path, nil) != nil {
-			return errDarwinOrdinary
+			return darwinAliasRefuse(pairwiseCase, "setup")
 		}
 		file, err := os.OpenFile(path, os.O_RDWR, 0)
 		if err != nil {
-			return errDarwinOrdinary
+			return darwinAliasRefuse(pairwiseCase, "pairwise-open")
 		}
 		before := child.sources()
 		out, notice, commandErr, watchdog := darwinAliasInvoke(child, action, file, file)
@@ -1910,13 +2022,32 @@ func (w *darwinCommandWorker) aliasAdmission() error {
 			darwinCommandCloseFailure = true
 		}
 		content, readErr := darwinCommandReadDefault(path)
-		if watchdog || closeErr != nil || readErr != nil || len(content) != 0 || len(out) != 0 || len(notice) != 0 || !errors.Is(commandErr, darwinAliasExpected(action)) || !child.preserved(before) || child.recordProducts() != nil {
-			return errDarwinOrdinary
+		if watchdog {
+			return darwinAliasRefuse(pairwiseCase, "watchdog")
+		}
+		if closeErr != nil {
+			return darwinAliasRefuse(pairwiseCase, "output-close")
+		}
+		if readErr != nil || len(content) != 0 {
+			return darwinAliasRefuse(pairwiseCase, "pairwise-content")
+		}
+		if len(out) != 0 || len(notice) != 0 {
+			return darwinAliasRefuse(pairwiseCase, "output-bytes")
+		}
+		if !errors.Is(commandErr, darwinAliasExpected(action)) {
+			return darwinAliasRefuse(pairwiseCase, "command-result")
+		}
+		if !child.preserved(before) {
+			return darwinAliasRefuse(pairwiseCase, "source-preservation")
+		}
+		if child.recordProducts() != nil {
+			return darwinAliasRefuse(pairwiseCase, "products")
 		}
 	}
 	return nil
 }
 func runDarwinCommandCases(request darwinOrdinaryRequest) (executed, passed uint64) {
+	darwinCommandAliasFailure.caseIndex, darwinCommandAliasFailure.check = 0, ""
 	if os.Getuid() != darwinOrdinaryUID || os.Geteuid() != darwinOrdinaryUID || os.Getgid() != darwinOrdinaryUID || os.Getegid() != darwinOrdinaryUID ||
 		request.Profile.Binary != request.Engine || request.HoldProfile.Binary != request.HoldEngine || len(request.Profile.Args) != 0 || len(request.HoldProfile.Args) != 0 {
 		return 0, 0
