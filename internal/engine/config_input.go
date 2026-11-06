@@ -3,6 +3,7 @@ package engine
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -31,32 +32,49 @@ type configInputFile interface {
 // This is a bounded observed stream, not an immutable snapshot or a binding to
 // an external engine's later reopen of an original configuration pathname.
 func readConfigInput(path string) ([]byte, error) {
+	return readConfigInputContext(context.Background(), path)
+}
+
+func readConfigInputContext(ctx context.Context, path string) ([]byte, error) {
+	if err := preparationContextError(ctx); err != nil {
+		return nil, err
+	}
 	if !filepath.IsAbs(path) {
 		return nil, errors.New("configPath must be an absolute path to a local file")
 	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, &configInputFailure{cause: err}
+		return nil, &configInputFailure{cause: errors.Join(err, preparationContextError(ctx))}
 	}
 	if !info.Mode().IsRegular() || info.Size() > configInputLimit {
 		return nil, errConfigInputSize
 	}
+	if err := preparationContextError(ctx); err != nil {
+		return nil, err
+	}
 	file, err := openConfigInput(path)
 	if err != nil {
-		return nil, &configInputFailure{cause: err}
+		return nil, &configInputFailure{cause: errors.Join(err, preparationContextError(ctx))}
 	}
-	return readOwnedConfigInput(file)
+	return readOwnedConfigInputContext(ctx, file)
 }
 
 // Take ownership immediately, and release no bytes until Close is confirmed.
-func readOwnedConfigInput(file configInputFile) (data []byte, failure error) {
+func readOwnedConfigInput(file configInputFile) ([]byte, error) {
+	return readOwnedConfigInputContext(context.Background(), file)
+}
+
+func readOwnedConfigInputContext(ctx context.Context, file configInputFile) (data []byte, failure error) {
 	defer func() {
 		closeErr := file.Close()
-		if failure != nil || closeErr != nil {
+		if canceled := preparationContextError(ctx); failure != nil || closeErr != nil || canceled != nil {
 			data = nil
-			failure = &configInputFailure{cause: errors.Join(failure, closeErr)}
+			failure = &configInputFailure{cause: errors.Join(failure, closeErr, canceled)}
 		}
 	}()
+	if err := preparationContextError(ctx); err != nil {
+		return nil, err
+	}
 	before, err := file.Stat()
 	if err != nil {
 		return nil, err
@@ -64,12 +82,15 @@ func readOwnedConfigInput(file configInputFile) (data []byte, failure error) {
 	if !before.Mode().IsRegular() || before.Size() > configInputLimit {
 		return nil, errConfigInputSize
 	}
-	data, err = io.ReadAll(io.LimitReader(file, configInputLimit+1))
+	data, err = io.ReadAll(io.LimitReader(preparationReader{ctx: ctx, reader: file}, configInputLimit+1))
 	if err != nil {
 		return nil, err
 	}
 	if len(data) > configInputLimit {
 		return nil, errConfigInputSize
+	}
+	if err := preparationContextError(ctx); err != nil {
+		return nil, err
 	}
 	after, err := file.Stat()
 	if err != nil {

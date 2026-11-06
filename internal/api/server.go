@@ -116,6 +116,15 @@ func failProfile(w http.ResponseWriter, err error, fallback int) {
 	fail(w, status, err.Error())
 }
 
+// Preserve uncertainty/policy precedence while categorizing canceled launch work.
+func failEnginePreparation(w http.ResponseWriter, err error) {
+	status := http.StatusBadRequest
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		status = http.StatusRequestTimeout
+	}
+	failProfile(w, err, status)
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/support", s.support)
@@ -197,9 +206,9 @@ func (s *Server) Handler() http.Handler {
 			fail(w, 400, err.Error())
 			return
 		}
-		plan, err := s.Manager.Preview(p)
+		plan, err := s.Manager.PreviewContext(r.Context(), p)
 		if err != nil {
-			fail(w, 400, err.Error())
+			failEnginePreparation(w, err)
 			return
 		}
 		JSON(w, 200, plan)
@@ -231,8 +240,8 @@ func (s *Server) Handler() http.Handler {
 			fail(w, 409, "profile changed since launch review; reopen the launch preview")
 			return
 		}
-		if err := s.Manager.Start(p); err != nil {
-			failProfile(w, err, http.StatusBadRequest)
+		if err := s.Manager.StartContext(r.Context(), p); err != nil {
+			failEnginePreparation(w, err)
 			return
 		}
 		JSON(w, 200, s.Manager.Snapshot())

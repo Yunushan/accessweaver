@@ -140,7 +140,7 @@ type managerShutdown struct {
 
 type Manager struct {
 	guard                 *managed.Guard
-	opMu                  sync.Mutex // Serializes prepare/start/stop, including generated files.
+	opMu                  operationMutex // Serializes prepare/start/stop, including generated files.
 	mu                    sync.Mutex
 	cmd                   *exec.Cmd
 	run                   *runState
@@ -214,22 +214,39 @@ func (w logWriter) Write(b []byte) (int, error) {
 
 // Start preserves the launch-acceptance contract for existing controller callers.
 func (m *Manager) Start(p profile.Profile) error {
-	_, err := m.StartTracked(p)
+	return m.StartContext(context.Background(), p)
+}
+
+func (m *Manager) StartContext(ctx context.Context, p profile.Profile) error {
+	_, err := m.StartTrackedContext(ctx, p)
 	return err
 }
 
 // StartTracked returns a handle only after the owned process starts successfully.
 // Successful launch is not a connectivity or service-readiness observation.
 func (m *Manager) StartTracked(p profile.Profile) (*Run, error) {
-	return m.startTracked(p, nil)
+	return m.StartTrackedContext(context.Background(), p)
+}
+
+// The caller context controls admission/preparation only. Once Start succeeds,
+// the exact owned Run is returned, even if that caller has canceled meanwhile.
+// Child lifetime remains governed by managed authorization and explicit Stop.
+func (m *Manager) StartTrackedContext(ctx context.Context, p profile.Profile) (*Run, error) {
+	return m.startTrackedContext(ctx, p, nil)
 }
 
 // observedWait is an in-process test observer; it cannot alter process waiting.
 func (m *Manager) startTracked(p profile.Profile, observedWait func()) (*Run, error) {
+	return m.startTrackedContext(context.Background(), p, observedWait)
+}
+
+func (m *Manager) startTrackedContext(caller context.Context, p profile.Profile, observedWait func()) (*Run, error) {
 	if err := m.pendingLifetimeError(); err != nil {
 		return nil, err
 	}
-	m.opMu.Lock()
+	if err := m.opMu.LockContext(caller); err != nil {
+		return nil, err
+	}
 	defer m.opMu.Unlock()
 	if err := m.pendingLifetimeError(); err != nil {
 		return nil, err
@@ -244,8 +261,11 @@ func (m *Manager) startTracked(p profile.Profile, observedWait func()) (*Run, er
 		return nil, errors.New("another engine is running; stop it before starting a new one")
 	}
 	m.mu.Unlock()
-	bin, args, err := prepareWithGuard(p, m.root, m.guard)
+	bin, args, err := prepareWithGuardContext(caller, p, m.root, m.guard)
 	if err != nil {
+		return nil, err
+	}
+	if err := preparationContextError(caller); err != nil {
 		return nil, err
 	}
 	environment, authorization, err := launchPolicyAuthorization(m.guard, p, bin)
@@ -279,6 +299,9 @@ func (m *Manager) startTracked(p profile.Profile, observedWait func()) (*Run, er
 	if factory == nil {
 		factory = prepareProcessLifetime
 	}
+	if err := preparationContextError(caller); err != nil {
+		return nil, err
+	}
 	owner, err := factory(cmd)
 	if err != nil {
 		return nil, err
@@ -296,13 +319,17 @@ func (m *Manager) startTracked(p profile.Profile, observedWait func()) (*Run, er
 	m.mu.Lock()
 	closing, occupied := m.closing, m.cmd != nil
 	m.mu.Unlock()
-	if closing || occupied || ctx.Err() != nil {
+	callerErr := preparationContextError(caller)
+	if closing || occupied || ctx.Err() != nil || callerErr != nil {
 		closeErr := owner.abortStart()
 		if closing {
 			return nil, errors.Join(errors.New("engine manager is shutting down"), closeErr)
 		}
 		if occupied {
 			return nil, errors.Join(errors.New("another engine is running; stop it before starting a new one"), closeErr)
+		}
+		if callerErr != nil {
+			return nil, &preparationCancellation{cause: errors.Join(ctx.Err(), callerErr, closeErr)}
 		}
 		return nil, errors.Join(ctx.Err(), closeErr)
 	}
@@ -568,5 +595,9 @@ func (m *Manager) finishShutdown(shutdown *managerShutdown) {
 }
 
 func (m *Manager) Preview(p profile.Profile) (LaunchPlan, error) {
-	return previewWithGuard(p, m.root, m.guard)
+	return m.PreviewContext(context.Background(), p)
+}
+
+func (m *Manager) PreviewContext(ctx context.Context, p profile.Profile) (LaunchPlan, error) {
+	return previewWithGuardContext(ctx, p, m.root, m.guard)
 }

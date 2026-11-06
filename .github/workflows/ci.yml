@@ -892,13 +892,13 @@ jobs:
         run: go test ./cmd/accessweaver -run '^TestBackup' -count=1 -timeout=3m
       - name: Test profile API read and audit completion contracts
         if: inputs.scope == 'profile-read'
-        run: go test ./internal/api -run '^Test(Profile(Read|Mutation)|AtomicWriteAPI|AuditedProfile(ReadUncertainty|Mutation|AtomicWrite|WriteKeepsCompletedOutcomeWhenResponseReadFails|ActualCRUDAndRevisionRefusal)|AuditedAPIFailClosedBeforeStoreAndAfterUncertainResult|CleanMissingProfileRemainsNotFoundAndCanBeCreated)' -count=1 -timeout=3m
+        run: go test ./internal/api -run '^Test(EnginePreparation|Profile(Read|Mutation)|AtomicWriteAPI|AuditedProfile(ReadUncertainty|Mutation|AtomicWrite|WriteKeepsCompletedOutcomeWhenResponseReadFails|ActualCRUDAndRevisionRefusal)|AuditedAPIFailClosedBeforeStoreAndAfterUncertainResult|CleanMissingProfileRemainsNotFoundAndCanBeCreated)' -count=1 -timeout=3m
       - name: Test profile import read completion contracts
         if: inputs.scope == 'profile-read'
-        run: go test ./cmd/accessweaver -run '^TestAuditImport(Read|Mutation|AtomicWrite)Completion' -count=1 -timeout=3m
+        run: go test ./cmd/accessweaver -run '^Test(AuditImport(Read|Mutation|AtomicWrite)Completion|ForegroundEngine|RecordedEngineLifecycle)' -count=1 -timeout=3m
       - name: Test generated input write completion contracts
         if: inputs.scope == 'profile-read'
-        run: go test ./internal/engine -run '^Test(AtomicWriteGenerated|ExecutableHashCompletion|ConfigInput)' -count=1 -timeout=3m
+        run: go test ./internal/engine -run '^Test(AtomicWriteGenerated|ExecutableHashCompletion|ConfigInput|PreparationContext)' -count=1 -timeout=3m
       - name: Race test backup I/O ownership
         if: runner.os != 'Windows'
         run: |
@@ -911,11 +911,11 @@ jobs:
         if: runner.os != 'Windows' && inputs.scope == 'profile-read'
         run: |
           $ErrorActionPreference = 'Stop'
-          go test -race ./internal/api -run '^Test(Profile(Read|Mutation)|AtomicWriteAPI|AuditedProfile(ReadUncertainty|Mutation|AtomicWrite|WriteKeepsCompletedOutcomeWhenResponseReadFails|ActualCRUDAndRevisionRefusal)|AuditedAPIFailClosedBeforeStoreAndAfterUncertainResult|CleanMissingProfileRemainsNotFoundAndCanBeCreated)' -count=1 -timeout=3m
+          go test -race ./internal/api -run '^Test(EnginePreparation|Profile(Read|Mutation)|AtomicWriteAPI|AuditedProfile(ReadUncertainty|Mutation|AtomicWrite|WriteKeepsCompletedOutcomeWhenResponseReadFails|ActualCRUDAndRevisionRefusal)|AuditedAPIFailClosedBeforeStoreAndAfterUncertainResult|CleanMissingProfileRemainsNotFoundAndCanBeCreated)' -count=1 -timeout=3m
           if ($LASTEXITCODE -ne 0) { throw 'Profile read API race contracts failed' }
-          go test -race ./cmd/accessweaver -run '^TestAuditImport(Read|Mutation|AtomicWrite)Completion' -count=1 -timeout=3m
+          go test -race ./cmd/accessweaver -run '^Test(AuditImport(Read|Mutation|AtomicWrite)Completion|ForegroundEngine|RecordedEngineLifecycle)' -count=1 -timeout=3m
           if ($LASTEXITCODE -ne 0) { throw 'Profile import read completion race contracts failed' }
-          go test -race ./internal/engine -run '^Test(AtomicWriteGenerated|ExecutableHashCompletion|ConfigInput)' -count=1 -timeout=3m
+          go test -race ./internal/engine -run '^Test(AtomicWriteGenerated|ExecutableHashCompletion|ConfigInput|PreparationContext)' -count=1 -timeout=3m
           if ($LASTEXITCODE -ne 0) { throw 'Generated input write completion race contracts failed' }
       - name: Build source-bound CLI and verify independent Web Crypto interoperability
         run: |

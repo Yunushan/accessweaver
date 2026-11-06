@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -34,7 +35,10 @@ func executableBase(path string) string {
 	return strings.TrimSuffix(strings.ToLower(filepath.Base(path)), ".exe")
 }
 
-func binaryFor(p profile.Profile, d Descriptor) (string, error) {
+func binaryForContext(ctx context.Context, p profile.Profile, d Descriptor) (string, error) {
+	if err := preparationContextError(ctx); err != nil {
+		return "", err
+	}
 	bin := strings.TrimSpace(p.Binary)
 	names := d.ExecutablesFor(runtime.GOOS)
 	if bin == "" {
@@ -94,11 +98,14 @@ func binaryFor(p profile.Profile, d Descriptor) (string, error) {
 		return "", errors.New("binary is not executable; check file permissions")
 	}
 	if p.SHA256 != "" {
+		if err := preparationContextError(ctx); err != nil {
+			return "", err
+		}
 		f, err := os.Open(bin)
 		if err != nil {
 			return "", err
 		}
-		digest, err := executableHash(f)
+		digest, err := executableHashContext(ctx, f)
 		if err != nil {
 			return "", err
 		}
@@ -135,15 +142,30 @@ func usesDomainFiles(engine string) bool {
 // Preview does not execute external code, write generated files, or probe the network.
 // Bad schema is an error; missing engine prerequisites are returned as actionable issues.
 func Preview(p profile.Profile, root string) (LaunchPlan, error) {
-	return previewWithGuard(p, root, managed.NewGuard(nil))
+	return PreviewContext(context.Background(), p, root)
+}
+
+func PreviewContext(ctx context.Context, p profile.Profile, root string) (LaunchPlan, error) {
+	return previewWithGuardContext(ctx, p, root, managed.NewGuard(nil))
 }
 func previewWithGuard(p profile.Profile, root string, guard *managed.Guard) (LaunchPlan, error) {
-	plan, _, err := previewWithConfigReader(p, root, guard, readConfigInput)
+	return previewWithGuardContext(context.Background(), p, root, guard)
+}
+
+func previewWithGuardContext(ctx context.Context, p profile.Profile, root string, guard *managed.Guard) (LaunchPlan, error) {
+	plan, _, err := previewWithConfigReaderContext(ctx, p, root, guard, readConfigInputContext)
 	return plan, err
 }
 
 func previewWithConfigReader(p profile.Profile, root string, guard *managed.Guard, readConfig func(string) ([]byte, error)) (LaunchPlan, []byte, error) {
+	return previewWithConfigReaderContext(context.Background(), p, root, guard, func(_ context.Context, path string) ([]byte, error) { return readConfig(path) })
+}
+
+func previewWithConfigReaderContext(ctx context.Context, p profile.Profile, root string, guard *managed.Guard, readConfig func(context.Context, string) ([]byte, error)) (LaunchPlan, []byte, error) {
 	var configData []byte
+	if err := preparationContextError(ctx); err != nil {
+		return LaunchPlan{}, nil, err
+	}
 	plan := LaunchPlan{Engine: p.Engine, Platform: runtime.GOOS, Binary: p.Binary, Args: []string{}, Warnings: []string{}, Issues: []string{}, GeneratedFiles: []string{}}
 	if err := p.Validate(); err != nil {
 		return plan, nil, err
@@ -185,7 +207,10 @@ func previewWithConfigReader(p profile.Profile, root string, guard *managed.Guar
 			}
 		}
 	}
-	bin, binErr := binaryFor(p, d)
+	bin, binErr := binaryForContext(ctx, p, d)
+	if canceled := preparationContextError(ctx, binErr); canceled != nil {
+		return plan, nil, canceled
+	}
 	if binErr != nil {
 		issue(binErr.Error())
 	} else {
@@ -232,7 +257,10 @@ func previewWithConfigReader(p profile.Profile, root string, guard *managed.Guar
 		if p.Engine != "wiresock" && p.Engine != "sing-box" && p.Engine != "xray" {
 			issue("configPath is only supported by WireSock, sing-box and Xray; use native arguments for other engines")
 		} else {
-			configData, err = readConfig(p.ConfigPath)
+			configData, err = readConfig(ctx, p.ConfigPath)
+			if canceled := preparationContextError(ctx, err); canceled != nil {
+				return plan, nil, canceled
+			}
 			if err == nil {
 				err = inspectConfigBytes(p.Engine, configData)
 			}
@@ -249,6 +277,9 @@ func previewWithConfigReader(p profile.Profile, root string, guard *managed.Guar
 	if err := checkLaunchPolicy(guard, p, plan.Binary); err != nil {
 		plan.policyError = err
 		issue(err.Error())
+	}
+	if err := preparationContextError(ctx); err != nil {
+		return plan, nil, err
 	}
 	plan.Ready = len(plan.Issues) == 0
 	return plan, configData, nil
@@ -484,14 +515,28 @@ func adapterArgs(p profile.Profile, base, include, exclude string) ([]string, []
 // Prepare verifies all prerequisites again, then materializes only generated data
 // files. It never evaluates a shell command or changes a system proxy/firewall.
 func Prepare(p profile.Profile, root string) (string, []string, error) {
-	return prepareWithGuard(p, root, managed.NewGuard(nil))
+	return PrepareContext(context.Background(), p, root)
+}
+
+// Cancellation stops preparation at operation boundaries; completed generated
+// writes are retained. It cannot interrupt a native call already in progress.
+func PrepareContext(ctx context.Context, p profile.Profile, root string) (string, []string, error) {
+	return prepareWithGuardContext(ctx, p, root, managed.NewGuard(nil))
 }
 func prepareWithGuard(p profile.Profile, root string, guard *managed.Guard) (string, []string, error) {
-	return prepareWithConfigReader(p, root, guard, readConfigInput)
+	return prepareWithGuardContext(context.Background(), p, root, guard)
+}
+
+func prepareWithGuardContext(ctx context.Context, p profile.Profile, root string, guard *managed.Guard) (string, []string, error) {
+	return prepareWithConfigReaderContext(ctx, p, root, guard, readConfigInputContext)
 }
 
 func prepareWithConfigReader(p profile.Profile, root string, guard *managed.Guard, readConfig func(string) ([]byte, error)) (string, []string, error) {
-	plan, configData, err := previewWithConfigReader(p, root, guard, readConfig)
+	return prepareWithConfigReaderContext(context.Background(), p, root, guard, func(_ context.Context, path string) ([]byte, error) { return readConfig(path) })
+}
+
+func prepareWithConfigReaderContext(ctx context.Context, p profile.Profile, root string, guard *managed.Guard, readConfig func(context.Context, string) ([]byte, error)) (string, []string, error) {
+	plan, configData, err := previewWithConfigReaderContext(ctx, p, root, guard, readConfig)
 	if err != nil {
 		return "", nil, err
 	}
@@ -500,6 +545,9 @@ func prepareWithConfigReader(p profile.Profile, root string, guard *managed.Guar
 	}
 	if !plan.Ready {
 		return "", nil, errors.New(strings.Join(plan.Issues, "; "))
+	}
+	if err := preparationContextError(ctx); err != nil {
+		return "", nil, err
 	}
 	if p.Engine == "wiresock" && len(p.Routing.Applications) > 0 {
 		var lines []string
@@ -511,9 +559,15 @@ func prepareWithConfigReader(p profile.Profile, root string, guard *managed.Guar
 			lines = append(lines, line)
 		}
 		text := strings.TrimRight(strings.Join(lines, "\n"), "\r\n") + "\nAllowedApps = " + strings.Join(p.Routing.Applications, ", ") + "\n"
+		if err := preparationContextError(ctx); err != nil {
+			return "", nil, err
+		}
 		if err := profile.AtomicWrite(filepath.Join(root, "generated", p.ID+"-wiresock.conf"), []byte(text)); err != nil {
 			return "", nil, err
 		}
+	}
+	if err := preparationContextError(ctx); err != nil {
+		return "", nil, err
 	}
 	if !usesDomainFiles(p.Engine) {
 		return plan.Binary, plan.Args, nil
@@ -529,9 +583,15 @@ func prepareWithConfigReader(p profile.Profile, root string, guard *managed.Guar
 		if err != nil {
 			return "", nil, err
 		}
+		if err := preparationContextError(ctx); err != nil {
+			return "", nil, err
+		}
 		if err := profile.AtomicWrite(file, []byte(strings.ToLower(strings.Join(item.values, "\n"))+"\n")); err != nil {
 			return "", nil, err
 		}
+	}
+	if err := preparationContextError(ctx); err != nil {
+		return "", nil, err
 	}
 	return plan.Binary, plan.Args, nil
 }

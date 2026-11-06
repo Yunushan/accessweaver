@@ -141,11 +141,13 @@ func execute(args []string) error {
 		if len(args) != 2 {
 			return errors.New("usage: accessweaver preview PROFILE_ID")
 		}
-		p, err := store.Get(args[1])
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		p, err := store.GetContext(ctx, args[1])
 		if err != nil {
 			return err
 		}
-		plan, err := engine.Preview(p, root)
+		plan, err := engine.PreviewContext(ctx, p, root)
 		if err != nil {
 			return err
 		}
@@ -188,12 +190,12 @@ func execute(args []string) error {
 		if len(args) < 2 {
 			return errors.New("usage: accessweaver run PROFILE_ID")
 		}
-		p, err := store.Get(args[1])
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		p, err := store.GetContext(ctx, args[1])
 		if err != nil {
 			return err
 		}
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
 		return runForegroundEngine(ctx, p, engine.NewManager(root), os.Stdout)
 	default:
 		return fmt.Errorf("unknown command %q; use help", args[0])
@@ -214,7 +216,7 @@ func runForegroundEngine(ctx context.Context, p profile.Profile, manager *engine
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	run, err := manager.StartTracked(p)
+	run, err := manager.StartTrackedContext(ctx, p)
 	if err != nil {
 		return err
 	}
