@@ -35,10 +35,12 @@ foreach($name in $selected){
 if((Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash -cne $sourceHash){throw 'DNS source changed while selecting functions'}
 $ownerPath=[IO.Path]::GetFullPath([IO.Path]::Combine([IO.Path]::GetTempPath(),('accessweaver-dns-contracts-'+[guid]::NewGuid().ToString('N'))))
 $owner=[IO.Directory]::CreateDirectory($ownerPath)
-$ownerCreated=$owner.CreationTimeUtc.Ticks
+$ownerMarker=[IO.Path]::Combine($ownerPath,'.fixture-owner')
+$ownerToken=[guid]::NewGuid().ToString('N')
+[IO.File]::WriteAllText($ownerMarker,$ownerToken,[Text.UTF8Encoding]::new($false))
 $script:checks=0;$script:caseNumber=0
 $script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('absent','absent-entry-idempotence-and-unrelated-preservation','accessweaver-dns-contracts-','add','all-providers-no-plaintext-fallback','ambiguous-adapter','bad-doh','bad-flags','capture-inspection-failure-not-empty','case','confirmed-absent-entry-not-removed-again','confirmed-absent-mode-is-dhcp','current-doh-query-before-effects','dns','doh','duplicate-doh','empty-adapters','empty-static','exact-original-doh-restored','expected-refusal','false','guid-recovery-uses-current-index','invalid-recovery-preflight','legacy-no-doh-recovery-supported','malformed-mode-not-empty','missing-adapter','no-false-restored-event','none','original-snapshot-retained','partial-removal-retains-needed-recovery','profiles','recovery-retry-completes-after-confirmed-inspection','registry-error-not-dhcp','remove','restore-inspection-before-effects','saved-doh-needs-capability','set','snapshot-before-native-effects','source-doh-inspection-failed','source-doh-mutation-failed','source-registry-inspection-failed','source-snapshot-removal-failed','source-snapshot-write-failed','true','unexpected-contract-error','unknown-test-code')
+$script:closedContractCodes=@('absent','absent-entry-idempotence-and-unrelated-preservation','accessweaver-dns-contracts-','add','all-providers-no-plaintext-fallback','ambiguous-adapter','bad-doh','bad-flags','capture-inspection-failure-not-empty','case','confirmed-absent-entry-not-removed-again','confirmed-absent-mode-is-dhcp','current-doh-query-before-effects','dns','doh','duplicate-doh','empty-adapters','empty-static','exact-original-doh-restored','expected-refusal','false','fixture-cleanup-incomplete','guid-recovery-uses-current-index','invalid-recovery-preflight','legacy-no-doh-recovery-supported','malformed-mode-not-empty','missing-adapter','no-false-restored-event','none','original-snapshot-retained','partial-removal-retains-needed-recovery','profiles','recovery-retry-completes-after-confirmed-inspection','registry-error-not-dhcp','remove','restore-inspection-before-effects','saved-doh-needs-capability','set','snapshot-before-native-effects','source-doh-inspection-failed','source-doh-mutation-failed','source-registry-inspection-failed','source-snapshot-removal-failed','source-snapshot-write-failed','true','unexpected-contract-error','unknown-test-code')
 function Assert-DNS([bool]$Condition,[string]$Code){if(-not $Condition){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('DNS contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-DNS([scriptblock]$Operation){$failed=$false;try{& $Operation | Out-Null}catch{$failed=$true};Assert-DNS $failed 'expected-refusal'}
 function New-DNSCase {
@@ -176,19 +178,26 @@ try {
 } finally {
     # One shell owns cleanup. Resolve and verify the explicitly created fixture
     # root before any recursive delete; do not cross to cmd/batch for deletion.
-    $current=Microsoft.PowerShell.Management\Get-Item -LiteralPath $ownerPath -Force -ErrorAction Stop
-    if([IO.Path]::GetFullPath($current.FullName) -cne $ownerPath -or $current.CreationTimeUtc.Ticks -ne $ownerCreated -or ($current.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Changed DNS fixture root retained'}
-    Microsoft.PowerShell.Management\Remove-Item -LiteralPath $ownerPath -Recurse -Force -ErrorAction Stop
-    if($ReportPath){
-        $parent=Microsoft.PowerShell.Management\Get-Item -LiteralPath $reportParent.FullName -Force -ErrorAction Stop
-        if($parent.FullName -cne $reportParent.FullName -or $parent.CreationTimeUtc.Ticks -ne $reportCreated -or ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint) -or [IO.Directory]::GetFileSystemEntries($parent.FullName).Length -ne 0){throw 'Changed contract report parent retained'}
-        $commit=[string]$env:GITHUB_SHA
-        if($commit -and $commit -notmatch '^[0-9a-f]{40}$'){throw 'Contract source identity is invalid'}
-        if($PSVersionTable.PSEdition -notin @('Core','Desktop') -or $script:contractCode -notin $script:closedContractCodes){throw 'Contract output metadata is invalid'}
-        $report=@{schemaVersion=1;sourceCommit=$commit;workflowSHA256=$sourceHash.ToLowerInvariant();fixtureSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();edition=$PSVersionTable.PSEdition;version=$PSVersionTable.PSVersion.ToString();outcome=$script:contractOutcome;code=$script:contractCode;checks=$script:checks;realDnsChanged=$false;nativeDnsQualified=$false}
-        $bytes=[Text.UTF8Encoding]::new($false).GetBytes((Microsoft.PowerShell.Utility\ConvertTo-Json -InputObject $report -Compress))
-        if($bytes.Length -gt 4096){throw 'Contract output exceeds fixed metadata limit'}
-        $stream=[IO.FileStream]::new($ReportPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
-        try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush()}finally{$stream.Dispose()}
+    $bodyOutcome=$script:contractOutcome;$bodyCode=$script:contractCode
+    $script:contractOutcome='failed';$script:contractCode='fixture-cleanup-incomplete'
+    try {
+        $current=Microsoft.PowerShell.Management\Get-Item -LiteralPath $ownerPath -Force -ErrorAction Stop
+        $marker=Microsoft.PowerShell.Management\Get-Item -LiteralPath $ownerMarker -Force -ErrorAction Stop
+        if([IO.Path]::GetFullPath($current.FullName) -cne $ownerPath -or -not $current.PSIsContainer -or ($current.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $marker.PSIsContainer -or ($marker.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $marker.Length -ne 32 -or [IO.File]::ReadAllText($ownerMarker) -cne $ownerToken){throw 'Changed DNS fixture root retained'}
+        Microsoft.PowerShell.Management\Remove-Item -LiteralPath $ownerPath -Recurse -Force -ErrorAction Stop
+        $script:contractOutcome=$bodyOutcome;$script:contractCode=$bodyCode
+    } finally {
+        if($ReportPath){
+            $parent=Microsoft.PowerShell.Management\Get-Item -LiteralPath $reportParent.FullName -Force -ErrorAction Stop
+            if($parent.FullName -cne $reportParent.FullName -or $parent.CreationTimeUtc.Ticks -ne $reportCreated -or ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint) -or [IO.Directory]::GetFileSystemEntries($parent.FullName).Length -ne 0){throw 'Changed contract report parent retained'}
+            $commit=[string]$env:GITHUB_SHA
+            if($commit -and $commit -notmatch '^[0-9a-f]{40}$'){throw 'Contract source identity is invalid'}
+            if($PSVersionTable.PSEdition -notin @('Core','Desktop') -or $script:contractCode -notin $script:closedContractCodes){throw 'Contract output metadata is invalid'}
+            $report=@{schemaVersion=1;sourceCommit=$commit;workflowSHA256=$sourceHash.ToLowerInvariant();fixtureSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();edition=$PSVersionTable.PSEdition;version=$PSVersionTable.PSVersion.ToString();outcome=$script:contractOutcome;code=$script:contractCode;checks=$script:checks;realDnsChanged=$false;nativeDnsQualified=$false}
+            $bytes=[Text.UTF8Encoding]::new($false).GetBytes((Microsoft.PowerShell.Utility\ConvertTo-Json -InputObject $report -Compress))
+            if($bytes.Length -gt 4096){throw 'Contract output exceeds fixed metadata limit'}
+            $stream=[IO.FileStream]::new($ReportPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+            try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush()}finally{$stream.Dispose()}
+        }
     }
 }
