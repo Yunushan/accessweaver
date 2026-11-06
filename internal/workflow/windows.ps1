@@ -27,6 +27,7 @@ $script:mutex = $null
 $script:ownsMutex = $false
 $script:journalState = 'running'
 $script:pendingUninstaller = $null
+$script:externalEffectsPending = $false
 $script:repairProxyReady = $false
 if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-state-ready {0}' -f $script:workflowClock.ElapsedMilliseconds))}
 
@@ -142,6 +143,8 @@ function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[
     }
     try {
         Trace-TaskQueryStage 'start'
+        # A consumed vendor tool exit cannot certify every external side effect.
+        if($r.action -notin @('discover','updates','choose-folder')){$script:externalEffectsPending=$true}
         [void]$p.Start();$started=$true;$p.StandardInput.Close()
         Trace-TaskQueryStage 'started'
         $stdout=New-ToolCapture $p.StandardOutput;$stderr=New-ToolCapture $p.StandardError
@@ -664,8 +667,14 @@ function Assert-ComponentZipBudget([IO.Stream]$stream) {
 function Component-ArchivePlan($zip,[string]$destination) {
     if($zip.Entries.Count -eq 0 -or $zip.Entries.Count -gt 4096){throw 'Component archive must contain between 1 and 4096 entries'}
     $base=[IO.Path]::GetFullPath($destination).TrimEnd('\');No-Reparse $base
+    $baseParent=Split-Path -Parent $base
+    if(-not [IO.Directory]::Exists($base) -and (-not $baseParent -or -not [IO.Directory]::Exists($baseParent))){throw 'Component archive destination parent must already exist'}
+    # Include the extraction root and every implicit parent in the same finite
+    # object budget. Explicit entries keep their separate duplicate-path check.
     $paths=[Collections.Generic.Dictionary[string,bool]]::new([StringComparer]::OrdinalIgnoreCase)
+    $objects=[Collections.Generic.Dictionary[string,bool]]::new([StringComparer]::OrdinalIgnoreCase)
     $plan=[Collections.Generic.List[object]]::new();$total=0L
+    $objects.Add($base,$true);$plan.Add(@{entry=$null;target=$base;directory=$true})
     foreach($entry in $zip.Entries){
         if($entry.Length -gt 2147483648L-$total){throw 'Component archive exceeds 2 GiB'};$total+=$entry.Length
         $name=$entry.FullName.Replace('\','/')
@@ -674,23 +683,34 @@ function Component-ArchivePlan($zip,[string]$destination) {
         $directory=$name.EndsWith('/') -or $mode -eq 0x4000 -or ($entry.ExternalAttributes -band 0x10)
         if($directory -and $entry.Length -ne 0){throw 'Component archive directory contains file data'}
         if(-not $name -or $name.StartsWith('/') -or $name.Contains('//') -or $name -match '[:<>\"|?*\x00-\x1f]'){throw 'Component archive contains an invalid Windows path'}
-        $relative=$name.TrimEnd('/')
-        foreach($part in $relative.Split('/')){
+        $relative=$name.TrimEnd('/');$parts=@($relative.Split('/'))
+        if($parts.Count -gt 32){throw 'Component archive exceeds the 32-level path-depth limit'}
+        foreach($part in $parts){
             $stem=($part -split '[.]',2)[0].TrimEnd(' ')
             if(-not $part -or $part -in @('.','..') -or $part.EndsWith('.') -or $part.EndsWith(' ') -or $stem -match '^(CON|PRN|AUX|NUL|CLOCK[$]|CONIN[$]|CONOUT[$]|COM[1-9\u00b9\u00b2\u00b3]|LPT[1-9\u00b9\u00b2\u00b3])$'){throw 'Component archive contains an ambiguous Windows path'}
         }
         $target=[IO.Path]::GetFullPath((Join-Path $base $relative))
         if(-not (Under $target $base) -or $paths.ContainsKey($target)){throw 'Component archive contains an escaping or duplicate path'}
-        $paths.Add($target,[bool]$directory);$plan.Add(@{entry=$entry;target=$target;directory=[bool]$directory})
+        $paths.Add($target,[bool]$directory)
+        $current=$base
+        for($partIndex=0;$partIndex -lt $parts.Count;$partIndex++){
+            $current=[IO.Path]::GetFullPath((Join-Path $current $parts[$partIndex]))
+            $isDirectory=($partIndex -lt $parts.Count-1) -or [bool]$directory
+            if($objects.ContainsKey($current)){
+                if($objects[$current] -ne $isDirectory){throw 'Component archive file conflicts with a directory path'}
+            }else{
+                if($objects.Count -ge 8192){throw 'Component archive exceeds the 8192-object filesystem limit'}
+                $objects.Add($current,$isDirectory)
+                $plan.Add(@{entry=$(if($isDirectory){$null}else{$entry});target=$current;directory=$isDirectory})
+            }
+        }
     }
+    # Preflight all planned objects before creating even the destination root.
+    # Parent-first plan order also prevents CreateDirectory from introducing
+    # uncounted implicit parents during extraction.
     foreach($item in $plan){
         No-Reparse $item.target
         if((Test-Path -LiteralPath $item.target) -and [bool](Get-Item -LiteralPath $item.target -Force).PSIsContainer -ne $item.directory){throw 'Component archive conflicts with an existing file or directory'}
-        $parent=Split-Path -Parent $item.target
-        while($parent -and $parent -ine $base){
-            if(($paths.ContainsKey($parent) -and -not $paths[$parent]) -or ((Test-Path -LiteralPath $parent) -and -not (Get-Item -LiteralPath $parent -Force).PSIsContainer)){throw 'Component archive file conflicts with a directory path'}
-            $parent=Split-Path -Parent $parent
-        }
     }
     return $plan.ToArray()
 }
@@ -706,7 +726,7 @@ function Expand-Safe([string]$archive,[string]$destination) {
         if(@($plan | Where-Object {$_.target -ieq $inputStream.Name}).Count){throw 'Component archive cannot replace its own container'}
         foreach($item in $plan){
             if($item.directory){[void][IO.Directory]::CreateDirectory($item.target);continue}
-            $parent=Split-Path -Parent $item.target;[void][IO.Directory]::CreateDirectory($parent);No-Reparse $parent
+            $parent=Split-Path -Parent $item.target;No-Reparse $parent
             $temporary=Join-Path $parent ('.accessweaver-extract-'+[guid]::NewGuid().ToString('N')+'.tmp')
             $source=$null;$output=$null;$hasher=$null;$ownsTemporary=$false
             try {
@@ -1209,6 +1229,8 @@ function Start-App([string]$variant) {
     $app=Find-App $variant;if(-not $app){throw 'Application is not installed'};No-Reparse $app
     if([Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0){throw 'Start user applications from the signed-in Windows desktop, not the SYSTEM session'}
     # Explorer brokers the launch in the signed-in desktop user's context.
+    # Its external application lifetime is not owned or certified by this worker.
+    $script:externalEffectsPending=$true
     Start-Process -FilePath (Join-Path $env:SystemRoot 'explorer.exe') -ArgumentList @((Quote-Arg $app)) -WindowStyle Hidden
     $deadline=[DateTime]::UtcNow.AddSeconds(10)
     do{foreach($process in Get-Process -ErrorAction SilentlyContinue){try{if($process.Path -eq $app){Event 'Application process is running in the desktop session';return}}catch{}};Start-Sleep -Milliseconds 500}while([DateTime]::UtcNow -lt $deadline)
@@ -1470,7 +1492,15 @@ function New-WorkflowResultFailureReport([Collections.IDictionary]$Result,[strin
         }catch {}
     }
     $reboot=$Result['rebootRequired'] -is [bool] -and $Result['rebootRequired']
-    return @{reportVersion=1;resultToken=$ResultToken;ok=$false;error='Workflow result reporting failed; inspect process.log and the recovery journal';reportingFailure=$Code;events=@();data=$null;rebootRequired=[bool]$reboot;journal=$journal}
+    $fallback=@{reportVersion=1;resultToken=$ResultToken;ok=$false;error='Workflow result reporting failed; inspect process.log and the recovery journal';reportingFailure=$Code;events=@();data=$null;rebootRequired=[bool]$reboot;journal=$journal}
+    $cleanup=@($Result['finalizationFailures'])
+    if($cleanup.Count -gt 0 -and $cleanup.Count -le 4){
+        $known=$true
+        foreach($failure in $cleanup){if($failure -isnot [string] -or $failure -cnotin @('journal-save','mutex-release','mutex-dispose','uninstaller-start')){$known=$false}}
+        if($known){$fallback.finalizationFailures=$cleanup}
+    }
+    if($Result['externalEffectsPending'] -is [bool] -and $Result['externalEffectsPending']){$fallback.externalEffectsPending=$true}
+    return $fallback
 }
 function Publish-WorkflowResult([string]$Path,[Collections.IDictionary]$Result,[string]$ResultToken,[int]$MaximumBytes=32MB) {
     Assert-WorkflowResultToken $ResultToken
@@ -1487,6 +1517,43 @@ function Publish-WorkflowResult([string]$Path,[Collections.IDictionary]$Result,[
     }
     Write-WorkflowResultBytes $Path $bytes $MaximumBytes
     return $normal
+}
+function Invoke-WorkflowDeferredUninstaller([string]$Path) {
+    # Intentional handoff: completion of the registered product uninstaller is
+    # not observed by this worker. The report always retains that uncertainty.
+    Start-Process -FilePath $Path -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -WindowStyle Hidden
+}
+function Complete-WorkflowFinalization([Collections.IDictionary]$Result,[string]$Path,[string]$ResultToken) {
+    $failures=[Collections.Generic.List[string]]::new()
+    # Every owned cleanup stage is attempted independently. A failed journal
+    # save must not skip mutex release/disposal or bounded result publication.
+    try {Save-Journal}catch {[void]$failures.Add('journal-save')}
+    if($script:mutex){
+        if($script:ownsMutex){
+            try {$script:mutex.ReleaseMutex();$script:ownsMutex=$false}catch {[void]$failures.Add('mutex-release')}
+        }
+        try {$script:mutex.Dispose();$script:mutex=$null}catch {[void]$failures.Add('mutex-dispose')}
+    }
+    if($Result['ok'] -is [bool] -and $Result['ok'] -and $script:pendingUninstaller -and $failures.Count -eq 0){
+        # Mark before the attempt: a launch exception cannot prove that no
+        # detached process was accepted. Never rewrite the machine journal
+        # after releasing the mutex or retry an uncertain native handoff.
+        $script:externalEffectsPending=$true
+        $Result['uninstallerHandoff']='attempted'
+        try {Invoke-WorkflowDeferredUninstaller $script:pendingUninstaller;$Result['uninstallerHandoff']='started'}catch {
+            $Result['uninstallerHandoff']='unconfirmed';[void]$failures.Add('uninstaller-start')
+        }
+    }
+    if($failures.Count){
+        $Result['ok']=$false;$script:journalState='failed'
+        if(-not $Result.Contains('error') -or -not $Result['error']){$Result['error']='Workflow finalization is unconfirmed; inspect the retained result and recovery journal'}
+    }
+    $Result['finalizationFailures']=@($failures.ToArray())
+    $Result['externalEffectsPending']=[bool]$script:externalEffectsPending
+    $Result['events']=@($script:events.ToArray());$Result['rebootRequired']=[bool]$script:rebootRequired;$Result['journal']=$script:journalPath
+    try {
+        if(-not (Publish-WorkflowResult $Path $Result $ResultToken)){$Result['ok']=$false}
+    }catch {$Result['ok']=$false;throw}
 }
 $result=@{ok=$false;events=@();data=$null;rebootRequired=$false;journal=$null}
 try {
@@ -1526,15 +1593,16 @@ try {
     $result.error=$_.Exception.Message
     $script:journalState='failed'
     if($script:dnsTouched -and (Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json'))){try{Restore-DNS}catch{$result.dnsRecoveryError=$_.Exception.Message}}
-    if($r.action -in @('install','auto-install','connect','config','download','dns','refresh','scan','app-install','app-repair')){$result.rollbackErrors=@(Rollback);if(-not $result.rollbackErrors.Count){$script:journalState='rolled-back'}}
+    if($r.action -in @('install','auto-install','connect','config','download','dns','refresh','scan','app-install','app-repair')){
+        $result.rollbackScope='recorded-resources';$result.recordedRollbackComplete=$false
+        $result.rollbackErrors=@(Rollback)
+        if(-not $result.rollbackErrors.Count){
+            $result.recordedRollbackComplete=$true
+            $script:journalState=if($script:externalEffectsPending){'recovery-attempted'}else{'rolled-back'}
+        }
+    }
     Write-Output ('Workflow failed: '+$result.error)
 } finally {
-    Save-Journal
-    if($script:mutex){if($script:ownsMutex){$script:mutex.ReleaseMutex()};$script:mutex.Dispose()}
-    if($result.ok -and $script:pendingUninstaller){try{Start-Process -FilePath $script:pendingUninstaller -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -WindowStyle Hidden}catch{$result.ok=$false;$result.error=$_.Exception.Message;$script:journalState='failed';Save-Journal}}
-    $result.events=@($script:events.ToArray());$result.rebootRequired=$script:rebootRequired;$result.journal=$script:journalPath
-    try {
-        if(-not (Publish-WorkflowResult $inputData.resultPath $result $inputData.resultToken)){$result.ok=$false}
-    }catch {$result.ok=$false;throw}
+    Complete-WorkflowFinalization $result $inputData.resultPath $inputData.resultToken
 }
 if(-not $result.ok){exit 1}

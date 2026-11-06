@@ -587,3 +587,48 @@ test('history fixture: explicit capture, paging, exact detail and private raw ex
   const beforeRestricted=historyReads;restricted=true;await page.reload();await expect(page.locator('.nav-item[data-view="system"]')).toBeDisabled();await expect(page.locator('#history-panel')).toBeHidden();expect(historyReads).toBe(beforeRestricted);
  }finally{releaseA();releaseCapture();}
 });
+
+// Static assets + synthetic API only. No core fixture or native worker.
+test('lifecycle fixture: protected completion tracking and pending admission preserve inspection',async({page},testInfo)=>{
+ const origin='http://127.0.0.1:43103',session='b'.repeat(43),assets=new Map();
+ for(const [route,file,type] of [['/','index.html','text/html'],['/app.js','app.js','text/javascript'],['/locales.js','locales.js','text/javascript'],['/system.js','system.js','text/javascript'],['/app.css','app.css','text/css']])assets.set(route,{body:await fs.readFile(path.join(repo,'web',file)),contentType:type});
+ let status='none',starts=0,reads=0,restricted=false,releaseRead,enteredRead;
+ const heldRead=new Promise(resolve=>releaseRead=resolve),readEntered=new Promise(resolve=>enteredRead=resolve);
+ await page.route('**/*',async route=>{
+  const url=new URL(route.request().url());if(url.origin!==origin){await route.abort();return;}
+  const asset=assets.get(url.pathname);if(asset){await route.fulfill(asset);return;}
+  expect(route.request().headers()['x-accessweaver-token']).toBe(session);
+  if(url.pathname==='/api/bootstrap'){await route.fulfill({json:{platform:'windows',version:'synthetic-lifecycle-ui',profileEditingOnly:restricted}});return;}
+  if(url.pathname==='/api/v1/profiles'){await route.fulfill({status:500,json:{error:'Synthetic profile loading failure'}});return;}
+  if(url.pathname==='/api/v1/engines'){await route.fulfill({json:[]});return;}
+  if(url.pathname==='/api/v1/runtime'){await route.fulfill({json:{state:'stopped',log:[]}});return;}
+  if(url.pathname==='/api/v1/system/history/lifecycle'){
+   reads++;expect(route.request().method()).toBe('GET');expect(url.search).toBe('');
+   if(status==='held'){enteredRead();await heldRead;await route.fulfill({json:{state:'released',jobId:'a'.repeat(48),admissionBlocked:false,protection:'retirement-unavailable'}}).catch(()=>{});return;}
+   if(status==='unavailable'){await route.fulfill({status:503,json:{error:'PRIVATE_SYNTHETIC_DETAIL'}});return;}
+   await route.fulfill({json:{state:status,...(status!=='none'?{jobId:'a'.repeat(48)}:{}),admissionBlocked:['intent','sealed','blocked'].includes(status),protection:'retirement-unavailable'}});return;
+  }
+  if(url.pathname==='/api/v1/system/start'){starts++;expect(route.request().postDataJSON()).toEqual({planId:'synthetic-reviewed-plan',confirm:true});await route.fulfill({status:409,json:{error:'PRIVATE_SYNTHETIC_DETAIL',code:'workflow-lifecycle-pending'}});return;}
+  if(url.pathname==='/api/v1/system/history/page'){await route.fulfill({status:409,json:{error:'Capture required'}});return;}
+  await route.fulfill({status:404,json:{error:'Synthetic route unavailable'}});
+ });
+ const nav=async view=>{const toggle=page.locator('#menu-toggle');if(await toggle.isVisible())await toggle.click();await page.locator('.nav-item[data-view="'+view+'"]').click();};
+ try{
+  await page.goto(origin+'/#accessweaver-session='+session);await expect(page.locator('#connection-notice')).toBeVisible();await nav('system');
+  await expect(page.locator('#history-lifecycle-refresh')).toBeEnabled();expect(reads).toBe(0);
+  await page.locator('#history-lifecycle-refresh').click();await expect(page.locator('#history-lifecycle-status')).toContainText('Legacy evidence remains protected');
+  status='released';await page.locator('#history-lifecycle-refresh').click();await expect(page.locator('#history-lifecycle-status')).toContainText('Vendor cleanup and evidence retirement are not certified');
+  status='unavailable';await page.locator('#history-lifecycle-refresh').click();await expect(page.locator('#history-lifecycle-status')).toContainText('busy or unavailable');await expect(page.locator('#history-lifecycle-job')).toBeEmpty();await expect(page.locator('#history-lifecycle-card')).not.toContainText('PRIVATE_SYNTHETIC_DETAIL');
+  // Explicit synthetic review state exercises the actual click/error path while
+  // profile loading remains failed; no product preview or worker is claimed.
+  await page.evaluate(()=>{$('system-action').value='config';refreshSystemFields();$('system-applications').value='Synthetic retained application';$('system-journal').value='synthetic-recovery.json';systemUI.plan={id:'synthetic-reviewed-plan',ready:true};$('system-consent').checked=true;$('system-consent').disabled=false;$('system-apply').disabled=false;});
+  await page.locator('#system-apply').click();await expect(page.locator('#system-output')).toContainText('Nothing is retried automatically');expect(starts).toBe(1);
+  await expect(page.locator('#system-consent')).not.toBeChecked();await expect(page.locator('#system-applications')).toHaveValue('Synthetic retained application');await expect(page.locator('#system-journal')).toHaveValue('synthetic-recovery.json');await expect(page.locator('#system-apply')).toBeDisabled();await expect(page.locator('#history-panel')).toBeVisible();await expect(page.locator('#system-output')).not.toContainText('PRIVATE_SYNTHETIC_DETAIL');
+  const titles={en:'Completion tracking',tr:'Tamamlanma takibi',ru:'Контроль завершения',es:'Seguimiento de finalización'};
+  for(const [language,title] of Object.entries(titles)){await nav('settings');await page.locator('#settings-language').selectOption(language);await nav('system');await expect(page.locator('#history-lifecycle-title')).toHaveText(title);}
+  await nav('settings');await page.locator('#settings-language').selectOption('en');await nav('system');status='sealed';await page.locator('#history-lifecycle-refresh').click();await expect(page.locator('#history-lifecycle-status')).toContainText('owner release is unconfirmed');
+  await page.locator('#history-lifecycle-card').screenshot({path:testInfo.outputPath('lifecycle-fixture-source-only.png')});
+  status='held';await page.locator('#history-lifecycle-refresh').click();await readEntered;await nav('settings');releaseRead();await nav('system');await expect(page.locator('#history-lifecycle-status')).toContainText('has not been read');await expect(page.locator('#history-lifecycle-job')).toBeEmpty();expect(starts).toBe(1);
+  const before=reads;restricted=true;await page.reload();await expect(page.locator('.nav-item[data-view="system"]')).toBeDisabled();await expect(page.locator('#history-lifecycle-card')).toBeHidden();expect(reads).toBe(before);
+ }finally{releaseRead();}
+});

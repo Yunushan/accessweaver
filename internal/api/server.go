@@ -29,18 +29,19 @@ import (
 )
 
 type Server struct {
-	Policy       *managed.Guard
-	Store        *profile.Store
-	Manager      *engine.Manager
-	Workflows    *workflow.Manager
-	UI           fs.FS
-	Token        string
-	profileAudit *audit.Recorder
-	mutations    mutationGate
-	historyRead  sync.Mutex
-	statusRead   sync.Mutex
-	lifecycleMu  sync.Mutex
-	shutdown     *serverShutdownState
+	Policy        *managed.Guard
+	Store         *profile.Store
+	Manager       *engine.Manager
+	Workflows     *workflow.Manager
+	UI            fs.FS
+	Token         string
+	profileAudit  *audit.Recorder
+	mutations     mutationGate
+	historyRead   sync.Mutex
+	lifecycleRead sync.Mutex
+	statusRead    sync.Mutex
+	lifecycleMu   sync.Mutex
+	shutdown      *serverShutdownState
 }
 
 func New(store *profile.Store, manager *engine.Manager, static fs.FS) (*Server, error) {

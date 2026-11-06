@@ -343,3 +343,37 @@ func TestSystemHistoryBrowserFileExportChecksWriteSyncClose(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemHistoryLifecycleReadOnlyStrictAndPrivate(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "missing")
+	manager := systemHistoryBrowserManager(root)
+	var output bytes.Buffer
+	if err := runSystemHistory(context.Background(), manager, []string{"lifecycle"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	var status workflow.WorkflowLifecycleStatus
+	if json.Unmarshal(output.Bytes(), &status) != nil || status.State != "none" || status.AdmissionBlocked || status.Protection != "retirement-unavailable" {
+		t.Fatal("CLI did not preserve actual uninitialized lifecycle projection")
+	}
+	if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("CLI lifecycle GET initialized missing storage")
+	}
+	for _, args := range [][]string{{"lifecycle", "extra"}, {"lifecycle", "--limit", "1"}, {"lifecycle", "--out", "private"}} {
+		output.Reset()
+		if err := runSystemHistory(context.Background(), manager, args, &output); !errors.Is(err, workflow.ErrHistoryInvalidRequest) || output.Len() != 0 {
+			t.Fatal("CLI lifecycle arguments fell back to broad history")
+		}
+	}
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	private := []byte("PRIVATE_LIFECYCLE_NATIVE_PATH")
+	if err := os.WriteFile(filepath.Join(root, ".workflow-lifecycle.current"), private, 0600); err != nil {
+		t.Fatal(err)
+	}
+	output.Reset()
+	err := runSystemHistory(context.Background(), manager, []string{"lifecycle"}, &output)
+	if !errors.Is(err, workflow.ErrWorkflowLifecyclePending) || err.Error() != workflow.ErrWorkflowLifecyclePending.Error() || strings.Contains(err.Error(), string(private)) || output.Len() != 0 {
+		t.Fatal("uncertain lifecycle CLI status disclosed a private cause or printed clean metadata")
+	}
+}

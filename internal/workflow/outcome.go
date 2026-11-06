@@ -65,7 +65,7 @@ func workflowFinalFailure(cause error) error {
 		return nil
 	}
 	var messages []string
-	for _, category := range []error{ErrWorkflowAdmission, ErrWorkflowExecution, ErrWorkflowResult, ErrWorkflowPersistence, ErrWorkflowCleanup, ErrWorkflowStore, ErrWorkflowBusy} {
+	for _, category := range []error{ErrWorkflowAdmission, ErrWorkflowExecution, ErrWorkflowResult, ErrWorkflowPersistence, ErrWorkflowCleanup, ErrWorkflowStore, ErrWorkflowBusy, ErrWorkflowLifecycle, ErrWorkflowLifecyclePending} {
 		if errors.Is(cause, category) {
 			messages = append(messages, category.Error())
 		}

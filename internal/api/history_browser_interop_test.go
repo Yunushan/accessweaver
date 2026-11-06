@@ -21,8 +21,8 @@ import (
 
 var historyBrowserWireSources = []string{
 	"go.mod", "go.sum",
-	"internal/api/history.go", "internal/api/history_browser.go", "internal/api/history_browser_test.go", "internal/api/history_browser_interop_test.go", "internal/api/server.go", "internal/api/workflow_json.go", "internal/api/workflows.go", "internal/api/audit.go", "internal/api/mutations.go",
-	"internal/workflow/history.go", "internal/workflow/history_capture.go", "internal/workflow/history_index.go", "internal/workflow/history_inventory.go", "internal/workflow/history_record.go", "internal/workflow/history_replace_unix.go", "internal/workflow/history_replace_windows.go", "internal/workflow/manager.go", "internal/workflow/outcome.go", "internal/workflow/output.go", "internal/workflow/result.go", "internal/workflow/store.go",
+	"internal/api/history_lifecycle.go", "internal/api/history.go", "internal/api/history_browser.go", "internal/api/history_browser_test.go", "internal/api/history_browser_interop_test.go", "internal/api/server.go", "internal/api/workflow_json.go", "internal/api/workflows.go", "internal/api/audit.go", "internal/api/mutations.go",
+	"internal/workflow/lifecycle.go", "internal/workflow/lifecycle_manifest.go", "internal/workflow/history.go", "internal/workflow/history_capture.go", "internal/workflow/history_index.go", "internal/workflow/history_inventory.go", "internal/workflow/history_record.go", "internal/workflow/history_replace_unix.go", "internal/workflow/history_replace_windows.go", "internal/workflow/manager.go", "internal/workflow/outcome.go", "internal/workflow/output.go", "internal/workflow/result.go", "internal/workflow/store.go",
 	"web/system.js", "web/app.js", "web/locales.js", "web/index.html", "web/app.css", "web/app.test.cjs",
 }
 
@@ -174,6 +174,11 @@ func TestHistoryBrowserSourceWireInterop(t *testing.T) {
 	}
 	raw := []byte{0xff, '{', 0, 'X'}
 	server := historyBrowserFixture(t, map[string][]byte{canonicalID + ".json": canonical, "wire-malformed.json": raw})
+	lifecycleResponse := request(t, server, http.MethodGet, "/api/v1/system/history/lifecycle", nil, server.Token, "127.0.0.1")
+	var lifecycle workflow.WorkflowLifecycleStatus
+	if lifecycleResponse.Code != http.StatusOK || json.Unmarshal(lifecycleResponse.Body.Bytes(), &lifecycle) != nil || lifecycle.State != "none" || lifecycle.AdmissionBlocked || lifecycle.Protection != "retirement-unavailable" {
+		t.Fatal("history wire lifecycle read did not preserve actual uninitialized metadata")
+	}
 	inventoryResponse := request(t, server, http.MethodPost, "/api/v1/system/history/inventory", map[string]any{}, server.Token, "127.0.0.1")
 	var inventory workflow.HistoryInventory
 	if inventoryResponse.Code != http.StatusOK || json.Unmarshal(inventoryResponse.Body.Bytes(), &inventory) != nil || inventory.Count != 2 {
@@ -211,7 +216,7 @@ func TestHistoryBrowserSourceWireInterop(t *testing.T) {
 	responses := []struct {
 		name     string
 		response *httptest.ResponseRecorder
-	}{{"inventory.json", inventoryResponse}, {"page-first.json", firstResponse}, {"page-last.json", lastResponse}, {"detail.json", detailResponse}, {"raw.bin", rawResponse}}
+	}{{"lifecycle-none.json", lifecycleResponse}, {"inventory.json", inventoryResponse}, {"page-first.json", firstResponse}, {"page-last.json", lastResponse}, {"detail.json", detailResponse}, {"raw.bin", rawResponse}}
 	manifest := historyBrowserWireManifest{SchemaVersion: 1, Sources: sources, Expected: historyBrowserWireExpected{
 		Snapshot: inventory.Snapshot, CanonicalRef: canonicalRow.RecordRef, CanonicalRevision: canonicalRow.Revision, CanonicalID: canonicalID,
 		RawRef: rawRow.RecordRef, RawRevision: rawRow.Revision,
@@ -236,7 +241,7 @@ func TestHistoryBrowserSourceWireInterop(t *testing.T) {
 	write("manifest.json", append(encoded, '\n'))
 	checkRoot()
 	entries, err = os.ReadDir(outputPath)
-	if err != nil || len(entries) != 6 {
+	if err != nil || len(entries) != 7 {
 		t.Fatal("history wire output contains unknown entries; all files retained")
 	}
 }

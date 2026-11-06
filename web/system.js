@@ -81,10 +81,10 @@ function exportSystemRequest(){
   downloadFile(JSON.stringify(request,null,2)+'\n','accessweaver-'+request.action+'-request.json');
 }
 async function applySystem(){
-  if(systemUI.busy||!systemUI.plan?.ready||!$('system-consent').checked)return;
-  systemUI.busy=true;const id=systemUI.plan.id;invalidateSystemPlan();
+  if(systemUI.busy||workflowLifecycleBlocked()||!systemUI.plan?.ready||!$('system-consent').checked)return;
+  systemUI.busy=true;const id=systemUI.plan.id,context=historyContext();invalidateSystemPlan();
   try {const job=await apiRequest('/api/v1/system/start','POST',{planId:id,confirm:true});renderSystemJob(job);pollSystemJob();}
-  catch(error){setTextOutput('system-output',error.message);toast(error.message,true)}finally{systemUI.busy=false}
+  catch(error){if(context!==historyContext()||state.view!=='system')return;if(!handleWorkflowLifecycleAdmission(error)){setTextOutput('system-output',error.message);toast(error.message,true)}}finally{systemUI.busy=false}
 }
 function renderSystemJob(job){
  if(!job?.id)return;
@@ -142,6 +142,44 @@ async function exportSystemReport(kind){
 }
 
 
+
+// Completion tracking is independent of captured pages, current jobs and profile
+// loading. Each response is bound to its session, mode and navigation generation.
+const workflowLifecycleUI={context:'',generation:0,controller:null,loading:false,status:null,admissionBlocked:false,admissionRefused:false,message:'lifecycleNotLoaded',bad:false};
+function workflowLifecycleBlocked(){return workflowLifecycleUI.admissionBlocked===true||workflowLifecycleUI.admissionRefused===true;}
+function lifecycleProjection(value){
+ if(!value||!['none','intent','sealed','released','blocked'].includes(value.state)||typeof value.admissionBlocked!=='boolean'||value.protection!=='retirement-unavailable'||(value.jobId!==undefined&&(typeof value.jobId!=='string'||!/^[a-f0-9]{48}$/.test(value.jobId)))||value.admissionBlocked!==['intent','sealed','blocked'].includes(value.state)||(value.state==='none'&&value.jobId!==undefined)||(['intent','sealed','released'].includes(value.state)&&value.jobId===undefined))throw new Error('historyInvalidResponse');
+ return {state:value.state,admissionBlocked:value.admissionBlocked,protection:value.protection,...(value.jobId?{jobId:value.jobId}:{})};
+}
+function resetWorkflowLifecycle(clearAdmissionRefusal=true){workflowLifecycleUI.controller?.abort();workflowLifecycleUI.controller=null;workflowLifecycleUI.generation++;workflowLifecycleUI.loading=false;workflowLifecycleUI.status=null;workflowLifecycleUI.admissionBlocked=false;if(clearAdmissionRefusal)workflowLifecycleUI.admissionRefused=false;workflowLifecycleUI.message='lifecycleNotLoaded';workflowLifecycleUI.bad=false;renderWorkflowLifecycle();}
+function updateWorkflowLifecycleAvailability(){
+ const context=historyContext();if(context!==workflowLifecycleUI.context){resetWorkflowLifecycle();workflowLifecycleUI.context=context;renderWorkflowLifecycle();}
+ $('history-lifecycle-card').hidden=state.profileEditingOnly;
+ $('history-lifecycle-refresh').disabled=!supportAvailable()||workflowLifecycleUI.loading;
+ $('history-lifecycle-card').setAttribute('aria-busy',String(workflowLifecycleUI.loading));
+ if(workflowLifecycleBlocked())$('system-apply').disabled=true;
+}
+function renderWorkflowLifecycle(){
+ const status=workflowLifecycleUI.status;
+ $('history-lifecycle-status').textContent=t(workflowLifecycleUI.loading?'lifecycleLoading':status?'lifecycleState_'+status.state:workflowLifecycleUI.message);
+ $('history-lifecycle-status').className=workflowLifecycleUI.bad?'hint error':'hint';
+ $('history-lifecycle-job').textContent=status?.jobId?t('lifecycleGeneration')+': '+status.jobId:'';
+ $('history-lifecycle-blocked').hidden=!workflowLifecycleBlocked();
+}
+async function refreshWorkflowLifecycle(){
+ updateWorkflowLifecycleAvailability();if(!supportAvailable()||workflowLifecycleUI.loading)return;
+ const context=historyContext(),generation=++workflowLifecycleUI.generation,controller=new AbortController();workflowLifecycleUI.controller=controller;workflowLifecycleUI.loading=true;renderWorkflowLifecycle();updateWorkflowLifecycleAvailability();
+ const current=()=>context===historyContext()&&generation===workflowLifecycleUI.generation&&state.view==='system'&&supportAvailable();
+ try{const status=lifecycleProjection(await historyRequest('/api/v1/system/history/lifecycle',controller,{maxBytes:4096}));if(!current())return;workflowLifecycleUI.status=status;workflowLifecycleUI.admissionBlocked=status.admissionBlocked;workflowLifecycleUI.bad=false;}
+ catch(error){if(!current())return;workflowLifecycleUI.status=error?.status===409?{state:'blocked',admissionBlocked:true,protection:'retirement-unavailable'}:null;if(error?.status===409)workflowLifecycleUI.admissionBlocked=true;workflowLifecycleUI.message=error?.status===503?'lifecycleBusy':error?.status===408||error?.name==='AbortError'?'lifecycleEnded':'lifecycleUnavailable';workflowLifecycleUI.bad=true;}
+ finally{controller.abort();if(current()){workflowLifecycleUI.loading=false;workflowLifecycleUI.controller=null;renderWorkflowLifecycle();updateWorkflowLifecycleAvailability();}}
+}
+function handleWorkflowLifecycleAdmission(error){
+ if(error?.status!==409||error?.code!=='workflow-lifecycle-pending')return false;
+ invalidateSystemPlan();workflowLifecycleUI.controller?.abort();workflowLifecycleUI.controller=null;workflowLifecycleUI.generation++;workflowLifecycleUI.loading=false;workflowLifecycleUI.admissionRefused=true;workflowLifecycleUI.admissionBlocked=true;workflowLifecycleUI.status={state:'blocked',admissionBlocked:true,protection:'retirement-unavailable'};workflowLifecycleUI.bad=true;historyUI.open=true;updateHistoryAvailability();renderWorkflowLifecycle();
+ setTextOutput('system-output',t('lifecycleAdmissionBlocked'));toast(t('lifecycleAdmissionBlocked'),true);$('history-lifecycle-title').focus();return true;
+}
+
 const historyUI={open:false,context:'',generation:0,listGeneration:0,detailGeneration:0,inventory:null,items:[],cursor:'',nextCursor:'',trail:[],selected:null,job:null,largePreview:false,detailReady:false,rawAvailable:false,message:'historyNoCapture',messageValues:{},bad:false,capturing:false,listing:false,detailing:false,exporting:false,captureController:null,listController:null,detailController:null,exportController:null};
 const historyClassifications=new Set(['canonical','legacy','malformed','oversized','special','unreadable']);
 const historyStates=new Set(['running','succeeded','failed','interrupted','unknown']);
@@ -172,8 +210,9 @@ function historyClearDetail(){historyUI.detailController?.abort();historyUI.expo
 function historyReset(){
  historyStopRequests();historyUI.inventory=null;historyUI.items=[];historyUI.cursor='';historyUI.nextCursor='';historyUI.trail=[];historyClearDetail();historyUI.message='historyNoCapture';historyUI.messageValues={};historyUI.bad=false;
 }
-function historyNavigationChanged(view){if(view!=='system'){historyStopRequests();historyUI.open=false;}}
+function historyNavigationChanged(view){if(view!=='system'){historyStopRequests();historyUI.open=false;resetWorkflowLifecycle(false);}}
 function updateHistoryAvailability(){
+ updateWorkflowLifecycleAvailability();
  const context=historyContext();if(historyUI.context!==context){historyReset();historyUI.context=context;historyUI.open=false;renderHistoryMessage();renderHistoryRows();renderHistoryDetail();}
  $('history-panel').hidden=!historyUI.open||state.profileEditingOnly;
  const available=supportAvailable(),busy=historyUI.capturing||historyUI.listing;
@@ -216,7 +255,7 @@ function renderHistoryDetail(){
  setTextOutput('history-detail',text);$('history-detail-limited').hidden=!limited;
  if(limited)$('history-detail').setAttribute('aria-describedby','history-detail-limited');else $('history-detail').removeAttribute('aria-describedby');
 }
-function refreshHistoryLanguage(){renderHistoryMessage();renderHistoryRows();renderHistoryDetail();updateHistoryAvailability();}
+function refreshHistoryLanguage(){renderWorkflowLifecycle();renderHistoryMessage();renderHistoryRows();renderHistoryDetail();updateHistoryAvailability();}
 function historyError(error){
  if(error?.reportTooLarge)return 'historyCapacity';
  if(error?.status===409){historyUI.inventory=null;historyUI.items=[];historyUI.cursor='';historyUI.nextCursor='';historyUI.trail=[];historyClearDetail();return 'historyCaptureNeeded';}
@@ -312,10 +351,10 @@ $('system-form').addEventListener('submit',event=>{event.preventDefault();previe
 $('system-form').addEventListener('input',invalidateSystemPlan);$('system-form').addEventListener('change',invalidateSystemPlan);
 $('system-engine').addEventListener('change',()=>{renderSystemPresets();refreshSystemFields()});
 $('system-action').addEventListener('change',()=>{refreshSystemFields()});
-$('system-folder').addEventListener('click',async()=>{try{const job=await apiRequest('/api/v1/system/folder','POST',{});systemUI.folderJob=job.id;renderSystemJob(job);pollSystemJob()}catch(e){toast(e.message,true)}});
+$('system-folder').addEventListener('click',async()=>{const context=historyContext();try{const job=await apiRequest('/api/v1/system/folder','POST',{});systemUI.folderJob=job.id;renderSystemJob(job);pollSystemJob()}catch(e){if(context===historyContext()&&state.view==='system'&&!handleWorkflowLifecycleAdmission(e))toast(e.message,true)}});
 $('system-clear-apps').addEventListener('click',()=>{$('system-applications').value='';invalidateSystemPlan()});
 $('system-preset').addEventListener('change',()=>{const p=systemUI.presets[Number($('system-preset').value)];if($('system-preset').value!==''&&p){$('system-args').value=p.args.join('\n');invalidateSystemPlan()}});
-$('system-consent').addEventListener('change',()=>{$('system-apply').disabled=!systemUI.plan?.ready||!$('system-consent').checked});
+$('system-consent').addEventListener('change',()=>{$('system-apply').disabled=!systemUI.plan?.ready||!$('system-consent').checked||workflowLifecycleBlocked()});
 $('system-apply').addEventListener('click',applySystem);
 $('system-export').addEventListener('click',exportSystemRequest);
 $('system-export-status').addEventListener('click',()=>exportSystemReport('status'));
@@ -324,6 +363,7 @@ updateSystemExportButtons();
 $('system-inspect').addEventListener('click',()=>previewSystem({action:'discover'}));
 $('system-cancel').addEventListener('click',async()=>{try{renderSystemJob(await apiRequest('/api/v1/system/cancel','POST',{}))}catch(e){toast(e.message,true)}});
 $('system-history').addEventListener('click',openHistory);
+$('history-lifecycle-refresh').addEventListener('click',refreshWorkflowLifecycle);
 $('history-capture').addEventListener('click',captureHistory);
 $('history-cancel-capture').addEventListener('click',cancelHistoryCapture);
 $('history-refresh').addEventListener('click',()=>loadHistoryPage('',null,[]));

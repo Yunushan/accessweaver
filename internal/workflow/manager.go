@@ -129,6 +129,7 @@ type Manager struct {
 	root                string
 	storeRoot           string
 	openStoreLease      func(string) (workflowStoreLease, error)
+	writeLifecycle      func(string, []byte, string) error
 	storeFailure        error
 	retainedStoreLeases []workflowStoreLease
 	plans               map[string]Plan
@@ -499,6 +500,10 @@ func (m *Manager) Start(id string) (Job, error) {
 	m.mu.Unlock()
 	activeLease, activeErr := m.acquireWorkflowStoreLease(workflowActiveLockName)
 	initialErr := activeErr
+	var lifecycle *workflowLifecycle
+	if initialErr == nil {
+		lifecycle, initialErr = m.beginWorkflowLifecycle(ctx, job, p.Request)
+	}
 	if initialErr == nil {
 		// Contention does not consume a still-reviewed plan. Once this reserved
 		// generation owns the root, its ordinary admission durability proceeds.
@@ -511,10 +516,16 @@ func (m *Manager) Start(id string) (Job, error) {
 		}
 	}
 	if initialErr != nil {
+		preIntentCancellation := lifecycle == nil && (initialErr == context.Canceled || initialErr == context.DeadlineExceeded)
 		admissionCause := initialErr
-		if activeErr == nil {
+		if activeErr == nil && !preIntentCancellation {
 			admissionCause = workflowCause(ErrWorkflowPersistence, admissionCause)
 		}
+		job.State = "failed"
+		job.FinishedAt = time.Now().UTC()
+		job.Error = boundedJobError(initialErr.Error())
+		lifecycleErr := m.sealWorkflowLifecycle(lifecycle, job, workflowFailure(ErrWorkflowAdmission, admissionCause))
+		admissionCause = errors.Join(admissionCause, lifecycleErr)
 		// Sample before internal cancellation, and observe lease cleanup outside
 		// mu. Shutdown keeps this exact reserved completion until both finish.
 		closeErr := m.closeWorkflowStoreLease(activeLease)
@@ -529,9 +540,18 @@ func (m *Manager) Start(id string) (Job, error) {
 		job.Error = boundedJobError(errors.Join(initialErr, closeErr).Error())
 		m.job = job
 		completion.err = workflowFinalFailure(workflowFailure(ErrWorkflowAdmission, admissionCause))
+		if preIntentCancellation && initialErr == context.Canceled && completion.cancelRequested && context.Cause(ctx) == context.Canceled && lifecycleErr == nil && closeErr == nil {
+			// Explicit cancellation refused a still-unwritten generation. All
+			// actual owners closed cleanly; retain Start's canceled refusal but
+			// do not invent persistence/cleanup uncertainty for Shutdown.
+			completion.err = nil
+		}
 		close(done)
-		if errors.Is(initialErr, ErrWorkflowStore) || closeErr != nil {
+		if errors.Is(initialErr, ErrWorkflowStore) || errors.Is(initialErr, ErrWorkflowLifecycle) || closeErr != nil {
 			// New coordination errors never print an underlying OS pathname.
+			return Job{}, completion.err
+		}
+		if preIntentCancellation && managed.IsPolicyError(context.Cause(ctx)) {
 			return Job{}, completion.err
 		}
 		return Job{}, initialErr
@@ -579,6 +599,14 @@ func (m *Manager) Start(id string) (Job, error) {
 			job.Error = boundedJobError("persist result: " + persistErr.Error() + "; " + job.Error)
 			terminalErr = errors.Join(terminalErr, workflowFailure(ErrWorkflowPersistence, persistErr))
 		}
+		// Seal exact persisted record bytes and the bounded local artifact
+		// observation while the original active owner still excludes admission.
+		lifecycleErr := m.sealWorkflowLifecycle(lifecycle, job, terminalErr)
+		if lifecycleErr != nil {
+			job.State = "failed"
+			job.Error = boundedJobError(job.Error + "; seal local lifecycle: " + lifecycleErr.Error())
+			terminalErr = errors.Join(terminalErr, lifecycleErr)
+		}
 		// The lease covers all actual work and attempted terminal persistence.
 		// Its close is observed before in-memory completion publication; never
 		// rewrite the record after releasing an uncertain/closed reservation.
@@ -588,7 +616,16 @@ func (m *Manager) Start(id string) (Job, error) {
 			job.Error = boundedJobError("release workflow store: " + leaseErr.Error() + "; " + job.Error)
 			terminalErr = errors.Join(terminalErr, workflowFailure(ErrWorkflowCleanup, leaseErr))
 		}
-		if cooperative && resultErr == nil && persistErr == nil && leaseErr == nil {
+		var acknowledgementErr error
+		if lifecycleErr == nil && leaseErr == nil {
+			acknowledgementErr = m.acknowledgeWorkflowLifecycle(lifecycle)
+			if acknowledgementErr != nil {
+				job.State = "failed"
+				job.Error = boundedJobError(job.Error + "; acknowledge local release: " + acknowledgementErr.Error())
+				terminalErr = errors.Join(terminalErr, acknowledgementErr)
+			}
+		}
+		if cooperative && resultErr == nil && persistErr == nil && leaseErr == nil && lifecycleErr == nil && acknowledgementErr == nil {
 			terminalErr = nil
 		}
 		m.mu.Lock()
@@ -729,7 +766,7 @@ func execute(ctx context.Context, dir string, r Request) (result json.RawMessage
 	logClosed := false
 	defer func() {
 		if !logClosed {
-			failure = errors.Join(failure, log.Close())
+			failure = errors.Join(failure, workflowFailure(ErrWorkflowCleanup, log.Close()))
 		}
 	}()
 	phase := func(name string) error {
@@ -820,7 +857,7 @@ func execute(ctx context.Context, dir string, r Request) (result json.RawMessage
 	// Wait has joined the context watcher, so every configured Cancel outcome
 	// is now available even if Wait preferred the process ExitError over it.
 	cleanupErr := cancellation.failure()
-	err = errors.Join(runErr, cleanupErr, workflowFailure(ErrWorkflowPersistence, output.failure()), phase("child-exited"), log.Close())
+	err = errors.Join(runErr, cleanupErr, workflowFailure(ErrWorkflowPersistence, output.failure()), phase("child-exited"), workflowFailure(ErrWorkflowCleanup, log.Close()))
 	logClosed = true
 	if err != nil {
 		if contextErr := ctx.Err(); contextErr != nil {

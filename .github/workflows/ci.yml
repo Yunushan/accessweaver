@@ -14,6 +14,7 @@ on:
           - full
           - workflow-store
           - workflow-history
+          - workflow-lifecycle
 
 permissions:
   contents: read
@@ -27,16 +28,16 @@ env:
 
 jobs:
   browser:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
     uses: ./.github/workflows/browser.yml
   windows-audit-storage:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
     uses: ./.github/workflows/windows-audit-storage.yml
   darwin-audit-commands:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
     uses: ./.github/workflows/darwin-audit-commands.yml
   vulnerabilities:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
     name: Go vulnerability checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -96,7 +97,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   test:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
     name: Test (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -408,7 +409,7 @@ jobs:
         shell: bash
         run: test -z "$(gofmt -l cmd internal web)"
   race:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
     name: Race detector (Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -428,7 +429,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   race-arm64:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
     name: Race detector (Linux/arm64)
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
@@ -449,7 +450,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   cross-compile:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
     name: Cross-build (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -473,8 +474,8 @@ jobs:
   # Manual candidate-only fixture check. The regular push/PR/full matrix above
   # stays complete. This does not certify installed or managed endpoints.
   workflow-store:
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.scope == 'workflow-store' || inputs.scope == 'workflow-history') }}
-    name: Workflow ${{ inputs.scope == 'workflow-history' && 'history' || 'store' }} (${{ matrix.goos }}/${{ matrix.goarch }})
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.scope == 'workflow-store' || inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle') }}
+    name: Workflow ${{ inputs.scope == 'workflow-lifecycle' && 'lifecycle' || inputs.scope == 'workflow-history' && 'history' || 'store' }} (${{ matrix.goos }}/${{ matrix.goarch }})
     strategy:
       fail-fast: false
       matrix:
@@ -534,21 +535,21 @@ jobs:
       - name: Test workflow store admission, lifetime and subprocess fixtures
         run: go test ./internal/workflow -run '^TestWorkflowStore' -count=1 -timeout=4m
       - name: Test workflow history inventory and exact records
-        if: ${{ inputs.scope == 'workflow-history' }}
+        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' }}
         run: go test ./internal/workflow -run '^TestWorkflowHistory' -count=1 -timeout=5m
       - name: Test history API and CLI contracts
-        if: ${{ inputs.scope == 'workflow-history' }}
+        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' }}
         run: go test ./internal/api ./cmd/accessweaver -run '^(TestHistoryBrowser|TestSystemHistoryBrowser)' -count=1 -timeout=5m
       - name: Test private history file creation
-        if: ${{ inputs.scope == 'workflow-history' }}
+        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' }}
         run: go test ./internal/privatefile -count=1 -timeout=3m
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        if: ${{ inputs.scope == 'workflow-history' }}
+        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' }}
         with:
           node-version: '26.8.2'
           package-manager-cache: false
       - name: Verify actual Go history responses with desktop source
-        if: ${{ inputs.scope == 'workflow-history' }}
+        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -559,3 +560,41 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'History response producer failed' }
           node web/app.test.cjs
           if ($LASTEXITCODE -ne 0) { throw 'History desktop contract verification failed' }
+      - name: Test workflow lifecycle receipts and worker reports
+        if: ${{ inputs.scope == 'workflow-lifecycle' }}
+        run: go test ./internal/workflow -run '^(TestWorkflowLifecycle|TestWorkerReport)' -count=1 -timeout=5m
+      - name: Test signed history-retirement permission
+        if: ${{ inputs.scope == 'workflow-lifecycle' }}
+        run: go test ./internal/managed -run '^TestHistoryRetirement' -count=1 -timeout=3m
+      - name: Test lifecycle API and CLI status
+        if: ${{ inputs.scope == 'workflow-lifecycle' }}
+        run: go test ./internal/api ./cmd/accessweaver -run '^(TestHistoryLifecycle|TestSystemHistoryLifecycle)' -count=1 -timeout=3m
+      - name: PowerShell7 archive and finalization source contracts
+        if: ${{ inputs.scope == 'workflow-lifecycle' && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./scripts/test-windows-component-archives.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Archive source contracts failed' }
+          $fixture = Join-Path $env:RUNNER_TEMP ('accessweaver-finalizer-' + [Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $fixture -ErrorAction Stop | Out-Null
+          & ./scripts/test-windows-workflow-finalization.ps1 -InteropDirectory $fixture
+          if ($LASTEXITCODE -ne 0) { throw 'Finalizer source producer failed' }
+          $env:ACCESSWEAVER_WORKER_FINALIZATION_INTEROP = $fixture
+          go test ./internal/workflow -run '^TestWorkerReportFinalizationPowerShellInterop$' -count=1 -timeout=2m
+          if ($LASTEXITCODE -ne 0) { throw 'Finalizer report receiver failed' }
+      - name: Windows PowerShell5.1 archive and finalization source contracts
+        if: ${{ inputs.scope == 'workflow-lifecycle' && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stock = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-windows-component-archives.ps1 -RequireWindowsPowerShell
+          if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell archive contracts failed' }
+          $fixture = Join-Path $env:RUNNER_TEMP ('accessweaver-finalizer51-' + [Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $fixture -ErrorAction Stop | Out-Null
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-windows-workflow-finalization.ps1 -RequireWindowsPowerShell -InteropDirectory $fixture
+          if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell finalizer producer failed' }
+          $env:ACCESSWEAVER_WORKER_FINALIZATION_INTEROP = $fixture
+          go test ./internal/workflow -run '^TestWorkerReportFinalizationPowerShellInterop$' -count=1 -timeout=2m
+          if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell finalizer receiver failed' }

@@ -599,8 +599,8 @@ test('history row buttons keep full48hex identity accessible while shortening vi
 
 test('actual Go history wire fixtures satisfy desktop paging, detail and exact raw export',{skip:!process.env.ACCESSWEAVER_HISTORY_INTEROP},async()=>{
  const path=require('node:path'),crypto=require('node:crypto');
- const sources=['go.mod','go.sum','internal/api/history.go','internal/api/history_browser.go','internal/api/history_browser_test.go','internal/api/history_browser_interop_test.go','internal/api/server.go','internal/api/workflow_json.go','internal/api/workflows.go','internal/api/audit.go','internal/api/mutations.go','internal/workflow/history.go','internal/workflow/history_capture.go','internal/workflow/history_index.go','internal/workflow/history_inventory.go','internal/workflow/history_record.go','internal/workflow/history_replace_unix.go','internal/workflow/history_replace_windows.go','internal/workflow/manager.go','internal/workflow/outcome.go','internal/workflow/output.go','internal/workflow/result.go','internal/workflow/store.go','web/system.js','web/app.js','web/locales.js','web/index.html','web/app.css','web/app.test.cjs'];
- const payloadNames=['inventory.json','page-first.json','page-last.json','detail.json','raw.bin'],names=[...payloadNames,'manifest.json'];
+ const sources=['go.mod','go.sum','internal/api/history_lifecycle.go','internal/api/history.go','internal/api/history_browser.go','internal/api/history_browser_test.go','internal/api/history_browser_interop_test.go','internal/api/server.go','internal/api/workflow_json.go','internal/api/workflows.go','internal/api/audit.go','internal/api/mutations.go','internal/workflow/lifecycle.go','internal/workflow/lifecycle_manifest.go','internal/workflow/history.go','internal/workflow/history_capture.go','internal/workflow/history_index.go','internal/workflow/history_inventory.go','internal/workflow/history_record.go','internal/workflow/history_replace_unix.go','internal/workflow/history_replace_windows.go','internal/workflow/manager.go','internal/workflow/outcome.go','internal/workflow/output.go','internal/workflow/result.go','internal/workflow/store.go','web/system.js','web/app.js','web/locales.js','web/index.html','web/app.css','web/app.test.cjs'];
+ const payloadNames=['lifecycle-none.json','inventory.json','page-first.json','page-last.json','detail.json','raw.bin'],names=[...payloadNames,'manifest.json'];
  const directory=path.resolve(process.env.ACCESSWEAVER_HISTORY_INTEROP),repo=path.resolve(__dirname,'..'),hash=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
  const keys=(value,expected)=>assert.deepEqual(Object.keys(value).sort(),[...expected].sort(),'Source interop schema contains unexpected fields');
  const same=(a,b)=>a.dev===b.dev&&a.ino===b.ino;
@@ -642,15 +642,17 @@ test('actual Go history wire fixtures satisfy desktop paging, detail and exact r
  env.context.downloadFile=(data,name,mime)=>downloaded={data,name,mime};
  env.context.fetch=async(target,options)=>{
   const url=new URL(target,'http://localhost');
+  if(url.pathname==='/api/v1/system/history/lifecycle')return new Response(bytes['lifecycle-none.json'],{headers:{'Content-Type':metadata['lifecycle-none.json'].contentType}});
   if(url.pathname==='/api/v1/system/history/inventory'){assert.equal(options.method,'POST');assert.equal(options.body,'{}');return new Response(bytes['inventory.json'],{headers:{'Content-Type':metadata['inventory.json'].contentType}});}
   if(url.pathname==='/api/v1/system/history/page'){const name=url.searchParams.has('cursor')?'page-last.json':'page-first.json';return new Response(bytes[name],{headers:{'Content-Type':metadata[name].contentType}});}
   if(url.pathname==='/api/v1/system/history/records/'+expected.canonicalRef){assert.equal(url.searchParams.get('revision'),expected.canonicalRevision);return new Response(bytes['detail.json'],{headers:{'Content-Type':metadata['detail.json'].contentType}});}
-  // The five-file producer carries canonical detail. This metadata-only reply
+  // The six-payload producer carries canonical detail. This metadata-only reply
   // composes its actual malformed row with the already tested raw-only UI state.
   if(url.pathname==='/api/v1/system/history/records/'+expected.rawRef){assert.equal(url.searchParams.get('revision'),expected.rawRevision);return historyFixtureResponse({record:raw,rawAvailable:true});}
   assert.equal(url.pathname,'/api/v1/system/history/records/'+expected.rawRef+'/export');assert.equal(url.searchParams.get('revision'),expected.rawRevision);
   return new Response(bytes['raw.bin'],{headers:{'Content-Type':metadata['raw.bin'].contentType,'ETag':metadata['raw.bin'].etag,'X-AccessWeaver-Revision':metadata['raw.bin'].xAccessWeaverRevision}});
  };
+ await env.run('refreshWorkflowLifecycle()');assert.equal(env.run('workflowLifecycleUI.status.state'),'none');assert.equal(env.run('workflowLifecycleUI.status.admissionBlocked'),false);
  await env.run('captureHistory()');assert.equal(env.run('historyUI.inventory.snapshot'),expected.snapshot);
  await env.run('historyNextPage()');assert.equal(env.run('historyUI.nextCursor'),'');assert.equal(env.get('history-next').disabled,true);
  const canonicalFirst=first.items[0].recordRef===expected.canonicalRef;if(canonicalFirst)await env.run('historyPreviousPage()');
@@ -659,4 +661,45 @@ test('actual Go history wire fixtures satisfy desktop paging, detail and exact r
  env.put('interopRawRef',expected.rawRef);await env.run('selectHistoryRecord(interopRawRef)');await env.run('exportHistoryRecord()');
  assert.ok(downloaded);assert.equal(downloaded.name,'accessweaver-workflow-record.bin');assert.equal(downloaded.mime,'application/octet-stream');assert.deepEqual(Buffer.from(await downloaded.data.arrayBuffer()),bytes['raw.bin']);
  const after=fs.lstatSync(directory,{bigint:true});assert.ok(same(identity,after),'Source interop root changed');assert.deepEqual(fs.readdirSync(directory).sort(),[...names].sort());
+});
+
+// Local completion metadata source contracts; no workflow/native child runs.
+function lifecycleFixture(state='none'){return {state,admissionBlocked:['intent','sealed','blocked'].includes(state),protection:'retirement-unavailable',...(['intent','sealed','released'].includes(state)?{jobId:'a'.repeat(48)}:{})};}
+test('completion tracking is read-only, localized and independent of profile loading and current-job controls',async()=>{
+ const env=onlineHistory(),requests=[];env.run('state.offline=true;state.profiles=[];systemUI.plan={id:"kept",ready:true};$("system-consent").checked=true;$("system-cancel").disabled=false');
+ assert.equal(env.run('coreAvailable()'),false);env.run('updateHistoryAvailability()');assert.equal(env.get('history-lifecycle-refresh').disabled,false);assert.equal(requests.length,0);
+ env.context.fetch=async(path,options)=>{requests.push({path,options});return historyFixtureResponse(lifecycleFixture('released'))};
+ await env.run('refreshWorkflowLifecycle()');assert.equal(requests.length,1);assert.equal(requests[0].path,'/api/v1/system/history/lifecycle');assert.equal(requests[0].options.method,'GET');assert.equal(requests[0].options.headers['X-AccessWeaver-Token'],'history-session');assert.equal(requests[0].options.redirect,'error');
+ assert.equal(env.run('systemUI.plan.id'),'kept');assert.equal(env.get('system-consent').checked,true);assert.equal(env.get('system-cancel').disabled,false);assert.match(env.get('history-lifecycle-status').textContent,/Vendor cleanup.*not certified/);
+ for(const lang of ['en','tr','ru','es']){env.put('lifecycleLanguage',lang);env.run('state.lang=lifecycleLanguage');for(const state of ['none','intent','sealed','released','blocked']){env.put('projection',lifecycleFixture(state));env.run('workflowLifecycleUI.status=lifecycleProjection(projection);renderWorkflowLifecycle()');assert.notEqual(env.get('history-lifecycle-status').textContent,'lifecycleState_'+state);assert.ok(env.get('history-lifecycle-status').textContent.length>30);}}
+});
+test('completion status refuses contradictory or oversized replies and never keeps an old clean projection after failure',async()=>{
+ const env=onlineHistory();env.context.fetch=async()=>historyFixtureResponse(lifecycleFixture('released'));await env.run('refreshWorkflowLifecycle()');assert.equal(env.run('workflowLifecycleUI.status.state'),'released');
+ for(const response of [{...lifecycleFixture('released'),admissionBlocked:true},{...lifecycleFixture('none'),jobId:'a'.repeat(48)},{...lifecycleFixture('intent'),jobId:'private/path'}, {...lifecycleFixture(),state:'vendor-clean'}]){env.context.fetch=async()=>historyFixtureResponse(response);await env.run('refreshWorkflowLifecycle()');assert.equal(env.run('workflowLifecycleUI.status'),null);assert.match(env.get('history-lifecycle-status').textContent,/could not be verified/);}
+ env.context.fetch=async()=>historyFixtureResponse({private:'PRIVATE_RAW_ERROR'},503);await env.run('refreshWorkflowLifecycle()');assert.equal(env.run('workflowLifecycleUI.status'),null);assert.doesNotMatch(env.get('history-lifecycle-status').textContent,/PRIVATE_RAW_ERROR/);assert.match(env.get('history-lifecycle-status').textContent,/busy or unavailable/);
+ env.context.fetch=async()=>historyFixtureResponse({private:'x'.repeat(5000)});await env.run('refreshWorkflowLifecycle()');assert.equal(env.run('workflowLifecycleUI.status'),null);assert.equal(env.get('system-cancel').disabled,false);
+});
+test('late completion responses cannot cross navigation, session or audited mode generations',async()=>{
+ for(const change of ['state.token="new-session";updateHistoryAvailability()','state.profileEditingOnly=true;updateHistoryAvailability()','state.view="profiles";historyNavigationChanged("profiles")']){
+  const env=onlineHistory();let finish,signal;env.context.fetch=(_path,options)=>{signal=options.signal;return new Promise(resolve=>finish=resolve)};
+  const request=env.run('refreshWorkflowLifecycle()');assert.equal(env.get('history-lifecycle-refresh').disabled,true);env.run(change);assert.equal(signal.aborted,true);assert.match(env.get('history-lifecycle-status').textContent,/has not been read/);finish(historyFixtureResponse(lifecycleFixture('released')));await request;assert.equal(env.run('workflowLifecycleUI.status'),null);assert.doesNotMatch(env.get('history-lifecycle-job').textContent,/[a-f0-9]{48}/);
+ }
+ const env=onlineHistory();let finish;env.context.fetch=()=>new Promise(resolve=>finish=resolve);const old=env.run('refreshWorkflowLifecycle()');env.run('resetWorkflowLifecycle()');env.context.fetch=async()=>historyFixtureResponse(lifecycleFixture('sealed'));await env.run('refreshWorkflowLifecycle()');finish(historyFixtureResponse(lifecycleFixture('released')));await old;assert.equal(env.run('workflowLifecycleUI.status.state'),'sealed');assert.equal(env.get('system-apply').disabled,true);
+});
+test('pending workflow admission preserves inputs, clears consent and exposes inspection without replaying mutations',async()=>{
+ const env=onlineHistory(),calls=[];env.run('systemUI.plan={id:"reviewed",ready:true};$("system-consent").checked=true;$("system-applications").value="private existing folder";$("system-journal").value="recovery.json";$("system-cancel").disabled=false');
+ env.context.fetch=async(path,options)=>{calls.push({path,options});return historyFixtureResponse({error:'PRIVATE_OS_ERROR',code:'workflow-lifecycle-pending'},409)};
+ await env.run('applySystem()');assert.equal(calls.length,1);assert.equal(calls[0].path,'/api/v1/system/start');assert.equal(env.run('systemUI.plan'),null);assert.equal(env.get('system-consent').checked,false);assert.equal(env.get('system-applications').value,'private existing folder');assert.equal(env.get('system-journal').value,'recovery.json');assert.equal(env.get('system-cancel').disabled,false);assert.equal(env.run('historyUI.open'),true);assert.equal(env.run('workflowLifecycleUI.status.state'),'blocked');assert.equal(env.get('system-apply').disabled,true);assert.doesNotMatch(env.get('system-output').textContent,/PRIVATE_OS_ERROR/);assert.match(env.get('system-output').textContent,/Nothing is retried automatically/);
+ await env.run('applySystem()');assert.equal(calls.length,1);env.run('state.view="settings";historyNavigationChanged("settings");state.view="system";updateHistoryAvailability()');assert.equal(env.run('workflowLifecycleBlocked()'),true);env.context.fetch=async()=>historyFixtureResponse(lifecycleFixture('released'));await env.run('refreshWorkflowLifecycle()');assert.equal(env.run('workflowLifecycleUI.status.state'),'released');assert.equal(env.run('workflowLifecycleBlocked()'),true);assert.equal(env.get('history-lifecycle-blocked').hidden,false);env.context.fetch=async()=>historyFixtureResponse({},503);await env.run('refreshWorkflowLifecycle()');assert.equal(env.run('workflowLifecycleBlocked()'),true);assert.equal(env.get('system-apply').disabled,true);env.context.fetch=async()=>historyFixtureResponse({},409);await env.run('refreshWorkflowLifecycle()');assert.equal(env.run('workflowLifecycleUI.status.state'),'blocked');
+});
+test('pending start response from an expired session cannot expose private completion state',async()=>{
+ const env=onlineHistory();env.run('systemUI.plan={id:"reviewed",ready:true};$("system-consent").checked=true');let finish;
+ env.context.fetch=()=>new Promise(resolve=>finish=resolve);const request=env.run('applySystem()');env.run('state.token="new-session";updateHistoryAvailability()');finish(historyFixtureResponse({error:'private',code:'workflow-lifecycle-pending'},409));await request;assert.equal(env.run('workflowLifecycleUI.status'),null);assert.equal(env.run('historyUI.open'),false);assert.doesNotMatch(env.get('system-output').textContent,/private/);
+});
+
+test('an earlier completion read cannot clear a later unresolved admission refusal',async()=>{
+ const env=onlineHistory();let finish;env.run('systemUI.plan={id:"reviewed",ready:true};$("system-consent").checked=true');
+ env.context.fetch=path=>path.endsWith('/lifecycle')?new Promise(resolve=>finish=resolve):Promise.resolve(historyFixtureResponse({code:'workflow-lifecycle-pending',error:'fixed'},409));
+ const read=env.run('refreshWorkflowLifecycle()');await env.run('applySystem()');assert.equal(env.run('workflowLifecycleBlocked()'),true);finish(historyFixtureResponse(lifecycleFixture('released')));await read;
+ assert.equal(env.run('workflowLifecycleUI.status.state'),'blocked');assert.equal(env.run('workflowLifecycleUI.loading'),false);assert.equal(env.get('system-apply').disabled,true);
 });

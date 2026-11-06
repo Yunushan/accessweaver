@@ -105,10 +105,13 @@ func TestWorkflowStoreAcquisitionRetainsShutdownGeneration(t *testing.T) {
 	}
 	f.unblockAll()
 	workflowStoreUnitAwait(t, started, "admission did not join after acquisition release")
-	if err := <-startResult; err != nil {
-		t.Fatal(err)
+	if err := <-startResult; !errors.Is(err, context.Canceled) {
+		t.Fatal("pre-intent cancellation did not refuse the unwritten generation")
 	}
-	workflowStoreUnitAwait(t, m.done, "cancelled acquisition did not finish persistence and release")
+	workflowStoreUnitAwait(t, m.done, "cancelled acquisition did not finish its owned release")
+	if _, err := os.Lstat(filepath.Join(f.root, workflowLifecycleCurrent)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("pre-intent cancellation invented durable lifecycle evidence")
+	}
 	if err := m.Shutdown(context.Background()); err != nil || executed.Load() {
 		t.Fatal("pure cooperative acquisition cancellation executed or lost clean completion")
 	}

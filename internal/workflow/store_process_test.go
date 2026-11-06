@@ -531,12 +531,27 @@ func TestWorkflowStoreProcessCrashReleasesHandlesWithoutDeletingLocks(t *testing
 	workflowStoreSameLocks(t, f.root, identities)
 	retry := f.start(m, plan.ID)
 	f.awaitStart(retry)
-	if retry.err != nil {
-		t.Fatal("OS crash release did not permit subsequent reviewed admission")
+	// The OS released the exact persistent locks, but an interrupted new
+	// lifecycle intent is not evidence of confirmed local completion.
+	if !errors.Is(retry.err, ErrWorkflowLifecyclePending) || !errors.Is(retry.err, ErrWorkflowAdmission) {
+		t.Fatal("unacknowledged crash intent did not refuse subsequent admission")
 	}
 	workflowStoreAwaitDone(t, m)
-	if calls.Load() != 1 || m.TerminalError(plan.ID) != nil {
-		t.Fatal("post-crash source admission did not finish normally")
+	if calls.Load() != 0 {
+		t.Fatal("post-crash review-required admission executed")
+	}
+	lease, err := openWorkflowStoreLease(filepath.Join(f.root, workflowActiveLockName))
+	if err != nil {
+		t.Fatal("actual OS crash release was not independently observable")
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal("crash-release probe did not close")
+	}
+	if _, err := m.History(); err != nil {
+		t.Fatal("interrupted source history became unavailable")
+	}
+	if _, err := m.CaptureHistoryInventory(context.Background()); err != nil {
+		t.Fatal("interrupted source inventory became unavailable")
 	}
 	retained, err := os.ReadFile(oldPath)
 	if err != nil || !bytes.Equal(retained, oldBytes) {

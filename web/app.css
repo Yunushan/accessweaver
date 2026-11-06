@@ -134,3 +134,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @media(max-width:760px){.history-panel .page-heading{display:block}.history-panel .heading-actions{margin-top:12px}.history-table th,.history-table td{padding:10px}.history-record-button{max-width:140px}}
 
 .history-scroll:focus-visible{outline:2px solid var(--primary);outline-offset:3px}
+
+.lifecycle-card { margin-top: 20px; }
+.lifecycle-card h2 { margin: 0; }
+.lifecycle-job { overflow-wrap: anywhere; }

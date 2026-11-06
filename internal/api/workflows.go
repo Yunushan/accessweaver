@@ -15,7 +15,7 @@ func (s *Server) workflowRoutes(mux *http.ServeMux) {
 		}
 		job, err := s.Workflows.Start(plan.ID)
 		if err != nil {
-			failProfile(w, err, http.StatusConflict)
+			failWorkflowStart(w, err)
 			return
 		}
 		workflowJobJSON(w, r, http.StatusAccepted, job)
@@ -30,6 +30,7 @@ func (s *Server) workflowRoutes(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("GET /api/v1/system", s.workflowStatus)
 	mux.HandleFunc("GET /api/v1/system/history", s.workflowHistory)
+	mux.HandleFunc("GET /api/v1/system/history/lifecycle", s.workflowLifecycle)
 	mux.HandleFunc("POST /api/v1/system/history/inventory", s.workflowHistoryInventory)
 	mux.HandleFunc("GET /api/v1/system/history/page", s.workflowHistoryPage)
 	mux.HandleFunc("GET /api/v1/system/history/records/{recordRef}", s.workflowHistoryRecord)
@@ -62,7 +63,7 @@ func (s *Server) workflowRoutes(mux *http.ServeMux) {
 		}
 		job, err := s.Workflows.Start(input.PlanID)
 		if err != nil {
-			failProfile(w, err, http.StatusConflict)
+			failWorkflowStart(w, err)
 			return
 		}
 		workflowJobJSON(w, r, http.StatusAccepted, job)

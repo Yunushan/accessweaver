@@ -47,6 +47,27 @@ func (g *Guard) ProfileMutation(ctx context.Context, mutation string) error {
 	}
 	return nil
 }
+
+// AuthorizeHistoryRetirement reserves a separate policy permission for a future
+// reviewed local history operation. It enables no route, workflow action or
+// deletion by itself. Profile permissions and workflow approvals do not apply.
+func (g *Guard) AuthorizeHistoryRetirement() (*Authorization, error) {
+	a, err := g.authority()
+	if err != nil {
+		return nil, err
+	}
+	if a != nil && !a.verified.Policy.AllowWorkflowHistoryRetirement {
+		return nil, fmt.Errorf("%w: workflow history retirement is disabled", ErrDenied)
+	}
+	authorization := newAuthorization(g, a)
+	// Bind the returned grant to current identity/validity even if the authority
+	// changed after the initial permission read. Default loaders stay native.
+	if err := authorization.Check(); err != nil {
+		return nil, err
+	}
+	return authorization, nil
+}
+
 func (g *Guard) Diagnostics() error {
 	_, err := g.AuthorizeDiagnostics()
 	return err

@@ -27,7 +27,7 @@ func parseSystemHistory(args []string) (systemHistoryRequest, error) {
 	}
 	request.operation = args[0]
 	switch args[0] {
-	case "capture":
+	case "capture", "lifecycle":
 		if len(args) != 1 {
 			return request, workflow.ErrHistoryInvalidRequest
 		}
@@ -121,6 +121,10 @@ func systemHistoryError(err error) error {
 	switch {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		message = "workflow history request ended before completion"
+	case errors.Is(err, workflow.ErrWorkflowLifecyclePending):
+		message = workflow.ErrWorkflowLifecyclePending.Error()
+	case errors.Is(err, workflow.ErrWorkflowLifecycle):
+		message = workflow.ErrWorkflowLifecycle.Error()
 	case errors.Is(err, workflow.ErrHistoryInvalidRequest):
 		message = workflow.ErrHistoryInvalidRequest.Error()
 	case errors.Is(err, workflow.ErrHistoryInventoryNeeded):
@@ -157,6 +161,12 @@ func runSystemHistory(ctx context.Context, manager *workflow.Manager, args []str
 		return systemHistoryError(err)
 	}
 	switch request.operation {
+	case "lifecycle":
+		status, err := manager.LifecycleStatus(ctx)
+		if err != nil {
+			return systemHistoryError(err)
+		}
+		return systemHistoryError(writeSystemHistoryMetadata(out, status))
 	case "capture":
 		inventory, err := manager.CaptureHistoryInventory(ctx)
 		if err != nil {

@@ -11,6 +11,7 @@ Inventory entries include ordinary record files, job working directories and unk
 Bare `system history` keeps the existing complete JSON-array export, filename order and resource limits. The additive commands are:
 
 ```text
+system history lifecycle
 system history capture
 system history list [--limit N] [--snapshot SNAPSHOT] [--cursor CURSOR]
 system history get REF --revision REVISION
@@ -32,6 +33,14 @@ accessweaver.exe system history export $record.recordRef --revision $record.revi
 `--out` creates a new private file exclusively and refuses an existing destination. Windows creates a protected current-user/SYSTEM DACL before any payload write. Current macOS direct-file export requires a local APFS filesystem with ownership enabled and no inherited ACL. Protection failures preserve an empty newly created file and return an error before writing contents; existing files and ACLs are never repaired. Raw bytes are checked against the selected revision before opening the destination. A later write, flush or close failure returns a nonzero status and can leave an incomplete new file; the previous destination is never overwritten. Default raw stdout adds no newline or JSON wrapper. Use the browser download or `--out` for binary evidence in Windows PowerShell 5.1: native byte-preserving redirection was introduced in [PowerShell 7.4](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_redirection?view=powershell-7.5).
 
 Selected metadata-only entries can use an explicitly empty revision with `get`; raw export requires a complete SHA-256 revision. Unknown or repeated flags, malformed references, missing revisions and extra arguments are rejected rather than falling back to the broad legacy export.
+
+## Local completion tracking
+
+The desktop **Completion tracking** card and `system history lifecycle` read a bounded local receipt projection without capturing history or creating missing storage. Refresh is independent of slow history downloads, operation review and current-job cancellation. Authenticated inspection remains available when profile loading fails; profile-audited sessions continue to deny system history. The HTTP route is `GET /api/v1/system/history/lifecycle`; it accepts no query parameters and uses a separate single-reader gate.
+
+The states are `none`, `intent`, `sealed`, `released` and `blocked`, with an optional tracked job ID and a local `admissionBlocked` flag. `none` leaves legacy evidence protected. `released` records observed local worker, record and original lease closure; it does not certify vendor cleanup, escaped descendants, physical power-loss durability, retirement eligibility or disk capacity. All states retain `retirement-unavailable` protection. This projection alone is never permission to start another operation.
+
+Unresolved or malformed evidence prevents new workflow admission. Start and folder actions return HTTP 409 with the fixed `workflow-lifecycle-pending` code. The desktop retains request and recovery inputs, clears review consent and exposes completion status and history inspection without replaying a mutation. Read errors never become a clean completion state. A later released current receipt does not clear the desktop’s observed admission refusal: other orphan or staging evidence can still block the backend admission scan. Inspect and preserve unresolved evidence; this slice adds no recovery retry, deletion or retirement action. Storage quotas remain separate work.
 
 ## Freshness and exact bytes
 
