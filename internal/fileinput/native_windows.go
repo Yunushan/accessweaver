@@ -171,7 +171,9 @@ func reopen(meta *os.File, path string, share uint32) (*os.File, error) {
 	var h windows.Handle
 	var q error
 	e = c.Control(func(raw uintptr) {
-		value, _, cause := reopenFile.Call(raw, uintptr(windows.GENERIC_READ), uintptr(share), uintptr(windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT|windows.FILE_FLAG_OPEN_NO_RECALL))
+		// Keep data/directory reopen flags minimal. Recall or caching may occur;
+		// metadata handles separately retain their no-recall request.
+		value, _, cause := reopenFile.Call(raw, uintptr(windows.GENERIC_READ), uintptr(share), uintptr(windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT))
 		h = windows.Handle(value)
 		if h == windows.InvalidHandle || h == 0 {
 			if cause == syscall.Errno(0) {
