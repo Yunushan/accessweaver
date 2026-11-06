@@ -21,6 +21,7 @@ import (
 
 var historyBrowserWireSources = []string{
 	"go.mod", "go.sum",
+	"internal/fileinput/fileinput.go", "internal/fileinput/native_unix.go", "internal/fileinput/native_windows.go",
 	"internal/api/history_lifecycle.go", "internal/api/history.go", "internal/api/history_browser.go", "internal/api/history_browser_test.go", "internal/api/history_staging_test.go", "internal/api/history_browser_interop_test.go", "internal/api/server.go", "internal/api/workflow_json.go", "internal/api/workflows.go", "internal/api/audit.go", "internal/api/mutations.go",
 	"internal/workflow/lifecycle.go", "internal/workflow/lifecycle_manifest.go", "internal/workflow/history.go", "internal/workflow/history_capture.go", "internal/workflow/history_staging.go", "internal/workflow/history_index.go", "internal/workflow/history_inventory.go", "internal/workflow/history_record.go", "internal/workflow/history_replace_unix.go", "internal/workflow/history_replace_windows.go", "internal/workflow/manager.go", "internal/workflow/outcome.go", "internal/workflow/persistence_observation.go", "internal/workflow/output.go", "internal/workflow/result.go", "internal/workflow/store.go",
 	"web/system.js", "web/app.js", "web/locales.js", "web/index.html", "web/app.css", "web/app.test.cjs",

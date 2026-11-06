@@ -22,7 +22,7 @@ import (
 
 var supportWireDirectories = []string{
 	"internal/api", "internal/audit", "internal/buildinfo", "internal/engine",
-	"internal/fileidentity", "internal/filelock", "internal/logfile", "internal/managed",
+	"internal/fileidentity", "internal/fileinput", "internal/filelock", "internal/logfile", "internal/managed",
 	"internal/nativepath", "internal/nativeprocess", "internal/privatefile", "internal/profile", "internal/workflow",
 }
 var supportWireFixedSources = []string{

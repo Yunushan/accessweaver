@@ -19,7 +19,7 @@ import (
 	"github.com/Yunushan/accessweaver/internal/workflow"
 )
 
-var reconciliationWireDirectories = []string{"internal/api", "internal/workflow", "internal/managed", "internal/fileidentity", "internal/privatefile", "internal/filelock", "internal/nativeprocess", "internal/nativepath"}
+var reconciliationWireDirectories = []string{"internal/api", "internal/workflow", "internal/managed", "internal/fileidentity", "internal/fileinput", "internal/privatefile", "internal/filelock", "internal/nativeprocess", "internal/nativepath"}
 var reconciliationWireFixedSources = []string{"go.mod", "go.sum", "internal/workflow/windows.ps1", "internal/workflow/reconciliation_test.go", "internal/workflow/lifecycle_test.go", "internal/workflow/shutdown_test.go", "internal/workflow/reconciliation_export_test.go", "internal/workflow/reconciliation_http_interop_test.go", "internal/workflow/reconciliation_wire_interop_test.go", "web/system.js", "web/app.js", "web/index.html", "web/app.css", "web/locales.js", "web/app.test.cjs"}
 
 type reconciliationWireSource struct {

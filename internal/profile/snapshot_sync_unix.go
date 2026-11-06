@@ -9,10 +9,5 @@ func syncSnapshotDirectory(path string) error {
 	if err != nil {
 		return err
 	}
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	if syncErr != nil {
-		return syncErr
-	}
-	return closeErr
+	return syncSnapshotOwned(file)
 }

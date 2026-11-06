@@ -23,6 +23,12 @@ type Lock struct {
 // TryAcquire takes an exclusive lock without waiting. All participants must
 // use this API and must not remove/replace the lock file while it is in use.
 func TryAcquire(path string) (*Lock, error) {
+	return tryAcquire(path, func(file *os.File) error { return file.Close() })
+}
+
+// The per-call close operation observes the same actual owned file; production
+// always uses Close directly. No native lock backend or runtime selector changes.
+func tryAcquire(path string, closeOwned func(*os.File) error) (*Lock, error) {
 	if info, err := os.Lstat(path); err == nil {
 		if !info.Mode().IsRegular() {
 			return nil, errors.New("lock must be a regular file")
@@ -34,7 +40,7 @@ func TryAcquire(path string) (*Lock, error) {
 	if err != nil {
 		return nil, err
 	}
-	fail := func(err error) (*Lock, error) { _ = f.Close(); return nil, err }
+	fail := func(err error) (*Lock, error) { return nil, joinLockClose(err, closeOwned(f)) }
 	if err = tryLock(f); err != nil {
 		return fail(err)
 	}
@@ -55,6 +61,16 @@ func TryAcquire(path string) (*Lock, error) {
 // Acquire waits for contention only until ctx ends. It does not turn filesystem
 // or unsupported-lock errors into retries, and it never steals a stale PID lock.
 func Acquire(ctx context.Context, path string) (*Lock, error) {
+	return acquire(ctx, path, TryAcquire, func(lock *Lock) error { return lock.Close() })
+}
+
+func joinLockClose(primary, closeErr error) error {
+	if closeErr == nil {
+		return primary
+	}
+	return errors.Join(primary, closeErr)
+}
+func acquire(ctx context.Context, path string, attempt func(string) (*Lock, error), closeOwned func(*Lock) error) (*Lock, error) {
 	contended := false
 	for {
 		if err := ctx.Err(); err != nil {
@@ -63,15 +79,16 @@ func Acquire(ctx context.Context, path string) (*Lock, error) {
 			}
 			return nil, err
 		}
-		lock, err := TryAcquire(path)
+		lock, err := attempt(path)
 		if err == nil {
 			if canceled := ctx.Err(); canceled != nil {
-				_ = lock.Close()
-				return nil, canceled
+				return nil, joinLockClose(canceled, closeOwned(lock))
 			}
 			return lock, nil
 		}
-		if !errors.Is(err, ErrBusy) {
+		// Both native implementations return the exact sentinel for contention.
+		// A joined Close fault is not plain contention and must never retry.
+		if err != ErrBusy {
 			return nil, fmt.Errorf("acquire file lock: %w", err)
 		}
 		contended = true
