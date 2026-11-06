@@ -35,6 +35,6 @@ test('keyboard evidence is source-bound, closed-schema and exclusive without ret
 
 test('keyboard focus trace accepts only fixed categories, booleans and bounded source line numbers',()=>{
  const trace={before:'feedback',after:'dialog',prevented:true,feedbackTabIndex:0,feedbackRendered:true,feedbackBlocked:false,candidates:['feedback'],candidateLimited:false,candidateScanOK:true,errorKind:'none',errorLine:0};
- assert.equal(validKeyboard(trace),true);assert.equal(validKeyboard(null),true);
+ assert.equal(validKeyboard(trace),true);assert.equal(validKeyboard(null),true);assert.equal(validKeyboard({...trace,after:'scroll',candidates:['scroll','feedback']}),true);
  for(const mutation of [{after:'PRIVATE_SYNTHETIC_TARGET'},{candidates:['/private/fixture']},{errorKind:'PRIVATE_SYNTHETIC_ERROR'},{errorLine:5001},{message:'PRIVATE_SYNTHETIC_ERROR'},{candidates:Array(65).fill('feedback')}])assert.equal(validKeyboard({...trace,...mutation}),false);
 });

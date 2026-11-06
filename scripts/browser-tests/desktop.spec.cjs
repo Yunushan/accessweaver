@@ -851,23 +851,22 @@ for(const scenario of ['guided-success','json-success','guided-failure','json-fa
  let release,finished,entered=false,requestCount=0,posted,routeFailure=false;
  const gate=new Promise(resolve=>{release=resolve}),handlerDone=new Promise(resolve=>{finished=resolve});
  const handler=async route=>{entered=true;requestCount++;posted=route.request().postDataJSON();try{await gate;if(success)await route.continue();else await route.fulfill({status:503,json:{error:'Controlled fixture save refusal'}})}catch{routeFailure=true}finally{finished()}};
- const modal=page.locator('#editor-modal'),dialog=modal.locator('[role="dialog"]'),summary=modal.locator('#editor-simple .advanced-details summary'),docs=modal.locator('#engine-guidance a'),feedback=page.locator('#editor-feedback');
+ const modal=page.locator('#editor-modal'),dialog=modal.locator('[role="dialog"]'),scroll=page.locator('#editor-scroll'),summary=modal.locator('#editor-simple .advanced-details summary'),docs=modal.locator('#engine-guidance a'),feedback=page.locator('#editor-feedback');
  try{
   await evidence.check('editor-open',async()=>{
    await open(page,core);await profiles(page);await page.locator('#new-profile').click();
    await page.locator('#p-id').fill(id);await page.locator('#p-name').fill('Modal keyboard fixture');await page.locator('#p-binary').fill(path.join(repo,'build','absent-browser-fixture-engine'));
    if(advanced)await page.locator('#tab-advanced').click();
-   await expect(dialog).toHaveAttribute('tabindex','-1');await page.route(endpoint,handler);
+   await expect(dialog).toHaveAttribute('tabindex','-1');await expect(scroll).toHaveAttribute('role','region');await expect(scroll).toHaveAccessibleName(await page.locator('#editor-title').textContent());await page.route(endpoint,handler);
   });
   await evidence.check('save-request',async()=>{await page.locator('#save-profile').click();await expect.poll(()=>requestCount).toBe(1);await expect(page.locator('#save-profile')).toBeDisabled()});
   await evidence.check('busy-focus',async()=>{const polled=await page.waitForResponse(response=>new URL(response.url()).pathname==='/api/v1/runtime'&&response.request().method()==='GET');expect(polled.status()).toBe(200);await page.waitForFunction(()=>!state.polling);await expect(page.locator('#connection-notice')).toBeHidden();await expect(page.locator('#preview-profile')).toBeDisabled();await expect(feedback).toBeFocused();await expect(modal).toBeVisible();expect(await page.locator('.app-shell').evaluate(el=>el.inert)).toBe(true)});
-  await evidence.check('forward-tab',async()=>{await installKeyboardTrace(page);const before=await keyboardSnapshot(page);await page.keyboard.press('Tab');const {focus,...observed}=await keyboardSnapshot(page);evidence.keyboard={before:before.focus,after:focus,...observed};await expect(advanced?feedback:docs).toBeFocused()});
+  await evidence.check('forward-tab',async()=>{await installKeyboardTrace(page);const before=await keyboardSnapshot(page);await page.keyboard.press('Tab');const {focus,...observed}=await keyboardSnapshot(page);evidence.keyboard={before:before.focus,after:focus,...observed};await expect(scroll).toBeFocused()});
   await evidence.check('reverse-tab',async()=>{await page.keyboard.press('Shift+Tab');await expect(feedback).toBeFocused()});
   await evidence.check('busy-shortcuts',async()=>{await page.keyboard.press('Escape');await expect(modal).toBeVisible();await page.keyboard.press('Control+s');expect(requestCount).toBe(1);await expect(page.locator('#save-profile')).toBeDisabled()});
   await evidence.check('disclosure-or-json',async()=>{
-   if(!advanced){await summary.focus();await page.keyboard.press('Enter');await expect(summary.locator('..')).toHaveAttribute('open','');await expect(page.locator('#p-notes')).toBeDisabled()}
-   else await expect(page.locator('#editor-simple')).toBeHidden();
-   await page.keyboard.press('Tab');await expect(feedback).toBeFocused();await page.keyboard.press('Shift+Tab');await expect(advanced?feedback:summary).toBeFocused();
+   if(!advanced){await scroll.focus();await page.keyboard.press('Tab');await expect(docs).toBeFocused();await page.keyboard.press('Tab');await expect(summary).toBeFocused();await page.keyboard.press('Enter');await expect(summary.locator('..')).toHaveAttribute('open','');await expect(page.locator('#p-notes')).toBeDisabled();await page.keyboard.press('Tab');await expect(feedback).toBeFocused();await page.keyboard.press('Shift+Tab');await expect(summary).toBeFocused()}
+   else {await expect(page.locator('#editor-simple')).toBeHidden();await page.keyboard.press('Tab');await expect(scroll).toBeFocused();await page.keyboard.press('Shift+Tab');await expect(feedback).toBeFocused()}
   });
   await evidence.check('release-reply',async()=>{release();await handlerDone;expect(routeFailure).toBe(false)});
   await evidence.check('save-outcome',async()=>{if(success){await expect(modal).toBeHidden();await expect(page.locator('#new-profile')).toBeFocused()}else{await expect(modal).toBeVisible();await expect(feedback).toHaveClass('error');await expect(feedback).toBeFocused();await expect(page.locator('#save-profile')).toBeEnabled()}});

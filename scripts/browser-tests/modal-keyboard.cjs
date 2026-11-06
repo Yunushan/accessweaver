@@ -4,7 +4,7 @@ const path=require('node:path');
 const {createHash}=require('node:crypto');
 const scenarios=['guided-success','json-success','guided-failure','json-failure'];
 const names=['editor-open','save-request','busy-focus','forward-tab','reverse-tab','busy-shortcuts','disclosure-or-json','release-reply','save-outcome','draft-or-saved-preserved','close-or-return','single-save'];
-const focusTargets=['feedback','dialog','docs','summary','save','preview','cancel','close','simple-tab','json-tab','field','other','body','outside'];
+const focusTargets=['feedback','scroll','dialog','docs','summary','save','preview','cancel','close','simple-tab','json-tab','field','other','body','outside'];
 const errorKinds=['none','TypeError','ReferenceError','Other'];
 const sources=['web/app.js','web/index.html','web/app.css','scripts/browser-tests/desktop.spec.cjs','scripts/browser-tests/modal-keyboard.cjs','scripts/browser-tests/playwright.config.cjs','scripts/browser-tests/package-lock.json'];
 function contract(){
@@ -26,7 +26,7 @@ async function keyboardSnapshot(page){
   const modal=document.getElementById('editor-modal'),feedback=document.getElementById('editor-feedback');
   const target=element=>{
    if(element===document.body)return 'body';if(!element||!modal.contains(element))return 'outside';
-   for(const [id,code]of [['editor-feedback','feedback'],['save-profile','save'],['preview-profile','preview'],['cancel-editor','cancel'],['close-editor','close'],['tab-simple','simple-tab'],['tab-advanced','json-tab']])if(element===document.getElementById(id))return code;
+   for(const [id,code]of [['editor-feedback','feedback'],['editor-scroll','scroll'],['save-profile','save'],['preview-profile','preview'],['cancel-editor','cancel'],['close-editor','close'],['tab-simple','simple-tab'],['tab-advanced','json-tab']])if(element===document.getElementById(id))return code;
    if(element===modal.querySelector('[role="dialog"]'))return 'dialog';if(element.matches('#engine-guidance a'))return 'docs';if(element.matches('#editor-simple .advanced-details summary'))return 'summary';if(element.matches('input,textarea,select'))return 'field';return 'other';
   };
   let candidates=[],candidateScanOK=true;try{candidates=Array.from(modal.querySelectorAll('button,input,textarea,select,a[href],summary,[tabindex]')).filter(element=>element.tabIndex>=0&&!element.matches(':disabled')&&!element.closest('[hidden],[inert]')&&element.getClientRects().length&&getComputedStyle(element).visibility==='visible').map(target)}catch{candidateScanOK=false}
