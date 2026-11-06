@@ -43,6 +43,9 @@ func (s *Server) profileChange(ctx context.Context, action string, operation fun
 		if errors.Is(err, profile.ErrMutationUncertain) {
 			return audit.OperationResult{Outcome: "indeterminate", Err: err}
 		}
+		if errors.Is(err, profile.ErrAtomicWriteUncertain) {
+			return audit.OperationResult{Outcome: "indeterminate", Err: err}
+		}
 		// A read/cleanup cofailure stays uncertain even when its retained causes
 		// also include a normally refused revision, contention or policy result.
 		if errors.Is(err, profile.ErrReadUnavailable) || errors.Is(err, filelock.ErrCloseUncertain) {

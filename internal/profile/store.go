@@ -275,38 +275,6 @@ func (s *Store) deleteIfUnchangedLockedContext(ctx context.Context, id string, e
 	return os.Remove(file)
 }
 
-func AtomicWrite(file string, data []byte) error {
-	dir := filepath.Dir(file)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(dir, ".accessweaver-*")
-	if err != nil {
-		return err
-	}
-	temp := f.Name()
-	defer os.Remove(temp)
-	if err = f.Chmod(0600); err != nil {
-		f.Close()
-		return err
-	}
-	if _, err = f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	// Atomic replace is platform-specific; Win32 MoveFileExW handles existing files.
-	if err = replaceFile(temp, file); err != nil {
-		return err
-	}
-	return nil
-}
 func (s *Store) Seed(samples []Profile) error {
 	if err := s.guard.ProfileChanges(); err != nil {
 		if errors.Is(err, managed.ErrDenied) {

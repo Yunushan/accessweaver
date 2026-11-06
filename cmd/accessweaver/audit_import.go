@@ -228,9 +228,9 @@ func completeReviewedProfileImport(operationErr, controllerCloseErr error) impor
 	if operationErr == nil && controllerCloseErr == nil {
 		return importOutcome{outcome: "completed", mutationStarted: true}
 	}
-	// A partial mutation or read failure can retain a known refusal as a
+	// An uncertain file update, mutation or read can retain a refusal as a
 	// co-cause. Neither it nor an unconfirmed controller Close proves refusal.
-	if controllerCloseErr == nil && !errors.Is(operationErr, profile.ErrMutationUncertain) && !errors.Is(operationErr, profile.ErrReadUnavailable) && !errors.Is(operationErr, filelock.ErrCloseUncertain) &&
+	if controllerCloseErr == nil && !errors.Is(operationErr, profile.ErrMutationUncertain) && !errors.Is(operationErr, profile.ErrAtomicWriteUncertain) && !errors.Is(operationErr, profile.ErrReadUnavailable) && !errors.Is(operationErr, filelock.ErrCloseUncertain) &&
 		(errors.Is(operationErr, profile.ErrConflict) || errors.Is(operationErr, managed.ErrDenied) || errors.Is(operationErr, profile.ErrStoreBusy)) {
 		return importOutcome{outcome: "refused", mutationStarted: true, failure: errAuditImportRefused}
 	}
