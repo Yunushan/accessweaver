@@ -31,6 +31,7 @@ func (s *Server) workflowRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/system", s.workflowStatus)
 	mux.HandleFunc("GET /api/v1/system/history", s.workflowHistory)
 	mux.HandleFunc("GET /api/v1/system/history/lifecycle", s.workflowLifecycle)
+	mux.HandleFunc("GET /api/v1/system/storage", s.controllerStorageStatus)
 	mux.HandleFunc("GET /api/v1/system/history/reconciliation", s.workflowReconciliationStatus)
 	mux.HandleFunc("POST /api/v1/system/history/reconciliation/preview", s.workflowReconciliationPreview)
 	mux.HandleFunc("POST /api/v1/system/history/reconciliation/apply", s.workflowReconciliationApply)

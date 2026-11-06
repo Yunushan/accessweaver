@@ -87,9 +87,10 @@ func workflowPipelineChild(mode string) int {
 		return 94
 	}
 	if mode == "cancel" {
-		// The checked report publication is the readiness marker. The parent
-		// cancels its owned CommandContext well before this bounded backstop;
-		// this does not model completion of any native/vendor side effect.
+		// The parent observes the stdout marker through its owned process.log
+		// only after this checked report Write/Sync/Close, then cancels its
+		// owned CommandContext before this bounded backstop. This does not
+		// model completion of any native/vendor side effect.
 		<-time.After(30 * time.Second)
 		return 95
 	}
@@ -189,6 +190,7 @@ func TestWorkflowCommandPipelineCancellationJoinsActualChildAndOutputs(t *testin
 	command, observation, _ := workflowPipelineBind(t, f, "cancel")
 	job := f.start()
 	path := filepath.Join(f.manager.root, job.ID, "result.json")
+	logPath := filepath.Join(f.manager.root, job.ID, "process.log")
 	deadline := time.NewTimer(8 * time.Second)
 	defer deadline.Stop()
 	tick := time.NewTicker(5 * time.Millisecond)
@@ -197,12 +199,19 @@ ready:
 	for {
 		select {
 		case <-tick.C:
-			raw, err := os.ReadFile(path)
+			// Valid JSON alone can be visible before the child has synced
+			// and closed the report. Its fixed stdout marker is emitted only
+			// after those operations, then captured by the actual log owner.
+			log, err := readWorkflowLifecycleFile(context.Background(), logPath, 64<<10)
+			if err != nil || !bytes.Contains(log, []byte("source-pipeline-stdout\n")) {
+				continue
+			}
+			raw, err := readWorkflowLifecycleFile(context.Background(), path, 64<<10)
 			if err == nil && json.Valid(raw) {
 				break ready
 			}
 		case <-deadline.C:
-			t.Fatal("actual source child did not publish its readiness report")
+			t.Fatal("actual source child did not confirm its closed readiness report through owned output")
 		case <-f.manager.done:
 			t.Fatal("held source pipeline exited before cancellation")
 		}

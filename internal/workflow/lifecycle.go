@@ -42,12 +42,13 @@ type WorkflowLifecycleStatus struct {
 }
 
 type workflowLifecycleIntent struct {
-	Version       int       `json:"version"`
-	Generation    string    `json:"generation"`
-	Nonce         string    `json:"nonce"`
-	Action        string    `json:"action"`
-	RequestSHA256 string    `json:"requestSHA256"`
-	CreatedAt     time.Time `json:"createdAt"`
+	Version                 int       `json:"version"`
+	Generation              string    `json:"generation"`
+	Nonce                   string    `json:"nonce"`
+	Action                  string    `json:"action"`
+	RequestSHA256           string    `json:"requestSHA256"`
+	CreatedAt               time.Time `json:"createdAt"`
+	ControllerStorageSHA256 string    `json:"controllerStorageSHA256,omitempty"`
 }
 type workflowLifecyclePointer struct {
 	Version      int    `json:"version"`
@@ -211,7 +212,7 @@ func workflowLifecycleWithinByteLimit(receipt workflowLifecycleReceipt) bool {
 
 func validWorkflowLifecycleReceipt(receipt workflowLifecycleReceipt) bool {
 	intent := receipt.Intent
-	if !workflowLifecycleWithinByteLimit(receipt) || receipt.Version != 1 || intent.Version != 1 || !historyHex(intent.Generation, 48) || !historyHex(intent.Nonce, 48) || !historyHex(intent.RequestSHA256, 64) || intent.CreatedAt.IsZero() || !knownWorkflowLifecycleAction(intent.Action) || receipt.IntentSHA256 != workflowLifecycleJSONHash(intent) {
+	if !workflowLifecycleWithinByteLimit(receipt) || receipt.Version != 1 || intent.Version != 1 || !historyHex(intent.Generation, 48) || !historyHex(intent.Nonce, 48) || !historyHex(intent.RequestSHA256, 64) || (intent.ControllerStorageSHA256 != "" && !historyHex(intent.ControllerStorageSHA256, 64)) || intent.CreatedAt.IsZero() || !knownWorkflowLifecycleAction(intent.Action) || receipt.IntentSHA256 != workflowLifecycleJSONHash(intent) {
 		return false
 	}
 	if receipt.Seal == nil {
@@ -523,7 +524,13 @@ func (m *Manager) beginWorkflowLifecycle(ctx context.Context, job Job, request R
 	if cause != nil {
 		return nil, workflowLifecycleError(cause)
 	}
-	intent := workflowLifecycleIntent{1, job.ID, nonce, job.Action, workflowLifecycleHash(requestBytes), time.Now().UTC()}
+	intent := workflowLifecycleIntent{Version: 1, Generation: job.ID, Nonce: nonce, Action: job.Action, RequestSHA256: workflowLifecycleHash(requestBytes), CreatedAt: time.Now().UTC()}
+	m.mu.Lock()
+	budget := m.controllerBudget
+	m.mu.Unlock()
+	if budget != nil && budget.reservation.Generation == job.ID {
+		intent.ControllerStorageSHA256 = budget.binding.digest()
+	}
 	receipt := workflowLifecycleReceipt{Version: 1, Intent: intent, IntentSHA256: workflowLifecycleJSONHash(intent)}
 	b, _ := json.Marshal(intent)
 	// Before this boundary cancellation is a refusal with no generation writes.

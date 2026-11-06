@@ -71,8 +71,8 @@ function refreshSystemLanguage(){for(const option of $('system-action').options)
 function renderSystemPresets(){const previous=$('system-preset').value;$('system-preset').replaceChildren();const empty=document.createElement('option');empty.value='';empty.textContent=t('customArguments');$('system-preset').appendChild(empty);systemUI.presets.forEach((p,i)=>{if(p.engine!==$('system-engine').value)return;const option=document.createElement('option');option.value=String(i);option.textContent=p.name;$('system-preset').appendChild(option)});$('system-preset').value=previous;}
 async function previewSystem(request=systemRequest()){
   if(systemUI.busy)return;
-  invalidateSystemPlan();systemUI.busy=true;const revision=systemUI.revision;
-  try {if(!coreAvailable())throw new Error(t('coreRequired'));const plan=await apiRequest('/api/v1/system/preview','POST',request);if(revision!==systemUI.revision)return;systemUI.plan=plan;setTextOutput('system-plan',JSON.stringify({operation:plan.request,requiresAdministrator:plan.requiresAdministrator,steps:plan.steps,issues:plan.issues,warnings:plan.warnings,expiresAt:plan.expiresAt},null,2));$('system-consent').disabled=!plan.ready;$('system-export').disabled=false;}
+  invalidateSystemPlan();systemUI.busy=true;const revision=systemUI.revision,reviewContext=historyContext();
+  try {if(!coreAvailable())throw new Error(t('coreRequired'));const plan=await apiRequest('/api/v1/system/preview','POST',request);if(revision!==systemUI.revision)return;systemUI.plan=plan;if(reviewContext===historyContext()&&state.view==='system')clearControllerStorageRefusal();setTextOutput('system-plan',JSON.stringify({operation:plan.request,requiresAdministrator:plan.requiresAdministrator,steps:plan.steps,issues:plan.issues,warnings:plan.warnings,expiresAt:plan.expiresAt},null,2));$('system-consent').disabled=!plan.ready;$('system-export').disabled=false;}
   catch(error){setTextOutput('system-plan',error.message);toast(error.message,true)}finally{systemUI.busy=false}
 }
 function exportSystemRequest(){
@@ -84,7 +84,7 @@ async function applySystem(){
   if(systemUI.busy||workflowLifecycleBlocked()||!systemUI.plan?.ready||!$('system-consent').checked)return;
   systemUI.busy=true;const id=systemUI.plan.id,context=historyContext();invalidateSystemPlan();
   try {const job=await apiRequest('/api/v1/system/start','POST',{planId:id,confirm:true});renderSystemJob(job);pollSystemJob();}
-  catch(error){if(context!==historyContext()||state.view!=='system')return;if(!handleWorkflowLifecycleAdmission(error)){setTextOutput('system-output',error.message);toast(error.message,true)}}finally{systemUI.busy=false}
+  catch(error){if(context!==historyContext()||state.view!=='system')return;if(!handleWorkflowLifecycleAdmission(error)&&!handleControllerStorageAdmission(error)){setTextOutput('system-output',error.message);toast(error.message,true)}}finally{systemUI.busy=false}
 }
 function renderSystemJob(job){
  if(!job?.id)return;
@@ -210,8 +210,9 @@ function historyClearDetail(){historyUI.detailController?.abort();historyUI.expo
 function historyReset(){
  historyStopRequests();historyUI.inventory=null;historyUI.items=[];historyUI.cursor='';historyUI.nextCursor='';historyUI.trail=[];historyClearDetail();historyUI.message='historyNoCapture';historyUI.messageValues={};historyUI.bad=false;
 }
-function historyNavigationChanged(view){if(view!=='system'){historyStopRequests();historyUI.open=false;resetWorkflowLifecycle(false);resetReconciliation(false);updateReconciliationAvailability();}}
+function historyNavigationChanged(view){if(view!=='system'){historyStopRequests();historyUI.open=false;resetWorkflowLifecycle(false);resetReconciliation(false);updateReconciliationAvailability();resetControllerStorage(false);updateControllerStorageAvailability();}}
 function updateHistoryAvailability(){
+ updateControllerStorageAvailability();
  updateWorkflowLifecycleAvailability();
  updateReconciliationAvailability();
  const context=historyContext();if(historyUI.context!==context){historyReset();historyUI.context=context;historyUI.open=false;renderHistoryMessage();renderHistoryRows();renderHistoryDetail();}
@@ -256,7 +257,7 @@ function renderHistoryDetail(){
  setTextOutput('history-detail',text);$('history-detail-limited').hidden=!limited;
  if(limited)$('history-detail').setAttribute('aria-describedby','history-detail-limited');else $('history-detail').removeAttribute('aria-describedby');
 }
-function refreshHistoryLanguage(){renderReconciliation();renderWorkflowLifecycle();renderHistoryMessage();renderHistoryRows();renderHistoryDetail();updateHistoryAvailability();}
+function refreshHistoryLanguage(){renderControllerStorage();renderReconciliation();renderWorkflowLifecycle();renderHistoryMessage();renderHistoryRows();renderHistoryDetail();updateHistoryAvailability();}
 function historyError(error){
  if(error?.status===409&&error?.code==='history-staging-pending')return 'historyStagingPending';
  if(error?.reportTooLarge)return 'historyCapacity';
@@ -464,8 +465,10 @@ function renderReconciliationObjects(target,objects){
 }
 function renderReconciliation(){
  const status=reconciliationUI.status,plan=reconciliationUI.plan,receipt=reconciliationUI.receipt;
- $('reconcile-status').textContent=t(reconciliationUI.statusLoading?'reconcileReadingStatus':reconciliationUI.statusError|| (status?'reconcileState_'+status.state:'reconcileNotLoaded'));
- $('reconcile-message').textContent=t(reconciliationUI.message)+(reconciliationUI.detail?' '+t(reconciliationUI.detail):'');$('reconcile-message').className=reconciliationUI.bad?'hint error':'hint';
+ const statusKey=reconciliationUI.statusLoading?'reconcileReadingStatus':reconciliationUI.statusError||(status?'reconcileState_'+status.state:'');
+ const statusText=statusKey?t(statusKey):'',messageText=t(reconciliationUI.message)+(reconciliationUI.detail?' '+t(reconciliationUI.detail):'');
+ $('reconcile-status').textContent=statusText;$('reconcile-status').hidden=!statusText||statusText===messageText;
+ $('reconcile-message').textContent=messageText;$('reconcile-message').className=reconciliationUI.bad?'hint error':'hint';
  $('reconcile-known-operation').textContent=reconciliationUI.knownOperation?t('reconcileOperation')+': '+reconciliationUI.knownOperation:'';
  $('reconcile-review').hidden=!plan;
  if(plan){$('reconcile-review-summary').textContent=[t('reconcileGeneration')+': '+plan.generation,t('reconcileOperation')+': '+plan.operationId,t('reconcileExpires')+': '+historyDate(plan.expiresAt),t('reconcileRevision')+': '+plan.reviewRevision,t('reconcileIntentDigest')+': '+plan.intentSHA256,t('reconcileSealDigest')+': '+plan.sealSHA256].join('\n');renderReconciliationObjects('reconcile-review-objects',plan.objects);}
@@ -525,12 +528,55 @@ async function readReconciliationReceipt(){
  await read();
 }
 
+// Observation only: source reservations are not disk usage, physical space,
+// aggregate quota, native-writer containment or permission to start work.
+const controllerStorageUI={context:'',generation:0,controller:null,loading:false,status:null,message:'controllerStorageNotLoaded',bad:false,refusal:''};
+const controllerStorageCodes=new Set(['workflow-storage-invalid','workflow-storage-denied','workflow-storage-policy-unavailable','workflow-storage-busy','workflow-storage-request-ended','workflow-storage-pending','workflow-storage-capacity','workflow-storage-unavailable']);
+function controllerStorageProjection(value){
+ const numeric=['generationsTracked','reservedBytes','retainedChargeBytes','uncertainBytes','finalizationReservedBytes'],flags=['aggregateQuotaEnforced','physicalCapacityGuaranteed','nativeWritersContained','workerJournalBounded'];
+ const required=['state','scope',...numeric,'legacyAccounting',...flags],allowed=new Set([...required,'generation','action']);
+ if(!value||typeof value!=='object'||Array.isArray(value)||required.some(key=>!Object.hasOwn(value,key))||Object.keys(value).some(key=>!allowed.has(key))||!['uninitialized','tracked','pending'].includes(value.state)||value.scope!=='tracked-controller-evidence-only'||value.legacyAccounting!=='not-included'||numeric.some(key=>!Number.isSafeInteger(value[key])||value[key]<0)||flags.some(key=>value[key]!==false))throw new Error('controllerStorageInvalidResponse');
+ if(value.generation!==undefined&&!reconciliationHex(value.generation)||value.action!==undefined&&!(typeof value.action==='string'&&(Object.hasOwn(systemOperationText,value.action)||value.action==='choose-folder')))throw new Error('controllerStorageInvalidResponse');
+ if(value.state==='uninitialized'&&(value.generation!==undefined||value.action!==undefined||numeric.some(key=>value[key]!==0)))throw new Error('controllerStorageInvalidResponse');
+ if(value.finalizationReservedBytes>value.reservedBytes||value.state==='tracked'&&value.uncertainBytes!==0||value.state==='pending'&&(value.reservedBytes!==0||value.finalizationReservedBytes!==0))throw new Error('controllerStorageInvalidResponse');
+ return Object.fromEntries([...required,...['generation','action'].filter(key=>Object.hasOwn(value,key))].map(key=>[key,value[key]]));
+}
+function resetControllerStorage(clearRefusal=true){const controller=controllerStorageUI.controller;controllerStorageUI.generation++;controllerStorageUI.controller=null;controllerStorageUI.loading=false;controllerStorageUI.status=null;controllerStorageUI.message='controllerStorageNotLoaded';controllerStorageUI.bad=false;if(clearRefusal)controllerStorageUI.refusal='';controller?.abort();renderControllerStorage();}
+function updateControllerStorageAvailability(){const context=historyContext();if(controllerStorageUI.context!==context){resetControllerStorage();controllerStorageUI.context=context;}$('controller-storage-card').hidden=state.profileEditingOnly;$('controller-storage-refresh').disabled=!supportAvailable()||controllerStorageUI.loading;$('controller-storage-card').setAttribute('aria-busy',String(controllerStorageUI.loading));}
+function renderControllerStorage(){
+ const status=controllerStorageUI.status;$('controller-storage-status').textContent=t(controllerStorageUI.loading?'controllerStorageLoading':status?'controllerStorageState_'+status.state:controllerStorageUI.message);$('controller-storage-status').className=controllerStorageUI.bad?'hint error':'hint';
+ const refusal=controllerStorageUI.refusal;$('controller-storage-refusal').hidden=!refusal;$('controller-storage-refusal').textContent=refusal?t(refusal==='workflow-storage-capacity'?'controllerStorageAdmissionCapacity':'controllerStorageAdmissionPending'):'';
+ $('controller-storage-values').hidden=!status||status.state==='uninitialized';
+ for(const [key,id]of [['generationsTracked','generations'],['reservedBytes','reserved'],['retainedChargeBytes','retained'],['uncertainBytes','uncertain'],['finalizationReservedBytes','finalization']])$('controller-storage-'+id).textContent=status?(key==='generationsTracked'?new Intl.NumberFormat(state.lang).format(status[key]):historySize(status[key])):'';
+ $('controller-storage-generation').textContent=status?.generation?t('controllerStorageGeneration')+': '+status.generation:'';
+ $('controller-storage-action').textContent=status?.action?t('operation')+': '+(status.action==='choose-folder'?t('controllerStorageFolderAction'):systemOperationText[status.action][state.lang]):'';
+}
+function controllerStorageError(error){if(error?.reportTooLarge||error?.message==='controllerStorageInvalidResponse')return 'controllerStorageInvalidResponse';return ({'workflow-storage-invalid':'controllerStorageInvalidResponse','workflow-storage-denied':'controllerStorageDenied','workflow-storage-policy-unavailable':'controllerStoragePolicyUnavailable','workflow-storage-busy':'controllerStorageBusy','workflow-storage-request-ended':'controllerStorageEnded','workflow-storage-pending':'controllerStoragePending','workflow-storage-capacity':'controllerStorageCapacity','workflow-storage-unavailable':'controllerStorageUnavailable'})[error?.code]||(error?.name==='AbortError'||error?.status===408?'controllerStorageEnded':error?.status===403?'controllerStorageDenied':error?.status===503?'controllerStorageBusy':'controllerStorageUnavailable');}
+async function controllerStorageRequest(controller){
+ const timer=setTimeout(()=>controller.abort(),12000),active=()=>{if(controller.signal.aborted)throw new DOMException('Request canceled','AbortError');};
+ try{active();const response=await fetch('/api/v1/system/storage',{method:'GET',headers:{'X-AccessWeaver-Token':state.token},credentials:'same-origin',cache:'no-store',redirect:'error',signal:controller.signal});active();if(!/^application\/json(?:\s*;|$)/i.test(response.headers.get('Content-Type')||''))throw new Error('controllerStorageInvalidResponse');const blob=await readSystemDownload(response,4096);active();const bytes=await blob.arrayBuffer();active();let value;try{value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch{throw new Error('controllerStorageInvalidResponse');}if(!response.ok)throw Object.assign(new Error('Storage status unavailable'),{status:response.status,...(controllerStorageCodes.has(value?.code)?{code:value.code}:{})});return value;}
+ finally{clearTimeout(timer);controller.abort();}
+}
+async function refreshControllerStorage(){
+ updateControllerStorageAvailability();if(!supportAvailable()||controllerStorageUI.loading)return;const context=controllerStorageUI.context,generation=++controllerStorageUI.generation,controller=new AbortController();controllerStorageUI.controller=controller;controllerStorageUI.loading=true;controllerStorageUI.bad=false;renderControllerStorage();updateControllerStorageAvailability();
+ const current=()=>context===historyContext()&&context===controllerStorageUI.context&&generation===controllerStorageUI.generation&&state.view==='system'&&supportAvailable();
+ try{const status=controllerStorageProjection(await controllerStorageRequest(controller));if(!current())return;controllerStorageUI.status=status;controllerStorageUI.message='controllerStorageState_'+status.state;}
+ catch(error){if(current()){controllerStorageUI.status=null;controllerStorageUI.message=controllerStorageError(error);controllerStorageUI.bad=true;}}
+ finally{if(current()){controllerStorageUI.loading=false;controllerStorageUI.controller=null;renderControllerStorage();updateControllerStorageAvailability();}}
+}
+async function chooseSystemFolder(){const context=historyContext();try{const job=await apiRequest('/api/v1/system/folder','POST',{});if(context!==historyContext()||state.view!=='system'||!supportAvailable())return;systemUI.folderJob=job.id;renderSystemJob(job);pollSystemJob();}catch(error){if(context===historyContext()&&state.view==='system'&&!handleWorkflowLifecycleAdmission(error)&&!handleControllerStorageAdmission(error))toast(error.message,true);}}
+function clearControllerStorageRefusal(){if(controllerStorageUI.refusal){controllerStorageUI.refusal='';renderControllerStorage();}}
+function handleControllerStorageAdmission(error){
+ if(error?.status!==409||!['workflow-storage-capacity','workflow-storage-pending'].includes(error?.code)||!supportAvailable()||state.view!=='system')return false;
+ updateControllerStorageAvailability();invalidateSystemPlan();workflowLifecycleUI.refusalEpoch++;controllerStorageUI.refusal=error.code;renderControllerStorage();updateControllerStorageAvailability();const message=t(error.code==='workflow-storage-capacity'?'controllerStorageAdmissionCapacity':'controllerStorageAdmissionPending');toast(message,true);$('controller-storage-title').focus();return true;
+}
+
 const systemNavigation=document.createElement('button');systemNavigation.type='button';systemNavigation.className='nav-item';systemNavigation.dataset.view='system';systemNavigation.dataset.i18n='systemTools';systemNavigation.textContent=t('systemTools');systemNavigation.addEventListener('click',()=>navigate('system',true));document.querySelector('.main-nav').appendChild(systemNavigation);
 $('system-form').addEventListener('submit',event=>{event.preventDefault();previewSystem()});
 $('system-form').addEventListener('input',invalidateSystemPlan);$('system-form').addEventListener('change',invalidateSystemPlan);
 $('system-engine').addEventListener('change',()=>{renderSystemPresets();refreshSystemFields()});
 $('system-action').addEventListener('change',()=>{refreshSystemFields()});
-$('system-folder').addEventListener('click',async()=>{const context=historyContext();try{const job=await apiRequest('/api/v1/system/folder','POST',{});systemUI.folderJob=job.id;renderSystemJob(job);pollSystemJob()}catch(e){if(context===historyContext()&&state.view==='system'&&!handleWorkflowLifecycleAdmission(e))toast(e.message,true)}});
+$('system-folder').addEventListener('click',chooseSystemFolder);
 $('system-clear-apps').addEventListener('click',()=>{$('system-applications').value='';invalidateSystemPlan()});
 $('system-preset').addEventListener('change',()=>{const p=systemUI.presets[Number($('system-preset').value)];if($('system-preset').value!==''&&p){$('system-args').value=p.args.join('\n');invalidateSystemPlan()}});
 $('system-consent').addEventListener('change',()=>{$('system-apply').disabled=!systemUI.plan?.ready||!$('system-consent').checked||workflowLifecycleBlocked()});
@@ -543,6 +589,7 @@ $('system-inspect').addEventListener('click',()=>previewSystem({action:'discover
 $('system-cancel').addEventListener('click',async()=>{try{renderSystemJob(await apiRequest('/api/v1/system/cancel','POST',{}))}catch(e){toast(e.message,true)}});
 $('system-history').addEventListener('click',openHistory);
 $('history-lifecycle-refresh').addEventListener('click',refreshWorkflowLifecycle);
+$('controller-storage-refresh').addEventListener('click',refreshControllerStorage);
 $('reconcile-refresh').addEventListener('click',refreshReconciliationStatus);
 $('reconcile-preview').addEventListener('click',()=>previewReconciliation(false));
 $('reconcile-resume').addEventListener('click',()=>previewReconciliation(true));

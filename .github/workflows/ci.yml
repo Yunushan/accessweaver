@@ -17,6 +17,7 @@ on:
           - workflow-lifecycle
           - workflow-reconciliation
           - desktop-diagnostics
+          - controller-storage
 
 permissions:
   contents: read
@@ -30,16 +31,16 @@ env:
 
 jobs:
   browser:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage') }}
     uses: ./.github/workflows/browser.yml
   windows-audit-storage:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage') }}
     uses: ./.github/workflows/windows-audit-storage.yml
   darwin-audit-commands:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage') }}
     uses: ./.github/workflows/darwin-audit-commands.yml
   vulnerabilities:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage') }}
     name: Go vulnerability checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -99,7 +100,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   test:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage') }}
     name: Test (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -411,7 +412,7 @@ jobs:
         shell: bash
         run: test -z "$(gofmt -l cmd internal web)"
   race:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage') }}
     name: Race detector (Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -431,7 +432,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   race-arm64:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage') }}
     name: Race detector (Linux/arm64)
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
@@ -452,7 +453,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   cross-compile:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage') }}
     name: Cross-build (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -476,8 +477,8 @@ jobs:
   # Manual candidate-only fixture check. The regular push/PR/full matrix above
   # stays complete. This does not certify installed or managed endpoints.
   workflow-store:
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.scope == 'workflow-store' || inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' || inputs.scope == 'workflow-reconciliation') }}
-    name: ${{ inputs.scope == 'workflow-reconciliation' && 'Workflow reconciliation' || inputs.scope == 'desktop-diagnostics' && 'Desktop diagnostics' || inputs.scope == 'workflow-lifecycle' && 'Workflow lifecycle' || inputs.scope == 'workflow-history' && 'Workflow history' || 'Workflow store' }} (${{ matrix.goos }}/${{ matrix.goarch }})
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.scope == 'workflow-store' || inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' || inputs.scope == 'workflow-reconciliation' || inputs.scope == 'controller-storage') }}
+    name: ${{ inputs.scope == 'controller-storage' && 'Controller storage' || inputs.scope == 'workflow-reconciliation' && 'Workflow reconciliation' || inputs.scope == 'desktop-diagnostics' && 'Desktop diagnostics' || inputs.scope == 'workflow-lifecycle' && 'Workflow lifecycle' || inputs.scope == 'workflow-history' && 'Workflow history' || 'Workflow store' }} (${{ matrix.goos }}/${{ matrix.goarch }})
     strategy:
       fail-fast: false
       matrix:
@@ -535,24 +536,24 @@ jobs:
       - name: Test native persistent file locks
         run: go test ./internal/filelock -count=1 -timeout=3m
       - name: Test workflow store admission, lifetime and subprocess fixtures
-        if: ${{ inputs.scope != 'workflow-reconciliation' }}
+        if: ${{ inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' }}
         run: go test ./internal/workflow -run '^TestWorkflowStore' -count=1 -timeout=4m
       - name: Test workflow history inventory and exact records
         if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' }}
         run: go test ./internal/workflow -run '^TestWorkflowHistory' -count=1 -timeout=5m
       - name: Test history API and CLI contracts
-        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' || inputs.scope == 'workflow-reconciliation' }}
+        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' || inputs.scope == 'workflow-reconciliation' || inputs.scope == 'controller-storage' }}
         run: go test ./internal/api ./cmd/accessweaver -run '^(TestHistoryBrowser|TestSystemHistoryBrowser)' -count=1 -timeout=5m
       - name: Test private history file creation
-        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' || inputs.scope == 'workflow-reconciliation' }}
+        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' || inputs.scope == 'workflow-reconciliation' || inputs.scope == 'controller-storage' }}
         run: go test ./internal/privatefile -count=1 -timeout=3m
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' || inputs.scope == 'workflow-reconciliation' }}
+        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' || inputs.scope == 'workflow-reconciliation' || inputs.scope == 'controller-storage' }}
         with:
           node-version: '26.8.2'
           package-manager-cache: false
       - name: Verify actual Go history responses with desktop source
-        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' || inputs.scope == 'workflow-reconciliation' }}
+        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' || inputs.scope == 'workflow-reconciliation' || inputs.scope == 'controller-storage' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -653,3 +654,29 @@ jobs:
           go test -race ./internal/workflow -count=1 -timeout=6m
           go test -race ./internal/managed -run '^TestLifecycleReconciliation' -count=1 -timeout=3m
           go test -race ./internal/api ./cmd/accessweaver -run '^(TestLifecycleReconciliationAPI|TestSystemHistoryReconciliation)' -count=1 -timeout=4m
+      - name: Test complete controller storage and workflow ownership contracts
+        if: ${{ inputs.scope == 'controller-storage' }}
+        run: go test ./internal/workflow -count=1 -timeout=5m
+      - name: Test controller storage API and CLI contracts
+        if: ${{ inputs.scope == 'controller-storage' }}
+        run: go test ./internal/api ./cmd/accessweaver -run '^(TestControllerStorageAPI|TestSystemControllerStorage)' -count=1 -timeout=3m
+      - name: Verify actual Go controller storage responses with desktop source
+        if: ${{ inputs.scope == 'controller-storage' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $fixture = Join-Path $env:RUNNER_TEMP ('accessweaver-controller-storage-' + [Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $fixture -ErrorAction Stop | Out-Null
+          $env:ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP = $fixture
+          go test ./internal/workflow -run '^TestControllerStorageDesktopWireInterop$' -count=1 -timeout=3m
+          if ($LASTEXITCODE -ne 0) { throw 'Controller storage response producer failed' }
+          node web/app.test.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Controller storage desktop contract verification failed' }
+      - name: Static analysis controller storage contracts
+        if: ${{ inputs.scope == 'controller-storage' }}
+        run: go vet ./internal/workflow ./internal/managed ./internal/api ./cmd/accessweaver
+      - name: Race native controller storage and workflow ownership
+        if: ${{ inputs.scope == 'controller-storage' && runner.os != 'Windows' }}
+        run: |
+          go test -race ./internal/workflow -count=1 -timeout=6m
+          go test -race ./internal/api ./cmd/accessweaver -run '^(TestControllerStorageAPI|TestSystemControllerStorage)' -count=1 -timeout=4m

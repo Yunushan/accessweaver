@@ -54,7 +54,7 @@ func TestWorkflowStoreProcessHelper(t *testing.T) {
 }
 
 func workflowStoreSourceChild(phase string) int {
-	if phase != "admission" && phase != "execution" && phase != "terminal" {
+	if phase != "admission" && phase != "execution" && phase != "terminal" && phase != "storage-reservation" {
 		return 90
 	}
 	reader := bufio.NewReaderSize(os.Stdin, 4096)
@@ -105,6 +105,9 @@ func workflowStoreSourceChild(phase string) int {
 		<-release
 	}
 	m := workflowStoreSourceManager(request.Root)
+	if phase == "storage-reservation" {
+		m.controllerStorageHooks = &controllerStorageHooks{afterReserved: hold}
+	}
 	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
 		observeWorkflowNoNativeOwners(ctx)
 		if phase == "execution" {

@@ -123,33 +123,35 @@ func Catalog() []Operation {
 }
 
 type Manager struct {
-	startMu              sync.Mutex
-	guard                *managed.Guard
-	mu                   sync.Mutex
-	root                 string
-	storeRoot            string
-	openStoreLease       func(string) (workflowStoreLease, error)
-	writeLifecycle       func(string, []byte, string) error
-	publishLifecycle     func(string, string, string) error
-	historyStagingHooks  *historyStagingHooks
-	releaseWitness       *localReleaseWitness
-	reconciliationPlans  map[string]*privateReconciliationPlan
-	maintenance          *reconciliationCompletion
-	storeFailure         error
-	retainedStoreLeases  []workflowStoreLease
-	plans                map[string]Plan
-	job                  Job
-	cancel               context.CancelFunc
-	done                 chan struct{}
-	completion           *workflowCompletion
-	shutdown             *workflowShutdown
-	closing              bool
-	execute              func(context.Context, string, Request) (json.RawMessage, error)
-	persist              func(string, []byte) error
-	persistProbe         *workflowPersistObservation
-	lastJobPersistClosed bool
-	platform             string
-	requireAdmin         func() error
+	startMu                sync.Mutex
+	guard                  *managed.Guard
+	mu                     sync.Mutex
+	root                   string
+	storeRoot              string
+	openStoreLease         func(string) (workflowStoreLease, error)
+	writeLifecycle         func(string, []byte, string) error
+	publishLifecycle       func(string, string, string) error
+	historyStagingHooks    *historyStagingHooks
+	controllerBudget       *controllerStorageBudget
+	controllerStorageHooks *controllerStorageHooks
+	releaseWitness         *localReleaseWitness
+	reconciliationPlans    map[string]*privateReconciliationPlan
+	maintenance            *reconciliationCompletion
+	storeFailure           error
+	retainedStoreLeases    []workflowStoreLease
+	plans                  map[string]Plan
+	job                    Job
+	cancel                 context.CancelFunc
+	done                   chan struct{}
+	completion             *workflowCompletion
+	shutdown               *workflowShutdown
+	closing                bool
+	execute                func(context.Context, string, Request) (json.RawMessage, error)
+	persist                func(string, []byte) error
+	persistProbe           *workflowPersistObservation
+	lastJobPersistClosed   bool
+	platform               string
+	requireAdmin           func() error
 }
 
 func New(root string) *Manager { return NewWithGuard(root, managed.NewGuard(nil)) }
@@ -511,8 +513,32 @@ func (m *Manager) Start(id string) (Job, error) {
 	initialErr := activeErr
 	initialRecordClosed := false
 	var lifecycle *workflowLifecycle
+	var prepared *preparedWorkflowInput
 	if initialErr == nil {
-		lifecycle, initialErr = m.beginWorkflowLifecycle(ctx, job, p.Request)
+		initialErr = ctx.Err()
+	}
+	if initialErr == nil {
+		prepared, initialErr = prepareWorkflowInput(filepath.Join(m.root, id), p.Request, permission)
+	}
+	if initialErr == nil {
+		initialErr = permission.Authorization.Check()
+	}
+	if initialErr == nil {
+		var budget *controllerStorageBudget
+		budget, initialErr = m.reserveControllerStorage(ctx, job, prepared)
+		if initialErr == nil {
+			m.mu.Lock()
+			m.controllerBudget = budget
+			m.mu.Unlock()
+			if m.controllerStorageHooks != nil && m.controllerStorageHooks.afterReserved != nil {
+				m.controllerStorageHooks.afterReserved()
+			}
+			ctx = context.WithValue(ctx, preparedWorkflowInputKey{}, prepared)
+			ctx = context.WithValue(ctx, controllerStorageBudgetKey{}, budget)
+			// A durable reservation has crossed admission. Finish its intent even if
+			// canceled, then use the original canceled context for the worker branch.
+			lifecycle, initialErr = m.beginWorkflowLifecycle(context.WithoutCancel(ctx), job, p.Request)
+		}
 	}
 	if initialErr == nil {
 		// Contention does not consume a still-reviewed plan. Once this reserved
@@ -560,7 +586,7 @@ func (m *Manager) Start(id string) (Job, error) {
 			completion.err = nil
 		}
 		close(done)
-		if errors.Is(initialErr, ErrWorkflowStore) || errors.Is(initialErr, ErrWorkflowLifecycle) || closeErr != nil {
+		if errors.Is(initialErr, ErrWorkflowStore) || errors.Is(initialErr, ErrWorkflowLifecycle) || errors.Is(initialErr, ErrWorkflowStoragePending) || errors.Is(initialErr, ErrWorkflowStorageCapacity) || closeErr != nil {
 			// New coordination errors never print an underlying OS pathname.
 			return Job{}, completion.err
 		}
@@ -691,6 +717,14 @@ func (m *Manager) saveJob(job *Job) error {
 	b, e := encodeJob(*job)
 	if e != nil {
 		return e
+	}
+	m.mu.Lock()
+	budget := m.controllerBudget
+	m.mu.Unlock()
+	if budget != nil && budget.reservation.Generation == job.ID {
+		if err := budget.chargeRecord(b); err != nil {
+			return err
+		}
 	}
 	lease, err := m.acquireWorkflowStoreLease(workflowTransactionLockName)
 	if err != nil {
@@ -855,11 +889,29 @@ func executeWorkflow(ctx context.Context, dir string, r Request, commandFactory 
 	if commandFactory == nil && runtime.GOOS != "windows" {
 		return nil, errors.New("Windows required")
 	}
-	permission, err := workflowPermission(managed.NewGuard(nil), r)
-	if err != nil {
+	prepared := preparedWorkflowFrom(ctx)
+	if prepared == nil {
+		permission, err := workflowPermission(managed.NewGuard(nil), r)
+		if err != nil {
+			return nil, err
+		}
+		prepared, err = prepareWorkflowInput(dir, r, permission)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := prepared.Authorization.Check(); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	requestBytes, err := json.Marshal(r)
+	if err != nil || prepared.RequestSHA256 != workflowLifecycleHash(requestBytes) || prepared.ResultPath != filepath.Join(dir, "result.json") {
+		return nil, ErrWorkflowStoragePending
+	}
+	if preparedWorkflowFrom(ctx) != nil {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			return nil, err
+		}
+	} else if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
 	log, err := logfile.Open(filepath.Join(dir, "process.log"), 4<<20, 2)
@@ -883,46 +935,25 @@ func executeWorkflow(ctx context.Context, dir string, r Request, commandFactory 
 	if err := phase("storage-ready"); err != nil {
 		return nil, err
 	}
-	script, _ := scripts.ReadFile("windows.ps1")
+	script := prepared.Script
+	b := prepared.Input
 	scriptPath := filepath.Join(dir, "workflow.ps1")
-	if err := profile.AtomicWrite(scriptPath, script); err != nil {
+	scriptLimit, err := snapshotAllowance(ctx, "script", script)
+	if err != nil {
+		return nil, err
+	}
+	if err := writeControllerSnapshot(scriptPath, script, scriptLimit); err != nil {
 		return nil, err
 	}
 	if err := phase("script-ready"); err != nil {
 		return nil, err
 	}
-	executable, err := os.Executable()
+	requestPath := filepath.Join(dir, "request.json")
+	requestLimit, err := snapshotAllowance(ctx, "request", b)
 	if err != nil {
 		return nil, err
 	}
-	hook, _ := presetFiles.ReadFile("presets/00-accessweaver-isp.sh")
-	// Unavailable host identity stays unknown. Read-only workflows may proceed,
-	// but driver prerequisite selection must refuse it without an x64 fallback.
-	nativeArchitecture, _ := nativepath.WindowsArchitecture()
-	resultTokenBytes := make([]byte, 24)
-	if _, err := rand.Read(resultTokenBytes); err != nil {
-		return nil, err
-	}
-	resultToken := hex.EncodeToString(resultTokenBytes)
-	input := struct {
-		NativeArchitecture string                 `json:"nativeArchitecture"`
-		Request            Request                `json:"request"`
-		Controller         string                 `json:"controller"`
-		ResultPath         string                 `json:"resultPath"`
-		ResultToken        string                 `json:"resultToken"`
-		ISPHook            string                 `json:"ispHook"`
-		ManagedPolicy      bool                   `json:"managedPolicy"`
-		AllowDownloads     bool                   `json:"allowDownloads"`
-		Downloads          []managed.DownloadRule `json:"downloads"`
-	}{
-		NativeArchitecture: nativeArchitecture, Request: r, Controller: executable,
-		ResultPath: filepath.Join(dir, "result.json"), ResultToken: resultToken,
-		ISPHook: string(hook), ManagedPolicy: permission.Managed,
-		AllowDownloads: permission.AllowDownloads, Downloads: permission.Downloads,
-	}
-	b, _ := json.Marshal(input)
-	requestPath := filepath.Join(dir, "request.json")
-	if err := profile.AtomicWrite(requestPath, b); err != nil {
+	if err := writeControllerSnapshot(requestPath, b, requestLimit); err != nil {
 		return nil, err
 	}
 	if err := phase("request-ready"); err != nil {
@@ -933,6 +964,9 @@ func executeWorkflow(ctx context.Context, dir string, r Request, commandFactory 
 	// reread as privileged code or as a different request after launch review.
 	program := strings.Replace(string(script), "param([Parameter(Mandatory=$true)][string]$RequestPath)", "param()", 1)
 	program = strings.Replace(program, "$inputData = Get-Content -LiteralPath $RequestPath -Raw | ConvertFrom-Json", "$inputData = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+base64.StdEncoding.EncodeToString(b)+"')) | ConvertFrom-Json", 1)
+	if err := prepared.Authorization.Check(); err != nil {
+		return nil, err
+	}
 	var cmd *exec.Cmd
 	if commandFactory != nil {
 		cmd, err = commandFactory(ctx, b, program)
@@ -998,14 +1032,14 @@ func executeWorkflow(ctx context.Context, dir string, r Request, commandFactory 
 			err = errors.Join(err, contextErr)
 		}
 	}
-	result, readErr := readWorkflowLifecycleFile(context.Background(), input.ResultPath, maxResultBytes)
+	result, readErr := readWorkflowLifecycleFile(context.Background(), prepared.ResultPath, maxResultBytes)
 	if readErr != nil {
 		return nil, errors.Join(err, workflowCause(ErrWorkflowResult, fmt.Errorf("read workflow result: %w", readErr)))
 	}
 	if resultErr := validateResult(result); resultErr != nil {
 		return nil, errors.Join(err, workflowCause(ErrWorkflowResult, resultErr))
 	}
-	report, reportErr := decodeWorkerReport(result, input.ResultToken)
+	report, reportErr := decodeWorkerReport(result, prepared.ResultToken)
 	if reportErr != nil {
 		// Never publish an unrelated or stale file as this launch's result.
 		return nil, errors.Join(err, workflowCause(ErrWorkflowResult, reportErr))
