@@ -84,6 +84,10 @@ func failProfile(w http.ResponseWriter, err error, fallback int) {
 		fail(w, http.StatusServiceUnavailable, audit.ErrRecorderUnavailable.Error())
 		return
 	}
+	if errors.Is(err, profile.ErrMutationUncertain) {
+		fail(w, http.StatusServiceUnavailable, profile.ErrMutationUncertain.Error())
+		return
+	}
 	if errors.Is(err, profile.ErrReadUnavailable) || errors.Is(err, filelock.ErrCloseUncertain) {
 		fail(w, http.StatusServiceUnavailable, profile.ErrReadUnavailable.Error())
 		return

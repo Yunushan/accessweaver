@@ -134,8 +134,9 @@ func (s *Store) Save(p Profile) error {
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
-	return s.saveLocked(p)
+	return mutateProfileSynchronously(context.Background(), func(ctx context.Context, progress *mutationProgress) error {
+		return s.saveLockedContext(ctx, p, progress)
+	}, lock.Close)
 }
 
 // SaveIfUnchanged compares and replaces under the shared OS lock. CLI import
@@ -160,7 +161,12 @@ func (s *Store) saveIfUnchangedContext(ctx context.Context, p Profile, read func
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
+	return mutateProfileSynchronously(ctx, func(ctx context.Context, progress *mutationProgress) error {
+		return s.saveIfUnchangedLockedContext(ctx, p, read, progress)
+	}, lock.Close)
+}
+
+func (s *Store) saveIfUnchangedLockedContext(ctx context.Context, p Profile, read func(context.Context, string) (Profile, error), progress *mutationProgress) error {
 	current, err := read(ctx, p.ID)
 	if errors.Is(err, ErrReadUnavailable) {
 		return err
@@ -174,11 +180,10 @@ func (s *Store) saveIfUnchangedContext(ctx context.Context, p Profile, read func
 	} else if p.UpdatedAt.IsZero() || !p.UpdatedAt.Equal(current.UpdatedAt) {
 		return ErrConflict
 	}
-	return s.saveLockedContext(ctx, p)
+	return s.saveLockedContext(ctx, p, progress)
 }
 
-func (s *Store) saveLocked(p Profile) error { return s.saveLockedContext(context.Background(), p) }
-func (s *Store) saveLockedContext(ctx context.Context, p Profile) error {
+func (s *Store) saveLockedContext(ctx context.Context, p Profile, progress *mutationProgress) error {
 	if err := s.guard.ProfileMutation(ctx, "write"); err != nil {
 		return err
 	}
@@ -195,6 +200,7 @@ func (s *Store) saveLockedContext(ctx context.Context, p Profile) error {
 	if fi, err := os.Lstat(path); err == nil && !fi.Mode().IsRegular() {
 		return errors.New("refusing to overwrite non-regular file")
 	}
+	progress.effectsAttempted = true
 	return AtomicWrite(path, b)
 }
 func (s *Store) Delete(id string) error {
@@ -205,7 +211,12 @@ func (s *Store) Delete(id string) error {
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
+	return mutateProfileSynchronously(context.Background(), func(_ context.Context, progress *mutationProgress) error {
+		return s.deleteLocked(id, progress)
+	}, lock.Close)
+}
+
+func (s *Store) deleteLocked(id string, progress *mutationProgress) error {
 	file, err := s.filename(id)
 	if err != nil {
 		return err
@@ -213,6 +224,7 @@ func (s *Store) Delete(id string) error {
 	if err := s.guard.ProfileChanges(); err != nil {
 		return err
 	}
+	progress.effectsAttempted = true
 	return os.Remove(file)
 }
 
@@ -233,7 +245,12 @@ func (s *Store) deleteIfUnchangedContext(ctx context.Context, id string, expecte
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
+	return mutateProfileSynchronously(ctx, func(ctx context.Context, progress *mutationProgress) error {
+		return s.deleteIfUnchangedLockedContext(ctx, id, expected, read, progress)
+	}, lock.Close)
+}
+
+func (s *Store) deleteIfUnchangedLockedContext(ctx context.Context, id string, expected time.Time, read func(context.Context, string) (Profile, error), progress *mutationProgress) error {
 	current, err := read(ctx, id)
 	if errors.Is(err, ErrReadUnavailable) {
 		return err
@@ -254,6 +271,7 @@ func (s *Store) deleteIfUnchangedContext(ctx context.Context, id string, expecte
 	if err := s.guard.ProfileMutation(ctx, "delete"); err != nil {
 		return err
 	}
+	progress.effectsAttempted = true
 	return os.Remove(file)
 }
 
@@ -300,7 +318,12 @@ func (s *Store) Seed(samples []Profile) error {
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
+	return mutateProfileSynchronously(context.Background(), func(ctx context.Context, progress *mutationProgress) error {
+		return s.seedLockedContext(ctx, samples, progress)
+	}, lock.Close)
+}
+
+func (s *Store) seedLockedContext(ctx context.Context, samples []Profile, progress *mutationProgress) error {
 	// Seeding is first-run initialization, not synchronization. Once the user
 	// deletes a bundled profile it must stay deleted on subsequent launches.
 	marker := filepath.Join(s.Root, "presets-initialized")
@@ -327,12 +350,13 @@ func (s *Store) Seed(samples []Profile) error {
 		if err := p.Validate(); err != nil {
 			return err
 		}
-		if err := s.saveLocked(p); err != nil {
+		if err := s.saveLockedContext(ctx, p, progress); err != nil {
 			return err
 		}
 	}
 	if err := s.guard.ProfileChanges(); err != nil {
 		return err
 	}
+	progress.effectsAttempted = true
 	return AtomicWrite(marker, []byte("1\n"))
 }

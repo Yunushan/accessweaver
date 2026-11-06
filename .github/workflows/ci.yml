@@ -892,10 +892,10 @@ jobs:
         run: go test ./cmd/accessweaver -run '^TestBackup' -count=1 -timeout=3m
       - name: Test profile API read and audit completion contracts
         if: inputs.scope == 'profile-read'
-        run: go test ./internal/api -run '^Test(ProfileRead|AuditedProfile(ReadUncertainty|WriteKeepsCompletedOutcomeWhenResponseReadFails|ActualCRUDAndRevisionRefusal)|AuditedAPIFailClosedBeforeStoreAndAfterUncertainResult|CleanMissingProfileRemainsNotFoundAndCanBeCreated)' -count=1 -timeout=3m
+        run: go test ./internal/api -run '^Test(Profile(Read|Mutation)|AuditedProfile(ReadUncertainty|Mutation|WriteKeepsCompletedOutcomeWhenResponseReadFails|ActualCRUDAndRevisionRefusal)|AuditedAPIFailClosedBeforeStoreAndAfterUncertainResult|CleanMissingProfileRemainsNotFoundAndCanBeCreated)' -count=1 -timeout=3m
       - name: Test profile import read completion contracts
         if: inputs.scope == 'profile-read'
-        run: go test ./cmd/accessweaver -run '^TestAuditImportReadCompletion' -count=1 -timeout=3m
+        run: go test ./cmd/accessweaver -run '^TestAuditImport(Read|Mutation)Completion' -count=1 -timeout=3m
       - name: Race test backup I/O ownership
         if: runner.os != 'Windows'
         run: |
@@ -908,9 +908,9 @@ jobs:
         if: runner.os != 'Windows' && inputs.scope == 'profile-read'
         run: |
           $ErrorActionPreference = 'Stop'
-          go test -race ./internal/api -run '^Test(ProfileRead|AuditedProfile(ReadUncertainty|WriteKeepsCompletedOutcomeWhenResponseReadFails|ActualCRUDAndRevisionRefusal)|AuditedAPIFailClosedBeforeStoreAndAfterUncertainResult|CleanMissingProfileRemainsNotFoundAndCanBeCreated)' -count=1 -timeout=3m
+          go test -race ./internal/api -run '^Test(Profile(Read|Mutation)|AuditedProfile(ReadUncertainty|Mutation|WriteKeepsCompletedOutcomeWhenResponseReadFails|ActualCRUDAndRevisionRefusal)|AuditedAPIFailClosedBeforeStoreAndAfterUncertainResult|CleanMissingProfileRemainsNotFoundAndCanBeCreated)' -count=1 -timeout=3m
           if ($LASTEXITCODE -ne 0) { throw 'Profile read API race contracts failed' }
-          go test -race ./cmd/accessweaver -run '^TestAuditImportReadCompletion' -count=1 -timeout=3m
+          go test -race ./cmd/accessweaver -run '^TestAuditImport(Read|Mutation)Completion' -count=1 -timeout=3m
           if ($LASTEXITCODE -ne 0) { throw 'Profile import read completion race contracts failed' }
       - name: Build source-bound CLI and verify independent Web Crypto interoperability
         run: |
