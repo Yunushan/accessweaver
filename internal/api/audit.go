@@ -9,6 +9,7 @@ import (
 
 	"github.com/Yunushan/accessweaver/internal/audit"
 	"github.com/Yunushan/accessweaver/internal/engine"
+	"github.com/Yunushan/accessweaver/internal/filelock"
 	"github.com/Yunushan/accessweaver/internal/managed"
 	"github.com/Yunushan/accessweaver/internal/profile"
 )
@@ -36,6 +37,11 @@ func (s *Server) profileChange(ctx context.Context, action string, operation fun
 		err := operation(ctx)
 		if err == nil {
 			return audit.OperationResult{Outcome: "completed"}
+		}
+		// A read/cleanup cofailure stays uncertain even when its retained causes
+		// also include a normally refused revision, contention or policy result.
+		if errors.Is(err, profile.ErrReadUnavailable) || errors.Is(err, filelock.ErrCloseUncertain) {
+			return audit.OperationResult{Outcome: "indeterminate", Err: err}
 		}
 		// These store contracts refuse before saving/deleting. Cancellation or
 		// unknown I/O may race with commit, so neither is asserted absent.

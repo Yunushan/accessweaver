@@ -19,6 +19,7 @@ type apiAuditJournal struct {
 	lines         []byte
 	events        []audit.Event
 	calls, failAt int
+	afterAppend   func(audit.Event)
 }
 
 func (j *apiAuditJournal) Append(ctx context.Context, e audit.Event) (audit.Checkpoint, error) {
@@ -36,6 +37,9 @@ func (j *apiAuditJournal) Append(ctx context.Context, e audit.Event) (audit.Chec
 	j.lines = append(j.lines, data...)
 	j.head = next
 	j.events = append(j.events, e)
+	if j.afterAppend != nil {
+		j.afterAppend(e)
+	}
 	return next, nil
 }
 func (j *apiAuditJournal) Snapshot(context.Context) ([]byte, audit.Checkpoint, audit.Checkpoint, error) {

@@ -22,6 +22,7 @@ import (
 	"github.com/Yunushan/accessweaver/internal/buildinfo"
 	"github.com/Yunushan/accessweaver/internal/diagnostics"
 	"github.com/Yunushan/accessweaver/internal/engine"
+	"github.com/Yunushan/accessweaver/internal/filelock"
 	"github.com/Yunushan/accessweaver/internal/managed"
 	"github.com/Yunushan/accessweaver/internal/profile"
 	"github.com/Yunushan/accessweaver/internal/uiaccess"
@@ -75,8 +76,20 @@ func fail(w http.ResponseWriter, status int, message string) {
 
 func failProfile(w http.ResponseWriter, err error, fallback int) {
 	status := fallback
-	if errors.Is(err, audit.ErrRecorderUnavailable) || errors.Is(err, audit.ErrRecordedUncertain) {
-		fail(w, http.StatusServiceUnavailable, err.Error())
+	if errors.Is(err, audit.ErrRecordedUncertain) {
+		fail(w, http.StatusServiceUnavailable, audit.ErrRecordedUncertain.Error())
+		return
+	}
+	if errors.Is(err, audit.ErrRecorderUnavailable) {
+		fail(w, http.StatusServiceUnavailable, audit.ErrRecorderUnavailable.Error())
+		return
+	}
+	if errors.Is(err, profile.ErrReadUnavailable) || errors.Is(err, filelock.ErrCloseUncertain) {
+		fail(w, http.StatusServiceUnavailable, profile.ErrReadUnavailable.Error())
+		return
+	}
+	if fallback == http.StatusNotFound && errors.Is(err, fs.ErrNotExist) {
+		fail(w, http.StatusNotFound, "saved profile was not found")
 		return
 	}
 	if errors.Is(err, profile.ErrConflict) {

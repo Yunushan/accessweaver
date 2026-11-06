@@ -14,6 +14,17 @@ import (
 
 var ErrBusy = errors.New("another process holds the file lock")
 
+// ErrCloseUncertain means an acquisition's owned-file cleanup returned an error.
+// It is not plain contention and must take precedence over a retained ErrBusy.
+var ErrCloseUncertain = errors.New("file lock acquisition cleanup could not be confirmed")
+
+type acquisitionCloseUncertain struct{ cause error }
+
+func (e *acquisitionCloseUncertain) Error() string { return ErrCloseUncertain.Error() }
+func (e *acquisitionCloseUncertain) Unwrap() []error {
+	return []error{ErrCloseUncertain, e.cause}
+}
+
 type Lock struct {
 	file     *os.File
 	once     sync.Once
@@ -68,7 +79,7 @@ func joinLockClose(primary, closeErr error) error {
 	if closeErr == nil {
 		return primary
 	}
-	return errors.Join(primary, closeErr)
+	return &acquisitionCloseUncertain{cause: errors.Join(primary, closeErr)}
 }
 func acquire(ctx context.Context, path string, attempt func(string) (*Lock, error), closeOwned func(*Lock) error) (*Lock, error) {
 	contended := false

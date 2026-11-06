@@ -21,8 +21,9 @@ on:
           - recovery-journal
           - desktop-support
           - backup-io
+          - profile-read
       backup_platform:
-        description: Native platform for the manual backup-io scope only
+        description: Native platform for manual backup-io and profile-read scopes
         type: choice
         default: all
         options:
@@ -43,16 +44,16 @@ env:
 
 jobs:
   browser:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
     uses: ./.github/workflows/browser.yml
   windows-audit-storage:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
     uses: ./.github/workflows/windows-audit-storage.yml
   darwin-audit-commands:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
     uses: ./.github/workflows/darwin-audit-commands.yml
   vulnerabilities:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
     name: Go vulnerability checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -112,7 +113,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   test:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
     name: Test (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -424,7 +425,7 @@ jobs:
         shell: bash
         run: test -z "$(gofmt -l cmd internal web)"
   race:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
     name: Race detector (Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -444,7 +445,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   race-arm64:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
     name: Race detector (Linux/arm64)
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
@@ -465,7 +466,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   cross-compile:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
     name: Cross-build (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -839,8 +840,8 @@ jobs:
         run: go vet ./internal/api ./web
 
   backup-io:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.scope == 'backup-io' }}
-    name: Backup I/O (${{ matrix.goos }}/${{ matrix.goarch }})
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.scope == 'backup-io' || inputs.scope == 'profile-read') }}
+    name: ${{ inputs.scope == 'profile-read' && 'Profile read I/O' || 'Backup I/O' }} (${{ matrix.goos }}/${{ matrix.goarch }})
     strategy:
       fail-fast: false
       matrix:
@@ -889,6 +890,12 @@ jobs:
         run: go test ./internal/backup ./internal/profile -count=1 -timeout=3m
       - name: Test backup CLI contracts
         run: go test ./cmd/accessweaver -run '^TestBackup' -count=1 -timeout=3m
+      - name: Test profile API read and audit completion contracts
+        if: inputs.scope == 'profile-read'
+        run: go test ./internal/api -run '^Test(ProfileRead|AuditedProfile(ReadUncertainty|WriteKeepsCompletedOutcomeWhenResponseReadFails|ActualCRUDAndRevisionRefusal)|AuditedAPIFailClosedBeforeStoreAndAfterUncertainResult|CleanMissingProfileRemainsNotFoundAndCanBeCreated)' -count=1 -timeout=3m
+      - name: Test profile import read completion contracts
+        if: inputs.scope == 'profile-read'
+        run: go test ./cmd/accessweaver -run '^TestAuditImportReadCompletion' -count=1 -timeout=3m
       - name: Race test backup I/O ownership
         if: runner.os != 'Windows'
         run: |
@@ -897,6 +904,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Backup I/O package race contracts failed' }
           go test -race ./cmd/accessweaver -run '^TestBackup' -count=1 -timeout=3m
           if ($LASTEXITCODE -ne 0) { throw 'Backup CLI race contracts failed' }
+      - name: Race test profile read completion contracts
+        if: runner.os != 'Windows' && inputs.scope == 'profile-read'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          go test -race ./internal/api -run '^Test(ProfileRead|AuditedProfile(ReadUncertainty|WriteKeepsCompletedOutcomeWhenResponseReadFails|ActualCRUDAndRevisionRefusal)|AuditedAPIFailClosedBeforeStoreAndAfterUncertainResult|CleanMissingProfileRemainsNotFoundAndCanBeCreated)' -count=1 -timeout=3m
+          if ($LASTEXITCODE -ne 0) { throw 'Profile read API race contracts failed' }
+          go test -race ./cmd/accessweaver -run '^TestAuditImportReadCompletion' -count=1 -timeout=3m
+          if ($LASTEXITCODE -ne 0) { throw 'Profile import read completion race contracts failed' }
       - name: Build source-bound CLI and verify independent Web Crypto interoperability
         run: |
           $ErrorActionPreference = 'Stop'
@@ -915,3 +930,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native backup Web Crypto interoperability failed' }
       - name: Static analysis backup I/O contracts
         run: go vet ./internal/fileinput ./internal/privatefile ./internal/filelock ./internal/backup ./internal/profile ./cmd/accessweaver
+      - name: Static analysis profile read contracts
+        if: inputs.scope == 'profile-read'
+        run: go vet ./internal/api

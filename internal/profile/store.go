@@ -59,13 +59,18 @@ func (s *Store) lock(ctx context.Context) (*filelock.Lock, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	lock, err := filelock.Acquire(ctx, filepath.Join(s.Root, ".profiles.lock"))
+	if errors.Is(err, filelock.ErrCloseUncertain) {
+		return nil, profileReadUnavailable(err)
+	}
 	if errors.Is(err, filelock.ErrBusy) {
 		return nil, fmt.Errorf("%w: %w", ErrStoreBusy, err)
 	}
 	if err == nil {
 		if restoreErr := checkRestoreState(s.Root); restoreErr != nil {
-			_ = lock.Close()
-			return nil, restoreErr
+			_, refusal := readProfileSynchronously(ctx, func(context.Context) (Profile, error) {
+				return Profile{}, restoreErr
+			}, lock.Close)
+			return nil, refusal
 		}
 	}
 	return lock, err
@@ -82,36 +87,11 @@ func (s *Store) GetContext(ctx context.Context, id string) (Profile, error) {
 	if err != nil {
 		return Profile{}, err
 	}
-	defer lock.Close()
-	return s.getLocked(id)
+	return readProfileSynchronously(ctx, func(ctx context.Context) (Profile, error) {
+		return s.getLockedContext(ctx, id)
+	}, lock.Close)
 }
 
-func (s *Store) getLocked(id string) (Profile, error) {
-	file, err := s.filename(id)
-	if err != nil {
-		return Profile{}, err
-	}
-	info, err := os.Lstat(file)
-	if err != nil {
-		return Profile{}, err
-	}
-	if !info.Mode().IsRegular() {
-		return Profile{}, errors.New("profile must be a regular file")
-	}
-	f, err := os.Open(file)
-	if err != nil {
-		return Profile{}, err
-	}
-	defer f.Close()
-	p, err := Decode(f)
-	if err != nil {
-		return Profile{}, fmt.Errorf("%s: %w", id, err)
-	}
-	if p.ID != id {
-		return Profile{}, errors.New("profile id does not match filename")
-	}
-	return p, nil
-}
 func (s *Store) List() ([]Profile, error) {
 	return s.ListContext(context.Background())
 }
@@ -131,7 +111,7 @@ func (s *Store) listLocked(ctx context.Context) ([]Profile, error) {
 			continue
 		}
 		id := f.Name()[:len(f.Name())-5]
-		p, err := s.getLocked(id)
+		p, err := s.getLockedContext(ctx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -166,6 +146,10 @@ func (s *Store) SaveIfUnchanged(p Profile) error {
 }
 
 func (s *Store) SaveIfUnchangedContext(ctx context.Context, p Profile) error {
+	return s.saveIfUnchangedContext(ctx, p, s.getLockedContext)
+}
+
+func (s *Store) saveIfUnchangedContext(ctx context.Context, p Profile, read func(context.Context, string) (Profile, error)) error {
 	if err := s.guard.ProfileMutation(ctx, "write"); err != nil {
 		return err
 	}
@@ -177,7 +161,10 @@ func (s *Store) SaveIfUnchangedContext(ctx context.Context, p Profile) error {
 		return err
 	}
 	defer lock.Close()
-	current, err := s.getLocked(p.ID)
+	current, err := read(ctx, p.ID)
+	if errors.Is(err, ErrReadUnavailable) {
+		return err
+	}
 	if errors.Is(err, fs.ErrNotExist) {
 		if !p.UpdatedAt.IsZero() {
 			return ErrConflict
@@ -235,6 +222,10 @@ func (s *Store) DeleteIfUnchanged(id string, expected time.Time) error {
 }
 
 func (s *Store) DeleteIfUnchangedContext(ctx context.Context, id string, expected time.Time) error {
+	return s.deleteIfUnchangedContext(ctx, id, expected, s.getLockedContext)
+}
+
+func (s *Store) deleteIfUnchangedContext(ctx context.Context, id string, expected time.Time, read func(context.Context, string) (Profile, error)) error {
 	if err := s.guard.ProfileMutation(ctx, "delete"); err != nil {
 		return err
 	}
@@ -243,7 +234,10 @@ func (s *Store) DeleteIfUnchangedContext(ctx context.Context, id string, expecte
 		return err
 	}
 	defer lock.Close()
-	current, err := s.getLocked(id)
+	current, err := read(ctx, id)
+	if errors.Is(err, ErrReadUnavailable) {
+		return err
+	}
 	if errors.Is(err, fs.ErrNotExist) {
 		return ErrConflict
 	}

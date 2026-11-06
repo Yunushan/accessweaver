@@ -208,14 +208,30 @@ func importReviewedProfile(ctx context.Context, data []byte) importOutcome {
 	}
 	controller, err := filelock.TryAcquire(filepath.Join(root, ".controller.lock"))
 	if err != nil {
-		return importOutcome{outcome: "refused", mutationStarted: true, failure: errAuditImportRefused}
+		return failedReviewedProfileImportAcquisition(err)
 	}
 	err = store.SaveIfUnchangedContext(ctx, p)
 	closeErr := controller.Close()
-	if err == nil && closeErr == nil {
+	return completeReviewedProfileImport(err, closeErr)
+}
+
+// A failed acquisition may already own a file whose Close was unconfirmed.
+// That cleanup cofailure cannot be presented as a known refusal to the recorder.
+func failedReviewedProfileImportAcquisition(err error) importOutcome {
+	if errors.Is(err, filelock.ErrCloseUncertain) {
+		return importOutcome{outcome: "indeterminate", mutationStarted: true, failure: errAuditImportUncertain}
+	}
+	return importOutcome{outcome: "refused", mutationStarted: true, failure: errAuditImportRefused}
+}
+
+func completeReviewedProfileImport(operationErr, controllerCloseErr error) importOutcome {
+	if operationErr == nil && controllerCloseErr == nil {
 		return importOutcome{outcome: "completed", mutationStarted: true}
 	}
-	if errors.Is(err, profile.ErrConflict) || errors.Is(err, managed.ErrDenied) || errors.Is(err, profile.ErrStoreBusy) {
+	// A read failure can retain a known refusal as a co-cause. Neither it nor
+	// an unconfirmed controller Close proves the operation was safely refused.
+	if controllerCloseErr == nil && !errors.Is(operationErr, profile.ErrReadUnavailable) && !errors.Is(operationErr, filelock.ErrCloseUncertain) &&
+		(errors.Is(operationErr, profile.ErrConflict) || errors.Is(operationErr, managed.ErrDenied) || errors.Is(operationErr, profile.ErrStoreBusy)) {
 		return importOutcome{outcome: "refused", mutationStarted: true, failure: errAuditImportRefused}
 	}
 	return importOutcome{outcome: "indeterminate", mutationStarted: true, failure: errAuditImportUncertain}
