@@ -52,6 +52,19 @@ class NativeRuntimeReadCaptureTests(unittest.TestCase):
   self.assertEqual(profile['test'],'TestDarwinDeploymentCompletionContracts')
   self.assertEqual(profile['filename'],'darwin-deployment-completion.json')
 
+ def test_desktop_profile_refuses_other_cases_and_fixed_authority_overrides(self):
+  value=self.valid()
+  with self.assertRaises(DRIVER.Refused):DRIVER.validate_native(value,'a'*40,'arm64','desktop-read')
+  profile=DRIVER.PROFILES['desktop-read']
+  value['cases']=[{'name':name,'passed':True,'checks':1,'code':'none','sites':0} for name in profile['cases']]
+  self.assertEqual(DRIVER.validate_native(value,'a'*40,'arm64','desktop-read'),value)
+  for suite in ('runtime-read','deployment-completion'):
+   with self.assertRaises(DRIVER.Refused):DRIVER.validate_native(value,'a'*40,'arm64',suite)
+  self.assertEqual(profile['test'],'TestDarwinDesktopReadCompletionContracts')
+  self.assertEqual(profile['filename'],'darwin-desktop-read.json')
+  self.assertEqual(len({p['guard'] for p in DRIVER.PROFILES.values()}),3)
+  self.assertTrue(all(name.startswith(('internal/packageupgrade/','internal/darwintrust/','scripts/')) for name in profile['sources']))
+
  def test_duplicate_json_keys_refused(self):
   with self.assertRaises(DRIVER.Refused):DRIVER.load_json('{"schemaVersion":1,"schemaVersion":2}')
 

@@ -972,6 +972,31 @@ jobs:
           path: ${{ env.ACCESSWEAVER_DARWIN_DEPLOYMENT_COMPLETION_EVIDENCE }}/**/darwin-deployment-completion.json
           if-no-files-found: error
           retention-days: 7
+      - name: Test native Darwin desktop read completion
+        if: inputs.scope == 'profile-read' && matrix.goos == 'darwin'
+        env:
+          ACCESSWEAVER_DISPOSABLE_DARWIN_DESKTOP_READ_TEST: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $desktopEvidence = Join-Path $env:RUNNER_TEMP ('accessweaver-desktop-read-' + [Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $desktopEvidence -ErrorAction Stop | Out-Null
+          foreach ($mode in @('normal', 'race')) {
+            New-Item -ItemType Directory -Path (Join-Path $desktopEvidence $mode) -ErrorAction Stop | Out-Null
+          }
+          $env:ACCESSWEAVER_DARWIN_DESKTOP_READ_EVIDENCE = $desktopEvidence
+          ('ACCESSWEAVER_DARWIN_DESKTOP_READ_EVIDENCE=' + $desktopEvidence) | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append -ErrorAction Stop
+          /usr/bin/python3 scripts/test_darwin_runtime_read_completion.py
+          if ($LASTEXITCODE -ne 0) { throw 'Native desktop collector contracts failed' }
+          /usr/bin/python3 scripts/test-darwin-runtime-read-completion.py --suite desktop-read
+          if ($LASTEXITCODE -ne 0) { throw 'Native desktop read completion contracts failed' }
+      - name: Retain native Darwin desktop read completion evidence
+        if: ${{ always() && inputs.scope == 'profile-read' && matrix.goos == 'darwin' && env.ACCESSWEAVER_DARWIN_DESKTOP_READ_EVIDENCE != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: darwin-desktop-read-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_DARWIN_DESKTOP_READ_EVIDENCE }}/**/darwin-desktop-read.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Test DNS snapshot and recovery contracts
         if: inputs.scope == 'profile-read'
         run: |

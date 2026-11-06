@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -120,29 +121,40 @@ func applications() (*os.File, error) {
 	if e != nil {
 		return nil, e
 	}
-	defer root.Close()
+	return nativeRuntimeReads().applicationsAt(root)
+}
+
+// Root ownership transfers on entry. The only selected child is Applications;
+// its existing admin-group exception is read-only and never reaches descendants.
+func (r runtimeReadOps) applicationsAt(root *os.File) (f *os.File, failure error) {
+	completed := false
+	defer func() {
+		failure = r.finish(root, failure)
+		if !completed || failure != nil {
+			failure = r.finish(f, failure)
+			f = nil
+		}
+	}()
 	fd, e := unix.Openat(int(root.Fd()), "Applications", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if e != nil {
-		return nil, e
+		return f, e
 	}
-	f := os.NewFile(uintptr(fd), "/Applications")
+	f = os.NewFile(uintptr(fd), filepath.Join(root.Name(), "Applications"))
 	info, e := f.Stat()
 	if e != nil {
-		f.Close()
-		return nil, e
+		return f, e
 	}
 	st := info.Sys().(*syscall.Stat_t)
 	if !info.IsDir() || st.Uid != 0 || (st.Gid != 0 && st.Gid != 80) || (info.Mode().Perm() != 0755 && info.Mode().Perm() != 0775) || info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
-		f.Close()
-		return nil, errors.New("unsupported Applications container protection")
+		return f, errors.New("unsupported Applications container protection")
 	}
 	if e = darwintrust.CheckPersistent(f); e == nil {
 		e = darwintrust.CheckReadOnlyACL(f)
 	}
 	if e != nil {
-		f.Close()
-		return nil, e
+		return f, e
 	}
+	completed = true
 	return f, nil
 }
 func inspectBundle(root *os.File, m Manifest, encoded []byte) (map[string][]byte, error) {

@@ -22,26 +22,42 @@ func readDesktopRegistrations() ([]desktopRecord, [][]byte, error) {
 	if e != nil {
 		return nil, nil, e
 	}
-	defer parent.Close()
-	root, e := deploymentDirectory(parent, desktopRoot, 0, false)
+	return nativeRuntimeReads().readDesktopRegistrationsAt(parent)
+}
+
+// This scope owns parent and every registration descriptor. Failed cleanup
+// withholds all records, including an otherwise clean missing registration.
+func (r runtimeReadOps) readDesktopRegistrationsAt(parent *os.File) (records []desktopRecord, encoded [][]byte, failure error) {
+	var root *os.File
+	var absent error
+	defer func() {
+		failure = r.finish(root, failure)
+		failure = r.finish(parent, failure)
+		if failure != nil {
+			failure = errors.Join(failure, absent)
+			records, encoded = nil, nil
+		}
+	}()
+	var e error
+	root, e = r.deploymentDirectory(parent, desktopRoot, 0, false)
 	if darwintrust.IsReadAbsent(e) {
+		absent = e
 		return nil, nil, nil
 	}
 	if e != nil {
 		return nil, nil, e
 	}
-	defer root.Close()
-	entries, e := deploymentEntries(root, 0, 64)
+	entries, e := r.deploymentEntries(root, 0, 64)
 	if e != nil {
 		return nil, nil, e
 	}
-	records := []desktopRecord{}
-	encoded := [][]byte{}
+	records = []desktopRecord{}
+	encoded = [][]byte{}
 	for _, entry := range entries {
 		if !desktopRecordFile.MatchString(entry.Name()) {
 			return nil, nil, errors.New("unknown desktop registration object; preserve and inspect")
 		}
-		data, e := readDetachedDeploymentFile(root, entry.Name(), maxDesktopRecord)
+		data, e := r.readDetachedDeploymentFile(root, entry.Name(), maxDesktopRecord)
 		if e != nil {
 			return nil, nil, e
 		}
@@ -64,21 +80,24 @@ func readDesktopRegistrations() ([]desktopRecord, [][]byte, error) {
 		records = append(records, r)
 		encoded = append(encoded, data)
 	}
-	if e = sameDeploymentEntry(parent, desktopRoot, root, 0); e != nil {
+	if e = r.sameDeploymentEntry(parent, desktopRoot, root, 0); e != nil {
 		return nil, nil, e
 	}
 	return records, encoded, nil
 }
-func verifyDesktopApplication(apps *os.File, r desktopRecord) error {
-	app, e := directoryAt(apps, "AccessWeaver.app")
+func verifyDesktopApplication(apps *os.File, record desktopRecord) error {
+	return nativeRuntimeReads().verifyDesktopApplication(apps, record)
+}
+func (r runtimeReadOps) verifyDesktopApplication(apps *os.File, record desktopRecord) (failure error) {
+	app, e := r.directoryAt(apps, "AccessWeaver.app")
 	if e != nil {
 		return e
 	}
-	defer app.Close()
+	defer func() { failure = r.finish(app, failure) }()
 	if e = deploymentObject(app, true, 0, 0755); e != nil {
 		return e
 	}
-	important, e := inspectBundleInventory(app, r.Manifest, nil, false)
+	important, e := r.inspectBundleInventory(app, record.Manifest, nil, false)
 	if e != nil {
 		return e
 	}
@@ -86,7 +105,7 @@ func verifyDesktopApplication(apps *os.File, r desktopRecord) error {
 	if e != nil {
 		return e
 	}
-	if b != r.Build {
+	if b != record.Build {
 		return errors.New("public desktop build differs from protected registration")
 	}
 	if e = checkBundlePlist(important["Contents/Info.plist"], b.Version, desktopBundleID, desktopExecutable); e != nil {
@@ -100,9 +119,12 @@ func verifyDesktopApplication(apps *os.File, r desktopRecord) error {
 	if len(image) < 32 || binary.LittleEndian.Uint32(image) != 0xfeedfacf || binary.LittleEndian.Uint32(image[4:]) != cpu || binary.LittleEndian.Uint32(image[12:]) != 2 {
 		return errors.New("public launcher native image differs")
 	}
-	return sameDeploymentEntry(apps, "AccessWeaver.app", app, 0)
+	return r.sameDeploymentEntry(apps, "AccessWeaver.app", app, 0)
 }
 func desktopApplicationCompatible(apps *os.File, records []desktopRecord) error {
+	return nativeRuntimeReads().desktopApplicationCompatible(apps, records)
+}
+func (r runtimeReadOps) desktopApplicationCompatible(apps *os.File, records []desktopRecord) error {
 	var st unix.Stat_t
 	e := unix.Fstatat(int(apps.Fd()), "AccessWeaver.app", &st, unix.AT_SYMLINK_NOFOLLOW)
 	if errors.Is(e, unix.ENOENT) {
@@ -111,12 +133,12 @@ func desktopApplicationCompatible(apps *os.File, records []desktopRecord) error 
 	if e != nil {
 		return e
 	}
-	app, e := directoryAt(apps, "AccessWeaver.app")
+	app, e := r.directoryAt(apps, "AccessWeaver.app")
 	if e != nil {
 		return e
 	}
-	encoded, readErr := readPath(app, "Contents/Resources/BUILD-INFO.json", 16384)
-	e = errors.Join(readErr, app.Close())
+	encoded, readErr := r.readPath(app, "Contents/Resources/BUILD-INFO.json", 16384)
+	e = r.finish(app, readErr)
 	if e != nil {
 		return e
 	}
@@ -126,9 +148,9 @@ func desktopApplicationCompatible(apps *os.File, records []desktopRecord) error 
 	if e != nil {
 		return e
 	}
-	for _, r := range records {
-		if r.Build == build {
-			return verifyDesktopApplication(apps, r)
+	for _, record := range records {
+		if record.Build == build {
+			return r.verifyDesktopApplication(apps, record)
 		}
 	}
 	return errors.New("legacy, changed or unregistered public app exists; explicit migration or repair is required")
@@ -138,7 +160,11 @@ func legacyReceiptsAbsent() error {
 	if e != nil {
 		return e
 	}
-	defer receipts.Close()
+	return nativeRuntimeReads().legacyReceiptsAbsentAt(receipts)
+}
+func (r runtimeReadOps) legacyReceiptsAbsentAt(receipts *os.File) (failure error) {
+	defer func() { failure = r.finish(receipts, failure) }()
+	var e error
 	for _, name := range []string{BundleID + ".plist", BundleID + ".bom"} {
 		var st unix.Stat_t
 		e = unix.Fstatat(int(receipts.Fd()), name, &st, unix.AT_SYMLINK_NOFOLLOW)
@@ -203,58 +229,60 @@ func desktopPackageOperation(phase string, coordinated bool) (DesktopPackageResu
 	if e != nil {
 		return result, e
 	}
-	defer apps.Close()
-	records, encoded, e := readDesktopRegistrations()
-	if e != nil {
-		return result, e
-	}
-	selected := -1
-	for i, r := range records {
-		order, e := CompareVersions(b.Version, r.Build.Version)
+	return nativeRuntimeReads().withDesktopApplications(apps, func(apps *os.File) (DesktopPackageResult, error) {
+		var result DesktopPackageResult
+		records, encoded, e := readDesktopRegistrations()
 		if e != nil {
 			return result, e
 		}
-		if order < 0 {
-			return result, errors.New("desktop downgrade refused by retained registration")
-		}
-		matches := digest(encoded[i]) == seal
-		if order == 0 && !matches {
-			return result, errors.New("same-version desktop registration differs; preserve and inspect")
-		}
-		if matches {
-			if r.Build != b {
-				return result, errors.New("compiled desktop build differs from registered record")
-			}
-			selected = i
-		}
-	}
-	if phase == "preinstall" {
-		if e = desktopApplicationCompatible(apps, records); e != nil {
-			return result, e
-		}
-		if component == "metadata" && selected < 0 && len(records) >= 64 {
-			return result, errors.New("desktop registration capacity exhausted; preserve and inspect")
-		}
-	} else if selected < 0 {
-		return result, errors.New("compiled desktop registration is missing after package copy")
-	}
-	if component == "application" {
-		if !coordinated {
-			if selected < 0 {
-				return result, errors.New("install matching protected desktop metadata before the application component")
-			}
-			if e = desktopCoreActive(); e != nil {
+		selected := -1
+		for i, r := range records {
+			order, e := CompareVersions(b.Version, r.Build.Version)
+			if e != nil {
 				return result, e
 			}
-		}
-		if phase == "postinstall" {
-			if e = verifyDesktopApplication(apps, records[selected]); e != nil {
-				return result, e
+			if order < 0 {
+				return result, errors.New("desktop downgrade refused by retained registration")
+			}
+			matches := digest(encoded[i]) == seal
+			if order == 0 && !matches {
+				return result, errors.New("same-version desktop registration differs; preserve and inspect")
+			}
+			if matches {
+				if r.Build != b {
+					return result, errors.New("compiled desktop build differs from registered record")
+				}
+				selected = i
 			}
 		}
-	}
-	// The JSON result records only completed read-only verification, not what
-	// Apple Installer might have copied before invoking this process.
-	result = DesktopPackageResult{SchemaVersion: 1, Component: component, Phase: phase, Version: b.Version, RecordSHA256: seal, PublicApplicationVerified: component == "application" && phase == "postinstall"}
-	return result, nil
+		if phase == "preinstall" {
+			if e = desktopApplicationCompatible(apps, records); e != nil {
+				return result, e
+			}
+			if component == "metadata" && selected < 0 && len(records) >= 64 {
+				return result, errors.New("desktop registration capacity exhausted; preserve and inspect")
+			}
+		} else if selected < 0 {
+			return result, errors.New("compiled desktop registration is missing after package copy")
+		}
+		if component == "application" {
+			if !coordinated {
+				if selected < 0 {
+					return result, errors.New("install matching protected desktop metadata before the application component")
+				}
+				if e = desktopCoreActive(); e != nil {
+					return result, e
+				}
+			}
+			if phase == "postinstall" {
+				if e = verifyDesktopApplication(apps, records[selected]); e != nil {
+					return result, e
+				}
+			}
+		}
+		// The JSON result records only completed read-only verification, not what
+		// Apple Installer might have copied before invoking this process.
+		result = DesktopPackageResult{SchemaVersion: 1, Component: component, Phase: phase, Version: b.Version, RecordSHA256: seal, PublicApplicationVerified: component == "application" && phase == "postinstall"}
+		return result, nil
+	})
 }
