@@ -723,3 +723,43 @@ test('reconciliation fixture: explicit review, uncertain apply and known receipt
   restricted=true;await page.evaluate(async()=>{try{await readCore()}catch{}renderAll()});await expect(page.locator('.nav-item[data-view="system"]')).toBeDisabled();await expect(page.locator('#history-reconciliation-card')).toBeHidden();expect(await page.evaluate(()=>reconciliationUI.attempt)).toBeNull();expect(await page.locator('#reconcile-operation').inputValue()).toBe('');expect(applyCount).toBe(2);expect(previewCount).toBe(3);expect(requests.filter(item=>item.path.endsWith('/apply'))).toHaveLength(2);
  }finally{releaseApply();releaseReview();}
 });
+
+// Static assets and synthetic HTTP only. No core fixture, native workflow,
+// source staging file or actual retained-owner cleanup is created here.
+test('history staging fixture: retained capture keeps only freshly checked selection and explicit export',async({page},testInfo)=>{
+ const origin='http://127.0.0.1:43106',session='e'.repeat(43),assets=new Map(),id='a'.repeat(48),ref='source_record_stage';
+ const job={id,state:'failed',error:'Original source-only failure retained'},raw=Buffer.from(JSON.stringify(job)),revision=createHash('sha256').update(raw).digest('hex');
+ const inventory={snapshot:'b'.repeat(48),storeRevision:'c'.repeat(48),createdAt:'2026-11-01T00:00:00Z',count:1,totalBytes:raw.length};
+ const record={recordRef:ref,revision,id,action:'discover',state:'failed',finishedAt:'2026-11-01T00:00:00Z',size:raw.length,classification:'canonical',protection:'retirement-unavailable',errorPresent:true,resultPresent:false,rawAvailable:true};
+ let captures=0,details=0,exports=0,releaseDetail,detailEntered;
+ const detailGate=new Promise(resolve=>releaseDetail=resolve),detailStarted=new Promise(resolve=>detailEntered=resolve);
+ for(const [route,file,type] of [['/','index.html','text/html'],['/app.js','app.js','text/javascript'],['/locales.js','locales.js','text/javascript'],['/system.js','system.js','text/javascript'],['/app.css','app.css','text/css']])assets.set(route,{body:await fs.readFile(path.join(repo,'web',file)),contentType:type});
+ await page.route('**/*',async route=>{
+  const url=new URL(route.request().url());if(url.origin!==origin){await route.abort();return;}const asset=assets.get(url.pathname);if(asset){await route.fulfill(asset);return;}
+  expect(route.request().headers()['x-accessweaver-token']).toBe(session);
+  if(url.pathname==='/api/bootstrap'){await route.fulfill({json:{platform:'windows',version:'source-only-history-staging',profileEditingOnly:false}});return;}
+  if(url.pathname==='/api/v1/profiles'){await route.fulfill({status:500,json:{error:'Synthetic profile read failure'}});return;}
+  if(url.pathname==='/api/v1/engines'){await route.fulfill({json:[]});return;}
+  if(url.pathname==='/api/v1/runtime'){await route.fulfill({json:{state:'stopped',log:[]}});return;}
+  if(url.pathname==='/api/v1/system/history/inventory'){
+   expect(route.request().method()).toBe('POST');expect(route.request().postDataJSON()).toEqual({});captures++;expect(captures).toBeLessThanOrEqual(2);await route.fulfill(captures===1?{json:inventory}:{status:409,json:{code:'history-staging-pending',error:'PRIVATE_SYNTHETIC_STAGING_CAUSE'}});return;
+  }
+  if(url.pathname==='/api/v1/system/history/page'){
+   expect(route.request().method()).toBe('GET');if(!captures){await route.fulfill({status:409,json:{error:'Synthetic capture needed'}});return;}
+   if(captures===2)expect(url.searchParams.get('snapshot')).toBe(inventory.snapshot);await route.fulfill({json:{inventory,items:[record]}});return;
+  }
+  if(url.pathname==='/api/v1/system/history/records/'+ref){details++;expect(route.request().method()).toBe('GET');expect(url.searchParams.get('revision')).toBe(revision);if(details===2){detailEntered();await detailGate;}await route.fulfill({json:{record,job,rawAvailable:true}});return;}
+  if(url.pathname==='/api/v1/system/history/records/'+ref+'/export'){exports++;expect(route.request().method()).toBe('GET');expect(url.searchParams.get('revision')).toBe(revision);await route.fulfill({body:raw,headers:{'Content-Type':'application/octet-stream','ETag':'"'+revision+'"','X-AccessWeaver-Revision':revision}});return;}
+  await route.fulfill({status:404,json:{error:'Synthetic route unavailable'}});
+ });
+ const nav=async view=>{const toggle=page.locator('#menu-toggle');if(await toggle.isVisible())await toggle.click();await page.locator('.nav-item[data-view="'+view+'"]').click();};
+ try{
+  await page.goto(origin+'/#accessweaver-session='+session);await expect(page.locator('#connection-notice')).toBeVisible();await nav('system');await page.locator('#system-history').click();await page.locator('#history-capture').click();await page.getByTitle(id,{exact:true}).click();await expect(page.locator('#history-detail')).toContainText(job.error);await expect(page.locator('#history-export-record')).toBeEnabled();
+  await page.evaluate(()=>{systemUI.plan={id:'source-review-kept',ready:true};$('system-consent').checked=true;$('system-cancel').disabled=false});
+  await page.locator('#history-capture').focus();await page.keyboard.press('Enter');await detailStarted;await expect(page.locator('#history-export-record')).toBeDisabled();await expect(page.locator('#history-detail-panel')).toBeHidden();await expect(page.locator('#system-cancel')).toBeEnabled();expect(exports).toBe(0);releaseDetail();
+  await expect(page.locator('#history-status')).toContainText('incomplete inventory capture');await expect(page.locator('#history-status')).not.toContainText('PRIVATE_SYNTHETIC');await expect(page.locator('#history-detail')).toContainText(job.error);await expect(page.locator('#history-export-record')).toBeEnabled();expect(captures).toBe(2);expect(details).toBe(2);expect(exports).toBe(0);expect(await page.evaluate(()=>systemUI.plan.id)).toBe('source-review-kept');await expect(page.locator('#system-consent')).toBeChecked();
+  const downloading=page.waitForEvent('download');await page.locator('#history-export-record').click();const download=await downloading;expect(await fs.readFile(await download.path())).toEqual(raw);expect(exports).toBe(1);expect(captures).toBe(2);
+  await page.setViewportSize({width:390,height:844});await settleAnimations(page);await expect(page.locator('#menu-toggle')).toHaveAttribute('aria-expanded','false');expect(await page.locator('#sidebar').evaluate(sidebar=>sidebar.inert)).toBe(true);await expect.poll(()=>page.locator('#sidebar').evaluate(sidebar=>sidebar.getBoundingClientRect().right)).toBeLessThanOrEqual(0.5);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);await expect(page.locator('#history-detail-title')).toContainText(id);await page.locator('#history-title').focus();await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:testInfo.outputPath('history-staging-source-only-preserved.png'),fullPage:true});
+  const AxeBuilder=require('@axe-core/playwright').default;const accessibility=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']).analyze();expect(accessibility.violations.map(item=>item.id)).toEqual([]);
+ }finally{releaseDetail();}
+});

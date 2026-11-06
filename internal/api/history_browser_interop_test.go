@@ -21,8 +21,8 @@ import (
 
 var historyBrowserWireSources = []string{
 	"go.mod", "go.sum",
-	"internal/api/history_lifecycle.go", "internal/api/history.go", "internal/api/history_browser.go", "internal/api/history_browser_test.go", "internal/api/history_browser_interop_test.go", "internal/api/server.go", "internal/api/workflow_json.go", "internal/api/workflows.go", "internal/api/audit.go", "internal/api/mutations.go",
-	"internal/workflow/lifecycle.go", "internal/workflow/lifecycle_manifest.go", "internal/workflow/history.go", "internal/workflow/history_capture.go", "internal/workflow/history_index.go", "internal/workflow/history_inventory.go", "internal/workflow/history_record.go", "internal/workflow/history_replace_unix.go", "internal/workflow/history_replace_windows.go", "internal/workflow/manager.go", "internal/workflow/outcome.go", "internal/workflow/output.go", "internal/workflow/result.go", "internal/workflow/store.go",
+	"internal/api/history_lifecycle.go", "internal/api/history.go", "internal/api/history_browser.go", "internal/api/history_browser_test.go", "internal/api/history_staging_test.go", "internal/api/history_browser_interop_test.go", "internal/api/server.go", "internal/api/workflow_json.go", "internal/api/workflows.go", "internal/api/audit.go", "internal/api/mutations.go",
+	"internal/workflow/lifecycle.go", "internal/workflow/lifecycle_manifest.go", "internal/workflow/history.go", "internal/workflow/history_capture.go", "internal/workflow/history_staging.go", "internal/workflow/history_index.go", "internal/workflow/history_inventory.go", "internal/workflow/history_record.go", "internal/workflow/history_replace_unix.go", "internal/workflow/history_replace_windows.go", "internal/workflow/manager.go", "internal/workflow/outcome.go", "internal/workflow/persistence_observation.go", "internal/workflow/output.go", "internal/workflow/result.go", "internal/workflow/store.go",
 	"web/system.js", "web/app.js", "web/locales.js", "web/index.html", "web/app.css", "web/app.test.cjs",
 }
 
@@ -33,6 +33,7 @@ type historyBrowserWireSource struct {
 
 type historyBrowserWireFile struct {
 	Name                  string `json:"name"`
+	Status                int    `json:"status"`
 	Size                  int    `json:"size"`
 	SHA256                string `json:"sha256"`
 	ContentType           string `json:"contentType"`
@@ -70,8 +71,19 @@ func historyBrowserWireSourceHashes(t *testing.T, repository string) []historyBr
 		if err != nil || !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > 8<<20 {
 			t.Fatal("history wire source binding file was unavailable")
 		}
-		data, err := os.ReadFile(path)
-		if err != nil || len(data) > 8<<20 {
+		file, openErr := os.Open(path)
+		if openErr != nil {
+			t.Fatal("history wire source binding could not be opened")
+		}
+		opened, statErr := file.Stat()
+		data, readErr := io.ReadAll(io.LimitReader(file, (8<<20)+1))
+		final, finalErr := file.Stat()
+		closeErr := file.Close()
+		named, nameErr := os.Lstat(path)
+		if statErr != nil || readErr != nil || finalErr != nil || closeErr != nil || nameErr != nil || len(data) > 8<<20 ||
+			!os.SameFile(info, opened) || !os.SameFile(opened, final) || !os.SameFile(final, named) ||
+			!opened.Mode().IsRegular() || !final.Mode().IsRegular() || !named.Mode().IsRegular() ||
+			opened.Size() != int64(len(data)) || final.Size() != int64(len(data)) || named.Size() != int64(len(data)) {
 			t.Fatal("history wire source binding could not be read")
 		}
 		out = append(out, historyBrowserWireSource{Name: name, SHA256: historyBrowserWireHash(data)})
@@ -213,17 +225,48 @@ func TestHistoryBrowserSourceWireInterop(t *testing.T) {
 	if rawResponse.Code != http.StatusOK || !bytes.Equal(rawResponse.Body.Bytes(), raw) || rawResponse.Header().Get("ETag") != `"`+rawRow.Revision+`"` || rawResponse.Header().Get("X-AccessWeaver-Revision") != rawRow.Revision {
 		t.Fatal("history wire raw response did not preserve exact bytes and revision headers")
 	}
+	// This source-owned foreign stage is deliberately not granted closure or
+	// cleanup authority. The actual capture route must refuse another allocation
+	// while the already captured page and selected raw bytes remain readable.
+	stagePath := filepath.Join(server.Store.Root, ".workflow-history-"+strings.Repeat("b", 48)+".tmp")
+	stageBytes := []byte("source-interop-retained-stage-not-an-owner-proof")
+	stage, stageErr := os.OpenFile(stagePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if stageErr != nil {
+		t.Fatal("history wire retained stage unavailable")
+	}
+	n, stageWriteErr := stage.Write(stageBytes)
+	stageSyncErr, stageCloseErr := stage.Sync(), stage.Close()
+	if n != len(stageBytes) || stageWriteErr != nil || stageSyncErr != nil || stageCloseErr != nil {
+		t.Fatal("history wire controlled stage did not close completely")
+	}
+	pendingResponse := request(t, server, http.MethodPost, "/api/v1/system/history/inventory", map[string]any{}, server.Token, "127.0.0.1")
+	var pending map[string]string
+	if pendingResponse.Code != http.StatusConflict || pendingResponse.Body.Len() > 4096 || json.Unmarshal(pendingResponse.Body.Bytes(), &pending) != nil || len(pending) != 2 || pending["code"] != "history-staging-pending" || pending["error"] != workflow.ErrHistoryStagingPending.Error() {
+		t.Fatal("history wire actual retained-stage refusal unavailable")
+	}
+	pageAfter := request(t, server, http.MethodGet, "/api/v1/system/history/page?limit=1&snapshot="+inventory.Snapshot, nil, server.Token, "127.0.0.1")
+	if pageAfter.Code != http.StatusOK || !bytes.Equal(pageAfter.Body.Bytes(), firstResponse.Body.Bytes()) {
+		t.Fatal("history wire pending allocation changed prior actual page")
+	}
+	rawAfter := request(t, server, http.MethodGet, "/api/v1/system/history/records/"+rawRow.RecordRef+"/export?revision="+rawRow.Revision, nil, server.Token, "127.0.0.1")
+	if rawAfter.Code != http.StatusOK || !bytes.Equal(rawAfter.Body.Bytes(), rawResponse.Body.Bytes()) {
+		t.Fatal("history wire pending allocation changed prior exact raw evidence")
+	}
+	retained, stageReadErr := os.ReadFile(stagePath)
+	if stageReadErr != nil || !bytes.Equal(retained, stageBytes) {
+		t.Fatal("history wire pending allocation changed retained stage")
+	}
 	responses := []struct {
 		name     string
 		response *httptest.ResponseRecorder
-	}{{"lifecycle-none.json", lifecycleResponse}, {"inventory.json", inventoryResponse}, {"page-first.json", firstResponse}, {"page-last.json", lastResponse}, {"detail.json", detailResponse}, {"raw.bin", rawResponse}}
+	}{{"lifecycle-none.json", lifecycleResponse}, {"inventory.json", inventoryResponse}, {"page-first.json", firstResponse}, {"page-last.json", lastResponse}, {"detail.json", detailResponse}, {"raw.bin", rawResponse}, {"pending-error.json", pendingResponse}}
 	manifest := historyBrowserWireManifest{SchemaVersion: 1, Sources: sources, Expected: historyBrowserWireExpected{
 		Snapshot: inventory.Snapshot, CanonicalRef: canonicalRow.RecordRef, CanonicalRevision: canonicalRow.Revision, CanonicalID: canonicalID,
 		RawRef: rawRow.RecordRef, RawRevision: rawRow.Revision,
 	}}
 	for _, item := range responses {
 		data := item.response.Body.Bytes()
-		entry := historyBrowserWireFile{Name: item.name, Size: len(data), SHA256: historyBrowserWireHash(data), ContentType: item.response.Header().Get("Content-Type")}
+		entry := historyBrowserWireFile{Name: item.name, Status: item.response.Code, Size: len(data), SHA256: historyBrowserWireHash(data), ContentType: item.response.Header().Get("Content-Type")}
 		if item.name == "raw.bin" {
 			entry.ETag = item.response.Header().Get("ETag")
 			entry.XAccessWeaverRevision = item.response.Header().Get("X-AccessWeaver-Revision")
@@ -241,7 +284,7 @@ func TestHistoryBrowserSourceWireInterop(t *testing.T) {
 	write("manifest.json", append(encoded, '\n'))
 	checkRoot()
 	entries, err = os.ReadDir(outputPath)
-	if err != nil || len(entries) != 7 {
+	if err != nil || len(entries) != 8 {
 		t.Fatal("history wire output contains unknown entries; all files retained")
 	}
 }

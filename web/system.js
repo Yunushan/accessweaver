@@ -258,17 +258,25 @@ function renderHistoryDetail(){
 }
 function refreshHistoryLanguage(){renderReconciliation();renderWorkflowLifecycle();renderHistoryMessage();renderHistoryRows();renderHistoryDetail();updateHistoryAvailability();}
 function historyError(error){
+ if(error?.status===409&&error?.code==='history-staging-pending')return 'historyStagingPending';
  if(error?.reportTooLarge)return 'historyCapacity';
  if(error?.status===409){historyUI.inventory=null;historyUI.items=[];historyUI.cursor='';historyUI.nextCursor='';historyUI.trail=[];historyClearDetail();return 'historyCaptureNeeded';}
  return ({400:'historyInvalidResponse',404:'historyRecordUnavailable',408:'historyRequestEnded',413:'historyCapacity',503:'historyBusy'})[error?.status]||(error?.name==='AbortError'?'historyRequestEnded':error?.message==='historyInvalidResponse'?'historyInvalidResponse':'historyFailed');
 }
 async function historyRequest(path,controller,{method='GET',body,maxBytes=2*1024*1024,timeout=12000}={}){
  const timer=setTimeout(()=>controller.abort(),timeout),token=state.token;
+ const active=()=>{if(controller.signal.aborted)throw new DOMException('Request canceled','AbortError');};
  try{
-  const response=await fetch(path,{method,headers:{'X-AccessWeaver-Token':token,...(body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body),credentials:'same-origin',redirect:'error',cache:'no-store',signal:controller.signal});
-  if(!response.ok)throw Object.assign(new Error('historyRequestFailed'),{status:response.status});
+  active();const response=await fetch(path,{method,headers:{'X-AccessWeaver-Token':token,...(body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body),credentials:'same-origin',redirect:'error',cache:'no-store',signal:controller.signal});active();
+  if(!response.ok){
+   let code;
+   if(response.status===409&&method==='POST'&&path==='/api/v1/system/history/inventory'&&/^application\/json(?:\s*;|$)/i.test(response.headers.get('Content-Type')||'')){
+    try{const blob=await readSystemDownload(response,4096);active();const bytes=await blob.arrayBuffer();active();const value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));if(value?.code==='history-staging-pending')code=value.code;}catch{active();}
+   }
+   throw Object.assign(new Error('historyRequestFailed'),{status:response.status,...(code?{code}:{})});
+  }
   if(!/^application\/json(?:\s*;|$)/i.test(response.headers.get('Content-Type')||''))throw new Error('historyInvalidResponse');
-  const blob=await readSystemDownload(response,maxBytes),bytes=await blob.arrayBuffer();
+  const blob=await readSystemDownload(response,maxBytes);active();const bytes=await blob.arrayBuffer();active();
   try{return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch{throw new Error('historyInvalidResponse');}
  }finally{clearTimeout(timer);controller.abort();}
 }
@@ -282,15 +290,40 @@ function cancelHistoryCapture(){
 }
 async function captureHistory(){
  updateHistoryAvailability();if(!supportAvailable()||historyUI.capturing)return;
+ const previous=historyUI.inventory?{inventory:historyUI.inventory,cursor:historyUI.cursor,trail:historyUI.trail.slice(),selected:historyUI.selected?{recordRef:historyUI.selected.recordRef,revision:historyUI.selected.revision}:null}:null;
  historyReset();historyUI.context=historyContext();historyUI.open=true;historyUI.capturing=true;
- const context=historyUI.context,generation=historyUI.generation,controller=new AbortController();historyUI.captureController=controller;
+ const context=historyUI.context,generation=historyUI.generation,listGeneration=historyUI.listGeneration,detailGeneration=historyUI.detailGeneration,controller=new AbortController();historyUI.captureController=controller;
  setHistoryMessage('historyCapturing');renderHistoryRows();renderHistoryDetail();updateHistoryAvailability();
  try{
   const inventory=historyInventory(await historyRequest('/api/v1/system/history/inventory',controller,{method:'POST',body:{},timeout:5*60*1000}));
   if(!historyCurrent(context,generation))return;
   historyUI.inventory=inventory;await loadHistoryPage('',inventory.snapshot,[]);
- }catch(error){if(historyCurrent(context,generation)){setHistoryMessage(historyError(error),{},true);renderHistoryRows();renderHistoryDetail();}}
- finally{if(historyCurrent(context,generation)){historyUI.capturing=false;renderHistoryRows();updateHistoryAvailability();}}
+ }catch(error){if(historyCurrent(context,generation)&&error?.status===409&&error?.code==='history-staging-pending')await restoreHistoryAfterStagingPending(previous,context,generation,listGeneration,detailGeneration);if(historyCurrent(context,generation)&&listGeneration===historyUI.listGeneration&&detailGeneration===historyUI.detailGeneration){setHistoryMessage(historyError(error),{},true);renderHistoryRows();renderHistoryDetail();}}
+ finally{if(historyCurrent(context,generation)){historyUI.capturing=false;historyUI.captureController=null;renderHistoryRows();updateHistoryAvailability();}}
+}
+// Retain only bounded capture coordinates, never an old result payload. A
+// staging refusal proves no snapshot freshness; both page and selected detail
+// must be read again before they can be restored to the current generation.
+function historyPage(value,cursor,snapshot,trail){
+ const inventory=historyInventory(value.inventory),nextCursor=value.nextCursor===undefined?'':value.nextCursor;
+ if(snapshot&&inventory.snapshot!==snapshot||!Array.isArray(value.items)||value.items.length>64||typeof nextCursor!=='string'||nextCursor&&(!historyOpaque(nextCursor)||[cursor,...trail].includes(nextCursor)))throw new Error('historyInvalidResponse');
+ const items=value.items.map(historyRecord);if(new Set(items.map(record=>record.recordRef)).size!==items.length)throw new Error('historyInvalidResponse');
+ return {inventory,items,nextCursor};
+}
+async function restoreHistoryAfterStagingPending(previous,context,generation,listGeneration,detailGeneration){
+ const current=()=>historyCurrent(context,generation)&&listGeneration===historyUI.listGeneration&&detailGeneration===historyUI.detailGeneration;if(!previous||!current())return;
+ const read=async(path,maxBytes)=>{const controller=new AbortController();historyUI.captureController=controller;return historyRequest(path,controller,{maxBytes});};
+ try{
+  const query=new URLSearchParams({limit:'64',snapshot:previous.inventory.snapshot});if(previous.cursor)query.set('cursor',previous.cursor);
+  const page=historyPage(await read('/api/v1/system/history/page?'+query,2*1024*1024),previous.cursor,previous.inventory.snapshot,previous.trail);if(!current())return;
+  if(['snapshot','storeRevision','createdAt','count','totalBytes'].some(key=>page.inventory[key]!==previous.inventory[key]))return;
+  historyUI.inventory=page.inventory;historyUI.items=page.items;historyUI.cursor=previous.cursor;historyUI.nextCursor=page.nextCursor;historyUI.trail=previous.trail;
+  const record=previous.selected&&page.items.find(item=>item.recordRef===previous.selected.recordRef&&item.revision===previous.selected.revision);if(!record)return;
+  const detail=await read('/api/v1/system/history/records/'+encodeURIComponent(record.recordRef)+'?revision='+record.revision,4*1024*1024);if(!current())return;
+  const observed=historyRecord(detail.record);
+  if(observed.recordRef!==record.recordRef||observed.revision!==record.revision||typeof detail.rawAvailable!=='boolean'||detail.rawAvailable!==observed.rawAvailable||detail.job!=null&&(typeof detail.job!=='object'||Array.isArray(detail.job)))return;
+  historyUI.selected=observed;historyUI.job=detail.job??null;historyUI.rawAvailable=detail.rawAvailable;historyUI.detailReady=true;
+ }catch{/* Unknown or changed evidence never restores the old detail/export. */}
 }
 async function loadHistoryPage(cursor='',snapshot=null,trail=[]){
  updateHistoryAvailability();if(!supportAvailable())return;
@@ -302,9 +335,7 @@ async function loadHistoryPage(cursor='',snapshot=null,trail=[]){
  try{
   const page=await historyRequest('/api/v1/system/history/page?'+query,controller);
   if(!historyCurrent(context,generation)||listGeneration!==historyUI.listGeneration)return;
-  const inventory=historyInventory(page.inventory),nextCursor=page.nextCursor===undefined?'':page.nextCursor;
-  if(snapshot&&inventory.snapshot!==snapshot||!Array.isArray(page.items)||page.items.length>64||typeof nextCursor!=='string'||nextCursor&&(!historyOpaque(nextCursor)||[cursor,...trail].includes(nextCursor)))throw new Error('historyInvalidResponse');
-  const items=page.items.map(historyRecord);if(new Set(items.map(record=>record.recordRef)).size!==items.length)throw new Error('historyInvalidResponse');
+  const {inventory,items,nextCursor}=historyPage(page,cursor,snapshot,trail);
   historyUI.inventory=inventory;historyUI.items=items;historyUI.cursor=cursor;historyUI.nextCursor=nextCursor;historyUI.trail=trail;
   setHistoryMessage('historyPageSummary',{count:new Intl.NumberFormat(state.lang).format(items.length)});
   renderHistoryRows();

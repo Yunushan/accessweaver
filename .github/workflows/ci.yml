@@ -563,6 +563,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'History response producer failed' }
           node web/app.test.cjs
           if ($LASTEXITCODE -ne 0) { throw 'History desktop contract verification failed' }
+      - name: Static analysis history staging contracts
+        if: ${{ inputs.scope == 'workflow-history' }}
+        run: go vet ./internal/workflow ./internal/api ./cmd/accessweaver
+      - name: Race native history staging admission and preserved reads
+        if: ${{ inputs.scope == 'workflow-history' && runner.os != 'Windows' }}
+        run: |
+          go test -race ./internal/workflow -run '^TestWorkflowHistory' -count=1 -timeout=6m
+          go test -race ./internal/api ./cmd/accessweaver -run '^(TestHistoryBrowser|TestSystemHistoryBrowser)' -count=1 -timeout=5m
       - name: Test workflow lifecycle receipts and worker reports
         if: ${{ inputs.scope == 'workflow-lifecycle' }}
         run: go test ./internal/workflow -run '^(TestWorkflowLifecycle|TestWorkerReport)' -count=1 -timeout=5m

@@ -309,7 +309,7 @@ func TestHistoryBrowserErrorsAreFixedAndStreamingIsBounded(t *testing.T) {
 	for _, item := range []struct {
 		err    error
 		status int
-	}{{workflow.ErrHistoryInvalidRequest, 400}, {workflow.ErrHistoryInventoryNeeded, 409}, {workflow.ErrHistoryInventoryStale, 409}, {workflow.ErrHistoryRecordUnavailable, 404}, {workflow.ErrHistoryCapacity, 413}, {workflow.ErrWorkflowBusy, 503}, {workflow.ErrHistoryUnavailable, 500}, {context.Canceled, 408}, {errors.New("PRIVATE_HISTORY_PATH"), 500}} {
+	}{{workflow.ErrHistoryInvalidRequest, 400}, {workflow.ErrHistoryInventoryNeeded, 409}, {workflow.ErrHistoryInventoryStale, 409}, {workflow.ErrHistoryRecordUnavailable, 404}, {workflow.ErrHistoryCapacity, 413}, {workflow.ErrHistoryStagingPending, 409}, {workflow.ErrWorkflowBusy, 503}, {workflow.ErrHistoryUnavailable, 500}, {context.Canceled, 408}, {errors.New("PRIVATE_HISTORY_PATH"), 500}} {
 		w := httptest.NewRecorder()
 		failHistoryBrowser(w, errors.Join(item.err, errors.New("PRIVATE_HISTORY_NATIVE_ERROR")))
 		if w.Code != item.status || bytes.Contains(w.Body.Bytes(), []byte("PRIVATE_HISTORY_")) {

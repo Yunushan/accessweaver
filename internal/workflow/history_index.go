@@ -68,7 +68,8 @@ func newHistoryRevision() (string, error) {
 // The revision is an intent: invalidate captured inventories BEFORE attempting
 // a coordinated record mutation, even when that mutation subsequently fails.
 // Caller owns the short transaction lease; GET never invokes this function.
-func (m *Manager) bumpWorkflowStoreRevision() error {
+func (m *Manager) bumpWorkflowStoreRevision() error { return m.bumpWorkflowStoreRevisionObserved(nil) }
+func (m *Manager) bumpWorkflowStoreRevisionObserved(beforePublish func(string, string) error) error {
 	path := filepath.Join(m.storeRoot, historyRevisionName)
 	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
 		return workflowStoreError(ErrHistoryUnavailable)
@@ -79,7 +80,7 @@ func (m *Manager) bumpWorkflowStoreRevision() error {
 	if err != nil {
 		return workflowStoreError(err)
 	}
-	return workflowStoreError(writeWorkflowDataFile(path, []byte(revision+"\n")))
+	return workflowStoreError(writeWorkflowDataFileObserved(path, []byte(revision+"\n"), beforePublish))
 }
 func (m *Manager) readWorkflowStoreRevision() (string, error) {
 	b, err := readWorkflowFile(filepath.Join(m.storeRoot, historyRevisionName), 49)

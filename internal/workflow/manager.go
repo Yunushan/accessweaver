@@ -131,6 +131,7 @@ type Manager struct {
 	openStoreLease       func(string) (workflowStoreLease, error)
 	writeLifecycle       func(string, []byte, string) error
 	publishLifecycle     func(string, string, string) error
+	historyStagingHooks  *historyStagingHooks
 	releaseWitness       *localReleaseWitness
 	reconciliationPlans  map[string]*privateReconciliationPlan
 	maintenance          *reconciliationCompletion

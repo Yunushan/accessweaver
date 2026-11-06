@@ -225,7 +225,7 @@ func TestSystemHistoryBrowserMetadataOnlyDetailAndFixedErrors(t *testing.T) {
 	if json.Unmarshal(output.Bytes(), &detail) != nil || detail.Job != nil || detail.RawAvailable {
 		t.Fatal("CLI metadata-only selection adopted an unknown source")
 	}
-	for _, category := range []error{workflow.ErrHistoryInvalidRequest, workflow.ErrHistoryInventoryNeeded, workflow.ErrHistoryInventoryStale, workflow.ErrHistoryRecordUnavailable, workflow.ErrHistoryCapacity, workflow.ErrWorkflowBusy, workflow.ErrHistoryUnavailable} {
+	for _, category := range []error{workflow.ErrHistoryInvalidRequest, workflow.ErrHistoryInventoryNeeded, workflow.ErrHistoryInventoryStale, workflow.ErrHistoryRecordUnavailable, workflow.ErrHistoryCapacity, workflow.ErrHistoryStagingPending, workflow.ErrWorkflowBusy, workflow.ErrHistoryUnavailable} {
 		private := errors.New("PRIVATE_HISTORY_STORAGE")
 		err := systemHistoryError(errors.Join(category, private))
 		if !errors.Is(err, category) || !errors.Is(err, private) || strings.Contains(err.Error(), "PRIVATE_HISTORY_") {

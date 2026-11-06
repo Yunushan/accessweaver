@@ -14,8 +14,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"github.com/Yunushan/accessweaver/internal/privatefile"
 )
 
 func (m *Manager) openHistorySourceRoot() (*os.Root, os.FileInfo, error) {
@@ -248,67 +246,71 @@ func (m *Manager) captureHistoryInventory(ctx context.Context) (inventory Histor
 			err = historyError(ErrHistoryUnavailable, errors.Join(err, closeErr))
 		}
 	}()
-	// Only explicit capture may initialize the revision. The active lease
-	// excludes current-version writers; publication alone needs the short lock.
+	// Inspect the existing derived index outside the short transaction.
+	prior, cause := inspectHistoryStage(filepath.Join(m.storeRoot, historyIndexName), historyStageMaxBytes, nil, nil)
+	if cause != nil && !errors.Is(cause, os.ErrNotExist) {
+		return inventory, historyStagePending(cause)
+	}
 	transaction, cause := m.acquireWorkflowStoreLease(workflowTransactionLockName)
 	if cause != nil {
 		return inventory, cause
 	}
-	revision, cause := m.readWorkflowStoreRevision()
+	cause = m.historyStageScan(ctx)
+	var revision string
+	if cause == nil {
+		revision, cause = m.readWorkflowStoreRevision()
+	}
 	if errors.Is(cause, os.ErrNotExist) {
-		cause = m.bumpWorkflowStoreRevision()
+		var beforeEpochPublish func(string, string) error
+		if hooks := m.historyStagingHooks; hooks != nil {
+			beforeEpochPublish = hooks.beforeEpochPublish
+		}
+		cause = m.bumpWorkflowStoreRevisionObserved(beforeEpochPublish)
 		if cause == nil {
 			revision, cause = m.readWorkflowStoreRevision()
 		}
 	}
+	snapshot, randomErr := newHistoryRevision()
+	if cause == nil {
+		cause = randomErr
+	}
+	var reservation *historyStageReservation
+	if cause == nil {
+		reservation, cause = m.reserveHistoryStage(ctx, snapshot, revision, prior)
+	}
 	closeErr := m.closeWorkflowStoreLease(transaction)
 	if cause != nil || closeErr != nil {
-		return inventory, historyError(ErrHistoryUnavailable, errors.Join(cause, closeErr))
-	}
-	snapshot, cause := newHistoryRevision()
-	if cause != nil {
-		return inventory, historyError(ErrHistoryUnavailable, cause)
-	}
-	inventory = HistoryInventory{Snapshot: snapshot, StoreRevision: revision, CreatedAt: time.Now().UTC()}
-	temporary, cause := privatefile.CreateTemp(m.storeRoot, ".workflow-history-*.tmp")
-	if cause != nil {
-		return HistoryInventory{}, historyError(ErrHistoryUnavailable, cause)
-	}
-	stage := temporary.Name()
-	stageInfo, stageStatErr := temporary.Stat()
-	closed, uncertain, publicationAttempted := false, false, false
-	defer func() {
-		if !closed {
-			closed = true
-			if closeErr := temporary.Close(); closeErr != nil {
-				uncertain = true
-				inventory = HistoryInventory{}
-				err = historyError(ErrHistoryUnavailable, errors.Join(err, closeErr))
+		combined := errors.Join(cause, closeErr)
+		if reservation == nil && closeErr == nil && !errors.Is(cause, ErrHistoryStagingPending) {
+			if historyDiscardableStageError(combined) || errors.Is(cause, errHistoryCaptureClosing) {
+				return inventory, historyError(ErrHistoryUnavailable, combined)
+			}
+			// Failed epoch bootstrap may already own a retained private49byte stage.
+			// Observe names only; never infer closure or remove it from the failure tag.
+			if scanErr := m.historyStageScan(context.Background()); scanErr == nil {
+				return inventory, historyError(ErrHistoryUnavailable, combined)
+			} else {
+				combined = errors.Join(combined, scanErr)
 			}
 		}
-		// Only known cancellation/capacity can discard derived metadata, after
-		// observed Close and a fresh same-object check. Original evidence and
-		// uncertain writes/flushes/closes/publication are always preserved.
-		if !uncertain && !publicationAttempted && stageStatErr == nil && historyDiscardableStageError(err) {
-			named, statErr := os.Lstat(stage)
-			if statErr == nil && named.Mode().IsRegular() && os.SameFile(stageInfo, named) {
-				if removeErr := os.Remove(stage); removeErr != nil {
-					err = historyError(ErrHistoryUnavailable, errors.Join(err, removeErr))
-				}
-			} else {
-				err = historyError(ErrHistoryUnavailable, errors.Join(err, statErr, ErrHistoryInventoryStale))
-			}
+		return inventory, historyStagePending(combined)
+	}
+	defer func() {
+		if err != nil && ctx.Err() != nil && !errors.Is(err, ctx.Err()) {
+			err = errors.Join(err, ctx.Err())
+		}
+		err = reservation.FinishFailure(err)
+		if err != nil {
+			inventory = HistoryInventory{}
 		}
 	}()
-	if stageStatErr != nil {
-		return HistoryInventory{}, historyError(ErrHistoryUnavailable, stageStatErr)
+	inventory = HistoryInventory{Snapshot: snapshot, StoreRevision: revision, CreatedAt: time.Now().UTC()}
+	temporary, cause := reservation.Create()
+	if cause != nil {
+		return HistoryInventory{}, cause
 	}
 	// Never repair or delete the source history.
-	if cause = temporary.Chmod(0600); cause != nil {
-		return HistoryInventory{}, historyError(ErrHistoryUnavailable, cause)
-	}
 	if _, cause = temporary.Write(make([]byte, historyHeaderBytes)); cause != nil {
-		uncertain = true
 		return HistoryInventory{}, historyError(ErrHistoryUnavailable, cause)
 	}
 	source, named, cause := m.openHistorySourceRoot()
@@ -375,7 +377,6 @@ func (m *Manager) captureHistoryInventory(ctx context.Context) (inventory Histor
 						return frameErr
 					}
 					if _, writeErr := temporary.Write(frame); writeErr != nil {
-						uncertain = true
 						return writeErr
 					}
 					inventory.Count++
@@ -398,36 +399,19 @@ func (m *Manager) captureHistoryInventory(ctx context.Context) (inventory Histor
 		return HistoryInventory{}, historyError(ErrHistoryUnavailable, cause)
 	}
 	if _, cause = temporary.WriteAt(header, 0); cause != nil {
-		uncertain = true
 		return HistoryInventory{}, historyError(ErrHistoryUnavailable, cause)
 	}
 	if cause = temporary.Sync(); cause != nil {
-		uncertain = true
 		return HistoryInventory{}, historyError(ErrHistoryUnavailable, cause)
 	}
-	closed = true
 	if cause = temporary.Close(); cause != nil {
-		uncertain = true
-		return HistoryInventory{}, historyError(ErrHistoryUnavailable, cause)
+		return HistoryInventory{}, historyStagePending(cause)
 	}
-	transaction, cause = m.acquireWorkflowStoreLease(workflowTransactionLockName)
-	if cause != nil {
+	if cause = reservation.Prepared(); cause != nil {
 		return HistoryInventory{}, cause
 	}
-	current, revisionErr := m.readWorkflowStoreRevision()
-	if revisionErr == nil && current != inventory.StoreRevision {
-		revisionErr = ErrHistoryInventoryStale
-	}
-	if revisionErr == nil {
-		revisionErr = ctx.Err()
-	}
-	if revisionErr == nil {
-		publicationAttempted = true
-		revisionErr = replaceHistoryIndex(stage, filepath.Join(m.storeRoot, historyIndexName))
-	}
-	closeErr = m.closeWorkflowStoreLease(transaction)
-	if revisionErr != nil || closeErr != nil {
-		return HistoryInventory{}, historyError(ErrHistoryUnavailable, errors.Join(revisionErr, closeErr))
+	if cause = reservation.Publish(ctx); cause != nil {
+		return HistoryInventory{}, cause
 	}
 	return inventory, nil
 }

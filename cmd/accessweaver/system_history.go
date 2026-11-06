@@ -121,6 +121,8 @@ func systemHistoryError(err error) error {
 	switch {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		message = "workflow history request ended before completion"
+	case errors.Is(err, workflow.ErrHistoryStagingPending):
+		message = workflow.ErrHistoryStagingPending.Error()
 	case errors.Is(err, workflow.ErrWorkflowLifecyclePending):
 		message = workflow.ErrWorkflowLifecyclePending.Error()
 	case errors.Is(err, workflow.ErrWorkflowLifecycle):

@@ -370,3 +370,6 @@ Object.assign(extraLocales.es,{"reconcileTitle":"Revisar cierre local","reconcil
 
 Object.assign(extraLocales.ru,{reconcileIntentDigest:'SHA-256 намерения',reconcileSealDigest:'SHA-256 завершения',reconcileAckDigest:'SHA-256 подтверждения освобождения'});
 Object.assign(extraLocales.es,{reconcileIntentDigest:'SHA-256 de intención',reconcileSealDigest:'SHA-256 del cierre',reconcileAckDigest:'SHA-256 de confirmación de liberación'});
+
+Object.assign(extraLocales.ru,{historyStagingPending:'Сохранены метаданные незавершённого снимка. Новый снимок недоступен. Существующие записи защищены. Предыдущий вид и выбранные сведения возвращаются только после свежих проверок версии. Удаление, исправление и повтор не выполняются автоматически.'});
+Object.assign(extraLocales.es,{historyStagingPending:'Se conservan metadatos de una captura incompleta. No puede iniciarse otra captura. Los registros existentes siguen protegidos. La vista anterior y el detalle seleccionado solo se restauran tras comprobar de nuevo su revisión. No se elimina, repara ni reintenta nada automáticamente.'});

@@ -42,6 +42,9 @@ func failHistoryBrowser(w http.ResponseWriter, err error) {
 		status, message = http.StatusConflict, workflow.ErrHistoryInventoryStale.Error()
 	case errors.Is(err, workflow.ErrHistoryRecordUnavailable):
 		status, message = http.StatusNotFound, workflow.ErrHistoryRecordUnavailable.Error()
+	case errors.Is(err, workflow.ErrHistoryStagingPending):
+		JSON(w, http.StatusConflict, map[string]string{"error": workflow.ErrHistoryStagingPending.Error(), "code": "history-staging-pending"})
+		return
 	case errors.Is(err, workflow.ErrHistoryCapacity):
 		status, message = http.StatusRequestEntityTooLarge, workflow.ErrHistoryCapacity.Error()
 	case errors.Is(err, workflow.ErrWorkflowBusy):

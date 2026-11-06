@@ -1,6 +1,8 @@
 package workflow
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"github.com/Yunushan/accessweaver/internal/privatefile"
 	"io"
@@ -16,6 +18,12 @@ type workflowPersistObservation struct {
 // Every successful return follows actual Write, Sync and checked Close. Failed
 // stages are retained; a fake persist hook cannot set the private observation.
 func writeWorkflowDataFile(path string, b []byte) error {
+	return writeWorkflowDataFileObserved(path, b, nil)
+}
+
+// The optional observer runs after actual Write/Sync/Close. It can refuse
+// publication but cannot replace those physical operations or their errors.
+func writeWorkflowDataFileObserved(path string, b []byte, beforePublish func(string, string) error) error {
 	if len(b) > maxHistoryRecordBytes {
 		return ErrWorkflowPersistence
 	}
@@ -68,6 +76,19 @@ func writeWorkflowDataFile(path string, b []byte) error {
 		}
 	} else if err != nil || !os.SameFile(before, target) {
 		return errors.Join(ErrWorkflowPersistence, err)
+	}
+	if beforePublish != nil {
+		if err = beforePublish(stage, path); err != nil {
+			return err
+		}
+		named, checkErr := os.Lstat(stage)
+		if checkErr != nil || !named.Mode().IsRegular() || !os.SameFile(identity, named) {
+			return errors.Join(ErrWorkflowPersistence, checkErr)
+		}
+		observed, checkErr := readWorkflowLifecycleFile(context.Background(), stage, int64(len(b)))
+		if checkErr != nil || !bytes.Equal(observed, b) {
+			return errors.Join(ErrWorkflowPersistence, checkErr)
+		}
 	}
 	return replaceHistoryIndex(stage, path)
 }
