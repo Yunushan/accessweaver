@@ -2,11 +2,8 @@ package engine
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -102,16 +99,11 @@ func binaryFor(p profile.Profile, d Descriptor) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		h := sha256.New()
-		_, err = io.Copy(h, f)
-		closeErr := f.Close()
+		digest, err := executableHash(f)
 		if err != nil {
 			return "", err
 		}
-		if closeErr != nil {
-			return "", closeErr
-		}
-		if !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), p.SHA256) {
+		if !strings.EqualFold(digest, p.SHA256) {
 			return "", errors.New("executable SHA-256 mismatch; not launched")
 		}
 	}
