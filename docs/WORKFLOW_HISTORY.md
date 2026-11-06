@@ -103,6 +103,10 @@ Raw selected-record transfers are limited to 64 MiB; typed detail has a 128 MiB 
 
 The derived `.workflow-history.index` and `.workflow-store-revision` live beside the `workflows` directory. Clean cancellation or capacity refusal closes and verifies its own staging object before removing that derived temporary file. Uncertain write, flush, close or promotion failures preserve their staging objects for review. Persistent lock files stay in place. Index publication and byte checks do not establish a physical power-loss guarantee, global disk quota or hard serialization-memory budget.
 
+The separate Windows `recover` operation reads a selected machine journal through one held read-only stream, with an 8 MiB input limit and actual EOF, length and byte-count checks. It closes that stream successfully before strict UTF-8 decoding and JSON parsing; one leading UTF-8 BOM is accepted, with no UTF-16 or locale fallback. Oversized, incomplete, length-changing, unreadable or malformed input is refused with a fixed private error. The selected journal and adjacent staging files remain untouched, and the existing administrator, protected-path, undo-resource and expected-hash checks still govern recovery.
+
+Machine initialization can create a fresh current journal before the selected older journal is read. A refusal therefore does not mean the entire operation made no writes. This receiver limit does not bound journal production, backups, copies, native writers, parser memory or total storage; the controller's `workerJournalBounded` capability remains false. It provides no cleanup, retirement or vendor-completion proof.
+
 ## Access and remaining work
 
 All new HTTP routes require the ordinary loopback host, session header and same-origin checks. Profile-audited desktop mode continues to deny system history routes. History inspection remains available to an authenticated session when unrelated profile loading fails. Private history stays separate from metadata-only support summaries and is cleared from the page when its session or mode changes.

@@ -1370,9 +1370,61 @@ function Rollback {
     }}catch{$rollbackErrors+=@($_.Exception.Message)}}
     return $rollbackErrors
 }
+# A recovery read never writes the selected journal or adopts a partial frame.
+# This input cap is separate from producer bounds and whole-store accounting.
+function Throw-WorkflowRecoveryJournalReadFailure {
+    throw [IO.InvalidDataException]::new('Recovery journal could not be read safely; preserve the selected journal and recovery evidence')
+}
+function Read-WorkflowRecoveryJournalBytes([IO.Stream]$Source) {
+    $maximum=8MB
+    $memory=$null
+    try {
+        if($null -eq $Source -or -not $Source.CanRead -or -not $Source.CanSeek -or $Source.Position -ne 0){Throw-WorkflowRecoveryJournalReadFailure}
+        $initial=[long]$Source.Length
+        if($initial -lt 0 -or $initial -gt $maximum){Throw-WorkflowRecoveryJournalReadFailure}
+        $memory=[IO.MemoryStream]::new();$buffer=[byte[]]::new(65536);$actual=0L
+        while($true){
+            # At the boundary only one extra byte is admitted from the source;
+            # it is rejected before any accumulator write or JSON parsing.
+            $readSize=[int][Math]::Min([long]$buffer.Length,$maximum-$actual+1L)
+            $count=$Source.Read($buffer,0,$readSize)
+            if($count -lt 0 -or $count -gt $readSize){Throw-WorkflowRecoveryJournalReadFailure}
+            if($count -eq 0){break}
+            if($count -gt $maximum-$actual -or $count -gt $initial-$actual){Throw-WorkflowRecoveryJournalReadFailure}
+            $memory.Write($buffer,0,$count);$actual+=$count
+        }
+        if($actual -ne $initial -or [long]$Source.Length -ne $initial -or [long]$Source.Position -ne $actual){Throw-WorkflowRecoveryJournalReadFailure}
+        return ,$memory.ToArray()
+    }catch {Throw-WorkflowRecoveryJournalReadFailure}
+    finally {if($memory){$memory.Dispose()}}
+}
+# This helper takes ownership of exactly Source. Parsing cannot run until the
+# actual read and its one checked Dispose have both completed successfully.
+function Read-WorkflowRecoveryJournalStream([IO.Stream]$Source) {
+    $bytes=$null;$failed=$false
+    try {$bytes=Read-WorkflowRecoveryJournalBytes $Source}catch {$failed=$true}
+    finally {
+        if($null -eq $Source){$failed=$true}
+        else {try {$Source.Dispose()}catch {$failed=$true}}
+    }
+    if($failed){Throw-WorkflowRecoveryJournalReadFailure}
+    try {
+        $text=[Text.UTF8Encoding]::new($false,$true).GetString([byte[]]$bytes)
+        # Accept one legacy UTF-8 BOM; never fall back to UTF-16 or a locale.
+        if($text.Length -gt 0 -and $text[0] -eq [char]0xfeff){$text=$text.Substring(1)}
+        if([string]::IsNullOrWhiteSpace($text) -or ($text.Length -gt 0 -and $text[0] -eq [char]0xfeff)){Throw-WorkflowRecoveryJournalReadFailure}
+        $saved=$text|ConvertFrom-Json -ErrorAction Stop
+        return ,$saved
+    }catch {Throw-WorkflowRecoveryJournalReadFailure}
+}
+function Read-WorkflowRecoveryJournal([string]$Path) {
+    try {$source=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)}
+    catch {Throw-WorkflowRecoveryJournalReadFailure}
+    return ,(Read-WorkflowRecoveryJournalStream $source)
+}
 function Recover-Operation {
     if($r.journalId -notmatch '^workflow-[a-fA-F0-9]{32}\.json$'){throw 'Invalid recovery journal name'}
-    $journal=Join-Path $root ('logs\'+$r.journalId);No-Reparse $journal;$saved=Get-Content -LiteralPath $journal -Raw|ConvertFrom-Json
+    $journal=Join-Path $root ('logs\'+$r.journalId);No-Reparse $journal;$saved=Read-WorkflowRecoveryJournal $journal
     foreach($entry in @($saved.undo)){
         switch($entry.kind){
             'file' {$allowed=(Under $entry.path $root);if(-not $allowed){$allowed=(Under $entry.path (Join-Path $env:LOCALAPPDATA 'Discord')) -and ([IO.Path]::GetFileName($entry.path) -in @('version.dll','drover.ini'))};if(-not $allowed){throw 'Recovery journal contains an unmanaged file path'};if($entry.backup -and -not (Under $entry.backup (Join-Path $root 'backups'))){throw 'Recovery backup is outside protected storage'}}
