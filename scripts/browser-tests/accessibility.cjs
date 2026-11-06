@@ -2,6 +2,7 @@
 const {expect}=require('@playwright/test');
 const AxeBuilder=require('@axe-core/playwright').default;
 const {summarize}=require('./accessibility-report.cjs');
+const {a11yRules}=require('./suite-status-reporter.cjs');
 const tags=['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa','best-practice'];
 async function settleAnimations(page){
  await page.evaluate(async()=>{await Promise.all(document.getAnimations()
@@ -15,6 +16,7 @@ async function scanAccessibility(page,core,testInfo,name){
  const report={schemaVersion:1,...identity(core),scope:'automated-accessibility',name,project:testInfo.project.name,
   engine:result.testEngine,tags,violations:summarize(result.violations),incomplete:summarize(result.incomplete,true),
   passedRules:result.passes.length,inapplicableRules:result.inapplicable.length};
+ for(const code of new Set(report.violations.map(rule=>a11yRules.includes(rule.id)?rule.id:'other')))testInfo.annotations.push({type:'aw-a11y-rule',description:code});
  await testInfo.attach('accessibility-'+name+'.json',{body:JSON.stringify(report,null,2)+'\n',contentType:'application/json'});
  expect(report.violations,name+' accessibility violations').toEqual([]);
 }
