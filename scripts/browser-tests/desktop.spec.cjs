@@ -845,7 +845,7 @@ test('support export fixture: delayed replies cannot cross navigation, session o
 
 // Delay only this isolated fixture's save response; never run an engine or probe.
 for(const scenario of ['guided-success','json-success','guided-failure','json-failure'])test('modal keyboard save contract: '+scenario,async({page,core},testInfo)=>{
- const {contract,writeEvidence}=require('./modal-keyboard.cjs');const evidence=contract();
+ const {contract,writeEvidence,installKeyboardTrace,keyboardSnapshot}=require('./modal-keyboard.cjs');const evidence=contract();
  const advanced=scenario.startsWith('json-'),success=scenario.endsWith('-success'),id='modal-keyboard-'+scenario;
  const endpoint='**/api/v1/profiles/'+id;
  let release,finished,entered=false,requestCount=0,posted,routeFailure=false;
@@ -861,7 +861,7 @@ for(const scenario of ['guided-success','json-success','guided-failure','json-fa
   });
   await evidence.check('save-request',async()=>{await page.locator('#save-profile').click();await expect.poll(()=>requestCount).toBe(1);await expect(page.locator('#save-profile')).toBeDisabled()});
   await evidence.check('busy-focus',async()=>{const polled=await page.waitForResponse(response=>new URL(response.url()).pathname==='/api/v1/runtime'&&response.request().method()==='GET');expect(polled.status()).toBe(200);await page.waitForFunction(()=>!state.polling);await expect(page.locator('#connection-notice')).toBeHidden();await expect(page.locator('#preview-profile')).toBeDisabled();await expect(feedback).toBeFocused();await expect(modal).toBeVisible();expect(await page.locator('.app-shell').evaluate(el=>el.inert)).toBe(true)});
-  await evidence.check('forward-tab',async()=>{await page.keyboard.press('Tab');await expect(advanced?feedback:docs).toBeFocused()});
+  await evidence.check('forward-tab',async()=>{await installKeyboardTrace(page);const before=await keyboardSnapshot(page);await page.keyboard.press('Tab');const {focus,...observed}=await keyboardSnapshot(page);evidence.keyboard={before:before.focus,after:focus,...observed};await expect(advanced?feedback:docs).toBeFocused()});
   await evidence.check('reverse-tab',async()=>{await page.keyboard.press('Shift+Tab');await expect(feedback).toBeFocused()});
   await evidence.check('busy-shortcuts',async()=>{await page.keyboard.press('Escape');await expect(modal).toBeVisible();await page.keyboard.press('Control+s');expect(requestCount).toBe(1);await expect(page.locator('#save-profile')).toBeDisabled()});
   await evidence.check('disclosure-or-json',async()=>{

@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const os=require('node:os');
 const path=require('node:path');
-const {contract,names,sources,writeEvidence}=require('./modal-keyboard.cjs');
+const {contract,names,sources,writeEvidence,validKeyboard}=require('./modal-keyboard.cjs');
 
 test('keyboard evidence checks retain only ordered static state and never callback errors',async()=>{
  const result=contract(),secret='PRIVATE_SYNTHETIC_ERROR';await result.check(names[0],async()=>{});
@@ -31,4 +31,10 @@ test('keyboard evidence is source-bound, closed-schema and exclusive without ret
   assert.ok(info.isDirectory()&&!info.isSymbolicLink()&&path.dirname(resolved)===parent&&path.basename(resolved).startsWith('accessweaver-modal-contract-'),'Unsafe keyboard evidence fixture cleanup');
   await fs.rm(resolved,{recursive:true,force:true});
  }
+});
+
+test('keyboard focus trace accepts only fixed categories, booleans and bounded source line numbers',()=>{
+ const trace={before:'feedback',after:'dialog',prevented:true,feedbackTabIndex:0,feedbackRendered:true,feedbackBlocked:false,candidates:['feedback'],candidateLimited:false,candidateScanOK:true,errorKind:'none',errorLine:0};
+ assert.equal(validKeyboard(trace),true);assert.equal(validKeyboard(null),true);
+ for(const mutation of [{after:'PRIVATE_SYNTHETIC_TARGET'},{candidates:['/private/fixture']},{errorKind:'PRIVATE_SYNTHETIC_ERROR'},{errorLine:5001},{message:'PRIVATE_SYNTHETIC_ERROR'},{candidates:Array(65).fill('feedback')}])assert.equal(validKeyboard({...trace,...mutation}),false);
 });
