@@ -860,14 +860,14 @@ for(const scenario of ['guided-success','json-success','guided-failure','json-fa
    await expect(dialog).toHaveAttribute('tabindex','-1');await page.route(endpoint,handler);
   });
   await evidence.check('save-request',async()=>{await page.locator('#save-profile').click();await expect.poll(()=>requestCount).toBe(1);await expect(page.locator('#save-profile')).toBeDisabled()});
-  await evidence.check('busy-focus',async()=>{await expect(feedback).toBeFocused();await expect(modal).toBeVisible();expect(await page.locator('.app-shell').evaluate(el=>el.inert)).toBe(true)});
-  await evidence.check('forward-tab',async()=>{await page.keyboard.press('Tab');await expect(advanced?dialog:docs).toBeFocused()});
-  await evidence.check('reverse-tab',async()=>{await page.keyboard.press('Shift+Tab');await expect(advanced?dialog:summary).toBeFocused()});
+  await evidence.check('busy-focus',async()=>{const polled=await page.waitForResponse(response=>new URL(response.url()).pathname==='/api/v1/runtime'&&response.request().method()==='GET');expect(polled.status()).toBe(200);await page.waitForFunction(()=>!state.polling);await expect(page.locator('#connection-notice')).toBeHidden();await expect(page.locator('#preview-profile')).toBeDisabled();await expect(feedback).toBeFocused();await expect(modal).toBeVisible();expect(await page.locator('.app-shell').evaluate(el=>el.inert)).toBe(true)});
+  await evidence.check('forward-tab',async()=>{await page.keyboard.press('Tab');await expect(advanced?feedback:docs).toBeFocused()});
+  await evidence.check('reverse-tab',async()=>{await page.keyboard.press('Shift+Tab');await expect(feedback).toBeFocused()});
   await evidence.check('busy-shortcuts',async()=>{await page.keyboard.press('Escape');await expect(modal).toBeVisible();await page.keyboard.press('Control+s');expect(requestCount).toBe(1);await expect(page.locator('#save-profile')).toBeDisabled()});
   await evidence.check('disclosure-or-json',async()=>{
    if(!advanced){await summary.focus();await page.keyboard.press('Enter');await expect(summary.locator('..')).toHaveAttribute('open','');await expect(page.locator('#p-notes')).toBeDisabled()}
    else await expect(page.locator('#editor-simple')).toBeHidden();
-   await page.keyboard.press('Tab');await expect(advanced?dialog:docs).toBeFocused();await page.keyboard.press('Shift+Tab');await expect(advanced?dialog:summary).toBeFocused();
+   await page.keyboard.press('Tab');await expect(feedback).toBeFocused();await page.keyboard.press('Shift+Tab');await expect(advanced?feedback:summary).toBeFocused();
   });
   await evidence.check('release-reply',async()=>{release();await handlerDone;expect(routeFailure).toBe(false)});
   await evidence.check('save-outcome',async()=>{if(success){await expect(modal).toBeHidden();await expect(page.locator('#new-profile')).toBeFocused()}else{await expect(modal).toBeVisible();await expect(feedback).toHaveClass('error');await expect(feedback).toBeFocused();await expect(page.locator('#save-profile')).toBeEnabled()}});

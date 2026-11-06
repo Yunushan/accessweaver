@@ -1178,7 +1178,7 @@ function modalKeyboardFixture(candidates=[]) {
  const press=shiftKey=>{let prevented=0;env.context.keyboardEvent={key:'Tab',shiftKey,preventDefault(){prevented++}};env.run('trapModalKeys(keyboardEvent)');return prevented;};
  return {...env,modal,dialog,press};
 }
-test('modal keyboard keeps Tab and Shift+Tab inside a busy dialog without enabled controls',()=>{
+test('modal keyboard keeps Tab and Shift+Tab inside a dialog without sequential controls',()=>{
  const env=modalKeyboardFixture();
  for(const shift of [false,true]){env.context.document.activeElement=env.context.document.body;assert.equal(env.press(shift),1);assert.equal(env.context.document.activeElement,env.dialog);}
 });
@@ -1192,4 +1192,10 @@ test('modal keyboard ignores unrendered and invisible controls when wrapping',()
  closed.getClientRects=()=>[];invisible.visibility='hidden';
  const modal=modalKeyboardFixture([first,closed,invisible]);modal.context.document.activeElement=first;
  assert.equal(modal.press(true),1);assert.equal(modal.context.document.activeElement,first);
+});
+
+test('runtime polling cannot re-enable Preview while an editor save is pending',()=>{
+ const env=environment();env.run('state.offline=false;state.loading=false;state.disconnected=false;state.coreAuthenticated=true;state.token="fixture";state.editing={saving:true};renderHero()');
+ assert.equal(env.get('preview-profile').disabled,true);
+ env.run('state.editing.saving=false;renderHero()');assert.equal(env.get('preview-profile').disabled,false);
 });

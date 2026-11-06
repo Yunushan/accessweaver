@@ -372,7 +372,7 @@ function renderHero() {
   $('storage-description').textContent = t(state.storageBlocked || state.preservedProfiles.length ? 'storageRecovery' : state.offline ? 'browserStorage' : 'coreStorage');
   $('export-browser-backup').hidden = !state.offline;
   $('storage-badge').textContent = t(state.offline ? 'browserStorageBadge' : 'coreStorageBadge');
-  $('preview-profile').disabled = !coreAvailable();
+  $('preview-profile').disabled = !coreAvailable() || !!state.editing?.saving;
   updateProbeAvailability();
   $('show-logs').disabled = state.offline || state.loading;
   updateSupportAvailability();
