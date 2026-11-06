@@ -1033,14 +1033,25 @@ function Save-Hostlist {
         Restart-Service 'AccessWeaver-goodbyedpi';(Get-Service 'AccessWeaver-goodbyedpi').WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
     }
 }
+function Read-OriginalDNSNameServer([string]$path) {
+    # Read the key successfully before treating an absent NameServer as DHCP.
+    # Access failures and malformed values are not evidence of an empty value.
+    $items=@(Get-ItemProperty -LiteralPath $path -ErrorAction Stop)
+    if($items.Count -ne 1 -or $null -eq $items[0]){throw 'Original DNS mode could not be inspected; no new DNS configuration was applied'}
+    $property=$items[0].PSObject.Properties['NameServer']
+    if($null -eq $property -or $null -eq $property.Value){return ''}
+    if($property.Value -isnot [string]){throw 'Original DNS mode has an unsupported value; no new DNS configuration was applied'}
+    return [string]$property.Value
+}
 function Configure-DNS([string]$method) {
+    if($method -notin @('doh','dnscrypt')){throw 'Choose doh or dnscrypt'}
     if($method -eq 'doh'){foreach($command in @('Get-DnsClientDohServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'This Windows version does not expose native DoH management; choose DNSCrypt instead'}}}
     $snapshot=Join-Path $root 'profiles\dns-original.json'
     $adapters=@(Get-NetAdapter | Where-Object {$_.Status -eq 'Up' -and $_.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN'})
     if(-not $adapters.Count){throw 'No active physical network adapter found'}
     if(-not (Test-Path -LiteralPath $snapshot)){
-        $records=@();foreach($adapter in $adapters){$reg='HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\'+$adapter.InterfaceGuid;$names=(Get-ItemProperty -LiteralPath $reg -Name NameServer -ErrorAction SilentlyContinue).NameServer;$reg6='HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\'+$adapter.InterfaceGuid;$names6=(Get-ItemProperty -LiteralPath $reg6 -Name NameServer -ErrorAction SilentlyContinue).NameServer;$records+=@{guid=[string]$adapter.InterfaceGuid;index=$adapter.ifIndex;ipv4=@((Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4).ServerAddresses);ipv6=@((Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv6).ServerAddresses);dhcp4=[string]::IsNullOrWhiteSpace($names);dhcp6=[string]::IsNullOrWhiteSpace($names6)}}
-        $dohSettings=@();if(Get-Command 'Get-DnsClientDohServerAddress' -ErrorAction SilentlyContinue){$dohSettings=@(Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue)}
+        $records=@();foreach($adapter in $adapters){$reg='HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\'+$adapter.InterfaceGuid;$names=Read-OriginalDNSNameServer $reg;$reg6='HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\'+$adapter.InterfaceGuid;$names6=Read-OriginalDNSNameServer $reg6;$records+=@{guid=[string]$adapter.InterfaceGuid;index=$adapter.ifIndex;ipv4=@((Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4).ServerAddresses);ipv6=@((Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv6).ServerAddresses);dhcp4=[string]::IsNullOrWhiteSpace($names);dhcp6=[string]::IsNullOrWhiteSpace($names6)}}
+        $dohSettings=@();if(Get-Command 'Get-DnsClientDohServerAddress' -ErrorAction SilentlyContinue){$dohSettings=@(Get-DnsClientDohServerAddress -ErrorAction Stop)}
         Write-Atomic $snapshot (@{adapters=@($records);doh=$dohSettings}|ConvertTo-Json -Depth 10)
     }
     $script:dnsTouched=$true
@@ -1056,7 +1067,9 @@ function Configure-DNS([string]$method) {
     } elseif($method -eq 'doh') {
         if(Get-Service 'AccessWeaver-dnscrypt' -ErrorAction SilentlyContinue){Stop-Service 'AccessWeaver-dnscrypt';Set-Service 'AccessWeaver-dnscrypt' -StartupType Manual}
         $providers=@(@{address='8.8.8.8';url='https://dns.google/dns-query'},@{address='9.9.9.9';url='https://dns.quad9.net/dns-query'},@{address='2001:4860:4860::8888';url='https://dns.google/dns-query'},@{address='2620:fe::fe';url='https://dns.quad9.net/dns-query'})
-        foreach($provider in $providers){if(Get-DnsClientDohServerAddress -ServerAddress $provider.address -ErrorAction SilentlyContinue){Set-DnsClientDohServerAddress -ServerAddress $provider.address -DohTemplate $provider.url -AllowFallbackToUdp $false -AutoUpgrade $true}else{Add-DnsClientDohServerAddress -ServerAddress $provider.address -DohTemplate $provider.url -AllowFallbackToUdp $false -AutoUpgrade $true}}
+        $currentDoh=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
+        foreach($provider in $providers){if(@($currentDoh | Where-Object {$_.ServerAddress -eq $provider.address}).Count -gt 1){throw 'Current DoH configuration is ambiguous; retain the original DNS snapshot'}}
+        foreach($provider in $providers){if(@($currentDoh | Where-Object {$_.ServerAddress -eq $provider.address}).Count -eq 1){Set-DnsClientDohServerAddress -ServerAddress $provider.address -DohTemplate $provider.url -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop}else{Add-DnsClientDohServerAddress -ServerAddress $provider.address -DohTemplate $provider.url -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop}}
         $servers=@($providers | ForEach-Object {$_.address})
     } else {throw 'Choose doh or dnscrypt'}
     foreach($adapter in $adapters){Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses $servers}
@@ -1069,13 +1082,53 @@ function Configure-DNS([string]$method) {
 }
 function Restore-DNS {
     $snapshot=Join-Path $root 'profiles\dns-original.json';if(-not (Test-Path -LiteralPath $snapshot)){throw 'No original DNS snapshot exists; no settings were changed'}
-    $saved=Get-Content -LiteralPath $snapshot -Raw | ConvertFrom-Json
-    foreach($record in $saved.adapters){$adapter=Get-NetAdapter | Where-Object {[string]$_.InterfaceGuid -eq $record.guid};if(-not $adapter){throw 'An original network adapter is missing; retain the snapshot for later recovery'}
-        foreach($family in @('IPv4','IPv6')){$dhcp=if($family -eq 'IPv4'){$record.dhcp4}else{$record.dhcp6};$values=if($family -eq 'IPv4'){@($record.ipv4)}else{@($record.ipv6)};$dns=Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily $family;if($dhcp){$dns | Set-DnsClientServerAddress -ResetServerAddresses}else{$dns | Set-DnsClientServerAddress -ServerAddresses $values}}
+    $saved=Get-Content -LiteralPath $snapshot -Raw -ErrorAction Stop | ConvertFrom-Json
+    if($null -eq $saved.adapters -or @($saved.adapters).Count -eq 0){throw 'Original DNS snapshot has no adapter records; retain it for manual recovery'}
+    # Inspect every original adapter and relevant DoH entry before changing any
+    # settings. This is preflight, not a guarantee of an atomic OS transaction.
+    $currentAdapters=@(Get-NetAdapter -ErrorAction Stop);$plans=@()
+    foreach($record in $saved.adapters){
+        if($record.dhcp4 -isnot [bool] -or $record.dhcp6 -isnot [bool]){throw 'Original DNS snapshot has invalid address mode flags; retain it for manual recovery'}
+        $matches=@($currentAdapters | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
+        if($matches.Count -ne 1){throw 'An original network adapter is missing or ambiguous; retain the snapshot for later recovery'}
+        foreach($family in @('IPv4','IPv6')){
+            $dhcp=if($family -eq 'IPv4'){$record.dhcp4}else{$record.dhcp6}
+            $values=if($family -eq 'IPv4'){@($record.ipv4)}else{@($record.ipv6)}
+            if(-not $dhcp -and ($values.Count -eq 0 -or @($values | Where-Object {$_ -isnot [string] -or [string]::IsNullOrWhiteSpace($_)}).Count -ne 0)){throw 'Original static DNS addresses are unavailable; retain the snapshot for manual recovery'}
+        }
+        $plans+=@{record=$record;adapter=$matches[0]}
     }
-    if(Get-Command 'Get-DnsClientDohServerAddress' -ErrorAction SilentlyContinue){foreach($address in @('8.8.8.8','9.9.9.9','2001:4860:4860::8888','2620:fe::fe')){$old=$saved.doh | Where-Object {$_.ServerAddress -eq $address};if($old){Set-DnsClientDohServerAddress -ServerAddress $address -DohTemplate $old.DohTemplate -AllowFallbackToUdp $old.AllowFallbackToUdp -AutoUpgrade $old.AutoUpgrade}else{Remove-DnsClientDohServerAddress -ServerAddress $address -ErrorAction SilentlyContinue}}}
-    Remove-Item -LiteralPath $snapshot;Event 'Original DNS and DoH settings restored'
+    $dohAvailable=[bool](Get-Command 'Get-DnsClientDohServerAddress' -ErrorAction SilentlyContinue)
+    $currentDoh=@();$dohPlans=@()
+    if($dohAvailable){
+        foreach($command in @('Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'DoH recovery commands are unavailable; retain the original DNS snapshot'}}
+        $currentDoh=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
+        foreach($address in @('8.8.8.8','9.9.9.9','2001:4860:4860::8888','2620:fe::fe')){
+            $old=@($saved.doh | Where-Object {$_.ServerAddress -eq $address});$current=@($currentDoh | Where-Object {$_.ServerAddress -eq $address})
+            if($old.Count -gt 1 -or $current.Count -gt 1){throw 'DoH recovery metadata is ambiguous; retain the original DNS snapshot'}
+            if($old.Count -eq 1 -and ($old[0].DohTemplate -isnot [string] -or [string]::IsNullOrWhiteSpace($old[0].DohTemplate) -or $old[0].AllowFallbackToUdp -isnot [bool] -or $old[0].AutoUpgrade -isnot [bool])){throw 'Original DoH metadata is incomplete; retain the DNS snapshot for manual recovery'}
+            $dohPlans+=@{address=$address;old=$old;current=$current}
+        }
+    } elseif(@($saved.doh | Where-Object {$null -ne $_}).Count -gt 0){throw 'Original DoH metadata cannot be restored on this host; retain the DNS snapshot'}
+    foreach($plan in $plans){
+        $record=$plan.record;$adapter=$plan.adapter
+        foreach($family in @('IPv4','IPv6')){
+            $dhcp=if($family -eq 'IPv4'){$record.dhcp4}else{$record.dhcp6};$values=if($family -eq 'IPv4'){@($record.ipv4)}else{@($record.ipv6)}
+            $dns=@(Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily $family -ErrorAction Stop)
+            if($dns.Count -ne 1 -or $null -eq $dns[0]){throw 'Original adapter DNS settings could not be inspected; retain the recovery snapshot'}
+            if($dhcp){$dns[0] | Set-DnsClientServerAddress -ResetServerAddresses -ErrorAction Stop}else{$dns[0] | Set-DnsClientServerAddress -ServerAddresses $values -ErrorAction Stop}
+        }
+    }
+    foreach($plan in $dohPlans){
+        if($plan.old.Count -eq 1){
+            $old=$plan.old[0]
+            if($plan.current.Count -eq 1){Set-DnsClientDohServerAddress -ServerAddress $plan.address -DohTemplate $old.DohTemplate -AllowFallbackToUdp $old.AllowFallbackToUdp -AutoUpgrade $old.AutoUpgrade -ErrorAction Stop}
+            else{Add-DnsClientDohServerAddress -ServerAddress $plan.address -DohTemplate $old.DohTemplate -AllowFallbackToUdp $old.AllowFallbackToUdp -AutoUpgrade $old.AutoUpgrade -ErrorAction Stop}
+        } elseif($plan.current.Count -eq 1){Remove-DnsClientDohServerAddress -ServerAddress $plan.address -ErrorAction Stop}
+    }
+    Remove-Item -LiteralPath $snapshot -ErrorAction Stop;Event 'Original DNS and DoH settings restored'
 }
+
 function Refresh-Task {
     $name='AccessWeaver-WireSock-Refresh'
     if(-not $r.enabled){Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue;Event 'Reconnect task removed';return}

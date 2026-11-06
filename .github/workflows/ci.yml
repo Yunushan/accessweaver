@@ -896,6 +896,31 @@ jobs:
       - name: Test profile import read completion contracts
         if: inputs.scope == 'profile-read'
         run: go test ./cmd/accessweaver -run '^Test(AuditImport(Read|Mutation|AtomicWrite)Completion|ForegroundEngine|RecordedEngineLifecycle)' -count=1 -timeout=3m
+      - name: Test DNS snapshot and recovery contracts
+        if: inputs.scope == 'profile-read'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dnsEvidence = Join-Path $env:RUNNER_TEMP ('accessweaver-dns-contracts-' + [Guid]::NewGuid().ToString('N'))
+          $env:ACCESSWEAVER_DNS_CONTRACT_EVIDENCE = $dnsEvidence
+          ('ACCESSWEAVER_DNS_CONTRACT_EVIDENCE=' + $dnsEvidence) | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append -ErrorAction Stop
+          $coreEvidence = Join-Path $dnsEvidence 'core'
+          New-Item -ItemType Directory -Path $coreEvidence -Force -ErrorAction Stop | Out-Null
+          ./scripts/test-dns-recovery-contracts.ps1 -ReportPath (Join-Path $coreEvidence 'dns-contracts.json')
+          if ($env:RUNNER_OS -eq 'Windows') {
+            $desktopShell = Join-Path $env:windir 'System32/WindowsPowerShell/v1.0/powershell.exe'
+            $desktopEvidence = Join-Path $dnsEvidence 'desktop'
+            New-Item -ItemType Directory -Path $desktopEvidence -ErrorAction Stop | Out-Null
+            & $desktopShell -NoProfile -NonInteractive -File scripts/test-dns-recovery-contracts.ps1 -RequireWindowsPowerShell -ReportPath (Join-Path $desktopEvidence 'dns-contracts.json')
+            if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell DNS source contracts failed' }
+          }
+      - name: Retain DNS source contract evidence
+        if: ${{ always() && inputs.scope == 'profile-read' && env.ACCESSWEAVER_DNS_CONTRACT_EVIDENCE != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dns-source-contracts-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_DNS_CONTRACT_EVIDENCE }}/**/dns-contracts.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Test ordinary CLI input and cleanup contracts
         if: inputs.scope == 'profile-read'
         run: |

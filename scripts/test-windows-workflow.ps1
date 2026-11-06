@@ -508,7 +508,7 @@ Configure-DNS 'doh'
 $dnsSnapshot=Join-Path $root 'profiles\dns-original.json'
 Assert (Test-Path -LiteralPath $dnsSnapshot) 'DNS snapshot persisted before changes'
 Assert ($script:dnsCalls[0].servers.Count -eq 4) 'DNS configuration covers IPv4 and IPv6 providers'
-Assert (@($script:dohCalls | Where-Object {$_.action -eq 'add' -and $_.fallback -eq $false}).Count -eq 4) 'Native DoH configuration disables plaintext fallback'
+Assert (@($script:dohCalls | Where-Object {$_.action -in @('add','set') -and $_.fallback -eq $false}).Count -eq 4) 'Native DoH configuration disables plaintext fallback'
 Restore-DNS
 Assert (@($script:dnsCalls|Where-Object {$_.family -eq 'IPv4' -and $_.servers -contains '192.0.2.53'}).Count -eq 1) 'Original static IPv4 DNS is restored'
 Assert (@($script:dnsCalls|Where-Object {$_.family -eq 'IPv6' -and $_.reset}).Count -eq 1) 'Original DHCP IPv6 DNS is restored independently'
