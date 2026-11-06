@@ -15,6 +15,9 @@ var (
 	ErrWorkflowResult      = errors.New("workflow result is unavailable")
 	ErrWorkflowPersistence = errors.New("workflow outcome could not be persisted")
 	ErrWorkflowCleanup     = errors.New("workflow native cleanup is unconfirmed")
+	// Store categories retain private OS causes without printing their paths.
+	ErrWorkflowBusy  = errors.New("another workflow is using this data directory")
+	ErrWorkflowStore = errors.New("workflow store coordination failed")
 )
 
 // ErrWorkflowOutcomeUnavailable reports no completed current generation for an
@@ -62,7 +65,7 @@ func workflowFinalFailure(cause error) error {
 		return nil
 	}
 	var messages []string
-	for _, category := range []error{ErrWorkflowAdmission, ErrWorkflowExecution, ErrWorkflowResult, ErrWorkflowPersistence, ErrWorkflowCleanup} {
+	for _, category := range []error{ErrWorkflowAdmission, ErrWorkflowExecution, ErrWorkflowResult, ErrWorkflowPersistence, ErrWorkflowCleanup, ErrWorkflowStore, ErrWorkflowBusy} {
 		if errors.Is(cause, category) {
 			messages = append(messages, category.Error())
 		}

@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Validation scope
+        type: choice
+        default: full
+        options:
+          - full
+          - workflow-store
 
 permissions:
   contents: read
@@ -18,12 +26,16 @@ env:
 
 jobs:
   browser:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.scope != 'workflow-store' }}
     uses: ./.github/workflows/browser.yml
   windows-audit-storage:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.scope != 'workflow-store' }}
     uses: ./.github/workflows/windows-audit-storage.yml
   darwin-audit-commands:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.scope != 'workflow-store' }}
     uses: ./.github/workflows/darwin-audit-commands.yml
   vulnerabilities:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.scope != 'workflow-store' }}
     name: Go vulnerability checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -83,6 +95,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   test:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.scope != 'workflow-store' }}
     name: Test (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -394,6 +407,7 @@ jobs:
         shell: bash
         run: test -z "$(gofmt -l cmd internal web)"
   race:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.scope != 'workflow-store' }}
     name: Race detector (Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -413,6 +427,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   race-arm64:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.scope != 'workflow-store' }}
     name: Race detector (Linux/arm64)
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
@@ -433,6 +448,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   cross-compile:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.scope != 'workflow-store' }}
     name: Cross-build (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -453,3 +469,66 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: bash scripts/build-all.sh "$TARGET"
+  # Manual candidate-only fixture check. The regular push/PR/full matrix above
+  # stays complete. This does not certify installed or managed endpoints.
+  workflow-store:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.scope == 'workflow-store' }}
+    name: Workflow store (${{ matrix.goos }}/${{ matrix.goarch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            sdkarch: x64
+          - os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            sdkarch: arm64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            sdkarch: x64
+          - os: windows-11-arm
+            goos: windows
+            goarch: arm64
+            sdkarch: arm64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            sdkarch: arm64
+          - os: macos-15-intel
+            goos: darwin
+            goarch: amd64
+            sdkarch: x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      GOTOOLCHAIN: local
+      ACCESSWEAVER_EXPECT_GOOS: ${{ matrix.goos }}
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+          architecture: ${{ matrix.sdkarch }}
+      - name: Verify native host and SDK identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $hostOS = (go env GOHOSTOS).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Go host OS unavailable' }
+          $hostArch = (go env GOHOSTARCH).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Go host architecture unavailable' }
+          if ($hostOS -ne $env:ACCESSWEAVER_EXPECT_GOOS -or $hostArch -ne $env:ACCESSWEAVER_EXPECT_GOARCH) { throw 'Go host target mismatch' }
+      - name: Verify dependencies
+        run: go mod verify
+      - name: Test native persistent file locks
+        run: go test ./internal/filelock -count=1 -timeout=3m
+      - name: Test workflow store admission, lifetime and subprocess fixtures
+        run: go test ./internal/workflow -run '^TestWorkflowStore' -count=1 -timeout=4m

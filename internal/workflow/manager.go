@@ -123,26 +123,30 @@ func Catalog() []Operation {
 }
 
 type Manager struct {
-	startMu      sync.Mutex
-	guard        *managed.Guard
-	mu           sync.Mutex
-	root         string
-	plans        map[string]Plan
-	job          Job
-	cancel       context.CancelFunc
-	done         chan struct{}
-	completion   *workflowCompletion
-	shutdown     *workflowShutdown
-	closing      bool
-	execute      func(context.Context, string, Request) (json.RawMessage, error)
-	persist      func(string, []byte) error
-	platform     string
-	requireAdmin func() error
+	startMu             sync.Mutex
+	guard               *managed.Guard
+	mu                  sync.Mutex
+	root                string
+	storeRoot           string
+	openStoreLease      func(string) (workflowStoreLease, error)
+	storeFailure        error
+	retainedStoreLeases []workflowStoreLease
+	plans               map[string]Plan
+	job                 Job
+	cancel              context.CancelFunc
+	done                chan struct{}
+	completion          *workflowCompletion
+	shutdown            *workflowShutdown
+	closing             bool
+	execute             func(context.Context, string, Request) (json.RawMessage, error)
+	persist             func(string, []byte) error
+	platform            string
+	requireAdmin        func() error
 }
 
 func New(root string) *Manager { return NewWithGuard(root, managed.NewGuard(nil)) }
 func NewWithGuard(root string, guard *managed.Guard) *Manager {
-	return &Manager{guard: guard, root: filepath.Join(root, "workflows"), plans: map[string]Plan{}, execute: execute, persist: profile.AtomicWrite, platform: runtime.GOOS, requireAdmin: requireAdministrator}
+	return &Manager{guard: guard, root: filepath.Join(root, "workflows"), storeRoot: filepath.Clean(root), openStoreLease: openWorkflowStoreLease, plans: map[string]Plan{}, execute: execute, persist: profile.AtomicWrite, platform: runtime.GOOS, requireAdmin: requireAdministrator}
 }
 
 func (m *Manager) Preview(r Request) (Plan, error) {
@@ -427,6 +431,9 @@ func (m *Manager) Start(id string) (Job, error) {
 	if m.closing {
 		return Job{}, errors.New("system workflow manager is shutting down")
 	}
+	if m.storeFailure != nil {
+		return Job{}, workflowFinalFailure(workflowFailure(ErrWorkflowAdmission, m.storeFailure))
+	}
 	if m.job.State == "running" {
 		return Job{}, errors.New("a system workflow is already running")
 	}
@@ -466,6 +473,9 @@ func (m *Manager) Start(id string) (Job, error) {
 	if m.closing {
 		return Job{}, errors.New("system workflow manager is shutting down")
 	}
+	if m.storeFailure != nil {
+		return Job{}, workflowFinalFailure(workflowFailure(ErrWorkflowAdmission, m.storeFailure))
+	}
 	if m.job.State == "running" {
 		return Job{}, errors.New("a system workflow is already running")
 	}
@@ -477,7 +487,6 @@ func (m *Manager) Start(id string) (Job, error) {
 			return Job{}, err
 		}
 	}
-	delete(m.plans, id)
 	m.cancel = cancel
 	m.job = Job{ID: id, Action: p.Request.Action, State: "running", StartedAt: time.Now().UTC()}
 	job := m.job
@@ -488,28 +497,46 @@ func (m *Manager) Start(id string) (Job, error) {
 	// cancel or wait with their own deadline while this private write is
 	// pending; execution requires a durable running record.
 	m.mu.Unlock()
-	initialErr := os.MkdirAll(m.root, 0700)
+	activeLease, activeErr := m.acquireWorkflowStoreLease(workflowActiveLockName)
+	initialErr := activeErr
 	if initialErr == nil {
-		initialErr = m.saveJob(&job)
+		// Contention does not consume a still-reviewed plan. Once this reserved
+		// generation owns the root, its ordinary admission durability proceeds.
+		m.mu.Lock()
+		delete(m.plans, id)
+		m.mu.Unlock()
+		initialErr = os.MkdirAll(m.root, 0700)
+		if initialErr == nil {
+			initialErr = m.saveJob(&job)
+		}
 	}
-	m.mu.Lock()
 	if initialErr != nil {
-		// Keep a cancellation or policy co-cause observed during admission,
-		// before internal cleanup cancels the context itself. The private job
-		// display and Start return retain the original storage error text.
 		admissionCause := initialErr
+		if activeErr == nil {
+			admissionCause = workflowCause(ErrWorkflowPersistence, admissionCause)
+		}
+		// Sample before internal cancellation, and observe lease cleanup outside
+		// mu. Shutdown keeps this exact reserved completion until both finish.
+		closeErr := m.closeWorkflowStoreLease(activeLease)
+		admissionCause = errors.Join(admissionCause, workflowFailure(ErrWorkflowCleanup, closeErr))
 		if cause := context.Cause(ctx); cause != nil {
 			admissionCause = errors.Join(admissionCause, cause)
 		}
 		cancel()
+		m.mu.Lock()
 		job.State = "failed"
 		job.FinishedAt = time.Now().UTC()
-		job.Error = boundedJobError(initialErr.Error())
+		job.Error = boundedJobError(errors.Join(initialErr, closeErr).Error())
 		m.job = job
-		completion.err = workflowFinalFailure(workflowFailure(ErrWorkflowAdmission, workflowCause(ErrWorkflowPersistence, admissionCause)))
+		completion.err = workflowFinalFailure(workflowFailure(ErrWorkflowAdmission, admissionCause))
 		close(done)
+		if errors.Is(initialErr, ErrWorkflowStore) || closeErr != nil {
+			// New coordination errors never print an underlying OS pathname.
+			return Job{}, completion.err
+		}
 		return Job{}, initialErr
 	}
+	m.mu.Lock()
 
 	started = true
 	go func() {
@@ -552,7 +579,16 @@ func (m *Manager) Start(id string) (Job, error) {
 			job.Error = boundedJobError("persist result: " + persistErr.Error() + "; " + job.Error)
 			terminalErr = errors.Join(terminalErr, workflowFailure(ErrWorkflowPersistence, persistErr))
 		}
-		if cooperative && resultErr == nil && persistErr == nil {
+		// The lease covers all actual work and attempted terminal persistence.
+		// Its close is observed before in-memory completion publication; never
+		// rewrite the record after releasing an uncertain/closed reservation.
+		leaseErr := m.closeWorkflowStoreLease(activeLease)
+		if leaseErr != nil {
+			job.State = "failed"
+			job.Error = boundedJobError("release workflow store: " + leaseErr.Error() + "; " + job.Error)
+			terminalErr = errors.Join(terminalErr, workflowFailure(ErrWorkflowCleanup, leaseErr))
+		}
+		if cooperative && resultErr == nil && persistErr == nil && leaseErr == nil {
 			terminalErr = nil
 		}
 		m.mu.Lock()
@@ -572,7 +608,21 @@ func (m *Manager) saveJob(job *Job) error {
 	if e != nil {
 		return e
 	}
-	return m.persist(filepath.Join(m.root, job.ID+".json"), b)
+	lease, err := m.acquireWorkflowStoreLease(workflowTransactionLockName)
+	if err != nil {
+		return err
+	}
+	writeErr := m.persist(filepath.Join(m.root, job.ID+".json"), b)
+	closeErr := workflowFailure(ErrWorkflowCleanup, m.closeWorkflowStoreLease(lease))
+	if closeErr == nil {
+		// Preserve the original persistence error's identity when coordination
+		// succeeded; existing admission callers observe that exact local cause.
+		return writeErr
+	}
+	if writeErr == nil {
+		return closeErr
+	}
+	return errors.Join(writeErr, closeErr)
 }
 func (m *Manager) Snapshot() Job {
 	m.mu.Lock()
