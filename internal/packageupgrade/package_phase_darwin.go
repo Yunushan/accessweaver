@@ -16,24 +16,38 @@ func packageIncoming(identity deploymentIdentity, create bool) error {
 	if e != nil {
 		return e
 	}
-	defer parent.Close()
-	incoming, e := deploymentDirectory(parent, deploymentIncoming, 0, create)
+	return packageIncomingAt(parent, identity, create, nativeRuntimeReads())
+}
+
+// This scope owns parent and every opened verifier descriptor. A clean absent
+// input remains allowed, but failed cleanup never becomes clean absence.
+func packageIncomingAt(parent *os.File, identity deploymentIdentity, create bool, r runtimeReadOps) (failure error) {
+	var absent error
+	defer func() {
+		failure = r.finish(parent, failure)
+		if failure != nil && absent != nil {
+			failure = errors.Join(failure, absent)
+		}
+	}()
+	incoming, e := r.deploymentDirectory(parent, deploymentIncoming, 0, create)
 	if !create && darwintrust.IsReadAbsent(e) {
+		absent = e
 		return nil
 	}
 	if e != nil {
 		return e
 	}
-	defer incoming.Close()
-	stage, e := deploymentDirectory(incoming, identity.ManifestSHA256, 0, create)
+	defer func() { failure = r.finish(incoming, failure) }()
+	stage, e := r.deploymentDirectory(incoming, identity.ManifestSHA256, 0, create)
 	if !create && darwintrust.IsReadAbsent(e) {
+		absent = e
 		return nil
 	}
 	if e != nil {
 		return e
 	}
-	defer stage.Close()
-	entries, e := deploymentEntries(stage, 0, 3)
+	defer func() { failure = r.finish(stage, failure) }()
+	entries, e := r.deploymentEntries(stage, 0, 3)
 	if e != nil {
 		return e
 	}
@@ -43,15 +57,15 @@ func packageIncoming(identity deploymentIdentity, create bool) error {
 	if len(entries) != 3 {
 		return errors.New("existing package input has unexpected contents; preserve and inspect")
 	}
-	app, encoded, sbom, embedded, e := openDeploymentBundle(stage)
+	app, encoded, sbom, embedded, e := r.openDeploymentBundle(stage)
 	if e != nil {
 		return e
 	}
-	defer app.Close()
+	defer func() { failure = r.finish(app, failure) }()
 	if embedded || len(sbom) == 0 {
 		return errors.New("new packages require detached inventory and payload SBOM")
 	}
-	_, _, e = verifyDeploymentInventory(app, identity, encoded, false, sbom)
+	_, _, e = r.verifyDeploymentInventory(app, identity, encoded, false, sbom)
 	return e
 }
 
@@ -100,7 +114,7 @@ func PackageOperation(phase string) (result DeploymentResult, err error) {
 	if e == nil {
 		e = packageIncoming(identity, true)
 	}
-	if e != nil {
+	if e != nil && !published {
 		state = "refused"
 	}
 	result = DeploymentResult{SchemaVersion: 1, Operation: "prepare-deployment", Generation: s.state.Generation, Version: identity.Version, ManifestSHA256: identity.ManifestSHA256, PayloadSHA256: identity.PayloadSHA256, SlotID: slot.ID, State: state, OperationRecordPublished: published}

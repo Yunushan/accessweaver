@@ -31,18 +31,32 @@ func openDeploymentIncoming(identity deploymentIdentity) (*os.File, error) {
 	if e != nil {
 		return nil, e
 	}
-	defer parent.Close()
-	incoming, e := deploymentDirectory(parent, deploymentIncoming, 0, false)
+	return openDeploymentIncomingAt(parent, identity, nativeRuntimeReads())
+}
+
+// Parent ownership transfers on entry. Public callers always select the fixed
+// protected parent above; only owned hosted-root fixtures supply another one.
+func openDeploymentIncomingAt(parent *os.File, identity deploymentIdentity, r runtimeReadOps) (stage *os.File, failure error) {
+	var incoming *os.File
+	completed := false
+	defer func() {
+		failure = r.finish(incoming, failure)
+		failure = r.finish(parent, failure)
+		if !completed || failure != nil {
+			failure = r.finish(stage, failure)
+			stage = nil
+		}
+	}()
+	var e error
+	incoming, e = r.deploymentDirectory(parent, deploymentIncoming, 0, false)
 	if e != nil {
 		return nil, e
 	}
-	defer incoming.Close()
-	stage, e := deploymentDirectory(incoming, identity.ManifestSHA256, 0, false)
+	stage, e = r.deploymentDirectory(incoming, identity.ManifestSHA256, 0, false)
 	if e != nil {
-		return nil, e
+		return stage, e
 	}
-	// The exact legacy or schema2 container stays held through the copy.
-	// Both detached metadata files are authenticated by the compiled seal.
+	completed = true
 	return stage, nil
 }
 func (s *deploymentStore) matchingPending(identity deploymentIdentity) (deploymentPending, bool, error) {
@@ -60,6 +74,9 @@ func (s *deploymentStore) matchingPending(identity deploymentIdentity) (deployme
 	return found, count == 1, nil
 }
 func (s *deploymentStore) reconcileDeployment(op string, identity deploymentIdentity, openSource func() (*os.File, error)) (deploymentSlot, bool, string, error) {
+	return nativeDeploymentCompletion().reconcileDeployment(s, op, identity, openSource)
+}
+func (d deploymentCompletion) reconcileDeployment(s *deploymentStore, op string, identity deploymentIdentity, openSource func() (*os.File, error)) (deploymentSlot, bool, string, error) {
 	pending, found, e := s.matchingPending(identity)
 	if e != nil {
 		return deploymentSlot{}, false, "refused", e
@@ -74,11 +91,11 @@ func (s *deploymentStore) reconcileDeployment(op string, identity deploymentIden
 			if e != nil {
 				return pending.Slot, false, "refused", e
 			}
-			e = dir.Close()
+			e = d.finish(dir, nil)
 			return pending.Slot, false, "prepared", e
 		}
 		before := append([]byte{}, s.encoded...)
-		slot, e := s.prepare(identity)
+		slot, e := d.prepare(s, identity)
 		return slot, !bytes.Equal(before, s.encoded), "prepared", e
 	case "activate-deployment":
 		if !found {
@@ -86,7 +103,7 @@ func (s *deploymentStore) reconcileDeployment(op string, identity deploymentIden
 				return deploymentSlot{}, false, "refused", errors.New("no matching prepared or active deployment")
 			}
 			slot := s.state.Active
-			_, e := s.activatePrepared(slot)
+			_, e := d.activatePrepared(s, slot)
 			return slot, false, "active", e
 		}
 		if pending.BaseGeneration != s.state.Generation {
@@ -97,20 +114,20 @@ func (s *deploymentStore) reconcileDeployment(op string, identity deploymentIden
 			return pending.Slot, false, "refused", e
 		}
 		entries, readErr := deploymentEntries(dir, 0, 3)
-		closeErr := dir.Close()
+		closeErr := d.finish(dir, nil)
 		if e = errors.Join(readErr, closeErr); e != nil {
 			return pending.Slot, false, "refused", e
 		}
 		if len(entries) != 0 {
-			published, e := s.activatePrepared(pending.Slot)
+			published, e := d.activatePrepared(s, pending.Slot)
 			return pending.Slot, published, "active", e
 		}
 		app, e := openSource()
 		if e != nil {
-			return pending.Slot, false, "refused", e
+			return pending.Slot, false, "refused", d.finish(app, e)
 		}
-		published, copyErr := s.copyIncomingAndActivate(pending.Slot, app)
-		return pending.Slot, published, "active", errors.Join(copyErr, app.Close())
+		published, copyErr := d.copyIncomingAndActivate(s, pending.Slot, app)
+		return pending.Slot, published, "active", d.finish(app, copyErr)
 	case "deactivate-deployment":
 		// An older helper cannot deactivate a newer or differently sealed app.
 		if s.state.Active.Identity != identity {
@@ -120,14 +137,14 @@ func (s *deploymentStore) reconcileDeployment(op string, identity deploymentIden
 		if e := s.verifySlot(slot); e != nil {
 			return slot, false, "refused", e
 		}
-		published, e := s.deactivate()
+		published, e := d.deactivate(s)
 		return slot, published, "inactive", e
 	case "abandon-deployment":
 		if !found {
 			return deploymentSlot{}, false, "refused", errors.New("no matching preparation to abandon")
 		}
 		// Abandon the record, not its files. No guessed recursive deletion.
-		published, e := s.abandon(pending.Slot.ID)
+		published, e := d.abandon(s, pending.Slot.ID)
 		return pending.Slot, published, "abandoned", e
 	}
 	return deploymentSlot{}, false, "refused", errors.New("unknown deployment operation")
@@ -156,7 +173,7 @@ func DeploymentOperation(op string) (result DeploymentResult, err error) {
 	}
 	defer func() { err = errors.Join(err, s.Close()) }()
 	slot, published, state, e := s.reconcileDeployment(op, identity, func() (*os.File, error) { return openDeploymentIncoming(identity) })
-	if e != nil {
+	if e != nil && !published {
 		state = "refused"
 	}
 	result = DeploymentResult{SchemaVersion: 1, Operation: op, Generation: s.state.Generation, Version: identity.Version, ManifestSHA256: identity.ManifestSHA256, PayloadSHA256: identity.PayloadSHA256, SlotID: slot.ID, State: state, OperationRecordPublished: published}

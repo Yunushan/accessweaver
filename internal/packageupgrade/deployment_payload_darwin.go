@@ -198,6 +198,9 @@ func (r runtimeReadOps) verifySlot(s *deploymentStore, slot deploymentSlot) (fai
 // possibly-published record. It never resumes a partial copy, runs installed
 // code, overwrites a slot or deletes retained data.
 func (s *deploymentStore) activatePrepared(slot deploymentSlot) (bool, error) {
+	return nativeDeploymentCompletion().activatePrepared(s, slot)
+}
+func (d deploymentCompletion) activatePrepared(s *deploymentStore, slot deploymentSlot) (bool, error) {
 	if s.owner != 0 {
 		return false, errors.New("deployment activation requires root-owned storage")
 	}
@@ -219,7 +222,7 @@ func (s *deploymentStore) activatePrepared(slot deploymentSlot) (bool, error) {
 			return false, e
 		}
 	}
-	return s.commit(next)
+	return d.commit(s, next)
 }
 func (s *deploymentStore) copyAndActivate(slot deploymentSlot, source *os.File) (bool, error) {
 	encoded, e := readPath(source, ManifestName, 2<<20)
@@ -228,15 +231,21 @@ func (s *deploymentStore) copyAndActivate(slot deploymentSlot, source *os.File) 
 	}
 	return s.copyBundleAndActivate(slot, source, encoded, true, nil)
 }
-func (s *deploymentStore) copyIncomingAndActivate(slot deploymentSlot, container *os.File) (published bool, err error) {
+func (s *deploymentStore) copyIncomingAndActivate(slot deploymentSlot, container *os.File) (bool, error) {
+	return nativeDeploymentCompletion().copyIncomingAndActivate(s, slot, container)
+}
+func (d deploymentCompletion) copyIncomingAndActivate(s *deploymentStore, slot deploymentSlot, container *os.File) (published bool, err error) {
 	app, encoded, sbom, embedded, e := openDeploymentBundle(container)
 	if e != nil {
 		return false, e
 	}
-	defer func() { err = errors.Join(err, app.Close()) }()
-	return s.copyBundleAndActivate(slot, app, encoded, embedded, sbom)
+	defer func() { err = d.finish(app, err) }()
+	return d.copyBundleAndActivate(s, slot, app, encoded, embedded, sbom)
 }
 func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.File, inventory []byte, embedded bool, sbom []byte) (bool, error) {
+	return nativeDeploymentCompletion().copyBundleAndActivate(s, slot, source, inventory, embedded, sbom)
+}
+func (d deploymentCompletion) copyBundleAndActivate(s *deploymentStore, slot deploymentSlot, source *os.File, inventory []byte, embedded bool, sbom []byte) (published bool, failure error) {
 	if s.owner != 0 {
 		return false, errors.New("deployment copy requires root-owned storage")
 	}
@@ -252,7 +261,7 @@ func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.
 	if e != nil {
 		return false, e
 	}
-	defer dir.Close()
+	defer func() { failure = d.finish(dir, failure) }()
 	entries, e := deploymentEntries(dir, 0, 1)
 	if e != nil {
 		return false, e
@@ -264,14 +273,14 @@ func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.
 	if e != nil {
 		return false, e
 	}
-	defer app.Close()
+	defer func() { failure = d.finish(app, failure) }()
 	if e = s.phase("payload-reserved"); e != nil {
 		return false, e
 	}
 	dirs := append([]Directory{}, m.Directories...)
 	sort.Slice(dirs, func(i, j int) bool { return dirs[i].Path < dirs[j].Path })
-	for _, d := range dirs {
-		parent, name, e := deploymentFileParent(app, d.Path)
+	for _, directory := range dirs {
+		parent, name, e := deploymentFileParent(app, directory.Path)
 		if e != nil {
 			return false, e
 		}
@@ -280,13 +289,13 @@ func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.
 		}
 		child, e := darwintrust.CreateDirectoryAt(parent, name, 0)
 		if parent != app {
-			parent.Close()
+			e = d.finish(parent, e)
 		}
 		if e != nil {
-			return false, e
+			return false, d.finish(child, e)
 		}
 		// These are new objects inside the private uncommitted slot.
-		e = errors.Join(child.Chmod(0755), fullDeploymentSync(child), child.Close())
+		e = d.finish(child, errors.Join(child.Chmod(0755), fullDeploymentSync(child)))
 		if e != nil {
 			return false, e
 		}
@@ -295,14 +304,14 @@ func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.
 	if embedded {
 		files = append(files, File{Path: ManifestName, Bytes: int64(len(encoded)), SHA256: digest(encoded), Mode: "0644"})
 	} else {
-		if e = writeDetachedDeploymentFile(dir, detachedDeploymentManifest, encoded); e != nil {
+		if e = d.writeDetachedDeploymentFile(dir, detachedDeploymentManifest, encoded); e != nil {
 			return false, e
 		}
 		if e = s.phase("payload-manifest-durable"); e != nil {
 			return false, e
 		}
 		if m.SchemaVersion == 2 {
-			if e = writeDetachedDeploymentFile(dir, PayloadSBOMName, sbom); e != nil {
+			if e = d.writeDetachedDeploymentFile(dir, PayloadSBOMName, sbom); e != nil {
 				return false, e
 			}
 			if e = s.phase("payload-sbom-durable"); e != nil {
@@ -327,10 +336,10 @@ func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.
 		}
 		f, e := darwintrust.CreateRegularAt(parent, name, 0)
 		if parent != app {
-			parent.Close()
+			e = d.finish(parent, e)
 		}
 		if e != nil {
-			return false, e
+			return false, d.finish(f, e)
 		}
 		mode := os.FileMode(0644)
 		if record.Mode == "0755" {
@@ -340,7 +349,7 @@ func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.
 		if writeErr == nil && n != len(data) {
 			writeErr = io.ErrShortWrite
 		}
-		e = errors.Join(writeErr, f.Chmod(mode), fullDeploymentSync(f), f.Close())
+		e = d.finish(f, errors.Join(writeErr, f.Chmod(mode), fullDeploymentSync(f)))
 		if e != nil {
 			return false, e
 		}
@@ -355,7 +364,7 @@ func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.
 		if e != nil {
 			return false, e
 		}
-		e = errors.Join(fullDeploymentSync(child), child.Close())
+		e = d.finish(child, fullDeploymentSync(child))
 		if e != nil {
 			return false, e
 		}
@@ -366,12 +375,26 @@ func (s *deploymentStore) copyBundleAndActivate(slot deploymentSlot, source *os.
 	if e = s.phase("payload-complete"); e != nil {
 		return false, e
 	}
-	return s.activatePrepared(slot)
+	// Finalize both owned payload metadata handles before activation. Clear
+	// each pointer before attempting Close so no deferred path can repeat it.
+	finishedApp := app
+	app = nil
+	e = d.finish(finishedApp, nil)
+	finishedDir := dir
+	dir = nil
+	e = d.finish(finishedDir, e)
+	if e != nil {
+		return false, e
+	}
+	return d.activatePrepared(s, slot)
 }
 
 // Create only in the private uncommitted slot. Partial metadata is retained;
 // neither a missing sibling nor a failed flush authorizes repair/publication.
 func writeDetachedDeploymentFile(container *os.File, name string, data []byte) error {
+	return nativeDeploymentCompletion().writeDetachedDeploymentFile(container, name, data)
+}
+func (d deploymentCompletion) writeDetachedDeploymentFile(container *os.File, name string, data []byte) error {
 	f, e := darwintrust.CreateRegularAt(container, name, 0)
 	if e != nil {
 		return e
@@ -380,5 +403,5 @@ func writeDetachedDeploymentFile(container *os.File, name string, data []byte) e
 	if writeErr == nil && n != len(data) {
 		writeErr = io.ErrShortWrite
 	}
-	return errors.Join(writeErr, f.Chmod(0644), fullDeploymentSync(f), f.Close(), fullDeploymentSync(container))
+	return errors.Join(d.finish(f, errors.Join(writeErr, f.Chmod(0644), fullDeploymentSync(f))), fullDeploymentSync(container))
 }

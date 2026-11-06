@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"syscall"
 
 	"github.com/Yunushan/accessweaver/internal/darwintrust"
@@ -29,7 +30,9 @@ type deploymentStore struct {
 	encoded                                            []byte
 	// Native tests inject a stopped operation at durable phase boundaries.
 	// There is no environment or configuration route to this callback.
-	observe func(string) error
+	observe   func(string) error
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func openDeployment(initialize bool) (*deploymentStore, error) {
@@ -423,7 +426,10 @@ func (r runtimeReadOps) readRecord(s *deploymentStore, dir *os.File) (payload []
 
 // commit returns published even if a post-rename durability/error probe fails.
 // Callers must reopen/reconcile, never undo a possibly published generation.
-func (s *deploymentStore) commit(next deploymentState) (published bool, result error) {
+func (s *deploymentStore) commit(next deploymentState) (bool, error) {
+	return nativeDeploymentCompletion().commit(s, next)
+}
+func (d deploymentCompletion) commit(s *deploymentStore, next deploymentState) (published bool, result error) {
 	encoded, e := encodeDeployment(next)
 	if e != nil {
 		return false, e
@@ -467,7 +473,7 @@ func (s *deploymentStore) commit(next deploymentState) (published bool, result e
 	}
 	defer func() {
 		if staged != nil {
-			result = errors.Join(result, staged.Close())
+			result = d.finish(staged, result)
 		}
 	}()
 	if e = s.phase("record-reserved"); e != nil {
@@ -481,7 +487,7 @@ func (s *deploymentStore) commit(next deploymentState) (published bool, result e
 	if writeErr == nil && n != len(encoded) {
 		writeErr = io.ErrShortWrite
 	}
-	e = errors.Join(writeErr, f.Chmod(0644), fullDeploymentSync(f), f.Close())
+	e = d.finish(f, errors.Join(writeErr, f.Chmod(0644), fullDeploymentSync(f)))
 	if e != nil {
 		return false, e
 	}
@@ -517,7 +523,7 @@ func (s *deploymentStore) commit(next deploymentState) (published bool, result e
 	s.encoded = encoded
 	var closeErr error
 	if old != nil {
-		closeErr = old.Close()
+		closeErr = d.finish(old, nil)
 	}
 	if e = s.phase("record-published"); e != nil {
 		return true, errors.Join(e, closeErr)
@@ -537,6 +543,9 @@ func slotFromDirectory(f *os.File, id string, identity deploymentIdentity) (depl
 	return deploymentSlot{ID: id, Device: int64(st.Dev), Inode: st.Ino, Identity: identity}, nil
 }
 func (s *deploymentStore) prepare(identity deploymentIdentity) (deploymentSlot, error) {
+	return nativeDeploymentCompletion().prepare(s, identity)
+}
+func (d deploymentCompletion) prepare(s *deploymentStore, identity deploymentIdentity) (result deploymentSlot, failure error) {
 	if e := identity.validate(); e != nil {
 		return deploymentSlot{}, e
 	}
@@ -562,7 +571,7 @@ func (s *deploymentStore) prepare(identity deploymentIdentity) (deploymentSlot, 
 	if e != nil {
 		return deploymentSlot{}, e
 	}
-	defer dir.Close()
+	defer func() { failure = d.finish(dir, failure) }()
 	slot, e := slotFromDirectory(dir, id, identity)
 	if e != nil {
 		return slot, e
@@ -577,7 +586,7 @@ func (s *deploymentStore) prepare(identity deploymentIdentity) (deploymentSlot, 
 	if e != nil {
 		return slot, e
 	}
-	_, e = s.commit(next)
+	_, e = d.commit(s, next)
 	return slot, e
 }
 func (s *deploymentStore) openSlot(slot deploymentSlot) (*os.File, error) {
@@ -601,26 +610,23 @@ func (r runtimeReadOps) openSlot(s *deploymentStore, slot deploymentSlot) (*os.F
 	return dir, nil
 }
 func (s *deploymentStore) deactivate() (bool, error) {
+	return nativeDeploymentCompletion().deactivate(s)
+}
+func (d deploymentCompletion) deactivate(s *deploymentStore) (bool, error) {
 	next, e := s.state.deactivate()
 	if e != nil {
 		return false, e
 	}
-	return s.commit(next)
+	return d.commit(s, next)
 }
 func (s *deploymentStore) abandon(id string) (bool, error) {
+	return nativeDeploymentCompletion().abandon(s, id)
+}
+func (d deploymentCompletion) abandon(s *deploymentStore, id string) (bool, error) {
 	next, e := s.state.abandon(id)
 	if e != nil {
 		return false, e
 	}
-	return s.commit(next)
+	return d.commit(s, next)
 }
-func (s *deploymentStore) Close() error {
-	var result error
-	for _, p := range []**os.File{&s.current, &s.runtimeLock, &s.lock, &s.versions, &s.root, &s.parent} {
-		if *p != nil {
-			result = errors.Join(result, (*p).Close())
-			*p = nil
-		}
-	}
-	return result
-}
+func (s *deploymentStore) Close() error { return s.closeWith(nativeDeploymentCompletion()) }

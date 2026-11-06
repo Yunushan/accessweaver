@@ -41,6 +41,17 @@ class NativeRuntimeReadCaptureTests(unittest.TestCase):
   with self.assertRaises(DRIVER.Refused):DRIVER.validate_native(value,'a'*40)
   value['outcome']='failed';self.assertEqual(DRIVER.validate_native(value,'a'*40),value)
 
+ def test_deployment_profile_cannot_accept_runtime_cases(self):
+  value=self.valid()
+  with self.assertRaises(DRIVER.Refused):DRIVER.validate_native(value,'a'*40,'arm64','deployment-completion')
+  value['cases']=[{'name':name,'passed':True,'checks':1,'code':'none','sites':0} for name in DRIVER.DEPLOYMENT_CASES]
+  self.assertEqual(DRIVER.validate_native(value,'a'*40,'arm64','deployment-completion'),value)
+  with self.assertRaises(DRIVER.Refused):DRIVER.validate_native(value,'a'*40,'arm64','runtime-read')
+  profile=DRIVER.PROFILES['deployment-completion']
+  self.assertNotEqual(profile['guard'],DRIVER.PROFILES['runtime-read']['guard'])
+  self.assertEqual(profile['test'],'TestDarwinDeploymentCompletionContracts')
+  self.assertEqual(profile['filename'],'darwin-deployment-completion.json')
+
  def test_duplicate_json_keys_refused(self):
   with self.assertRaises(DRIVER.Refused):DRIVER.load_json('{"schemaVersion":1,"schemaVersion":2}')
 
