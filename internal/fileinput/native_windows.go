@@ -17,6 +17,52 @@ import (
 
 var reopenFile = windows.NewLazySystemDLL("kernel32.dll").NewProc("ReOpenFile")
 
+type nativeInputPhase uint8
+
+const (
+	nativeInputMetadataOpen nativeInputPhase = iota + 1
+	nativeInputMetadataState
+	nativeInputSameObjectReopen
+	nativeInputReaderState
+	nativeInputDirectoryName
+	nativeInputDirectoryMetadataClose
+)
+
+// A phase identifies the failed existing gate, not an individual native call.
+// Keep causes available to errors.Is/As without printing native or path details.
+type nativeInputFailure struct {
+	phase nativeInputPhase
+	cause error
+}
+
+func (e *nativeInputFailure) Error() string {
+	if e == nil {
+		return ErrUnavailable.Error()
+	}
+	switch e.phase {
+	case nativeInputMetadataOpen:
+		return "selected file input native failure: metadata-open"
+	case nativeInputMetadataState:
+		return "selected file input native failure: metadata-state"
+	case nativeInputSameObjectReopen:
+		return "selected file input native failure: sameobject-reopen"
+	case nativeInputReaderState:
+		return "selected file input native failure: reader-state"
+	case nativeInputDirectoryName:
+		return "selected file input native failure: directory-name"
+	case nativeInputDirectoryMetadataClose:
+		return "selected file input native failure: directory-metadata-close"
+	default:
+		return ErrUnavailable.Error()
+	}
+}
+func (e *nativeInputFailure) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
+}
+
 type nativeIDInfo struct {
 	Volume uint64
 	FileID [16]byte
@@ -197,9 +243,10 @@ func reopen(meta *os.File, path string, share uint32) (*os.File, error) {
 func openKind(path string, kind fileidentity.Kind, share uint32) (reader, meta *os.File, err error) {
 	meta, err = metadata(path, false)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, &nativeInputFailure{phase: nativeInputMetadataOpen, cause: err}
 	}
 	good := false
+	var failurePhase nativeInputPhase
 	defer func() {
 		if !good {
 			if reader != nil {
@@ -208,18 +255,23 @@ func openKind(path string, kind fileidentity.Kind, share uint32) (reader, meta *
 			}
 			err = errors.Join(err, meta.Close())
 			meta = nil
+			// Wrap last so cleanup cofailures remain causes rather than printed data.
+			err = &nativeInputFailure{phase: failurePhase, cause: err}
 		}
 	}()
 	before, e := stateFromFile(meta)
 	if e != nil || before.Kind != kind {
+		failurePhase = nativeInputMetadataState
 		return nil, meta, errors.Join(ErrUnavailable, e)
 	}
 	reader, err = reopen(meta, path, share)
 	if err != nil {
+		failurePhase = nativeInputSameObjectReopen
 		return nil, meta, err
 	}
 	after, e := stateFromFile(reader)
 	if e != nil || after.Kind != kind || before.ID != after.ID || before.Size != after.Size || !before.Modified.Equal(after.Modified) {
+		failurePhase = nativeInputReaderState
 		return reader, meta, errors.Join(ErrUnavailable, e)
 	}
 	good = true
@@ -235,14 +287,14 @@ func openInput(path string) (input, error) {
 func openDirectory(path string) (*os.File, error) {
 	name, e := absoluteName(path)
 	if e != nil {
-		return nil, e
+		return nil, &nativeInputFailure{phase: nativeInputDirectoryName, cause: e}
 	}
 	reader, meta, e := openKind(name, fileidentity.Directory, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE)
 	if e != nil {
 		return nil, e
 	}
 	if e = meta.Close(); e != nil {
-		return nil, errors.Join(e, reader.Close())
+		return nil, &nativeInputFailure{phase: nativeInputDirectoryMetadataClose, cause: errors.Join(e, reader.Close())}
 	}
 	return reader, nil
 }
