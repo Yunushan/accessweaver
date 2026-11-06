@@ -8,7 +8,9 @@ import (
 	"golang.org/x/sys/windows"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -240,6 +242,115 @@ func reopen(meta *os.File, path string, share uint32) (*os.File, error) {
 	}
 	return f, nil
 }
+
+// ntDirectoryCall keeps every native output/name buffer pinned until the
+// synchronous self-open, including any unexpected pending completion, is joined.
+type ntDirectoryCall struct {
+	handle windows.Handle
+	status windows.IO_STATUS_BLOCK
+	name   windows.NTUnicodeString
+	attrs  windows.OBJECT_ATTRIBUTES
+}
+
+func validDirectoryHandle(h windows.Handle, borrowed windows.Handle) bool {
+	return h != 0 && h != windows.InvalidHandle && h != borrowed
+}
+
+// awaitNTDirectory joins only the original operation. It never opens, reads,
+// signals, closes or replaces its handle. An unconfirmed result retains this
+// scope and the borrowed metadata owner; context cancellation cannot abandon it.
+func awaitNTDirectory(call *ntDirectoryCall, borrowed windows.Handle) error {
+	var observation error
+	for {
+		h := windows.Handle(atomic.LoadUintptr((*uintptr)(unsafe.Pointer(&call.handle))))
+		if !validDirectoryHandle(h, borrowed) {
+			// A synchronous create is not expected to return pending without a usable
+			// completion handle. Retain the pinned native outputs rather than inventing
+			// completion or closing the borrowed root. The original output may arrive.
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		event, err := windows.WaitForSingleObject(h, windows.INFINITE)
+		if err != nil || event != windows.WAIT_OBJECT_0 {
+			if observation == nil {
+				observation = errors.Join(ErrUnavailable, err)
+			}
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		final := windows.NTStatus(atomic.LoadUint32((*uint32)(unsafe.Pointer(&call.status.Status))))
+		if final == windows.STATUS_PENDING {
+			if observation == nil {
+				observation = ErrUnavailable
+			}
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		if final != 0 {
+			return errors.Join(observation, final)
+		}
+		return observation
+	}
+}
+
+// reopenDirectory uses pinned Go's retained-handle empty-name self-open
+// representation (at_windows.go openatFallback). It keeps the original object
+// after rename/replacement, without resolving the original pathname.
+// Only this directory branch uses NT open; regular-file ReOpenFile is unchanged.
+func reopenDirectory(meta *os.File, path string, share uint32) (file *os.File, err error) {
+	if meta == nil {
+		return nil, ErrUnavailable
+	}
+	connection, err := meta.SyscallConn()
+	if err != nil {
+		return nil, err
+	}
+	call := new(ntDirectoryCall)
+	call.handle = windows.InvalidHandle
+	call.status.Status = windows.STATUS_PENDING // never adopt uninitialized zeroes
+	var pin runtime.Pinner
+	pin.Pin(call)
+	defer pin.Unpin()
+	borrowed := windows.InvalidHandle
+	adopted := false
+	defer func() {
+		h := windows.Handle(atomic.LoadUintptr((*uintptr)(unsafe.Pointer(&call.handle))))
+		if !adopted && validDirectoryHandle(h, borrowed) {
+			if closeErr := windows.CloseHandle(h); closeErr != nil {
+				err = errors.Join(err, closeErr)
+			}
+			file = nil
+		}
+	}()
+	var nativeErr error
+	controlErr := connection.Control(func(raw uintptr) {
+		borrowed = windows.Handle(raw)
+		call.attrs = windows.OBJECT_ATTRIBUTES{Length: uint32(unsafe.Sizeof(call.attrs)), RootDirectory: borrowed, ObjectName: &call.name, Attributes: windows.OBJ_CASE_INSENSITIVE}
+		nativeErr = windows.NtCreateFile(&call.handle, windows.FILE_GENERIC_READ|windows.SYNCHRONIZE, &call.attrs, &call.status, nil, 0, share, windows.FILE_OPEN, windows.FILE_DIRECTORY_FILE|windows.FILE_OPEN_REPARSE_POINT|windows.FILE_SYNCHRONOUS_IO_NONALERT|windows.FILE_OPEN_FOR_BACKUP_INTENT, 0, 0)
+		// A nonzero syscall status is authoritative, except STATUS_PENDING which
+		// requires an actual joined completion and final IOSB before any adoption.
+		if nativeErr == windows.STATUS_PENDING {
+			nativeErr = errors.Join(windows.STATUS_PENDING, awaitNTDirectory(call, borrowed))
+		}
+	})
+	if controlErr != nil {
+		return nil, errors.Join(controlErr, nativeErr)
+	}
+	if nativeErr != nil {
+		return nil, nativeErr
+	}
+	h := windows.Handle(atomic.LoadUintptr((*uintptr)(unsafe.Pointer(&call.handle))))
+	if !validDirectoryHandle(h, borrowed) || call.status.Status != 0 || call.status.Information != 1 {
+		return nil, ErrUnavailable
+	} // FILE_OPENED
+	file = os.NewFile(uintptr(h), path) // name is only a diagnostic label, never authority
+	if file == nil {
+		return nil, ErrUnavailable
+	}
+	adopted = true
+	return file, nil
+}
+
 func openKind(path string, kind fileidentity.Kind, share uint32) (reader, meta *os.File, err error) {
 	meta, err = metadata(path, false)
 	if err != nil {
@@ -264,7 +375,11 @@ func openKind(path string, kind fileidentity.Kind, share uint32) (reader, meta *
 		failurePhase = nativeInputMetadataState
 		return nil, meta, errors.Join(ErrUnavailable, e)
 	}
-	reader, err = reopen(meta, path, share)
+	if kind == fileidentity.Directory {
+		reader, err = reopenDirectory(meta, path, share)
+	} else {
+		reader, err = reopen(meta, path, share)
+	}
 	if err != nil {
 		failurePhase = nativeInputSameObjectReopen
 		return nil, meta, err

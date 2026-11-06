@@ -271,3 +271,167 @@ func TestBackupInputWindowsNativeCategoriesAreClosedAndDoNotFormatCauses(t *test
 		}
 	}
 }
+
+// These fixtures own only fresh local objects. Failed/uncertain cleanup keeps
+// the root; no original input or unrelated directory is removed.
+type ntDirectoryFixture struct {
+	root     string
+	state    fileidentity.State
+	preserve bool
+}
+
+func newNTDirectoryFixture(t *testing.T) *ntDirectoryFixture {
+	t.Helper()
+	root, err := os.MkdirTemp("", "accessweaver-nt-directory-")
+	if err != nil {
+		t.Fatal("owned directory fixture unavailable")
+	}
+	state, err := StateFromPath(root, false)
+	if err != nil {
+		t.Fatal("owned directory fixture identity unavailable")
+	}
+	f := &ntDirectoryFixture{root: root, state: state}
+	t.Cleanup(func() {
+		if f.preserve {
+			t.Error("unconfirmed directory fixture retained")
+			return
+		}
+		state, err := StateFromPath(root, false)
+		if err != nil || state.Kind != fileidentity.Directory || state.ID != f.state.ID {
+			t.Error("changed directory fixture retained")
+			return
+		}
+		if err = os.RemoveAll(root); err != nil {
+			t.Error("owned directory fixture cleanup failed")
+		}
+	})
+	return f
+}
+func (f *ntDirectoryFixture) close(t *testing.T, file *os.File) {
+	t.Helper()
+	if err := file.Close(); err != nil {
+		f.preserve = true
+		t.Error("owned directory handle close failed")
+	}
+}
+
+func TestBackupInputWindowsNTDirectorySelfOpenRetainsRenamedObject(t *testing.T) {
+	f := newNTDirectoryFixture(t)
+	name := filepath.Join(f.root, "selected")
+	moved := filepath.Join(f.root, "retained")
+	if err := os.Mkdir(name, 0700); err != nil {
+		t.Fatal("owned source directory unavailable")
+	}
+	if err := os.WriteFile(filepath.Join(name, "original.txt"), []byte("original owned evidence"), 0600); err != nil {
+		t.Fatal("owned source entry unavailable")
+	}
+	meta, err := metadata(name, false)
+	if err != nil {
+		t.Fatal("owned metadata handle unavailable")
+	}
+	defer f.close(t, meta)
+	before, err := StateFromFile(meta)
+	if err != nil || before.Kind != fileidentity.Directory {
+		t.Fatal("owned source directory identity unavailable")
+	}
+	if err = os.Rename(name, moved); err != nil {
+		t.Fatal("owned source directory rename failed")
+	}
+	if err = os.Mkdir(name, 0700); err != nil {
+		t.Fatal("owned replacement directory unavailable")
+	}
+	if err = os.WriteFile(filepath.Join(name, "replacement.txt"), []byte("replacement owned evidence"), 0600); err != nil {
+		t.Fatal("owned replacement entry unavailable")
+	}
+	replacement, err := StateFromPath(name, false)
+	if err != nil || replacement.ID == before.ID {
+		t.Fatal("owned replacement identity not distinct")
+	}
+	reader, err := reopenDirectory(meta, name, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE)
+	if err != nil {
+		f.preserve = true
+		t.Fatal("held directory self-open failed")
+	}
+	defer f.close(t, reader)
+	after, err := StateFromFile(reader)
+	if err != nil || after.Kind != fileidentity.Directory || after.ID != before.ID || after.Size != before.Size || !after.Modified.Equal(before.Modified) {
+		t.Fatal("directory self-open lost original native binding")
+	}
+	entries, err := reader.ReadDir(-1)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "original.txt" {
+		t.Fatal("directory enumeration followed replacement pathname")
+	}
+	stillBorrowed, err := StateFromFile(meta)
+	if err != nil || stillBorrowed.ID != before.ID {
+		t.Fatal("directory self-open consumed borrowed metadata handle")
+	}
+}
+
+func TestBackupInputWindowsNTDirectorySelfOpenRefusesOtherKindsAndClosedRoot(t *testing.T) {
+	f := newNTDirectoryFixture(t)
+	name := filepath.Join(f.root, "ordinary-file")
+	const body = "unchanged owned regular file"
+	if err := os.WriteFile(name, []byte(body), 0600); err != nil {
+		t.Fatal("owned regular fixture unavailable")
+	}
+	meta, err := metadata(name, false)
+	if err != nil {
+		t.Fatal("owned regular metadata unavailable")
+	}
+	defer f.close(t, meta)
+	before, err := StateFromFile(meta)
+	if err != nil {
+		t.Fatal("owned regular identity unavailable")
+	}
+	unexpected, err := reopenDirectory(meta, name, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE)
+	if unexpected != nil {
+		f.close(t, unexpected)
+		t.Fatal("directory-only open accepted regular file")
+	}
+	if status, ok := err.(windows.NTStatus); !ok || status == 0 || status == windows.STATUS_PENDING {
+		f.preserve = true
+		t.Fatal("directory-only refusal included unexpected completion or cleanup uncertainty")
+	}
+	after, err := StateFromFile(meta)
+	if err != nil || after.ID != before.ID || after.Kind != before.Kind || after.Size != before.Size || !after.Modified.Equal(before.Modified) {
+		t.Fatal("failed directory open changed borrowed source")
+	}
+	data, err := Read(context.Background(), name, 100)
+	if err != nil || string(data) != body {
+		t.Fatal("failed directory open changed source bytes")
+	}
+	clear(data)
+	directory, err := metadata(f.root, false)
+	if err != nil {
+		t.Fatal("owned closed-root fixture unavailable")
+	}
+	if err = directory.Close(); err != nil {
+		f.preserve = true
+		t.Fatal("owned closed-root cleanup was not confirmed")
+	}
+	var probe [1]byte
+	n, readErr := directory.Read(probe[:])
+	if n != 0 || !errors.Is(readErr, os.ErrClosed) {
+		f.preserve = true
+		t.Fatal("owned directory was not observably closed")
+	}
+	result, err := reopenDirectory(directory, f.root, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE)
+	if result != nil {
+		f.close(t, result)
+		t.Fatal("closed directory root accepted")
+	}
+	if err == nil {
+		f.preserve = true
+		t.Fatal("closed directory root failed without error")
+	}
+	held, err := OpenDirectory(f.root)
+	if err != nil {
+		f.preserve = true
+		t.Fatal("owned directory observation failed")
+	}
+	defer f.close(t, held)
+	entries, err := held.ReadDir(-1)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "ordinary-file" {
+		t.Fatal("failed self-open created or removed fixture entries")
+	}
+}
