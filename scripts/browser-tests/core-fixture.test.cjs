@@ -23,6 +23,7 @@ async function coreFixture(t,spawn,filesystem={}){
   require(name){
    if(name==='@playwright/test')return {test:{extend(definition){fixture=definition.core;return ()=>{}}}};
    if(name==='./accessibility.cjs')return {};
+   if(name==='./desktop-performance.cjs'||name==='node:perf_hooks')return require(name);
    if(name==='node:child_process')return {spawn,execFileSync(){throw new Error('version execution must not occur after failed spawn')}};
    if(name==='node:fs/promises')return {...fs,...filesystem};
    if(['node:fs/promises','node:path','node:events','node:crypto'].includes(name))return require(name);

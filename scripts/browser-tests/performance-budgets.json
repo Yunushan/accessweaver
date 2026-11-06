@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "scope": "source-built-linux-controller-and-browser-ci-baseline",
+  "profiles": 256,
+  "loadSeconds": 60,
+  "requestsPerSecond": 4,
+  "burstRequests": 96,
+  "burstConcurrency": 4,
+  "reloadSamples": 5,
+  "navigationSamples": 24,
+  "editorSamples": 10,
+  "resourceIntervalMilliseconds": 250,
+  "cooldownSeconds": 5,
+  "limits": {
+    "controllerStartupMs": {
+      "max": 1500
+    },
+    "dashboardReadyMs": {
+      "max": 3000
+    },
+    "reloadP95Ms": {
+      "max": 1500
+    },
+    "navigationP95Ms": {
+      "max": 500
+    },
+    "editorP95Ms": {
+      "max": 500
+    },
+    "apiP95Ms": {
+      "max": 250
+    },
+    "burstRequestsPerSecond": {
+      "min": 20
+    },
+    "loadRequestsPerSecond": {
+      "min": 3.8
+    },
+    "loadCpuPercentOneCore": {
+      "max": 50
+    },
+    "sampledPeakRssBytes": {
+      "max": 201326592
+    },
+    "sampledPeakDescriptors": {
+      "max": 128
+    },
+    "sampledPeakThreads": {
+      "max": 128
+    },
+    "cooldownRssGrowthBytes": {
+      "max": 67108864
+    },
+    "cooldownDescriptorGrowth": {
+      "max": 2
+    },
+    "cooldownThreadGrowth": {
+      "max": 8
+    }
+  }
+}

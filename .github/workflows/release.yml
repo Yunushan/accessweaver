@@ -333,7 +333,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       - name: Browser logic and fixture cleanup tests
-        run: node --test web/app.test.cjs scripts/browser-tests/core-fixture.test.cjs scripts/browser-tests/accessibility-report.test.cjs
+        run: node --test web/app.test.cjs scripts/browser-tests/core-fixture.test.cjs scripts/browser-tests/desktop-performance.test.cjs scripts/browser-tests/accessibility-report.test.cjs
   package:
     name: Package core and attest build provenance
     outputs:

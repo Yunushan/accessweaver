@@ -73,7 +73,7 @@ jobs:
           npm ci --ignore-scripts
           npm audit --audit-level=moderate
       - name: Verify fixed keyboard evidence contracts
-        run: node --test scripts/browser-tests/modal-keyboard.test.cjs scripts/browser-tests/suite-status-reporter.test.cjs
+        run: node --test scripts/browser-tests/modal-keyboard.test.cjs scripts/browser-tests/suite-status-reporter.test.cjs scripts/browser-tests/desktop-performance.test.cjs
       - name: Verify the pinned preinstalled browser environment
         timeout-minutes: 5
         working-directory: scripts/browser-tests
@@ -107,5 +107,14 @@ jobs:
         with:
           name: browser-contract-status-${{ matrix.browser }}
           path: build/browser-contract-evidence/status.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Retain source-bound desktop performance evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-performance-${{ matrix.browser }}
+          path: build/desktop-performance/status.json
           if-no-files-found: error
           retention-days: 7

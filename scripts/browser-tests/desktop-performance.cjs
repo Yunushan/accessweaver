@@ -1,0 +1,90 @@
+// Development-only, read-only measurements of the fixture's own controller.
+// Reports contain fixed metric names/numbers/hashes, never DOM, paths or tokens.
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path');
+const {performance}=require('node:perf_hooks'),{createHash}=require('node:crypto'),{execFileSync,ChildProcess}=require('node:child_process'),os=require('node:os');
+const budgets=require('./performance-budgets.json');
+const performanceCaseName='desktop performance meets published Linux controller and browser budgets';
+const metricNames=Object.keys(budgets.limits);
+const countNames=['reload','navigation','editor','burstRequests','loadRequests','resourceSamples','loadMilliseconds'];
+const stages=['environment','startup','dashboard','reload','navigation','editor','burst','load','cooldown','resources','complete'];
+const sources=['web/app.js','web/index.html','web/app.css','web/locales.js','web/system.js','scripts/browser-tests/desktop.spec.cjs','scripts/browser-tests/desktop-performance.cjs','scripts/browser-tests/performance-budgets.json','scripts/browser-tests/package-lock.json','scripts/browser-tests/playwright.config.cjs','.github/workflows/browser.yml'];
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+function number(text){assert.match(text,/^[0-9]+$/,'numeric process counter required');const n=Number(text);assert.ok(Number.isSafeInteger(n),'process counter range differs');return n}
+function parseStat(raw,pid,parent,pageBytes){
+ assert.ok(Number.isSafeInteger(pageBytes)&&pageBytes>0,'native page unit differs');assert.ok(typeof raw==='string'&&Buffer.byteLength(raw)<=16384,'process stat budget differs');const begin=raw.indexOf(' ('),end=raw.lastIndexOf(') ');assert.ok(begin>0&&end>begin,'process stat shape differs');
+ assert.equal(number(raw.slice(0,begin)),pid,'process identity differs');const fields=raw.slice(end+2).trim().split(/\s+/);assert.ok(fields.length>=22&&/^[A-Za-z]$/.test(fields[0])&&!['Z','X','x'].includes(fields[0]),'process is not live');assert.equal(number(fields[1]),parent,'owned child parent differs');
+ const cpuTicks=number(fields[11])+number(fields[12]),startTicks=number(fields[19]),rssBytes=number(fields[21])*pageBytes,threads=number(fields[17]);
+ assert.ok(Number.isSafeInteger(cpuTicks)&&Number.isSafeInteger(rssBytes)&&startTicks>0&&threads>0,'process counters differ');return {cpuTicks,startTicks,rssBytes,threads};
+}
+function percentile(values,p=.95){assert.ok(values.length>0&&values.every(n=>Number.isFinite(n)&&n>=0)&&p>0&&p<=1,'latency samples differ');const sorted=[...values].sort((a,b)=>a-b);return sorted[Math.ceil(p*sorted.length)-1]}
+function cpuPercent(before,after,hz,milliseconds){assert.ok(after.startTicks===before.startTicks&&after.cpuTicks>=before.cpuTicks&&Number.isFinite(hz)&&hz>0&&Number.isFinite(milliseconds)&&milliseconds>0,'CPU sample identity differs');return (after.cpuTicks-before.cpuTicks)/hz/(milliseconds/1000)*100}
+function violations(value){const result=metricNames.filter(name=>{const n=value.metrics[name],rule=budgets.limits[name];return !Number.isFinite(n)||(rule.max!==undefined&&n>rule.max)||(rule.min!==undefined&&n<rule.min)});const c=value.counts;if(c.reload!==budgets.reloadSamples||c.navigation!==budgets.navigationSamples||c.editor!==budgets.editorSamples||c.burstRequests!==budgets.burstRequests||c.loadRequests!==budgets.loadSeconds*budgets.requestsPerSecond||c.resourceSamples<200||c.loadMilliseconds<budgets.loadSeconds*1000)result.push('workload');return result}
+async function boundedRead(name,maximum){const file=await fs.open(name,'r');try{const chunks=[],buffer=Buffer.alloc(Math.min(65536,maximum+1));let total=0;for(;;){const {bytesRead}=await file.read(buffer,0,Math.min(buffer.length,maximum-total+1),null);if(!bytesRead)break;total+=bytesRead;if(total>maximum)throw new Error('measurement input budget differs');chunks.push(Buffer.from(buffer.subarray(0,bytesRead)))}return Buffer.concat(chunks)}finally{await file.close()}}
+async function boundedHash(name,maximum){const file=await fs.open(name,'r');try{const initial=await file.stat();assert.ok(initial.isFile()&&initial.size>0&&initial.size<=maximum,'evidence input differs');const hash=createHash('sha256'),buffer=Buffer.alloc(65536);let total=0;for(;;){const {bytesRead}=await file.read(buffer,0,Math.min(buffer.length,maximum-total+1),null);if(!bytesRead)break;total+=bytesRead;assert.ok(total<=maximum,'evidence input grew');hash.update(buffer.subarray(0,bytesRead))}const final=await file.stat();assert.ok(total===initial.size&&initial.size===final.size&&initial.dev===final.dev&&initial.ino===final.ino&&initial.mtimeMs===final.mtimeMs,'evidence input changed');return hash.digest('hex')}finally{await file.close()}}
+async function seedPerformanceProfiles(home){
+ const folder=path.join(home,'state','profiles');await fs.mkdir(folder,{recursive:true,mode:0o700});
+ for(let i=0;i<budgets.profiles;i++){const id='perf-'+String(i).padStart(4,'0'),profile={version:1,id,name:'Performance fixture '+i,engine:'byedpi',binary:'/accessweaver-performance-fixture/absent-engine',args:[],routing:{includeDomains:[],excludeDomains:[],applications:[]},probe:{host:'example.invalid',port:443,tls:true,timeoutSeconds:5}};const file=await fs.open(path.join(folder,id+'.json'),'wx',0o600);try{await file.writeFile(JSON.stringify(profile)+'\n','utf8')}finally{await file.close()}}
+}
+function liveChild(child){assert.ok(child instanceof ChildProcess&&Number.isInteger(child.pid)&&child.pid>0&&child.exitCode===null&&child.signalCode===null&&!child.killed,'owned live controller required')}
+async function sampleController(child,identity,pageBytes){
+ liveChild(child);const pid=child.pid,stat=parseStat((await boundedRead('/proc/'+pid+'/stat',16384)).toString('utf8'),pid,process.pid,pageBytes);if(identity!==null)assert.equal(stat.startTicks,identity,'controller identity changed');
+ const directory=await fs.opendir('/proc/'+pid+'/fd');let descriptors=0;try{for(;;){const entry=await directory.read();if(!entry)break;assert.match(entry.name,/^[0-9]+$/,'descriptor census shape differs');if(++descriptors>4096)throw new Error('descriptor census budget exceeded')}}finally{await directory.close()}
+ liveChild(child);return {...stat,descriptors};
+}
+async function paint(page){await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity).map(a=>a.finished.catch(()=>{})));await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))})}
+async function ready(page){await page.waitForFunction(count=>state.coreAuthenticated&&!state.offline&&!state.loading&&Array.isArray(state.profiles)&&state.profiles.length===count&&document.querySelector('#hero-status')?.textContent==='Ready when you are',budgets.profiles,{timeout:10000});await paint(page)}
+async function requestBatch(page,count){
+ const values=await page.evaluate(async({count,profiles})=>Promise.all(Array.from({length:count},async()=>{
+  const started=performance.now(),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),2000);
+  try{const response=await fetch('/api/v1/profiles',{headers:{'X-AccessWeaver-Token':state.token},credentials:'same-origin',redirect:'error',cache:'no-store',signal:controller.signal});if(response.status!==200||!/^application\/json(?:\s*;|$)/i.test(response.headers.get('Content-Type')||''))return {ok:false,milliseconds:0};
+   const reader=response.body.getReader(),chunks=[];let bytes=0,complete=false;
+   try{for(;;){const next=await reader.read();if(next.done){complete=true;break}bytes+=next.value.length;if(bytes>1048576)return {ok:false,milliseconds:0};chunks.push(next.value)}}finally{if(!complete)await reader.cancel().catch(()=>{});reader.releaseLock()}
+   const body=new Uint8Array(bytes);let offset=0;for(const chunk of chunks){body.set(chunk,offset);offset+=chunk.length}const rows=JSON.parse(new TextDecoder().decode(body));return {ok:Array.isArray(rows)&&rows.length===profiles,milliseconds:performance.now()-started};
+  }catch{return {ok:false,milliseconds:0}}finally{controller.abort();clearTimeout(timer)}
+ })),{count,profiles:budgets.profiles});
+ assert.ok(values.length===count&&values.every(v=>v.ok===true&&Number.isFinite(v.milliseconds)&&v.milliseconds>=0),'authenticated inventory request failed');return values.map(v=>v.milliseconds);
+}
+function validateValue(value){
+ assert.deepEqual(Object.keys(value).sort(),['stage','metrics','counts'].sort(),'performance value schema differs');assert.ok(stages.includes(value.stage),'performance stage differs');
+ assert.deepEqual(Object.keys(value.metrics).sort(),[...metricNames].sort(),'performance metric schema differs');for(const n of Object.values(value.metrics))assert.ok(n===null||Number.isFinite(n)&&Math.abs(n)<=Number.MAX_SAFE_INTEGER,'performance metric differs');
+ assert.deepEqual(Object.keys(value.counts).sort(),[...countNames].sort(),'performance count schema differs');for(const n of Object.values(value.counts))assert.ok(Number.isSafeInteger(n)&&n>=0&&n<=100000,'performance count differs');
+}
+async function writePerformanceReport(repo,project,source,binaryHash,environment,value){
+ assert.ok(['chromium','firefox','webkit'].includes(project)&&/^[0-9a-f]{40}$/.test(source)&&/^[0-9a-f]{64}$/.test(binaryHash),'performance identity differs');validateValue(value);
+ assert.deepEqual(Object.keys(environment).sort(),['platform','architecture','node','playwright','cpuCount','pageBytes','clockTicksPerSecond'].sort(),'performance environment schema differs');assert.ok(environment.platform==='linux'&&['x64','arm64'].includes(environment.architecture)&&/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(environment.node)&&environment.playwright==='1.64.1'&&Number.isInteger(environment.cpuCount)&&environment.cpuCount>=1&&environment.cpuCount<=1024&&(environment.pageBytes===null||Number.isInteger(environment.pageBytes)&&environment.pageBytes>0&&environment.pageBytes<=1048576)&&(environment.clockTicksPerSecond===null||Number.isInteger(environment.clockTicksPerSecond)&&environment.clockTicksPerSecond>0&&environment.clockTicksPerSecond<=1000000),'performance environment differs');
+ const snapshot={stage:value.stage,metrics:{...value.metrics},counts:{...value.counts}},context={...environment},failed=violations(snapshot),sourceSHA256={};for(const name of sources)sourceSHA256[name]=await boundedHash(path.join(repo,name),1<<20);
+ assert.equal(await boundedHash(path.join(repo,'build/browser-tests/accessweaver'),128<<20),binaryHash,'controller binary changed');
+ const data={schemaVersion:1,sourceCommit:source,sourceSHA256,binarySHA256:binaryHash,project,scope:budgets.scope,profileCount:budgets.profiles,environment:context,...snapshot,violations:failed,outcome:snapshot.stage==='complete'&&failed.length===0?'passed':'failed',longDurationQualified:false,productionQualificationComplete:false};
+ const encoded=JSON.stringify(data)+'\n';assert.ok(Buffer.byteLength(encoded)<=16384,'performance report budget differs');const parent=path.join(repo,'build/desktop-performance');await fs.mkdir(parent,{recursive:true,mode:0o700});const info=await fs.lstat(parent),resolved=await fs.realpath(parent),build=await fs.realpath(path.join(repo,'build'));assert.ok(info.isDirectory()&&!info.isSymbolicLink()&&path.dirname(resolved)===build,'performance parent differs');const file=await fs.open(path.join(resolved,'status.json'),'wx',0o600);try{await file.writeFile(encoded,'utf8')}finally{await file.close()}return data.outcome;
+}
+async function runDesktopPerformance(page,core,testInfo){
+ const value={stage:'environment',metrics:Object.fromEntries(metricNames.map(n=>[n,null])),counts:Object.fromEntries(countNames.map(n=>[n,0]))},environment={platform:process.platform,architecture:process.arch,node:process.version,playwright:'1.64.1',cpuCount:os.availableParallelism(),pageBytes:null,clockTicksPerSecond:null};
+ const metrics=value.metrics,counts=value.counts,api=[],navigation=[],editor=[],reload=[];let sampling=false,sampleTask,samplingError,identity=null,baseline;const child=core.controller;
+ const sample=async()=>{const s=await sampleController(child,identity,pageBytes);identity=s.startTicks;counts.resourceSamples++;metrics.sampledPeakRssBytes=Math.max(metrics.sampledPeakRssBytes||0,s.rssBytes);metrics.sampledPeakDescriptors=Math.max(metrics.sampledPeakDescriptors||0,s.descriptors);metrics.sampledPeakThreads=Math.max(metrics.sampledPeakThreads||0,s.threads);return s};
+ let pageBytes,hz;
+ try{
+  assert.equal(process.platform,'linux','Linux performance observer required');assert.ok(environment.cpuCount>=2,'reference CPU capacity required');liveChild(child);
+  pageBytes=number(execFileSync('/usr/bin/getconf',['PAGESIZE'],{encoding:'utf8',timeout:2000,maxBuffer:128}).trim());hz=number(execFileSync('/usr/bin/getconf',['CLK_TCK'],{encoding:'utf8',timeout:2000,maxBuffer:128}).trim());assert.ok(pageBytes>0&&hz>0,'native counter units differ');environment.pageBytes=pageBytes;environment.clockTicksPerSecond=hz;
+  value.stage='startup';metrics.controllerStartupMs=core.launcherReadyMilliseconds;assert.ok(Number.isFinite(metrics.controllerStartupMs)&&metrics.controllerStartupMs>=0,'controller startup clock differs');
+  value.stage='dashboard';let started=performance.now();await page.goto(core.launcher);await ready(page);metrics.dashboardReadyMs=performance.now()-started;baseline=await sample();
+  sampling=true;sampleTask=(async()=>{while(sampling){try{await sample()}catch{samplingError=true;sampling=false;break}await wait(budgets.resourceIntervalMilliseconds)}})();
+  value.stage='reload';for(let i=0;i<budgets.reloadSamples;i++){started=performance.now();await page.reload();await ready(page);reload.push(performance.now()-started);counts.reload++}metrics.reloadP95Ms=percentile(reload);
+  const views=['dashboard','profiles','engines','diagnostics','settings','system'];
+  const navigate=async(view)=>{const start=performance.now();await page.locator('.nav-item[data-view="'+view+'"]').click();await page.locator('#view-'+view+'.active').waitFor({state:'visible'});await paint(page);navigation.push(performance.now()-start);counts.navigation++};
+  value.stage='navigation';for(let i=0;i<12;i++)await navigate(views[i%views.length]);
+  value.stage='editor';await page.locator('.nav-item[data-view="profiles"]').click();for(let i=0;i<budgets.editorSamples;i++){started=performance.now();await page.locator('#new-profile').click();await page.locator('#editor-modal').waitFor({state:'visible'});await paint(page);editor.push(performance.now()-started);counts.editor++;await page.locator('#close-editor').click();await page.locator('#editor-modal').waitFor({state:'hidden'})}metrics.editorP95Ms=percentile(editor);
+  value.stage='burst';started=performance.now();for(let i=0;i<budgets.burstRequests;i+=budgets.burstConcurrency){api.push(...await requestBatch(page,budgets.burstConcurrency));counts.burstRequests+=budgets.burstConcurrency}metrics.burstRequestsPerSecond=counts.burstRequests/((performance.now()-started)/1000);
+  value.stage='load';const before=await sample(),loadStarted=performance.now();for(let i=0;i<budgets.loadSeconds;i++){await wait(Math.max(0,loadStarted+i*1000-performance.now()));api.push(...await requestBatch(page,budgets.requestsPerSecond));counts.loadRequests+=budgets.requestsPerSecond;if(i%5===0)await navigate(views[(i/5)%views.length]);assert.ok(!samplingError,'owned resource observation failed')}
+  await wait(Math.max(0,loadStarted+budgets.loadSeconds*1000-performance.now()));const after=await sample(),loadElapsed=performance.now()-loadStarted;counts.loadMilliseconds=Math.floor(loadElapsed);metrics.loadRequestsPerSecond=counts.loadRequests/(loadElapsed/1000);metrics.loadCpuPercentOneCore=cpuPercent(before,after,hz,loadElapsed);metrics.navigationP95Ms=percentile(navigation);metrics.apiP95Ms=percentile(api);
+  value.stage='cooldown';await wait(budgets.cooldownSeconds*1000);const cooldown=await sample();metrics.cooldownRssGrowthBytes=cooldown.rssBytes-baseline.rssBytes;metrics.cooldownDescriptorGrowth=cooldown.descriptors-baseline.descriptors;metrics.cooldownThreadGrowth=cooldown.threads-baseline.threads;assert.ok(!samplingError,'owned resource observation failed');value.stage='complete';
+ }catch{
+  // Only the fixed current stage crosses the evidence boundary.
+ }finally{
+  sampling=false;if(sampleTask)await sampleTask;if(samplingError)value.stage='resources';
+ }
+ let outcome=value.stage==='complete'&&violations(value).length===0?'passed':'failed';
+ if(process.env.GITHUB_ACTIONS==='true')outcome=await writePerformanceReport(path.resolve(__dirname,'../..'),testInfo.project.name,core.build.commit,core.binarySha256,environment,value);
+ assert.equal(outcome,'passed','Desktop performance contract failed at '+value.stage);
+}
+module.exports={budgets,performanceCaseName,metricNames,countNames,stages,sources,parseStat,percentile,cpuPercent,violations,validateValue,seedPerformanceProfiles,liveChild,writePerformanceReport,runDesktopPerformance};

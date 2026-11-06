@@ -5,6 +5,8 @@ const { spawn, execFileSync } = require('node:child_process');
 const { once } = require('node:events');
 const { createHash } = require('node:crypto');
 const { expect } = base;
+const {performance}=require('node:perf_hooks');
+const {performanceCaseName,seedPerformanceProfiles,runDesktopPerformance}=require('./desktop-performance.cjs');
 const {settleAnimations,scanAccessibility,assertControlContrast}=require('./accessibility.cjs');
 const repo = path.resolve(__dirname, '../..');
 const binary = path.resolve(process.env.ACCESSWEAVER_BINARY || path.join(repo, 'build/browser-tests', process.platform === 'win32' ? 'accessweaver.exe' : 'accessweaver'));
@@ -20,6 +22,8 @@ const test = base.test.extend({
     const exited = () => !child || child.exitCode!==null || child.signalCode!==null;
     try {
       await fs.mkdir(cache, {mode:0o700});
+      if(testInfo.title===performanceCaseName)await seedPerformanceProfiles(home);
+      const launchStarted=performance.now();
       child = spawn(binary, ['ui'], {windowsHide:true, stdio:['ignore','pipe','pipe'], env:{...process.env,
         ACCESSWEAVER_HOME:path.join(home,'state'), ACCESSWEAVER_NO_BROWSER:'1', XDG_CACHE_HOME:cache, LOCALAPPDATA:cache}});
       child.once('error', error => {startError=error;});
@@ -33,6 +37,7 @@ const test = base.test.extend({
         if(Date.now()>deadline) throw new Error('Controller did not produce a private launcher');
         await delay(25);
       }
+      const launcherReadyMilliseconds=performance.now()-launchStarted;
       const binarySha256=createHash('sha256').update(await fs.readFile(binary)).digest('hex');
       const build=JSON.parse(execFileSync(binary,['version','--json'],{windowsHide:true,encoding:'utf8'}));
       if(process.env.GITHUB_ACTIONS==='true'){
@@ -46,7 +51,7 @@ const test = base.test.extend({
         playwright:require('@playwright/test/package.json').version,
         build,
       }), contentType:'application/json'});
-      await use({launcher, home, build, binarySha256, profilePath:id=>path.join(home,'state','profiles',id+'.json')});
+      await use({launcher, home, build, binarySha256, controller:child, launcherReadyMilliseconds, profilePath:id=>path.join(home,'state','profiles',id+'.json')});
     } finally {
       if(!exited() && child.pid) {
         const exitEvent=once(child,'exit');
@@ -885,4 +890,10 @@ for(const scenario of ['guided-success','json-success','guided-failure','json-fa
   release();if(entered)await Promise.race([handlerDone,delay(5000)]);await page.unroute(endpoint,handler);
   await writeEvidence(repo,core,testInfo,scenario,evidence);
  }
+});
+
+test('desktop performance meets published Linux controller and browser budgets',async({page,core},testInfo)=>{
+ test.skip(process.platform!=='linux','Linux process observation; native platform performance qualification remains separate');
+ test.setTimeout(120000);
+ await runDesktopPerformance(page,core,testInfo);
 });
