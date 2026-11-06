@@ -32,7 +32,7 @@ func main() {
 		os.Exit(1)
 	}
 }
-func execute(args []string) error {
+func execute(args []string) (failure error) {
 	if len(args) == 2 && args[0] == "service-host" {
 		return servicehost.Run(args[1])
 	}
@@ -59,11 +59,11 @@ func execute(args []string) error {
 		}
 	}
 	runtimeLease, leaseErr := packageupgrade.AcquireInstalledRuntime()
+	if runtimeLease != nil {
+		defer func() { failure = closeOrdinaryCommandOwner(failure, runtimeLease) }()
+	}
 	if leaseErr != nil {
 		return leaseErr
-	}
-	if runtimeLease != nil {
-		defer runtimeLease.Close()
 	}
 	if args[0] == "managed" {
 		return managedCommand(args[1:])
@@ -92,13 +92,18 @@ func execute(args []string) error {
 		}
 		if args[0] == "ui" || args[0] == "run" || args[0] == "import" {
 			controller, lockErr := filelock.TryAcquire(filepath.Join(root, ".controller.lock"))
+			if controller != nil {
+				defer func() { failure = closeOrdinaryCommandOwner(failure, controller) }()
+			}
+			if errors.Is(lockErr, filelock.ErrCloseUncertain) {
+				return &ordinaryCommandFailure{category: errOrdinaryCommandCleanup, cause: lockErr}
+			}
 			if errors.Is(lockErr, filelock.ErrBusy) {
 				return errors.New("another AccessWeaver controller is using this data directory; close it before starting a controller or importing through the CLI")
 			}
 			if lockErr != nil {
 				return fmt.Errorf("lock controller data directory: %w", lockErr)
 			}
-			defer controller.Close()
 		}
 		if err = store.Seed(profile.Builtins()); err != nil {
 			return err
@@ -156,34 +161,12 @@ func execute(args []string) error {
 		if len(args) < 2 {
 			return errors.New("usage: accessweaver validate FILE.json")
 		}
-		f, err := os.Open(args[1])
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		p, err := profile.Decode(f)
-		if err != nil {
-			return err
-		}
-		fmt.Println("Valid profile:", p.ID)
-		return nil
+		return ordinaryProfileCommand(args[1], os.Stdout, readOrdinaryProfile, nil)
 	case "import":
 		if len(args) < 2 {
 			return errors.New("usage: accessweaver import FILE.json")
 		}
-		f, err := os.Open(args[1])
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		p, err := profile.Decode(f)
-		if err != nil {
-			return err
-		}
-		if err = store.Save(p); err != nil {
-			return err
-		}
-		fmt.Println("Imported:", p.ID)
+		return ordinaryProfileCommand(args[1], os.Stdout, readOrdinaryProfile, store.Save)
 	case "doctor":
 		return doctorCommand(args[1:])
 	case "run":
