@@ -129,6 +129,31 @@ foreach($bytes in @([byte[]]@(0xc3,0x28),[byte[]]@(0xff,0xfe,0x7b,0),[byte[]]@(0
     Assert-RecoveryFailure {Read-WorkflowRecoveryJournalStream $stream}
     Assert-Recovery ($stream.Eof -and $stream.Disposals -eq 1) 'Rejected encoding or JSON bypassed source closure'
 }
+# Raw NUL must be refused by framing before the permissive JSON parser. These
+# frames still reach actual EOF and one checked owned Dispose first.
+$rawNulFrames=@(
+    [byte[]]@(0),
+    [byte[]](@(0)+@($small)),
+    [byte[]](@($small)+@(0)),
+    [byte[]](@([Text.Encoding]::UTF8.GetBytes('{"undo":'))+@(0)+@([Text.Encoding]::UTF8.GetBytes('[],"events":[]}'))),
+    [byte[]](@([Text.Encoding]::UTF8.GetBytes('{"undo":[],"events":["'))+@(0)+@([Text.Encoding]::UTF8.GetBytes('"]}')))
+)
+foreach($rawNulFrame in $rawNulFrames){
+    $stream=[AccessWeaverRecoveryReaderFixture.ObservedStream]::new($rawNulFrame,'')
+    $script:recoveryObserved=$stream;$before=$script:recoveryParses
+    Assert-RecoveryFailure {Read-WorkflowRecoveryJournalStream $stream}
+    Assert-Recovery ($stream.Eof -and $stream.Disposals -eq 1 -and $stream.Closed -and $stream.Writes -eq 0) 'Raw NUL framing refusal bypassed EOF or owned Close'
+    Assert-Recovery ($script:recoveryParses -eq $before) 'Raw NUL frame reached JSON parsing'
+}
+# This has six literal ASCII escape characters, not a raw NUL byte. The real
+# parser must retain its valid decoded U+0000 string value.
+$escapedNul=[Text.Encoding]::UTF8.GetBytes('{"undo":[],"events":["\u0000"]}')
+$stream=[AccessWeaverRecoveryReaderFixture.ObservedStream]::new($escapedNul,'')
+$script:recoveryObserved=$stream;$before=$script:recoveryParses
+$parsed=Read-WorkflowRecoveryJournalStream $stream
+$decodedNul=[string]$parsed.events[0]
+Assert-Recovery ($decodedNul.Length -eq 1 -and [int][char]$decodedNul[0] -eq 0) 'Valid escaped NUL data was rejected or changed'
+Assert-Recovery ($script:recoveryParses -eq $before+1 -and $stream.Eof -and $stream.Disposals -eq 1 -and $stream.Closed -and $stream.Writes -eq 0) 'Escaped NUL data bypassed actual parser or owned Close'
 $unicode=[Text.Encoding]::UTF8.GetBytes(('{"undo":[],"events":["'+[char]0x03bb+[char]0x4e2d+'"]}'))
 $withBom=[byte[]](@(0xef,0xbb,0xbf)+@($unicode))
 $stream=[AccessWeaverRecoveryReaderFixture.ObservedStream]::new($withBom,'')

@@ -1413,6 +1413,9 @@ function Read-WorkflowRecoveryJournalStream([IO.Stream]$Source) {
         # Accept one legacy UTF-8 BOM; never fall back to UTF-16 or a locale.
         if($text.Length -gt 0 -and $text[0] -eq [char]0xfeff){$text=$text.Substring(1)}
         if([string]::IsNullOrWhiteSpace($text) -or ($text.Length -gt 0 -and $text[0] -eq [char]0xfeff)){Throw-WorkflowRecoveryJournalReadFailure}
+        # Json.NET accepts raw NUL as ignorable input. It is not a valid JSON
+        # frame character; escaped JSON \u0000 remains valid data after parsing.
+        if($text.IndexOf([char]0) -ge 0){Throw-WorkflowRecoveryJournalReadFailure}
         $saved=$text|ConvertFrom-Json -ErrorAction Stop
         return ,$saved
     }catch {Throw-WorkflowRecoveryJournalReadFailure}
