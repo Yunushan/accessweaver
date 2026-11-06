@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"net"
@@ -139,13 +138,19 @@ func Preview(p profile.Profile, root string) (LaunchPlan, error) {
 	return previewWithGuard(p, root, managed.NewGuard(nil))
 }
 func previewWithGuard(p profile.Profile, root string, guard *managed.Guard) (LaunchPlan, error) {
+	plan, _, err := previewWithConfigReader(p, root, guard, readConfigInput)
+	return plan, err
+}
+
+func previewWithConfigReader(p profile.Profile, root string, guard *managed.Guard, readConfig func(string) ([]byte, error)) (LaunchPlan, []byte, error) {
+	var configData []byte
 	plan := LaunchPlan{Engine: p.Engine, Platform: runtime.GOOS, Binary: p.Binary, Args: []string{}, Warnings: []string{}, Issues: []string{}, GeneratedFiles: []string{}}
 	if err := p.Validate(); err != nil {
-		return plan, err
+		return plan, nil, err
 	}
 	d, err := Lookup(p.Engine)
 	if err != nil {
-		return plan, err
+		return plan, nil, err
 	}
 	issue := func(s string) { plan.Issues = append(plan.Issues, s) }
 	if !d.Supported(runtime.GOOS) {
@@ -192,7 +197,7 @@ func previewWithGuard(p profile.Profile, root string, guard *managed.Guard) (Lau
 	}
 	root, err = filepath.Abs(root)
 	if err != nil {
-		return plan, err
+		return plan, nil, err
 	}
 	include := filepath.Join(root, "generated", p.ID+"-include.txt")
 	exclude := filepath.Join(root, "generated", p.ID+"-exclude.txt")
@@ -226,8 +231,15 @@ func previewWithGuard(p profile.Profile, root string, guard *managed.Guard) (Lau
 	if p.ConfigPath != "" {
 		if p.Engine != "wiresock" && p.Engine != "sing-box" && p.Engine != "xray" {
 			issue("configPath is only supported by WireSock, sing-box and Xray; use native arguments for other engines")
-		} else if err := inspectConfig(p); err != nil {
-			issue(err.Error())
+		} else {
+			configData, err = readConfig(p.ConfigPath)
+			if err == nil {
+				err = inspectConfigBytes(p.Engine, configData)
+			}
+			if err != nil {
+				configData = nil
+				issue(err.Error())
+			}
 		}
 	}
 	if p.SHA256 == "" {
@@ -239,45 +251,15 @@ func previewWithGuard(p profile.Profile, root string, guard *managed.Guard) (Lau
 		issue(err.Error())
 	}
 	plan.Ready = len(plan.Issues) == 0
-	return plan, nil
+	return plan, configData, nil
 }
 
 func inspectConfig(p profile.Profile) error {
-	if !filepath.IsAbs(p.ConfigPath) {
-		return errors.New("configPath must be an absolute path to a local file")
-	}
-	fi, err := os.Stat(p.ConfigPath)
+	data, err := readConfigInput(p.ConfigPath)
 	if err != nil {
-		return fmt.Errorf("read configuration: %w", err)
+		return err
 	}
-	if !fi.Mode().IsRegular() || fi.Size() > 4<<20 {
-		return errors.New("configuration must be a regular file no larger than 4 MiB")
-	}
-	f, err := os.Open(p.ConfigPath)
-	if err != nil {
-		return fmt.Errorf("open configuration: %w", err)
-	}
-	defer f.Close()
-	if p.Engine != "wiresock" {
-		return nil
-	}
-	// WireSock supports shell hooks. Reject them so importing a tunnel does not
-	// quietly become a script runner. Never include a line/value in errors (keys).
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		key, _, ok := strings.Cut(scanner.Text(), "=")
-		if !ok {
-			continue
-		}
-		switch strings.ToLower(strings.TrimSpace(key)) {
-		case "preup", "postup", "predown", "postdown":
-			return errors.New("WireSock configuration contains a command hook (PreUp/PostUp/PreDown/PostDown); remove hooks for managed mode")
-		}
-	}
-	if scanner.Err() != nil {
-		return errors.New("could not inspect WireSock configuration")
-	}
-	return nil
+	return inspectConfigBytes(p.Engine, data)
 }
 
 func adapterArgs(p profile.Profile, base, include, exclude string) ([]string, []string, []string) {
@@ -505,7 +487,11 @@ func Prepare(p profile.Profile, root string) (string, []string, error) {
 	return prepareWithGuard(p, root, managed.NewGuard(nil))
 }
 func prepareWithGuard(p profile.Profile, root string, guard *managed.Guard) (string, []string, error) {
-	plan, err := previewWithGuard(p, root, guard)
+	return prepareWithConfigReader(p, root, guard, readConfigInput)
+}
+
+func prepareWithConfigReader(p profile.Profile, root string, guard *managed.Guard, readConfig func(string) ([]byte, error)) (string, []string, error) {
+	plan, configData, err := previewWithConfigReader(p, root, guard, readConfig)
 	if err != nil {
 		return "", nil, err
 	}
@@ -516,12 +502,8 @@ func prepareWithGuard(p profile.Profile, root string, guard *managed.Guard) (str
 		return "", nil, errors.New(strings.Join(plan.Issues, "; "))
 	}
 	if p.Engine == "wiresock" && len(p.Routing.Applications) > 0 {
-		data, err := os.ReadFile(p.ConfigPath)
-		if err != nil {
-			return "", nil, err
-		}
 		var lines []string
-		for _, line := range strings.Split(string(data), "\n") {
+		for _, line := range strings.Split(string(configData), "\n") {
 			key, _, has := strings.Cut(line, "=")
 			if has && (strings.EqualFold(strings.TrimSpace(key), "AllowedApps") || strings.EqualFold(strings.TrimSpace(key), "DisallowedApps")) {
 				continue
