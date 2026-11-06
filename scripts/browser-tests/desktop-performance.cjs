@@ -25,6 +25,8 @@ async function boundedHash(name,maximum){const file=await fs.open(name,'r');try{
 async function seedPerformanceProfiles(home){
  const folder=path.join(home,'state','profiles');await fs.mkdir(folder,{recursive:true,mode:0o700});
  for(let i=0;i<budgets.profiles;i++){const id='perf-'+String(i).padStart(4,'0'),profile={version:1,id,name:'Performance fixture '+i,engine:'byedpi',binary:'/accessweaver-performance-fixture/absent-engine',args:[],routing:{includeDomains:[],excludeDomains:[],applications:[]},probe:{host:'example.invalid',port:443,tls:true,timeoutSeconds:5}};const file=await fs.open(path.join(folder,id+'.json'),'wx',0o600);try{await file.writeFile(JSON.stringify(profile)+'\n','utf8')}finally{await file.close()}}
+ // Match a normally initialized populated store; startup must not add presets.
+ const marker=await fs.open(path.join(home,'state','presets-initialized'),'wx',0o600);try{await marker.writeFile('1\n','utf8')}finally{await marker.close()}
 }
 function liveChild(child){assert.ok(child instanceof ChildProcess&&Number.isInteger(child.pid)&&child.pid>0&&child.exitCode===null&&child.signalCode===null&&!child.killed,'owned live controller required')}
 async function sampleController(child,identity,pageBytes){
