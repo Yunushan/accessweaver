@@ -162,11 +162,25 @@ func workflowHistoryStagingFiles(t *testing.T, root string) map[string]workflowH
 		if err != nil {
 			t.Fatal("source staging object identity unavailable")
 		}
+		if entry.Name() == workflowActiveLockName || entry.Name() == workflowTransactionLockName {
+			// Windows byte-range locks deny payload reads, including beyond
+			// EOF. These coordination files have no payload: snapshot only
+			// their ordinary zero-length metadata and actual native identity.
+			// SameFile(info, info) eagerly fills Go's lazy Windows file ID.
+			if !info.Mode().IsRegular() || info.Size() != 0 || !os.SameFile(info, info) {
+				t.Fatal("source staging coordination metadata unavailable")
+			}
+			files[entry.Name()] = workflowHistoryStagingFile{identity: info}
+			continue
+		}
 		if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
 			continue
 		}
 		if !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > 64<<10 {
 			t.Fatal("source staging object exceeded the small fixture bound")
+		}
+		if !os.SameFile(info, info) {
+			t.Fatal("source staging object metadata identity unavailable")
 		}
 		data, err := os.ReadFile(filepath.Join(root, entry.Name()))
 		if err != nil || len(data) > 64<<10 || int64(len(data)) != info.Size() {
@@ -185,7 +199,16 @@ func workflowHistoryStagingSameFiles(t *testing.T, root string, expected map[str
 	}
 	for name, before := range expected {
 		after, exists := now[name]
-		if !exists || !os.SameFile(before.identity, after.identity) || !bytes.Equal(before.bytes, after.bytes) {
+		if !exists {
+			t.Fatal("refused staging attempt changed a retained object's identity or bytes")
+		}
+		if name == workflowActiveLockName || name == workflowTransactionLockName {
+			if !before.identity.Mode().IsRegular() || !after.identity.Mode().IsRegular() || before.identity.Size() != 0 || after.identity.Size() != 0 || !os.SameFile(before.identity, after.identity) {
+				t.Fatal("refused staging attempt changed coordination metadata")
+			}
+			continue
+		}
+		if !os.SameFile(before.identity, after.identity) || !bytes.Equal(before.bytes, after.bytes) {
 			t.Fatal("refused staging attempt changed a retained object's identity or bytes")
 		}
 	}
@@ -264,7 +287,7 @@ func TestWorkflowHistoryStagingProcessCrashKeepsDurableReservationAndExactReads(
 	}
 	activePath := filepath.Join(fixture.root, workflowActiveLockName)
 	activeIdentity, err := os.Lstat(activePath)
-	if err != nil {
+	if err != nil || !activeIdentity.Mode().IsRegular() || activeIdentity.Size() != 0 || !os.SameFile(activeIdentity, activeIdentity) {
 		t.Fatal("original source active lock identity unavailable")
 	}
 	if !fixture.finishChild(true) {
