@@ -800,3 +800,45 @@ test('controller storage fixture: logical observation and refused admission pres
   expect(calls.filter(call=>call.method==='POST')).toEqual([{path:'/api/v1/system/start',method:'POST'},{path:'/api/v1/system/folder',method:'POST'}]);
  }finally{releaseRead();}
 });
+
+
+// All replies and assets are synthetic. This fixture never requests a core,
+// starts a product executable, reads host state or uploads support metadata.
+test('support export fixture: delayed replies cannot cross navigation, session or mode and an explicit current export downloads',async({page},testInfo)=>{
+ const origin='http://127.0.0.1:43106',assets=new Map(),held=[],downloads=[];let session='s'.repeat(43),profileOnly=false,runtimeFailure=false;
+ const summary={schemaVersion:1,scope:'metadata-only',generatedAt:'2026-11-01T00:00:00Z',build:{version:'source-only-support-fixture',commit:'a'.repeat(40),sourceState:'clean',builtAt:'unknown',goVersion:'go1.27.3',platform:'linux',arch:'amd64'},profiles:{status:'available',total:1,byEngine:{byedpi:1}},runtime:{state:'stopped',errorPresent:false,logLines:0},workflow:{state:'idle',errorPresent:false,resultPresent:false}};
+ for(const [route,file,type]of [['/','index.html','text/html'],['/app.js','app.js','text/javascript'],['/locales.js','locales.js','text/javascript'],['/system.js','system.js','text/javascript'],['/app.css','app.css','text/css']])assets.set(route,{body:await fs.readFile(path.join(repo,'web',file)),contentType:type});
+ page.on('download',download=>downloads.push(download));
+ await page.route('**/*',async route=>{
+  const url=new URL(route.request().url());if(url.origin!==origin){await route.abort();return;}const asset=assets.get(url.pathname);if(asset){await route.fulfill(asset);return;}
+  expect(route.request().headers()['x-accessweaver-token']).toBe(session);
+  if(url.pathname==='/api/bootstrap'){await route.fulfill({json:{platform:'linux',version:'source-only-support-fixture',profileEditingOnly:profileOnly}});return;}
+  if(url.pathname==='/api/v1/engines'||url.pathname==='/api/v1/profiles'){await route.fulfill({json:[]});return;}
+  if(url.pathname==='/api/v1/runtime'){await route.fulfill(runtimeFailure?{status:503,json:{error:'Synthetic runtime unavailable'}}:{json:{state:'stopped',log:[]}});return;}
+  if(url.pathname==='/api/v1/support'){
+   expect(route.request().method()).toBe('GET');let release,complete;const wait=new Promise(resolve=>release=resolve),done=new Promise(resolve=>complete=resolve),gate={release,done,status:200};held.push(gate);await wait;
+   try{await route.fulfill(gate.status===200?{json:summary}:{status:503,json:{error:'PRIVATE_OLD_SUPPORT_ERROR'}})}catch{}finally{complete()}return;
+  }
+  await route.fulfill({status:404,json:{error:'Synthetic route unavailable'}});
+ });
+ const nav=async view=>{const toggle=page.locator('#menu-toggle');if(await toggle.isVisible())await toggle.click();await page.locator('.nav-item[data-view="'+view+'"]').click();};
+ const begin=async()=>{const count=held.length;await page.locator('#export-support').click();await expect.poll(()=>held.length).toBe(count+1);await expect(page.locator('#export-support')).toBeDisabled();return held.at(-1)};
+ try{
+  await page.goto(origin+'/#accessweaver-session='+session);await nav('settings');await expect(page.locator('#export-support')).toBeEnabled();
+  const first=await begin();const failed=page.waitForEvent('requestfailed',request=>new URL(request.url()).pathname==='/api/v1/support');await nav('profiles');await failed;await nav('settings');const second=await begin();
+  first.status=503;first.release();await first.done;await expect(page.locator('#export-support')).toBeDisabled();expect(downloads).toHaveLength(0);await expect(page.locator('#toast')).not.toContainText('PRIVATE_OLD_SUPPORT_ERROR');
+  const currentDownload=page.waitForEvent('download');second.release();await second.done;const download=await currentDownload;expect(download.suggestedFilename()).toBe('accessweaver-support-summary.json');expect(JSON.parse(await fs.readFile(await download.path(),'utf8'))).toEqual(summary);await expect(page.locator('#export-support')).toBeEnabled();expect(downloads).toHaveLength(1);
+  for(const change of ['mode','session','connection']){
+   const gate=await begin(),aborted=page.waitForEvent('requestfailed',request=>new URL(request.url()).pathname==='/api/v1/support');
+   if(change==='mode'){profileOnly=true;await page.evaluate(async()=>{await readCore();renderAll()});await expect(page.locator('#export-support')).toBeDisabled();}
+   if(change==='session'){session='t'.repeat(43);await page.evaluate(next=>{location.hash='accessweaver-session='+next;readSession();navigate('settings')},session);}
+   if(change==='connection'){runtimeFailure=true;await page.evaluate(()=>pollStatus());await expect(page.locator('#connection-notice')).toBeVisible();}
+   await aborted;gate.release();await gate.done;expect(downloads).toHaveLength(1);await expect(page.locator('#toast')).not.toContainText('PRIVATE_OLD_SUPPORT_ERROR');
+   if(change==='mode'){profileOnly=false;await page.evaluate(async()=>{await readCore();renderAll()});}
+   if(change==='connection'){runtimeFailure=false;await page.evaluate(()=>reconnect());}
+   await nav('settings');await expect(page.locator('#export-support')).toBeEnabled();
+  }
+  await expect(page.locator('#toast')).toHaveAttribute('class','');await page.setViewportSize({width:390,height:844});await settleAnimations(page);await expect(page.locator('#menu-toggle')).toHaveAttribute('aria-expanded','false');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);await page.locator('#export-support').focus();await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:testInfo.outputPath('support-export-source-only-ready.png'),fullPage:true});
+  expect(held).toHaveLength(5);expect(downloads).toHaveLength(1);
+ }finally{for(const gate of held)gate.release();await Promise.all(held.map(gate=>gate.done));}
+});

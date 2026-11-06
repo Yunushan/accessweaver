@@ -179,9 +179,11 @@ function readSession(){
     state.token=credential;
     try{sessionStorage.setItem('aw.session',credential)}catch{}
     history.replaceState(null,'',(location.pathname||'/')+(location.search||'')+'#dashboard');
+    updateSupportAvailability();
     return;
   }
   try{const saved=sessionStorage.getItem('aw.session');if(/^[A-Za-z0-9_-]{43}$/.test(saved||''))state.token=saved}catch{}
+  updateSupportAvailability();
 }
 const engineGuide = id => t(({spoofdpi:'guideSpoof',byedpi:'guideByedpi',zapret:'guideZapret',zapret2:'guideZapret',goodbyedpi:'guideGoodbye',wiresock:'guideWiresock',wireguard:'guideWireguard'})[id] || 'guideProxy');
 
@@ -246,6 +248,7 @@ function navigate(view, focus=false) {
   window.scrollTo(0,0);
   if (focus) $('content').focus({preventScroll:true});
   probeNavigationChanged(view);
+  supportNavigationChanged(view);
   if(typeof historyNavigationChanged==='function')historyNavigationChanged(view);
   if(view==='system'&&coreAvailable()&&typeof loadSystemTools==='function')loadSystemTools().catch(error=>{setTextOutput('system-output',error.message)});
 }
@@ -279,6 +282,7 @@ async function readCore() {
   state.coreAuthenticated = true;
   state.profileEditingOnly = boot.profileEditingOnly === true;
   updateProbeAvailability();
+  updateSupportAvailability();
   if(typeof updateSystemExportButtons==='function')updateSystemExportButtons();
   const [engines,profiles,runtime] = await Promise.all([
     apiRequest('/api/v1/engines'),apiRequest('/api/v1/profiles'),apiRequest('/api/v1/runtime')
@@ -371,7 +375,7 @@ function renderHero() {
   $('preview-profile').disabled = !coreAvailable();
   updateProbeAvailability();
   $('show-logs').disabled = state.offline || state.loading;
-  $('export-support').disabled = !supportAvailable() || !!state.supportExporting;
+  updateSupportAvailability();
   if(typeof updateSystemExportButtons==='function')updateSystemExportButtons();
   if (pending && state.launch) {
     state.launch.ready = false;
@@ -650,15 +654,86 @@ async function saveEditor() {
   } catch (err) { if (state.editing) state.editing.saving = false; editorError(err); }
   finally { setEditorBusy(false); $('save-profile').disabled = false; }
 }
-async function exportSupportSummary(){
-  if(!supportAvailable()){toast(t('coreRequired'),true);return}
-  if(state.supportExporting)return;
-  state.supportExporting=true;$('export-support').disabled=true;
+// A support download belongs to one explicit Settings request, not merely to
+// whichever session happens to be current when an earlier response arrives.
+const supportExportUI={generation:0,context:'',operation:null};
+function supportContext(){return JSON.stringify([state.token,!!state.coreAuthenticated,!!state.profileEditingOnly,!!state.offline,!!state.disconnected,!!state.loading]);}
+function invalidateSupportExport(){
+  const operation=supportExportUI.operation;
+  supportExportUI.generation++;supportExportUI.operation=null;state.supportExporting=false;
+  operation?.controller.abort();
+}
+function updateSupportAvailability(){
+  const context=supportContext();
+  if(supportExportUI.context!==context){invalidateSupportExport();supportExportUI.context=context;}
+  $('export-support').disabled=!supportAvailable()||!!supportExportUI.operation;
+}
+function supportNavigationChanged(view){
+  if(view!=='settings')invalidateSupportExport();
+  updateSupportAvailability();
+}
+function supportExportCurrent(operation){
+  return supportExportUI.operation===operation&&supportExportUI.generation===operation.generation&&supportContext()===operation.context&&state.view==='settings'&&supportAvailable();
+}
+function supportMetadataReport(report){
+  const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
+  const fields=(value,required,optional=[])=>object(value)&&required.every(key=>Object.prototype.hasOwnProperty.call(value,key))&&Object.keys(value).every(key=>required.includes(key)||optional.includes(key));
+  const text=value=>typeof value==='string'&&value.length<=256;
+  const count=value=>Number.isSafeInteger(value)&&value>=0;
+  const engine=value=>['zapret','zapret2','byedpi','goodbyedpi','wiresock','wireguard','spoofdpi','sing-box','xray','other'].includes(value);
+  if(!fields(report,['schemaVersion','scope','generatedAt','build','profiles','runtime','workflow'])||report.schemaVersion!==1||report.scope!=='metadata-only'||!text(report.generatedAt)||!Number.isFinite(Date.parse(report.generatedAt)))throw new Error('Invalid support metadata');
+  const buildFields=['version','commit','sourceState','builtAt','goVersion','platform','arch'];
+  if(!fields(report.build,buildFields)||!buildFields.every(key=>text(report.build[key])))throw new Error('Invalid support metadata');
+  const profiles=report.profiles,runtime=report.runtime,workflow=report.workflow;
+  if(!fields(profiles,['status','total'],['byEngine'])||!['available','unavailable'].includes(profiles.status)||(profiles.status==='available'?!count(profiles.total):profiles.total!==null))throw new Error('Invalid support metadata');
+  if(profiles.byEngine!==undefined&&(!object(profiles.byEngine)||Object.entries(profiles.byEngine).some(([key,value])=>!engine(key)||!count(value))||(profiles.status==='unavailable'&&Object.keys(profiles.byEngine).length)))throw new Error('Invalid support metadata');
+  if(!fields(runtime,['state','errorPresent','logLines'],['engine'])||!['stopped','running','stopping','error','unknown'].includes(runtime.state)||typeof runtime.errorPresent!=='boolean'||!count(runtime.logLines)||(runtime.engine!==undefined&&!engine(runtime.engine)))throw new Error('Invalid support metadata');
+  if(!fields(workflow,['state','errorPresent','resultPresent'],['action'])||!['idle','running','succeeded','failed','interrupted','unknown'].includes(workflow.state)||typeof workflow.errorPresent!=='boolean'||typeof workflow.resultPresent!=='boolean'||(workflow.action!==undefined&&(!text(workflow.action)||!/^[-a-z0-9]+$/.test(workflow.action))))throw new Error('Invalid support metadata');
+  return report;
+}
+async function readSupportSummary(operation){
+  const maximum=16*1024,signal=operation.controller.signal;
+  const active=()=>{if(signal.aborted||!supportExportCurrent(operation))throw new DOMException('Request canceled','AbortError');};
+  active();
+  const response=await fetch('/api/v1/support',{method:'GET',headers:{'X-AccessWeaver-Token':operation.token},cache:'no-store',redirect:'error',signal});
+  active();
+  if(!response.ok||!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(response.headers.get('Content-Type')||''))throw new Error('Support summary unavailable');
+  const length=response.headers.get('Content-Length');
+  if(length!==null&&(!/^\d+$/.test(length)||Number(length)>maximum))throw new Error('Support summary unavailable');
+  if(!response.body?.getReader)throw new Error('Support summary unavailable');
+  const reader=response.body.getReader(),decoder=new TextDecoder('utf-8',{fatal:true});
+  let total=0,text='',complete=false;
   try{
-    const report=await apiRequest('/api/v1/support');
+    while(true){
+      const part=await reader.read();active();
+      if(part.done){complete=true;break;}
+      if((!ArrayBuffer.isView(part.value)||Object.prototype.toString.call(part.value)!=='[object Uint8Array]')||part.value.byteLength>maximum-total)throw new Error('Support summary unavailable');
+      total+=part.value.byteLength;text+=decoder.decode(part.value,{stream:true});
+    }
+    text+=decoder.decode();active();
+    return supportMetadataReport(JSON.parse(text));
+  }finally{
+    if(!complete){operation.controller.abort();try{await reader.cancel();}catch{}}
+    reader.releaseLock();
+  }
+}
+async function exportSupportSummary(){
+  updateSupportAvailability();
+  if(state.view!=='settings'||!supportAvailable()){toast(t(state.profileEditingOnly?'profileAuditNotice':'coreRequired'),true);return;}
+  if(supportExportUI.operation)return;
+  const operation={generation:++supportExportUI.generation,context:supportContext(),token:state.token,controller:new AbortController()};
+  supportExportUI.operation=operation;state.supportExporting=true;updateSupportAvailability();
+  const timer=setTimeout(()=>operation.controller.abort(),12000);
+  try{
+    const report=await readSupportSummary(operation);
+    if(!supportExportCurrent(operation)||operation.controller.signal.aborted)return;
     downloadFile(JSON.stringify(report,null,2)+'\n','accessweaver-support-summary.json');
-  }catch(error){toast(error.message,true)}
-  finally{state.supportExporting=false;$('export-support').disabled=!supportAvailable()}
+  }catch(error){
+    if(supportExportCurrent(operation))toast(t('disconnectedDesc'),true);
+  }finally{
+    clearTimeout(timer);
+    if(supportExportUI.operation===operation){supportExportUI.operation=null;state.supportExporting=false;operation.controller.abort();updateSupportAvailability();}
+  }
 }
 function downloadFile(data,name,mime='application/json') {
   const url = URL.createObjectURL(new Blob([data],{type:mime}));
@@ -903,6 +978,7 @@ function bindEvents() {
   $$('.nav-item').forEach(el => el.addEventListener('click',() => navigate(el.dataset.view,true)));
   $$('[data-action]').forEach(el => el.addEventListener('click',() => navigate(el.dataset.action === 'diagnose' ? 'diagnostics' : el.dataset.action,true)));
   window.addEventListener('hashchange',() => navigate(location.hash.slice(1) || 'dashboard'));
+  window.addEventListener('pagehide',()=>{invalidateSupportExport();updateSupportAvailability()});
   window.addEventListener('beforeunload',event => { if (state.editing?.dirty) { event.preventDefault(); event.returnValue = ''; } });
   $('menu-toggle').addEventListener('click',() => setSidebarOpen(!$('sidebar').classList.contains('open')));
   narrowNavigation.addEventListener('change',() => {

@@ -19,6 +19,7 @@ on:
           - desktop-diagnostics
           - controller-storage
           - recovery-journal
+          - desktop-support
 
 permissions:
   contents: read
@@ -32,16 +33,16 @@ env:
 
 jobs:
   browser:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support') }}
     uses: ./.github/workflows/browser.yml
   windows-audit-storage:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support') }}
     uses: ./.github/workflows/windows-audit-storage.yml
   darwin-audit-commands:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support') }}
     uses: ./.github/workflows/darwin-audit-commands.yml
   vulnerabilities:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support') }}
     name: Go vulnerability checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -101,7 +102,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   test:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support') }}
     name: Test (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -413,7 +414,7 @@ jobs:
         shell: bash
         run: test -z "$(gofmt -l cmd internal web)"
   race:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support') }}
     name: Race detector (Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -433,7 +434,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   race-arm64:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support') }}
     name: Race detector (Linux/arm64)
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
@@ -454,7 +455,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   cross-compile:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support') }}
     name: Cross-build (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -741,3 +742,88 @@ jobs:
           $stock = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
           & $stock -NoProfile -NonInteractive -File ./scripts/test-windows-workflow-recovery-reader.ps1 -RequireWindowsPowerShell
           if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell recovery reader source contracts failed' }
+  desktop-support:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.scope == 'full' || inputs.scope == 'desktop-support' }}
+    name: Desktop support (${{ matrix.goos }}/${{ matrix.goarch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            sdkarch: x64
+          - os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            sdkarch: arm64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            sdkarch: x64
+          - os: windows-11-arm
+            goos: windows
+            goarch: arm64
+            sdkarch: arm64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            sdkarch: arm64
+          - os: macos-15-intel
+            goos: darwin
+            goarch: amd64
+            sdkarch: x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      GOTOOLCHAIN: local
+      ACCESSWEAVER_EXPECT_GOOS: ${{ matrix.goos }}
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+          architecture: ${{ matrix.sdkarch }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '26.8.2'
+          architecture: ${{ matrix.sdkarch }}
+          package-manager-cache: false
+      - name: Verify native host and SDK identity
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $native = go env -json GOHOSTOS GOHOSTARCH GOOS GOARCH GOVERSION GOTOOLCHAIN | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Native Go identity unavailable' }
+          if ($native.GOHOSTOS -ne $env:ACCESSWEAVER_EXPECT_GOOS -or $native.GOOS -ne $env:ACCESSWEAVER_EXPECT_GOOS -or $native.GOHOSTARCH -ne $env:ACCESSWEAVER_EXPECT_GOARCH -or $native.GOARCH -ne $env:ACCESSWEAVER_EXPECT_GOARCH) { throw 'Native Go target mismatch' }
+          if ($native.GOVERSION -ne ('go' + $env:GO_VERSION) -or $native.GOTOOLCHAIN -ne 'local') { throw 'Pinned Go SDK mismatch' }
+      - name: Verify dependencies
+        run: go mod verify
+      - name: Test support metadata privacy and store failures
+        run: go test ./internal/api -run '^TestSupport' -count=1 -timeout=3m
+      - name: Verify actual Go support and desktop ownership contracts
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $specs = @(
+            @{ name='history'; variable='ACCESSWEAVER_HISTORY_INTEROP'; package='./internal/api'; test='^TestHistoryBrowserSourceWireInterop$' },
+            @{ name='reconciliation'; variable='ACCESSWEAVER_RECONCILIATION_INTEROP'; package='./internal/workflow'; test='^TestLifecycleReconciliationDesktopWireInterop$' },
+            @{ name='controller'; variable='ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP'; package='./internal/workflow'; test='^TestControllerStorageDesktopWireInterop$' },
+            @{ name='support'; variable='ACCESSWEAVER_SUPPORT_INTEROP'; package='./internal/api'; test='^TestSupportDesktopWireInterop$' }
+          )
+          foreach ($spec in $specs) {
+            $fixture = Join-Path $env:RUNNER_TEMP ('accessweaver-desktop-support-' + $spec.name + '-' + [Guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $fixture -ErrorAction Stop | Out-Null
+            [Environment]::SetEnvironmentVariable($spec.variable, $fixture, 'Process')
+            go test $spec.package -run $spec.test -count=1 -timeout=3m
+            if ($LASTEXITCODE -ne 0) { throw 'Desktop support actual response producer failed' }
+          }
+          node web/app.test.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop support ownership and wire contracts failed' }
+      - name: Static analysis support export contracts
+        run: go vet ./internal/api ./web

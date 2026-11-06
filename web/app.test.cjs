@@ -158,32 +158,68 @@ test('a blocked machine preview enables only request export',async()=>{
   env.run('invalidateSystemPlan()');assert.equal(env.get('system-export').disabled,true);
 });
 
-test('support export uses the authenticated core summary without changing another busy action',async()=>{
-  const env=environment();env.run('state.offline=false;state.loading=false;state.disconnected=false;state.busy=true;state.coreAuthenticated=true;state.token="fixture"');
-  const report={schemaVersion:1,scope:'metadata-only',profiles:{total:2},runtime:{state:'stopped'}};
-  env.put('supportFixture',report);env.run('apiRequest=async(path)=>{if(path!=="/api/v1/support")throw new Error("wrong summary route");return supportFixture}');
-  let download;env.context.downloadFile=(data,name)=>{download={data,name}};
-  await env.run('exportSupportSummary()');
-  assert.deepEqual(JSON.parse(download.data),report);assert.equal(download.name,'accessweaver-support-summary.json');
-  assert.equal(env.run('state.busy'),true);assert.equal(env.get('export-support').disabled,false);
+function supportFixture(){return {schemaVersion:1,scope:'metadata-only',generatedAt:'2026-11-01T00:00:00Z',build:{version:'source-fixture',commit:'a'.repeat(40),sourceState:'clean',builtAt:'unknown',goVersion:'go1.27.3',platform:'linux',arch:'amd64'},profiles:{status:'available',total:2,byEngine:{byedpi:2}},runtime:{state:'stopped',errorPresent:false,logLines:0},workflow:{state:'idle',errorPresent:false,resultPresent:false}};}
+function supportReady(env){env.run('state.view="settings";state.offline=false;state.loading=false;state.disconnected=false;state.coreAuthenticated=true;state.token="fixture";updateSupportAvailability()');}
+function supportResponse(report=supportFixture(),options={}){
+ const bytes=options.bytes??new TextEncoder().encode(JSON.stringify(report));let read=false,canceled=false,released=false;
+ return {ok:options.ok??true,headers:{get:name=>name==='Content-Type'?(options.contentType??'application/json; charset=utf-8'):name==='Content-Length'?(options.length??null):null},body:{getReader:()=>({async read(){if(read)return {done:true};read=true;return {done:false,value:bytes}},async cancel(){canceled=true},releaseLock(){released=true}})},get canceled(){return canceled},get released(){return released}};
+}
+function supportDeferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no});return {promise,resolve,reject};}
+test('support export uses the bounded authenticated metadata summary without changing another busy action',async()=>{
+ const env=environment();supportReady(env);env.run('state.busy=true');const report=supportFixture();
+ let request,download;env.context.fetch=async(path,options)=>{request={path,options};return supportResponse(report)};env.context.downloadFile=(data,name)=>{download={data,name}};
+ await env.run('exportSupportSummary()');
+ assert.equal(request.path,'/api/v1/support');assert.equal(request.options.method,'GET');assert.equal(request.options.headers['X-AccessWeaver-Token'],'fixture');assert.equal(request.options.redirect,'error');assert.equal(request.options.cache,'no-store');
+ assert.deepEqual(JSON.parse(download.data),report);assert.equal(download.name,'accessweaver-support-summary.json');assert.equal(env.run('state.busy'),true);assert.equal(env.get('export-support').disabled,false);assert.equal(env.run('state.supportExporting'),false);
 });
-
-test('failed or offline support export never downloads a partial report',async()=>{
-  const env=environment();let downloads=0;env.context.downloadFile=()=>downloads++;
-  env.run('apiRequest=async()=>{throw new Error("fixture core unavailable")}');
-  await env.run('exportSupportSummary()');assert.equal(downloads,0);
-  env.run('state.offline=false;state.loading=false;state.disconnected=false;state.coreAuthenticated=true;state.token="fixture"');
-  await env.run('exportSupportSummary()');assert.equal(downloads,0);assert.equal(env.run('state.supportExporting'),false);
+test('support export failures discard private error bodies and never download partial metadata',async()=>{
+ for(const response of [supportResponse(undefined,{ok:false}),supportResponse(undefined,{contentType:'text/plain'}),supportResponse(undefined,{length:'16385'}),supportResponse(undefined,{bytes:new Uint8Array(16385)}),supportResponse(undefined,{bytes:Uint8Array.from([0xff])}),supportResponse({...supportFixture(),privateDetails:'PRIVATE_SUPPORT_BODY'}),supportResponse({...supportFixture(),schemaVersion:2})]){
+  const env=environment();supportReady(env);let downloads=0;const messages=[];env.context.fetch=async()=>response;env.context.downloadFile=()=>downloads++;env.context.toast=message=>messages.push(message);
+  await env.run('exportSupportSummary()');assert.equal(downloads,0);assert.deepEqual(messages,[env.run('t("disconnectedDesc")')]);assert.equal(env.run('state.supportExporting'),false);assert.equal(env.get('export-support').disabled,false);
+ }
+ const env=environment();supportReady(env);let downloads=0;const messages=[];env.context.fetch=async()=>{throw new Error('PRIVATE_SUPPORT_TRANSPORT')};env.context.downloadFile=()=>downloads++;env.context.toast=message=>messages.push(message);await env.run('exportSupportSummary()');assert.equal(downloads,0);assert.deepEqual(messages,[env.run('t("disconnectedDesc")')]);
 });
-
-test('support metadata stays accessible when authenticated profile loading fails',async()=>{
-  const env=environment();env.run('state.token="fixture"');
-  env.context.fetch=async path=>path==='/api/bootstrap'?{ok:true,json:async()=>({platform:'windows'})}:{ok:false,status:500,json:async()=>({error:'private store failure'})};
-  await assert.rejects(env.run('readCore()'));
-  env.run('state.loading=false;state.offline=true');
-  assert.equal(env.run('supportAvailable()'),true);assert.equal(env.run('coreAvailable()'),false);
+test('support export context and navigation changes abort and suppress late success or feedback',async()=>{
+ for(const change of ['state.token="next-session";updateSupportAvailability()','state.profileEditingOnly=true;updateSupportAvailability()','state.coreAuthenticated=false;updateSupportAvailability()','state.loading=true;updateSupportAvailability()','state.offline=true;updateSupportAvailability()','state.disconnected=true;updateSupportAvailability()','navigate("profiles")','invalidateSupportExport();updateSupportAvailability()']){
+  const env=environment();supportReady(env);const held=supportDeferred();let signal,downloads=0;const messages=[];env.context.fetch=(path,options)=>{signal=options.signal;return held.promise};env.context.downloadFile=()=>downloads++;env.context.toast=message=>messages.push(message);
+  const exporting=env.run('exportSupportSummary()');env.run(change);assert.equal(signal.aborted,true,change);held.resolve(supportResponse());await exporting;assert.equal(downloads,0,change);assert.deepEqual(messages,[],change);assert.equal(env.run('state.supportExporting'),false,change);
+ }
 });
-
+test('old support success and failure cannot release or overwrite a newer explicit export',async()=>{
+ for(const lateFailure of [false,true]){
+  const env=environment();supportReady(env);const first=supportDeferred(),second=supportDeferred();let calls=0,downloads=0;const messages=[];env.context.fetch=()=>++calls===1?first.promise:second.promise;env.context.downloadFile=()=>downloads++;env.context.toast=message=>messages.push(message);
+  const old=env.run('exportSupportSummary()');env.run('navigate("profiles");navigate("settings")');const current=env.run('exportSupportSummary()');assert.equal(calls,2);
+  if(lateFailure)first.reject(new Error('PRIVATE_OLD_SUPPORT_ERROR'));else first.resolve(supportResponse());await old;
+  assert.equal(env.run('state.supportExporting'),true);assert.equal(env.get('export-support').disabled,true);assert.equal(downloads,0);assert.deepEqual(messages,[]);
+  second.resolve(supportResponse());await current;assert.equal(downloads,1);assert.equal(env.run('state.supportExporting'),false);assert.equal(env.get('export-support').disabled,false);assert.deepEqual(messages,[]);
+ }
+});
+test('support export bounds streamed bytes before parsing and cancels an over-limit stream',async()=>{
+ const env=environment();supportReady(env);let reads=0,canceled=0,released=0,downloads=0;
+ env.context.fetch=async()=>({ok:true,headers:{get:name=>name==='Content-Type'?'application/json':null},body:{getReader:()=>({async read(){reads++;return {done:false,value:new Uint8Array(reads===1?16384:1)}},async cancel(){canceled++},releaseLock(){released++}})}});env.context.downloadFile=()=>downloads++;
+ await env.run('exportSupportSummary()');assert.equal(reads,2);assert.equal(canceled,1);assert.equal(released,1);assert.equal(downloads,0);
+});
+test('support body timeout cannot adopt a late body even when the mocked transport ignores abort',async()=>{
+ const env=environment();supportReady(env);const body=supportDeferred(),started=supportDeferred();let timeout,reads=0,canceled=0,downloads=0;const messages=[];env.context.setTimeout=(callback,milliseconds)=>{assert.equal(milliseconds,12000);timeout=callback;return 1};env.context.fetch=async()=>({ok:true,headers:{get:name=>name==='Content-Type'?'application/json':null},body:{getReader:()=>({read(){reads++;started.resolve();return body.promise},async cancel(){canceled++},releaseLock(){}})}});env.context.downloadFile=()=>downloads++;env.context.toast=message=>messages.push(message);
+ const exporting=env.run('exportSupportSummary()');await started.promise;assert.equal(reads,1);timeout();body.resolve({done:false,value:new TextEncoder().encode(JSON.stringify(supportFixture()))});await exporting;assert.equal(downloads,0);assert.equal(canceled,1);assert.deepEqual(messages,[env.run('t("disconnectedDesc")')]);assert.equal(env.run('state.supportExporting'),false);
+});
+test('the actual session loader invalidates a held support export before adopting a new credential',async()=>{
+ const env=environment();supportReady(env);const held=supportDeferred();let signal,downloads=0;env.context.fetch=(path,options)=>{signal=options.signal;return held.promise};env.context.downloadFile=()=>downloads++;
+ const exporting=env.run('exportSupportSummary()');env.context.location.hash='#accessweaver-session='+'z'.repeat(43);env.run('readSession()');assert.equal(signal.aborted,true);held.resolve(supportResponse());await exporting;assert.equal(downloads,0);assert.equal(env.run('state.token'),'z'.repeat(43));assert.equal(env.run('state.supportExporting'),false);
+});
+test('the bound pagehide handler cancels support ownership and keeps export usable on a cached authenticated offline view',async()=>{
+ const env=environment();supportReady(env);env.run('state.offline=true');const handlers=new Map();env.context.window.addEventListener=(name,callback)=>handlers.set(name,callback);env.run('bindEvents()');
+ const first=supportDeferred(),second=supportDeferred();let calls=0,downloads=0;env.context.fetch=()=>++calls===1?first.promise:second.promise;env.context.downloadFile=()=>downloads++;
+ const old=env.run('exportSupportSummary()');assert.equal(env.get('export-support').disabled,true);handlers.get('pagehide')();assert.equal(env.run('state.supportExporting'),false);assert.equal(env.get('export-support').disabled,false);
+ const current=env.run('exportSupportSummary()');first.resolve(supportResponse());await old;assert.equal(downloads,0);assert.equal(env.run('state.supportExporting'),true);assert.equal(env.get('export-support').disabled,true);second.resolve(supportResponse());await current;assert.equal(downloads,1);assert.equal(env.get('export-support').disabled,false);
+});
+test('support export stays available after authenticated profile loading fails but profile-audited mode denies it',async()=>{
+ const env=environment();env.run('state.token="fixture"');env.context.fetch=async path=>path==='/api/bootstrap'?{ok:true,json:async()=>({platform:'windows'})}:{ok:false,status:500,json:async()=>({error:'private store failure'})};
+ await assert.rejects(env.run('readCore()'));env.run('state.loading=false;state.offline=true;state.view="settings"');assert.equal(env.run('supportAvailable()'),true);assert.equal(env.run('coreAvailable()'),false);
+ const report=supportFixture();report.profiles={status:'unavailable',total:null};let downloads=0,calls=0;env.context.fetch=async()=>{calls++;return supportResponse(report)};env.context.downloadFile=()=>downloads++;await env.run('exportSupportSummary()');assert.equal(downloads,1);assert.equal(calls,1);
+ env.run('state.profileEditingOnly=true');await env.run('exportSupportSummary()');assert.equal(calls,1);assert.equal(downloads,1);assert.equal(env.get('export-support').disabled,true);
+ const offline=environment();let requests=0;offline.context.fetch=async()=>{requests++;throw new Error('Unexpected request')};await offline.run('exportSupportSummary()');assert.equal(requests,0);
+});
 
 test('diagnostic modes require an explicit STUN target and isolate proxy fields',()=>{
  const env=environment();env.get('probe-path').value='socks5';env.get('probe-transport').value='stun';env.get('probe-proxy').value='127.0.0.1:1080';
@@ -1097,4 +1133,35 @@ test('actual Go controller storage wire remains logical, bounded and observation
  selected='pending.json';await env.run('refreshControllerStorage()');assert.equal(env.run('controllerStorageUI.status.state'),'pending');assert.equal(env.run('controllerStorageUI.status.generation'),manifest.expected.generation);assert.ok(env.run('controllerStorageUI.status.uncertainBytes')>0);assert.equal(env.run('controllerStorageUI.status.reservedBytes'),0);assert.equal(env.run('controllerStorageUI.status.finalizationReservedBytes'),0);assert.equal(env.run('controllerStorageUI.refusal'),'workflow-storage-pending');
  selected='tracked.json';await env.run('refreshControllerStorage()');assert.equal(env.run('controllerStorageUI.status.state'),'tracked');assert.equal(env.run('controllerStorageUI.status.generation'),manifest.expected.generation);assert.equal(env.run('controllerStorageUI.status.reservedBytes'),0);assert.equal(env.run('controllerStorageUI.status.uncertainBytes'),0);assert.equal(env.run('controllerStorageUI.status.finalizationReservedBytes'),0);assert.ok(env.run('controllerStorageUI.status.retainedChargeBytes')>0);assert.equal(env.run('controllerStorageUI.refusal'),'workflow-storage-pending');assert.equal(env.run('workflowLifecycleUI.refusalEpoch'),refusalEpoch);assert.equal(env.run('systemUI.plan'),null);assert.equal(env.get('system-consent').checked,false);assert.equal(env.get('system-applications').value,'Retained source input');assert.equal(env.get('system-journal').value,'source-recovery.json');assert.equal(env.get('system-output').textContent,'Original outcome retained');assert.equal(env.get('system-cancel').disabled,false);assert.equal(calls.length,3);
  for(const entry of manifest.files)assert.equal(hash(read(directory,entry.name,4096)),entry.sha256,'Desktop changed actual storage wire bytes');assert.equal(hash(read(directory,'manifest.json',128*1024)),hash(manifestBytes));assert.ok(same(rootIdentity,ordinary(directory)));assert.ok(JSON.stringify(fs.readdirSync(directory).sort())===JSON.stringify(names));
+});
+
+// Optional actual Go HTTP responses. Default source runs never invent wire evidence.
+test('actual Go support API wire validates and downloads only the current metadata summary',{skip:!process.env.ACCESSWEAVER_SUPPORT_INTEROP},async()=>{
+ const path=require('node:path'),crypto=require('node:crypto'),repo=path.resolve(__dirname,'..'),directory=path.resolve(process.env.ACCESSWEAVER_SUPPORT_INTEROP);
+ const payloadNames=['available.json','unavailable.json'],names=[...payloadNames,'manifest.json'].sort();
+ const dirs=['internal/api','internal/audit','internal/buildinfo','internal/engine','internal/fileidentity','internal/filelock','internal/logfile','internal/managed','internal/nativepath','internal/nativeprocess','internal/privatefile','internal/profile','internal/workflow'];
+ const fixed=['go.mod','go.sum','internal/workflow/windows.ps1','internal/api/server_test.go','internal/api/support_test.go','internal/api/support_wire_interop_test.go','web/app.js','web/system.js','web/locales.js','web/index.html','web/app.css','web/app.test.cjs'];
+ const hash=data=>crypto.createHash('sha256').update(data).digest('hex'),same=(a,b)=>a.dev===b.dev&&a.ino===b.ino;
+ const closed=(value,keys)=>{assert.ok(value&&typeof value==='object'&&!Array.isArray(value),'Wire object required');assert.ok(JSON.stringify(Object.keys(value).sort())===JSON.stringify([...keys].sort()),'Unexpected support wire schema');};
+ function ordinary(target){const info=fs.lstatSync(target,{bigint:true});assert.ok(info.isDirectory()&&!info.isSymbolicLink(),'Ordinary support wire directory required');return info;}
+ function read(root,name,maximum){let fd;try{
+  const parts=name.split('/');assert.ok(parts.every(part=>part&&part!=='.'&&part!=='..'&&!part.includes('\\')),'Fixed source components required');let parent=root;ordinary(parent);for(const part of parts.slice(0,-1)){parent=path.join(parent,part);ordinary(parent);}const target=path.join(parent,parts.at(-1)),named=fs.lstatSync(target,{bigint:true});assert.ok(named.isFile()&&!named.isSymbolicLink()&&named.size>=0n&&named.size<=BigInt(maximum),'Bounded ordinary support wire file required');
+  fd=fs.openSync(target,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0));const opened=fs.fstatSync(fd,{bigint:true});assert.ok(same(named,opened),'Support wire changed while opening');let total=0;const chunks=[];
+  for(;;){const buffer=Buffer.alloc(Math.min(32768,maximum+1-total)),n=fs.readSync(fd,buffer,0,buffer.length,null);if(!n)break;total+=n;assert.ok(total<=maximum,'Support wire exceeded its read bound');chunks.push(buffer.subarray(0,n));}
+  const after=fs.fstatSync(fd,{bigint:true}),current=fs.lstatSync(target,{bigint:true});assert.ok(current.isFile()&&!current.isSymbolicLink()&&same(opened,after)&&same(after,current)&&opened.size===after.size&&after.size===current.size&&opened.mtimeNs===after.mtimeNs&&after.mtimeNs===current.mtimeNs&&BigInt(total)===after.size,'Support wire changed while reading');return Buffer.concat(chunks,total);
+ }catch(error){if(error?.code)assert.fail('Support wire source unavailable');throw error;}finally{if(fd!==undefined){try{fs.closeSync(fd)}catch{assert.fail('Support wire Close failed')}}}}
+ function parse(bytes){const text=new TextDecoder('utf-8',{fatal:true}).decode(bytes),value=JSON.parse(text);let at=0;const space=()=>{while(/[ \t\r\n]/.test(text[at]||''))at++;};function string(){const start=at++;for(;;){const c=text[at++];if(c==='"')return JSON.parse(text.slice(start,at));if(c==='\\')at++;}}
+  function scan(depth){assert.ok(depth<=64,'Support wire depth exceeded');space();const c=text[at];if(c==='{'){at++;space();const seen=new Set();if(text[at]==='}'){at++;return;}for(;;){const key=string();assert.equal(seen.has(key),false,'Duplicate support wire JSON key');seen.add(key);space();assert.equal(text[at++],':');scan(depth+1);space();if(text[at++]==='}')return;space();}}else if(c==='['){at++;space();if(text[at]===']'){at++;return;}for(;;){scan(depth+1);space();if(text[at++]===']')return;space();}}else if(c==='"')string();else{const match=/^(?:true|false|null|-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)/.exec(text.slice(at));assert.ok(match,'Invalid support wire value');at+=match[0].length;}}
+  scan(0);space();assert.equal(at,text.length,'Trailing support wire JSON');return value;
+ }
+ const rootIdentity=ordinary(directory);assert.deepEqual(fs.readdirSync(directory).sort(),names,'Unexpected support wire files');
+ const sources=[...fixed];for(const name of dirs){ordinary(path.join(repo,name));for(const entry of fs.readdirSync(path.join(repo,name),{withFileTypes:true})){if(!entry.name.endsWith('.go')||entry.name.endsWith('_test.go'))continue;assert.ok(entry.isFile()&&!entry.isSymbolicLink(),'Ordinary flat Go source required');sources.push(name+'/'+entry.name);}}sources.sort();assert.ok(sources.length<=512&&sources.length===new Set(sources).size,'Support source list exceeded its closed bound');
+ const manifestBytes=read(directory,'manifest.json',128*1024),manifest=parse(manifestBytes);closed(manifest,['schemaVersion','sources','files','expected']);assert.equal(manifest.schemaVersion,1);assert.ok(Array.isArray(manifest.sources)&&manifest.sources.length===sources.length);assert.deepEqual(manifest.sources.map(entry=>entry.name),sources,'Exact independently collected support sources required');closed(manifest.expected,['availableTotal','availableEngine']);assert.equal(manifest.expected.availableTotal,1);assert.equal(manifest.expected.availableEngine,'byedpi');
+ for(const entry of manifest.sources){closed(entry,['name','sha256']);assert.match(entry.sha256,/^[a-f0-9]{64}$/);assert.equal(hash(read(repo,entry.name,8*1024*1024)),entry.sha256,'Support source binding mismatch');}
+ assert.ok(Array.isArray(manifest.files)&&manifest.files.length===payloadNames.length);assert.deepEqual(manifest.files.map(entry=>entry.name).sort(),[...payloadNames].sort());
+ const bytes={},metadata={},values={};for(const entry of manifest.files){closed(entry,['name','size','sha256','status','contentType']);assert.ok(payloadNames.includes(entry.name));assert.ok(Number.isSafeInteger(entry.size)&&entry.size>0&&entry.size<=16*1024);assert.match(entry.sha256,/^[a-f0-9]{64}$/);assert.equal(entry.status,200);assert.match(entry.contentType,/^application\/json(?:;\s*charset=utf-8)?$/i);bytes[entry.name]=read(directory,entry.name,16*1024);assert.equal(bytes[entry.name].length,entry.size);assert.equal(hash(bytes[entry.name]),entry.sha256);metadata[entry.name]=entry;values[entry.name]=parse(bytes[entry.name]);}
+ const env=environment();supportReady(env);const calls=[],downloads=[];let selected=payloadNames[0];env.context.fetch=async(target,options)=>{calls.push({target,options});assert.equal(target,'/api/v1/support');assert.equal(options.method,'GET');assert.equal(options.body,undefined);assert.equal(options.headers['X-AccessWeaver-Token'],'fixture');assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');return new Response(bytes[selected],{status:metadata[selected].status,headers:{'Content-Type':metadata[selected].contentType}})};env.context.downloadFile=(data,name)=>downloads.push({data,name});
+ for(const name of payloadNames){env.put('actualSupport',values[name]);assert.deepEqual(plain(env.run('supportMetadataReport(actualSupport)')),values[name]);selected=name;await env.run('exportSupportSummary()');assert.equal(downloads.length,calls.length);assert.deepEqual(JSON.parse(downloads.at(-1).data),values[name]);assert.equal(downloads.at(-1).name,'accessweaver-support-summary.json');assert.equal(env.run('state.supportExporting'),false);assert.equal(env.get('export-support').disabled,false);}
+ assert.equal(values['available.json'].profiles.status,'available');assert.equal(values['available.json'].profiles.total,manifest.expected.availableTotal);assert.equal(values['available.json'].profiles.byEngine[manifest.expected.availableEngine],manifest.expected.availableTotal);assert.equal(values['unavailable.json'].profiles.status,'unavailable');assert.equal(values['unavailable.json'].profiles.total,null);assert.equal(calls.length,2);
+ for(const entry of manifest.files)assert.equal(hash(read(directory,entry.name,16*1024)),entry.sha256,'Desktop changed actual support wire bytes');assert.equal(hash(read(directory,'manifest.json',128*1024)),hash(manifestBytes));assert.ok(same(rootIdentity,ordinary(directory)));assert.deepEqual(fs.readdirSync(directory).sort(),names);
 });
