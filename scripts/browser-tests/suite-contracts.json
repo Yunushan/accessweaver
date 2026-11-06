@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": 1,
+      "name": "private launcher authenticates the UI and removes the credential from its address"
+    },
+    {
+      "id": 2,
+      "name": "create, reload, export and collision import preserve the saved profile"
+    },
+    {
+      "id": 3,
+      "name": "a stale tab preserves its draft and cannot overwrite a newer save"
+    },
+    {
+      "id": 4,
+      "name": "invalid JSON stays editable and an unavailable engine cannot be launched"
+    },
+    {
+      "id": 5,
+      "name": "modal keyboard focus and persisted preferences work in the real DOM"
+    },
+    {
+      "id": 6,
+      "name": "narrow navigation preserves layout and drawer state in en"
+    },
+    {
+      "id": 7,
+      "name": "narrow navigation preserves layout and drawer state in tr"
+    },
+    {
+      "id": 8,
+      "name": "narrow navigation preserves layout and drawer state in ru"
+    },
+    {
+      "id": 9,
+      "name": "narrow navigation preserves layout and drawer state in es"
+    },
+    {
+      "id": 10,
+      "name": "machine review exports the exact request while unavailable apply stays disabled"
+    },
+    {
+      "id": 11,
+      "name": "support export excludes private profile contents and leaves the runtime stopped"
+    },
+    {
+      "id": 12,
+      "name": "diagnostics selects an explicit proxy path and STUN target without sending probe traffic"
+    },
+    {
+      "id": 13,
+      "name": "accessibility views in en/dark"
+    },
+    {
+      "id": 14,
+      "name": "accessibility dialogs in en/dark"
+    },
+    {
+      "id": 15,
+      "name": "accessibility views in en/light"
+    },
+    {
+      "id": 16,
+      "name": "accessibility dialogs in en/light"
+    },
+    {
+      "id": 17,
+      "name": "accessibility views in tr/dark"
+    },
+    {
+      "id": 18,
+      "name": "accessibility dialogs in tr/dark"
+    },
+    {
+      "id": 19,
+      "name": "accessibility views in tr/light"
+    },
+    {
+      "id": 20,
+      "name": "accessibility dialogs in tr/light"
+    },
+    {
+      "id": 21,
+      "name": "accessibility views in ru/dark"
+    },
+    {
+      "id": 22,
+      "name": "accessibility dialogs in ru/dark"
+    },
+    {
+      "id": 23,
+      "name": "accessibility views in ru/light"
+    },
+    {
+      "id": 24,
+      "name": "accessibility dialogs in ru/light"
+    },
+    {
+      "id": 25,
+      "name": "accessibility views in es/dark"
+    },
+    {
+      "id": 26,
+      "name": "accessibility dialogs in es/dark"
+    },
+    {
+      "id": 27,
+      "name": "accessibility views in es/light"
+    },
+    {
+      "id": 28,
+      "name": "accessibility dialogs in es/light"
+    },
+    {
+      "id": 29,
+      "name": "keyboard users can skip navigation and scroll launch review with visible focus"
+    },
+    {
+      "id": 30,
+      "name": "keyboard users can read maintenance review and retained history without applying operations"
+    },
+    {
+      "id": 31,
+      "name": "reduced motion applies to navigation and explicit editor preview scrolling"
+    },
+    {
+      "id": 32,
+      "name": "320 CSS pixel reflow includes modal controls in en"
+    },
+    {
+      "id": 33,
+      "name": "320 CSS pixel reflow includes modal controls in tr"
+    },
+    {
+      "id": 34,
+      "name": "320 CSS pixel reflow includes modal controls in ru"
+    },
+    {
+      "id": 35,
+      "name": "320 CSS pixel reflow includes modal controls in es"
+    },
+    {
+      "id": 36,
+      "name": "keyboard focus returns to the same card control after saves and engine creation"
+    },
+    {
+      "id": 37,
+      "name": "narrow navigation excludes closed links and supports keyboard opening and Escape"
+    },
+    {
+      "id": 38,
+      "name": "large retained history has a bounded preview and complete private exports"
+    },
+    {
+      "id": 39,
+      "name": "optional workflow metadata cannot stop polling or replace reviewed inputs"
+    },
+    {
+      "id": 40,
+      "name": "pending lifecycle blocks launch while retaining profile editing and local inspection"
+    },
+    {
+      "id": 41,
+      "name": "history fixture: explicit capture, paging, exact detail and private raw export"
+    },
+    {
+      "id": 42,
+      "name": "lifecycle fixture: protected completion tracking and pending admission preserve inspection"
+    },
+    {
+      "id": 43,
+      "name": "diagnostic fixture: cancellation, busy admission and late replies preserve the current request"
+    },
+    {
+      "id": 44,
+      "name": "reconciliation fixture: explicit review, uncertain apply and known receipt retain original evidence"
+    },
+    {
+      "id": 45,
+      "name": "history staging fixture: retained capture keeps only freshly checked selection and explicit export"
+    },
+    {
+      "id": 46,
+      "name": "controller storage fixture: logical observation and refused admission preserve explicit review and controls"
+    },
+    {
+      "id": 47,
+      "name": "support export fixture: delayed replies cannot cross navigation, session or mode and an explicit current export downloads"
+    },
+    {
+      "id": 48,
+      "name": "modal keyboard save contract: guided-success"
+    },
+    {
+      "id": 49,
+      "name": "modal keyboard save contract: json-success"
+    },
+    {
+      "id": 50,
+      "name": "modal keyboard save contract: guided-failure"
+    },
+    {
+      "id": 51,
+      "name": "modal keyboard save contract: json-failure"
+    }
+  ]
+}
