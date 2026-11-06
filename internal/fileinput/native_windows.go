@@ -22,37 +22,53 @@ type nativeIDInfo struct {
 	FileID [16]byte
 }
 
-func absoluteName(path string) (string, error) {
+// Validate both the caller spelling and the result of Windows path expansion.
+// GetFullPathName (used by filepath.Abs) can turn a DOS reserved name into a
+// device namespace, whose complete spelling then becomes filepath.VolumeName.
+func validateWindowsNamespace(path string) error {
 	if path == "" || !utf8.ValidString(path) || strings.ContainsRune(path, 0) {
-		return "", ErrUnavailable
+		return ErrUnavailable
 	}
-	p := strings.ReplaceAll(path, "/", `\`)
-	low := strings.ToLower(p)
+	low := strings.ToLower(path)
 	for _, prefix := range []string{`\\?\`, `\\.\`, `\??\`, `\device\`, `\global??\`, `\dosdevices\`} {
 		if strings.HasPrefix(low, prefix) {
-			return "", ErrUnavailable
+			return ErrUnavailable
 		}
+	}
+	volume := filepath.VolumeName(path)
+	if strings.Contains(strings.TrimPrefix(path, volume), ":") {
+		return ErrUnavailable
+	}
+	for _, part := range strings.Split(strings.TrimPrefix(path, volume), `\`) {
+		base := strings.ToUpper(strings.SplitN(strings.TrimRight(part, " ."), ".", 2)[0])
+		switch base {
+		case "CON", "PRN", "AUX", "NUL", "CLOCK$", "CONIN$", "CONOUT$":
+			return ErrUnavailable
+		}
+		if len(base) > 3 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) {
+			switch base[3:] {
+			case "1", "2", "3", "4", "5", "6", "7", "8", "9", "\u00b9", "\u00b2", "\u00b3":
+				return ErrUnavailable
+			}
+		}
+	}
+	return nil
+}
+
+func absoluteName(path string) (string, error) {
+	p := strings.ReplaceAll(path, "/", `\`)
+	if e := validateWindowsNamespace(p); e != nil {
+		return "", e
 	}
 	p, e := filepath.Abs(p)
 	if e != nil {
 		return "", e
 	}
-	volume := filepath.VolumeName(p)
-	if volume == "" || strings.Contains(strings.TrimPrefix(p, volume), ":") {
-		return "", ErrUnavailable
+	if e = validateWindowsNamespace(p); e != nil {
+		return "", e
 	}
-	for _, part := range strings.Split(strings.TrimPrefix(p, volume), `\`) {
-		base := strings.ToUpper(strings.SplitN(strings.TrimRight(part, " ."), ".", 2)[0])
-		switch base {
-		case "CON", "PRN", "AUX", "NUL", "CLOCK$", "CONIN$", "CONOUT$":
-			return "", ErrUnavailable
-		}
-		if len(base) > 3 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) {
-			switch base[3:] {
-			case "1", "2", "3", "4", "5", "6", "7", "8", "9", "Â¹", "Â²", "Â³":
-				return "", ErrUnavailable
-			}
-		}
+	if filepath.VolumeName(p) == "" {
+		return "", ErrUnavailable
 	}
 	return p, nil
 }

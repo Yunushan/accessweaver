@@ -94,3 +94,35 @@ func TestBackupInputWindowsOrdinaryUNCSpellingIsNotAuditLocalPolicy(t *testing.T
 		t.Fatal("ordinary UNC syntax refused", e)
 	}
 }
+
+// These are lexical path checks only. They never open a device, local source,
+// UNC share, socket or network resource.
+func TestBackupInputWindowsNamespaceValidationBeforeAndAfterNormalization(t *testing.T) {
+	for _, name := range []string{
+		"NUL", "nul.txt", "COM1", "a/NUL", `nested\cOm1.TxT`,
+		"COM\u00b9", "lpt\u00b2", "COM\u00b3.txt", "child/LPT\u00b9.TxT", "child/CoM\u00b2.log", "LPT\u00b3",
+		`\\.\NUL`, `\\?\C:\owned-fixture`, `\??\C:\owned-fixture`,
+		`\Device\owned-fixture`, `\GLOBAL??\owned-fixture`, `\DosDevices\owned-fixture`,
+		"//./NUL", "/??/C:/owned-fixture", `C:\owned-fixture:stream`,
+		"", "owned\x00fixture", string([]byte{0xff}),
+	} {
+		got, err := AbsoluteName(name)
+		if got != "" || !errors.Is(err, ErrUnavailable) {
+			t.Fatal("nonordinary Windows namespace accepted")
+		}
+	}
+	for _, name := range []string{
+		`owned-fixture\..\archive.awbackup`, "./owned-fixture/passphrase",
+		"COM10.txt", "LPT10", "ordinary.nul", "fixture-\u00e9/CONTAINER.txt",
+		`C:\owned-fixture\archive.awbackup`, `\\example.invalid\owned-fixture\archive`,
+	} {
+		want, err := filepath.Abs(name)
+		if err != nil {
+			t.Fatal("ordinary Windows path normalization unavailable")
+		}
+		got, err := AbsoluteName(name)
+		if err != nil || got != want {
+			t.Fatal("ordinary Windows path semantics changed")
+		}
+	}
+}

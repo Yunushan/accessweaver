@@ -394,7 +394,10 @@ func (f *snapshotFaultSyncFile) Sync() error {
 func (f *snapshotFaultSyncFile) Close() error {
 	f.closes++
 	f.nativeCloseErr = f.file.Close()
-	return snapshotJoin(f.nativeCloseErr, f.closeFault)
+	if f.nativeCloseErr != nil {
+		return f.nativeCloseErr
+	}
+	return f.closeFault
 }
 func TestSnapshotIOSyncAndCloseCofailuresBothSurviveActualOwnedFile(t *testing.T) {
 	f := newSnapshotIOFixture(t)
@@ -417,8 +420,8 @@ func TestSnapshotIOSyncAndCloseCofailuresBothSurviveActualOwnedFile(t *testing.T
 	if !errors.Is(err, owned.syncFault) || !errors.Is(err, owned.closeFault) || owned.syncs != 1 || owned.closes != 1 {
 		t.Fatal("sync/close observations were lost or repeated", err)
 	}
-	if _, err := file.Stat(); !errors.Is(err, os.ErrClosed) {
+	if n, err := file.Read(make([]byte, 1)); n != 0 || !errors.Is(err, os.ErrClosed) {
 		f.preserve.Store(true)
-		t.Fatal("actual file close not observed")
+		t.Fatal("actual file close not observed", n, err)
 	}
 }
