@@ -582,6 +582,7 @@ function switchEditor(tab,transfer=true) {
 }
 function editorError(err) {
   setEditorFeedback(err.message,true);
+  $('editor-feedback').focus({preventScroll:true});
   toast(err.message,true);
 }
 function markDirty() {
@@ -646,6 +647,7 @@ async function saveEditor() {
     state.editing.saving = true;
     setEditorBusy(true);
     setEditorFeedback(t('saving'));
+    $('editor-feedback').focus({preventScroll:true});
     await persist(p);
     state.editing.saving = false;
     renderAll();
@@ -968,11 +970,16 @@ function trapModalKeys(event) {
   }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's' && modal.id === 'editor-modal') { event.preventDefault(); saveEditor(); }
   if (event.key !== 'Tab') return;
-  const focusable = Array.from(modal.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href],[tabindex="0"]')).filter(el => !el.closest('[hidden]') && el.tabIndex !== -1);
+  const focusable = Array.from(modal.querySelectorAll('button,input,textarea,select,a[href],summary,[tabindex]')).filter(el => el.tabIndex >= 0 && !el.matches(':disabled') && !el.closest('[hidden],[inert]') && el.getClientRects().length && getComputedStyle(el).visibility === 'visible');
   const first = focusable[0], last = focusable[focusable.length - 1];
-  if (!first) return;
-  if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) { event.preventDefault(); last.focus(); }
-  else if (!event.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) { event.preventDefault(); first.focus(); }
+  if (!first) {
+    event.preventDefault();
+    modal.querySelector('[role="dialog"]')?.focus({preventScroll:true});
+    return;
+  }
+  const sequential = focusable.includes(document.activeElement);
+  if (event.shiftKey && (document.activeElement === first || !sequential)) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && (document.activeElement === last || !sequential)) { event.preventDefault(); first.focus(); }
 }
 function bindEvents() {
   $$('.nav-item').forEach(el => el.addEventListener('click',() => navigate(el.dataset.view,true)));

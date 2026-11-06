@@ -1165,3 +1165,31 @@ test('actual Go support API wire validates and downloads only the current metada
  assert.equal(values['available.json'].profiles.status,'available');assert.equal(values['available.json'].profiles.total,manifest.expected.availableTotal);assert.equal(values['available.json'].profiles.byEngine[manifest.expected.availableEngine],manifest.expected.availableTotal);assert.equal(values['unavailable.json'].profiles.status,'unavailable');assert.equal(values['unavailable.json'].profiles.total,null);assert.equal(calls.length,2);
  for(const entry of manifest.files)assert.equal(hash(read(directory,entry.name,16*1024)),entry.sha256,'Desktop changed actual support wire bytes');assert.equal(hash(read(directory,'manifest.json',128*1024)),hash(manifestBytes));assert.ok(same(rootIdentity,ordinary(directory)));assert.deepEqual(fs.readdirSync(directory).sort(),names);
 });
+
+function modalKeyboardFixture(candidates=[]) {
+ const env=environment(),modal=env.get('editor-modal'),dialog=env.get('modal-keyboard-dialog');
+ modal.hidden=false;dialog.tabIndex=-1;
+ env.context.document.querySelectorAll=selector=>selector==='.modal-backdrop'?[modal]:[];
+ modal.querySelector=selector=>selector==='[role="dialog"]'?dialog:null;
+ modal.querySelectorAll=selector=>candidates.filter(el=>el.tagName!=='SUMMARY'||selector.includes('summary'));
+ modal.contains=element=>element===dialog||element===modal||candidates.includes(element);
+ env.context.getComputedStyle=element=>({visibility:element.visibility||'visible'});
+ for(const element of candidates){element.tabIndex??=0;element.getClientRects??=()=>[{}];element.matches??=()=>false;element.focus=()=>{env.context.document.activeElement=element};}
+ const press=shiftKey=>{let prevented=0;env.context.keyboardEvent={key:'Tab',shiftKey,preventDefault(){prevented++}};env.run('trapModalKeys(keyboardEvent)');return prevented;};
+ return {...env,modal,dialog,press};
+}
+test('modal keyboard keeps Tab and Shift+Tab inside a busy dialog without enabled controls',()=>{
+ const env=modalKeyboardFixture();
+ for(const shift of [false,true]){env.context.document.activeElement=env.context.document.body;assert.equal(env.press(shift),1);assert.equal(env.context.document.activeElement,env.dialog);}
+});
+test('modal keyboard includes the native summary when all form buttons are disabled',()=>{
+ const env=environment(),summary=env.get('modal-keyboard-summary');summary.tagName='SUMMARY';
+ const modal=modalKeyboardFixture([summary]);modal.context.document.activeElement=summary;
+ for(const shift of [false,true]){assert.equal(modal.press(shift),1);assert.equal(modal.context.document.activeElement,summary);}
+});
+test('modal keyboard ignores unrendered and invisible controls when wrapping',()=>{
+ const env=environment(),first=env.get('modal-keyboard-first'),closed=env.get('modal-keyboard-closed'),invisible=env.get('modal-keyboard-invisible');
+ closed.getClientRects=()=>[];invisible.visibility='hidden';
+ const modal=modalKeyboardFixture([first,closed,invisible]);modal.context.document.activeElement=first;
+ assert.equal(modal.press(true),1);assert.equal(modal.context.document.activeElement,first);
+});

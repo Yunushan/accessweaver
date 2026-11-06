@@ -72,6 +72,8 @@ jobs:
         run: |
           npm ci --ignore-scripts
           npm audit --audit-level=moderate
+      - name: Verify fixed keyboard evidence contracts
+        run: node --test scripts/browser-tests/modal-keyboard.test.cjs
       - name: Verify the pinned preinstalled browser environment
         timeout-minutes: 5
         working-directory: scripts/browser-tests
@@ -89,3 +91,12 @@ jobs:
           path: build/browser-results/
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Retain fixed modal keyboard contract evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: modal-keyboard-${{ matrix.browser }}
+          path: build/modal-keyboard-evidence/*.json
+          if-no-files-found: error
+          retention-days: 7

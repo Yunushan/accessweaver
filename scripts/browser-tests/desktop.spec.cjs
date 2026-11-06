@@ -842,3 +842,44 @@ test('support export fixture: delayed replies cannot cross navigation, session o
   expect(held).toHaveLength(5);expect(downloads).toHaveLength(1);
  }finally{for(const gate of held)gate.release();await Promise.all(held.map(gate=>gate.done));}
 });
+
+// Delay only this isolated fixture's save response; never run an engine or probe.
+for(const scenario of ['guided-success','json-success','guided-failure','json-failure'])test('modal keyboard save contract: '+scenario,async({page,core},testInfo)=>{
+ const {contract,writeEvidence}=require('./modal-keyboard.cjs');const evidence=contract();
+ const advanced=scenario.startsWith('json-'),success=scenario.endsWith('-success'),id='modal-keyboard-'+scenario;
+ const endpoint='**/api/v1/profiles/'+id;
+ let release,finished,entered=false,requestCount=0,posted,routeFailure=false;
+ const gate=new Promise(resolve=>{release=resolve}),handlerDone=new Promise(resolve=>{finished=resolve});
+ const handler=async route=>{entered=true;requestCount++;posted=route.request().postDataJSON();try{await gate;if(success)await route.continue();else await route.fulfill({status:503,json:{error:'Controlled fixture save refusal'}})}catch{routeFailure=true}finally{finished()}};
+ const modal=page.locator('#editor-modal'),dialog=modal.locator('[role="dialog"]'),summary=modal.locator('#editor-simple .advanced-details summary'),docs=modal.locator('#engine-guidance a'),feedback=page.locator('#editor-feedback');
+ try{
+  await evidence.check('editor-open',async()=>{
+   await open(page,core);await profiles(page);await page.locator('#new-profile').click();
+   await page.locator('#p-id').fill(id);await page.locator('#p-name').fill('Modal keyboard fixture');await page.locator('#p-binary').fill(path.join(repo,'build','absent-browser-fixture-engine'));
+   if(advanced)await page.locator('#tab-advanced').click();
+   await expect(dialog).toHaveAttribute('tabindex','-1');await page.route(endpoint,handler);
+  });
+  await evidence.check('save-request',async()=>{await page.locator('#save-profile').click();await expect.poll(()=>requestCount).toBe(1);await expect(page.locator('#save-profile')).toBeDisabled()});
+  await evidence.check('busy-focus',async()=>{await expect(feedback).toBeFocused();await expect(modal).toBeVisible();expect(await page.locator('.app-shell').evaluate(el=>el.inert)).toBe(true)});
+  await evidence.check('forward-tab',async()=>{await page.keyboard.press('Tab');await expect(advanced?dialog:docs).toBeFocused()});
+  await evidence.check('reverse-tab',async()=>{await page.keyboard.press('Shift+Tab');await expect(advanced?dialog:summary).toBeFocused()});
+  await evidence.check('busy-shortcuts',async()=>{await page.keyboard.press('Escape');await expect(modal).toBeVisible();await page.keyboard.press('Control+s');expect(requestCount).toBe(1);await expect(page.locator('#save-profile')).toBeDisabled()});
+  await evidence.check('disclosure-or-json',async()=>{
+   if(!advanced){await summary.focus();await page.keyboard.press('Enter');await expect(summary.locator('..')).toHaveAttribute('open','');await expect(page.locator('#p-notes')).toBeDisabled()}
+   else await expect(page.locator('#editor-simple')).toBeHidden();
+   await page.keyboard.press('Tab');await expect(advanced?dialog:docs).toBeFocused();await page.keyboard.press('Shift+Tab');await expect(advanced?dialog:summary).toBeFocused();
+  });
+  await evidence.check('release-reply',async()=>{release();await handlerDone;expect(routeFailure).toBe(false)});
+  await evidence.check('save-outcome',async()=>{if(success){await expect(modal).toBeHidden();await expect(page.locator('#new-profile')).toBeFocused()}else{await expect(modal).toBeVisible();await expect(feedback).toHaveClass('error');await expect(feedback).toBeFocused();await expect(page.locator('#save-profile')).toBeEnabled()}});
+  await evidence.check('draft-or-saved-preserved',async()=>{
+   expect(posted.id).toBe(id);expect(posted.name).toBe('Modal keyboard fixture');
+   if(success){const saved=JSON.parse(await fs.readFile(core.profilePath(id),'utf8'));expect(saved.id).toBe(id);expect(saved.name).toBe(posted.name);expect(saved.args).toEqual(posted.args)}
+   else {await expect(fs.stat(core.profilePath(id))).rejects.toMatchObject({code:'ENOENT'});if(advanced){const draft=JSON.parse(await page.locator('#p-json').inputValue());expect(draft.id).toBe(id);expect(draft.name).toBe(posted.name)}else{await expect(page.locator('#p-id')).toHaveValue(id);await expect(page.locator('#p-name')).toHaveValue(posted.name)}}
+  });
+  await evidence.check('close-or-return',async()=>{if(!success){page.once('dialog',dialog=>dialog.accept());await page.keyboard.press('Escape')}await expect(modal).toBeHidden();await expect(page.locator('#new-profile')).toBeFocused()});
+  await evidence.check('single-save',async()=>{expect(requestCount).toBe(1);await page.unroute(endpoint,handler)});
+ }finally{
+  release();if(entered)await Promise.race([handlerDone,delay(5000)]);await page.unroute(endpoint,handler);
+  await writeEvidence(repo,core,testInfo,scenario,evidence);
+ }
+});
