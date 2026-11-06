@@ -151,29 +151,25 @@ func legacyReceiptsAbsent() error {
 	}
 	return nil
 }
-func desktopCoreActive() (err error) {
-	parent, e := darwintrust.OpenRootDirectory(deploymentParent)
-	if e != nil {
-		return e
+func desktopCoreActive() error {
+	parent, err := darwintrust.OpenRootDirectory(deploymentParent)
+	if err != nil {
+		return err
 	}
-	defer parent.Close()
-	root, e := deploymentDirectory(parent, deploymentRoot, 0, false)
-	if e != nil {
-		return e
+	r := nativeRuntimeReads()
+	lease, err := acquireInstalledRuntimeScope(parent, r, func(root *os.File, lease *RuntimeLease) error {
+		if _, _, err := r.readActiveRuntime(root, ""); err != nil {
+			return err
+		}
+		if err := r.sameDeploymentEntry(parent, deploymentRoot, root, 0); err != nil {
+			return err
+		}
+		return r.sameRuntimeFile(root, lease.file, 0)
+	})
+	if err != nil {
+		return err
 	}
-	defer root.Close()
-	lease, e := acquireRuntimeReader(root)
-	if e != nil {
-		return e
-	}
-	defer func() { err = errors.Join(err, lease.Close()) }()
-	if _, _, e = readActiveRuntime(root, ""); e != nil {
-		return e
-	}
-	if e = sameDeploymentEntry(parent, deploymentRoot, root, 0); e != nil {
-		return e
-	}
-	return sameRuntimeFile(root, lease.file, 0)
+	return r.finishLease(lease, nil)
 }
 
 // Apple Installer alone writes the public app/registration payloads. This

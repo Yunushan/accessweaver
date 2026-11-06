@@ -31,28 +31,27 @@ func LaunchInstalled(args []string) (err error) {
 	if e != nil {
 		return e
 	}
-	defer parent.Close()
-	root, e := deploymentDirectory(parent, deploymentRoot, 0, false)
-	if e != nil {
-		return e
+	r := nativeRuntimeReads()
+	var core string
+	lease, err := acquireInstalledRuntimeScope(parent, r, func(root *os.File, lease *RuntimeLease) error {
+		active, _, err := r.readActiveRuntime(root, "")
+		if err != nil {
+			return err
+		}
+		if err = r.sameDeploymentEntry(parent, deploymentRoot, root, 0); err != nil {
+			return err
+		}
+		if err = r.sameRuntimeFile(root, lease.file, 0); err != nil {
+			return err
+		}
+		core = installedCorePath(active.ID)
+		return nil
+	})
+	if err != nil {
+		return err
 	}
-	defer root.Close()
-	lease, e := acquireRuntimeReader(root)
-	if e != nil {
-		return e
-	}
-	defer func() { err = errors.Join(err, lease.Close()) }()
-	active, _, e := readActiveRuntime(root, "")
-	if e != nil {
-		return e
-	}
-	if e = sameDeploymentEntry(parent, deploymentRoot, root, 0); e != nil {
-		return e
-	}
-	if e = sameRuntimeFile(root, lease.file, 0); e != nil {
-		return e
-	}
-	return execWithRuntimeLease(lease, installedCorePath(active.ID), args, os.Environ())
+	defer func() { err = r.finishLease(lease, err) }()
+	return execWithRuntimeLease(lease, core, args, os.Environ())
 }
 
 // Duplicate the existing open-file description, never unlock/relock between

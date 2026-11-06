@@ -43,11 +43,14 @@ func openDeployment(initialize bool) (*deploymentStore, error) {
 	return beginDeploymentMode(parent, 0, nil, initialize)
 }
 func deploymentDirectory(parent *os.File, name string, owner uint32, create bool) (*os.File, error) {
+	return nativeRuntimeReads().deploymentDirectory(parent, name, owner, create)
+}
+func (r runtimeReadOps) deploymentDirectory(parent *os.File, name string, owner uint32, create bool) (*os.File, error) {
 	f, e := darwintrust.OpenDirectoryAt(parent, name, owner)
 	if darwintrust.IsReadAbsent(e) && create {
 		f, e = darwintrust.CreateDirectoryAt(parent, name, owner)
 		if errors.Is(e, unix.EEXIST) {
-			return deploymentDirectory(parent, name, owner, false)
+			return r.deploymentDirectory(parent, name, owner, false)
 		}
 		if e == nil {
 			if owner == 0 {
@@ -62,7 +65,7 @@ func deploymentDirectory(parent *os.File, name string, owner uint32, create bool
 		e = deploymentObject(f, true, owner, 0755)
 	}
 	if e != nil && f != nil {
-		f.Close()
+		e = r.finish(f, e)
 		f = nil
 	}
 	return f, e
@@ -93,11 +96,14 @@ func fullDeploymentSync(f *os.File) error {
 	return errors.Join(e, syncErr)
 }
 func sameDeploymentEntry(parent *os.File, name string, held *os.File, owner uint32) error {
+	return nativeRuntimeReads().sameDeploymentEntry(parent, name, held, owner)
+}
+func (r runtimeReadOps) sameDeploymentEntry(parent *os.File, name string, held *os.File, owner uint32) (failure error) {
 	actual, e := darwintrust.OpenDirectoryAt(parent, name, owner)
 	if e != nil {
 		return e
 	}
-	defer actual.Close()
+	defer func() { failure = r.finish(actual, failure) }()
 	a, e := held.Stat()
 	if e != nil {
 		return e
@@ -112,13 +118,21 @@ func sameDeploymentEntry(parent *os.File, name string, held *os.File, owner uint
 	return nil
 }
 func deploymentEntries(dir *os.File, owner uint32, limit int) ([]os.DirEntry, error) {
+	return nativeRuntimeReads().deploymentEntries(dir, owner, limit)
+}
+func (r runtimeReadOps) deploymentEntries(dir *os.File, owner uint32, limit int) (result []os.DirEntry, failure error) {
 	// Fresh descriptor avoids sharing enumeration offsets with the held root.
 	fd, e := unix.Openat(int(dir.Fd()), ".", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if e != nil {
 		return nil, e
 	}
 	f := os.NewFile(uintptr(fd), dir.Name())
-	defer f.Close()
+	defer func() {
+		failure = r.finish(f, failure)
+		if failure != nil {
+			result = nil
+		}
+	}()
 	if _, e = darwintrust.Check(f, true, owner); e != nil {
 		return nil, e
 	}
@@ -315,7 +329,7 @@ func beginDeploymentMode(parent *os.File, owner uint32, observe func(string) err
 	}
 	return s, nil
 }
-func (s *deploymentStore) checkRoot() error {
+func (s *deploymentStore) checkRoot() (failure error) {
 	if s.root == nil || s.lock == nil {
 		return errors.New("deployment store is closed")
 	}
@@ -334,7 +348,7 @@ func (s *deploymentStore) checkRoot() error {
 	if e != nil {
 		return e
 	}
-	defer actual.Close()
+	defer func() { failure = nativeRuntimeReads().finish(actual, failure) }()
 	if e = deploymentObject(actual, false, s.owner, 0600); e != nil {
 		return e
 	}
@@ -363,7 +377,10 @@ func (s *deploymentStore) phase(name string) error {
 	return nil
 }
 func (s *deploymentStore) readRecord(dir *os.File) ([]byte, error) {
-	entries, e := deploymentEntries(dir, s.owner, 1)
+	return nativeRuntimeReads().readRecord(s, dir)
+}
+func (r runtimeReadOps) readRecord(s *deploymentStore, dir *os.File) (payload []byte, failure error) {
+	entries, e := r.deploymentEntries(dir, s.owner, 1)
 	if e != nil {
 		return nil, e
 	}
@@ -374,7 +391,12 @@ func (s *deploymentStore) readRecord(dir *os.File) ([]byte, error) {
 	if e != nil {
 		return nil, e
 	}
-	defer f.Close()
+	defer func() {
+		failure = r.finish(f, failure)
+		if failure != nil {
+			payload = nil
+		}
+	}()
 	if e = deploymentObject(f, false, s.owner, 0644); e != nil {
 		return nil, e
 	}
@@ -559,6 +581,9 @@ func (s *deploymentStore) prepare(identity deploymentIdentity) (deploymentSlot, 
 	return slot, e
 }
 func (s *deploymentStore) openSlot(slot deploymentSlot) (*os.File, error) {
+	return nativeRuntimeReads().openSlot(s, slot)
+}
+func (r runtimeReadOps) openSlot(s *deploymentStore, slot deploymentSlot) (*os.File, error) {
 	if e := slot.validate(); e != nil {
 		return nil, e
 	}
@@ -571,8 +596,7 @@ func (s *deploymentStore) openSlot(slot deploymentSlot) (*os.File, error) {
 		e = errors.New("reserved deployment slot identity changed")
 	}
 	if e != nil {
-		dir.Close()
-		return nil, e
+		return nil, r.finish(dir, e)
 	}
 	return dir, nil
 }

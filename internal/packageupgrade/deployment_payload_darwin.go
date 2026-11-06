@@ -30,10 +30,13 @@ func verifyDeploymentBundle(app *os.File, identity deploymentIdentity) (Manifest
 // legacy detached inventory, or schema2 with both inventory and SBOM detached.
 // Layout alone never grants trust: inventory/core seals are verified below.
 func openDeploymentBundle(container *os.File) (*os.File, []byte, []byte, bool, error) {
+	return nativeRuntimeReads().openDeploymentBundle(container)
+}
+func (r runtimeReadOps) openDeploymentBundle(container *os.File) (*os.File, []byte, []byte, bool, error) {
 	if e := deploymentObject(container, true, 0, 0755); e != nil {
 		return nil, nil, nil, false, e
 	}
-	entries, e := deploymentEntries(container, 0, 3)
+	entries, e := r.deploymentEntries(container, 0, 3)
 	if e != nil {
 		return nil, nil, nil, false, e
 	}
@@ -53,26 +56,29 @@ func openDeploymentBundle(container *os.File) (*os.File, []byte, []byte, bool, e
 	if !hasApp || len(entries) != 1 && !hasSidecar || hasSBOM && !hasSidecar {
 		return nil, nil, nil, false, errors.New("deployment bundle container is incomplete")
 	}
-	app, e := directoryAt(container, "AccessWeaver.app")
+	app, e := r.directoryAt(container, "AccessWeaver.app")
 	if e != nil {
 		return nil, nil, nil, false, e
 	}
 	var encoded, sbom []byte
 	if hasSidecar {
-		encoded, e = readDetachedDeploymentFile(container, detachedDeploymentManifest, 2<<20)
+		encoded, e = r.readDetachedDeploymentFile(container, detachedDeploymentManifest, 2<<20)
 	} else {
-		encoded, e = readPath(app, ManifestName, 2<<20)
+		encoded, e = r.readPath(app, ManifestName, 2<<20)
 	}
 	if e == nil && hasSBOM {
-		sbom, e = readDetachedDeploymentFile(container, PayloadSBOMName, maxPayloadSBOM)
+		sbom, e = r.readDetachedDeploymentFile(container, PayloadSBOMName, maxPayloadSBOM)
 	}
 	if e != nil {
-		return nil, nil, nil, false, errors.Join(e, app.Close())
+		return nil, nil, nil, false, r.finish(app, e)
 	}
 	return app, encoded, sbom, !hasSidecar, nil
 }
 func readDetachedDeploymentFile(container *os.File, name string, limit int64) ([]byte, error) {
-	data, st, e := readAt(container, name, limit)
+	return nativeRuntimeReads().readDetachedDeploymentFile(container, name, limit)
+}
+func (r runtimeReadOps) readDetachedDeploymentFile(container *os.File, name string, limit int64) ([]byte, error) {
+	data, st, e := r.readAt(container, name, limit)
 	if e != nil {
 		return nil, e
 	}
@@ -83,6 +89,9 @@ func readDetachedDeploymentFile(container *os.File, name string, limit int64) ([
 }
 
 func verifyDeploymentInventory(app *os.File, identity deploymentIdentity, encoded []byte, embedded bool, sbom []byte) (Manifest, []byte, error) {
+	return nativeRuntimeReads().verifyDeploymentInventory(app, identity, encoded, embedded, sbom)
+}
+func (r runtimeReadOps) verifyDeploymentInventory(app *os.File, identity deploymentIdentity, encoded []byte, embedded bool, sbom []byte) (Manifest, []byte, error) {
 	var empty Manifest
 	if e := identity.validate(); e != nil {
 		return empty, nil, e
@@ -109,8 +118,8 @@ func verifyDeploymentInventory(app *os.File, identity deploymentIdentity, encode
 		return empty, nil, e
 	}
 	fresh := os.NewFile(uintptr(fd), app.Name())
-	important, e := inspectBundleInventory(fresh, m, encoded, embedded)
-	e = errors.Join(e, fresh.Close())
+	important, e := r.inspectBundleInventory(fresh, m, encoded, embedded)
+	e = r.finish(fresh, e)
 	if e != nil {
 		return empty, nil, e
 	}
@@ -135,15 +144,21 @@ func verifyDeploymentInventory(app *os.File, identity deploymentIdentity, encode
 	return m, encoded, nil
 }
 func deploymentSubdirectory(root *os.File, path string) (*os.File, error) {
+	return nativeRuntimeReads().subdirectory(root, path)
+}
+func (r runtimeReadOps) subdirectory(root *os.File, path string) (*os.File, error) {
 	current := root
 	owned := false
 	for _, part := range strings.Split(path, "/") {
-		next, e := directoryAt(current, part)
+		next, err := r.directoryAt(current, part)
 		if owned {
-			current.Close()
+			err = r.finish(current, err)
 		}
-		if e != nil {
-			return nil, e
+		if err != nil {
+			if next != nil {
+				err = r.finish(next, err)
+			}
+			return nil, err
 		}
 		current = next
 		owned = true
@@ -159,20 +174,23 @@ func deploymentFileParent(root *os.File, path string) (*os.File, string, error) 
 	return parent, parts[len(parts)-1], e
 }
 func (s *deploymentStore) verifySlot(slot deploymentSlot) error {
-	dir, e := s.openSlot(slot)
+	return nativeRuntimeReads().verifySlot(s, slot)
+}
+func (r runtimeReadOps) verifySlot(s *deploymentStore, slot deploymentSlot) (failure error) {
+	dir, e := r.openSlot(s, slot)
 	if e != nil {
 		return e
 	}
-	defer dir.Close()
+	defer func() { failure = r.finish(dir, failure) }()
 	if e = deploymentObject(dir, true, 0, 0755); e != nil {
 		return e
 	}
-	app, encoded, sbom, embedded, e := openDeploymentBundle(dir)
+	app, encoded, sbom, embedded, e := r.openDeploymentBundle(dir)
 	if e != nil {
 		return e
 	}
-	defer app.Close()
-	_, _, e = verifyDeploymentInventory(app, slot.Identity, encoded, embedded, sbom)
+	defer func() { failure = r.finish(app, failure) }()
+	_, _, e = r.verifyDeploymentInventory(app, slot.Identity, encoded, embedded, sbom)
 	return e
 }
 

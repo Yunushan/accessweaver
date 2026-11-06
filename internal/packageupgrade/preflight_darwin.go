@@ -37,12 +37,21 @@ func checkGroup(file *os.File) error {
 	return nil
 }
 func readAt(parent *os.File, name string, limit int64) ([]byte, syscall.Stat_t, error) {
+	return nativeRuntimeReads().readAt(parent, name, limit)
+}
+func (r runtimeReadOps) readAt(parent *os.File, name string, limit int64) (payload []byte, identity syscall.Stat_t, failure error) {
 	var zero syscall.Stat_t
 	file, e := darwintrust.OpenRegularAt(parent, name, 0)
 	if e != nil {
 		return nil, zero, e
 	}
-	defer file.Close()
+	defer func() {
+		failure = r.finish(file, failure)
+		if failure != nil {
+			payload = nil
+			identity = zero
+		}
+	}()
 	if e = checkGroup(file); e != nil {
 		return nil, zero, e
 	}
@@ -68,38 +77,39 @@ func readAt(parent *os.File, name string, limit int64) ([]byte, syscall.Stat_t, 
 	return data, before, nil
 }
 func directoryAt(parent *os.File, name string) (*os.File, error) {
+	return nativeRuntimeReads().directoryAt(parent, name)
+}
+func (r runtimeReadOps) directoryAt(parent *os.File, name string) (*os.File, error) {
 	f, e := darwintrust.OpenDirectoryAt(parent, name, 0)
 	if e != nil {
 		return nil, e
 	}
 	if e = checkGroup(f); e != nil {
-		f.Close()
-		return nil, e
+		return nil, r.finish(f, e)
 	}
 	return f, nil
 }
 func readPath(root *os.File, name string, limit int64) ([]byte, error) {
+	return nativeRuntimeReads().readPath(root, name, limit)
+}
+func (r runtimeReadOps) readPath(root *os.File, name string, limit int64) (payload []byte, failure error) {
 	parts := strings.Split(name, "/")
 	current := root
-	owned := false
-	defer func() {
-		if owned {
-			current.Close()
+	if len(parts) > 1 {
+		var err error
+		current, err = r.subdirectory(root, strings.Join(parts[:len(parts)-1], "/"))
+		if err != nil {
+			return nil, err
 		}
-	}()
-	for _, part := range parts[:len(parts)-1] {
-		next, e := directoryAt(current, part)
-		if e != nil {
-			return nil, e
-		}
-		if owned {
-			current.Close()
-		}
-		current = next
-		owned = true
+		defer func() {
+			failure = r.finish(current, failure)
+			if failure != nil {
+				payload = nil
+			}
+		}()
 	}
-	data, _, e := readAt(current, parts[len(parts)-1], limit)
-	return data, e
+	data, _, err := r.readAt(current, parts[len(parts)-1], limit)
+	return data, err
 }
 
 // Only the fixed /Applications container admits its normal admin group write
@@ -142,6 +152,9 @@ func inspectBundle(root *os.File, m Manifest, encoded []byte) (map[string][]byte
 // Detached inventories cover every app file, including code-signature resources.
 // Only the legacy reader admits the embedded inventory as an excluded file.
 func inspectBundleInventory(root *os.File, m Manifest, encoded []byte, embedded bool) (map[string][]byte, error) {
+	return nativeRuntimeReads().inspectBundleInventory(root, m, encoded, embedded)
+}
+func (r runtimeReadOps) inspectBundleInventory(root *os.File, m Manifest, encoded []byte, embedded bool) (map[string][]byte, error) {
 	if embedded && m.SchemaVersion != 1 {
 		return nil, errors.New("embedded manifest schema differs")
 	}
@@ -184,7 +197,7 @@ func inspectBundleInventory(root *os.File, m Manifest, encoded []byte, embedded 
 			}
 			seen[relative] = true
 			if dirs[relative] {
-				next, e := directoryAt(parent, name)
+				next, e := r.directoryAt(parent, name)
 				if e != nil {
 					return e
 				}
@@ -195,12 +208,9 @@ func inspectBundleInventory(root *os.File, m Manifest, encoded []byte, embedded 
 				if e == nil {
 					e = walk(next, relative+"/", depth+1)
 				}
-				closeErr := next.Close()
+				e = r.finish(next, e)
 				if e != nil {
 					return e
-				}
-				if closeErr != nil {
-					return closeErr
 				}
 				continue
 			}
@@ -208,7 +218,7 @@ func inspectBundleInventory(root *os.File, m Manifest, encoded []byte, embedded 
 			if !ok {
 				return errors.New("unexpected installed bundle object")
 			}
-			data, st, e := readAt(parent, name, 64<<20)
+			data, st, e := r.readAt(parent, name, 64<<20)
 			if e != nil {
 				return e
 			}
