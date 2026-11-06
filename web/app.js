@@ -144,6 +144,9 @@ const state = {
 };
 Object.assign(en,{"lifecycleTitle":"Completion tracking","lifecycleRefresh":"Refresh completion status","lifecycleNotice":"Tracks local worker and record closure only. It does not certify vendor changes or permit deleting recovery evidence.","lifecycleNotLoaded":"Completion status has not been read. Existing evidence is unchanged.","lifecycleLoading":"Reading local completion evidence…","lifecycleState_none":"No local completion receipt is tracked. Legacy evidence remains protected; this is not an admission or storage-capacity grant.","lifecycleState_intent":"A local workflow intent is unresolved. Preserve its inputs and recovery evidence.","lifecycleState_sealed":"A local result is sealed, but owner release is unconfirmed. Preserve recovery evidence.","lifecycleState_released":"Local worker, record and original lease closure was observed. Vendor cleanup and evidence retirement are not certified.","lifecycleState_blocked":"Local completion evidence requires inspection. New workflow admission is blocked.","lifecycleAdmissionBlocked":"New workflows are blocked by unresolved local completion evidence. Keep the inputs and recovery evidence; history inspection and current-job cancellation remain available. Nothing is retried automatically.","lifecycleGeneration":"Tracked workflow","lifecycleBusy":"Completion status is busy or unavailable. Try this read again; no operation was retried.","lifecycleEnded":"The completion status request ended. Evidence is unchanged.","lifecycleUnavailable":"Completion status could not be verified. No clean completion is assumed."});
 Object.assign(tr,{"lifecycleTitle":"Tamamlanma takibi","lifecycleRefresh":"Tamamlanma durumunu yenile","lifecycleNotice":"Yalnızca yerel çalışan ve kayıt kapanışını izler. Üretici değişikliklerini doğrulamaz ve kurtarma kanıtlarını silme izni vermez.","lifecycleNotLoaded":"Tamamlanma durumu okunmadı. Mevcut kanıtlar değişmedi.","lifecycleLoading":"Yerel tamamlanma kanıtları okunuyor…","lifecycleState_none":"İzlenen yerel tamamlanma kaydı yok. Eski kanıtlar korunur; bu durum yeni işlem veya depolama kapasitesi izni değildir.","lifecycleState_intent":"Yerel işlem niyeti çözümlenmedi. Girdileri ve kurtarma kanıtlarını koruyun.","lifecycleState_sealed":"Yerel sonuç mühürlendi ancak sahiplerin bırakıldığı doğrulanmadı. Kurtarma kanıtlarını koruyun.","lifecycleState_released":"Yerel çalışan, kayıt ve ilk kilit sahipliğinin kapanışı gözlendi. Üretici temizliği ve kanıt kaldırma izni doğrulanmaz.","lifecycleState_blocked":"Yerel tamamlanma kanıtları incelenmeli. Yeni işlem kabulü engellendi.","lifecycleAdmissionBlocked":"Çözümlenmemiş yerel tamamlanma kanıtları yeni işlemleri engelliyor. Girdileri ve kurtarma kanıtlarını koruyun; geçmiş incelemesi ve çalışan işlemi iptal etme kullanılabilir. Hiçbir işlem otomatik tekrarlanmaz.","lifecycleGeneration":"İzlenen işlem","lifecycleBusy":"Tamamlanma durumu meşgul veya kullanılamıyor. Okumayı yeniden deneyin; hiçbir işlem tekrarlanmadı.","lifecycleEnded":"Tamamlanma durumu isteği sona erdi. Kanıtlar değişmedi.","lifecycleUnavailable":"Tamamlanma durumu doğrulanamadı. Temiz kapanış varsayılmaz."});
+const probeUI={generation:0,context:'',operation:null,completed:null,notice:'',failure:''};
+Object.assign(en,{"probeCancel":"Cancel test","probeCanceled":"Cancellation requested. Inputs are kept. Incomplete results are discarded; no test is retried automatically.","probeInputsCleared":"Inputs changed. Previous diagnostic results were cleared. Start a test explicitly.","probeContextCleared":"The connection, session or desktop mode changed. Previous diagnostic results were cleared. Inputs are kept.","probeViewCleared":"Diagnostic view closed. Inputs are kept and previous results were cleared. No test is retried automatically.","probeBusy":"Another diagnostic is active or still finishing. Inputs are kept. Wait, then start a test explicitly; nothing is retried automatically.","probeRequestEnded":"The diagnostic request ended before completion. Inputs are kept. Start another test explicitly."});
+Object.assign(tr,{"probeCancel":"Testi iptal et","probeCanceled":"İptal istendi. Girdiler korunur. Tamamlanmamış sonuçlar atılır; hiçbir test otomatik tekrarlanmaz.","probeInputsCleared":"Girdiler değişti. Önceki tanılama sonuçları temizlendi. Testi açıkça yeniden başlatın.","probeContextCleared":"Bağlantı, oturum veya masaüstü modu değişti. Önceki tanılama sonuçları temizlendi. Girdiler korunur.","probeViewCleared":"Tanılama görünümü kapatıldı. Girdiler korundu ve önceki sonuçlar temizlendi. Hiçbir test otomatik tekrarlanmaz.","probeBusy":"Başka bir tanılama çalışıyor veya hâlâ tamamlanıyor. Girdiler korunur. Bekleyip testi açıkça başlatın; otomatik yeniden deneme yapılmaz.","probeRequestEnded":"Tanılama isteği tamamlanmadan sona erdi. Girdiler korunur. Yeni bir testi açıkça başlatın."});
 const translations = {en,tr,...(typeof extraLocales==='object'?extraLocales:{})};
 const diagnosticCopy = {"en": {"diagnosticsSubtitle": "Check an explicit direct or proxy path using TCP/TLS or UDP/STUN.", "probePath": "Network path", "probeTransport": "Protocol", "pathDirect": "Direct", "probeProxy": "Proxy host:port (no credentials)", "probeScope": "The selected path only. No direct fallback. This does not prove engine routing, voice or QUIC connectivity.", "probeSTUN": "Enter a STUN server you trust. One UDP binding exchange; the server and reported address are unauthenticated.", "reportPath": "Tested path"}, "tr": {"diagnosticsSubtitle": "TCP/TLS veya UDP/STUN ile do\u011frudan ya da vekil sunucu yolunu test edin.", "probePath": "A\u011f yolu", "probeTransport": "Protokol", "pathDirect": "Do\u011frudan", "probeProxy": "Vekil sunucu:port (kimlik bilgisi yok)", "probeScope": "Yaln\u0131zca se\u00e7ilen yol test edilir. Do\u011frudan ba\u011flant\u0131ya ge\u00e7ilmez. Motor y\u00f6nlendirmesi, ses veya QUIC ba\u011flant\u0131s\u0131n\u0131 kan\u0131tlamaz.", "probeSTUN": "G\u00fcvendi\u011finiz bir STUN sunucusu girin. Tek UDP iste\u011fi; sunucu ve bildirdi\u011fi adres do\u011frulanmaz.", "reportPath": "Test edilen yol"}, "es": {"diagnosticsSubtitle": "Comprueba una ruta directa o por proxy con TCP/TLS o UDP/STUN.", "probePath": "Ruta de red", "probeTransport": "Protocolo", "pathDirect": "Directa", "probeProxy": "Proxy host:puerto (sin credenciales)", "probeScope": "Solo la ruta elegida. Sin alternativa directa. No demuestra el enrutamiento del motor ni la conectividad de voz o QUIC.", "probeSTUN": "Introduce un servidor STUN de confianza. Un intercambio UDP; el servidor y la direcci\u00f3n indicada no se autentican.", "reportPath": "Ruta comprobada"}, "ru": {"diagnosticsSubtitle": "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u043f\u0440\u044f\u043c\u043e\u0433\u043e \u043f\u0443\u0442\u0438 \u0438\u043b\u0438 \u043f\u0440\u043e\u043a\u0441\u0438: TCP/TLS \u0438\u043b\u0438 UDP/STUN.", "probePath": "\u0421\u0435\u0442\u0435\u0432\u043e\u0439 \u043f\u0443\u0442\u044c", "probeTransport": "\u041f\u0440\u043e\u0442\u043e\u043a\u043e\u043b", "pathDirect": "\u041d\u0430\u043f\u0440\u044f\u043c\u0443\u044e", "probeProxy": "\u041f\u0440\u043e\u043a\u0441\u0438 host:port (\u0431\u0435\u0437 \u0443\u0447\u0451\u0442\u043d\u044b\u0445 \u0434\u0430\u043d\u043d\u044b\u0445)", "probeScope": "\u0422\u043e\u043b\u044c\u043a\u043e \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u044b\u0439 \u043f\u0443\u0442\u044c, \u0431\u0435\u0437 \u043f\u0435\u0440\u0435\u0445\u043e\u0434\u0430 \u043d\u0430\u043f\u0440\u044f\u043c\u0443\u044e. \u041d\u0435 \u0434\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u0442 \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u0438\u0437\u0430\u0446\u0438\u044e \u0434\u0432\u0438\u0436\u043a\u0430, \u0441\u0432\u044f\u0437\u044c \u0434\u043b\u044f \u0433\u043e\u043b\u043e\u0441\u0430 \u0438\u043b\u0438 QUIC.", "probeSTUN": "\u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u0434\u043e\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 STUN-\u0441\u0435\u0440\u0432\u0435\u0440. \u041e\u0434\u0438\u043d UDP-\u043e\u0431\u043c\u0435\u043d; \u0441\u0435\u0440\u0432\u0435\u0440 \u0438 \u0441\u043e\u043e\u0431\u0449\u0451\u043d\u043d\u044b\u0439 \u0430\u0434\u0440\u0435\u0441 \u043d\u0435 \u0430\u0443\u0442\u0435\u043d\u0442\u0438\u0444\u0438\u0446\u0438\u0440\u0443\u044e\u0442\u0441\u044f.", "reportPath": "\u041f\u0440\u043e\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u043f\u0443\u0442\u044c"}};
 for (const [lang,words] of Object.entries(diagnosticCopy)) Object.assign(translations[lang],words);
@@ -196,7 +199,8 @@ function updateTranslations() {
     $('editor-title').textContent = t(state.editing.isNew ? 'editorTitleNew' : 'editorTitleEdit');
     updateEditorGuidance();
   }
-  if (state.lastProbe) renderProbe(state.lastProbe);
+  if (state.lastProbe) renderProbe(state.lastProbe); else renderProbeNotice();
+  updateProbeAvailability();
   updateBreadcrumb();
 }
 function changeLanguage(lang) {
@@ -233,22 +237,29 @@ function navigate(view, focus=false) {
   if (location.hash !== '#' + view) location.hash = view;
   window.scrollTo(0,0);
   if (focus) $('content').focus({preventScroll:true});
+  probeNavigationChanged(view);
   if(typeof historyNavigationChanged==='function')historyNavigationChanged(view);
   if(view==='system'&&coreAvailable()&&typeof loadSystemTools==='function')loadSystemTools().catch(error=>{setTextOutput('system-output',error.message)});
 }
-async function apiRequest(path, method='GET', data, timeout=12000) {
+async function apiRequest(path, method='GET', data, timeout=12000, externalSignal) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(),timeout);
+  const abort = () => controller.abort();
+  const ensureActive = () => {if(controller.signal.aborted)throw new DOMException('Request canceled','AbortError');};
+  if(externalSignal?.aborted)abort();else externalSignal?.addEventListener('abort',abort,{once:true});
+  const timer = setTimeout(abort,timeout);
   try {
+    ensureActive();
     const response = await fetch(path, {
       method, headers:{...(data !== undefined ? {'Content-Type':'application/json'} : {}),'X-AccessWeaver-Token':state.token},
       body:data === undefined ? undefined : JSON.stringify(data), cache:'no-store', signal:controller.signal
     });
+    ensureActive();
     let json;
-    try { json = await response.json(); } catch { throw new Error(t('disconnectedDesc')); }
-    if (!response.ok) throw Object.assign(new Error(json.error || `HTTP ${response.status}`),{status:response.status,...(json.code==='workflow-lifecycle-pending'?{code:json.code}:{})});
+    try { json = await response.json(); } catch(error) { ensureActive(); if(error?.name==='AbortError')throw error; throw new Error(t('disconnectedDesc')); }
+    ensureActive();
+    if (!response.ok) throw Object.assign(new Error(json.error || `HTTP ${response.status}`),{status:response.status,...(['workflow-lifecycle-pending','diagnostic-busy'].includes(json.code)?{code:json.code}:{})});
     return json;
-  } finally { clearTimeout(timer); }
+  } finally { clearTimeout(timer); externalSignal?.removeEventListener('abort',abort); }
 }
 function engineOptions() {
   return state.engines.map(e => `<option value="${escapeHTML(e.id)}">${escapeHTML(e.name)}</option>`).join('');
@@ -259,6 +270,7 @@ async function readCore() {
   if (!boot.platform) throw new Error(t('coreRequired'));
   state.coreAuthenticated = true;
   state.profileEditingOnly = boot.profileEditingOnly === true;
+  updateProbeAvailability();
   const [engines,profiles,runtime] = await Promise.all([
     apiRequest('/api/v1/engines'),apiRequest('/api/v1/profiles'),apiRequest('/api/v1/runtime')
   ]);
@@ -348,7 +360,7 @@ function renderHero() {
   $('export-browser-backup').hidden = !state.offline;
   $('storage-badge').textContent = t(state.offline ? 'browserStorageBadge' : 'coreStorageBadge');
   $('preview-profile').disabled = !coreAvailable();
-  $('probe-submit').disabled = state.profileEditingOnly || !coreAvailable() || !!state.probing;
+  updateProbeAvailability();
   $('show-logs').disabled = state.offline || state.loading;
   $('export-support').disabled = !supportAvailable() || !!state.supportExporting;
   if(typeof updateSystemExportButtons==='function')updateSystemExportButtons();
@@ -774,21 +786,75 @@ function probeRequest() {
  const path = $('probe-path').value || 'direct', transport = $('probe-transport').value || 'tcp';
  return {host:$('probe-host').value.trim(),port:Number($('probe-port').value),timeoutSeconds:Number($('probe-timeout').value),tls:transport === 'tcp' && $('probe-tls').checked,path,transport,...(path === 'direct' ? {} : {proxy:$('probe-proxy').value.trim()})};
 }
+function probeContext(){return JSON.stringify([state.token,!!state.coreAuthenticated,!!state.profileEditingOnly,!!state.offline,!!state.disconnected,!!state.loading]);}
+function probeAvailable(){return !state.profileEditingOnly&&!!state.token&&coreAvailable();}
+function probeFingerprint(request=probeRequest()){return JSON.stringify(request);}
+function renderProbeNotice(){
+ if(!probeUI.notice)return;
+ $('diagnostic-results').className='empty-results';
+ $('diagnostic-results').textContent=t(probeUI.notice)+(probeUI.failure?': '+probeUI.failure:'');
+}
+function updateProbeButtons(){
+ const active=!!probeUI.operation;
+ $('probe-submit').disabled=!probeAvailable()||active;
+ const button=$('probe-submit'),label=(active?'busy:':'ready:')+state.lang;
+ // Input change can fire during a pointer click's focus transition. Keep the
+ // existing button children when its state/language did not actually change.
+ if(button.dataset.probeLabel!==label){button.innerHTML=icon(active?'pulse':'play')+'<span>'+t(active?'testRunning':'startTest')+'</span>';button.dataset.probeLabel=label;}
+ $('probe-cancel').disabled=!active;
+}
+function invalidateProbe(notice){
+ const operation=probeUI.operation;
+ const hadOutput=!!operation||!!probeUI.completed||state.lastProbe!==null||!!probeUI.notice;
+ // Invalidate before abort: even a transport that ignores cancellation cannot
+ // publish its report/error or release a newer operation in its finally block.
+ probeUI.generation++;probeUI.operation=null;probeUI.completed=null;
+ state.probing=false;state.lastProbe=null;probeUI.failure='';
+ if(hadOutput)probeUI.notice=notice;
+ $('export-report').hidden=true;$('diagnostic-meta').hidden=true;
+ $('diagnostic-meta').replaceChildren();
+ renderProbeNotice();updateProbeButtons();operation?.controller.abort();
+}
+function updateProbeAvailability(){
+ const context=probeContext();
+ if(probeUI.context!==context){invalidateProbe('probeContextCleared');probeUI.context=context;}
+ updateProbeButtons();
+}
+function probeNavigationChanged(view){if(view!=='diagnostics')invalidateProbe('probeViewCleared');}
+function probeInputsChanged(){invalidateProbe('probeInputsCleared');}
+function cancelProbe(){
+ if(!probeUI.operation)return;
+ invalidateProbe('probeCanceled');
+ if(probeAvailable())$('probe-submit').focus();
+}
+function probeCurrent(operation){
+ return probeUI.operation===operation&&probeUI.generation===operation.generation&&probeContext()===operation.context&&state.view==='diagnostics'&&probeAvailable()&&probeFingerprint()===operation.fingerprint;
+}
 async function runProbe() {
-  if (!coreAvailable()) { toast(t('coreRequired'),true); return; }
-  if (state.probing) return;
-  const p = probeRequest();
-  state.lastProbe = null; $('export-report').hidden = true; $('diagnostic-meta').hidden = true;
-  $('diagnostic-results').className = 'empty-results'; $('diagnostic-results').textContent = t('testRunning');
-  state.probing = true;
-  const button = $('probe-submit'); button.disabled = true; button.innerHTML = icon('pulse') + `<span>${t('testRunning')}</span>`;
-  try {
-    const report = await apiRequest('/api/v1/diagnose','POST',p,(p.timeoutSeconds + 10) * 1000);
-    state.lastProbe = report; renderProbe(report);
-    const passed = report.checks?.length && report.checks.every(c => c.status === 'ok');
-    toast(t(passed ? 'testDone' : 'testIncomplete'),!passed);
-  } catch (err) { $('diagnostic-results').textContent = t('testFailed') + ': ' + err.message; toast(t('testFailed') + ': ' + err.message,true); }
-  finally { state.probing = false; button.disabled = !coreAvailable(); button.innerHTML = icon('play') + `<span>${t('startTest')}</span>`; }
+ updateProbeAvailability();
+ if(state.view!=='diagnostics'||!probeAvailable()){toast(t(state.profileEditingOnly?'profileAuditNotice':'coreRequired'),true);return;}
+ if(probeUI.operation)return;
+ const request=Object.freeze(probeRequest()),controller=new AbortController();
+ const operation={generation:++probeUI.generation,context:probeContext(),request,fingerprint:probeFingerprint(request),controller};
+ probeUI.operation=operation;probeUI.completed=null;probeUI.notice='testRunning';probeUI.failure='';state.probing=true;state.lastProbe=null;
+ $('export-report').hidden=true;$('diagnostic-meta').hidden=true;$('diagnostic-meta').replaceChildren();renderProbeNotice();updateProbeButtons();
+ try{
+  const report=await apiRequest('/api/v1/diagnose','POST',request,(request.timeoutSeconds+10)*1000,controller.signal);
+  if(!probeCurrent(operation)){if(probeUI.operation===operation)invalidateProbe('probeContextCleared');return;}
+  probeUI.completed={context:operation.context,fingerprint:operation.fingerprint,report};state.lastProbe=report;probeUI.notice='';renderProbe(report);
+ }catch(error){
+  if(!probeCurrent(operation)){if(probeUI.operation===operation)invalidateProbe('probeContextCleared');return;}
+  probeUI.notice=error.status===503&&error.code==='diagnostic-busy'?'probeBusy':error.name==='AbortError'?'probeRequestEnded':'testFailed';
+  probeUI.failure=probeUI.notice==='testFailed'?error.message:'';renderProbeNotice();
+ }finally{
+  if(probeUI.operation===operation){probeUI.operation=null;state.probing=false;controller.abort();updateProbeAvailability();}
+ }
+}
+function exportProbeReport(){
+ updateProbeAvailability();
+ const completed=probeUI.completed;
+ if(!completed||state.view!=='diagnostics'||!probeAvailable()||completed.context!==probeContext()||completed.fingerprint!==probeFingerprint()||state.lastProbe!==completed.report){if(completed||state.lastProbe)invalidateProbe('probeInputsCleared');return;}
+ downloadFile(JSON.stringify(completed.report,null,2)+'\n','accessweaver-diagnostics-'+completed.report.host+'.json');
 }
 function renderProbe(report) {
   const checks = report.checks || [], passed = checks.length > 0 && checks.every(c => c.status === 'ok');
@@ -872,8 +938,11 @@ function bindEvents() {
   $('probe-path').addEventListener('change',() => updateProbeMode());
   $('probe-transport').addEventListener('change',() => updateProbeMode(true));
   updateProbeMode();
+  $('diagnostic-form').addEventListener('input',probeInputsChanged);
+  $('diagnostic-form').addEventListener('change',probeInputsChanged);
   $('diagnostic-form').addEventListener('submit',event => { event.preventDefault(); runProbe(); });
-  $('export-report').addEventListener('click',() => { if (state.lastProbe) downloadFile(JSON.stringify(state.lastProbe,null,2) + '\n','accessweaver-diagnostics-' + state.lastProbe.host + '.json'); });
+  $('probe-cancel').addEventListener('click',cancelProbe);
+  $('export-report').addEventListener('click',exportProbeReport);
   $('show-logs').addEventListener('click',showLogs);
   $('export-support').addEventListener('click',exportSupportSummary);
   $('close-logs').addEventListener('click',() => setModal('logs-modal',false));

@@ -112,7 +112,7 @@ func (d runner) stun(ctx context.Context, input Request, r *Report) {
 			r.Checks = append(r.Checks, check("Proxy", "failed", start, err.Error()))
 			return
 		}
-		defer closeOnCancel(ctx, association)()
+		defer recordConnectionCleanup(r, closeOnCancel(ctx, association))
 		relay, err := socksCommand(association, 3, "0.0.0.0", 0)
 		if err != nil {
 			r.Checks = append(r.Checks, check("Proxy", "failed", start, err.Error()))
@@ -138,7 +138,7 @@ func (d runner) stun(ctx context.Context, input Request, r *Report) {
 		r.Checks = append(r.Checks, check("UDP/STUN", "failed", start, err.Error()))
 		return
 	}
-	defer closeOnCancel(ctx, connection)()
+	defer recordConnectionCleanup(r, closeOnCancel(ctx, connection))
 	request, err := bindingRequest()
 	if err != nil {
 		r.Checks = append(r.Checks, check("UDP/STUN", "failed", start, err.Error()))

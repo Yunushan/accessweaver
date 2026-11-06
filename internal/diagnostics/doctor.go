@@ -194,13 +194,59 @@ func dialAddresses(ctx context.Context, network string, addresses []net.IPAddr, 
 	}
 	return nil, last
 }
-func closeOnCancel(ctx context.Context, c net.Conn) func() {
-	stop := context.AfterFunc(ctx, func() { _ = c.Close() })
-	return func() { stop(); _ = c.Close() }
+
+// The deferred owner joins an already-running cancellation Close. A second
+// Close may return immediately while the first still owns actual cleanup, so
+// it cannot substitute for observing that callback's completion.
+func closeOnCancel(ctx context.Context, c net.Conn) func() error {
+	done := make(chan struct{})
+	var closeErr error
+	closeConnection := func() {
+		defer close(done)
+		closeErr = c.Close()
+	}
+	stop := context.AfterFunc(ctx, closeConnection)
+	return func() error {
+		if stop() {
+			closeConnection()
+		} else {
+			<-done
+		}
+		return closeErr
+	}
 }
+
+func recordConnectionCleanup(report *Report, release func() error) {
+	if release() != nil {
+		// Reports are private, but a native Close cause still need not expose
+		// arbitrary implementation text. Preserve the earlier transport checks.
+		report.Checks = append(report.Checks, Check{Name: "Cleanup", Status: "failed", Detail: "connection cleanup reported an error"})
+	}
+}
+
+// TLS can start its own asynchronous Close when its handshake context ends.
+// Delegate that Close to the same retained owner as every other cancellation
+// path, including when the current I/O connection wraps buffered proxy bytes.
+// No TLS-library callback can substitute a second raw Close for the first one.
+type diagnosticTLSConnection struct {
+	net.Conn
+	release func() error
+}
+
+func (c *diagnosticTLSConnection) Close() error { return c.release() }
+
+func handshakeDiagnosticTLS(ctx context.Context, connection net.Conn, release func() error, config *tls.Config) (tls.ConnectionState, error) {
+	secured := tls.Client(&diagnosticTLSConnection{Conn: connection, release: release}, config)
+	if err := secured.HandshakeContext(ctx); err != nil {
+		return tls.ConnectionState{}, err
+	}
+	return secured.ConnectionState(), nil
+}
+
 func (d runner) tcp(ctx context.Context, input Request, r *Report) {
 	start := time.Now()
 	var connection net.Conn
+	var release func() error
 	var err error
 	if input.Path == "direct" {
 		// Resolve once, report that stage independently, and dial only those IPs.
@@ -216,6 +262,8 @@ func (d runner) tcp(ctx context.Context, input Request, r *Report) {
 			r.Checks = append(r.Checks, check("TCP", "failed", start, err.Error()))
 			return
 		}
+		release = closeOnCancel(ctx, connection)
+		defer recordConnectionCleanup(r, release)
 		r.Checks = append(r.Checks, check("TCP", "ok", start, "direct connection established"))
 	} else {
 		host, port, _ := net.SplitHostPort(input.Proxy)
@@ -225,7 +273,8 @@ func (d runner) tcp(ctx context.Context, input Request, r *Report) {
 			r.Checks = append(r.Checks, check("Proxy", "failed", start, err.Error()))
 			return
 		}
-		defer closeOnCancel(ctx, connection)()
+		release = closeOnCancel(ctx, connection)
+		defer recordConnectionCleanup(r, release)
 		if input.Path == "socks5" {
 			_, err = socksCommand(connection, 1, input.Host, input.Port)
 		} else {
@@ -238,23 +287,22 @@ func (d runner) tcp(ctx context.Context, input Request, r *Report) {
 		r.Checks = append(r.Checks, check("Proxy", "ok", start, input.Path+" tunnel accepted; destination DNS is delegated to the proxy"))
 		r.Checks = append(r.Checks, check("TCP", "ok", start, "connection through the selected proxy established"))
 	}
-	defer closeOnCancel(ctx, connection)()
 	if !input.TLS {
 		return
 	}
 	start = time.Now()
-	secured := tls.Client(connection, &tls.Config{ServerName: input.Host, MinVersion: tls.VersionTLS12, RootCAs: d.tlsRoots})
-	if err := secured.HandshakeContext(ctx); err != nil {
+	state, err := handshakeDiagnosticTLS(ctx, connection, release, &tls.Config{ServerName: input.Host, MinVersion: tls.VersionTLS12, RootCAs: d.tlsRoots})
+	if err != nil {
 		r.Checks = append(r.Checks, check("TLS", "failed", start, err.Error()))
 		return
 	}
-	state := secured.ConnectionState()
 	if len(state.VerifiedChains) == 0 {
 		r.Checks = append(r.Checks, check("TLS", "failed", start, "server certificate chain was not verified"))
 		return
 	}
 	r.Checks = append(r.Checks, check("TLS", "ok", start, fmt.Sprintf("TLS %x; target certificate and name verified", state.Version)))
-	_ = secured.Close()
+	// The registered raw-connection owner closes after the handshake; no
+	// second TLS closer can race or outlive the cancellation owner.
 }
 func check(name, status string, started time.Time, detail string) Check {
 	return Check{Name: name, Status: status, DurationMs: time.Since(started).Milliseconds(), Detail: detail}

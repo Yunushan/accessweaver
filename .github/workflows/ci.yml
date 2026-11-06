@@ -15,6 +15,7 @@ on:
           - workflow-store
           - workflow-history
           - workflow-lifecycle
+          - desktop-diagnostics
 
 permissions:
   contents: read
@@ -28,16 +29,16 @@ env:
 
 jobs:
   browser:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics') }}
     uses: ./.github/workflows/browser.yml
   windows-audit-storage:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics') }}
     uses: ./.github/workflows/windows-audit-storage.yml
   darwin-audit-commands:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics') }}
     uses: ./.github/workflows/darwin-audit-commands.yml
   vulnerabilities:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics') }}
     name: Go vulnerability checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -97,7 +98,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   test:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics') }}
     name: Test (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -409,7 +410,7 @@ jobs:
         shell: bash
         run: test -z "$(gofmt -l cmd internal web)"
   race:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics') }}
     name: Race detector (Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -429,7 +430,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   race-arm64:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics') }}
     name: Race detector (Linux/arm64)
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
@@ -450,7 +451,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   cross-compile:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics') }}
     name: Cross-build (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -474,8 +475,8 @@ jobs:
   # Manual candidate-only fixture check. The regular push/PR/full matrix above
   # stays complete. This does not certify installed or managed endpoints.
   workflow-store:
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.scope == 'workflow-store' || inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle') }}
-    name: Workflow ${{ inputs.scope == 'workflow-lifecycle' && 'lifecycle' || inputs.scope == 'workflow-history' && 'history' || 'store' }} (${{ matrix.goos }}/${{ matrix.goarch }})
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.scope == 'workflow-store' || inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics') }}
+    name: ${{ inputs.scope == 'desktop-diagnostics' && 'Desktop diagnostics' || inputs.scope == 'workflow-lifecycle' && 'Workflow lifecycle' || inputs.scope == 'workflow-history' && 'Workflow history' || 'Workflow store' }} (${{ matrix.goos }}/${{ matrix.goarch }})
     strategy:
       fail-fast: false
       matrix:
@@ -535,21 +536,21 @@ jobs:
       - name: Test workflow store admission, lifetime and subprocess fixtures
         run: go test ./internal/workflow -run '^TestWorkflowStore' -count=1 -timeout=4m
       - name: Test workflow history inventory and exact records
-        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' }}
+        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' }}
         run: go test ./internal/workflow -run '^TestWorkflowHistory' -count=1 -timeout=5m
       - name: Test history API and CLI contracts
-        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' }}
+        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' }}
         run: go test ./internal/api ./cmd/accessweaver -run '^(TestHistoryBrowser|TestSystemHistoryBrowser)' -count=1 -timeout=5m
       - name: Test private history file creation
-        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' }}
+        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' }}
         run: go test ./internal/privatefile -count=1 -timeout=3m
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' }}
+        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' }}
         with:
           node-version: '26.8.2'
           package-manager-cache: false
       - name: Verify actual Go history responses with desktop source
-        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' }}
+        if: ${{ inputs.scope == 'workflow-history' || inputs.scope == 'workflow-lifecycle' || inputs.scope == 'desktop-diagnostics' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -598,3 +599,17 @@ jobs:
           $env:ACCESSWEAVER_WORKER_FINALIZATION_INTEROP = $fixture
           go test ./internal/workflow -run '^TestWorkerReportFinalizationPowerShellInterop$' -count=1 -timeout=2m
           if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell finalizer receiver failed' }
+      - name: Test diagnostic transport and cancellation ownership
+        if: ${{ inputs.scope == 'desktop-diagnostics' }}
+        run: go test ./internal/diagnostics -count=1 -timeout=3m
+      - name: Test diagnostic HTTP admission and request cancellation
+        if: ${{ inputs.scope == 'desktop-diagnostics' }}
+        run: go test ./internal/api -run '^TestDiagnostic' -count=1 -timeout=3m
+      - name: Static analysis diagnostic and API contracts
+        if: ${{ inputs.scope == 'desktop-diagnostics' }}
+        run: go vet ./internal/diagnostics ./internal/api
+      - name: Race native diagnostic cancellation and admission
+        if: ${{ inputs.scope == 'desktop-diagnostics' && runner.os != 'Windows' }}
+        run: |
+          go test -race ./internal/diagnostics -count=1 -timeout=3m
+          go test -race ./internal/api -run '^TestDiagnostic' -count=1 -timeout=4m

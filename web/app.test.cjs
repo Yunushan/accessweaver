@@ -200,7 +200,7 @@ test('diagnostic report identifies and escapes the tested path and endpoint',()=
 });
 
 test('a rejected diagnostic clears the previous report and export instead of showing stale success',async()=>{
- const env=environment();env.run('state.offline=false;state.loading=false;state.token="fixture";state.lastProbe={checks:[{status:"ok"}]}');
+ const env=environment();env.run('state.view="diagnostics";state.offline=false;state.loading=false;state.token="fixture";state.lastProbe={checks:[{status:"ok"}]}');
  env.get('probe-path').value='direct';env.get('probe-transport').value='tcp';env.context.fetch=async()=>({ok:false,status:403,json:async()=>({error:'policy denied'})});
  await env.run('runProbe()');assert.equal(env.run('state.lastProbe'),null);assert.equal(env.get('export-report').hidden,true);assert.equal(env.get('diagnostic-meta').hidden,true);assert.match(env.get('diagnostic-results').textContent,/Test failed: policy denied/);
 });
@@ -702,4 +702,81 @@ test('an earlier completion read cannot clear a later unresolved admission refus
  env.context.fetch=path=>path.endsWith('/lifecycle')?new Promise(resolve=>finish=resolve):Promise.resolve(historyFixtureResponse({code:'workflow-lifecycle-pending',error:'fixed'},409));
  const read=env.run('refreshWorkflowLifecycle()');await env.run('applySystem()');assert.equal(env.run('workflowLifecycleBlocked()'),true);finish(historyFixtureResponse(lifecycleFixture('released')));await read;
  assert.equal(env.run('workflowLifecycleUI.status.state'),'blocked');assert.equal(env.run('workflowLifecycleUI.loading'),false);assert.equal(env.get('system-apply').disabled,true);
+});
+
+// Diagnostic lifecycle fixtures use deferred source replies. They deliberately
+// ignore fetch abort to prove stale callbacks cannot publish or release owners.
+function onlineProbe(){const env=environment();env.run('state.view="diagnostics";state.loading=false;state.offline=false;state.disconnected=false;state.coreAuthenticated=true;state.token="diagnostic-session";updateProbeAvailability()');return env;}
+function probeFixtureReport(host='discord.com',overrides={}){return {host,port:443,path:'direct',transport:'tcp',at:'2026-11-01T00:00:00Z',checks:[{name:'TCP',status:'ok',durationMs:1,detail:'Source-only fixture'}],...overrides};}
+function diagnosticResponse(report,status=200){return {ok:status>=200&&status<300,status,json:async()=>report};}
+
+test('external API abort signals are isolated and listeners plus timers close on every terminal path',async()=>{
+ const {getEventListeners}=require('node:events'),env=environment(),first=new AbortController(),second=new AbortController(),pending=[],timers=new Set();let timer=0;
+ env.context.firstSignal=first.signal;env.context.secondSignal=second.signal;
+ env.context.setTimeout=()=>{const id=++timer;timers.add(id);return id};env.context.clearTimeout=id=>timers.delete(id);
+ env.context.fetch=(path,options)=>new Promise((resolve,reject)=>pending.push({path,signal:options.signal,resolve,reject}));
+ const a=env.run('apiRequest("/first","GET",undefined,1000,firstSignal)'),b=env.run('apiRequest("/second","GET",undefined,1000,secondSignal)');
+ assert.equal(getEventListeners(first.signal,'abort').length,1);assert.equal(getEventListeners(second.signal,'abort').length,1);first.abort();assert.equal(pending[0].signal.aborted,true);assert.equal(pending[1].signal.aborted,false);
+ pending[0].reject(new DOMException('source cancellation','AbortError'));pending[1].resolve(diagnosticResponse({ok:true}));await assert.rejects(a,{name:'AbortError'});assert.deepEqual(plain(await b),{ok:true});assert.equal(timers.size,0);assert.equal(getEventListeners(first.signal,'abort').length,0);assert.equal(getEventListeners(second.signal,'abort').length,0);
+ const ended=new AbortController();ended.abort();env.context.endedSignal=ended.signal;let sends=0;env.context.fetch=async()=>{sends++;return diagnosticResponse({})};await assert.rejects(env.run('apiRequest("/ended","GET",undefined,1000,endedSignal)'),{name:'AbortError'});assert.equal(sends,0);assert.equal(timers.size,0);
+ const fault=new AbortController();env.context.faultSignal=fault.signal;env.context.fetch=async()=>({ok:true,json:async()=>{throw Error('source decode fault')}});await assert.rejects(env.run('apiRequest("/parse","GET",undefined,1000,faultSignal)'));assert.equal(getEventListeners(fault.signal,'abort').length,0);assert.equal(timers.size,0);
+});
+
+test('explicit diagnostic cancellation preserves inputs and other operations while discarding late success',async()=>{
+ const env=onlineProbe();let resolve,signal;const requests=[];env.get('probe-host').value='private-target.example';env.get('probe-path').value='socks5';env.get('probe-proxy').value='127.0.0.1:1080';env.run('state.busy=true;state.supportExporting=true');
+ env.context.fetch=(path,options)=>{requests.push({path,options});signal=options.signal;return new Promise(done=>resolve=done)};
+ const running=env.run('runProbe()');assert.equal(env.get('probe-cancel').disabled,false);assert.equal(env.get('probe-submit').disabled,true);assert.equal(requests.length,1);assert.equal(JSON.parse(requests[0].options.body).proxy,'127.0.0.1:1080');
+ env.run('cancelProbe()');assert.equal(signal.aborted,true);assert.equal(env.run('state.probing'),false);assert.equal(env.run('state.busy'),true);assert.equal(env.run('state.supportExporting'),true);assert.equal(env.get('probe-host').value,'private-target.example');assert.equal(env.get('probe-proxy').value,'127.0.0.1:1080');assert.equal(env.get('probe-cancel').disabled,true);assert.match(env.get('diagnostic-results').textContent,/Cancellation requested/);
+ resolve(diagnosticResponse(probeFixtureReport('LATE_PRIVATE_TARGET')));await running;assert.equal(env.run('state.lastProbe'),null);assert.equal(env.get('export-report').hidden,true);assert.equal(env.get('diagnostic-meta').hidden,true);assert.doesNotMatch(env.get('diagnostic-results').textContent,/LATE_PRIVATE_TARGET/);assert.equal(requests.length,1);
+});
+
+test('late canceled diagnostic success and error cannot finish or overwrite a newer diagnostic',async()=>{
+ for(const oldError of [false,true]){
+  const env=onlineProbe(),pending=[];env.context.fetch=(_path,options)=>new Promise((resolve,reject)=>pending.push({resolve,reject,signal:options.signal}));
+  const old=env.run('runProbe()');env.run('cancelProbe()');env.get('probe-host').value='new.example';const current=env.run('runProbe()');
+  if(oldError)pending[0].reject(Error('LATE_PRIVATE_ERROR'));else pending[0].resolve(diagnosticResponse(probeFixtureReport('old.example')));await old;
+  assert.equal(env.run('state.probing'),true);assert.equal(env.get('probe-submit').disabled,true);assert.equal(env.get('probe-cancel').disabled,false);assert.equal(pending[1].signal.aborted,false);assert.equal(env.run('state.lastProbe'),null);assert.doesNotMatch(env.get('diagnostic-results').textContent,/LATE_PRIVATE_ERROR|old.example/);
+  pending[1].resolve(diagnosticResponse(probeFixtureReport('new.example')));await current;assert.equal(env.run('state.lastProbe.host'),'new.example');assert.equal(env.get('probe-submit').disabled,false);assert.equal(env.get('probe-cancel').disabled,true);assert.equal(env.get('export-report').hidden,false);
+ }
+});
+
+test('diagnostic navigation, inputs, session, mode and connection resets abort and clear private results',async()=>{
+ for(const change of ['navigate("settings")','$("probe-host").value="changed.example";probeInputsChanged()','state.token="replacement-session";updateProbeAvailability()','state.profileEditingOnly=true;updateProbeAvailability()','state.offline=true;updateProbeAvailability()','state.disconnected=true;updateProbeAvailability()','state.loading=true;updateProbeAvailability()','state.coreAuthenticated=false;updateProbeAvailability()']){
+  const env=onlineProbe();let resolve,signal;env.context.fetch=(_path,options)=>{signal=options.signal;return new Promise(done=>resolve=done)};
+  const running=env.run('runProbe()');env.run(change);assert.equal(signal.aborted,true);resolve(diagnosticResponse(probeFixtureReport('LATE_PRIVATE_RESULT')));await running;
+  assert.equal(env.run('state.lastProbe'),null);assert.equal(env.run('probeUI.completed'),null);assert.equal(env.run('state.probing'),false);assert.equal(env.get('export-report').hidden,true);assert.equal(env.get('diagnostic-meta').hidden,true);assert.doesNotMatch(env.get('diagnostic-results').textContent,/LATE_PRIVATE_RESULT/);
+ }
+});
+
+test('a profile-only bootstrap clears an in-flight diagnostic before a later profile read fails',async()=>{
+ const env=onlineProbe();let resolve,signal;env.context.fetch=(path,options)=>path==='/api/v1/diagnose'?(signal=options.signal,new Promise(done=>resolve=done)):Promise.resolve(path==='/api/bootstrap'?diagnosticResponse({platform:'linux',profileEditingOnly:true}):path==='/api/v1/profiles'?diagnosticResponse({error:'private profile failure'},500):diagnosticResponse([]));
+ const running=env.run('runProbe()');await assert.rejects(env.run('readCore()'));assert.equal(signal.aborted,true);assert.equal(env.get('probe-submit').disabled,true);resolve(diagnosticResponse(probeFixtureReport('OLD_SESSION_TARGET')));await running;assert.equal(env.run('state.lastProbe'),null);assert.equal(env.get('export-report').hidden,true);
+});
+
+test('diagnostic export belongs only to the completed unchanged request and current session',async()=>{
+ const env=onlineProbe(),downloads=[];env.context.downloadFile=(data,name)=>downloads.push({data,name});env.context.fetch=async()=>diagnosticResponse(probeFixtureReport());
+ await env.run('runProbe()');env.run('exportProbeReport()');assert.equal(downloads.length,1);assert.equal(JSON.parse(downloads[0].data).host,'discord.com');
+ env.get('probe-host').value='changed-without-event.example';env.run('exportProbeReport()');assert.equal(downloads.length,1);assert.equal(env.run('state.lastProbe'),null);assert.equal(env.get('export-report').hidden,true);
+ await env.run('runProbe()');env.run('state.token="new-session";exportProbeReport()');assert.equal(downloads.length,1);assert.equal(env.run('state.lastProbe'),null);
+ const noSend=onlineProbe();let sends=0;noSend.context.fetch=async()=>{sends++;return diagnosticResponse(probeFixtureReport())};noSend.run('state.profileEditingOnly=true');await noSend.run('runProbe()');assert.equal(sends,0);
+});
+
+test('diagnostic busy feedback is localized without replay and preserves the reviewed test inputs',async()=>{
+ for(const lang of ['en','tr','ru','es']){
+  const env=onlineProbe();env.context.langFixture=lang;env.run('state.lang=langFixture');env.get('probe-host').value='chosen.example';let sends=0;
+  env.context.fetch=async()=>{sends++;return diagnosticResponse({error:'PRIVATE_BUSY_CAUSE',code:'diagnostic-busy'},503)};await env.run('runProbe()');assert.equal(sends,1);assert.equal(env.get('probe-host').value,'chosen.example');assert.equal(env.get('export-report').hidden,true);assert.equal(env.get('probe-submit').disabled,false);assert.equal(env.get('probe-cancel').disabled,true);assert.equal(env.get('diagnostic-results').textContent,env.run('t("probeBusy")'));assert.doesNotMatch(env.get('diagnostic-results').textContent,/PRIVATE_BUSY_CAUSE|diagnostic-busy/);
+  for(const key of ['probeCancel','probeCanceled','probeInputsCleared','probeContextCleared','probeViewCleared','probeBusy','probeRequestEnded']){env.context.copyKey=key;assert.notEqual(env.run('t(copyKey)'),key);}
+  env.context.fetch=async()=>{sends++;return diagnosticResponse(probeFixtureReport('chosen.example'))};await env.run('runProbe()');assert.equal(sends,2);assert.equal(env.run('state.lastProbe.host'),'chosen.example');
+ }
+});
+
+test('diagnostic timeouts during fetch and JSON body consumption cannot publish a late success',async()=>{
+ for(const phase of ['fetch','body']){
+  const env=onlineProbe();let timeout,finish,signal,bodyEntered=false;env.context.setTimeout=callback=>{timeout=callback;return 1};env.context.clearTimeout=()=>{};
+  env.context.fetch=(_path,options)=>{signal=options.signal;return phase==='fetch'?new Promise(resolve=>finish=resolve):Promise.resolve({ok:true,json:()=>{bodyEntered=true;return new Promise(resolve=>finish=resolve)}})};
+  const running=env.run('runProbe()');if(phase==='body'){for(let i=0;i<4&&!bodyEntered;i++)await Promise.resolve();assert.equal(bodyEntered,true);}
+  timeout();assert.equal(signal.aborted,true);if(phase==='fetch')finish(diagnosticResponse(probeFixtureReport('LATE_TIMEOUT_RESULT')));else finish(probeFixtureReport('LATE_TIMEOUT_RESULT'));await running;
+  assert.equal(env.run('state.lastProbe'),null);assert.equal(env.get('export-report').hidden,true);assert.equal(env.get('probe-submit').disabled,false);assert.match(env.get('diagnostic-results').textContent,/ended before completion/);assert.doesNotMatch(env.get('diagnostic-results').textContent,/LATE_TIMEOUT_RESULT/);
+ }
+ const env=onlineProbe();let fail;env.context.fetch=async()=>({ok:true,json:()=>new Promise((_resolve,reject)=>fail=reject)});const request=env.run('apiRequest("/body")');for(let i=0;i<4&&!fail;i++)await Promise.resolve();fail(new DOMException('source body aborted','AbortError'));await assert.rejects(request,{name:'AbortError'});
 });

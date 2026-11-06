@@ -39,6 +39,7 @@ type Server struct {
 	mutations     mutationGate
 	historyRead   sync.Mutex
 	lifecycleRead sync.Mutex
+	diagnosticRun sync.Mutex
 	statusRead    sync.Mutex
 	lifecycleMu   sync.Mutex
 	shutdown      *serverShutdownState
@@ -224,6 +225,15 @@ func (s *Server) Handler() http.Handler {
 			fail(w, http.StatusForbidden, err.Error())
 			return
 		}
+		// Keep this independent from mutations, workflow status and cancellation.
+		// The slot remains owned through transport cleanup and response output;
+		// canceling one HTTP client cannot multiply still-running diagnostics.
+		if !s.diagnosticRun.TryLock() {
+			w.Header().Set("Retry-After", "1")
+			JSON(w, http.StatusServiceUnavailable, map[string]string{"error": "another diagnostic is still finishing; try again shortly", "code": "diagnostic-busy"})
+			return
+		}
+		defer s.diagnosticRun.Unlock()
 		var input diagnostics.Request
 		if err := readJSON(w, r, &input); err != nil {
 			fail(w, 400, err.Error())

@@ -632,3 +632,45 @@ test('lifecycle fixture: protected completion tracking and pending admission pre
   const before=reads;restricted=true;await page.reload();await expect(page.locator('.nav-item[data-view="system"]')).toBeDisabled();await expect(page.locator('#history-lifecycle-card')).toBeHidden();expect(reads).toBe(before);
  }finally{releaseRead();}
 });
+
+// No core fixture: all assets and API replies are synthetic. This exercises the
+// browser operation lifecycle only; no diagnostic sockets or native worker run.
+test('diagnostic fixture: cancellation, busy admission and late replies preserve the current request',async({page},testInfo)=>{
+ const origin='http://127.0.0.1:43104',session='c'.repeat(43),assets=new Map(),requests=[],held=[];let profileOnly=false;
+ for(const [route,file,type] of [['/','index.html','text/html'],['/app.js','app.js','text/javascript'],['/locales.js','locales.js','text/javascript'],['/system.js','system.js','text/javascript'],['/app.css','app.css','text/css']])assets.set(route,{body:await fs.readFile(path.join(repo,'web',file)),contentType:type});
+ const report=request=>({host:request.host,port:request.port,path:request.path,transport:request.transport,...(request.proxy?{proxy:request.proxy}:{}),at:'2026-11-01T00:00:00Z',checks:[{name:'Source fixture',status:'ok',durationMs:1,detail:'No diagnostic traffic sent'}]});
+ const barrier=()=>{let release,complete;const wait=new Promise(resolve=>release=resolve),done=new Promise(resolve=>complete=resolve),value={release,complete,wait,done};held.push(value);return value};
+ await page.route('**/*',async route=>{
+  const url=new URL(route.request().url());if(url.origin!==origin){await route.abort();return;}
+  const asset=assets.get(url.pathname);if(asset){await route.fulfill(asset);return;}
+  expect(route.request().headers()['x-accessweaver-token']).toBe(session);
+  if(url.pathname==='/api/bootstrap'){await route.fulfill({json:{platform:'linux',version:'source-only-diagnostic-fixture',profileEditingOnly:profileOnly}});return;}
+  if(url.pathname==='/api/v1/engines'||url.pathname==='/api/v1/profiles'){await route.fulfill({json:[]});return;}
+  if(url.pathname==='/api/v1/runtime'){await route.fulfill({json:{state:'stopped',log:[]}});return;}
+  if(url.pathname==='/api/v1/diagnose'){
+   expect(route.request().method()).toBe('POST');const request=route.request().postDataJSON();requests.push(request);const ordinal=requests.length;
+   if(ordinal===2){await route.fulfill({status:503,headers:{'Retry-After':'1'},json:{code:'diagnostic-busy',error:'PRIVATE_SYNTHETIC_BUSY_DETAIL'}});return;}
+   if(ordinal===4){await route.fulfill({json:report(request)});return;}
+   const gate=barrier();await gate.wait;try{await route.fulfill({json:report(request)})}catch{}finally{gate.complete()}return;
+  }
+  await route.fulfill({status:404,json:{error:'Synthetic route unavailable'}});
+ });
+ const nav=async view=>{const toggle=page.locator('#menu-toggle');if(await toggle.isVisible())await toggle.click();await page.locator('.nav-item[data-view="'+view+'"]').click();};
+ try{
+  await page.goto(origin+'/#accessweaver-session='+session);await nav('diagnostics');await page.locator('#probe-path').selectOption('socks5');await page.locator('#probe-proxy').fill('127.0.0.1:1080');await page.locator('#probe-host').fill('first.synthetic.example');await page.locator('#probe-timeout').fill('60');
+  await expect(page.locator('#probe-submit')).toBeEnabled();expect(await page.locator('#diagnostic-form').evaluate(form=>form.checkValidity())).toBe(true);await page.locator('#probe-submit').click();await expect.poll(()=>requests.length).toBe(1);await expect(page.locator('#probe-cancel')).toBeEnabled();await page.locator('#probe-cancel').focus();await page.keyboard.press('Enter');
+  await expect(page.locator('#diagnostic-results')).toContainText('Cancellation requested');await expect(page.locator('#probe-host')).toHaveValue('first.synthetic.example');await expect(page.locator('#probe-proxy')).toHaveValue('127.0.0.1:1080');await expect(page.locator('#export-report')).toBeHidden();await expect(page.locator('#probe-submit')).toBeFocused();
+  await page.locator('#probe-submit').click();await expect(page.locator('#diagnostic-results')).toContainText('active or still finishing');expect(requests).toHaveLength(2);await expect(page.locator('#diagnostic-results')).not.toContainText('PRIVATE_SYNTHETIC_BUSY_DETAIL');await expect(page.locator('#probe-submit')).toBeEnabled();held[0].release();await held[0].done;await expect(page.locator('#diagnostic-meta')).toBeHidden();
+  await page.locator('#probe-host').fill('second.synthetic.example');await page.locator('#probe-submit').click();await expect.poll(()=>requests.length).toBe(3);await page.locator('#probe-host').fill('current.synthetic.example');await expect(page.locator('#probe-cancel')).toBeDisabled();await expect(page.locator('#diagnostic-results')).toContainText('Inputs changed');await page.locator('#probe-submit').click();await expect(page.locator('#diagnostic-meta')).toContainText('current.synthetic.example');
+  held[1].release();await held[1].done;await expect(page.locator('#diagnostic-meta')).not.toContainText('second.synthetic.example');
+  const downloadReady=page.waitForEvent('download');await page.locator('#export-report').click();const download=await downloadReady;const exported=JSON.parse(await fs.readFile(await download.path(),'utf8'));expect(exported.host).toBe('current.synthetic.example');expect(exported.path).toBe('socks5');expect(exported.proxy).toBe('127.0.0.1:1080');
+  await nav('settings');await nav('diagnostics');await expect(page.locator('#export-report')).toBeHidden();await expect(page.locator('#diagnostic-meta')).toBeHidden();await expect(page.locator('#probe-host')).toHaveValue('current.synthetic.example');
+  const labels={en:'Cancel test',tr:'Testi iptal et',ru:'Отменить тест',es:'Cancelar prueba'};
+  for(const [language,label] of Object.entries(labels)){
+   await nav('settings');await page.locator('#settings-language').selectOption(language);await nav('diagnostics');await page.locator('#probe-host').fill('locale-'+language+'.synthetic.example');const count=requests.length;await page.locator('#probe-submit').click();await expect.poll(()=>requests.length).toBe(count+1);await expect(page.locator('#probe-cancel')).toHaveText(label);await page.locator('#probe-cancel').focus();await page.keyboard.press('Enter');await expect(page.locator('#probe-cancel')).toBeDisabled();await expect(page.locator('#export-report')).toBeHidden();await expect(page.locator('#diagnostic-results')).not.toContainText('probeCanceled');held.at(-1).release();await held.at(-1).done;
+  }
+  await page.locator('#lang-toggle').click();await expect(page.locator('html')).toHaveAttribute('lang','en');await expect(page.locator('#diagnostic-results')).toContainText('Cancellation requested');await expect(page.locator('#toast')).not.toContainText('Test completed');await page.setViewportSize({width:390,height:844});await settleAnimations(page);await expect(page.locator('#menu-toggle')).toHaveAttribute('aria-expanded','false');expect(await page.locator('#sidebar').evaluate(sidebar=>sidebar.inert)).toBe(true);expect(await page.evaluate(()=>!$('sidebar').contains(document.activeElement))).toBe(true);await expect.poll(()=>page.locator('#sidebar').evaluate(sidebar=>sidebar.getBoundingClientRect().right)).toBeLessThanOrEqual(0.5);await page.screenshot({path:testInfo.outputPath('diagnostic-fixture-source-only-canceled.png'),fullPage:true});
+  await page.locator('#probe-submit').click();await expect(page.locator('#probe-cancel')).toBeEnabled();await expect.poll(()=>held.length).toBe(7);profileOnly=true;await page.evaluate(async()=>{await readCore();renderAll()});await expect(page.locator('.nav-item[data-view="diagnostics"]')).toBeDisabled();await expect(page.locator('#export-report')).toBeHidden();expect(await page.evaluate(()=>state.lastProbe)).toBeNull();held.at(-1).release();await held.at(-1).done;
+  expect(requests.every(request=>request.path==='socks5'&&request.proxy==='127.0.0.1:1080')).toBe(true);
+ }finally{for(const gate of held)gate.release();await Promise.allSettled(held.map(gate=>gate.done));}
+});

@@ -138,3 +138,5 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .lifecycle-card { margin-top: 20px; }
 .lifecycle-card h2 { margin: 0; }
 .lifecycle-job { overflow-wrap: anywhere; }
+
+.diagnostic-cancel { margin-top: 10px; }
