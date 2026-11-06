@@ -159,7 +159,11 @@ func TestBackupContextBeforePassphraseAndFixedSourceError(t *testing.T) {
 }
 
 func TestBackupOutputNativeAncestorIdentityRefusesSource(t *testing.T) {
-	root := t.TempDir()
+	// Production passes a resolved parent to the strict ancestry helper.
+	root, e := filepath.EvalSymlinks(t.TempDir())
+	if e != nil {
+		t.Fatal(e)
+	}
 	source := filepath.Join(root, "source")
 	child := filepath.Join(source, "child")
 	if e := os.MkdirAll(child, 0700); e != nil {

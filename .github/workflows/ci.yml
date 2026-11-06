@@ -21,6 +21,15 @@ on:
           - recovery-journal
           - desktop-support
           - backup-io
+      backup_platform:
+        description: Native platform for the manual backup-io scope only
+        type: choice
+        default: all
+        options:
+          - all
+          - linux
+          - windows
+          - darwin
 
 permissions:
   contents: read
@@ -835,31 +844,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            goos: linux
-            goarch: amd64
-            sdkarch: x64
-          - os: ubuntu-24.04-arm
-            goos: linux
-            goarch: arm64
-            sdkarch: arm64
-          - os: windows-latest
-            goos: windows
-            goarch: amd64
-            sdkarch: x64
-          - os: windows-11-arm
-            goos: windows
-            goarch: arm64
-            sdkarch: arm64
-          - os: macos-latest
-            goos: darwin
-            goarch: arm64
-            sdkarch: arm64
-          - os: macos-15-intel
-            goos: darwin
-            goarch: amd64
-            sdkarch: x64
+        include: >-
+          ${{ fromJSON(
+            inputs.backup_platform == 'linux' && '[{"os":"ubuntu-latest","goos":"linux","goarch":"amd64","sdkarch":"x64"},{"os":"ubuntu-24.04-arm","goos":"linux","goarch":"arm64","sdkarch":"arm64"}]' ||
+            inputs.backup_platform == 'windows' && '[{"os":"windows-latest","goos":"windows","goarch":"amd64","sdkarch":"x64"},{"os":"windows-11-arm","goos":"windows","goarch":"arm64","sdkarch":"arm64"}]' ||
+            inputs.backup_platform == 'darwin' && '[{"os":"macos-latest","goos":"darwin","goarch":"arm64","sdkarch":"arm64"},{"os":"macos-15-intel","goos":"darwin","goarch":"amd64","sdkarch":"x64"}]' ||
+            '[{"os":"ubuntu-latest","goos":"linux","goarch":"amd64","sdkarch":"x64"},{"os":"ubuntu-24.04-arm","goos":"linux","goarch":"arm64","sdkarch":"arm64"},{"os":"windows-latest","goos":"windows","goarch":"amd64","sdkarch":"x64"},{"os":"windows-11-arm","goos":"windows","goarch":"arm64","sdkarch":"arm64"},{"os":"macos-latest","goos":"darwin","goarch":"arm64","sdkarch":"arm64"},{"os":"macos-15-intel","goos":"darwin","goarch":"amd64","sdkarch":"x64"}]'
+          ) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     env:
