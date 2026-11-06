@@ -398,6 +398,8 @@ test('large retained history has a bounded preview and complete private exports'
  await expect(page.locator('#history-detail img')).toHaveCount(0);expect(await page.evaluate(()=>globalThis.workflowPayloadExecuted)).toBeUndefined();expect(await page.evaluate(()=>globalThis.workflowMetadataExecuted)).toBeUndefined();
  await expect(page.locator('#history-detail')).toHaveAttribute('aria-describedby','history-detail-limited');
  expect((await page.locator('#history-detail').textContent()).length).toBeLessThanOrEqual(128*1024);
+ const detailName=await page.locator('#history-detail-title').textContent(),previewName=await page.locator('#history-preview-title').textContent();
+ await expect(page.locator('#history-detail-panel')).toHaveAccessibleName(detailName);await expect(page.locator('#history-detail')).toHaveAccessibleName(detailName+' '+previewName);expect(previewName).not.toBe('');
  await scanAccessibility(page,core,testInfo,'limited-history-preview');await assertControlContrast(page,core,testInfo,'limited-history-preview');
  const pending=page.waitForEvent('download');await page.locator('#system-export-history').click();
  const download=await pending;expect(download.suggestedFilename()).toBe('accessweaver-workflow-history.json');
