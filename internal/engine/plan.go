@@ -214,7 +214,7 @@ func previewWithGuard(p profile.Profile, root string, guard *managed.Guard) (Lau
 	if p.Engine == "wiresock" && len(p.Routing.Applications) > 0 {
 		adapterProfile.ConfigPath = filepath.Join(root, "generated", p.ID+"-wiresock.conf")
 		plan.GeneratedFiles = append(plan.GeneratedFiles, adapterProfile.ConfigPath)
-		plan.Warnings = append(plan.Warnings, "Guided application rules replace AllowedApps/DisallowedApps in a private generated copy. The original tunnel configuration is unchanged.")
+		plan.Warnings = append(plan.Warnings, "Guided application rules replace AllowedApps/DisallowedApps in a generated configuration copy. The original tunnel configuration is unchanged.")
 	}
 	args, warnings, argumentIssues := adapterArgs(adapterProfile, executableBase(plan.Binary), include, exclude)
 	plan.Args = args
