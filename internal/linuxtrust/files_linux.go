@@ -53,7 +53,23 @@ func Check(file *os.File, directory bool, owner uint32) (os.FileInfo, error) {
 func validName(name string) bool {
 	return name != "" && name != "." && name != ".." && !strings.Contains(name, "/") && strings.IndexByte(name, 0) < 0
 }
+
+// openingOperations belongs to one call. Tests inject returned cleanup errors
+// after closing real owned descriptors; production has no mutable test hooks.
+type openingOperations struct {
+	check func(*os.File, bool, uint32) (os.FileInfo, error)
+	close func(*os.File) error
+}
+
+func nativeOpeningOperations() openingOperations {
+	return openingOperations{check: Check, close: (*os.File).Close}
+}
+
 func OpenDirectoryAt(parent *os.File, name string, owner uint32) (*os.File, error) {
+	return openDirectoryAt(parent, name, owner, nativeOpeningOperations())
+}
+
+func openDirectoryAt(parent *os.File, name string, owner uint32, ops openingOperations) (*os.File, error) {
 	if !validName(name) {
 		return nil, errors.New("expected one directory name")
 	}
@@ -62,13 +78,16 @@ func OpenDirectoryAt(parent *os.File, name string, owner uint32) (*os.File, erro
 		return nil, err
 	}
 	file := os.NewFile(uintptr(fd), filepath.Join(parent.Name(), name))
-	if _, err := Check(file, true, owner); err != nil {
-		file.Close()
-		return nil, err
+	if _, err := ops.check(file, true, owner); err != nil {
+		return nil, errors.Join(err, ops.close(file))
 	}
 	return file, nil
 }
 func OpenRootDirectory(path string) (*os.File, error) {
+	return openRootDirectory(path, nativeOpeningOperations())
+}
+
+func openRootDirectory(path string, ops openingOperations) (*os.File, error) {
 	if !strings.HasPrefix(path, "/") || strings.IndexByte(path, 0) >= 0 {
 		return nil, errors.New("managed directory must be absolute")
 	}
@@ -77,17 +96,21 @@ func OpenRootDirectory(path string) (*os.File, error) {
 		return nil, err
 	}
 	current := os.NewFile(uintptr(fd), "/")
-	if _, err := Check(current, true, 0); err != nil {
-		current.Close()
-		return nil, err
+	if _, err := ops.check(current, true, 0); err != nil {
+		return nil, errors.Join(err, ops.close(current))
 	}
 	if path == "/" {
 		return current, nil
 	}
 	for _, part := range strings.Split(strings.TrimPrefix(path, "/"), "/") {
-		next, err := OpenDirectoryAt(current, part, 0)
-		current.Close()
+		next, openErr := openDirectoryAt(current, part, 0, ops)
+		// The next directory cannot be handed off until the previous owned
+		// anchor completes. A failed close is attempted once, never retried.
+		err := errors.Join(openErr, ops.close(current))
 		if err != nil {
+			if next != nil {
+				err = errors.Join(err, ops.close(next))
+			}
 			return nil, err
 		}
 		current = next
@@ -95,6 +118,10 @@ func OpenRootDirectory(path string) (*os.File, error) {
 	return current, nil
 }
 func OpenRegularAt(parent *os.File, name string, owner uint32) (*os.File, error) {
+	return openRegularAt(parent, name, owner, nativeOpeningOperations())
+}
+
+func openRegularAt(parent *os.File, name string, owner uint32, ops openingOperations) (*os.File, error) {
 	if !validName(name) {
 		return nil, errors.New("expected one regular-file name")
 	}
@@ -104,9 +131,9 @@ func OpenRegularAt(parent *os.File, name string, owner uint32) (*os.File, error)
 		return nil, err
 	}
 	probe := os.NewFile(uintptr(fd), name)
-	before, err := Check(probe, false, owner)
-	probe.Close()
-	if err != nil {
+	before, checkErr := ops.check(probe, false, owner)
+	// Do not open the readable handle after an unconfirmed probe close.
+	if err := errors.Join(checkErr, ops.close(probe)); err != nil {
 		return nil, err
 	}
 	fd, err = syscall.Openat(int(parent.Fd()), name, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
@@ -114,13 +141,12 @@ func OpenRegularAt(parent *os.File, name string, owner uint32) (*os.File, error)
 		return nil, err
 	}
 	file := os.NewFile(uintptr(fd), filepath.Join(parent.Name(), name))
-	after, err := Check(file, false, owner)
+	after, err := ops.check(file, false, owner)
 	if err != nil || !os.SameFile(before, after) {
-		file.Close()
-		if err != nil {
-			return nil, err
+		if err == nil {
+			err = errors.New("managed file changed while opening")
 		}
-		return nil, errors.New("managed file changed while opening")
+		return nil, errors.Join(err, ops.close(file))
 	}
 	return file, nil
 }

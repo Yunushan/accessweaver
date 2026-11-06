@@ -1042,6 +1042,31 @@ jobs:
             go test -race ./internal/engine -run '^TestPreStart' -count=1 -timeout=3m
             if ($LASTEXITCODE -ne 0) { throw 'Pre-start cleanup race contracts failed' }
           }
+      - name: Test Linux trust opening completion
+        if: runner.os == 'Linux' && inputs.scope == 'profile-read'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidate = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $candidate -ne $env:GITHUB_SHA) { throw 'Linux trust source identity mismatch' }
+          $changes = git status --porcelain --untracked-files=all
+          if ($LASTEXITCODE -ne 0 -or $changes) { throw 'Linux trust requires clean committed source' }
+          $env:ACCESSWEAVER_LINUX_TRUST_EVIDENCE = 'normal'
+          go test ./internal/linuxtrust ./internal/managed -count=1 -timeout=3m
+          if ($LASTEXITCODE -ne 0) { throw 'Linux trust normal completion contracts failed' }
+          $env:ACCESSWEAVER_LINUX_TRUST_EVIDENCE = 'race'
+          go test -race ./internal/linuxtrust ./internal/managed -count=1 -timeout=4m
+          if ($LASTEXITCODE -ne 0) { throw 'Linux trust race completion contracts failed' }
+          Remove-Item Env:ACCESSWEAVER_LINUX_TRUST_EVIDENCE
+          go vet ./internal/linuxtrust ./internal/managed
+          if ($LASTEXITCODE -ne 0) { throw 'Linux trust static analysis failed' }
+      - name: Retain Linux trust opening evidence
+        if: always() && runner.os == 'Linux' && inputs.scope == 'profile-read'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-trust-opening-${{ matrix.goarch }}
+          path: build/linux-trust-opening/*.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Test generated input write completion contracts
         if: inputs.scope == 'profile-read'
         run: go test ./internal/engine -run '^Test(AtomicWriteGenerated|ExecutableHashCompletion|ConfigInput|PreparationContext)' -count=1 -timeout=3m
