@@ -68,6 +68,7 @@ func TestEnginePreparationErrorPrecedence(t *testing.T) {
 	}{
 		{"canceled", context.Canceled, http.StatusRequestTimeout, "context canceled"},
 		{"expired", context.DeadlineExceeded, http.StatusRequestTimeout, "context deadline exceeded"},
+		{"cleanup-uncertain", errors.Join(context.Canceled, engine.ErrPreparationCleanupUncertain, errors.New("PRIVATE_CLEANUP_DETAIL")), http.StatusServiceUnavailable, engine.ErrPreparationCleanupUncertain.Error()},
 		{"atomic-uncertainty", errors.Join(context.Canceled, profile.ErrAtomicWriteUncertain), http.StatusServiceUnavailable, profile.ErrAtomicWriteUncertain.Error()},
 		{"denied", errors.Join(context.Canceled, managed.ErrDenied), http.StatusForbidden, ""},
 	} {

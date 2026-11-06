@@ -269,7 +269,7 @@ func TestPreparationContextCancellationAfterOwnerAllocationClosesOwner(t *testin
 		return tap, nil
 	}
 	run, err := manager.StartTrackedContext(ctx, f.profile)
-	if run != nil || !errors.Is(err, context.Canceled) || !errors.Is(err, closeCause) || tap == nil || tap.aborted != 1 || err.Error() != errPreparationCanceled.Error() {
+	if run != nil || !errors.Is(err, context.Canceled) || !errors.Is(err, closeCause) || tap == nil || tap.aborted != 1 || !errors.Is(err, ErrPreparationCleanupUncertain) || err.Error() != ErrPreparationCleanupUncertain.Error() {
 		t.Fatal("canceled pre-start owner was not closed or cofailure lost")
 	}
 	if manager.Snapshot().PID != 0 {

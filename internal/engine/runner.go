@@ -149,6 +149,7 @@ type Manager struct {
 	root                  string
 	closing               bool
 	shutdown              *managerShutdown
+	preparationFault      error // Sticky unconfirmed pre-start cleanup; no child Run.
 	prepareLifetime       lifetimeFactory
 	output                io.Writer
 	afterStart            func() // Private source-test observer, fixed before Start.
@@ -304,7 +305,13 @@ func (m *Manager) startTrackedContext(caller context.Context, p profile.Profile,
 	}
 	owner, err := factory(cmd)
 	if err != nil {
-		return nil, err
+		if owner != nil {
+			return nil, m.abortPreparedOwner(owner, err)
+		}
+		return nil, m.rememberPreparationFailure(err)
+	}
+	if owner == nil {
+		return nil, ErrProcessLifecycle
 	}
 	run := &runState{done: make(chan struct{}), owner: owner}
 	owner.setFaultHandler(func(fault error) {
@@ -321,25 +328,26 @@ func (m *Manager) startTrackedContext(caller context.Context, p profile.Profile,
 	m.mu.Unlock()
 	callerErr := preparationContextError(caller)
 	if closing || occupied || ctx.Err() != nil || callerErr != nil {
-		closeErr := owner.abortStart()
-		if closing {
-			return nil, errors.Join(errors.New("engine manager is shutting down"), closeErr)
+		var primary error
+		switch {
+		case closing:
+			primary = errors.New("engine manager is shutting down")
+		case occupied:
+			primary = errors.New("another engine is running; stop it before starting a new one")
+		case callerErr != nil:
+			primary = &preparationCancellation{cause: errors.Join(ctx.Err(), callerErr)}
+		default:
+			primary = ctx.Err()
 		}
-		if occupied {
-			return nil, errors.Join(errors.New("another engine is running; stop it before starting a new one"), closeErr)
-		}
-		if callerErr != nil {
-			return nil, &preparationCancellation{cause: errors.Join(ctx.Err(), callerErr, closeErr)}
-		}
-		return nil, errors.Join(ctx.Err(), closeErr)
+		return nil, m.abortPreparedOwner(owner, primary)
 	}
+
 	// Never hold Manager.mu across Start: child output uses that mutex.
 	if err := cmd.Start(); err != nil {
-		closeErr := owner.abortStart()
 		if cause := context.Cause(ctx); managed.IsPolicyError(cause) {
 			err = errors.Join(cause, err)
 		}
-		return nil, errors.Join(fmt.Errorf("engine start failed: %w", err), closeErr)
+		return nil, m.abortPreparedOwner(owner, fmt.Errorf("engine start failed: %w", err))
 	}
 	started = true
 	if m.afterStart != nil {
@@ -496,11 +504,14 @@ func (m *Manager) pendingLifetimeError() error {
 	m.mu.Lock()
 	run := m.run
 	active := m.cmd != nil
+	fault := m.preparationFault
 	m.mu.Unlock()
 	if active && run != nil && run.owner != nil {
-		return run.owner.pendingError()
+		if pending := run.owner.pendingError(); pending != nil {
+			return pending
+		}
 	}
-	return nil
+	return fault
 }
 
 // RetryCleanup is an explicit, generation-bound recovery for known retained

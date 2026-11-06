@@ -118,6 +118,10 @@ func failProfile(w http.ResponseWriter, err error, fallback int) {
 
 // Preserve uncertainty/policy precedence while categorizing canceled launch work.
 func failEnginePreparation(w http.ResponseWriter, err error) {
+	if errors.Is(err, engine.ErrPreparationCleanupUncertain) {
+		fail(w, http.StatusServiceUnavailable, engine.ErrPreparationCleanupUncertain.Error())
+		return
+	}
 	status := http.StatusBadRequest
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		status = http.StatusRequestTimeout

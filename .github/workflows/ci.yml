@@ -896,6 +896,16 @@ jobs:
       - name: Test profile import read completion contracts
         if: inputs.scope == 'profile-read'
         run: go test ./cmd/accessweaver -run '^Test(AuditImport(Read|Mutation|AtomicWrite)Completion|ForegroundEngine|RecordedEngineLifecycle)' -count=1 -timeout=3m
+      - name: Test pre-start cleanup retention contracts
+        if: inputs.scope == 'profile-read'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          go test ./internal/engine -run '^TestPreStart' -count=1 -timeout=3m
+          if ($LASTEXITCODE -ne 0) { throw 'Pre-start cleanup contracts failed' }
+          if ($env:RUNNER_OS -ne 'Windows') {
+            go test -race ./internal/engine -run '^TestPreStart' -count=1 -timeout=3m
+            if ($LASTEXITCODE -ne 0) { throw 'Pre-start cleanup race contracts failed' }
+          }
       - name: Test generated input write completion contracts
         if: inputs.scope == 'profile-read'
         run: go test ./internal/engine -run '^Test(AtomicWriteGenerated|ExecutableHashCompletion|ConfigInput|PreparationContext)' -count=1 -timeout=3m
