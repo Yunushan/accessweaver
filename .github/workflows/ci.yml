@@ -575,11 +575,11 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           & ./scripts/test-windows-component-archives.ps1
-          if ($LASTEXITCODE -ne 0) { throw 'Archive source contracts failed' }
+          if (-not $?) { throw 'Archive source contracts failed' }
           $fixture = Join-Path $env:RUNNER_TEMP ('accessweaver-finalizer-' + [Guid]::NewGuid().ToString('N'))
           New-Item -ItemType Directory -Path $fixture -ErrorAction Stop | Out-Null
           & ./scripts/test-windows-workflow-finalization.ps1 -InteropDirectory $fixture
-          if ($LASTEXITCODE -ne 0) { throw 'Finalizer source producer failed' }
+          if (-not $?) { throw 'Finalizer source producer failed' }
           $env:ACCESSWEAVER_WORKER_FINALIZATION_INTEROP = $fixture
           go test ./internal/workflow -run '^TestWorkerReportFinalizationPowerShellInterop$' -count=1 -timeout=2m
           if ($LASTEXITCODE -ne 0) { throw 'Finalizer report receiver failed' }
