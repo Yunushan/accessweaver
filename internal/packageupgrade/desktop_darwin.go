@@ -24,7 +24,7 @@ func readDesktopRegistrations() ([]desktopRecord, [][]byte, error) {
 	}
 	defer parent.Close()
 	root, e := deploymentDirectory(parent, desktopRoot, 0, false)
-	if errors.Is(e, unix.ENOENT) {
+	if darwintrust.IsReadAbsent(e) {
 		return nil, nil, nil
 	}
 	if e != nil {

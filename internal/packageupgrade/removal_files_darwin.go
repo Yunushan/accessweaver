@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Yunushan/accessweaver/internal/darwintrust"
 	"golang.org/x/sys/unix"
 )
 
@@ -164,7 +165,7 @@ func (r *removalIntentStore) removeNextRemovalObjectUsing(ctx context.Context, r
 			}
 		}
 	}
-	if errors.Is(e, unix.ENOENT) {
+	if darwintrust.IsReadAbsent(e) {
 		// Only the one canonical pending intent admits absence. A reopened
 		// protected parent must still match the frozen plan.
 		if !journal.pending {

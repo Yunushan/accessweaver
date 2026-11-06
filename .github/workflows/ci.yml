@@ -853,7 +853,7 @@ jobs:
             '[{"os":"ubuntu-latest","goos":"linux","goarch":"amd64","sdkarch":"x64"},{"os":"ubuntu-24.04-arm","goos":"linux","goarch":"arm64","sdkarch":"arm64"},{"os":"windows-latest","goos":"windows","goarch":"amd64","sdkarch":"x64"},{"os":"windows-11-arm","goos":"windows","goarch":"arm64","sdkarch":"arm64"},{"os":"macos-latest","goos":"darwin","goarch":"arm64","sdkarch":"arm64"},{"os":"macos-15-intel","goos":"darwin","goarch":"amd64","sdkarch":"x64"}]'
           ) }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 20
     env:
       GOTOOLCHAIN: local
       ACCESSWEAVER_EXPECT_GOOS: ${{ matrix.goos }}
@@ -896,6 +896,32 @@ jobs:
       - name: Test profile import read completion contracts
         if: inputs.scope == 'profile-read'
         run: go test ./cmd/accessweaver -run '^Test(AuditImport(Read|Mutation|AtomicWrite)Completion|ForegroundEngine|RecordedEngineLifecycle)' -count=1 -timeout=3m
+      - name: Test native Darwin read acquisition completion
+        if: inputs.scope == 'profile-read' && matrix.goos == 'darwin'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $readEvidence = Join-Path $env:RUNNER_TEMP ('accessweaver-darwin-read-acquisition-' + [Guid]::NewGuid().ToString('N'))
+          ('ACCESSWEAVER_DARWIN_READ_ACQUISITION_EVIDENCE=' + $readEvidence) | Out-File -LiteralPath $env:GITHUB_ENV -Encoding utf8 -Append -ErrorAction Stop
+          $normalEvidence = Join-Path $readEvidence 'normal'
+          New-Item -ItemType Directory -Path $normalEvidence -Force -ErrorAction Stop | Out-Null
+          $env:ACCESSWEAVER_DARWIN_READ_ACQUISITION_REPORT = $normalEvidence
+          go test -p=2 ./internal/darwintrust ./internal/managed ./internal/packageupgrade -count=1 -timeout=4m
+          if ($LASTEXITCODE -ne 0) { throw 'Darwin native reader regression contracts failed' }
+          $raceEvidence = Join-Path $readEvidence 'race'
+          New-Item -ItemType Directory -Path $raceEvidence -ErrorAction Stop | Out-Null
+          $env:ACCESSWEAVER_DARWIN_READ_ACQUISITION_REPORT = $raceEvidence
+          go test -race -p=2 ./internal/darwintrust ./internal/managed ./internal/packageupgrade -count=1 -timeout=4m
+          if ($LASTEXITCODE -ne 0) { throw 'Darwin native reader race contracts failed' }
+          go vet -p=2 ./internal/darwintrust ./internal/managed ./internal/packageupgrade
+          if ($LASTEXITCODE -ne 0) { throw 'Darwin native reader static analysis failed' }
+      - name: Retain native Darwin read acquisition evidence
+        if: ${{ always() && inputs.scope == 'profile-read' && matrix.goos == 'darwin' && env.ACCESSWEAVER_DARWIN_READ_ACQUISITION_EVIDENCE != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: darwin-read-acquisition-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_DARWIN_READ_ACQUISITION_EVIDENCE }}/**/darwin-read-acquisition.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Test DNS snapshot and recovery contracts
         if: inputs.scope == 'profile-read'
         run: |

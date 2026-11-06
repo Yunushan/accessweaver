@@ -105,7 +105,7 @@ func beginDarwinInstallationObserved(parent *os.File, initial bool, owner uint32
 			current.Close()
 			return fail(errors.New("machine policy directory already exists; bootstrap cannot replace it"))
 		}
-		if !errors.Is(err, unix.ENOENT) {
+		if !darwintrust.IsReadAbsent(err) {
 			return fail(err)
 		}
 	} else {
@@ -181,7 +181,7 @@ func sameDarwinDirectory(parent *os.File, name string, expected *os.File, owner 
 func readDarwinSnapshotAt(parent *os.File, owner uint32) (machineSnapshot, error) {
 	for attempt := 0; attempt < 3; attempt++ {
 		dir, err := darwintrust.OpenDirectoryAt(parent, darwinPolicyDirectory, owner)
-		if errors.Is(err, unix.ENOENT) {
+		if darwintrust.IsReadAbsent(err) {
 			return machineSnapshot{}, nil
 		}
 		if err != nil {

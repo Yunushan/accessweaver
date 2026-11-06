@@ -44,7 +44,7 @@ func openDeployment(initialize bool) (*deploymentStore, error) {
 }
 func deploymentDirectory(parent *os.File, name string, owner uint32, create bool) (*os.File, error) {
 	f, e := darwintrust.OpenDirectoryAt(parent, name, owner)
-	if errors.Is(e, unix.ENOENT) && create {
+	if darwintrust.IsReadAbsent(e) && create {
 		f, e = darwintrust.CreateDirectoryAt(parent, name, owner)
 		if errors.Is(e, unix.EEXIST) {
 			return deploymentDirectory(parent, name, owner, false)
@@ -289,7 +289,7 @@ func beginDeploymentMode(parent *os.File, owner uint32, observe func(string) err
 		return fail(e)
 	}
 	s.current, e = deploymentDirectory(s.root, "state", owner, false)
-	if errors.Is(e, unix.ENOENT) {
+	if darwintrust.IsReadAbsent(e) {
 		slots, readErr := deploymentEntries(s.versions, owner, maxRetainedDeployments)
 		if readErr != nil {
 			return fail(readErr)

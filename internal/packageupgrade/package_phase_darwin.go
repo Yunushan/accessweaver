@@ -5,7 +5,6 @@ package packageupgrade
 import (
 	"errors"
 	"github.com/Yunushan/accessweaver/internal/darwintrust"
-	"golang.org/x/sys/unix"
 	"os"
 )
 
@@ -19,7 +18,7 @@ func packageIncoming(identity deploymentIdentity, create bool) error {
 	}
 	defer parent.Close()
 	incoming, e := deploymentDirectory(parent, deploymentIncoming, 0, create)
-	if !create && errors.Is(e, unix.ENOENT) {
+	if !create && darwintrust.IsReadAbsent(e) {
 		return nil
 	}
 	if e != nil {
@@ -27,7 +26,7 @@ func packageIncoming(identity deploymentIdentity, create bool) error {
 	}
 	defer incoming.Close()
 	stage, e := deploymentDirectory(incoming, identity.ManifestSHA256, 0, create)
-	if !create && errors.Is(e, unix.ENOENT) {
+	if !create && darwintrust.IsReadAbsent(e) {
 		return nil
 	}
 	if e != nil {
