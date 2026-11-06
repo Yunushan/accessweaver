@@ -140,3 +140,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .lifecycle-job { overflow-wrap: anywhere; }
 
 .diagnostic-cancel { margin-top: 10px; }
+
+.reconciliation-card { margin-top: 20px; }
+.reconciliation-card h2 { margin: 0; }
+.reconciliation-card .form-row { margin-top: 14px; }
+.reconciliation-card .heading-actions { margin: 14px 0; flex-wrap: wrap; }
+.reconciliation-identity { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.reconciliation-card table caption { text-align: left; padding: 10px 0; color: var(--muted); }

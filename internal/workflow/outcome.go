@@ -33,7 +33,12 @@ type workflowCompletion struct {
 	cancelRequested bool
 }
 
-type workflowShutdown struct{ completion *workflowCompletion }
+type workflowShutdown struct {
+	finished    bool
+	err         error
+	completion  *workflowCompletion
+	maintenance *reconciliationCompletion
+}
 
 // Shutdown is newly exposed on local stderr. Its printable error must stay
 // fixed and small even when the original private tool cause is many MiB.

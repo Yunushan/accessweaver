@@ -144,6 +144,9 @@ func systemHistoryError(err error) error {
 // This private caller-context/writer seam is used by the actual CLI dispatcher.
 // New commands never change global stdout or need a second Manager protocol.
 func runSystemHistory(ctx context.Context, manager *workflow.Manager, args []string, output io.Writer) error {
+	if len(args) > 0 && args[0] == "reconciliation" {
+		return runSystemReconciliation(ctx, manager, args[1:], output)
+	}
 	request, err := parseSystemHistory(args)
 	if err != nil {
 		return systemHistoryError(err)

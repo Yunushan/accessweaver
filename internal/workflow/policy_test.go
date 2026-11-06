@@ -152,6 +152,7 @@ func TestActiveWorkflowRevocationCancelsWorkerAndPersistsFailure(t *testing.T) {
 	manager.platform = "windows"
 	entered := make(chan struct{})
 	manager.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		close(entered)
 		<-ctx.Done()
 		// A stale or misbehaving worker cannot turn cancellation into success.

@@ -102,6 +102,7 @@ func TestWorkerReportFailureIsRetainedAlongsideExecutionAndPersistence(t *testin
 			entered := make(chan struct{})
 			executionFault := errors.New("PRIVATE_SOURCE_EXECUTION_FAILURE")
 			f.manager.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+				observeWorkflowNoNativeOwners(ctx)
 				close(entered)
 				<-ctx.Done()
 				return payload, errors.Join(ctx.Err(), executionFault, report.failure())
@@ -265,6 +266,7 @@ func TestWorkerReportFinalizationCofailuresSurviveCancellationAndTerminalPersist
 				return realPersist(path, data)
 			}
 			f.manager.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+				observeWorkflowNoNativeOwners(ctx)
 				close(entered)
 				<-ctx.Done()
 				return payload, errors.Join(ctx.Err(), executionFault, report.failure())

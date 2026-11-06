@@ -145,7 +145,7 @@ async function exportSystemReport(kind){
 
 // Completion tracking is independent of captured pages, current jobs and profile
 // loading. Each response is bound to its session, mode and navigation generation.
-const workflowLifecycleUI={context:'',generation:0,controller:null,loading:false,status:null,admissionBlocked:false,admissionRefused:false,message:'lifecycleNotLoaded',bad:false};
+const workflowLifecycleUI={context:'',generation:0,controller:null,loading:false,status:null,admissionBlocked:false,admissionRefused:false,refusalEpoch:0,message:'lifecycleNotLoaded',bad:false};
 function workflowLifecycleBlocked(){return workflowLifecycleUI.admissionBlocked===true||workflowLifecycleUI.admissionRefused===true;}
 function lifecycleProjection(value){
  if(!value||!['none','intent','sealed','released','blocked'].includes(value.state)||typeof value.admissionBlocked!=='boolean'||value.protection!=='retirement-unavailable'||(value.jobId!==undefined&&(typeof value.jobId!=='string'||!/^[a-f0-9]{48}$/.test(value.jobId)))||value.admissionBlocked!==['intent','sealed','blocked'].includes(value.state)||(value.state==='none'&&value.jobId!==undefined)||(['intent','sealed','released'].includes(value.state)&&value.jobId===undefined))throw new Error('historyInvalidResponse');
@@ -176,7 +176,7 @@ async function refreshWorkflowLifecycle(){
 }
 function handleWorkflowLifecycleAdmission(error){
  if(error?.status!==409||error?.code!=='workflow-lifecycle-pending')return false;
- invalidateSystemPlan();workflowLifecycleUI.controller?.abort();workflowLifecycleUI.controller=null;workflowLifecycleUI.generation++;workflowLifecycleUI.loading=false;workflowLifecycleUI.admissionRefused=true;workflowLifecycleUI.admissionBlocked=true;workflowLifecycleUI.status={state:'blocked',admissionBlocked:true,protection:'retirement-unavailable'};workflowLifecycleUI.bad=true;historyUI.open=true;updateHistoryAvailability();renderWorkflowLifecycle();
+ invalidateSystemPlan();workflowLifecycleUI.controller?.abort();workflowLifecycleUI.controller=null;workflowLifecycleUI.generation++;workflowLifecycleUI.loading=false;workflowLifecycleUI.refusalEpoch++;workflowLifecycleUI.admissionRefused=true;workflowLifecycleUI.admissionBlocked=true;workflowLifecycleUI.status={state:'blocked',admissionBlocked:true,protection:'retirement-unavailable'};workflowLifecycleUI.bad=true;historyUI.open=true;updateHistoryAvailability();renderWorkflowLifecycle();
  setTextOutput('system-output',t('lifecycleAdmissionBlocked'));toast(t('lifecycleAdmissionBlocked'),true);$('history-lifecycle-title').focus();return true;
 }
 
@@ -210,9 +210,10 @@ function historyClearDetail(){historyUI.detailController?.abort();historyUI.expo
 function historyReset(){
  historyStopRequests();historyUI.inventory=null;historyUI.items=[];historyUI.cursor='';historyUI.nextCursor='';historyUI.trail=[];historyClearDetail();historyUI.message='historyNoCapture';historyUI.messageValues={};historyUI.bad=false;
 }
-function historyNavigationChanged(view){if(view!=='system'){historyStopRequests();historyUI.open=false;resetWorkflowLifecycle(false);}}
+function historyNavigationChanged(view){if(view!=='system'){historyStopRequests();historyUI.open=false;resetWorkflowLifecycle(false);resetReconciliation(false);updateReconciliationAvailability();}}
 function updateHistoryAvailability(){
  updateWorkflowLifecycleAvailability();
+ updateReconciliationAvailability();
  const context=historyContext();if(historyUI.context!==context){historyReset();historyUI.context=context;historyUI.open=false;renderHistoryMessage();renderHistoryRows();renderHistoryDetail();}
  $('history-panel').hidden=!historyUI.open||state.profileEditingOnly;
  const available=supportAvailable(),busy=historyUI.capturing||historyUI.listing;
@@ -255,7 +256,7 @@ function renderHistoryDetail(){
  setTextOutput('history-detail',text);$('history-detail-limited').hidden=!limited;
  if(limited)$('history-detail').setAttribute('aria-describedby','history-detail-limited');else $('history-detail').removeAttribute('aria-describedby');
 }
-function refreshHistoryLanguage(){renderWorkflowLifecycle();renderHistoryMessage();renderHistoryRows();renderHistoryDetail();updateHistoryAvailability();}
+function refreshHistoryLanguage(){renderReconciliation();renderWorkflowLifecycle();renderHistoryMessage();renderHistoryRows();renderHistoryDetail();updateHistoryAvailability();}
 function historyError(error){
  if(error?.reportTooLarge)return 'historyCapacity';
  if(error?.status===409){historyUI.inventory=null;historyUI.items=[];historyUI.cursor='';historyUI.nextCursor='';historyUI.trail=[];historyClearDetail();return 'historyCaptureNeeded';}
@@ -346,6 +347,153 @@ async function exportHistoryRecord(){
  finally{clearTimeout(timer);controller.abort();if(historyCurrent(context,generation)&&detailGeneration===historyUI.detailGeneration){historyUI.exporting=false;updateHistoryAvailability();}}
 }
 
+
+// Reconciliation owns a separate review and read lifecycle. Only our own
+// explicitly applied, matching completed receipt can clear a Start refusal.
+const reconciliationUI={context:'',generation:0,statusGeneration:0,reviewGeneration:0,receiptGeneration:0,status:null,plan:null,attempt:null,receipt:null,knownOperation:'',statusError:'',statusLoading:false,reviewing:false,applying:false,reading:false,watching:false,watchRemaining:0,statusController:null,reviewController:null,applyController:null,receiptController:null,planTimer:null,receiptTimer:null,message:'reconcileNotLoaded',detail:'',bad:false};
+const reconciliationBase='/api/v1/system/history/reconciliation';
+const reconciliationCodes=new Set(['reconciliation-invalid','reconciliation-unavailable','reconciliation-conflict','reconciliation-expired','reconciliation-pending','reconciliation-denied','reconciliation-policy-unavailable','reconciliation-request-ended','reconciliation-busy','reconciliation-store-unavailable']);
+function reconciliationHex(value,size=48){return typeof value==='string'&&new RegExp('^[a-f0-9]{'+size+'}$').test(value);}
+function reconciliationInvalid(){return new Error('reconcileInvalidResponse');}
+function reconciliationTime(value){if(typeof value!=='string'||value.length>64||!Number.isFinite(Date.parse(value)))throw reconciliationInvalid();return value;}
+function reconciliationScope(value){if(value?.scope!=='original-local-owners-only'||value?.protection!=='retirement-unavailable')throw reconciliationInvalid();}
+function reconciliationObjects(value){
+ const items=value===null?[]:value;if(!Array.isArray(items)||items.length>8)throw reconciliationInvalid();const refs=new Set();
+ return items.map(item=>{if(!item||!reconciliationHex(item.ref,64)||refs.has(item.ref)||item.role!=='closed-ack-stage'||!Number.isSafeInteger(item.size)||item.size<0||item.size>65536||!reconciliationHex(item.sha256,64))throw reconciliationInvalid();refs.add(item.ref);return {ref:item.ref,role:item.role,size:item.size,sha256:item.sha256};});
+}
+function reconciliationStatus(value){
+ reconciliationScope(value);if(!['none','available','pending','completed','unavailable'].includes(value.state)||typeof value.canPreview!=='boolean'||typeof value.resumeAvailable!=='boolean'||value.generation!==undefined&&!reconciliationHex(value.generation)||value.operationId!==undefined&&!reconciliationHex(value.operationId))throw reconciliationInvalid();
+ const generation=value.generation||'',operationId=value.operationId||'';
+ if(value.state==='none'&&(generation||operationId||value.canPreview||value.resumeAvailable)||value.state==='available'&&(!generation||operationId||!value.canPreview||value.resumeAvailable)||value.state==='pending'&&(!generation||!operationId||value.canPreview)||value.state==='completed'&&(!generation||!operationId||value.canPreview||value.resumeAvailable)||value.state==='unavailable'&&(operationId||value.canPreview||value.resumeAvailable))throw reconciliationInvalid();
+ return {state:value.state,generation,operationId,canPreview:value.canPreview,resumeAvailable:value.resumeAvailable,scope:value.scope,protection:value.protection};
+}
+function reconciliationPlan(value,request){
+ reconciliationScope(value);if(!reconciliationHex(value.id)||!reconciliationHex(value.operationId)||!reconciliationHex(value.generation)||value.action!=='retry-local-release-ack'||!reconciliationHex(value.reviewRevision,64)||!reconciliationHex(value.intentSHA256,64)||!reconciliationHex(value.sealSHA256,64)||typeof value.resume!=='boolean')throw reconciliationInvalid();
+ const expiresAt=reconciliationTime(value.expiresAt),objects=reconciliationObjects(value.objects);
+ if(value.resume!==!!request.operationId||request.operationId&&value.operationId!==request.operationId||request.generation&&value.generation!==request.generation)throw reconciliationInvalid();
+ if(Date.parse(expiresAt)<=Date.now())throw Object.assign(new Error('expired'),{code:'reconciliation-expired'});
+ return {id:value.id,operationId:value.operationId,generation:value.generation,action:value.action,expiresAt,reviewRevision:value.reviewRevision,intentSHA256:value.intentSHA256,sealSHA256:value.sealSHA256,objects,resume:value.resume,scope:value.scope,protection:value.protection};
+}
+function reconciliationReceipt(value){
+ reconciliationScope(value);if(!reconciliationHex(value.operationId)||!reconciliationHex(value.generation)||value.state!=='completed'||value.action!=='retry-local-release-ack'||!reconciliationHex(value.intentSHA256,64)||!reconciliationHex(value.sealSHA256,64)||!reconciliationHex(value.ackSHA256,64))throw reconciliationInvalid();
+ return {operationId:value.operationId,generation:value.generation,state:value.state,action:value.action,intentSHA256:value.intentSHA256,sealSHA256:value.sealSHA256,ackSHA256:value.ackSHA256,quarantined:reconciliationObjects(value.quarantined),completedAt:reconciliationTime(value.completedAt),scope:value.scope,protection:value.protection};
+}
+function reconciliationReceiptMatches(receipt,plan){
+ if(receipt.operationId!==plan.operationId||receipt.generation!==plan.generation||receipt.action!==plan.action||receipt.intentSHA256!==plan.intentSHA256||receipt.sealSHA256!==plan.sealSHA256||receipt.quarantined.length!==plan.objects.length)return false;
+ const objects=new Map(receipt.quarantined.map(object=>[object.ref,object]));
+ return plan.objects.every(object=>{const current=objects.get(object.ref);return current&&current.role===object.role&&current.size===object.size&&current.sha256===object.sha256;});
+}
+function reconciliationActionIdle(){return !reconciliationUI.applying&&!reconciliationUI.reviewing&&!reconciliationUI.reading&&!reconciliationUI.watching&&!reconciliationUI.plan&&!reconciliationUI.receipt;}
+function reconciliationCurrent(context,generation){return context===historyContext()&&context===reconciliationUI.context&&generation===reconciliationUI.generation&&supportAvailable()&&state.view==='system';}
+function reconciliationError(error){
+ if(error?.message==='reconcileInvalidResponse'||error?.reportTooLarge)return 'reconcileInvalidResponse';
+ const code={ 'reconciliation-invalid':'reconcileInvalid','reconciliation-unavailable':'reconcileUnavailable','reconciliation-conflict':'reconcileConflict','reconciliation-expired':'reconcileExpired','reconciliation-pending':'reconcilePending','reconciliation-denied':'reconcileDenied','reconciliation-policy-unavailable':'reconcilePolicyUnavailable','reconciliation-request-ended':'reconcileEnded','reconciliation-busy':'reconcileBusy','reconciliation-store-unavailable':'reconcileStoreUnavailable'}[error?.code];
+ return code||({400:'reconcileInvalid',403:'reconcileDenied',408:'reconcileEnded',409:'reconcileConflict',503:'reconcileBusy'})[error?.status]||(error?.name==='AbortError'?'reconcileEnded':'reconcileUnavailable');
+}
+async function reconciliationRequest(path,controller,{method='GET',body,maxBytes=65536}={}){
+ const timer=setTimeout(()=>controller.abort(),15000),token=state.token;
+ const active=()=>{if(controller.signal.aborted)throw new DOMException('Request canceled','AbortError');};
+ try{
+  active();const response=await fetch(path,{method,headers:{'X-AccessWeaver-Token':token,...(body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body),credentials:'same-origin',redirect:'error',cache:'no-store',signal:controller.signal});active();
+  if(!/^application\/json(?:\s*;|$)/i.test(response.headers.get('Content-Type')||''))throw reconciliationInvalid();
+  const blob=await readSystemDownload(response,response.ok?maxBytes:4096);active();const bytes=await blob.arrayBuffer();active();let value;try{value=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch{throw reconciliationInvalid();}
+  if(!response.ok)throw Object.assign(new Error('reconciliation request failed'),{status:response.status,...(reconciliationCodes.has(value?.code)?{code:value.code}:{})});
+  return value;
+ }finally{clearTimeout(timer);controller.abort();}
+}
+function clearReconciliationPlan(){clearTimeout(reconciliationUI.planTimer);reconciliationUI.planTimer=null;reconciliationUI.plan=null;$('reconcile-consent').checked=false;}
+function stopReconciliationWatch(){reconciliationUI.receiptGeneration++;clearTimeout(reconciliationUI.receiptTimer);reconciliationUI.receiptTimer=null;reconciliationUI.receiptController?.abort();reconciliationUI.receiptController=null;reconciliationUI.reading=false;reconciliationUI.watching=false;}
+function resetReconciliation(contextChanged=true){
+ const controllers=['statusController','reviewController','applyController','receiptController'].map(key=>reconciliationUI[key]);
+ reconciliationUI.generation++;reconciliationUI.statusGeneration++;reconciliationUI.reviewGeneration++;reconciliationUI.receiptGeneration++;
+ clearReconciliationPlan();clearTimeout(reconciliationUI.receiptTimer);reconciliationUI.receiptTimer=null;
+ for(const key of ['statusController','reviewController','applyController','receiptController'])reconciliationUI[key]=null;
+ reconciliationUI.status=null;reconciliationUI.statusError='';reconciliationUI.receipt=null;reconciliationUI.statusLoading=false;reconciliationUI.reviewing=false;reconciliationUI.applying=false;reconciliationUI.reading=false;reconciliationUI.watching=false;reconciliationUI.detail='';reconciliationUI.bad=false;
+ if(contextChanged){reconciliationUI.attempt=null;reconciliationUI.knownOperation='';$('reconcile-generation').value='';$('reconcile-operation').value='';}
+ reconciliationUI.message=reconciliationUI.attempt?'reconcileReceiptNeeded':'reconcileNotLoaded';
+ for(const controller of controllers)controller?.abort();renderReconciliation();
+}
+function updateReconciliationAvailability(){
+ const context=historyContext();if(context!==reconciliationUI.context){resetReconciliation();reconciliationUI.context=context;}
+ const available=supportAvailable(),busy=reconciliationUI.applying||reconciliationUI.reviewing;
+ $('history-reconciliation-card').hidden=state.profileEditingOnly;$('reconcile-refresh').disabled=!available||reconciliationUI.statusLoading;
+ $('reconcile-preview').disabled=!available||busy||!$('reconcile-generation').value.trim()&&reconciliationUI.status?.canPreview===false;
+ const operationId=$('reconcile-operation').value.trim(),known=reconciliationUI.status?.operationId===operationId;
+ $('reconcile-resume').disabled=!available||busy||!reconciliationHex(operationId)||known&&!reconciliationUI.status.resumeAvailable;
+ $('reconcile-receipt').disabled=!available||reconciliationUI.applying||!reconciliationHex(operationId);
+ $('reconcile-receipt').textContent=t(reconciliationUI.watching?'reconcileStopReceipt':'reconcileReadReceipt');
+ $('reconcile-consent').disabled=!available||!reconciliationUI.plan||Date.parse(reconciliationUI.plan.expiresAt)<=Date.now()||reconciliationUI.applying;
+ $('reconcile-apply').disabled=$('reconcile-consent').disabled||!$('reconcile-consent').checked;
+ $('reconcile-generation').disabled=reconciliationUI.applying;$('reconcile-operation').disabled=reconciliationUI.applying;
+}
+function reconciliationInputsChanged(){clearReconciliationPlan();reconciliationUI.reviewGeneration++;reconciliationUI.reviewController?.abort();reconciliationUI.reviewController=null;reconciliationUI.reviewing=false;stopReconciliationWatch();reconciliationUI.receipt=null;reconciliationUI.message=reconciliationUI.attempt?'reconcileReceiptNeeded':'reconcileNotLoaded';reconciliationUI.detail='';renderReconciliation();updateReconciliationAvailability();}
+function setReconciliationMessage(message,bad=false,detail=''){reconciliationUI.message=message;reconciliationUI.detail=detail;reconciliationUI.bad=bad;renderReconciliation();}
+function renderReconciliationObjects(target,objects){
+ const rows=objects.map(item=>{const row=document.createElement('tr');historyCell(row,t('reconcileRole'));const ref=historyCell(row,item.ref.slice(0,12)+'…'+item.ref.slice(-8));ref.setAttribute('title',item.ref);historyCell(row,historySize(item.size));const digest=historyCell(row,item.sha256.slice(0,12)+'…'+item.sha256.slice(-8));digest.setAttribute('title',item.sha256);return row;});$(target).replaceChildren(...rows);
+}
+function renderReconciliation(){
+ const status=reconciliationUI.status,plan=reconciliationUI.plan,receipt=reconciliationUI.receipt;
+ $('reconcile-status').textContent=t(reconciliationUI.statusLoading?'reconcileReadingStatus':reconciliationUI.statusError|| (status?'reconcileState_'+status.state:'reconcileNotLoaded'));
+ $('reconcile-message').textContent=t(reconciliationUI.message)+(reconciliationUI.detail?' '+t(reconciliationUI.detail):'');$('reconcile-message').className=reconciliationUI.bad?'hint error':'hint';
+ $('reconcile-known-operation').textContent=reconciliationUI.knownOperation?t('reconcileOperation')+': '+reconciliationUI.knownOperation:'';
+ $('reconcile-review').hidden=!plan;
+ if(plan){$('reconcile-review-summary').textContent=[t('reconcileGeneration')+': '+plan.generation,t('reconcileOperation')+': '+plan.operationId,t('reconcileExpires')+': '+historyDate(plan.expiresAt),t('reconcileRevision')+': '+plan.reviewRevision,t('reconcileIntentDigest')+': '+plan.intentSHA256,t('reconcileSealDigest')+': '+plan.sealSHA256].join('\n');renderReconciliationObjects('reconcile-review-objects',plan.objects);}
+ $('reconcile-receipt-panel').hidden=!receipt;
+ if(receipt){$('reconcile-receipt-summary').textContent=[t('reconcileOperation')+': '+receipt.operationId,t('reconcileGeneration')+': '+receipt.generation,t('reconcileCompletedAt')+': '+historyDate(receipt.completedAt),t('reconcileIntentDigest')+': '+receipt.intentSHA256,t('reconcileSealDigest')+': '+receipt.sealSHA256,t('reconcileAckDigest')+': '+receipt.ackSHA256].join('\n');renderReconciliationObjects('reconcile-receipt-objects',receipt.quarantined);}
+}
+function scheduleReconciliationExpiry(plan){
+ clearTimeout(reconciliationUI.planTimer);reconciliationUI.planTimer=setTimeout(()=>{if(reconciliationUI.plan!==plan)return;if(Date.parse(plan.expiresAt)>Date.now()){scheduleReconciliationExpiry(plan);return;}clearReconciliationPlan();setReconciliationMessage('reconcileExpired',true);updateReconciliationAvailability();},Math.max(1,Math.min(2147483647,Date.parse(plan.expiresAt)-Date.now())));
+}
+async function refreshReconciliationStatus(){
+ updateReconciliationAvailability();if(!supportAvailable()||reconciliationUI.statusLoading)return;
+ const context=reconciliationUI.context,generation=reconciliationUI.generation,readGeneration=++reconciliationUI.statusGeneration,controller=new AbortController();reconciliationUI.statusController=controller;reconciliationUI.statusLoading=true;reconciliationUI.statusError='';if(reconciliationActionIdle())setReconciliationMessage('reconcileReadingStatus');updateReconciliationAvailability();
+ const current=()=>reconciliationCurrent(context,generation)&&readGeneration===reconciliationUI.statusGeneration;
+ try{const status=reconciliationStatus(await reconciliationRequest(reconciliationBase,controller,{maxBytes:4096}));if(!current())return;reconciliationUI.status=status;if(status.operationId&&!$('reconcile-operation').value.trim()){$('reconcile-operation').value=status.operationId;reconciliationUI.knownOperation=status.operationId;}if(reconciliationActionIdle())setReconciliationMessage('reconcileState_'+status.state);}
+ catch(error){if(current()){reconciliationUI.status=null;reconciliationUI.statusError=reconciliationError(error);if(reconciliationActionIdle())setReconciliationMessage(reconciliationUI.statusError,true);}}
+ finally{if(current()){reconciliationUI.statusLoading=false;reconciliationUI.statusController=null;renderReconciliation();updateReconciliationAvailability();}}
+}
+async function previewReconciliation(resume=false){
+ updateReconciliationAvailability();if(!supportAvailable()||reconciliationUI.applying)return;
+ const generationInput=$('reconcile-generation').value.trim(),operationId=$('reconcile-operation').value.trim();
+ if(resume?!reconciliationHex(operationId):generationInput&&!reconciliationHex(generationInput)){setReconciliationMessage('reconcileInvalid',true);return;}
+ const request=resume?{operationId}:generationInput?{generation:generationInput}:{};
+ clearReconciliationPlan();stopReconciliationWatch();reconciliationUI.receipt=null;reconciliationUI.statusGeneration++;reconciliationUI.statusController?.abort();reconciliationUI.statusController=null;reconciliationUI.statusLoading=false;reconciliationUI.reviewController?.abort();const context=reconciliationUI.context,generation=reconciliationUI.generation,reviewGeneration=++reconciliationUI.reviewGeneration,refusalEpoch=workflowLifecycleUI.refusalEpoch,controller=new AbortController();reconciliationUI.reviewController=controller;reconciliationUI.reviewing=true;setReconciliationMessage('reconcileReviewing');updateReconciliationAvailability();
+ const current=()=>reconciliationCurrent(context,generation)&&reviewGeneration===reconciliationUI.reviewGeneration;
+ try{const plan=reconciliationPlan(await reconciliationRequest(reconciliationBase+'/preview',controller,{method:'POST',body:request}),request);if(!current())return;if(refusalEpoch!==workflowLifecycleUI.refusalEpoch)throw Object.assign(new Error('changed'),{code:'reconciliation-conflict'});plan.refusalEpoch=refusalEpoch;reconciliationUI.plan=plan;reconciliationUI.knownOperation=plan.operationId;$('reconcile-operation').value=plan.operationId;scheduleReconciliationExpiry(plan);setReconciliationMessage('reconcileReviewReady');$('reconcile-review-title').focus();}
+ catch(error){if(current())setReconciliationMessage(reconciliationError(error),true);}
+ finally{if(current()){reconciliationUI.reviewing=false;reconciliationUI.reviewController=null;renderReconciliation();updateReconciliationAvailability();}}
+}
+function acceptReconciliationReceipt(receipt){
+ reconciliationUI.statusGeneration++;reconciliationUI.statusController?.abort();reconciliationUI.statusController=null;reconciliationUI.statusLoading=false;reconciliationUI.status=null;reconciliationUI.statusError='';reconciliationUI.receipt=receipt;reconciliationUI.knownOperation=receipt.operationId;setReconciliationMessage('reconcileCompleted');
+ const attempt=reconciliationUI.attempt;
+ if(attempt&&attempt.context===historyContext()&&reconciliationReceiptMatches(receipt,attempt)){const mayClear=!attempt.receiptAccepted&&attempt.refusalEpoch===workflowLifecycleUI.refusalEpoch;attempt.receiptAccepted=true;if(mayClear){workflowLifecycleUI.generation++;workflowLifecycleUI.controller?.abort();workflowLifecycleUI.controller=null;workflowLifecycleUI.loading=false;workflowLifecycleUI.admissionRefused=false;refreshWorkflowLifecycle();}}
+}
+async function applyReconciliation(){
+ updateReconciliationAvailability();const plan=reconciliationUI.plan;if(!supportAvailable()||reconciliationUI.applying||!plan||!$('reconcile-consent').checked)return;
+ if(plan.refusalEpoch!==workflowLifecycleUI.refusalEpoch){clearReconciliationPlan();setReconciliationMessage('reconcileConflict',true);updateReconciliationAvailability();return;}
+ if(Date.parse(plan.expiresAt)<=Date.now()){clearReconciliationPlan();setReconciliationMessage('reconcileExpired',true);updateReconciliationAvailability();return;}
+ const context=reconciliationUI.context,generation=reconciliationUI.generation,controller=new AbortController();
+ reconciliationUI.attempt={...plan,context};reconciliationUI.knownOperation=plan.operationId;reconciliationUI.applyController=controller;reconciliationUI.applying=true;clearReconciliationPlan();stopReconciliationWatch();reconciliationUI.statusGeneration++;reconciliationUI.statusController?.abort();reconciliationUI.statusController=null;reconciliationUI.statusLoading=false;setReconciliationMessage('reconcileApplying');updateReconciliationAvailability();
+ const current=()=>reconciliationCurrent(context,generation)&&reconciliationUI.applyController===controller;
+ try{const receipt=reconciliationReceipt(await reconciliationRequest(reconciliationBase+'/apply',controller,{method:'POST',body:{planId:plan.id,confirm:true}}));if(!current())return;if(!reconciliationReceiptMatches(receipt,plan))throw reconciliationInvalid();acceptReconciliationReceipt(receipt);}
+ catch(error){if(current())setReconciliationMessage('reconcileReceiptNeeded',true,reconciliationError(error));}
+ finally{if(current()){reconciliationUI.applying=false;reconciliationUI.applyController=null;renderReconciliation();updateReconciliationAvailability();}}
+}
+async function readReconciliationReceipt(){
+ updateReconciliationAvailability();if(!supportAvailable()||reconciliationUI.applying)return;
+ if(reconciliationUI.watching){stopReconciliationWatch();setReconciliationMessage('reconcileWatchStopped');updateReconciliationAvailability();return;}
+ const operationId=$('reconcile-operation').value.trim();if(!reconciliationHex(operationId)){setReconciliationMessage('reconcileInvalid',true);return;}
+ clearReconciliationPlan();reconciliationUI.reviewGeneration++;reconciliationUI.reviewController?.abort();reconciliationUI.reviewController=null;reconciliationUI.reviewing=false;stopReconciliationWatch();reconciliationUI.watching=true;reconciliationUI.watchRemaining=20;reconciliationUI.receipt=null;reconciliationUI.knownOperation=operationId;
+ const context=reconciliationUI.context,generation=reconciliationUI.generation,readGeneration=reconciliationUI.receiptGeneration;
+ const current=()=>reconciliationCurrent(context,generation)&&readGeneration===reconciliationUI.receiptGeneration&&reconciliationUI.watching;
+ const read=async()=>{
+  if(!current())return;const controller=new AbortController();reconciliationUI.receiptController=controller;reconciliationUI.reading=true;setReconciliationMessage('reconcileReadingReceipt');updateReconciliationAvailability();
+  try{const receipt=reconciliationReceipt(await reconciliationRequest(reconciliationBase+'/receipts/'+operationId,controller));if(!current())return;if(receipt.operationId!==operationId||reconciliationUI.attempt?.context===context&&reconciliationUI.attempt.operationId===operationId&&!reconciliationReceiptMatches(receipt,reconciliationUI.attempt))throw reconciliationInvalid();reconciliationUI.watching=false;reconciliationUI.reading=false;reconciliationUI.receiptController=null;acceptReconciliationReceipt(receipt);updateReconciliationAvailability();}
+  catch(error){if(!current())return;reconciliationUI.reading=false;reconciliationUI.receiptController=null;if(error.code==='reconciliation-pending'&&--reconciliationUI.watchRemaining>0){setReconciliationMessage('reconcileReceiptPending');reconciliationUI.receiptTimer=setTimeout(read,1500);}else{reconciliationUI.watching=false;setReconciliationMessage(error.code==='reconciliation-pending'?'reconcileStillPending':reconciliationError(error),true);}updateReconciliationAvailability();}
+ };
+ await read();
+}
+
 const systemNavigation=document.createElement('button');systemNavigation.type='button';systemNavigation.className='nav-item';systemNavigation.dataset.view='system';systemNavigation.dataset.i18n='systemTools';systemNavigation.textContent=t('systemTools');systemNavigation.addEventListener('click',()=>navigate('system',true));document.querySelector('.main-nav').appendChild(systemNavigation);
 $('system-form').addEventListener('submit',event=>{event.preventDefault();previewSystem()});
 $('system-form').addEventListener('input',invalidateSystemPlan);$('system-form').addEventListener('change',invalidateSystemPlan);
@@ -364,6 +512,13 @@ $('system-inspect').addEventListener('click',()=>previewSystem({action:'discover
 $('system-cancel').addEventListener('click',async()=>{try{renderSystemJob(await apiRequest('/api/v1/system/cancel','POST',{}))}catch(e){toast(e.message,true)}});
 $('system-history').addEventListener('click',openHistory);
 $('history-lifecycle-refresh').addEventListener('click',refreshWorkflowLifecycle);
+$('reconcile-refresh').addEventListener('click',refreshReconciliationStatus);
+$('reconcile-preview').addEventListener('click',()=>previewReconciliation(false));
+$('reconcile-resume').addEventListener('click',()=>previewReconciliation(true));
+$('reconcile-receipt').addEventListener('click',readReconciliationReceipt);
+$('reconcile-apply').addEventListener('click',applyReconciliation);
+$('reconcile-consent').addEventListener('change',updateReconciliationAvailability);
+for(const id of ['reconcile-generation','reconcile-operation'])$(id).addEventListener('input',reconciliationInputsChanged);
 $('history-capture').addEventListener('click',captureHistory);
 $('history-cancel-capture').addEventListener('click',cancelHistoryCapture);
 $('history-refresh').addEventListener('click',()=>loadHistoryPage('',null,[]));

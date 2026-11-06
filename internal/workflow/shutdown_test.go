@@ -17,8 +17,17 @@ import (
 	"unicode/utf8"
 
 	"github.com/Yunushan/accessweaver/internal/managed"
-	"github.com/Yunushan/accessweaver/internal/profile"
 )
+
+// observeWorkflowNoNativeOwners is an explicit test-only fact for callbacks
+// audited to create no native child, asynchronous output or retained native
+// handle. It never stands in for observed command Wait/owner/output closure or
+// the production persistence writer's separate observation.
+func observeWorkflowNoNativeOwners(ctx context.Context) {
+	if observation := localExecutionFrom(ctx); observation != nil {
+		observation.NoNativeOwners = true
+	}
+}
 
 // These fixtures use the actual reservation, validation and private persistence
 // paths with controlled source callbacks. The platform label admits a reviewed
@@ -47,7 +56,8 @@ func newWorkflowShutdownFixture(t *testing.T) *workflowShutdownFixture {
 	f.manager = NewWithGuard(root, managed.NewGuard(func() (*managed.Authority, error) { return nil, nil }))
 	f.manager.platform = "windows"
 	f.manager.requireAdmin = func() error { return nil }
-	f.manager.execute = func(context.Context, string, Request) (json.RawMessage, error) {
+	f.manager.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		return json.RawMessage(`{"fixture":true}`), nil
 	}
 	t.Cleanup(f.close)
@@ -117,6 +127,17 @@ func (f *workflowShutdownFixture) close() {
 	if f.preserve {
 		return
 	}
+	if done := workflowMaintenanceDone(f.manager); done != nil {
+		select {
+		case <-done:
+		default:
+			f.preserve = true
+			f.t.Error("workflow maintenance completion unconfirmed; fixture preserved")
+		}
+	}
+	if f.preserve {
+		return
+	}
 	current, err := os.Lstat(f.root)
 	if err != nil || !current.IsDir() || current.Mode()&os.ModeSymlink != 0 || !os.SameFile(f.rootInfo, current) {
 		f.t.Error("workflow fixture root binding changed")
@@ -125,6 +146,14 @@ func (f *workflowShutdownFixture) close() {
 	if os.RemoveAll(f.root) != nil {
 		f.t.Error("workflow fixture removal failed")
 	}
+}
+func workflowMaintenanceDone(m *Manager) <-chan struct{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.maintenance != nil {
+		return m.maintenance.done
+	}
+	return nil
 }
 func workflowShutdownDone(m *Manager) <-chan struct{} {
 	m.mu.Lock()
@@ -190,9 +219,13 @@ func TestWorkflowShutdownRetainsTypedExecutionAndTerminalSaveFailures(t *testing
 			cause := &workflowPrivateCause{message: private + strings.Repeat("界", maxJobErrorBytes)}
 			storage := errors.New("PRIVATE_WORKFLOW_PERSIST_CAUSE")
 			result := json.RawMessage(`{"retained":"source-result"}`)
-			m.execute = func(context.Context, string, Request) (json.RawMessage, error) { return result, cause }
+			m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+				observeWorkflowNoNativeOwners(ctx)
+				return result, cause
+			}
 			writing, wait := f.barrier()
 			var terminalWrites atomic.Int32
+			realPersist := m.persist
 			m.persist = func(path string, data []byte) error {
 				var job Job
 				if json.Unmarshal(data, &job) != nil {
@@ -206,7 +239,7 @@ func TestWorkflowShutdownRetainsTypedExecutionAndTerminalSaveFailures(t *testing
 						return storage
 					}
 				}
-				return profile.AtomicWrite(path, data)
+				return realPersist(path, data)
 			}
 			job := f.start()
 			workflowShutdownAwait(t, writing, "workflow did not reach terminal persistence")
@@ -294,6 +327,7 @@ func TestWorkflowShutdownCooperativeCancellationDoesNotHideOtherFailures(t *test
 			entered, wait := f.barrier()
 			canceled := make(chan struct{})
 			m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+				observeWorkflowNoNativeOwners(ctx)
 				close(entered)
 				<-ctx.Done()
 				close(canceled)
@@ -338,6 +372,7 @@ func TestWorkflowShutdownResultValidationFailureSurvivesPlainCancellation(t *tes
 			m := f.manager
 			entered, wait := f.barrier()
 			m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+				observeWorkflowNoNativeOwners(ctx)
 				close(entered)
 				<-ctx.Done()
 				wait()
@@ -377,6 +412,7 @@ func TestWorkflowShutdownReservedAdmissionRetainsWriteFailure(t *testing.T) {
 			cause := errors.New("PRIVATE_WORKFLOW_ADMISSION_WRITE")
 			var executions atomic.Int32
 			m.execute = func(context.Context, string, Request) (json.RawMessage, error) { executions.Add(1); return nil, nil }
+			realPersist := m.persist
 			m.persist = func(path string, data []byte) error {
 				var job Job
 				if json.Unmarshal(data, &job) != nil {
@@ -389,7 +425,7 @@ func TestWorkflowShutdownReservedAdmissionRetainsWriteFailure(t *testing.T) {
 						return cause
 					}
 				}
-				return profile.AtomicWrite(path, data)
+				return realPersist(path, data)
 			}
 			start, startDone := f.startAsync(f.plan())
 			workflowShutdownAwait(t, writing, "workflow reservation did not reach initial persistence")
@@ -435,6 +471,7 @@ func TestWorkflowShutdownConcurrentCallersRetainOneGeneration(t *testing.T) {
 	cause := errors.New("PRIVATE_WORKFLOW_SHARED_FAILURE")
 	var executions, cancelCalls atomic.Int32
 	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		executions.Add(1)
 		close(entered)
 		<-ctx.Done()
@@ -496,6 +533,7 @@ func TestWorkflowShutdownCapturesCurrentGenerationWithoutHistoricalFailure(t *te
 			entered, wait := f.barrier()
 			var executions atomic.Int32
 			m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+				observeWorkflowNoNativeOwners(ctx)
 				if executions.Add(1) == 1 {
 					return json.RawMessage(`{"old":true}`), oldCause
 				}
@@ -589,6 +627,7 @@ func TestWorkflowShutdownPreservesPolicyCancellationCause(t *testing.T) {
 	entered, wait := f.barrier()
 	causes := make(chan error, 1)
 	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		close(entered)
 		<-ctx.Done()
 		causes <- context.Cause(ctx)
@@ -646,6 +685,7 @@ func TestWorkflowShutdownNestedSyntheticCleanupWarningIsActionableAndPrivate(t *
 	selected := &workflowSyntheticWaitFailure{exit: exit}
 	entered, wait := f.barrier()
 	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		close(entered)
 		<-ctx.Done()
 		wait()
@@ -701,11 +741,13 @@ func TestWorkflowShutdownPlainCancellationKeepsTerminalPersistenceCofailure(t *t
 	entered, wait := f.barrier()
 	storage := errors.New("PRIVATE_CANCEL_PERSIST_FAILURE")
 	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		close(entered)
 		<-ctx.Done()
 		wait()
 		return json.RawMessage(`{"cancel":true}`), ctx.Err()
 	}
+	realPersist := m.persist
 	m.persist = func(path string, data []byte) error {
 		var job Job
 		if json.Unmarshal(data, &job) != nil {
@@ -714,7 +756,7 @@ func TestWorkflowShutdownPlainCancellationKeepsTerminalPersistenceCofailure(t *t
 		if job.State != "running" {
 			return storage
 		}
-		return profile.AtomicWrite(path, data)
+		return realPersist(path, data)
 	}
 	f.start()
 	workflowShutdownAwait(t, entered, "cancel persistence fixture did not execute")
@@ -770,6 +812,7 @@ func TestWorkflowTerminalErrorRequiresExactCompletedCurrentGeneration(t *testing
 	cause := errors.New("PRIVATE_CURRENT_TERMINAL_FAILURE")
 	var executions atomic.Int32
 	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		contexts <- ctx
 		if executions.Add(1) == 1 {
 			close(firstEntered)

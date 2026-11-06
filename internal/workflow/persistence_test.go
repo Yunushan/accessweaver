@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
-
-	"github.com/Yunushan/accessweaver/internal/profile"
 )
 
 // Both inputs satisfy the 32 MiB result contract, but formatting/HTML escaping
@@ -97,7 +95,10 @@ func completedPersistenceFixture(t *testing.T, result json.RawMessage, runErr er
 	t.Helper()
 	m := New(t.TempDir())
 	m.platform = "windows"
-	m.execute = func(context.Context, string, Request) (json.RawMessage, error) { return result, runErr }
+	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
+		return result, runErr
+	}
 	plan, err := m.Preview(Request{Action: "discover"})
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +122,8 @@ func completedPersistenceFixture(t *testing.T, result json.RawMessage, runErr er
 func TestWorkflowPersistenceFailureRemainsVisibleWithOversizedCause(t *testing.T) {
 	m := New(t.TempDir())
 	m.platform = "windows"
-	m.execute = func(context.Context, string, Request) (json.RawMessage, error) {
+	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		if err := os.Rename(m.root, m.root+"-retained"); err != nil {
 			return nil, err
 		}
@@ -158,12 +160,14 @@ func TestTerminalPersistenceDoesNotBlockControlOrClaimCompletion(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			m := New(t.TempDir())
 			m.platform = "windows"
-			m.execute = func(context.Context, string, Request) (json.RawMessage, error) {
+			m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+				observeWorkflowNoNativeOwners(ctx)
 				return json.RawMessage(`{"ok":true}`), nil
 			}
 			writing, release := make(chan struct{}), make(chan struct{})
 			var releaseOnce sync.Once
 			unblock := func() { releaseOnce.Do(func() { close(release) }) }
+			realPersist := m.persist
 			m.persist = func(path string, data []byte) error {
 				var record Job
 				if err := json.Unmarshal(data, &record); err != nil {
@@ -176,7 +180,7 @@ func TestTerminalPersistenceDoesNotBlockControlOrClaimCompletion(t *testing.T) {
 						return errors.New("injected terminal persistence failure")
 					}
 				}
-				return profile.AtomicWrite(path, data)
+				return realPersist(path, data)
 			}
 			plan, err := m.Preview(Request{Action: "discover"})
 			if err != nil {

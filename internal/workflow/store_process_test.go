@@ -17,7 +17,6 @@ import (
 
 	"github.com/Yunushan/accessweaver/internal/filelock"
 	"github.com/Yunushan/accessweaver/internal/managed"
-	"github.com/Yunushan/accessweaver/internal/profile"
 )
 
 const workflowStoreSourceArgument = "--workflow-store-source-fixture-v1"
@@ -30,7 +29,8 @@ func workflowStoreSourceManager(root string) *Manager {
 	m := NewWithGuard(root, guard)
 	m.platform = "windows"
 	m.requireAdmin = func() error { return errors.New("unexpected administrative fixture operation") }
-	m.execute = func(context.Context, string, Request) (json.RawMessage, error) {
+	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		return json.RawMessage(`{"ok":true}`), nil
 	}
 	return m
@@ -105,12 +105,14 @@ func workflowStoreSourceChild(phase string) int {
 		<-release
 	}
 	m := workflowStoreSourceManager(request.Root)
-	m.execute = func(context.Context, string, Request) (json.RawMessage, error) {
+	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		if phase == "execution" {
 			hold()
 		}
 		return json.RawMessage(`{"ok":true}`), nil
 	}
+	realPersist := m.persist
 	m.persist = func(path string, data []byte) error {
 		var job Job
 		if json.Unmarshal(data, &job) != nil {
@@ -119,7 +121,7 @@ func workflowStoreSourceChild(phase string) int {
 		if phase == "admission" && job.State == "running" || phase == "terminal" && job.State != "running" {
 			hold()
 		}
-		return profile.AtomicWrite(path, data)
+		return realPersist(path, data)
 	}
 	plan, err := m.Preview(Request{Action: "discover"})
 	if err != nil || !plan.Ready {
@@ -230,7 +232,8 @@ func newWorkflowStoreSourceFixture(t *testing.T) *workflowStoreSourceFixture {
 func (f *workflowStoreSourceFixture) manager() (*Manager, *atomic.Int32) {
 	m := workflowStoreSourceManager(f.root)
 	calls := &atomic.Int32{}
-	m.execute = func(context.Context, string, Request) (json.RawMessage, error) {
+	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		calls.Add(1)
 		return json.RawMessage(`{"ok":true}`), nil
 	}

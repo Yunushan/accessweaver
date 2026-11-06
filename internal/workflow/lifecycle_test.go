@@ -11,15 +11,14 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/Yunushan/accessweaver/internal/profile"
 )
 
 func workflowLifecycleFreshManager(f *workflowShutdownFixture) *Manager {
 	manager := NewWithGuard(f.root, f.manager.guard)
 	manager.platform = "windows"
 	manager.requireAdmin = func() error { return nil }
-	manager.execute = func(context.Context, string, Request) (json.RawMessage, error) {
+	manager.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		return json.RawMessage(`{"fixture":true}`), nil
 	}
 	// Registered after the primary fixture cleanup, so every secondary owner
@@ -36,6 +35,14 @@ func workflowLifecycleFreshManager(f *workflowShutdownFixture) *Manager {
 			default:
 				f.preserve = true
 				f.t.Error("secondary workflow completion unconfirmed; fixture preserved")
+			}
+		}
+		if done := workflowMaintenanceDone(manager); done != nil {
+			select {
+			case <-done:
+			default:
+				f.preserve = true
+				f.t.Error("secondary workflow maintenance completion unconfirmed; fixture preserved")
 			}
 		}
 	})
@@ -70,6 +77,7 @@ func TestWorkflowLifecycleIntentPrecedesJobAndWorkdir(t *testing.T) {
 	f := newWorkflowShutdownFixture(t)
 	m := f.manager
 	var persisted atomic.Int32
+	realPersist := m.persist
 	m.persist = func(path string, b []byte) error {
 		receipt := workflowLifecycleReadCurrent(t, m)
 		if receipt.Seal != nil || receipt.Ack != nil {
@@ -80,9 +88,10 @@ func TestWorkflowLifecycleIntentPrecedesJobAndWorkdir(t *testing.T) {
 				t.Fatal("workdir preceded durable intent")
 			}
 		}
-		return profile.AtomicWrite(path, b)
+		return realPersist(path, b)
 	}
-	m.execute = func(_ context.Context, path string, _ Request) (json.RawMessage, error) {
+	m.execute = func(ctx context.Context, path string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		if err := os.Mkdir(path, 0700); err != nil {
 			return nil, err
 		}
@@ -131,7 +140,10 @@ func TestWorkflowLifecycleFailedExecutionCanAcknowledgeKnownLocalRelease(t *test
 	f := newWorkflowShutdownFixture(t)
 	m := f.manager
 	cause := errors.New("owned execution failure")
-	m.execute = func(context.Context, string, Request) (json.RawMessage, error) { return nil, cause }
+	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
+		return nil, cause
+	}
 	job := f.start()
 	workflowLifecycleAwait(t, m)
 	receipt := workflowLifecycleReadCurrent(t, m)
@@ -150,7 +162,8 @@ func TestWorkflowLifecycleCleanupUncertaintyBlocksNewGenerationAndPreservesReads
 	f := newWorkflowShutdownFixture(t)
 	m := f.manager
 	cause := errors.New("PRIVATE_CLEANUP_CAUSE")
-	m.execute = func(context.Context, string, Request) (json.RawMessage, error) {
+	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		return nil, workflowFailure(ErrWorkflowCleanup, cause)
 	}
 	job := f.start()
@@ -217,11 +230,11 @@ func TestWorkflowLifecycleOrphanPointerAndFailedAckRemainBlocking(t *testing.T) 
 			f := newWorkflowShutdownFixture(t)
 			m := f.manager
 			cause := errors.New("PRIVATE_METADATA_CAUSE")
-			m.writeLifecycle = func(path string, b []byte, previous string) error {
+			m.publishLifecycle = func(stage, path, previous string) error {
 				if phase == "pointer" && filepath.Base(path) == workflowLifecycleCurrent || phase == "ack" && strings.HasSuffix(path, ".ack.json") {
 					return cause
 				}
-				return writeWorkflowLifecycleFile(path, b, previous)
+				return physicalLifecyclePublish(stage, path, previous)
 			}
 			plan := f.plan()
 			_, err := m.Start(plan.ID)
@@ -258,7 +271,8 @@ func TestWorkflowLifecycleOrphanPointerAndFailedAckRemainBlocking(t *testing.T) 
 func TestWorkflowLifecycleUnknownManifestDoesNotInventUncertainOwners(t *testing.T) {
 	f := newWorkflowShutdownFixture(t)
 	m := f.manager
-	m.execute = func(_ context.Context, path string, _ Request) (json.RawMessage, error) {
+	m.execute = func(ctx context.Context, path string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		for depth := 0; depth < workflowLifecycleManifestDepth+2; depth++ {
 			if err := os.Mkdir(path, 0700); err != nil {
 				return nil, err
@@ -345,7 +359,8 @@ func TestWorkflowLifecycleResultUncertaintyRetainsCofailureAndRefusesAcknowledge
 	f := newWorkflowShutdownFixture(t)
 	m := f.manager
 	cause := errors.New("owned execution cofailure")
-	m.execute = func(context.Context, string, Request) (json.RawMessage, error) {
+	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		return json.RawMessage(`{"incomplete":`), cause
 	}
 	job := f.start()
@@ -370,7 +385,7 @@ func TestWorkflowLifecycleCancellationAfterPublicationBoundaryDrainsRealOutcome(
 			cause := errors.New("owned lifecycle publication failure")
 			var executed atomic.Bool
 			m.execute = func(context.Context, string, Request) (json.RawMessage, error) { executed.Store(true); return nil, nil }
-			m.writeLifecycle = func(path string, b []byte, previous string) error {
+			m.publishLifecycle = func(stage, path, previous string) error {
 				if strings.HasSuffix(path, ".intent.json") {
 					close(entered)
 					release()
@@ -378,7 +393,7 @@ func TestWorkflowLifecycleCancellationAfterPublicationBoundaryDrainsRealOutcome(
 						return cause
 					}
 				}
-				return writeWorkflowLifecycleFile(path, b, previous)
+				return physicalLifecyclePublish(stage, path, previous)
 			}
 			result, started := f.startAsync(f.plan())
 			workflowStoreUnitAwait(t, entered, "source intent publication did not enter owned boundary")

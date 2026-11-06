@@ -29,20 +29,22 @@ import (
 )
 
 type Server struct {
-	Policy        *managed.Guard
-	Store         *profile.Store
-	Manager       *engine.Manager
-	Workflows     *workflow.Manager
-	UI            fs.FS
-	Token         string
-	profileAudit  *audit.Recorder
-	mutations     mutationGate
-	historyRead   sync.Mutex
-	lifecycleRead sync.Mutex
-	diagnosticRun sync.Mutex
-	statusRead    sync.Mutex
-	lifecycleMu   sync.Mutex
-	shutdown      *serverShutdownState
+	Policy              *managed.Guard
+	Store               *profile.Store
+	Manager             *engine.Manager
+	Workflows           *workflow.Manager
+	UI                  fs.FS
+	Token               string
+	profileAudit        *audit.Recorder
+	mutations           mutationGate
+	historyRead         sync.Mutex
+	lifecycleRead       sync.Mutex
+	reconciliationRead  sync.Mutex
+	reconciliationWrite sync.Mutex
+	diagnosticRun       sync.Mutex
+	statusRead          sync.Mutex
+	lifecycleMu         sync.Mutex
+	shutdown            *serverShutdownState
 }
 
 func New(store *profile.Store, manager *engine.Manager, static fs.FS) (*Server, error) {
@@ -305,7 +307,7 @@ func (s *Server) Handler() http.Handler {
 				// Diagnostics and read-only previews need not serialize with these.
 				// Explicit history capture owns its heavy history gate and backend
 				// leases so system cancellation remains available during its scan.
-				if r.URL.Path != "/api/v1/diagnose" && r.URL.Path != "/api/v1/preview" && !(r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/history/inventory") {
+				if r.URL.Path != "/api/v1/diagnose" && r.URL.Path != "/api/v1/preview" && !reconciliationMutationPath(r) && !(r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/history/inventory") {
 					releaseAdmission, err := s.mutations.reserve(r.Context())
 					if err != nil {
 						rejectMutation(w, err)

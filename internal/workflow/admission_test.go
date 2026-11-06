@@ -8,8 +8,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/Yunushan/accessweaver/internal/profile"
 )
 
 func TestPendingAdmissionPersistenceKeepsControlsAvailable(t *testing.T) {
@@ -29,6 +27,7 @@ func TestPendingAdmissionPersistenceKeepsControlsAvailable(t *testing.T) {
 				executed <- struct{}{}
 				return json.RawMessage(`{"ok":true}`), nil
 			}
+			realPersist := m.persist
 			m.persist = func(path string, data []byte) error {
 				var job Job
 				if err := json.Unmarshal(data, &job); err != nil {
@@ -41,7 +40,7 @@ func TestPendingAdmissionPersistenceKeepsControlsAvailable(t *testing.T) {
 						return errors.New("injected initial persistence failure")
 					}
 				}
-				return profile.AtomicWrite(path, data)
+				return realPersist(path, data)
 			}
 			plan, err := m.Preview(Request{Action: "discover"})
 			if err != nil {

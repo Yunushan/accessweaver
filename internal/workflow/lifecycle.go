@@ -13,8 +13,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/Yunushan/accessweaver/internal/privatefile"
 )
 
 // Lifecycle receipts describe only this controller's local record, workdir and
@@ -82,7 +80,11 @@ type workflowLifecycleReceipt struct {
 	Ack          *workflowLifecycleAck   `json:"ack,omitempty"`
 }
 type workflowLifecycle struct {
-	receipt workflowLifecycleReceipt
+	receipt               workflowLifecycleReceipt
+	initialMetadataClosed bool
+	sealPublished         bool
+	sealTransactionClosed bool
+	ackObservation        ackObservation
 }
 
 func workflowLifecycleHash(b []byte) string {
@@ -177,68 +179,12 @@ func readWorkflowLifecycleFile(ctx context.Context, path string, limit int64) (b
 // privatefile provides privacy before payload on every supported platform.
 // Unknown/partially written metadata is preserved. Publishing a receipt never
 // overwrites an unknown destination; replacement requires its exact old hash.
-func writeWorkflowLifecycleFile(path string, b []byte, previous string) (err error) {
-	if len(b) > workflowLifecycleMaxReceiptBytes {
-		return ErrWorkflowLifecycle
-	}
-	var old []byte
-	var cause error
-	if previous != "" {
-		old, cause = readWorkflowLifecycleFile(context.Background(), path, workflowLifecycleMaxReceiptBytes)
-		if cause != nil || workflowLifecycleHash(old) != previous {
-			return errors.Join(ErrWorkflowLifecycle, cause)
-		}
-	}
-	file, cause := privatefile.CreateTemp(filepath.Dir(path), ".lifecycle-*.tmp")
-	if cause != nil {
-		return cause
-	}
-	stage := file.Name()
-	identity, cause := file.Stat()
-	if cause != nil {
-		return errors.Join(cause, workflowFailure(ErrWorkflowCleanup, file.Close()))
-	}
-	if n, cause := file.Write(b); cause != nil || n != len(b) {
-		if cause == nil {
-			cause = io.ErrShortWrite
-		}
-		return errors.Join(cause, workflowFailure(ErrWorkflowCleanup, file.Close()))
-	}
-	if cause = file.Sync(); cause != nil {
-		return errors.Join(cause, workflowFailure(ErrWorkflowCleanup, file.Close()))
-	}
-	if cause = workflowFailure(ErrWorkflowCleanup, file.Close()); cause != nil {
-		return cause
-	}
-	current, cause := os.Lstat(stage)
-	if cause != nil || !current.Mode().IsRegular() || !os.SameFile(identity, current) {
-		return errors.Join(ErrWorkflowLifecycle, cause)
-	}
-	if previous == "" {
-		// Same-directory hard-link publication is atomic and refuses an existing
-		// destination. Every payload write/Sync/Close precedes publication.
-		// Unsupported filesystems fail closed; no nonexclusive fallback exists.
-		if cause = os.Link(stage, path); cause != nil {
-			return cause
-		}
-		current, cause = os.Lstat(stage)
-		if cause != nil || !current.Mode().IsRegular() || !os.SameFile(identity, current) {
-			return errors.Join(ErrWorkflowLifecycle, cause)
-		}
-		return os.Remove(stage)
-	}
-	old, cause = readWorkflowLifecycleFile(context.Background(), path, workflowLifecycleMaxReceiptBytes)
-	if cause != nil || workflowLifecycleHash(old) != previous {
-		return errors.Join(ErrWorkflowLifecycle, cause)
-	}
-	return replaceHistoryIndex(stage, path)
+func writeWorkflowLifecycleFile(path string, b []byte, previous string) error {
+	return writeLifecycleObserved(path, b, previous, nil).Err
 }
 
 func (m *Manager) lifecycleWrite(path string, b []byte, previous string) error {
-	if m.writeLifecycle != nil {
-		return m.writeLifecycle(path, b, previous)
-	}
-	return writeWorkflowLifecycleFile(path, b, previous)
+	return m.observedLifecycleWrite(path, b, previous).Err
 }
 func (m *Manager) lifecycleReceiptPath(id, phase string) string {
 	return filepath.Join(m.storeRoot, workflowLifecycleDirectory, id+"."+phase+".json")
@@ -417,6 +363,9 @@ func (m *Manager) readWorkflowLifecycleChain(ctx context.Context, id string) (re
 // from a crash before current-pointer publication. No uncertainty is deleted or
 // silently converted into a fresh generation. Status itself stays a small read.
 func (m *Manager) inspectWorkflowLifecycleAdmission(ctx context.Context) (generations int, err error) {
+	if cause := m.checkReconciliationAdmission(ctx); cause != nil {
+		return 0, cause
+	}
 	if cause := ctx.Err(); cause != nil {
 		return 0, cause
 	}
@@ -583,7 +532,8 @@ func (m *Manager) beginWorkflowLifecycle(ctx context.Context, job Job, request R
 	if cause = ctx.Err(); cause != nil {
 		return nil, cause
 	}
-	if cause = m.lifecycleWrite(m.lifecycleReceiptPath(job.ID, "intent"), b, ""); cause != nil {
+	intentObservation := m.observedLifecycleWrite(m.lifecycleReceiptPath(job.ID, "intent"), b, "")
+	if cause = intentObservation.Err; cause != nil {
 		return nil, workflowLifecycleError(cause)
 	}
 	next := workflowLifecyclePointer{1, job.ID, receipt.IntentSHA256}
@@ -593,10 +543,11 @@ func (m *Manager) beginWorkflowLifecycle(ctx context.Context, job Job, request R
 		oldBytes, _ := json.Marshal(pointer)
 		oldHash = workflowLifecycleHash(oldBytes)
 	}
-	if cause = m.lifecycleWrite(filepath.Join(m.storeRoot, workflowLifecycleCurrent), nextBytes, oldHash); cause != nil {
+	pointerObservation := m.observedLifecycleWrite(filepath.Join(m.storeRoot, workflowLifecycleCurrent), nextBytes, oldHash)
+	if cause = pointerObservation.Err; cause != nil {
 		return nil, workflowLifecycleError(cause)
 	}
-	return &workflowLifecycle{receipt: receipt}, nil
+	return &workflowLifecycle{receipt: receipt, initialMetadataClosed: intentObservation.Known && intentObservation.Published && pointerObservation.Known && pointerObservation.Published}, nil
 }
 
 func (m *Manager) sealWorkflowLifecycle(state *workflowLifecycle, job Job, outcome error) (err error) {
@@ -613,6 +564,9 @@ func (m *Manager) sealWorkflowLifecycle(state *workflowLifecycle, job Job, outco
 		} else {
 			cause = errors.Join(ErrWorkflowPersistence, readErr)
 		}
+	}
+	if !state.initialMetadataClosed {
+		cause = errors.Join(cause, workflowFailure(ErrWorkflowPersistence, ErrLifecycleReconciliationUnavailable))
 	}
 	manifest, manifestErr := m.collectWorkflowLifecycleManifest(job.ID)
 	seal.Manifest = manifest
@@ -638,21 +592,25 @@ func (m *Manager) sealWorkflowLifecycle(state *workflowLifecycle, job Job, outco
 		return workflowLifecycleError(errors.Join(cause, transactionErr))
 	}
 	defer func() {
-		err = errors.Join(err, workflowFailure(ErrWorkflowCleanup, m.closeWorkflowStoreLease(transaction)))
+		closeErr := m.closeWorkflowStoreLease(transaction)
+		state.sealTransactionClosed = closeErr == nil
+		err = errors.Join(err, workflowFailure(ErrWorkflowCleanup, closeErr))
 	}()
 	pointer, current, currentErr := m.readWorkflowLifecycleCurrent(context.Background())
 	if currentErr != nil || pointer == nil || pointer.Generation != job.ID || current.IntentSHA256 != state.receipt.IntentSHA256 || current.Seal != nil || current.Ack != nil {
 		return workflowLifecyclePending(errors.Join(cause, currentErr, ErrWorkflowLifecycle))
 	}
-	if writeErr := m.lifecycleWrite(m.lifecycleReceiptPath(job.ID, "seal"), b, ""); writeErr != nil {
-		return workflowLifecycleError(errors.Join(cause, writeErr))
+	observation := m.observedLifecycleWrite(m.lifecycleReceiptPath(job.ID, "seal"), b, "")
+	if observation.Err != nil {
+		return workflowLifecycleError(errors.Join(cause, observation.Err))
 	}
+	state.sealPublished = observation.Known && observation.Published
 	state.receipt = next
 	return workflowLifecycleError(cause)
 }
 
 func (m *Manager) acknowledgeWorkflowLifecycle(state *workflowLifecycle) (err error) {
-	if state == nil || state.receipt.Seal == nil || !state.receipt.Seal.LocalReleasePermitted {
+	if state == nil || state.receipt.Seal == nil || !state.receipt.Seal.LocalReleasePermitted || !state.sealPublished || !state.sealTransactionClosed {
 		return workflowLifecyclePending(nil)
 	}
 	transaction, cause := m.acquireWorkflowStoreLease(workflowTransactionLockName)
@@ -663,7 +621,9 @@ func (m *Manager) acknowledgeWorkflowLifecycle(state *workflowLifecycle) (err er
 	// active lease only. It cannot recursively certify Close of its own writer
 	// or this short coordination lease. Current acquisition supplies exclusion.
 	defer func() {
-		err = errors.Join(err, workflowFailure(ErrWorkflowCleanup, m.closeWorkflowStoreLease(transaction)))
+		closeErr := m.closeWorkflowStoreLease(transaction)
+		state.ackObservation.TransactionClosed = closeErr == nil
+		err = errors.Join(err, workflowFailure(ErrWorkflowCleanup, closeErr))
 	}()
 	pointer, current, cause := m.readWorkflowLifecycleCurrent(context.Background())
 	if cause != nil || pointer == nil || pointer.Generation != state.receipt.Intent.Generation || current.IntentSHA256 != state.receipt.IntentSHA256 || current.SealSHA256 != state.receipt.SealSHA256 || current.Ack != nil {
@@ -675,7 +635,8 @@ func (m *Manager) acknowledgeWorkflowLifecycle(state *workflowLifecycle) (err er
 		return workflowLifecycleError(ErrWorkflowLifecycle)
 	}
 	b, _ := json.Marshal(next.Ack)
-	if cause = m.lifecycleWrite(m.lifecycleReceiptPath(next.Intent.Generation, "ack"), b, ""); cause != nil {
+	state.ackObservation.Write = m.observedLifecycleWrite(m.lifecycleReceiptPath(next.Intent.Generation, "ack"), b, "")
+	if cause = state.ackObservation.Write.Err; cause != nil {
 		return workflowLifecycleError(cause)
 	}
 	state.receipt = next

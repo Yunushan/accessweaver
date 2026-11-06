@@ -38,7 +38,8 @@ func TestWorkflowStoreBusyKeepsReviewedPlanAndHistoryUntouched(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = held.Close() })
 	var executed atomic.Int32
-	m.execute = func(context.Context, string, Request) (json.RawMessage, error) {
+	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		executed.Add(1)
 		return json.RawMessage(`{"fixture":true}`), nil
 	}
@@ -267,7 +268,8 @@ func TestWorkflowStoreTransactionCloseFailurePreventsExecution(t *testing.T) {
 func TestWorkflowStoreTransactionDoesNotCoverExecution(t *testing.T) {
 	f := newWorkflowShutdownFixture(t)
 	m := f.manager
-	m.execute = func(context.Context, string, Request) (json.RawMessage, error) {
+	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		transaction, err := openWorkflowStoreLease(filepath.Join(f.root, workflowTransactionLockName))
 		if err != nil {
 			return nil, errors.New("transaction lock remained held during execution")

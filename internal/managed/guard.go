@@ -68,6 +68,26 @@ func (g *Guard) AuthorizeHistoryRetirement() (*Authorization, error) {
 	return authorization, nil
 }
 
+// AuthorizeLifecycleReconciliation binds a fresh grant for reviewed local
+// lifecycle metadata reconciliation. It does not prove an unknown owner's
+// release or authorize retirement, deletion, vendor effects or native actions.
+// Callers authorize preview and apply independently and retain the grant's
+// identity/expiry checks through the owned operation.
+func (g *Guard) AuthorizeLifecycleReconciliation() (*Authorization, error) {
+	authority, err := g.authority()
+	if err != nil {
+		return nil, err
+	}
+	if authority != nil && !authority.verified.Policy.AllowWorkflowLifecycleReconciliation {
+		return nil, fmt.Errorf("%w: workflow lifecycle reconciliation is disabled", ErrDenied)
+	}
+	authorization := newAuthorization(g, authority)
+	// Refuse an identity, validity or source change during grant acquisition.
+	if err := authorization.Check(); err != nil {
+		return nil, err
+	}
+	return authorization, nil
+}
 func (g *Guard) Diagnostics() error {
 	_, err := g.AuthorizeDiagnostics()
 	return err

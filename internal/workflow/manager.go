@@ -123,31 +123,39 @@ func Catalog() []Operation {
 }
 
 type Manager struct {
-	startMu             sync.Mutex
-	guard               *managed.Guard
-	mu                  sync.Mutex
-	root                string
-	storeRoot           string
-	openStoreLease      func(string) (workflowStoreLease, error)
-	writeLifecycle      func(string, []byte, string) error
-	storeFailure        error
-	retainedStoreLeases []workflowStoreLease
-	plans               map[string]Plan
-	job                 Job
-	cancel              context.CancelFunc
-	done                chan struct{}
-	completion          *workflowCompletion
-	shutdown            *workflowShutdown
-	closing             bool
-	execute             func(context.Context, string, Request) (json.RawMessage, error)
-	persist             func(string, []byte) error
-	platform            string
-	requireAdmin        func() error
+	startMu              sync.Mutex
+	guard                *managed.Guard
+	mu                   sync.Mutex
+	root                 string
+	storeRoot            string
+	openStoreLease       func(string) (workflowStoreLease, error)
+	writeLifecycle       func(string, []byte, string) error
+	publishLifecycle     func(string, string, string) error
+	releaseWitness       *localReleaseWitness
+	reconciliationPlans  map[string]*privateReconciliationPlan
+	maintenance          *reconciliationCompletion
+	storeFailure         error
+	retainedStoreLeases  []workflowStoreLease
+	plans                map[string]Plan
+	job                  Job
+	cancel               context.CancelFunc
+	done                 chan struct{}
+	completion           *workflowCompletion
+	shutdown             *workflowShutdown
+	closing              bool
+	execute              func(context.Context, string, Request) (json.RawMessage, error)
+	persist              func(string, []byte) error
+	persistProbe         *workflowPersistObservation
+	lastJobPersistClosed bool
+	platform             string
+	requireAdmin         func() error
 }
 
 func New(root string) *Manager { return NewWithGuard(root, managed.NewGuard(nil)) }
 func NewWithGuard(root string, guard *managed.Guard) *Manager {
-	return &Manager{guard: guard, root: filepath.Join(root, "workflows"), storeRoot: filepath.Clean(root), openStoreLease: openWorkflowStoreLease, plans: map[string]Plan{}, execute: execute, persist: profile.AtomicWrite, platform: runtime.GOOS, requireAdmin: requireAdministrator}
+	m := &Manager{guard: guard, root: filepath.Join(root, "workflows"), storeRoot: filepath.Clean(root), openStoreLease: openWorkflowStoreLease, plans: map[string]Plan{}, execute: execute, platform: runtime.GOOS, requireAdmin: requireAdministrator}
+	m.persist = m.defaultPersist
+	return m
 }
 
 func (m *Manager) Preview(r Request) (Plan, error) {
@@ -500,6 +508,7 @@ func (m *Manager) Start(id string) (Job, error) {
 	m.mu.Unlock()
 	activeLease, activeErr := m.acquireWorkflowStoreLease(workflowActiveLockName)
 	initialErr := activeErr
+	initialRecordClosed := false
 	var lifecycle *workflowLifecycle
 	if initialErr == nil {
 		lifecycle, initialErr = m.beginWorkflowLifecycle(ctx, job, p.Request)
@@ -513,6 +522,9 @@ func (m *Manager) Start(id string) (Job, error) {
 		initialErr = os.MkdirAll(m.root, 0700)
 		if initialErr == nil {
 			initialErr = m.saveJob(&job)
+			m.mu.Lock()
+			initialRecordClosed = m.lastJobPersistClosed
+			m.mu.Unlock()
 		}
 	}
 	if initialErr != nil {
@@ -561,9 +573,13 @@ func (m *Manager) Start(id string) (Job, error) {
 	started = true
 	go func() {
 		var result json.RawMessage
+		executionObservation := &localExecutionObservation{}
 		err := ctx.Err()
+		if err != nil {
+			executionObservation.NeverCalled = true
+		}
 		if err == nil {
-			result, err = m.execute(ctx, filepath.Join(m.root, id), p.Request)
+			result, err = m.execute(context.WithValue(ctx, localExecutionObservationKey{}, executionObservation), filepath.Join(m.root, id), p.Request)
 		}
 		cause := context.Cause(ctx)
 		if managed.IsPolicyError(cause) {
@@ -575,7 +591,14 @@ func (m *Manager) Start(id string) (Job, error) {
 		m.mu.Lock()
 		cooperative := completion.cancelRequested && err == context.Canceled && ctx.Err() == context.Canceled && cause == context.Canceled
 		m.mu.Unlock()
+		executionKnown := executionObservation.NeverCalled || executionObservation.NoNativeOwners || executionObservation.Invoked && executionObservation.Setup && executionObservation.Waited && executionObservation.Bound && executionObservation.OwnerClosed && executionObservation.OutputClosed && executionObservation.ReportValid && executionObservation.Finished
+		if !executionKnown {
+			err = errors.Join(err, workflowCause(ErrWorkflowCleanup, ErrLifecycleReconciliationUnavailable))
+		}
 		terminalErr := workflowFailure(ErrWorkflowExecution, err)
+		if !initialRecordClosed {
+			terminalErr = errors.Join(terminalErr, workflowFailure(ErrWorkflowPersistence, ErrLifecycleReconciliationUnavailable))
+		}
 		resultErr := validateResult(result)
 		if resultErr != nil {
 			result = nil
@@ -601,6 +624,12 @@ func (m *Manager) Start(id string) (Job, error) {
 		}
 		// Seal exact persisted record bytes and the bounded local artifact
 		// observation while the original active owner still excludes admission.
+		m.mu.Lock()
+		recordClosed := m.lastJobPersistClosed
+		m.mu.Unlock()
+		if !recordClosed {
+			terminalErr = errors.Join(terminalErr, workflowFailure(ErrWorkflowPersistence, ErrLifecycleReconciliationUnavailable))
+		}
 		lifecycleErr := m.sealWorkflowLifecycle(lifecycle, job, terminalErr)
 		if lifecycleErr != nil {
 			job.State = "failed"
@@ -616,6 +645,13 @@ func (m *Manager) Start(id string) (Job, error) {
 			job.Error = boundedJobError("release workflow store: " + leaseErr.Error() + "; " + job.Error)
 			terminalErr = errors.Join(terminalErr, workflowFailure(ErrWorkflowCleanup, leaseErr))
 		}
+		var witness *localReleaseWitness
+		if (executionObservation.NeverCalled || executionObservation.NoNativeOwners || executionObservation.Invoked && executionObservation.Setup && executionObservation.Waited && executionObservation.Bound && executionObservation.OwnerClosed && executionObservation.OutputClosed && executionObservation.ReportValid && executionObservation.Finished) && persistErr == nil && lifecycleErr == nil && leaseErr == nil && lifecycle != nil && lifecycle.sealPublished && lifecycle.sealTransactionClosed && lifecycle.receipt.Seal.LocalReleasePermitted {
+			witness = &localReleaseWitness{Receipt: lifecycle.receipt, Done: done}
+			m.mu.Lock()
+			m.releaseWitness = witness
+			m.mu.Unlock()
+		}
 		var acknowledgementErr error
 		if lifecycleErr == nil && leaseErr == nil {
 			acknowledgementErr = m.acknowledgeWorkflowLifecycle(lifecycle)
@@ -623,6 +659,16 @@ func (m *Manager) Start(id string) (Job, error) {
 				job.State = "failed"
 				job.Error = boundedJobError(job.Error + "; acknowledge local release: " + acknowledgementErr.Error())
 				terminalErr = errors.Join(terminalErr, acknowledgementErr)
+			}
+		}
+		if witness != nil {
+			witness.Ack = lifecycle.ackObservation
+			if acknowledgementErr == nil {
+				m.mu.Lock()
+				if m.releaseWitness == witness {
+					m.releaseWitness = nil
+				}
+				m.mu.Unlock()
 			}
 		}
 		if cooperative && resultErr == nil && persistErr == nil && leaseErr == nil && lifecycleErr == nil && acknowledgementErr == nil {
@@ -649,11 +695,28 @@ func (m *Manager) saveJob(job *Job) error {
 	if err != nil {
 		return err
 	}
+	m.mu.Lock()
+	m.lastJobPersistClosed = false
+	m.mu.Unlock()
 	writeErr := m.bumpWorkflowStoreRevision()
 	if writeErr == nil {
-		writeErr = m.persist(filepath.Join(m.root, job.ID+".json"), b)
+		path := filepath.Join(m.root, job.ID+".json")
+		probe := &workflowPersistObservation{path: path, sha: workflowLifecycleHash(b)}
+		m.mu.Lock()
+		m.persistProbe = probe
+		m.mu.Unlock()
+		writeErr = m.persist(path, b)
+		m.mu.Lock()
+		m.persistProbe = nil
+		m.lastJobPersistClosed = writeErr == nil && probe.closed
+		m.mu.Unlock()
 	}
 	closeErr := workflowFailure(ErrWorkflowCleanup, m.closeWorkflowStoreLease(lease))
+	if closeErr != nil {
+		m.mu.Lock()
+		m.lastJobPersistClosed = false
+		m.mu.Unlock()
+	}
 	if closeErr == nil {
 		// Preserve the original persistence error's identity when coordination
 		// succeeded; existing admission callers observe that exact local cause.
@@ -713,6 +776,10 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	m.closing = true
 	if m.shutdown == nil {
 		m.shutdown = &workflowShutdown{}
+		if m.maintenance != nil && !reconciliationDone(m.maintenance.done) {
+			m.shutdown.maintenance = m.maintenance
+			m.maintenance.cancel()
+		}
 		if completion := m.completion; completion != nil {
 			select {
 			case <-completion.done:
@@ -727,29 +794,64 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 		}
 	}
 	completion := m.shutdown.completion
+	maintenance := m.shutdown.maintenance
 	m.mu.Unlock()
-	if completion == nil {
+	for _, done := range []<-chan struct{}{func() <-chan struct{} {
+		if completion != nil {
+			return completion.done
+		}
 		return nil
+	}(), func() <-chan struct{} {
+		if maintenance != nil {
+			return maintenance.done
+		}
+		return nil
+	}()} {
+		if done == nil || reconciliationDone(done) {
+			continue
+		}
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
-	select {
-	case <-completion.done:
-		return completion.err
-	default:
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.shutdown.finished {
+		if completion != nil {
+			m.shutdown.err = completion.err
+		}
+		if maintenance != nil && maintenance.err != nil {
+			if m.shutdown.err == nil {
+				m.shutdown.err = maintenance.err
+			} else {
+				m.shutdown.err = errors.Join(m.shutdown.err, maintenance.err)
+			}
+		}
+		m.shutdown.finished = true
 	}
-	select {
-	case <-completion.done:
-		return completion.err
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return m.shutdown.err
 }
 
-func execute(ctx context.Context, dir string, r Request) (result json.RawMessage, failure error) {
+func execute(ctx context.Context, dir string, r Request) (json.RawMessage, error) {
+	return executeWorkflow(ctx, dir, r, nil)
+}
+
+// A nil constructor uses the sole trusted production shell. A private per-call
+// constructor permits source tests to exercise this same owned pipeline with
+// an inert source-built child; no profile/environment selector exists.
+func executeWorkflow(ctx context.Context, dir string, r Request, commandFactory func(context.Context, []byte, string) (*exec.Cmd, error)) (result json.RawMessage, failure error) {
+	observation := localExecutionFrom(ctx)
+	if observation != nil {
+		observation.Invoked = true
+		defer func() { observation.Finished = true }()
+	}
 	started := time.Now()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if runtime.GOOS != "windows" {
+	if commandFactory == nil && runtime.GOOS != "windows" {
 		return nil, errors.New("Windows required")
 	}
 	permission, err := workflowPermission(managed.NewGuard(nil), r)
@@ -766,7 +868,11 @@ func execute(ctx context.Context, dir string, r Request) (result json.RawMessage
 	logClosed := false
 	defer func() {
 		if !logClosed {
-			failure = errors.Join(failure, workflowFailure(ErrWorkflowCleanup, log.Close()))
+			closeErr := log.Close()
+			if observation != nil {
+				observation.OutputClosed = closeErr == nil
+			}
+			failure = errors.Join(failure, workflowFailure(ErrWorkflowCleanup, closeErr))
 		}
 	}()
 	phase := func(name string) error {
@@ -826,22 +932,36 @@ func execute(ctx context.Context, dir string, r Request) (result json.RawMessage
 	// reread as privileged code or as a different request after launch review.
 	program := strings.Replace(string(script), "param([Parameter(Mandatory=$true)][string]$RequestPath)", "param()", 1)
 	program = strings.Replace(program, "$inputData = Get-Content -LiteralPath $RequestPath -Raw | ConvertFrom-Json", "$inputData = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+base64.StdEncoding.EncodeToString(b)+"')) | ConvertFrom-Json", 1)
-	systemDirectory, err := nativepath.SystemDirectory()
-	if err != nil {
-		return nil, err
+	var cmd *exec.Cmd
+	if commandFactory != nil {
+		cmd, err = commandFactory(ctx, b, program)
+		if err != nil {
+			return nil, err
+		}
+		if cmd == nil {
+			return nil, ErrWorkflowExecution
+		}
+	} else {
+		systemDirectory, err := nativepath.SystemDirectory()
+		if err != nil {
+			return nil, err
+		}
+		powershell := filepath.Join(systemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")
+		environment, err := nativepath.ProcessEnvironment()
+		if err != nil {
+			return nil, err
+		}
+		if err := phase("environment-ready"); err != nil {
+			return nil, err
+		}
+		cmd = exec.CommandContext(ctx, powershell, "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", "$script:workflowClock=[Diagnostics.Stopwatch]::StartNew(); [Console]::WriteLine('Workflow phase: input'); [Console]::WriteLine(('Workflow timing ms: shell-input {0}' -f $script:workflowClock.ElapsedMilliseconds)); $source=[Console]::In.ReadToEnd(); [Console]::WriteLine('Workflow phase: parse'); [Console]::WriteLine(('Workflow timing ms: shell-parse {0}' -f $script:workflowClock.ElapsedMilliseconds)); & ([scriptblock]::Create($source))")
+		cmd.Env = environment
+		cmd.Dir = systemDirectory
+		cmd.Stdin = strings.NewReader(program)
 	}
-	powershell := filepath.Join(systemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe")
-	environment, err := nativepath.ProcessEnvironment()
-	if err != nil {
-		return nil, err
+	if cmd.Stdin == nil {
+		cmd.Stdin = strings.NewReader(program)
 	}
-	if err := phase("environment-ready"); err != nil {
-		return nil, err
-	}
-	cmd := exec.CommandContext(ctx, powershell, "-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass", "-Command", "$script:workflowClock=[Diagnostics.Stopwatch]::StartNew(); [Console]::WriteLine('Workflow phase: input'); [Console]::WriteLine(('Workflow timing ms: shell-input {0}' -f $script:workflowClock.ElapsedMilliseconds)); $source=[Console]::In.ReadToEnd(); [Console]::WriteLine('Workflow phase: parse'); [Console]::WriteLine(('Workflow timing ms: shell-parse {0}' -f $script:workflowClock.ElapsedMilliseconds)); & ([scriptblock]::Create($source))")
-	cmd.Env = environment
-	cmd.Dir = systemDirectory
-	cmd.Stdin = strings.NewReader(program)
 	cmd.WaitDelay = 2 * time.Second
 	output := &startupLog{writer: log, started: started}
 	cmd.Stdout = output
@@ -853,18 +973,31 @@ func execute(ctx context.Context, dir string, r Request) (result json.RawMessage
 	cancellation := captureCommandCancellation(cmd)
 	// Bind ownership before the consuming Wait; retain it through cancellation
 	// and output completion, then finish persistence before result validation.
-	runErr := runWorkflowCommand(cmd, owner)
+	if observation != nil {
+		observation.Setup = true
+	}
+	commandObservation, outputClosed, runErr := runWorkflowCommandWithOutput(cmd, owner, output)
+	if observation != nil {
+		observation.Waited = commandObservation.Waited
+		observation.Bound = commandObservation.Bound
+		observation.OwnerClosed = commandObservation.OwnerClosed
+	}
 	// Wait has joined the context watcher, so every configured Cancel outcome
 	// is now available even if Wait preferred the process ExitError over it.
 	cleanupErr := cancellation.failure()
-	err = errors.Join(runErr, cleanupErr, workflowFailure(ErrWorkflowPersistence, output.failure()), phase("child-exited"), workflowFailure(ErrWorkflowCleanup, log.Close()))
+	phaseErr := phase("child-exited")
+	closeLogErr := log.Close()
+	if observation != nil {
+		observation.OutputClosed = outputClosed && closeLogErr == nil && output.failure() == nil && cleanupErr == nil && phaseErr == nil
+	}
+	err = errors.Join(runErr, cleanupErr, workflowFailure(ErrWorkflowPersistence, output.failure()), phaseErr, workflowFailure(ErrWorkflowCleanup, closeLogErr))
 	logClosed = true
 	if err != nil {
 		if contextErr := ctx.Err(); contextErr != nil {
 			err = errors.Join(err, contextErr)
 		}
 	}
-	result, readErr := readWorkflowFile(input.ResultPath, maxResultBytes)
+	result, readErr := readWorkflowLifecycleFile(context.Background(), input.ResultPath, maxResultBytes)
 	if readErr != nil {
 		return nil, errors.Join(err, workflowCause(ErrWorkflowResult, fmt.Errorf("read workflow result: %w", readErr)))
 	}
@@ -875,6 +1008,9 @@ func execute(ctx context.Context, dir string, r Request) (result json.RawMessage
 	if reportErr != nil {
 		// Never publish an unrelated or stale file as this launch's result.
 		return nil, errors.Join(err, workflowCause(ErrWorkflowResult, reportErr))
+	}
+	if observation != nil {
+		observation.ReportValid = report.failure() == nil
 	}
 	err = errors.Join(err, report.failure())
 	if err != nil {

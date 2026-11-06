@@ -29,18 +29,19 @@ var enginePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,49}$`)
 // Empty allowlists and false permissions are deny-by-default policy intent.
 // Execution guards and a protected machine trust store must consume this intent.
 type Policy struct {
-	Downloads                      []DownloadRule `json:"downloads,omitempty"`
-	SchemaVersion                  int            `json:"schemaVersion"`
-	Revision                       uint64         `json:"revision"`
-	IssuedAt                       time.Time      `json:"issuedAt"`
-	ExpiresAt                      time.Time      `json:"expiresAt"`
-	AllowDownloads                 bool           `json:"allowDownloads"`
-	AllowDiagnostics               bool           `json:"allowDiagnostics"`
-	AllowProfileChanges            bool           `json:"allowProfileChanges"`
-	RequireProfileAudit            bool           `json:"requireProfileAudit,omitempty"`
-	AllowWorkflowHistoryRetirement bool           `json:"allowWorkflowHistoryRetirement,omitempty"`
-	Launches                       []LaunchRule   `json:"launches"`
-	Workflows                      []WorkflowRule `json:"workflows"`
+	Downloads                            []DownloadRule `json:"downloads,omitempty"`
+	SchemaVersion                        int            `json:"schemaVersion"`
+	Revision                             uint64         `json:"revision"`
+	IssuedAt                             time.Time      `json:"issuedAt"`
+	ExpiresAt                            time.Time      `json:"expiresAt"`
+	AllowDownloads                       bool           `json:"allowDownloads"`
+	AllowDiagnostics                     bool           `json:"allowDiagnostics"`
+	AllowProfileChanges                  bool           `json:"allowProfileChanges"`
+	RequireProfileAudit                  bool           `json:"requireProfileAudit,omitempty"`
+	AllowWorkflowHistoryRetirement       bool           `json:"allowWorkflowHistoryRetirement,omitempty"`
+	AllowWorkflowLifecycleReconciliation bool           `json:"allowWorkflowLifecycleReconciliation,omitempty"`
+	Launches                             []LaunchRule   `json:"launches"`
+	Workflows                            []WorkflowRule `json:"workflows"`
 }
 
 type DownloadRule struct {

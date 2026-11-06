@@ -14,8 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/Yunushan/accessweaver/internal/profile"
 )
 
 const (
@@ -81,7 +79,7 @@ func (m *Manager) bumpWorkflowStoreRevision() error {
 	if err != nil {
 		return workflowStoreError(err)
 	}
-	return workflowStoreError(profile.AtomicWrite(path, []byte(revision+"\n")))
+	return workflowStoreError(writeWorkflowDataFile(path, []byte(revision+"\n")))
 }
 func (m *Manager) readWorkflowStoreRevision() (string, error) {
 	b, err := readWorkflowFile(filepath.Join(m.storeRoot, historyRevisionName), 49)

@@ -105,6 +105,7 @@ func TestPlansAreImmutableExpiringAndSingleUse(t *testing.T) {
 	input.Applications[0] = "mutated.exe"
 	p.Request.Applications[0] = "also-mutated.exe"
 	m.execute = func(ctx context.Context, dir string, r Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		if r.Applications[0] != "original.exe" {
 			return nil, errors.New("reviewed request changed")
 		}
@@ -140,6 +141,7 @@ func TestConcurrentJobAndCancellationPersistFailure(t *testing.T) {
 	m.platform = "windows"
 	m.requireAdmin = func() error { return nil }
 	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
@@ -193,6 +195,7 @@ func TestShutdownWaitsForDurableOutcomeAndRejectsNewJobs(t *testing.T) {
 		}
 	})
 	m.execute = func(ctx context.Context, _ string, _ Request) (json.RawMessage, error) {
+		observeWorkflowNoNativeOwners(ctx)
 		close(executing)
 		<-ctx.Done()
 		close(finishing)

@@ -14,20 +14,31 @@ type commandOwner interface {
 	Close() error
 }
 
+type commandRunObservation struct{ Accepted, Waited, Bound, OwnerClosed bool }
+
 func runWorkflowCommand(cmd *exec.Cmd, owner commandOwner) error {
-	if owner == nil {
-		return cmd.Run()
-	}
+	_, err := runWorkflowCommandObserved(cmd, owner)
+	return err
+}
+func runWorkflowCommandObserved(cmd *exec.Cmd, owner commandOwner) (observation commandRunObservation, failure error) {
 	if err := cmd.Start(); err != nil {
-		// No child was accepted. Closing still resolves a pre-start gate.
-		return errors.Join(err, workflowFailure(ErrWorkflowCleanup, owner.Close()))
+		if owner != nil {
+			return observation, errors.Join(err, workflowFailure(ErrWorkflowCleanup, owner.Close()))
+		}
+		return observation, err
 	}
-	bindErr := owner.Bind(cmd.Process)
-	// A binding failure cannot undo a successful Start. Retain the accepted
-	// child and perform its real wait even when native cleanup is uncertain.
+	observation.Accepted = true
+	var bindErr error
+	if owner != nil {
+		bindErr = owner.Bind(cmd.Process)
+	}
+	observation.Bound = bindErr == nil
 	waitErr := cmd.Wait()
-	closeErr := owner.Close()
-	return errors.Join(waitErr,
-		workflowFailure(ErrWorkflowCleanup, bindErr),
-		workflowFailure(ErrWorkflowCleanup, closeErr))
+	observation.Waited = cmd.ProcessState != nil
+	var closeErr error
+	if owner != nil {
+		closeErr = owner.Close()
+	}
+	observation.OwnerClosed = closeErr == nil
+	return observation, errors.Join(waitErr, workflowFailure(ErrWorkflowCleanup, bindErr), workflowFailure(ErrWorkflowCleanup, closeErr))
 }
