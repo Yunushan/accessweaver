@@ -67,6 +67,8 @@ Auto-install selects only a completed reported common strategy, preferring HTTPS
 
 ## Ownership, cancellation and recovery
 
+[History inspection](WORKFLOW_HISTORY.md) describes the explicit private inventory, bounded pages and exact selected-record exports. The existing complete history export remains available; this browser does not retire recovery evidence.
+
 Before publishing a native worker result, the worker checks the complete UTF-8 JSON byte count against 32 MiB. It writes a fresh sibling staging file, flushes and closes it, then promotes it only if the result filename is absent. Write, flush, close and promotion failures retain uncertain staging and cannot overwrite an existing result. Every newly executed report carries a version and a fresh launch token; the controller rejects stale or mismatched output. This token provides correlation, not authentication of user-writable storage or publisher identity. Legacy history remains readable.
 
 An oversized, unencodable or over-depth result produces a small failed-report envelope when storage permits. It omits the large data/events, retains bounded recovery-journal and reboot context, and is reported as a result failure even if the operation had already changed system state. Reporting failure does not rerun the operation or establish rollback. The byte check bounds result-file writes; serialization and the source object graph are not claimed to have a hard memory bound. Whole-history quotas, paging and reviewed retirement remain separate work, and recovery evidence is retained.

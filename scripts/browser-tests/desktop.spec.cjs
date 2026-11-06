@@ -314,9 +314,9 @@ test('keyboard users can read maintenance review and retained history without ap
  const folder=path.join(core.home,'state','workflows');await fs.mkdir(folder,{recursive:true});
  const original=JSON.stringify({id:'keyboard-fixture',action:'discover',state:'failed',startedAt:'2026-11-02T00:00:00Z',result:{rows:Array.from({length:100},(_,i)=>({index:i,value:'Synthetic history fixture'}))}});
  const record=path.join(folder,'keyboard-fixture.json');await fs.writeFile(record,original);
- await page.locator('#system-history').click();await expect(page.locator('#system-output')).toContainText('keyboard-fixture');
- await tabTo('system-output');await page.keyboard.press('PageDown');
- await expect.poll(()=>page.locator('#system-output').evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
+ await page.locator('#system-history').click();await page.locator('#history-capture').click();await page.locator('#history-rows button').first().click();await expect(page.locator('#history-detail')).toContainText('keyboard-fixture');
+ await tabTo('history-detail');await page.keyboard.press('PageDown');
+ await expect.poll(()=>page.locator('#history-detail').evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
  expect(await fs.readFile(record,'utf8')).toBe(original);
 });
 
@@ -392,12 +392,12 @@ test('large retained history has a bounded preview and complete private exports'
  const privateError='<img src=x onerror="globalThis.workflowMetadataExecuted=true">'+String.fromCodePoint(0x2028,0x2029).repeat(32768)+'<>&'.repeat(32768);
  const original='{"id":"display-fixture","action":"discover","state":"failed","startedAt":"2026-11-02T00:00:00Z","error":'+JSON.stringify(privateError)+',"result":{"nested":'+'['.repeat(6000)+'0'+']'.repeat(6000)+',"text":'+JSON.stringify(privateText)+',"private":"PRIVATE_FULL_HISTORY_FIXTURE"}}';
  const record=path.join(folder,'display-fixture.json');await fs.writeFile(record,original);
- await page.locator('#system-history').click();
- await expect(page.locator('#system-output')).toContainText('display-fixture');
- await expect(page.locator('#system-output-limited')).toBeVisible();
- await expect(page.locator('#system-output img')).toHaveCount(0);expect(await page.evaluate(()=>globalThis.workflowPayloadExecuted)).toBeUndefined();expect(await page.evaluate(()=>globalThis.workflowMetadataExecuted)).toBeUndefined();
- await expect(page.locator('#system-output')).toHaveAttribute('aria-describedby','system-output-limited');
- expect((await page.locator('#system-output').textContent()).length).toBeLessThanOrEqual(128*1024);
+ await page.locator('#system-history').click();await page.locator('#history-capture').click();await page.locator('#history-rows button').first().click();
+ await expect(page.locator('#history-detail')).toContainText('display-fixture');
+ await expect(page.locator('#history-detail-limited')).toBeVisible();
+ await expect(page.locator('#history-detail img')).toHaveCount(0);expect(await page.evaluate(()=>globalThis.workflowPayloadExecuted)).toBeUndefined();expect(await page.evaluate(()=>globalThis.workflowMetadataExecuted)).toBeUndefined();
+ await expect(page.locator('#history-detail')).toHaveAttribute('aria-describedby','history-detail-limited');
+ expect((await page.locator('#history-detail').textContent()).length).toBeLessThanOrEqual(128*1024);
  await scanAccessibility(page,core,testInfo,'limited-history-preview');await assertControlContrast(page,core,testInfo,'limited-history-preview');
  const pending=page.waitForEvent('download');await page.locator('#system-export-history').click();
  const download=await pending;expect(download.suggestedFilename()).toBe('accessweaver-workflow-history.json');
@@ -499,4 +499,91 @@ test('pending lifecycle blocks launch while retaining profile editing and local 
   await expect(page.locator('#show-logs')).toBeEnabled();await page.locator('#show-logs').click();
   await expect(page.locator('#logs-modal')).toBeVisible();await page.locator('#close-logs').click();
   expect(starts).toBe(0);
+});
+
+// Only static assets and synthetic API replies. Deliberately no core fixture:
+// this case launches no product/native worker and proves UI behavior only.
+test('history fixture: explicit capture, paging, exact detail and private raw export',async({page},testInfo)=>{
+ const origin='http://127.0.0.1:43102',session='a'.repeat(43),revisionA='c'.repeat(64),revisionB='e'.repeat(64);
+ const refA=Buffer.from('source-history-record-A').toString('base64url'),refB=Buffer.from('source-history-record-B').toString('base64url'),refC=Buffer.from('source-history-record-C').toString('base64url'),cursor=Buffer.from('source-history-next-page').toString('base64url');
+ const a={recordRef:refA,revision:revisionA,id:'1'.repeat(48),action:'discover',state:'failed',startedAt:'2026-11-01T00:00:00Z',finishedAt:'2026-11-01T00:01:00Z',size:128,classification:'canonical',protection:'retirement-unavailable',errorPresent:true,resultPresent:true,rawAvailable:true};
+ const b={...a,recordRef:refB,revision:revisionB,id:'2'.repeat(48),classification:'malformed',size:3*1024*1024};
+ const c={...a,recordRef:refC,revision:'',id:'',state:'unknown',classification:'special',rawAvailable:false};
+ const d={...c,recordRef:Buffer.from('source-history-record-D').toString('base64url'),classification:'oversized',size:20*1024*1024*1024};
+ const raw=Buffer.alloc(b.size);raw.set([0xff,0,13,10,60,38,65]);const assets=new Map();
+ for(const [route,file,type] of [['/','index.html','text/html'],['/app.js','app.js','text/javascript'],['/locales.js','locales.js','text/javascript'],['/system.js','system.js','text/javascript'],['/app.css','app.css','text/css']])assets.set(route,{body:await fs.readFile(path.join(repo,'web',file)),contentType:type});
+ let captures=0,stale=false,restricted=false,historyReads=0,firstA=true,releaseA,enteredA,releaseCapture,enteredCapture;
+ const heldA=new Promise(resolve=>releaseA=resolve),readyA=new Promise(resolve=>enteredA=resolve),heldCapture=new Promise(resolve=>releaseCapture=resolve),readyCapture=new Promise(resolve=>enteredCapture=resolve);
+ const inventory=()=>({snapshot:(captures>1?'f':'a').repeat(48),storeRevision:'b'.repeat(48),createdAt:'2026-11-01T00:02:00Z',count:4,totalBytes:b.size+384});
+ const requests=[];
+ await page.route('**/*',async route=>{
+  const url=new URL(route.request().url());if(url.origin!==origin){await route.abort();return;}
+  const asset=assets.get(url.pathname);if(asset){await route.fulfill(asset);return;}
+  expect(route.request().headers()['x-accessweaver-token']).toBe(session);
+  if(url.pathname==='/api/bootstrap'){await route.fulfill({json:{platform:'windows',version:'source-only-history-ui',profileEditingOnly:restricted}});return;}
+  if(url.pathname==='/api/v1/profiles'){await route.fulfill({status:500,json:{error:'Synthetic profile loading failure'}});return;}
+  if(url.pathname==='/api/v1/engines'){await route.fulfill({json:[]});return;}
+  if(url.pathname==='/api/v1/runtime'){await route.fulfill({json:{state:'stopped',log:[]}});return;}
+  if(url.pathname.startsWith('/api/v1/system/history')){
+   historyReads++;requests.push({path:url.pathname,search:url.search,method:route.request().method()});
+   if(url.pathname==='/api/v1/system/history/inventory'){
+    expect(route.request().method()).toBe('POST');expect(route.request().postDataJSON()).toEqual({});captures++;stale=false;if(captures===2){enteredCapture();await heldCapture;await route.fulfill({json:inventory()}).catch(()=>{});return;}await route.fulfill({json:inventory()});return;
+   }
+   if(url.pathname==='/api/v1/system/history/page'){
+    expect(url.searchParams.get('limit')).toBe('64');
+    if(!captures||stale){await route.fulfill({status:409,json:{error:'History inventory is unavailable'}});return;}
+    await route.fulfill({json:{inventory:inventory(),items:url.searchParams.get('cursor')?[c,d]:[a,b],nextCursor:url.searchParams.get('cursor')?'':cursor}});return;
+   }
+   if(url.pathname==='/api/v1/system/history/records/'+refA){
+    expect(url.searchParams.get('revision')).toBe(revisionA);
+    if(firstA){firstA=false;enteredA();await heldA;await route.fulfill({json:{record:a,job:{id:'STALE_HISTORY_DETAIL'},rawAvailable:true}}).catch(()=>{});return;}
+    await route.fulfill({json:{record:a,job:{id:a.id,state:'failed',result:{text:'<img src=x onerror="globalThis.historyPayloadExecuted=true">'+'x'.repeat(200000)}},rawAvailable:true}});return;
+   }
+   if(url.pathname==='/api/v1/system/history/records/'+refB){expect(url.searchParams.get('revision')).toBe(revisionB);await route.fulfill({json:{record:b,rawAvailable:true}});return;}
+   if(url.pathname==='/api/v1/system/history/records/'+d.recordRef){expect(url.searchParams.has('revision')).toBe(true);expect(url.searchParams.get('revision')).toBe('');await route.fulfill({json:{record:d,rawAvailable:false}});return;}
+   if(url.pathname==='/api/v1/system/history/records/'+refC){expect(url.searchParams.has('revision')).toBe(true);expect(url.searchParams.get('revision')).toBe('');await route.fulfill({json:{record:c,rawAvailable:false}});return;}
+   if(url.pathname==='/api/v1/system/history/records/'+refB+'/export'){
+    expect(url.searchParams.get('revision')).toBe(revisionB);await route.fulfill({body:raw,headers:{'Content-Type':'application/octet-stream','ETag':'"'+revisionB+'"','X-AccessWeaver-Revision':revisionB}});return;
+   }
+  }
+  await route.fulfill({status:404,json:{error:'Synthetic route unavailable'}});
+ });
+ const navigateHistoryFixture=async view=>{const toggle=page.locator('#menu-toggle');if(await toggle.isVisible())await toggle.click();await page.locator('.nav-item[data-view="'+view+'"]').click();};
+ try{
+  await page.goto(origin+'/#accessweaver-session='+session);
+  await expect(page.locator('#connection-notice')).toBeVisible();
+  await navigateHistoryFixture('system');
+  await expect(page.locator('#system-history')).toBeEnabled();await page.locator('#system-history').click();
+  await expect(page.locator('#history-status')).toContainText('new capture');expect(captures).toBe(0);
+  await page.locator('#history-capture').focus();await page.keyboard.press('Enter');
+  await expect(page.locator('#history-rows button')).toHaveCount(2);expect(captures).toBe(1);
+  await expect(page.locator('#history-rows')).toContainText('Recovery evidence is protected');
+  await page.getByTitle(a.id,{exact:true}).click();await readyA;
+  await page.getByTitle(b.id,{exact:true}).click();await expect(page.locator('#history-detail-title')).toContainText(b.id);
+  releaseA();await expect(page.locator('#history-detail')).not.toContainText('STALE_HISTORY_DETAIL');await expect(page.locator('#history-detail')).toContainText('too large for the desktop preview');expect(requests.some(item=>item.path==='/api/v1/system/history/records/'+refB)).toBe(false);
+  await page.getByTitle(a.id,{exact:true}).click();await expect(page.locator('#history-detail-limited')).toBeVisible();
+  expect((await page.locator('#history-detail').textContent()).length).toBeLessThanOrEqual(128*1024);await expect(page.locator('#history-detail img')).toHaveCount(0);expect(await page.evaluate(()=>globalThis.historyPayloadExecuted)).toBeUndefined();
+  await page.getByTitle(b.id,{exact:true}).click();await expect(page.locator('#history-export-record')).toBeEnabled();
+  const pendingDownload=page.waitForEvent('download');await page.locator('#history-export-record').click();const download=await pendingDownload;
+  expect(download.suggestedFilename()).toBe('accessweaver-workflow-record.bin');expect(await fs.readFile(await download.path())).toEqual(raw);
+  await page.locator('#history-next').focus();await page.keyboard.press('Enter');await expect(page.locator('#history-rows button')).toHaveCount(2);await expect(page.locator('#history-detail-panel')).toBeHidden();
+  expect(new Set(await page.locator('#history-rows button').allTextContents()).size).toBe(2);await expect(page.locator('#history-rows')).toContainText('Above inspection limit');
+  await page.locator('#history-rows button').first().click();await expect(page.locator('#history-detail')).toContainText('cannot be safely read');await expect(page.locator('#history-export-record')).toBeDisabled();
+  await page.locator('#history-panel').screenshot({path:testInfo.outputPath('history-fixture-source-only-oversized.png')});
+  await page.locator('#history-previous').click();await expect(page.locator('#history-rows button')).toHaveCount(2);
+  stale=true;await page.locator('#history-refresh').click();await expect(page.locator('#history-status')).toContainText('new capture');expect(captures).toBe(1);
+  await page.locator('#history-capture').click();await readyCapture;await expect(page.locator('#history-cancel-capture')).toBeEnabled();await page.locator('#history-cancel-capture').click();releaseCapture();await expect(page.locator('#history-status')).toContainText('request canceled');await expect(page.locator('#history-rows button')).toHaveCount(0);
+  await page.locator('#history-capture').click();await expect(page.locator('#history-rows button')).toHaveCount(2);expect(captures).toBe(3);
+  await page.locator('#history-panel').screenshot({path:testInfo.outputPath('history-fixture-source-only-wide.png')});
+  await page.setViewportSize({width:390,height:844});
+  const headings={en:'Workflow history',tr:'İşlem geçmişi',ru:'История операций',es:'Historial de operaciones'};
+  for(const [language,title] of Object.entries(headings)){
+   await navigateHistoryFixture('settings');await page.locator('#settings-language').selectOption(language);
+   await navigateHistoryFixture('system');await page.locator('#system-history').click();await expect(page.locator('#history-title')).toHaveText(title);await expect(page.locator('#history-rows button')).toHaveCount(2);
+  }
+  await page.locator('#history-panel').screenshot({path:testInfo.outputPath('history-fixture-source-only-narrow.png')});
+  const AxeBuilder=require('@axe-core/playwright').default;await settleAnimations(page);const accessibility=await new AxeBuilder({page}).withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa']).analyze();expect(accessibility.violations.map(item=>item.id)).toEqual([]);
+  expect(requests.every(item=>item.method==='GET'||item.path==='/api/v1/system/history/inventory'&&item.method==='POST')).toBe(true);
+  const beforeRestricted=historyReads;restricted=true;await page.reload();await expect(page.locator('.nav-item[data-view="system"]')).toBeDisabled();await expect(page.locator('#history-panel')).toBeHidden();expect(historyReads).toBe(beforeRestricted);
+ }finally{releaseA();releaseCapture();}
 });

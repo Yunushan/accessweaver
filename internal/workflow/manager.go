@@ -612,7 +612,10 @@ func (m *Manager) saveJob(job *Job) error {
 	if err != nil {
 		return err
 	}
-	writeErr := m.persist(filepath.Join(m.root, job.ID+".json"), b)
+	writeErr := m.bumpWorkflowStoreRevision()
+	if writeErr == nil {
+		writeErr = m.persist(filepath.Join(m.root, job.ID+".json"), b)
+	}
 	closeErr := workflowFailure(ErrWorkflowCleanup, m.closeWorkflowStoreLease(lease))
 	if closeErr == nil {
 		// Preserve the original persistence error's identity when coordination

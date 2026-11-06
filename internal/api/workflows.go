@@ -30,6 +30,10 @@ func (s *Server) workflowRoutes(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("GET /api/v1/system", s.workflowStatus)
 	mux.HandleFunc("GET /api/v1/system/history", s.workflowHistory)
+	mux.HandleFunc("POST /api/v1/system/history/inventory", s.workflowHistoryInventory)
+	mux.HandleFunc("GET /api/v1/system/history/page", s.workflowHistoryPage)
+	mux.HandleFunc("GET /api/v1/system/history/records/{recordRef}", s.workflowHistoryRecord)
+	mux.HandleFunc("GET /api/v1/system/history/records/{recordRef}/export", s.workflowHistoryRecordExport)
 	mux.HandleFunc("POST /api/v1/system/preview", func(w http.ResponseWriter, r *http.Request) {
 		var input workflow.Request
 		if err := readJSON(w, r, &input); err != nil {

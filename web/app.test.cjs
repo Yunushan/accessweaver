@@ -35,6 +35,7 @@ function environment() {
     checkValidity() {return true;}
     reportValidity() {return true;}
     appendChild(el) {this.children.push(el);return el;}
+    replaceChildren(...els) {this.children=[...els];}
     append(...els) {this.children.push(...els);}
     remove() {}
     click() {}
@@ -440,4 +441,222 @@ test('a pending-lifecycle change refreshes profile controls even when status and
   await env.run('pollStatus()');assert.equal(env.context.profileUpdates,1);assert.equal(env.get('hero-primary').disabled,true);
   env.run('apiRequest=async()=>({state:"error",profileId:"test-profile",pid:0,lifecyclePending:false})');
   await env.run('pollStatus()');assert.equal(env.context.profileUpdates,2);assert.equal(env.get('hero-primary').disabled,false);
+});
+
+// Source-only history contracts: synthetic API replies; no product or native worker.
+function historyFixtureRecord(overrides={}){return {recordRef:'record_A',revision:'c'.repeat(64),id:'d'.repeat(48),action:'discover',state:'failed',startedAt:'2026-11-01T00:00:00Z',finishedAt:'2026-11-01T00:01:00Z',size:128,classification:'canonical',protection:'retirement-unavailable',errorPresent:true,resultPresent:true,rawAvailable:true,...overrides};}
+function historyFixtureInventory(){return {snapshot:'a'.repeat(48),storeRevision:'b'.repeat(48),createdAt:'2026-11-01T00:02:00Z',count:2,totalBytes:256};}
+function historyFixtureResponse(value,status=200){return new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});}
+function onlineHistory(){const env=environment();env.run(systemSource);env.run('state.view="system";state.loading=false;state.coreAuthenticated=true;state.token="history-session";state.offline=false;updateHistoryAvailability();historyUI.open=true');return env;}
+
+test('history capture is explicit and metadata paging preserves the legacy export route',async()=>{
+ const env=onlineHistory(),inventory=historyFixtureInventory(),record=historyFixtureRecord(),requests=[];
+ env.context.fetch=async(path,options)=>{requests.push({path,options});if(path==='/api/v1/system/history/inventory')return historyFixtureResponse(inventory);if(path.startsWith('/api/v1/system/history/page'))return requests.filter(item=>item.path.startsWith('/api/v1/system/history/page')).length===1?historyFixtureResponse({},409):historyFixtureResponse({inventory,items:[record],nextCursor:''});throw Error('unexpected history route');};
+ await env.run('openHistory()');assert.equal(requests.length,1);assert.equal(requests[0].options.method,'GET');assert.equal(env.run('historyUI.inventory'),null);assert.match(env.get('history-status').textContent,/new capture/);
+ await env.run('captureHistory()');assert.equal(requests.filter(item=>item.options.method==='POST').length,1);
+ const capture=requests.find(item=>item.options.method==='POST');assert.equal(capture.path,'/api/v1/system/history/inventory');assert.equal(capture.options.body,'{}');assert.equal(capture.options.headers['X-AccessWeaver-Token'],'history-session');assert.equal(capture.options.redirect,'error');
+ assert.equal(env.run('historyUI.items.length'),1);assert.equal(env.run('historyUI.inventory.snapshot'),inventory.snapshot);assert.equal(new URL(requests.at(-1).path,'http://localhost').searchParams.get('limit'),'64');assert.equal(env.get('history-capture').disabled,false);
+ assert.match(env.get('history-detail-summary').textContent,/^$/);assert.match(env.get('history-status').textContent,/Showing 1/);
+});
+
+test('history follows opaque cursors and previous-page navigation without changing operation review',async()=>{
+ const env=onlineHistory(),inventory=historyFixtureInventory(),first=historyFixtureRecord(),second=historyFixtureRecord({recordRef:'record_B',revision:'e'.repeat(64)}),routes=[];
+ env.run('systemUI.plan={id:"reviewed-operation",ready:true};$("system-consent").checked=true');
+ env.context.fetch=async path=>{routes.push(path);const cursor=new URL(path,'http://localhost').searchParams.get('cursor');return historyFixtureResponse({inventory,items:[cursor?second:first],nextCursor:cursor?'':'next_cursor'});};
+ await env.run('loadHistoryPage()');await env.run('historyNextPage()');await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(env.run('historyUI.cursor'),'next_cursor');assert.equal(env.run('historyUI.items[0].recordRef'),'record_B');assert.equal(env.get('history-previous').disabled,false);
+ await env.run('historyPreviousPage()');await new Promise(resolve=>setImmediate(resolve));assert.equal(env.run('historyUI.items[0].recordRef'),'record_A');assert.equal(env.run('systemUI.plan.id'),'reviewed-operation');assert.equal(env.get('system-consent').checked,true);assert.equal(routes.length,3);
+});
+
+test('late history page replies cannot replace a newer page even when fetch ignores abort',async()=>{
+ const env=onlineHistory(),inventory=historyFixtureInventory();let resolveFirst,resolveSecond,firstSignal;
+ env.context.fetch=(path,options)=>new Promise(resolve=>{if(path.includes('cursor=first')){resolveFirst=resolve;firstSignal=options.signal;}else resolveSecond=resolve;});
+ const first=env.run('loadHistoryPage("first")'),second=env.run('loadHistoryPage("second")');
+ resolveSecond(historyFixtureResponse({inventory,items:[historyFixtureRecord({recordRef:'record_B'})],nextCursor:''}));await second;
+ resolveFirst(historyFixtureResponse({inventory,items:[historyFixtureRecord()],nextCursor:''}));await first;
+ assert.equal(firstSignal.aborted,true);assert.equal(env.run('historyUI.items[0].recordRef'),'record_B');
+});
+
+test('exact history detail is independent from current status and rejects stale selected records',async()=>{
+ const env=onlineHistory(),a=historyFixtureRecord(),b=historyFixtureRecord({recordRef:'record_B',revision:'e'.repeat(64)});env.put('historyRows',[a,b]);env.run('historyUI.items=historyRows;systemUI.plan={id:"reviewed-operation",ready:true};$("system-consent").checked=true;$("system-journal").value="reviewed.json";$("system-cancel").disabled=false');
+ let resolveA,resolveB;
+ env.context.fetch=path=>new Promise(resolve=>{if(path.includes('/record_A?'))resolveA=resolve;else resolveB=resolve;});
+ const pendingA=env.run('selectHistoryRecord("record_A")'),pendingB=env.run('selectHistoryRecord("record_B")');
+ const job={id:'historical',state:'failed',result:{journal:'PRIVATE_OLD_JOURNAL',payload:'<img src=x onerror=alert(1)>'}};
+ resolveB(historyFixtureResponse({record:b,job,rawAvailable:true}));await pendingB;
+ resolveA(historyFixtureResponse({record:a,job:{id:'stale-private'},rawAvailable:true}));await pendingA;
+ assert.equal(env.run('historyUI.selected.recordRef'),'record_B');assert.equal(env.run('historyUI.job.id'),'historical');assert.equal(env.get('history-detail').innerHTML,'');assert.match(env.get('history-detail').textContent,/<img/);
+ assert.equal(env.get('system-journal').value,'reviewed.json');assert.equal(env.get('system-cancel').disabled,false);assert.equal(env.run('systemUI.plan.id'),'reviewed-operation');assert.equal(env.get('system-consent').checked,true);
+});
+
+test('unreadable captured records use explicit empty revision detail and cannot be exported',async()=>{
+ const env=onlineHistory(),record=historyFixtureRecord({classification:'special',state:'unknown',rawAvailable:false,revision:'',id:''});env.put('historyRows',[record]);env.run('historyUI.items=historyRows');
+ let route;env.context.fetch=async path=>{route=path;return historyFixtureResponse({record,rawAvailable:false});};
+ await env.run('selectHistoryRecord("record_A")');assert.equal(route,'/api/v1/system/history/records/record_A?revision=');assert.equal(env.get('history-export-record').disabled,true);assert.match(env.get('history-detail').textContent,/cannot be safely read/);
+});
+
+test('selected raw history export preserves binary bytes and requires both exact revision echoes',async()=>{
+ const env=onlineHistory(),record=historyFixtureRecord({size:6}),bytes=new Uint8Array([0xff,0,13,10,60,38]);env.put('selectedHistory',record);env.run('historyUI.selected=selectedHistory;historyUI.detailReady=true;historyUI.rawAvailable=true');
+ let download,request,route;env.context.downloadFile=(data,name,mime)=>{download={data,name,mime}};
+ env.context.fetch=async(path,options)=>{route=path;request=options;return new Response(bytes,{headers:{'Content-Type':'application/octet-stream','ETag':'"'+record.revision+'"','X-AccessWeaver-Revision':record.revision}});};
+ await env.run('exportHistoryRecord()');assert.deepEqual(new Uint8Array(await download.data.arrayBuffer()),bytes);assert.equal(download.name,'accessweaver-workflow-record.bin');assert.equal(download.mime,'application/octet-stream');assert.equal(request.headers['X-AccessWeaver-Token'],'history-session');assert.equal(request.redirect,'error');assert.match(route,/record_A\/export\?revision=/);
+ download=null;env.context.fetch=async()=>new Response(bytes,{headers:{'Content-Type':'application/octet-stream','ETag':'"wrong"','X-AccessWeaver-Revision':record.revision}});
+ await env.run('exportHistoryRecord()');assert.equal(download,null);assert.match(env.get('history-status').textContent,/could not be verified/);assert.equal(env.run('historyUI.exporting'),false);
+ env.context.fetch=async()=>new Response(bytes.slice(0,3),{headers:{'Content-Type':'application/octet-stream','ETag':'"'+record.revision+'"','X-AccessWeaver-Revision':record.revision}});await env.run('exportHistoryRecord()');assert.equal(download,null);assert.match(env.get('history-status').textContent,/could not be verified/);
+});
+
+test('raw history export refuses a stream beyond64MiB without downloading a partial record',async()=>{
+ const env=onlineHistory(),record=historyFixtureRecord();env.put('selectedHistory',record);env.run('historyUI.selected=selectedHistory;historyUI.detailReady=true;historyUI.rawAvailable=true');
+ let downloads=0,canceled=false,part=0;env.context.downloadFile=()=>downloads++;
+ const response={ok:true,headers:new Headers({'Content-Type':'application/octet-stream','ETag':'"'+record.revision+'"','X-AccessWeaver-Revision':record.revision}),body:{getReader(){return {async read(){return {done:false,value:new Uint8Array(++part===1?64*1024*1024:1)}},async cancel(){canceled=true},releaseLock(){}}}}};
+ env.context.fetch=async()=>response;await env.run('exportHistoryRecord()');assert.equal(downloads,0);assert.equal(canceled,true);assert.equal(env.run('historyUI.exporting'),false);
+});
+
+test('stale inventory clears selection and does not automatically create a new capture',async()=>{
+ const env=onlineHistory(),record=historyFixtureRecord();env.put('selectedHistory',record);env.run('historyUI.items=[selectedHistory];historyUI.selected=selectedHistory;historyUI.detailReady=true;historyUI.rawAvailable=true');
+ let requests=0;env.context.fetch=async()=>{requests++;return historyFixtureResponse({},409)};
+ await env.run('loadHistoryPage()');assert.equal(requests,1);assert.equal(env.run('historyUI.selected'),null);assert.equal(env.run('historyUI.inventory'),null);assert.equal(env.get('history-detail-panel').hidden,true);assert.equal(env.get('history-capture').disabled,false);assert.match(env.get('history-status').textContent,/new capture/);
+});
+
+test('history recovery reads survive profile loading failure and session or audited-mode changes clear private state',async()=>{
+ const env=onlineHistory(),inventory=historyFixtureInventory(),record=historyFixtureRecord();env.run('state.offline=true;state.disconnected=true');
+ env.context.fetch=async()=>historyFixtureResponse({inventory,items:[record],nextCursor:''});await env.run('loadHistoryPage()');assert.equal(env.run('historyUI.items.length'),1);
+ env.run('historyUI.selected=historyUI.items[0];historyUI.job={private:"OLD_SESSION_PAYLOAD"};historyUI.detailReady=true;state.token="new-session";updateHistoryAvailability()');
+ assert.equal(env.run('historyUI.items.length'),0);assert.equal(env.run('historyUI.selected'),null);assert.equal(env.get('history-panel').hidden,true);assert.equal(env.get('history-detail-panel').hidden,true);
+ env.run('state.profileEditingOnly=true;updateHistoryAvailability()');assert.equal(env.get('system-history').disabled,true);assert.equal(env.get('history-capture').disabled,true);
+});
+
+test('history rejects response paths, unknown protection and mismatched detail revisions',async()=>{
+ const inventory=historyFixtureInventory();
+ for(const change of [{recordRef:'../private'},{protection:'deletion-allowed'},{revision:'PRIVATE_REVISION'}]){
+  const env=onlineHistory();env.context.fetch=async()=>historyFixtureResponse({inventory,items:[historyFixtureRecord(change)],nextCursor:''});
+  await env.run('loadHistoryPage()');assert.equal(env.run('historyUI.items.length'),0);assert.match(env.get('history-status').textContent,/could not be verified/);
+ }
+ const env=onlineHistory(),record=historyFixtureRecord();env.put('historyRows',[record]);env.run('historyUI.items=historyRows');
+ env.context.fetch=async()=>historyFixtureResponse({record:{...record,revision:'e'.repeat(64)},job:{private:'WRONG_RECORD'},rawAvailable:true});await env.run('selectHistoryRecord("record_A")');
+ assert.equal(env.run('historyUI.job'),null);assert.equal(env.get('history-export-record').disabled,true);assert.doesNotMatch(env.get('history-detail').textContent,/WRONG_RECORD/);
+});
+
+test('all four languages label history classifications and protection without exposing protocol names',()=>{
+ const env=onlineHistory();env.put('historyRows',[historyFixtureRecord()]);env.run('historyUI.items=historyRows');
+ for(const language of ['en','tr','ru','es']){env.put('historyLanguage',language);env.run('state.lang=historyLanguage;refreshHistoryLanguage()');assert.equal(env.run('t("historyProtected")').includes('retirement-unavailable'),false);for(const classification of ['canonical','legacy','malformed','oversized','special','unreadable']){env.put('historyClassification',classification);assert.notEqual(env.run('t("historyClass_"+historyClassification)'),'historyClass_'+classification);}}
+});
+
+
+test('canceling only the history capture refuses its late response without canceling a workflow',async()=>{
+ const env=onlineHistory(),inventory=historyFixtureInventory();let resolveCapture,signal;const requests=[];
+ env.context.fetch=(path,options)=>new Promise(resolve=>{requests.push(path);resolveCapture=resolve;signal=options.signal;});env.run('systemUI.plan={id:"reviewed-operation",ready:true};$("system-cancel").disabled=false');
+ const capture=env.run('captureHistory()');assert.equal(env.get('history-cancel-capture').disabled,false);
+ env.run('cancelHistoryCapture()');assert.equal(signal.aborted,true);assert.equal(env.get('history-cancel-capture').disabled,true);assert.match(env.get('history-status').textContent,/request canceled/);
+ resolveCapture(historyFixtureResponse(inventory));await capture;assert.equal(env.run('historyUI.inventory'),null);assert.deepEqual(requests,['/api/v1/system/history/inventory']);assert.equal(env.run('systemUI.plan.id'),'reviewed-operation');assert.equal(env.get('system-cancel').disabled,false);assert.equal(env.run('historyUI.capturing'),false);
+});
+
+
+test('legacy history labels distinguish canonical opaque refs and oversized logical files remain visible',async()=>{
+ const env=onlineHistory(),inventory={...historyFixtureInventory(),totalBytes:0};
+ const refs=[0,1].map(slot=>Buffer.from(JSON.stringify({v:1,snapshot:'a'.repeat(48),slot})).toString('base64url'));
+ env.put('legacyNameRows',refs.map(recordRef=>historyFixtureRecord({recordRef,id:'',classification:'legacy'})));
+ const names=plain(env.run('legacyNameRows.map(historyRecordName)'));assert.notEqual(names[0],names[1]);assert.ok(names.every(name=>name.length<=80));
+ const oversized=historyFixtureRecord({recordRef:refs[1],id:'',classification:'oversized',state:'unknown',size:20*1024*1024*1024,rawAvailable:false,revision:''});
+ env.context.fetch=async()=>historyFixtureResponse({inventory,items:[oversized],nextCursor:''});await env.run('loadHistoryPage()');
+ assert.equal(env.run('historyUI.items[0].size'),20*1024*1024*1024);assert.equal(env.run('historyUI.items[0].rawAvailable'),false);assert.match(env.get('history-status').textContent,/Showing 1/);
+ const invalid=historyFixtureRecord({size:64*1024*1024+1});env.context.fetch=async()=>historyFixtureResponse({inventory,items:[invalid],nextCursor:''});await env.run('loadHistoryPage()');assert.match(env.get('history-status').textContent,/could not be verified/);
+});
+
+
+test('large history entries skip JSON detail parsing and keep exact private raw export available',async()=>{
+ const env=onlineHistory(),record=historyFixtureRecord({size:3*1024*1024});env.put('historyRows',[record]);env.run('historyUI.items=historyRows');
+ const routes=[];let downloaded;
+ env.context.fetch=async path=>{routes.push(path);return new Response(new Uint8Array(record.size),{headers:{'Content-Type':'application/octet-stream','ETag':'"'+record.revision+'"','X-AccessWeaver-Revision':record.revision}})};
+ env.context.downloadFile=data=>downloaded=data;
+ await env.run('selectHistoryRecord("record_A")');assert.equal(routes.length,0);assert.equal(env.get('history-export-record').disabled,false);assert.match(env.get('history-detail').textContent,/too large for the desktop preview/);
+ await env.run('exportHistoryRecord()');assert.equal(routes.length,1);assert.match(routes[0],/\/record_A\/export\?/);assert.equal(downloaded.size,record.size);
+});
+
+test('detail JSON overflow cancels preview and offers raw export only for the still-selected record',async()=>{
+ const env=onlineHistory(),a=historyFixtureRecord(),b=historyFixtureRecord({recordRef:'record_B',revision:'e'.repeat(64)});env.put('historyRows',[a,b]);env.run('historyUI.items=historyRows');
+ let canceled=false,reads=0;
+ const oversized={ok:true,headers:new Headers({'Content-Type':'application/json'}),body:{getReader(){return {async read(){return {done:false,value:new Uint8Array(++reads===1?4*1024*1024:1)}},async cancel(){canceled=true},releaseLock(){}}}}};
+ env.context.fetch=async()=>oversized;await env.run('selectHistoryRecord("record_A")');assert.equal(canceled,true);assert.equal(env.run('historyUI.job'),null);assert.equal(env.get('history-export-record').disabled,false);assert.match(env.get('history-detail').textContent,/too large/);
+ let releaseA;env.context.fetch=path=>path.includes('/record_A?')?new Promise(resolve=>releaseA=resolve):Promise.resolve(historyFixtureResponse({record:b,job:{id:'current-B'},rawAvailable:true}));
+ const pendingA=env.run('selectHistoryRecord("record_A")');await env.run('selectHistoryRecord("record_B")');reads=0;releaseA(oversized);await pendingA;assert.equal(env.run('historyUI.selected.recordRef'),'record_B');assert.equal(env.run('historyUI.job.id'),'current-B');assert.equal(env.run('historyUI.largePreview'),false);
+});
+
+
+test('history accepts an omitted final cursor but rejects non-string cursor values',async()=>{
+ const env=onlineHistory(),inventory={...historyFixtureInventory(),count:0,totalBytes:0};env.context.fetch=async()=>historyFixtureResponse({inventory,items:[]});
+ await env.run('loadHistoryPage()');assert.equal(env.run('historyUI.nextCursor'),'');assert.equal(env.run('historyUI.inventory.count'),0);assert.match(env.get('history-status').textContent,/Showing 0/);
+ env.context.fetch=async()=>historyFixtureResponse({inventory,items:[],nextCursor:null});await env.run('loadHistoryPage()');assert.match(env.get('history-status').textContent,/could not be verified/);
+});
+
+
+test('history row buttons keep full48hex identity accessible while shortening visible labels',()=>{
+ const env=onlineHistory(),record=historyFixtureRecord();env.put('historyRows',[record]);env.run('historyUI.items=historyRows;renderHistoryRows()');
+ const button=env.get('history-rows').children[0].children[0].children[0];assert.equal(button.textContent,record.id.slice(0,8)+'…'+record.id.slice(-6));assert.equal(button.getAttribute('title'),record.id);assert.equal(button.getAttribute('aria-label'),button.textContent+': '+record.id);
+ env.run('historyUI.selected=historyUI.items[0];renderHistoryDetail()');assert.match(env.get('history-detail-title').textContent,new RegExp(record.id));
+});
+
+
+test('actual Go history wire fixtures satisfy desktop paging, detail and exact raw export',{skip:!process.env.ACCESSWEAVER_HISTORY_INTEROP},async()=>{
+ const path=require('node:path'),crypto=require('node:crypto');
+ const sources=['go.mod','go.sum','internal/api/history.go','internal/api/history_browser.go','internal/api/history_browser_test.go','internal/api/history_browser_interop_test.go','internal/api/server.go','internal/api/workflow_json.go','internal/api/workflows.go','internal/api/audit.go','internal/api/mutations.go','internal/workflow/history.go','internal/workflow/history_capture.go','internal/workflow/history_index.go','internal/workflow/history_inventory.go','internal/workflow/history_record.go','internal/workflow/history_replace_unix.go','internal/workflow/history_replace_windows.go','internal/workflow/manager.go','internal/workflow/outcome.go','internal/workflow/output.go','internal/workflow/result.go','internal/workflow/store.go','web/system.js','web/app.js','web/locales.js','web/index.html','web/app.css','web/app.test.cjs'];
+ const payloadNames=['inventory.json','page-first.json','page-last.json','detail.json','raw.bin'],names=[...payloadNames,'manifest.json'];
+ const directory=path.resolve(process.env.ACCESSWEAVER_HISTORY_INTEROP),repo=path.resolve(__dirname,'..'),hash=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
+ const keys=(value,expected)=>assert.deepEqual(Object.keys(value).sort(),[...expected].sort(),'Source interop schema contains unexpected fields');
+ const same=(a,b)=>a.dev===b.dev&&a.ino===b.ino;
+ function readChecked(root,name,maximum){
+  let fd;
+  try{
+   const target=path.join(root,name),before=fs.lstatSync(target,{bigint:true});
+   assert.ok(before.isFile()&&!before.isSymbolicLink()&&before.size>=0n&&before.size<=BigInt(maximum),'Source interop file is not a bounded regular file');
+   fd=fs.openSync(target,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW||0));const opened=fs.fstatSync(fd,{bigint:true});assert.ok(same(before,opened),'Source interop file changed while opening');
+   const chunks=[];let total=0;
+   for(;;){const buffer=Buffer.alloc(Math.min(32*1024,maximum+1-total)),n=fs.readSync(fd,buffer,0,buffer.length,null);if(!n)break;total+=n;assert.ok(total<=maximum,'Source interop file exceeded its bound');chunks.push(buffer.subarray(0,n));}
+   const after=fs.fstatSync(fd,{bigint:true});assert.ok(same(opened,after)&&opened.size===after.size&&BigInt(total)===opened.size,'Source interop file changed while reading');
+   return Buffer.concat(chunks,total);
+  }catch(error){if(error?.code)assert.fail('Source interop file is unavailable');throw error;}
+  finally{if(fd!==undefined){try{fs.closeSync(fd)}catch{assert.fail('Source interop file did not close')}}}
+ }
+ let identity;
+ try{identity=fs.lstatSync(directory,{bigint:true});assert.ok(identity.isDirectory()&&!identity.isSymbolicLink(),'Source interop root is not an ordinary directory');assert.deepEqual(fs.readdirSync(directory).sort(),[...names].sort(),'Source interop directory contains unexpected files');}catch(error){if(error?.code)assert.fail('Source interop root is unavailable');throw error;}
+ const parse=bytes=>JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+ const manifest=parse(readChecked(directory,'manifest.json',128*1024));keys(manifest,['schemaVersion','sources','files','expected']);assert.equal(manifest.schemaVersion,1);
+ assert.ok(Array.isArray(manifest.sources)&&manifest.sources.length===sources.length);assert.deepEqual(manifest.sources.map(item=>item.name).sort(),[...sources].sort());
+ for(const entry of manifest.sources){keys(entry,['name','sha256']);assert.ok(sources.includes(entry.name)&&/^[a-f0-9]{64}$/.test(entry.sha256));assert.equal(hash(readChecked(repo,entry.name,4*1024*1024)),entry.sha256,'Source interop does not match this checkout');}
+ assert.ok(Array.isArray(manifest.files)&&manifest.files.length===payloadNames.length);assert.deepEqual(manifest.files.map(item=>item.name).sort(),[...payloadNames].sort());
+ const bytes={},metadata={};
+ for(const entry of manifest.files){
+  assert.ok(payloadNames.includes(entry.name),'Source interop filename is not allowed');keys(entry,entry.name==='raw.bin'?['name','size','sha256','contentType','etag','xAccessWeaverRevision']:['name','size','sha256','contentType']);
+  assert.ok(Number.isSafeInteger(entry.size)&&entry.size>=0&&/^[a-f0-9]{64}$/.test(entry.sha256));bytes[entry.name]=readChecked(directory,entry.name,entry.name==='raw.bin'?64*1024*1024:4*1024*1024);assert.equal(bytes[entry.name].length,entry.size);assert.equal(hash(bytes[entry.name]),entry.sha256);
+  assert.ok(entry.name==='raw.bin'?entry.contentType==='application/octet-stream':/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(entry.contentType));metadata[entry.name]=entry;
+ }
+ keys(manifest.expected,['snapshot','canonicalRef','canonicalRevision','canonicalID','rawRef','rawRevision']);const expected=manifest.expected;
+ assert.match(expected.snapshot,/^[a-f0-9]{48}$/);assert.equal(expected.canonicalID,'a'.repeat(48));assert.match(expected.canonicalRevision,/^[a-f0-9]{64}$/);assert.match(expected.rawRevision,/^[a-f0-9]{64}$/);
+ for(const ref of [expected.canonicalRef,expected.rawRef])assert.match(ref,/^[A-Za-z0-9_-]{1,256}$/);assert.notEqual(expected.canonicalRef,expected.rawRef);
+ assert.deepEqual(bytes['raw.bin'],Buffer.from([0xff,0x7b,0,0x58]));assert.equal(expected.rawRevision,hash(bytes['raw.bin']));assert.equal(metadata['raw.bin'].etag,'"'+expected.rawRevision+'"');assert.equal(metadata['raw.bin'].xAccessWeaverRevision,expected.rawRevision);
+ const inventory=parse(bytes['inventory.json']),first=parse(bytes['page-first.json']),last=parse(bytes['page-last.json']),detail=parse(bytes['detail.json']);
+ assert.equal(inventory.snapshot,expected.snapshot);assert.equal(inventory.count,2);assert.equal(first.items.length,1);assert.equal(last.items.length,1);assert.ok(first.nextCursor);assert.equal(Object.hasOwn(last,'nextCursor'),false);
+ const records=[...first.items,...last.items],canonical=records.find(item=>item.recordRef===expected.canonicalRef),raw=records.find(item=>item.recordRef===expected.rawRef);
+ assert.ok(canonical&&raw);assert.equal(canonical.id,expected.canonicalID);assert.equal(canonical.revision,expected.canonicalRevision);assert.equal(raw.revision,expected.rawRevision);assert.equal(raw.size,bytes['raw.bin'].length);assert.equal(detail.record.recordRef,expected.canonicalRef);assert.equal(detail.job.id,expected.canonicalID);
+ const env=onlineHistory();let downloaded;
+ env.context.downloadFile=(data,name,mime)=>downloaded={data,name,mime};
+ env.context.fetch=async(target,options)=>{
+  const url=new URL(target,'http://localhost');
+  if(url.pathname==='/api/v1/system/history/inventory'){assert.equal(options.method,'POST');assert.equal(options.body,'{}');return new Response(bytes['inventory.json'],{headers:{'Content-Type':metadata['inventory.json'].contentType}});}
+  if(url.pathname==='/api/v1/system/history/page'){const name=url.searchParams.has('cursor')?'page-last.json':'page-first.json';return new Response(bytes[name],{headers:{'Content-Type':metadata[name].contentType}});}
+  if(url.pathname==='/api/v1/system/history/records/'+expected.canonicalRef){assert.equal(url.searchParams.get('revision'),expected.canonicalRevision);return new Response(bytes['detail.json'],{headers:{'Content-Type':metadata['detail.json'].contentType}});}
+  // The five-file producer carries canonical detail. This metadata-only reply
+  // composes its actual malformed row with the already tested raw-only UI state.
+  if(url.pathname==='/api/v1/system/history/records/'+expected.rawRef){assert.equal(url.searchParams.get('revision'),expected.rawRevision);return historyFixtureResponse({record:raw,rawAvailable:true});}
+  assert.equal(url.pathname,'/api/v1/system/history/records/'+expected.rawRef+'/export');assert.equal(url.searchParams.get('revision'),expected.rawRevision);
+  return new Response(bytes['raw.bin'],{headers:{'Content-Type':metadata['raw.bin'].contentType,'ETag':metadata['raw.bin'].etag,'X-AccessWeaver-Revision':metadata['raw.bin'].xAccessWeaverRevision}});
+ };
+ await env.run('captureHistory()');assert.equal(env.run('historyUI.inventory.snapshot'),expected.snapshot);
+ await env.run('historyNextPage()');assert.equal(env.run('historyUI.nextCursor'),'');assert.equal(env.get('history-next').disabled,true);
+ const canonicalFirst=first.items[0].recordRef===expected.canonicalRef;if(canonicalFirst)await env.run('historyPreviousPage()');
+ env.put('interopCanonicalRef',expected.canonicalRef);await env.run('selectHistoryRecord(interopCanonicalRef)');assert.deepEqual(plain(env.run('historyUI.job')),detail.job);
+ if(canonicalFirst)await env.run('historyNextPage()');else await env.run('historyPreviousPage()');
+ env.put('interopRawRef',expected.rawRef);await env.run('selectHistoryRecord(interopRawRef)');await env.run('exportHistoryRecord()');
+ assert.ok(downloaded);assert.equal(downloaded.name,'accessweaver-workflow-record.bin');assert.equal(downloaded.mime,'application/octet-stream');assert.deepEqual(Buffer.from(await downloaded.data.arrayBuffer()),bytes['raw.bin']);
+ const after=fs.lstatSync(directory,{bigint:true});assert.ok(same(identity,after),'Source interop root changed');assert.deepEqual(fs.readdirSync(directory).sort(),[...names].sort());
 });

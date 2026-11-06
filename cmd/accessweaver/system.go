@@ -19,7 +19,7 @@ import (
 func systemCommand(args []string, root string) error {
 	manager := workflow.New(root)
 	if len(args) == 0 {
-		fmt.Print("Windows system workflows:\n  system operations\n  system presets\n  system discover\n  system preview REQUEST.json\n  system apply REQUEST.json --confirm\n  system history\nRequest format and recovery: docs/WINDOWS_WORKFLOWS.md\n")
+		fmt.Print("Windows system workflows:\n  system operations\n  system presets\n  system discover\n  system preview REQUEST.json\n  system apply REQUEST.json --confirm\n  system history\n  system history capture\n  system history list [--limit N] [--cursor CURSOR] [--snapshot SNAPSHOT]\n  system history get REF --revision REV\n  system history export REF --revision REV [--out PATH]\nRequest format and recovery: docs/WINDOWS_WORKFLOWS.md\n")
 		return nil
 	}
 	switch args[0] {
@@ -41,11 +41,9 @@ func systemCommand(args []string, root string) error {
 		}
 		return printJSON(items)
 	case "history":
-		items, err := manager.History()
-		if err != nil {
-			return err
-		}
-		return workflow.WriteHistoryJSON(os.Stdout, items)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return runSystemHistory(ctx, manager, args[1:], os.Stdout)
 	case "parse-scan":
 		if len(args) != 3 {
 			return errors.New("usage: system parse-scan REPORT.txt zapret|zapret2")

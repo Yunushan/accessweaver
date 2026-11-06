@@ -292,7 +292,9 @@ func (s *Server) Handler() http.Handler {
 				}
 				// Keep active-profile checks and mutations in one transaction.
 				// Diagnostics and read-only previews need not serialize with these.
-				if r.URL.Path != "/api/v1/diagnose" && r.URL.Path != "/api/v1/preview" {
+				// Explicit history capture owns its heavy history gate and backend
+				// leases so system cancellation remains available during its scan.
+				if r.URL.Path != "/api/v1/diagnose" && r.URL.Path != "/api/v1/preview" && !(r.Method == http.MethodPost && r.URL.Path == "/api/v1/system/history/inventory") {
 					releaseAdmission, err := s.mutations.reserve(r.Context())
 					if err != nil {
 						rejectMutation(w, err)
