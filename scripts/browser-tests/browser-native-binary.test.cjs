@@ -13,3 +13,20 @@ test('all primary browser entry points and actual headless shell must match the 
 test('Chrome alone cannot stand in for a missing headless shell or WebKit native entry',t=>{const {cache,executables,shell}=fixture(t);fs.unlinkSync(shell);assert.throws(()=>verifyBrowserCache(cache,executables,'amd64'));fs.writeFileSync(shell,elf('amd64'),{mode:0o700});fs.unlinkSync(path.join(path.dirname(executables.webkit),'minibrowser-gtk/MiniBrowser'));assert.throws(()=>verifyBrowserCache(cache,executables,'amd64'))});
 
 test('native image acceptance cannot inspect one launcher while executing a channel, remote browser or other controller',()=>{validateNativeInvocation({});validateNativeInvocation({PW_BROWSER_CHANNEL:'',PW_TEST_CONNECT_WS_ENDPOINT:'',ACCESSWEAVER_BINARY:''});for(const name of ['PW_BROWSER_CHANNEL','PW_TEST_CONNECT_WS_ENDPOINT','ACCESSWEAVER_BINARY'])assert.throws(()=>validateNativeInvocation({[name]:'PRIVATE_SYNTHETIC_OVERRIDE'}),error=>!error.message.includes('PRIVATE_SYNTHETIC_OVERRIDE'))});
+
+
+const {sources,validValue,writeReport}=require('./check-image-environment.cjs');
+function imageValue(){return {stage:'browser-isa',failureKind:'AssertionError',outcome:'failed',observations:[{role:'chromium',format:'elf',machine:'amd64'},{role:'firefox',format:'elf',machine:'amd64'},{role:'webkit-gtk',format:'script',machine:'unknown'}]}}
+test('failed ELF guard exposes only fixed role, header format and ISA codes',t=>{
+ const {cache,executables}=fixture(t),observations=[];fs.writeFileSync(path.join(path.dirname(executables.webkit),'minibrowser-gtk/MiniBrowser'),'#!/bin/sh\n# PRIVATE_SYNTHETIC_WRAPPER_VALUE\n'+' '.repeat(64));
+ assert.throws(()=>verifyBrowserCache(cache,executables,'amd64',record=>observations.push(record)));
+ assert.deepEqual(observations.at(-1),{role:'webkit-gtk',format:'script',machine:'unknown'});assert.ok(!JSON.stringify(observations).includes('PRIVATE_SYNTHETIC'));
+});
+test('preflight report excludes error text and rejects arbitrary fields and inconsistent pass claims',()=>{
+ validValue(imageValue());for(const mutate of [v=>v.error='PRIVATE_SYNTHETIC_ERROR',v=>v.observations[0].path='PRIVATE_SYNTHETIC_PATH',v=>v.observations[0].machine='PRIVATE_SYNTHETIC_ISA',v=>v.observations[2].machine='amd64',v=>v.outcome='passed']){const v=imageValue();mutate(v);assert.throws(()=>validValue(v))}
+});
+test('source-bound fixed preflight report is parseable, exclusive and cannot claim cross-ISA success',t=>{
+ const root=temporary(t);for(const name of sources)put(root,name,'synthetic source\n');const value=imageValue(),source='a'.repeat(40);
+ const data=writeReport(root,source,'webkit','amd64',value),bytes=fs.readFileSync(path.join(root,'build/browser-image-evidence/status.json'),'utf8');assert.deepEqual(JSON.parse(bytes),data);assert.ok(bytes.endsWith('\n'));assert.equal(data.productionQualificationComplete,false);assert.equal(Object.keys(data.sourceSHA256).length,sources.length);assert.ok(!bytes.includes(root));assert.throws(()=>writeReport(root,source,'webkit','amd64',value));
+ value.stage='complete';value.failureKind='none';value.outcome='passed';value.observations=[...['chromium','firefox','webkit-gtk','chromium-headless-shell'].map(role=>({role,format:'elf',machine:'arm64'}))];assert.throws(()=>writeReport(root,source,'webkit','amd64',value));
+});
