@@ -4,7 +4,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=r
 const phases=['dashboard','reload','navigation','editor','burst','load','cooldown'];
 const mappedFields=['mappedRssBytes','pssBytes','privateBytes','sharedBytes','anonymousBytes','swapBytes','pssAnonBytes','pssFileBytes','pssShmemBytes'];
 const groupFields=['processes','statRssBytes','largestProcessRssBytes','readable','denied','unavailable',...mappedFields];
-const sources=['scripts/browser-tests/browser-memory.cjs','scripts/browser-tests/browser-resources.cjs','scripts/browser-tests/desktop-performance.cjs','scripts/browser-tests/desktop.spec.cjs','scripts/browser-tests/performance-budgets.json','scripts/browser-tests/playwright.config.cjs','scripts/browser-tests/package-lock.json','web/app.js','web/app.css','web/index.html','.github/workflows/browser.yml'];
+const sources=['scripts/browser-tests/job-cpu.cjs','scripts/browser-tests/browser-memory.cjs','scripts/browser-tests/browser-resources.cjs','scripts/browser-tests/desktop-performance.cjs','scripts/browser-tests/desktop.spec.cjs','scripts/browser-tests/performance-budgets.json','scripts/browser-tests/playwright.config.cjs','scripts/browser-tests/package-lock.json','web/app.js','web/app.css','web/index.html','.github/workflows/browser.yml'];
 function emptyGroup(){return Object.fromEntries(groupFields.map(k=>[k,0]))}
 function parseSmaps(raw){
  assert.ok(typeof raw==='string'&&Buffer.byteLength(raw)<=16384,'Owned memory input budget differs');
