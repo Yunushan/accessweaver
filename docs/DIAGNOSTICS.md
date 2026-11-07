@@ -52,6 +52,8 @@ UDP endpoint selection remains serial, and the existing one-request/one-response
 
 Ten regression tests cover stalled primary-family fallback, same-family time sharing, immediate refusal, unused fallback, late loser completion/error, cancellation, failed I/O deadlines, invalid input, retained dial/cleanup causes and a real loopback connection using one controlled resolution. The three original contracts fail against the previous serial behavior with a private per-call connector. Controlled stalled/late connectors and injected completion errors do not reproduce a real WAN outage or kernel Close fault.
 
+The [0e9b2d5 fallback receipt](qualification/0e9b2d5d8a16-diagnostic-address-fallback.json) records all six first-attempt native Linux core jobs passing. All ten new regressions pass in AMD64/ARM64 unit/race mode, with 40 root executions and 24 controlled subtest completions. Each complete run passes 779 of 797 cataloged roots and explicitly skips the same 18 existing roots; both vet runs cover all 29 packages. All six provider ZIP digests and four platform/mode catalogs were verified. The changed diagnostics tests and complete core CLI also pass twenty compile-only checks across ten targets. The source-controlled connector and native qualification limits above remain; no formal readiness gate is promoted.
+
 ## Managed cancellation and evidence
 
 All probe stages retain one managed authorization. The existing policy monitor closes owned sockets on observed enrollment, removal, expiry, payload/key change or source failure; a final source check also runs before returning. Polling limitations and administrative recovery requirements are described in [managed configuration](MANAGED_CONFIGURATION.md#policy-changes-during-active-operations).
