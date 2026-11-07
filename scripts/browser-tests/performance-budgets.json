@@ -86,5 +86,5 @@
     }
   },
   "browserResourceIntervalMilliseconds": 1000,
-  "browserResourcePolicy": "One-second samples of worker-owned browser and verified descendants. Summed RSS counts shared pages per process; observed CPU is a lower bound when processes exit between samples. Browser/renderer measurement is separate from the unchanged controller caps."
+  "browserResourcePolicy": "One-second samples of worker-owned browser and verified descendants. Summed RSS counts shared pages per process; observed CPU is incomplete when processes exit between samples and has sequential-snapshot timing uncertainty. Browser/renderer measurement is separate from the unchanged controller caps."
 }

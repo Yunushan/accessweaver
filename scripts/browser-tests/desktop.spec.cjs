@@ -13,14 +13,16 @@ const binary = path.resolve(process.env.ACCESSWEAVER_BINARY || path.join(repo, '
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const test = base.test.extend({
-  browserOwner: [async ({playwright,browserName,headless,channel,launchOptions},use) => {
+  browserOwner: async ({playwright,browserName,headless,channel,launchOptions,contextOptions,viewport},use,testInfo) => {
+    expect(testInfo.title).toBe(performanceCaseName);
     const server=await playwright[browserName].launchServer({...launchOptions,headless,channel,host:'127.0.0.1',timeout:30000});
     try {
       const browser=await playwright[browserName].connect(server.wsEndpoint(),{timeout:30000});
-      await use({browser,controller:server.process()});
+      const context=await browser.newContext({...contextOptions,viewport});
+      try { await use({page:await context.newPage(),controller:server.process()}); }
+      finally { await context.close(); }
     } finally { await server.close(); }
-  },{scope:'worker'}],
-  browser: [async ({browserOwner},use) => { await use(browserOwner.browser); },{scope:'worker'}],
+  },
   core: async ({browser}, use, testInfo) => {
     const parent = path.join(repo, 'build/browser-state');
     await fs.mkdir(parent, {recursive:true, mode:0o700});
@@ -903,8 +905,8 @@ for(const scenario of ['guided-success','json-success','guided-failure','json-fa
  }
 });
 
-test('desktop performance meets published Linux controller and browser budgets',async({page,core,browserOwner},testInfo)=>{
+test('desktop performance meets published Linux controller and browser budgets',async({core,browserOwner},testInfo)=>{
  test.skip(process.platform!=='linux','Linux process observation; native platform performance qualification remains separate');
  test.setTimeout(120000);
- await runDesktopPerformance(page,core,testInfo,browserOwner.controller);
+ await runDesktopPerformance(browserOwner.page,core,testInfo,browserOwner.controller);
 });
