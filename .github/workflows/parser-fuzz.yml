@@ -128,6 +128,8 @@ jobs:
           ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP: ''
           ACCESSWEAVER_SUPPORT_INTEROP: ''
         run: node --test web/app.test.cjs
+      - name: Characterize canonical timestamp string spellings
+        run: go test -count=1 -run=^TestTimestampRawJSONSpellingCharacterization$ ./internal/jsoninput
       - name: Run complete root regression
         run: node scripts/core-test-evidence.cjs unit
       - name: Run complete Linux root race regression
