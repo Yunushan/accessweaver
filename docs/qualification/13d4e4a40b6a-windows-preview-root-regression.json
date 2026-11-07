@@ -1,0 +1,416 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "13d4e4a40b6afc40bcc503a05aca3efa8e35a182",
+  "workflow": ".github/workflows/local-preview-inputs.yml",
+  "run": {
+    "id": 42352288957,
+    "head_sha": "13d4e4a40b6afc40bcc503a05aca3efa8e35a182",
+    "head_branch": "codex/local-preview-inputs",
+    "path": ".github/workflows/local-preview-inputs.yml",
+    "status": "completed",
+    "conclusion": "success",
+    "event": "push",
+    "run_attempt": 1,
+    "html_url": "https://github.com/Yunushan/accessweaver/actions/runs/42352288957"
+  },
+  "hostedJobs": [
+    {
+      "id": 128342802686,
+      "name": "Local inputs (windows/arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "checkRunId": 128342802686,
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-known result privacy contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete root regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Qualify native Windows local preview and namespace ownership",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete Linux root race regression",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128342802838,
+      "name": "Local inputs (linux/arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "checkRunId": 128342802838,
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-known result privacy contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete root regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Qualify native Windows local preview and namespace ownership",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run complete Linux root race regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128342802842,
+      "name": "Local inputs (windows/amd64)",
+      "status": "completed",
+      "conclusion": "success",
+      "checkRunId": 128342802842,
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-known result privacy contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete root regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Qualify native Windows local preview and namespace ownership",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete Linux root race regression",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128342802884,
+      "name": "Local inputs (linux/amd64)",
+      "status": "completed",
+      "conclusion": "success",
+      "checkRunId": 128342802884,
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-known result privacy contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete root regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Qualify native Windows local preview and namespace ownership",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Run complete Linux root race regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "hostedAllRequiredStagesPassed": true,
+  "hostedRequiredTargets": [
+    "windows/amd64",
+    "windows/arm64",
+    "linux/amd64",
+    "linux/arm64"
+  ],
+  "sourceSHA256": {
+    ".github/workflows/local-preview-inputs.yml": "bfc0c720f7bdbb60412bbf6a8fab4ea0514dbadd22bfd59f1d00afa628f45a18",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+    "internal/engine/config_input.go": "691b860fbbba9f4b2d217292332e5d7ada37df7e895c417a681a74706e3626f6",
+    "internal/engine/config_input_windows.go": "0e96526c3435e4e4170b95db76821a57bcf586b0f72000f02764cb3d0024a4a9",
+    "internal/engine/plan.go": "f05f63d871c1f8b17754f00741cbabb618dd410a52c805c168c456a8f68616b8",
+    "internal/engine/preview_input.go": "554d5c63782fee1fb2a99d8e1b362b92f0fb6f29dba26d5efe142544ec72d8fa",
+    "internal/engine/preview_input_other.go": "31c14d439a0057b334b136592a32dcd906d3492f3193ddf55380095444148921",
+    "internal/engine/preview_input_windows.go": "e76cbfdd070ae785daab6294a9dd32152c2b59e88532d466b42ea8dbd6b89853",
+    "internal/engine/preview_input_windows_test.go": "0b855a32ac947137582f4cdb8160d1027b8754cbea25bade744c6b68379fe7f8",
+    "internal/engine/preview_search.go": "8cd98baf0034cc17d9b032f972d3f8318f8739c9519aa5634afaa0f152e60147",
+    "internal/engine/preview_search_test.go": "b54514748efcb2b7e83d5392725df4c97ad9f8c0eaa3233fd58b92f65802163d",
+    "internal/fileidentity/local_read_windows.go": "14244e03f6ba2c79ad703475668784e18114c3cdeb2f4c4aa64dd340fa58d321",
+    "internal/fileidentity/local_read_windows_test.go": "eddfd8efcc67e8c448f2bcfbe3dac8c09c334049ea31b987a103ccbc0d96d1ff",
+    "internal/fileidentity/native_windows.go": "6cb68e18dca538cce9a54e7b24461253870d23484da8a581638462e97fe59b9f",
+    "internal/workflow/command_lifetime_test.go": "fb5601dffd2be1bcb545688e10a6ea9da3bc8f613a9f349daa1f166a632fac8f",
+    "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+    "scripts/core-test-catalog/main.go": "0aea23c470ee31523b199e2e6e68d0d42e519c064dae8771c84d30197a3c4d8a",
+    "scripts/core-test-catalog/main_test.go": "81179c5eaa3a805961c698527c6acbfba1eb30684896f2f5b67df43c37bab8a8",
+    "scripts/core-test-evidence.cjs": "f0a56e85f433de6b8c266caf604d319e00bc2a865c1eb06d0e379e076a2d3462",
+    "scripts/core-test-evidence.test.cjs": "36d3542ad32e20789deb4245b26679d73976e3f38ecd0a530164e53588deed9f"
+  },
+  "evidenceMethod": "Bounded public provider run/job/source-known step metadata and mandatory source assertions. Only the preceding reviewed producer's fixed catalogue root failure labels were read through check annotations. Raw Go logs, dynamic test names and private artifacts were not collected.",
+  "cryptographicArtifactAuthenticationPerformed": false,
+  "rootRegression": {
+    "unit": [
+      "windows/amd64",
+      "windows/arm64",
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "race": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "vet": [
+      "windows/amd64",
+      "windows/arm64",
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "unitInvocation": "go test -json -count=1 -timeout=6m ./...",
+    "raceInvocation": "go test -json -count=1 -timeout=6m -race ./...",
+    "packageConcurrency": "Go default; no -p override",
+    "skipOrOutputCountsCollected": false,
+    "privacyContractTests": 8
+  },
+  "nativeWindows": {
+    "roots": [
+      "TestDisposableWindowsFileIdentityNative",
+      "TestWindowsLocalPreviewRead",
+      "TestWindowsPreviewLocalInputs"
+    ],
+    "newReaderGroups": [
+      "regular-and-local-links",
+      "remote-and-device-refusal",
+      "mapped-local-drive",
+      "mapped-remote-drive",
+      "reparse-substitution",
+      "same-parent-name-substitution",
+      "held-reader-survives-name-replacement"
+    ],
+    "previewAssertions": [
+      "local configuration and hash-pinned inert executable inspection",
+      "absolute local PATH selection while ignoring a UNC entry",
+      "UNC/device configuration refusal",
+      "remote executable preview refusal",
+      "metadata-only inspection and unpinned preview succeed for an execute/read-attributes ACL without data-read access; direct open and hash-pinned preview refuse data access; original DACL restoration checked"
+    ],
+    "disposableHostedOnly": true,
+    "ownedDOSMappingCleanupRequired": true,
+    "inertPreviewEngineExecuted": false,
+    "ownedACLRestorationRequired": true
+  },
+  "portabilityCorrections": {
+    "catalogue": "Resolve both root and package directory aliases before checking physical containment; reject outside package directories, including packages without test files.",
+    "startFailureAssertions": "Retain the exact cmd.Err when executable lookup fails at construction, or the missing-file PathError when Start performs lookup. Require the same cleanup cause, one owner Close and no accepted process.",
+    "additionalTests": [
+      "TestCatalogRootAliasesAndPackageDirectoryEscape",
+      "TestWorkflowCommandInitializationFailureKeepsOriginalCause"
+    ]
+  },
+  "priorAttempts": [
+    {
+      "sourceCommit": "7558b7fddfd19b0119b0b9e427c18bec67814a64",
+      "run": {
+        "id": 42348699987,
+        "head_sha": "7558b7fddfd19b0119b0b9e427c18bec67814a64",
+        "head_branch": "codex/local-preview-inputs",
+        "status": "completed",
+        "conclusion": "failure",
+        "run_attempt": 1,
+        "path": ".github/workflows/local-preview-inputs.yml",
+        "html_url": "https://github.com/Yunushan/accessweaver/actions/runs/42348699987"
+      },
+      "outcome": "Both Linux root unit/race suites passed; Windows root regression failed before guarded preview/ACL qualification."
+    },
+    {
+      "sourceCommit": "ae568375ea3ef8f13815a5d0bf0ae47e02c7f3f7",
+      "run": {
+        "id": 42350696449,
+        "head_sha": "ae568375ea3ef8f13815a5d0bf0ae47e02c7f3f7",
+        "path": ".github/workflows/local-preview-inputs.yml",
+        "status": "completed",
+        "conclusion": "failure",
+        "run_attempt": 1,
+        "html_url": "https://github.com/Yunushan/accessweaver/actions/runs/42350696449"
+      },
+      "outcome": "Both Linux root unit/race suites and both independent guarded Windows preview/ACL stages passed. Both Windows root suites failed the same two source-known catalogue/lifecycle assertions.",
+      "fixedFailureLabels": [
+        "github.com/Yunushan/accessweaver/scripts/core-test-catalog#TestCatalogBuildsDeterministicPackagePlan",
+        "github.com/Yunushan/accessweaver/internal/workflow#TestWorkflowCommandFailedStartClosesUnboundOwner"
+      ],
+      "diagnosticCollection": "Two bounded public check annotation responses, each <=512 KiB, projected against static source catalogue; unrelated messages discarded."
+    }
+  ],
+  "localCompilation": {
+    "mode": "compile-only",
+    "producedBinariesExecuted": false,
+    "earlierProductSource": {
+      "sourceCommit": "7558b7fddfd19b0119b0b9e427c18bec67814a64",
+      "checksPassed": 20,
+      "targets": [
+        "windows/amd64",
+        "windows/arm64",
+        "linux/amd64",
+        "linux/arm64",
+        "darwin/amd64",
+        "darwin/arm64",
+        "freebsd/amd64",
+        "freebsd/arm64",
+        "openbsd/amd64",
+        "openbsd/arm64"
+      ],
+      "packages": [
+        "internal/engine",
+        "internal/fileidentity"
+      ],
+      "sourceDigest": "61bfaadc1f9a4b5362dbd23ce7f5eb4fa27efcd292b842002722bab47699fe37",
+      "sourceStableDuringChecks": true,
+      "binding": "The twenty-check sweep was performed at the metadata correction. Both package directories are byte-identical in the final hosted source; this is not a fresh twenty-check sweep at the final commit."
+    },
+    "currentPortabilitySource": {
+      "checksPassed": 8,
+      "targets": [
+        "windows/amd64",
+        "windows/arm64",
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "packages": [
+        "scripts/core-test-catalog",
+        "internal/workflow"
+      ],
+      "sourceFiles": {
+        "scripts/core-test-catalog/main.go": "0aea23c470ee31523b199e2e6e68d0d42e519c064dae8771c84d30197a3c4d8a",
+        "scripts/core-test-catalog/main_test.go": "81179c5eaa3a805961c698527c6acbfba1eb30684896f2f5b67df43c37bab8a8",
+        "internal/workflow/command_lifetime_test.go": "fb5601dffd2be1bcb545688e10a6ea9da3bc8f613a9f349daa1f166a632fac8f"
+      }
+    }
+  },
+  "rawLogsOrPrivateArtifactsFetched": false,
+  "sourceKnownFailureAnnotationsRead": true,
+  "limits": [
+    "Source-built disposable-host tests qualify the configured cases at this exact source; no installed or publisher-signed product qualification.",
+    "Remote labels and link/mapping fixtures are synthetic; no live SMB server, authentication capture or credential/relay experiment was performed, and transport-level isolation was not measured.",
+    "Preview fixture does not execute its inert engine; vendor/network/routing/DNS/tunnel lifecycle and power-loss acceptance remain separate.",
+    "Native checks cover Windows/Linux amd64/arm64; the other six desktop targets are compile-only here.",
+    "Whole-product security, signing, managed endpoint and long-duration acceptance remain incomplete.",
+    "Full root suites retain their configured platform/opt-in skips; step metadata does not establish per-test counts.",
+    "macOS launch-preparation diagnostics remain outside this investigation and were not read."
+  ],
+  "gatesPromoted": false,
+  "productionQualificationComplete": false
+}
