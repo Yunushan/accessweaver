@@ -68,7 +68,16 @@ function showSystemOutput(value){
 }
 function setEditorFeedback(text,error=false){setTextOutput('editor-feedback',text);$('editor-feedback').className=error?'error':'';}
 
-const icon=(name)=>`<svg aria-hidden="true"><use href="#i-${name}"></use></svg>`;
+// Copy immutable, owned symbol geometry once per definition. Dynamic cards keep
+// the same shapes and CSS inheritance without SVG use-element instance trees.
+const iconMarkup = new WeakMap();
+function icon(name) {
+  const symbol=$('i-'+name);
+  if(!symbol||symbol.tagName.toLowerCase()!=='symbol')return '<svg aria-hidden="true" viewBox="0 0 24 24"></svg>';
+  let markup=iconMarkup.get(symbol);
+  if(markup===undefined){markup=`<svg aria-hidden="true" viewBox="${escapeHTML(symbol.getAttribute('viewBox'))}">${symbol.innerHTML}</svg>`;iconMarkup.set(symbol,markup);}
+  return markup;
+}
 const escapeHTML=(s)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const splitLines=s=>String(s||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
 const uniqueId=(base,existing)=>{let p=base.replace(/[^a-z0-9-]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,55)||'profile';if(!/^[a-z]/.test(p)||p.length<2)p='my-'+p;let n=p,i=2;while(existing.some(x=>x.id===n))n=`${p}-${i++}`;return n};

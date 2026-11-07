@@ -47,6 +47,11 @@ function environment() {
     const value=/\bvalue="([^"]*)"/.exec(match[2]);if(value)el.value=value[1];
     el.checked=/\bchecked\b/.test(match[2]);el.hidden=/\bhidden\b/.test(match[2]);
   }
+  // Preserve the canonical owned symbol definitions used by the real DOM.
+  for(const match of html.matchAll(/<symbol\b([^>]*\bid="([^"]+)"[^>]*)>([\s\S]*?)<\/symbol>/g)) {
+    const node=get(match[2]);node.innerHTML=match[3];
+    const viewBox=/\bviewBox="([^"]*)"/.exec(match[1]);if(viewBox)node.setAttribute('viewBox',viewBox[1]);
+  }
   get('profile-filter').value='all';
   context={console,URL,URLSearchParams,Blob,TextEncoder,TextDecoder,AbortController,DOMException,structuredClone,performance,Date,Intl,Math,JSON,Number,String,Boolean,Array,Object,Set,Map,Error,TypeError,Promise,
     sessionStorage:{getItem(k){return data.get('session:'+k)??null},setItem(k,v){data.set('session:'+k,String(v))}},
@@ -1331,8 +1336,8 @@ test('unchanged dashboard polling preserves status text, control nodes and focus
  const env=environment();env.run('state.loading=false;state.offline=false;state.coreAuthenticated=true;state.token="fixture";state.platform="linux";state.runtime={state:"stopped"};renderHero()');let writes=0;
  for(const [id,keys] of [['hero-status',['textContent']],['status-badge',['textContent','className']],['stats-profiles',['textContent']],['hero-primary',['innerHTML','disabled']],['connection-notice',['hidden']]])for(const key of keys){const node=env.get(id);let value=node[key];Object.defineProperty(node,key,{get(){return value},set(next){writes++;value=next},configurable:true})}
  env.get('hero-primary').focus();env.run('apiRequest=async()=>({state:"stopped"});');await env.run('pollStatus()');env.run('renderHero();renderHero()');assert.equal(writes,0);assert.equal(env.context.document.activeElement,env.get('hero-primary'));
- env.run('state.runtime={state:"running",engine:"byedpi",profileId:"fixture",pid:321};renderHero()');assert.equal(env.get('hero-status').textContent,env.run('t("running")'));assert.match(env.get('running-engine').textContent,/321/);assert.match(env.get('hero-primary').innerHTML,/#i-stop/);assert.ok(writes>0);
- env.run('state.busy=true;renderHero()');assert.equal(env.get('hero-primary').disabled,true);env.run('state.busy=false;state.runtime.lifecyclePending=true;renderHero()');assert.match(env.get('hero-primary').innerHTML,/#i-alert/);assert.equal(env.get('hero-primary').disabled,true);env.run('state.runtime={state:"stopped"};state.lang="es";renderHero()');assert.equal(env.get('hero-status').textContent,env.run('t("ready")'));assert.equal(env.get('hero-primary').disabled,false);assert.ok(env.get('hero-primary').innerHTML.includes(env.run('t("selectProfile")')));
+ env.run('state.runtime={state:"running",engine:"byedpi",profileId:"fixture",pid:321};renderHero()');assert.equal(env.get('hero-status').textContent,env.run('t("running")'));assert.match(env.get('running-engine').textContent,/321/);assert.ok(env.get('hero-primary').innerHTML.includes(env.run('icon("stop")')));assert.ok(writes>0);
+ env.run('state.busy=true;renderHero()');assert.equal(env.get('hero-primary').disabled,true);env.run('state.busy=false;state.runtime.lifecyclePending=true;renderHero()');assert.ok(env.get('hero-primary').innerHTML.includes(env.run('icon("alert")')));assert.equal(env.get('hero-primary').disabled,true);env.run('state.runtime={state:"stopped"};state.lang="es";renderHero()');assert.equal(env.get('hero-status').textContent,env.run('t("ready")'));assert.equal(env.get('hero-primary').disabled,false);assert.ok(env.get('hero-primary').innerHTML.includes(env.run('t("selectProfile")')));
 });
 
 
@@ -1349,4 +1354,16 @@ test('engine library retains unchanged controls and reflects platform, catalog a
  env.run('state.lang="tr";renderEngines()');assert.deepEqual(writes,{engines:5,platforms:2});assert.ok(platforms.includes(env.run('t("windowsSupport")')));
  env.run('state.engines=[];renderEngines()');assert.deepEqual(writes,{engines:6,platforms:2});assert.equal(engines,'');
  env.run('renderEngines()');assert.deepEqual(writes,{engines:6,platforms:2});
+});
+
+
+test('dynamic icons preserve canonical symbol geometry without use instance trees',()=>{
+ const env=environment();let count=0;
+ for(const match of html.matchAll(/<symbol\b([^>]*\bid="i-([^"]+)"[^>]*)>([\s\S]*?)<\/symbol>/g)){
+  const viewBox=/\bviewBox="([^"]*)"/.exec(match[1])[1];env.context.glyphName=match[2];const markup=env.run('icon(glyphName)');
+  assert.match(markup,/<svg\b[^>]*aria-hidden="true"/);assert.ok(markup.includes('viewBox="'+viewBox+'"'));
+  assert.equal(markup.replace(/^<svg\b[^>]*>/,'').replace(/<\/svg>$/,''),match[3]);assert.doesNotMatch(markup,/<use\b/);count++;
+ }
+ assert.ok(count>20);
+ for(const name of ['unknown','<img src=x>','constructor','__proto__']){env.context.glyphName=name;const markup=env.run('icon(glyphName)');assert.match(markup,/<svg\b[^>]*aria-hidden="true"/);assert.doesNotMatch(markup,/<use\b|<img\b|constructor|__proto__/);}
 });

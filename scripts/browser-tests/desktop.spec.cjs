@@ -126,6 +126,25 @@ test('private launcher authenticates the UI and removes the credential from its 
     return {cardRetained:card.isConnected&&grid.firstElementChild===card,platformRetained:platform.isConnected&&matrix.firstElementChild===platform,focused:document.activeElement===control};
   });
   expect(library).toEqual({cardRetained:true,platformRetained:true,focused:true});
+  const geometry=await page.evaluate(()=>{
+    const host=document.createElement('div'),root=document.documentElement,theme=root.dataset.theme;
+    host.setAttribute('aria-hidden','true');host.style.cssText='position:fixed;left:-10000px;top:0;pointer-events:none';document.body.appendChild(host);
+    let checked=0,invalid=0;
+    try{
+      for(const color of ['dark','light']){root.dataset.theme=color;
+        for(const symbol of document.querySelectorAll('.icon-library symbol'))for(const size of [15,18,33]){
+          const probe=document.createElement('div');probe.innerHTML=icon(symbol.id.slice(2))+'<svg aria-hidden="true"><use href="#'+symbol.id+'"></use></svg>';host.appendChild(probe);
+          const [direct,reference]=probe.children;for(const svg of [direct,reference]){svg.style.width=size+'px';svg.style.height=size+'px';}
+          const normalized=(nodes,svg)=>{const origin=svg.getBoundingClientRect(),bounds=nodes.map(node=>node.getBoundingClientRect());return [Math.min(...bounds.map(r=>r.left))-origin.left,Math.min(...bounds.map(r=>r.top))-origin.top,Math.max(...bounds.map(r=>r.right))-origin.left,Math.max(...bounds.map(r=>r.bottom))-origin.top]};
+          const shapes=Array.from(direct.querySelectorAll('path,rect,circle,line,polyline,polygon,ellipse')),a=normalized(shapes,direct),b=normalized([reference.querySelector('use')],reference),left=getComputedStyle(direct),right=getComputedStyle(reference);
+          if(!shapes.length||direct.querySelector('use')||a.some((n,i)=>!Number.isFinite(n)||Math.abs(n-b[i])>.05)||['stroke','strokeWidth','fill','strokeLinecap','strokeLinejoin'].some(key=>left[key]!==right[key]))invalid++;
+          checked++;probe.remove();
+        }
+      }
+      return {checked,invalid};
+    }finally{host.remove();if(theme===undefined)delete root.dataset.theme;else root.dataset.theme=theme;}
+  });
+  expect(geometry.checked).toBeGreaterThan(120);expect(geometry.invalid).toBe(0);
 
 });
 
