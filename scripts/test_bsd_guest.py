@@ -237,6 +237,7 @@ class TargetAndFirmwareTests(unittest.TestCase):
                 root = Path(name).resolve()
                 repo, capsule = root / "repo", root / "capsule"
                 (repo / "internal" / "profile").mkdir(parents=True)
+                (repo / "internal/profile/fixture_test.go").write_text("package profile\nfunc TestFixture(t *testing.T) {}\n", encoding="utf-8")
                 capsule.mkdir(mode=0o700)
                 compiled = []
                 def command(args, *, env=None, **kwargs):

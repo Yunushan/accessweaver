@@ -4,6 +4,7 @@ The legacy report/log bundle and its verifier contract remain separate. This
 projection exports no accounts, paths, console text or raw test output.
 """
 import argparse
+from bsd_test_observations import validate_observation
 import hashlib
 import json
 import os
@@ -15,7 +16,7 @@ import subprocess
 
 MODULE = "github.com/Yunushan/accessweaver/"
 TARGETS = {osname + "/" + arch for osname in ("freebsd", "openbsd") for arch in ("amd64", "arm64")}
-SOURCES = ("scripts/bsd_public_evidence.py", "scripts/test_bsd_public_evidence.py", "scripts/test_bsd_guest.py", "scripts/test-bsd-guest.py", "scripts/test-openbsd-guest.py", "scripts/bsd_packaged_candidate.py", "scripts/build-all.sh", ".github/workflows/bsd.yml", ".github/workflows/openbsd.yml", ".github/workflows/bsd-candidate.yml", "go.mod", "go.sum")
+SOURCES = ("scripts/bsd_test_observations.py", "scripts/test_bsd_test_observations.py", "scripts/bsd_public_evidence.py", "scripts/test_bsd_public_evidence.py", "scripts/test_bsd_guest.py", "scripts/test-bsd-guest.py", "scripts/test-openbsd-guest.py", "scripts/bsd_packaged_candidate.py", "scripts/build-all.sh", ".github/workflows/bsd.yml", ".github/workflows/openbsd.yml", ".github/workflows/bsd-candidate.yml", "go.mod", "go.sum")
 PHASES = {"build", "source-build", "image-download", "image-prepare", "firmware-prepare", "guest-boot", "guest-identity", "payload-transfer", "guest-cli", "guest-unit-tests", "installer-media", "installer-boot", "guest-installation", "installed-guest-boot", "packaged-backup-roundtrip"}
 
 def exact_hash(value):
@@ -109,9 +110,9 @@ def project(report, source, tree, target, hashes, legacy_digest):
     passed = all(checks.values())
     phase = report.get("failurePhase")
     stage = "complete" if passed else "report-unavailable" if legacy_digest is None else phase if isinstance(phase, str) and phase in PHASES else "producer-failure"
-    result = {"schemaVersion": 2, "sourceCommit": source, "sourceTree": tree, "sourceSHA256": dict(hashes), "target": target,
+    result = {"schemaVersion": 3, "sourceCommit": source, "sourceTree": tree, "sourceSHA256": dict(hashes), "target": target,
               "scope": "disposable-bsd-guest-core", "expectedGoVersion": "go1.27.3", "stage": stage, "outcome": "passed" if passed else "failed",
-              "checks": checks, "build": public_build(report.get("buildObservations", {})), "counts": {"expectedPackages": expected, "completedPackages": len(package_rows),
+              "checks": checks, "build": public_build(report.get("buildObservations", {})), "testDiagnostics": report.get("publicTestObservations", []), "counts": {"expectedPackages": expected, "completedPackages": len(package_rows),
               "passedTestInstances": sum(p["passedTestInstances"] for p in package_rows), "skippedTestInstances": sum(p["skippedTestInstances"] for p in package_rows)},
               "packages": package_rows, "packagePlanSHA256": hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
               "legacyReportSHA256": legacy_digest, "packagedCandidateExecuted": flag(report, "packagedCandidateExecuted"),
@@ -121,11 +122,11 @@ def project(report, source, tree, target, hashes, legacy_digest):
     validate_public(result)
     return result
 
-PUBLIC_KEYS = {"schemaVersion", "sourceCommit", "sourceTree", "sourceSHA256", "target", "scope", "expectedGoVersion", "stage", "outcome", "checks", "build", "counts", "packages", "packagePlanSHA256", "legacyReportSHA256", "packagedCandidateExecuted", "productionQualificationComplete", "platformQualificationComplete", "hardwareQualificationComplete", "readinessGatesPromoted"}
+PUBLIC_KEYS = {"schemaVersion", "sourceCommit", "sourceTree", "sourceSHA256", "target", "scope", "expectedGoVersion", "stage", "outcome", "checks", "build", "testDiagnostics", "counts", "packages", "packagePlanSHA256", "legacyReportSHA256", "packagedCandidateExecuted", "productionQualificationComplete", "platformQualificationComplete", "hardwareQualificationComplete", "readinessGatesPromoted"}
 CHECK_KEYS = {"sourceMatches", "hostCompilerMatches", "ordinaryGuestIdentityMatches", "executedCLIIdentityMatches", "imageInputsAuthenticated", "transportedExecutableHashesVerified", "guestExecutionPassed", "ownedEmulatorsStopped", "ownedCapsuleRemoved", "completePackageSetPassed", "cleanupConfirmed"}
 
 def validate_public(data):
-    if not isinstance(data, dict) or set(data) != PUBLIC_KEYS or type(data["schemaVersion"]) is not int or data["schemaVersion"] != 2:
+    if not isinstance(data, dict) or set(data) != PUBLIC_KEYS or type(data["schemaVersion"]) is not int or data["schemaVersion"] != 3:
         raise ValueError("public schema differs")
     if (not re.fullmatch(r"[a-f0-9]{40}", data["sourceCommit"]) or not re.fullmatch(r"[a-f0-9]{40}", data["sourceTree"]) or
             data["target"] not in TARGETS or data["scope"] != "disposable-bsd-guest-core" or data["expectedGoVersion"] != "go1.27.3"):
@@ -149,6 +150,16 @@ def validate_public(data):
         raise ValueError("public package totals differ")
     if not exact_hash(data["packagePlanSHA256"]) or data["legacyReportSHA256"] is not None and not exact_hash(data["legacyReportSHA256"]):
         raise ValueError("public report hashes differ")
+    diagnostics = data["testDiagnostics"]
+    if not isinstance(diagnostics, list) or len(diagnostics) != len(data["packages"]):
+        raise ValueError("public test diagnostics count differs")
+    for i, row in enumerate(diagnostics):
+        if not isinstance(row, dict) or type(row.get("packageID")) is not int or row["packageID"] != i:
+            raise ValueError("public test diagnostic package differs")
+        observation = {k: v for k, v in row.items() if k != "packageID"}
+        validate_observation(observation)
+        if data["packages"][i]["exitCode"] == 0 and (observation["failedRootIDs"] or observation["assertionLocations"] or observation["unknownFailureNames"] or observation["truncated"]):
+            raise ValueError("public successful package diagnostics differ")
     complete = bool(data["counts"]["expectedPackages"] and
                     data["counts"]["completedPackages"] == data["counts"]["expectedPackages"] and
                     all(row["exitCode"] == 0 for row in data["packages"]))

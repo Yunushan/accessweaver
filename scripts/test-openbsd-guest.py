@@ -455,7 +455,7 @@ def main():
     output.mkdir(mode=0o700, parents=True, exist_ok=True)
     common.owned_directory(output)
     report = {"schemaVersion": 1, "sourceCommit": source, "target": "openbsd/" + target["arch"], "hostSDK": sdk,
-              "packages": [], "guestExecutionPassed": False, "packagedCandidateExecuted": False,
+              "packages": [], "publicTestObservations": [], "guestExecutionPassed": False, "packagedCandidateExecuted": False,
               "hardwareQualificationComplete": False, "platformQualificationComplete": False,
               "productionQualificationComplete": False, "readinessGatesPromoted": 0}
     installer_vm = runtime_vm = None
@@ -548,6 +548,8 @@ def main():
             result = common.run(ssh, data=script.encode(), timeout=180, check=False)
             log = output / f"{target['label']}-unit-{index:02d}.log"
             log.write_bytes(result.stdout)
+            diagnostic = common.observe_output(result.stdout, manifest["testCatalogs"][package["package"]], result.returncode)
+            report["publicTestObservations"].append({"packageID": index, **diagnostic})
             report["packages"].append({**package, "returnCode": result.returncode, "elapsedSeconds": round(time.monotonic() - started, 3),
                                       "passedTestInstances": len(re.findall(rb"--- PASS:", result.stdout)),
                                       "skippedTestInstances": len(re.findall(rb"--- SKIP:", result.stdout)), "logSHA256": common.digest(log)})

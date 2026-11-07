@@ -45,6 +45,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p test_bsd_guest.py -v
           python3 -m unittest discover -s scripts -p test_bsd_public_evidence.py -v
+          python3 -m unittest discover -s scripts -p test_bsd_test_observations.py -v
       - name: Install distribution-signed hypervisor and ISO tools
         run: |
           sudo apt-get update

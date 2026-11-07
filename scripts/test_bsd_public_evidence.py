@@ -19,6 +19,7 @@ def fixture(osname="freebsd", arch="amd64"):
             "guestIdentity": {"OS": {"freebsd": "FreeBSD", "openbsd": "OpenBSD"}[osname], "release": "15.1-RELEASE" if osname == "freebsd" else "8.0", "machine": arch, "uid": 1000, "user": "awtest"},
             "executedCLI": {"commit": SOURCE, "sourceState": "clean", "platform": osname, "arch": arch, "goVersion": "go1.27.3", "version": "PRIVATE_SYNTHETIC_VALUE"},
             "buildObservations": {"step": "complete", "plannedPackages": 1, "completedPackages": 1},
+            "publicTestObservations": [{"packageID": 0, "catalogSHA256": "a" * 64, "rootCount": 1, "fileCount": 1, "failedRootIDs": [], "assertionLocations": [], "unknownFailureNames": 0, "truncated": False}],
             "cliSHA256": "d" * 64, "guestExecutionPassed": True, "allTransportedExecutableHashesVerified": True,
             "imageDigestVerified": True, "installerMediaDigestVerified": True, "installerMetadataSignatureVerified": True, "installerCompleted": True, "seedRemovedBeforeTargetExecution": True,
             "ownedEmulatorStopped": True, "ownedEmulatorsStopped": True, "ownedCapsuleRemoved": True, "crossCompiledPackages": 1,
@@ -37,8 +38,10 @@ class PublicBSDReportTests(unittest.TestCase):
                     self.assertEqual(result["outcome"], "passed")
                     self.assertEqual(result["counts"], {"expectedPackages": 1, "completedPackages": 1, "passedTestInstances": 7, "skippedTestInstances": 2})
                     encoded = json.dumps(result)
-                    for private in ("PRIVATE_SYNTHETIC_VALUE", "awtest", "uid", "logSHA256", "privatePath", "qemuVersion"):
+                    for private in ("PRIVATE_SYNTHETIC_VALUE", "awtest"):
                         self.assertNotIn(private, encoded)
+                    for private_key in ("uid", "logSHA256", "privatePath", "qemuVersion"):
+                        self.assertNotIn(json.dumps(private_key) + ":", encoded)
                     self.assertFalse(result["productionQualificationComplete"])
                     self.assertEqual(result["readinessGatesPromoted"], 0)
 
@@ -87,7 +90,9 @@ class PublicBSDReportTests(unittest.TestCase):
         for change in (lambda d: d.update(schemaVersion=True),
                        lambda d: d.update(legacyReportSHA256=None),
                        lambda d: d["counts"].update(expectedPackages=2),
-                       lambda d: d["packages"][0].update(exitCode=1)):
+                       lambda d: d["packages"][0].update(exitCode=1),
+                       lambda d: d["testDiagnostics"][0].update(private="PRIVATE_SYNTHETIC_VALUE"),
+                       lambda d: d["testDiagnostics"][0].update(packageID=True)):
             data = projected();change(data)
             with self.assertRaises(ValueError):evidence.validate_public(data)
         for suffix in ("../private", "internal/./private", "internal/../private"):

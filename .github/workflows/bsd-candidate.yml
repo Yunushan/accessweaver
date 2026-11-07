@@ -3,6 +3,7 @@ name: BSD candidate core qualification
 on:
   push:
     branches: ['codex/bsd-public-qualification']
+    paths-ignore: ['docs/**']
   workflow_dispatch:
 
 permissions:

@@ -5,6 +5,7 @@ The host cross-compiles; the guest executes. This is not hardware, routing,
 managed BSD policy, installer or complete platform qualification.
 """
 import argparse
+from bsd_test_observations import source_catalog, observe_output
 import hashlib
 import json
 import lzma
@@ -470,7 +471,7 @@ def build_payload(repo, capsule, source, target, packaged=None, observations=Non
     observations.update(step="package-discovery", plannedPackages=0, completedPackages=0, currentPackageID=None)
     packages = decode_objects(run(["go", "list", "-json", "./..."], env=env, split_stderr=True).stdout)
     observations["plannedPackages"] = sum(bool(p.get("TestGoFiles") or p.get("XTestGoFiles")) for p in packages)
-    records = []
+    records, catalogs = [], {}
     for package in packages:
         if not package.get("TestGoFiles") and not package.get("XTestGoFiles"):
             continue
@@ -478,6 +479,7 @@ def build_payload(repo, capsule, source, target, packaged=None, observations=Non
         if not name.startswith(MODULE):
             raise RuntimeError("unexpected test module")
         directory = relative_package(package["Dir"], repo)
+        catalogs[name] = source_catalog(repo, directory, package.get("TestGoFiles", []) + package.get("XTestGoFiles", []))
         filename = "tests/" + hashlib.sha256(name.encode()).hexdigest()[:20] + ".test"
         executable = payload / filename
         observations.update(step="package-compile", currentPackageID=len(records))
@@ -507,7 +509,7 @@ def build_payload(repo, capsule, source, target, packaged=None, observations=Non
     run(["git", "archive", "--format=tar", "--output=" + str(payload / "source.tar"), "HEAD"])
     if run(["git", "status", "--porcelain"]).stdout.strip():
         raise RuntimeError("source changed while building")
-    manifest = {"sourceCommit": source, "goos": goos, "goarch": target["arch"], "hostCrossCompiled": True,
+    manifest = {"sourceCommit": source, "goos": goos, "goarch": target["arch"], "hostCrossCompiled": True, "testCatalogs": catalogs,
                 "cli": {"file": cli, "sha256": digest(payload / cli)}, "packages": records,
                 "sourceArchiveSHA256": digest(payload / "source.tar")}
     if receipt is not None:
@@ -597,7 +599,7 @@ def main():
     output.mkdir(mode=0o700, parents=True, exist_ok=True)
     owned_directory(output)
     report = {"schemaVersion": 1, "sourceCommit": source, "target": "freebsd/" + target["arch"], "hostSDK": sdk,
-              "imageURL": target["imageURL"], "imageSHA256": target["imageSHA256"], "packages": [], "guestExecutionPassed": False,
+              "imageURL": target["imageURL"], "imageSHA256": target["imageSHA256"], "packages": [], "publicTestObservations": [], "guestExecutionPassed": False,
               "packagedCandidateExecuted": False,
               "hardwareQualificationComplete": False, "platformQualificationComplete": False,
               "readinessGatesPromoted": 0, "productionQualificationComplete": False}
@@ -747,6 +749,8 @@ def main():
             record = {**package, "returnCode": result.returncode, "elapsedSeconds": round(time.monotonic() - started, 3),
                       "passedTestInstances": len(re.findall(r"--- PASS:", text)), "skippedTestInstances": len(re.findall(r"--- SKIP:", text)),
                       "logSHA256": digest(log)}
+            diagnostic = observe_output(result.stdout, manifest["testCatalogs"][package["package"]], result.returncode)
+            report["publicTestObservations"].append({"packageID": index, **diagnostic})
             report["packages"].append(record)
             print(json.dumps({"package": package["package"], "returnCode": result.returncode}), flush=True)
         if any(record["returnCode"] != 0 for record in report["packages"]):
