@@ -966,8 +966,11 @@ for(const scenario of ['guided-success','json-success','guided-failure','json-fa
 
 test('desktop performance meets published Linux controller and browser budgets',async({core,browserOwner},testInfo)=>{
  test.skip(process.platform!=='linux','Linux process observation; native platform performance qualification remains separate');
- test.setTimeout(120000);
+ const soak=process.env.ACCESSWEAVER_BROWSER_SOAK==='1';
+ if(soak)expect(require('./browser-soak.cjs').allowed()).toBe(true);
+ test.setTimeout(soak?18*60_000:120000);
  await runDesktopPerformance(browserOwner.page,core,testInfo,browserOwner.controller);
+ if(soak)await require('./browser-soak.cjs').runSoak(browserOwner.page,core,testInfo,browserOwner.controller);
 });
 
 // Ordinary loopback HTTP serves source assets and synthetic replies only.

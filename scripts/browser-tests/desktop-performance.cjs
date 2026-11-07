@@ -112,4 +112,4 @@ async function runDesktopPerformance(page,core,testInfo,browserChild){
  if(process.env.GITHUB_ACTIONS==='true')await writeMemoryReport(path.resolve(__dirname,'../..'),core.build.commit,core.binarySha256,testInfo.project.name,process.env.ACCESSWEAVER_EXPECT_GOARCH,memoryPoints);
  assert.equal(outcome,'passed','Desktop performance contract failed at '+value.stage);
 }
-module.exports={waitUntil,failureKinds,classifyFailure,dashboardReady,budgets,performanceCaseName,metricNames,countNames,stages,sources,parseStat,percentile,cpuPercent,violations,validateValue,seedPerformanceProfiles,liveChild,writePerformanceReport,runDesktopPerformance};
+module.exports={waitUntil,failureKinds,classifyFailure,dashboardReady,budgets,performanceCaseName,metricNames,countNames,stages,sources,parseStat,percentile,cpuPercent,violations,validateValue,seedPerformanceProfiles,liveChild,writePerformanceReport,runDesktopPerformance,sampleController,requestBatch,paint};
