@@ -100,7 +100,7 @@ jobs:
           BROWSER: ${{ matrix.browser }}
         run: node check-image-environment.cjs
       - name: Verify fixed keyboard evidence contracts
-        run: node --test scripts/browser-tests/modal-keyboard.test.cjs scripts/browser-tests/suite-status-reporter.test.cjs scripts/browser-tests/desktop-performance.test.cjs scripts/browser-tests/browser-native-binary.test.cjs scripts/browser-tests/browser-resources.test.cjs scripts/browser-tests/browser-memory.test.cjs scripts/browser-tests/job-cpu.test.cjs scripts/check-native-environment.test.cjs
+        run: node --test scripts/browser-tests/svg-geometry.test.cjs scripts/browser-tests/modal-keyboard.test.cjs scripts/browser-tests/suite-status-reporter.test.cjs scripts/browser-tests/desktop-performance.test.cjs scripts/browser-tests/browser-native-binary.test.cjs scripts/browser-tests/browser-resources.test.cjs scripts/browser-tests/browser-memory.test.cjs scripts/browser-tests/job-cpu.test.cjs scripts/check-native-environment.test.cjs
       - name: Verify isolated application contracts
         run: |
           unset ACCESSWEAVER_HISTORY_INTEROP ACCESSWEAVER_RECONCILIATION_INTEROP ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP ACCESSWEAVER_SUPPORT_INTEROP
@@ -161,5 +161,14 @@ jobs:
         with:
           name: browser-memory-${{ matrix.goarch }}-${{ matrix.browser }}
           path: build/browser-memory/status.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Retain fixed source-known SVG geometry diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: svg-geometry-${{ matrix.goarch }}-${{ matrix.browser }}
+          path: build/svg-geometry/status.json
           if-no-files-found: error
           retention-days: 7
