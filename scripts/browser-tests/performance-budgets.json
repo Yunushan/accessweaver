@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "scope": "source-built-linux-controller-and-browser-ci-baseline",
   "profiles": 256,
   "loadSeconds": 60,
@@ -56,6 +56,35 @@
     },
     "cooldownThreadGrowth": {
       "max": 8
+    },
+    "browserSampledPeakRssBytes": {
+      "max": 1073741824
+    },
+    "browserSampledPeakDescriptors": {
+      "max": 1024
+    },
+    "browserSampledPeakThreads": {
+      "max": 512
+    },
+    "browserSampledPeakProcesses": {
+      "max": 64
+    },
+    "browserObservedLoadCpuPercentOneCore": {
+      "max": 300
+    },
+    "browserCooldownRssGrowthBytes": {
+      "max": 268435456
+    },
+    "browserCooldownDescriptorGrowth": {
+      "max": 64
+    },
+    "browserCooldownThreadGrowth": {
+      "max": 64
+    },
+    "browserCooldownProcessGrowth": {
+      "max": 4
     }
-  }
+  },
+  "browserResourceIntervalMilliseconds": 1000,
+  "browserResourcePolicy": "One-second samples of worker-owned browser and verified descendants. Summed RSS counts shared pages per process; observed CPU is a lower bound when processes exit between samples. Browser/renderer measurement is separate from the unchanged controller caps."
 }

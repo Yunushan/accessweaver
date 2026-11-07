@@ -93,7 +93,7 @@ jobs:
           npm ci --ignore-scripts
           npm audit --audit-level=moderate
       - name: Verify fixed keyboard evidence contracts
-        run: node --test scripts/browser-tests/modal-keyboard.test.cjs scripts/browser-tests/suite-status-reporter.test.cjs scripts/browser-tests/desktop-performance.test.cjs scripts/browser-tests/browser-native-binary.test.cjs scripts/check-native-environment.test.cjs
+        run: node --test scripts/browser-tests/modal-keyboard.test.cjs scripts/browser-tests/suite-status-reporter.test.cjs scripts/browser-tests/desktop-performance.test.cjs scripts/browser-tests/browser-native-binary.test.cjs scripts/browser-tests/browser-resources.test.cjs scripts/check-native-environment.test.cjs
       - name: Verify the pinned preinstalled browser environment
         timeout-minutes: 5
         working-directory: scripts/browser-tests
