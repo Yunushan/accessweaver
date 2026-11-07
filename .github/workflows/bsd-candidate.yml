@@ -1,0 +1,21 @@
+name: BSD candidate core qualification
+
+on:
+  push:
+    branches: ['codex/bsd-public-qualification']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bsd-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  freebsd:
+    name: Current FreeBSD core
+    uses: ./.github/workflows/bsd.yml
+  openbsd:
+    name: Current OpenBSD core
+    uses: ./.github/workflows/openbsd.yml

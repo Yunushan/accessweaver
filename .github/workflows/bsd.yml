@@ -2,6 +2,7 @@ name: BSD guest core probe
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -41,7 +42,9 @@ jobs:
           architecture: ${{ matrix.sdkarch }}
           cache: false
       - name: Check guest guard and resource regressions
-        run: python3 -m unittest discover -s scripts -p test_bsd_guest.py -v
+        run: |
+          python3 -m unittest discover -s scripts -p test_bsd_guest.py -v
+          python3 -m unittest discover -s scripts -p test_bsd_public_evidence.py -v
       - name: Install distribution-signed hypervisor and ISO tools
         run: |
           sudo apt-get update
@@ -56,6 +59,17 @@ jobs:
           ACCESSWEAVER_DISPOSABLE_BSD_GUEST_TEST: '1'
           ACCESSWEAVER_BSD_ARCH: ${{ matrix.arch }}
         run: python3 scripts/test-bsd-guest.py
+      - name: Project closed public guest results
+        if: ${{ !cancelled() }}
+        run: python3 scripts/bsd_public_evidence.py --os freebsd --arch ${{ matrix.arch }}
+      - name: Retain closed public guest results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: freebsd-${{ matrix.arch }}-public-core
+          path: build/bsd-public-checks/freebsd-${{ matrix.arch }}.json
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Retain guest execution evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
