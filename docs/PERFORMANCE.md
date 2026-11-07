@@ -75,3 +75,21 @@ The Linux observer starts at that owned child, discovers descendants through eve
 Browser sampling runs about once per second, separately from controller sampling at 250 ms. Peak RSS is the maximum sampled sum of process RSS and counts shared pages once per process; it is not unique physical memory or a continuous peak. Observed CPU integrates counters of sampled identities across the declared load observation window. Processes that start and exit between samples, and final CPU ticks after the last observation of an exited process, can be missed; sequential snapshot boundaries can also shift ticks across the measured window. This is incomplete sampled CPU accounting, not an exact total or a strict one-sided bound. Counts retain sample totals, observed exits and the CPU-window duration. No PID, process name or relationship is serialized.
 
 The additional reference limits are 1 GiB summed sampled RSS, 1024 descriptors, 512 threads, 64 processes and 300% of one logical CPU. Cooldown growth limits are 256 MiB RSS, 64 descriptors, 64 threads and four processes. These reserve capacity on a four-logical-CPU reference worker and complement the unchanged controller caps; acceptance requires at least 50 browser samples and a CPU window of at least 60 seconds. These limits and instrumentation require fresh six-job evidence before any browser-resource acceptance claim. They do not establish representative-hardware, signed-distribution, complete CPU-accounting or eight-hour traffic qualification.
+
+
+The [fcf0aa9 resource receipt](qualification/fcf0aa9508f5-browser-resource-failure.json) records the current **failed** six-job qualification in [run 42325780145](https://github.com/Yunushan/accessweaver/actions/runs/42325780145). Five jobs passed; ARM64 Firefox failed only the 1 GiB summed sampled browser RSS cap: 1,109,790,720 bytes, exceeding the cap by 36,048,896 bytes (34.38 MiB). All 306 original functional case executions passed, with no skipped or retried cases. Five performance cases passed and one failed; the 90 original controller/UI cap checks passed, and 53 of 54 added browser-resource cap checks passed. The cap remains unchanged, and full browser-resource acceptance remains unqualified.
+
+The product now applies the existing 160 ms fade/translation/easing only to each view’s direct page heading. The full profile view, which can contain 256 cards, no longer receives that entrance animation. Layout, colors and reduced-motion rules are unchanged. In this candidate all six navigation p95 measurements meet the existing 500 ms cap. The preceding candidate retained a 500.94 ms AMD64 WebKit navigation failure and a 1,135,120,384-byte ARM64 Firefox RSS failure; the receipt retains both and the earlier fixture correction. These measurements do not establish that compositing was the sole source of the remaining memory cost.
+
+| Native target | Browser | Navigation p95 ms | Summed sampled browser RSS MiB | RSS cap result |
+| --- | --- | ---: | ---: | --- |
+| linux/amd64 | chromium | 400.04 | 721.62 | passed |
+| linux/amd64 | firefox | 329.21 | 1017.95 | passed |
+| linux/amd64 | webkit | 493.95 | 835.35 | passed |
+| linux/arm64 | chromium | 433.32 | 792.08 | passed |
+| linux/arm64 | firefox | 333.93 | 1058.38 | failed |
+| linux/arm64 | webkit | 496.86 | 874.66 | passed |
+
+All 24 provider archive digests were verified before parsing the four source-owned report kinds. Case, performance and keyboard reports agree on each target/browser’s executed binary; all 288 keyboard checks and 30 native ELF inspections passed. The embedded product and CLI test programs compiled for all ten targets (20 compile-only checks); no produced foreign programs were executed. Local Node validation passed 211 of 216 tests, with four actual-Go-wire and one Linux-only process test skipped on Windows. The real owned-child/grandchild census ran successfully in all six native jobs.
+
+The next memory investigation must distinguish shared-page repetition and native browser overhead from profile-rendering costs using bounded observations of these owned processes. Keep the 1 GiB RSS cap, all 24 limits, all 52 cases, workload sizes and deadlines. The prior passing native baseline at 5d94e98 remains source-specific; it does not qualify this expanded resource workload. All formal readiness gates remain incomplete and unchanged.
