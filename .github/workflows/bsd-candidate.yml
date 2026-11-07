@@ -2,7 +2,7 @@ name: BSD candidate core qualification
 
 on:
   push:
-    branches: ['codex/bsd-public-qualification']
+    branches: ['codex/bsd-public-qualification', 'codex/bsd-runtime-readiness']
     paths-ignore: ['docs/**']
   workflow_dispatch:
 

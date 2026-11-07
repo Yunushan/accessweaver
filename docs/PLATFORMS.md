@@ -71,3 +71,11 @@ A native product needs an Android application using [VpnService](https://develop
 ## iOS / iPadOS
 
 A native product needs a signed app and [Packet Tunnel Provider](https://developer.apple.com/documentation/networkextension/packet-tunnel-provider), correct entitlements/provisioning and actual tunnel forwarding. It needs real-device testing for routing, DNS, background lifecycle and distribution requirements. A browser or PWA cannot substitute for the provider.
+
+## BSD lifetime fixture pipe roles
+
+The public e6490f5 BSD diagnostics were mapped to immutable test source after explicit approval. All four targets reported the same sixteen Unix lifetime/shutdown roots; FreeBSD ARM64 separately reported a durable-result wait timeout. Catalog hashes were independently reconstructed before mapping, and no raw logs or private controller data were read. Reported source locations also include skip/helper sites and are not all failure assertions.
+
+The lifetime fixture incorrectly required inherited pipe descriptor 3 to be read-only and descriptor 4 to be write-only. The [FreeBSD 15.1 pipe implementation](https://raw.githubusercontent.com/freebsd/freebsd-src/releng/15.1/sys/kern/sys_pipe.c) and [OpenBSD implementation](https://raw.githubusercontent.com/openbsd/src/master/sys/kern/sys_pipe.c) create both endpoints with read/write capabilities. The corrected fixture requires the intended role's capability and accepts that native bidirectional mode, while still rejecting the opposite-only mode, invalid modes and unexpected descriptor numbers. FIFO type, nonblocking setup, close-on-exec, bounded deadlines, anonymous inherited endpoints, source-built child identity and owned cleanup remain required. It continues to use one direction per endpoint; production process ownership and kqueue logic are unchanged.
+
+A native regression checks the real `os.Pipe` descriptors and the positive/negative role table. The complete existing engine suites remain selected on all four BSD targets; the previously failed roots are not skipped. This source correction has not yet been qualified natively and does not resolve or waive the separate durable-result deadline failure. Compilation alone and a corrected fixture do not qualify routing, installed lifecycle, signed distribution or any complete platform gate.

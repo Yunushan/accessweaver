@@ -1,0 +1,223 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "e6490f5d15f08de87cf4de2cd53be6384519fa89",
+  "runID": 42374139097,
+  "scope": "approved-public-bsd-failure-source-mapping",
+  "approval": "User explicitly approved mapping verified public-core numeric failures to immutable repository test names, filenames and assertion lines for this investigation and follow-up runs.",
+  "catalogsReconstructedAndMatched": true,
+  "publicProviderZIPDigests": [
+    {
+      "target": "freebsd/amd64",
+      "digest": "sha256:faac316b194a89866e10d3b4227d3fa2e3e95a2376d6df143135a743b300a908",
+      "verified": true
+    },
+    {
+      "target": "freebsd/arm64",
+      "digest": "sha256:54e968109def5deea2cfc93666f56cb0cb586ffdb0737b6decf1e186151e5eaa",
+      "verified": true
+    },
+    {
+      "target": "openbsd/amd64",
+      "digest": "sha256:9fe16ec527d5d08504f2c814c0d1f51dfaef0fac7089412b236f4d75efd0cb4f",
+      "verified": true
+    },
+    {
+      "target": "openbsd/arm64",
+      "digest": "sha256:9ad82c9140293eeb1a30fdf44012ab1171fa99913eeda0ea00cdeb7693ba67f1",
+      "verified": true
+    }
+  ],
+  "groups": [
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/engine",
+      "packageID": 10,
+      "catalogSHA256": "e04851ccb39ea46bd86fa027d971a11d95a47b6c634e3a52ef856be21004fb9b",
+      "failedRoots": [
+        "TestUnixLifetimeAdmittedSignalResolvesBeforeConsumingWait",
+        "TestUnixLifetimeAlreadyExitedChildBeforeNativeObserverBinding",
+        "TestUnixLifetimeCanceledWaitAndShutdownDoNotAbandonAdmittedSignal",
+        "TestUnixLifetimeCleanupFaultRetainsOwnershipUntilExplicitRetry",
+        "TestUnixLifetimeEscalationFailureReturnsPendingFault",
+        "TestUnixLifetimeObserverCloseFailureRetainsActualExit",
+        "TestUnixLifetimeOutsideSessionCannotJoinEngineGroup",
+        "TestUnixLifetimeRealDescendantWaitAcknowledgedBeforeLeaderExit",
+        "TestUnixLifetimeRetiresSignalsAcrossWaitAndPublication",
+        "TestUnixShutdownDoesNotImportInactiveHistoricalFailure",
+        "TestUnixShutdownDrainsActualBlockedOutputAfterStopTimeout",
+        "TestUnixShutdownDrainsRealAcceptedStartPublishedAfterClosing",
+        "TestUnixShutdownPendingCleanupRequiresExplicitSameRunRetry",
+        "TestUnixShutdownPropagatesLifecycleErrorWithoutChangingActualExitZero",
+        "TestUnixShutdownRepeatedCallersShareOneActualStop",
+        "TestUnixShutdownRetainsCompletedGenerationPublishedAfterEntry"
+      ],
+      "sourceLocations": [
+        {
+          "sourceFile": "internal/engine/config_input_test.go",
+          "line": 183,
+          "sourceLine": "t.Skip(\"WireSock generation is a Windows adapter\")"
+        },
+        {
+          "sourceFile": "internal/engine/lifetime_unix_test.go",
+          "line": 418,
+          "sourceLine": "f.t.Error(\"lifetime fixture completion unconfirmed\")"
+        },
+        {
+          "sourceFile": "internal/engine/lifetime_unix_test.go",
+          "line": 427,
+          "sourceLine": "f.t.Error(\"lifetime fixture preserved after unconfirmed completion\")"
+        },
+        {
+          "sourceFile": "internal/engine/lifetime_unix_test.go",
+          "line": 493,
+          "sourceLine": "f.start(\"controlled\", func(owner *ownedProcess) {"
+        },
+        {
+          "sourceFile": "internal/engine/lifetime_unix_test.go",
+          "line": 536,
+          "sourceLine": "f.start(\"term\", func(owner *ownedProcess) { owner.beforeWait = func() { close(beforeWait) } }, nil)"
+        },
+        {
+          "sourceFile": "internal/engine/lifetime_unix_test.go",
+          "line": 587,
+          "sourceLine": "f.start(\"controlled\", func(owner *ownedProcess) {"
+        },
+        {
+          "sourceFile": "internal/engine/lifetime_unix_test.go",
+          "line": 668,
+          "sourceLine": "f.start(\"controlled\", func(owner *ownedProcess) {"
+        },
+        {
+          "sourceFile": "internal/engine/lifetime_unix_test.go",
+          "line": 680,
+          "sourceLine": "f.start(\"descendant\", nil, nil)"
+        },
+        {
+          "sourceFile": "internal/engine/lifetime_unix_test.go",
+          "line": 795,
+          "sourceLine": "f.start(\"controlled\", nil, nil)"
+        },
+        {
+          "sourceFile": "internal/engine/lifetime_unix_test.go",
+          "line": 832,
+          "sourceLine": "f.start(\"term\", nil, nil)"
+        },
+        {
+          "sourceFile": "internal/engine/lifetime_unix_test.go",
+          "line": 918,
+          "sourceLine": "result := lifetimeExit(t, f.run, RunExited, 0)"
+        },
+        {
+          "sourceFile": "internal/engine/lifetime_unix_test.go",
+          "line": 979,
+          "sourceLine": "f.start(\"controlled\", nil, nil)"
+        },
+        {
+          "sourceFile": "internal/engine/plan_test.go",
+          "line": 177,
+          "sourceLine": "t.Skip(\"Windows WireSock adapter\")"
+        },
+        {
+          "sourceFile": "internal/engine/plan_test.go",
+          "line": 219,
+          "sourceLine": "t.Skip(\"Windows component locations\")"
+        },
+        {
+          "sourceFile": "internal/engine/shutdown_unix_test.go",
+          "line": 76,
+          "sourceLine": "f.start(\"term\", func(owner *ownedProcess) {"
+        },
+        {
+          "sourceFile": "internal/engine/shutdown_unix_test.go",
+          "line": 110,
+          "sourceLine": "f.start(\"output\", func(owner *ownedProcess) {"
+        },
+        {
+          "sourceFile": "internal/engine/shutdown_unix_test.go",
+          "line": 175,
+          "sourceLine": "f.start(\"controlled\", func(owner *ownedProcess) {"
+        },
+        {
+          "sourceFile": "internal/engine/shutdown_unix_test.go",
+          "line": 245,
+          "sourceLine": "f.start(\"controlled\", func(owner *ownedProcess) {"
+        },
+        {
+          "sourceFile": "internal/engine/shutdown_unix_test.go",
+          "line": 266,
+          "sourceLine": "f.start(\"controlled\", func(owner *ownedProcess) {"
+        },
+        {
+          "sourceFile": "internal/engine/shutdown_unix_test.go",
+          "line": 303,
+          "sourceLine": "f.read('r') // The real image is executing before manager publication."
+        },
+        {
+          "sourceFile": "internal/engine/shutdown_unix_test.go",
+          "line": 377,
+          "sourceLine": "f.read('r')"
+        }
+      ],
+      "targets": [
+        "freebsd/amd64",
+        "freebsd/arm64",
+        "openbsd/amd64",
+        "openbsd/arm64"
+      ]
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "packageID": 25,
+      "catalogSHA256": "458cda366ff3d4e542167ddbce3fc9bbd147382a811d46ae292e9c0563b71eb2",
+      "failedRoots": [
+        "TestRejectedResultsRemainDurableAndSerializable"
+      ],
+      "sourceLocations": [
+        {
+          "sourceFile": "internal/workflow/command_pipeline_test.go",
+          "line": 34,
+          "sourceLine": "t.Skip(\"source pipeline child requires its closed fixture arguments\")"
+        },
+        {
+          "sourceFile": "internal/workflow/controller_storage_wire_interop_test.go",
+          "line": 126,
+          "sourceLine": "t.Skip(\"optional actual controller storage desktop fixture not requested\")"
+        },
+        {
+          "sourceFile": "internal/workflow/reconciliation_wire_interop_test.go",
+          "line": 93,
+          "sourceLine": "t.Skip(\"source-generated reconciliation desktop fixtures not requested\")"
+        },
+        {
+          "sourceFile": "internal/workflow/result_test.go",
+          "line": 92,
+          "sourceLine": "t.Fatal(ctx.Err())"
+        },
+        {
+          "sourceFile": "internal/workflow/worker_report_finalization_interop_test.go",
+          "line": 22,
+          "sourceLine": "t.Skip(\"source-generated PowerShell finalization fixtures not requested\")"
+        },
+        {
+          "sourceFile": "internal/workflow/worker_report_interop_test.go",
+          "line": 20,
+          "sourceLine": "t.Skip(\"source-generated PowerShell report fixtures not requested\")"
+        }
+      ],
+      "targets": [
+        "freebsd/arm64"
+      ]
+    }
+  ],
+  "uniqueFailedRoots": 17,
+  "failedRootOccurrences": 65,
+  "rawLogsRead": false,
+  "runtimeFailureMessagesRead": false,
+  "privateControllerStateRead": false,
+  "hostAccountOrCredentialQueries": false,
+  "limitations": [
+    "A source-location inventory may contain skip/helper sites and does not establish that each listed line is a failed assertion.",
+    "Lexical declaration inventories are diagnostic allowlists, not executed-coverage catalogs.",
+    "The mapping does not qualify the failing BSD run or change any whole readiness gate."
+  ],
+  "formalGatesPromoted": 0
+}

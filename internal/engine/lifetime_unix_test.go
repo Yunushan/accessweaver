@@ -38,15 +38,59 @@ func init() {
 	}
 }
 
+// BSD anonymous pipes are bidirectional and expose O_RDWR at both ends.
+// Require the role's capability; do not require the opposite capability absent.
+// The fixture still uses only inherited FIFO descriptors3/4 in one direction.
+func lifetimeFixturePipeRole(fd, flags int) bool {
+	mode := flags & unix.O_ACCMODE
+	switch fd {
+	case 3:
+		return mode == unix.O_RDONLY || mode == unix.O_RDWR
+	case 4:
+		return mode == unix.O_WRONLY || mode == unix.O_RDWR
+	default:
+		return false
+	}
+}
+
+func TestUnixLifetimeFixturePipeRoles(t *testing.T) {
+	for _, tc := range []struct {
+		fd, mode int
+		accepted bool
+	}{
+		{3, unix.O_RDONLY, true}, {3, unix.O_RDWR, true}, {3, unix.O_WRONLY, false},
+		{4, unix.O_WRONLY, true}, {4, unix.O_RDWR, true}, {4, unix.O_RDONLY, false},
+		{2, unix.O_RDWR, false}, {5, unix.O_RDWR, false},
+		{3, unix.O_ACCMODE, false}, {4, unix.O_ACCMODE, false},
+	} {
+		for _, extra := range []int{0, unix.O_NONBLOCK} {
+			if lifetimeFixturePipeRole(tc.fd, tc.mode|extra) != tc.accepted {
+				t.Fatal("lifetime pipe role capability differs")
+			}
+		}
+	}
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal("lifetime native pipe unavailable")
+	}
+	defer func() {
+		if errors.Join(read.Close(), write.Close()) != nil {
+			t.Error("lifetime native pipe completion failed")
+		}
+	}()
+	for fd, file := range map[int]*os.File{3: read, 4: write} {
+		flags, err := unix.FcntlInt(file.Fd(), unix.F_GETFL, 0)
+		if err != nil || !lifetimeFixturePipeRole(fd, flags) {
+			t.Fatal("lifetime native pipe role refused")
+		}
+	}
+}
+
 func lifetimeFixtureMain(mode string) (status int) {
 	for _, fd := range []int{3, 4} {
 		var st unix.Stat_t
 		flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFL, 0)
-		want := unix.O_RDONLY
-		if fd == 4 {
-			want = unix.O_WRONLY
-		}
-		if err != nil || flags&unix.O_ACCMODE != want || unix.Fstat(fd, &st) != nil || st.Mode&unix.S_IFMT != unix.S_IFIFO || unix.SetNonblock(fd, true) != nil {
+		if err != nil || !lifetimeFixturePipeRole(fd, flags) || unix.Fstat(fd, &st) != nil || st.Mode&unix.S_IFMT != unix.S_IFIFO || unix.SetNonblock(fd, true) != nil {
 			return 71
 		}
 		unix.CloseOnExec(fd)
