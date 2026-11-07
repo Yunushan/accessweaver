@@ -1,0 +1,123 @@
+name: Owned browser rendering control
+
+on:
+  push:
+    branches: ['codex/browser-memory-control']
+    paths-ignore: ['docs/**', 'README.md']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-control-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: '1.27.3'
+
+jobs:
+  browser:
+    name: Real browser (${{ matrix.goarch }}/${{ matrix.browser }})
+    runs-on: ${{ matrix.os }}
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+      # Docker populates this isolated anonymous volume from the image's /etc.
+      # Its machine-policy parent must use qualified persistent storage.
+      volumes:
+        - /etc
+      options: --user 1001 --init --shm-size=1gb --cgroupns=private
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+        goarch: [amd64, arm64]
+        include:
+          - goarch: amd64
+            os: ubuntu-latest
+            sdkarch: x64
+            nodearch: x64
+          - goarch: arm64
+            os: ubuntu-24.04-arm
+            sdkarch: arm64
+            nodearch: arm64
+    env:
+      ACCESSWEAVER_BROWSER_CONTROL: '1'
+      GOTOOLCHAIN: local
+      ACCESSWEAVER_JOB_CPU_ACCOUNTING: required
+      ACCESSWEAVER_EXPECT_GOOS: linux
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
+    steps:
+      - name: Check ordinary-user container paths
+        timeout-minutes: 5
+        shell: sh
+        run: |
+          set -eu
+          if [ "$(id -u)" != 1001 ]; then
+            printf '%s\n' 'Browser acceptance requires UID 1001.' >&2
+            exit 1
+          fi
+          for directory in "${HOME:-}" "${GITHUB_WORKSPACE:-}" "${RUNNER_TEMP:-}" "${RUNNER_TOOL_CACHE:-}"; do
+            if [ -z "$directory" ] || [ ! -d "$directory" ] || [ ! -w "$directory" ]; then
+              printf 'Required browser container directory is missing or not writable: %s\n' "$directory" >&2
+              exit 1
+            fi
+          done
+          if [ ! -d /etc ] || [ -L /etc ] || [ "$(stat -c '%u' -- /etc)" != 0 ] || [ -w /etc ]; then
+            printf '%s\n' 'Browser container /etc must be a real root-owned directory that UID 1001 cannot write.' >&2
+            exit 1
+          fi
+          policy_filesystem="$(stat -f -c '%t' -- /etc)"
+          case "$policy_filesystem" in
+            ef53|58465342|9123683e) ;;
+            *)
+              printf 'Browser container /etc filesystem %s is unsupported; require ext4, XFS or Btrfs.\n' "$policy_filesystem" >&2
+              exit 1
+              ;;
+          esac
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+          architecture: ${{ matrix.sdkarch }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '26.8.2'
+          architecture: ${{ matrix.nodearch }}
+          package-manager-cache: false
+      - name: Verify native host and SDK identity
+        run: node scripts/check-native-environment.cjs
+      - name: Build the real controller
+        run: go build -trimpath -o build/browser-tests/accessweaver ./cmd/accessweaver
+      - name: Verify built controller native identity
+        run: node scripts/check-native-environment.cjs --binary build/browser-tests/accessweaver
+      - name: Install locked test dependencies and check known advisories
+        working-directory: scripts/browser-tests
+        run: |
+          npm ci --ignore-scripts
+          npm audit --audit-level=moderate
+      - name: Verify the pinned preinstalled browser environment
+        timeout-minutes: 5
+        working-directory: scripts/browser-tests
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: node check-image-environment.cjs
+      - name: Verify numeric control and ownership contracts
+        run: node --test scripts/browser-tests/browser-control.test.cjs scripts/browser-tests/browser-native-binary.test.cjs scripts/browser-tests/browser-resources.test.cjs scripts/browser-tests/browser-memory.test.cjs scripts/browser-tests/job-cpu.test.cjs scripts/browser-tests/browser-soak.test.cjs
+      - name: Run diagnostic minimal rendering control
+        working-directory: scripts/browser-tests
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: node browser-control.cjs
+      - name: Retain fixed numeric control evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-control-${{ matrix.goarch }}-${{ matrix.browser }}
+          path: build/browser-control/status.json
+          if-no-files-found: error
+          retention-days: 7
