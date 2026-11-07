@@ -2,6 +2,11 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const $$=selector=>Array.from(document.querySelectorAll(selector));
+// Keep unchanged live status text and controls intact during runtime polling.
+function setText(id,value){const target=$(id),text=String(value);if(target.textContent!==text)target.textContent=text;}
+function setDisabled(id,value){const target=$(id),disabled=!!value;if(target.disabled!==disabled)target.disabled=disabled;}
+function setHidden(id,value){const target=$(id),hidden=!!value;if(target.hidden!==hidden)target.hidden=hidden;}
+
 const narrowNavigation=window.matchMedia('(max-width: 760px)');
 function setSidebarOpen(open){
   const sidebar=$('sidebar');
@@ -355,41 +360,42 @@ async function pollStatus() {
   finally { state.polling = false; }
 }
 function renderHero() {
-  $('profile-audit-notice').hidden=!state.profileEditingOnly;
-  $('profile-audit-notice').textContent=t('profileAuditNotice');
-  $$('[data-action="diagnose"], [data-view="diagnostics"], [data-view="system"]').forEach(node=>{node.disabled=state.profileEditingOnly});
+  setHidden('profile-audit-notice',!state.profileEditingOnly);
+  setText('profile-audit-notice',t('profileAuditNotice'));
+  $$('[data-action="diagnose"], [data-view="diagnostics"], [data-view="system"]').forEach(node=>{if(node.disabled!==state.profileEditingOnly)node.disabled=state.profileEditingOnly});
   if(state.profileEditingOnly&&['system','diagnostics'].includes(state.view))navigate('profiles');
   const pending = lifecyclePending();
   const running = !pending && state.runtime.state === 'running';
   const failed = ['failed','exited','error'].includes(state.runtime.state);
   const status = state.disconnected ? 'disconnected' : state.offline ? 'offline' : pending ? 'shutdownPending' : running ? 'running' : failed ? 'failedState' : 'ready';
-  $('hero-status').textContent = state.loading ? t('connecting') : t(status);
-  $('hero-description').textContent = t(state.disconnected ? 'disconnectedDesc' : state.offline ? 'offlineDesc' : pending ? 'shutdownPendingDesc' : running ? 'runningDesc' : failed ? 'failedDesc' : 'readyDesc');
-  $('status-badge').textContent = t(state.disconnected ? 'disconnected' : state.offline ? 'offlineBadge' : pending ? 'shutdownPendingBadge' : running ? 'runningBadge' : 'notRunning');
-  $('status-badge').className = 'tag ' + (state.disconnected || pending ? 'tag-red' : running && coreAvailable() ? 'tag-teal' : state.offline ? 'tag-purple' : 'tag-neutral');
-  $('running-engine').textContent = running ? state.runtime.engine + ' · PID ' + state.runtime.pid : '—';
-  $('stats-profiles').textContent = state.profiles.length;
-  $('stats-engines').textContent = state.engines.length;
-  $('nav-profile-count').textContent = state.profiles.length;
-  $('stats-platform').textContent = platformName(state.platform);
-  $('settings-platform').textContent = platformName(state.platform);
-  $('hero-primary').innerHTML = icon(pending ? 'alert' : running && coreAvailable() ? 'stop' : 'layers') + `<span>${t(pending ? 'shutdownPending' : running && coreAvailable() ? 'stop' : 'selectProfile')}</span>`;
-  $('hero-primary').disabled = pending || state.loading || state.busy;
-  $('connection-notice').hidden = !state.offline && !state.disconnected;
-  $('connection-notice-text').textContent = t(state.disconnected ? 'disconnectedNotice' : 'offlineNotice');
-  $('storage-description').textContent = t(state.storageBlocked || state.preservedProfiles.length ? 'storageRecovery' : state.offline ? 'browserStorage' : 'coreStorage');
-  $('export-browser-backup').hidden = !state.offline;
-  $('storage-badge').textContent = t(state.offline ? 'browserStorageBadge' : 'coreStorageBadge');
-  $('preview-profile').disabled = !coreAvailable() || !!state.editing?.saving;
+  setText('hero-status',state.loading ? t('connecting') : t(status));
+  setText('hero-description',t(state.disconnected ? 'disconnectedDesc' : state.offline ? 'offlineDesc' : pending ? 'shutdownPendingDesc' : running ? 'runningDesc' : failed ? 'failedDesc' : 'readyDesc'));
+  setText('status-badge',t(state.disconnected ? 'disconnected' : state.offline ? 'offlineBadge' : pending ? 'shutdownPendingBadge' : running ? 'runningBadge' : 'notRunning'));
+  const badgeClass = 'tag ' + (state.disconnected || pending ? 'tag-red' : running && coreAvailable() ? 'tag-teal' : state.offline ? 'tag-purple' : 'tag-neutral');
+  if($('status-badge').className!==badgeClass)$('status-badge').className=badgeClass;
+  setText('running-engine',running ? state.runtime.engine + ' · PID ' + state.runtime.pid : '—');
+  setText('stats-profiles',state.profiles.length);
+  setText('stats-engines',state.engines.length);
+  setText('nav-profile-count',state.profiles.length);
+  setText('stats-platform',platformName(state.platform));
+  setText('settings-platform',platformName(state.platform));
+  renderMarkup($('hero-primary'),icon(pending ? 'alert' : running && coreAvailable() ? 'stop' : 'layers') + `<span>${t(pending ? 'shutdownPending' : running && coreAvailable() ? 'stop' : 'selectProfile')}</span>`);
+  setDisabled('hero-primary',pending || state.loading || state.busy);
+  setHidden('connection-notice',!state.offline && !state.disconnected);
+  setText('connection-notice-text',t(state.disconnected ? 'disconnectedNotice' : 'offlineNotice'));
+  setText('storage-description',t(state.storageBlocked || state.preservedProfiles.length ? 'storageRecovery' : state.offline ? 'browserStorage' : 'coreStorage'));
+  setHidden('export-browser-backup',!state.offline);
+  setText('storage-badge',t(state.offline ? 'browserStorageBadge' : 'coreStorageBadge'));
+  setDisabled('preview-profile',!coreAvailable() || !!state.editing?.saving);
   updateProbeAvailability();
-  $('show-logs').disabled = state.offline || state.loading;
+  setDisabled('show-logs',state.offline || state.loading);
   updateSupportAvailability();
   if(typeof updateSystemExportButtons==='function')updateSystemExportButtons();
   if (pending && state.launch) {
     state.launch.ready = false;
-    $('launch-plan').textContent = t('shutdownPendingDesc');
+    setText('launch-plan',t('shutdownPendingDesc'));
   }
-  $('launch-confirm').disabled = pending || state.profileEditingOnly || !coreAvailable() || !state.launch?.ready || state.busy;
+  setDisabled('launch-confirm',pending || state.profileEditingOnly || !coreAvailable() || !state.launch?.ready || state.busy);
 }
 function profileCard(p, full=false) {
   const active = !lifecyclePending() && coreAvailable() && state.runtime.state === 'running' && state.runtime.profileId === p.id;
@@ -405,11 +411,11 @@ function profileCard(p, full=false) {
 }
 // Repeated navigation should retain unchanged cards, their DOM state and focus.
 // Cache per owned container; new nodes or changed markup still render normally.
-const profileMarkup = new WeakMap();
-function renderProfileMarkup(element, markup) {
-  if (profileMarkup.get(element) === markup) return false;
+const elementMarkup = new WeakMap();
+function renderMarkup(element, markup) {
+  if (elementMarkup.get(element) === markup) return false;
   element.innerHTML = markup;
-  profileMarkup.set(element, markup);
+  elementMarkup.set(element, markup);
   return true;
 }
 function renderProfiles() {
@@ -418,10 +424,10 @@ function renderProfiles() {
   const filter = $('profile-filter').value || 'all';
   const selected = state.profiles.filter(p => (filter === 'all' || p.engine === filter) && [p.name,p.engine,p.id,p.description,p.notes].join(' ').toLocaleLowerCase(state.lang).includes(term));
   const empty = `<div class="empty-card">${icon('layers')}<p>${escapeHTML(t('noProfiles'))}</p><button class="btn btn-outline" data-create-profile>${escapeHTML(t('createProfile'))}</button></div>`;
-  let replaced = renderProfileMarkup($('quick-profiles'),state.profiles.length ? state.profiles.slice(0,3).map(p => profileCard(p)).join('') : empty);
+  let replaced = renderMarkup($('quick-profiles'),state.profiles.length ? state.profiles.slice(0,3).map(p => profileCard(p)).join('') : empty);
   // Build the full collection on demand; keep it current after its first visit.
   if(state.view==='profiles'||state.profileGridRendered){
-    replaced = renderProfileMarkup($('all-profiles'),selected.length ? selected.map(p => profileCard(p,true)).join('') : empty) || replaced;
+    replaced = renderMarkup($('all-profiles'),selected.length ? selected.map(p => profileCard(p,true)).join('') : empty) || replaced;
     $('profile-result-count').textContent = selected.length + ' / ' + state.profiles.length + ' ' + t('profilesShown');
     state.profileGridRendered=true;
   }

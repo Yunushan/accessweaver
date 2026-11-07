@@ -1325,3 +1325,12 @@ test('profile grids retain unchanged markup across navigation and still reflect 
   env.run('state.busy=true;renderProfiles()');assert.equal(writes.all,6);assert.equal(writes.quick,4);
   env.run('state.profiles=[];renderProfiles()');assert.equal(writes.all,7);assert.equal(writes.quick,5);
 });
+
+
+test('unchanged dashboard polling preserves status text, control nodes and focused action',async()=>{
+ const env=environment();env.run('state.loading=false;state.offline=false;state.coreAuthenticated=true;state.token="fixture";state.platform="linux";state.runtime={state:"stopped"};renderHero()');let writes=0;
+ for(const [id,keys] of [['hero-status',['textContent']],['status-badge',['textContent','className']],['stats-profiles',['textContent']],['hero-primary',['innerHTML','disabled']],['connection-notice',['hidden']]])for(const key of keys){const node=env.get(id);let value=node[key];Object.defineProperty(node,key,{get(){return value},set(next){writes++;value=next},configurable:true})}
+ env.get('hero-primary').focus();env.run('apiRequest=async()=>({state:"stopped"});');await env.run('pollStatus()');env.run('renderHero();renderHero()');assert.equal(writes,0);assert.equal(env.context.document.activeElement,env.get('hero-primary'));
+ env.run('state.runtime={state:"running",engine:"byedpi",profileId:"fixture",pid:321};renderHero()');assert.equal(env.get('hero-status').textContent,env.run('t("running")'));assert.match(env.get('running-engine').textContent,/321/);assert.match(env.get('hero-primary').innerHTML,/#i-stop/);assert.ok(writes>0);
+ env.run('state.busy=true;renderHero()');assert.equal(env.get('hero-primary').disabled,true);env.run('state.busy=false;state.runtime.lifecyclePending=true;renderHero()');assert.match(env.get('hero-primary').innerHTML,/#i-alert/);assert.equal(env.get('hero-primary').disabled,true);env.run('state.runtime={state:"stopped"};state.lang="es";renderHero()');assert.equal(env.get('hero-status').textContent,env.run('t("ready")'));assert.equal(env.get('hero-primary').disabled,false);assert.ok(env.get('hero-primary').innerHTML.includes(env.run('t("selectProfile")')));
+});

@@ -112,6 +112,14 @@ test('private launcher authenticates the UI and removes the credential from its 
   const unauthenticated=await page.request.get(new URL('/api/bootstrap',page.url()).href);
   expect(unauthenticated.status()).toBe(403);
   await expect(page.locator('#status-badge')).toHaveText('NOT RUNNING');
+  const stable=await page.evaluate(async()=>{
+    const button=document.getElementById('hero-primary'),glyph=button.firstElementChild,label=button.lastElementChild;button.focus();let changes=0;
+    const observer=new MutationObserver(records=>{changes+=records.length});
+    observer.observe(document.getElementById('hero-status'),{childList:true,subtree:true,characterData:true});observer.observe(document.getElementById('stats-profiles'),{childList:true,subtree:true,characterData:true});
+    try{await pollStatus();renderHero();renderHero();await Promise.resolve();return {glyphRetained:glyph.isConnected&&button.firstElementChild===glyph,labelRetained:label.isConnected&&button.lastElementChild===label,focused:document.activeElement===button,changes}}finally{observer.disconnect()}
+  });
+  expect(stable).toEqual({glyphRetained:true,labelRetained:true,focused:true,changes:0});
+
 });
 
 test('create, reload, export and collision import preserve the saved profile', async ({page,core}) => {
