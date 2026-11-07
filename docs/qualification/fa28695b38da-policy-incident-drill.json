@@ -1,0 +1,535 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "fa28695b38dab0c6a80d73d160b445c6f8fed01c",
+  "sourceTree": "e8952f901568d2e5ddd29a1bd1d5a1f25f030014",
+  "branch": "codex/incident-drill-72c1669",
+  "run": {
+    "id": 42335887482,
+    "status": "completed",
+    "conclusion": "success",
+    "attempt": 1
+  },
+  "url": "https://github.com/Yunushan/accessweaver/actions/runs/42335887482",
+  "scope": "Source-level managed policy incident sequence with controlled in-memory transaction storage; complete root-module native Linux unit/race/vet qualification",
+  "sourceSHA256": {
+    "internal/managed/incident_drill_test.go": "18a1558297ff24a3344afc23a19145e5284d991a158fb9dab1e85bf80e197d7e",
+    "docs/INCIDENT_RESPONSE.md": "f84545886bec058427aceb90da525b7130a2f6268bd53ac99ed8eca1355b35ae",
+    "docs/MACHINE_POLICY_RECOVERY.md": "a761639c63b413c0003ed9f94333eac5e27da848ce56c8039abc5ce75915bd07"
+  },
+  "coreProducerSHA256": {
+    ".github/workflows/native-core.yml": "fb2ecde1e0ac1e5cf871c876b789c7cc392aa33f039691c18b63dfc681786e94",
+    "scripts/core-test-evidence.cjs": "ebdf09caa492f876612d311203f41ccd886ec5788eb1bf4a80bd21ac1beb45b1",
+    "scripts/core-test-catalog/main.go": "56f3a8731537d111ac7b752a7b0329e0b2275e3b691e0fdf87132d4b3a1d5177",
+    "scripts/core-test-catalog/main_test.go": "778cd56016854cd64f4107a0fd778b5e1209048d8c55d23d4f485d638e21a1a4",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00"
+  },
+  "drillPhases": [
+    "baseline-signed-enrollment",
+    "publish-deny-by-default-containment",
+    "cancel-retained-operation",
+    "reject-older-and-replacement-key-updates",
+    "damaged-source-stays-enrolled-and-blocked",
+    "review-independent-key-source-and-floor",
+    "retained-history-defeats-lowered-external-floor",
+    "failed-publication-preserves-blocked-source",
+    "approval-expiry-after-staging-aborts",
+    "recover-new-key-with-known-cleanup-error",
+    "reject-recovery-replay-and-former-signer",
+    "fresh-approval-required-after-recovery"
+  ],
+  "drillRoot": "TestPolicyIncidentContainmentAndRecoveryDrill",
+  "drillPhaseCompletions": 48,
+  "nativeReports": [
+    {
+      "architecture": "amd64",
+      "mode": "race",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 787,
+      "rootPassed": 769,
+      "rootSkipped": 18,
+      "rootNotRun": 0,
+      "childPassed": 949,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "drill": {
+        "name": "TestPolicyIncidentContainmentAndRecoveryDrill",
+        "status": "passed",
+        "attempts": 1,
+        "elapsedMilliseconds": 1120,
+        "childPassed": 12,
+        "childFailed": 0,
+        "childSkipped": 0
+      },
+      "unknownEvents": 0,
+      "buildFailures": 0
+    },
+    {
+      "architecture": "amd64",
+      "mode": "unit",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 787,
+      "rootPassed": 769,
+      "rootSkipped": 18,
+      "rootNotRun": 0,
+      "childPassed": 949,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "drill": {
+        "name": "TestPolicyIncidentContainmentAndRecoveryDrill",
+        "status": "passed",
+        "attempts": 1,
+        "elapsedMilliseconds": 1020,
+        "childPassed": 12,
+        "childFailed": 0,
+        "childSkipped": 0
+      },
+      "unknownEvents": 0,
+      "buildFailures": 0
+    },
+    {
+      "architecture": "amd64",
+      "mode": "vet",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 787,
+      "rootPassed": 0,
+      "rootSkipped": 0,
+      "rootNotRun": 787,
+      "childPassed": 0,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "drill": {
+        "name": "TestPolicyIncidentContainmentAndRecoveryDrill",
+        "status": "not-run",
+        "attempts": 0,
+        "elapsedMilliseconds": 0,
+        "childPassed": 0,
+        "childFailed": 0,
+        "childSkipped": 0
+      },
+      "unknownEvents": 0,
+      "buildFailures": 0
+    },
+    {
+      "architecture": "arm64",
+      "mode": "race",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 787,
+      "rootPassed": 769,
+      "rootSkipped": 18,
+      "rootNotRun": 0,
+      "childPassed": 949,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "drill": {
+        "name": "TestPolicyIncidentContainmentAndRecoveryDrill",
+        "status": "passed",
+        "attempts": 1,
+        "elapsedMilliseconds": 1130,
+        "childPassed": 12,
+        "childFailed": 0,
+        "childSkipped": 0
+      },
+      "unknownEvents": 0,
+      "buildFailures": 0
+    },
+    {
+      "architecture": "arm64",
+      "mode": "unit",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 787,
+      "rootPassed": 769,
+      "rootSkipped": 18,
+      "rootNotRun": 0,
+      "childPassed": 949,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "drill": {
+        "name": "TestPolicyIncidentContainmentAndRecoveryDrill",
+        "status": "passed",
+        "attempts": 1,
+        "elapsedMilliseconds": 1010,
+        "childPassed": 12,
+        "childFailed": 0,
+        "childSkipped": 0
+      },
+      "unknownEvents": 0,
+      "buildFailures": 0
+    },
+    {
+      "architecture": "arm64",
+      "mode": "vet",
+      "outcome": "passed",
+      "packages": 29,
+      "rootTestsCataloged": 787,
+      "rootPassed": 0,
+      "rootSkipped": 0,
+      "rootNotRun": 787,
+      "childPassed": 0,
+      "childFailed": 0,
+      "childSkipped": 0,
+      "drill": {
+        "name": "TestPolicyIncidentContainmentAndRecoveryDrill",
+        "status": "not-run",
+        "attempts": 0,
+        "elapsedMilliseconds": 0,
+        "childPassed": 0,
+        "childFailed": 0,
+        "childSkipped": 0
+      },
+      "unknownEvents": 0,
+      "buildFailures": 0
+    }
+  ],
+  "explicitRootSkipsInEachUnitAndRaceRun": [
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestBackupOutputCaseAliasCannotCreateInsideSource"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestDisposableLinuxManagedPolicyNative"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestDisposableLinuxRecordedPolicyTransactions"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestForegroundRunClosedPipeWorker"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestRecordedEngineClosedStandardPipeWorker"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestRecordedExportClosedStandardPipeWorker"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/cmd/accessweaver",
+      "test": "TestWindowsAuditAliasMetadata"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/api",
+      "test": "TestHistoryBrowserSourceWireInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/api",
+      "test": "TestSupportDesktopWireInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/engine",
+      "test": "TestConfigInputPrepareUsesOneInspectedRead"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/engine",
+      "test": "TestWindowsInstalledComponentDiscovery"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/engine",
+      "test": "TestWireSockApplicationConfigurationIsPrivateCopy"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/managed",
+      "test": "TestDisposableLinuxPolicyTransactions"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestControllerStorageDesktopWireInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestLifecycleReconciliationDesktopWireInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestWorkerReportFinalizationPowerShellInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestWorkerReportPowerShellInterop"
+    },
+    {
+      "package": "github.com/Yunushan/accessweaver/internal/workflow",
+      "test": "TestWorkflowCommandPipelineSourceChild"
+    }
+  ],
+  "localValidation": [
+    {
+      "mode": "unit",
+      "scope": "./internal/managed",
+      "exitCode": 0,
+      "packageStatus": "pass",
+      "results": [
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/baseline-signed-enrollment",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/publish-deny-by-default-containment",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/cancel-retained-operation",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/reject-older-and-replacement-key-updates",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/damaged-source-stays-enrolled-and-blocked",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/review-independent-key-source-and-floor",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/retained-history-defeats-lowered-external-floor",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/failed-publication-preserves-blocked-source",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/approval-expiry-after-staging-aborts",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/recover-new-key-with-known-cleanup-error",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/reject-recovery-replay-and-former-signer",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/fresh-approval-required-after-recovery",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill",
+          "status": "pass"
+        }
+      ],
+      "fixedAssertions": []
+    },
+    {
+      "mode": "race",
+      "scope": "./internal/managed",
+      "exitCode": 0,
+      "packageStatus": "pass",
+      "results": [
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/baseline-signed-enrollment",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/publish-deny-by-default-containment",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/cancel-retained-operation",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/reject-older-and-replacement-key-updates",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/damaged-source-stays-enrolled-and-blocked",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/review-independent-key-source-and-floor",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/retained-history-defeats-lowered-external-floor",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/failed-publication-preserves-blocked-source",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/approval-expiry-after-staging-aborts",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/recover-new-key-with-known-cleanup-error",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/reject-recovery-replay-and-former-signer",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill/fresh-approval-required-after-recovery",
+          "status": "pass"
+        },
+        {
+          "test": "TestPolicyIncidentContainmentAndRecoveryDrill",
+          "status": "pass"
+        }
+      ],
+      "fixedAssertions": []
+    },
+    {
+      "mode": "vet",
+      "scope": "./internal/managed",
+      "exitCode": 0
+    }
+  ],
+  "compileOnly": [
+    {
+      "target": "linux/amd64",
+      "package": "./internal/managed",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "linux/arm64",
+      "package": "./internal/managed",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "windows/amd64",
+      "package": "./internal/managed",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "windows/arm64",
+      "package": "./internal/managed",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "darwin/amd64",
+      "package": "./internal/managed",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "darwin/arm64",
+      "package": "./internal/managed",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "freebsd/amd64",
+      "package": "./internal/managed",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "freebsd/arm64",
+      "package": "./internal/managed",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "openbsd/amd64",
+      "package": "./internal/managed",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    },
+    {
+      "target": "openbsd/arm64",
+      "package": "./internal/managed",
+      "exitCode": 0,
+      "compileOnly": true,
+      "executed": false
+    }
+  ],
+  "jobs": [
+    {
+      "id": 128292601441,
+      "name": "native-core / Core (amd64/unit)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128292601667,
+      "name": "native-core / Core (amd64/vet)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128292601723,
+      "name": "native-core / Core (amd64/race)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128292601726,
+      "name": "native-core / Core (arm64/vet)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128292601747,
+      "name": "native-core / Core (arm64/race)",
+      "conclusion": "success"
+    },
+    {
+      "id": 128292601814,
+      "name": "native-core / Core (arm64/unit)",
+      "conclusion": "success"
+    }
+  ],
+  "archiveDigests": {
+    "native-core-arm64-vet": "sha256:3593cb370094fa52296f07a4c260527a5f1fac2182348d394010cb11c90e4746",
+    "native-core-amd64-unit": "sha256:5a6e3cdf272c132ac31694a6d037d60af3ad58c45e72e5eb44cb02a6743c9ce4",
+    "native-core-amd64-race": "sha256:8aa9d785b37d26381099f13de3270188ae768f9e5f038f09b06e7e36919a8568",
+    "native-core-arm64-race": "sha256:660e76e56c671ba25b794d5dfaddabb8ad0e093180324f9805168fedf9567433",
+    "native-core-arm64-unit": "sha256:7c928ae298f09a3ab75a3eb11937ad80e654c6fcdcbbefa55f463dcc971ccfd2",
+    "native-core-amd64-vet": "sha256:a1cb8738cf0e1e56e094a1eb6a86686295eca296083c3b44aa317265aa0275e7"
+  },
+  "reportBundleSHA256": "3fe737c9e0bb4a17772cf1163bd46624e6e2dbb0c15679b69d0439df32a97eeb",
+  "catalogSHA256": {
+    "amd64-unit": "451bfd2bf1dc44279a352c53377f605a35f4a7487f8d9418854ae9d5108f6d6c",
+    "amd64-race": "451bfd2bf1dc44279a352c53377f605a35f4a7487f8d9418854ae9d5108f6d6c",
+    "arm64-unit": "451bfd2bf1dc44279a352c53377f605a35f4a7487f8d9418854ae9d5108f6d6c",
+    "arm64-race": "451bfd2bf1dc44279a352c53377f605a35f4a7487f8d9418854ae9d5108f6d6c"
+  },
+  "privacy": {
+    "rawLogsAnnotationsOrUnrelatedArtifactsRead": false,
+    "rawGoOutputOrDynamicSubtestLabelsRetained": false,
+    "sourceAllowlistValidated": true,
+    "providerZipDigestsVerifiedBeforeParsing": true
+  },
+  "limits": [
+    "Transaction storage is in memory; this does not qualify native enrollment, ACLs, protected publication or physical durability.",
+    "The owned operation is an authorization context, not a vendor process or actual traffic.",
+    "No production release was quarantined, publisher certificate revoked, signing account changed, installed endpoint repaired or organizational response exercised.",
+    "Compile-only checks execute none of the produced targets; native execution here covers Linux AMD64 and ARM64 only.",
+    "The 18 skips per unit/race run remain explicit and unqualified; two packages have no tests. Vet leaves every test not-run.",
+    "Other desktop, installed lifecycle, eight-hour traffic, real release revocation and incident ownership acceptance remain open."
+  ],
+  "formalGateCounts": {
+    "partial": 42,
+    "failed": 3,
+    "missing": 4,
+    "unverified": 1,
+    "passed": 0
+  },
+  "readinessSHA256": "6aba24860c171a7a3931029589b0e04dac90ed4a6f22da3fc02bd058bf903b0e",
+  "gatesPromoted": false,
+  "productionQualificationComplete": false
+}
