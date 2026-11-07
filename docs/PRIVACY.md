@@ -1,0 +1,51 @@
+# Network activity and privacy
+
+AccessWeaver has no analytics, advertising, cloud-account or cloud-sync service. The shipped editor uses local assets; engine/provider links open only when selected. An authenticated dashboard communicates with its local core, including periodic local status reads. Explicit diagnostics and Windows workflows can make external requests. Installed services, scheduled reconnects and vendor applications can continue network activity after the initiating operation or dashboard has finished.
+
+This inventory describes the destinations selected by this repository. User-selected targets, proxies, DNS settings, tunnel/engine configurations, HTTPS redirects and version-specific third-party programs introduce variable destinations. A managed deployment must qualify those actual inputs and programs; the table is not an exhaustive traffic capture or proof that vendor software has no telemetry.
+
+## Browser and diagnostic traffic
+
+| Trigger | Destination and information sent |
+|---|---|
+| Open an authenticated dashboard or use its controls | Same-origin local API routes. The session header and any profile/request body go to the core. The shared helper accepts root-relative `/api/` routes, rejects normalized paths outside that namespace, and uses same-origin fetch mode/credentials with redirect rejection. It does not forward a reviewed mutation to a redirected route. The core also sends a same-origin CSP and a no-referrer policy. |
+| Open an engine/provider hyperlink | The displayed upstream URL in the user's browser. Links use `noopener noreferrer`; no profile or session value is added to the link. These URLs are references, not automatic download requests. |
+| Request direct TCP/TLS diagnostics | The requested target and the operating system's configured resolver. TLS, when enabled, verifies the target using the OS trust store. The remote service sees the connection's source address and requested protocol information. |
+| Request SOCKS5 or HTTP CONNECT diagnostics | The selected proxy, with local DNS for its hostname. The target name/authority is given to that proxy for remote resolution; there is no direct-target fallback. Proxy negotiation is unauthenticated and unencrypted. Target TLS is separate. |
+| Request direct or SOCKS5 UDP/STUN diagnostics | The explicitly selected STUN server or SOCKS5 relay, with the DNS behavior above. One unauthenticated binding exchange can reveal a public mapped address. No public STUN service is selected automatically. |
+| Export a support summary or diagnostic report | A local browser download; no upload destination. The metadata-only support summary excludes identifiers, paths, targets, private error details, logs and session credentials. Diagnostic reports include the requested target/proxy and may include a mapped public address. |
+
+[Diagnostics](DIAGNOSTICS.md) defines cancellation, trust and protocol limits. [Support summaries](SUPPORT.md) differ from private workflow status/history exports, which can contain configurations and tool output. Review private exports before sharing them.
+
+## Windows workflow traffic
+
+Previewing a workflow constructs a local plan. Applying a reviewed operation can contact the following sources. Missing local components can trigger acquisition even when a bundle path was supplied: supplying a partial bundle is not an offline guarantee.
+
+| Operation | Source-defined external destinations and behavior |
+|---|---|
+| Check AccessWeaver updates | `api.github.com/repos/Yunushan/accessweaver/releases?per_page=30`. This reads release metadata and compares versions locally; it does not install an update or upload profiles. |
+| Find/download a missing component | `api.github.com/repos/<repository>/releases/latest`, followed by the selected release asset. Metadata requests identify the component/release and use the `AccessWeaver` user agent; asset requests use the selected transfer transport. The repository choices are listed below. |
+| Download an explicitly supplied component URL | An initial HTTPS URL admitted by the worker's component-source rules and the required content hash or publisher checks. Initial GitHub URLs must be release-download paths in an admitted repository. Other admitted initial hosts are `wiresock.net`, `www.wiresock.net`, `discord.com`, `dl.discordapp.net`, `download.discordapp.net`, `aka.ms` and `download.visualstudio.microsoft.com`. |
+| Install WireSock without an existing local installer | The source default is `wiresock.net/_api/download-release.php` with product, Windows platform and version query parameters. A supplied reviewed URL can replace it. The current source pins the default installer digest; this is not a statement about the latest vendor release or every supported architecture. |
+| Install an NDISAPI prerequisite | GitHub release metadata/assets for `wiresock/ndisapi`, selected for the resolved native architecture. |
+| Install the Visual C++ prerequisite without a local installer | `aka.ms/vs/17/release/vc_redist.x64.exe` and its HTTPS redirect destinations. Artifact and publisher checks still apply; this fixed source URL does not establish architecture-wide compatibility. |
+| Install Discord or PTB | `discord.com/api/downloads/distributions/app/installers/latest` with the selected stable/PTB channel, Windows platform and x64 architecture, followed by HTTPS redirects. The installed application and installer have their own network behavior. |
+| Install SplitCord | GitHub release metadata/assets for `cagritaskn/SplitCord-Turkey`, then the selected installer. |
+| Configure Windows DoH | Google at `8.8.8.8` / `2001:4860:4860::8888` using `dns.google/dns-query`, and Quad9 at `9.9.9.9` / `2620:fe::fe` using `dns.quad9.net/dns-query`. UDP fallback is disabled. Resolver verification queries `example.com`. Subsequent system DNS queries use the configured settings. |
+| Install/configure DNSCrypt | Acquisition from `DNSCrypt/dnscrypt-proxy` when needed, then the installed TOML's resolver, source-list and bootstrap destinations. If `server_names` is absent, the worker inserts Google, Cloudflare and Quad9 resolver names. It preserves an existing setting. Resolver verification queries `example.com`; actual provider endpoints depend on the installed configuration and upstream resolver lists. |
+| Generate a tunnel configuration without an existing `configPath` | Acquire `ViRb3/wgcf` when needed, then run its Cloudflare WARP registration/generation operations. New-account registration requires the explicit terms choice. Existing account files can be reused by the selected tool. These are vendor account/credential operations, with version-specific endpoints and terms. An existing configuration avoids that generation path. |
+| Scan or auto-install Zapret strategies | Acquire the selected component when missing and execute the supplied upstream blockcheck bundle. `DOMAINS` is the supplied target list, or `discord.com discord.gg` by default. Upstream scripts can perform their own checks and DNS requests; scan level does not prove that the target list is their only outbound traffic. Auto-install can also configure the selected DNS method and install the resulting method. |
+| Connect, install a method, or enable periodic reconnect | Vendor/tunnel/proxy/packet-engine destinations and traffic selected by the configuration, arguments and applications. Services and scheduled tasks can run later. DNS configuration and nested component acquisition can add the contacts above. |
+| Start, uninstall or repair a vendor application | The selected vendor program can perform its own network operations. Combined Discord repair remains unavailable; user application maintenance and machine networking have separate privilege requirements. |
+
+Component metadata selection currently uses `hufrea/byedpi`, `wiresock/proxifyre`, `ViRb3/wgcf`, `cagritaskn/SplitWire-Turkey`, `ValdikSS/GoodbyeDPI`, `DNSCrypt/dnscrypt-proxy` and `hdrover/discord-drover`. Separate prerequisite/application paths use the repositories in the table. The initial asset allowlist also admits release-download paths under `wiresock/ndisapi`, `bol-van/zapret-win-bundle`, `bol-van/zapret2` and `cagritaskn/SplitCord-Turkey`.
+
+The acquisition worker permits up to five HTTPS redirects, including vendor/CDN hosts outside the initial-host list. Its .NET path rejects user information/fragments and non-HTTPS hops; the stock curl path restricts initial and redirect protocols to HTTPS. Metadata and artifact transfers have separate documented byte/time bounds. Content hashes, administrator download pins and publisher checks do not prove that only the initial host was contacted. [Windows workflow guidance](WINDOWS_WORKFLOWS.md) describes these controls and their native qualification limits.
+
+## Delegated software and managed deployments
+
+Foreground engines receive the reviewed executable, arguments and supported local configuration. Existing sing-box, Xray and WireSock configurations can contain upstream addresses and credentials; packet/proxy tools can inspect or route application traffic. The WireSock SDK has its own telemetry/licensing terms. Reference-only WireGuard profiles are not launched by the foreground manager. AccessWeaver does not certify every vendor's destinations or privacy policy.
+
+Operating-system DNS, system proxies/PAC, certificate verification, revocation checks, browser behavior and vendor installers can involve independently configured services. Network or application removal and recovery can also re-enable previous settings. Managed deployment acceptance still requires actual endpoint/vendor traffic observations, administrator egress policy, consent/support procedures and independent confirmation that credentials are not transmitted unintentionally. These have not been established by the synthetic browser transport checks.
+
+The source owners of these choices are the diagnostic transports, Windows workflow worker, engine catalogue and browser API/download controls. Changes to their providers, download repositories, defaults or delegated tools require updating this inventory and the corresponding qualification evidence. No privacy or whole-readiness gate receives credit from this inventory alone.

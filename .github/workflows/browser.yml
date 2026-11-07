@@ -101,6 +101,10 @@ jobs:
         run: node check-image-environment.cjs
       - name: Verify fixed keyboard evidence contracts
         run: node --test scripts/browser-tests/modal-keyboard.test.cjs scripts/browser-tests/suite-status-reporter.test.cjs scripts/browser-tests/desktop-performance.test.cjs scripts/browser-tests/browser-native-binary.test.cjs scripts/browser-tests/browser-resources.test.cjs scripts/browser-tests/browser-memory.test.cjs scripts/browser-tests/job-cpu.test.cjs scripts/check-native-environment.test.cjs
+      - name: Verify isolated application contracts
+        run: |
+          unset ACCESSWEAVER_HISTORY_INTEROP ACCESSWEAVER_RECONCILIATION_INTEROP ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP ACCESSWEAVER_SUPPORT_INTEROP
+          node --test web/app.test.cjs
       - name: Exercise the dashboard with an isolated local controller
         working-directory: scripts/browser-tests
         env:

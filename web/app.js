@@ -256,6 +256,9 @@ function navigate(view, focus=false) {
   if(view==='system'&&coreAvailable()&&typeof loadSystemTools==='function')loadSystemTools().catch(error=>{setTextOutput('system-output',error.message)});
 }
 async function apiRequest(path, method='GET', data, timeout=12000, externalSignal) {
+  let target;
+  try { if(typeof path==='string')target=new URL(path,location.origin); } catch {}
+  if(!target||!path.startsWith('/api/')||/[\\#\u0000-\u0020\u007f]/.test(path)||target.origin!==location.origin||!target.pathname.startsWith('/api/'))throw new Error(t('coreRequired'));
   const controller = new AbortController();
   const abort = () => controller.abort();
   const ensureActive = () => {if(controller.signal.aborted)throw new DOMException('Request canceled','AbortError');};
@@ -265,7 +268,7 @@ async function apiRequest(path, method='GET', data, timeout=12000, externalSigna
     ensureActive();
     const response = await fetch(path, {
       method, headers:{...(data !== undefined ? {'Content-Type':'application/json'} : {}),'X-AccessWeaver-Token':state.token},
-      body:data === undefined ? undefined : JSON.stringify(data), cache:'no-store', signal:controller.signal
+      body:data === undefined ? undefined : JSON.stringify(data), cache:'no-store', credentials:'same-origin', mode:'same-origin', redirect:'error', signal:controller.signal
     });
     ensureActive();
     let json;

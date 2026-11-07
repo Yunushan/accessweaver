@@ -969,3 +969,69 @@ test('desktop performance meets published Linux controller and browser budgets',
  test.setTimeout(120000);
  await runDesktopPerformance(browserOwner.page,core,testInfo,browserOwner.controller);
 });
+
+// Ordinary loopback HTTP serves source assets and synthetic replies only.
+// Use actual redirects: request interception observes only their initial URL.
+// No controller, vendor process, external destination or real credential runs.
+test('shared API keeps reviewed requests on local routes without redirects', async ({page}) => {
+  const {createServer}=require('node:http'),session='p'.repeat(43),assets=new Map();
+  const policySource=await fs.readFile(path.join(repo,'internal/api/server.go'),'utf8');
+  const policy=policySource.match(/Set\("Content-Security-Policy", "([^"]+)"\)/);
+  expect(policy).not.toBeNull();
+  for(const [route,file,type]of [['/','index.html','text/html'],['/app.js','app.js','text/javascript'],['/locales.js','locales.js','text/javascript'],['/system.js','system.js','text/javascript'],['/app.css','app.css','text/css']])assets.set(route,{body:await fs.readFile(path.join(repo,'web',file)),type});
+  let sources=0,targets=0,protocolErrors=0;const sourceCredentials=[],targetCredentials=[];
+  const fixture={scope:'synthetic-redirect-body'},encoded=JSON.stringify(fixture);
+  const server=createServer((request,response)=>{
+    response.setHeader('Content-Security-Policy',policy[1]);response.setHeader('Cache-Control','no-store');
+    const json=(status,value)=>{response.writeHead(status,{'Content-Type':'application/json'});response.end(JSON.stringify(value))};
+    (async()=>{
+      const pathname=new URL(request.url,'http://127.0.0.1').pathname,asset=assets.get(pathname);
+      if(asset){response.writeHead(200,{'Content-Type':asset.type});response.end(asset.body);return;}
+      if(pathname==='/api/v1/synthetic-privacy-source'||pathname==='/api/v1/synthetic-privacy-target'){
+        let body='';for await(const bytes of request){if(Buffer.byteLength(body)+bytes.length>1024){protocolErrors++;json(413,{});request.destroy();return;}body+=bytes.toString('utf8');}
+        if(request.method!=='POST'||body!==encoded){protocolErrors++;json(400,{});return;}
+        const credential=request.headers['x-accessweaver-token']===session;
+        if(pathname.endsWith('-source')){sources++;sourceCredentials.push(credential);response.writeHead(307,{Location:'/api/v1/synthetic-privacy-target'});response.end();return;}
+        targets++;targetCredentials.push(credential);json(200,{fixtureAccepted:true});return;
+      }
+      if(pathname.startsWith('/api/')&&request.headers['x-accessweaver-token']!==session){protocolErrors++;json(401,{});return;}
+      if(pathname==='/api/bootstrap'){json(200,{platform:'linux',version:'synthetic-network-privacy'});return;}
+      if(pathname==='/api/v1/engines'||pathname==='/api/v1/profiles'){json(200,[]);return;}
+      if(pathname==='/api/v1/runtime'){json(200,{state:'stopped',log:[]});return;}
+      json(404,{});
+    })().catch(()=>{protocolErrors++;if(!response.headersSent)response.writeHead(500,{'Content-Type':'application/json'});response.end('{}')});
+  });
+  server.requestTimeout=5000;server.headersTimeout=5000;server.keepAliveTimeout=1000;
+  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve)});
+  try{
+    const address=server.address();expect(address&&typeof address==='object').toBe(true);
+    await page.goto('http://127.0.0.1:'+address.port+'/#accessweaver-session='+session);
+    await expect(page.locator('#connection-notice')).toBeHidden();
+    // The control carries no session credential. It proves that this origin/CSP
+    // can follow a redirect and replay a POST body to another local API route.
+    const control=await page.evaluate(async payload=>(await fetch('/api/v1/synthetic-privacy-source',{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)
+    })).json(),fixture);
+    expect(control).toEqual({fixtureAccepted:true});expect(sources).toBe(1);expect(targets).toBe(1);
+    const refused=await page.evaluate(async payload=>{
+      try{await apiRequest('/api/v1/synthetic-privacy-source','POST',payload);return false}catch{return true}
+    },fixture);
+    expect(refused).toBe(true);expect(sources).toBe(2);expect(targets).toBe(1);
+    expect(sourceCredentials).toEqual([false,true]);expect(targetCredentials).toEqual([false]);
+    const rejected=await page.evaluate(async()=>{
+      const original=window.fetch;let attempted=0,count=0;
+      window.fetch=async()=>{attempted++;throw new Error('Synthetic unexpected fetch')};
+      try{
+        for(const path of ['https://outside.invalid/api/v1/runtime','//outside.invalid/api/v1/runtime','/api/%2e%2e/outside','/api/v1/runtime#fragment']){
+          try{await apiRequest(path)}catch{count++}
+        }
+      }finally{window.fetch=original}
+      return {attempted,count};
+    });
+    expect(rejected).toEqual({attempted:0,count:4});
+    expect((await page.evaluate(()=>apiRequest('/api/v1/runtime'))).state).toBe('stopped');
+    expect(protocolErrors).toBe(0);
+  }finally{
+    try{await page.close()}finally{await new Promise((resolve,reject)=>{server.close(error=>error?reject(error):resolve());server.closeAllConnections()})}
+  }
+});

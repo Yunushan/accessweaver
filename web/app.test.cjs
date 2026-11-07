@@ -72,6 +72,33 @@ test('connected UI displays the core build version without interpreting HTML',as
   await env.run('readCore()');
   for(const node of versionNodes){assert.equal(node.textContent,'2.3.4-rc.1 <source>');assert.equal(node.innerHTML,'');}
 });
+test('shared API rejects nonlocal and normalized outside-API paths before issuing a request',async()=>{
+ const env=environment();env.run('state.token="SYNTHETIC_PRIVATE_SESSION"');let calls=0;
+ env.context.fetch=async()=>{calls++;throw new Error('Unexpected request')};
+ const invalid=['https://outside.invalid/api/v1/runtime','//outside.invalid/api/v1/runtime','api/v1/runtime','/api/%2e%2e/outside','/api/../outside','/api/v1/runtime#fragment','/api/v1/ru\\ntime','/api/v1/runtime\n','/api/v1/runtime ',null,{},42];
+ for(const target of invalid){env.put('requestTarget',target);await assert.rejects(env.run('apiRequest(requestTarget)'));}
+ assert.equal(calls,0);
+});
+test('shared API refuses redirects without replaying its private mutation',async()=>{
+ const env=environment();env.run('state.token="SYNTHETIC_PRIVATE_SESSION"');let initial=0,forwarded=0;
+ env.context.fetch=async(path,options)=>{
+  assert.equal(path,'/api/v1/synthetic-redirect');initial++;
+  // This fixture models a redirecting response; a real-browser control verifies
+  // that ordinary follow mode can replay the body to another local API route.
+  if(options.redirect==='error')throw new TypeError('Synthetic redirect refused');
+  forwarded++;return {ok:true,json:async()=>({accepted:true})};
+ };
+ await assert.rejects(env.run('apiRequest("/api/v1/synthetic-redirect","POST",{scope:"synthetic-private-body"})'));
+ assert.equal(initial,1);assert.equal(forwarded,0);assert.equal(env.run('state.token'),'SYNTHETIC_PRIVATE_SESSION');
+});
+test('shared API preserves valid bootstrap and query requests with same-origin transport',async()=>{
+ const env=environment(),seen=[];env.run('state.token="SYNTHETIC_PRIVATE_SESSION"');
+ env.context.fetch=async(path,options)=>{seen.push({path,options});return {ok:true,json:async()=>({accepted:true})};};
+ await env.run('apiRequest("/api/bootstrap")');
+ await env.run('apiRequest("/api/v1/profiles/synthetic?revision=abc","PUT",{name:"synthetic"})');
+ assert.equal(seen.length,2);assert.equal(seen[1].options.body,'{"name":"synthetic"}');
+ for(const {options}of seen){assert.equal(options.credentials,'same-origin');assert.equal(options.mode,'same-origin');assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');assert.equal(options.headers['X-AccessWeaver-Token'],'SYNTHETIC_PRIVATE_SESSION');}
+});
 function valid(env,profile=baseProfile()) {env.put('fixture',profile);return env.run('validateProfile(fixture)');}
 test('private launcher session is consumed without retaining it in the address',()=>{
   const env=environment(),credential='s'.repeat(43);let cleanAddress;
@@ -781,11 +808,11 @@ test('external API abort signals are isolated and listeners plus timers close on
  env.context.firstSignal=first.signal;env.context.secondSignal=second.signal;
  env.context.setTimeout=()=>{const id=++timer;timers.add(id);return id};env.context.clearTimeout=id=>timers.delete(id);
  env.context.fetch=(path,options)=>new Promise((resolve,reject)=>pending.push({path,signal:options.signal,resolve,reject}));
- const a=env.run('apiRequest("/first","GET",undefined,1000,firstSignal)'),b=env.run('apiRequest("/second","GET",undefined,1000,secondSignal)');
+ const a=env.run('apiRequest("/api/v1/synthetic-first","GET",undefined,1000,firstSignal)'),b=env.run('apiRequest("/api/v1/synthetic-second","GET",undefined,1000,secondSignal)');
  assert.equal(getEventListeners(first.signal,'abort').length,1);assert.equal(getEventListeners(second.signal,'abort').length,1);first.abort();assert.equal(pending[0].signal.aborted,true);assert.equal(pending[1].signal.aborted,false);
  pending[0].reject(new DOMException('source cancellation','AbortError'));pending[1].resolve(diagnosticResponse({ok:true}));await assert.rejects(a,{name:'AbortError'});assert.deepEqual(plain(await b),{ok:true});assert.equal(timers.size,0);assert.equal(getEventListeners(first.signal,'abort').length,0);assert.equal(getEventListeners(second.signal,'abort').length,0);
- const ended=new AbortController();ended.abort();env.context.endedSignal=ended.signal;let sends=0;env.context.fetch=async()=>{sends++;return diagnosticResponse({})};await assert.rejects(env.run('apiRequest("/ended","GET",undefined,1000,endedSignal)'),{name:'AbortError'});assert.equal(sends,0);assert.equal(timers.size,0);
- const fault=new AbortController();env.context.faultSignal=fault.signal;env.context.fetch=async()=>({ok:true,json:async()=>{throw Error('source decode fault')}});await assert.rejects(env.run('apiRequest("/parse","GET",undefined,1000,faultSignal)'));assert.equal(getEventListeners(fault.signal,'abort').length,0);assert.equal(timers.size,0);
+ const ended=new AbortController();ended.abort();env.context.endedSignal=ended.signal;let sends=0;env.context.fetch=async()=>{sends++;return diagnosticResponse({})};await assert.rejects(env.run('apiRequest("/api/v1/synthetic-ended","GET",undefined,1000,endedSignal)'),{name:'AbortError'});assert.equal(sends,0);assert.equal(timers.size,0);
+ const fault=new AbortController();env.context.faultSignal=fault.signal;env.context.fetch=async()=>({ok:true,json:async()=>{throw Error('source decode fault')}});await assert.rejects(env.run('apiRequest("/api/v1/synthetic-parse","GET",undefined,1000,faultSignal)'));assert.equal(getEventListeners(fault.signal,'abort').length,0);assert.equal(timers.size,0);
 });
 
 test('explicit diagnostic cancellation preserves inputs and other operations while discarding late success',async()=>{
@@ -844,7 +871,7 @@ test('diagnostic timeouts during fetch and JSON body consumption cannot publish 
   timeout();assert.equal(signal.aborted,true);if(phase==='fetch')finish(diagnosticResponse(probeFixtureReport('LATE_TIMEOUT_RESULT')));else finish(probeFixtureReport('LATE_TIMEOUT_RESULT'));await running;
   assert.equal(env.run('state.lastProbe'),null);assert.equal(env.get('export-report').hidden,true);assert.equal(env.get('probe-submit').disabled,false);assert.match(env.get('diagnostic-results').textContent,/ended before completion/);assert.doesNotMatch(env.get('diagnostic-results').textContent,/LATE_TIMEOUT_RESULT/);
  }
- const env=onlineProbe();let fail;env.context.fetch=async()=>({ok:true,json:()=>new Promise((_resolve,reject)=>fail=reject)});const request=env.run('apiRequest("/body")');for(let i=0;i<4&&!fail;i++)await Promise.resolve();fail(new DOMException('source body aborted','AbortError'));await assert.rejects(request,{name:'AbortError'});
+ const env=onlineProbe();let fail;env.context.fetch=async()=>({ok:true,json:()=>new Promise((_resolve,reject)=>fail=reject)});const request=env.run('apiRequest("/api/v1/synthetic-body")');for(let i=0;i<4&&!fail;i++)await Promise.resolve();fail(new DOMException('source body aborted','AbortError'));await assert.rejects(request,{name:'AbortError'});
 });
 
 // Reviewed reconciliation source contracts. No filesystem, owner, worker or

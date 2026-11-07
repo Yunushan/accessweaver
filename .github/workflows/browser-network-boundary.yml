@@ -1,0 +1,18 @@
+name: Browser network boundary qualification
+
+on:
+  push:
+    branches: ['codex/browser-network-boundary']
+    paths-ignore: ['docs/**', 'README.md']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-network-boundary-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  browser:
+    uses: ./.github/workflows/browser.yml

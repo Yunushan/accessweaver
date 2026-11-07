@@ -30,7 +30,7 @@ Inspired by the workflow of SplitWire-Turkey, independently implemented. AccessW
 - Run direct or explicit SOCKS5/HTTP CONNECT TCP/TLS diagnostics, plus bounded direct/SOCKS5 UDP/STUN checks.
 - Review and apply Windows component installation, services, app routing, hostlists, DNS, application repair and recovery through **Installation & repair**.
 - Work in English, Turkish, Russian or Spanish, with dark/light themes and a responsive interface.
-- Keep profile data on your device. AccessWeaver itself has no telemetry, ads, subscription or cloud sync; external engines have their own policies.
+- Keep profile data on your device. AccessWeaver itself has no telemetry, ads, subscription or cloud sync; external engines have their own policies. See the [network activity inventory](docs/PRIVACY.md) for explicit diagnostics, downloads, DNS, updates and delegated vendor traffic.
 
 ## Quick start
 
