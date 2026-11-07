@@ -42,6 +42,7 @@ func FuzzDecodeProfile(f *testing.F) {
 	dated.UpdatedAt = time.Date(2026, 11, 7, 12, 34, 56, 0, time.UTC)
 	datedSeed, _ := json.Marshal(dated)
 	f.Add(bytes.Replace(datedSeed, []byte("2026-11-07T12:34:56Z"), []byte("2026-11-07T12:34:56+00:00"), 1))
+	f.Add(bytes.Replace(datedSeed, []byte("2026-11-07T12:34:56Z"), []byte("2026-11-07T12:34:56+24:00"), 1))
 	f.Add([]byte(`{}`))
 	f.Add(append(bytes.Clone(seed), []byte(` {}`)...))
 	f.Fuzz(func(t *testing.T, data []byte) {

@@ -133,6 +133,12 @@ func checkValue(decoder *json.Decoder, shape reflect.Type, depth int) error {
 	}
 	delimiter, compound := token.(json.Delim)
 	if !compound {
+		if shape == timeType {
+			value, ok := token.(string)
+			if !ok || !ValidTimestamp(value) {
+				return errors.New("timestamp must use valid RFC3339 syntax")
+			}
+		}
 		if shape != nil && shape != timeType {
 			switch shape.Kind() {
 			case reflect.Struct, reflect.Map, reflect.Slice, reflect.Array:

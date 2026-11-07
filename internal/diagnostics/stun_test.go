@@ -88,10 +88,18 @@ func FuzzBindingResponse(f *testing.F) {
 	request := make([]byte, 20)
 	binary.BigEndian.PutUint16(request, 1)
 	binary.BigEndian.PutUint32(request[4:], stunCookie)
-	f.Add(stunReply(request, net.ParseIP("203.0.113.7"), 49152, true))
+	for _, ip := range []string{"203.0.113.7", "2001:db8::123"} {
+		for _, fingerprint := range []bool{false, true} {
+			f.Add(stunReply(request, net.ParseIP(ip), 49152, fingerprint))
+		}
+	}
 	f.Add([]byte{})
 	f.Fuzz(func(t *testing.T, p []byte) {
+		before := bytes.Clone(p)
 		mapped, err := bindingResponse(p, request)
+		if !bytes.Equal(before, p) {
+			t.Fatal("STUN parser changed input bytes")
+		}
 		if err == nil {
 			host, port, e := net.SplitHostPort(mapped)
 			n, _ := strconv.Atoi(port)

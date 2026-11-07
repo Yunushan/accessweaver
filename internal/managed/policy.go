@@ -17,6 +17,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/Yunushan/accessweaver/internal/jsoninput"
 )
 
 const MaxPolicyBytes = 64 << 10
@@ -107,6 +109,13 @@ func DecodePolicy(data []byte, now time.Time, minimumRevision uint64) (Policy, e
 	}
 	if now.IsZero() || p.IssuedAt.IsZero() || p.ExpiresAt.IsZero() || !p.ExpiresAt.After(p.IssuedAt) {
 		return p, errors.New("policy requires valid issuedAt and expiresAt timestamps")
+	}
+	var timestampText struct {
+		IssuedAt  string `json:"issuedAt"`
+		ExpiresAt string `json:"expiresAt"`
+	}
+	if json.Unmarshal(data, &timestampText) != nil || !jsoninput.ValidTimestamp(timestampText.IssuedAt) || !jsoninput.ValidTimestamp(timestampText.ExpiresAt) {
+		return p, errors.New("policy timestamps require valid RFC3339 syntax")
 	}
 	if p.IssuedAt.After(now.Add(5 * time.Minute)) {
 		return p, errors.New("policy issuance is in the future")

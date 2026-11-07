@@ -18,6 +18,11 @@ env:
   GO_VERSION: '1.27.3'
 
 jobs:
+  parser-mutations:
+    uses: ./.github/workflows/parser-fuzz.yml
+    with:
+      skip_browser: true
+
   browser:
     uses: ./.github/workflows/browser.yml
   windows-audit-storage:
@@ -342,7 +347,7 @@ jobs:
       contents: read
       id-token: write
       attestations: write
-    needs: [verify, vulnerabilities, browser, windows-audit-storage, darwin-audit-commands]
+    needs: [verify, vulnerabilities, browser, windows-audit-storage, darwin-audit-commands, parser-mutations]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
