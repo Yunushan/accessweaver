@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "bacccba344bf3bae77219a4525478ac62ce3d487",
+  "sourceTree": "81a12c65c4b4d06a0183863dafd4d8582a0acdda",
+  "runID": 42396796629,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/42396796629",
+  "scope": "inert fixture PID publication and original closed-standard-stream Linux unit/race assertions",
+  "componentScopeQualified": true,
+  "wholeWorkflowTerminalAtCapture": false,
+  "sourceSHA256": {
+    "cmd/accessweaver/audit_run_linux_test.go": "ad313f287ac0635802445b3b1c38065c40d6a2eae2a03d077375f824ef7904ba",
+    "cmd/accessweaver/audit_run_pipe_linux_test.go": "269dd1530d982a5a5c3b5363069caa492e8d63e4871b00e287667c962721e9de",
+    "scripts/core-test-evidence.cjs": "dd7304cab4f0ba1170cb408f642fddce66752ac85779a60e605f8b3002305d60",
+    "scripts/core-test-evidence.test.cjs": "ef160ad3636497357c483f430c2e4fbaf1c060f2f5316455dd3dbb200e7513fc",
+    ".github/workflows/parser-fuzz.yml": "741b7d64f9655783931b2c7f714d4559d0fd5d6ef31b1e367ab3a78e935d30ff"
+  },
+  "fixedArchivesVerified": 4,
+  "modeReportsVerified": 6,
+  "modeSummaries": [
+    {
+      "platform": "linux",
+      "architecture": "arm64",
+      "mode": "unit",
+      "outcome": "passed",
+      "packages": 30,
+      "reportedRootPasses": 801,
+      "explicitRootSkips": 18,
+      "providerZIPDigest": "sha256:6b3d31c1619d23850ec0a42c28004317090d4b652aa356408d0ca82fc2ec6276"
+    },
+    {
+      "platform": "linux",
+      "architecture": "arm64",
+      "mode": "race",
+      "outcome": "passed",
+      "packages": 30,
+      "reportedRootPasses": 801,
+      "explicitRootSkips": 18,
+      "providerZIPDigest": "sha256:6b3d31c1619d23850ec0a42c28004317090d4b652aa356408d0ca82fc2ec6276"
+    },
+    {
+      "platform": "windows",
+      "architecture": "amd64",
+      "mode": "unit",
+      "outcome": "passed",
+      "packages": 30,
+      "reportedRootPasses": 737,
+      "explicitRootSkips": 36,
+      "providerZIPDigest": "sha256:e2612eb761a73a04f6a7784f84677887a899d1baa4f0fa03bfcad1e056573940"
+    },
+    {
+      "platform": "windows",
+      "architecture": "arm64",
+      "mode": "unit",
+      "outcome": "passed",
+      "packages": 30,
+      "reportedRootPasses": 737,
+      "explicitRootSkips": 36,
+      "providerZIPDigest": "sha256:d7c8dc9c1a0db98eb219794c79080454282a559084e042924299148155626568"
+    },
+    {
+      "platform": "linux",
+      "architecture": "amd64",
+      "mode": "unit",
+      "outcome": "passed",
+      "packages": 30,
+      "reportedRootPasses": 801,
+      "explicitRootSkips": 18,
+      "providerZIPDigest": "sha256:b1391a5237acf551f59e13209fc07ad21c34e9fc67331ee1ef01fe2af11eb058"
+    },
+    {
+      "platform": "linux",
+      "architecture": "amd64",
+      "mode": "race",
+      "outcome": "passed",
+      "packages": 30,
+      "reportedRootPasses": 801,
+      "explicitRootSkips": 18,
+      "providerZIPDigest": "sha256:b1391a5237acf551f59e13209fc07ad21c34e9fc67331ee1ef01fe2af11eb058"
+    }
+  ],
+  "linuxClosedPipeOutcomes": [
+    {
+      "architecture": "arm64",
+      "mode": "unit",
+      "ordinaryCasePasses": 3,
+      "repeatAttempts": 20,
+      "repeatedCasePasses": 60,
+      "ordinaryPassedChildEvents": 16,
+      "repeatPassedChildEvents": 340,
+      "failedOrSkippedChildEvents": 0,
+      "repeatElapsedMilliseconds": 1940,
+      "providerZIPDigest": "sha256:6b3d31c1619d23850ec0a42c28004317090d4b652aa356408d0ca82fc2ec6276",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "architecture": "arm64",
+      "mode": "race",
+      "ordinaryCasePasses": 3,
+      "repeatAttempts": 20,
+      "repeatedCasePasses": 60,
+      "ordinaryPassedChildEvents": 16,
+      "repeatPassedChildEvents": 340,
+      "failedOrSkippedChildEvents": 0,
+      "repeatElapsedMilliseconds": 4680,
+      "providerZIPDigest": "sha256:6b3d31c1619d23850ec0a42c28004317090d4b652aa356408d0ca82fc2ec6276",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "architecture": "amd64",
+      "mode": "unit",
+      "ordinaryCasePasses": 3,
+      "repeatAttempts": 20,
+      "repeatedCasePasses": 60,
+      "ordinaryPassedChildEvents": 16,
+      "repeatPassedChildEvents": 340,
+      "failedOrSkippedChildEvents": 0,
+      "repeatElapsedMilliseconds": 1400,
+      "providerZIPDigest": "sha256:b1391a5237acf551f59e13209fc07ad21c34e9fc67331ee1ef01fe2af11eb058",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "architecture": "amd64",
+      "mode": "race",
+      "ordinaryCasePasses": 3,
+      "repeatAttempts": 20,
+      "repeatedCasePasses": 60,
+      "ordinaryPassedChildEvents": 16,
+      "repeatPassedChildEvents": 340,
+      "failedOrSkippedChildEvents": 0,
+      "repeatElapsedMilliseconds": 5160,
+      "providerZIPDigest": "sha256:b1391a5237acf551f59e13209fc07ad21c34e9fc67331ee1ef01fe2af11eb058",
+      "providerZIPDigestVerified": true
+    }
+  ],
+  "ordinaryCasePasses": 12,
+  "repeatedCasePasses": 240,
+  "sourceDeclarationAllowlistVerified": true,
+  "independentCompleteGoASTCatalogVerified": false,
+  "diagnosticOnlyRootCounts": true,
+  "sourceBackedCorrection": "The fixture output gate requires existence of a final PID name. The child now writes/closes a pending PID record before same-directory rename publishes that name.",
+  "productionLifecycleChanged": false,
+  "productionPrivateOutputArchitectureChanged": false,
+  "assertionsOrDeadlinesRelaxed": false,
+  "allEarlierFailuresSameCofactorProved": false,
+  "priorFailureReceipts": [
+    "6cd8c3d5f3f-closed-pipe-failure.json",
+    "3da17713b612-closed-pipe-worker-stage.json"
+  ],
+  "localValidation": {
+    "unchangedSyntheticPrivacyContractsPassedAtParentSource": 12,
+    "affectedLinuxTargetsCompiledOnly": 2,
+    "localNativeBinariesExecuted": false
+  },
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0,
+  "limitations": [
+    "This qualifies the selected fixture coordination correction and observed attempts; it does not prove every prior intermittent failure had the same cofactor.",
+    "Root counts use source declaration allowlists and do not claim an independently complete Go AST coverage catalogue.",
+    "The remaining mutation/browser jobs were still running at capture.",
+    "Sustained Firefox/WebKit failures, installed/native/vendor qualification, signing, native assistive technology and the eight-hour working-day soak remain separate."
+  ]
+}
