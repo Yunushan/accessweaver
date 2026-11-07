@@ -22,6 +22,7 @@ on:
           - desktop-support
           - backup-io
           - profile-read
+          - native-core
       backup_platform:
         description: Native platform for manual backup-io and profile-read scopes
         type: choice
@@ -43,17 +44,20 @@ env:
   GO_VERSION: '1.27.3'
 
 jobs:
+  native-core:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.scope == 'full' || inputs.scope == 'native-core' }}
+    uses: ./.github/workflows/native-core.yml
   browser:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
     uses: ./.github/workflows/browser.yml
   windows-audit-storage:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
     uses: ./.github/workflows/windows-audit-storage.yml
   darwin-audit-commands:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
     uses: ./.github/workflows/darwin-audit-commands.yml
   vulnerabilities:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
     name: Go vulnerability checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -113,7 +117,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   test:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
     name: Test (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -419,13 +423,13 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       - name: Browser logic and fixture cleanup tests
-        run: node --test web/app.test.cjs scripts/browser-tests/core-fixture.test.cjs scripts/browser-tests/desktop-performance.test.cjs scripts/browser-tests/browser-native-binary.test.cjs scripts/browser-tests/browser-resources.test.cjs scripts/browser-tests/browser-memory.test.cjs scripts/browser-tests/job-cpu.test.cjs scripts/browser-tests/accessibility-report.test.cjs
+        run: node --test scripts/core-test-evidence.test.cjs web/app.test.cjs scripts/browser-tests/core-fixture.test.cjs scripts/browser-tests/desktop-performance.test.cjs scripts/browser-tests/browser-native-binary.test.cjs scripts/browser-tests/browser-resources.test.cjs scripts/browser-tests/browser-memory.test.cjs scripts/browser-tests/job-cpu.test.cjs scripts/browser-tests/accessibility-report.test.cjs
       - name: Go formatting
         if: runner.os == 'Linux'
         shell: bash
         run: test -z "$(gofmt -l cmd internal web)"
   race:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
     name: Race detector (Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -445,7 +449,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   race-arm64:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
     name: Race detector (Linux/arm64)
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
@@ -466,7 +470,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   cross-compile:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
     name: Cross-build (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 15

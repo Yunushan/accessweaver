@@ -1,0 +1,71 @@
+name: Native Linux core qualification
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.27.3'
+
+jobs:
+  core:
+    name: Core (${{ matrix.goarch }}/${{ matrix.mode }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+        mode: [vet, unit, race]
+        include:
+          - goarch: amd64
+            os: ubuntu-latest
+            sdkarch: x64
+          - goarch: arm64
+            os: ubuntu-24.04-arm
+            sdkarch: arm64
+    env:
+      GOTOOLCHAIN: local
+      ACCESSWEAVER_EXPECT_GOOS: linux
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          architecture: ${{ matrix.sdkarch }}
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '26.8.2'
+          architecture: ${{ matrix.sdkarch }}
+          package-manager-cache: false
+      - name: Verify native host and SDK identity
+        run: node scripts/check-native-environment.cjs
+      - name: Verify ordinary Linux worker
+        run: node -e "if (process.platform !== 'linux' || !process.getuid || process.getuid() === 0) throw new Error('Ordinary Linux worker required')"
+      - name: Verify source catalog and output privacy contracts
+        run: |
+          go test ./scripts/core-test-catalog -count=1
+          node --test scripts/core-test-evidence.test.cjs
+      - name: Verify module cache integrity
+        run: |
+          go mod download
+          go mod verify
+      - name: Run complete core scope with fixed evidence
+        env:
+          CORE_MODE: ${{ matrix.mode }}
+        run: node scripts/core-test-evidence.cjs "$CORE_MODE"
+      - name: Retain source-known core outcomes
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-core-${{ matrix.goarch }}-${{ matrix.mode }}
+          path: build/native-core-evidence/status.json
+          if-no-files-found: error
+          retention-days: 7
