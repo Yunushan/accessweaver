@@ -127,3 +127,13 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $source -cne $env:GITHUB_SHA) { throw 'Source changed during qualification' }
           $changes = @(git -c core.fsmonitor=false status --porcelain=v1 --untracked-files=normal)
           if ($LASTEXITCODE -ne 0 -or $changes.Count -ne 0) { throw 'Qualification changed source' }
+      - name: Retain source-known root regression outcomes
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: root-regression-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            build/native-core-evidence/status-unit.json
+            build/native-core-evidence/status-race.json
+          if-no-files-found: error
+          retention-days: 7

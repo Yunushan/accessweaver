@@ -148,6 +148,17 @@ jobs:
         if: ${{ !cancelled() && runner.os == 'Linux' && steps.native_identity.outcome == 'success' && steps.source_identity.outcome == 'success' && steps.module_integrity.outcome == 'success' && steps.known_labels.outcome == 'success' }}
         shell: bash
         run: CGO_ENABLED=1 node scripts/core-test-evidence.cjs race
+      - name: Retain source-known root regression outcomes
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: root-regression-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            build/native-core-evidence/status-unit.json
+            build/native-core-evidence/status-race.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Mutate json-object for thirty seconds
         run: node scripts/parser-fuzz-evidence.cjs json-object
       - name: Mutate profile for thirty seconds
