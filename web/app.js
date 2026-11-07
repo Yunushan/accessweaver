@@ -699,10 +699,10 @@ function closeEditor(force=false) {
 function updateEditorGuidance() {
   const e = state.engines.find(x => x.id === $('p-engine').value);
   if (!e) return;
-  $('engine-guidance').innerHTML = `<div>${icon('info')}<strong>${escapeHTML(e.name)}</strong><a href="${safeSource(e.source)}" target="_blank" rel="noopener noreferrer">${escapeHTML(t('engineDocs'))} ↗</a></div><p>${escapeHTML(engineGuide(e.id))}</p>`;
+  renderMarkup($('engine-guidance'), `<div>${icon('info')}<strong>${escapeHTML(e.name)}</strong><a href="${safeSource(e.source)}" target="_blank" rel="noopener noreferrer">${escapeHTML(t('engineDocs'))} ↗</a></div><p>${escapeHTML(engineGuide(e.id))}</p>`);
   $('p-binary').placeholder = e.executables?.[0] || ({byedpi:'ciadpi',zapret2:'nfqws2',zapret:'nfqws',goodbyedpi:'goodbyedpi.exe',wiresock:'wiresock-client.exe'})[e.id] || e.id;
-  $('rule-capability').textContent = t(e.includes ? 'supportedIncludes' : 'unsupportedIncludes') + ' ' + t(e.excludes ? 'supportedExcludes' : 'unsupportedExcludes');
-  $('domain-count').textContent = splitLines($('p-includes').value).length + ' ' + t('includeCount') + ' · ' + splitLines($('p-excludes').value).length + ' ' + t('excludeCount');
+  setText('rule-capability',t(e.includes ? 'supportedIncludes' : 'unsupportedIncludes') + ' ' + t(e.excludes ? 'supportedExcludes' : 'unsupportedExcludes'));
+  setText('domain-count',splitLines($('p-includes').value).length + ' ' + t('includeCount') + ' · ' + splitLines($('p-excludes').value).length + ' ' + t('excludeCount'));
   $('p-includes').setAttribute('aria-describedby','rule-capability');
   $('p-excludes').setAttribute('aria-describedby','rule-capability');
 }

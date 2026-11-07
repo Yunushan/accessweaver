@@ -1367,3 +1367,29 @@ test('dynamic icons preserve canonical symbol geometry without use instance tree
  assert.ok(count>20);
  for(const name of ['unknown','<img src=x>','constructor','__proto__']){env.context.glyphName=name;const markup=env.run('icon(glyphName)');assert.match(markup,/<svg\b[^>]*aria-hidden="true"/);assert.doesNotMatch(markup,/<use\b|<img\b|constructor|__proto__/);}
 });
+
+test('editor input retains unchanged engine guidance while domain counts stay live',()=>{
+ const env=environment(),writes={guidance:0,capability:0,counts:0};
+ for(const [id,key,field] of [['engine-guidance','innerHTML','guidance'],['rule-capability','textContent','capability'],['domain-count','textContent','counts']]){
+  const node=env.get(id);let value=node[key];Object.defineProperty(node,key,{get:()=>value,set:next=>{writes[field]++;value=next},configurable:true});
+ }
+ env.put('fixture',baseProfile());env.run('showEditor(fixture)');assert.deepEqual(writes,{guidance:1,capability:1,counts:1});
+ const initial=env.get('engine-guidance').innerHTML;
+ for(let i=0;i<20;i++){env.get('p-name').value='Draft '+i;env.run('markDirty()');}
+ assert.deepEqual(writes,{guidance:1,capability:1,counts:1});assert.equal(env.get('engine-guidance').innerHTML,initial);assert.equal(env.run('state.editing.dirty'),true);
+ env.get('p-includes').value='one.example\ntwo.example';env.get('p-excludes').value='excluded.example';env.run('markDirty()');
+ assert.deepEqual(writes,{guidance:1,capability:1,counts:2});assert.equal(env.get('domain-count').textContent,env.run('"2 "+t("includeCount")+" \u00b7 1 "+t("excludeCount")'));
+ assert.equal(env.get('p-includes').getAttribute('aria-describedby'),'rule-capability');assert.equal(env.get('p-excludes').getAttribute('aria-describedby'),'rule-capability');
+ env.run('closeEditor(true);showEditor(fixture)');assert.equal(writes.guidance,1);assert.equal(env.get('p-name').value,baseProfile().name);
+});
+
+test('editor guidance updates for engine, catalog and language changes without caching draft inputs',()=>{
+ const env=environment();env.put('fixture',baseProfile());env.run('showEditor(fixture)');const initial=env.get('engine-guidance').innerHTML;
+ env.get('p-engine').value='wiresock';env.get('p-binary').value='private-draft-binary';env.run('updateEditorGuidance()');
+ assert.notEqual(env.get('engine-guidance').innerHTML,initial);assert.ok(env.get('engine-guidance').innerHTML.includes('WireSock'));assert.equal(env.get('p-binary').placeholder,'wiresock-client.exe');assert.equal(env.get('p-binary').value,'private-draft-binary');
+ assert.equal(env.get('rule-capability').textContent,env.run('t("unsupportedIncludes")+" "+t("unsupportedExcludes")'));
+ env.run('state.engines=state.engines.map(e=>e.id==="wiresock"?{...e,name:"Changed <engine>",source:"https://docs.example/engine?a=1&b=2",executables:["changed-engine"]}:e);updateEditorGuidance()');
+ assert.match(env.get('engine-guidance').innerHTML,/Changed &lt;engine&gt;/);assert.match(env.get('engine-guidance').innerHTML,/href="https:\/\/docs.example\/engine\?a=1&amp;b=2"/);assert.equal(env.get('p-binary').placeholder,'changed-engine');
+ for(const language of ['tr','ru','es','en']){env.context.fixtureLanguage=language;env.run('state.lang=fixtureLanguage;updateEditorGuidance()');assert.ok(env.get('engine-guidance').innerHTML.includes(env.run('escapeHTML(t("engineDocs"))')));assert.ok(env.get('engine-guidance').innerHTML.includes(env.run('escapeHTML(engineGuide("wiresock"))')));assert.equal(env.get('rule-capability').textContent,env.run('t("unsupportedIncludes")+" "+t("unsupportedExcludes")'));assert.equal(env.get('p-binary').value,'private-draft-binary');}
+ env.run('state.engines=state.engines.map(e=>e.id==="wiresock"?{...e,source:"javascript:untrusted"}:e);updateEditorGuidance()');assert.match(env.get('engine-guidance').innerHTML,/href="#"/);assert.doesNotMatch(env.get('engine-guidance').innerHTML,/javascript:/);
+});

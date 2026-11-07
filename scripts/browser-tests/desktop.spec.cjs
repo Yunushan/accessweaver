@@ -474,7 +474,14 @@ test('keyboard focus returns to the same card control after saves and engine cre
  const distant=page.locator('#all-profiles .profile-card-actions [data-profile-id="perf-0255"][data-profile-action="edit"]');
  await distant.focus();await expect(distant).toBeFocused();await expect(distant).toBeInViewport();
  await page.keyboard.press('Enter');await expect(page.locator('#p-id')).toHaveValue('perf-0255');
- await page.locator('#p-name').fill('ZZ distant keyboard fixture');await page.locator('#save-profile').click();
+ const guidance=await page.locator('#engine-guidance a').elementHandle();
+ try{
+  await page.locator('#p-name').fill('ZZ distant keyboard fixture');
+  expect(await guidance.evaluate(link=>link.isConnected&&link===document.querySelector('#engine-guidance a'))).toBe(true);
+  await page.locator('#engine-guidance a').focus();await page.evaluate(()=>updateEditorGuidance());
+  expect(await guidance.evaluate(link=>link.isConnected&&document.activeElement===link)).toBe(true);
+ }finally{await guidance.dispose();}
+ await page.locator('#save-profile').click();
  await expect(page.locator('#editor-modal')).toBeHidden();await expect(distant).toBeFocused();
  await expect(distant).toBeInViewport();
  await page.locator('#profile-search').fill('perf-0255');await expect(cards).toHaveCount(1);
