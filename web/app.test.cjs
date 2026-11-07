@@ -1334,3 +1334,19 @@ test('unchanged dashboard polling preserves status text, control nodes and focus
  env.run('state.runtime={state:"running",engine:"byedpi",profileId:"fixture",pid:321};renderHero()');assert.equal(env.get('hero-status').textContent,env.run('t("running")'));assert.match(env.get('running-engine').textContent,/321/);assert.match(env.get('hero-primary').innerHTML,/#i-stop/);assert.ok(writes>0);
  env.run('state.busy=true;renderHero()');assert.equal(env.get('hero-primary').disabled,true);env.run('state.busy=false;state.runtime.lifecyclePending=true;renderHero()');assert.match(env.get('hero-primary').innerHTML,/#i-alert/);assert.equal(env.get('hero-primary').disabled,true);env.run('state.runtime={state:"stopped"};state.lang="es";renderHero()');assert.equal(env.get('hero-status').textContent,env.run('t("ready")'));assert.equal(env.get('hero-primary').disabled,false);assert.ok(env.get('hero-primary').innerHTML.includes(env.run('t("selectProfile")')));
 });
+
+
+test('engine library retains unchanged controls and reflects platform, catalog and language changes',()=>{
+ const env=environment(),writes={engines:0,platforms:0};let engines='',platforms='';
+ Object.defineProperty(env.get('engines-grid'),'innerHTML',{get:()=>engines,set:value=>{writes.engines++;engines=value},configurable:true});
+ Object.defineProperty(env.get('platform-matrix'),'innerHTML',{get:()=>platforms,set:value=>{writes.platforms++;platforms=value},configurable:true});
+ env.run('state.engines=[{...exampleEngines[0],platforms:["linux"],integration:"managed"}];state.loading=false;state.offline=false;state.platform="linux";renderEngines()');
+ assert.deepEqual(writes,{engines:1,platforms:1});
+ env.run('state.profiles=[];renderEngines();renderEngines()');assert.deepEqual(writes,{engines:1,platforms:1});
+ env.run('state.engines[0].name="Changed engine label";renderEngines()');assert.deepEqual(writes,{engines:2,platforms:1});assert.match(engines,/Changed engine label/);
+ env.run('state.platform="windows";renderEngines()');assert.deepEqual(writes,{engines:3,platforms:1});assert.ok(engines.includes(env.run('t("engineUnsupported")')));assert.doesNotMatch(engines,/class="current-platform"/);
+ env.run('state.offline=true;renderEngines()');assert.equal(writes.engines,4);assert.ok(engines.includes(env.run('t("platformUnknown")')));
+ env.run('state.lang="tr";renderEngines()');assert.deepEqual(writes,{engines:5,platforms:2});assert.ok(platforms.includes(env.run('t("windowsSupport")')));
+ env.run('state.engines=[];renderEngines()');assert.deepEqual(writes,{engines:6,platforms:2});assert.equal(engines,'');
+ env.run('renderEngines()');assert.deepEqual(writes,{engines:6,platforms:2});
+});

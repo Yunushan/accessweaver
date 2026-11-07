@@ -119,6 +119,13 @@ test('private launcher authenticates the UI and removes the credential from its 
     try{await pollStatus();renderHero();renderHero();await Promise.resolve();return {glyphRetained:glyph.isConnected&&button.firstElementChild===glyph,labelRetained:label.isConnected&&button.lastElementChild===label,focused:document.activeElement===button,changes}}finally{observer.disconnect()}
   });
   expect(stable).toEqual({glyphRetained:true,labelRetained:true,focused:true,changes:0});
+  await page.locator('.nav-item[data-view="engines"]').click();
+  const library=await page.evaluate(()=>{
+    const grid=document.getElementById('engines-grid'),matrix=document.getElementById('platform-matrix'),card=grid.firstElementChild,platform=matrix.firstElementChild,control=card.querySelector('[data-engine-create]');
+    control.focus();renderAll();renderAll();
+    return {cardRetained:card.isConnected&&grid.firstElementChild===card,platformRetained:platform.isConnected&&matrix.firstElementChild===platform,focused:document.activeElement===control};
+  });
+  expect(library).toEqual({cardRetained:true,platformRetained:true,focused:true});
 
 });
 

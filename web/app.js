@@ -435,15 +435,15 @@ function renderProfiles() {
 }
 function renderEngines() {
   const focus = rememberFocus(document.activeElement);
-  $('engines-grid').innerHTML = state.engines.map(e => {
+  let replaced = renderMarkup($('engines-grid'),state.engines.map(e => {
     const external = e.integration === 'external' || e.id === 'wireguard';
     const supported = e.platforms.includes(state.platform) && !external;
     const rule = (label,enabled) => `<span class="capability ${enabled ? 'supported' : ''}">${icon(enabled ? 'check' : 'x')}${escapeHTML(t(label))}</span>`;
     return `<article class="engine-card"><div class="engine-card-header"><div><h3>${escapeHTML(e.name)}</h3><span class="engine-kind">${escapeHTML(t(external ? 'externalIntegration' : 'managedIntegration'))}</span></div><span class="engine-type">${icon(e.kind === 'vpn' ? 'shield' : e.kind === 'packet' ? 'layers' : 'globe')}</span></div><p>${escapeHTML(state.lang !== 'en' ? engineGuide(e.id) : e.notes)}</p><div class="platform-pills">${e.platforms.map(p => `<span class="${p === state.platform ? 'current-platform' : ''}">${escapeHTML(platformName(p))}</span>`).join('')}</div><div class="engine-capabilities">${rule('includesLabel',e.includes)}${rule('excludesLabel',e.excludes)}${e.license ? `<span class="license-label">${escapeHTML(e.license)}</span>` : ''}</div><div class="engine-card-foot"><a href="${safeSource(e.source)}" target="_blank" rel="noopener noreferrer">${escapeHTML(t('readDocs'))}</a><button class="text-button" data-engine-create="${escapeHTML(e.id)}">${escapeHTML(t('createForEngine'))} ${icon('plus')}</button></div><span class="engine-platform-status">${escapeHTML(t(external ? 'engineExternal' : supported ? 'engineAvailable' : state.offline ? 'platformUnknown' : 'engineUnsupported'))}</span></article>`;
-  }).join('');
+  }).join(''));
   const platforms = [ ['Windows','desktopCore','windowsSupport'],['Linux','desktopCore','linuxSupport'],['macOS','partialCore','macSupport'],['BSD','partialCore','bsdSupport'],['Android','mobileEditor','androidSupport'],['iOS','mobileEditor','iosSupport'] ];
-  $('platform-matrix').innerHTML = platforms.map(([name,badge,desc]) => `<article><div><h3>${name}</h3><span class="tag tag-neutral">${escapeHTML(t(badge))}</span></div><p>${escapeHTML(t(desc))}</p></article>`).join('');
-  restoreReplacedFocus(focus);
+  replaced = renderMarkup($('platform-matrix'),platforms.map(([name,badge,desc]) => `<article><div><h3>${name}</h3><span class="tag tag-neutral">${escapeHTML(t(badge))}</span></div><p>${escapeHTML(t(desc))}</p></article>`).join('')) || replaced;
+  if (replaced) restoreReplacedFocus(focus);
 }
 function renderAll() { renderHero(); renderProfiles(); renderEngines(); }
 
