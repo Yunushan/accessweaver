@@ -30,7 +30,18 @@ func init() {
 		if argument != "recorded-engine-exit-zero" && argument != "recorded-engine-exit-fail" && argument != "recorded-engine-wait" {
 			continue
 		}
-		if err := os.WriteFile(os.Getenv("ACCESSWEAVER_RECORDED_ENGINE_PID"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+		pidFile := os.Getenv("ACCESSWEAVER_RECORDED_ENGINE_PID")
+		if pidFile == "" {
+			os.Exit(24)
+		}
+		// The output gate observes existence of the final name. Publish only
+		// after WriteFile has completed and closed the full PID record, so a
+		// closed-stream cleanup cannot stop us between create and write.
+		pending := pidFile + ".pending"
+		if err := os.WriteFile(pending, []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+			os.Exit(24)
+		}
+		if err := os.Rename(pending, pidFile); err != nil {
 			os.Exit(24)
 		}
 		switch argument {
