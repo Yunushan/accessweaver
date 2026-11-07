@@ -977,20 +977,27 @@ test('shared API keeps reviewed requests on local routes without redirects', asy
   const {createServer}=require('node:http'),session='p'.repeat(43),assets=new Map();
   const policySource=await fs.readFile(path.join(repo,'internal/api/server.go'),'utf8');
   const policy=policySource.match(/Set\("Content-Security-Policy", "([^"]+)"\)/);
-  expect(policy).not.toBeNull();
+  const referrer=policySource.match(/Set\("Referrer-Policy", "([^"]+)"\)/);
+  expect(policy).not.toBeNull();expect(referrer).not.toBeNull();
   for(const [route,file,type]of [['/','index.html','text/html'],['/app.js','app.js','text/javascript'],['/locales.js','locales.js','text/javascript'],['/system.js','system.js','text/javascript'],['/app.css','app.css','text/css']])assets.set(route,{body:await fs.readFile(path.join(repo,'web',file)),type});
-  let sources=0,targets=0,protocolErrors=0;const sourceCredentials=[],targetCredentials=[];
+  let sources=0,targets=0,protocolErrors=0,originRefusals=0;const sourceCredentials=[],targetCredentials=[];
   const fixture={scope:'synthetic-redirect-body'},encoded=JSON.stringify(fixture);
   const server=createServer((request,response)=>{
-    response.setHeader('Content-Security-Policy',policy[1]);response.setHeader('Cache-Control','no-store');
+    response.setHeader('Content-Security-Policy',policy[1]);response.setHeader('Referrer-Policy',referrer[1]);response.setHeader('Cache-Control','no-store');
     const json=(status,value)=>{response.writeHead(status,{'Content-Type':'application/json'});response.end(JSON.stringify(value))};
     (async()=>{
       const pathname=new URL(request.url,'http://127.0.0.1').pathname,asset=assets.get(pathname);
       if(asset){response.writeHead(200,{'Content-Type':asset.type});response.end(asset.body);return;}
-      if(pathname==='/api/v1/synthetic-privacy-source'||pathname==='/api/v1/synthetic-privacy-target'){
+      const expectedOrigin='http://'+request.headers.host;
+      if(pathname.startsWith('/api/')&&request.headers.origin!==undefined&&request.headers.origin!==expectedOrigin){originRefusals++;request.resume();json(403,{error:'Synthetic origin refused'});return;}
+      if(['/api/v1/synthetic-privacy-source','/api/v1/synthetic-privacy-target','/api/v1/synthetic-privacy-approved'].includes(pathname)){
         let body='';for await(const bytes of request){if(Buffer.byteLength(body)+bytes.length>1024){protocolErrors++;json(413,{});request.destroy();return;}body+=bytes.toString('utf8');}
         if(request.method!=='POST'||body!==encoded){protocolErrors++;json(400,{});return;}
         const credential=request.headers['x-accessweaver-token']===session;
+        if(pathname.endsWith('-approved')){
+          if(!credential){protocolErrors++;json(401,{});return;}
+          json(200,{fixtureAccepted:true,originMatches:request.headers.origin===expectedOrigin,referrerAbsent:request.headers.referer===undefined});return;
+        }
         if(pathname.endsWith('-source')){sources++;sourceCredentials.push(credential);response.writeHead(307,{Location:'/api/v1/synthetic-privacy-target'});response.end();return;}
         targets++;targetCredentials.push(credential);json(200,{fixtureAccepted:true});return;
       }
@@ -1007,6 +1014,15 @@ test('shared API keeps reviewed requests on local routes without redirects', asy
     const address=server.address();expect(address&&typeof address==='object').toBe(true);
     await page.goto('http://127.0.0.1:'+address.port+'/#accessweaver-session='+session);
     await expect(page.locator('#connection-notice')).toBeHidden();
+    // The core refuses an explicitly opaque Origin. Browsers can serialize it
+    // under no-referrer for non-CORS mutations; this control uses only the
+    // fixture's public synthetic credential and leaves the server rule intact.
+    const modeControl=await page.evaluate(async payload=>(await fetch('/api/v1/synthetic-privacy-approved',{
+      method:'POST',mode:'same-origin',headers:{'Content-Type':'application/json','X-AccessWeaver-Token':'p'.repeat(43)},body:JSON.stringify(payload)
+    })).status,fixture);
+    expect([200,403]).toContain(modeControl);expect(originRefusals).toBe(modeControl===403?1:0);
+    const approved=await page.evaluate(payload=>apiRequest('/api/v1/synthetic-privacy-approved','POST',payload),fixture);
+    expect(approved).toEqual({fixtureAccepted:true,originMatches:true,referrerAbsent:true});
     // The control carries no session credential. It proves that this origin/CSP
     // can follow a redirect and replay a POST body to another local API route.
     const control=await page.evaluate(async payload=>(await fetch('/api/v1/synthetic-privacy-source',{
@@ -1030,7 +1046,7 @@ test('shared API keeps reviewed requests on local routes without redirects', asy
     });
     expect(rejected).toEqual({attempted:0,count:4});
     expect((await page.evaluate(()=>apiRequest('/api/v1/runtime'))).state).toBe('stopped');
-    expect(protocolErrors).toBe(0);
+    expect(protocolErrors).toBe(0);expect(originRefusals).toBe(modeControl===403?1:0);
   }finally{
     try{await page.close()}finally{await new Promise((resolve,reject)=>{server.close(error=>error?reject(error):resolve());server.closeAllConnections()})}
   }

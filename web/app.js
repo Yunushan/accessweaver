@@ -266,9 +266,11 @@ async function apiRequest(path, method='GET', data, timeout=12000, externalSigna
   const timer = setTimeout(abort,timeout);
   try {
     ensureActive();
+    // Keep CORS-mode Origin serialization under the core's no-referrer policy.
+    // Local route validation and redirect rejection constrain the destination.
     const response = await fetch(path, {
       method, headers:{...(data !== undefined ? {'Content-Type':'application/json'} : {}),'X-AccessWeaver-Token':state.token},
-      body:data === undefined ? undefined : JSON.stringify(data), cache:'no-store', credentials:'same-origin', mode:'same-origin', redirect:'error', signal:controller.signal
+      body:data === undefined ? undefined : JSON.stringify(data), cache:'no-store', credentials:'same-origin', mode:'cors', redirect:'error', signal:controller.signal
     });
     ensureActive();
     let json;
