@@ -2,7 +2,7 @@ name: Owned application script costs
 
 on:
   push:
-    branches: ['codex/browser-startup-costs']
+    branches: ['codex/browser-startup-costs', 'codex/browser-startup-guard']
     paths-ignore: ['docs/**', 'README.md']
   workflow_dispatch:
 

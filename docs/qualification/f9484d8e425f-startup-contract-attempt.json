@@ -1,0 +1,352 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "f9484d8e425f30a944dadc8917d92b9abaee82a9",
+  "runID": 42427131276,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/42427131276",
+  "runConclusion": "failure",
+  "scope": "Hosted startup diagnostic synthetic-contract attempt",
+  "jobs": [
+    {
+      "id": 128567700798,
+      "name": "Real browser (arm64/firefox)",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify numeric startup and ownership contracts",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Measure full-application script costs",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain fixed numeric startup evidence",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "id": 128567700976,
+      "name": "Real browser (arm64/chromium)",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify numeric startup and ownership contracts",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Measure full-application script costs",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain fixed numeric startup evidence",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "id": 128567700997,
+      "name": "Real browser (amd64/chromium)",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify numeric startup and ownership contracts",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Measure full-application script costs",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain fixed numeric startup evidence",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "id": 128567700998,
+      "name": "Real browser (arm64/webkit)",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify numeric startup and ownership contracts",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Measure full-application script costs",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain fixed numeric startup evidence",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "id": 128567701005,
+      "name": "Real browser (amd64/firefox)",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify numeric startup and ownership contracts",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Measure full-application script costs",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain fixed numeric startup evidence",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "id": 128567701080,
+      "name": "Real browser (amd64/webkit)",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify numeric startup and ownership contracts",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Measure full-application script costs",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Retain fixed numeric startup evidence",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    }
+  ],
+  "diagnosticStepSkippedTargets": 6,
+  "fixedReportsAvailable": 0,
+  "sourceKnownPreconditionMismatch": {
+    "sourceTestSHA256": "4965095ea79b86e567d667e71760962d1646be8e361cd9e746d595fc97766ce1",
+    "finding": "The guard test expected the hosted-opt-in assertion even when the hosted job deliberately enables all opt-ins. With no browser fixture, run() instead rejects at the subsequent required-browser assertion.",
+    "sourceDefectVerified": true,
+    "actualProviderAssertionRead": false,
+    "followupRegression": "Pure VM cases explicitly cover opted-in Linux, non-opted-in Linux and Windows; all reject before any native dependency executes."
+  },
+  "privacy": {
+    "rawLogsRead": false,
+    "rawErrorTextRead": false,
+    "privateArtifactsDownloaded": false
+  },
+  "localSyntheticContractsAfterCorrection": 13,
+  "applicationOrOriginalAcceptanceChanged": false,
+  "qualificationCredit": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0,
+  "limitations": [
+    "Known job-step metadata proves the contract step failed and the UI experiment was skipped on all six targets; no script-cost or performance result is inferred.",
+    "The source defect and its deterministic regression are verified independently; raw provider assertions were not inspected.",
+    "Normal acceptance for this source is tracked separately and remains pending."
+  ]
+}
