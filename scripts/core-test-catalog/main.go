@@ -108,7 +108,11 @@ func build(root string, raw []byte) (catalog, error) {
 	if len(raw) > 8<<20 {
 		return result, errors.New("package input budget")
 	}
-	real, e := filepath.EvalSymlinks(root)
+	requestedRoot, e := filepath.Abs(root)
+	if e != nil {
+		return result, e
+	}
+	real, e := filepath.EvalSymlinks(requestedRoot)
 	if e != nil {
 		return result, e
 	}
@@ -129,9 +133,18 @@ func build(root string, raw []byte) (catalog, error) {
 		if p.ImportPath != module && !strings.HasPrefix(p.ImportPath, module+"/") {
 			return result, errors.New("unexpected package")
 		}
-		if seen[p.ImportPath] || len(result.Packages) >= 128 || !inside(root, p.Dir) {
+		// Compare actual directory spellings on both sides. Windows short names
+		// and directory links may spell the same source root differently. No test
+		// file is opened before canonical package containment is confirmed, even
+		// for a package with no test files.
+		if seen[p.ImportPath] || len(result.Packages) >= 128 || !filepath.IsAbs(p.Dir) {
 			return result, errors.New("package plan differs")
 		}
+		directory, directoryErr := filepath.EvalSymlinks(p.Dir)
+		if directoryErr != nil || !inside(root, directory) {
+			return result, errors.New("package directory differs")
+		}
+		p.Dir = directory
 		seen[p.ImportPath] = true
 		fileNames := append(append([]string{}, p.TestGoFiles...), p.XTestGoFiles...)
 		if len(fileNames) > 512 {

@@ -5,11 +5,17 @@ on:
     paths:
       - 'internal/engine/**'
       - 'internal/fileidentity/**'
+      - 'internal/workflow/**'
+      - 'scripts/core-test-catalog/**'
+      - 'scripts/core-test-evidence*.cjs'
       - '.github/workflows/local-preview-inputs.yml'
   pull_request:
     paths:
       - 'internal/engine/**'
       - 'internal/fileidentity/**'
+      - 'internal/workflow/**'
+      - 'scripts/core-test-catalog/**'
+      - 'scripts/core-test-evidence*.cjs'
       - '.github/workflows/local-preview-inputs.yml'
   workflow_dispatch:
 
