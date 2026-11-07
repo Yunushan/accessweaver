@@ -31,3 +31,8 @@ test('performance readiness tolerates the private launcher and failure projectio
  assert.equal(vm.runInNewContext(predicate,{document}),false);const state={coreAuthenticated:true,offline:false,loading:false,profiles:Array(256)};assert.equal(vm.runInNewContext(predicate,{document,state}),true);assert.equal(vm.runInNewContext(predicate,{document,state:{...state,profiles:Array(257)}}),false);assert.equal(vm.runInNewContext(predicate,{document,state:{...state,loading:true}}),false);
  const secret='PRIVATE_SYNTHETIC';assert.equal(P.classifyFailure({name:'ReferenceError',get message(){throw new Error(secret)},get stack(){throw new Error(secret)}}),'ReferenceError');assert.equal(P.classifyFailure({name:secret}),'Other');assert.equal(P.classifyFailure({get name(){throw new Error(secret)}}),'Other');
 });
+
+test('performance minimum durations survive early fractional timer wakeups without rounding the measurement up',async()=>{
+ let now=0;const delays=[];await P.waitUntil(100,()=>now,async ms=>{delays.push(ms);now+=delays.length===1?99.5:ms});assert.deepEqual(delays,[100,1]);assert.ok(now>=100);assert.equal(Math.floor(now),100);
+ let slept=false;await P.waitUntil(100,()=>100,async()=>{slept=true});assert.equal(slept,false);await assert.rejects(P.waitUntil(Infinity));await assert.rejects(P.waitUntil(100,()=>NaN));let calls=0;await assert.rejects(P.waitUntil(100,()=>++calls===1?10:9,async()=>{}));
+});
