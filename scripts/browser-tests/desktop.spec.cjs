@@ -399,7 +399,7 @@ test('keyboard focus returns to the same card control after saves and engine cre
  // Every card stays in the DOM. Distant content must become usable through
  // focus, scrolling and filtering, including after a save replaces the cards.
  const cards=page.locator('#all-profiles .profile-card');await expect(cards).toHaveCount(256);
- const distant=action(page,'edit','perf-0255');
+ const distant=page.locator('#all-profiles .profile-card-actions [data-profile-id="perf-0255"][data-profile-action="edit"]');
  await distant.focus();await expect(distant).toBeFocused();await expect(distant).toBeInViewport();
  await page.keyboard.press('Enter');await expect(page.locator('#p-id')).toHaveValue('perf-0255');
  await page.locator('#p-name').fill('ZZ distant keyboard fixture');await page.locator('#save-profile').click();
