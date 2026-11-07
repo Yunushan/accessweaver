@@ -47,7 +47,7 @@ func readConfigInputContext(ctx context.Context, path string) ([]byte, error) {
 	if err != nil {
 		return nil, &configInputFailure{cause: errors.Join(err, preparationContextError(ctx))}
 	}
-	if !info.Mode().IsRegular() || info.Size() > configInputLimit {
+	if !info.regular || info.size > configInputLimit {
 		return nil, errConfigInputSize
 	}
 	if err := preparationContextError(ctx); err != nil {

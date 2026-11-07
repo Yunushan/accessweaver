@@ -48,7 +48,7 @@ func binaryForContext(ctx context.Context, p profile.Profile, d Descriptor) (str
 		}
 		if bin == "" {
 			for _, candidate := range installedCandidates(p.Engine) {
-				if info, err := statPreviewInput(candidate); err == nil && info.Mode().IsRegular() {
+				if info, err := statPreviewInput(candidate); err == nil && info.regular {
 					bin = candidate
 					break
 				}
@@ -89,10 +89,10 @@ func binaryForContext(ctx context.Context, p profile.Profile, d Descriptor) (str
 	if err != nil {
 		return "", fmt.Errorf("read executable: %w", err)
 	}
-	if !info.Mode().IsRegular() {
+	if !info.regular {
 		return "", errors.New("binary must be a regular file")
 	}
-	if runtime.GOOS != "windows" && info.Mode().Perm()&0111 == 0 {
+	if runtime.GOOS != "windows" && !info.unixExecutable {
 		return "", errors.New("binary is not executable; check file permissions")
 	}
 	if p.SHA256 != "" {

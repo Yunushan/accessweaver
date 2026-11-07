@@ -8,8 +8,14 @@ import (
 	"os/exec"
 )
 
-func statPreviewInput(path string) (os.FileInfo, error) { return os.Stat(path) }
-func openPreviewInput(path string) (*os.File, error)    { return os.Open(path) }
+func statPreviewInput(path string) (previewInputMetadata, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return previewInputMetadata{}, err
+	}
+	return previewInputMetadata{regular: info.Mode().IsRegular(), size: info.Size(), unixExecutable: info.Mode().Perm()&0111 != 0}, nil
+}
+func openPreviewInput(path string) (*os.File, error) { return os.Open(path) }
 func lookupPreviewExecutable(ctx context.Context, name string) (string, error) {
 	if err := preparationContextError(ctx); err != nil {
 		return "", err

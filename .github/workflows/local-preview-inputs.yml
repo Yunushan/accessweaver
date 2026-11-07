@@ -86,8 +86,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Vet complete root source
         run: go vet ./...
-      - name: Run engine and file identity regression
-        run: go test ./internal/engine ./internal/fileidentity -count=1 -timeout=4m
+      - name: Run complete root regression
+        run: go test ./... -count=1 -timeout=6m
       - name: Qualify native Windows local preview and namespace ownership
         if: runner.os == 'Windows'
         env:
@@ -99,10 +99,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test ./internal/engine -run '^TestWindowsPreviewLocalInputs$' -count=1 -timeout=3m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Run Linux engine and identity race regression
+      - name: Run complete Linux root race regression
         if: runner.os == 'Linux'
         shell: bash
-        run: CGO_ENABLED=1 go test -race ./internal/engine ./internal/fileidentity -count=1 -timeout=4m
+        run: CGO_ENABLED=1 go test -race ./... -count=1 -timeout=6m
       - name: Confirm source unchanged after qualification
         shell: pwsh
         run: |

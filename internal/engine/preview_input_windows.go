@@ -18,23 +18,21 @@ func openPreviewInput(path string) (*os.File, error) {
 	return fileidentity.OpenLocal(path)
 }
 
-func statPreviewInput(path string) (os.FileInfo, error) {
-	file, err := openPreviewInput(path)
+func statPreviewInput(path string) (previewInputMetadata, error) {
+	if !windowsPreviewDrivePath(path) {
+		return previewInputMetadata{}, fileidentity.ErrUnavailable
+	}
+	state, err := fileidentity.FromPath(path, true)
 	if err != nil {
-		return nil, err
+		return previewInputMetadata{}, err
 	}
-	info, statErr := file.Stat()
-	closeErr := file.Close()
-	if statErr != nil || closeErr != nil {
-		return nil, fileidentity.ErrUnavailable
-	}
-	return info, nil
+	return previewInputMetadata{regular: state.Kind == fileidentity.Regular, size: state.Size}, nil
 }
 
 func lookupPreviewExecutable(ctx context.Context, name string) (string, error) {
 	found := searchWindowsPreviewExecutable(ctx, name, filepath.SplitList(os.Getenv("PATH")), func(path string) bool {
 		info, err := statPreviewInput(path)
-		return err == nil && info.Mode().IsRegular()
+		return err == nil && info.regular
 	})
 	if err := preparationContextError(ctx); err != nil {
 		return "", err
