@@ -33,10 +33,14 @@ function verifyBrowserCache(cache,executables,architecture,observe=()=>{}){
  const checked=[];
  for(const name of ['chromium','firefox']){verifyELFFile(cache,executables[name],architecture,name,observe);checked.push(name)}
  const webkit=insideCache(cache,executables.webkit),webkitRoot=path.dirname(webkit);
- // The pinned upstream pw_run.sh selects minibrowser-gtk by default. Inspect
- // WPE too when packaged; never select a different executable as a fallback.
- verifyELFFile(cache,path.join(webkitRoot,'minibrowser-gtk','MiniBrowser'),architecture,'webkit-gtk',observe);checked.push('webkit-gtk');
- const wpe=path.join(webkitRoot,'minibrowser-wpe','MiniBrowser');if(fs.existsSync(wpe)){verifyELFFile(cache,wpe,architecture,'webkit-wpe',observe);checked.push('webkit-wpe')}
+ // The pinned pw_run.sh selects GTK when headed and WPE with --headless.
+ // Each bundled MiniBrowser is a script wrapper; the native ELF is in bin/.
+ // Both exact layouts are required, without fallback to a different launcher.
+ for(const port of ['gtk','wpe']){
+  const bundle=path.join(webkitRoot,'minibrowser-'+port),wrapper=insideCache(cache,path.join(bundle,'MiniBrowser')),fd=fs.openSync(wrapper,'r');
+  try{const before=fs.fstatSync(fd),header=Buffer.alloc(2);assert.equal(fs.readSync(fd,header,0,2,0),2,'WebKit bundle wrapper is incomplete');assert.ok(header[0]===35&&header[1]===33,'WebKit bundle launcher must retain the pinned script layout');const after=fs.fstatSync(fd);assert.ok(before.dev===after.dev&&before.ino===after.ino&&before.size===after.size&&before.mtimeMs===after.mtimeMs,'WebKit wrapper changed during inspection')}finally{fs.closeSync(fd)}
+  verifyELFFile(cache,path.join(bundle,'bin','MiniBrowser'),architecture,'webkit-'+port,observe);checked.push('webkit-'+port);
+ }
  const entries=fs.readdirSync(cache);assert.ok(entries.length<=64,'native browser cache entry budget differs');
  const shells=entries.filter(name=>/^chromium_headless_shell-[0-9]+$/.test(name));assert.ok(shells.length>=1&&shells.length<=4,'native Chromium headless shell is missing or ambiguous');
  for(const folder of shells){verifyELFFile(cache,path.join(cache,folder,architecture==='amd64'?'chrome-headless-shell-linux64':'chrome-headless-shell-linux-arm64','chrome-headless-shell'),architecture,'chromium-headless-shell',observe);checked.push('chromium-headless-shell')}
