@@ -47,7 +47,7 @@ A profile is a versioned JSON object. The Go backend validates schema and field 
 | `sha256` | Optional 64-character hex digest of the executable; checked again before launch |
 | `args` | Up to 128 literal arguments, each at most 4,096 bytes; no shell interpolation |
 | `routing.includeDomains`, `routing.excludeDomains` | Up to 4,096 entries each; supported mappings differ by adapter |
-| `routing.applications` | Reserved; nonempty values block launch |
+| `routing.applications` | Guided application rules for the Windows WireSock adapter; nonempty values block launch for other adapters. See the [engine guide](ENGINES.md) |
 | `probe` | Host/IP, port 1–65,535, TLS switch and timeout 1–60 seconds |
 | `updatedAt` | RFC 3339 timestamp managed by the store on save |
 

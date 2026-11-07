@@ -44,7 +44,7 @@ Tarayıcı paneli otomatik açılır; konsol işlemini açık bırakın. **Hazı
 
 ### Kaynak koddan derleyin
 
-Güncel ve desteklenen bir [Go sürümü](https://go.dev/dl/) kurun (kaynak kod en az Go 1.24 gerektirir):
+Güncel ve desteklenen bir [Go sürümü](https://go.dev/dl/) kurun (kaynak kod en az Go 1.26 gerektirir):
 
 ```bash
 git clone https://github.com/Yunushan/accessweaver.git
@@ -70,7 +70,7 @@ Betikler uygulamayı `bin/` içine derler; üçüncü taraf motor kurmaz veya si
 4. Çalıştırma ön izlemesini inceleyin, hazırlık hatalarını çözün ve hazır olduğunuzda açıkça başlatın.
 5. Uygulama proxy ayarını veya işletim sistemi paket işleme kurulumunu motor rehberine göre ayrıca yapın. Trafiğin istediğiniz yoldan geçtiğini uygulamanın içinden doğrulayın.
 
-ByeDPI başlangıç profili `127.0.0.1:1080` üzerinde dinler. Trafiğin buradan geçmesi için uygulamanın SOCKS ayarı bu adrese yönlendirilmelidir. Paket motorlarının sürücü/firewall kurulumları ayrıca yapılır. Yerleşik tanılama, bilgisayarın normal ağ yolunu kullanır; seçili SOCKS proxy'sini özel olarak test etmez.
+ByeDPI başlangıç profili `127.0.0.1:1080` üzerinde dinler. Trafiğin buradan geçmesi için uygulamanın SOCKS ayarı bu adrese yönlendirilmelidir. Paket motorlarının sürücü/firewall kurulumları ayrıca yapılır. Tanılama varsayılan olarak bilgisayarın normal ağ yolunu kullanır. Bu proxy'yi test etmek için SOCKS5'i ve uç noktasını açıkça seçin; doğrudan bağlantıya geri dönüş yapılmaz. [Tanılama kapsamı ve örnekler](docs/DIAGNOSTICS.md).
 
 ### Komut satırı
 
