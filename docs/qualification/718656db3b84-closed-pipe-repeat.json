@@ -1,0 +1,101 @@
+{
+  "sourceCommit": "718656db3b8440e29c0b53f494d9005bef0c696d",
+  "runID": 42394012322,
+  "scope": "hosted Linux AMD64/ARM64 unit/race closed-standard-stream repetition",
+  "rows": [
+    {
+      "architecture": "amd64",
+      "mode": "unit",
+      "ordinaryCasePasses": 3,
+      "repeatedAttempts": 20,
+      "repeatedCasePasses": 60,
+      "ordinaryPassedChildEvents": 16,
+      "repeatPassedChildEvents": 340,
+      "failedOrSkippedChildEvents": 0,
+      "repeatElapsedMilliseconds": 2350,
+      "providerZIPDigest": "sha256:34e3d7071a9bbff73adaa78cc90546f5783b846d86c0da90d117baff602fd1bc",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "architecture": "amd64",
+      "mode": "race",
+      "ordinaryCasePasses": 3,
+      "repeatedAttempts": 20,
+      "repeatedCasePasses": 60,
+      "ordinaryPassedChildEvents": 16,
+      "repeatPassedChildEvents": 340,
+      "failedOrSkippedChildEvents": 0,
+      "repeatElapsedMilliseconds": 6260,
+      "providerZIPDigest": "sha256:34e3d7071a9bbff73adaa78cc90546f5783b846d86c0da90d117baff602fd1bc",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "architecture": "arm64",
+      "mode": "unit",
+      "ordinaryCasePasses": 3,
+      "repeatedAttempts": 20,
+      "repeatedCasePasses": 60,
+      "ordinaryPassedChildEvents": 16,
+      "repeatPassedChildEvents": 340,
+      "failedOrSkippedChildEvents": 0,
+      "repeatElapsedMilliseconds": 1410,
+      "providerZIPDigest": "sha256:22df9919c52835ddef5b862446663a493c224f703091b0c3f25ec3e14f797ab8",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "architecture": "arm64",
+      "mode": "race",
+      "ordinaryCasePasses": 3,
+      "repeatedAttempts": 20,
+      "repeatedCasePasses": 60,
+      "ordinaryPassedChildEvents": 16,
+      "repeatPassedChildEvents": 340,
+      "failedOrSkippedChildEvents": 0,
+      "repeatElapsedMilliseconds": 4700,
+      "providerZIPDigest": "sha256:22df9919c52835ddef5b862446663a493c224f703091b0c3f25ec3e14f797ab8",
+      "providerZIPDigestVerified": true
+    }
+  ],
+  "repeatedCasePasses": 240,
+  "ordinaryCasePasses": 12,
+  "earlierFailureExplained": false,
+  "productionSignalHandlingChanged": false,
+  "formalGatesPromoted": 0,
+  "schemaVersion": 1,
+  "sourceTree": "ee9f4055a7691136978c424bda1bd59a0f751bad",
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/42394012322",
+  "componentScopeQualified": true,
+  "wholeWorkflowQualified": false,
+  "fullProductionQualified": false,
+  "earlierFailure": {
+    "sourceCommit": "f3f15309e64db4ec3b7b5bc94f5b679fe183f676",
+    "runID": 42389392931,
+    "jobID": 128453562858,
+    "caseOrAssertionKnown": false,
+    "explainedOrFixedByThisPass": false
+  },
+  "sourceSHA256": {
+    "cmd/accessweaver/audit_run_pipe_linux_test.go": "10dfea0acca6d0b135799d6715b540efc7860cd4d4b6b5a5a05981a76397ac89",
+    "scripts/core-test-evidence.cjs": "811a75b623b4bf17ea78db949ecf80f719330825fec029eccfa4355df118a57b",
+    "scripts/core-test-evidence.test.cjs": "22593b13fc8e37b8447e5e838f330b5c96e57510394bdd9038e1c3138796070c",
+    ".github/workflows/parser-fuzz.yml": "741b7d64f9655783931b2c7f714d4559d0fd5d6ef31b1e367ab3a78e935d30ff"
+  },
+  "localValidation": {
+    "syntheticPrivacyContractsPassed": 10,
+    "linuxTestPackagesCompiledOnly": 2,
+    "nativeBinariesExecuted": false
+  },
+  "privacy": {
+    "rawLogsRead": false,
+    "rawOutputRetained": false,
+    "privateStateRead": false,
+    "fixedCasePhaseAllowlistOnly": true
+  },
+  "limitations": [
+    "This component verifies fixed root/child counts from source-declared allowlists, not an independently complete Go AST coverage catalogue.",
+    "The earlier intermittent closed-stream failure remains unexplained. Joining the worker on early test exits is test-fixture cleanup hardening, not an established fix for that failure.",
+    "The new diagnostic annotations are emitted only on a failure; passing runs do not exercise provider annotation retrieval.",
+    "The twenty repetitions retain all assertions, real descriptors, owned inert children, 20-second worker deadlines and full-suite/job ceilings.",
+    "Installed products, native assistive technology, long working-day soak, vendor traffic, signatures and whole readiness gates remain separate."
+  ]
+}
