@@ -130,27 +130,39 @@ test('private launcher authenticates the UI and removes the credential from its 
   const geometry=await page.evaluate(()=>{
     const host=document.createElement('div'),root=document.documentElement,theme=root.dataset.theme;
     host.setAttribute('aria-hidden','true');host.style.cssText='position:fixed;left:-10000px;top:0;pointer-events:none';document.body.appendChild(host);
-    const glyphs=Array.from(document.querySelectorAll('.icon-library symbol')),rows=[];let checked=0,invalid=0;
+    const glyphs=Array.from(document.querySelectorAll('.icon-library symbol')),rows=[];let checked=0,invalid=0,scaleMismatchDetected=false,strokeMismatchDetected=false,colorMismatchDetected=false;
     try{
       for(const color of ['dark','light']){root.dataset.theme=color;
         for(let glyph=0;glyph<glyphs.length;glyph++)for(const size of [15,18,33]){const symbol=glyphs[glyph];
           const probe=document.createElement('div');probe.innerHTML=icon(symbol.id.slice(2))+'<svg aria-hidden="true"><use href="#'+symbol.id+'"></use></svg>';host.appendChild(probe);
           const [direct,reference]=probe.children;for(const svg of [direct,reference]){svg.style.width=size+'px';svg.style.height=size+'px';}
           const normalized=(nodes,svg)=>{const origin=svg.getBoundingClientRect(),bounds=nodes.map(node=>node.getBoundingClientRect());return [Math.min(...bounds.map(r=>r.left))-origin.left,Math.min(...bounds.map(r=>r.top))-origin.top,Math.max(...bounds.map(r=>r.right))-origin.left,Math.max(...bounds.map(r=>r.bottom))-origin.top]};
-          const shapes=Array.from(direct.querySelectorAll('path,rect,circle,line,polyline,polygon,ellipse')),a=normalized(shapes,direct),b=normalized([reference.querySelector('use')],reference),left=getComputedStyle(direct),right=getComputedStyle(reference);
-          const properties=['stroke','strokeWidth','fill','strokeLinecap','strokeLinejoin','strokeMiterlimit','strokeDasharray','strokeDashoffset','opacity','vectorEffect'],styleMask=properties.reduce((mask,key,i)=>mask|(left[key]!==right[key]?1<<i:0),0);
+          const shapes=Array.from(direct.querySelectorAll('path,rect,circle,line,polyline,polygon,ellipse')),a=normalized(shapes,direct),b=normalized([reference.querySelector('use')],reference);
+          const properties=['stroke','strokeWidth','fill','strokeLinecap','strokeLinejoin','strokeMiterlimit','strokeDasharray','strokeDashoffset','opacity','vectorEffect'],styleDifference=()=>{const left=getComputedStyle(direct),right=getComputedStyle(reference);return properties.reduce((mask,key,i)=>mask|(left[key]!==right[key]?1<<i:0),0)},styleMask=styleDifference();
           const projected=values=>values.map(n=>Number.isFinite(n)&&Math.abs(n)<=65536?n:null);
           const fillBounds=(nodes,svg,stroke=false)=>{try{const origin=svg.getBoundingClientRect(),points=[];for(const node of nodes){const box=node.getBBox({fill:true,stroke,markers:stroke,clipped:false}),m=node.getScreenCTM();if(!m)return [null,null,null,null];for(const x of [box.x,box.x+box.width])for(const y of [box.y,box.y+box.height])points.push({x:m.a*x+m.c*y+m.e,y:m.b*x+m.d*y+m.f})}return projected([Math.min(...points.map(p=>p.x))-origin.left,Math.min(...points.map(p=>p.y))-origin.top,Math.max(...points.map(p=>p.x))-origin.left,Math.max(...points.map(p=>p.y))-origin.top])}catch{return [null,null,null,null]}};
-          const hasUse=direct.querySelector('use')!==null;rows.push({glyph,theme:color,size,shapeCount:shapes.length,hasUse,styleMask,direct:projected(a),reference:projected(b),directFill:fillBounds(shapes,direct),referenceFill:fillBounds([reference.querySelector('use')],reference),directStroke:fillBounds(shapes,direct,true),referenceStroke:fillBounds([reference.querySelector('use')],reference,true)});
-          if(!shapes.length||hasUse||a.some((n,i)=>!Number.isFinite(n)||Math.abs(n-b[i])>.05)||(styleMask&31)!==0)invalid++;
+          const hasUse=direct.querySelector('use')!==null,row={glyph,theme:color,size,shapeCount:shapes.length,hasUse,styleMask,direct:projected(a),reference:projected(b),directFill:fillBounds(shapes,direct),referenceFill:fillBounds([reference.querySelector('use')],reference),directStroke:fillBounds(shapes,direct,true),referenceStroke:fillBounds([reference.querySelector('use')],reference,true)};rows.push(row);
+          const differs=(x,y)=>x.some((n,i)=>n===null||y[i]===null||Math.abs(n-y[i])>.05);
+          if(!shapes.length||hasUse||differs(row.directFill,row.referenceFill)||differs(row.directStroke,row.referenceStroke)||styleMask!==0)invalid++;
+          if(glyph===0&&color==='dark'&&size===18){
+            const viewBox=direct.getAttribute('viewBox'),width=direct.style.strokeWidth,stroke=direct.style.stroke;
+            direct.setAttribute('viewBox','0 0 48 48');const scaled=fillBounds(shapes,direct);scaleMismatchDetected=scaled.every(Number.isFinite)&&row.referenceFill.every(Number.isFinite)&&differs(scaled,row.referenceFill);if(viewBox===null)direct.removeAttribute('viewBox');else direct.setAttribute('viewBox',viewBox);
+            direct.style.strokeWidth='8px';strokeMismatchDetected=(styleDifference()&2)!==0;direct.style.strokeWidth=width;
+            direct.style.stroke='rgb(1, 2, 3)';colorMismatchDetected=(styleDifference()&1)!==0;direct.style.stroke=stroke;
+          }
           checked++;probe.remove();
         }
       }
-      return {checked,invalid,glyphCount:glyphs.length,rows};
+      return {checked,invalid,glyphCount:glyphs.length,rows,scaleMismatchDetected,strokeMismatchDetected,colorMismatchDetected};
     }finally{host.remove();if(theme===undefined)delete root.dataset.theme;else root.dataset.theme=theme;}
   });
-  if(process.env.GITHUB_ACTIONS==='true')await writeSVGGeometryReport(repo,core.build.commit,core.binarySha256,testInfo.project.name,process.env.ACCESSWEAVER_EXPECT_GOARCH,{glyphCount:geometry.glyphCount,rows:geometry.rows});
-  expect(geometry.checked).toBeGreaterThan(120);expect(geometry.invalid).toBe(0);
+  if(process.env.GITHUB_ACTIONS==='true'){const coverage=await writeSVGGeometryReport(repo,core.build.commit,core.binarySha256,testInfo.project.name,process.env.ACCESSWEAVER_EXPECT_GOARCH,{glyphCount:geometry.glyphCount,rows:geometry.rows});expect(coverage.complete).toBe(true);expect(geometry.glyphCount).toBe(coverage.expectedGlyphCount);}
+  expect(geometry.glyphCount).toBeGreaterThan(20);
+  expect(geometry.checked).toBe(geometry.glyphCount*6);
+  expect(geometry.invalid).toBe(0);
+  expect(geometry.scaleMismatchDetected).toBe(true);
+  expect(geometry.strokeMismatchDetected).toBe(true);
+  expect(geometry.colorMismatchDetected).toBe(true);
 
 });
 

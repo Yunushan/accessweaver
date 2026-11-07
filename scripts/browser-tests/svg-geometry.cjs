@@ -20,5 +20,6 @@ async function writeReport(repo,source,binarySHA256,project,architecture,value){
  const bytes=await boundedHTML(path.join(repo,'web/index.html'));assert.equal(createHash('sha256').update(bytes).digest('hex'),sourceSHA256['web/index.html']);const expectedGlyphCount=[...bytes.toString('utf8').matchAll(/<symbol\b[^>]*\bid="i-[^"]+"/g)].length;assert.ok(expectedGlyphCount>0&&expectedGlyphCount<=64);
  const report={schemaVersion:1,sourceCommit:source,sourceSHA256,binarySHA256,project,architecture,scope:'owned-source-svg-geometry',expectedGlyphCount,data,complete:data.glyphCount===expectedGlyphCount&&data.rows.length===expectedGlyphCount*6,productionQualificationComplete:false};const encoded=JSON.stringify(report)+'\n';assert.ok(Buffer.byteLength(encoded)<=131072);
  const parent=path.join(repo,'build/svg-geometry');await fs.mkdir(parent,{recursive:true,mode:0o700});const info=await fs.lstat(parent),real=await fs.realpath(parent);assert.ok(info.isDirectory()&&!info.isSymbolicLink()&&path.dirname(real)===await fs.realpath(path.join(repo,'build')));const fd=await fs.open(path.join(real,'status.json'),'wx',0o600);try{await fd.writeFile(encoded,'utf8')}finally{await fd.close()}
+ return {expectedGlyphCount,complete:report.complete};
 }
 module.exports={sizes,themes,sources,fields,validate,writeReport};
