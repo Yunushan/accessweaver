@@ -408,7 +408,7 @@ test('keyboard focus returns to the same card control after saves and engine cre
  await page.locator('#profile-search').fill('perf-0255');await expect(cards).toHaveCount(1);
  await expect(page.locator('#all-profiles .profile-title')).toHaveText('ZZ distant keyboard fixture');
  await page.locator('#profile-search').fill('');await expect(cards).toHaveCount(256);
- await cards.last().scrollIntoViewIfNeeded();await expect(distant).toBeInViewport();
+ await distant.locator('xpath=ancestor::article').scrollIntoViewIfNeeded();await expect(distant).toBeInViewport();
  await distant.focus();await page.keyboard.press('Tab');await expect(action(page,'duplicate','perf-0255')).toBeFocused();
  await page.locator('#new-profile').scrollIntoViewIfNeeded();await create(page,'keyboard-save');
  const edit=page.locator('#all-profiles .profile-card-actions [data-profile-action="edit"][data-profile-id="keyboard-save"]');
