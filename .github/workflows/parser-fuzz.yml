@@ -3,6 +3,7 @@ name: Native parser mutation qualification
 on:
   push:
     paths:
+      - 'cmd/**'
       - 'internal/**'
       - 'web/**'
       - 'scripts/browser-tests/**'
@@ -18,6 +19,7 @@ on:
       - 'scripts/check-native-environment*.cjs'
   pull_request:
     paths:
+      - 'cmd/**'
       - 'internal/**'
       - 'web/**'
       - 'scripts/browser-tests/**'
@@ -81,6 +83,7 @@ jobs:
       CORE_PREVIEW_ROOT_LAYOUT: '1'
       CORE_MODE_REPORTS: '1'
       CORE_FAILURE_ANNOTATIONS: '1'
+      ACCESSWEAVER_CLOSED_PIPE_REPEAT: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

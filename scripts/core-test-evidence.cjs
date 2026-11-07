@@ -4,10 +4,17 @@
 const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),{createHash}=require('node:crypto'),{spawn,execFileSync}=require('node:child_process');
 const MODULE='github.com/Yunushan/accessweaver',modes=['unit','race','vet'],stages=['identity','catalog','execute','source','complete'];
 const sources=['.github/workflows/native-core.yml','scripts/core-test-evidence.cjs','scripts/core-test-catalog/main.go','scripts/core-test-catalog/main_test.go','go.mod','go.sum'];
+// Only these public, fixed CLI cases/phases may appear in supplemental
+// annotations. Dynamic test labels and Output payloads are never retained.
+const closedPipePackage=MODULE+'/cmd/accessweaver',closedPipeRoot='TestRecordedEngineClosedStdoutAndStderrReapBeforeScopeRestoration',closedPipeRepeat='TestRecordedEngineClosedStandardPipeRepeated';
+const closedPipePhases=['intent-checkpoint','worker-completion','scope-cleanup','sigpipe-restoration','journal-integrity'];
+const closedPipeCases=['intent','accepted','notice'];
+const closedPipeLabels=new Set();
+for(const root of [closedPipeRoot,...Array.from({length:20},(_,i)=>closedPipeRepeat+'/attempt-'+(i+1))])for(const mode of closedPipeCases){closedPipeLabels.add(root+'/'+mode);for(const phase of closedPipePhases)if(phase!=='intent-checkpoint'||mode==='accepted')closedPipeLabels.add(root+'/'+mode+'/'+phase)}
 function exact(value,keys){assert.deepEqual(Object.keys(value).sort(),[...keys].sort(),'Core evidence schema differs')}
 function planValue(plan){exact(plan,['schemaVersion','module','packages']);assert.ok(plan.schemaVersion===1&&plan.module===MODULE&&Array.isArray(plan.packages)&&plan.packages.length>0&&plan.packages.length<=128);let roots=0;const packages=new Set();for(const p of plan.packages){exact(p,['path','tests']);assert.ok(typeof p.path==='string'&&(p.path===MODULE||p.path.startsWith(MODULE+'/'))&&/^[A-Za-z0-9_./-]+$/.test(p.path)&&p.path.length<=256&&!packages.has(p.path));packages.add(p.path);assert.ok(Array.isArray(p.tests)&&new Set(p.tests).size===p.tests.length);for(const name of p.tests)assert.ok(typeof name==='string'&&/^(Test|Fuzz|Example)[\p{L}\p{N}_]*$/u.test(name)&&name.length<=256);roots+=p.tests.length}assert.ok(roots<=20000)}
 class Tracker{
- constructor(plan){planValue(plan);this.unknown=0;this.overflow=false;this.discardedOutputEvents=0;this.buildFailures=0;this.packages=plan.packages.map(p=>({path:p.path,status:'not-run',elapsedMilliseconds:0,tests:p.tests.map(name=>({name,status:'not-run',attempts:0,elapsedMilliseconds:0,childPassed:0,childFailed:0,childSkipped:0}))}));}
+ constructor(plan){planValue(plan);this.closedPipeFailures=new Set();this.unknown=0;this.overflow=false;this.discardedOutputEvents=0;this.buildFailures=0;this.packages=plan.packages.map(p=>({path:p.path,status:'not-run',elapsedMilliseconds:0,tests:p.tests.map(name=>({name,status:'not-run',attempts:0,elapsedMilliseconds:0,childPassed:0,childFailed:0,childSkipped:0}))}));}
  increment(key){if(this[key]>=10000000)this.overflow=true;else this[key]++}
  event(event){
   const action=event?.Action;if(action==='output'||action==='build-output'){this.increment('discardedOutputEvents');return}if(action==='build-start')return;if(action==='build-fail'){this.increment('buildFailures');return}
@@ -15,7 +22,7 @@ class Tracker{
   const p=this.packages.find(p=>p.path===event.Package);if(!p){this.increment('unknown');return}
   if(event.Test!==undefined&&event.Test!==''){
    if(typeof event.Test!=='string'||event.Test.length>65536){this.increment('unknown');return}const slash=event.Test.indexOf('/'),root=slash<0?event.Test:event.Test.slice(0,slash),t=p.tests.find(t=>t.name===root);if(!t){this.increment('unknown');return}
-   if(slash>=0){if(['pass','fail','skip'].includes(action)){const key={pass:'childPassed',fail:'childFailed',skip:'childSkipped'}[action];if(t[key]>=10000000)this.overflow=true;else t[key]++}return}
+   if(slash>=0){if(action==='fail'&&p.path===closedPipePackage&&closedPipeLabels.has(event.Test)&&this.closedPipeFailures.size<10)this.closedPipeFailures.add(event.Test);if(['pass','fail','skip'].includes(action)){const key={pass:'childPassed',fail:'childFailed',skip:'childSkipped'}[action];if(t[key]>=10000000)this.overflow=true;else t[key]++}return}
    if(action==='run'){if(t.attempts>=16){this.overflow=true;return}t.attempts++;t.status='running'}
    if(['pass','fail','skip'].includes(action)){if(['passed','failed','skipped'].includes(t.status)){this.increment('unknown');return}t.status={pass:'passed',fail:'failed',skip:'skipped'}[action];t.elapsedMilliseconds=elapsed(event.Elapsed)}
   }else{
@@ -40,6 +47,7 @@ function failureAnnotations(plan,projected){
  }
  return labels;
 }
+function closedPipeFailureAnnotations(tracker){return [...tracker.closedPipeFailures].filter(label=>closedPipeLabels.has(label)).map(label=>closedPipePackage+'#'+label)}
 async function run(repo,mode,tracker){
  const args=testArguments(mode,process.env.CORE_PREVIEW_ROOT_LAYOUT==='1'),windows=process.platform==='win32';
  return new Promise(resolve=>{const child=spawn('go',args,{cwd:repo,env:{...process.env,GOTOOLCHAIN:'local'},stdio:['ignore',mode==='vet'?'ignore':'pipe','ignore'],detached:!windows,windowsHide:true});let pending=Buffer.alloc(0),bytes=0,failed=false,forced=false,closed=false,killTimer;
@@ -64,6 +72,6 @@ async function main(){
  let stage='catalog',tracker=null,plan=null,execution={exitCode:null,streamValid:false,bytes:0},stable=false;
  try{const listed=command(repo,['go','list',...(mode==='race'?['-race']:[]),'-json','./...']);plan=JSON.parse(execFileSync('go',['run','./scripts/core-test-catalog','-root',repo],{cwd:repo,input:listed,encoding:'utf8',maxBuffer:8<<20,stdio:['pipe','pipe','ignore'],timeout:180000}));tracker=new Tracker(plan);stage='execute';execution=await run(repo,mode,tracker);stage='source';const after=identity(repo);stable=before.source===after.source&&before.tree===after.tree;assert.ok(stable);stage='complete'}catch{}
  const projected=tracker?tracker.value(mode,execution.exitCode):{unknownEvents:0,overflow:false,discardedOutputEvents:0,buildFailures:0,packages:[],outcome:'failed'},sourceSHA256={};for(const name of sources)sourceSHA256[name]=await boundedHash(path.join(repo,name));const outcome=stage==='complete'&&stable&&execution.streamValid&&projected.outcome==='passed'?'passed':'failed';
- const data={schemaVersion:1,sourceCommit:before.source,sourceTree:before.tree,sourceSHA256,platform,architecture:arch,go:'go1.27.3',mode,stage,exitCode:execution.exitCode,streamValid:execution.streamValid,sourceStable:stable,inputBytes:execution.bytes,...projected,outcome,productionQualificationComplete:false};await writeReport(repo,data,process.env.CORE_MODE_REPORTS==='1'?'status-'+mode+'.json':'status.json');console.log(JSON.stringify({mode,stage,outcome,packages:data.packages.length,unknownEvents:data.unknownEvents}));if(outcome!=='passed'){if(process.env.CORE_FAILURE_ANNOTATIONS==='1'&&plan&&stable)for(const label of failureAnnotations(plan,projected))console.log('::error title=Source-known root failure::'+label);process.exitCode=1;}
+ const data={schemaVersion:1,sourceCommit:before.source,sourceTree:before.tree,sourceSHA256,platform,architecture:arch,go:'go1.27.3',mode,stage,exitCode:execution.exitCode,streamValid:execution.streamValid,sourceStable:stable,inputBytes:execution.bytes,...projected,outcome,productionQualificationComplete:false};await writeReport(repo,data,process.env.CORE_MODE_REPORTS==='1'?'status-'+mode+'.json':'status.json');console.log(JSON.stringify({mode,stage,outcome,packages:data.packages.length,unknownEvents:data.unknownEvents}));if(outcome!=='passed'){if(process.env.CORE_FAILURE_ANNOTATIONS==='1'&&plan&&stable){for(const label of failureAnnotations(plan,projected))console.log('::error title=Source-known root failure::'+label);for(const label of closedPipeFailureAnnotations(tracker))console.log('::error title=Source-known closed-pipe failure::'+label)}process.exitCode=1;}
 }
-module.exports={Tracker,planValue,writeReport,sources,modes,stages,testArguments,signalOwnedChild,failureAnnotations};if(require.main===module)main().catch(()=>{console.error('Core qualification evidence failed');process.exitCode=1});
+module.exports={Tracker,planValue,writeReport,sources,modes,stages,testArguments,signalOwnedChild,failureAnnotations,closedPipeFailureAnnotations};if(require.main===module)main().catch(()=>{console.error('Core qualification evidence failed');process.exitCode=1});

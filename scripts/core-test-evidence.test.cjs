@@ -43,3 +43,23 @@ test('Windows unit reports support distinct exclusive names and reject unsafe ou
  await assert.rejects(C.writeReport(root,data,'../PRIVATE_SYNTHETIC'));await C.writeReport(root,data,'status-unit.json');const written=JSON.parse(await fs.readFile(path.join(root,'build/native-core-evidence/status-unit.json'),'utf8'));assert.equal(written.platform,'windows');assert.equal(written.outcome,'passed');
  await assert.rejects(C.writeReport(root,data,'status-unit.json'),{code:'EEXIST'});await assert.rejects(C.writeReport(root,{...data,mode:'race'},'status-race.json'));
 });
+
+
+test('closed-pipe annotations retain only exact fixed public cases/phases and never inspect output',()=>{
+ const pkg=MODULE+'/cmd/accessweaver',root='TestRecordedEngineClosedStdoutAndStderrReapBeforeScopeRestoration',repeat='TestRecordedEngineClosedStandardPipeRepeated';
+ const p={schemaVersion:1,module:MODULE,packages:[{path:pkg,tests:[root,repeat]},{path:MODULE+'/internal/other',tests:[root]}]},t=new C.Tracker(p);
+ const output={get Output(){throw new Error('PRIVATE_SYNTHETIC')}};
+ t.event({Action:'output',get Test(){throw new Error('PRIVATE_SYNTHETIC')},get Output(){throw new Error('PRIVATE_SYNTHETIC')}});
+ for(const label of [root+'/accepted/scope-cleanup',repeat+'/attempt-20/notice/sigpipe-restoration'])t.event(Object.assign(Object.create(output),{Action:'fail',Package:pkg,Test:label}));
+ assert.deepEqual(C.closedPipeFailureAnnotations(t),[pkg+'#'+root+'/accepted/scope-cleanup',pkg+'#'+repeat+'/attempt-20/notice/sigpipe-restoration']);
+ for(const label of [root+'/PRIVATE_SYNTHETIC',root+'/intent/intent-checkpoint',root+'/accepted/scope-cleanup/PRIVATE_SYNTHETIC',repeat+'/attempt-21/notice/sigpipe-restoration'])t.event(Object.assign(Object.create(output),{Action:'fail',Package:pkg,Test:label}));
+ t.event({Action:'fail',Package:MODULE+'/internal/other',Test:root+'/accepted/scope-cleanup'});t.event({Action:'pass',Package:pkg,Test:root+'/notice/worker-completion'});
+ assert.equal(C.closedPipeFailureAnnotations(t).length,2);assert.ok(!JSON.stringify(C.closedPipeFailureAnnotations(t)).includes('PRIVATE_SYNTHETIC'));assert.ok(!JSON.stringify(t.value('unit',1)).includes('scope-cleanup'));
+});
+
+test('fixed closed-pipe diagnostics cap labels and preserve ordinary root failure counts',()=>{
+ const pkg=MODULE+'/cmd/accessweaver',root='TestRecordedEngineClosedStandardPipeRepeated',p={schemaVersion:1,module:MODULE,packages:[{path:pkg,tests:[root]}]},t=new C.Tracker(p);
+ t.event({Action:'start',Package:pkg});t.event({Action:'run',Package:pkg,Test:root});
+ for(let n=1;n<=20;n++)t.event({Action:'fail',Package:pkg,Test:root+'/attempt-'+n+'/notice/scope-cleanup'});
+ t.event({Action:'fail',Package:pkg,Test:root});t.event({Action:'fail',Package:pkg});const v=t.value('unit',1);assert.equal(v.outcome,'failed');assert.equal(v.packages[0].tests[0].childFailed,20);assert.equal(C.closedPipeFailureAnnotations(t).length,10);assert.deepEqual(C.failureAnnotations(p,v),[pkg+'#'+root]);
+});
