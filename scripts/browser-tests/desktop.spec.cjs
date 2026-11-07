@@ -32,7 +32,7 @@ const test = base.test.extend({
     const exited = () => !child || child.exitCode!==null || child.signalCode!==null;
     try {
       await fs.mkdir(cache, {mode:0o700});
-      if(testInfo.title===performanceCaseName)await seedPerformanceProfiles(home);
+      if(testInfo.title===performanceCaseName||testInfo.title==='keyboard focus returns to the same card control after saves and engine creation')await seedPerformanceProfiles(home);
       const launchStarted=performance.now();
       child = spawn(binary, ['ui'], {windowsHide:true, stdio:['ignore','pipe','pipe'], env:{...process.env,
         ACCESSWEAVER_HOME:path.join(home,'state'), ACCESSWEAVER_NO_BROWSER:'1', XDG_CACHE_HOME:cache, LOCALAPPDATA:cache}});
@@ -395,7 +395,22 @@ for(const language of ['en','tr','ru','es'])test(`320 CSS pixel reflow includes 
 
 
 test('keyboard focus returns to the same card control after saves and engine creation',async({page,core})=>{
- await open(page,core);await create(page,'keyboard-save');
+ await open(page,core);await profiles(page);
+ // Every card stays in the DOM. Distant content must become usable through
+ // focus, scrolling and filtering, including after a save replaces the cards.
+ const cards=page.locator('#all-profiles .profile-card');await expect(cards).toHaveCount(256);
+ const distant=action(page,'edit','perf-0255');
+ await distant.focus();await expect(distant).toBeFocused();await expect(distant).toBeInViewport();
+ await page.keyboard.press('Enter');await expect(page.locator('#p-id')).toHaveValue('perf-0255');
+ await page.locator('#p-name').fill('ZZ distant keyboard fixture');await page.locator('#save-profile').click();
+ await expect(page.locator('#editor-modal')).toBeHidden();await expect(distant).toBeFocused();
+ await expect(distant).toBeInViewport();
+ await page.locator('#profile-search').fill('perf-0255');await expect(cards).toHaveCount(1);
+ await expect(page.locator('#all-profiles .profile-title')).toHaveText('ZZ distant keyboard fixture');
+ await page.locator('#profile-search').fill('');await expect(cards).toHaveCount(256);
+ await cards.last().scrollIntoViewIfNeeded();await expect(distant).toBeInViewport();
+ await distant.focus();await page.keyboard.press('Tab');await expect(action(page,'duplicate','perf-0255')).toBeFocused();
+ await page.locator('#new-profile').scrollIntoViewIfNeeded();await create(page,'keyboard-save');
  const edit=page.locator('#all-profiles .profile-card-actions [data-profile-action="edit"][data-profile-id="keyboard-save"]');
  await edit.click();await page.locator('#p-name').fill('Saved keyboard fixture');await page.locator('#save-profile').click();
  await expect(page.locator('#editor-modal')).toBeHidden();await expect(edit).toBeFocused();
