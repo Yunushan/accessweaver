@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/Yunushan/accessweaver/internal/jsoninput"
 )
 
 const SchemaVersion = 1
@@ -63,14 +65,8 @@ func Decode(r io.Reader) (Profile, error) {
 	if len(data) > 1<<20 {
 		return p, errors.New("profile exceeds 1 MiB")
 	}
-	dec := json.NewDecoder(strings.NewReader(string(data)))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&p); err != nil {
+	if err := jsoninput.Decode(data, &p); err != nil {
 		return p, err
-	}
-	var rest any
-	if err := dec.Decode(&rest); !errors.Is(err, io.EOF) {
-		return p, errors.New("JSON must contain exactly one object")
 	}
 	return p, p.Validate()
 }

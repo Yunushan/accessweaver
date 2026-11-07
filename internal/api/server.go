@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"net"
@@ -23,6 +22,7 @@ import (
 	"github.com/Yunushan/accessweaver/internal/diagnostics"
 	"github.com/Yunushan/accessweaver/internal/engine"
 	"github.com/Yunushan/accessweaver/internal/filelock"
+	"github.com/Yunushan/accessweaver/internal/jsoninput"
 	"github.com/Yunushan/accessweaver/internal/managed"
 	"github.com/Yunushan/accessweaver/internal/profile"
 	"github.com/Yunushan/accessweaver/internal/uiaccess"
@@ -367,17 +367,11 @@ func (s *Server) Handler() http.Handler {
 }
 func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, maxAPIRequestBodyBytes)
-	d := json.NewDecoder(r.Body)
-	d.DisallowUnknownFields()
-	if err := d.Decode(v); err != nil {
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
 		return err
 	}
-	var trailing any
-	if err := d.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return fmt.Errorf("expected one JSON object")
-	}
-
-	return nil
+	return jsoninput.Decode(data, v)
 }
 
 // serverShutdownState publishes its result before done closes. Pending is only
