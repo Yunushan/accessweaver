@@ -63,3 +63,15 @@ test('fixed closed-pipe diagnostics cap labels and preserve ordinary root failur
  for(let n=1;n<=20;n++)t.event({Action:'fail',Package:pkg,Test:root+'/attempt-'+n+'/notice/scope-cleanup'});
  t.event({Action:'fail',Package:pkg,Test:root});t.event({Action:'fail',Package:pkg});const v=t.value('unit',1);assert.equal(v.outcome,'failed');assert.equal(v.packages[0].tests[0].childFailed,20);assert.equal(C.closedPipeFailureAnnotations(t).length,10);assert.deepEqual(C.failureAnnotations(p,v),[pkg+'#'+root]);
 });
+
+
+test('fixed worker stage projection retains no file contents or arbitrary suffixes',()=>{
+ const pkg=MODULE+'/cmd/accessweaver',root='TestRecordedEngineClosedStandardPipeRepeated',p={schemaVersion:1,module:MODULE,packages:[{path:pkg,tests:[root]}]},t=new C.Tracker(p),base=root+'/attempt-20/accepted/scope-cleanup/';
+ t.event({Action:'fail',Package:pkg,Test:base+'worker-reaped',get Output(){throw new Error('PRIVATE_SYNTHETIC')}});t.event({Action:'fail',Package:pkg,Test:base+'PRIVATE_SYNTHETIC'});t.event({Action:'fail',Package:pkg,Test:base+'worker-reaped/PRIVATE_SYNTHETIC'});assert.deepEqual(C.closedPipeFailureAnnotations(t),[pkg+'#'+base+'worker-reaped']);assert.ok(!JSON.stringify(t.value('race',1)).includes('worker-reaped'));
+});
+
+
+test('worker annotation allowlist matches all fixed public fixture stage codes',async()=>{
+ const source=await fs.readFile(path.join(__dirname,'../cmd/accessweaver/audit_run_pipe_linux_test.go'),'utf8'),block=source.match(/var recordedEnginePipeStages = map\[string\]string\{([^}]+)\}/)[1],labels=[...block.matchAll(/"([0-9]{2})":\s*"(worker-[a-z-]+)"/g)];assert.equal(labels.length,15);assert.equal(new Set(labels.map(m=>m[1])).size,15);
+ const pkg=MODULE+'/cmd/accessweaver',root='TestRecordedEngineClosedStandardPipeRepeated',p={schemaVersion:1,module:MODULE,packages:[{path:pkg,tests:[root]}]};for(const stage of [...labels.map(m=>m[2]),'worker-unavailable']){const t=new C.Tracker(p),label=root+'/attempt-20/accepted/scope-cleanup/'+stage;t.event({Action:'fail',Package:pkg,Test:label});assert.deepEqual(C.closedPipeFailureAnnotations(t),[pkg+'#'+label])}
+});

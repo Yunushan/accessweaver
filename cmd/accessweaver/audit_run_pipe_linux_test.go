@@ -56,6 +56,51 @@ func (w *recordedEngineStandardOutput) Write(data []byte) (int, error) {
 	return w.file.Write(data)
 }
 
+// This file is owned synthetic fixture state, not application output. Only a
+// fixed two-digit stage code may leave the worker through this channel. Fatal
+// assertions can themselves hit restored SIGPIPE before Go prints their text.
+var recordedEnginePipeStages = map[string]string{
+	"01": "worker-initialized", "02": "worker-command", "03": "worker-outcome",
+	"04": "worker-notice", "05": "worker-dispatch", "06": "worker-pid-read",
+	"07": "worker-pid-parse", "08": "worker-reaped", "09": "worker-inventory",
+	"10": "worker-journal-open", "11": "worker-journal-lock",
+	"12": "worker-controller-open", "13": "worker-controller-lock",
+	"14": "worker-proof", "15": "worker-restoration",
+}
+
+func newRecordedEnginePipeStage(t *testing.T, base string) func(string) {
+	t.Helper()
+	file, err := os.OpenFile(filepath.Join(base, "pipe-worker-stage"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		t.Fatal("cannot create fixed worker stage", err)
+	}
+	t.Cleanup(func() { _ = file.Close() })
+	return func(code string) {
+		t.Helper()
+		if _, known := recordedEnginePipeStages[code]; !known {
+			t.Fatal("unknown fixed worker stage")
+		}
+		if n, err := file.WriteAt([]byte(code), 0); err != nil || n != 2 {
+			t.Fatal("cannot retain fixed worker stage", err)
+		}
+	}
+}
+
+func readRecordedEnginePipeStage(base string) string {
+	file, err := os.Open(filepath.Join(base, "pipe-worker-stage"))
+	if err != nil {
+		return "worker-unavailable"
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, 3))
+	closeErr := file.Close()
+	if readErr == nil && closeErr == nil && len(data) == 2 {
+		if stage, known := recordedEnginePipeStages[string(data)]; known {
+			return stage
+		}
+	}
+	return "worker-unavailable"
+}
+
 func TestRecordedEngineClosedStandardPipeWorker(t *testing.T) {
 	mode := os.Getenv("ACCESSWEAVER_TEST_RECORDED_ENGINE_PIPE_MODE")
 	if mode == "" {
@@ -66,9 +111,12 @@ func TestRecordedEngineClosedStandardPipeWorker(t *testing.T) {
 	}
 	base := os.Getenv("ACCESSWEAVER_TEST_RECORDED_ENGINE_PIPE_ROOT")
 	pidFile := filepath.Join(base, "owned-child.pid")
+	stage := newRecordedEnginePipeStage(t, base)
+	stage("01")
 	signal.Reset(syscall.SIGPIPE) // Isolated source-test process only.
 	args := []string{"run", "--directory", filepath.Join(base, "journal"), "--from", filepath.Join(base, "genesis.json"), "--to", filepath.Join(base, "head.json"), "--profile", filepath.Join(base, "PRIVATE_ENGINE_PROFILE.json"), "--consent", "metadata-only"}
 	var commandErr error
+	stage("02")
 	switch mode {
 	case "intent":
 		// Exercise actual CLI dispatch with FD1 closed before command startup.
@@ -80,6 +128,7 @@ func TestRecordedEngineClosedStandardPipeWorker(t *testing.T) {
 		notice := &recordedEngineStandardOutput{file: os.Stderr, pid: pidFile}
 		commandErr = auditRunCommand(args, os.Stdout, notice)
 	}
+	stage("03")
 	if mode == "intent" {
 		if !errors.Is(commandErr, audit.ErrRecorderUnavailable) {
 			t.Fatal("unobserved intent lost its no-dispatch admission failure", commandErr)
@@ -87,32 +136,40 @@ func TestRecordedEngineClosedStandardPipeWorker(t *testing.T) {
 	} else if !errors.Is(commandErr, audit.ErrRecordedUncertain) {
 		t.Fatal("post-launch pipe loss falsely reported a no-dispatch or successful outcome", commandErr)
 	}
+	stage("04")
 	if mode == "notice" && !errors.Is(commandErr, errEngineLaunchOutput) {
 		t.Fatal("failed notice lost its fixed local output error", commandErr)
 	}
+	stage("05")
 	if mode == "intent" {
 		if _, err := os.Stat(pidFile); !os.IsNotExist(err) {
 			t.Fatal("unobserved intent dispatched an inert child")
 		}
 	} else {
+		stage("06")
 		data, err := os.ReadFile(pidFile)
 		if err != nil {
 			t.Fatal("pipe failure never reached an actual running inert child", err)
 		}
+		stage("07")
 		pid, err := strconv.Atoi(string(data))
 		if err != nil || pid <= 0 {
 			t.Fatal("invalid owned inert PID")
 		}
+		stage("08")
 		if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
 			t.Fatal("pipe failure left the owned inert child alive or unreaped", err)
 		}
 	}
+	stage("09")
 	assertRecordedEngineNoInventory(t, os.Getenv("ACCESSWEAVER_HOME"))
-	for _, path := range []string{filepath.Join(base, "journal", "events.journal"), filepath.Join(os.Getenv("ACCESSWEAVER_HOME"), ".controller.lock")} {
+	for index, path := range []string{filepath.Join(base, "journal", "events.journal"), filepath.Join(os.Getenv("ACCESSWEAVER_HOME"), ".controller.lock")} {
+		stage([]string{"10", "12"}[index])
 		file, err := os.OpenFile(path, os.O_RDWR, 0)
 		if err != nil {
 			t.Fatal("command did not leave its expected owned coordination file", err)
 		}
+		stage([]string{"11", "13"}[index])
 		lockErr := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB)
 		if lockErr == nil {
 			lockErr = unix.Flock(int(file.Fd()), unix.LOCK_UN)
@@ -122,11 +179,13 @@ func TestRecordedEngineClosedStandardPipeWorker(t *testing.T) {
 			t.Fatal("pipe command released output before native journal/controller cleanup", lockErr, closeErr)
 		}
 	}
+	stage("14")
 	if err := os.WriteFile(filepath.Join(base, "pipe-cleanup-proved"), []byte(mode+": no child remains and both owning scopes closed\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	// Production scope restoration must precede return. A fresh write to that
 	// same failed standard descriptor must now use default SIGPIPE behavior.
+	stage("15")
 	if mode == "notice" {
 		_, _ = os.Stderr.Write([]byte("scope restored\n"))
 	} else {
@@ -239,6 +298,9 @@ func TestRecordedEngineClosedStdoutAndStderrReapBeforeScopeRestoration(t *testin
 			if !t.Run("scope-cleanup", func(t *testing.T) {
 				proof, err := os.ReadFile(filepath.Join(f.base, "pipe-cleanup-proved"))
 				if err != nil || !strings.HasPrefix(string(proof), mode+":") {
+					t.Run(readRecordedEnginePipeStage(f.base), func(t *testing.T) {
+						t.Fatal("worker stopped before the cleanup proof at this fixed stage")
+					})
 					t.Fatal("worker exited before proving owned child and scope cleanup", err, notice.String())
 				}
 			}) {
