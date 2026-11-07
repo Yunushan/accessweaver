@@ -23,6 +23,7 @@ on:
           - backup-io
           - profile-read
           - native-core
+          - fixture-dependencies
       backup_platform:
         description: Native platform for manual backup-io and profile-read scopes
         type: choice
@@ -48,13 +49,13 @@ jobs:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.scope == 'full' || inputs.scope == 'native-core' }}
     uses: ./.github/workflows/native-core.yml
   browser:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core' && inputs.scope != 'fixture-dependencies') }}
     uses: ./.github/workflows/browser.yml
   windows-audit-storage:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core' && inputs.scope != 'fixture-dependencies') }}
     uses: ./.github/workflows/windows-audit-storage.yml
   darwin-audit-commands:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core' && inputs.scope != 'fixture-dependencies') }}
     uses: ./.github/workflows/darwin-audit-commands.yml
   vulnerabilities:
     if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
@@ -81,6 +82,7 @@ jobs:
           "$GOBIN/actionlint" -shellcheck= -pyflakes=
           python3 -m unittest discover -s scripts -p test_vulnerability_report.py -v
           python3 -m unittest discover -s scripts -p test_darwin_audit_command_capture.py -v
+          python3 -m unittest discover -s scripts -p test_fixture_qualification.py -v
       - name: Verify optional fixture dependencies and compile (no guest execution)
         run: |
           go -C scripts/fixtures/wgpeer mod download
@@ -106,7 +108,18 @@ jobs:
           path: build/sbom-checks/
           if-no-files-found: ignore
           retention-days: 14
+      - name: Qualify disposable WireGuard fixture traffic and advisory contracts
+        run: python3 scripts/fixture_qualification.py
+      - name: Retain fixed WireGuard fixture qualification
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wireguard-fixture-qualification
+          path: build/fixture-qualification/status.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Check known vulnerabilities for all core targets and fixture environments
+        if: inputs.scope != 'fixture-dependencies'
         run: GOVULNCHECK="$GOBIN/govulncheck" bash scripts/check-vulnerabilities.sh
       - name: Retain scanner evidence, including failed reports
         if: always()
@@ -117,7 +130,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   test:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core' && inputs.scope != 'fixture-dependencies') }}
     name: Test (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -429,7 +442,7 @@ jobs:
         shell: bash
         run: test -z "$(gofmt -l cmd internal web)"
   race:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core' && inputs.scope != 'fixture-dependencies') }}
     name: Race detector (Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -449,7 +462,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   race-arm64:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core' && inputs.scope != 'fixture-dependencies') }}
     name: Race detector (Linux/arm64)
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
@@ -470,7 +483,7 @@ jobs:
         run: node scripts/check-native-environment.cjs
       - run: go test -race ./... -count=1
   cross-compile:
-    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.scope != 'workflow-store' && inputs.scope != 'workflow-history' && inputs.scope != 'workflow-lifecycle' && inputs.scope != 'desktop-diagnostics' && inputs.scope != 'workflow-reconciliation' && inputs.scope != 'controller-storage' && inputs.scope != 'recovery-journal' && inputs.scope != 'desktop-support' && inputs.scope != 'backup-io' && inputs.scope != 'profile-read' && inputs.scope != 'native-core' && inputs.scope != 'fixture-dependencies') }}
     name: Cross-build (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
