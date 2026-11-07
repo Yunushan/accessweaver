@@ -17,6 +17,14 @@ bash scripts/build-all.sh
 
 CI runs native core tests on amd64 and arm64 Linux/Windows/macOS, with race checks on both Linux architectures. The [platform matrix](PLATFORMS.md) lists the actual runner labels, architecture/source assertions and remaining scope limits. Per-target native identity, backup, recovery and managed-policy records use architecture-specific artifact names. `scripts/check-native-environment.cjs` rejects cross SDKs, target mismatches and dirty/mismatched hosted build identities; its adversarial identity tests run in every native job. Command-generation tests check the arguments AccessWeaver produces; they do not execute upstream engines or confirm DPI effectiveness. Cross-builds check compilation only. Check [GitHub Actions](https://github.com/Yunushan/accessweaver/actions) for the actual run outcome.
 
+## Windows preview local-file qualification
+
+At exact source `65e73e707964ec079192842e6de82dc5eeee3b35`, the [four-target hosted run](https://github.com/Yunushan/accessweaver/actions/runs/42347107705) passed Windows/Linux amd64/arm64 native host/SDK identity, clean source, module integrity, root-source vet and engine/file-identity regression. Both Linux targets also passed the race suite; both Windows targets passed the explicitly guarded native identity and preview fixtures. The [source-bound record](qualification/65e73e707964-windows-local-preview-inputs.json) retains job/step metadata and the actual source hashes.
+
+The new Windows reader cases cover local files/links, remote and device refusal, owned local/remote DOS mappings, reparse substitution, same-parent file replacement and a held reader after pathname replacement. The preview fixture inspects a local configuration and hash-pinned inert executable, selects a local PATH entry after ignoring a UNC entry, and refuses remote configuration/executable inputs. It never executes that inert engine. Mapping cleanup requires the exact owned target and confirmed removal. Local compilation passed twenty package checks across all ten desktop targets; none of those produced binaries ran locally.
+
+This is configured source-built acceptance from provider metadata and mandatory source assertions. Go output counts, provider logs, annotations and private artifacts were not fetched, and no test binary was independently authenticated. No live SMB/authentication or credential-capture experiment was performed; transport-level isolation was not measured. Publisher signing, installed/managed endpoints, vendor network/lifecycle behavior, reboot/power-loss and long-duration acceptance remain separate. No whole readiness gate is promoted.
+
 ## Native identity evidence
 
 Native jobs assert the intended host and SDK before tests, then execute `version --json` from the built CLI and record its source, compiler, OS, architecture and SHA-256. For a local Linux amd64 check with a trusted built executable:
