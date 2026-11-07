@@ -469,7 +469,7 @@ func (s *Server) serveListenerWithWorkflowShutdown(ctx context.Context, listener
 	s.lifecycleMu.Unlock()
 	addr := "http://" + listener.Addr().String()
 	gate := &serverHandlerGate{}
-	server := &http.Server{Handler: gate.wrap(s.Handler()), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 75 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32 << 10}
+	server := &http.Server{Handler: gate.wrap(s.Handler()), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 75 * time.Second, IdleTimeout: 5 * time.Second, MaxHeaderBytes: 32 << 10}
 	lifetime, cancelLifetime := context.WithCancel(ctx)
 	served := make(chan error, 1)
 	go func() {

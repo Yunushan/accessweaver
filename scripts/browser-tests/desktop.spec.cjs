@@ -134,7 +134,7 @@ test('create, reload, export and collision import preserve the saved profile', a
   for(const buffer of [Buffer.from(ambiguous),Buffer.from([0xff]),Buffer.concat([Buffer.from([0xef,0xbb,0xbf]),Buffer.from(canonical)])]){
     await page.locator('#toast').evaluate(element=>{element.textContent=''});
     await page.locator('#import-file').setInputFiles({name:'rejected.json',mimeType:'application/json',buffer});
-    await expect(page.locator('#toast')).toContainText('Could not import JSON profile');
+    await expect(page.locator('#toast')).toContainText('Unable to import JSON profile');
     await expect(page.locator('#editor-modal')).toBeHidden();
     expect(JSON.parse(await fs.readFile(core.profilePath('browser-fixture'),'utf8'))).toEqual(original);
   }
