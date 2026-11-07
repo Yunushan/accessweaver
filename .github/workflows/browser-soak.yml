@@ -2,7 +2,7 @@ name: Sustained browser readiness
 
 on:
   push:
-    branches: ['codex/browser-soak-readiness', 'codex/browser-modal-rendering', 'codex/browser-startup-attribution', 'codex/browser-ready-clock', 'codex/dashboard-dom-stability', 'codex/browser-callback-clock', 'codex/browser-startup-context', 'codex/engine-dom-stability', 'codex/svg-icon-instances']
+    branches: ['codex/browser-soak-readiness', 'codex/browser-modal-rendering', 'codex/browser-startup-attribution', 'codex/browser-ready-clock', 'codex/dashboard-dom-stability', 'codex/browser-callback-clock', 'codex/browser-startup-context', 'codex/engine-dom-stability', 'codex/svg-icon-instances', 'codex/browser-runtime-1-65']
     paths-ignore: ['docs/**', 'README.md']
   workflow_dispatch:
 
@@ -21,7 +21,7 @@ jobs:
     name: Real browser (${{ matrix.goarch }}/${{ matrix.browser }})
     runs-on: ${{ matrix.os }}
     container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d
       # Docker populates this isolated anonymous volume from the image's /etc.
       # Its machine-policy parent must use qualified persistent storage.
       volumes:

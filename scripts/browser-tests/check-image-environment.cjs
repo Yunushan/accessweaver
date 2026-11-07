@@ -7,7 +7,7 @@ const path = require('node:path');
 const {architecture}=require('../check-native-environment.cjs');
 const {verifyBrowserCache,validateNativeInvocation}=require('./browser-native-binary.cjs');
 
-const expectedVersion = '1.64.1';
+const expectedVersion = '1.65.0';
 const expectedCache = '/ms-playwright';
 
 
