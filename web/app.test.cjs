@@ -87,6 +87,30 @@ test('browser cannot obtain a session credential from public bootstrap',async()=
 });
 function rejectsProfile(profile) {const env=environment();assert.throws(()=>valid(env,profile));}
 test('valid version-1 profile is accepted',()=>{valid(environment());});
+const timestampTable = require('../internal/profile/testdata/timestamps.json');
+test('shared timestamp conformance preserves optional values and original text',()=>{
+ assert.equal(timestampTable.schemaVersion,1);assert.equal(timestampTable.cases.length,65);
+ for(const c of timestampTable.cases){
+  const env=environment(),p=baseProfile();if(c.present)p.updatedAt=c.value;
+  if(c.accepted){assert.deepEqual(plain(valid(env,p)),p,c.id);assert.deepEqual(plain(env.run('parseProfileJSON(JSON.stringify(fixture))')),p,c.id)}
+  else{env.put('fixture',p);assert.throws(()=>env.run('validateProfile(fixture)'),undefined,c.id);assert.throws(()=>env.run('parseProfileJSON(JSON.stringify(fixture))'),undefined,c.id)}
+ }
+});
+test('invalid timestamps cannot publish an offline profile or replace stored data',async()=>{
+ const env=environment(),original=baseProfile();env.put('original',original);env.run('state.profiles=[original]');env.data.set('aw.profiles',JSON.stringify([original]));
+ for(const c of timestampTable.cases.filter(c=>!c.accepted)){
+  env.put('fixture',{...original,updatedAt:c.value});await assert.rejects(env.run('persist(fixture)'),undefined,c.id);
+  assert.deepEqual(plain(env.run('state.profiles')),[original],c.id);assert.deepEqual(JSON.parse(env.data.get('aw.profiles')),[original],c.id);
+ }
+});
+test('valid timestamps retain null, offsets and fractional precision through editor modes',()=>{
+ for(const c of timestampTable.cases.filter(c=>c.accepted)){
+  const env=environment(),p=baseProfile();if(c.present)p.updatedAt=c.value;env.put('fixture',p);
+  env.run('showEditor(fixture,true);switchEditor("advanced");switchEditor("simple");');
+  assert.equal(env.run('state.editorTab'),'simple',c.id);const got=plain(env.run('fromSimple()'));
+  assert.equal(Object.hasOwn(got,'updatedAt'),c.present,c.id);if(c.present)assert.deepEqual(got.updatedAt,c.value,c.id);
+ }
+});
 test('unknown top-level fields are rejected',()=>{rejectsProfile({...baseProfile(),surprise:true});});
 test('unsupported schema version is rejected',()=>{rejectsProfile({...baseProfile(),version:2});});
 test('invalid ID is rejected',()=>{rejectsProfile({...baseProfile(),id:'../escape'});});

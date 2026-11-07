@@ -5,7 +5,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=r
 const {spawn,execFileSync}=require('node:child_process'),{createHash}=require('node:crypto');
 const {signalOwnedChild}=require('./core-test-evidence.cjs');
 const manifest=require('./parser-fuzz-targets.json');
-const commonSources=['scripts/parser-fuzz-targets.json','scripts/parser-fuzz-evidence.cjs','scripts/parser-fuzz-evidence.test.cjs','.github/workflows/parser-fuzz.yml','.github/workflows/release.yml','internal/managed/fuzz_contract_test.go','internal/managed/policy.go','internal/jsoninput/time.go','go.mod','go.sum'];
+const commonSources=['internal/profile/testdata/timestamps.json','internal/profile/strict_input_test.go','scripts/parser-fuzz-targets.json','scripts/parser-fuzz-evidence.cjs','scripts/parser-fuzz-evidence.test.cjs','.github/workflows/parser-fuzz.yml','.github/workflows/release.yml','internal/managed/fuzz_contract_test.go','internal/managed/policy.go','internal/jsoninput/time.go','go.mod','go.sum'];
 const keys=['schemaVersion','sourceCommit','sourceTree','sourceSHA256','platform','architecture','go','node','target','stage','exitCode','sourceStable','streamValid','baselineInputs','workers','executions','newInteresting','elapsedSeconds','packagePassed','instrumented','discardedOutputEvents','inputBytes','outcome','productionQualificationComplete'];
 function exact(value,names){assert.deepEqual(Object.keys(value).sort(),[...names].sort(),'Fuzz evidence schema differs')}
 function validateManifest(value){

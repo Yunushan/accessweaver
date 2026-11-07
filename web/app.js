@@ -485,6 +485,19 @@ function parseProfileJSON(text) {
   return validateProfile(parsed);
 }
 
+// Validate the original RFC3339 text without Date normalization or loss of
+// fractional precision. Go's canonical decoder checks the same calendar bounds.
+function validProfileTimestamp(value) {
+  if (typeof value !== 'string') return false;
+  const match = /^([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.[0-9]+)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$/.exec(value);
+  // JavaScript's $ can match before a final newline; require the entire value.
+  if (!match || match[0] !== value) return false;
+  const [year,month,day,hour,minute,second] = match.slice(1).map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31,leap ? 29 : 28,31,30,31,30,31,31,30,31,30,31];
+  return month >= 1 && month <= 12 && day >= 1 && day <= days[month-1] && hour <= 23 && minute <= 59 && second <= 59;
+}
+
 // Validate before any write, including offline saves. Keep the schema aligned with profile.Profile.
 function validateProfile(p) {
   const object = (value,keys,path) => {
@@ -503,7 +516,7 @@ function validateProfile(p) {
   if (state.engines.length && !state.engines.some(e => e.id === p.engine)) throw new Error(t('invalidEngine'));
   if (/[\r\n]/.test((p.binary || '') + (p.configPath || ''))) throw new Error(t('invalidField') + ': binary / configPath');
   if (p.sha256 && !/^[a-f\d]{64}$/i.test(p.sha256)) throw new Error(t('invalidSHA'));
-  if (p.updatedAt !== undefined && (typeof p.updatedAt !== 'string' || Number.isNaN(Date.parse(p.updatedAt)))) throw new Error(t('invalidField') + ': updatedAt');
+  if (p.updatedAt !== undefined && p.updatedAt !== null && !validProfileTimestamp(p.updatedAt)) throw new Error(t('invalidField') + ': updatedAt');
   const strings = (value,max,count,path) => {
     if (value === null || value === undefined) return [];
     if (!Array.isArray(value) || value.length > count || value.some(v => typeof v !== 'string' || new TextEncoder().encode(v).length > max || v.includes('\0'))) throw new Error(t('invalidField') + ': ' + path);

@@ -121,6 +121,13 @@ jobs:
       - name: Verify numeric fuzz evidence contracts
         id: fuzz_contracts
         run: node --test scripts/parser-fuzz-evidence.test.cjs
+      - name: Verify browser profile input conformance
+        env:
+          ACCESSWEAVER_HISTORY_INTEROP: ''
+          ACCESSWEAVER_RECONCILIATION_INTEROP: ''
+          ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP: ''
+          ACCESSWEAVER_SUPPORT_INTEROP: ''
+        run: node --test web/app.test.cjs
       - name: Run complete root regression
         run: node scripts/core-test-evidence.cjs unit
       - name: Run complete Linux root race regression

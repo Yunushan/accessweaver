@@ -5,6 +5,7 @@ const { spawn, execFileSync } = require('node:child_process');
 const { once } = require('node:events');
 const { createHash } = require('node:crypto');
 const { expect } = base;
+const timestampTable=require('../../internal/profile/testdata/timestamps.json');
 const {performance}=require('node:perf_hooks');
 const {performanceCaseName,seedPerformanceProfiles,runDesktopPerformance}=require('./desktop-performance.cjs');
 const {settleAnimations,scanAccessibility,assertControlContrast}=require('./accessibility.cjs');
@@ -131,7 +132,7 @@ test('create, reload, export and collision import preserve the saved profile', a
   expect(exported).toEqual(original);
   const canonical=JSON.stringify(exported);
   const ambiguous=canonical.replace('"name":','"\\u006eame":"PRIVATE_IMPORT_REJECTED","name":');
-  for(const buffer of [Buffer.from(ambiguous),Buffer.from([0xff]),Buffer.concat([Buffer.from([0xef,0xbb,0xbf]),Buffer.from(canonical)])]){
+  for(const buffer of [Buffer.from(ambiguous),Buffer.from(JSON.stringify({...exported,updatedAt:'2026-02-30T12:00:00Z'})),Buffer.from([0xff]),Buffer.concat([Buffer.from([0xef,0xbb,0xbf]),Buffer.from(canonical)])]){
     await page.locator('#toast').evaluate(element=>{element.textContent=''});
     await page.locator('#import-file').setInputFiles({name:'rejected.json',mimeType:'application/json',buffer});
     await expect(page.locator('#toast')).toContainText('Unable to import JSON profile');
@@ -164,6 +165,13 @@ test('invalid JSON stays editable and an unavailable engine cannot be launched',
   await expect(page.locator('#editor-feedback')).toHaveClass('error');
   await expect(page.locator('#p-json')).toHaveValue('{broken');
   const savedBytes=await fs.readFile(core.profilePath('browser-fixture'));
+  const conformance=await page.evaluate(({profile,cases})=>cases.map(c=>{
+    const input={...profile};delete input.updatedAt;if(c.present)input.updatedAt=c.value;
+    const text=JSON.stringify(input);
+    try{const got=parseProfileJSON(text);return {id:c.id,accepted:true,preserved:JSON.stringify(got)===text}}
+    catch{return {id:c.id,accepted:false,preserved:false}}
+  }),{profile:JSON.parse(savedBytes),cases:timestampTable.cases});
+  expect(conformance).toEqual(timestampTable.cases.map(c=>({id:c.id,accepted:c.accepted,preserved:c.accepted})));
   const duplicate=savedBytes.toString('utf8').replace('"tls":','"tls":false,"tls":');
   await page.locator('#p-json').fill(duplicate);await page.locator('#save-profile').click();
   await expect(page.locator('#editor-feedback')).toContainText('Use each JSON field name only once.');
@@ -172,6 +180,18 @@ test('invalid JSON stays editable and an unavailable engine cannot be launched',
   await expect(page.locator('#tab-advanced')).toHaveAttribute('aria-selected','true');
   await expect(page.locator('#p-json')).toBeVisible();
   expect(await fs.readFile(core.profilePath('browser-fixture'))).toEqual(savedBytes);
+  for(const id of ['calendar-overflow','space-separator','extended-year']){
+    const c=timestampTable.cases.find(c=>c.id===id),text=JSON.stringify({...JSON.parse(savedBytes),updatedAt:c.value});
+    await page.locator('#p-json').fill(text);await page.locator('#save-profile').click();
+    await expect(page.locator('#editor-feedback')).toHaveClass('error');await expect(page.locator('#p-json')).toHaveValue(text);
+    expect(await fs.readFile(core.profilePath('browser-fixture'))).toEqual(savedBytes);
+  }
+  for(const updatedAt of [null,'2026-11-01T12:34:56.123456789+05:45']){
+    await page.locator('#p-json').fill(JSON.stringify({...JSON.parse(savedBytes),updatedAt}));
+    await page.locator('#tab-simple').click();await expect(page.locator('#tab-simple')).toHaveAttribute('aria-selected','true');
+    expect(await page.evaluate(()=>currentEditorProfile().updatedAt)).toEqual(updatedAt);
+    await page.locator('#tab-advanced').click();
+  }
   page.once('dialog',dialog=>dialog.accept());await page.locator('#cancel-editor').click();
   await action(page,'run').click();await expect(page.locator('#launch-modal')).toBeVisible();
   await expect(page.locator('#launch-confirm')).toBeDisabled();
