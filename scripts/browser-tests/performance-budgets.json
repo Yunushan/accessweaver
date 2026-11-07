@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "scope": "source-built-linux-controller-and-browser-ci-baseline",
   "profiles": 256,
   "loadSeconds": 60,
@@ -83,8 +83,12 @@
     },
     "browserCooldownProcessGrowth": {
       "max": 4
+    },
+    "jobLoadCpuPercentOneCore": {
+      "max": 100
     }
   },
   "browserResourceIntervalMilliseconds": 1000,
-  "browserResourcePolicy": "One-second samples of worker-owned browser and verified descendants. Summed RSS counts shared pages per process; observed CPU is incomplete when processes exit between samples and has sequential-snapshot timing uncertainty. Browser/renderer measurement is separate from the unchanged controller caps."
+  "browserResourcePolicy": "One-second samples of worker-owned browser and verified descendants. Summed RSS counts shared pages per process; observed CPU is incomplete when processes exit between samples and has sequential-snapshot timing uncertainty. Browser/renderer measurement is separate from the unchanged controller caps.",
+  "jobCpuPolicy": "Read-only private cgroup-v2 usage includes all job processes and descendant cgroups, including exited workers; this is whole-job accounting, not application-only attribution. Existing24caps stay unchanged. The added100percent-of-one-core average cap reserves three of four reference cores."
 }
