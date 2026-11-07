@@ -83,6 +83,8 @@ func FuzzDecodeCanonicalObject(f *testing.F) {
 	for _, seed := range [][]byte{[]byte(`{}`), []byte(`{"name":"fixture","tls":false,"nested":{"port":443},"args":["a"],"at":null}`), []byte(`{"name":"one","name":"two"}`), []byte(`{"args":null}`), []byte(`{"at":"2026-11-07T12:34:56+00:00"}`), {0xff}, []byte(`null`)} {
 		f.Add(seed)
 	}
+	f.Add([]byte(`{"at":"\u0032026-11-07T12:34:56Z"}`))
+	f.Add([]byte(`{"at":"2026-11-07T12\u003a34:56.123456789+03:00"}`))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		before := bytes.Clone(data)
 		original := inputFixture{Name: "unchanged", InputProbe: InputProbe{TLS: true, Port: 7}}
@@ -105,6 +107,22 @@ func FuzzDecodeCanonicalObject(f *testing.F) {
 		var fields map[string]json.RawMessage
 		if json.Unmarshal(data, &fields) != nil {
 			t.Fatal("accepted object did not parse independently")
+		}
+		at := fields["at"]
+		if len(at) == 0 {
+			at = json.RawMessage("null")
+		}
+		payload := bytes.TrimSpace(data)
+		opaque := append(append(append([]byte(`{"at":`), at...), []byte(`,"payload":`)...), payload...)
+		opaque = append(opaque, '}')
+		if len(opaque) <= MaxBytes {
+			var preserved struct {
+				At      time.Time       `json:"at"`
+				Payload json.RawMessage `json:"payload"`
+			}
+			if Decode(opaque, &preserved) != nil || !preserved.At.Equal(got.At) || !bytes.Equal(preserved.Payload, payload) {
+				t.Fatal("accepted timestamp decoding changed opaque payload bytes")
+			}
 		}
 		keys := make([]string, 0, len(fields))
 		for key := range fields {

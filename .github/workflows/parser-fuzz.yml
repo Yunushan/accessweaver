@@ -132,7 +132,7 @@ jobs:
         run: node --test web/app.test.cjs
       - name: Verify fixed timestamp observation contracts
         run: node --test scripts/timestamp-json-observation.test.cjs
-      - name: Characterize canonical timestamp string spellings
+      - name: Verify canonical timestamp string spellings
         run: node scripts/timestamp-json-observation.cjs
       - name: Retain fixed timestamp spelling observations
         if: ${{ !cancelled() && steps.native_identity.outcome == 'success' && steps.source_identity.outcome == 'success' }}

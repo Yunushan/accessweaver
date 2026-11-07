@@ -2,6 +2,7 @@ package jsoninput
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,9 +13,10 @@ import (
 	"time"
 )
 
-// Fixed synthetic observations distinguish an SDK mismatch from a bad hypothesis.
+// The application must accept equivalent valid JSON string spellings.
+// Fixed observations keep the direct SDK method distinct from the actual codec.
 // No input bytes, timestamps, paths or native error text enter the report.
-func TestTimestampRawJSONSpellingCharacterization(t *testing.T) {
+func TestTimestampRawJSONSpellingAcceptance(t *testing.T) {
 	const canonical = "2026-11-07T12:34:56.123456789+03:00"
 	quoted, _ := json.Marshal(canonical)
 	spellings := []struct {
@@ -81,7 +83,7 @@ func TestTimestampRawJSONSpellingCharacterization(t *testing.T) {
 		}
 		row := observation{ID: c.id, StringAccepted: plainErr == nil, StringEqual: plain.At == canonical, TimestampValid: ValidTimestamp(plain.At), DirectSDKAccepted: directErr == nil, DirectTimeEqual: directErr == nil && direct.Equal(expected), Equivalent: plainErr == nil && plain.At == canonical && ValidTimestamp(plain.At), ApplicationAccepted: appErr == nil, ApplicationTimeEqual: appErr == nil && got.At.Equal(expected), ApplicationUnchangedOnError: appErr == nil || reflect.DeepEqual(got, original), SDKAccepted: sdkErr == nil, SDKTimeEqual: sdkErr == nil && sdk.At.Equal(expected), SourceUnchanged: bytes.Equal(body, before), Cause: cause}
 		observations = append(observations, row)
-		if !row.Equivalent || !row.SourceUnchanged || !row.ApplicationUnchangedOnError || row.ApplicationAccepted && !row.ApplicationTimeEqual || row.SDKAccepted && !row.SDKTimeEqual || row.DirectSDKAccepted && !row.DirectTimeEqual {
+		if !row.ApplicationAccepted || !row.ApplicationTimeEqual || !row.Equivalent || !row.SourceUnchanged || !row.ApplicationUnchangedOnError || row.ApplicationAccepted && !row.ApplicationTimeEqual || row.SDKAccepted && !row.SDKTimeEqual || row.DirectSDKAccepted && !row.DirectTimeEqual {
 			t.Error("timestamp observation invariant differs")
 		}
 	}
@@ -91,5 +93,34 @@ func TestTimestampRawJSONSpellingCharacterization(t *testing.T) {
 			t.Fatal("timestamp observation encoding failed")
 		}
 		fmt.Printf("ACCESSWEAVER_TIMESTAMP_JSON:%s\n", encoded)
+	}
+}
+
+// Opaque payloads must retain exact signature-covered bytes while typed timestamp
+// fields use the standard codec across pointer, slice and map containers.
+func TestTimestampSpellingPreservesOpaquePayload(t *testing.T) {
+	const canonical = "2026-11-07T12:34:56.123456789+03:00"
+	const spelled = `"\u0032026-11-07T12\u003a34\u003a56.123456789\u002b03\u003a00"`
+	payload := []byte(`{ "date" : ` + spelled + `, "counter" : 1e+03 }`)
+	private := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+	signature := ed25519.Sign(private, payload)
+	body := []byte(`{"at":` + spelled + `,"pointer":` + spelled + `,"list":[` + spelled + `,null],"lookup":{"fixture":` + spelled + `},"payload":` + string(payload) + `}`)
+	before := bytes.Clone(body)
+	var got struct {
+		At      time.Time            `json:"at"`
+		Pointer *time.Time           `json:"pointer"`
+		List    []time.Time          `json:"list"`
+		Lookup  map[string]time.Time `json:"lookup"`
+		Payload json.RawMessage      `json:"payload"`
+	}
+	expected, err := time.Parse(time.RFC3339Nano, canonical)
+	if err != nil {
+		t.Fatal("timestamp fixture is invalid")
+	}
+	if Decode(body, &got) != nil || !got.At.Equal(expected) || got.Pointer == nil || !got.Pointer.Equal(expected) || len(got.List) != 2 || !got.List[0].Equal(expected) || !got.List[1].IsZero() || len(got.Lookup) != 1 || !got.Lookup["fixture"].Equal(expected) {
+		t.Fatal("equivalent timestamp containers changed meaning")
+	}
+	if !bytes.Equal(got.Payload, payload) || !ed25519.Verify(private.Public().(ed25519.PublicKey), got.Payload, signature) || !bytes.Equal(body, before) {
+		t.Fatal("timestamp decoding changed source or signature-covered payload bytes")
 	}
 }
