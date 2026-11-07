@@ -7,12 +7,18 @@ on:
       - 'internal/profile/**'
       - 'internal/api/**'
       - '.github/workflows/canonical-json-inputs.yml'
+      - 'web/app.js'
+      - 'web/app.test.cjs'
+      - 'scripts/browser-tests/desktop.spec.cjs'
   pull_request:
     paths:
       - 'internal/jsoninput/**'
       - 'internal/profile/**'
       - 'internal/api/**'
       - '.github/workflows/canonical-json-inputs.yml'
+      - 'web/app.js'
+      - 'web/app.test.cjs'
+      - 'scripts/browser-tests/desktop.spec.cjs'
   workflow_dispatch:
 
 permissions:
@@ -97,6 +103,13 @@ jobs:
       - name: Verify source-known result privacy contracts
         id: known_labels
         run: node --test scripts/core-test-evidence.test.cjs
+      - name: Verify profile editor input regressions
+        env:
+          ACCESSWEAVER_HISTORY_INTEROP: ''
+          ACCESSWEAVER_RECONCILIATION_INTEROP: ''
+          ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP: ''
+          ACCESSWEAVER_SUPPORT_INTEROP: ''
+        run: node --test web/app.test.cjs
       - name: Run complete root regression
         run: node scripts/core-test-evidence.cjs unit
       - name: Run complete Linux root race regression

@@ -117,12 +117,27 @@ test('create, reload, export and collision import preserve the saved profile', a
   await open(page,core);await create(page);
   const original=JSON.parse(await fs.readFile(core.profilePath('browser-fixture'),'utf8'));
   expect(original.name).toBe('Browser fixture');
+  await expect(action(page,'duplicate')).toBeEnabled();
+  const retainedCard=await action(page,'edit').elementHandle();
+  try {
+    await page.locator('.nav-item[data-view="dashboard"]').click();await profiles(page);
+    expect(await retainedCard.evaluate(element=>element.isConnected)).toBe(true);
+  } finally { await retainedCard.dispose(); }
   await page.reload();await expect(page.locator('#connection-notice')).toBeHidden();await profiles(page);
   await expect(action(page,'edit')).toBeVisible();
   const downloaded=page.waitForEvent('download');await action(page,'export').click();
   const download=await downloaded;
   const exported=JSON.parse(await fs.readFile(await download.path(),'utf8'));
   expect(exported).toEqual(original);
+  const canonical=JSON.stringify(exported);
+  const ambiguous=canonical.replace('"name":','"\\u006eame":"PRIVATE_IMPORT_REJECTED","name":');
+  for(const buffer of [Buffer.from(ambiguous),Buffer.from([0xff]),Buffer.concat([Buffer.from([0xef,0xbb,0xbf]),Buffer.from(canonical)])]){
+    await page.locator('#toast').evaluate(element=>{element.textContent=''});
+    await page.locator('#import-file').setInputFiles({name:'rejected.json',mimeType:'application/json',buffer});
+    await expect(page.locator('#toast')).toContainText('Could not import JSON profile');
+    await expect(page.locator('#editor-modal')).toBeHidden();
+    expect(JSON.parse(await fs.readFile(core.profilePath('browser-fixture'),'utf8'))).toEqual(original);
+  }
   await page.locator('#import-file').setInputFiles({name:'fixture.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(exported))});
   await expect(page.locator('#editor-modal')).toBeVisible();
   await expect(page.locator('#p-id')).not.toHaveValue('browser-fixture');
@@ -148,6 +163,15 @@ test('invalid JSON stays editable and an unavailable engine cannot be launched',
   await page.locator('#save-profile').click();
   await expect(page.locator('#editor-feedback')).toHaveClass('error');
   await expect(page.locator('#p-json')).toHaveValue('{broken');
+  const savedBytes=await fs.readFile(core.profilePath('browser-fixture'));
+  const duplicate=savedBytes.toString('utf8').replace('"tls":','"tls":false,"tls":');
+  await page.locator('#p-json').fill(duplicate);await page.locator('#save-profile').click();
+  await expect(page.locator('#editor-feedback')).toContainText('Use each JSON field name only once.');
+  await expect(page.locator('#p-json')).toHaveValue(duplicate);
+  await page.locator('#tab-simple').click();
+  await expect(page.locator('#tab-advanced')).toHaveAttribute('aria-selected','true');
+  await expect(page.locator('#p-json')).toBeVisible();
+  expect(await fs.readFile(core.profilePath('browser-fixture'))).toEqual(savedBytes);
   page.once('dialog',dialog=>dialog.accept());await page.locator('#cancel-editor').click();
   await action(page,'run').click();await expect(page.locator('#launch-modal')).toBeVisible();
   await expect(page.locator('#launch-confirm')).toBeDisabled();

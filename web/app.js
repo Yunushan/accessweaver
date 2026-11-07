@@ -156,6 +156,8 @@ Object.assign(tr,{historyStagingPending:'Tamamlanmamış bir envanter kaydının
 Object.assign(en,{"controllerStorageTitle":"Controller evidence storage","controllerStorageRefresh":"Refresh storage observation","controllerStorageNotice":"Planned controller evidence per workflow start and its original completion metadata only. History capture, reconciliation maintenance and legacy or untracked files are excluded. Logical commitments do not measure disk usage or free space.","controllerStorageLimits":"This status does not enforce an aggregate quota, guarantee physical space, contain native writers or bound worker journals. It grants no admission, deletion, cleanup or retirement.","controllerStorageNotLoaded":"Storage observation has not been read. Existing evidence is unchanged.","controllerStorageLoading":"Reading controller storage commitments…","controllerStorageState_uninitialized":"Controller tracking is not initialized. Legacy and untracked evidence is not included; this does not mean the disk is empty.","controllerStorageState_tracked":"Tracked controller commitments are reported. This observation does not authorize a new operation or certify completed finalization.","controllerStorageState_pending":"Tracked storage has unresolved commitments. A zero reservation is not evidence of free space. Preserve inputs and evidence; finalization and ownership are not assumed complete.","controllerStorageGenerations":"Tracked generations","controllerStorageReserved":"Reserved logical bytes","controllerStorageRetained":"Retained logical charge","controllerStorageUncertain":"Uncertain logical charge","controllerStorageFinalization":"Logical allowance for finalization","controllerStorageGeneration":"Tracked generation","controllerStorageFolderAction":"Choose an application folder","controllerStorageInvalidResponse":"The storage response could not be verified. No clean or empty state is assumed.","controllerStorageDenied":"Administrator policy does not permit this storage inspection.","controllerStoragePolicyUnavailable":"Administrator policy could not be verified. Storage inspection remains unavailable.","controllerStorageBusy":"Storage observation is busy. Refresh explicitly later; no operation is queued or repeated.","controllerStorageEnded":"The storage request ended before confirmation. Existing evidence and operation inputs remain preserved.","controllerStoragePending":"Controller storage evidence is pending or unconfirmed. Preserve it; no completed finalization or admission is assumed.","controllerStorageCapacity":"Reported controller commitments exceed a source limit. This does not measure available physical space. Preserve the evidence.","controllerStorageUnavailable":"Controller storage commitments could not be verified. No clean or empty state is assumed.","controllerStorageAdmissionCapacity":"Controller storage limits refused the request. Inputs and recovery selections are preserved; consent was cleared. Inspect storage and explicitly request a new review. Nothing is queued or replayed.","controllerStorageAdmissionPending":"Controller storage requires explicit review. Keep the inputs and evidence. Status alone cannot clear this refusal; request a new operation review explicitly. Backend admission checks still apply. Nothing is retried automatically."});
 Object.assign(tr,{"controllerStorageTitle":"Denetleyici kanıt depolaması","controllerStorageRefresh":"Depolama gözlemini yenile","controllerStorageNotice":"Yalnızca her işlem başlangıcı için planlanan denetleyici kanıtı ve ilk tamamlanma meta verileri. Geçmiş görüntüsü, uzlaştırma bakımı, eski veya izlenmeyen dosyalar dahil değildir. Mantıksal taahhütler disk kullanımı veya boş alanı ölçmez.","controllerStorageLimits":"Bu durum toplam kota uygulamaz, fiziksel alanı garanti etmez, yerel yazıcıları sınırlamaz veya çalışan günlüklerine sınır koymaz. Başlatma, silme, temizleme veya kayıt kaldırma izni vermez.","controllerStorageNotLoaded":"Depolama gözlemi okunmadı. Mevcut kanıtlar değişmedi.","controllerStorageLoading":"Denetleyici depolama taahhütleri okunuyor…","controllerStorageState_uninitialized":"Denetleyici takibi başlatılmadı. Eski ve izlenmeyen kanıtlar dahil değildir; bu, diskin boş olduğu anlamına gelmez.","controllerStorageState_tracked":"İzlenen denetleyici taahhütleri gösteriliyor. Bu gözlem yeni işlem izni vermez veya sonlandırmanın tamamlandığını doğrulamaz.","controllerStorageState_pending":"İzlenen depolama taahhütleri çözümlenmedi. Sıfır rezerv, boş alan kanıtı değildir. Girdileri ve kanıtları koruyun; sonlandırma ve sahipliğin tamamlandığı varsayılmaz.","controllerStorageGenerations":"İzlenen nesiller","controllerStorageReserved":"Ayrılan mantıksal baytlar","controllerStorageRetained":"Korunan mantıksal yük","controllerStorageUncertain":"Belirsiz mantıksal yük","controllerStorageFinalization":"Sonlandırma için mantıksal pay","controllerStorageGeneration":"İzlenen nesil","controllerStorageFolderAction":"Uygulama klasörü seç","controllerStorageInvalidResponse":"Depolama yanıtı doğrulanamadı. Temiz veya boş durum varsayılmaz.","controllerStorageDenied":"Yönetici ilkesi bu depolama incelemesine izin vermiyor.","controllerStoragePolicyUnavailable":"Yönetici ilkesi doğrulanamadı. Depolama incelemesi kullanılamıyor.","controllerStorageBusy":"Depolama gözlemi meşgul. Daha sonra açıkça yenileyin; işlem kuyruğa alınmaz veya tekrarlanmaz.","controllerStorageEnded":"Depolama isteği doğrulanmadan sona erdi. Mevcut kanıtlar ve işlem girdileri korunur.","controllerStoragePending":"Denetleyici depolama kanıtları bekliyor veya doğrulanmadı. Koruyun; sonlandırma veya işlem izni varsayılmaz.","controllerStorageCapacity":"Bildirilen denetleyici taahhütleri kaynak sınırını aşıyor. Bu, fiziksel boş alanı ölçmez. Kanıtları koruyun.","controllerStorageUnavailable":"Denetleyici depolama taahhütleri doğrulanamadı. Temiz veya boş durum varsayılmaz.","controllerStorageAdmissionCapacity":"Denetleyici depolama sınırları isteği reddetti. Girdiler ve kurtarma seçimleri korundu; onay temizlendi. Depolamayı inceleyip açıkça yeni inceleme isteyin. İşlem kuyruğa alınmaz veya tekrarlanmaz.","controllerStorageAdmissionPending":"Denetleyici depolaması açık inceleme gerektiriyor. Girdileri ve kanıtları koruyun. Yalnız durum okumak bu reddi temizlemez; açıkça yeni işlem incelemesi isteyin. Sunucu kabul denetimleri geçerlidir. Otomatik yeniden deneme yapılmaz."});
 const translations = {en,tr,...(typeof extraLocales==='object'?extraLocales:{})};
+const profileJSONCopy = {en:'Use each JSON field name only once.',tr:'Her JSON alan adını yalnızca bir kez kullanın.',ru:'Укажите каждое имя поля JSON только один раз.',es:'Usa cada nombre de campo JSON una sola vez.'};
+for (const [lang,message] of Object.entries(profileJSONCopy)) translations[lang].duplicateJSONField = message;
 const diagnosticCopy = {"en": {"diagnosticsSubtitle": "Check an explicit direct or proxy path using TCP/TLS or UDP/STUN.", "probePath": "Network path", "probeTransport": "Protocol", "pathDirect": "Direct", "probeProxy": "Proxy host:port (no credentials)", "probeScope": "The selected path only. No direct fallback. This does not prove engine routing, voice or QUIC connectivity.", "probeSTUN": "Enter a STUN server you trust. One UDP binding exchange; the server and reported address are unauthenticated.", "reportPath": "Tested path"}, "tr": {"diagnosticsSubtitle": "TCP/TLS veya UDP/STUN ile do\u011frudan ya da vekil sunucu yolunu test edin.", "probePath": "A\u011f yolu", "probeTransport": "Protokol", "pathDirect": "Do\u011frudan", "probeProxy": "Vekil sunucu:port (kimlik bilgisi yok)", "probeScope": "Yaln\u0131zca se\u00e7ilen yol test edilir. Do\u011frudan ba\u011flant\u0131ya ge\u00e7ilmez. Motor y\u00f6nlendirmesi, ses veya QUIC ba\u011flant\u0131s\u0131n\u0131 kan\u0131tlamaz.", "probeSTUN": "G\u00fcvendi\u011finiz bir STUN sunucusu girin. Tek UDP iste\u011fi; sunucu ve bildirdi\u011fi adres do\u011frulanmaz.", "reportPath": "Test edilen yol"}, "es": {"diagnosticsSubtitle": "Comprueba una ruta directa o por proxy con TCP/TLS o UDP/STUN.", "probePath": "Ruta de red", "probeTransport": "Protocolo", "pathDirect": "Directa", "probeProxy": "Proxy host:puerto (sin credenciales)", "probeScope": "Solo la ruta elegida. Sin alternativa directa. No demuestra el enrutamiento del motor ni la conectividad de voz o QUIC.", "probeSTUN": "Introduce un servidor STUN de confianza. Un intercambio UDP; el servidor y la direcci\u00f3n indicada no se autentican.", "reportPath": "Ruta comprobada"}, "ru": {"diagnosticsSubtitle": "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u043f\u0440\u044f\u043c\u043e\u0433\u043e \u043f\u0443\u0442\u0438 \u0438\u043b\u0438 \u043f\u0440\u043e\u043a\u0441\u0438: TCP/TLS \u0438\u043b\u0438 UDP/STUN.", "probePath": "\u0421\u0435\u0442\u0435\u0432\u043e\u0439 \u043f\u0443\u0442\u044c", "probeTransport": "\u041f\u0440\u043e\u0442\u043e\u043a\u043e\u043b", "pathDirect": "\u041d\u0430\u043f\u0440\u044f\u043c\u0443\u044e", "probeProxy": "\u041f\u0440\u043e\u043a\u0441\u0438 host:port (\u0431\u0435\u0437 \u0443\u0447\u0451\u0442\u043d\u044b\u0445 \u0434\u0430\u043d\u043d\u044b\u0445)", "probeScope": "\u0422\u043e\u043b\u044c\u043a\u043e \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u044b\u0439 \u043f\u0443\u0442\u044c, \u0431\u0435\u0437 \u043f\u0435\u0440\u0435\u0445\u043e\u0434\u0430 \u043d\u0430\u043f\u0440\u044f\u043c\u0443\u044e. \u041d\u0435 \u0434\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u0442 \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u0438\u0437\u0430\u0446\u0438\u044e \u0434\u0432\u0438\u0436\u043a\u0430, \u0441\u0432\u044f\u0437\u044c \u0434\u043b\u044f \u0433\u043e\u043b\u043e\u0441\u0430 \u0438\u043b\u0438 QUIC.", "probeSTUN": "\u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u0434\u043e\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 STUN-\u0441\u0435\u0440\u0432\u0435\u0440. \u041e\u0434\u0438\u043d UDP-\u043e\u0431\u043c\u0435\u043d; \u0441\u0435\u0440\u0432\u0435\u0440 \u0438 \u0441\u043e\u043e\u0431\u0449\u0451\u043d\u043d\u044b\u0439 \u0430\u0434\u0440\u0435\u0441 \u043d\u0435 \u0430\u0443\u0442\u0435\u043d\u0442\u0438\u0444\u0438\u0446\u0438\u0440\u0443\u044e\u0442\u0441\u044f.", "reportPath": "\u041f\u0440\u043e\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u043f\u0443\u0442\u044c"}};
 for (const [lang,words] of Object.entries(diagnosticCopy)) Object.assign(translations[lang],words);
 const profileAuditCopy={en:{profileAuditNotice:'Recorded profile editing: saves and deletes require audit recording. Engine, system, diagnostics and support actions are unavailable in this session.'},tr:{profileAuditNotice:'Kayıtlı profil düzenleme: kaydetme ve silme işlemleri denetim kaydı gerektirir. Bu oturumda motor, sistem, tanılama ve destek işlemleri kullanılamaz.'},ru:{profileAuditNotice:'Редактирование профилей с журналом: сохранение и удаление требуют записи аудита. Движки, системные операции, диагностика и поддержка недоступны в этом сеансе.'},es:{profileAuditNotice:'Edición de perfiles con registro: guardar y eliminar requieren un registro de auditoría. Los motores, las acciones del sistema, los diagnósticos y el soporte no están disponibles en esta sesión.'}};
@@ -396,20 +398,29 @@ function profileCard(p, full=false) {
   const profileAction = (action, symbol, label, disabled=false) => `<button data-profile-action="${action}" data-profile-id="${escapeHTML(p.id)}" aria-label="${escapeHTML(t(label))}: ${escapeHTML(p.name)}" title="${escapeHTML(t(label))}" ${disabled ? 'disabled' : ''}>${icon(symbol)}</button>`;
   return `<article class="profile-card ${active ? 'profile-active' : ''}"><div class="profile-top"><div class="profile-symbol ${p.engine === 'byedpi' ? 'teal' : ''}">${icon(['wiresock','wireguard'].includes(p.engine) ? 'shield' : p.engine === 'byedpi' ? 'globe' : 'layers')}</div><span class="tag ${active ? 'tag-teal' : 'tag-neutral'}">${active ? t('runningBadge') : escapeHTML(p.category || t('customCategory'))}</span></div><${heading} class="profile-card-heading"><button class="profile-title" data-profile-action="edit" data-profile-id="${escapeHTML(p.id)}">${escapeHTML(p.name)}</button></${heading}><p title="${escapeHTML(desc)}">${escapeHTML(desc)}</p><div class="profile-rules"><span>${icon('globe')}${includes} ${t('includeCount')}</span><span>${icon('shield')}${excludes} ${t('excludeCount')}</span></div><div class="profile-card-foot"><span class="engine-label">${escapeHTML(e?.name || p.engine)}</span><div class="profile-card-actions">${profileAction(active ? 'stop' : 'run',active ? 'stop' : 'play',active ? 'stop' : 'reviewSetup',lifecyclePending() || state.profileEditingOnly || !coreAvailable() || state.busy || external)}${profileAction('edit','pen','edit',active)}${profileAction('duplicate','copy','duplicate',state.busy)}${profileAction('export','download','export')}${full ? profileAction('delete','trash','delete',active || state.busy) : ''}</div></div>${full ? `<div class="profile-availability"><span class="availability-dot ${capable ? 'available' : ''}"></span>${escapeHTML(t(external ? 'engineExternal' : capable ? 'engineAvailable' : state.offline ? 'platformUnknown' : 'engineUnsupported'))}</div>` : ''}</article>`;
 }
+// Repeated navigation should retain unchanged cards, their DOM state and focus.
+// Cache per owned container; new nodes or changed markup still render normally.
+const profileMarkup = new WeakMap();
+function renderProfileMarkup(element, markup) {
+  if (profileMarkup.get(element) === markup) return false;
+  element.innerHTML = markup;
+  profileMarkup.set(element, markup);
+  return true;
+}
 function renderProfiles() {
   const focus = rememberFocus(document.activeElement);
   const term = $('profile-search').value.toLocaleLowerCase(state.lang).trim();
   const filter = $('profile-filter').value || 'all';
   const selected = state.profiles.filter(p => (filter === 'all' || p.engine === filter) && [p.name,p.engine,p.id,p.description,p.notes].join(' ').toLocaleLowerCase(state.lang).includes(term));
   const empty = `<div class="empty-card">${icon('layers')}<p>${escapeHTML(t('noProfiles'))}</p><button class="btn btn-outline" data-create-profile>${escapeHTML(t('createProfile'))}</button></div>`;
-  $('quick-profiles').innerHTML = state.profiles.length ? state.profiles.slice(0,3).map(p => profileCard(p)).join('') : empty;
+  let replaced = renderProfileMarkup($('quick-profiles'),state.profiles.length ? state.profiles.slice(0,3).map(p => profileCard(p)).join('') : empty);
   // Build the full collection on demand; keep it current after its first visit.
   if(state.view==='profiles'||state.profileGridRendered){
-    $('all-profiles').innerHTML = selected.length ? selected.map(p => profileCard(p,true)).join('') : empty;
+    replaced = renderProfileMarkup($('all-profiles'),selected.length ? selected.map(p => profileCard(p,true)).join('') : empty) || replaced;
     $('profile-result-count').textContent = selected.length + ' / ' + state.profiles.length + ' ' + t('profilesShown');
     state.profileGridRendered=true;
   }
-  restoreReplacedFocus(focus);
+  if (replaced) restoreReplacedFocus(focus);
 }
 function renderEngines() {
   const focus = rememberFocus(document.activeElement);
@@ -424,6 +435,55 @@ function renderEngines() {
   restoreReplacedFocus(focus);
 }
 function renderAll() { renderHero(); renderProfiles(); renderEngines(); }
+
+// JSON.parse validates syntax but discards duplicate keys. Inspect the original
+// bounded text before publishing the parsed object to either editor mode.
+function parseProfileJSON(text) {
+  if (typeof text !== 'string') throw new Error(t('jsonError'));
+  const maxBytes = 1 << 20;
+  if (text.length > maxBytes || new TextEncoder().encode(text).length > maxBytes) throw new Error(t('fileTooLarge'));
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { throw new Error(t('jsonError')); }
+  let offset = 0;
+  const whitespace = () => { while (offset < text.length && /[ \t\r\n]/.test(text[offset])) offset++; };
+  const string = key => {
+    const start = offset++;
+    while (offset < text.length) {
+      const character = text[offset++];
+      if (character === '\\') offset++;
+      else if (character === '"') return key ? JSON.parse(text.slice(start,offset)) : undefined;
+    }
+    throw new Error(t('jsonError'));
+  };
+  const value = depth => {
+    if (depth > 16) throw new Error(t('jsonError'));
+    whitespace();
+    if (text[offset] === '{') {
+      offset++; whitespace();
+      const keys = new Set();
+      while (text[offset] !== '}') {
+        const key = string(true);
+        if (keys.has(key)) throw new Error(t('duplicateJSONField'));
+        keys.add(key); whitespace(); offset++; value(depth+1); whitespace();
+        if (text[offset] !== ',') break;
+        offset++; whitespace();
+      }
+      offset++;
+    } else if (text[offset] === '[') {
+      offset++; whitespace();
+      while (text[offset] !== ']') {
+        value(depth+1); whitespace();
+        if (text[offset] !== ',') break;
+        offset++;
+      }
+      offset++;
+    } else if (text[offset] === '"') string(false);
+    else { while (offset < text.length && !/[ \t\r\n,}\]]/.test(text[offset])) offset++; }
+  };
+  value(0); whitespace();
+  if (offset !== text.length) throw new Error(t('jsonError'));
+  return validateProfile(parsed);
+}
 
 // Validate before any write, including offline saves. Keep the schema aligned with profile.Profile.
 function validateProfile(p) {
@@ -563,7 +623,7 @@ function fromSimple() {
   return {...p,id:val('p-id'),name:val('p-name'),description:val('p-description'),category:val('p-category'),engine:val('p-engine'),binary:val('p-binary'),configPath:val('p-config'),sha256:val('p-sha'),args,routing:{includeDomains:splitLines($('p-includes').value),excludeDomains:splitLines($('p-excludes').value),applications:splitLines($('p-apps').value)},probe:{host:val('p-probe-host'),port:Number(val('p-probe-port')),tls:$('p-probe-tls').checked,timeoutSeconds:Number(val('p-probe-timeout'))},notes:val('p-notes')};
 }
 function currentEditorProfile() {
-  return validateProfile(state.editorTab === 'advanced' ? JSON.parse($('p-json').value) : fromSimple());
+  return state.editorTab === 'advanced' ? parseProfileJSON($('p-json').value) : validateProfile(fromSimple());
 }
 function switchEditor(tab,transfer=true) {
   if (!state.editing || state.editing.saving) return;
@@ -749,8 +809,11 @@ function downloadFile(data,name,mime='application/json') {
 }
 async function importProfile(file) {
   try {
-    if (file.size > 1 << 20) throw new Error(t('fileTooLarge'));
-    const p = clone(validateProfile(JSON.parse(await file.text())));
+    if (!Number.isSafeInteger(file?.size) || file.size < 0 || file.size > 1 << 20) throw new Error(t('fileTooLarge'));
+    const bytes = await file.arrayBuffer();
+    if (bytes.byteLength > 1 << 20 || bytes.byteLength !== file.size) throw new Error(t('fileTooLarge'));
+    const text = new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes);
+    const p = clone(parseProfileJSON(text));
     const collision = state.profiles.some(existing => existing.id === p.id);
     if (collision) { p.id = uniqueId(p.id + '-import',state.profiles); p.name = copyName(p.name); }
     delete p.updatedAt;

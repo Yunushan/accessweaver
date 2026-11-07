@@ -107,7 +107,7 @@ test('a stale connected deletion sends its reviewed revision and preserves the c
 test('null profile arrays remain editable and renderable',()=>{const env=environment();const p=baseProfile();p.args=null;p.routing={includeDomains:null,excludeDomains:null,applications:null};valid(env,p);env.put('fixture',p);env.run('showEditor(fixture); fromSimple(); profileCard(fixture,true);');});
 test('unknown nested routing fields are rejected',()=>{const p=baseProfile();p.routing.unknown=true;rejectsProfile(p);});
 test('unknown nested probe fields are rejected',()=>{const p=baseProfile();p.probe.unknown=true;rejectsProfile(p);});
-test('import collision opens renamed draft without replacing stored profile',async()=>{const env=environment();const original=baseProfile();env.put('fixture',original);env.run('state.profiles = [fixture]');const imported={...original,name:'Imported'};env.context.fileFixture={size:100,text:async()=>JSON.stringify(imported)};await env.run('importProfile(fileFixture)');assert.deepEqual(plain(env.run('state.profiles')),[original]);assert.notEqual(env.run('state.editing.profile.id'),original.id);assert.equal(env.run('state.editing.isNew'),true);assert.equal(env.data.has('aw.profiles'),false);});
+test('import collision opens renamed draft without replacing stored profile',async()=>{const env=environment();const original=baseProfile();env.put('fixture',original);env.run('state.profiles = [fixture]');const imported={...original,name:'Imported'};env.context.fileFixture=new Blob([JSON.stringify(imported)]);await env.run('importProfile(fileFixture)');assert.deepEqual(plain(env.run('state.profiles')),[original]);assert.notEqual(env.run('state.editing.profile.id'),original.id);assert.equal(env.run('state.editing.isNew'),true);assert.equal(env.data.has('aw.profiles'),false);});
 test('disconnected core blocks writes without changing cached profiles',async()=>{const env=environment();env.put('fixture',baseProfile());env.run('state.disconnected=true');await assert.rejects(env.run('persist(fixture)'));assert.equal(env.run('state.profiles.length'),0);});
 test('failed poll marks connection unknown without falsely stopping cached process',async()=>{const env=environment();env.run('state.loading=false;state.offline=false;state.runtime={state:"running",profileId:"test-profile",pid:123};apiRequest=async()=>{throw new Error("network down")};');await env.run('pollStatus()');assert.equal(env.run('state.disconnected'),true);assert.equal(env.run('state.runtime.state'),'running');assert.equal(env.run('coreAvailable()'),false);});
 test('process exit refreshes profile actions',async()=>{const env=environment();env.context.profileRenderCalls=0;env.run('state.loading=false;state.offline=false;state.runtime={state:"running",profileId:"test-profile",pid:123};renderProfiles=()=>{profileRenderCalls++};apiRequest=async()=>({state:"exited",profileId:"test-profile"});');await env.run('pollStatus()');assert.equal(env.context.profileRenderCalls,1);});
@@ -1209,4 +1209,68 @@ test('dashboard defers the full256profile DOM until entry and keeps the visited 
 });
 test('first profile-view render honors search, engine filter and direct navigation without dropping stored profiles',()=>{
  const env=environment(),profiles=Array.from({length:256},(_,i)=>({...baseProfile(),id:'large-'+i,name:'Large profile '+i}));env.put('collection',profiles);env.run('state.loading=false;state.profiles=collection;state.view="profiles";$("profile-search").value="Large profile 255";renderProfiles()');assert.equal((env.get('all-profiles').innerHTML.match(/<article class="profile-card/g)||[]).length,1);assert.ok(env.get('all-profiles').innerHTML.includes('Large profile 255'));assert.ok(env.get('profile-result-count').textContent.startsWith('1 / 256'));env.run('$("profile-filter").value="wiresock";renderProfiles()');assert.ok(env.get('all-profiles').innerHTML.includes('empty-card'));assert.equal(env.run('state.profiles.length'),256);
+});
+
+test('raw profile JSON rejects duplicate and escaped keys before object conversion',()=>{
+  const env=environment(),source=JSON.stringify(baseProfile());
+  for(const text of [source.replace('"id":','"id":"test-profile","id":'),source.replace('"name":','"\\u006eame":"PRIVATE_DUPLICATE_VALUE","name":'),source.replace('"tls":','"tls":false,"tls":'),source.replace('"includeDomains":','"includeDomains":[],"includeDomains":')]){
+    env.context.rawJSON=text;
+    assert.throws(()=>env.run('parseProfileJSON(rawJSON)'),/Use each JSON field name only once/);
+    assert.equal(env.run('state.editing'),null);assert.equal(env.data.has('aw.profiles'),false);
+  }
+  env.context.rawJSON=JSON.stringify({...baseProfile(),notes:'escaped "quote", slash \\ and true null [ ] { }'});
+  assert.equal(plain(env.run('parseProfileJSON(rawJSON)')).notes,JSON.parse(env.context.rawJSON).notes);
+  env.context.rawJSON=JSON.stringify(baseProfile(),null,2);
+  assert.deepEqual(plain(env.run('parseProfileJSON(rawJSON)')),baseProfile());
+});
+test('invalid raw advanced JSON preserves editor mode, draft and saved profiles',async()=>{
+  const env=environment();env.put('fixture',baseProfile());env.run('state.profiles=[fixture];showEditor(fixture);switchEditor("advanced");');
+  const raw=JSON.stringify(baseProfile()).replace('"name":','"name":"PRIVATE_DRAFT","name":');env.get('p-json').value=raw;
+  env.run('markDirty();switchEditor("simple")');
+  assert.equal(env.run('state.editorTab'),'advanced');assert.equal(env.get('p-json').value,raw);
+  await env.run('saveEditor()');
+  assert.equal(env.run('state.editing.dirty'),true);assert.equal(env.get('p-json').value,raw);
+  assert.deepEqual(plain(env.run('state.profiles')),[baseProfile()]);assert.equal(env.data.has('aw.profiles'),false);
+  assert.match(env.get('editor-feedback').textContent,/Use each JSON field name only once/);
+});
+test('profile file import rejects ambiguous or malformed bytes without replacing a draft',async()=>{
+  const env=environment();env.put('fixture',baseProfile());env.run('showEditor(fixture);markDirty()');
+  const draft=plain(env.run('state.editing'));
+  const valid=JSON.stringify(baseProfile());
+  for(const bytes of [valid.replace('"id":','"id":"test-profile","id":'),new Uint8Array([0xff]),'\ufeff'+valid]){
+    env.context.fileFixture=new Blob([bytes]);await env.run('importProfile(fileFixture)');
+    assert.deepEqual(plain(env.run('state.editing')),draft);assert.equal(env.data.has('aw.profiles'),false);
+  }
+});
+test('raw profile JSON enforces byte and nesting budgets',()=>{
+  const env=environment();env.context.rawJSON=JSON.stringify({...baseProfile(),notes:'x'.repeat(1<<20)});
+  assert.throws(()=>env.run('parseProfileJSON(rawJSON)'));
+  env.context.rawJSON='{"x":'+'['.repeat(17)+'0'+']'.repeat(17)+'}';
+  assert.throws(()=>env.run('parseProfileJSON(rawJSON)'));
+});
+
+test('raw JSON scanner preserves escaped and multilingual values from canonical profiles',()=>{
+  const env=environment();
+  for(let index=0;index<100;index++){
+    const profile={...baseProfile(),name:'Fixture '+index,notes:('quote " slash \\ braces {} [] true null Türkçe Русский Español\n').repeat(index%5+1),args:['',String(index),'value with "quote" and \\ slash','line\nbreak']};
+    env.context.rawJSON=JSON.stringify(profile,null,index%4);
+    assert.deepEqual(plain(env.run('parseProfileJSON(rawJSON)')),profile);
+  }
+});
+
+test('profile grids retain unchanged markup across navigation and still reflect every changed input',()=>{
+  const env=environment(),writes={all:0,quick:0};let all='',quick='';
+  Object.defineProperty(env.get('all-profiles'),'innerHTML',{get:()=>all,set:value=>{writes.all++;all=value},configurable:true});
+  Object.defineProperty(env.get('quick-profiles'),'innerHTML',{get:()=>quick,set:value=>{writes.quick++;quick=value},configurable:true});
+  env.put('fixture',baseProfile());env.run('state.view="profiles";state.profiles=[fixture];renderProfiles()');
+  assert.deepEqual(writes,{all:1,quick:1});
+  env.run('state.view="dashboard";renderProfiles();state.view="profiles";renderProfiles()');
+  assert.deepEqual(writes,{all:1,quick:1});
+  env.run('state.profiles[0].name="Changed name";renderProfiles()');
+  assert.deepEqual(writes,{all:2,quick:2});assert.match(all,/Changed name/);
+  env.get('profile-search').value='no match';env.run('renderProfiles()');assert.equal(writes.all,3);assert.equal(writes.quick,2);
+  env.get('profile-search').value='';env.run('renderProfiles()');assert.equal(writes.all,4);
+  env.run('state.lang="tr";renderProfiles()');assert.equal(writes.all,5);assert.equal(writes.quick,3);
+  env.run('state.busy=true;renderProfiles()');assert.equal(writes.all,6);assert.equal(writes.quick,4);
+  env.run('state.profiles=[];renderProfiles()');assert.equal(writes.all,7);assert.equal(writes.quick,5);
 });
