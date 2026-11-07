@@ -3,6 +3,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path');
 const {performance}=require('node:perf_hooks'),{createHash}=require('node:crypto'),{execFileSync,ChildProcess}=require('node:child_process'),os=require('node:os');
+const {writeMemoryReport}=require('./browser-memory.cjs');
 const budgets=require('./performance-budgets.json');
 const {BrowserResources}=require('./browser-resources.cjs');
 const performanceCaseName='desktop performance meets published Linux controller and browser budgets';
@@ -11,7 +12,7 @@ const countNames=['reload','navigation','editor','burstRequests','loadRequests',
 const failureKinds=['none','Error','TypeError','ReferenceError','TimeoutError','AssertionError','AbortError','Other'];
 function classifyFailure(error){let name;try{name=error?.name}catch{return 'Other'}return failureKinds.includes(name)&&name!=='none'?name:'Other'}
 const stages=['environment','startup','dashboard','reload','navigation','editor','burst','load','cooldown','resources','complete'];
-const sources=['scripts/browser-tests/browser-resources.cjs','scripts/check-native-environment.cjs','scripts/browser-tests/check-image-environment.cjs','scripts/browser-tests/browser-native-binary.cjs','web/app.js','web/index.html','web/app.css','web/locales.js','web/system.js','scripts/browser-tests/desktop.spec.cjs','scripts/browser-tests/desktop-performance.cjs','scripts/browser-tests/performance-budgets.json','scripts/browser-tests/package-lock.json','scripts/browser-tests/playwright.config.cjs','.github/workflows/browser.yml'];
+const sources=['scripts/browser-tests/browser-memory.cjs','scripts/browser-tests/browser-resources.cjs','scripts/check-native-environment.cjs','scripts/browser-tests/check-image-environment.cjs','scripts/browser-tests/browser-native-binary.cjs','web/app.js','web/index.html','web/app.css','web/locales.js','web/system.js','scripts/browser-tests/desktop.spec.cjs','scripts/browser-tests/desktop-performance.cjs','scripts/browser-tests/performance-budgets.json','scripts/browser-tests/package-lock.json','scripts/browser-tests/playwright.config.cjs','.github/workflows/browser.yml'];
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function waitUntil(deadline,clock=()=>performance.now(),sleep=wait){assert.ok(Number.isFinite(deadline),'monotonic deadline differs');let previous=-Infinity;for(;;){const now=clock();assert.ok(Number.isFinite(now)&&now>=previous,'monotonic clock differs');previous=now;const remaining=deadline-now;if(remaining<=0)return;await sleep(Math.max(1,Math.ceil(remaining)))}}
 function number(text){assert.match(text,/^[0-9]+$/,'numeric process counter required');const n=Number(text);assert.ok(Number.isSafeInteger(n),'process counter range differs');return n}
@@ -67,41 +68,46 @@ async function writePerformanceReport(repo,project,source,binaryHash,environment
 }
 async function runDesktopPerformance(page,core,testInfo,browserChild){
  const value={stage:'environment',failureKind:'none',metrics:Object.fromEntries(metricNames.map(n=>[n,null])),counts:Object.fromEntries(countNames.map(n=>[n,0]))},environment={platform:process.platform,architecture:process.arch,node:process.version,playwright:'1.64.1',cpuCount:os.availableParallelism(),pageBytes:null,clockTicksPerSecond:null};
- const metrics=value.metrics,counts=value.counts,api=[],navigation=[],editor=[],reload=[];let sampling=false,sampleTask,samplingError,identity=null,baseline,browserObserver,browserBaseline,browserTask;const child=core.controller;
+ const metrics=value.metrics,counts=value.counts,api=[],navigation=[],editor=[],reload=[],memoryPoints=[];let sampling=false,sampleTask,samplingError,identity=null,baseline,browserObserver,browserBaseline,browserTask;const child=core.controller;
  const sample=async()=>{const s=await sampleController(child,identity,pageBytes);identity=s.startTicks;counts.resourceSamples++;metrics.sampledPeakRssBytes=Math.max(metrics.sampledPeakRssBytes||0,s.rssBytes);metrics.sampledPeakDescriptors=Math.max(metrics.sampledPeakDescriptors||0,s.descriptors);metrics.sampledPeakThreads=Math.max(metrics.sampledPeakThreads||0,s.threads);return s};
  let browserSampling=false;
  const browserTaskPause=async()=>{browserSampling=false;if(browserTask)await browserTask;};
  const resumeBrowserSampling=()=>{browserSampling=true;browserTask=(async()=>{while(sampling&&browserSampling){try{await browserSample()}catch(error){samplingError=classifyFailure(error);sampling=false;break}await wait(budgets.browserResourceIntervalMilliseconds)}})();};
- const browserSample=async()=>{
-  let s;try{s=await browserObserver.snapshot()}catch(error){counts.browserFailureStage=browserObserver.failureStage||1;throw error}counts.browserResourceSamples=s.samples;counts.browserObservedExits=s.observedExits;
+ let browserQueue=Promise.resolve();
+ const browserSample=(withMemory=false)=>{const task=browserQueue.then(async()=>{
+  let s;try{s=await browserObserver.snapshot(withMemory)}catch(error){counts.browserFailureStage=browserObserver.failureStage||1;throw error}counts.browserResourceSamples=s.samples;counts.browserObservedExits=s.observedExits;
   for(const [metric,field] of [['browserSampledPeakRssBytes','rssBytes'],['browserSampledPeakDescriptors','descriptors'],['browserSampledPeakThreads','threads'],['browserSampledPeakProcesses','processes']])metrics[metric]=Math.max(metrics[metric]||0,s[field]);
   return s;
- };
+ });browserQueue=task.catch(()=>{});return task;};
+ const captureMemory=async(phase)=>{const snapshot=await browserSample(true);memoryPoints.push({phase,...snapshot.memory});return snapshot;};
  let pageBytes,hz;
  try{
   assert.equal(process.platform,'linux','Linux performance observer required');assert.ok(environment.cpuCount>=2,'reference CPU capacity required');liveChild(child);
   pageBytes=number(execFileSync('/usr/bin/getconf',['PAGESIZE'],{encoding:'utf8',timeout:2000,maxBuffer:128}).trim());hz=number(execFileSync('/usr/bin/getconf',['CLK_TCK'],{encoding:'utf8',timeout:2000,maxBuffer:128}).trim());assert.ok(pageBytes>0&&hz>0,'native counter units differ');environment.pageBytes=pageBytes;environment.clockTicksPerSecond=hz;browserObserver=new BrowserResources(browserChild,pageBytes,parseStat);
   value.stage='startup';metrics.controllerStartupMs=core.launcherReadyMilliseconds;assert.ok(Number.isFinite(metrics.controllerStartupMs)&&metrics.controllerStartupMs>=0,'controller startup clock differs');
-  value.stage='dashboard';let started=performance.now();await page.goto(core.launcher);await ready(page);metrics.dashboardReadyMs=performance.now()-started;baseline=await sample();browserBaseline=await browserSample();
+  value.stage='dashboard';let started=performance.now();await page.goto(core.launcher);await ready(page);metrics.dashboardReadyMs=performance.now()-started;baseline=await sample();browserBaseline=await captureMemory('dashboard');
   sampling=true;sampleTask=(async()=>{while(sampling){try{await sample()}catch(error){samplingError=classifyFailure(error);sampling=false;break}await wait(budgets.resourceIntervalMilliseconds)}})();
   resumeBrowserSampling();
-  value.stage='reload';for(let i=0;i<budgets.reloadSamples;i++){started=performance.now();await page.reload();await ready(page);reload.push(performance.now()-started);counts.reload++}metrics.reloadP95Ms=percentile(reload);
+  value.stage='reload';for(let i=0;i<budgets.reloadSamples;i++){started=performance.now();await page.reload();await ready(page);reload.push(performance.now()-started);counts.reload++}metrics.reloadP95Ms=percentile(reload);await captureMemory('reload');
   const views=['dashboard','profiles','engines','diagnostics','settings','system'];
   const navigate=async(view)=>{const start=performance.now();await page.locator('.nav-item[data-view="'+view+'"]').click();await page.locator('#view-'+view+'.active').waitFor({state:'visible'});await paint(page);navigation.push(performance.now()-start);counts.navigation++};
   value.stage='navigation';for(let i=0;i<12;i++)await navigate(views[i%views.length]);
-  value.stage='editor';await page.locator('.nav-item[data-view="profiles"]').click();await paint(page);for(let i=0;i<budgets.editorSamples;i++){started=performance.now();await page.locator('#new-profile').click();await page.locator('#editor-modal').waitFor({state:'visible'});await paint(page);editor.push(performance.now()-started);counts.editor++;await page.locator('#close-editor').click();await page.locator('#editor-modal').waitFor({state:'hidden'})}metrics.editorP95Ms=percentile(editor);
+  await captureMemory('navigation');
+  value.stage='editor';await page.locator('.nav-item[data-view="profiles"]').click();await paint(page);for(let i=0;i<budgets.editorSamples;i++){started=performance.now();await page.locator('#new-profile').click();await page.locator('#editor-modal').waitFor({state:'visible'});await paint(page);editor.push(performance.now()-started);counts.editor++;await page.locator('#close-editor').click();await page.locator('#editor-modal').waitFor({state:'hidden'})}metrics.editorP95Ms=percentile(editor);await captureMemory('editor');
   value.stage='burst';started=performance.now();for(let i=0;i<budgets.burstRequests;i+=budgets.burstConcurrency){api.push(...await requestBatch(page,budgets.burstConcurrency));counts.burstRequests+=budgets.burstConcurrency}metrics.burstRequestsPerSecond=counts.burstRequests/((performance.now()-started)/1000);
+  await captureMemory('burst');
   value.stage='load';await browserTaskPause();const browserBefore=await browserSample(),browserCpuStarted=performance.now(),before=await sample(),loadStarted=performance.now();resumeBrowserSampling();for(let i=0;i<budgets.loadSeconds;i++){await waitUntil(loadStarted+i*1000);const [latencies]=await Promise.all([requestBatch(page,budgets.requestsPerSecond),i%5===0?navigate(views[(i/5)%views.length]):Promise.resolve()]);api.push(...latencies);counts.loadRequests+=budgets.requestsPerSecond;assert.ok(!samplingError,'owned resource observation failed')}
-  await waitUntil(loadStarted+budgets.loadSeconds*1000);const after=await sample(),loadElapsed=performance.now()-loadStarted;await browserTaskPause();const browserAfter=await browserSample();const browserCpuElapsed=performance.now()-browserCpuStarted;counts.browserCpuMilliseconds=Math.floor(browserCpuElapsed);metrics.browserObservedLoadCpuPercentOneCore=(browserAfter.cpuTicks-browserBefore.cpuTicks)/hz/(browserCpuElapsed/1000)*100;resumeBrowserSampling();counts.loadMilliseconds=Math.floor(loadElapsed);metrics.loadRequestsPerSecond=counts.loadRequests/(loadElapsed/1000);metrics.loadCpuPercentOneCore=cpuPercent(before,after,hz,loadElapsed);metrics.navigationP95Ms=percentile(navigation);metrics.apiP95Ms=percentile(api);
-  value.stage='cooldown';await waitUntil(performance.now()+budgets.cooldownSeconds*1000);const cooldown=await sample();await browserTaskPause();const browserCooldown=await browserSample();metrics.browserCooldownRssGrowthBytes=browserCooldown.rssBytes-browserBaseline.rssBytes;metrics.browserCooldownDescriptorGrowth=browserCooldown.descriptors-browserBaseline.descriptors;metrics.browserCooldownThreadGrowth=browserCooldown.threads-browserBaseline.threads;metrics.browserCooldownProcessGrowth=browserCooldown.processes-browserBaseline.processes;metrics.cooldownRssGrowthBytes=cooldown.rssBytes-baseline.rssBytes;metrics.cooldownDescriptorGrowth=cooldown.descriptors-baseline.descriptors;metrics.cooldownThreadGrowth=cooldown.threads-baseline.threads;assert.ok(!samplingError,'owned resource observation failed');value.stage='complete';
+  await waitUntil(loadStarted+budgets.loadSeconds*1000);const after=await sample(),loadElapsed=performance.now()-loadStarted;await browserTaskPause();const browserAfter=await browserSample(true);memoryPoints.push({phase:'load',...browserAfter.memory});const browserCpuElapsed=performance.now()-browserCpuStarted;counts.browserCpuMilliseconds=Math.floor(browserCpuElapsed);metrics.browserObservedLoadCpuPercentOneCore=(browserAfter.cpuTicks-browserBefore.cpuTicks)/hz/(browserCpuElapsed/1000)*100;resumeBrowserSampling();counts.loadMilliseconds=Math.floor(loadElapsed);metrics.loadRequestsPerSecond=counts.loadRequests/(loadElapsed/1000);metrics.loadCpuPercentOneCore=cpuPercent(before,after,hz,loadElapsed);metrics.navigationP95Ms=percentile(navigation);metrics.apiP95Ms=percentile(api);
+  value.stage='cooldown';await waitUntil(performance.now()+budgets.cooldownSeconds*1000);const cooldown=await sample();await browserTaskPause();const browserCooldown=await browserSample(true);memoryPoints.push({phase:'cooldown',...browserCooldown.memory});metrics.browserCooldownRssGrowthBytes=browserCooldown.rssBytes-browserBaseline.rssBytes;metrics.browserCooldownDescriptorGrowth=browserCooldown.descriptors-browserBaseline.descriptors;metrics.browserCooldownThreadGrowth=browserCooldown.threads-browserBaseline.threads;metrics.browserCooldownProcessGrowth=browserCooldown.processes-browserBaseline.processes;metrics.cooldownRssGrowthBytes=cooldown.rssBytes-baseline.rssBytes;metrics.cooldownDescriptorGrowth=cooldown.descriptors-baseline.descriptors;metrics.cooldownThreadGrowth=cooldown.threads-baseline.threads;assert.ok(!samplingError,'owned resource observation failed');value.stage='complete';
  }catch(error){
   // Only fixed stage/kind codes cross the evidence boundary.
   value.failureKind=classifyFailure(error);
  }finally{
-  sampling=false;if(sampleTask)await sampleTask;if(browserTask)await browserTask;if(samplingError){value.stage='resources';value.failureKind=samplingError;}
+  sampling=false;if(sampleTask)await sampleTask;if(browserTask)await browserTask;await browserQueue;if(samplingError){value.stage='resources';value.failureKind=samplingError;}
  }
  let outcome=value.stage==='complete'&&value.failureKind==='none'&&violations(value).length===0?'passed':'failed';
  if(process.env.GITHUB_ACTIONS==='true')outcome=await writePerformanceReport(path.resolve(__dirname,'../..'),testInfo.project.name,core.build.commit,core.binarySha256,environment,value);
+ if(process.env.GITHUB_ACTIONS==='true')await writeMemoryReport(path.resolve(__dirname,'../..'),core.build.commit,core.binarySha256,testInfo.project.name,process.env.ACCESSWEAVER_EXPECT_GOARCH,memoryPoints);
  assert.equal(outcome,'passed','Desktop performance contract failed at '+value.stage);
 }
 module.exports={waitUntil,failureKinds,classifyFailure,dashboardReady,budgets,performanceCaseName,metricNames,countNames,stages,sources,parseStat,percentile,cpuPercent,violations,validateValue,seedPerformanceProfiles,liveChild,writePerformanceReport,runDesktopPerformance};

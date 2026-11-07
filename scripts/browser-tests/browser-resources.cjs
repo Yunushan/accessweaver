@@ -4,6 +4,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const {ChildProcess} = require('node:child_process');
+const {parseSmaps,emptyGroup,mappedFields}=require('./browser-memory.cjs');
 const MAX_PROCESSES = 64, MAX_THREADS = 512, MAX_IDENTITIES = 2048;
 function live(child) {
   assert.ok(child instanceof ChildProcess && Number.isSafeInteger(child.pid) && child.pid > 0 && child.exitCode === null && child.signalCode === null && !child.killed, 'Owned live browser required');
@@ -52,13 +53,14 @@ class BrowserResources {
     if(stat.dead){assert.notEqual(pid,this.child.pid,'Owned browser root exited');return null;}
     return stat;
   }
-  async snapshot() {
+  async snapshot(withMemory=false) {
+    assert.equal(typeof withMemory,'boolean','Owned memory selection differs');
     this.phase=1; live(this.child); assert.ok(!this.busy, 'Browser resource samples must be serialized'); this.busy = true;
     try {
       const pending = [{pid:this.child.pid, parent:process.pid}], visited = new Set();
       // Previously proven descendants remain owned if reparented after an exit.
       for (const pid of this.known.keys()) if (pid !== this.child.pid) pending.push({pid, parent:null});
-      let rssBytes=0, descriptors=0, threads=0, processes=0, taskReads=0;
+      let rssBytes=0, descriptors=0, threads=0, processes=0, taskReads=0;const memory=withMemory?{root:emptyGroup(),descendants:emptyGroup()}:null;
       while (pending.length) {
         const item=pending.shift(), pid=item.pid; if (visited.has(pid)) continue; visited.add(pid);
         assert.ok(visited.size <= MAX_IDENTITIES, 'Browser identity census budget differs');
@@ -79,16 +81,23 @@ class BrowserResources {
           catch(error) { if(error?.code==='ENOENT')continue; throw error; }
           for(const child of ids(raw,MAX_PROCESSES)) { assert.ok(child!==pid && child!==this.child.pid, 'Owned browser ancestry cycles'); children.add(child); assert.ok(children.size<=MAX_PROCESSES,'Owned descendant budget differs'); }
         }
+        let mapping=null,availability='readable';
+        if(withMemory){
+          this.phase=8;
+          try{mapping=parseSmaps(await this.io.read('/proc/'+pid+'/smaps_rollup',16384));}
+          catch(error){if(['EACCES','EPERM'].includes(error?.code))availability='denied';else if(['ENOENT','ESRCH','ENOSYS'].includes(error?.code))availability='unavailable';else throw error;}
+        }
         this.phase=6; const after=await this.counters(pid,item.parent,before);
         if (!after) { processes--; if(previous&&!previous.gone){previous.gone=true;this.exits++;} continue; }
         assert.ok(!previous || !previous.gone, 'Retired owned identity unexpectedly returned');
         this.phase=7; this.cpuTicks+=after.cpuTicks-(previous?previous.cpuTicks:0); assert.ok(Number.isSafeInteger(this.cpuTicks),'Owned CPU aggregate differs');
         this.known.set(pid,{startTicks:after.startTicks,cpuTicks:after.cpuTicks,gone:false}); assert.ok(this.known.size<=MAX_IDENTITIES,'Owned identity history budget differs');
+        if(withMemory){const group=memory[pid===this.child.pid?'root':'descendants'];group.processes++;group.statRssBytes+=after.rssBytes;group.largestProcessRssBytes=Math.max(group.largestProcessRssBytes,after.rssBytes);group[availability]++;if(mapping)for(const k of mappedFields)group[k]+=mapping[k];}
         rssBytes+=after.rssBytes; descriptors+=fdNames.length; threads+=after.threads;
         for(const child of children) if(!visited.has(child)) pending.push({pid:child,parent:pid});
       }
       live(this.child); this.samples++;
-      return {cpuTicks:this.cpuTicks,rssBytes,descriptors,threads,processes,samples:this.samples,observedExits:this.exits};
+      return {cpuTicks:this.cpuTicks,rssBytes,descriptors,threads,processes,samples:this.samples,observedExits:this.exits,...(withMemory?{memory}:{})};
     } catch(error) { this.failureStage=this.phase; throw error; } finally { this.busy=false; }
   }
 }
