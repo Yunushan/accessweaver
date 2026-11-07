@@ -253,7 +253,9 @@ class TargetAndFirmwareTests(unittest.TestCase):
                             guest.build_payload(repo, capsule, "a" * 40, target, staged)
                         self.assertFalse((capsule / "payload.tar.gz").exists())
                         continue
-                    manifest, archive = guest.build_payload(repo, capsule, "a" * 40, target, staged if packaged else None)
+                    observations = {}
+                    manifest, archive = guest.build_payload(repo, capsule, "a" * 40, target, staged if packaged else None, observations)
+                    self.assertEqual(observations, {"step": "complete", "plannedPackages": 1, "completedPackages": 1, "currentPackageID": None})
                 if packaged:
                     stage.assert_called_once()
                     self.assertEqual(manifest["packagedCandidate"], receipt)

@@ -435,7 +435,24 @@ def remove_owned_capsule(capsule, root, identity, emulator_stopped):
     shutil.rmtree(capsule)
 
 
-def build_payload(repo, capsule, source, target, packaged=None):
+def build_failure_observations(error):
+    # Only source-defined codes and bounded integers leave the build runner.
+    kind = {CommandFailure: "command-failed", TimeoutError: "helper-timeout",
+            ValueError: "invalid-build-input", RuntimeError: "build-assertion"}.get(type(error), "build-exception")
+    cause = {"bounded helper output exceeded": "helper-output-limit",
+             "unsupported package path": "unsupported-package-path",
+             "unexpected test module": "unexpected-test-module",
+             "unexpected unit package set": "unexpected-package-count",
+             "source archive exceeds bounds or contains submodules": "source-archive-limit",
+             "source changed while building": "source-changed",
+             "payload exceeds bound": "payload-limit"}.get(str(error), "unspecified")
+    code = error.result.returncode if isinstance(error, CommandFailure) else None
+    if type(code) is not int or not -255 <= code <= 255:
+        code = None
+    return {"failureKind": kind, "failureCause": cause, "failureExitCode": code}
+
+
+def build_payload(repo, capsule, source, target, packaged=None, observations=None):
     goos = target.get("goos", "freebsd")
     if (goos not in ("freebsd", "openbsd") or target["arch"] not in ("amd64", "arm64") or
             target["label"] != goos + "-" + target["arch"]):
@@ -445,7 +462,10 @@ def build_payload(repo, capsule, source, target, packaged=None):
     tests = payload / "tests"
     tests.mkdir(mode=0o700)
     env = dict(os.environ, GOOS=goos, GOARCH=target["arch"], CGO_ENABLED="0", GOTOOLCHAIN="local")
+    observations = {} if observations is None else observations
+    observations.update(step="package-discovery", plannedPackages=0, completedPackages=0, currentPackageID=None)
     packages = decode_objects(run(["go", "list", "-json", "./..."], env=env).stdout)
+    observations["plannedPackages"] = sum(bool(p.get("TestGoFiles") or p.get("XTestGoFiles")) for p in packages)
     records = []
     for package in packages:
         if not package.get("TestGoFiles") and not package.get("XTestGoFiles"):
@@ -456,14 +476,17 @@ def build_payload(repo, capsule, source, target, packaged=None):
         directory = relative_package(package["Dir"], repo)
         filename = "tests/" + hashlib.sha256(name.encode()).hexdigest()[:20] + ".test"
         executable = payload / filename
+        observations.update(step="package-compile", currentPackageID=len(records))
         run(["go", "test", "-mod=readonly", "-c", "-o", str(executable), name], env=env, timeout=300)
         if not executable.is_file() or executable.stat().st_size > 128 << 20:
             raise RuntimeError("unbounded test binary")
         records.append({"package": name, "directory": directory, "file": filename, "sha256": digest(executable)})
+        observations["completedPackages"] = len(records)
     if not records or len(records) > 64:
         raise RuntimeError("unexpected unit package set")
     cli = "accessweaver-" + target["label"]
     receipt = None
+    observations.update(step="source-cli-build" if packaged is None else "packaged-cli-copy", currentPackageID=None)
     if packaged is None:
         run(["bash", "scripts/build-all.sh", goos + "/" + target["arch"]],
             env=dict(os.environ, OUTPUT_DIR=str(payload), GOTOOLCHAIN="local"), timeout=300)
@@ -472,6 +495,7 @@ def build_payload(repo, capsule, source, target, packaged=None):
         # Copy the exact staged archive bytes; never substitute a rebuilt CLI.
         receipt = copy_packaged_cli(packaged, payload / cli, source, target["arch"], os.environ.get("GITHUB_REF", ""), goos=goos)
         (payload / "BUILD-INFO.json").write_text(json.dumps(receipt["build"]) + "\n", encoding="utf-8")
+    observations["step"] = "source-archive"
     tree = run(["git", "ls-tree", "-r", "-l", "HEAD"]).stdout.decode("utf-8").splitlines()
     sizes = [line.split("\t", 1)[0].split()[-1] for line in tree]
     if len(tree) > 4096 or any(not value.isdecimal() for value in sizes) or sum(map(int, sizes)) > 64 << 20:
@@ -491,10 +515,12 @@ def build_payload(repo, capsule, source, target, packaged=None):
     files += [payload / record["file"] for record in records]
     if sum(path.stat().st_size for path in files) > 1 << 30:
         raise RuntimeError("payload exceeds bound")
+    observations["step"] = "transport-archive"
     archive = capsule / "payload.tar.gz"
     with tarfile.open(archive, "w:gz", compresslevel=1) as tar:
         for path in files:
             tar.add(path, arcname=path.relative_to(payload).as_posix(), recursive=False)
+    observations["step"] = "complete"
     return manifest, archive
 
 
@@ -577,7 +603,8 @@ def main():
     phase = "build"
     failed = True
     try:
-        manifest, archive = build_payload(repo, capsule, source, target, args.packaged_candidate)
+        report["buildObservations"] = {}
+        manifest, archive = build_payload(repo, capsule, source, target, args.packaged_candidate, report["buildObservations"])
         if args.packaged_candidate is not None:
             report["packagedCandidate"] = manifest["packagedCandidate"]
         report["crossCompiledPackages"] = len(manifest["packages"])
@@ -724,6 +751,8 @@ def main():
         failed = False
     except Exception as error:
         report.update(firmware_failure_observations(error))
+        if phase == "build":
+            report.setdefault("buildObservations", {}).update(build_failure_observations(error))
         report["failurePhase"] = phase
         report["failureType"] = type(error).__name__
         print("Guest qualification incomplete: " + phase + "/" + type(error).__name__, flush=True)
@@ -742,7 +771,7 @@ def main():
             except (OSError, subprocess.TimeoutExpired):
                 report["cleanupFailed"] = True
                 failed = True
-            report["ownedEmulatorStopped"] = emulator_stopped
+        report["ownedEmulatorStopped"] = emulator_stopped
         if serial_thread is not None:
             serial_thread.join(timeout=2)
             if serial_thread.is_alive():

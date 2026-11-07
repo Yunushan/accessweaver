@@ -462,7 +462,8 @@ def main():
     stopped, failed, phase = True, True, "source-build"
     unconfirmed_start = False
     try:
-        manifest, payload = common.build_payload(repo, capsule, source, target, args.packaged_candidate)
+        report["buildObservations"] = {}
+        manifest, payload = common.build_payload(repo, capsule, source, target, args.packaged_candidate, report["buildObservations"])
         if args.packaged_candidate is not None:
             report["packagedCandidate"] = manifest["packagedCandidate"]
         report["crossCompiledPackages"] = len(manifest["packages"])
@@ -557,6 +558,8 @@ def main():
         failed = False
     except Exception as error:
         report.update(failurePhase=phase, failureType=type(error).__name__)
+        if phase == "source-build":
+            report.setdefault("buildObservations", {}).update(common.build_failure_observations(error))
         print("OpenBSD qualification incomplete: " + phase + "/" + type(error).__name__, file=sys.stderr)
     finally:
         # A failed constructor may leave process ownership uncertain. Preserve

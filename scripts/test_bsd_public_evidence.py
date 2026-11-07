@@ -18,6 +18,7 @@ def fixture(osname="freebsd", arch="amd64"):
             "hostSDK": {"GOOS": "linux", "GOARCH": arch, "GOHOSTOS": "linux", "GOHOSTARCH": arch, "GOVERSION": "go1.27.3", "GOTOOLCHAIN": "local"},
             "guestIdentity": {"OS": {"freebsd": "FreeBSD", "openbsd": "OpenBSD"}[osname], "release": "15.1-RELEASE" if osname == "freebsd" else "8.0", "machine": arch, "uid": 1000, "user": "awtest"},
             "executedCLI": {"commit": SOURCE, "sourceState": "clean", "platform": osname, "arch": arch, "goVersion": "go1.27.3", "version": "PRIVATE_SYNTHETIC_VALUE"},
+            "buildObservations": {"step": "complete", "plannedPackages": 1, "completedPackages": 1},
             "cliSHA256": "d" * 64, "guestExecutionPassed": True, "allTransportedExecutableHashesVerified": True,
             "imageDigestVerified": True, "installerMediaDigestVerified": True, "installerMetadataSignatureVerified": True, "installerCompleted": True, "seedRemovedBeforeTargetExecution": True,
             "ownedEmulatorStopped": True, "ownedEmulatorsStopped": True, "ownedCapsuleRemoved": True, "crossCompiledPackages": 1,
@@ -97,6 +98,18 @@ class PublicBSDReportTests(unittest.TestCase):
             report = fixture();report.update(guestExecutionPassed=False, failurePhase=phase)
             self.assertEqual(projected(report)["stage"], phase)
 
+    def test_build_progress_exports_only_fixed_codes_and_bounded_counters(self):
+        report = fixture();report.update(guestExecutionPassed=False, failurePhase="build")
+        report["buildObservations"] = {"step": "package-compile", "plannedPackages": 27, "completedPackages": 3, "currentPackageID": 3, "failureKind": "command-failed", "failureExitCode": 1, "private": "PRIVATE_SYNTHETIC_VALUE"}
+        data = projected(report)
+        self.assertEqual(data["build"]["currentPackageID"],3)
+        self.assertEqual(data["build"]["failureKind"],"command-failed")
+        self.assertNotIn("PRIVATE_SYNTHETIC_VALUE",json.dumps(data))
+        for change in ({"step":"PRIVATE_SYNTHETIC_VALUE"}, {"plannedPackages":True}, {"currentPackageID":64}, {"failureExitCode":"private"}, {"completedPackages":28}):
+            report["buildObservations"].update(change)
+            with self.assertRaises(ValueError):projected(report)
+            report["buildObservations"].update(step="package-compile",plannedPackages=27,currentPackageID=3,failureExitCode=1,completedPackages=3)
+
     def test_failure_phase_is_closed_and_no_failure_text_is_exported(self):
         report = fixture();report.update(guestExecutionPassed=False, failurePhase="PRIVATE_SYNTHETIC_VALUE", failureType="PRIVATE_SYNTHETIC_VALUE")
         result = projected(report)
@@ -116,6 +129,19 @@ class PublicBSDReportTests(unittest.TestCase):
             finally:
                 self.assertEqual(root.parent, Path(tempfile.gettempdir()).resolve())
                 self.assertTrue(root.name.startswith("accessweaver-bsd-public-"))
+
+    def test_producer_failure_codes_drop_exception_text_and_command_arguments(self):
+        import importlib.util
+        import subprocess
+        spec = importlib.util.spec_from_file_location("bsd_guest_public_fixture", Path(__file__).with_name("test-bsd-guest.py"))
+        producer = importlib.util.module_from_spec(spec);spec.loader.exec_module(producer)
+        errors = (RuntimeError("PRIVATE_SYNTHETIC_VALUE"), ValueError("bounded helper output exceeded"), TimeoutError("PRIVATE_SYNTHETIC_VALUE"), producer.CommandFailure(subprocess.CompletedProcess(["PRIVATE_SYNTHETIC_VALUE"], 1, b"PRIVATE_SYNTHETIC_VALUE")))
+        for error in errors:
+            data = producer.build_failure_observations(error)
+            self.assertNotIn("PRIVATE_SYNTHETIC_VALUE", json.dumps(data))
+            evidence.public_build(data)
+        self.assertEqual(producer.build_failure_observations(errors[1])["failureCause"], "helper-output-limit")
+        self.assertEqual(producer.build_failure_observations(errors[3])["failureExitCode"], 1)
 
     def test_guard_refuses_local_before_source_commands(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(evidence, "command") as command:

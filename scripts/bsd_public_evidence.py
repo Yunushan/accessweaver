@@ -15,7 +15,7 @@ import subprocess
 
 MODULE = "github.com/Yunushan/accessweaver/"
 TARGETS = {osname + "/" + arch for osname in ("freebsd", "openbsd") for arch in ("amd64", "arm64")}
-SOURCES = ("scripts/bsd_public_evidence.py", "scripts/test_bsd_public_evidence.py", "scripts/test-bsd-guest.py", "scripts/test-openbsd-guest.py", "scripts/bsd_packaged_candidate.py", "scripts/build-all.sh", ".github/workflows/bsd.yml", ".github/workflows/openbsd.yml", ".github/workflows/bsd-candidate.yml", "go.mod", "go.sum")
+SOURCES = ("scripts/bsd_public_evidence.py", "scripts/test_bsd_public_evidence.py", "scripts/test_bsd_guest.py", "scripts/test-bsd-guest.py", "scripts/test-openbsd-guest.py", "scripts/bsd_packaged_candidate.py", "scripts/build-all.sh", ".github/workflows/bsd.yml", ".github/workflows/openbsd.yml", ".github/workflows/bsd-candidate.yml", "go.mod", "go.sum")
 PHASES = {"build", "source-build", "image-download", "image-prepare", "firmware-prepare", "guest-boot", "guest-identity", "payload-transfer", "guest-cli", "guest-unit-tests", "installer-media", "installer-boot", "guest-installation", "installed-guest-boot", "packaged-backup-roundtrip"}
 
 def exact_hash(value):
@@ -31,6 +31,28 @@ def flag(report, key):
     if type(value) is not bool:
         raise ValueError("public flag differs")
     return value
+
+BUILD_STEPS = {"not-observed", "package-discovery", "package-compile", "source-cli-build", "packaged-cli-copy", "source-archive", "transport-archive", "complete"}
+BUILD_KINDS = {"none", "command-failed", "helper-timeout", "invalid-build-input", "build-assertion", "build-exception"}
+BUILD_CAUSES = {"unspecified", "helper-output-limit", "unsupported-package-path", "unexpected-test-module", "unexpected-package-count", "source-archive-limit", "source-changed", "payload-limit"}
+
+def public_build(raw):
+    if not isinstance(raw, dict):
+        raise ValueError("public build object differs")
+    step, kind, cause = raw.get("step", "not-observed"), raw.get("failureKind", "none"), raw.get("failureCause", "unspecified")
+    if step not in BUILD_STEPS or kind not in BUILD_KINDS or cause not in BUILD_CAUSES:
+        raise ValueError("public build codes differ")
+    result = {"step": step, "plannedPackages": number(raw.get("plannedPackages", 0), 64),
+              "completedPackages": number(raw.get("completedPackages", 0), 64),
+              "currentPackageID": raw.get("currentPackageID"), "failureKind": kind,
+              "failureCause": cause, "failureExitCode": raw.get("failureExitCode")}
+    if result["currentPackageID"] is not None:
+        number(result["currentPackageID"], 63)
+    if result["failureExitCode"] is not None:
+        number(result["failureExitCode"], 255, -255)
+    if result["completedPackages"] > result["plannedPackages"]:
+        raise ValueError("public build progress differs")
+    return result
 
 def project(report, source, tree, target, hashes, legacy_digest):
     if target not in TARGETS or not re.fullmatch(r"[a-f0-9]{40}", source) or not re.fullmatch(r"[a-f0-9]{40}", tree):
@@ -87,9 +109,9 @@ def project(report, source, tree, target, hashes, legacy_digest):
     passed = all(checks.values())
     phase = report.get("failurePhase")
     stage = "complete" if passed else "report-unavailable" if legacy_digest is None else phase if isinstance(phase, str) and phase in PHASES else "producer-failure"
-    result = {"schemaVersion": 1, "sourceCommit": source, "sourceTree": tree, "sourceSHA256": dict(hashes), "target": target,
+    result = {"schemaVersion": 2, "sourceCommit": source, "sourceTree": tree, "sourceSHA256": dict(hashes), "target": target,
               "scope": "disposable-bsd-guest-core", "expectedGoVersion": "go1.27.3", "stage": stage, "outcome": "passed" if passed else "failed",
-              "checks": checks, "counts": {"expectedPackages": expected, "completedPackages": len(package_rows),
+              "checks": checks, "build": public_build(report.get("buildObservations", {})), "counts": {"expectedPackages": expected, "completedPackages": len(package_rows),
               "passedTestInstances": sum(p["passedTestInstances"] for p in package_rows), "skippedTestInstances": sum(p["skippedTestInstances"] for p in package_rows)},
               "packages": package_rows, "packagePlanSHA256": hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
               "legacyReportSHA256": legacy_digest, "packagedCandidateExecuted": flag(report, "packagedCandidateExecuted"),
@@ -99,11 +121,11 @@ def project(report, source, tree, target, hashes, legacy_digest):
     validate_public(result)
     return result
 
-PUBLIC_KEYS = {"schemaVersion", "sourceCommit", "sourceTree", "sourceSHA256", "target", "scope", "expectedGoVersion", "stage", "outcome", "checks", "counts", "packages", "packagePlanSHA256", "legacyReportSHA256", "packagedCandidateExecuted", "productionQualificationComplete", "platformQualificationComplete", "hardwareQualificationComplete", "readinessGatesPromoted"}
+PUBLIC_KEYS = {"schemaVersion", "sourceCommit", "sourceTree", "sourceSHA256", "target", "scope", "expectedGoVersion", "stage", "outcome", "checks", "build", "counts", "packages", "packagePlanSHA256", "legacyReportSHA256", "packagedCandidateExecuted", "productionQualificationComplete", "platformQualificationComplete", "hardwareQualificationComplete", "readinessGatesPromoted"}
 CHECK_KEYS = {"sourceMatches", "hostCompilerMatches", "ordinaryGuestIdentityMatches", "executedCLIIdentityMatches", "imageInputsAuthenticated", "transportedExecutableHashesVerified", "guestExecutionPassed", "ownedEmulatorsStopped", "ownedCapsuleRemoved", "completePackageSetPassed", "cleanupConfirmed"}
 
 def validate_public(data):
-    if not isinstance(data, dict) or set(data) != PUBLIC_KEYS or type(data["schemaVersion"]) is not int or data["schemaVersion"] != 1:
+    if not isinstance(data, dict) or set(data) != PUBLIC_KEYS or type(data["schemaVersion"]) is not int or data["schemaVersion"] != 2:
         raise ValueError("public schema differs")
     if (not re.fullmatch(r"[a-f0-9]{40}", data["sourceCommit"]) or not re.fullmatch(r"[a-f0-9]{40}", data["sourceTree"]) or
             data["target"] not in TARGETS or data["scope"] != "disposable-bsd-guest-core" or data["expectedGoVersion"] != "go1.27.3"):
@@ -132,7 +154,11 @@ def validate_public(data):
                     all(row["exitCode"] == 0 for row in data["packages"]))
     if data["checks"]["completePackageSetPassed"] != complete:
         raise ValueError("public completion check differs")
+    if not isinstance(data["build"], dict) or set(data["build"]) != {"step", "plannedPackages", "completedPackages", "currentPackageID", "failureKind", "failureCause", "failureExitCode"} or public_build(data["build"]) != data["build"]:
+        raise ValueError("public build schema differs")
     passed = all(data["checks"].values())
+    if passed and (data["build"]["step"] != "complete" or data["build"]["failureKind"] != "none" or data["build"]["failureExitCode"] is not None or data["build"]["completedPackages"] != data["counts"]["expectedPackages"]):
+        raise ValueError("public successful build differs")
     if passed and data["legacyReportSHA256"] is None:
         raise ValueError("public successful report requires producer digest")
     if (data["outcome"] != ("passed" if passed else "failed") or data["stage"] not in PHASES | {"complete", "report-unavailable", "producer-failure"} or
