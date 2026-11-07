@@ -165,6 +165,30 @@ class GuestSafetyTests(unittest.TestCase):
             guest.decode_objects(b'{"name":"one"}\nmalformed')
 
 
+@unittest.skipUnless(os.name == "posix", "pipe selector subprocess fixture requires POSIX")
+class StructuredCommandTests(unittest.TestCase):
+    def test_stderr_diagnostics_do_not_contaminate_discovery_json(self):
+        body = "import os;os.write(2,b'go: downloading fixture.invalid/module v1.0.0\\n');os.write(1,b'{\"ImportPath\":\"fixture\"}\\n')"
+        result = guest.run([sys.executable, "-c", body], split_stderr=True, timeout=5)
+        self.assertEqual(guest.decode_objects(result.stdout), [{"ImportPath": "fixture"}])
+        self.assertIn(b"go: downloading", result.stderr)
+        merged = guest.run([sys.executable, "-c", body], timeout=5)
+        with self.assertRaises(json.JSONDecodeError):guest.decode_objects(merged.stdout)
+        self.assertIsNone(merged.stderr)
+
+    def test_split_streams_share_one_bound_and_preserve_nonzero_exit(self):
+        body = "import os;os.write(1,b'a'*1024);os.write(2,b'b'*1024)"
+        with self.assertRaisesRegex(ValueError, "bounded helper output exceeded"):
+            guest.run([sys.executable, "-c", body], split_stderr=True, limit=1500, timeout=5)
+        body = "import os;os.write(1,b'{}');os.write(2,b'PRIVATE_FIXTURE');raise SystemExit(7)"
+        with self.assertRaises(guest.CommandFailure) as caught:
+            guest.run([sys.executable, "-c", body], split_stderr=True, timeout=5)
+        self.assertEqual(caught.exception.result.returncode,7)
+        self.assertEqual(caught.exception.result.stdout,b'{}')
+        self.assertEqual(caught.exception.result.stderr,b'PRIVATE_FIXTURE')
+        self.assertNotIn("PRIVATE_FIXTURE",str(caught.exception))
+
+
 class TargetAndFirmwareTests(unittest.TestCase):
     def hosted(self, arch):
         repo = Path(__file__).resolve().parents[1]
@@ -218,6 +242,7 @@ class TargetAndFirmwareTests(unittest.TestCase):
                 def command(args, *, env=None, **kwargs):
                     result = b""
                     if args[:2] == ["go", "list"]:
+                        self.assertTrue(kwargs.get("split_stderr"), "module-download diagnostics must not contaminate JSON")
                         result = json.dumps({"ImportPath": guest.MODULE + "internal/profile",
                                              "Dir": str(repo / "internal/profile"), "TestGoFiles": ["fixture_test.go"]}).encode()
                     elif args[:2] == ["go", "test"]:
@@ -239,7 +264,7 @@ class TargetAndFirmwareTests(unittest.TestCase):
                         Path(output).write_bytes(b"source-fixture")
                     elif args[:2] != ["git", "status"]:
                         self.fail("unexpected build command")
-                    return guest.subprocess.CompletedProcess(args, 0, result)
+                    return guest.subprocess.CompletedProcess(args, 0, result, b"go: downloading fixture.invalid/module v1.0.0\n" if args[:2] == ["go", "list"] else None)
                 target = dict(guest.selected_target(arch), goos=goos, label=goos + "-" + arch)
                 staged = root / "authenticated-stage"
                 receipt = {"build": {"arch": arch}, "binarySha256": hashlib.sha256(b"archived-cli-for-" + arch.encode()).hexdigest()}

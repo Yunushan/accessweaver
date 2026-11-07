@@ -191,14 +191,14 @@ class CommandFailure(RuntimeError):
         self.result = result
 
 
-def run(args, *, env=None, timeout=120, limit=8 << 20, data=None, check=True):
+def run(args, *, env=None, timeout=120, limit=8 << 20, data=None, check=True, split_stderr=False):
     """Use explicit argv and bound output/lifetime; guest targets run via SSH."""
     if data is not None and len(data) > 2048:
         raise ValueError("bounded helper input exceeded")
     proc = subprocess.Popen(args, stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE if split_stderr else subprocess.STDOUT, env=env,
                             start_new_session=True)
-    output = bytearray()
+    output, errors = bytearray(), bytearray()
     deadline = time.monotonic() + timeout
     selector = selectors.DefaultSelector()
     try:
@@ -208,22 +208,24 @@ def run(args, *, env=None, timeout=120, limit=8 << 20, data=None, check=True):
                 proc.stdin.close()
             except BrokenPipeError:
                 pass
-        selector.register(proc.stdout, selectors.EVENT_READ)
-        while True:
+        selector.register(proc.stdout, selectors.EVENT_READ, output)
+        if split_stderr:
+            selector.register(proc.stderr, selectors.EVENT_READ, errors)
+        while selector.get_map():
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError("bounded helper deadline exceeded")
             events = selector.select(min(0.25, remaining))
-            if not events:
-                continue
-            chunk = os.read(proc.stdout.fileno(), 65536)
-            if not chunk:
-                break
-            if len(output) + len(chunk) > limit:
-                raise ValueError("bounded helper output exceeded")
-            output.extend(chunk)
+            for key, _ in events:
+                chunk = os.read(key.fileobj.fileno(), 65536)
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    continue
+                if len(output) + len(errors) + len(chunk) > limit:
+                    raise ValueError("bounded helper output exceeded")
+                key.data.extend(chunk)
         code = proc.wait(timeout=max(0.01, deadline - time.monotonic()))
-        result = subprocess.CompletedProcess(args, code, bytes(output), None)
+        result = subprocess.CompletedProcess(args, code, bytes(output), bytes(errors) if split_stderr else None)
         if check and code:
             raise CommandFailure(result)
         return result
@@ -251,6 +253,8 @@ def run(args, *, env=None, timeout=120, limit=8 << 20, data=None, check=True):
         finally:
             selector.close()
             proc.stdout.close()
+            if proc.stderr is not None:
+                proc.stderr.close()
             if proc.stdin is not None and not proc.stdin.closed:
                 try:
                     proc.stdin.close()
@@ -438,7 +442,7 @@ def remove_owned_capsule(capsule, root, identity, emulator_stopped):
 def build_failure_observations(error):
     # Only source-defined codes and bounded integers leave the build runner.
     kind = {CommandFailure: "command-failed", TimeoutError: "helper-timeout",
-            ValueError: "invalid-build-input", RuntimeError: "build-assertion"}.get(type(error), "build-exception")
+            ValueError: "invalid-build-input", json.JSONDecodeError: "invalid-discovery-json", RuntimeError: "build-assertion"}.get(type(error), "build-exception")
     cause = {"bounded helper output exceeded": "helper-output-limit",
              "unsupported package path": "unsupported-package-path",
              "unexpected test module": "unexpected-test-module",
@@ -464,7 +468,7 @@ def build_payload(repo, capsule, source, target, packaged=None, observations=Non
     env = dict(os.environ, GOOS=goos, GOARCH=target["arch"], CGO_ENABLED="0", GOTOOLCHAIN="local")
     observations = {} if observations is None else observations
     observations.update(step="package-discovery", plannedPackages=0, completedPackages=0, currentPackageID=None)
-    packages = decode_objects(run(["go", "list", "-json", "./..."], env=env).stdout)
+    packages = decode_objects(run(["go", "list", "-json", "./..."], env=env, split_stderr=True).stdout)
     observations["plannedPackages"] = sum(bool(p.get("TestGoFiles") or p.get("XTestGoFiles")) for p in packages)
     records = []
     for package in packages:

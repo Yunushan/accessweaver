@@ -33,7 +33,7 @@ def flag(report, key):
     return value
 
 BUILD_STEPS = {"not-observed", "package-discovery", "package-compile", "source-cli-build", "packaged-cli-copy", "source-archive", "transport-archive", "complete"}
-BUILD_KINDS = {"none", "command-failed", "helper-timeout", "invalid-build-input", "build-assertion", "build-exception"}
+BUILD_KINDS = {"none", "command-failed", "helper-timeout", "invalid-build-input", "invalid-discovery-json", "build-assertion", "build-exception"}
 BUILD_CAUSES = {"unspecified", "helper-output-limit", "unsupported-package-path", "unexpected-test-module", "unexpected-package-count", "source-archive-limit", "source-changed", "payload-limit"}
 
 def public_build(raw):
