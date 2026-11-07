@@ -47,3 +47,7 @@ The [0b98e4a acceptance receipt](qualification/0b98e4aa0c2a-desktop-performance-
 | webkit | 38.46 | 659.87 | 482.94 | 344.43 | 22.00 | 2.13 | 16.36 |
 
 The product view entrance is now 160 ms, preserving its fade, translation, easing and reduced-motion rules. The retained receipt includes the preceding failed measurements and their source corrections; no budget was raised. Provider ZIP digests are verified before parsing, and suite, performance and keyboard reports must agree on the executed binary for each browser. The 20 affected product/CLI compile checks cover all ten targets; they are compile-only. Long-duration, browser/renderer resources, signed installation, actual traffic and full native desktop gates remain incomplete.
+
+## Native architecture expansion
+
+The full three-browser workload now has native amd64 and arm64 jobs with the same version-one targets. Native runner/SDK/controller/Node checks and browser ELF instruction-set checks precede execution. Architecture-qualified artifact names keep each runtime separate; reports must match their actual native architecture and executed binary. This expands native measurement coverage without changing the accepted workload, deadlines or budget caps. Fresh six-job results are required before claiming native ARM64 acceptance. See [BROWSER_ACCEPTANCE.md](BROWSER_ACCEPTANCE.md#native-linux-browser-matrix). Controller-only resource scope and remaining ten-target/eight-hour requirements remain unchanged.

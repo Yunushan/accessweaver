@@ -12,8 +12,8 @@ env:
 
 jobs:
   browser:
-    name: Real browser (${{ matrix.browser }})
-    runs-on: ubuntu-latest
+    name: Real browser (${{ matrix.goarch }}/${{ matrix.browser }})
+    runs-on: ${{ matrix.os }}
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
       # Docker populates this isolated anonymous volume from the image's /etc.
@@ -26,6 +26,20 @@ jobs:
       fail-fast: false
       matrix:
         browser: [chromium, firefox, webkit]
+        goarch: [amd64, arm64]
+        include:
+          - goarch: amd64
+            os: ubuntu-latest
+            sdkarch: x64
+            nodearch: x64
+          - goarch: arm64
+            os: ubuntu-24.04-arm
+            sdkarch: arm64
+            nodearch: arm64
+    env:
+      GOTOOLCHAIN: local
+      ACCESSWEAVER_EXPECT_GOOS: linux
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
     steps:
       - name: Check ordinary-user container paths
         timeout-minutes: 5
@@ -61,19 +75,25 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
+          architecture: ${{ matrix.sdkarch }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '26.8.2'
+          architecture: ${{ matrix.nodearch }}
           package-manager-cache: false
+      - name: Verify native host and SDK identity
+        run: node scripts/check-native-environment.cjs
       - name: Build the real controller
         run: go build -trimpath -o build/browser-tests/accessweaver ./cmd/accessweaver
+      - name: Verify built controller native identity
+        run: node scripts/check-native-environment.cjs --binary build/browser-tests/accessweaver
       - name: Install locked test dependencies and check known advisories
         working-directory: scripts/browser-tests
         run: |
           npm ci --ignore-scripts
           npm audit --audit-level=moderate
       - name: Verify fixed keyboard evidence contracts
-        run: node --test scripts/browser-tests/modal-keyboard.test.cjs scripts/browser-tests/suite-status-reporter.test.cjs scripts/browser-tests/desktop-performance.test.cjs
+        run: node --test scripts/browser-tests/modal-keyboard.test.cjs scripts/browser-tests/suite-status-reporter.test.cjs scripts/browser-tests/desktop-performance.test.cjs scripts/browser-tests/browser-native-binary.test.cjs scripts/check-native-environment.test.cjs
       - name: Verify the pinned preinstalled browser environment
         timeout-minutes: 5
         working-directory: scripts/browser-tests
@@ -87,7 +107,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: desktop-browser-${{ matrix.browser }}
+          name: desktop-browser-${{ matrix.goarch }}-${{ matrix.browser }}
           path: build/browser-results/
           if-no-files-found: ignore
           retention-days: 14
@@ -96,7 +116,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: modal-keyboard-${{ matrix.browser }}
+          name: modal-keyboard-${{ matrix.goarch }}-${{ matrix.browser }}
           path: build/modal-keyboard-evidence/*.json
           if-no-files-found: error
           retention-days: 7
@@ -105,7 +125,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: browser-contract-status-${{ matrix.browser }}
+          name: browser-contract-status-${{ matrix.goarch }}-${{ matrix.browser }}
           path: build/browser-contract-evidence/status.json
           if-no-files-found: error
           retention-days: 7
@@ -114,7 +134,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: desktop-performance-${{ matrix.browser }}
+          name: desktop-performance-${{ matrix.goarch }}-${{ matrix.browser }}
           path: build/desktop-performance/status.json
           if-no-files-found: error
           retention-days: 7

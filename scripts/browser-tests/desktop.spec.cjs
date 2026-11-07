@@ -43,6 +43,9 @@ const test = base.test.extend({
       if(process.env.GITHUB_ACTIONS==='true'){
         expect(build.commit).toBe(process.env.GITHUB_SHA);
         expect(build.sourceState).toBe('clean');
+        expect(build.platform).toBe(process.env.ACCESSWEAVER_EXPECT_GOOS);
+        expect(build.arch).toBe(process.env.ACCESSWEAVER_EXPECT_GOARCH);
+        expect(build.goVersion).toBe('go'+process.env.GO_VERSION);
       }
       await testInfo.attach('candidate.json', {body:JSON.stringify({
         binarySha256,
