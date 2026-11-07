@@ -1199,3 +1199,14 @@ test('runtime polling cannot re-enable Preview while an editor save is pending',
  assert.equal(env.get('preview-profile').disabled,true);
  env.run('state.editing.saving=false;renderHero()');assert.equal(env.get('preview-profile').disabled,false);
 });
+
+
+test('dashboard defers the full256profile DOM until entry and keeps the visited collection current',()=>{
+ const env=environment(),profiles=Array.from({length:256},(_,i)=>({...baseProfile(),id:'large-'+i,name:'Large profile '+i}));env.put('collection',profiles);env.run('state.loading=false;state.profiles=collection;renderProfiles()');
+ const cards=element=>(element.innerHTML.match(/<article class="profile-card/g)||[]).length;
+ assert.equal(cards(env.get('quick-profiles')),3);assert.equal(env.get('all-profiles').innerHTML,'');env.run('navigate("profiles")');assert.equal(cards(env.get('all-profiles')),256);assert.ok(env.get('profile-result-count').textContent.startsWith('256 / 256'));
+ env.run('navigate("dashboard");state.profiles[0].name="Updated after visit";renderProfiles()');assert.ok(env.get('all-profiles').innerHTML.includes('Updated after visit'));assert.equal(cards(env.get('all-profiles')),256);env.run('navigate("profiles")');assert.equal(cards(env.get('all-profiles')),256);
+});
+test('first profile-view render honors search, engine filter and direct navigation without dropping stored profiles',()=>{
+ const env=environment(),profiles=Array.from({length:256},(_,i)=>({...baseProfile(),id:'large-'+i,name:'Large profile '+i}));env.put('collection',profiles);env.run('state.loading=false;state.profiles=collection;state.view="profiles";$("profile-search").value="Large profile 255";renderProfiles()');assert.equal((env.get('all-profiles').innerHTML.match(/<article class="profile-card/g)||[]).length,1);assert.ok(env.get('all-profiles').innerHTML.includes('Large profile 255'));assert.ok(env.get('profile-result-count').textContent.startsWith('1 / 256'));env.run('$("profile-filter").value="wiresock";renderProfiles()');assert.ok(env.get('all-profiles').innerHTML.includes('empty-card'));assert.equal(env.run('state.profiles.length'),256);
+});

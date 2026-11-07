@@ -139,7 +139,7 @@ const state = {
   theme: storage.get('aw.theme') === 'light' ? 'light' : 'dark',
   offline: false, disconnected: false, loading: true, coreAuthenticated: false, platform: 'unknown',
   engines: [], profiles: [], runtime: {state:'stopped', log:[]}, token:'',
-  view:'dashboard', editing:null, editorTab:'simple', lastProbe:null,
+  view:'dashboard', profileGridRendered:false, editing:null, editorTab:'simple', lastProbe:null,
   launch:null, busy:false, polling:false, reconnecting:false, preservedProfiles:[], storageBlocked:false
 };
 Object.assign(en,{"lifecycleTitle":"Completion tracking","lifecycleRefresh":"Refresh completion status","lifecycleNotice":"Tracks local worker and record closure only. It does not certify vendor changes or permit deleting recovery evidence.","lifecycleNotLoaded":"Completion status has not been read. Existing evidence is unchanged.","lifecycleLoading":"Reading local completion evidence…","lifecycleState_none":"No local completion receipt is tracked. Legacy evidence remains protected; this is not an admission or storage-capacity grant.","lifecycleState_intent":"A local workflow intent is unresolved. Preserve its inputs and recovery evidence.","lifecycleState_sealed":"A local result is sealed, but owner release is unconfirmed. Preserve recovery evidence.","lifecycleState_released":"Local worker, record and original lease closure was observed. Vendor cleanup and evidence retirement are not certified.","lifecycleState_blocked":"Local completion evidence requires inspection. New workflow admission is blocked.","lifecycleAdmissionBlocked":"New workflows are blocked by unresolved local completion evidence. Keep the inputs and recovery evidence; history inspection and current-job cancellation remain available. Nothing is retried automatically.","lifecycleGeneration":"Tracked workflow","lifecycleBusy":"Completion status is busy or unavailable. Try this read again; no operation was retried.","lifecycleEnded":"The completion status request ended. Evidence is unchanged.","lifecycleUnavailable":"Completion status could not be verified. No clean completion is assumed."});
@@ -242,6 +242,7 @@ function navigate(view, focus=false) {
     el.classList.toggle('active',active);
     if (active) el.setAttribute('aria-current','page'); else el.removeAttribute('aria-current');
   });
+  if(view==='profiles'&&!state.profileGridRendered)renderProfiles();
   updateBreadcrumb();
   setSidebarOpen(false);
   if (location.hash !== '#' + view) location.hash = view;
@@ -402,8 +403,12 @@ function renderProfiles() {
   const selected = state.profiles.filter(p => (filter === 'all' || p.engine === filter) && [p.name,p.engine,p.id,p.description,p.notes].join(' ').toLocaleLowerCase(state.lang).includes(term));
   const empty = `<div class="empty-card">${icon('layers')}<p>${escapeHTML(t('noProfiles'))}</p><button class="btn btn-outline" data-create-profile>${escapeHTML(t('createProfile'))}</button></div>`;
   $('quick-profiles').innerHTML = state.profiles.length ? state.profiles.slice(0,3).map(p => profileCard(p)).join('') : empty;
-  $('all-profiles').innerHTML = selected.length ? selected.map(p => profileCard(p,true)).join('') : empty;
-  $('profile-result-count').textContent = selected.length + ' / ' + state.profiles.length + ' ' + t('profilesShown');
+  // Build the full collection on demand; keep it current after its first visit.
+  if(state.view==='profiles'||state.profileGridRendered){
+    $('all-profiles').innerHTML = selected.length ? selected.map(p => profileCard(p,true)).join('') : empty;
+    $('profile-result-count').textContent = selected.length + ' / ' + state.profiles.length + ' ' + t('profilesShown');
+    state.profileGridRendered=true;
+  }
   restoreReplacedFocus(focus);
 }
 function renderEngines() {
