@@ -177,22 +177,7 @@ func (d runner) dial(ctx context.Context, network, host string, port int) (net.C
 	return dialAddresses(ctx, network, addresses, port)
 }
 func dialAddresses(ctx context.Context, network string, addresses []net.IPAddr, port int) (net.Conn, error) {
-	var last error
-	for _, address := range addresses {
-		target := net.JoinHostPort(address.String(), strconv.Itoa(port))
-		connection, err := (&net.Dialer{}).DialContext(ctx, network, target)
-		if err == nil {
-			if limit, ok := ctx.Deadline(); ok {
-				_ = connection.SetDeadline(limit)
-			}
-			return connection, nil
-		}
-		last = err
-		if ctx.Err() != nil {
-			break
-		}
-	}
-	return nil, last
+	return dialAddressSet(ctx, network, addresses, port, (&net.Dialer{}).DialContext, 300*time.Millisecond)
 }
 
 // The deferred owner joins an already-running cancellation Close. A second

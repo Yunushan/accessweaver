@@ -42,6 +42,16 @@ The bounded STUN parser checks the transaction, message type, cookie, lengths, X
 
 SOCKS5/HTTP proxy negotiation itself is unauthenticated and unencrypted. Use a trusted proxy and network; TLS authenticates only the target when enabled. Reports may contain target/proxy names and public mapped addresses. Review an exported report before sharing it; nothing is uploaded automatically.
 
+## Resolved-address fallback and connection completion
+
+Direct TCP and proxy TCP connections use only the IPs from their single host lookup. The first returned address family starts immediately; a second family starts after 300 ms if needed, or immediately when the primary family has exhausted its candidates. At most two address attempts run concurrently, one per family, with remaining time shared across each family's queued addresses. This restores fast family fallback lost when [Go's hostname dialer](https://pkg.go.dev/net#Dialer) is called separately for each literal IP; it is not a claim to implement every [RFC 8305](https://www.rfc-editor.org/rfc/rfc8305.html) discovery/sorting behavior.
+
+The first connected socket cancels the other worker. Both workers finish and every unused socket completes its one Close before handoff. An unconfirmed loser Close also closes the winner and fails the attempt. The winner must accept the original overall I/O deadline before negotiation proceeds. Native Close/deadline causes remain available to Go error inspection, while report text for those completion failures is fixed. Empty, excessive or malformed address sets do not dial. Request cancellation rejects and completes late connections; it does not publish them as success. The context deadline bounds network work; waiting for native completion is not a hard operating-system syscall deadline.
+
+UDP endpoint selection remains serial, and the existing one-request/one-response STUN behavior is unchanged. Address fallback does not permit a proxy probe to connect directly to its target or resolve the target locally. It does not establish traffic routing, a working public IPv6 path, end-to-end UDP fallback or installed-product readiness.
+
+Ten regression tests cover stalled primary-family fallback, same-family time sharing, immediate refusal, unused fallback, late loser completion/error, cancellation, failed I/O deadlines, invalid input, retained dial/cleanup causes and a real loopback connection using one controlled resolution. The three original contracts fail against the previous serial behavior with a private per-call connector. Controlled stalled/late connectors and injected completion errors do not reproduce a real WAN outage or kernel Close fault.
+
 ## Managed cancellation and evidence
 
 All probe stages retain one managed authorization. The existing policy monitor closes owned sockets on observed enrollment, removal, expiry, payload/key change or source failure; a final source check also runs before returning. Polling limitations and administrative recovery requirements are described in [managed configuration](MANAGED_CONFIGURATION.md#policy-changes-during-active-operations).
