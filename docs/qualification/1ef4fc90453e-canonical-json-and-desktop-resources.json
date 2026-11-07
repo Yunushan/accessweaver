@@ -1,0 +1,2180 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+  "workflow": ".github/workflows/canonical-json-inputs.yml",
+  "sourceSHA256": {
+    "internal/jsoninput/decode.go": "f67def39695c562251b71d27f402518337c70c793e6f540b2b96048cdd539e0b",
+    "internal/jsoninput/decode_test.go": "1a0aa904a34acd4c5cbf85f2eff06f8a2c753795241cc81d24bc06799daadbf0",
+    "internal/profile/model.go": "ee94ba89ff703cd3f86a58c91d1982d801e118eb42495023ff7b5f0bb189c1d5",
+    "internal/profile/strict_input_test.go": "f32729716b63e485b00032924bb76c85412a899637c17bcb1019ab2cd2cd3c8c",
+    "internal/api/server.go": "d7a49af6bc47ffccf548c01ac6265cc403a348d082d5cf94f924de6877a201c0",
+    "internal/api/strict_input_test.go": "d0ad5261037ca81eac1c72ef2503910ecbee03a61022a61026badc8cb3d18af2",
+    "web/app.js": "f8f0963d5293b85239f5e75e22c8bd91f2dfd6fc6d2d33087f58947c35ada071",
+    "web/app.test.cjs": "3f19bdb6b3f487ee187d68dad4b357cab7f25075a66c3fec88244b8756d9f748",
+    "web/index.html": "4de9b17ac88a7c9b304245c08b5c59bbe48fba803f8be67247a2290689c2f4ca",
+    "web/app.css": "8521ae31ca301ece108a6b3d9f305d4389a2896ddd1704d372cee6036af83176",
+    "web/system.js": "b0da03f86609e356ecd5a56a63ab7ad02ee18bc8b56ecf94e270ad297b28383b",
+    "web/locales.js": "3e76feaab403e9356420b183de3eb10d2aa7590f263d33a935730ff02ee63b8c",
+    "scripts/browser-tests/desktop.spec.cjs": "f6a2f46d4394a0870b7a22e427b2eafbb244dbf0106dbf33ba1559160dffc0e7",
+    "scripts/browser-tests/desktop-performance.cjs": "568ae8bca70ece3ad506b37c4c83ada4542d063409c77f04f8b8333c4d89f76d",
+    "scripts/browser-tests/performance-budgets.json": "97e105bb42966d2b4a0cf4b8505385dbaab1aa1a4afab9670be4f8ee9785160e",
+    "scripts/browser-tests/suite-contracts.json": "1b0e93ba45b50e4a0a1087a6971278bfecbe7fe63aec9bad48ed501185522a1a",
+    "scripts/browser-tests/suite-status-reporter.cjs": "191ab1c9cddde38187f14395fcc3a9e5a0fd27de838dbee1f6f73989fc22672b",
+    ".github/workflows/canonical-json-inputs.yml": "9144006cd90e899a8066dc1ff9ae2fb8ebd8eaf93be57c64d9212366deb47d65",
+    ".github/workflows/browser.yml": "e4ea16df0c6b855f3d6890ef1794bf15b6950a6472b4c7c9947b54a12ea8f761",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+    "scripts/core-test-evidence.cjs": "f0a56e85f433de6b8c266caf604d319e00bc2a865c1eb06d0e379e076a2d3462",
+    "scripts/core-test-catalog/main.go": "0aea23c470ee31523b199e2e6e68d0d42e519c064dae8771c84d30197a3c4d8a",
+    "internal/api/idle_connection_test.go": "aa4b256563ca5393163829bce4dcb67e1acf34dddd34175315dd9228b84b6156"
+  },
+  "run": {
+    "id": 42356121198,
+    "head_sha": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+    "head_branch": "codex/canonical-json-inputs",
+    "path": ".github/workflows/canonical-json-inputs.yml",
+    "status": "completed",
+    "conclusion": "success",
+    "event": "push",
+    "run_attempt": 1,
+    "html_url": "https://github.com/Yunushan/accessweaver/actions/runs/42356121198"
+  },
+  "hostedJobs": [
+    {
+      "id": 128354476239,
+      "name": "Canonical JSON (windows/amd64)",
+      "status": "completed",
+      "conclusion": "success",
+      "checkRunId": 128354476239,
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-known result privacy contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify profile editor input regressions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete root regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete Linux root race regression",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Fuzz FuzzDecodeCanonicalObject for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Fuzz FuzzDecodeProfile for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128354476390,
+      "name": "Canonical JSON (linux/amd64)",
+      "status": "completed",
+      "conclusion": "success",
+      "checkRunId": 128354476390,
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-known result privacy contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify profile editor input regressions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete root regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete Linux root race regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Fuzz FuzzDecodeCanonicalObject for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Fuzz FuzzDecodeProfile for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128354476406,
+      "name": "Canonical JSON (windows/arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "checkRunId": 128354476406,
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-known result privacy contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify profile editor input regressions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete root regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete Linux root race regression",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Fuzz FuzzDecodeCanonicalObject for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Fuzz FuzzDecodeProfile for thirty seconds",
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128354476425,
+      "name": "Canonical input browser compatibility / Real browser (amd64/firefox)",
+      "status": "completed",
+      "conclusion": "success",
+      "checkRunId": 128354476425,
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed modal keyboard contract evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound browser case status",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound desktop performance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed browser image preflight evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed owned browser memory diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128354476442,
+      "name": "Canonical input browser compatibility / Real browser (amd64/webkit)",
+      "status": "completed",
+      "conclusion": "success",
+      "checkRunId": 128354476442,
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed modal keyboard contract evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound browser case status",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound desktop performance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed browser image preflight evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed owned browser memory diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128354476443,
+      "name": "Canonical JSON (linux/arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "checkRunId": 128354476443,
+      "steps": [
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify immutable source identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify module integrity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Vet complete root source",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-known result privacy contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify profile editor input regressions",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete root regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run complete Linux root race regression",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Fuzz FuzzDecodeCanonicalObject for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Fuzz FuzzDecodeProfile for thirty seconds",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Confirm source unchanged after qualification",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128354476462,
+      "name": "Canonical input browser compatibility / Real browser (arm64/webkit)",
+      "status": "completed",
+      "conclusion": "success",
+      "checkRunId": 128354476462,
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed modal keyboard contract evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound browser case status",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound desktop performance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed browser image preflight evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed owned browser memory diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128354476485,
+      "name": "Canonical input browser compatibility / Real browser (arm64/chromium)",
+      "status": "completed",
+      "conclusion": "success",
+      "checkRunId": 128354476485,
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed modal keyboard contract evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound browser case status",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound desktop performance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed browser image preflight evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed owned browser memory diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128354476509,
+      "name": "Canonical input browser compatibility / Real browser (arm64/firefox)",
+      "status": "completed",
+      "conclusion": "success",
+      "checkRunId": 128354476509,
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed modal keyboard contract evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound browser case status",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound desktop performance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed browser image preflight evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed owned browser memory diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 128354476618,
+      "name": "Canonical input browser compatibility / Real browser (amd64/chromium)",
+      "status": "completed",
+      "conclusion": "success",
+      "checkRunId": 128354476618,
+      "steps": [
+        {
+          "name": "Check ordinary-user container paths",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify native host and SDK identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the real controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify built controller native identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Install locked test dependencies and check known advisories",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify the pinned preinstalled browser environment",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fixed keyboard evidence contracts",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Exercise the dashboard with an isolated local controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain test results without private controller state",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed modal keyboard contract evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound browser case status",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain source-bound desktop performance evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed browser image preflight evidence",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed owned browser memory diagnostics",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "hostedAllRequiredStagesPassed": true,
+  "inputContract": {
+    "maxBytes": 1048576,
+    "maxDescendantDepth": 16,
+    "canonicalUniqueKeys": true,
+    "escapedKeyCollisionsRejected": true,
+    "typedDestinationPublishedAfterCompleteValidation": true,
+    "fixedPublicDecodeErrorWithNativeCause": true,
+    "browserImportAndAdvancedOriginalTextChecked": true,
+    "browserFileUTF8FatalAndBOMRejected": true,
+    "browserDraftAndSavedBytesPreservedOnRejection": true,
+    "duplicateMessageLanguages": [
+      "en",
+      "tr",
+      "ru",
+      "es"
+    ]
+  },
+  "rootRegression": {
+    "unitAndVetTargets": [
+      "windows/amd64",
+      "windows/arm64",
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "raceTargets": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "rootUnitCommand": "go test -json -count=1 -timeout=6m ./...",
+    "rootRaceCommand": "go test -json -count=1 -timeout=6m -race ./...",
+    "packageConcurrency": "Go default",
+    "rootOutputCountsCollected": false,
+    "platformOptInSkipsRemain": true
+  },
+  "fuzzing": {
+    "targets": [
+      "internal/jsoninput#FuzzDecodeCanonicalObject",
+      "internal/profile#FuzzDecodeProfile"
+    ],
+    "architectures": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "secondsPerRun": 30,
+    "workerParallelism": 2,
+    "mutationsOrCoverageCountsCollected": false,
+    "rawProcessOutputDiscarded": true,
+    "limits": "Bounded mutation runs and seed regression; not an exhaustive proof."
+  },
+  "localChecks": {
+    "pureBrowserUnit": {
+      "node": "v26.8.2",
+      "summary": {
+        "tests": 171,
+        "pass": 167,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 4,
+        "todo": 0
+      },
+      "actualGoFixturesRead": false,
+      "nativeProductExecuted": false
+    },
+    "beforeAfterNegativeControl": {
+      "baselineSource": "2c5ccfb96ad8fbed3c39b924943c0a81d351ccd0",
+      "actualPreviousUIUsed": true,
+      "newRegressionNames": [
+        "invalid raw advanced JSON preserves editor mode, draft and saved profiles",
+        "profile file import rejects ambiguous or malformed bytes without replacing a draft",
+        "profile grids retain unchanged markup across navigation and still reflect every changed input"
+      ],
+      "expectedFailuresObserved": 3,
+      "rawOutputRetained": false,
+      "nativeProductExecuted": false,
+      "currentFullSuite": "171registered/167passed/4explicitGoFixtureSkips"
+    },
+    "fixedReporterTestsPassed": 4,
+    "compileOnly": {
+      "finalCandidateChecks": 40,
+      "targets": [
+        "windows/amd64",
+        "windows/arm64",
+        "linux/amd64",
+        "linux/arm64",
+        "darwin/amd64",
+        "darwin/arm64",
+        "freebsd/amd64",
+        "freebsd/arm64",
+        "openbsd/amd64",
+        "openbsd/arm64"
+      ],
+      "packages": [
+        "internal/jsoninput",
+        "internal/profile",
+        "internal/api",
+        "cmd/accessweaver"
+      ],
+      "sourceBinding": "Twenty unchanged jsoninput/profile package checks are retained from the source-stable decoder sweep; twenty API/CLI checks were refreshed after the final idle-socket change and new loopback test. The earlier timestamp-oracle and embedded UI edits were separately recompiled. All final compiled Go/asset SHA256 values match this exact Git source.",
+      "producedBinariesExecuted": false,
+      "compiler": "go version go1.27.3 windows/amd64"
+    }
+  },
+  "browserRegression": {
+    "targets": [
+      "amd64/chromium",
+      "amd64/firefox",
+      "amd64/webkit",
+      "arm64/chromium",
+      "arm64/firefox",
+      "arm64/webkit"
+    ],
+    "registeredCasesPerTarget": 52,
+    "sameCaseNamesAndPerformanceWorkloadAsPriorSource": true,
+    "profileWorkload": 256,
+    "performanceBudgetsUnchanged": true,
+    "cssAndAnimationsUnchanged": true,
+    "implementation": "Retain profile-grid DOM only when its derived markup is unchanged; all profiles remain rendered after first entry, and changed data, search/filter, language and runtime button states render updated markup."
+  },
+  "evidenceMethod": "Exact-source public run/job/static-step metadata and selected fixed-schema browser case/performance artifacts, bounded to 64 KiB per ZIP and 32 KiB per JSON in memory. Each selected ZIP must match the provider SHA256 and each recorded source hash must match the expected Git blob. No raw logs, traces, screenshots, error messages, private controller state or host account credentials are collected. Fixed report validation also requires the complete producer schema/source-hash set, matching per-target binary hashes and independently recomputed workload and budget outcomes.",
+  "publicFixedSchemaArtifactDownload": "Anonymous nightly.link redirect for public repository artifacts, with independent provider ZIP digest verification; no host authentication used.",
+  "rawLogsOrPrivateArtifactsFetched": false,
+  "cryptographicPublisherOrBinaryAuthenticationPerformed": false,
+  "limits": [
+    "Native source qualification here covers Windows/Linux AMD64/ARM64 only; the remaining six desktop targets are compile-only.",
+    "Browser acceptance uses source-built Linux controller fixtures, not publisher-signed installed desktop/MDM packages.",
+    "The four local/hosted pure editor-unit Go-wire fixture cases remain explicitly skipped; this is not a claim to execute those native fixtures.",
+    "Finite fuzz/load and sampled resource measurements do not establish long-duration stability or all possible hostile inputs.",
+    "Signing, endpoint deployment, vendor traffic/lifecycle, held macOS diagnostics and full enterprise desktop acceptance remain incomplete."
+  ],
+  "gatesPromoted": false,
+  "productionQualificationComplete": false,
+  "priorAttempts": [
+    {
+      "sourceCommit": "2c5ccfb96ad8fbed3c39b924943c0a81d351ccd0",
+      "run": {
+        "id": 42353474795,
+        "head_sha": "2c5ccfb96ad8fbed3c39b924943c0a81d351ccd0",
+        "head_branch": "codex/canonical-json-inputs",
+        "path": ".github/workflows/canonical-json-inputs.yml",
+        "status": "completed",
+        "conclusion": "failure",
+        "event": "push",
+        "run_attempt": 1,
+        "html_url": "https://github.com/Yunushan/accessweaver/actions/runs/42353474795"
+      },
+      "nativeResult": "All four root jobs passed, including both Linux race and four thirty-second fuzz stages.",
+      "browserResult": "Four browser jobs passed; amd64 WebKit navigationP95Ms and ARM Firefox browserSampledPeakRssBytes exceeded unchanged caps. Both failed browser case reports passed the other 51 cases once.",
+      "fixedReportProjection": [
+        {
+          "artifactId": 13566508034,
+          "artifactName": "desktop-performance-amd64-webkit",
+          "providerZIPDigest": "sha256:15f78b20aefb3f28869dac842760cc745e1fabe4fd0c38df7cd60c8489ec75ba",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "2c5ccfb96ad8fbed3c39b924943c0a81d351ccd0",
+          "project": "webkit",
+          "binarySHA256": "6a01dbfdea744da662ebc31b4b43afbdb5d9bf41e08e5dda23889b3a3cda29f5",
+          "outcome": "failed",
+          "sourceHashesVerified": 17,
+          "stage": "complete",
+          "failureKind": "none",
+          "violations": [
+            "navigationP95Ms"
+          ],
+          "metrics": {
+            "controllerStartupMs": 31.68734599999152,
+            "dashboardReadyMs": 697.3771909999778,
+            "reloadP95Ms": 226.14279399998486,
+            "navigationP95Ms": 527.5638190000318,
+            "editorP95Ms": 405.28731699998025,
+            "apiP95Ms": 43,
+            "burstRequestsPerSecond": 154.52006761534494,
+            "loadRequestsPerSecond": 3.999938429547745,
+            "loadCpuPercentOneCore": 2.533294338713572,
+            "sampledPeakRssBytes": 17321984,
+            "sampledPeakDescriptors": 14,
+            "sampledPeakThreads": 10,
+            "cooldownRssGrowthBytes": 1925120,
+            "cooldownDescriptorGrowth": 2,
+            "cooldownThreadGrowth": 2,
+            "browserSampledPeakRssBytes": 893042688,
+            "browserSampledPeakDescriptors": 102,
+            "browserSampledPeakThreads": 66,
+            "browserSampledPeakProcesses": 5,
+            "browserObservedLoadCpuPercentOneCore": 8.741066162189908,
+            "browserCooldownRssGrowthBytes": 152326144,
+            "browserCooldownDescriptorGrowth": 9,
+            "browserCooldownThreadGrowth": -4,
+            "browserCooldownProcessGrowth": 0,
+            "jobLoadCpuPercentOneCore": 18.33746298691862
+          },
+          "environment": {
+            "platform": "linux",
+            "architecture": "x64",
+            "node": "v26.8.2",
+            "playwright": "1.64.1",
+            "cpuCount": 4,
+            "pageBytes": 4096,
+            "clockTicksPerSecond": 100
+          },
+          "counts": {
+            "reload": 5,
+            "navigation": 24,
+            "editor": 10,
+            "burstRequests": 96,
+            "loadRequests": 240,
+            "resourceSamples": 313,
+            "loadMilliseconds": 60000,
+            "browserResourceSamples": 84,
+            "browserObservedExits": 0,
+            "browserCpuMilliseconds": 60976,
+            "browserFailureStage": 0,
+            "jobCpuMilliseconds": 60974,
+            "jobCpuFailureStage": 0
+          }
+        },
+        {
+          "artifactId": 13566491989,
+          "artifactName": "desktop-performance-arm64-firefox",
+          "providerZIPDigest": "sha256:6ec37fdccfafab286db9fcccfe4fe7f2557b47b024883f969a8dce6d9f89d803",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "2c5ccfb96ad8fbed3c39b924943c0a81d351ccd0",
+          "project": "firefox",
+          "binarySHA256": "ed82d70e431075c94c1f977eea2b59e391b40c8eb11334f7b43842b0e55b5c61",
+          "outcome": "failed",
+          "sourceHashesVerified": 17,
+          "stage": "complete",
+          "failureKind": "none",
+          "violations": [
+            "browserSampledPeakRssBytes"
+          ],
+          "metrics": {
+            "controllerStartupMs": 32.17654999997467,
+            "dashboardReadyMs": 580.3830370000214,
+            "reloadP95Ms": 232.4236769999843,
+            "navigationP95Ms": 332.0998520000139,
+            "editorP95Ms": 322.5757670000312,
+            "apiP95Ms": 34,
+            "burstRequestsPerSecond": 188.84435233080399,
+            "loadRequestsPerSecond": 3.9998546396825967,
+            "loadCpuPercentOneCore": 1.583275794874361,
+            "sampledPeakRssBytes": 16883712,
+            "sampledPeakDescriptors": 15,
+            "sampledPeakThreads": 11,
+            "cooldownRssGrowthBytes": 3059712,
+            "cooldownDescriptorGrowth": 1,
+            "cooldownThreadGrowth": 2,
+            "browserSampledPeakRssBytes": 1100750848,
+            "browserSampledPeakDescriptors": 284,
+            "browserSampledPeakThreads": 156,
+            "browserSampledPeakProcesses": 7,
+            "browserObservedLoadCpuPercentOneCore": 6.958385670663909,
+            "browserCooldownRssGrowthBytes": 220348416,
+            "browserCooldownDescriptorGrowth": -4,
+            "browserCooldownThreadGrowth": -13,
+            "browserCooldownProcessGrowth": 0,
+            "jobLoadCpuPercentOneCore": 19.891943406681733
+          },
+          "environment": {
+            "platform": "linux",
+            "architecture": "arm64",
+            "node": "v26.8.2",
+            "playwright": "1.64.1",
+            "cpuCount": 4,
+            "pageBytes": 4096,
+            "clockTicksPerSecond": 100
+          },
+          "counts": {
+            "reload": 5,
+            "navigation": 24,
+            "editor": 10,
+            "burstRequests": 96,
+            "loadRequests": 240,
+            "resourceSamples": 308,
+            "loadMilliseconds": 60002,
+            "browserResourceSamples": 82,
+            "browserObservedExits": 0,
+            "browserCpuMilliseconds": 60789,
+            "browserFailureStage": 0,
+            "jobCpuMilliseconds": 60787,
+            "jobCpuFailureStage": 0
+          }
+        },
+        {
+          "artifactId": 13566328000,
+          "artifactName": "browser-contract-status-arm64-firefox",
+          "providerZIPDigest": "sha256:13695bf0b500ecc4d028d0f22549cb88c9dfa58f593a3e2e06fb69eaf5d7931a",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "2c5ccfb96ad8fbed3c39b924943c0a81d351ccd0",
+          "project": "firefox",
+          "binarySHA256": "ed82d70e431075c94c1f977eea2b59e391b40c8eb11334f7b43842b0e55b5c61",
+          "outcome": "failed",
+          "sourceHashesVerified": 19,
+          "registered": 52,
+          "passedCases": 51,
+          "nonPassingCases": [
+            {
+              "id": 52,
+              "status": "failed",
+              "attempts": 1,
+              "sourceRole": "other",
+              "sourceLine": 0,
+              "sourceColumn": 0
+            }
+          ],
+          "attempts": 52
+        },
+        {
+          "artifactId": 13566274882,
+          "artifactName": "browser-contract-status-amd64-webkit",
+          "providerZIPDigest": "sha256:750855eb9bc3e35bcfb2857af5a7c5c66f46dbf6409e1c828a8f70f0fdbab401",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "2c5ccfb96ad8fbed3c39b924943c0a81d351ccd0",
+          "project": "webkit",
+          "binarySHA256": "6a01dbfdea744da662ebc31b4b43afbdb5d9bf41e08e5dda23889b3a3cda29f5",
+          "outcome": "failed",
+          "sourceHashesVerified": 19,
+          "registered": 52,
+          "passedCases": 51,
+          "nonPassingCases": [
+            {
+              "id": 52,
+              "status": "failed",
+              "attempts": 1,
+              "sourceRole": "other",
+              "sourceLine": 0,
+              "sourceColumn": 0
+            }
+          ],
+          "attempts": 52
+        }
+      ]
+    },
+    {
+      "sourceCommit": "aa0ef64da2b1c896140dbd6ed03a64f2fe67e492",
+      "run": {
+        "id": 42354951349,
+        "head_sha": "aa0ef64da2b1c896140dbd6ed03a64f2fe67e492",
+        "head_branch": "codex/canonical-json-inputs",
+        "path": ".github/workflows/canonical-json-inputs.yml",
+        "status": "completed",
+        "conclusion": "failure",
+        "event": "push",
+        "run_attempt": 1,
+        "html_url": "https://github.com/Yunushan/accessweaver/actions/runs/42354951349"
+      },
+      "nativeResult": "All four full-root/editor jobs and both Linux race/fuzz stages passed.",
+      "browserResult": "All six jobs failed at the new case-2 assertion expecting the wrong existing English prefix. The product message was correct. Five performance reports passed; amd64 Chromium also exceeded the unchanged cooldown descriptor-growth cap with three.",
+      "fixedReportProjection": [
+        {
+          "artifactId": 13567920264,
+          "artifactName": "browser-contract-status-arm64-chromium",
+          "providerZIPDigest": "sha256:7cbb64feede1fbb36d69a72969c6253112c9adfdcfacee4cb9d10ace0ad2e11b",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "aa0ef64da2b1c896140dbd6ed03a64f2fe67e492",
+          "project": "chromium",
+          "binarySHA256": "669cb606a27849f24a0fdb4cc38e8823e7bcc396c619421f00d54148c8868130",
+          "outcome": "failed",
+          "sourceHashesVerified": 19,
+          "registered": 52,
+          "passedCases": 51,
+          "nonPassingCases": [
+            {
+              "id": 2,
+              "status": "failed",
+              "attempts": 1,
+              "sourceRole": "desktop",
+              "sourceLine": 137,
+              "sourceColumn": 42
+            }
+          ],
+          "attempts": 52
+        },
+        {
+          "artifactId": 13567865346,
+          "artifactName": "desktop-performance-amd64-chromium",
+          "providerZIPDigest": "sha256:992a31be2aaec590a6d26cb003d3778f0f2afbeeb2cb13116bec3e9773596986",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "aa0ef64da2b1c896140dbd6ed03a64f2fe67e492",
+          "project": "chromium",
+          "binarySHA256": "db53f4ca2adc5720dc4564b53446c352325a81a2178bd266be3fac55a9f42e94",
+          "outcome": "failed",
+          "sourceHashesVerified": 17,
+          "stage": "complete",
+          "failureKind": "none",
+          "violations": [
+            "cooldownDescriptorGrowth"
+          ],
+          "metrics": {
+            "controllerStartupMs": 33.261232000018936,
+            "dashboardReadyMs": 341.5346539999882,
+            "reloadP95Ms": 249.99995200001285,
+            "navigationP95Ms": 386.46690100000706,
+            "editorP95Ms": 194.84667499997886,
+            "apiP95Ms": 34.90000000002328,
+            "burstRequestsPerSecond": 168.68319875172213,
+            "loadRequestsPerSecond": 3.999922879753579,
+            "loadCpuPercentOneCore": 2.366621037187534,
+            "sampledPeakRssBytes": 17674240,
+            "sampledPeakDescriptors": 15,
+            "sampledPeakThreads": 12,
+            "cooldownRssGrowthBytes": 2498560,
+            "cooldownDescriptorGrowth": 3,
+            "cooldownThreadGrowth": 3,
+            "browserSampledPeakRssBytes": 760975360,
+            "browserSampledPeakDescriptors": 165,
+            "browserSampledPeakThreads": 66,
+            "browserSampledPeakProcesses": 6,
+            "browserObservedLoadCpuPercentOneCore": 5.232640586106387,
+            "browserCooldownRssGrowthBytes": 73584640,
+            "browserCooldownDescriptorGrowth": 4,
+            "browserCooldownThreadGrowth": 0,
+            "browserCooldownProcessGrowth": 0,
+            "jobLoadCpuPercentOneCore": 14.348593861554058
+          },
+          "environment": {
+            "platform": "linux",
+            "architecture": "x64",
+            "node": "v26.8.2",
+            "playwright": "1.64.1",
+            "cpuCount": 4,
+            "pageBytes": 4096,
+            "clockTicksPerSecond": 100
+          },
+          "counts": {
+            "reload": 5,
+            "navigation": 24,
+            "editor": 10,
+            "burstRequests": 96,
+            "loadRequests": 240,
+            "resourceSamples": 300,
+            "loadMilliseconds": 60001,
+            "browserResourceSamples": 81,
+            "browserObservedExits": 0,
+            "browserCpuMilliseconds": 60963,
+            "browserFailureStage": 0,
+            "jobCpuMilliseconds": 60957,
+            "jobCpuFailureStage": 0
+          }
+        },
+        {
+          "artifactId": 13567735442,
+          "artifactName": "browser-contract-status-amd64-chromium",
+          "providerZIPDigest": "sha256:67e7d79b9b9534e858e060a64afec907e6e486229346405abc35a702a1096e39",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "aa0ef64da2b1c896140dbd6ed03a64f2fe67e492",
+          "project": "chromium",
+          "binarySHA256": "db53f4ca2adc5720dc4564b53446c352325a81a2178bd266be3fac55a9f42e94",
+          "outcome": "failed",
+          "sourceHashesVerified": 19,
+          "registered": 52,
+          "passedCases": 50,
+          "nonPassingCases": [
+            {
+              "id": 2,
+              "status": "failed",
+              "attempts": 1,
+              "sourceRole": "desktop",
+              "sourceLine": 137,
+              "sourceColumn": 42
+            },
+            {
+              "id": 52,
+              "status": "failed",
+              "attempts": 1,
+              "sourceRole": "other",
+              "sourceLine": 0,
+              "sourceColumn": 0
+            }
+          ],
+          "attempts": 52
+        },
+        {
+          "artifactId": 13567720119,
+          "artifactName": "browser-contract-status-arm64-webkit",
+          "providerZIPDigest": "sha256:d66b55cc19fd15b2ba2abb5135e6df99ea3bb4570dd50e37172d6ad9e07fb5ed",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "aa0ef64da2b1c896140dbd6ed03a64f2fe67e492",
+          "project": "webkit",
+          "binarySHA256": "669cb606a27849f24a0fdb4cc38e8823e7bcc396c619421f00d54148c8868130",
+          "outcome": "failed",
+          "sourceHashesVerified": 19,
+          "registered": 52,
+          "passedCases": 51,
+          "nonPassingCases": [
+            {
+              "id": 2,
+              "status": "failed",
+              "attempts": 1,
+              "sourceRole": "desktop",
+              "sourceLine": 137,
+              "sourceColumn": 42
+            }
+          ],
+          "attempts": 52
+        },
+        {
+          "artifactId": 13567650331,
+          "artifactName": "desktop-performance-arm64-webkit",
+          "providerZIPDigest": "sha256:deec9eff74adeca786d8323ddc50adff2e0c33a35ae29b3c77fd594831724c70",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "aa0ef64da2b1c896140dbd6ed03a64f2fe67e492",
+          "project": "webkit",
+          "binarySHA256": "669cb606a27849f24a0fdb4cc38e8823e7bcc396c619421f00d54148c8868130",
+          "outcome": "passed",
+          "sourceHashesVerified": 17,
+          "stage": "complete",
+          "failureKind": "none",
+          "violations": [],
+          "metrics": {
+            "controllerStartupMs": 31.829836999997497,
+            "dashboardReadyMs": 653.8808929999941,
+            "reloadP95Ms": 212.40391299995827,
+            "navigationP95Ms": 441.0362539999769,
+            "editorP95Ms": 402.97194900002796,
+            "apiP95Ms": 28,
+            "burstRequestsPerSecond": 200.8925955172394,
+            "loadRequestsPerSecond": 3.9998801029939317,
+            "loadCpuPercentOneCore": 1.4999550386227245,
+            "sampledPeakRssBytes": 16887808,
+            "sampledPeakDescriptors": 13,
+            "sampledPeakThreads": 10,
+            "cooldownRssGrowthBytes": 2158592,
+            "cooldownDescriptorGrowth": 1,
+            "cooldownThreadGrowth": 1,
+            "browserSampledPeakRssBytes": 869191680,
+            "browserSampledPeakDescriptors": 101,
+            "browserSampledPeakThreads": 66,
+            "browserSampledPeakProcesses": 5,
+            "browserObservedLoadCpuPercentOneCore": 9.746983000076838,
+            "browserCooldownRssGrowthBytes": 204091392,
+            "browserCooldownDescriptorGrowth": 8,
+            "browserCooldownThreadGrowth": -7,
+            "browserCooldownProcessGrowth": 0,
+            "jobLoadCpuPercentOneCore": 16.044417982332277
+          },
+          "environment": {
+            "platform": "linux",
+            "architecture": "arm64",
+            "node": "v26.8.2",
+            "playwright": "1.64.1",
+            "cpuCount": 4,
+            "pageBytes": 4096,
+            "clockTicksPerSecond": 100
+          },
+          "counts": {
+            "reload": 5,
+            "navigation": 24,
+            "editor": 10,
+            "burstRequests": 96,
+            "loadRequests": 240,
+            "resourceSamples": 311,
+            "loadMilliseconds": 60001,
+            "browserResourceSamples": 84,
+            "browserObservedExits": 0,
+            "browserCpuMilliseconds": 60736,
+            "browserFailureStage": 0,
+            "jobCpuMilliseconds": 60734,
+            "jobCpuFailureStage": 0
+          }
+        },
+        {
+          "artifactId": 13567635957,
+          "artifactName": "browser-contract-status-arm64-firefox",
+          "providerZIPDigest": "sha256:bef5f7b8dec56ba344608898baef6c7a1234067ecf68ef7613cb00b830cd8622",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "aa0ef64da2b1c896140dbd6ed03a64f2fe67e492",
+          "project": "firefox",
+          "binarySHA256": "669cb606a27849f24a0fdb4cc38e8823e7bcc396c619421f00d54148c8868130",
+          "outcome": "failed",
+          "sourceHashesVerified": 19,
+          "registered": 52,
+          "passedCases": 51,
+          "nonPassingCases": [
+            {
+              "id": 2,
+              "status": "failed",
+              "attempts": 1,
+              "sourceRole": "desktop",
+              "sourceLine": 137,
+              "sourceColumn": 42
+            }
+          ],
+          "attempts": 52
+        },
+        {
+          "artifactId": 13567312686,
+          "artifactName": "desktop-performance-arm64-chromium",
+          "providerZIPDigest": "sha256:56e169dd39efd80ca4d369f182265d1f26cd1339008aa96e9a91236d473e1f95",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "aa0ef64da2b1c896140dbd6ed03a64f2fe67e492",
+          "project": "chromium",
+          "binarySHA256": "669cb606a27849f24a0fdb4cc38e8823e7bcc396c619421f00d54148c8868130",
+          "outcome": "passed",
+          "sourceHashesVerified": 17,
+          "stage": "complete",
+          "failureKind": "none",
+          "violations": [],
+          "metrics": {
+            "controllerStartupMs": 33.26378500001738,
+            "dashboardReadyMs": 312.88835399999516,
+            "reloadP95Ms": 272.50170799999614,
+            "navigationP95Ms": 389.83775099998456,
+            "editorP95Ms": 199.87434399998165,
+            "apiP95Ms": 16.400000000023283,
+            "burstRequestsPerSecond": 231.00461614358653,
+            "loadRequestsPerSecond": 3.9998539196017315,
+            "loadCpuPercentOneCore": 1.4499470458556276,
+            "sampledPeakRssBytes": 16588800,
+            "sampledPeakDescriptors": 14,
+            "sampledPeakThreads": 10,
+            "cooldownRssGrowthBytes": 1560576,
+            "cooldownDescriptorGrowth": 1,
+            "cooldownThreadGrowth": 1,
+            "browserSampledPeakRssBytes": 727564288,
+            "browserSampledPeakDescriptors": 165,
+            "browserSampledPeakThreads": 63,
+            "browserSampledPeakProcesses": 6,
+            "browserObservedLoadCpuPercentOneCore": 5.372347328835686,
+            "browserCooldownRssGrowthBytes": 68628480,
+            "browserCooldownDescriptorGrowth": 4,
+            "browserCooldownThreadGrowth": 0,
+            "browserCooldownProcessGrowth": 0,
+            "jobLoadCpuPercentOneCore": 13.554884798458911
+          },
+          "environment": {
+            "platform": "linux",
+            "architecture": "arm64",
+            "node": "v26.8.2",
+            "playwright": "1.64.1",
+            "cpuCount": 4,
+            "pageBytes": 4096,
+            "clockTicksPerSecond": 100
+          },
+          "counts": {
+            "reload": 5,
+            "navigation": 24,
+            "editor": 10,
+            "burstRequests": 96,
+            "loadRequests": 240,
+            "resourceSamples": 303,
+            "loadMilliseconds": 60002,
+            "browserResourceSamples": 82,
+            "browserObservedExits": 0,
+            "browserCpuMilliseconds": 60867,
+            "browserFailureStage": 0,
+            "jobCpuMilliseconds": 60856,
+            "jobCpuFailureStage": 0
+          }
+        },
+        {
+          "artifactId": 13567283395,
+          "artifactName": "desktop-performance-amd64-firefox",
+          "providerZIPDigest": "sha256:dd0598e67c367e050f6b4cab0dc29e8630d4dab99b996a6073307c1937440ec2",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "aa0ef64da2b1c896140dbd6ed03a64f2fe67e492",
+          "project": "firefox",
+          "binarySHA256": "db53f4ca2adc5720dc4564b53446c352325a81a2178bd266be3fac55a9f42e94",
+          "outcome": "passed",
+          "sourceHashesVerified": 17,
+          "stage": "complete",
+          "failureKind": "none",
+          "violations": [],
+          "metrics": {
+            "controllerStartupMs": 33.04100999998627,
+            "dashboardReadyMs": 580.5077919999603,
+            "reloadP95Ms": 446.9454370000167,
+            "navigationP95Ms": 367.306052000029,
+            "editorP95Ms": 337.49623799999245,
+            "apiP95Ms": 33,
+            "burstRequestsPerSecond": 155.2395760711724,
+            "loadRequestsPerSecond": 3.9999517650483236,
+            "loadCpuPercentOneCore": 2.383304593341293,
+            "sampledPeakRssBytes": 17473536,
+            "sampledPeakDescriptors": 14,
+            "sampledPeakThreads": 11,
+            "cooldownRssGrowthBytes": 2170880,
+            "cooldownDescriptorGrowth": 1,
+            "cooldownThreadGrowth": 2,
+            "browserSampledPeakRssBytes": 1056378880,
+            "browserSampledPeakDescriptors": 285,
+            "browserSampledPeakThreads": 155,
+            "browserSampledPeakProcesses": 7,
+            "browserObservedLoadCpuPercentOneCore": 7.111171175565653,
+            "browserCooldownRssGrowthBytes": 172019712,
+            "browserCooldownDescriptorGrowth": -7,
+            "browserCooldownThreadGrowth": -11,
+            "browserCooldownProcessGrowth": 0,
+            "jobLoadCpuPercentOneCore": 20.944684366530396
+          },
+          "environment": {
+            "platform": "linux",
+            "architecture": "x64",
+            "node": "v26.8.2",
+            "playwright": "1.64.1",
+            "cpuCount": 4,
+            "pageBytes": 4096,
+            "clockTicksPerSecond": 100
+          },
+          "counts": {
+            "reload": 5,
+            "navigation": 24,
+            "editor": 10,
+            "burstRequests": 96,
+            "loadRequests": 240,
+            "resourceSamples": 309,
+            "loadMilliseconds": 60000,
+            "browserResourceSamples": 82,
+            "browserObservedExits": 0,
+            "browserCpuMilliseconds": 61030,
+            "browserFailureStage": 0,
+            "jobCpuMilliseconds": 61028,
+            "jobCpuFailureStage": 0
+          }
+        },
+        {
+          "artifactId": 13567268269,
+          "artifactName": "desktop-performance-arm64-firefox",
+          "providerZIPDigest": "sha256:65df83dade653a474d75dc67c26b32b7e8c647be3c6064806471e69447ddf2a8",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "aa0ef64da2b1c896140dbd6ed03a64f2fe67e492",
+          "project": "firefox",
+          "binarySHA256": "669cb606a27849f24a0fdb4cc38e8823e7bcc396c619421f00d54148c8868130",
+          "outcome": "passed",
+          "sourceHashesVerified": 17,
+          "stage": "complete",
+          "failureKind": "none",
+          "violations": [],
+          "metrics": {
+            "controllerStartupMs": 33.44458000001032,
+            "dashboardReadyMs": 666.9374700000044,
+            "reloadP95Ms": 242.2655289999675,
+            "navigationP95Ms": 327.76796299999114,
+            "editorP95Ms": 325.4539719999884,
+            "apiP95Ms": 33,
+            "burstRequestsPerSecond": 177.440579558204,
+            "loadRequestsPerSecond": 3.9998760570405856,
+            "loadCpuPercentOneCore": 1.583284272578565,
+            "sampledPeakRssBytes": 16928768,
+            "sampledPeakDescriptors": 14,
+            "sampledPeakThreads": 10,
+            "cooldownRssGrowthBytes": 1740800,
+            "cooldownDescriptorGrowth": 1,
+            "cooldownThreadGrowth": 0,
+            "browserSampledPeakRssBytes": 1064181760,
+            "browserSampledPeakDescriptors": 282,
+            "browserSampledPeakThreads": 154,
+            "browserSampledPeakProcesses": 7,
+            "browserObservedLoadCpuPercentOneCore": 7.252292815835797,
+            "browserCooldownRssGrowthBytes": 177090560,
+            "browserCooldownDescriptorGrowth": -10,
+            "browserCooldownThreadGrowth": -11,
+            "browserCooldownProcessGrowth": 0,
+            "jobLoadCpuPercentOneCore": 20.473258345196164
+          },
+          "environment": {
+            "platform": "linux",
+            "architecture": "arm64",
+            "node": "v26.8.2",
+            "playwright": "1.64.1",
+            "cpuCount": 4,
+            "pageBytes": 4096,
+            "clockTicksPerSecond": 100
+          },
+          "counts": {
+            "reload": 5,
+            "navigation": 24,
+            "editor": 10,
+            "burstRequests": 96,
+            "loadRequests": 240,
+            "resourceSamples": 309,
+            "loadMilliseconds": 60001,
+            "browserResourceSamples": 82,
+            "browserObservedExits": 0,
+            "browserCpuMilliseconds": 60946,
+            "browserFailureStage": 0,
+            "jobCpuMilliseconds": 60944,
+            "jobCpuFailureStage": 0
+          }
+        },
+        {
+          "artifactId": 13567258491,
+          "artifactName": "browser-contract-status-amd64-firefox",
+          "providerZIPDigest": "sha256:51b8829976257d49ee1632b9241facce3e939bf23791877d81af665525b73d75",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "aa0ef64da2b1c896140dbd6ed03a64f2fe67e492",
+          "project": "firefox",
+          "binarySHA256": "db53f4ca2adc5720dc4564b53446c352325a81a2178bd266be3fac55a9f42e94",
+          "outcome": "failed",
+          "sourceHashesVerified": 19,
+          "registered": 52,
+          "passedCases": 51,
+          "nonPassingCases": [
+            {
+              "id": 2,
+              "status": "failed",
+              "attempts": 1,
+              "sourceRole": "desktop",
+              "sourceLine": 137,
+              "sourceColumn": 42
+            }
+          ],
+          "attempts": 52
+        },
+        {
+          "artifactId": 13567177685,
+          "artifactName": "desktop-performance-amd64-webkit",
+          "providerZIPDigest": "sha256:53b033d18e80322aa4fbfa4d5a4efcd2a41bc6382eb42c1de1107b2a99470231",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "aa0ef64da2b1c896140dbd6ed03a64f2fe67e492",
+          "project": "webkit",
+          "binarySHA256": "db53f4ca2adc5720dc4564b53446c352325a81a2178bd266be3fac55a9f42e94",
+          "outcome": "passed",
+          "sourceHashesVerified": 17,
+          "stage": "complete",
+          "failureKind": "none",
+          "violations": [],
+          "metrics": {
+            "controllerStartupMs": 34.52503700001398,
+            "dashboardReadyMs": 674.2876079999842,
+            "reloadP95Ms": 219.3542169999564,
+            "navigationP95Ms": 473.36244799999986,
+            "editorP95Ms": 346.95612300001085,
+            "apiP95Ms": 26,
+            "burstRequestsPerSecond": 159.0057460800865,
+            "loadRequestsPerSecond": 3.999910163484363,
+            "loadCpuPercentOneCore": 2.483277559829875,
+            "sampledPeakRssBytes": 17453056,
+            "sampledPeakDescriptors": 14,
+            "sampledPeakThreads": 10,
+            "cooldownRssGrowthBytes": 2080768,
+            "cooldownDescriptorGrowth": 1,
+            "cooldownThreadGrowth": 1,
+            "browserSampledPeakRssBytes": 892571648,
+            "browserSampledPeakDescriptors": 101,
+            "browserSampledPeakThreads": 66,
+            "browserSampledPeakProcesses": 5,
+            "browserObservedLoadCpuPercentOneCore": 9.136356614421512,
+            "browserCooldownRssGrowthBytes": 153051136,
+            "browserCooldownDescriptorGrowth": 8,
+            "browserCooldownThreadGrowth": -5,
+            "browserCooldownProcessGrowth": 0,
+            "jobLoadCpuPercentOneCore": 16.664343025236146
+          },
+          "environment": {
+            "platform": "linux",
+            "architecture": "x64",
+            "node": "v26.8.2",
+            "playwright": "1.64.1",
+            "cpuCount": 4,
+            "pageBytes": 4096,
+            "clockTicksPerSecond": 100
+          },
+          "counts": {
+            "reload": 5,
+            "navigation": 24,
+            "editor": 10,
+            "burstRequests": 96,
+            "loadRequests": 240,
+            "resourceSamples": 308,
+            "loadMilliseconds": 60001,
+            "browserResourceSamples": 83,
+            "browserObservedExits": 0,
+            "browserCpuMilliseconds": 60855,
+            "browserFailureStage": 0,
+            "jobCpuMilliseconds": 60853,
+            "jobCpuFailureStage": 0
+          }
+        },
+        {
+          "artifactId": 13567033280,
+          "artifactName": "browser-contract-status-amd64-webkit",
+          "providerZIPDigest": "sha256:be5f750116115fa994c83ea0fa611c440e053a7dcef621adffe7b75fe39f6cd8",
+          "providerZIPDigestVerified": true,
+          "sourceCommit": "aa0ef64da2b1c896140dbd6ed03a64f2fe67e492",
+          "project": "webkit",
+          "binarySHA256": "db53f4ca2adc5720dc4564b53446c352325a81a2178bd266be3fac55a9f42e94",
+          "outcome": "failed",
+          "sourceHashesVerified": 19,
+          "registered": 52,
+          "passedCases": 51,
+          "nonPassingCases": [
+            {
+              "id": 2,
+              "status": "failed",
+              "attempts": 1,
+              "sourceRole": "desktop",
+              "sourceLine": 137,
+              "sourceColumn": 42
+            }
+          ],
+          "attempts": 52
+        }
+      ]
+    }
+  ],
+  "idleHTTP": {
+    "previousUnusedKeepAliveSeconds": 90,
+    "unusedKeepAliveSeconds": 5,
+    "activeReadSecondsUnchanged": 20,
+    "activeWriteSecondsUnchanged": 75,
+    "root": "TestDesktopHTTPKeepAliveIdleBudget",
+    "subcases": [
+      "unused-connection-expires",
+      "active-request-outlives-idle-allowance"
+    ],
+    "assertions": [
+      "One-second idle observation followed by an actual second successful response on the same socket.",
+      "Confirmed peer EOF within the finite idle completion budget.",
+      "An incomplete active JSON request remains connected for six seconds, then completes with its expected malformed-input response.",
+      "Client sockets, owned listener, admitted handlers and both managers complete before the fixture releases ownership."
+    ],
+    "limits": "Owned loopback TCP fixture only; not an attribution of every observed descriptor to an idle socket, nor a hard operating-system syscall deadline."
+  },
+  "browserFixedReports": [
+    {
+      "artifactId": 13568380173,
+      "artifactName": "browser-contract-status-arm64-chromium",
+      "providerZIPDigest": "sha256:91103e83b493850cb46362a5231901e248a7b5fa728447fa9e8c2bfda2a312bf",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+      "project": "chromium",
+      "binarySHA256": "5c4398d7da05e60d0f921d3d9f651c25b75bc77557f1e7ef5963a05763776f58",
+      "outcome": "passed",
+      "sourceHashesVerified": 19,
+      "registered": 52,
+      "passedCases": 52,
+      "nonPassingCases": [],
+      "attempts": 52
+    },
+    {
+      "artifactId": 13568215321,
+      "artifactName": "browser-contract-status-amd64-webkit",
+      "providerZIPDigest": "sha256:07494f9113f4a5ff6d03b03e061e0676cab9a3039d44718730d3d20e325f2654",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+      "project": "webkit",
+      "binarySHA256": "da1897bfe9fb639b75806c169e2e2008d408de5a365d75766abe5894c74b43bb",
+      "outcome": "passed",
+      "sourceHashesVerified": 19,
+      "registered": 52,
+      "passedCases": 52,
+      "nonPassingCases": [],
+      "attempts": 52
+    },
+    {
+      "artifactId": 13568067062,
+      "artifactName": "desktop-performance-arm64-chromium",
+      "providerZIPDigest": "sha256:acd75dba70267da99e2b5a99bf5245d1c283334d09c5d5b570750f0c66067397",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+      "project": "chromium",
+      "binarySHA256": "5c4398d7da05e60d0f921d3d9f651c25b75bc77557f1e7ef5963a05763776f58",
+      "outcome": "passed",
+      "sourceHashesVerified": 17,
+      "stage": "complete",
+      "failureKind": "none",
+      "violations": [],
+      "metrics": {
+        "controllerStartupMs": 31.614750000007916,
+        "dashboardReadyMs": 315.6638019999955,
+        "reloadP95Ms": 239.02833100000862,
+        "navigationP95Ms": 386.8795309999841,
+        "editorP95Ms": 199.98045800000546,
+        "apiP95Ms": 21.600000000034925,
+        "burstRequestsPerSecond": 233.71271146858908,
+        "loadRequestsPerSecond": 3.99996080438408,
+        "loadCpuPercentOneCore": 1.4499857915892291,
+        "sampledPeakRssBytes": 17035264,
+        "sampledPeakDescriptors": 14,
+        "sampledPeakThreads": 10,
+        "cooldownRssGrowthBytes": 2695168,
+        "cooldownDescriptorGrowth": -3,
+        "cooldownThreadGrowth": 1,
+        "browserSampledPeakRssBytes": 720596992,
+        "browserSampledPeakDescriptors": 163,
+        "browserSampledPeakThreads": 66,
+        "browserSampledPeakProcesses": 6,
+        "browserObservedLoadCpuPercentOneCore": 5.264289031286705,
+        "browserCooldownRssGrowthBytes": 61562880,
+        "browserCooldownDescriptorGrowth": -2,
+        "browserCooldownThreadGrowth": 1,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 13.040593353120734
+      },
+      "environment": {
+        "platform": "linux",
+        "architecture": "arm64",
+        "node": "v26.8.2",
+        "playwright": "1.64.1",
+        "cpuCount": 4,
+        "pageBytes": 4096,
+        "clockTicksPerSecond": 100
+      },
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 304,
+        "loadMilliseconds": 60000,
+        "browserResourceSamples": 82,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 60976,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 60974,
+        "jobCpuFailureStage": 0
+      }
+    },
+    {
+      "artifactId": 13568051531,
+      "artifactName": "browser-contract-status-arm64-firefox",
+      "providerZIPDigest": "sha256:2ec52bbd8d126e453614c8b9b9efdb380eb5cb06698164547aa5184126477b1b",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+      "project": "firefox",
+      "binarySHA256": "5c4398d7da05e60d0f921d3d9f651c25b75bc77557f1e7ef5963a05763776f58",
+      "outcome": "passed",
+      "sourceHashesVerified": 19,
+      "registered": 52,
+      "passedCases": 52,
+      "nonPassingCases": [],
+      "attempts": 52
+    },
+    {
+      "artifactId": 13567987317,
+      "artifactName": "desktop-performance-arm64-webkit",
+      "providerZIPDigest": "sha256:c0c83967fe0d177d2c23891d875c36a2cd58030e0a0a8b51ddda0833b3942892",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+      "project": "webkit",
+      "binarySHA256": "5c4398d7da05e60d0f921d3d9f651c25b75bc77557f1e7ef5963a05763776f58",
+      "outcome": "passed",
+      "sourceHashesVerified": 17,
+      "stage": "complete",
+      "failureKind": "none",
+      "violations": [],
+      "metrics": {
+        "controllerStartupMs": 31.378320999996504,
+        "dashboardReadyMs": 596.0287090000056,
+        "reloadP95Ms": 227.31254799998715,
+        "navigationP95Ms": 433.9695139999967,
+        "editorP95Ms": 378.8316449999693,
+        "apiP95Ms": 29,
+        "burstRequestsPerSecond": 228.92227921698912,
+        "loadRequestsPerSecond": 3.9997747441524303,
+        "loadCpuPercentOneCore": 1.5165812571577966,
+        "sampledPeakRssBytes": 17039360,
+        "sampledPeakDescriptors": 14,
+        "sampledPeakThreads": 11,
+        "cooldownRssGrowthBytes": 2138112,
+        "cooldownDescriptorGrowth": -2,
+        "cooldownThreadGrowth": 2,
+        "browserSampledPeakRssBytes": 900145152,
+        "browserSampledPeakDescriptors": 102,
+        "browserSampledPeakThreads": 66,
+        "browserSampledPeakProcesses": 5,
+        "browserObservedLoadCpuPercentOneCore": 9.36118550195342,
+        "browserCooldownRssGrowthBytes": 176160768,
+        "browserCooldownDescriptorGrowth": 5,
+        "browserCooldownThreadGrowth": -3,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 16.399669255444618
+      },
+      "environment": {
+        "platform": "linux",
+        "architecture": "arm64",
+        "node": "v26.8.2",
+        "playwright": "1.64.1",
+        "cpuCount": 4,
+        "pageBytes": 4096,
+        "clockTicksPerSecond": 100
+      },
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 307,
+        "loadMilliseconds": 60003,
+        "browserResourceSamples": 83,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 60782,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 60781,
+        "jobCpuFailureStage": 0
+      }
+    },
+    {
+      "artifactId": 13567967420,
+      "artifactName": "desktop-performance-amd64-firefox",
+      "providerZIPDigest": "sha256:0a80df26a0deb6a6d266796a66e50ee67bea27c829f61888ef3b5bbaaa696882",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+      "project": "firefox",
+      "binarySHA256": "da1897bfe9fb639b75806c169e2e2008d408de5a365d75766abe5894c74b43bb",
+      "outcome": "passed",
+      "sourceHashesVerified": 17,
+      "stage": "complete",
+      "failureKind": "none",
+      "violations": [],
+      "metrics": {
+        "controllerStartupMs": 31.268049000005703,
+        "dashboardReadyMs": 433.53988100000424,
+        "reloadP95Ms": 300.8270729999931,
+        "navigationP95Ms": 293.15812899998855,
+        "editorP95Ms": 217.17731900000945,
+        "apiP95Ms": 18,
+        "burstRequestsPerSecond": 257.403536369057,
+        "loadRequestsPerSecond": 3.9999120109355615,
+        "loadCpuPercentOneCore": 1.5166333041464004,
+        "sampledPeakRssBytes": 17612800,
+        "sampledPeakDescriptors": 13,
+        "sampledPeakThreads": 11,
+        "cooldownRssGrowthBytes": 995328,
+        "cooldownDescriptorGrowth": -3,
+        "cooldownThreadGrowth": 1,
+        "browserSampledPeakRssBytes": 1035513856,
+        "browserSampledPeakDescriptors": 283,
+        "browserSampledPeakThreads": 153,
+        "browserSampledPeakProcesses": 7,
+        "browserObservedLoadCpuPercentOneCore": 5.02903102303493,
+        "browserCooldownRssGrowthBytes": 128901120,
+        "browserCooldownDescriptorGrowth": -15,
+        "browserCooldownThreadGrowth": -14,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 14.381026649527588
+      },
+      "environment": {
+        "platform": "linux",
+        "architecture": "x64",
+        "node": "v26.8.2",
+        "playwright": "1.64.1",
+        "cpuCount": 4,
+        "pageBytes": 4096,
+        "clockTicksPerSecond": 100
+      },
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 298,
+        "loadMilliseconds": 60001,
+        "browserResourceSamples": 80,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 60449,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 60447,
+        "jobCpuFailureStage": 0
+      }
+    },
+    {
+      "artifactId": 13567937422,
+      "artifactName": "browser-contract-status-amd64-firefox",
+      "providerZIPDigest": "sha256:d9e8dcdfc24c4eeeca9b6f8d91400da4db65f4c3b3d8e6323635b2bf873816a4",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+      "project": "firefox",
+      "binarySHA256": "da1897bfe9fb639b75806c169e2e2008d408de5a365d75766abe5894c74b43bb",
+      "outcome": "passed",
+      "sourceHashesVerified": 19,
+      "registered": 52,
+      "passedCases": 52,
+      "nonPassingCases": [],
+      "attempts": 52
+    },
+    {
+      "artifactId": 13567887390,
+      "artifactName": "desktop-performance-amd64-chromium",
+      "providerZIPDigest": "sha256:b33318095913a81674519cbf09173a965d8f966fb5dea70cffa2657a81cd26eb",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+      "project": "chromium",
+      "binarySHA256": "da1897bfe9fb639b75806c169e2e2008d408de5a365d75766abe5894c74b43bb",
+      "outcome": "passed",
+      "sourceHashesVerified": 17,
+      "stage": "complete",
+      "failureKind": "none",
+      "violations": [],
+      "metrics": {
+        "controllerStartupMs": 31.11806300000171,
+        "dashboardReadyMs": 366.52118199999677,
+        "reloadP95Ms": 242.25076600001194,
+        "navigationP95Ms": 322.6491509999905,
+        "editorP95Ms": 154.90254099998856,
+        "apiP95Ms": 32.29999999998836,
+        "burstRequestsPerSecond": 250.07976828233862,
+        "loadRequestsPerSecond": 3.9998813881172977,
+        "loadCpuPercentOneCore": 1.7999466246527838,
+        "sampledPeakRssBytes": 17330176,
+        "sampledPeakDescriptors": 13,
+        "sampledPeakThreads": 11,
+        "cooldownRssGrowthBytes": 2211840,
+        "cooldownDescriptorGrowth": -3,
+        "cooldownThreadGrowth": 2,
+        "browserSampledPeakRssBytes": 764923904,
+        "browserSampledPeakDescriptors": 165,
+        "browserSampledPeakThreads": 64,
+        "browserSampledPeakProcesses": 6,
+        "browserObservedLoadCpuPercentOneCore": 4.460813053836047,
+        "browserCooldownRssGrowthBytes": 69791744,
+        "browserCooldownDescriptorGrowth": -2,
+        "browserCooldownThreadGrowth": -1,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 12.171582511164814
+      },
+      "environment": {
+        "platform": "linux",
+        "architecture": "x64",
+        "node": "v26.8.2",
+        "playwright": "1.64.1",
+        "cpuCount": 4,
+        "pageBytes": 4096,
+        "clockTicksPerSecond": 100
+      },
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 296,
+        "loadMilliseconds": 60001,
+        "browserResourceSamples": 80,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 60975,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 60973,
+        "jobCpuFailureStage": 0
+      }
+    },
+    {
+      "artifactId": 13567607959,
+      "artifactName": "browser-contract-status-amd64-chromium",
+      "providerZIPDigest": "sha256:788644d79f5a625a5472ae3d7771125a7327e9809ece93189052fff26956584c",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+      "project": "chromium",
+      "binarySHA256": "da1897bfe9fb639b75806c169e2e2008d408de5a365d75766abe5894c74b43bb",
+      "outcome": "passed",
+      "sourceHashesVerified": 19,
+      "registered": 52,
+      "passedCases": 52,
+      "nonPassingCases": [],
+      "attempts": 52
+    },
+    {
+      "artifactId": 13567483325,
+      "artifactName": "browser-contract-status-arm64-webkit",
+      "providerZIPDigest": "sha256:64f8009c3a7195ac3833080a594d7ed23e4c08556f16f014ae9860ecb347f79e",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+      "project": "webkit",
+      "binarySHA256": "5c4398d7da05e60d0f921d3d9f651c25b75bc77557f1e7ef5963a05763776f58",
+      "outcome": "passed",
+      "sourceHashesVerified": 19,
+      "registered": 52,
+      "passedCases": 52,
+      "nonPassingCases": [],
+      "attempts": 52
+    },
+    {
+      "artifactId": 13567422297,
+      "artifactName": "desktop-performance-arm64-firefox",
+      "providerZIPDigest": "sha256:f3fe1d8e946ffd322531ae281ecb3b59bf30d1cb8a19894e14446c0604b52a97",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+      "project": "firefox",
+      "binarySHA256": "5c4398d7da05e60d0f921d3d9f651c25b75bc77557f1e7ef5963a05763776f58",
+      "outcome": "passed",
+      "sourceHashesVerified": 17,
+      "stage": "complete",
+      "failureKind": "none",
+      "violations": [],
+      "metrics": {
+        "controllerStartupMs": 32.361688999983016,
+        "dashboardReadyMs": 637.7248219999601,
+        "reloadP95Ms": 256.5187169999699,
+        "navigationP95Ms": 342.2890759999864,
+        "editorP95Ms": 327.1501209999551,
+        "apiP95Ms": 31,
+        "burstRequestsPerSecond": 180.49947182095542,
+        "loadRequestsPerSecond": 3.9990791061268696,
+        "loadCpuPercentOneCore": 1.5996316424507477,
+        "sampledPeakRssBytes": 17068032,
+        "sampledPeakDescriptors": 13,
+        "sampledPeakThreads": 11,
+        "cooldownRssGrowthBytes": 1314816,
+        "cooldownDescriptorGrowth": -3,
+        "cooldownThreadGrowth": 2,
+        "browserSampledPeakRssBytes": 1064472576,
+        "browserSampledPeakDescriptors": 282,
+        "browserSampledPeakThreads": 154,
+        "browserSampledPeakProcesses": 7,
+        "browserObservedLoadCpuPercentOneCore": 7.427720231434032,
+        "browserCooldownRssGrowthBytes": 173883392,
+        "browserCooldownDescriptorGrowth": -14,
+        "browserCooldownThreadGrowth": -11,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 21.311720295146444
+      },
+      "environment": {
+        "platform": "linux",
+        "architecture": "arm64",
+        "node": "v26.8.2",
+        "playwright": "1.64.1",
+        "cpuCount": 4,
+        "pageBytes": 4096,
+        "clockTicksPerSecond": 100
+      },
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 309,
+        "loadMilliseconds": 60013,
+        "browserResourceSamples": 82,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 60987,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 60985,
+        "jobCpuFailureStage": 0
+      }
+    },
+    {
+      "artifactId": 13567198849,
+      "artifactName": "desktop-performance-amd64-webkit",
+      "providerZIPDigest": "sha256:068ac27e9df3a20668cb910612c51a8cd8740d82c0a03c5b0e14faabc404a76d",
+      "providerZIPDigestVerified": true,
+      "sourceCommit": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+      "project": "webkit",
+      "binarySHA256": "da1897bfe9fb639b75806c169e2e2008d408de5a365d75766abe5894c74b43bb",
+      "outcome": "passed",
+      "sourceHashesVerified": 17,
+      "stage": "complete",
+      "failureKind": "none",
+      "violations": [],
+      "metrics": {
+        "controllerStartupMs": 32.704503999993904,
+        "dashboardReadyMs": 536.7136140000075,
+        "reloadP95Ms": 209.9735229999933,
+        "navigationP95Ms": 375.08253899999545,
+        "editorP95Ms": 304.57665299999644,
+        "apiP95Ms": 31,
+        "burstRequestsPerSecond": 201.85131210984378,
+        "loadRequestsPerSecond": 3.999893501502224,
+        "loadCpuPercentOneCore": 1.8499507444447787,
+        "sampledPeakRssBytes": 17432576,
+        "sampledPeakDescriptors": 14,
+        "sampledPeakThreads": 10,
+        "cooldownRssGrowthBytes": 1380352,
+        "cooldownDescriptorGrowth": -2,
+        "cooldownThreadGrowth": 0,
+        "browserSampledPeakRssBytes": 892989440,
+        "browserSampledPeakDescriptors": 101,
+        "browserSampledPeakThreads": 66,
+        "browserSampledPeakProcesses": 5,
+        "browserObservedLoadCpuPercentOneCore": 7.109597054014184,
+        "browserCooldownRssGrowthBytes": 167673856,
+        "browserCooldownDescriptorGrowth": 5,
+        "browserCooldownThreadGrowth": -7,
+        "browserCooldownProcessGrowth": 0,
+        "jobLoadCpuPercentOneCore": 14.788677241448761
+      },
+      "environment": {
+        "platform": "linux",
+        "architecture": "x64",
+        "node": "v26.8.2",
+        "playwright": "1.64.1",
+        "cpuCount": 4,
+        "pageBytes": 4096,
+        "clockTicksPerSecond": 100
+      },
+      "counts": {
+        "reload": 5,
+        "navigation": 24,
+        "editor": 10,
+        "burstRequests": 96,
+        "loadRequests": 240,
+        "resourceSamples": 308,
+        "loadMilliseconds": 60001,
+        "browserResourceSamples": 83,
+        "browserObservedExits": 0,
+        "browserCpuMilliseconds": 60762,
+        "browserFailureStage": 0,
+        "jobCpuMilliseconds": 60761,
+        "jobCpuFailureStage": 0
+      }
+    }
+  ],
+  "browserSummary": {
+    "sourceCommit": "1ef4fc90453e9bde41d2a98b497008bccecd51b2",
+    "providerZIPDigestsVerified": 12,
+    "browserCasesPassed": 312,
+    "performanceCapsPassed": 150,
+    "browserRetriesOrSkips": 0,
+    "worstNavigationP95Ms": 433.9695139999967,
+    "peakBrowserRSSMiB": 1015.16015625,
+    "maxControllerCooldownDescriptorGrowth": -2
+  }
+}
