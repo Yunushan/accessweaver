@@ -53,6 +53,9 @@ jobs:
     env:
       ACCESSWEAVER_EXPECT_GOOS: ${{ matrix.goos }}
       ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
+      CORE_PREVIEW_ROOT_LAYOUT: '1'
+      CORE_MODE_REPORTS: '1'
+      CORE_FAILURE_ANNOTATIONS: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -68,8 +71,10 @@ jobs:
           architecture: ${{ matrix.sdkarch }}
           package-manager-cache: false
       - name: Verify native host and SDK identity
+        id: native_identity
         run: node scripts/check-native-environment.cjs
       - name: Verify immutable source identity
+        id: source_identity
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -78,6 +83,7 @@ jobs:
           $changes = @(git status --porcelain=v1 --untracked-files=normal)
           if ($LASTEXITCODE -ne 0 -or $changes.Count -ne 0) { throw 'Clean committed source required' }
       - name: Verify module integrity
+        id: module_integrity
         shell: pwsh
         run: |
           go mod download
@@ -86,10 +92,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Vet complete root source
         run: go vet ./...
+      - name: Verify source-known result privacy contracts
+        id: known_labels
+        run: node --test scripts/core-test-evidence.test.cjs
       - name: Run complete root regression
-        run: go test ./... -count=1 -timeout=6m
+        run: node scripts/core-test-evidence.cjs unit
       - name: Qualify native Windows local preview and namespace ownership
-        if: runner.os == 'Windows'
+        if: ${{ !cancelled() && runner.os == 'Windows' && steps.native_identity.outcome == 'success' && steps.source_identity.outcome == 'success' && steps.module_integrity.outcome == 'success' && steps.known_labels.outcome == 'success' }}
         env:
           ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_STORAGE_TEST: '1'
           ACCESSWEAVER_DISPOSABLE_WINDOWS_PREVIEW_TEST: '1'
@@ -100,10 +109,11 @@ jobs:
           go test ./internal/engine -run '^TestWindowsPreviewLocalInputs$' -count=1 -timeout=3m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run complete Linux root race regression
-        if: runner.os == 'Linux'
+        if: ${{ !cancelled() && runner.os == 'Linux' && steps.native_identity.outcome == 'success' && steps.source_identity.outcome == 'success' && steps.module_integrity.outcome == 'success' && steps.known_labels.outcome == 'success' }}
         shell: bash
-        run: CGO_ENABLED=1 go test -race ./... -count=1 -timeout=6m
+        run: CGO_ENABLED=1 node scripts/core-test-evidence.cjs race
       - name: Confirm source unchanged after qualification
+        if: ${{ !cancelled() && steps.source_identity.outcome == 'success' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
