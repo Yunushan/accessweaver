@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -43,14 +41,14 @@ func binaryForContext(ctx context.Context, p profile.Profile, d Descriptor) (str
 	names := d.ExecutablesFor(runtime.GOOS)
 	if bin == "" {
 		for _, name := range names {
-			if found, err := exec.LookPath(name); err == nil {
+			if found, err := lookupPreviewExecutable(ctx, name); err == nil {
 				bin = found
 				break
 			}
 		}
 		if bin == "" {
 			for _, candidate := range installedCandidates(p.Engine) {
-				if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() {
+				if info, err := statPreviewInput(candidate); err == nil && info.Mode().IsRegular() {
 					bin = candidate
 					break
 				}
@@ -63,7 +61,7 @@ func binaryForContext(ctx context.Context, p profile.Profile, d Descriptor) (str
 		if strings.ContainsAny(bin, "/\\") {
 			return "", errors.New("binary must be an absolute path or executable name in PATH")
 		}
-		found, err := exec.LookPath(bin)
+		found, err := lookupPreviewExecutable(ctx, bin)
 		if err != nil {
 			return "", fmt.Errorf("find executable: %w", err)
 		}
@@ -87,7 +85,7 @@ func binaryForContext(ctx context.Context, p profile.Profile, d Descriptor) (str
 		}
 		return "", fmt.Errorf("%q is not a %s executable for %s; expected %s", base, d.Name, runtime.GOOS, strings.Join(names, ", "))
 	}
-	info, err := os.Stat(bin)
+	info, err := statPreviewInput(bin)
 	if err != nil {
 		return "", fmt.Errorf("read executable: %w", err)
 	}
@@ -101,7 +99,7 @@ func binaryForContext(ctx context.Context, p profile.Profile, d Descriptor) (str
 		if err := preparationContextError(ctx); err != nil {
 			return "", err
 		}
-		f, err := os.Open(bin)
+		f, err := openPreviewInput(bin)
 		if err != nil {
 			return "", err
 		}

@@ -1,0 +1,113 @@
+name: Local preview input qualification
+
+on:
+  push:
+    paths:
+      - 'internal/engine/**'
+      - 'internal/fileidentity/**'
+      - '.github/workflows/local-preview-inputs.yml'
+  pull_request:
+    paths:
+      - 'internal/engine/**'
+      - 'internal/fileidentity/**'
+      - '.github/workflows/local-preview-inputs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.27.3'
+  GOTOOLCHAIN: local
+  CGO_ENABLED: '0'
+
+jobs:
+  native:
+    name: Local inputs (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            sdkarch: x64
+          - os: windows-11-arm
+            goos: windows
+            goarch: arm64
+            sdkarch: arm64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            sdkarch: x64
+          - os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            sdkarch: arm64
+    env:
+      ACCESSWEAVER_EXPECT_GOOS: ${{ matrix.goos }}
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          architecture: ${{ matrix.sdkarch }}
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '26.8.2'
+          architecture: ${{ matrix.sdkarch }}
+          package-manager-cache: false
+      - name: Verify native host and SDK identity
+        run: node scripts/check-native-environment.cjs
+      - name: Verify immutable source identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $source -cne $env:GITHUB_SHA) { throw 'Source identity mismatch' }
+          $changes = @(git status --porcelain=v1 --untracked-files=normal)
+          if ($LASTEXITCODE -ne 0 -or $changes.Count -ne 0) { throw 'Clean committed source required' }
+      - name: Verify module integrity
+        shell: pwsh
+        run: |
+          go mod download
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go mod verify
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Vet complete root source
+        run: go vet ./...
+      - name: Run engine and file identity regression
+        run: go test ./internal/engine ./internal/fileidentity -count=1 -timeout=4m
+      - name: Qualify native Windows local preview and namespace ownership
+        if: runner.os == 'Windows'
+        env:
+          ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_STORAGE_TEST: '1'
+          ACCESSWEAVER_DISPOSABLE_WINDOWS_PREVIEW_TEST: '1'
+        shell: pwsh
+        run: |
+          go test ./internal/fileidentity -run '^Test(DisposableWindowsFileIdentityNative|WindowsLocalPreviewRead)$' -count=1 -timeout=4m
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test ./internal/engine -run '^TestWindowsPreviewLocalInputs$' -count=1 -timeout=3m
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run Linux engine and identity race regression
+        if: runner.os == 'Linux'
+        shell: bash
+        run: CGO_ENABLED=1 go test -race ./internal/engine ./internal/fileidentity -count=1 -timeout=4m
+      - name: Confirm source unchanged after qualification
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $source -cne $env:GITHUB_SHA) { throw 'Source changed during qualification' }
+          $changes = @(git -c core.fsmonitor=false status --porcelain=v1 --untracked-files=normal)
+          if ($LASTEXITCODE -ne 0 -or $changes.Count -ne 0) { throw 'Qualification changed source' }

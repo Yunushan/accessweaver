@@ -33,6 +33,8 @@ A profile is a versioned JSON object. The Go backend validates schema and field 
 
 `binary` may be empty to search the adapter's approved executable names on `PATH`. `configPath` is optional except for WireSock, sing-box and Xray; those adapters require an absolute local path. Profile export contains the path, not the file or its credentials. Absolute paths usually need updating when moving between machines.
 
+On Windows, use ordinary local drive-letter paths for executables and configuration files. Preview refuses UNC/device paths, remote drive mappings and links to remote targets. Bare executable names search absolute local `PATH` entries for `.exe` files; use an absolute path for a binary in the current directory.
+
 ## Field reference
 
 | Field | Meaning |

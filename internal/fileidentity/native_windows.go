@@ -327,6 +327,10 @@ func nativeMissing(err error) bool {
 }
 
 func (context windowsContext) open(parent windows.Handle, name string) (windows.Handle, error) {
+	return context.openAccess(parent, name, windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE)
+}
+
+func (context windowsContext) openAccess(parent windows.Handle, name string, access uint32) (windows.Handle, error) {
 	objectName, err := windows.NewNTUnicodeString(name)
 	if err != nil {
 		return windows.InvalidHandle, ErrUnavailable
@@ -340,7 +344,7 @@ func (context windowsContext) open(parent windows.Handle, name string) (windows.
 	// before using a root or intermediate component as a directory.
 	options := uint32(windows.FILE_OPEN_REPARSE_POINT | windows.FILE_SYNCHRONOUS_IO_NONALERT | windows.FILE_OPEN_NO_RECALL)
 	err = context.call(func() error {
-		return windows.NtCreateFile(&handle, windows.FILE_READ_ATTRIBUTES|windows.SYNCHRONIZE, &attributes, &status, nil, 0,
+		return windows.NtCreateFile(&handle, access, &attributes, &status, nil, 0,
 			windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, windows.FILE_OPEN, options, 0, 0)
 	})
 	runtime.KeepAlive(objectName)
@@ -358,7 +362,14 @@ func (context windowsContext) open(parent windows.Handle, name string) (windows.
 	return handle, nil
 }
 
-func fromPath(path string, followLinks bool) (result State, failure error) {
+func fromPath(path string, followLinks bool) (State, error) {
+	return inspectWindowsPath(path, followLinks, nil)
+}
+
+// consume runs while all metadata owners and the final parent are still held.
+// It must not borrow an owner beyond the call. A separate data handle can be
+// acquired relative to that parent and checked against the inspected identity.
+func inspectWindowsPath(path string, followLinks bool, consume func(windowsContext, windows.Handle, string, State) error) (result State, failure error) {
 	if !ordinaryWindowsPath(path) {
 		return State{}, ErrUnavailable
 	}
@@ -533,6 +544,11 @@ func fromPath(path string, followLinks bool) (result State, failure error) {
 			continue
 		}
 		if len(pending) == 0 {
+			if consume != nil {
+				if err := consume(context, stack[len(stack)-1], component, state); err != nil {
+					return State{}, err
+				}
+			}
 			return state, nil
 		}
 		if state.Kind != Directory {

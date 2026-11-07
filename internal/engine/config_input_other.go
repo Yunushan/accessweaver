@@ -1,4 +1,4 @@
-//go:build !linux && !darwin && !freebsd && !openbsd
+//go:build !windows && !linux && !darwin && !freebsd && !openbsd
 
 package engine
 

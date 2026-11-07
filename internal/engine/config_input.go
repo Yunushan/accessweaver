@@ -27,7 +27,8 @@ type configInputFile interface {
 	Stat() (os.FileInfo, error)
 }
 
-// Preserve followed aliases and the platform's existing path/share semantics.
+// Preserve followed local aliases. Windows acquisition refuses remote namespaces
+// before native file access; other platforms retain their existing semantics.
 // The preliminary Stat is advisory; only the acquired reader supplies bytes.
 // This is a bounded observed stream, not an immutable snapshot or a binding to
 // an external engine's later reopen of an original configuration pathname.
@@ -42,7 +43,7 @@ func readConfigInputContext(ctx context.Context, path string) ([]byte, error) {
 	if !filepath.IsAbs(path) {
 		return nil, errors.New("configPath must be an absolute path to a local file")
 	}
-	info, err := os.Stat(path)
+	info, err := statPreviewInput(path)
 	if err != nil {
 		return nil, &configInputFailure{cause: errors.Join(err, preparationContextError(ctx))}
 	}
