@@ -50,4 +50,17 @@ The product view entrance is now 160 ms, preserving its fade, translation, easin
 
 ## Native architecture expansion
 
-The full three-browser workload now has native amd64 and arm64 jobs with the same version-one targets. Native runner/SDK/controller/Node checks and browser ELF instruction-set checks precede execution. Architecture-qualified artifact names keep each runtime separate; reports must match their actual native architecture and executed binary. This expands native measurement coverage without changing the accepted workload, deadlines or budget caps. Fresh six-job results are required before claiming native ARM64 acceptance. See [BROWSER_ACCEPTANCE.md](BROWSER_ACCEPTANCE.md#native-linux-browser-matrix). Controller-only resource scope and remaining ten-target/eight-hour requirements remain unchanged.
+The full three-browser workload now has native amd64 and arm64 jobs with the same version-one targets. Native runner/SDK/controller/Node checks and browser ELF instruction-set checks precede execution. Architecture-qualified artifact names keep each runtime separate; reports must match their actual native architecture and executed binary. This expands native measurement coverage without changing the accepted workload, deadlines or budget caps. Native ARM64 acceptance requires all six complete job results. See [BROWSER_ACCEPTANCE.md](BROWSER_ACCEPTANCE.md#native-linux-browser-matrix). Controller-only resource scope and remaining ten-target/eight-hour requirements remain unchanged.
+
+The [5d94e98 native baseline](qualification/5d94e9807d0c-native-linux-browser-performance.json) now establishes the full workload in all six native Linux architecture/browser combinations, with the existing version-one budgets unchanged. All 90 cap checks passed in run 42321928976. Each job exposed four logical CPUs, 4096-byte pages and 100 clock ticks/second; controller and browser instruction sets matched their target. The load lasted 60,000–60,001 ms with 240 requests per job. Resource measurements still cover the owned controller only.
+
+| Native target | Browser | Startup ms | Dashboard ms | Navigation p95 ms | Editor p95 ms | API p95 ms | CPU % one core | Sampled RSS MiB |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| linux/amd64 | chromium | 33.26 | 320.02 | 401.77 | 172.08 | 18.90 | 1.87 | 16.37 |
+| linux/amd64 | firefox | 34.86 | 405.60 | 376.17 | 335.35 | 27.00 | 1.93 | 16.27 |
+| linux/amd64 | webkit | 36.76 | 431.94 | 361.68 | 289.52 | 14.00 | 1.20 | 16.93 |
+| linux/arm64 | chromium | 32.06 | 357.87 | 433.35 | 216.65 | 14.00 | 1.18 | 16.27 |
+| linux/arm64 | firefox | 32.79 | 429.15 | 360.42 | 322.12 | 21.00 | 1.27 | 15.99 |
+| linux/arm64 | webkit | 32.02 | 671.58 | 478.99 | 389.18 | 15.00 | 1.10 | 15.74 |
+
+The receipt retains all 15 metrics and workload counts for each job, their exact source and executed binary hashes, and the earlier wrapper-check failure and correction. Browser/renderer resources, representative hardware, other native operating systems, signed installation, actual engine traffic and the eight-hour soak remain unqualified. Formal readiness gate counts are unchanged.
