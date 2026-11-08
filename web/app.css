@@ -158,3 +158,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 .controller-storage-card{margin-top:20px}.controller-storage-card h2{margin:0}.controller-storage-card .heading-actions{flex-wrap:wrap}.controller-storage-values{display:grid;gap:12px;margin:18px 0}.controller-storage-values[hidden]{display:none}.controller-storage-values>div{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}.controller-storage-values dt{color:var(--muted)}.controller-storage-values dd{margin:0;overflow-wrap:anywhere;text-align:right}
 @media(max-width:760px){.controller-storage-values>div{grid-template-columns:minmax(0,1fr)}.controller-storage-values dd{text-align:left}}
+
+/* Keep the small, fixed set of shadowed controls separate from large list repaints. */
+.brand-mark,.online-dot,.topbar-secure-dot,.core-symbol,.orbit-node,.btn-primary,.modal-card{will-change:transform}

@@ -2,7 +2,7 @@ name: Sustained browser readiness
 
 on:
   push:
-    branches: ['codex/browser-soak-readiness', 'codex/browser-modal-rendering', 'codex/browser-startup-attribution', 'codex/browser-ready-clock', 'codex/dashboard-dom-stability', 'codex/browser-callback-clock', 'codex/browser-startup-context', 'codex/engine-dom-stability', 'codex/svg-icon-instances', 'codex/editor-guidance-retention', 'codex/browser-control-runner', 'codex/compact-ui-shadows', 'codex/stable-modal-layout', 'codex/inert-control-feedback']
+    branches: ['codex/browser-soak-readiness', 'codex/browser-modal-rendering', 'codex/browser-startup-attribution', 'codex/browser-ready-clock', 'codex/dashboard-dom-stability', 'codex/browser-callback-clock', 'codex/browser-startup-context', 'codex/engine-dom-stability', 'codex/svg-icon-instances', 'codex/editor-guidance-retention', 'codex/browser-control-runner', 'codex/compact-ui-shadows', 'codex/stable-modal-layout', 'codex/inert-control-feedback', 'codex/bounded-shadow-layers']
     paths-ignore: ['docs/**', 'README.md']
   workflow_dispatch:
 
