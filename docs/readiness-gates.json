@@ -36,7 +36,9 @@
           "status": "failed",
           "evidence": [
             "build/vm-tests/sandbox/results/reboot-results.json",
-            "docs/SPLITWIRE_IMPLEMENTATION.md"
+            "docs/SPLITWIRE_IMPLEMENTATION.md",
+            "docs/qualification/22cf0abb5da8-dns-restore-readback.json",
+            "docs/qualification/3ae6417cb9a8-dns-native-recovery.json"
           ]
         },
         {
@@ -599,7 +601,9 @@
           "status": "partial",
           "evidence": [
             "internal/logfile/writer.go",
-            "internal/workflow/manager.go"
+            "internal/workflow/manager.go",
+            "docs/qualification/22cf0abb5da8-dns-restore-readback.json",
+            "docs/qualification/3ae6417cb9a8-dns-native-recovery.json"
           ]
         },
         {
