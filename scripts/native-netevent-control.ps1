@@ -226,7 +226,7 @@ function Get-NativeNDISTemplateSignature([string]$Template) {
             foreach($attribute in $node.Attributes){if($attribute.Name -cnotin @('name','inType','outType','map','length','count')){return ''}}
             if($node.HasAttribute('count')){return ''}
             $name=$node.GetAttribute('name');$type=$node.GetAttribute('inType');$length=$node.GetAttribute('length')
-            if($name -cnotmatch '^[A-Za-z][A-Za-z0-9]{0,31}$' -or $type -cnotin @('win:UInt8','win:UInt16','win:UInt32','win:UnicodeString','win:Binary') -or ($length -and $length -cnotmatch '^[A-Za-z][A-Za-z0-9]{0,31}$')){return ''}
+            if($name -cnotmatch '^[A-Za-z][A-Za-z0-9]{0,31}$' -or $type -cnotin @('win:UInt8','win:UInt16','win:UInt32','win:UInt64','win:UnicodeString','win:Binary') -or ($length -and $length -cnotmatch '^[A-Za-z][A-Za-z0-9]{0,31}$')){return ''}
             $parts.Add($name+':'+$type+':'+$length)
         }
         if($parts.Count -eq 0){return ''};return [string]::Join('|',$parts.ToArray())
@@ -236,16 +236,18 @@ function Get-NativeNDISCatalogClass([int]$ID,[int]$Version,[int]$Level,[string]$
     if($Version -ne 0 -or $Level -lt 4 -or $Level -gt 5){return 'unknown'}
     $signature=Get-NativeNDISTemplateSignature $Template
     if($ID -eq 1001 -and $signature -ceq 'MiniportIfIndex:win:UInt32:|LowerIfIndex:win:UInt32:|FragmentSize:win:UInt32:|Fragment:win:Binary:FragmentSize'){return 'fragment'}
+    if($ID -eq 1001 -and $signature -ceq 'MiniportIfIndex:win:UInt32:|LowerIfIndex:win:UInt32:|FragmentSize:win:UInt32:|Fragment:win:Binary:FragmentSize|GftFlowEntryId:win:UInt64:|GftOffloadInformation:win:UInt64:'){return 'fragment'}
     if($ID -eq 1002 -and $signature -ceq 'MiniportIfIndex:win:UInt32:|LowerIfIndex:win:UInt32:|MetadataSize:win:UInt32:|Metadata:win:Binary:MetadataSize'){return 'metadata'}
     if($ID -eq 1011 -and $signature -ceq 'RulesCount:win:UInt32:'){return 'rules'}
     if($ID -eq 1016 -and $signature -ceq 'RuleId:win:UInt8:|Directive:win:UInt8:|Length:win:UInt16:|Value:win:Binary:Length'){return 'rules'}
     if($ID -cin @(1012,1013) -and $signature -ceq 'FriendlyName:win:UnicodeString:|UniqueName:win:UnicodeString:|ServiceName:win:UnicodeString:|Version:win:UnicodeString:'){return 'inventory'}
     if($ID -cin @(1014,1015) -and $signature -ceq 'MiniportIfIndex:win:UInt32:|LowerIfIndex:win:UInt32:|MediaType:win:UInt32:|ReferenceContext:win:UInt32:'){return 'inventory'}
+    if($ID -cin @(3001,3002) -and $Level -eq 5 -and $signature -ceq 'PreviousState:win:UInt8:|NextState:win:UInt8:|Location:win:UInt32:|Context:win:UInt32:'){return 'lifecycle'}
     return 'unknown'
 }
 function New-NativeNDISCatalogEvidence([string]$Code='not-inspected') {
-    $r=@{code=$Code;schemas=@();providerVerified=$false;definitions=-1;recognizedDefinitions=-1;records=-1;fragmentRecords=-1;metadataRecords=-1;ruleRecords=-1;inventoryRecords=-1;unknownRecords=-1;otherProviderRecords=-1;missingProviderIDs=-1;unrecognizedVersions=-1}
-    if($Code -cin @('complete','bound')){$r.providerVerified=$true;foreach($key in @('definitions','recognizedDefinitions','records','fragmentRecords','metadataRecords','ruleRecords','inventoryRecords','unknownRecords','otherProviderRecords','missingProviderIDs','unrecognizedVersions')){$r[$key]=0}};return $r
+    $r=@{code=$Code;schemas=@();providerVerified=$false;definitions=-1;recognizedDefinitions=-1;records=-1;fragmentRecords=-1;metadataRecords=-1;ruleRecords=-1;inventoryRecords=-1;lifecycleRecords=-1;unknownRecords=-1;otherProviderRecords=-1;missingProviderIDs=-1;unrecognizedVersions=-1}
+    if($Code -cin @('complete','bound')){$r.providerVerified=$true;foreach($key in @('definitions','recognizedDefinitions','records','fragmentRecords','metadataRecords','ruleRecords','inventoryRecords','lifecycleRecords','unknownRecords','otherProviderRecords','missingProviderIDs','unrecognizedVersions')){$r[$key]=0}};return $r
 }
 function Add-NativeNDISCatalogHeader([object]$Evidence,[object]$Catalog,[Nullable[guid]]$Provider,[int]$ID,[Nullable[byte]]$Version) {
     if($Evidence.code -cne 'complete' -or $Evidence.records -ge 4096 -or $ID -lt 0 -or $ID -gt 65535){throw 'NDIS catalog header bound'};$Evidence.records++
@@ -254,24 +256,26 @@ function Add-NativeNDISCatalogHeader([object]$Evidence,[object]$Catalog,[Nullabl
     if($null -eq $Version -or $Version -ne 0){$Evidence.unrecognizedVersions++;$Evidence.unknownRecords++;return}
     $key=([string]$ID)+':'+([string]$Version)
     $kind=if($Catalog.ContainsKey($key)){$Catalog[$key]}else{'unknown'}
-    switch -CaseSensitive ($kind){'fragment'{$Evidence.fragmentRecords++}'metadata'{$Evidence.metadataRecords++}'rules'{$Evidence.ruleRecords++}'inventory'{$Evidence.inventoryRecords++}default{$Evidence.unknownRecords++}}
+    switch -CaseSensitive ($kind){'fragment'{$Evidence.fragmentRecords++}'metadata'{$Evidence.metadataRecords++}'rules'{$Evidence.ruleRecords++}'inventory'{$Evidence.inventoryRecords++}'lifecycle'{$Evidence.lifecycleRecords++}default{$Evidence.unknownRecords++}}
 }
 function Get-NativeNDISCatalogEvidence([string]$Text) {
     $bad=New-NativeNDISCatalogEvidence 'invalid';if($Text.Length -gt 12288){return $bad}
     try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{return $bad}
-    $keys=@('definitions','recognizedDefinitions','records','fragmentRecords','metadataRecords','ruleRecords','inventoryRecords','unknownRecords','otherProviderRecords','missingProviderIDs','unrecognizedVersions')
-    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 14 -or $v.code -cnotin @('complete','bound','unavailable') -or $v.providerVerified -isnot [bool]){return $bad}
+    $keys=@('definitions','recognizedDefinitions','records','fragmentRecords','metadataRecords','ruleRecords','inventoryRecords','lifecycleRecords','unknownRecords','otherProviderRecords','missingProviderIDs','unrecognizedVersions')
+    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 15 -or $v.code -cnotin @('complete','bound','unavailable') -or $v.providerVerified -isnot [bool]){return $bad}
     foreach($key in $keys){if($null -eq $v.PSObject.Properties[$key]){return $bad};$n=$v.$key;if(($n -isnot [int] -and $n -isnot [long]) -or $n -lt -1 -or $n -gt 4096){return $bad};if(($v.code -ceq 'unavailable' -and $n -ne -1) -or ($v.code -cne 'unavailable' -and $n -lt 0)){return $bad}}
-    if($v.code -ceq 'unavailable'){if($v.providerVerified){return $bad}}elseif(-not $v.providerVerified -or $v.definitions -gt 64 -or $v.recognizedDefinitions -gt $v.definitions -or $v.records -ne $v.fragmentRecords+$v.metadataRecords+$v.ruleRecords+$v.inventoryRecords+$v.unknownRecords+$v.otherProviderRecords -or $v.missingProviderIDs -gt $v.otherProviderRecords -or $v.unrecognizedVersions -gt $v.unknownRecords){return $bad}
+    if($v.code -ceq 'unavailable'){if($v.providerVerified){return $bad}}elseif(-not $v.providerVerified -or $v.definitions -gt 64 -or $v.recognizedDefinitions -gt $v.definitions -or $v.records -ne $v.fragmentRecords+$v.metadataRecords+$v.ruleRecords+$v.inventoryRecords+$v.lifecycleRecords+$v.unknownRecords+$v.otherProviderRecords -or $v.missingProviderIDs -gt $v.otherProviderRecords -or $v.unrecognizedVersions -gt $v.unknownRecords){return $bad}
     if($v.schemas -isnot [array] -or $v.schemas.Count -gt 16){return $bad}
     $seen=@{};$total=0;$rows=[Collections.Generic.List[object]]::new()
     foreach($row in $v.schemas){
-        if($row -isnot [pscustomobject] -or @($row.PSObject.Properties).Count -ne 6 -or @($row.PSObject.Properties.Name | Where-Object {$_ -cnotin @('id','version','level','records','code','fields')}).Count -ne 0){return $bad}
+        if($row -isnot [pscustomobject] -or @($row.PSObject.Properties).Count -ne 9 -or @($row.PSObject.Properties.Name | Where-Object {$_ -cnotin @('id','version','level','records','code','fields','task','opcode','templateKind')}).Count -ne 0){return $bad}
         foreach($field in @('id','version','level','records')){if($row.$field -isnot [int] -and $row.$field -isnot [long]){return $bad}}
         if($row.id -lt 0 -or $row.id -gt 65535 -or $row.version -lt -1 -or $row.version -gt 255 -or $row.level -lt -1 -or $row.level -gt 255 -or $row.records -lt 1 -or $row.records -gt 4096 -or $row.code -cnotin @('projected','unsupported','missing') -or $row.fields -isnot [array] -or $row.fields.Count -gt 12){return $bad}
+        foreach($field in @('task','opcode')){if($row.$field -isnot [string] -or ($row.$field -and $row.$field -cnotmatch '^[A-Za-z][A-Za-z0-9_.:-]{0,63}$')){return $bad}}
+        if($row.templateKind -cnotin @('empty','data','structured','unsupported','missing')){return $bad}
         foreach($field in $row.fields){if($field -isnot [string] -or $field -cnotmatch '^[A-Za-z][A-Za-z0-9_]{0,47}:win:(UInt8|UInt16|UInt32|UInt64|Int8|Int16|Int32|Int64|HexInt32|HexInt64|UnicodeString|AnsiString|Binary|Boolean|GUID|Pointer|FILETIME|SYSTEMTIME|SID|SizeT):([A-Za-z][A-Za-z0-9_]{0,47}|[0-9]{1,5})?:([A-Za-z][A-Za-z0-9_]{0,47}|[0-9]{1,5})?$'){return $bad}}
         if(($row.code -ceq 'projected' -and $row.fields.Count -eq 0) -or ($row.code -cne 'projected' -and $row.fields.Count -ne 0) -or ($row.code -ceq 'missing' -and $row.level -ne -1)){return $bad}
-        $key=([string]$row.id)+':'+([string]$row.version);if($seen.ContainsKey($key)){return $bad};$seen[$key]=$true;$total+=$row.records;$rows.Add(@{id=$row.id;version=$row.version;level=$row.level;records=$row.records;code=$row.code;fields=@($row.fields)})
+        $key=([string]$row.id)+':'+([string]$row.version);if($seen.ContainsKey($key)){return $bad};$seen[$key]=$true;$total+=$row.records;$rows.Add(@{id=$row.id;version=$row.version;level=$row.level;records=$row.records;code=$row.code;fields=@($row.fields);task=$row.task;opcode=$row.opcode;templateKind=$row.templateKind})
     }
     if(($v.code -cin @('complete','bound') -and $total -ne $v.unknownRecords) -or ($v.code -ceq 'unavailable' -and $rows.Count -ne 0)){return $bad}
     $r=New-NativeNDISCatalogEvidence $v.code;foreach($key in $keys){$r[$key]=[int]$v.$key};$r.schemas=@($rows.ToArray());return $r
@@ -283,6 +287,7 @@ function Get-NativeNDISCatalogProgram([string]$Path) {
     $prefix=''
     $prefix='function Get-NativeNDISTemplateSignature {'+${function:Get-NativeNDISTemplateSignature}.ToString()+"}`n"+'function Get-NativeNDISCatalogClass {'+${function:Get-NativeNDISCatalogClass}.ToString()+"}`n"+'function New-NativeNDISCatalogEvidence {'+${function:New-NativeNDISCatalogEvidence}.ToString()+"}`n"+'function Add-NativeNDISCatalogHeader {'+${function:Add-NativeNDISCatalogHeader}.ToString()+"}`n"
     $prefix+='function Get-NativeNDISTemplateShape {'+${function:Get-NativeNDISTemplateShape}.ToString()+"}`n"
+    $prefix+='function Get-NativeNDISTemplateKind {'+${function:Get-NativeNDISTemplateKind}.ToString()+"}`n"
     $body=@'
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$PSModuleAutoLoadingPreference='None'
 Import-Module ([IO.Path]::Combine($PSHOME,'Modules','Microsoft.PowerShell.Utility','Microsoft.PowerShell.Utility.psd1')) -ErrorAction Stop
@@ -297,7 +302,9 @@ try{
         $id=[long]$definition.Id;$version=[int]$definition.Version;if($id -lt 0 -or $id -gt 65535 -or $version -lt 0 -or $version -gt 255){throw 'NDIS catalog definition'}
         $key=([string]$id)+':'+([string]$version);if($catalog.ContainsKey($key)){throw 'NDIS catalog duplicate'}
         $kind=Get-NativeNDISCatalogClass ([int]$id) $version ([int]$definition.Level.Value) $definition.Template
-        $shape=@(Get-NativeNDISTemplateShape $definition.Template);$shapes[$key]=@{id=[int]$id;version=$version;level=[int]$definition.Level.Value;records=0;code=$(if($shape.Count -gt 0){'projected'}else{'unsupported'});fields=$shape}
+        $shape=@(Get-NativeNDISTemplateShape $definition.Template);$task=[string]$definition.Task.Name;$opcode=[string]$definition.Opcode.Name
+        foreach($name in @($task,$opcode)){if($name -and $name -cnotmatch '^[A-Za-z][A-Za-z0-9_.:-]{0,63}$'){throw 'NDIS static symbol shape'}}
+        $shapes[$key]=@{id=[int]$id;version=$version;level=[int]$definition.Level.Value;records=0;code=$(if($shape.Count -gt 0){'projected'}else{'unsupported'});fields=$shape;task=$task;opcode=$opcode;templateKind=(Get-NativeNDISTemplateKind $definition.Template)}
         $catalog[$key]=$kind;$r.definitions++;if($kind -cne 'unknown'){$r.recognizedDefinitions++}
     }
     if($r.code -cne 'complete'){throw 'NDIS catalog bound'}
@@ -309,7 +316,7 @@ try{
             $version=if($null -eq $record.Version){-1}else{[int]$record.Version};$key=([string]$record.Id)+':'+([string]$version)
             if(-not $unmatched.ContainsKey($key)){
                 if($unmatched.Count -ge 16){throw 'NDIS schema projection bound'}
-                $unmatched[$key]=if($shapes.ContainsKey($key)){$shapes[$key]}else{@{id=$record.Id;version=$version;level=-1;records=0;code='missing';fields=@()}}
+                $unmatched[$key]=if($shapes.ContainsKey($key)){$shapes[$key]}else{@{id=$record.Id;version=$version;level=-1;records=0;code='missing';fields=@();task='';opcode='';templateKind='missing'}}
             };$unmatched[$key].records++
         }
     }finally{$record.Dispose()}}
@@ -340,4 +347,30 @@ function Get-NativeNDISTemplateShape([string]$Template) {
         }
         return $parts.ToArray()
     }catch{return @()}finally{if($null -ne $reader){$reader.Dispose()};if($null -ne $stream){$stream.Dispose()}}
+}
+
+
+function Get-NativeNDISTemplateKind([string]$Template) {
+    if(-not $Template){return 'empty'}
+    $reader=$null;$stream=$null
+    try{
+        if($Template.Length -gt 8192){return 'unsupported'}
+        $settings=[Xml.XmlReaderSettings]::new();$settings.DtdProcessing=[Xml.DtdProcessing]::Prohibit;$settings.XmlResolver=$null;$settings.MaxCharactersInDocument=8192
+        $stream=[IO.StringReader]::new($Template);$reader=[Xml.XmlReader]::Create($stream,$settings);$doc=[Xml.XmlDocument]::new();$doc.XmlResolver=$null;$doc.Load($reader)
+        $root=$doc.DocumentElement;$ns='http://schemas.microsoft.com/win/2004/08/events';if($root.LocalName -cne 'template' -or $root.NamespaceURI -cne $ns){return 'unsupported'}
+        if($root.ChildNodes.Count -eq 0){return 'empty'}
+        $kind='data';foreach($node in $root.ChildNodes){if($node.NodeType -ne [Xml.XmlNodeType]::Element -or $node.NamespaceURI -cne $ns -or $node.LocalName -cnotin @('data','struct')){return 'unsupported'};if($node.LocalName -ceq 'struct'){$kind='structured'}};return $kind
+    }catch{return 'unsupported'}finally{if($null -ne $reader){$reader.Dispose()};if($null -ne $stream){$stream.Dispose()}}
+}
+# Keep Windows command lines short; the attested catalog program is built in the child.
+function Get-NativeNDISCatalogLoader([string]$Path,[string]$HelperPath) {
+    $body=@'
+$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$PSModuleAutoLoadingPreference='None'
+Import-Module ([IO.Path]::Combine($PSHOME,'Modules','Microsoft.PowerShell.Utility','Microsoft.PowerShell.Utility.psd1')) -ErrorAction Stop
+. ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__HELPER__')))
+$program=Get-NativeNDISCatalogProgram ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__PATH__')))
+& ([scriptblock]::Create([Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($program))))
+'@
+    $body=$body.Replace('__HELPER__',[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($HelperPath))).Replace('__PATH__',[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Path)))
+    return [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($body))
 }

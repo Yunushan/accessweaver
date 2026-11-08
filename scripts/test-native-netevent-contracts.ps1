@@ -166,7 +166,7 @@ Case-N 'catalog-unmapped-and-error-events-never-become-inventory' {
     $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=2;$r.recognizedDefinitions=2;$g=[guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef';$catalog=@{'1001:0'='fragment';'1016:0'='rules'}
     Add-NativeNDISCatalogHeader $r $catalog $g 1001 0;Add-NativeNDISCatalogHeader $r $catalog $g 1016 0;Assert-N (Test-NativeNDISCatalogEvidence (Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Compress)))
     Add-NativeNDISCatalogHeader $r $catalog $g 2001 0;Add-NativeNDISCatalogHeader $r $catalog $g 1001 1
-    $r.schemas=@(@{id=2001;version=0;level=-1;records=1;code='missing';fields=@()},@{id=1001;version=1;level=-1;records=1;code='missing';fields=@()})
+    $r.schemas=@(@{id=2001;version=0;level=-1;records=1;code='missing';fields=@();task='';opcode='';templateKind='missing'},@{id=1001;version=1;level=-1;records=1;code='missing';fields=@();task='';opcode='';templateKind='missing'})
     $v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.unknownRecords -eq 2 -and $v.unrecognizedVersions -eq 1 -and -not (Test-NativeNDISCatalogEvidence $v))
 }
 Case-N 'catalog-report-private-or-contradictory-fields-refused' {
@@ -187,16 +187,40 @@ Case-N 'catalog-shape-refuses-nested-or-private-definition-text' {
     foreach($template in @('<template xmlns="http://schemas.microsoft.com/win/2004/08/events"><data name="Field" inType="win:UInt32">PRIVATE-SYNTHETIC</data></template>','<template xmlns="http://schemas.microsoft.com/win/2004/08/events"><data name="PRIVATE/SYNTHETIC" inType="win:UInt32"/></template>','<!DOCTYPE template [<!ENTITY x SYSTEM "file:///PRIVATE-SYNTHETIC">]><template>&x;</template>')){Assert-N (@(Get-NativeNDISTemplateShape $template).Count -eq 0)}
 }
 Case-N 'catalog-unknown-definition-shapes-are-bounded-and-counted' {
-    $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=1;$r.records=2;$r.unknownRecords=2;$r.schemas=@(@{id=1001;version=0;level=4;records=2;code='projected';fields=@('Field:win:UInt32::')})
+    $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=1;$r.records=2;$r.unknownRecords=2;$r.schemas=@(@{id=1001;version=0;level=4;records=2;code='projected';fields=@('Field:win:UInt32::');task='Task';opcode='win:Info';templateKind='data'})
     $v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.code -ceq 'complete' -and $v.schemas.Count -eq 1 -and -not (Test-NativeNDISCatalogEvidence $v))
     $r.schemas[0].records=1;$v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.code -ceq 'invalid')
 }
 Case-N 'catalog-schema-projection-rejects-extra-fields-and-invalid-tokens' {
     foreach($fault in @('private','path','boolean','duplicate')){
-        $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=1;$r.records=1;$r.unknownRecords=1;$row=@{id=1001;version=0;level=4;records=1;code='projected';fields=@('Field:win:UInt32::')};$r.schemas=@($row)
+        $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=1;$r.records=1;$r.unknownRecords=1;$row=@{id=1001;version=0;level=4;records=1;code='projected';fields=@('Field:win:UInt32::');task='Task';opcode='win:Info';templateKind='data'};$r.schemas=@($row)
         switch($fault){'private'{$row['private']='PRIVATE-SYNTHETIC'}'path'{$row.fields=@('PRIVATE/SYNTHETIC:win:UInt32::')}'boolean'{$row.id=$false}'duplicate'{$r.schemas=@($row,$row)}}
         $v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.code -ceq 'invalid' -and -not (($v | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))
     }
+}
+
+
+Case-N 'modern-gft-fragment-schema-must-match-both-extra-fields-exactly' {
+    $fields='MiniportIfIndex:UInt32|LowerIfIndex:UInt32|FragmentSize:UInt32|Fragment:Binary:FragmentSize|GftFlowEntryId:UInt64|GftOffloadInformation:UInt64'
+    Assert-N ((Get-NativeNDISCatalogClass 1001 0 4 (Template-N $fields)) -ceq 'fragment')
+    Assert-N ((Get-NativeNDISCatalogClass 1001 0 4 (Template-N $fields.Replace('GftOffloadInformation:UInt64','GftOffloadInformation:UInt32'))) -ceq 'unknown')
+    Assert-N ((Get-NativeNDISCatalogClass 1001 0 4 (Template-N ($fields+'|Other:UInt32'))) -ceq 'unknown')
+}
+Case-N 'lifecycle-schemas-remain-separate-from-inventory-and-errors' {
+    $template=Template-N 'PreviousState:UInt8|NextState:UInt8|Location:UInt32|Context:UInt32'
+    foreach($id in @(3001,3002)){Assert-N ((Get-NativeNDISCatalogClass $id 0 5 $template) -ceq 'lifecycle');Assert-N ((Get-NativeNDISCatalogClass $id 0 2 $template) -ceq 'unknown')}
+    $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=2;$r.recognizedDefinitions=2;$g=[guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef';Add-NativeNDISCatalogHeader $r @{'3001:0'='lifecycle'} $g 3001 0
+    $v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.code -ceq 'complete' -and $v.lifecycleRecords -eq 1 -and $v.inventoryRecords -eq 0 -and -not (Test-NativeNDISCatalogEvidence $v))
+}
+Case-N 'static-template-kind-does-not-infer-empty-or-structured-data' {
+    Assert-N ((Get-NativeNDISTemplateKind '') -ceq 'empty');Assert-N ((Get-NativeNDISTemplateKind '<template xmlns="http://schemas.microsoft.com/win/2004/08/events"/>') -ceq 'empty')
+    Assert-N ((Get-NativeNDISTemplateKind (Template-N 'Field:UInt32')) -ceq 'data')
+    Assert-N ((Get-NativeNDISTemplateKind '<template xmlns="http://schemas.microsoft.com/win/2004/08/events"><struct name="Fields" count="Count"/></template>') -ceq 'structured')
+    Assert-N ((Get-NativeNDISTemplateKind '<!DOCTYPE template [<!ENTITY x SYSTEM "file:///PRIVATE-SYNTHETIC">]><template>&x;</template>') -ceq 'unsupported')
+}
+Case-N 'catalog-loader-keeps-private-input-encoded-and-command-line-bounded' {
+    $body=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String((Get-NativeNDISCatalogLoader "PRIVATE-SYNTHETIC-'`nthrow 'never'" "PRIVATE-SYNTHETIC-'`nthrow 'never'")));$t=$null;$e=$null;[void][Management.Automation.Language.Parser]::ParseInput($body,[ref]$t,[ref]$e)
+    Assert-N ($e.Count -eq 0 -and -not $body.Contains('PRIVATE-SYNTHETIC') -and $body.Contains('Get-NativeNDISCatalogProgram') -and $body.Length -lt 4096 -and -not $body.Contains('FormatDescription'))
 }
 
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}
