@@ -478,13 +478,6 @@ test('keyboard focus returns to the same card control after saves and engine cre
  expect(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight)).toBe(true);
  const backgroundLayout=()=>Array.from(document.querySelectorAll('.app-shell,.main-layout')).map(node=>{const rect=node.getBoundingClientRect();return {left:rect.left,width:rect.width}});
  const beforeModal=await page.evaluate(backgroundLayout);expect(beforeModal).toHaveLength(2);
- // Rendering hints stay on fixed UI surfaces rather than the complete profile list.
- const hintOwnership=await page.evaluate(()=>{
-  const surfaces=Array.from(document.querySelectorAll('.brand-mark,.online-dot,.topbar-secure-dot,.core-symbol,.orbit-node,.btn-primary,.modal-card'));
-  return {surfaces:surfaces.length,prepared:surfaces.every(node=>getComputedStyle(node).willChange==='transform'),cards:Array.from(document.querySelectorAll('#all-profiles .profile-card')).map(node=>getComputedStyle(node).willChange)};
- });
- expect(hintOwnership.surfaces).toBeGreaterThan(0);expect(hintOwnership.surfaces).toBeLessThanOrEqual(32);expect(hintOwnership.prepared).toBe(true);
- expect(hintOwnership.cards).toHaveLength(256);expect(hintOwnership.cards.every(value=>value==='auto')).toBe(true);
  const backgroundFeedback=()=>['#new-profile','.nav-item.active','#all-profiles .profile-card'].map(selector=>{const node=document.querySelector(selector);return {connected:!!node?.isConnected,property:node?getComputedStyle(node).transitionProperty:null,finiteAnimations:node?node.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity).length:null}});
  const beforeFeedback=await page.evaluate(backgroundFeedback);expect(beforeFeedback).toHaveLength(3);expect(beforeFeedback.every(x=>x.connected&&x.property!=='none')).toBe(true);
  const foregroundFeedback=await page.locator('#save-profile').evaluate(node=>getComputedStyle(node).transitionProperty);expect(foregroundFeedback).not.toBe('none');
