@@ -178,7 +178,7 @@ function Start-NativeDNSWireCapture([object]$State) {
         };throw
     };$State.flags.filtersVerified=$true
     $State.phase='capture-start';$State.startAttempted=$true
-    [void](Invoke-NativeDNSWireTool $State @('start','--capture','--comp','nics','--pkt-size','0','--flags','0x012','--file-name',$State.etl,'--file-size','16','--log-mode','circular'))
+    [void](Invoke-NativeDNSWireTool $State @('start','--capture','--comp','all','--pkt-size','0','--flags','0x012','--file-name',$State.etl,'--file-size','16','--log-mode','circular'))
     $State.flags.captureStarted=$true
 }
 function Stop-NativeDNSWireCapture([object]$State) {
