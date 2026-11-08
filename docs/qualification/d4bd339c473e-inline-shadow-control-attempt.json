@@ -3449,6 +3449,9 @@
     "All original observations are complete. Every intervention reports attached expected style text but fails all four computed-shadow checks; it cannot establish a shadow-performance effect.",
     "The source policy disallows inline styles. No raw browser violation text or logs were read, and no production CSP change was made or is required by this diagnostic correction.",
     "Both arms retain valid original startup resource coverage and owned cleanup, but this does not repair the failed intervention.",
-    "Normal acceptance for this source is tracked independently; binary pairs with that normal cohort are not yet verified."
-  ]
+    "Normal acceptance passes ten jobs with26verifiedZIPs and matching actual controller binaries. It does not repair the rejected inline intervention."
+  ],
+  "actualControllerBinaryPairsWithNormalVerified": 6,
+  "normalCohortReceipt": "d4bd339c473e-shadow-cohort-normal.json",
+  "normalCohortConclusion": "success"
 }
