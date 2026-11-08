@@ -25,20 +25,20 @@ $definitions=@($ast.EndBlock.Statements)
 $tokens=$null;$issues=$null;$coordinator=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-doh-scenario.ps1'),[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Native coordinator source did not parse'}
 $definitions+=@($coordinator.EndBlock.Statements)
-$selected=@('Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
+$selected=@('Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Invoke-NativeDNSRollbackScenario','New-NativeDNSFailureResponse','Get-NativeDNSVerificationMarker','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
 $allowed=$selected+@('ConvertTo-Json','Get-NetAdapter','Get-ItemProperty','Get-DnsClientServerAddress','Get-Command','Get-DnsClientDohServerAddress','Where-Object','Get-Service','Clear-DnsClientCache','Resolve-DnsName')
 foreach($name in $selected){
     $nodes=@($definitions | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Acceptance helper function unavailable'}
     foreach($command in $nodes[0].FindAll({param($node)$node -is [Management.Automation.Language.CommandAst]},$true)){
         $commandName=$command.GetCommandName()
-        $callback=(-not $commandName -and $command.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and $command.CommandElements[0] -is [Management.Automation.Language.VariableExpressionAst] -and $command.CommandElements[0].VariablePath.UserPath -cin @('Apply','Capture','Resolve','InduceFailure','ResolveFailed','ResolveRestored'))
+        $callback=(-not $commandName -and $command.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and $command.CommandElements[0] -is [Management.Automation.Language.VariableExpressionAst] -and $command.CommandElements[0].VariablePath.UserPath -cin @('Apply','Capture','Resolve','InduceFailure','ResolveFailed','ResolveRestored','Configure','Observe','EmergencyRestore'))
         if(-not $callback -and $commandName -notin $allowed){throw 'Acceptance helper command boundary refused'}
     }
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
 $script:checks=0;$script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
+$script:closedContractCodes=@('rollback-native-result','rollback-native-flags','rollback-native-cleanup','rollback-native-order','rollback-native-preflight','fixed-dns-response','verification-marker-boundary','failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
 function Assert-A([bool]$Value,[string]$Code){if(-not $Value){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('Acceptance contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-A([scriptblock]$Operation){$failed=$false;try{& $Operation | Out-Null}catch{$failed=$true};Assert-A $failed 'expected-refusal'}
 $script:g1='abcdef00-0000-0000-0000-000000000001';$script:g2='abcdef00-0000-0000-0000-000000000002'
@@ -311,6 +311,67 @@ try {
         }
         $result=Invoke-NativeDoHScenario @parameters
         Assert-A ($result.operationCode -ceq 'baseline' -and $script:invalidEffects -eq 0 -and -not $result.configurationAttempted -and -not $result.restorationAttempted) 'failure-native-preflight'
+    }
+    # Synthetic DNS packets for the fixture's one public query name only.
+    $packet=[byte[]]::new(29);$packet[0]=0x12;$packet[1]=0x34;$packet[2]=1;$packet[5]=1;$packet[12]=7;$packet[20]=3;$packet[26]=1;$packet[28]=1
+    [Array]::Copy([Text.Encoding]::ASCII.GetBytes('example'),0,$packet,13,7);[Array]::Copy([Text.Encoding]::ASCII.GetBytes('com'),0,$packet,21,3)
+    foreach($type in @(1,28,65)){
+        $copy=[byte[]]$packet.Clone();$copy[26]=[byte]$type;$reply=New-NativeDNSFailureResponse $copy
+        Assert-A ($reply -is [byte[]] -and $reply.Length -eq 29 -and $reply[0] -eq 0x12 -and $reply[1] -eq 0x34 -and $reply[2] -eq 0x81 -and $reply[3] -eq 0x82 -and $reply[26] -eq $type -and $reply[10] -eq 0 -and $reply[11] -eq 0 -and $copy[2] -eq 1 -and $copy[3] -eq 0) 'fixed-dns-response'
+    }
+    $edns=[byte[]]::new(40);[Array]::Copy($packet,$edns,29);$edns[11]=1;$edns[31]=41;$edns[32]=4;$edns[33]=0xd0
+    $reply=New-NativeDNSFailureResponse $edns;Assert-A ($reply.Length -eq 29 -and $reply[11] -eq 0 -and $edns[11] -eq 1) 'fixed-dns-response'
+    foreach($change in @(@{i=2;v=0x80},@{i=2;v=8},@{i=5;v=2},@{i=7;v=1},@{i=9;v=1},@{i=11;v=1},@{i=11;v=2},@{i=12;v=0xc0},@{i=13;v=120},@{i=20;v=2},@{i=24;v=1},@{i=25;v=1},@{i=26;v=255},@{i=28;v=2})){
+        $bad=[byte[]]$packet.Clone();$bad[$change.i]=[byte]$change.v;Reject-A {New-NativeDNSFailureResponse $bad}
+    }
+    foreach($length in @(0,28,30,4097)){Reject-A {New-NativeDNSFailureResponse ([byte[]]::new($length))}}
+    foreach($change in @(@{i=31;v=1},@{i=34;v=1},@{i=35;v=1},@{i=39;v=1})){$bad=[byte[]]$edns.Clone();$bad[$change.i]=[byte]$change.v;Reject-A {New-NativeDNSFailureResponse $bad}}
+    $marker='Resolver verification failed; original DNS settings restored:'
+    for($split=0;$split -le $marker.Length;$split++){
+        $first=Get-NativeDNSVerificationMarker '' ('prefix'+$marker.Substring(0,$split));$second=Get-NativeDNSVerificationMarker $first.suffix ($marker.Substring($split)+'suffix')
+        Assert-A ($first.matched -or $second.matched) 'verification-marker-boundary'
+        Assert-A ($first.suffix.Length -lt $marker.Length -and $second.suffix.Length -lt $marker.Length) 'verification-marker-boundary'
+    }
+    Assert-A (-not (Get-NativeDNSVerificationMarker '' 'unrelated synthetic output').matched) 'verification-marker-boundary'
+    Reject-A {Get-NativeDNSVerificationMarker ('x'*$marker.Length) ''};Reject-A {Get-NativeDNSVerificationMarker '' ('x'*4097)}
+    foreach($failure in @('none','baseline','baseline-resolver','configuration','accepted','nonboolean','observation','missing-configured','missing-forwarded','malformed-observation','restored-state','restored-resolver','emergency-failure')){
+        New-ACase;$script:nativeBefore=Read-DNSAcceptanceState;Set-AConfigured 'dnscrypt';$script:nativeConfigured=Read-DNSAcceptanceState;$script:nativeAfter=Clone-A $script:nativeBefore
+        $script:nativeFailure=$failure;$script:rollbackTrace=[Collections.Generic.List[string]]::new();$script:rollbackConfigured=$false;$script:rollbackQueries=0
+        if($failure -cin @('restored-state','emergency-failure')){$script:nativeAfter=Clone-A $script:nativeConfigured}
+        $result=Invoke-NativeDNSRollbackScenario -Configure {
+            $script:rollbackTrace.Add('configure');$script:rollbackConfigured=$true
+            if($script:nativeFailure -ceq 'configuration'){throw 'fixture-configure-fault'}
+            if($script:nativeFailure -ceq 'accepted'){return $false};if($script:nativeFailure -ceq 'nonboolean'){return 1};return $true
+        } -Capture {
+            $script:rollbackTrace.Add('capture')
+            if($script:rollbackConfigured){return $script:nativeAfter}
+            if($script:nativeFailure -ceq 'baseline'){throw 'fixture-baseline-fault'};return $script:nativeBefore
+        } -Observe {
+            $script:rollbackTrace.Add('observe')
+            if($script:nativeFailure -ceq 'observation'){throw 'fixture-observation-fault'}
+            if($script:nativeFailure -ceq 'malformed-observation'){return @{configured=1;forwarded=$true}}
+            return @{configured=($script:nativeFailure -cne 'missing-configured');forwarded=($script:nativeFailure -cne 'missing-forwarded')}
+        } -Resolve {
+            $script:rollbackQueries++;$script:rollbackTrace.Add('resolve')
+            if(($script:rollbackQueries -eq 1 -and $script:nativeFailure -ceq 'baseline-resolver') -or ($script:rollbackQueries -eq 2 -and $script:nativeFailure -ceq 'restored-resolver')){throw 'fixture-resolver-fault'}
+        } -EmergencyRestore {
+            $script:rollbackTrace.Add('emergency')
+            if($script:nativeFailure -ceq 'emergency-failure'){throw 'fixture-emergency-fault'}
+        }
+        $operation=if($failure -cin @('baseline','baseline-resolver')){'baseline'}elseif($failure -cin @('configuration','accepted','nonboolean')){'configuration'}elseif($failure -cin @('observation','missing-configured','missing-forwarded','malformed-observation')){'effects-observation'}else{'none'}
+        $recovery=if($failure -cin @('restored-state','emergency-failure')){'restored-state'}elseif($failure -ceq 'restored-resolver'){'restored-resolver'}else{'none'}
+        Assert-A (($result.outcome -ceq 'passed') -eq ($failure -ceq 'none') -and $result.operationCode -ceq $operation -and $result.recoveryCode -ceq $recovery) 'rollback-native-result'
+        $expectedEmergency=$failure -cin @('restored-state','emergency-failure')
+        Assert-A ($result.emergencyRestoreAttempted -eq $expectedEmergency -and @($script:rollbackTrace | Where-Object {$_ -ceq 'emergency'}).Count -eq $(if($expectedEmergency){1}else{0})) 'rollback-native-cleanup'
+        if($failure -ceq 'none'){
+            Assert-A ($result.configurationRejected -and $result.configuredStateObserved -and $result.forwardedFailureObserved -and $result.originalStateRestored -and $result.restoredResolverPassed) 'rollback-native-flags'
+            Assert-A (($script:rollbackTrace -join ',') -ceq 'capture,resolve,configure,observe,capture,resolve') 'rollback-native-order'
+        }
+    }
+    foreach($missing in @('Configure','Capture','Observe','Resolve','EmergencyRestore')){
+        $script:invalidEffects=0;$boundary={$script:invalidEffects++};$parameters=@{Configure=$boundary;Capture=$boundary;Observe=$boundary;Resolve=$boundary;EmergencyRestore=$boundary};$parameters.Remove($missing)
+        $result=Invoke-NativeDNSRollbackScenario @parameters
+        Assert-A ($result.operationCode -ceq 'baseline' -and $script:invalidEffects -eq 0 -and -not $result.configurationAttempted -and -not $result.emergencyRestoreAttempted) 'rollback-native-preflight'
     }
     foreach($file in @('scripts/test-windows-integration.ps1','scripts/test-windows-reboot.ps1')){
         $tokens=$null;$issues=$null;$native=[Management.Automation.Language.Parser]::ParseFile((Join-Path $project $file),[ref]$tokens,[ref]$issues)
