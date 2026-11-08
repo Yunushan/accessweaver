@@ -1,9 +1,9 @@
 'use strict';
 // One fixed public synthetic DoH request. No configurable endpoint or credentials.
-const https=require('node:https'),tls=require('node:tls'),os=require('node:os');
+const tls=require('node:tls'),os=require('node:os');
 const QUERY='000001000001000000000000076578616d706c6503636f6d0000010001';
 function fixedDohQuery(){return Buffer.from(QUERY,'hex');}
-function requestOptions(agent=false){return {hostname:'8.8.8.8',port:443,family:4,servername:'dns.google',rejectUnauthorized:true,ca:tls.rootCertificates,minVersion:'TLSv1.3',maxVersion:'TLSv1.3',ALPNProtocols:['http/1.1'],method:'POST',path:'/dns-query',agent,headers:{Host:'dns.google',Accept:'application/dns-message','Content-Type':'application/dns-message','Content-Length':fixedDohQuery().length,Connection:'keep-alive'}};}
+function requestOptions(){return {hostname:'8.8.8.8',port:443,family:4,servername:'dns.google',rejectUnauthorized:true,ca:tls.rootCertificates,minVersion:'TLSv1.3',maxVersion:'TLSv1.3',ALPNProtocols:['http/1.1'],method:'POST',path:'/dns-query',agent:false,headers:{Host:'dns.google',Accept:'application/dns-message','Content-Type':'application/dns-message','Content-Length':fixedDohQuery().length,Connection:'close'}};}
 function dnsName(bytes,start){
  let at=start,next=null,jumps=0;const labels=[],seen=new Set();
  while(true){
@@ -26,27 +26,45 @@ function validateDohResponse(status,headers,body){
  return found&&at===body.length;
 }
 function beginDohClose(socket){if(!socket||socket.destroyed||!socket.writable||socket.writableEnded)return false;socket.end();return true;}
+
+function fixedHttpDohRequest(){const q=requestOptions();return Buffer.concat([Buffer.from(q.method+' '+q.path+' HTTP/1.1\r\n'+Object.entries(q.headers).map(([k,v])=>k+': '+v+'\r\n').join('')+'\r\n','ascii'),fixedDohQuery()]);}
+function readHttpDohReply(bytes,ended=false){
+ const need=ok=>{if(!ok)throw new Error('http-response');};need(Buffer.isBuffer(bytes)&&bytes.length<=16384);
+ const cut=bytes.indexOf('\r\n\r\n');if(cut<0){need(bytes.length<=8192&&!ended);return null;}need(cut<=8192);
+ const headerBytes=bytes.subarray(0,cut);need(!headerBytes.some(c=>c>126||(c<32&&![9,10,13].includes(c))));const lines=headerBytes.toString('ascii').split('\r\n');need(lines.length<=65&&/^HTTP\/1\.[01] 200(?: [ -~]*)?$/.test(lines[0]));const headers=Object.create(null);
+ for(const line of lines.slice(1)){const colon=line.indexOf(':');need(colon>0);const key=line.slice(0,colon).toLowerCase(),value=line.slice(colon+1).trim();need(/^[!#$%&'*+.^_\x60|~0-9a-z-]+$/.test(key)&&!Object.hasOwn(headers,key));headers[key]=value;}
+ const start=cut+4,length=headers['content-length'],transfer=headers['transfer-encoding'];need(length===undefined||transfer===undefined);
+ if(length!==undefined){need(/^(0|[1-9][0-9]{0,3})$/.test(length));const size=Number(length);need(size<=4096&&bytes.length-start<=size);if(bytes.length-start<size){need(!ended);return null;}return {status:200,headers,body:bytes.subarray(start)};}
+ if(transfer!==undefined){
+  need(transfer.toLowerCase()==='chunked');let at=start,total=0;const chunks=[];
+  for(let count=0;count<128;count++){
+   const lineEnd=bytes.indexOf('\r\n',at);if(lineEnd<0){need(!ended&&bytes.length-at<=16);return null;}need(lineEnd-at<=4&&/^[0-9a-fA-F]{1,4}$/.test(bytes.toString('ascii',at,lineEnd)));const size=Number.parseInt(bytes.toString('ascii',at,lineEnd),16);at=lineEnd+2;need(size<=4096-total);
+   if(bytes.length-at<size+2){need(!ended);return null;}need(bytes[at+size]===13&&bytes[at+size+1]===10);
+   if(size===0){need(at+2===bytes.length);return {status:200,headers,body:Buffer.concat(chunks,total)};}
+   chunks.push(bytes.subarray(at,at+size));total+=size;at+=size+2;
+  };need(false);
+ }
+ need(bytes.length-start<=4096);if(!ended)return null;return {status:200,headers,body:bytes.subarray(start)};
+}
 async function runFixedDohStimulus(){
  return await new Promise(resolve=>{
-  let request=null,socket=null,response=null,agent=null,done=false,authorized=false,validated=false,closed=false,peerEnded=false,failure=null,total=0;const chunks=[];
-  const finish=()=>{if(done)return;done=true;clearTimeout(deadline);if(agent)agent.destroy();const good=failure===null&&authorized&&validated&&closed&&peerEnded;resolve({schemaVersion:1,outcome:good?'passed':'failed',code:good?'none':failure||'close',tlsAuthorized:authorized,responseValidated:validated,closed,productionQualificationComplete:false});};
-  const stop=code=>{if(failure===null)failure=code;if(response)response.destroy();if(request)request.destroy();if(socket)socket.destroy();if(!socket)finish();};
+  let socket=null,done=false,authorized=false,validated=false,closed=false,peerEnded=false,failure=null,total=0;const chunks=[];
+  const finish=()=>{if(done)return;done=true;clearTimeout(deadline);const good=failure===null&&authorized&&validated&&closed&&peerEnded;resolve({schemaVersion:1,outcome:good?'passed':'failed',code:good?'none':failure||'close',tlsAuthorized:authorized,responseValidated:validated,closed,productionQualificationComplete:false});};
+  const stop=code=>{if(failure===null)failure=code;if(socket)socket.destroy();else finish();};
+  const inspect=ended=>{try{const r=readHttpDohReply(Buffer.concat(chunks,total),ended);if(!r)return;validated=validateDohResponse(r.status,r.headers,r.body);if(!validated)stop('response');else if(!socket.writableEnded&&!beginDohClose(socket))stop('close');}catch{stop('response');}};
   const deadline=setTimeout(()=>{stop('timeout');finish();},8000);
   try{
-   agent=new https.Agent({keepAlive:true,maxSockets:1,maxTotalSockets:1,maxFreeSockets:1});
-   agent.once('free',s=>{if(s!==socket||!authorized||!validated||failure!==null||!beginDohClose(s))stop('close');});
-   request=https.request(requestOptions(agent),res=>{
-    response=res;
-    res.on('data',chunk=>{total+=chunk.length;if(total>4096||chunks.length>=128){stop('bound');return;}chunks.push(chunk);});
-    res.on('end',()=>{validated=validateDohResponse(res.statusCode,res.headers,Buffer.concat(chunks,total));if(!validated)stop('response');else if(closed)finish();});
-    res.on('error',()=>stop('network'));
-   });
-   request.on('socket',s=>{socket=s;s.on('secureConnect',()=>{authorized=s.authorized===true&&s.getProtocol()==='TLSv1.3';if(!authorized)stop('tls');});s.on('end',()=>{peerEnded=true;});s.on('close',()=>{closed=true;finish();});s.on('error',()=>{if(failure===null)failure='network';});});
-   request.on('error',()=>stop('network'));request.end(fixedDohQuery());
+   const q=requestOptions();socket=tls.connect({host:q.hostname,port:q.port,family:q.family,servername:q.servername,rejectUnauthorized:q.rejectUnauthorized,ca:q.ca,minVersion:q.minVersion,maxVersion:q.maxVersion,ALPNProtocols:q.ALPNProtocols,allowHalfOpen:true});
+   socket.on('secureConnect',()=>{authorized=socket.authorized===true&&socket.getProtocol()==='TLSv1.3'&&socket.alpnProtocol==='http/1.1';if(!authorized)stop('tls');else socket.write(fixedHttpDohRequest());});
+   socket.on('data',chunk=>{total+=chunk.length;if(total>16384||chunks.length>=128){stop('bound');return;}chunks.push(chunk);inspect(false);});
+   socket.on('end',()=>{peerEnded=true;inspect(true);});
+   socket.on('close',hadError=>{closed=true;if(hadError&&failure===null)failure='network';finish();});
+   socket.on('error',()=>stop('network'));
   }catch{stop('network');}
  });
 }
-module.exports={fixedDohQuery,requestOptions,validateDohResponse,beginDohClose};
+module.exports={fixedDohQuery,requestOptions,validateDohResponse,beginDohClose,fixedHttpDohRequest,readHttpDohReply};
+
 if(require.main===module){
  const arch={x64:'amd64',arm64:'arm64'}[process.arch],host={x86_64:'amd64',amd64:'amd64',arm64:'arm64',aarch64:'arm64'}[os.machine().toLowerCase()];
  const guarded=process.platform==='win32'&&process.version==='v26.8.2'&&process.env.GITHUB_ACTIONS==='true'&&process.env.RUNNER_ENVIRONMENT==='github-hosted'&&/^[a-f0-9]{40}$/.test(process.env.GITHUB_SHA||'')&&process.env.ACCESSWEAVER_EXPECT_GOOS==='windows'&&arch===host&&arch===process.env.ACCESSWEAVER_EXPECT_GOARCH&&process.argv.length===2&&['ACCESSWEAVER_HISTORY_INTEROP','ACCESSWEAVER_RECONCILIATION_INTEROP','ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP','ACCESSWEAVER_SUPPORT_INTEROP'].every(k=>!Object.hasOwn(process.env,k));
