@@ -10,7 +10,7 @@ $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Wire source syntax'}
 $excluded=@('Invoke-NativeDNSWireProcess','Read-NativeDNSWireCapture','Get-NativeDNSWireItem')
-$allowed=@('Assert-NativeOrdinaryPath','Get-Command','Join-Path','Where-Object','Select-Object','Invoke-NativeDNSWireProcess','Invoke-NativeDNSWireTool','Assert-NativeDNSWireStopped','Assert-NativeDNSWireEmptyFilters','Get-NativeDNSWireFilterRows','Assert-NativeDNSWireFilters','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Assert-NativeDNSWireRule','New-NetFirewallRule','Remove-NetFirewallRule','Assert-NativeDNSWireFirewall','Get-DnsClientNrptPolicy','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Stop-NativeDNSWireCapture','Clear-DnsClientCache','Resolve-DnsName','Invoke-NativeDNSWireQuery','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile','Get-NativeDNSWireItem','ConvertFrom-Json','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState')
+$allowed=@('Get-NativeDNSWireSetupCode','Assert-NativeOrdinaryPath','Get-Command','Join-Path','Where-Object','Select-Object','Invoke-NativeDNSWireProcess','Invoke-NativeDNSWireTool','Assert-NativeDNSWireStopped','Assert-NativeDNSWireEmptyFilters','Get-NativeDNSWireFilterRows','Assert-NativeDNSWireFilters','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Assert-NativeDNSWireRule','New-NetFirewallRule','Remove-NetFirewallRule','Assert-NativeDNSWireFirewall','Get-DnsClientNrptPolicy','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Stop-NativeDNSWireCapture','Clear-DnsClientCache','Resolve-DnsName','Invoke-NativeDNSWireQuery','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile','Get-NativeDNSWireItem','ConvertFrom-Json','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState')
 $definitions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false));$seen=@{}
 foreach($definition in $definitions){
     if($seen.ContainsKey($definition.Name)){throw 'Duplicate wire source function'};$seen[$definition.Name]=$true
@@ -29,6 +29,12 @@ function New-WireCase {
 function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$Arguments,[byte[]]$InputBytes=$null) {
     $State.processes++;$State.joined++
     if($Program -ceq 'node-source'){
+        if($Arguments.Count -eq 1 -and $Arguments[0] -ceq '--version'){return 'v26.8.2'}
+        if($null -ne $InputBytes -and $InputBytes.Length -eq 1){
+            Assert-Wire (-not $script:running -and $script:filters.Count -eq 0 -and $script:rules.Count -eq 0)
+            if($script:fault -ceq 'decoder-preflight'){throw 'Source decoder unavailable'}
+            return '{"schemaVersion":1,"outcome":"refused","code":"capture-bound","evidence":null}'
+        }
         Assert-Wire ($null -ne $InputBytes -and $InputBytes.Length -eq 3 -and -not $script:running)
         if($script:fault -ceq 'decoder-refusal'){return '{"schemaVersion":1,"outcome":"refused","code":"tcp-gap","evidence":null}'}
         return '{"schemaVersion":1,"outcome":"decoded","code":"none","evidence":{"schemaVersion":1,"observation":"tls-observed","plaintextPackets":0,"productionQualificationComplete":false,"flows":[{"provider":"google-v4","clientHello":true,"serverHello":true,"outboundEncryptedRecords":1,"inboundEncryptedRecords":1}]}}'
@@ -110,6 +116,21 @@ function Reject-Wire([scriptblock]$Body){$rejected=$false;try{[void](& $Body)}ca
 $oldSystemRoot=$env:SystemRoot
 try {
     if(-not $env:SystemRoot){$env:SystemRoot=[IO.Path]::GetTempPath()}
+    Case-Wire 'startup-errors-map-to-fixed-categories' {
+        foreach($pair in @(@(2,'start-not-found'),@(5,'start-access'),@(193,'start-image'),@(267,'start-directory'),@(206,'start-path-bound'),@(740,'start-elevation'),@(1260,'start-policy'),@(1234,'start-os-other'))){
+            $failure=[ComponentModel.Win32Exception]::new([int]$pair[0],'source-private-error')
+            Assert-Wire ((Get-NativeDNSWireSetupCode $failure) -ceq $pair[1])
+            Assert-Wire ((Get-NativeDNSWireSetupCode ([Exception]::new('source-private-wrapper',$failure))) -ceq $pair[1])
+        }
+        Assert-Wire ((Get-NativeDNSWireSetupCode ([ArgumentException]::new('source-private-error'))) -ceq 'start-argument')
+        Assert-Wire ((Get-NativeDNSWireSetupCode ([InvalidOperationException]::new('source-private-error'))) -ceq 'start-state')
+        Assert-Wire ((Get-NativeDNSWireSetupCode ([Exception]::new('source-private-error'))) -ceq 'setup')
+    }
+    Case-Wire 'decoder-preflight-refuses-before-native-effects' {
+        New-WireCase;$script:fault='decoder-preflight'
+        Reject-Wire {Start-NativeDNSWireCapture $script:state}
+        Assert-Wire ($script:state.phase -ceq 'decoder-preflight' -and -not $script:running -and $script:filters.Count -eq 0 -and $script:rules.Count -eq 0 -and -not $script:state.startAttempted)
+    }
     Case-Wire 'complete-real-source-control-and-cleanup-order' {
         New-WireCase;Start-NativeDNSWireCapture $script:state;Measure-NativeDNSWire $script:state;Complete-NativeDNSWireCleanup $script:state
         $r=Get-NativeDNSWireSummary $script:state

@@ -6,6 +6,17 @@ function New-NativeDNSWireState([string]$PrivateRoot,[string]$DecoderPath) {
     foreach($name in @('baselineResolverPassed','filtersVerified','captureStarted','captureStopped','captureBounded','plaintextBlocked','ordinaryQueryPassed','tlsObserved','tlsBlocked','blockedQueryRejected','tlsBlockRemoved','resumedQueryPassed','originalStateVerified','rulesRemoved','filtersRemoved','originalResolverPassed')){$flags[$name]=$false}
     return @{workdir=$PrivateRoot;processFailureCode='none';failureExitCode=0;failureStdoutChars=0;failureStderrChars=0;failureElapsedMilliseconds=0;captureFileCode='not-inspected';decoder=$DecoderPath;etlBytes=0;pcapBytes=0;filterRows=0;filterCode='none';cleanupAttempted=$false;cleanupCompleted=$false;phase='preflight';failurePhase='none';decoderCode='none';before=$null;owner=('aw'+[guid]::NewGuid().ToString('N').Substring(0,10));tool=(Join-Path $env:SystemRoot 'System32\pktmon.exe');node=$node;etl=(Join-Path $PrivateRoot 'PktMon.etl');pcap=(Join-Path $PrivateRoot 'wire.pcapng');filters=@();rules=@();startAttempted=$false;stopped=$false;processes=0;joined=0;processFailed=$false;flags=$flags;tlsFlows=0;outRecords=0;inRecords=0;providers=0}
 }
+function Get-NativeDNSWireSetupCode([Exception]$Failure) {
+    for($depth=0;$null -ne $Failure -and $depth -lt 16;$depth++){
+        if($Failure -is [ComponentModel.Win32Exception]){
+            return $(switch($Failure.NativeErrorCode){2{'start-not-found'}3{'start-not-found'}5{'start-access'}193{'start-image'}267{'start-directory'}206{'start-path-bound'}740{'start-elevation'}1260{'start-policy'}default{'start-os-other'}})
+        }
+        if($null -eq $Failure.InnerException){break};$Failure=$Failure.InnerException
+    }
+    if($Failure -is [ArgumentException]){return 'start-argument'}
+    if($Failure -is [InvalidOperationException]){return 'start-state'}
+    return 'setup'
+}
 function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$Arguments,[byte[]]$InputBytes=$null) {
     if($State.processes -ge 128){throw 'Wire process bound'}
     $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$Program
@@ -36,7 +47,7 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
     } catch {
         $State.processFailed=$true
         if($State.processFailureCode -ceq 'none'){
-            $State.processFailureCode=if($failureKind -ceq 'none'){'setup'}else{$failureKind}
+            $State.processFailureCode=if($failureKind -ceq 'none'){Get-NativeDNSWireSetupCode $_.Exception}else{$failureKind}
             if($wasJoined){$State.failureExitCode=$p.ExitCode}
             if($captures.Count -gt 0){$State.failureStdoutChars=[Math]::Min(65537,$captures[0].text.Length)}
             if($captures.Count -gt 1){$State.failureStderrChars=[Math]::Min(65537,$captures[1].text.Length)}
@@ -113,6 +124,13 @@ function Remove-NativeDNSWireRules([object]$State,[string]$Kind) {
     }
 }
 function Start-NativeDNSWireCapture([object]$State) {
+    # Exercise the exact private working directory, executable and binary-stdin
+    # adapter before capture, filters or product configuration can be attempted.
+    $State.phase='decoder-preflight'
+    $version=Invoke-NativeDNSWireProcess $State $State.node @('--version')
+    if($version.Trim() -cne 'v26.8.2'){throw 'Wire decoder version'}
+    $probe=(Invoke-NativeDNSWireProcess $State $State.node @($State.decoder) ([byte[]]@(0))) | ConvertFrom-Json
+    if($probe.schemaVersion -ne 1 -or $probe.outcome -cne 'refused' -or $probe.code -cne 'capture-bound' -or $null -ne $probe.evidence){throw 'Wire decoder preflight'}
     $State.phase='monitor-preflight'
     Assert-NativeDNSWireStopped (Invoke-NativeDNSWireTool $State @('status'))
     Assert-NativeDNSWireEmptyFilters (Invoke-NativeDNSWireTool $State @('filter','list'))
