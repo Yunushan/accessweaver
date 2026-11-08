@@ -22,7 +22,7 @@ function Assert-NativeOrdinaryPath([string]$Path) {}
 function Get-Command {param($Name,$CommandType,$ErrorAction);if($Name -cne 'node'){throw 'Source command refused'};return @([pscustomobject]@{Path='node-source';Source='source-is-not-an-application-path'},[pscustomobject]@{Path='node-other';Source='other-source'})}
 function Assert-Wire([bool]$Condition){if(-not $Condition){throw 'Wire source assertion'}}
 function New-WireCase {
-    $script:fault='';$script:filters=@{};$script:rules=@{};$script:running=$false;$script:restored=$true;$script:events=[Collections.Generic.List[string]]::new();$script:addOrdinal=0;$script:etlSize=4096;$script:pcapSize=3;$script:itemReads=0
+    $script:fault='';$script:filters=@{};$script:rules=@{};$script:running=$false;$script:restored=$true;$script:events=[Collections.Generic.List[string]]::new();$script:addOrdinal=0;$script:counterReads=0;$script:etlSize=4096;$script:pcapSize=3;$script:itemReads=0
     $script:state=New-NativeDNSWireState ([IO.Path]::Combine([IO.Path]::GetTempPath(),'aw-wire-source')) ([IO.Path]::Combine([IO.Path]::GetTempPath(),'dns-wire-stdin.cjs'))
     $script:state.before='source-original'
 }
@@ -66,7 +66,12 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
             $script:running=$true;$script:events.Add('capture-start')
             if($script:fault -ceq 'partial-start'){throw 'Source partial capture start'};return ''
         }
-        'counters' {Assert-Wire ($script:running -and $State.flags.ordinaryQueryPassed -and $Arguments.Count -eq 3 -and $Arguments[1] -ceq '--json' -and $Arguments[2] -ceq '--zero');return '{"Components":[{"Name":"PRIVATE-SYNTHETIC","PacketsIn":2,"PacketsOut":3}]}'}
+        'counters' {
+            Assert-Wire ($script:running -and $State.flags.ordinaryQueryPassed -and $Arguments.Count -cin @(3,5) -and $Arguments[1] -ceq '--json' -and $Arguments[2] -ceq '--zero')
+            if($Arguments.Count -eq 5){Assert-Wire ($Arguments[3] -ceq '--type' -and $Arguments[4] -ceq 'flow' -and $script:counterReads -eq 1)}
+            else{Assert-Wire ($script:counterReads -eq 0)}
+            $script:counterReads++;return '{"Components":[{"Name":"PRIVATE-SYNTHETIC","PacketsIn":2,"PacketsOut":3}]}'
+        }
         'stop' {$script:running=$false;$script:events.Add('capture-stop');return ''}
         'etl2pcap' {Assert-Wire (-not $script:running);$script:events.Add('conversion');return ''}
     }
@@ -187,6 +192,7 @@ try {
     Case-Wire 'complete-real-source-control-and-cleanup-order' {
         New-WireCase;Start-NativeDNSWireCapture $script:state;Measure-NativeDNSWire $script:state;Complete-NativeDNSWireCleanup $script:state
         $r=Get-NativeDNSWireSummary $script:state
+        Assert-Wire ($script:counterReads -eq 2 -and $r.packetCounters.code -ceq 'parsed' -and $r.flowPacketCounters.code -ceq 'parsed')
         Assert-Wire ($r.outcome -ceq 'passed' -and -not $script:running -and $script:filters.Count -eq 0 -and $script:rules.Count -eq 0 -and $r.toolProcesses -eq $r.toolProcessesJoined -and $r.providerMask -eq 1)
         Assert-Wire ($script:events.IndexOf('query') -lt $script:events.IndexOf('capture-start') -and $script:events.IndexOf('capture-stop') -lt $script:events.IndexOf('conversion') -and $script:events.IndexOf('original-state') -lt $script:events.IndexOf('filter-remove'))
         Assert-Wire (-not (($r | ConvertTo-Json -Depth 6 -Compress).Contains($script:state.owner)))
@@ -222,7 +228,7 @@ try {
     Case-Wire 'wire-summary-excludes-private-paths-and-unknown-fields' {
         New-WireCase;$script:state.workdir='PRIVATE-SYNTHETIC-DIRECTORY'
         $r=Get-NativeDNSWireSummary $script:state
-        $keys=@('packetCounters','processFailureCode','failureExitCode','failureStdoutChars','failureStderrChars','failureElapsedMilliseconds','captureFileCode','etlBytes','pcapBytes','filterRows','filterCode','outcome','phase','failurePhase','decoderCode','controls','toolProcesses','toolProcessesJoined','toolFailure','tlsFlows','outboundEncryptedRecords','inboundEncryptedRecords','providerMask','rawCapturePublished','productionQualificationComplete')
+        $keys=@('flowPacketCounters','packetCounters','processFailureCode','failureExitCode','failureStdoutChars','failureStderrChars','failureElapsedMilliseconds','captureFileCode','etlBytes','pcapBytes','filterRows','filterCode','outcome','phase','failurePhase','decoderCode','controls','toolProcesses','toolProcessesJoined','toolFailure','tlsFlows','outboundEncryptedRecords','inboundEncryptedRecords','providerMask','rawCapturePublished','productionQualificationComplete')
         Assert-Wire ((@($r.Keys | Sort-Object) -join ',') -ceq (@($keys | Sort-Object) -join ',') -and -not (($r | ConvertTo-Json -Depth 4 -Compress).Contains('PRIVATE-SYNTHETIC')))
     }
     Case-Wire 'strict-stopped-and-empty-classifiers' {Reject-Wire {Assert-NativeDNSWireStopped "PRIVATE`nPacket Monitor is not running."};Reject-Wire {Assert-NativeDNSWireEmptyFilters "No filters.`n1 unknown"};Assert-NativeDNSWireStopped 'Packet Monitor is not running.';Assert-NativeDNSWireEmptyFilters "Packet Filters:`nNone"}
