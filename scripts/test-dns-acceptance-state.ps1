@@ -18,7 +18,14 @@ if($ReportPath){
 $project=Split-Path -Parent $PSScriptRoot
 $sourcePath=Join-Path $PSScriptRoot 'dns-acceptance-state.ps1'
 $sourceFiles=@('scripts/native-doh-scenario.ps1','scripts/test-native-doh.ps1','.github/workflows/native-doh.yml','scripts/dns-acceptance-state.ps1','scripts/test-dns-acceptance-state.ps1','scripts/test-windows-integration.ps1','scripts/test-windows-reboot.ps1','scripts/vmware-test-bootstrap.ps1','scripts/test-windows-workflow.ps1','.github/workflows/dns-recovery-contracts.yml')
-$sourceHashes=@{};foreach($file in $sourceFiles){$sourceHashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
+# PowerShell 5.1 Get-FileHash is a function that calls Test-Path. The
+# deliberately closed Test-Path mock below must not intercept source hashing.
+function Get-ASourceSHA256([string]$File) {
+    $stream=[IO.File]::OpenRead($File);$algorithm=[Security.Cryptography.SHA256]::Create()
+    try{return ([BitConverter]::ToString($algorithm.ComputeHash($stream))).Replace('-','').ToLowerInvariant()}
+    finally{$algorithm.Dispose();$stream.Dispose()}
+}
+$sourceHashes=@{};foreach($file in $sourceFiles){$sourceHashes[$file]=Get-ASourceSHA256 (Join-Path $project $file)}
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($sourcePath,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Acceptance helper source did not parse'}
 $definitions=@($ast.EndBlock.Statements)
@@ -560,7 +567,7 @@ try {
         $connected=if($file -like '*integration*'){@($calls | Where-Object {$_ -ceq 'Invoke-DNSAcceptanceRoundTrip'}).Count -eq 2}else{('Assert-DNSAcceptanceConfigured' -in $calls -and 'Assert-DNSAcceptanceRestored' -in $calls -and 'Get-DNSAcceptanceIndex' -in $calls)}
         Assert-A ($issues.Count -eq 0 -and $connected) 'native-harness-wiring'
     }
-    foreach($file in $sourceFiles){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $sourceHashes[$file]){throw 'Acceptance source changed during contracts'}}
+    foreach($file in $sourceFiles){if((Get-ASourceSHA256 (Join-Path $project $file)) -cne $sourceHashes[$file]){throw 'Acceptance source changed during contracts'}}
     $script:contractOutcome='passed';$script:contractCode='none'
     Write-Output ('DNS acceptance source contracts passed: '+$script:checks)
 } finally {
