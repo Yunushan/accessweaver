@@ -353,8 +353,13 @@
         {
           "id": "validation.performance",
           "acceptance": "Measure startup, UI responsiveness, CPU/RAM/handles, throughput, latency and long-duration stability against published budgets.",
-          "status": "missing",
-          "evidence": []
+          "status": "partial",
+          "evidence": [
+            "docs/PERFORMANCE.md",
+            "scripts/browser-tests/performance-budgets.json",
+            "docs/qualification/7cbda587c8aa-dns-family-normal.json",
+            "docs/qualification/593b59fb450d-browser-soak-attempt.json"
+          ]
         },
         {
           "id": "validation.qualification",
@@ -507,8 +512,15 @@
         {
           "id": "enterprise.audit",
           "acceptance": "Local administrative/user action events are attributable, redacted, bounded, tamper-evident and exportable to existing log collectors; support exports enforce documented consent and secret-handling rules.",
-          "status": "missing",
-          "evidence": []
+          "status": "partial",
+          "evidence": [
+            "docs/AUDIT_EVENTS.md",
+            "docs/RECORDED_AUDIT_EXPORT.md",
+            "docs/WINDOWS_AUDIT_STORAGE.md",
+            "docs/DARWIN_AUDIT_STORAGE.md",
+            "docs/qualification/795803e6ea88-windows-audit-storage.json",
+            "docs/qualification/33c7737d97cd-linux-recorded-policy-audit.json"
+          ]
         },
         {
           "id": "enterprise.management",
@@ -537,8 +549,11 @@
         {
           "id": "operations.incidents",
           "acceptance": "Exercise incident response, compromised dependency/update response, release revocation and recovery runbooks.",
-          "status": "missing",
-          "evidence": []
+          "status": "partial",
+          "evidence": [
+            "docs/INCIDENT_RESPONSE.md",
+            "docs/qualification/fa28695b38da-policy-incident-drill.json"
+          ]
         },
         {
           "id": "operations.observability",
@@ -636,11 +651,11 @@
     }
   ],
   "nextActions": [
-    "Complete native regression validation for bounded logs and durable workflow shutdown.",
-    "Unify version/source identity across runtime and release artifacts.",
-    "Resolve DNSCrypt and interactive Windows app failures in the full disposable VM.",
-    "Implement administrator-enforced local policy, signed configuration and managed deployment with tested privilege boundaries.",
-    "Complete independent security review, platform-native qualification, signing and operational ownership."
+    "Complete native encrypted-DNS transport, failure/reboot recovery, representative routing/ISP and interactive application acceptance; retain every failed observation.",
+    "Qualify the actual installed candidate across the ten-target desktop matrix, including standard-user/admin behavior, upgrade/reboot/downgrade/uninstall and intended managed endpoint deployment.",
+    "Meet the published performance budgets in sustained and eight-hour installed acceptance, resolving retained Firefox/WebKit failures; complete assistive-technology and four-language UI review.",
+    "Finish verified publisher signing, release provenance/independent rebuild, controlled delivery and build/release restoration; assign support, escalation and supported-version ownership.",
+    "Complete hostile cross-user/runtime security, private audit/support collector integration and operational incident/revocation exercises on intended managed desktop endpoints."
   ],
   "scope": {
     "confirmedByUser": "Desktop quality + managed deployment",
