@@ -184,6 +184,18 @@ check('server-syn-must-acknowledge-client-open',()=>{
  const f=conversation();f[1][47]=2;refusal(capture(f),'tcp-syn-shape');
  const g=conversation();g[0][47]=0x12;refusal(capture(g),'tcp-syn-shape');
 });
+check('stdin-adapter-preserves-positive-evidence-without-qualification',()=>{
+ const {decodeBytes}=require('./dns-wire-stdin.cjs');const r=decodeBytes(capture(conversation()));
+ assert.equal(r.outcome,'decoded');assert.equal(r.evidence.observation,'tls-observed');assert.equal(r.evidence.ordinaryResolverBound,false);assert.equal(r.evidence.productionQualificationComplete,false);
+});
+check('stdin-adapter-returns-closed-refusal-and-no-payload',()=>{
+ const {decodeBytes}=require('./dns-wire-stdin.cjs');const r=decodeBytes(Buffer.from('PRIVATE-SYNTHETIC'));
+ assert.deepEqual(r,{schemaVersion:1,outcome:'refused',code:'capture-bound',evidence:null});assert(!JSON.stringify(r).includes('PRIVATE'));
+});
+check('stdin-adapter-does-not-upgrade-insufficient-or-plaintext-evidence',()=>{
+ const {decodeBytes}=require('./dns-wire-stdin.cjs');
+ for(const f of [conversation().slice(0,2),[...conversation(),frame(Buffer.alloc(3),{udp:true,port:53})]]){const r=decodeBytes(capture(f));assert.equal(r.outcome,'decoded');assert.equal(r.evidence.observation,'insufficient');}
+});
 function runContracts(){
  const results=cases.map(([name,fn])=>{try{fn();return {name,passed:true};}catch{return {name,passed:false};}});
  return {schemaVersion:1,scope:'synthetic-doh-wire-decoder',cases:results,passed:results.every(r=>r.passed),nativeCapturePerformed:false,encryptedTrafficObserved:false,productionQualificationComplete:false};

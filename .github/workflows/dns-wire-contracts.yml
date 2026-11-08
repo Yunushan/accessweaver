@@ -6,10 +6,18 @@ on:
     paths:
       - 'scripts/dns-wire-*.cjs'
       - '.github/workflows/dns-wire-contracts.yml'
+      - 'scripts/native-dns-wire.ps1'
+      - 'scripts/test-dns-wire-native-contracts.ps1'
+      - 'scripts/test-native-doh.ps1'
+      - '.github/workflows/native-doh-wire.yml'
   pull_request:
     paths:
       - 'scripts/dns-wire-*.cjs'
       - '.github/workflows/dns-wire-contracts.yml'
+      - 'scripts/native-dns-wire.ps1'
+      - 'scripts/test-dns-wire-native-contracts.ps1'
+      - 'scripts/test-native-doh.ps1'
+      - '.github/workflows/native-doh-wire.yml'
   workflow_dispatch:
 
 permissions:

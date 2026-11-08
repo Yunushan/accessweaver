@@ -22,7 +22,7 @@ At source `df354fb0b9d8`, the [verified source receipt](qualification/df354fb0b9
 
 ## Required native DoH procedure
 
-The future hosted driver must retain the existing fresh non-domain VM, native architecture/source-built controller, absent interop variables, private evidence and independent baseline/state/recovery checks. Both Windows architectures require their own result.
+The optional `-WireTransport` hosted driver retains the existing fresh non-domain VM, native architecture/source-built controller, absent interop variables, private evidence and independent baseline/state/recovery checks. Both Windows architectures require their own result.
 
 1. Verify that no packet-monitor session or filters already exist; unknown state refuses. Record the complete independent DNS/DoH baseline and a healthy ordinary resolver. Do not remove someone else's filters or monitoring session.
 2. Install only uniquely owned endpoint-and-port capture filters for the four product resolver addresses. Verify the exact filter set before capture. Capture whole packets at NIC components into a bounded private buffer/file; do not collect unrelated endpoints, ETW providers or application logs.
@@ -32,10 +32,12 @@ The future hosted driver must retain the existing fresh non-domain VM, native ar
 6. Always restore the actual product originals and independently verify complete state. Retain originals and containment on failed/unverifiable recovery until the disposable VM is destroyed. After verified state recovery, retire only owned rules/filters, verify retirement and test the healthy original resolver. Join all owned children/capture work before publishing.
 7. Publish only source/binary identities, closed stage/failure codes, fixed provider labels, bounded counters and the independent control booleans. Report actual DoH wire qualification only when all controls and cleanup pass together.
 
-This procedure is not yet implemented or natively qualified. DNSCrypt requires separate evidence for the selected encrypted upstream protocol; a local DNSCrypt listener or a running service is insufficient. Real interface-index change, failure variants, reboot/power-loss, installed managed endpoints and the other readiness gates remain separate requirements.
+The optional driver and its separate AMD64/ARM64 workflow now implement this procedure. Fresh exact-source source/native results remain required before claiming qualification. The ordinary native scenarios retain their existing interface and reports; only the wire scenario adds closed control/cleanup metadata. DNSCrypt requires separate evidence for the selected encrypted upstream protocol; a local DNSCrypt listener or a running service is insufficient. Real interface-index change, failure variants, reboot/power-loss, installed managed endpoints and the other readiness gates remain separate requirements.
 
 ## Format and tool references
 
 Packet Monitor applies all conditions within a filter and combines filters as alternatives; its defaults capture multiple stack components and only a packet prefix. The driver must explicitly narrow the endpoints/components and request whole packets. See [Microsoft's command formatting](https://learn.microsoft.com/en-us/windows-server/networking/technologies/pktmon/pktmon-syntax), [capture options](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/pktmon-start) and [filter syntax](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/pktmon-filter-add).
 
 PCAPNG conversion loses Packet Monitor's component/drop distinctions, so conversion alone cannot prove delivery or losslessness. See [Microsoft's ETL conversion documentation](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/pktmon-etl2pcap). The decoder's section/interface/enhanced-packet framing follows the [PCAPNG format draft](https://www.ietf.org/archive/id/draft-ietf-opsawg-pcapng-06.html).
+
+The native helper sends private converted capture bytes to the guarded Node decoder over bounded binary stdin. It does not give the child an arbitrary capture-file path. Fifteen actual-source mock cases cover the successful control sequence, partial filter/start effects, existing-session refusal, name policy, decoder refusal, ineffective blocking/retirement, cache failure, required resumption and preservation of blocks/filters until original state is independently verified. These PowerShell cases run only on hosted machines; local checks inspect their AST and syntax.
