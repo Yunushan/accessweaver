@@ -431,3 +431,45 @@ function Get-NativeDNSWireSummary([object]$State) {
     $passed=($State.flags.Count -eq 16 -and @($State.flags.Values | Where-Object {$_ -isnot [bool] -or -not $_}).Count -eq 0 -and $State.processes -eq $State.joined -and -not $State.processFailed -and $State.decoderCode -ceq 'none' -and $State.outRecords -gt 0 -and $State.inRecords -gt 0)
     return @{eventEvidence=$State.eventEvidence;statsEvidence=$State.statsEvidence;monitorEvidence=$State.monitorEvidence;flowPacketCounters=$State.flowPacketCounters;packetCounters=$State.packetCounters;processFailureCode=$State.processFailureCode;failureExitCode=$State.failureExitCode;failureStdoutChars=$State.failureStdoutChars;failureStderrChars=$State.failureStderrChars;failureElapsedMilliseconds=$State.failureElapsedMilliseconds;captureFileCode=$State.captureFileCode;etlBytes=$State.etlBytes;pcapBytes=$State.pcapBytes;filterRows=$State.filterRows;filterCode=$State.filterCode;outcome=$(if($passed){'passed'}else{'failed'});phase=$State.phase;failurePhase=$State.failurePhase;decoderCode=$State.decoderCode;controls=$State.flags;toolProcesses=$State.processes;toolProcessesJoined=$State.joined;toolFailure=$State.processFailed;tlsFlows=$State.tlsFlows;outboundEncryptedRecords=$State.outRecords;inboundEncryptedRecords=$State.inRecords;providerMask=$State.providers;rawCapturePublished=$false;productionQualificationComplete=$false}
 }
+
+function Get-NativeDNSCaptureControlProgram {
+    $body=@'
+# AccessWeaver fixed capture positive control: no DNS lookup or TLS payload.
+$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$PSModuleAutoLoadingPreference='None'
+$client=$null;$wait=$null;$connected=$false
+try{
+    $client=[Net.Sockets.TcpClient]::new([Net.Sockets.AddressFamily]::InterNetwork)
+    $request=$client.BeginConnect([Net.IPAddress]::Parse('8.8.8.8'),443,$null,$null);$wait=$request.AsyncWaitHandle
+    if($wait.WaitOne(5000)){$client.EndConnect($request);$connected=$client.Connected}
+}catch{$connected=$false}
+finally{if($null -ne $client){$client.Dispose()};if($null -ne $wait){$wait.Dispose()}}
+[Console]::Out.WriteLine($(if($connected){'connected'}else{'refused'}))
+'@
+    return [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($body))
+}
+function Invoke-NativeDNSCaptureControl([object]$State) {
+    $r=@{outcome='failed';code='capture-start';connected=$false;captureStarted=$false;captureStopped=$false;captureBounded=$false;originalStateVerified=$false;filtersRemoved=$false;originalResolverPassed=$false;processes=0;joined=0;toolFailure=$false;eventEvidence=(New-NativeDNSWireEventEvidence)}
+    try{
+        Start-NativeDNSWireCapture $State
+        $r.code='connect'
+        $reply=Invoke-NativeDNSWireProcess $State $State.eventTool @('-NoProfile','-NonInteractive','-EncodedCommand',(Get-NativeDNSCaptureControlProgram))
+        $r.connected=($reply.Trim() -ceq 'connected');if(-not $r.connected){throw 'Capture control connection refused'}
+        $r.code='capture-stop';Stop-NativeDNSWireCapture $State
+        $r.code='capture-file';Measure-NativeDNSWireFile $State 'etl';$r.captureBounded=$true
+        $r.code='event-read'
+        $text=Invoke-NativeDNSWireProcess $State $State.eventTool @('-NoProfile','-NonInteractive','-EncodedCommand',(Get-NativeDNSWireEventProgram $State.etl))
+        $r.eventEvidence=Get-NativeDNSWireEventEvidence $text
+        if($r.eventEvidence.code -cne 'complete'){$r.code='event-read-incomplete'}
+        elseif($r.eventEvidence.framePayloadIDs -le 0){$r.code='frame-events-missing'}
+        else{$r.outcome='passed';$r.code='none'}
+    }catch{$r.outcome='failed'}
+    finally{
+        try{Complete-NativeDNSWireCleanup $State}catch{$r.outcome='failed';$r.code='cleanup'}
+        foreach($name in @('captureStarted','captureStopped','originalStateVerified','filtersRemoved','originalResolverPassed')){$r[$name]=$State.flags[$name]}
+        $r.processes=$State.processes;$r.joined=$State.joined;$r.toolFailure=$State.processFailed
+        if($r.outcome -ceq 'passed' -and (-not $r.captureStarted -or -not $r.captureStopped -or -not $r.captureBounded -or -not $r.originalStateVerified -or -not $r.filtersRemoved -or -not $r.originalResolverPassed -or $r.toolFailure -or $r.processes -ne $r.joined)){$r.outcome='failed';$r.code='cleanup'}
+    }
+    # This proves only the isolated producer control. No TLS/DNS wire evidence
+    # is set on State, and this capture is never submitted to product acceptance.
+    return $r
+}

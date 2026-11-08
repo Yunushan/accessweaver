@@ -3,7 +3,7 @@
 // Never starts/stops capture, edits filters or firewall/DNS state, or launches the product.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),os=require('node:os');
 const {spawnSync}=require('node:child_process');
-const SOURCES=Object.freeze(['scripts/dns-wire-evidence.cjs','scripts/dns-wire-evidence.test.cjs','scripts/dns-wire-contract-report.cjs','.github/workflows/dns-wire-contracts.yml','scripts/dns-wire-stdin.cjs','scripts/native-dns-wire.ps1','scripts/test-dns-wire-native-contracts.ps1','.github/workflows/native-doh-wire.yml','scripts/test-native-doh.ps1','scripts/dns-acceptance-state.ps1','scripts/native-doh-scenario.ps1']);
+const SOURCES=Object.freeze(['scripts/dns-wire-evidence.cjs','scripts/dns-wire-evidence.test.cjs','scripts/dns-wire-contract-report.cjs','.github/workflows/dns-wire-contracts.yml','scripts/dns-wire-stdin.cjs','scripts/native-dns-wire.ps1','scripts/test-dns-wire-native-contracts.ps1','.github/workflows/native-doh-wire.yml','scripts/test-native-doh.ps1','scripts/dns-acceptance-state.ps1','scripts/native-doh-scenario.ps1','scripts/test-native-capture-control.ps1','.github/workflows/native-capture-control.yml']);
 function classifyStatus(text){
  const s=text.trim();
  if(/^(?:Packet Monitor|Packet monitoring|Logger) is not (?:currently )?(?:running|active)\.?$/i.test(s))return 'stopped';
@@ -48,7 +48,7 @@ function sourceHashes(){
 function wireSourceContracts(){
  const script=path.join(__dirname,'test-dns-wire-native-contracts.ps1');
  const names=[...fs.readFileSync(script,'utf8').matchAll(/^    Case-Wire '([a-z0-9-]+)'/gm)].map(m=>m[1]);
- if(names.length!==42||new Set(names).size!==42)throw new Error('wire-source-catalog');
+ if(names.length!==46||new Set(names).size!==46)throw new Error('wire-source-catalog');
  const jobs=[['core','pwsh',[]]];
  if(process.platform==='win32')jobs.push(['desktop',path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe'),['-RequireWindowsPowerShell']]);
  return jobs.map(([edition,program,flags])=>{

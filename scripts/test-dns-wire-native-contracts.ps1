@@ -10,7 +10,7 @@ $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Wire source syntax'}
 $excluded=@('Invoke-NativeDNSWireProcess','Read-NativeDNSWireCapture','Read-NativeDNSWireStatsInput','Get-NativeDNSWireItem')
-$allowed=@('New-NativeDNSWireEventEvidence','Add-NativeDNSWireEventHeader','Get-NativeDNSWireEventProgram','Get-NativeDNSWireEventEvidence','Read-NativeDNSWireStatsInput','Get-NativeDNSWireStatsEvidence','Get-NativeDNSWireMonitorEvidence','Get-NativeDNSWireCounterEvidence','New-NativeDNSWireProbeBytes','Wait-NativeDNSWireWrite','Get-NativeDNSWireSetupCode','Assert-NativeOrdinaryPath','Get-Command','Join-Path','Where-Object','Select-Object','Invoke-NativeDNSWireProcess','Invoke-NativeDNSWireTool','Assert-NativeDNSWireStopped','Assert-NativeDNSWireEmptyFilters','Get-NativeDNSWireFilterRows','Assert-NativeDNSWireFilters','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Assert-NativeDNSWireRule','New-NetFirewallRule','Remove-NetFirewallRule','Assert-NativeDNSWireFirewall','Get-DnsClientNrptPolicy','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Stop-NativeDNSWireCapture','Clear-DnsClientCache','Resolve-DnsName','Invoke-NativeDNSWireQuery','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile','Get-NativeDNSWireItem','ConvertFrom-Json','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState')
+$allowed=@('Start-NativeDNSWireCapture','Complete-NativeDNSWireCleanup','Get-NativeDNSCaptureControlProgram','Invoke-NativeDNSCaptureControl','New-NativeDNSWireEventEvidence','Add-NativeDNSWireEventHeader','Get-NativeDNSWireEventProgram','Get-NativeDNSWireEventEvidence','Read-NativeDNSWireStatsInput','Get-NativeDNSWireStatsEvidence','Get-NativeDNSWireMonitorEvidence','Get-NativeDNSWireCounterEvidence','New-NativeDNSWireProbeBytes','Wait-NativeDNSWireWrite','Get-NativeDNSWireSetupCode','Assert-NativeOrdinaryPath','Get-Command','Join-Path','Where-Object','Select-Object','Invoke-NativeDNSWireProcess','Invoke-NativeDNSWireTool','Assert-NativeDNSWireStopped','Assert-NativeDNSWireEmptyFilters','Get-NativeDNSWireFilterRows','Assert-NativeDNSWireFilters','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Assert-NativeDNSWireRule','New-NetFirewallRule','Remove-NetFirewallRule','Assert-NativeDNSWireFirewall','Get-DnsClientNrptPolicy','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Stop-NativeDNSWireCapture','Clear-DnsClientCache','Resolve-DnsName','Invoke-NativeDNSWireQuery','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile','Get-NativeDNSWireItem','ConvertFrom-Json','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState')
 $definitions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false));$seen=@{}
 foreach($definition in $definitions){
     if($seen.ContainsKey($definition.Name)){throw 'Duplicate wire source function'};$seen[$definition.Name]=$true
@@ -40,10 +40,14 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
         return '{"schemaVersion":1,"outcome":"decoded","code":"none","evidence":{"schemaVersion":1,"observation":"tls-observed","plaintextPackets":0,"productionQualificationComplete":false,"flows":[{"provider":"google-v4","clientHello":true,"serverHello":true,"outboundEncryptedRecords":1,"inboundEncryptedRecords":1}]}}'
     }
     if($Program -ceq $State.eventTool){
-        Assert-Wire (-not $script:running -and $State.flags.captureStopped -and $Arguments.Count -eq 4 -and $Arguments[0] -ceq '-NoProfile' -and $Arguments[1] -ceq '-NonInteractive' -and $Arguments[2] -ceq '-EncodedCommand')
-        $body=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Arguments[3]));$t=$null;$e=$null;[void][Management.Automation.Language.Parser]::ParseInput($body,[ref]$t,[ref]$e)
-        Assert-Wire ($e.Count -eq 0 -and $body.Contains([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($State.etl))))
-        $r=New-NativeDNSWireEventEvidence 'complete';Add-NativeDNSWireEventHeader $r ([guid]'4d4f80d9-c8bd-4d73-bb5b-19c90402c5ac') 160 0
+        Assert-Wire ($Arguments.Count -eq 4 -and $Arguments[0] -ceq '-NoProfile' -and $Arguments[1] -ceq '-NonInteractive' -and $Arguments[2] -ceq '-EncodedCommand')
+        $body=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Arguments[3]));$t=$null;$e=$null;[void][Management.Automation.Language.Parser]::ParseInput($body,[ref]$t,[ref]$e);Assert-Wire ($e.Count -eq 0)
+        if($body.Contains('# AccessWeaver fixed capture positive control:')){
+            Assert-Wire ($script:running -and $script:rules.Count -eq 0 -and $body.Contains("Parse('8.8.8.8'),443") -and $body.Contains('WaitOne(5000)') -and $body.Contains('$client.Dispose()') -and $body.Contains('$wait.Dispose()'))
+            if($script:fault -ceq 'control-connect'){return 'refused'};return 'connected'
+        }
+        Assert-Wire (-not $script:running -and $State.flags.captureStopped -and $body.Contains([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($State.etl))))
+        $r=New-NativeDNSWireEventEvidence 'complete';if($script:fault -cne 'control-empty'){Add-NativeDNSWireEventHeader $r ([guid]'4d4f80d9-c8bd-4d73-bb5b-19c90402c5ac') 160 0}
         return ($r | ConvertTo-Json -Compress)
     }
     Assert-Wire ($Program -ceq $State.tool)
@@ -137,6 +141,24 @@ function Reject-Wire([scriptblock]$Body){$rejected=$false;try{[void](& $Body)}ca
 $oldSystemRoot=$env:SystemRoot
 try {
     if(-not $env:SystemRoot){$env:SystemRoot=[IO.Path]::GetTempPath()}
+    Case-Wire 'capture-positive-control-cannot-qualify-product-tls' {
+        New-WireCase;$r=Invoke-NativeDNSCaptureControl $script:state
+        Assert-Wire ($r.outcome -ceq 'passed' -and $r.connected -and $r.eventEvidence.framePayloadIDs -eq 1 -and $r.captureBounded -and $r.originalStateVerified -and $r.filtersRemoved -and $r.originalResolverPassed -and $r.processes -eq $r.joined -and -not $script:running -and $script:filters.Count -eq 0 -and $script:rules.Count -eq 0)
+        Assert-Wire (-not $script:state.flags.tlsObserved -and (Get-NativeDNSWireSummary $script:state).outcome -ceq 'failed')
+    }
+    Case-Wire 'connected-control-without-frame-events-fails-and-cleans-up' {
+        New-WireCase;$script:fault='control-empty';$r=Invoke-NativeDNSCaptureControl $script:state
+        Assert-Wire ($r.outcome -ceq 'failed' -and $r.code -ceq 'frame-events-missing' -and $r.connected -and $r.eventEvidence.code -ceq 'complete' -and $r.eventEvidence.framePayloadIDs -eq 0 -and $r.originalStateVerified -and $r.filtersRemoved -and $r.originalResolverPassed -and -not $script:running)
+    }
+    Case-Wire 'refused-control-connection-still-stops-and-retires-capture' {
+        New-WireCase;$script:fault='control-connect';$r=Invoke-NativeDNSCaptureControl $script:state
+        Assert-Wire ($r.outcome -ceq 'failed' -and $r.code -ceq 'connect' -and -not $r.connected -and $r.captureStopped -and $r.originalStateVerified -and $r.filtersRemoved -and $r.processes -eq $r.joined -and -not $script:running)
+    }
+    Case-Wire 'positive-control-retains-filters-until-original-state-verified' {
+        New-WireCase;$script:restored=$false;$r=Invoke-NativeDNSCaptureControl $script:state
+        Assert-Wire ($r.outcome -ceq 'failed' -and $r.code -ceq 'cleanup' -and -not $r.originalStateVerified -and -not $r.filtersRemoved -and $script:filters.Count -eq 12 -and -not $script:running)
+        $script:restored=$true;Complete-NativeDNSWireCleanup $script:state;Assert-Wire ($script:filters.Count -eq 0)
+    }
     Case-Wire 'event-headers-partition-known-unknown-and-other-providers' {
         $r=New-NativeDNSWireEventEvidence 'complete';$p=[guid]'4d4f80d9-c8bd-4d73-bb5b-19c90402c5ac'
         Add-NativeDNSWireEventHeader $r $p 160 0;Add-NativeDNSWireEventHeader $r $p 170 1;Add-NativeDNSWireEventHeader $r $p 20 0;Add-NativeDNSWireEventHeader $r $p 999 $null;Add-NativeDNSWireEventHeader $r ([guid]::Empty) 160 0;Add-NativeDNSWireEventHeader $r $null 160 0

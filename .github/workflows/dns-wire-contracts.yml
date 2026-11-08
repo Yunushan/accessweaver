@@ -10,6 +10,8 @@ on:
       - 'scripts/test-dns-wire-native-contracts.ps1'
       - 'scripts/test-native-doh.ps1'
       - '.github/workflows/native-doh-wire.yml'
+      - 'scripts/test-native-capture-control.ps1'
+      - '.github/workflows/native-capture-control.yml'
   pull_request:
     paths:
       - 'scripts/dns-wire-*.cjs'
@@ -18,6 +20,8 @@ on:
       - 'scripts/test-dns-wire-native-contracts.ps1'
       - 'scripts/test-native-doh.ps1'
       - '.github/workflows/native-doh-wire.yml'
+      - 'scripts/test-native-capture-control.ps1'
+      - '.github/workflows/native-capture-control.yml'
   workflow_dispatch:
 
 permissions:

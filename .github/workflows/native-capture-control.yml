@@ -1,0 +1,74 @@
+name: Native Windows capture positive control
+
+on:
+  push:
+    branches: ['main', 'codex/dns-adapter-coverage']
+    paths:
+      - 'scripts/native-dns-wire.ps1'
+      - 'scripts/test-dns-wire-native-contracts.ps1'
+      - 'scripts/test-native-capture-control.ps1'
+      - 'scripts/dns-wire-*.cjs'
+      - 'scripts/dns-acceptance-state.ps1'
+      - '.github/workflows/native-capture-control.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-capture-control-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  control:
+    name: Capture positive control (windows/${{ matrix.goarch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {goarch: amd64, os: windows-latest, sdkarch: x64}
+          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      ACCESSWEAVER_EXPECT_GOOS: windows
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '26.8.2'
+          architecture: ${{ matrix.sdkarch }}
+          package-manager-cache: false
+      - name: Verify native Node host
+        run: |
+          node -e "const os=require('node:os');const arch={x64:'amd64',arm64:'arm64'}[process.arch];const host={x86_64:'amd64',amd64:'amd64',arm64:'arm64',aarch64:'arm64'}[os.machine().toLowerCase()];if(process.platform!=='win32'||process.version!=='v26.8.2'||arch!==host||arch!==process.env.ACCESSWEAVER_EXPECT_GOARCH)process.exit(1)"
+          if($LASTEXITCODE -ne 0){throw 'Native Node identity refused'}
+      - name: Verify source contracts before capture
+        run: |
+          $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-dns-wire-native-contracts.ps1 -RequireWindowsPowerShell
+          if($LASTEXITCODE -ne 0){throw 'Capture control source preflight failed'}
+      - name: Run isolated capture positive control
+        run: |
+          $ErrorActionPreference='Stop'
+          $evidence=Join-Path $env:RUNNER_TEMP ('accessweaver-capture-control-'+[Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $evidence -ErrorAction Stop | Out-Null
+          $env:ACCESSWEAVER_CAPTURE_CONTROL_EVIDENCE=$evidence
+          "ACCESSWEAVER_CAPTURE_CONTROL_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-capture-control.ps1 -ReportPath (Join-Path $evidence 'status.json')
+          if($LASTEXITCODE -ne 0){throw 'Isolated capture positive control failed; fixed metadata retained'}
+      - name: Retain fixed capture control metadata only
+        if: always() && env.ACCESSWEAVER_CAPTURE_CONTROL_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: capture-positive-control-windows-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_CAPTURE_CONTROL_EVIDENCE }}/status.json
+          if-no-files-found: error
+          retention-days: 7
