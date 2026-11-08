@@ -106,7 +106,7 @@ public static class AccessWeaverNetEventControlIdentity {
     $control.catalogEvidence=Get-NativeNDISCatalogEvidence $text
     if(-not (Test-NativeNDISCatalogEvidence $control.catalogEvidence)){throw 'NDIS provider catalog unresolved'}
     $catalog=$control.catalogEvidence
-    if($catalog.records -ne $e.records -or $catalog.fragmentRecords -ne $e.fragmentIDs -or $catalog.metadataRecords+$catalog.ruleRecords+$catalog.inventoryRecords+$catalog.lifecycleRecords+$catalog.unknownRecords -ne $e.unknownProviderIDs -or $catalog.otherProviderRecords -ne $e.otherProviderRecords -or $catalog.missingProviderIDs -ne $e.missingProviderIDs -or $catalog.unrecognizedVersions -ne $e.unrecognizedVersions){throw 'NDIS catalog enumeration disagrees'}
+    if($catalog.records -ne $e.records -or $catalog.fragmentRecords -ne $e.fragmentIDs -or $catalog.metadataRecords+$catalog.ruleRecords+$catalog.inventoryRecords+$catalog.lifecycleRecords+$catalog.rundownRecords+$catalog.unknownRecords -ne $e.unknownProviderIDs -or $catalog.otherProviderRecords -ne $e.otherProviderRecords -or $catalog.missingProviderIDs -ne $e.missingProviderIDs -or $catalog.unrecognizedVersions -ne $e.unrecognizedVersions){throw 'NDIS catalog enumeration disagrees'}
     if($control.eventEvidence.code -cne 'complete' -or $control.eventEvidence.fragmentIDs -le 0){$control.code='fragment-events-missing'}else{$control.code='none';$control.outcome='passed'}
 }catch{$control.operationEvidence=$script:lastEvidence;$control.outcome='failed';$control.code=if($script:lastOperationCode -cne 'none'){$script:lastOperationCode}else{$control.phase}}
 finally{

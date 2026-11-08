@@ -8,7 +8,7 @@ $PSModuleAutoLoadingPreference='None'
 $project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-netevent-control.ps1'),[ref]$tokens,[ref]$issues);if($issues.Count){throw 'Source syntax'}
-$allowed=@('Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
+$allowed=@('Add-NativeNDISTemplateTreeNode','Test-NativeNDISTemplateTree','Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
 foreach($def in $ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
     if($def.Name -cin @('Get-NativeNetEventEnums','Get-NativeNetEventInventory')){continue}
     foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin $allowed){throw 'Source command boundary'}}
@@ -166,7 +166,7 @@ Case-N 'catalog-unmapped-and-error-events-never-become-inventory' {
     $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=2;$r.recognizedDefinitions=2;$g=[guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef';$catalog=@{'1001:0'='fragment';'1016:0'='rules'}
     Add-NativeNDISCatalogHeader $r $catalog $g 1001 0;Add-NativeNDISCatalogHeader $r $catalog $g 1016 0;Assert-N (Test-NativeNDISCatalogEvidence (Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Compress)))
     Add-NativeNDISCatalogHeader $r $catalog $g 2001 0;Add-NativeNDISCatalogHeader $r $catalog $g 1001 1
-    $r.schemas=@(@{id=2001;version=0;level=-1;records=1;code='missing';fields=@();task='';opcode='';templateKind='missing'},@{id=1001;version=1;level=-1;records=1;code='missing';fields=@();task='';opcode='';templateKind='missing'})
+    $r.schemas=@(@{id=2001;version=0;level=-1;records=1;code='missing';fields=@();task='';opcode='';templateKind='missing';tree=@()},@{id=1001;version=1;level=-1;records=1;code='missing';fields=@();task='';opcode='';templateKind='missing';tree=@()})
     $v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.unknownRecords -eq 2 -and $v.unrecognizedVersions -eq 1 -and -not (Test-NativeNDISCatalogEvidence $v))
 }
 Case-N 'catalog-report-private-or-contradictory-fields-refused' {
@@ -187,13 +187,13 @@ Case-N 'catalog-shape-refuses-nested-or-private-definition-text' {
     foreach($template in @('<template xmlns="http://schemas.microsoft.com/win/2004/08/events"><data name="Field" inType="win:UInt32">PRIVATE-SYNTHETIC</data></template>','<template xmlns="http://schemas.microsoft.com/win/2004/08/events"><data name="PRIVATE/SYNTHETIC" inType="win:UInt32"/></template>','<!DOCTYPE template [<!ENTITY x SYSTEM "file:///PRIVATE-SYNTHETIC">]><template>&x;</template>')){Assert-N (@(Get-NativeNDISTemplateShape $template).Count -eq 0)}
 }
 Case-N 'catalog-unknown-definition-shapes-are-bounded-and-counted' {
-    $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=1;$r.records=2;$r.unknownRecords=2;$r.schemas=@(@{id=1001;version=0;level=4;records=2;code='projected';fields=@('Field:win:UInt32::');task='Task';opcode='win:Info';templateKind='data'})
+    $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=1;$r.records=2;$r.unknownRecords=2;$r.schemas=@(@{id=1001;version=0;level=4;records=2;code='projected';fields=@('Field:win:UInt32::');task='Task';opcode='win:Info';templateKind='data';tree=@()})
     $v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.code -ceq 'complete' -and $v.schemas.Count -eq 1 -and -not (Test-NativeNDISCatalogEvidence $v))
     $r.schemas[0].records=1;$v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.code -ceq 'invalid')
 }
 Case-N 'catalog-schema-projection-rejects-extra-fields-and-invalid-tokens' {
     foreach($fault in @('private','path','boolean','duplicate')){
-        $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=1;$r.records=1;$r.unknownRecords=1;$row=@{id=1001;version=0;level=4;records=1;code='projected';fields=@('Field:win:UInt32::');task='Task';opcode='win:Info';templateKind='data'};$r.schemas=@($row)
+        $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=1;$r.records=1;$r.unknownRecords=1;$row=@{id=1001;version=0;level=4;records=1;code='projected';fields=@('Field:win:UInt32::');task='Task';opcode='win:Info';templateKind='data';tree=@()};$r.schemas=@($row)
         switch($fault){'private'{$row['private']='PRIVATE-SYNTHETIC'}'path'{$row.fields=@('PRIVATE/SYNTHETIC:win:UInt32::')}'boolean'{$row.id=$false}'duplicate'{$r.schemas=@($row,$row)}}
         $v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.code -ceq 'invalid' -and -not (($v | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))
     }
@@ -221,6 +221,36 @@ Case-N 'static-template-kind-does-not-infer-empty-or-structured-data' {
 Case-N 'catalog-loader-keeps-private-input-encoded-and-command-line-bounded' {
     $body=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String((Get-NativeNDISCatalogLoader "PRIVATE-SYNTHETIC-'`nthrow 'never'" "PRIVATE-SYNTHETIC-'`nthrow 'never'")));$t=$null;$e=$null;[void][Management.Automation.Language.Parser]::ParseInput($body,[ref]$t,[ref]$e)
     Assert-N ($e.Count -eq 0 -and -not $body.Contains('PRIVATE-SYNTHETIC') -and $body.Contains('Get-NativeNDISCatalogProgram') -and $body.Length -lt 4096 -and -not $body.Contains('FormatDescription'))
+}
+
+
+function TreeTemplate-N {
+    return '<template xmlns="http://schemas.microsoft.com/win/2004/08/events"><data name="Count" inType="win:UInt32"/><struct name="Rows" count="Count"><data name="Code" inType="win:UInt32"/><data name="Value" inType="win:UInt64"/></struct></template>'
+}
+Case-N 'rundown-schema-recognition-requires-exact-primary-types-and-level' {
+    $fields='SourceId:UInt8|RundownId:UInt32|Param1:UInt64|Param2:UInt64|ParamStr:UnicodeString|Description:UnicodeString'
+    Assert-N ((Get-NativeNDISCatalogClass 5100 0 4 (Template-N $fields)) -ceq 'rundown')
+    Assert-N ((Get-NativeNDISCatalogClass 5100 0 2 (Template-N $fields)) -ceq 'unknown');Assert-N ((Get-NativeNDISCatalogClass 5100 1 4 (Template-N $fields)) -ceq 'unknown')
+    Assert-N ((Get-NativeNDISCatalogClass 5100 0 4 (Template-N $fields.Replace('Param2:UInt64','Param2:UInt32'))) -ceq 'unknown')
+}
+Case-N 'static-schema-tree-preserves-ordered-structure-and-count-reference' {
+    $tree=@(Get-NativeNDISTemplateTree (TreeTemplate-N));Assert-N ($tree.Count -eq 5 -and $tree[0] -ceq 'D:Count:win:UInt32::' -and $tree[1] -ceq 'S:Rows::Count' -and $tree[4] -ceq 'E:Rows' -and (Test-NativeNDISTemplateTree $tree))
+}
+Case-N 'static-schema-tree-refuses-external-content-depth-and-size' {
+    foreach($template in @('<!DOCTYPE template [<!ENTITY x SYSTEM "file:///PRIVATE-SYNTHETIC">]><template>&x;</template>',('<template xmlns="http://schemas.microsoft.com/win/2004/08/events">'+('<struct name="Rows">'*5)+'<data name="Value" inType="win:UInt32"/>'+('</struct>'*5)+'</template>'),('x'*8193),'<template xmlns="http://schemas.microsoft.com/win/2004/08/events"><data name="Value" inType="win:UInt32">PRIVATE-SYNTHETIC</data></template>')){Assert-N (@(Get-NativeNDISTemplateTree $template).Count -eq 0)}
+}
+Case-N 'static-schema-tree-closed-grammar-requires-balanced-bounded-nesting' {
+    foreach($tree in @(@('S:Rows::Count','E:Other'),@('E:Rows'),@('S:Rows::Count'),@('D:PRIVATE/SYNTHETIC:win:UInt32::'),@('S:A::','S:B::','S:C::','S:D::','E:D','E:C','E:B','E:A'),@('D:Value:win:UInt32::')*49)){Assert-N (-not (Test-NativeNDISTemplateTree $tree))}
+}
+Case-N 'structured-definition-projection-never-implies-catalog-recognition' {
+    $template=TreeTemplate-N;Assert-N ((Get-NativeNDISCatalogClass 5101 0 4 $template) -ceq 'unknown')
+    $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=1;$r.records=1;$r.unknownRecords=1;$r.schemas=@(@{id=5101;version=0;level=4;records=1;code='unsupported';fields=@();task='';opcode='win:Info';templateKind='structured';tree=@(Get-NativeNDISTemplateTree $template)})
+    $v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.code -ceq 'complete' -and $v.unknownRecords -eq 1 -and -not (Test-NativeNDISCatalogEvidence $v))
+}
+Case-N 'rundown-count-remains-separate-and-contradictions-are-refused' {
+    $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=1;$r.recognizedDefinitions=1;Add-NativeNDISCatalogHeader $r @{'5100:0'='rundown'} ([guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef') 5100 0
+    $v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.code -ceq 'complete' -and $v.rundownRecords -eq 1 -and $v.inventoryRecords -eq 0)
+    $r.rundownRecords=2;Assert-N ((Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress)).code -ceq 'invalid')
 }
 
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}
