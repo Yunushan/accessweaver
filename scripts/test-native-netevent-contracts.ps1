@@ -5,10 +5,10 @@ if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-host
 if($RequireWindowsPowerShell -and ($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1)){throw 'Stock source shell required'}
 foreach($name in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management')){Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$name,($name+'.psd1'))) -ErrorAction Stop}
 $PSModuleAutoLoadingPreference='None'
-$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-offload-state.ps1','scripts/read-native-offload-state.ps1','scripts/ndis-tls-control.cjs','scripts/dns-wire-stdin.cjs','scripts/extract-native-ndis.ps1','scripts/ndis-private-convert.cjs','scripts/dns-wire-evidence.cjs','scripts/ndis-frame-converter.cjs','scripts/test-ndis-frame-converter.cjs','scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
+$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/offload-control-operation.ps1','scripts/native-offload-state.ps1','scripts/read-native-offload-state.ps1','scripts/ndis-tls-control.cjs','scripts/dns-wire-stdin.cjs','scripts/extract-native-ndis.ps1','scripts/ndis-private-convert.cjs','scripts/dns-wire-evidence.cjs','scripts/ndis-frame-converter.cjs','scripts/test-ndis-frame-converter.cjs','scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-netevent-control.ps1'),[ref]$tokens,[ref]$issues);if($issues.Count){throw 'Source syntax'}
-$allowed=@('Get-NativeOffloadRaw','New-NativeOffloadEvidence','New-NativeNDISTlsStimulusEvidence','New-NativeNDISTlsWireEvidence','New-NativeNDISExtractionEvidence','New-NativeNDISConversionEvidence','Get-NativeNDISTemplateTree','Add-NativeNDISTemplateTreeNode','Test-NativeNDISTemplateTree','Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
+$allowed=@('Read-NativeOffloadAdapterSnapshot','New-NativeOffloadChangeEvidence','Get-NativeOffloadRaw','New-NativeOffloadEvidence','New-NativeNDISTlsStimulusEvidence','New-NativeNDISTlsWireEvidence','New-NativeNDISExtractionEvidence','New-NativeNDISConversionEvidence','Get-NativeNDISTemplateTree','Add-NativeNDISTemplateTreeNode','Test-NativeNDISTemplateTree','Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
 foreach($sourceFile in @('native-netevent-control.ps1','native-offload-state.ps1')){
     $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $sourceFile),[ref]$tokens,[ref]$issues);if($issues.Count){throw 'Source syntax'}
 foreach($def in $ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
@@ -367,6 +367,52 @@ Case-N 'readonly-offload-public-summary-excludes-identifiers-and-mutations' {
 Case-N 'readonly-offload-entry-never-invokes-a-setter-or-restart' {
     $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'read-native-offload-state.ps1'),[ref]$tokens,[ref]$issues);Assert-N ($issues.Count -eq 0)
     foreach($command in $ast.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){Assert-N ($command.GetCommandName() -cnotin @('Set-NetAdapterLso','Enable-NetAdapterLso','Disable-NetAdapterLso','Restart-NetAdapter','Disable-NetAdapter','Enable-NetAdapter'))}
+}
+
+
+function OffloadChangeReply-N([string]$Operation) {
+    $r=New-NativeOffloadChangeEvidence $Operation;$r.code='none';$r.identityVerified=$true;$r.changeRequired=$true;$r.changeAttempted=$true;$r.changed=$true;$r.readbackVerified=$true;$r.preservedOthers=$true;$r.originalIPv4=$true;$r.currentIPv4=($Operation -ceq 'restore');$r.restored=($Operation -ceq 'restore');return $r
+}
+Case-N 'offload-restoration-binds-guid-after-interface-index-and-name-change' {
+    $v=OffloadInputs-N;$a=Read-NativeOffloadBinding $v.routes $v.adapters $v.settings
+    $v.adapters[0].CimInstanceProperties['InterfaceIndex'].Value=[uint32]9;$v.adapters[0].CimInstanceProperties['Name'].Value='source-renamed';$v.settings[0].CimInstanceProperties['Name'].Value='source-renamed'
+    $b=Read-NativeOffloadOwnerSnapshot $v.adapters $v.settings $a.guid;Assert-N ((Test-NativeOffloadOwner $a $b) -and $b.index -eq 9 -and -not (Test-NativeOffloadBindingEqual $a $b))
+}
+Case-N 'offload-restoration-refuses-missing-or-ambiguous-owner-guid' {
+    foreach($fault in @('foreign','duplicate')){$v=OffloadInputs-N;$a=Read-NativeOffloadBinding $v.routes $v.adapters $v.settings;if($fault -ceq 'foreign'){$v.adapters[0].CimInstanceProperties['InterfaceGuid'].Value='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'}else{$v.adapters+=@($v.adapters[0])};Reject-N {Read-NativeOffloadOwnerSnapshot $v.adapters $v.settings $a.guid}}
+}
+Case-N 'offload-restoration-owner-and-other-modes-cannot-drift' {
+    $v=OffloadInputs-N;$a=Read-NativeOffloadBinding $v.routes $v.adapters $v.settings
+    foreach($key in @('guid','description','instance')){$b=$a.Clone();$b[$key]='source-foreign';Assert-N (-not (Test-NativeOffloadOwner $a $b))}
+    foreach($key in @('maximumVersion','V1IPv4Enabled','IPv6Enabled')){$b=$a.Clone();$b[$key]=if($key -ceq 'maximumVersion'){1}else{-not $a[$key]};Assert-N (-not (Test-NativeOffloadOtherSettings $a $b))}
+    $b=$a.Clone();$b.IPv4Enabled=$false;Assert-N (Test-NativeOffloadOtherSettings $a $b)
+}
+Case-N 'offload-setter-selects-one-exact-instance-name-and-description' {
+    $v=OffloadInputs-N;$a=Read-NativeOffloadBinding $v.routes $v.adapters $v.settings;Assert-N ((Select-NativeOffloadSetting $a $v.settings) -eq $v.settings[0])
+    foreach($key in @('InstanceID','Name','InterfaceDescription')){$v=OffloadInputs-N;$v.settings[0].CimInstanceProperties[$key].Value='source-foreign';Reject-N {Select-NativeOffloadSetting $a $v.settings}}
+    $v=OffloadInputs-N;Reject-N {Select-NativeOffloadSetting $a @($v.settings[0],$v.settings[0])}
+}
+Case-N 'offload-stage-and-restore-evidence-require-fresh-complete-readback' {
+    foreach($op in @('stage','restore')){$r=OffloadChangeReply-N $op;Assert-N ((Get-NativeOffloadChangeEvidence ($r | ConvertTo-Json -Compress) $op).code -ceq 'none')
+        foreach($field in @('identityVerified','readbackVerified','preservedOthers')){$r=OffloadChangeReply-N $op;$r[$field]=$false;Assert-N ((Get-NativeOffloadChangeEvidence ($r | ConvertTo-Json -Compress) $op).code -ceq 'invalid')}
+    }
+    $r=OffloadChangeReply-N 'restore';$r.currentIPv4=$false;Assert-N ((Get-NativeOffloadChangeEvidence ($r | ConvertTo-Json -Compress) 'restore').code -ceq 'invalid')
+}
+Case-N 'offload-change-evidence-excludes-private-fields-and-false-success' {
+    $r=OffloadChangeReply-N 'stage';$r['private']='PRIVATE-SYNTHETIC';$v=Get-NativeOffloadChangeEvidence ($r | ConvertTo-Json -Compress) 'stage';Assert-N ($v.code -ceq 'invalid' -and -not (($v | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))
+    $r=New-NativeOffloadChangeEvidence 'restore';$r.code='not-staged';$r.restored=$true;Assert-N ((Get-NativeOffloadChangeEvidence ($r | ConvertTo-Json -Compress) 'restore').code -ceq 'not-staged');$r.changeAttempted=$true;Assert-N ((Get-NativeOffloadChangeEvidence ($r | ConvertTo-Json -Compress) 'restore').code -ceq 'invalid')
+    $r=OffloadChangeReply-N 'stage';$r.currentIPv4=$true;Assert-N ((Get-NativeOffloadChangeEvidence ($r | ConvertTo-Json -Compress) 'stage').code -ceq 'invalid')
+}
+Case-N 'offload-instrumentation-setters-require-exact-object-and-no-restart' {
+    $t=$null;$e=$null;$a=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'offload-control-operation.ps1'),[ref]$t,[ref]$e);Assert-N ($e.Count -eq 0);$setters=0
+    foreach($c in $a.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){
+        Assert-N ($c.GetCommandName() -cnotin @('Enable-NetAdapterLso','Disable-NetAdapterLso','Restart-NetAdapter','Disable-NetAdapter','Enable-NetAdapter','Set-NetAdapterAdvancedProperty'))
+        if($c.GetCommandName() -ceq 'Set-NetAdapterLso'){$setters++;$p=@($c.CommandElements | Where-Object {$_ -is [Management.Automation.Language.CommandParameterAst]} | ForEach-Object {$_.ParameterName});Assert-N ('InputObject' -cin $p -and 'IPv4Enabled' -cin $p -and 'NoRestart' -cin $p -and 'Confirm' -cin $p -and 'Name' -cnotin $p)}
+    };Assert-N ($setters -eq 2)
+}
+Case-N 'offload-plan-is-durable-before-mutation-and-restored-before-retirement' {
+    $body=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'offload-control-operation.ps1'));Assert-N ($body.IndexOf('FileMode]::CreateNew') -lt $body.IndexOf('Set-NetAdapterLso') -and $body.IndexOf('$stream.Flush($true)') -lt $body.IndexOf('Set-NetAdapterLso') -and $body.Contains("Read-NativeOffloadOwnerSnapshot $"+'inventory.adapters'))
+    $driver=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-native-netevent-control.ps1'));$cleanup=$driver.Substring($driver.IndexOf("`nfinally{"));Assert-N ($cleanup.IndexOf("Invoke-NativeOffloadOperation 'restore'") -lt $cleanup.IndexOf("Invoke-NativeNDISOperation 'remove'") -and $cleanup.Contains("if(-not $"+'offloadRestored)'))
 }
 
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}
