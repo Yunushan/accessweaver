@@ -25,8 +25,8 @@ $definitions=@($ast.EndBlock.Statements)
 $tokens=$null;$issues=$null;$coordinator=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-doh-scenario.ps1'),[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Native coordinator source did not parse'}
 $definitions+=@($coordinator.EndBlock.Statements)
-$selected=@('Invoke-NativeDoHScenario','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
-$allowed=$selected+@('Get-NetAdapter','Get-ItemProperty','Get-DnsClientServerAddress','Get-Command','Get-DnsClientDohServerAddress','Where-Object','Get-Service','Clear-DnsClientCache','Resolve-DnsName')
+$selected=@('Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
+$allowed=$selected+@('ConvertTo-Json','Get-NetAdapter','Get-ItemProperty','Get-DnsClientServerAddress','Get-Command','Get-DnsClientDohServerAddress','Where-Object','Get-Service','Clear-DnsClientCache','Resolve-DnsName')
 foreach($name in $selected){
     $nodes=@($definitions | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Acceptance helper function unavailable'}
@@ -38,7 +38,7 @@ foreach($name in $selected){
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
 $script:checks=0;$script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
+$script:closedContractCodes=@('capture-identity-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
 function Assert-A([bool]$Value,[string]$Code){if(-not $Value){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('Acceptance contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-A([scriptblock]$Operation){$failed=$false;try{& $Operation | Out-Null}catch{$failed=$true};Assert-A $failed 'expected-refusal'}
 $script:g1='abcdef00-0000-0000-0000-000000000001';$script:g2='abcdef00-0000-0000-0000-000000000002'
@@ -51,28 +51,39 @@ function New-AData {
 function Original-ADoh {return [pscustomobject]@{ServerAddress='192.0.2.90';DohTemplate='https://original.invalid/dns-query';AllowFallbackToUdp=$true;AutoUpgrade=$false}}
 function New-ACase {
     $script:adapters=@([pscustomobject]@{InterfaceGuid=$script:g1;ifIndex=77;Status='Up';InterfaceDescription='Fixture adapter'},[pscustomobject]@{InterfaceGuid=$script:g2;ifIndex=88;Status='Down';InterfaceDescription='Second fixture adapter'})
-    $script:data=New-AData;$script:doh=@((Original-ADoh));$script:available=$true;$script:registryFailure='';$script:dnsFailure='';$script:dohFailure=$false
+    $script:renumberAfterInventory=$false;$script:exposure=@{};$script:registryAbsent=@{};$script:registryValues=@{};$script:data=New-AData;$script:doh=@((Original-ADoh));$script:available=$true;$script:registryFailure='';$script:dnsFailure='';$script:dohFailure=$false
     $script:resolveFailure=$false;$script:operationFailure=$false;$script:restoreFailure=$false;$script:serviceStatus='Running';$script:actions=[Collections.Generic.List[string]]::new();$script:dnsReads=0
 }
 function Clone-A([object]$Value){return Microsoft.PowerShell.Utility\ConvertFrom-Json -InputObject (Microsoft.PowerShell.Utility\ConvertTo-Json -InputObject $Value -Depth 14)}
 function Get-NetAdapter {[CmdletBinding()]param();foreach($a in $script:adapters){[pscustomobject]@{InterfaceGuid=$a.InterfaceGuid;ifIndex=$a.ifIndex;Status=$a.Status;InterfaceDescription=$a.InterfaceDescription}}}
-function Get-ItemProperty {
-    [CmdletBinding()]param([string]$LiteralPath)
-    if($LiteralPath -notmatch '^HKLM:\\SYSTEM\\CurrentControlSet\\Services\\(Tcpip6?)\\Parameters\\Interfaces\\\{([a-f0-9-]{36})\}$'){throw 'Unexpected acceptance registry path'}
-    $family=if($Matches[1] -ceq 'Tcpip'){'IPv4'}else{'IPv6'};$guid=$Matches[2]
-    if(-not $script:data.ContainsKey($guid) -or $script:registryFailure -ceq $family){throw 'fixture-registry-inspection'}
-    $mode=if($family -ceq 'IPv4'){$script:data[$guid].mode4}else{$script:data[$guid].mode6}
-    if($mode -ceq 'dhcp'){return [pscustomobject]@{}}
-    if($mode -ceq 'malformed'){return [pscustomobject]@{NameServer=42}}
-    return [pscustomobject]@{NameServer='fixture-static-mode'}
+function Read-DNSAcceptanceRegistry([string]$Guid,[string]$Family) {
+    if(-not $script:data.ContainsKey($Guid) -or $script:registryFailure -ceq $Family){throw 'fixture-registry-inspection'}
+    $key=$Guid+'/'+$Family
+    if($script:registryAbsent.ContainsKey($key) -and $script:registryAbsent[$key]){return @{present=$false;hasValue=$false;kind='absent';value=$null}}
+    $mode=if($Family -ceq 'IPv4'){$script:data[$Guid].mode4}else{$script:data[$Guid].mode6}
+    if($mode -ceq 'dhcp'){return @{present=$true;hasValue=$false;kind='absent';value=$null}}
+    if($mode -ceq 'malformed'){return @{present=$true;hasValue=$true;kind='DWord';value=42}}
+    return @{present=$true;hasValue=$true;kind='String';value=$(if($script:registryValues.ContainsKey($key)){$script:registryValues[$key]}else{'fixture-static-mode'})}
 }
 function Get-DnsClientServerAddress {
     [CmdletBinding()]param($InterfaceIndex,$AddressFamily)
-    $script:dnsReads++;if($script:dnsFailure -ceq 'empty'){return}
-    $a=@($script:adapters | Where-Object {$_.ifIndex -eq $InterfaceIndex});if($a.Count -ne 1){throw 'fixture-address-identity'}
-    $guid=([guid]$a[0].InterfaceGuid).ToString('D');$values=if($AddressFamily -ceq 'IPv4'){@($script:data[$guid].servers4)}else{@($script:data[$guid].servers6)}
-    $result=[pscustomobject]@{ServerAddresses=@($values)}
-    if($script:dnsFailure -ceq 'duplicate'){return @($result,$result)};return $result
+    $script:dnsReads++
+    if($script:dnsFailure -ceq 'failure'){throw 'fixture-client-inventory-failed'}
+    if($script:dnsFailure -ceq 'empty'){return}
+    foreach($a in $script:adapters){
+        if($null -ne $InterfaceIndex -and $a.ifIndex -ne $InterfaceIndex){continue}
+        $guid=([guid]$a.InterfaceGuid).ToString('D')
+        foreach($family in @('IPv4','IPv6')){
+            if($AddressFamily -and $family -cne $AddressFamily){continue}
+            $key=$guid+'/'+$family
+            if($script:exposure.ContainsKey($key) -and -not $script:exposure[$key]){continue}
+            $values=if($family -ceq 'IPv4'){@($script:data[$guid].servers4)}else{@($script:data[$guid].servers6)}
+            $result=[pscustomobject]@{InterfaceIndex=$a.ifIndex;AddressFamily=$(if($family -ceq 'IPv4'){2}else{23});ServerAddresses=@($values)}
+            $result
+            if($script:dnsFailure -ceq 'duplicate'){$result}
+        }
+    }
+    if($null -eq $InterfaceIndex -and $script:renumberAfterInventory){$script:adapters[0].ifIndex=101;$script:renumberAfterInventory=$false}
 }
 function Get-Command {[CmdletBinding()]param([string]$Name);if($Name -cne 'Get-DnsClientDohServerAddress'){throw 'Unexpected acceptance command discovery'};if($script:available){return [pscustomobject]@{Name=$Name}}}
 function Get-DnsClientDohServerAddress {[CmdletBinding()]param();if($script:dohFailure){throw 'fixture-doh-inspection'};return $script:doh}
@@ -107,12 +118,12 @@ try {
     New-ACase;$script:data[$script:g1].servers6=@('fe80::53%77');$before=Read-DNSAcceptanceState;$script:adapters[0].ifIndex=101;$script:data[$script:g1].servers6=@('fe80::53%101')
     Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState);Assert-A ($before.adapters[0].ipv6.servers[0] -ceq 'fe80::53') 'link-local-scope-follows-guid'
     $script:data[$script:g1].servers6=@('fe80::53%77');Reject-A {Read-DNSAcceptanceState}
-    foreach($failure in @('registry4','registry6','dns-empty','dns-duplicate','doh','doh-duplicate','doh-flags','duplicate-guid','invalid-guid','empty-inventory','malformed-mode')){
+    foreach($failure in @('registry4','registry6','dns-failure','dns-duplicate','doh','doh-duplicate','doh-flags','duplicate-guid','invalid-guid','empty-inventory','malformed-mode')){
         New-ACase
         switch($failure){
             'registry4' {$script:registryFailure='IPv4'}
             'registry6' {$script:registryFailure='IPv6'}
-            'dns-empty' {$script:dnsFailure='empty'}
+            'dns-failure' {$script:dnsFailure='failure'}
             'dns-duplicate' {$script:dnsFailure='duplicate'}
             'doh' {$script:dohFailure=$true}
             'doh-duplicate' {$script:doh+=@($script:doh[0])}
@@ -188,6 +199,22 @@ try {
     Assert-A ($null -ne $aggregate -and $aggregate.InnerExceptions.Count -eq 2 -and ($script:actions -join ',') -ceq 'dns,dns-restore') 'operation-and-cleanup-errors-retained'
     New-ACase;$script:registryFailure='IPv4';Reject-A {Invoke-DNSAcceptanceRoundTrip 'doh' $script:applyFixture};Assert-A ($script:actions.Count -eq 0) 'capture-failure-no-operation'
     New-ACase;Reject-A {Invoke-DNSAcceptanceRoundTrip 'invalid' $script:applyFixture};Assert-A ($script:actions.Count -eq 0 -and $script:dnsReads -eq 0) 'invalid-method-no-operation'
+    New-ACase;$script:adapters[1].Status='Up';$script:exposure[$script:g2+'/IPv4']=$false;$script:exposure[$script:g2+'/IPv6']=$false;$script:registryAbsent[$script:g2+'/IPv4']=$true;$script:registryAbsent[$script:g2+'/IPv6']=$true
+    $before=Read-DNSAcceptanceState
+    Assert-A (-not $before.adapters[1].selected -and $before.adapters[1].ipv4.mode -ceq 'not-exposed' -and $before.adapters[1].ipv6.mode -ceq 'not-exposed' -and $before.adapters[1].ipv4.registryHash -match '^[a-f0-9]{64}$') 'unexposed-state-not-selected'
+    Set-AConfigured 'doh';Assert-DNSAcceptanceConfigured $before (Read-DNSAcceptanceState) 'doh';$script:data=New-AData;$script:doh=@((Original-ADoh));Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState);Assert-A $true 'unexposed-state-preserved'
+    $script:registryFailure='IPv4';Reject-A {Read-DNSAcceptanceState};Assert-A ($script:actions.Count -eq 0) 'unexposed-access-refused'
+    New-ACase;$script:exposure[$script:g2+'/IPv4']=$false;$before=Read-DNSAcceptanceState;$script:registryValues[$script:g2+'/IPv4']='changed dormant configuration'
+    Reject-A {Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState)};Assert-A $true 'unexposed-registry-change-refused'
+    foreach($family in @('IPv4','IPv6')){
+        New-ACase;$other=if($family -ceq 'IPv4'){'IPv6'}else{'IPv4'};$script:exposure[$script:g1+'/'+$other]=$false;$before=Read-DNSAcceptanceState
+        Set-AConfigured 'doh';if($other -ceq 'IPv4'){$script:data[$script:g1].mode4='dhcp'}
+        Assert-DNSAcceptanceConfigured $before (Read-DNSAcceptanceState) 'doh';Assert-A $true 'single-family-configured-state'
+    }
+    New-ACase;$script:dnsFailure='failure';$capturePhase='';$refused=$false
+    try{[void](Read-DNSAcceptanceState ([ref]$capturePhase))}catch{$refused=$true}
+    Assert-A ($refused -and $capturePhase -ceq 'dns-inventory') 'client-inventory-failure-phase'
+    New-ACase;$script:renumberAfterInventory=$true;Reject-A {Read-DNSAcceptanceState};Assert-A ($script:actions.Count -eq 0) 'capture-identity-change-refused'
     New-ACase;$capturePhase='';[void](Read-DNSAcceptanceState ([ref]$capturePhase));Assert-A ($capturePhase -ceq 'complete') 'capture-stage-complete'
     New-ACase;$script:registryFailure='IPv6';$capturePhase='';$refused=$false
     try{[void](Read-DNSAcceptanceState ([ref]$capturePhase))}catch{$refused=$true}

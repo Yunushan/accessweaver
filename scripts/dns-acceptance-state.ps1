@@ -16,47 +16,73 @@ function Convert-DNSAcceptanceAddress([object]$Value,[string]$Family,[int]$Inter
     }
     return $parsed.ToString()
 }
+function Read-DNSAcceptanceRegistry([string]$Guid,[string]$Family) {
+    $service=if($Family -ceq 'IPv4'){'Tcpip'}else{'Tcpip6'};$key=$null
+    try {
+        $key=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(('SYSTEM\CurrentControlSet\Services\'+$service+'\Parameters\Interfaces\{'+$Guid+'}'))
+        if($null -eq $key){return @{present=$false;hasValue=$false;kind='absent';value=$null}}
+        $hasValue=@($key.GetValueNames()) -icontains 'NameServer'
+        if(-not $hasValue){return @{present=$true;hasValue=$false;kind='absent';value=$null}}
+        return @{present=$true;hasValue=$true;kind=$key.GetValueKind('NameServer').ToString();value=$key.GetValue('NameServer',$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)}
+    } finally {if($null -ne $key){$key.Close()}}
+}
+function Get-DNSAcceptanceRegistryHash([object]$Registry) {
+    $ordered=[ordered]@{present=$Registry.present;hasValue=$Registry.hasValue;kind=$Registry.kind;value=$Registry.value}
+    $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($ordered|ConvertTo-Json -Compress -Depth 6))
+    if($bytes.Length -gt 65536){throw 'DNS acceptance dormant registry state exceeds its bound'}
+    $hash=[Security.Cryptography.SHA256]::Create()
+    try{return [BitConverter]::ToString($hash.ComputeHash($bytes)).Replace('-','').ToLowerInvariant()}finally{$hash.Dispose()}
+}
 function Read-DNSAcceptanceState([ref]$Stage,[ref]$Progress) {
     if($null -ne $Stage){$Stage.Value='inventory'}
     $inventory=@(Get-NetAdapter -ErrorAction Stop)
     if($null -ne $Progress){$Progress.Value=@{adapterTotal=$inventory.Count;adapterOrdinal=0;selected=$false}}
     if($inventory.Count -eq 0){throw 'DNS acceptance adapter inventory is empty'}
+    if($null -ne $Stage){$Stage.Value='dns-inventory'}
+    # Independent full inventory. Successful absence is an explicit state, never
+    # inferred from a failed per-interface lookup or a missing registry key.
+    $addresses=@(Get-DnsClientServerAddress -ErrorAction Stop);$clientIndex=@{}
+    foreach($entry in $addresses){
+        $index=[uint32]0
+        if($null -eq $entry -or -not [uint32]::TryParse([string]$entry.InterfaceIndex,[ref]$index) -or $index -eq 0){throw 'DNS acceptance client identity malformed'}
+        $family=switch([string]$entry.AddressFamily){ {$_ -in @('2','IPv4','InterNetwork')} {'IPv4'} {$_ -in @('23','IPv6','InterNetworkV6')} {'IPv6'} default {throw 'DNS acceptance client family malformed'}}
+        $key=([string]$index)+'/'+$family
+        if($clientIndex.ContainsKey($key)){throw 'DNS acceptance client family duplicated'};$clientIndex[$key]=$entry
+    }
     $known=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase);$adapters=@()
     foreach($adapter in $inventory){
         if($null -ne $Progress){$Progress.Value.adapterOrdinal++;$Progress.Value.selected=($adapter.Status -eq 'Up' -and $adapter.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN')}
         $guid=Convert-DNSAcceptanceGuid ([string]$adapter.InterfaceGuid)
         if(-not $known.Add($guid)){throw 'Duplicate DNS acceptance adapter identity'}
-        $families=@{}
+        $current=@(Get-NetAdapter -ErrorAction Stop | Where-Object {(Convert-DNSAcceptanceGuid ([string]$_.InterfaceGuid)) -ceq $guid})
+        if($current.Count -ne 1 -or $current[0].ifIndex -ne $adapter.ifIndex){throw 'DNS acceptance adapter changed during capture'}
+        $families=@{};$exposed=$false
         foreach($family in @('IPv4','IPv6')){
-            $service=if($family -eq 'IPv4'){'Tcpip'}else{'Tcpip6'}
-            $path='HKLM:\SYSTEM\CurrentControlSet\Services\'+$service+'\Parameters\Interfaces\{'+$guid+'}'
-            if($null -ne $Stage){$Stage.Value=if($family -ceq 'IPv4'){'registry-ipv4'}else{'registry-ipv6'}}
-            try {$items=@(Get-ItemProperty -LiteralPath $path -ErrorAction Stop)} catch {
-                if($null -ne $Stage){
-                    $kind=if($_.CategoryInfo.Category -eq [Management.Automation.ErrorCategory]::ObjectNotFound){'missing'}elseif($_.CategoryInfo.Category -in @([Management.Automation.ErrorCategory]::PermissionDenied,[Management.Automation.ErrorCategory]::SecurityError)){'access'}else{'error'}
-                    $Stage.Value='registry-'+$kind+'-'+$family.ToLowerInvariant()
-                }
-                throw
+            if($null -ne $Stage){$Stage.Value='registry-'+$family.ToLowerInvariant()}
+            try {$registry=Read-DNSAcceptanceRegistry $guid $family} catch {
+                if($null -ne $Stage){$Stage.Value='registry-error-'+$family.ToLowerInvariant()};throw
             }
-            if($null -ne $Stage){$Stage.Value='registry-shape-'+$family.ToLowerInvariant()}
-            if($items.Count -ne 1 -or $null -eq $items[0]){throw 'DNS acceptance registry inspection incomplete'}
+            $key=([string]$adapter.ifIndex)+'/'+$family
+            if(-not $clientIndex.ContainsKey($key)){
+                $families[$family]=@{mode='not-exposed';servers=@();registryHash=(Get-DNSAcceptanceRegistryHash $registry)}
+                continue
+            }
+            $exposed=$true
+            if(-not $registry.present){throw 'DNS acceptance exposed-family registry state is missing'}
             if($null -ne $Stage){$Stage.Value='registry-mode-'+$family.ToLowerInvariant()}
-            $property=$items[0].PSObject.Properties['NameServer'];$value=if($null -ne $property){$property.Value}else{$null}
+            $value=$registry.value
             if($null -ne $value -and $value -isnot [string]){throw 'DNS acceptance registry mode is malformed'}
-            $mode=if([string]::IsNullOrWhiteSpace($value)){'dhcp'}else{'static'}
-            if($null -ne $Stage){$Stage.Value=if($family -ceq 'IPv4'){'servers-ipv4'}else{'servers-ipv6'}}
-            $settings=@(Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily $family -ErrorAction Stop)
-            if($settings.Count -ne 1 -or $null -eq $settings[0]){throw 'DNS acceptance address inspection incomplete'}
-            $servers=@()
-            if($mode -eq 'static'){
-                foreach($address in @($settings[0].ServerAddresses)){$servers+=@(Convert-DNSAcceptanceAddress $address $family $adapter.ifIndex)}
+            $mode=if([string]::IsNullOrWhiteSpace($value)){'dhcp'}else{'static'};$servers=@()
+            if($null -ne $Stage){$Stage.Value='servers-'+$family.ToLowerInvariant()}
+            if($mode -ceq 'static'){
+                foreach($address in @($clientIndex[$key].ServerAddresses)){$servers+=@(Convert-DNSAcceptanceAddress $address $family $adapter.ifIndex)}
                 if($servers.Count -eq 0){throw 'DNS acceptance static servers are missing'}
             }
-            # DHCP leases can legitimately supply different servers after reboot.
-            # The independent registry read proves reset mode, not lease equality.
             $families[$family]=@{mode=$mode;servers=@($servers)}
         }
-        $adapters+=@{guid=$guid;selected=($adapter.Status -eq 'Up' -and $adapter.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN');ipv4=$families.IPv4;ipv6=$families.IPv6}
+        $selected=($exposed -and $adapter.Status -eq 'Up' -and $adapter.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN')
+        if($null -ne $Progress){$Progress.Value.selected=$selected}
+        $adapters+=@{guid=$guid;selected=$selected;ipv4=$families.IPv4;ipv6=$families.IPv6}
     }
     if($null -ne $Stage){$Stage.Value='doh-capability'}
     $available=[bool](Get-Command 'Get-DnsClientDohServerAddress' -ErrorAction SilentlyContinue)
@@ -81,11 +107,13 @@ function Get-DNSAcceptanceIndex([object]$State) {
         if($adapters.ContainsKey($guid) -or $record.selected -isnot [bool]){throw 'DNS acceptance adapter state is duplicated or malformed'}
         foreach($family in @('IPv4','IPv6')){
             $item=if($family -eq 'IPv4'){$record.ipv4}else{$record.ipv6}
-            if($null -eq $item -or $item.mode -cnotin @('dhcp','static')){throw 'DNS acceptance saved mode is invalid'}
+            if($null -eq $item -or $item.mode -cnotin @('dhcp','static','not-exposed')){throw 'DNS acceptance saved mode is invalid'}
             $servers=@($item.servers)
-            if(($item.mode -ceq 'dhcp' -and $servers.Count -ne 0) -or ($item.mode -ceq 'static' -and $servers.Count -eq 0)){throw 'DNS acceptance saved server list is invalid'}
+            if(($item.mode -cin @('dhcp','not-exposed') -and $servers.Count -ne 0) -or ($item.mode -ceq 'static' -and $servers.Count -eq 0)){throw 'DNS acceptance saved server list is invalid'}
+            if($item.mode -ceq 'not-exposed' -and ($item.registryHash -isnot [string] -or $item.registryHash -notmatch '^[a-f0-9]{64}$')){throw 'DNS acceptance dormant state fingerprint is missing'}
             foreach($address in $servers){[void](Convert-DNSAcceptanceAddress $address $family)}
         }
+        if($record.selected -and $record.ipv4.mode -ceq 'not-exposed' -and $record.ipv6.mode -ceq 'not-exposed'){throw 'DNS acceptance selected adapter exposes no client'}
         $adapters[$guid]=$record
     }
     foreach($entry in @($State.doh)){
@@ -104,6 +132,7 @@ function Assert-DNSAcceptanceRestored([object]$Before,[object]$After) {
         foreach($family in @('ipv4','ipv6')){
             $old=$expected.adapters[$guid].$family;$new=$actual.adapters[$guid].$family
             if($old.mode -cne $new.mode){throw 'DNS acceptance original DHCP/static mode differs'}
+            if($old.mode -ceq 'not-exposed' -and $old.registryHash -cne $new.registryHash){throw 'DNS acceptance dormant registry state differs'}
             $oldServers=@($old.servers);$newServers=@($new.servers)
             if($oldServers.Count -ne $newServers.Count){throw 'DNS acceptance original static server count differs'}
             for($i=0;$i -lt $oldServers.Count;$i++){
@@ -129,6 +158,10 @@ function Assert-DNSAcceptanceConfigured([object]$Before,[object]$Current,[string
         $guid=Convert-DNSAcceptanceGuid $record.guid
         if(-not $actual.adapters.ContainsKey($guid)){throw 'DNS acceptance configured adapter is missing'}
         foreach($family in @('ipv4','ipv6')){
+            if($record.$family.mode -ceq 'not-exposed'){
+                if($actual.adapters[$guid].$family.mode -cne 'not-exposed' -or $record.$family.registryHash -cne $actual.adapters[$guid].$family.registryHash){throw 'DNS acceptance unowned family changed'}
+                continue
+            }
             [string[]]$expected=if($family -eq 'ipv4'){@($v4)}else{@($v6)};$observed=$actual.adapters[$guid].$family;$servers=@($observed.servers)
             if($observed.mode -cne 'static' -or $servers.Count -ne $expected.Count){throw 'DNS acceptance configured family or mode differs'}
             for($i=0;$i -lt $expected.Count;$i++){if((Convert-DNSAcceptanceAddress $servers[$i] '') -cne $expected[$i]){throw 'DNS acceptance configured server differs'}}

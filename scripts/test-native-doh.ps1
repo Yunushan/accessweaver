@@ -140,6 +140,7 @@ public static class AccessWeaverNativeDoHIdentity {
                 try{$count=@(Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -AddressFamily $family -ErrorAction Stop).Count;if($count -le 16){$item.addressRows=$count}}catch{if($_.CategoryInfo.Category -eq [Management.Automation.ErrorCategory]::ObjectNotFound){$item.addressRows=0}}
                 $row[$family.ToLowerInvariant()]=$item
             }
+            $row.selected=($row.selected -and ($row.ipv4.addressRows -eq 1 -or $row.ipv6.addressRows -eq 1))
             $rows+=@($row)
         }
         return @($rows)
