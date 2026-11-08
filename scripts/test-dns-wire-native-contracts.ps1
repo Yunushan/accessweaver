@@ -134,6 +134,12 @@ try {
     Case-Wire 'capture-file-bound-admits-exact-configured-limit' {New-WireCase;$script:etlSize=16777216;Measure-NativeDNSWireFile $script:state 'etl';Assert-Wire ($script:state.etlBytes -eq 16777216 -and $script:state.captureFileCode -ceq 'ordinary')}
     Case-Wire 'capture-file-overflow-refuses-before-decoding' {New-WireCase;$script:etlSize=16777217;Reject-Wire {Measure-NativeDNSWireFile $script:state 'etl'};Assert-Wire ($script:state.captureFileCode -ceq 'oversized' -and -not $script:state.flags.captureBounded)}
     Case-Wire 'unavailable-capture-file-never-searches-alternate-paths' {New-WireCase;$script:fault='file-unavailable';Reject-Wire {Measure-NativeDNSWireFile $script:state 'etl'};Assert-Wire ($script:itemReads -eq 1 -and $script:state.captureFileCode -ceq 'unavailable')}
+    Case-Wire 'wire-summary-excludes-private-paths-and-unknown-fields' {
+        New-WireCase;$script:state.workdir='PRIVATE-SYNTHETIC-DIRECTORY'
+        $r=Get-NativeDNSWireSummary $script:state
+        $keys=@('processFailureCode','failureExitCode','failureStdoutChars','failureStderrChars','failureElapsedMilliseconds','captureFileCode','etlBytes','pcapBytes','filterRows','filterCode','outcome','phase','failurePhase','decoderCode','controls','toolProcesses','toolProcessesJoined','toolFailure','tlsFlows','outboundEncryptedRecords','inboundEncryptedRecords','providerMask','rawCapturePublished','productionQualificationComplete')
+        Assert-Wire ((@($r.Keys | Sort-Object) -join ',') -ceq (@($keys | Sort-Object) -join ',') -and -not (($r | ConvertTo-Json -Depth 4 -Compress).Contains('PRIVATE-SYNTHETIC')))
+    }
     Case-Wire 'strict-stopped-and-empty-classifiers' {Reject-Wire {Assert-NativeDNSWireStopped "PRIVATE`nPacket Monitor is not running."};Reject-Wire {Assert-NativeDNSWireEmptyFilters "No filters.`n1 unknown"};Assert-NativeDNSWireStopped 'Packet Monitor is not running.';Assert-NativeDNSWireEmptyFilters "Packet Filters:`nNone"}
 } finally {$env:SystemRoot=$oldSystemRoot}
 if((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -cne $hash){throw 'Wire source changed'}
