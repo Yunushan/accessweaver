@@ -5,14 +5,17 @@ if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-host
 if($RequireWindowsPowerShell -and ($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1)){throw 'Stock source shell required'}
 foreach($name in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management')){Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$name,($name+'.psd1'))) -ErrorAction Stop}
 $PSModuleAutoLoadingPreference='None'
-$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/ndis-tls-control.cjs','scripts/dns-wire-stdin.cjs','scripts/extract-native-ndis.ps1','scripts/ndis-private-convert.cjs','scripts/dns-wire-evidence.cjs','scripts/ndis-frame-converter.cjs','scripts/test-ndis-frame-converter.cjs','scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
+$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-offload-state.ps1','scripts/read-native-offload-state.ps1','scripts/ndis-tls-control.cjs','scripts/dns-wire-stdin.cjs','scripts/extract-native-ndis.ps1','scripts/ndis-private-convert.cjs','scripts/dns-wire-evidence.cjs','scripts/ndis-frame-converter.cjs','scripts/test-ndis-frame-converter.cjs','scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-netevent-control.ps1'),[ref]$tokens,[ref]$issues);if($issues.Count){throw 'Source syntax'}
-$allowed=@('New-NativeNDISTlsStimulusEvidence','New-NativeNDISTlsWireEvidence','New-NativeNDISExtractionEvidence','New-NativeNDISConversionEvidence','Get-NativeNDISTemplateTree','Add-NativeNDISTemplateTreeNode','Test-NativeNDISTemplateTree','Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
+$allowed=@('Get-NativeOffloadRaw','New-NativeOffloadEvidence','New-NativeNDISTlsStimulusEvidence','New-NativeNDISTlsWireEvidence','New-NativeNDISExtractionEvidence','New-NativeNDISConversionEvidence','Get-NativeNDISTemplateTree','Add-NativeNDISTemplateTreeNode','Test-NativeNDISTemplateTree','Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
+foreach($sourceFile in @('native-netevent-control.ps1','native-offload-state.ps1')){
+    $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $sourceFile),[ref]$tokens,[ref]$issues);if($issues.Count){throw 'Source syntax'}
 foreach($def in $ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
     if($def.Name -cin @('Get-NativeNetEventEnums','Get-NativeNetEventInventory')){continue}
     foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin $allowed){throw 'Source command boundary'}}
     . ([scriptblock]::Create($def.Extent.Text))
+}
 }
 function Assert-N([bool]$Value){if(-not $Value){throw 'Synthetic source assertion'}}
 function Reject-N([scriptblock]$Body){$rejected=$false;try{[void](& $Body)}catch{$rejected=$true};Assert-N $rejected}
@@ -336,6 +339,34 @@ Case-N 'strict-tls-wire-projection-rejects-contradictions-private-data-and-produ
         $r=TlsWireReply-N;switch($fault){'hello'{$r.evidence.flows[0].serverHello=$false}'encrypted'{$r.evidence.flows[0].outboundEncryptedRecords=0}'provider'{$r.evidence.flows[0].provider='PRIVATE-SYNTHETIC'}'private'{$r.evidence['private']='PRIVATE-SYNTHETIC'}'binding'{$r.evidence.ordinaryResolverBound=$true}'production'{$r.evidence.productionQualificationComplete=$true}}
         $v=Get-NativeNDISTlsWireEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.code -ceq 'invalid' -and -not (($v | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))
     }
+}
+
+
+function OffloadRow-N([string]$Class,[hashtable]$Values) {$p=@{};foreach($key in $Values.Keys){$p[$key]=[pscustomobject]@{Value=$Values[$key]}};return [pscustomobject]@{CimClass=[pscustomobject]@{CimClassName=$Class};CimInstanceProperties=$p}}
+function OffloadInputs-N {
+    return @{routes=@((OffloadRow-N 'MSFT_NetIPAddress' @{InterfaceIndex=[uint32]3}),(OffloadRow-N 'MSFT_NetRoute' @{InterfaceIndex=[uint32]3}));adapters=@((OffloadRow-N 'MSFT_NetAdapter' @{InterfaceIndex=[uint32]3;InterfaceGuid='11111111-2222-3333-4444-555555555555';Name='source-adapter';InterfaceDescription='source-description'}));settings=@((OffloadRow-N 'MSFT_NetAdapterLsoSettingData' @{Name='source-adapter';InterfaceDescription='source-description';InstanceID='source-instance';V1IPv4Enabled=$false;IPv4Enabled=$true;IPv6Enabled=$true;MaximumLsoVersionSupported=[uint32]2}))}
+}
+Case-N 'readonly-offload-binding-matches-typed-route-adapter-and-setting' {
+    $v=OffloadInputs-N;$r=Read-NativeOffloadBinding $v.routes $v.adapters $v.settings;Assert-N ($r.index -eq 3 -and $r.IPv4Enabled -and $r.maximumVersion -eq 2)
+}
+Case-N 'readonly-offload-binding-refuses-ambiguous-or-drifting-route' {
+    foreach($fault in @('count','class','index')){$v=OffloadInputs-N;switch($fault){'count'{$v.routes+=@($v.routes[0])}'class'{$v.routes[1].CimClass.CimClassName='MSFT_NetIPAddress'}'index'{$v.routes[1].CimInstanceProperties['InterfaceIndex'].Value=[uint32]4}};Reject-N {Read-NativeOffloadBinding $v.routes $v.adapters $v.settings}}
+}
+Case-N 'readonly-offload-binding-refuses-foreign-setting-and-coerced-state' {
+    foreach($fault in @('identity','boolean','version')){$v=OffloadInputs-N;switch($fault){'identity'{$v.settings[0].CimInstanceProperties['InterfaceDescription'].Value='source-foreign'}'boolean'{$v.settings[0].CimInstanceProperties['IPv4Enabled'].Value=1}'version'{$v.settings[0].CimInstanceProperties['MaximumLsoVersionSupported'].Value=[uint32]3}};Reject-N {Read-NativeOffloadBinding $v.routes $v.adapters $v.settings}}
+}
+Case-N 'readonly-offload-stability-compares-raw-identities-and-values' {
+    $v=OffloadInputs-N;$a=Read-NativeOffloadBinding $v.routes $v.adapters $v.settings;$b=Read-NativeOffloadBinding $v.routes $v.adapters $v.settings;Assert-N (Test-NativeOffloadBindingEqual $a $b)
+    foreach($key in @('guid','instance','IPv4Enabled')){$v=OffloadInputs-N;$b=Read-NativeOffloadBinding $v.routes $v.adapters $v.settings;$b[$key]=if($key -ceq 'IPv4Enabled'){$false}else{'source-drift'};Assert-N (-not (Test-NativeOffloadBindingEqual $a $b))}
+}
+Case-N 'readonly-offload-public-summary-excludes-identifiers-and-mutations' {
+    $r=New-NativeOffloadEvidence 'none';foreach($key in @('routeMatched','adapterMatched','settingMatched','getCapability','setCapability','noRestartCapability','routeStable','identityStable')){$r[$key]=$true};$r.ipv4Enabled=$true;$r.ipv6Enabled=$true;$r.v1Ipv4Enabled=$false;$r.maximumVersion=2
+    Assert-N ((Get-NativeOffloadEvidence ($r | ConvertTo-Json -Compress)).code -ceq 'none')
+    $r['private']='PRIVATE-SYNTHETIC';$v=Get-NativeOffloadEvidence ($r | ConvertTo-Json -Compress);Assert-N ($v.code -ceq 'invalid' -and -not (($v | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')));$r.Remove('private');$r.settingsChanged=$true;Assert-N ((Get-NativeOffloadEvidence ($r | ConvertTo-Json -Compress)).code -ceq 'invalid')
+}
+Case-N 'readonly-offload-entry-never-invokes-a-setter-or-restart' {
+    $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'read-native-offload-state.ps1'),[ref]$tokens,[ref]$issues);Assert-N ($issues.Count -eq 0)
+    foreach($command in $ast.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){Assert-N ($command.GetCommandName() -cnotin @('Set-NetAdapterLso','Enable-NetAdapterLso','Disable-NetAdapterLso','Restart-NetAdapter','Disable-NetAdapter','Enable-NetAdapter'))}
 }
 
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}

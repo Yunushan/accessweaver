@@ -4,6 +4,8 @@ on:
   push:
     branches: ['main', 'codex/dns-adapter-coverage']
     paths:
+      - 'scripts/native-offload-state.ps1'
+      - 'scripts/read-native-offload-state.ps1'
       - 'scripts/ndis-tls-control.cjs'
       - 'scripts/dns-wire-stdin.cjs'
       - 'scripts/extract-native-ndis.ps1'
