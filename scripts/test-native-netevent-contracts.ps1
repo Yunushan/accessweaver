@@ -415,6 +415,10 @@ Case-N 'offload-plan-is-durable-before-mutation-and-restored-before-retirement' 
     $driver=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-native-netevent-control.ps1'));$cleanup=$driver.Substring($driver.IndexOf("`nfinally{"));Assert-N ($cleanup.IndexOf("Invoke-NativeOffloadOperation 'restore'") -lt $cleanup.IndexOf("Invoke-NativeNDISOperation 'remove'") -and $cleanup.Contains("if(-not $"+'offloadRestored)'))
 }
 
+Case-N 'offload-private-acl-import-is-explicit-before-autoload-is-disabled' {
+    $body=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'offload-control-operation.ps1'));Assert-N ($body.Contains("'Microsoft.PowerShell.Security'") -and $body.IndexOf("'Microsoft.PowerShell.Security'") -lt $body.IndexOf("$"+"PSModuleAutoLoadingPreference='None'") -and $body.Contains('Get-Acl -LiteralPath $root') -and $body.Contains("$"+"stage='path-acl'"))
+}
+
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}
 $passed=@($cases | Where-Object {-not $_.passed}).Count -eq 0
 [Console]::Out.WriteLine((@{schemaVersion=1;scope='actual-native-netevent-source';sourceSHA256=$hashes;cases=@($cases.ToArray());passed=$passed;realCaptureStarted=$false;realDnsChanged=$false;nativeQualified=$false} | ConvertTo-Json -Depth 6 -Compress))

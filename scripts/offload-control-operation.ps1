@@ -5,12 +5,12 @@ $r=@{schemaVersion=1;operation=$Operation;code='environment';identityVerified=$f
 try{
     if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows' -or $PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1 -or [IntPtr]::Size -ne 8 -or $env:GITHUB_SHA -cnotmatch '^[a-f0-9]{40}$'){throw 'Fresh hosted stock operation required'}
     foreach($name in @('ACCESSWEAVER_HISTORY_INTEROP','ACCESSWEAVER_RECONCILIATION_INTEROP','ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP','ACCESSWEAVER_SUPPORT_INTEROP')){if($null -ne [Environment]::GetEnvironmentVariable($name,'Process')){throw 'Interop offload boundary'}}
-    foreach($name in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management','CimCmdlets','NetAdapter','NetTCPIP')){Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$name,($name+'.psd1'))) -ErrorAction Stop};$PSModuleAutoLoadingPreference='None'
+    foreach($name in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management','Microsoft.PowerShell.Security','CimCmdlets','NetAdapter','NetTCPIP')){Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$name,($name+'.psd1'))) -ErrorAction Stop};$PSModuleAutoLoadingPreference='None'
     . (Join-Path $PSScriptRoot 'native-offload-state.ps1');$r=New-NativeOffloadChangeEvidence $Operation
-    $stage='path';$root=[IO.Path]::GetFullPath($PrivateRoot);$local=[Environment]::GetFolderPath('LocalApplicationData')
+    $stage='path-canonical';$root=[IO.Path]::GetFullPath($PrivateRoot);$local=[Environment]::GetFolderPath('LocalApplicationData')
     if(-not $root.Equals($PrivateRoot,[StringComparison]::Ordinal) -or [IO.Path]::GetFileName($root) -cnotmatch '^AccessWeaver-NetEventControl-[a-f0-9]{32}$' -or -not [IO.Path]::GetDirectoryName($root).Equals($local,[StringComparison]::OrdinalIgnoreCase)){throw 'Offload private path'}
-    $current=$root;while($current){if(([IO.File]::GetAttributes($current) -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Offload reparse path'};$next=[IO.Path]::GetDirectoryName($current);if($next -eq $current){break};$current=$next}
-    $identity=[Security.Principal.WindowsIdentity]::GetCurrent();$security=Get-Acl -LiteralPath $root -ErrorAction Stop
+    $stage='path-ancestry';$current=$root;while($current){if(([IO.File]::GetAttributes($current) -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Offload reparse path'};$next=[IO.Path]::GetDirectoryName($current);if($next -eq $current){break};$current=$next}
+    $stage='path-acl';$identity=[Security.Principal.WindowsIdentity]::GetCurrent();$security=Get-Acl -LiteralPath $root -ErrorAction Stop
     if(-not $security.AreAccessRulesProtected -or $security.GetOwner([Security.Principal.SecurityIdentifier]).Value -cne $identity.User.Value){throw 'Offload root owner'}
     foreach($rule in $security.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])){if($rule.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or $rule.IdentityReference.Value -cnotin @($identity.User.Value,'S-1-5-18','S-1-5-32-544')){throw 'Offload root access'}}
     $planPath=Join-Path $root 'capture-offload-plan.json'
