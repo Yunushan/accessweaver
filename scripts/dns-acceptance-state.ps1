@@ -16,12 +16,14 @@ function Convert-DNSAcceptanceAddress([object]$Value,[string]$Family,[int]$Inter
     }
     return $parsed.ToString()
 }
-function Read-DNSAcceptanceState([ref]$Stage) {
+function Read-DNSAcceptanceState([ref]$Stage,[ref]$Progress) {
     if($null -ne $Stage){$Stage.Value='inventory'}
     $inventory=@(Get-NetAdapter -ErrorAction Stop)
+    if($null -ne $Progress){$Progress.Value=@{adapterTotal=$inventory.Count;adapterOrdinal=0;selected=$false}}
     if($inventory.Count -eq 0){throw 'DNS acceptance adapter inventory is empty'}
     $known=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase);$adapters=@()
     foreach($adapter in $inventory){
+        if($null -ne $Progress){$Progress.Value.adapterOrdinal++;$Progress.Value.selected=($adapter.Status -eq 'Up' -and $adapter.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN')}
         $guid=Convert-DNSAcceptanceGuid ([string]$adapter.InterfaceGuid)
         if(-not $known.Add($guid)){throw 'Duplicate DNS acceptance adapter identity'}
         $families=@{}
@@ -29,8 +31,16 @@ function Read-DNSAcceptanceState([ref]$Stage) {
             $service=if($family -eq 'IPv4'){'Tcpip'}else{'Tcpip6'}
             $path='HKLM:\SYSTEM\CurrentControlSet\Services\'+$service+'\Parameters\Interfaces\{'+$guid+'}'
             if($null -ne $Stage){$Stage.Value=if($family -ceq 'IPv4'){'registry-ipv4'}else{'registry-ipv6'}}
-            $items=@(Get-ItemProperty -LiteralPath $path -ErrorAction Stop)
+            try {$items=@(Get-ItemProperty -LiteralPath $path -ErrorAction Stop)} catch {
+                if($null -ne $Stage){
+                    $kind=if($_.CategoryInfo.Category -eq [Management.Automation.ErrorCategory]::ObjectNotFound){'missing'}elseif($_.CategoryInfo.Category -in @([Management.Automation.ErrorCategory]::PermissionDenied,[Management.Automation.ErrorCategory]::SecurityError)){'access'}else{'error'}
+                    $Stage.Value='registry-'+$kind+'-'+$family.ToLowerInvariant()
+                }
+                throw
+            }
+            if($null -ne $Stage){$Stage.Value='registry-shape-'+$family.ToLowerInvariant()}
             if($items.Count -ne 1 -or $null -eq $items[0]){throw 'DNS acceptance registry inspection incomplete'}
+            if($null -ne $Stage){$Stage.Value='registry-mode-'+$family.ToLowerInvariant()}
             $property=$items[0].PSObject.Properties['NameServer'];$value=if($null -ne $property){$property.Value}else{$null}
             if($null -ne $value -and $value -isnot [string]){throw 'DNS acceptance registry mode is malformed'}
             $mode=if([string]::IsNullOrWhiteSpace($value)){'dhcp'}else{'static'}

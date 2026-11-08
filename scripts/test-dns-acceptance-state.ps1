@@ -191,7 +191,7 @@ try {
     New-ACase;$capturePhase='';[void](Read-DNSAcceptanceState ([ref]$capturePhase));Assert-A ($capturePhase -ceq 'complete') 'capture-stage-complete'
     New-ACase;$script:registryFailure='IPv6';$capturePhase='';$refused=$false
     try{[void](Read-DNSAcceptanceState ([ref]$capturePhase))}catch{$refused=$true}
-    Assert-A ($refused -and $capturePhase -ceq 'registry-ipv6') 'capture-stage-refusal'
+    Assert-A ($refused -and $capturePhase -ceq 'registry-error-ipv6') 'capture-stage-refusal'
     foreach($failure in @('none','baseline','capability','selected','configuration','configured-state','ordinary-resolver','restoration','restored-state','dual')){
         New-ACase;$script:nativeBefore=Read-DNSAcceptanceState;Set-AConfigured 'doh';$script:nativeConfigured=Read-DNSAcceptanceState;$script:nativeAfter=Clone-A $script:nativeBefore
         $script:nativeActions=[Collections.Generic.List[string]]::new();$script:nativeFailure=$failure;$script:nativeResolves=0
