@@ -9,6 +9,8 @@ on:
       - 'go.mod'
       - 'go.sum'
       - 'scripts/dns-acceptance-state.ps1'
+      - 'scripts/test-dns-recovery-contracts.ps1'
+      - 'scripts/test-dns-acceptance-state.ps1'
       - 'scripts/native-doh-scenario.ps1'
       - 'scripts/test-native-doh.ps1'
       - 'scripts/check-native-environment.cjs'
