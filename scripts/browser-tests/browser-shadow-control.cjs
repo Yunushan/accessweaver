@@ -2,14 +2,14 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),{spawn,execFileSync}=require('node:child_process'),{createHash}=require('node:crypto'),{performance}=require('node:perf_hooks');
 const P=require('./desktop-performance.cjs'),T=require('./browser-timing.cjs'),C=require('./browser-control.cjs'),{BrowserResources}=require('./browser-resources.cjs'),{JobCpu,emptyChecks,checkNames,failureStage}=require('./job-cpu.cjs');
-const variants=['original','without-decorative-shadows','without-selection-shadows','without-box-shadow'];
+const variants=['original','without-core-and-modal-shadow','without-other-decorative-shadows','without-box-shadow'];
 const stages=['environment','controller','browser','startup','profiles','editor','close','complete'];
 const cleanupNames=['contextClosed','browserStopped','controllerStopped','fixtureRemoved'];
 const styleFields=['installed','attached','hrefMatches','sheetReady','bodyAbsentAtMarker','readyAtMs','failed'];
 const controlStylesheetPath='/__accessweaver-owned-shadow.css';
 const controlPattern=/^http:\/\/127\.0\.0\.1:[0-9]+\/__accessweaver-owned-shadow\.css$/;
 const sources=['scripts/browser-tests/browser-shadow-control.cjs','scripts/browser-tests/browser-shadow-control.test.cjs','scripts/browser-tests/browser-shadow-control.spec.cjs','scripts/browser-tests/shadow.config.cjs','scripts/browser-tests/playwright.config.cjs','scripts/browser-tests/browser-control.cjs','scripts/browser-tests/desktop-performance.cjs','scripts/browser-tests/browser-timing.cjs','scripts/browser-tests/browser-resources.cjs','scripts/browser-tests/browser-memory.cjs','scripts/browser-tests/job-cpu.cjs','scripts/browser-tests/browser-native-binary.cjs','scripts/browser-tests/check-image-environment.cjs','scripts/browser-tests/performance-budgets.json','scripts/browser-tests/package-lock.json','scripts/check-native-environment.cjs','.github/workflows/browser-shadow.yml','internal/api/server.go','internal/profile/store.go','web/app.js','web/app.css','web/index.html','web/locales.js','web/system.js','go.mod','go.sum'];
-const styles={original:'/* owned box-shadow control: original */','without-decorative-shadows':'.brand-mark,.online-dot,.topbar-secure-dot,.btn-primary,.core-symbol,.orbit-node,.modal-card,#toast,.sidebar{box-shadow:none!important}','without-selection-shadows':'.nav-item.active,.profile-active{box-shadow:none!important}','without-box-shadow':'*,*::before,*::after{box-shadow:none!important}'};
+const styles={original:'/* owned box-shadow control: original */','without-core-and-modal-shadow':'.core-symbol,.modal-card{box-shadow:none!important}','without-other-decorative-shadows':'.brand-mark,.online-dot,.topbar-secure-dot,.btn-primary,.orbit-node,#toast,.sidebar{box-shadow:none!important}','without-box-shadow':'*,*::before,*::after{box-shadow:none!important}'};
 const controlMarkerPath='/__accessweaver-owned-shadow-ready.js';
 const markerPattern=/^http:\/\/127\.0\.0\.1:[0-9]+\/__accessweaver-owned-shadow-ready\.js$/;
 const documentPattern=/^http:\/\/127\.0\.0\.1:[0-9]+\/$/;
@@ -37,9 +37,9 @@ const markerTemplate=String.raw`(()=>{
 })();`;
 function markerSource(variant){assert.ok(variants.includes(variant),'Fixed shadow variant required');return markerTemplate.replace('STYLESHEET_PATH',JSON.stringify(controlStylesheetPath)).replace('EXPECTED_RULES',variant==='original'?'0':'1').replace('EXPECTED_SELECTOR',JSON.stringify(variant==='original'?'':styles[variant].split('{')[0]))}
 function shadowProjection({variant,phase}){
- if(!['original','without-decorative-shadows','without-selection-shadows','without-box-shadow'].includes(variant)||!['startup','editor'].includes(phase))return [];
+ if(!['original','without-core-and-modal-shadow','without-other-decorative-shadows','without-box-shadow'].includes(variant)||!['startup','editor'].includes(phase))return [];
  const selectors=phase==='startup'?['.core-symbol','.brand-mark','.btn-primary','.online-dot','.topbar-secure-dot','.orbit-node','.nav-item.active']:['#editor-modal .modal-card'];
- return selectors.map(selector=>{const decorative=selector!=='.nav-item.active',none=variant==='without-box-shadow'||variant==='without-decorative-shadows'&&decorative||variant==='without-selection-shadows'&&!decorative,node=document.querySelector(selector);return !!node&&(getComputedStyle(node).boxShadow==='none')===none});
+ return selectors.map(selector=>{const decorative=selector!=='.nav-item.active',coreOrModal=selector==='.core-symbol'||selector==='#editor-modal .modal-card',none=variant==='without-box-shadow'||decorative&&(variant==='without-core-and-modal-shadow'?coreOrModal:variant==='without-other-decorative-shadows'&&!coreOrModal),node=document.querySelector(selector);return !!node&&(getComputedStyle(node).boxShadow==='none')===none});
 }
 function allowed(env=process.env,platform=process.platform){return platform==='linux'&&env.GITHUB_ACTIONS==='true'&&env.CI==='true'&&env.ACCESSWEAVER_BROWSER_SHADOW==='1'&&env.ACCESSWEAVER_JOB_CPU_ACCOUNTING==='required'}
 function empty(){return {stage:'environment',failureKind:'none',profilesRendered:0,controlStylesheetRequests:0,controlMarkerRequests:0,documentRequests:0,documentSourceMatched:false,documentSecurityHeadersPreserved:false,timing:T.empty(),styleState:null,shadowChecks:{startup:[false,false,false,false,false,false,false],editor:[false]},browserChecks:{beforeStartup:false,afterEditor:false},jobCpuChecks:emptyChecks(),jobCpuFailureStage:0,browserFailureStage:0,cleanup:Object.fromEntries(cleanupNames.map(k=>[k,false]))}}

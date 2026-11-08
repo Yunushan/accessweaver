@@ -2,7 +2,7 @@ name: Owned box-shadow rendering control
 
 on:
   push:
-    branches: ['codex/browser-shadow-control', 'codex/browser-shadow-csp', 'codex/browser-shadow-parser', 'codex/shadow-surface-control']
+    branches: ['codex/browser-shadow-control', 'codex/browser-shadow-csp', 'codex/browser-shadow-parser', 'codex/shadow-surface-control', 'codex/shadow-two-surfaces']
     paths-ignore: ['docs/**', 'README.md']
   workflow_dispatch:
 
@@ -32,7 +32,7 @@ jobs:
       fail-fast: false
       matrix:
         browser: [chromium, firefox, webkit]
-        variant: [original, without-decorative-shadows, without-selection-shadows, without-box-shadow]
+        variant: [original, without-core-and-modal-shadow, without-other-decorative-shadows, without-box-shadow]
         goarch: [amd64, arm64]
         include:
           - goarch: amd64
