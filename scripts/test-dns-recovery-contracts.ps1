@@ -171,19 +171,20 @@ function Set-Service {throw 'Service changes are forbidden in DNS contracts'}
 function Restart-Service {throw 'Service changes are forbidden in DNS contracts'}
 function Stop-Service {throw 'Service changes are forbidden in DNS contracts'}
 try {
-    # Link-local zones are volatile interface indexes, not saved identities.
+    # Legacy zones validate saved ownership; zone-free setter values are bound
+    # to the freshly GUID-resolved family row, including after renumbering.
     New-DNSCase;$script:mode6='fe80::53%77';$script:dnsValues['77/IPv6']=@('fe80::53%77','2001:0db8::0054','fe80::55%77')
     Configure-DNS 'doh';$saved=Microsoft.PowerShell.Utility\ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($snapshot))
     Assert-DNS (@($saved.adapters[0].ipv6).Count -eq 3 -and $saved.adapters[0].ipv6[0] -is [string] -and ($saved.adapters[0].ipv6 -join ',') -ceq 'fe80::53,2001:db8::54,fe80::55' -and -not $saved.adapters[0].dhcp6) 'scope-capture-flat-ordered'
     $script:calls.Clear();$script:adapters[0].ifIndex=88;Restore-DNS
     $writes=@($script:calls | Where-Object {$_.kind -eq 'dns' -and $_.family -eq 'IPv6'})
-    Assert-DNS ($writes.Count -eq 1 -and $writes[0].index -eq 88 -and -not $writes[0].reset -and ($writes[0].servers -join ',') -ceq 'fe80::53%88,2001:db8::54,fe80::55%88' -and -not [IO.File]::Exists($snapshot)) 'scope-rebinds-current-adapter'
+    Assert-DNS ($writes.Count -eq 1 -and $writes[0].index -eq 88 -and -not $writes[0].reset -and ($writes[0].servers -join ',') -ceq 'fe80::53,2001:db8::54,fe80::55' -and -not [IO.File]::Exists($snapshot)) 'scope-rebinds-current-adapter'
     foreach($original in @('fe80::53','fe80::53%77')){
         New-DNSCase;$saved=Original-DNSFixture;$saved.adapters[0].dhcp6=$false;$saved.adapters[0].ipv6=@($original);Write-DNSFixture $saved
         # A second change after restoration preflight must also use the GUID.
         $script:adapters[0].ifIndex=88;$script:renumberDuringDoh=$true;Restore-DNS
         $writes=@($script:calls | Where-Object {$_.kind -eq 'dns' -and $_.family -eq 'IPv6'})
-        Assert-DNS ($writes.Count -eq 1 -and $writes[0].index -eq 101 -and @($writes[0].servers).Count -eq 1 -and $writes[0].servers[0] -ceq 'fe80::53%101' -and -not [IO.File]::Exists($snapshot)) 'scope-rebinds-current-adapter'
+        Assert-DNS ($writes.Count -eq 1 -and $writes[0].index -eq 101 -and @($writes[0].servers).Count -eq 1 -and $writes[0].servers[0] -ceq 'fe80::53' -and -not [IO.File]::Exists($snapshot)) 'scope-rebinds-current-adapter'
     }
     New-DNSCase;$script:exposure['77/IPv6']=$false;Configure-DNS 'doh'
     $script:adapters[0].ifIndex=88;$script:mode6='fe80::53%88';$script:dnsValues['88/IPv6']=@('fe80::53%88')
@@ -191,7 +192,7 @@ try {
     Assert-DNS ($saved.adapters[0].index -eq 77 -and $saved.adapters[0].bound6 -and @($saved.adapters[0].ipv6).Count -eq 1 -and $saved.adapters[0].ipv6[0] -ceq 'fe80::53' -and $saved.adapters[0].ipv4[0] -ceq '192.0.2.53') 'scope-family-extension'
     $script:calls.Clear();$script:adapters[0].ifIndex=99;Restore-DNS
     $writes=@($script:calls | Where-Object {$_.kind -eq 'dns' -and $_.family -eq 'IPv6'})
-    Assert-DNS ($writes.Count -eq 1 -and $writes[0].servers[0] -ceq 'fe80::53%99' -and -not [IO.File]::Exists($snapshot)) 'scope-family-extension'
+    Assert-DNS ($writes.Count -eq 1 -and $writes[0].index -eq 99 -and $writes[0].servers[0] -ceq 'fe80::53' -and -not [IO.File]::Exists($snapshot)) 'scope-family-extension'
     # Invalid second-family or second-adapter data must precede all effects,
     # including the first valid family's reset and global DoH changes.
     $invalid=@(
@@ -227,8 +228,8 @@ try {
     New-DNSCase;$script:dnsValues['77/IPv6']=@('fe80::53%77');Configure-DNS 'doh';$script:calls.Clear();$script:adapters[0].ifIndex=88;Restore-DNS
     $writes=@($script:calls | Where-Object {$_.kind -eq 'dns' -and $_.family -eq 'IPv6'})
     Assert-DNS ($writes.Count -eq 1 -and $writes[0].reset -and $writes[0].index -eq 88) 'scope-dhcp-reset-preserved'
-    Assert-DNS ((@(Get-StaticDNSServers @('2001:0db8::0053') 'IPv6' 77 88) -join ',') -ceq '2001:db8::53' -and (@(Get-StaticDNSServers @('192.0.2.53','198.51.100.54') 'IPv4' 77 88) -join ',') -ceq '192.0.2.53,198.51.100.54') 'scope-global-and-ipv4-preserved'
-    Reject-DNS {Get-StaticDNSServers @('fe80::53') 'IPv5' 77 88}
+    Assert-DNS ((@(Get-StaticDNSServers @('2001:0db8::0053') 'IPv6' 77) -join ',') -ceq '2001:db8::53' -and (@(Get-StaticDNSServers @('192.0.2.53','198.51.100.54') 'IPv4' 77) -join ',') -ceq '192.0.2.53,198.51.100.54') 'scope-global-and-ipv4-preserved'
+    Reject-DNS {Get-StaticDNSServers @('fe80::53') 'IPv5' 77}
     foreach($family in @('IPv4','IPv6')){
         New-DNSCase;$script:registryFailure=$family
         Reject-DNS {Configure-DNS 'doh'}

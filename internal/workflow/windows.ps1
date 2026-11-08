@@ -1081,9 +1081,10 @@ function Assert-OriginalDNSModes([object]$Record,[hashtable]$Bounds) {
         } elseif(-not $dhcp -and ($values.Count -eq 0 -or @($values | Where-Object {$_ -isnot [string] -or [string]::IsNullOrWhiteSpace($_)}).Count -ne 0)){throw 'Original static DNS addresses are unavailable; retain the snapshot'}
     }
 }
-# Capture link-local originals without a volatile interface zone. Legacy numeric
-# zones must identify their original adapter before restoration can rebind them.
-function Get-StaticDNSServers([object[]]$Values,[string]$Family,[object]$OriginalIndex,[uint32]$TargetIndex=0) {
+# Canonical link-local values stay zone-free in snapshots and setter strings.
+# Legacy zones must identify their saved adapter; a fresh GUID-bound CIM row
+# supplies the current interface when those values are applied.
+function Get-StaticDNSServers([object[]]$Values,[string]$Family,[object]$OriginalIndex) {
     if($Family -cnotin @('IPv4','IPv6') -or $Values.Count -eq 0){throw 'Original static DNS family or addresses are invalid; retain the snapshot'}
     $addresses=@()
     foreach($value in $Values){
@@ -1101,7 +1102,7 @@ function Get-StaticDNSServers([object[]]$Values,[string]$Family,[object]$Origina
                 $index=[uint32]0
                 if($address.ScopeId -eq 0 -or -not $address.IsIPv6LinkLocal -or -not [uint32]::TryParse([string]$OriginalIndex,[ref]$index) -or $index -eq 0 -or $address.ScopeId -ne $index){throw 'Original IPv6 DNS scope cannot identify its saved adapter; retain the snapshot'}
             }
-            if($address.IsIPv6LinkLocal){$address.ScopeId=[long]$TargetIndex}
+            if($address.IsIPv6LinkLocal){$address.ScopeId=0}
         }
         $addresses+=@($address.ToString())
     }
@@ -1152,7 +1153,7 @@ function Configure-DNS([string]$method) {
         $bounds=Get-OriginalDNSBounds $record;Assert-OriginalDNSModes $record $bounds
         foreach($number in @('4','6')){
             if($bounds['bound'+$number]){
-                if(-not $record.('dhcp'+$number)){[void](Get-StaticDNSServers @($record.('ipv'+$number)) ('IPv'+$number) $record.index $matches[0].ifIndex)}
+                if(-not $record.('dhcp'+$number)){[void](Get-StaticDNSServers @($record.('ipv'+$number)) ('IPv'+$number) $record.index)}
                 if(@(Get-DNSClientRows $clients $matches[0].ifIndex ('IPv'+$number)).Count -ne 1){throw 'An owned DNS family is unavailable; retain the snapshot before further configuration'}
             }
         }
@@ -1265,7 +1266,7 @@ function Restore-DNS {
         $matches=@($currentAdapters | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
         if($matches.Count -ne 1){throw 'An original network adapter is missing or ambiguous; retain the snapshot for later recovery'}
         foreach($number in @('4','6')){
-            if($bounds['bound'+$number] -and -not $record.('dhcp'+$number)){[void](Get-StaticDNSServers @($record.('ipv'+$number)) ('IPv'+$number) $record.index $matches[0].ifIndex)}
+            if($bounds['bound'+$number] -and -not $record.('dhcp'+$number)){[void](Get-StaticDNSServers @($record.('ipv'+$number)) ('IPv'+$number) $record.index)}
         }
         $plans+=@{record=$record;adapter=$matches[0];bounds=$bounds}
     }
@@ -1291,7 +1292,7 @@ function Restore-DNS {
             if($matches.Count -ne 1){throw 'An original adapter changed before restoration; retain the recovery snapshot'}
             $dns=@(Get-DnsClientServerAddress -InterfaceIndex $matches[0].ifIndex -AddressFamily ('IPv'+$number) -ErrorAction Stop)
             if($dns.Count -ne 1 -or $null -eq $dns[0]){throw 'Original adapter DNS settings could not be inspected; retain the recovery snapshot'}
-            if($record.('dhcp'+$number)){$dns[0] | Set-DnsClientServerAddress -ResetServerAddresses -ErrorAction Stop}else{$dns[0] | Set-DnsClientServerAddress -ServerAddresses @(Get-StaticDNSServers @($record.('ipv'+$number)) ('IPv'+$number) $record.index $matches[0].ifIndex) -ErrorAction Stop}
+            if($record.('dhcp'+$number)){$dns[0] | Set-DnsClientServerAddress -ResetServerAddresses -ErrorAction Stop}else{$dns[0] | Set-DnsClientServerAddress -ServerAddresses @(Get-StaticDNSServers @($record.('ipv'+$number)) ('IPv'+$number) $record.index) -ErrorAction Stop}
         }
     }
     foreach($plan in $dohPlans){

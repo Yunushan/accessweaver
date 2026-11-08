@@ -474,6 +474,14 @@ try {
         $removed=$false;try{Remove-NativeStaticIPv6Fixture $before;Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState);$removed=$true}catch{}
         Assert-A ($removed -and $script:staticFirewallRemoved -eq ($failure -cnotin @('profile-disabled','local-rules-disabled')) -and $script:fixtureRules.Count -eq 0) 'static-stage-source'
     }
+    # The true pre-fixture original can itself contain scoped link-local DNS.
+    # Restore its canonical values on the GUID-bound row, without a setter zone.
+    New-ACase;$script:data[$script:g1].servers6=@('fe80::70%77','fe80::71%77');$before=Read-DNSAcceptanceState
+    $script:staticPlan=$null;$script:fixtureRules=@{};$script:staticStageFault='none';$script:staticStageFaultPending=$false;$script:staticFirewallProtected=$false;$script:staticFirewallRemoved=$false
+    Assert-A (Set-NativeStaticIPv6Fixture $before) 'static-stage-source'
+    Remove-NativeStaticIPv6Fixture $before
+    Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState)
+    Assert-A (($script:data[$script:g1].servers6 -join ',') -ceq 'fe80::70,fe80::71' -and $script:staticFirewallRemoved -and $script:fixtureRules.Count -eq 0) 'static-stage-source'
     # Persistent teardown faults must preserve both actual source-owned blocks.
     # No OS commands run: extraction above binds every dependency to these mocks.
     foreach($originalMode in @('static','dhcp')){

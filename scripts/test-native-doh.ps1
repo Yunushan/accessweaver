@@ -346,7 +346,7 @@ public static class AccessWeaverNativeDoHIdentity {
                     $row=Get-NativeStaticIPv6Row $script:staticPlan.guid;$original=$script:staticPlan.original
                     if($original.mode -ceq 'dhcp'){$row | Set-DnsClientServerAddress -ResetServerAddresses -ErrorAction Stop}
                     elseif($original.mode -ceq 'static'){
-                        $servers=@();foreach($value in @($original.servers)){$address=[Net.IPAddress]$value;if($address.IsIPv6LinkLocal){$address.ScopeId=[long]$row.InterfaceIndex};$servers+=@($address.ToString())}
+                        $servers=@();foreach($value in @($original.servers)){$address=[Net.IPAddress]$value;if($address.IsIPv6LinkLocal){$address.ScopeId=0};$servers+=@($address.ToString())}
                         $row | Set-DnsClientServerAddress -ServerAddresses $servers -ErrorAction Stop
                     }else{throw 'Native fixture original mode unavailable'}
                 }
