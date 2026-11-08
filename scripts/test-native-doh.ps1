@@ -272,6 +272,21 @@ public static class AccessWeaverNativeDoHIdentity {
         if($rows.Count -ne 1){throw 'Static fixture family changed'}
         return $rows[0]
     }
+    function Wait-NativeStaticIPv6FixtureState([object]$Expected,[string]$Guid) {
+        # Windows may expose an empty/partial client list after the setter has
+        # returned. Poll observation only; never reapply DNS or query the targets.
+        for($attempt=0;$attempt -lt 40;$attempt++){
+            $script:staticObservation=@{captured=$false;mode='unknown';count=-1;firstMatches=$false;secondMatches=$false}
+            try {
+                $observed=Read-DNSAcceptanceState;$observedIndex=Get-DNSAcceptanceIndex $observed
+                $current=$observedIndex.adapters[$Guid].ipv6
+                $script:staticObservation=@{captured=$true;mode=$current.mode;count=[Math]::Min(17,@($current.servers).Count);firstMatches=(@($current.servers).Count -ge 1 -and $current.servers[0] -ceq $script:staticPlan.servers[0]);secondMatches=(@($current.servers).Count -ge 2 -and $current.servers[1] -ceq $script:staticPlan.servers[1])}
+                Assert-DNSAcceptanceRestored $Expected $observed
+                return $true
+            }catch{if($attempt -eq 39){throw}}
+            Start-Sleep -Milliseconds 250
+        }
+    }
     function Set-NativeStaticIPv6Fixture([object]$Before) {
         $script:staticPhase='selection'
         $records=@($Before.adapters | Where-Object {$_.selected -and $_.ipv4.mode -cne 'not-exposed' -and $_.ipv6.mode -cne 'not-exposed'})
@@ -312,11 +327,7 @@ public static class AccessWeaverNativeDoHIdentity {
         $expected=ConvertFrom-Json -InputObject ($Before|ConvertTo-Json -Depth 12)
         $target=@($expected.adapters | Where-Object {$_.guid -ceq $record.guid})[0]
         $target.ipv6.mode='static';$target.ipv6.servers=@($script:staticPlan.servers)
-        $observed=Read-DNSAcceptanceState;$observedIndex=Get-DNSAcceptanceIndex $observed
-        $current=$observedIndex.adapters[$record.guid].ipv6
-        $script:staticObservation=@{captured=$true;mode=$current.mode;count=[Math]::Min(17,@($current.servers).Count);firstMatches=(@($current.servers).Count -ge 1 -and $current.servers[0] -ceq $script:staticPlan.servers[0]);secondMatches=(@($current.servers).Count -ge 2 -and $current.servers[1] -ceq $script:staticPlan.servers[1])}
-        Assert-DNSAcceptanceRestored $expected $observed
-        return $true
+        return (Wait-NativeStaticIPv6FixtureState $expected $record.guid)
     }
     function Remove-NativeStaticIPv6Fixture([object]$Before) {
         # A product snapshot remains authoritative for product-touched families

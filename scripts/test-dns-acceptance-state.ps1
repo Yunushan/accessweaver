@@ -59,7 +59,7 @@ function Original-ADoh {return [pscustomobject]@{ServerAddress='192.0.2.90';DohT
 function New-ACase {
     $script:adapters=@([pscustomobject]@{InterfaceGuid=$script:g1;ifIndex=77;Status='Up';InterfaceDescription='Fixture adapter'},[pscustomobject]@{InterfaceGuid=$script:g2;ifIndex=88;Status='Down';InterfaceDescription='Second fixture adapter'})
     $script:renumberAfterInventory=$false;$script:exposure=@{};$script:registryAbsent=@{};$script:registryValues=@{};$script:data=New-AData;$script:doh=@((Original-ADoh));$script:available=$true;$script:registryFailure='';$script:dnsFailure='';$script:dohFailure=$false
-    $script:staticTeardownFault='';$script:resolveFailure=$false;$script:operationFailure=$false;$script:restoreFailure=$false;$script:serviceStatus='Running';$script:actions=[Collections.Generic.List[string]]::new();$script:dnsReads=0
+    $script:staticWaitCalls=0;$script:staticPendingReads=0;$script:staticPendingShape='';$script:staticTeardownFault='';$script:resolveFailure=$false;$script:operationFailure=$false;$script:restoreFailure=$false;$script:serviceStatus='Running';$script:actions=[Collections.Generic.List[string]]::new();$script:dnsReads=0
 }
 function Clone-A([object]$Value){return Microsoft.PowerShell.Utility\ConvertFrom-Json -InputObject (Microsoft.PowerShell.Utility\ConvertTo-Json -InputObject $Value -Depth 14)}
 function Get-NetAdapter {[CmdletBinding()]param();foreach($a in $script:adapters){[pscustomobject]@{InterfaceGuid=$a.InterfaceGuid;ifIndex=$a.ifIndex;Status=$a.Status;InterfaceDescription=$a.InterfaceDescription}}}
@@ -85,6 +85,9 @@ function Get-DnsClientServerAddress {
             $key=$guid+'/'+$family
             if($script:exposure.ContainsKey($key) -and -not $script:exposure[$key]){continue}
             $values=if($family -ceq 'IPv4'){@($script:data[$guid].servers4)}else{@($script:data[$guid].servers6)}
+            if($null -eq $InterfaceIndex -and $guid -ceq $script:g1 -and $family -ceq 'IPv6' -and ($values -join ',') -ceq 'fe80::53%77,fe80::54%77' -and $script:staticPendingReads -gt 0){
+                $script:staticPendingReads--;if($script:staticPendingShape -ceq 'empty'){$values=@()}else{$values=@($values[0])}
+            }
             $result=[pscustomobject]@{InterfaceIndex=$a.ifIndex;AddressFamily=$(if($family -ceq 'IPv4'){2}else{23});ServerAddresses=@($values)}
             $result
             if($script:dnsFailure -ceq 'duplicate'){$result}
@@ -415,14 +418,15 @@ try {
     foreach($command in $resolver.ScriptBlock.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){
         if($command.GetCommandName() -cnotin @('Get-Service','Get-CimInstance','Get-Content','Join-Path','ConvertFrom-Json','Where-Object','Convert-DNSAcceptanceGuid','Get-NativeDNSAnswerCount')){throw 'Native source resolver callback boundary refused'}
     }
-    foreach($name in @('Get-NativeStaticIPv6Row','Set-NativeStaticIPv6Fixture','Remove-NativeStaticIPv6Fixture')){
+    foreach($name in @('Get-NativeStaticIPv6Row','Wait-NativeStaticIPv6FixtureState','Set-NativeStaticIPv6Fixture','Remove-NativeStaticIPv6Fixture')){
         $nodes=@($driver.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq $name},$true));if($nodes.Count -ne 1){throw 'Static staging source is ambiguous'}
         foreach($command in $nodes[0].FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){
-            if($command.GetCommandName() -cnotin @('Get-NetAdapter','Where-Object','Convert-DNSAcceptanceGuid','Get-DnsClientServerAddress','Get-NativeStaticIPv6Row','Get-NetIPAddress','Set-DnsClientServerAddress','ConvertFrom-Json','ConvertTo-Json','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','New-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Remove-NetFirewallRule','Test-Path','Join-Path','Invoke-NativeDoHCLI')){throw 'Static staging source boundary refused'}
+            if($command.GetCommandName() -cnotin @('Get-NetAdapter','Where-Object','Convert-DNSAcceptanceGuid','Get-DnsClientServerAddress','Get-NativeStaticIPv6Row','Wait-NativeStaticIPv6FixtureState','Start-Sleep','Get-NetIPAddress','Set-DnsClientServerAddress','ConvertFrom-Json','ConvertTo-Json','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','New-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Remove-NetFirewallRule','Test-Path','Join-Path','Invoke-NativeDoHCLI')){throw 'Static staging source boundary refused'}
         }
         . ([scriptblock]::Create($nodes[0].Extent.Text))
     }
     $machineRoot=[IO.Path]::GetTempPath();$script:staticSnapshotPath=Join-Path $machineRoot 'profiles\dns-original.json'
+    function Start-Sleep {[CmdletBinding()]param([int]$Milliseconds);if($Milliseconds -ne 250 -or $script:staticWaitCalls -ge 39){throw 'Unexpected source observation delay'};$script:staticWaitCalls++}
     function Get-NetIPAddress {[CmdletBinding()]param($InterfaceIndex,$AddressFamily,$Type);if(($null -ne $InterfaceIndex -and $InterfaceIndex -ne 77) -or $AddressFamily -cne 'IPv6' -or $Type -cne 'Unicast'){throw 'Unexpected source address inspection'};return [pscustomobject]@{IPAddress='fe80::a77%77';AddressState='Preferred'}}
     function Set-DnsClientServerAddress {
         [CmdletBinding()]param([Parameter(ValueFromPipeline)]$InputObject,[string[]]$ServerAddresses,[switch]$ResetServerAddresses)
@@ -431,6 +435,9 @@ try {
             if($script:staticTeardownFault -ceq 'write-throw'){throw 'source-original-restore-failed'}
             if($script:staticTeardownFault -ceq 'write-noop'){return}
             $script:data[$script:g1].mode6=if($ResetServerAddresses){'dhcp'}else{'static'};$script:data[$script:g1].servers6=if($ResetServerAddresses){@()}else{@($ServerAddresses)}
+            if(-not $ResetServerAddresses -and ($ServerAddresses -join ',') -ceq 'fe80::53%77,fe80::54%77' -and $script:staticStageFault -cin @('pending-empty','pending-count','permanent-empty','permanent-count')){
+                $script:staticPendingReads=if($script:staticStageFault -like 'permanent-*'){40}else{2};$script:staticPendingShape=if($script:staticStageFault -like '*-empty'){'empty'}else{'count'}
+            }
             if($script:staticStageFault -ceq 'family-set' -and $script:staticStageFaultPending){$script:staticStageFaultPending=$false;throw 'source-partial-family-set'}
         }
     }
@@ -453,11 +460,12 @@ try {
     function Remove-NetFirewallRule {[CmdletBinding()]param($Name,$PolicyStore);if($PolicyStore -cne 'PersistentStore' -or -not $script:fixtureRules.ContainsKey($Name)){throw 'Unexpected source firewall retirement'};$script:fixtureRules.Remove($Name)}
     function Test-Path {[CmdletBinding()]param($LiteralPath);if($LiteralPath -cne $script:staticSnapshotPath){throw 'Unexpected source snapshot inspection'};return $false}
     function Invoke-NativeDoHCLI {throw 'Product execution forbidden in source staging fixture'}
-    foreach($failure in @('none','cidr','create-second','active-filter','active-address','family-set','profile-disabled','local-rules-disabled')){
+    foreach($failure in @('none','cidr','pending-empty','pending-count','permanent-empty','permanent-count','create-second','active-filter','active-address','family-set','profile-disabled','local-rules-disabled')){
         New-ACase;$before=Read-DNSAcceptanceState;$script:staticPlan=$null;$script:fixtureRules=@{};$script:staticStageFault=$failure;$script:staticStageFaultPending=$true;$script:staticFirewallProtected=$false;$script:staticFirewallRemoved=$false;$stagePassed=$false
         try{$stagePassed=Set-NativeStaticIPv6Fixture $before}catch{}
-        Assert-A ($stagePassed -is [bool] -and $stagePassed -eq ($failure -cin @('none','cidr'))) 'static-stage-source'
-        if($failure -cin @('none','cidr')){Assert-A ($script:staticFirewallProtected -and $script:staticObservation.captured -and $script:staticObservation.mode -ceq 'static' -and $script:staticObservation.count -eq 2 -and $script:staticObservation.firstMatches -and $script:staticObservation.secondMatches) 'static-stage-source'}
+        Assert-A ($stagePassed -is [bool] -and $stagePassed -eq ($failure -cin @('none','cidr','pending-empty','pending-count'))) 'static-stage-source'
+        if($failure -cin @('none','cidr','pending-empty','pending-count')){Assert-A ($script:staticFirewallProtected -and $script:staticObservation.captured -and $script:staticObservation.mode -ceq 'static' -and $script:staticObservation.count -eq 2 -and $script:staticObservation.firstMatches -and $script:staticObservation.secondMatches) 'static-stage-source'}
+        Assert-A ($script:staticWaitCalls -eq $(if($failure -like 'pending-*'){2}elseif($failure -like 'permanent-*'){39}else{0})) 'static-stage-source'
         $removed=$false;try{Remove-NativeStaticIPv6Fixture $before;Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState);$removed=$true}catch{}
         Assert-A ($removed -and $script:staticFirewallRemoved -eq ($failure -cnotin @('profile-disabled','local-rules-disabled')) -and $script:fixtureRules.Count -eq 0) 'static-stage-source'
     }
