@@ -136,6 +136,8 @@ try {
         $stopped=Get-NativeDNSWireMonitorEvidence 'Packet Monitor is not running.' 'PRIVATE-SYNTHETIC'
         $disabled=Get-NativeDNSWireMonitorEvidence "Log file: PRIVATE-SYNTHETIC`nProvider Level Keywords`nMicrosoft-Windows-PktMon 4 0x2" 'PRIVATE-SYNTHETIC'
         $unknown=Get-NativeDNSWireMonitorEvidence 'PRIVATE-SYNTHETIC 0x12' ''
+        $rowOnly=Get-NativeDNSWireMonitorEvidence 'Microsoft-Windows-PktMon 0x4 0x0000000000000012' 'PRIVATE-SYNTHETIC'
+        Assert-Wire (-not $rowOnly.providerHeaderRecognized -and $rowOnly.keywordRowRecognized -and $rowOnly.rawPacketLogging -ceq 'enabled')
         $oversized=Get-NativeDNSWireMonitorEvidence "Provider Level Keywords`nMicrosoft-Windows-PktMon 4 0x10000000000000000" 'PRIVATE-SYNTHETIC'
         Assert-Wire ($oversized.providerHeaderRecognized -and -not $oversized.keywordRowRecognized -and $oversized.rawPacketLogging -ceq 'unknown')
         Assert-Wire ($stopped.state -ceq 'stopped' -and $stopped.rawPacketLogging -ceq 'unknown' -and $disabled.rawPacketLogging -ceq 'disabled' -and $unknown.state -ceq 'unknown' -and -not $unknown.ownedPathMentioned -and -not $unknown.providerMentioned -and $unknown.rawPacketLogging -ceq 'unknown')

@@ -257,13 +257,13 @@ function Get-NativeDNSWireMonitorEvidence([string]$Text,[string]$ExpectedPath) {
     $r.providerMentioned=$Text.Contains('Microsoft-Windows-PktMon')
     $r.circularSettingMentioned=($Text -match '(?im)^\s*Logging mode\s*:\s*Circular\s*$')
     if($r.ownedPathMentioned -and $r.providerMentioned){$r.state='owned-details'}
-    # Recognize only the exact provider/level/keyword table form. Unrecognized
-    # output remains unknown and never contributes to packet acceptance.
+    # Classify only an exact public-provider/level/keyword row. Heading
+    # recognition remains separate; neither contributes to packet acceptance.
     $r.providerHeaderRecognized=($Text -match '(?im)^[ \t]*(?:Provider(?: name)?|Name)[ \t]+Level[ \t]+Keywords[ \t]*\r?$')
     $r.keywordRowRecognized=($Text -match '(?im)^[ \t]*Microsoft-Windows-PktMon[ \t]+(?:0x)?[0-5][ \t]+0x(?<mask>[0-9a-f]{1,16})[ \t]*\r?$')
     if($r.keywordRowRecognized){
         $mask=[Convert]::ToUInt64($Matches.mask,16)
-        if($r.providerHeaderRecognized){$r.rawPacketLogging=if(($mask -band 0x10) -ne 0){'enabled'}else{'disabled'}}
+        $r.rawPacketLogging=if(($mask -band 0x10) -ne 0){'enabled'}else{'disabled'}
     }
     return $r
 }
