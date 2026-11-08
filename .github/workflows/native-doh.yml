@@ -63,6 +63,8 @@ jobs:
       - name: Verify coordinator source contracts before native changes
         run: |
           $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-dns-recovery-contracts.ps1 -RequireWindowsPowerShell
+          if($LASTEXITCODE -ne 0){throw 'Native worker recovery source preflight failed'}
           & $stock -NoProfile -NonInteractive -File ./scripts/test-dns-acceptance-state.ps1 -RequireWindowsPowerShell
           if($LASTEXITCODE -ne 0){throw 'Native coordinator source preflight failed'}
       - name: Build the actual native controller
