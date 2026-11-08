@@ -5,10 +5,10 @@ if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-host
 if($RequireWindowsPowerShell -and ($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1)){throw 'Stock source shell required'}
 foreach($name in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management')){Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$name,($name+'.psd1'))) -ErrorAction Stop}
 $PSModuleAutoLoadingPreference='None'
-$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
+$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/dns-wire-evidence.cjs','scripts/ndis-frame-converter.cjs','scripts/test-ndis-frame-converter.cjs','scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-netevent-control.ps1'),[ref]$tokens,[ref]$issues);if($issues.Count){throw 'Source syntax'}
-$allowed=@('Add-NativeNDISTemplateTreeNode','Test-NativeNDISTemplateTree','Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
+$allowed=@('Get-NativeNDISTemplateTree','Add-NativeNDISTemplateTreeNode','Test-NativeNDISTemplateTree','Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
 foreach($def in $ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
     if($def.Name -cin @('Get-NativeNetEventEnums','Get-NativeNetEventInventory')){continue}
     foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin $allowed){throw 'Source command boundary'}}
@@ -259,6 +259,21 @@ Case-N 'rundown-count-remains-separate-and-contradictions-are-refused' {
     $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=1;$r.recognizedDefinitions=1;Add-NativeNDISCatalogHeader $r @{'5100:0'='rundown'} ([guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef') 5100 0
     $v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.code -ceq 'complete' -and $v.rundownRecords -eq 1 -and $v.inventoryRecords -eq 0)
     $r.rundownRecords=2;Assert-N ((Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress)).code -ceq 'invalid')
+}
+
+
+function LayerTemplate-N {
+    return '<template xmlns="http://schemas.microsoft.com/win/2004/08/events"><data name="SourceId" inType="win:UInt8"/><data name="SourceName" inType="win:UnicodeString"/><data name="IfIndex" inType="win:UInt32"/><data name="LayerCount" inType="win:UInt16"/><struct name="LayerInfo" count="LayerCount"><data name="LayerId" inType="win:UInt32"/><data name="LayerName" inType="win:UnicodeString"/></struct></template>'
+}
+Case-N 'primary-layer-rundown-recognition-requires-exact-structure' {
+    $template=LayerTemplate-N;Assert-N ((Get-NativeNDISCatalogClass 5101 0 4 $template) -ceq 'rundown')
+    foreach($changed in @($template.Replace('count="LayerCount"','count="OtherCount"'),$template.Replace('name="LayerId" inType="win:UInt32"','name="LayerId" inType="win:UInt64"'),$template.Replace('name="LayerName"','name="OtherName"'))){Assert-N ((Get-NativeNDISCatalogClass 5101 0 4 $changed) -ceq 'unknown')}
+    Assert-N ((Get-NativeNDISCatalogClass 5101 1 4 $template) -ceq 'unknown');Assert-N ((Get-NativeNDISCatalogClass 5101 0 2 $template) -ceq 'unknown')
+}
+Case-N 'complete-primary-catalog-retains-three-rundown-records-explicitly' {
+    $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=3;$r.recognizedDefinitions=3;$g=[guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef';$catalog=@{'1001:0'='fragment';'5100:0'='rundown';'5101:0'='rundown'}
+    Add-NativeNDISCatalogHeader $r $catalog $g 1001 0;Add-NativeNDISCatalogHeader $r $catalog $g 5100 0;Add-NativeNDISCatalogHeader $r $catalog $g 5100 0;Add-NativeNDISCatalogHeader $r $catalog $g 5101 0
+    $v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.rundownRecords -eq 3 -and $v.unknownRecords -eq 0 -and (Test-NativeNDISCatalogEvidence $v))
 }
 
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}

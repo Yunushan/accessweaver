@@ -11152,6 +11152,413 @@
           "failedCases": []
         }
       ]
+    },
+    {
+      "sourceCommit": "14317743aa7e4bfce43bde033209411bbccb08ed",
+      "runID": 42521370974,
+      "allJobsTerminal": true,
+      "sourceSHA256": {
+        "scripts/native-etl-header.cs": "2624836059feb17a5b284bc8c9abbdb46978231fe4b7e319b0354ca6dfdadb5a",
+        "scripts/read-native-etl-loss.ps1": "e54c62b9550bb10d288997e1a32a84c7b0a45883bdec2eb48e9a6b9db66535e7",
+        "scripts/native-netevent-control.ps1": "4547a88c64b7a096c880c337aa1eaefbcc587b259669be4505a2ff3a0c2a05f9",
+        "scripts/netevent-control-operation.ps1": "b2601b0bad0507a0bc00c1e1808d768c0ef065fff0e70672ac47f86aa4dbfe8b",
+        "scripts/test-native-netevent-control.ps1": "374ecec148db37c5ec9a1eb2b86416051b704559a29b32bad9f8c7777ce38e55",
+        "scripts/test-native-netevent-contracts.ps1": "972fde272de1703d95042d1848b73ca24fa5b4834d0126c744c7cb032f59c00f",
+        ".github/workflows/native-netevent-control.yml": "0bfbbc84b63cb28255a417989b92ff859338b446976210688b38647f462d8343",
+        "scripts/native-dns-wire.ps1": "628ca31341babc247390d14dfcadea2d772d33a666570edbbd6c6b05ebee2850",
+        "scripts/dns-acceptance-state.ps1": "a8332f9d043c4f3577a5229a4831e7e88df52a1c9733eba4e4e254012622a2de"
+      },
+      "jobs": [
+        {
+          "id": 128855392852,
+          "name": "NetEvent capture control (windows/arm64)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failedSteps": [
+            "Verify source contracts before capture"
+          ],
+          "activeSteps": []
+        },
+        {
+          "id": 128855393014,
+          "name": "NetEvent capture control (windows/amd64)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failedSteps": [
+            "Verify source contracts before capture"
+          ],
+          "activeSteps": []
+        }
+      ],
+      "bothSourceContractsPassed": false,
+      "bothControlsPassed": false,
+      "missingNative": [
+        "amd64",
+        "arm64"
+      ],
+      "artifacts": [
+        {
+          "artifactID": 13633860262,
+          "artifactName": "netevent-source-windows-amd64",
+          "providerZIPDigest": "sha256:cd8207abe76116172b031b9e08dda4c654ede8c8f2388eb13dc9e1c055096db2",
+          "providerZIPDigestVerified": true,
+          "kind": "source",
+          "architecture": "amd64",
+          "passed": false,
+          "groupCount": 48,
+          "failedCases": [
+            "static-schema-tree-closed-grammar-requires-balanced-bounded-nesting"
+          ]
+        },
+        {
+          "artifactID": 13633566950,
+          "artifactName": "netevent-source-windows-arm64",
+          "providerZIPDigest": "sha256:76443b494149e9a548c39ed06f1466d830e53d77015887e195fb384c59c8d35a",
+          "providerZIPDigestVerified": true,
+          "kind": "source",
+          "architecture": "arm64",
+          "passed": false,
+          "groupCount": 48,
+          "failedCases": [
+            "static-schema-tree-closed-grammar-requires-balanced-bounded-nesting"
+          ]
+        }
+      ]
+    },
+    {
+      "sourceCommit": "d9d5e3f96f6034fd22811729ac069f04f6623ef6",
+      "runID": 42521604255,
+      "allJobsTerminal": true,
+      "sourceSHA256": {
+        "scripts/native-etl-header.cs": "2624836059feb17a5b284bc8c9abbdb46978231fe4b7e319b0354ca6dfdadb5a",
+        "scripts/read-native-etl-loss.ps1": "e54c62b9550bb10d288997e1a32a84c7b0a45883bdec2eb48e9a6b9db66535e7",
+        "scripts/native-netevent-control.ps1": "4547a88c64b7a096c880c337aa1eaefbcc587b259669be4505a2ff3a0c2a05f9",
+        "scripts/netevent-control-operation.ps1": "b2601b0bad0507a0bc00c1e1808d768c0ef065fff0e70672ac47f86aa4dbfe8b",
+        "scripts/test-native-netevent-control.ps1": "374ecec148db37c5ec9a1eb2b86416051b704559a29b32bad9f8c7777ce38e55",
+        "scripts/test-native-netevent-contracts.ps1": "34de7d43eea47a08d67fdf52b64fad4b99b443404510f905110cbd90bed19896",
+        ".github/workflows/native-netevent-control.yml": "0bfbbc84b63cb28255a417989b92ff859338b446976210688b38647f462d8343",
+        "scripts/native-dns-wire.ps1": "628ca31341babc247390d14dfcadea2d772d33a666570edbbd6c6b05ebee2850",
+        "scripts/dns-acceptance-state.ps1": "a8332f9d043c4f3577a5229a4831e7e88df52a1c9733eba4e4e254012622a2de"
+      },
+      "jobs": [
+        {
+          "id": 128856095453,
+          "name": "NetEvent capture control (windows/amd64)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failedSteps": [
+            "Run isolated NetEvent capture control"
+          ],
+          "activeSteps": []
+        },
+        {
+          "id": 128856095667,
+          "name": "NetEvent capture control (windows/arm64)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failedSteps": [
+            "Run isolated NetEvent capture control"
+          ],
+          "activeSteps": []
+        }
+      ],
+      "bothSourceContractsPassed": true,
+      "bothControlsPassed": false,
+      "missingNative": [],
+      "artifacts": [
+        {
+          "artifactID": 13634035266,
+          "artifactName": "netevent-control-windows-arm64",
+          "providerZIPDigest": "sha256:49e670074e02b76e4cffb7fdd37277e19a6e8afd7fab780d1788f9a54f5ff71e",
+          "providerZIPDigestVerified": true,
+          "kind": "control",
+          "architecture": "arm64",
+          "outcome": "failed",
+          "code": "control-failed",
+          "environmentVerified": true,
+          "nativeProcessVerified": true,
+          "control": {
+            "originalStateVerified": true,
+            "captureBounded": true,
+            "phase": "provider-catalog",
+            "lossEvidence": {
+              "maximumFileSize": 16,
+              "finalized": true,
+              "eventsLost": 0,
+              "logFileMode": 2,
+              "bufferSize": 65536,
+              "buffersWritten": 4,
+              "closed": true,
+              "nativeCode": 0,
+              "code": "parsed",
+              "pointerSize": 8,
+              "buffersLost": 0
+            },
+            "etlBytes": 262144,
+            "outcome": "failed",
+            "catalogEvidence": {
+              "metadataRecords": 0,
+              "rundownRecords": 2,
+              "unknownRecords": 1,
+              "missingProviderIDs": 0,
+              "lifecycleRecords": 20,
+              "records": 46,
+              "unrecognizedVersions": 0,
+              "code": "complete",
+              "inventoryRecords": 10,
+              "recognizedDefinitions": 11,
+              "ruleRecords": 6,
+              "fragmentRecords": 6,
+              "schemas": [
+                {
+                  "task": "",
+                  "id": 5101,
+                  "records": 1,
+                  "version": 0,
+                  "level": 4,
+                  "tree": [
+                    "D:SourceId:win:UInt8::",
+                    "D:SourceName:win:UnicodeString::",
+                    "D:IfIndex:win:UInt32::",
+                    "D:LayerCount:win:UInt16::",
+                    "S:LayerInfo::LayerCount",
+                    "D:LayerId:win:UInt32::",
+                    "D:LayerName:win:UnicodeString::",
+                    "E:LayerInfo"
+                  ],
+                  "fields": [],
+                  "code": "unsupported",
+                  "templateKind": "structured",
+                  "opcode": "win:Info"
+                }
+              ],
+              "otherProviderRecords": 1,
+              "providerVerified": true,
+              "definitions": 20
+            },
+            "operationEvidence": {
+              "modeKind": "numeric",
+              "hresult": 0,
+              "stage": "provider-readback",
+              "family": "none",
+              "statusKind": "enum",
+              "cimStatus": -1
+            },
+            "connected": true,
+            "sessionVerified": true,
+            "preflightEmpty": true,
+            "toolFailure": false,
+            "cleanupEvidence": {
+              "modeKind": "not-inspected",
+              "hresult": 0,
+              "stage": "not-inspected",
+              "family": "none",
+              "statusKind": "not-inspected",
+              "cimStatus": -1
+            },
+            "sessionRemoved": true,
+            "processes": 12,
+            "eventEvidence": {
+              "missingProviderIDs": 0,
+              "providerRecords": 45,
+              "code": "complete",
+              "records": 46,
+              "unknownProviderIDs": 39,
+              "fragmentIDs": 6,
+              "otherProviderRecords": 1,
+              "unrecognizedVersions": 0
+            },
+            "fragmentEvidence": {
+              "missingProviderIDs": 0,
+              "metadataIDs": 0,
+              "rawWan": 0,
+              "fragmentIDs": 6,
+              "otherProviderRecords": 1,
+              "ethernet": 6,
+              "received": 2,
+              "directionUnknown": 0,
+              "unknownProviderIDs": 39,
+              "unrecognizedVersions": 0,
+              "mediaConflict": 0,
+              "records": 46,
+              "code": "complete",
+              "partialEvent": 0,
+              "singleEvent": 6,
+              "missingKeywords": 0,
+              "wireless": 0,
+              "sent": 4
+            },
+            "joined": 12,
+            "captureStopped": true,
+            "captureStarted": true,
+            "code": "provider-catalog",
+            "originalResolverPassed": true,
+            "providerVerified": true,
+            "cleanupCode": "none"
+          },
+          "productInvoked": false,
+          "dnsSettingsChangesAttempted": false,
+          "firewallRulesCreated": false,
+          "encryptedTrafficQualified": false
+        },
+        {
+          "artifactID": 13633581546,
+          "artifactName": "netevent-source-windows-arm64",
+          "providerZIPDigest": "sha256:5bce7680ab7c4c573367aa4cf53c4293e128fba561f67fba1b915f9a8bd338ea",
+          "providerZIPDigestVerified": true,
+          "kind": "source",
+          "architecture": "arm64",
+          "passed": true,
+          "groupCount": 48,
+          "failedCases": []
+        },
+        {
+          "artifactID": 13633552414,
+          "artifactName": "netevent-control-windows-amd64",
+          "providerZIPDigest": "sha256:d918578a400160c64fed30c3683195fa2da4a2271ad85614c160bfc68186a41e",
+          "providerZIPDigestVerified": true,
+          "kind": "control",
+          "architecture": "amd64",
+          "outcome": "failed",
+          "code": "control-failed",
+          "environmentVerified": true,
+          "nativeProcessVerified": true,
+          "control": {
+            "originalStateVerified": true,
+            "captureBounded": true,
+            "phase": "provider-catalog",
+            "lossEvidence": {
+              "maximumFileSize": 16,
+              "finalized": true,
+              "eventsLost": 0,
+              "logFileMode": 2,
+              "bufferSize": 65536,
+              "buffersWritten": 5,
+              "closed": true,
+              "nativeCode": 0,
+              "code": "parsed",
+              "pointerSize": 8,
+              "buffersLost": 0
+            },
+            "etlBytes": 327680,
+            "outcome": "failed",
+            "catalogEvidence": {
+              "metadataRecords": 0,
+              "rundownRecords": 2,
+              "unknownRecords": 1,
+              "missingProviderIDs": 0,
+              "lifecycleRecords": 20,
+              "records": 46,
+              "unrecognizedVersions": 0,
+              "code": "complete",
+              "inventoryRecords": 10,
+              "recognizedDefinitions": 11,
+              "ruleRecords": 6,
+              "fragmentRecords": 6,
+              "schemas": [
+                {
+                  "task": "",
+                  "id": 5101,
+                  "records": 1,
+                  "version": 0,
+                  "level": 4,
+                  "tree": [
+                    "D:SourceId:win:UInt8::",
+                    "D:SourceName:win:UnicodeString::",
+                    "D:IfIndex:win:UInt32::",
+                    "D:LayerCount:win:UInt16::",
+                    "S:LayerInfo::LayerCount",
+                    "D:LayerId:win:UInt32::",
+                    "D:LayerName:win:UnicodeString::",
+                    "E:LayerInfo"
+                  ],
+                  "fields": [],
+                  "code": "unsupported",
+                  "templateKind": "structured",
+                  "opcode": "win:Info"
+                }
+              ],
+              "otherProviderRecords": 1,
+              "providerVerified": true,
+              "definitions": 20
+            },
+            "operationEvidence": {
+              "modeKind": "numeric",
+              "hresult": 0,
+              "stage": "provider-readback",
+              "family": "none",
+              "statusKind": "enum",
+              "cimStatus": -1
+            },
+            "connected": true,
+            "sessionVerified": true,
+            "preflightEmpty": true,
+            "toolFailure": false,
+            "cleanupEvidence": {
+              "modeKind": "not-inspected",
+              "hresult": 0,
+              "stage": "not-inspected",
+              "family": "none",
+              "statusKind": "not-inspected",
+              "cimStatus": -1
+            },
+            "sessionRemoved": true,
+            "processes": 12,
+            "eventEvidence": {
+              "missingProviderIDs": 0,
+              "providerRecords": 45,
+              "code": "complete",
+              "records": 46,
+              "unknownProviderIDs": 39,
+              "fragmentIDs": 6,
+              "otherProviderRecords": 1,
+              "unrecognizedVersions": 0
+            },
+            "fragmentEvidence": {
+              "missingProviderIDs": 0,
+              "metadataIDs": 0,
+              "rawWan": 0,
+              "fragmentIDs": 6,
+              "otherProviderRecords": 1,
+              "ethernet": 6,
+              "received": 2,
+              "directionUnknown": 0,
+              "unknownProviderIDs": 39,
+              "unrecognizedVersions": 0,
+              "mediaConflict": 0,
+              "records": 46,
+              "code": "complete",
+              "partialEvent": 0,
+              "singleEvent": 6,
+              "missingKeywords": 0,
+              "wireless": 0,
+              "sent": 4
+            },
+            "joined": 12,
+            "captureStopped": true,
+            "captureStarted": true,
+            "code": "provider-catalog",
+            "originalResolverPassed": true,
+            "providerVerified": true,
+            "cleanupCode": "none"
+          },
+          "productInvoked": false,
+          "dnsSettingsChangesAttempted": false,
+          "firewallRulesCreated": false,
+          "encryptedTrafficQualified": false
+        },
+        {
+          "artifactID": 13633199813,
+          "artifactName": "netevent-source-windows-amd64",
+          "providerZIPDigest": "sha256:fefc9561b4a9594c552f75646e18424b18c17eef487d54b8b1f87bc18ee45101",
+          "providerZIPDigestVerified": true,
+          "kind": "source",
+          "architecture": "amd64",
+          "passed": true,
+          "groupCount": 48,
+          "failedCases": []
+        }
+      ]
     }
   ],
   "defaultScenarioRegressions": [
@@ -11302,8 +11709,8 @@
       ]
     }
   ],
-  "distinctProviderZIPDigestsVerified": 248,
-  "terminalJobsVerified": 230,
+  "distinctProviderZIPDigestsVerified": 254,
+  "terminalJobsVerified": 234,
   "productSourceUnchangedSince": "3ae6417cb9a8a86d6b4e41dea0f25fc3af94c331",
   "readinessManifestSHA256": "9525ee76922c68ec4f3daafe581bffc9d7631bf77947863bc62a807556b4b735",
   "rawLogsRead": false,

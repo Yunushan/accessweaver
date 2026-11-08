@@ -4,6 +4,9 @@ on:
   push:
     branches: ['main', 'codex/dns-adapter-coverage']
     paths:
+      - 'scripts/dns-wire-evidence.cjs'
+      - 'scripts/ndis-frame-converter.cjs'
+      - 'scripts/test-ndis-frame-converter.cjs'
       - 'scripts/native-netevent-control.ps1'
       - 'scripts/native-etl-header.cs'
       - 'scripts/read-native-etl-loss.ps1'
@@ -52,7 +55,12 @@ jobs:
         run: |
           node -e "const os=require('node:os');const arch={x64:'amd64',arm64:'arm64'}[process.arch];const host={x86_64:'amd64',amd64:'amd64',arm64:'arm64',aarch64:'arm64'}[os.machine().toLowerCase()];if(process.platform!=='win32'||process.version!=='v26.8.2'||arch!==host||arch!==process.env.ACCESSWEAVER_EXPECT_GOARCH)process.exit(1)"
           if($LASTEXITCODE -ne 0){throw 'Native Node identity refused'}
+      - name: Verify pure complete-frame contracts
+        run: |
+          node scripts/test-ndis-frame-converter.cjs
+          if($LASTEXITCODE -ne 0){throw 'Pure complete-frame contracts failed'}
       - name: Verify source contracts before capture
+        if: always()
         run: |
           $ErrorActionPreference='Stop'
           $evidence=Join-Path $env:RUNNER_TEMP ('accessweaver-netevent-source-'+[Guid]::NewGuid().ToString('N'))

@@ -244,6 +244,10 @@ function Get-NativeNDISCatalogClass([int]$ID,[int]$Version,[int]$Level,[string]$
     if($ID -cin @(1014,1015) -and $signature -ceq 'MiniportIfIndex:win:UInt32:|LowerIfIndex:win:UInt32:|MediaType:win:UInt32:|ReferenceContext:win:UInt32:'){return 'inventory'}
     if($ID -cin @(3001,3002) -and $Level -eq 5 -and $signature -ceq 'PreviousState:win:UInt8:|NextState:win:UInt8:|Location:win:UInt32:|Context:win:UInt32:'){return 'lifecycle'}
     if($ID -eq 5100 -and $Level -eq 4 -and $signature -ceq 'SourceId:win:UInt8:|RundownId:win:UInt32:|Param1:win:UInt64:|Param2:win:UInt64:|ParamStr:win:UnicodeString:|Description:win:UnicodeString:'){return 'rundown'}
+    if($ID -eq 5101 -and $Level -eq 4){
+        $tree=@(Get-NativeNDISTemplateTree $Template)
+        if([string]::Join('|',$tree) -ceq 'D:SourceId:win:UInt8::|D:SourceName:win:UnicodeString::|D:IfIndex:win:UInt32::|D:LayerCount:win:UInt16::|S:LayerInfo::LayerCount|D:LayerId:win:UInt32::|D:LayerName:win:UnicodeString::|E:LayerInfo'){return 'rundown'}
+    }
     return 'unknown'
 }
 function New-NativeNDISCatalogEvidence([string]$Code='not-inspected') {
