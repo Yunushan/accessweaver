@@ -98,3 +98,19 @@ function Get-NativeDNSVerificationMarker([string]$Previous,[string]$Chunk) {
     $combined=$Previous+$Chunk;$start=[Math]::Max(0,$combined.Length-($marker.Length-1))
     return @{matched=$combined.Contains($marker);suffix=$combined.Substring($start)}
 }
+
+# Closed fixture-only I/O vocabulary. Exception text never enters a public report.
+function Get-NativeDNSForwarderFailure([Exception]$Failure) {
+    for($depth=0;$null -ne $Failure -and $depth -lt 16;$depth++){
+        if($Failure -is [Net.Sockets.SocketException]){if($Failure.NativeErrorCode -eq 10054){return 'peer-closed'};return 'socket-io'}
+        switch -CaseSensitive ($Failure.Message){
+            'Forwarded DNS packet bound exceeded' {return 'packet-bound'}
+            'Forwarded DNS request count exceeded' {return 'request-bound'}
+            'Non-loopback forwarder peer refused' {return 'peer-bound'}
+            'Forwarded DNS error response incomplete' {return 'response-write'}
+            {$_ -cin @('Fixed DNS query shape refused','Fixed DNS query name refused','Fixed DNS question type refused','Fixed DNS additional count refused','Fixed DNS trailing bytes refused','Fixed DNS EDNS shape refused')} {return 'packet-shape'}
+        }
+        $Failure=$Failure.InnerException
+    }
+    return 'unexpected-io'
+}
