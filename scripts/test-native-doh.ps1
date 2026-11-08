@@ -18,7 +18,7 @@ $sources=@('scripts/test-native-doh.ps1','scripts/native-doh-scenario.ps1','scri
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $script:cliCount=0;$script:joined=0;$script:overflow=$false;$script:captureFailed=$false;$script:diagnosticWaitExceeded=$false
 $script:captureStage='not-started';$script:captureProgress=@{adapterTotal=0;adapterOrdinal=0;selected=$false};$script:configureExit=-1;$script:restoreExit=-1;$script:answers=0
-$environmentVerified=$false;$nativeProcessVerified=$false;$binaryVerified=$false;$snapshotRemoved=$false;$scenario=$null;$outcome='failed';$code='environment-guard'
+$adapterShapes=@();$probeOutcome='not-started';$environmentVerified=$false;$nativeProcessVerified=$false;$binaryVerified=$false;$snapshotRemoved=$false;$scenario=$null;$outcome='failed';$code='environment-guard'
 try {
     if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows' -or $env:ACCESSWEAVER_EXPECT_GOOS -cne 'windows' -or $env:ACCESSWEAVER_EXPECT_GOARCH -cnotin @('amd64','arm64')){throw 'Hosted native Windows guard refused'}
     if($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1){throw 'Stock Windows PowerShell5.1 required'}
@@ -106,6 +106,46 @@ public static class AccessWeaverNativeDoHIdentity {
             if($process.ExitCode -ne 0 -or $script:overflow -or $script:captureFailed){throw 'Native CLI or bounded capture failed'}
         } finally {$process.Dispose()}
     }
+    function Get-NativeDoHAdapterShapes {
+        $inventory=@(Get-NetAdapter -ErrorAction Stop)
+        if($inventory.Count -gt 16){throw 'Native adapter shape bound exceeded'}
+        $physical=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase);$physicalKnown=$true
+        try{foreach($a in @(Get-NetAdapter -Physical -ErrorAction Stop)){[void]$physical.Add(([guid]$a.InterfaceGuid).ToString('D'))}}catch{$physicalKnown=$false}
+        $rows=@();$ordinal=0
+        foreach($a in $inventory){
+            $ordinal++;$guid=([guid]$a.InterfaceGuid).ToString('D')
+            $hardware=if($a.HardwareInterface -is [bool]){if($a.HardwareInterface){'true'}else{'false'}}else{'unknown'}
+            $isPhysical=if($physicalKnown){if($physical.Contains($guid)){'true'}else{'false'}}else{'unknown'}
+            $interfaceType=0;try{$n=[int]$a.InterfaceType;if($n -ge 0 -and $n -le 1024){$interfaceType=$n}}catch{}
+            $row=@{ordinal=$ordinal;selected=($a.Status -eq 'Up' -and $a.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN');hardware=$hardware;physical=$isPhysical;interfaceType=$interfaceType}
+            foreach($family in @('IPv4','IPv6')){
+                $item=@{registry='unknown';nameServerKind='unknown';binding='unknown';addressRows=-1}
+                $service=if($family -ceq 'IPv4'){'Tcpip'}else{'Tcpip6'}
+                $component=if($family -ceq 'IPv4'){'ms_tcpip'}else{'ms_tcpip6'}
+                $key=$null
+                try{
+                    $key=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(('SYSTEM\CurrentControlSet\Services\'+$service+'\Parameters\Interfaces\{'+$guid+'}'))
+                    if($null -eq $key){$item.registry='absent';$item.nameServerKind='absent'}else{
+                        $item.registry='present';$names=@($key.GetValueNames())
+                        if($names.Count -le 1024 -and $names -icontains 'NameServer'){
+                            $kind=$key.GetValueKind('NameServer').ToString()
+                            $item.nameServerKind=switch -CaseSensitive ($kind){'String' {'string'} 'ExpandString' {'expand-string'} 'MultiString' {'multi-string'} 'DWord' {'dword'} 'QWord' {'qword'} 'Binary' {'binary'} default {'unknown'}}
+                        }elseif($names.Count -le 1024){$item.nameServerKind='absent'}
+                    }
+                }catch{}finally{if($null -ne $key){$key.Close()}}
+                try{
+                    $bindings=@(Get-NetAdapterBinding -Name ([Management.Automation.WildcardPattern]::Escape([string]$a.Name)) -ComponentID $component -ErrorAction Stop)
+                    if($bindings.Count -eq 1 -and $bindings[0].Enabled -is [bool]){$item.binding=if($bindings[0].Enabled){'enabled'}else{'disabled'}}
+                }catch{}
+                try{$count=@(Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -AddressFamily $family -ErrorAction Stop).Count;if($count -le 16){$item.addressRows=$count}}catch{if($_.CategoryInfo.Category -eq [Management.Automation.ErrorCategory]::ObjectNotFound){$item.addressRows=0}}
+                $row[$family.ToLowerInvariant()]=$item
+            }
+            $rows+=@($row)
+        }
+        return @($rows)
+    }
+    # Read-only shape metadata uses no adapter names/GUIDs, addresses or values.
+    try{$adapterShapes=@(Get-NativeDoHAdapterShapes);$probeOutcome='complete'}catch{$probeOutcome='failed'}
     $scenario=Invoke-NativeDoHScenario -Apply {param($request) Invoke-NativeDoHCLI $request} -Capture {Read-DNSAcceptanceState ([ref]$script:captureStage) ([ref]$script:captureProgress)} -Resolve {
         Clear-DnsClientCache -ErrorAction Stop
         $answers=@(Resolve-DnsName 'example.com' -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
@@ -123,7 +163,7 @@ finally {
     # Fixed metadata only: no exception, account, path, DNS value or raw output.
     $parent=Get-Item -LiteralPath $reportParent.FullName -Force -ErrorAction Stop;Assert-NativeOrdinaryPath $ReportPath
     if($parent.CreationTimeUtc.Ticks -ne $reportCreated -or [IO.Directory]::GetFileSystemEntries($parent.FullName).Length -ne 0){throw 'Changed native report parent retained'}
-    $report=@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;platform='windows';architecture=$env:ACCESSWEAVER_EXPECT_GOARCH;goVersion=$env:GO_VERSION;edition=$PSVersionTable.PSEdition;version=$PSVersionTable.PSVersion.ToString();binarySHA256=$BinarySHA256;outcome=$outcome;code=$code;environmentVerified=$environmentVerified;nativeProcessVerified=$nativeProcessVerified;binaryVerified=$binaryVerified;scenario=$scenario;captureStage=$script:captureStage;captureProgress=$script:captureProgress;cliCount=$script:cliCount;processesJoined=$script:joined;configureExitCode=$script:configureExit;restoreExitCode=$script:restoreExit;outputOverflow=$script:overflow;captureFailed=$script:captureFailed;diagnosticWaitExceeded=$script:diagnosticWaitExceeded;ordinaryResolverAnswers=$script:answers;snapshotRemoved=$snapshotRemoved;encryptedTrafficObserved=$false;rebootExercised=$false;dnscryptExercised=$false;nativeDnsQualified=$false;productionQualificationComplete=$false}
+    $report=@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;platform='windows';architecture=$env:ACCESSWEAVER_EXPECT_GOARCH;goVersion=$env:GO_VERSION;edition=$PSVersionTable.PSEdition;version=$PSVersionTable.PSVersion.ToString();binarySHA256=$BinarySHA256;outcome=$outcome;code=$code;environmentVerified=$environmentVerified;nativeProcessVerified=$nativeProcessVerified;binaryVerified=$binaryVerified;scenario=$scenario;probeOutcome=$probeOutcome;adapterShapes=@($adapterShapes);captureStage=$script:captureStage;captureProgress=$script:captureProgress;cliCount=$script:cliCount;processesJoined=$script:joined;configureExitCode=$script:configureExit;restoreExitCode=$script:restoreExit;outputOverflow=$script:overflow;captureFailed=$script:captureFailed;diagnosticWaitExceeded=$script:diagnosticWaitExceeded;ordinaryResolverAnswers=$script:answers;snapshotRemoved=$snapshotRemoved;encryptedTrafficObserved=$false;rebootExercised=$false;dnscryptExercised=$false;nativeDnsQualified=$false;productionQualificationComplete=$false}
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($report|ConvertTo-Json -Depth 5 -Compress));if($bytes.Length -gt 16384){throw 'Native report exceeds fixed metadata bound'}
     $stream=[IO.FileStream]::new($ReportPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush()}finally{$stream.Dispose()}
