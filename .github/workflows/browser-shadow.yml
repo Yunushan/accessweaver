@@ -2,7 +2,7 @@ name: Owned box-shadow rendering control
 
 on:
   push:
-    branches: ['codex/browser-shadow-control', 'codex/browser-shadow-csp', 'codex/browser-shadow-parser']
+    branches: ['codex/browser-shadow-control', 'codex/browser-shadow-csp', 'codex/browser-shadow-parser', 'codex/shadow-surface-control']
     paths-ignore: ['docs/**', 'README.md']
   workflow_dispatch:
 
@@ -32,7 +32,7 @@ jobs:
       fail-fast: false
       matrix:
         browser: [chromium, firefox, webkit]
-        variant: [original, without-box-shadow]
+        variant: [original, without-decorative-shadows, without-selection-shadows, without-box-shadow]
         goarch: [amd64, arm64]
         include:
           - goarch: amd64
@@ -110,7 +110,7 @@ jobs:
         run: node check-image-environment.cjs
       - name: Verify shadow control and ownership contracts
         run: node --test scripts/browser-tests/browser-shadow-control.test.cjs scripts/browser-tests/browser-timing.test.cjs scripts/browser-tests/browser-native-binary.test.cjs scripts/browser-tests/browser-resources.test.cjs scripts/browser-tests/browser-memory.test.cjs scripts/browser-tests/job-cpu.test.cjs scripts/browser-tests/browser-soak.test.cjs
-      - name: Measure original and shadow-free rendering
+      - name: Measure fixed shadow surface groups
         working-directory: scripts/browser-tests
         env:
           BROWSER: ${{ matrix.browser }}
