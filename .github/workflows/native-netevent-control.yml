@@ -1,0 +1,88 @@
+name: Native Windows NetEvent capture control
+
+on:
+  push:
+    branches: ['main', 'codex/dns-adapter-coverage']
+    paths:
+      - 'scripts/native-netevent-control.ps1'
+      - 'scripts/netevent-control-operation.ps1'
+      - 'scripts/test-native-netevent-control.ps1'
+      - 'scripts/test-native-netevent-contracts.ps1'
+      - 'scripts/native-dns-wire.ps1'
+      - 'scripts/dns-acceptance-state.ps1'
+      - '.github/workflows/native-netevent-control.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-netevent-control-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  control:
+    name: NetEvent capture control (windows/${{ matrix.goarch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {goarch: amd64, os: windows-latest, sdkarch: x64}
+          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      ACCESSWEAVER_EXPECT_GOOS: windows
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '26.8.2'
+          architecture: ${{ matrix.sdkarch }}
+          package-manager-cache: false
+      - name: Verify native Node host
+        run: |
+          node -e "const os=require('node:os');const arch={x64:'amd64',arm64:'arm64'}[process.arch];const host={x86_64:'amd64',amd64:'amd64',arm64:'arm64',aarch64:'arm64'}[os.machine().toLowerCase()];if(process.platform!=='win32'||process.version!=='v26.8.2'||arch!==host||arch!==process.env.ACCESSWEAVER_EXPECT_GOARCH)process.exit(1)"
+          if($LASTEXITCODE -ne 0){throw 'Native Node identity refused'}
+      - name: Verify source contracts before capture
+        run: |
+          $ErrorActionPreference='Stop'
+          $evidence=Join-Path $env:RUNNER_TEMP ('accessweaver-netevent-source-'+[Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $evidence -ErrorAction Stop | Out-Null
+          $env:ACCESSWEAVER_NETEVENT_SOURCE=$evidence
+          "ACCESSWEAVER_NETEVENT_SOURCE=$evidence" >> $env:GITHUB_ENV
+          $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-netevent-contracts.ps1 -RequireWindowsPowerShell > (Join-Path $evidence 'status.json')
+          if($LASTEXITCODE -ne 0){throw 'NetEvent source preflight failed'}
+      - name: Run isolated NetEvent capture control
+        run: |
+          $ErrorActionPreference='Stop'
+          $evidence=Join-Path $env:RUNNER_TEMP ('accessweaver-netevent-control-'+[Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $evidence -ErrorAction Stop | Out-Null
+          $env:ACCESSWEAVER_NETEVENT_CONTROL=$evidence
+          "ACCESSWEAVER_NETEVENT_CONTROL=$evidence" >> $env:GITHUB_ENV
+          $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-netevent-control.ps1 -ReportPath (Join-Path $evidence 'status.json')
+          if($LASTEXITCODE -ne 0){throw 'NetEvent capture control failed; fixed metadata retained'}
+      - name: Retain fixed source contract metadata only
+        if: always() && env.ACCESSWEAVER_NETEVENT_SOURCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: netevent-source-windows-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_NETEVENT_SOURCE }}/status.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain fixed NetEvent control metadata only
+        if: always() && env.ACCESSWEAVER_NETEVENT_CONTROL != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: netevent-control-windows-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_NETEVENT_CONTROL }}/status.json
+          if-no-files-found: error
+          retention-days: 7
