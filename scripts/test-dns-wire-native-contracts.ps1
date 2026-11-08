@@ -126,13 +126,18 @@ $oldSystemRoot=$env:SystemRoot
 try {
     if(-not $env:SystemRoot){$env:SystemRoot=[IO.Path]::GetTempPath()}
     Case-Wire 'monitor-status-reduces-owned-details-without-private-paths' {
-        $r=Get-NativeDNSWireMonitorEvidence "Logging mode: Circular`nLog file: PRIVATE-SYNTHETIC`nProvider Level Keywords`nMicrosoft-Windows-PktMon 4 0x12" 'PRIVATE-SYNTHETIC'
-        Assert-Wire ($r.state -ceq 'owned-details' -and $r.ownedPathMentioned -and $r.providerMentioned -and $r.circularSettingMentioned -and $r.rawPacketLogging -ceq 'enabled' -and -not (($r | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))
+        foreach($header in @('Provider Level Keywords','Name Level Keywords')){foreach($level in @('4','0x4')){foreach($mask in @('0x12','0x0000000000000012')){foreach($lineEnding in @("`n","`r`n")){
+            $text=(@('Logging mode: Circular','Log file: PRIVATE-SYNTHETIC',$header,('Microsoft-Windows-PktMon '+$level+' '+$mask),'') -join $lineEnding)
+            $r=Get-NativeDNSWireMonitorEvidence $text 'PRIVATE-SYNTHETIC'
+            Assert-Wire ($r.state -ceq 'owned-details' -and $r.ownedPathMentioned -and $r.providerMentioned -and $r.providerHeaderRecognized -and $r.keywordRowRecognized -and $r.circularSettingMentioned -and $r.rawPacketLogging -ceq 'enabled' -and -not (($r | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))
+        }}}}
     }
     Case-Wire 'monitor-status-does-not-infer-missing-settings' {
         $stopped=Get-NativeDNSWireMonitorEvidence 'Packet Monitor is not running.' 'PRIVATE-SYNTHETIC'
         $disabled=Get-NativeDNSWireMonitorEvidence "Log file: PRIVATE-SYNTHETIC`nProvider Level Keywords`nMicrosoft-Windows-PktMon 4 0x2" 'PRIVATE-SYNTHETIC'
         $unknown=Get-NativeDNSWireMonitorEvidence 'PRIVATE-SYNTHETIC 0x12' ''
+        $oversized=Get-NativeDNSWireMonitorEvidence "Provider Level Keywords`nMicrosoft-Windows-PktMon 4 0x10000000000000000" 'PRIVATE-SYNTHETIC'
+        Assert-Wire ($oversized.providerHeaderRecognized -and -not $oversized.keywordRowRecognized -and $oversized.rawPacketLogging -ceq 'unknown')
         Assert-Wire ($stopped.state -ceq 'stopped' -and $stopped.rawPacketLogging -ceq 'unknown' -and $disabled.rawPacketLogging -ceq 'disabled' -and $unknown.state -ceq 'unknown' -and -not $unknown.ownedPathMentioned -and -not $unknown.providerMentioned -and $unknown.rawPacketLogging -ceq 'unknown')
     }
     Case-Wire 'packet-counter-summary-ignores-private-metadata' {

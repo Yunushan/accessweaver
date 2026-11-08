@@ -9,7 +9,7 @@ function New-NativeDNSWireState([string]$PrivateRoot,[string]$DecoderPath) {
     Assert-NativeOrdinaryPath $node
     $flags=@{}
     foreach($name in @('baselineResolverPassed','filtersVerified','captureStarted','captureStopped','captureBounded','plaintextBlocked','ordinaryQueryPassed','tlsObserved','tlsBlocked','blockedQueryRejected','tlsBlockRemoved','resumedQueryPassed','originalStateVerified','rulesRemoved','filtersRemoved','originalResolverPassed')){$flags[$name]=$false}
-    return @{monitorEvidence=@{state='not-inspected';ownedPathMentioned=$false;providerMentioned=$false;rawPacketLogging='unknown';circularSettingMentioned=$false};flowPacketCounters=@{code='not-inspected';fields=0;nonzero=$false};packetCounters=@{code='not-inspected';fields=0;nonzero=$false};workdir=$PrivateRoot;processFailureCode='none';failureExitCode=0;failureStdoutChars=0;failureStderrChars=0;failureElapsedMilliseconds=0;captureFileCode='not-inspected';decoder=$DecoderPath;etlBytes=0;pcapBytes=0;filterRows=0;filterCode='none';cleanupAttempted=$false;cleanupCompleted=$false;phase='preflight';failurePhase='none';decoderCode='none';before=$null;owner=('aw'+[guid]::NewGuid().ToString('N').Substring(0,10));tool=(Join-Path $env:SystemRoot 'System32\pktmon.exe');node=$node;etl=(Join-Path $PrivateRoot 'PktMon.etl');pcap=(Join-Path $PrivateRoot 'wire.pcapng');filters=@();rules=@();startAttempted=$false;stopped=$false;processes=0;joined=0;processFailed=$false;flags=$flags;tlsFlows=0;outRecords=0;inRecords=0;providers=0}
+    return @{monitorEvidence=@{state='not-inspected';ownedPathMentioned=$false;providerMentioned=$false;providerHeaderRecognized=$false;keywordRowRecognized=$false;rawPacketLogging='unknown';circularSettingMentioned=$false};flowPacketCounters=@{code='not-inspected';fields=0;nonzero=$false};packetCounters=@{code='not-inspected';fields=0;nonzero=$false};workdir=$PrivateRoot;processFailureCode='none';failureExitCode=0;failureStdoutChars=0;failureStderrChars=0;failureElapsedMilliseconds=0;captureFileCode='not-inspected';decoder=$DecoderPath;etlBytes=0;pcapBytes=0;filterRows=0;filterCode='none';cleanupAttempted=$false;cleanupCompleted=$false;phase='preflight';failurePhase='none';decoderCode='none';before=$null;owner=('aw'+[guid]::NewGuid().ToString('N').Substring(0,10));tool=(Join-Path $env:SystemRoot 'System32\pktmon.exe');node=$node;etl=(Join-Path $PrivateRoot 'PktMon.etl');pcap=(Join-Path $PrivateRoot 'wire.pcapng');filters=@();rules=@();startAttempted=$false;stopped=$false;processes=0;joined=0;processFailed=$false;flags=$flags;tlsFlows=0;outRecords=0;inRecords=0;providers=0}
 }
 function Get-NativeDNSWireSetupCode([Exception]$Failure) {
     for($depth=0;$null -ne $Failure -and $depth -lt 16;$depth++){
@@ -251,7 +251,7 @@ function Get-NativeDNSWireCounterEvidence([string]$Text) {
     return $result
 }
 function Get-NativeDNSWireMonitorEvidence([string]$Text,[string]$ExpectedPath) {
-    $r=@{state='unknown';ownedPathMentioned=$false;providerMentioned=$false;rawPacketLogging='unknown';circularSettingMentioned=$false}
+    $r=@{state='unknown';ownedPathMentioned=$false;providerMentioned=$false;providerHeaderRecognized=$false;keywordRowRecognized=$false;rawPacketLogging='unknown';circularSettingMentioned=$false}
     if($Text.Trim() -match '^(Packet Monitor|Packet monitoring|Logger) is not (currently )?(running|active)\.?$'){$r.state='stopped';return $r}
     $r.ownedPathMentioned=(-not [string]::IsNullOrWhiteSpace($ExpectedPath) -and $Text.IndexOf($ExpectedPath,[StringComparison]::OrdinalIgnoreCase) -ge 0)
     $r.providerMentioned=$Text.Contains('Microsoft-Windows-PktMon')
@@ -259,11 +259,11 @@ function Get-NativeDNSWireMonitorEvidence([string]$Text,[string]$ExpectedPath) {
     if($r.ownedPathMentioned -and $r.providerMentioned){$r.state='owned-details'}
     # Recognize only the exact provider/level/keyword table form. Unrecognized
     # output remains unknown and never contributes to packet acceptance.
-    if($Text -match '(?im)^\s*Provider(?: name)?\s+Level\s+Keywords\s*$'){
-        if($Text -match '(?im)^\s*Microsoft-Windows-PktMon\s+[0-5]\s+0x(?<mask>[0-9a-f]{1,8})\s*$'){
-            $mask=[Convert]::ToUInt64($Matches.mask,16)
-            $r.rawPacketLogging=if(($mask -band 0x10) -ne 0){'enabled'}else{'disabled'}
-        }
+    $r.providerHeaderRecognized=($Text -match '(?im)^[ \t]*(?:Provider(?: name)?|Name)[ \t]+Level[ \t]+Keywords[ \t]*\r?$')
+    $r.keywordRowRecognized=($Text -match '(?im)^[ \t]*Microsoft-Windows-PktMon[ \t]+(?:0x)?[0-5][ \t]+0x(?<mask>[0-9a-f]{1,16})[ \t]*\r?$')
+    if($r.keywordRowRecognized){
+        $mask=[Convert]::ToUInt64($Matches.mask,16)
+        if($r.providerHeaderRecognized){$r.rawPacketLogging=if(($mask -band 0x10) -ne 0){'enabled'}else{'disabled'}}
     }
     return $r
 }
