@@ -338,7 +338,12 @@ public static class AccessWeaverNativeDoHIdentity {
             }
         } finally {
             if($null -ne $script:staticPlan -and @($script:staticPlan.rules).Count -gt 0){
-                $script:staticPhase='firewall-teardown';$failed=$false
+                $script:staticPhase='firewall-teardown'
+                # Native writes may fail or return before state matches. Retain
+                # containment until this independent full-state read proves the
+                # original is restored; on uncertainty the fresh VM is discarded.
+                Assert-DNSAcceptanceRestored $Before (Read-DNSAcceptanceState)
+                $failed=$false
                 foreach($name in @($script:staticPlan.rules)){
                     try {
                         $owned=@(Get-NetFirewallRule -PolicyStore PersistentStore -ErrorAction Stop | Where-Object {$_.Name -ceq $name})

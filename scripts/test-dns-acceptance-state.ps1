@@ -52,7 +52,7 @@ function Original-ADoh {return [pscustomobject]@{ServerAddress='192.0.2.90';DohT
 function New-ACase {
     $script:adapters=@([pscustomobject]@{InterfaceGuid=$script:g1;ifIndex=77;Status='Up';InterfaceDescription='Fixture adapter'},[pscustomobject]@{InterfaceGuid=$script:g2;ifIndex=88;Status='Down';InterfaceDescription='Second fixture adapter'})
     $script:renumberAfterInventory=$false;$script:exposure=@{};$script:registryAbsent=@{};$script:registryValues=@{};$script:data=New-AData;$script:doh=@((Original-ADoh));$script:available=$true;$script:registryFailure='';$script:dnsFailure='';$script:dohFailure=$false
-    $script:resolveFailure=$false;$script:operationFailure=$false;$script:restoreFailure=$false;$script:serviceStatus='Running';$script:actions=[Collections.Generic.List[string]]::new();$script:dnsReads=0
+    $script:staticTeardownFault='';$script:resolveFailure=$false;$script:operationFailure=$false;$script:restoreFailure=$false;$script:serviceStatus='Running';$script:actions=[Collections.Generic.List[string]]::new();$script:dnsReads=0
 }
 function Clone-A([object]$Value){return Microsoft.PowerShell.Utility\ConvertFrom-Json -InputObject (Microsoft.PowerShell.Utility\ConvertTo-Json -InputObject $Value -Depth 14)}
 function Get-NetAdapter {[CmdletBinding()]param();foreach($a in $script:adapters){[pscustomobject]@{InterfaceGuid=$a.InterfaceGuid;ifIndex=$a.ifIndex;Status=$a.Status;InterfaceDescription=$a.InterfaceDescription}}}
@@ -68,7 +68,7 @@ function Read-DNSAcceptanceRegistry([string]$Guid,[string]$Family) {
 function Get-DnsClientServerAddress {
     [CmdletBinding()]param($InterfaceIndex,$AddressFamily)
     $script:dnsReads++
-    if($script:dnsFailure -ceq 'failure'){throw 'fixture-client-inventory-failed'}
+    if($script:dnsFailure -ceq 'failure' -or ($script:staticTeardownFault -ceq 'verification-read' -and $null -eq $InterfaceIndex)){throw 'fixture-client-inventory-failed'}
     if($script:dnsFailure -ceq 'empty'){return}
     foreach($a in $script:adapters){
         if($null -ne $InterfaceIndex -and $a.ifIndex -ne $InterfaceIndex){continue}
@@ -407,6 +407,8 @@ try {
         [CmdletBinding()]param([Parameter(ValueFromPipeline)]$InputObject,[string[]]$ServerAddresses,[switch]$ResetServerAddresses)
         process {
             if($InputObject.InterfaceIndex -ne 77 -or $InputObject.AddressFamily -ne 23){throw 'Unexpected source static family write'}
+            if($script:staticTeardownFault -ceq 'write-throw'){throw 'source-original-restore-failed'}
+            if($script:staticTeardownFault -ceq 'write-noop'){return}
             $script:data[$script:g1].mode6=if($ResetServerAddresses){'dhcp'}else{'static'};$script:data[$script:g1].servers6=if($ResetServerAddresses){@()}else{@($ServerAddresses)}
             if($script:staticStageFault -ceq 'family-set' -and $script:staticStageFaultPending){$script:staticStageFaultPending=$false;throw 'source-partial-family-set'}
         }
@@ -437,6 +439,29 @@ try {
         if($failure -cin @('none','cidr')){Assert-A ($script:staticFirewallProtected -and $script:staticObservation.captured -and $script:staticObservation.mode -ceq 'static' -and $script:staticObservation.count -eq 2 -and $script:staticObservation.firstMatches -and $script:staticObservation.secondMatches) 'static-stage-source'}
         $removed=$false;try{Remove-NativeStaticIPv6Fixture $before;Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState);$removed=$true}catch{}
         Assert-A ($removed -and $script:staticFirewallRemoved -eq ($failure -cnotin @('profile-disabled','local-rules-disabled')) -and $script:fixtureRules.Count -eq 0) 'static-stage-source'
+    }
+    # Persistent teardown faults must preserve both actual source-owned blocks.
+    # No OS commands run: extraction above binds every dependency to these mocks.
+    foreach($originalMode in @('static','dhcp')){
+        foreach($failure in @('write-throw','write-noop','verification-read','other-family')){
+            New-ACase;$script:data[$script:g1].mode6=$originalMode;$before=Read-DNSAcceptanceState
+            $script:staticPlan=$null;$script:fixtureRules=@{};$script:staticStageFault='none';$script:staticStageFaultPending=$false;$script:staticFirewallProtected=$false;$script:staticFirewallRemoved=$false
+            Assert-A (Set-NativeStaticIPv6Fixture $before) 'static-stage-source'
+            $script:staticTeardownFault=$failure
+            if($failure -ceq 'other-family'){$script:data[$script:g2].servers4=@('203.0.113.53')}
+            $refused=$false;try{Remove-NativeStaticIPv6Fixture $before}catch{$refused=$true}
+            Assert-A ($refused -and -not $script:staticFirewallRemoved -and $script:fixtureRules.Count -eq 2) 'static-stage-source'
+            foreach($name in @($script:staticPlan.rules)){
+                Assert-A ($script:fixtureRules.ContainsKey($name) -and $script:fixtureRules[$name].Action -ceq 'Block' -and $script:fixtureRules[$name].Enabled -ceq 'True') 'static-stage-source'
+            }
+            # Once the original can actually be verified, the same owned rules
+            # can be retired. An earlier refusal must not lose their identities.
+            $script:staticTeardownFault=''
+            if($failure -ceq 'other-family'){$script:data[$script:g2].servers4=@('192.0.2.53','192.0.2.54')}
+            Remove-NativeStaticIPv6Fixture $before
+            Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState)
+            Assert-A ($script:staticFirewallRemoved -and $script:fixtureRules.Count -eq 0) 'static-stage-source'
+        }
     }
     $body=$resolver.ScriptBlock.Extent.Text;$nativeResolve=[scriptblock]::Create($body.Substring(1,$body.Length-2))
     $machineRoot=[IO.Path]::GetTempPath();$script:staticSnapshotPath=Join-Path $machineRoot 'profiles\dns-original.json'
