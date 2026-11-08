@@ -16,21 +16,25 @@ $reportCreated=$reportParent.CreationTimeUtc.Ticks;$project=Split-Path -Parent $
 $sources=@('scripts/native-netevent-control.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $state=$null;$plan=$null;$environmentVerified=$false;$nativeProcessVerified=$false;$outcome='failed';$code='environment'
-$control=@{outcome='failed';phase='preflight';code='not-started';cleanupCode='none';preflightEmpty=$false;sessionVerified=$false;providerVerified=$false;captureStarted=$false;captureStopped=$false;connected=$false;captureBounded=$false;etlBytes=0;originalStateVerified=$false;originalResolverPassed=$false;sessionRemoved=$false;processes=0;joined=0;toolFailure=$false;eventEvidence=$null}
+$emptyEvidence=@{stage='not-inspected';family='none';hresult=0;cimStatus=-1;modeKind='not-inspected';statusKind='not-inspected'}
+$control=@{operationEvidence=$emptyEvidence;cleanupEvidence=$emptyEvidence;outcome='failed';phase='preflight';code='not-started';cleanupCode='none';preflightEmpty=$false;sessionVerified=$false;providerVerified=$false;captureStarted=$false;captureStopped=$false;connected=$false;captureBounded=$false;etlBytes=0;originalStateVerified=$false;originalResolverPassed=$false;sessionRemoved=$false;processes=0;joined=0;toolFailure=$false;eventEvidence=$null}
 function Invoke-NativeNDISOperation([string]$Operation) {
     foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'NDIS source changed'}}
     $payload=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($script:plan | ConvertTo-Json -Compress)))
     $text=Invoke-NativeDNSWireProcess $script:state $script:state.eventTool @('-NoProfile','-NonInteractive','-File',(Join-Path $PSScriptRoot 'netevent-control-operation.ps1'),'-Operation',$Operation,'-PlanBase64',$payload)
     $v=$text | ConvertFrom-Json -ErrorAction Stop
-    $keys=@('code','sessionGuid','state','sessionVerified','providerVerified','emptyBefore','emptyAfter')
-    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 7 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or $v.code -cnotin @('none','operation','plan','enum','session','identity','configuration','state','provider','filters','inventory','original') -or $v.state -cnotin @('unknown','absent','running','stopped')){throw 'NDIS operation shape'}
+    $keys=@('diagnostic','code','sessionGuid','state','sessionVerified','providerVerified','emptyBefore','emptyAfter')
+    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 8 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or $v.code -cnotin @('none','operation','plan','enum','session','identity','configuration','state','provider','filters','inventory','original') -or $v.state -cnotin @('unknown','absent','running','stopped')){throw 'NDIS operation shape'}
     foreach($key in @('sessionVerified','providerVerified','emptyBefore','emptyAfter')){if($v.$key -isnot [bool]){throw 'NDIS operation shape'}}
+    $diag=$v.diagnostic
+    if($diag -isnot [pscustomobject] -or @($diag.PSObject.Properties).Count -ne 6 -or @($diag.PSObject.Properties.Name | Where-Object {$_ -cnotin @('stage','family','hresult','cimStatus','modeKind','statusKind')}).Count -ne 0 -or $diag.stage -cnotin @('initial','enum-metadata','inventory-readback','session-readback','provider-readback','create-request','provider-request','start-request','stop-request','remove-request') -or $diag.family -cnotin @('none','cim','win32','argument','state','invocation','other') -or ($diag.hresult -isnot [int] -and $diag.hresult -isnot [long]) -or $diag.hresult -lt -2147483648 -or $diag.hresult -gt 2147483647 -or ($diag.cimStatus -isnot [int] -and $diag.cimStatus -isnot [long]) -or $diag.cimStatus -lt -1 -or $diag.cimStatus -gt 65535 -or $diag.modeKind -cnotin @('null','enum','string','numeric','other','not-inspected') -or $diag.statusKind -cnotin @('null','enum','string','numeric','other','not-inspected')){throw 'NDIS diagnostic shape'}
+    $script:lastEvidence=@{stage=$diag.stage;family=$diag.family;hresult=$diag.hresult;cimStatus=$diag.cimStatus;modeKind=$diag.modeKind;statusKind=$diag.statusKind}
     if($v.code -cne 'none'){$script:lastOperationCode=$v.code;throw 'NDIS native operation refused'}
     if($v.sessionGuid -isnot [string] -or ($v.sessionGuid -and $v.sessionGuid -cnotmatch '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')){throw 'NDIS operation identity'}
     if($v.sessionGuid){if($script:plan.guid -and $script:plan.guid -cne $v.sessionGuid){throw 'NDIS operation identity'};$script:plan.guid=$v.sessionGuid}
     return $v
 }
-$script:lastOperationCode='none'
+$script:lastOperationCode='none';$script:lastEvidence=$emptyEvidence
 try{
     if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows' -or $env:ACCESSWEAVER_EXPECT_GOOS -cne 'windows' -or $env:ACCESSWEAVER_EXPECT_GOARCH -cnotin @('amd64','arm64')){throw 'Hosted native Windows guard refused'}
     if($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1){throw 'Stock Windows PowerShell5.1 required'}
@@ -88,15 +92,15 @@ public static class AccessWeaverNetEventControlIdentity {
     $control.phase='headers';$text=Invoke-NativeDNSWireProcess $script:state $script:state.eventTool @('-NoProfile','-NonInteractive','-EncodedCommand',(Get-NativeNDISHeaderProgram $script:state.etl))
     $control.eventEvidence=Get-NativeNDISHeaderEvidence $text
     if($control.eventEvidence.code -cne 'complete' -or $control.eventEvidence.fragmentIDs -le 0){$control.code='fragment-events-missing'}else{$control.code='none';$control.outcome='passed'}
-}catch{$control.outcome='failed';$control.code=if($script:lastOperationCode -cne 'none'){$script:lastOperationCode}else{$control.phase}}
+}catch{$control.operationEvidence=$script:lastEvidence;$control.outcome='failed';$control.code=if($script:lastOperationCode -cne 'none'){$script:lastOperationCode}else{$control.phase}}
 finally{
     if($null -ne $script:plan){
-        try{$v=Invoke-NativeNDISOperation 'stop';$control.captureStopped=($v.state -cin @('stopped','absent'))}catch{$control.cleanupCode=if($script:lastOperationCode -cne 'none'){$script:lastOperationCode}else{'stop'}}
+        try{$v=Invoke-NativeNDISOperation 'stop';$control.captureStopped=($v.state -cin @('stopped','absent'))}catch{$control.cleanupEvidence=$script:lastEvidence;$control.cleanupCode=if($script:lastOperationCode -cne 'none'){$script:lastOperationCode}else{'stop'}}
         try{
             Assert-DNSAcceptanceRestored $script:state.before (Read-DNSAcceptanceState);$control.originalStateVerified=$true
             [void](Invoke-NativeDNSWireQuery 'example.com');$control.originalResolverPassed=$true;$script:plan.originalVerified=$true
             $v=Invoke-NativeNDISOperation 'remove';$control.sessionRemoved=$v.emptyAfter
-        }catch{if($control.cleanupCode -ceq 'none'){$control.cleanupCode=if($script:lastOperationCode -cne 'none'){$script:lastOperationCode}else{'recovery'}}}
+        }catch{$control.cleanupEvidence=$script:lastEvidence;if($control.cleanupCode -ceq 'none'){$control.cleanupCode=if($script:lastOperationCode -cne 'none'){$script:lastOperationCode}else{'recovery'}}}
     }
     if($null -ne $script:state){$control.processes=$script:state.processes;$control.joined=$script:state.joined;$control.toolFailure=$script:state.processFailed}
     $good=($control.outcome -ceq 'passed' -and $control.preflightEmpty -and $control.sessionVerified -and $control.providerVerified -and $control.captureStarted -and $control.captureStopped -and $control.connected -and $control.captureBounded -and $control.originalStateVerified -and $control.originalResolverPassed -and $control.sessionRemoved -and $control.cleanupCode -ceq 'none' -and -not $control.toolFailure -and $control.processes -eq $control.joined)

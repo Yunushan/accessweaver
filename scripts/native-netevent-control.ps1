@@ -1,5 +1,6 @@
 # Definitions only. Native calls execute solely through guarded bounded children.
 function Get-NativeNetEventEnums {
+    $script:netEventStage='enum-metadata'
     $result=@{}
     foreach($spec in @(@{key='mode';command='New-NetEventSession';parameter='CaptureMode';value='SaveToFile'},@{key='capture';command='Add-NetEventPacketCaptureProvider';parameter='CaptureType';value='Physical'})){
         $type=(Get-Command $spec.command -ErrorAction Stop).Parameters[$spec.parameter].ParameterType
@@ -8,12 +9,14 @@ function Get-NativeNetEventEnums {
     };return $result
 }
 function Get-NativeNetEventInventory {
+    $script:netEventStage='inventory-readback'
     $s=@();$p=@()
     try{$s=@(Get-NetEventSession -ErrorAction Stop | Select-Object -First 2)}catch{if($_.CategoryInfo.Category -ne [Management.Automation.ErrorCategory]::ObjectNotFound){throw}}
     try{$p=@(Get-NetEventPacketCaptureProvider -ErrorAction Stop | Select-Object -First 2)}catch{if($_.CategoryInfo.Category -ne [Management.Automation.ErrorCategory]::ObjectNotFound){throw}}
     return @{sessions=$s;providers=$p}
 }
 function Assert-NativeNetEventSession([object]$Row,[object]$Plan,[object]$Enums) {
+    $script:netEventStage='session-readback';$script:netEventModeValue=$Row.CaptureMode;$script:netEventStatusValue=$Row.SessionStatus
     $guid=[guid]::Empty
     if($Row.Name -isnot [string] -or $Row.Name -cne $Plan.name -or $Row.Guid -isnot [string] -or -not [guid]::TryParse($Row.Guid,[ref]$guid) -or $guid -eq [guid]::Empty){throw 'NetEvent session'}
     if($Plan.guid -and $guid -ne [guid]$Plan.guid){throw 'NetEvent identity'}
@@ -27,6 +30,7 @@ function Get-NativeNetEventState([object]$Row) {
     return 'unknown'
 }
 function Assert-NativeNetEventProvider([object]$Row,[object]$Plan,[string]$Guid,[object]$Enums) {
+    $script:netEventStage='provider-readback'
     $provider=[guid]::Empty;$session=[guid]::Empty
     if(-not [guid]::TryParse([string]$Row.Guid,[ref]$provider) -or $provider -ne [guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef' -or -not [guid]::TryParse([string]$Row.SessionGuid,[ref]$session) -or $session -ne [guid]$Guid -or $Row.SessionName -cne $Plan.name){throw 'NetEvent provider'}
     foreach($key in @('Level','CaptureType','TruncationLength','MatchAnyKeyword','MatchAllKeyword')){if($null -eq $Row.$key -or $Row.$key -is [bool]){throw 'NetEvent filters'}}
@@ -42,6 +46,7 @@ function Invoke-NativeNetEventOperation([string]$Operation,[object]$Plan) {
     if($Operation -cin @('preflight','create')){
         if($inventory.sessions.Count -ne 0 -or $inventory.providers.Count -ne 0){throw 'NetEvent inventory'};$r.emptyBefore=$true
         if($Operation -ceq 'preflight'){return $r}
+        $script:netEventStage='create-request'
         [void](New-NetEventSession -Name $Plan.name -CaptureMode SaveToFile -LocalFilePath $Plan.file -MaxFileSize 16 -ErrorAction Stop)
         $inventory=Get-NativeNetEventInventory
     }
@@ -55,17 +60,20 @@ function Invoke-NativeNetEventOperation([string]$Operation,[object]$Plan) {
     if($Operation -ceq 'create'){if($r.state -cne 'stopped' -or $inventory.providers.Count -ne 0){throw 'NetEvent state'};return $r}
     if($Operation -ceq 'provider'){
         if($r.state -cne 'stopped' -or $inventory.providers.Count -ne 0){throw 'NetEvent inventory'}
+        $script:netEventStage='provider-request'
         [void](Add-NetEventPacketCaptureProvider -SessionName $Plan.name -CaptureType Physical -MultiLayer $false -EtherType ([uint16[]]@(2048)) -IpAddresses @('8.8.8.8') -IpProtocols ([byte[]]@(6)) -TruncationLength 65535 -Level 5 -MatchAnyKeyword ([System.UInt64]::MaxValue) -MatchAllKeyword ([System.UInt64]0) -ErrorAction Stop)
     }elseif($Operation -ceq 'start'){
         if($r.state -cne 'stopped' -or -not $r.providerVerified){throw 'NetEvent state'}
+        $script:netEventStage='start-request'
         [void](Start-NetEventSession -InputObject $row -ErrorAction Stop)
     }elseif($Operation -ceq 'stop'){
-        if($r.state -ceq 'running'){[void](Stop-NetEventSession -InputObject $row -ErrorAction Stop)}
+        if($r.state -ceq 'running'){$script:netEventStage='stop-request';[void](Stop-NetEventSession -InputObject $row -ErrorAction Stop)}
     }elseif($Operation -ceq 'remove'){
         if(-not $Plan.originalVerified){throw 'NetEvent original'}
         if($r.state -cne 'stopped'){throw 'NetEvent state'}
         # The documented removal deletes associated objects. Reject any
         # unrecognized packet provider before acting on the exact CIM session.
+        $script:netEventStage='remove-request'
         [void](Remove-NetEventSession -InputObject $row -Confirm:$false -ErrorAction Stop)
     }
     $after=Get-NativeNetEventInventory

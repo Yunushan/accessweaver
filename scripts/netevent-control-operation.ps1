@@ -14,6 +14,8 @@ function Assert-NativeOrdinaryPath([string]$Path) {
     }
 }
 . (Join-Path $PSScriptRoot 'native-netevent-control.ps1')
+$script:netEventStage='initial';$script:netEventModeValue=$null;$script:netEventStatusValue=$null
+$diagnostic=@{stage='initial';family='none';hresult=0;cimStatus=-1;modeKind='not-inspected';statusKind='not-inspected'}
 $r=@{code='operation';sessionGuid='';state='unknown';sessionVerified=$false;providerVerified=$false;emptyBefore=$false;emptyAfter=$false}
 try{
     if($PlanBase64.Length -gt 8192){throw 'NetEvent plan'}
@@ -24,9 +26,23 @@ try{
     Assert-NativeOrdinaryPath $parent;Assert-NativeOrdinaryPath $file
     $r=Invoke-NativeNetEventOperation $Operation $plan
 }catch{
-    for($e=$_.Exception;$null -ne $e;$e=$e.InnerException){
-        $code=switch -CaseSensitive ($e.Message){'NetEvent plan'{'plan'}'NetEvent enum'{'enum'}'NetEvent session'{'session'}'NetEvent identity'{'identity'}'NetEvent configuration'{'configuration'}'NetEvent state'{'state'}'NetEvent provider'{'provider'}'NetEvent filters'{'filters'}'NetEvent inventory'{'inventory'}'NetEvent original'{'original'}default{''}}
-        if($code){$r.code=$code;break}
+    $caughtException=$_.Exception;$failure=$caughtException
+    for($depth=0;$depth -lt 16 -and $null -ne $failure;$depth++){
+        $code=switch -CaseSensitive ($failure.Message){'NetEvent plan'{'plan'}'NetEvent enum'{'enum'}'NetEvent session'{'session'}'NetEvent identity'{'identity'}'NetEvent configuration'{'configuration'}'NetEvent state'{'state'}'NetEvent provider'{'provider'}'NetEvent filters'{'filters'}'NetEvent inventory'{'inventory'}'NetEvent original'{'original'}default{''}}
+        if($code){$r.code=$code;break};$failure=$failure.InnerException
+    }
+    $failure=$caughtException
+    for($depth=0;$depth -lt 16 -and $null -ne $failure;$depth++){
+        $family=if($failure -is [Microsoft.Management.Infrastructure.CimException]){'cim'}elseif($failure -is [ComponentModel.Win32Exception]){'win32'}elseif($failure -is [ArgumentException] -or $failure -is [InvalidCastException]){'argument'}elseif($failure -is [InvalidOperationException]){'state'}elseif($failure -is [Management.Automation.RuntimeException]){'invocation'}else{'other'}
+        $diagnostic.family=$family;$diagnostic.hresult=[int]$failure.HResult
+        if($failure -is [Microsoft.Management.Infrastructure.CimException]){$n=[int]$failure.NativeErrorCode;if($n -ge 0 -and $n -le 65535){$diagnostic.cimStatus=$n}}
+        $failure=$failure.InnerException
     }
 }
+$diagnostic.stage=$script:netEventStage
+foreach($field in @('modeKind','statusKind')){
+    $value=if($field -ceq 'modeKind'){$script:netEventModeValue}else{$script:netEventStatusValue}
+    $diagnostic[$field]=if($null -eq $value){'null'}elseif($value -is [Enum]){'enum'}elseif($value -is [string]){'string'}elseif($value -is [byte] -or $value -is [uint16] -or $value -is [uint32] -or $value -is [int] -or $value -is [long]){'numeric'}else{'other'}
+}
+$r['diagnostic']=$diagnostic
 [Console]::Out.WriteLine(($r | ConvertTo-Json -Compress))
