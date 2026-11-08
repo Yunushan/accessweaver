@@ -8265,6 +8265,563 @@
       },
       "bothNativeWireScenariosPassed": false,
       "allNativeJobsTerminal": true
+    },
+    {
+      "sourceCommit": "ac1380049eabf534a830c0e130b668096f96bf65",
+      "sourceRunID": 42511866644,
+      "sourceAllSixPassed": true,
+      "sourceSHA256": {
+        "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+        "scripts/dns-wire-evidence.test.cjs": "6851b5ad925cc3fcba8b2d80821dbf68eb177fd6030b5ca8fdc5980b988ae9ee",
+        "scripts/dns-wire-contract-report.cjs": "c845a12f7df97e8eeff606b87cb753146c56a38a683ff6ba6e54ed0c991f0ddf",
+        ".github/workflows/dns-wire-contracts.yml": "c3a9156a189f3fb6b9b75bde17390ce34913e1d579a01bbfaaa1a32386498436",
+        "scripts/dns-wire-stdin.cjs": "b05d259e94b3f89555c645cc9205b922ae6418bf99bfa56581abdb72fa205fa0",
+        "scripts/native-dns-wire.ps1": "628ca31341babc247390d14dfcadea2d772d33a666570edbbd6c6b05ebee2850",
+        "scripts/test-dns-wire-native-contracts.ps1": "4af781a7e51c184efab8f826a6be41672df4135e9b452aafe836ae8e83095f6a",
+        ".github/workflows/native-doh-wire.yml": "19fd54b25ecb44c6a156af8c4da94398f1c73bb3e29af90a1acfbaa0d50e12e9",
+        "scripts/test-native-doh.ps1": "eef97825b3cf9983f471234ddc3fda80c8dfbc548ef7cbcfd02ff1e33b5e4bd3",
+        "scripts/dns-acceptance-state.ps1": "a8332f9d043c4f3577a5229a4831e7e88df52a1c9733eba4e4e254012622a2de",
+        "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
+        "scripts/test-native-capture-control.ps1": "3153edbe50345b2ff6815e42b0b540bf156fc7427f1e138e98e70aaacc01c241",
+        ".github/workflows/native-capture-control.yml": "8c9312ee9417e8c3a9f51469027a4c423db9dcab8cea43a1afa42afcd4367a37"
+      },
+      "sourceJobs": [
+        {
+          "id": 128826465395,
+          "target": "DNS wire source (darwin/arm64)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 128826465443,
+          "target": "DNS wire source (linux/arm64)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 128826465487,
+          "target": "DNS wire source (windows/amd64)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 128826465492,
+          "target": "DNS wire source (linux/amd64)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 128826465551,
+          "target": "DNS wire source (windows/arm64)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 128826465557,
+          "target": "DNS wire source (darwin/amd64)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "sourceArtifacts": [
+        {
+          "artifactID": 13630115587,
+          "artifactName": "dns-wire-source-windows-amd64",
+          "providerZIPDigest": "sha256:461eddd6e3cc3171f1006cf274fb6e9ff8e01a5c7d56ffa4ec3d2dedf3d19a76",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 46,
+              "passedGroups": 46,
+              "failedGroups": []
+            },
+            {
+              "edition": "desktop",
+              "code": "complete",
+              "groupCount": 46,
+              "passedGroups": 46,
+              "failedGroups": []
+            }
+          ]
+        },
+        {
+          "artifactID": 13629892175,
+          "artifactName": "dns-wire-source-linux-arm64",
+          "providerZIPDigest": "sha256:cfb799af0b0aa389012066c8d6fcd66497832d56f70e10bf499298c62da0f862",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 46,
+              "passedGroups": 46,
+              "failedGroups": []
+            }
+          ]
+        },
+        {
+          "artifactID": 13629578373,
+          "artifactName": "dns-wire-source-windows-arm64",
+          "providerZIPDigest": "sha256:8b856bfac888d6985cfa5550c3d877969d5bd1ac63155af507817d5dc0c6b2f7",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 46,
+              "passedGroups": 46,
+              "failedGroups": []
+            },
+            {
+              "edition": "desktop",
+              "code": "complete",
+              "groupCount": 46,
+              "passedGroups": 46,
+              "failedGroups": []
+            }
+          ]
+        },
+        {
+          "artifactID": 13629299267,
+          "artifactName": "dns-wire-source-darwin-arm64",
+          "providerZIPDigest": "sha256:52ee7e3adbab6e76e8984fbc4a308a79882e02caeabea4751097a729c81db898",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 46,
+              "passedGroups": 46,
+              "failedGroups": []
+            }
+          ]
+        },
+        {
+          "artifactID": 13629228003,
+          "artifactName": "dns-wire-source-linux-amd64",
+          "providerZIPDigest": "sha256:7874930c846efa902bf261106661e8ce9fb46dbc840d947989d2c278d9d5940a",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 46,
+              "passedGroups": 46,
+              "failedGroups": []
+            }
+          ]
+        },
+        {
+          "artifactID": 13629194786,
+          "artifactName": "dns-wire-source-darwin-amd64",
+          "providerZIPDigest": "sha256:193fa47f5088fc793c7e83ae7a6a7a5d40800adc5830e46312f3691f5359fa92",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 46,
+              "passedGroups": 46,
+              "failedGroups": []
+            }
+          ]
+        }
+      ],
+      "nativeRunID": 42511866579,
+      "nativeArtifacts": [
+        {
+          "artifactID": 13629827707,
+          "artifactName": "native-doh-wire-windows-amd64",
+          "providerZIPDigest": "sha256:8613c56c1fb27edac0a36d65906d6264703a0c0c1adde99395ccd9d1ce86c55d",
+          "providerZIPDigestVerified": true,
+          "outcome": "failed",
+          "code": "native-roundtrip-failed",
+          "configureExitCode": 0,
+          "restoreExitCode": 0,
+          "snapshotRemoved": true,
+          "scenario": {
+            "verificationCode": "none",
+            "failureInjected": false,
+            "operationCode": "ordinary-resolver",
+            "configurationAccepted": true,
+            "restorationAccepted": true,
+            "baselineCaptured": true,
+            "restoredStateVerified": true,
+            "code": "operation-failed",
+            "restorationCode": "none",
+            "outcome": "failed",
+            "failedResolverVerified": false,
+            "resolverPassed": false,
+            "configurationAttempted": true,
+            "restoredResolverVerified": false,
+            "configuredStateVerified": true,
+            "restorationAttempted": true
+          },
+          "wire": {
+            "phase": "complete",
+            "failureElapsedMilliseconds": 0,
+            "filterRows": 12,
+            "captureFileCode": "ordinary",
+            "controls": {
+              "baselineResolverPassed": true,
+              "originalStateVerified": true,
+              "tlsBlockRemoved": true,
+              "tlsObserved": false,
+              "captureBounded": true,
+              "blockedQueryRejected": true,
+              "captureStarted": true,
+              "rulesRemoved": true,
+              "tlsBlocked": true,
+              "ordinaryQueryPassed": true,
+              "filtersRemoved": true,
+              "captureStopped": true,
+              "plaintextBlocked": true,
+              "filtersVerified": true,
+              "originalResolverPassed": true,
+              "resumedQueryPassed": true
+            },
+            "failurePhase": "decode",
+            "tlsFlows": 0,
+            "failureStdoutChars": 0,
+            "rawCapturePublished": false,
+            "failureExitCode": 0,
+            "outcome": "failed",
+            "inboundEncryptedRecords": 0,
+            "toolProcesses": 30,
+            "toolFailure": false,
+            "monitorEvidence": {
+              "providerMentioned": true,
+              "state": "owned-details",
+              "keywordRowRecognized": true,
+              "ownedPathMentioned": true,
+              "circularSettingMentioned": true,
+              "providerHeaderRecognized": false,
+              "rawPacketLogging": "enabled"
+            },
+            "eventEvidence": {
+              "knownMetadataIDs": 0,
+              "unrecognizedVersions": 0,
+              "records": 36,
+              "frameDropPayloadIDs": 0,
+              "providerRecords": 0,
+              "otherProviderRecords": 36,
+              "missingProviderIDs": 0,
+              "unknownProviderIDs": 0,
+              "code": "complete",
+              "framePayloadIDs": 0
+            },
+            "outboundEncryptedRecords": 0,
+            "decoderCode": "capture-empty",
+            "statsEvidence": {
+              "source": "stdout-fallback",
+              "eventsLost": -1,
+              "events": -1,
+              "packets": -1,
+              "code": "unknown",
+              "buffersLost": -1
+            },
+            "processFailureCode": "none",
+            "failureStderrChars": 0,
+            "flowPacketCounters": {
+              "nonzero": true,
+              "code": "parsed",
+              "fields": 100
+            },
+            "toolProcessesJoined": 30,
+            "etlBytes": 3643,
+            "pcapBytes": 188,
+            "productionQualificationComplete": false,
+            "packetCounters": {
+              "nonzero": true,
+              "code": "parsed",
+              "fields": 188
+            },
+            "filterCode": "none",
+            "providerMask": 0
+          }
+        },
+        {
+          "artifactID": 13629334639,
+          "artifactName": "native-doh-wire-windows-arm64",
+          "providerZIPDigest": "sha256:13c1d617ace8f0bc0f5d9875f03faa9bc5eb532a86b4f2e549fd11efa909b39f",
+          "providerZIPDigestVerified": true,
+          "outcome": "failed",
+          "code": "native-roundtrip-failed",
+          "configureExitCode": 0,
+          "restoreExitCode": 0,
+          "snapshotRemoved": true,
+          "scenario": {
+            "verificationCode": "none",
+            "failureInjected": false,
+            "operationCode": "ordinary-resolver",
+            "configurationAccepted": true,
+            "restorationAccepted": true,
+            "baselineCaptured": true,
+            "restoredStateVerified": true,
+            "code": "operation-failed",
+            "restorationCode": "none",
+            "outcome": "failed",
+            "failedResolverVerified": false,
+            "resolverPassed": false,
+            "configurationAttempted": true,
+            "restoredResolverVerified": false,
+            "configuredStateVerified": true,
+            "restorationAttempted": true
+          },
+          "wire": {
+            "phase": "complete",
+            "failureElapsedMilliseconds": 0,
+            "filterRows": 12,
+            "captureFileCode": "ordinary",
+            "controls": {
+              "baselineResolverPassed": true,
+              "originalStateVerified": true,
+              "tlsBlockRemoved": true,
+              "tlsObserved": false,
+              "captureBounded": true,
+              "blockedQueryRejected": true,
+              "captureStarted": true,
+              "rulesRemoved": true,
+              "tlsBlocked": true,
+              "ordinaryQueryPassed": true,
+              "filtersRemoved": true,
+              "captureStopped": true,
+              "plaintextBlocked": true,
+              "filtersVerified": true,
+              "originalResolverPassed": true,
+              "resumedQueryPassed": true
+            },
+            "failurePhase": "decode",
+            "tlsFlows": 0,
+            "failureStdoutChars": 0,
+            "rawCapturePublished": false,
+            "failureExitCode": 0,
+            "outcome": "failed",
+            "inboundEncryptedRecords": 0,
+            "toolProcesses": 30,
+            "toolFailure": false,
+            "monitorEvidence": {
+              "providerMentioned": true,
+              "state": "owned-details",
+              "keywordRowRecognized": true,
+              "ownedPathMentioned": true,
+              "circularSettingMentioned": true,
+              "providerHeaderRecognized": false,
+              "rawPacketLogging": "enabled"
+            },
+            "eventEvidence": {
+              "knownMetadataIDs": 0,
+              "unrecognizedVersions": 0,
+              "records": 38,
+              "frameDropPayloadIDs": 0,
+              "providerRecords": 0,
+              "otherProviderRecords": 38,
+              "missingProviderIDs": 0,
+              "unknownProviderIDs": 0,
+              "code": "complete",
+              "framePayloadIDs": 0
+            },
+            "outboundEncryptedRecords": 0,
+            "decoderCode": "capture-empty",
+            "statsEvidence": {
+              "source": "stdout-fallback",
+              "eventsLost": -1,
+              "events": -1,
+              "packets": -1,
+              "code": "unknown",
+              "buffersLost": -1
+            },
+            "processFailureCode": "none",
+            "failureStderrChars": 0,
+            "flowPacketCounters": {
+              "nonzero": true,
+              "code": "parsed",
+              "fields": 100
+            },
+            "toolProcessesJoined": 30,
+            "etlBytes": 3809,
+            "pcapBytes": 180,
+            "productionQualificationComplete": false,
+            "packetCounters": {
+              "nonzero": true,
+              "code": "parsed",
+              "fields": 188
+            },
+            "filterCode": "none",
+            "providerMask": 0
+          }
+        }
+      ],
+      "sourceTerminalBasis": "all-six-source-bound-matrix-jobs-completed",
+      "nativeSHA256": {
+        "scripts/test-native-doh.ps1": "eef97825b3cf9983f471234ddc3fda80c8dfbc548ef7cbcfd02ff1e33b5e4bd3",
+        "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
+        "scripts/dns-acceptance-state.ps1": "a8332f9d043c4f3577a5229a4831e7e88df52a1c9733eba4e4e254012622a2de",
+        "scripts/test-dns-acceptance-state.ps1": "66f5e1d0743143781f92dec066e5e2439832c620dd8d9d27a3c3632d041150d2",
+        "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+        ".github/workflows/native-doh.yml": "7a373b86da9de96909db6ff01dcf7f4aa0115c5efc719b5540f1f84a4643df40",
+        "internal/workflow/windows.ps1": "57599bcec6c09ec499e681b758f88c99ea4fe789d12131948261e35ab81ecfd2",
+        "internal/workflow/manager.go": "e1eae98c45c8ccd7b77675d9a05be300c2d02cb85b8a372c1b3f8f74c04f8f1d",
+        "cmd/accessweaver/system.go": "205880642ec0814629f754b7f44ae3d36b00a584ee937e2705849b2ddead1f94",
+        "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+        "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+        "scripts/native-dns-wire.ps1": "628ca31341babc247390d14dfcadea2d772d33a666570edbbd6c6b05ebee2850",
+        "scripts/test-dns-wire-native-contracts.ps1": "4af781a7e51c184efab8f826a6be41672df4135e9b452aafe836ae8e83095f6a",
+        "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+        "scripts/dns-wire-stdin.cjs": "b05d259e94b3f89555c645cc9205b922ae6418bf99bfa56581abdb72fa205fa0",
+        ".github/workflows/native-doh-wire.yml": "19fd54b25ecb44c6a156af8c4da94398f1c73bb3e29af90a1acfbaa0d50e12e9"
+      },
+      "bothNativeWireScenariosPassed": false,
+      "allNativeJobsTerminal": true
+    }
+  ],
+  "capturePositiveControls": [
+    {
+      "sourceCommit": "ac1380049eabf534a830c0e130b668096f96bf65",
+      "runID": 42511866736,
+      "allJobsTerminal": true,
+      "sourceSHA256": {
+        "scripts/test-native-capture-control.ps1": "3153edbe50345b2ff6815e42b0b540bf156fc7427f1e138e98e70aaacc01c241",
+        "scripts/native-dns-wire.ps1": "628ca31341babc247390d14dfcadea2d772d33a666570edbbd6c6b05ebee2850",
+        "scripts/test-dns-wire-native-contracts.ps1": "4af781a7e51c184efab8f826a6be41672df4135e9b452aafe836ae8e83095f6a",
+        "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+        "scripts/dns-wire-stdin.cjs": "b05d259e94b3f89555c645cc9205b922ae6418bf99bfa56581abdb72fa205fa0",
+        "scripts/dns-acceptance-state.ps1": "a8332f9d043c4f3577a5229a4831e7e88df52a1c9733eba4e4e254012622a2de",
+        ".github/workflows/native-capture-control.yml": "8c9312ee9417e8c3a9f51469027a4c423db9dcab8cea43a1afa42afcd4367a37"
+      },
+      "jobs": [
+        {
+          "id": 128826465668,
+          "name": "Capture positive control (windows/arm64)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failedSteps": [
+            "Run isolated capture positive control"
+          ],
+          "activeSteps": []
+        },
+        {
+          "id": 128826465762,
+          "name": "Capture positive control (windows/amd64)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failedSteps": [
+            "Run isolated capture positive control"
+          ],
+          "activeSteps": []
+        }
+      ],
+      "bothControlsPassed": false,
+      "artifacts": [
+        {
+          "artifactID": 13630095583,
+          "artifactName": "capture-positive-control-windows-amd64",
+          "providerZIPDigest": "sha256:bbcbd8fd1edcb597064c7614ec5566876b3567e2b1520b0228491af29d4eeaae",
+          "providerZIPDigestVerified": true,
+          "outcome": "failed",
+          "code": "control-failed",
+          "toolSHA256": "baf1dd33a5722964d6a9b5858768b4eea574609c0482ba714b9f957e24fb0c9d",
+          "environmentVerified": true,
+          "nativeProcessVerified": true,
+          "control": {
+            "processes": 25,
+            "originalResolverPassed": true,
+            "filtersRemoved": true,
+            "code": "frame-events-missing",
+            "captureStopped": true,
+            "joined": 25,
+            "eventEvidence": {
+              "knownMetadataIDs": 0,
+              "unrecognizedVersions": 0,
+              "records": 36,
+              "frameDropPayloadIDs": 0,
+              "providerRecords": 0,
+              "otherProviderRecords": 36,
+              "missingProviderIDs": 0,
+              "unknownProviderIDs": 0,
+              "code": "complete",
+              "framePayloadIDs": 0
+            },
+            "toolFailure": false,
+            "outcome": "failed",
+            "connected": true,
+            "originalStateVerified": true,
+            "captureStarted": true,
+            "captureBounded": true
+          },
+          "productInvoked": false,
+          "dnsSettingsChangesAttempted": false,
+          "firewallRulesCreated": false,
+          "encryptedTrafficQualified": false
+        },
+        {
+          "artifactID": 13629538551,
+          "artifactName": "capture-positive-control-windows-arm64",
+          "providerZIPDigest": "sha256:1fce10bbc50489e2cde61296cfdf9199b3ca2a3da960116aa556190402ff1f53",
+          "providerZIPDigestVerified": true,
+          "outcome": "failed",
+          "code": "control-failed",
+          "toolSHA256": "3c7f303d61a4955e6d3e36edc98889bc9ac889ebcbce21b752f05266a3e1fd31",
+          "environmentVerified": true,
+          "nativeProcessVerified": true,
+          "control": {
+            "processes": 25,
+            "originalResolverPassed": true,
+            "filtersRemoved": true,
+            "code": "frame-events-missing",
+            "captureStopped": true,
+            "joined": 25,
+            "eventEvidence": {
+              "knownMetadataIDs": 0,
+              "unrecognizedVersions": 0,
+              "records": 38,
+              "frameDropPayloadIDs": 0,
+              "providerRecords": 0,
+              "otherProviderRecords": 38,
+              "missingProviderIDs": 0,
+              "unknownProviderIDs": 0,
+              "code": "complete",
+              "framePayloadIDs": 0
+            },
+            "toolFailure": false,
+            "outcome": "failed",
+            "connected": true,
+            "originalStateVerified": true,
+            "captureStarted": true,
+            "captureBounded": true
+          },
+          "productInvoked": false,
+          "dnsSettingsChangesAttempted": false,
+          "firewallRulesCreated": false,
+          "encryptedTrafficQualified": false
+        }
+      ]
     }
   ],
   "defaultScenarioRegressions": [
@@ -8415,8 +8972,8 @@
       ]
     }
   ],
-  "distinctProviderZIPDigestsVerified": 202,
-  "terminalJobsVerified": 200,
+  "distinctProviderZIPDigestsVerified": 212,
+  "terminalJobsVerified": 210,
   "productSourceUnchangedSince": "3ae6417cb9a8a86d6b4e41dea0f25fc3af94c331",
   "readinessManifestSHA256": "9525ee76922c68ec4f3daafe581bffc9d7631bf77947863bc62a807556b4b735",
   "rawLogsRead": false,
