@@ -8824,6 +8824,296 @@
       ]
     }
   ],
+  "captureProducerCapabilities": [
+    {
+      "sourceCommit": "a9992ed3aaa26670269ca488d9cb25042836af55",
+      "runID": 42513072394,
+      "allJobsTerminal": true,
+      "sourceSHA256": {
+        "scripts/trace-capture-capabilities.cjs": "01dc6a873083b23f505689b44ecc22b597dc161be2411019af89f268639bc2ac",
+        "scripts/test-trace-capture-capabilities.cjs": "f7ebf7beaf0a079053d4d668b1981962044318467c6dbb628dc773a9300d1dc6",
+        "scripts/read-native-trace-capabilities.ps1": "e0e95ef6913fc7508431d791acb197950b7e0f356c604fac7d8c1e1aebff85db",
+        ".github/workflows/trace-capture-capabilities.yml": "1ab4eecf40883b2fc135335fb9e84968b169c54b2eb690b3f50e627ffe6e4350"
+      },
+      "jobs": [
+        {
+          "id": 128830128995,
+          "name": "Read-only trace capabilities (windows/arm64)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failedSteps": [
+            "Read capture help and metadata only"
+          ],
+          "activeSteps": []
+        },
+        {
+          "id": 128830129212,
+          "name": "Read-only trace capabilities (windows/amd64)",
+          "status": "completed",
+          "conclusion": "failure",
+          "failedSteps": [
+            "Read capture help and metadata only"
+          ],
+          "activeSteps": []
+        }
+      ],
+      "bothObserved": false,
+      "artifacts": [
+        {
+          "artifactID": 13630555279,
+          "artifactName": "trace-capture-capabilities-windows-arm64",
+          "providerZIPDigest": "sha256:77b2470d5a4160b1087b50927febae0d0615ead269ae9df66423803d798ad1af",
+          "providerZIPDigestVerified": true,
+          "outcome": "failed",
+          "code": "queries",
+          "contractsPassed": true,
+          "contractGroups": 16,
+          "netsh": {
+            "statusBefore": "unknown",
+            "statusAfter": "unknown",
+            "captureOptionListed": true,
+            "captureTypeOptionListed": true,
+            "sessionNameOptionListed": true,
+            "privateFileOptionListed": true,
+            "fileBoundOptionListed": true,
+            "circularSyntaxListed": true,
+            "reportDisableSyntaxListed": true,
+            "correlationOptionListed": true,
+            "nonpersistentSyntaxListed": true,
+            "overwriteOptionListed": true,
+            "ipv4FilterListed": true,
+            "ipv6FilterListed": true,
+            "tcpPortFilterListed": false,
+            "truncationOptionListed": true
+          },
+          "netEvent": {
+            "code": "complete",
+            "stockShell": true,
+            "sessionCommandsListed": true,
+            "providerCommandsListed": true,
+            "privateFileParametersListed": true,
+            "packetFilterParametersListed": true,
+            "sessionReadbackParametersListed": true,
+            "providerReadbackParametersListed": true,
+            "sessionInventory": "empty",
+            "providerInventory": "empty"
+          },
+          "queryCodes": [
+            "exit",
+            "complete",
+            "complete",
+            "exit",
+            "complete"
+          ],
+          "queryExitCodes": null,
+          "captureStarted": false,
+          "sessionChanged": false,
+          "dnsSettingsChangesAttempted": false,
+          "productInvoked": false
+        },
+        {
+          "artifactID": 13629189749,
+          "artifactName": "trace-capture-capabilities-windows-amd64",
+          "providerZIPDigest": "sha256:fef9b8f6a33e19e640bd32a589e92a74151d8c80c0a94b9f221f1977433a58c1",
+          "providerZIPDigestVerified": true,
+          "outcome": "failed",
+          "code": "queries",
+          "contractsPassed": true,
+          "contractGroups": 16,
+          "netsh": {
+            "statusBefore": "unknown",
+            "statusAfter": "unknown",
+            "captureOptionListed": true,
+            "captureTypeOptionListed": true,
+            "sessionNameOptionListed": true,
+            "privateFileOptionListed": true,
+            "fileBoundOptionListed": true,
+            "circularSyntaxListed": true,
+            "reportDisableSyntaxListed": true,
+            "correlationOptionListed": true,
+            "nonpersistentSyntaxListed": true,
+            "overwriteOptionListed": true,
+            "ipv4FilterListed": true,
+            "ipv6FilterListed": true,
+            "tcpPortFilterListed": false,
+            "truncationOptionListed": true
+          },
+          "netEvent": {
+            "code": "complete",
+            "stockShell": true,
+            "sessionCommandsListed": true,
+            "providerCommandsListed": true,
+            "privateFileParametersListed": true,
+            "packetFilterParametersListed": true,
+            "sessionReadbackParametersListed": true,
+            "providerReadbackParametersListed": true,
+            "sessionInventory": "empty",
+            "providerInventory": "empty"
+          },
+          "queryCodes": [
+            "exit",
+            "complete",
+            "complete",
+            "exit",
+            "complete"
+          ],
+          "queryExitCodes": null,
+          "captureStarted": false,
+          "sessionChanged": false,
+          "dnsSettingsChangesAttempted": false,
+          "productInvoked": false
+        }
+      ]
+    },
+    {
+      "sourceCommit": "36f7631fd139496ead6e657f43f49236f3f3952e",
+      "runID": 42513622290,
+      "allJobsTerminal": true,
+      "sourceSHA256": {
+        "scripts/trace-capture-capabilities.cjs": "26a2b401a3eb701cbe449fd480246c87c2b0dabbc776fabba4e04a5e4073e79b",
+        "scripts/test-trace-capture-capabilities.cjs": "77ffdabc63671083575443fe9e09b8f60cfe2ab53d193b1e30caa2b9bfb676ac",
+        "scripts/read-native-trace-capabilities.ps1": "e0e95ef6913fc7508431d791acb197950b7e0f356c604fac7d8c1e1aebff85db",
+        ".github/workflows/trace-capture-capabilities.yml": "1ab4eecf40883b2fc135335fb9e84968b169c54b2eb690b3f50e627ffe6e4350"
+      },
+      "jobs": [
+        {
+          "id": 128831778648,
+          "name": "Read-only trace capabilities (windows/amd64)",
+          "status": "completed",
+          "conclusion": "success",
+          "failedSteps": [],
+          "activeSteps": []
+        },
+        {
+          "id": 128831778782,
+          "name": "Read-only trace capabilities (windows/arm64)",
+          "status": "completed",
+          "conclusion": "success",
+          "failedSteps": [],
+          "activeSteps": []
+        }
+      ],
+      "bothObserved": true,
+      "artifacts": [
+        {
+          "artifactID": 13630776061,
+          "artifactName": "trace-capture-capabilities-windows-arm64",
+          "providerZIPDigest": "sha256:eb882b2160763cbf4088299f69dd7c60ca2b5437f69948d5be03f140d4f656c9",
+          "providerZIPDigestVerified": true,
+          "outcome": "observed",
+          "code": "none",
+          "contractsPassed": true,
+          "contractGroups": 20,
+          "netsh": {
+            "statusBefore": "stopped",
+            "statusAfter": "stopped",
+            "captureOptionListed": true,
+            "captureTypeOptionListed": true,
+            "sessionNameOptionListed": true,
+            "privateFileOptionListed": true,
+            "fileBoundOptionListed": true,
+            "circularSyntaxListed": true,
+            "reportDisableSyntaxListed": true,
+            "correlationOptionListed": true,
+            "nonpersistentSyntaxListed": true,
+            "overwriteOptionListed": true,
+            "ipv4FilterListed": true,
+            "ipv6FilterListed": true,
+            "tcpPortFilterListed": false,
+            "truncationOptionListed": true
+          },
+          "netEvent": {
+            "code": "complete",
+            "stockShell": true,
+            "sessionCommandsListed": true,
+            "providerCommandsListed": true,
+            "privateFileParametersListed": true,
+            "packetFilterParametersListed": true,
+            "sessionReadbackParametersListed": true,
+            "providerReadbackParametersListed": true,
+            "sessionInventory": "empty",
+            "providerInventory": "empty"
+          },
+          "queryCodes": [
+            "inactive",
+            "complete",
+            "complete",
+            "inactive",
+            "complete"
+          ],
+          "queryExitCodes": [
+            1,
+            0,
+            0,
+            1,
+            0
+          ],
+          "captureStarted": false,
+          "sessionChanged": false,
+          "dnsSettingsChangesAttempted": false,
+          "productInvoked": false
+        },
+        {
+          "artifactID": 13630461923,
+          "artifactName": "trace-capture-capabilities-windows-amd64",
+          "providerZIPDigest": "sha256:83427ffb44509db5f5d8a776c48b4d54fcabf4e6646d982e3749deddb3e79a5a",
+          "providerZIPDigestVerified": true,
+          "outcome": "observed",
+          "code": "none",
+          "contractsPassed": true,
+          "contractGroups": 20,
+          "netsh": {
+            "statusBefore": "stopped",
+            "statusAfter": "stopped",
+            "captureOptionListed": true,
+            "captureTypeOptionListed": true,
+            "sessionNameOptionListed": true,
+            "privateFileOptionListed": true,
+            "fileBoundOptionListed": true,
+            "circularSyntaxListed": true,
+            "reportDisableSyntaxListed": true,
+            "correlationOptionListed": true,
+            "nonpersistentSyntaxListed": true,
+            "overwriteOptionListed": true,
+            "ipv4FilterListed": true,
+            "ipv6FilterListed": true,
+            "tcpPortFilterListed": false,
+            "truncationOptionListed": true
+          },
+          "netEvent": {
+            "code": "complete",
+            "stockShell": true,
+            "sessionCommandsListed": true,
+            "providerCommandsListed": true,
+            "privateFileParametersListed": true,
+            "packetFilterParametersListed": true,
+            "sessionReadbackParametersListed": true,
+            "providerReadbackParametersListed": true,
+            "sessionInventory": "empty",
+            "providerInventory": "empty"
+          },
+          "queryCodes": [
+            "inactive",
+            "complete",
+            "complete",
+            "inactive",
+            "complete"
+          ],
+          "queryExitCodes": [
+            1,
+            0,
+            0,
+            1,
+            0
+          ],
+          "captureStarted": false,
+          "sessionChanged": false,
+          "dnsSettingsChangesAttempted": false,
+          "productInvoked": false
+        }
+      ]
+    }
+  ],
   "defaultScenarioRegressions": [
     {
       "sourceCommit": "bcdc5279bc975476d059d4e471d607d5b04f64bc",
@@ -8972,8 +9262,8 @@
       ]
     }
   ],
-  "distinctProviderZIPDigestsVerified": 212,
-  "terminalJobsVerified": 210,
+  "distinctProviderZIPDigestsVerified": 216,
+  "terminalJobsVerified": 214,
   "productSourceUnchangedSince": "3ae6417cb9a8a86d6b4e41dea0f25fc3af94c331",
   "readinessManifestSHA256": "9525ee76922c68ec4f3daafe581bffc9d7631bf77947863bc62a807556b4b735",
   "rawLogsRead": false,
