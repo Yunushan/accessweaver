@@ -13,14 +13,23 @@ function Get-NativeNetEventInventory {
     $s=@();$p=@()
     try{$s=@(Get-NetEventSession -ErrorAction Stop | Select-Object -First 2)}catch{if($_.CategoryInfo.Category -ne [Management.Automation.ErrorCategory]::ObjectNotFound){throw}}
     try{$p=@(Get-NetEventPacketCaptureProvider -ErrorAction Stop | Select-Object -First 2)}catch{if($_.CategoryInfo.Category -ne [Management.Automation.ErrorCategory]::ObjectNotFound){throw}}
+    foreach($row in @($s)+@($p)){if($row -isnot [Microsoft.Management.Infrastructure.CimInstance]){throw 'NetEvent inventory'}}
     return @{sessions=$s;providers=$p}
 }
+function Get-NativeNetEventValue([object]$Row,[string]$Name) {
+    # Read underlying typed CIM data, independent of display type extensions.
+    $property=$Row.CimInstanceProperties[$Name]
+    if($null -eq $property){throw 'NetEvent configuration'}
+    return ,$property.Value
+}
 function Assert-NativeNetEventSession([object]$Row,[object]$Plan,[object]$Enums) {
-    $script:netEventStage='session-readback';$script:netEventModeValue=$Row.CaptureMode;$script:netEventStatusValue=$Row.SessionStatus
+    $script:netEventStage='session-readback'
+    $name=Get-NativeNetEventValue $Row 'Name';$id=Get-NativeNetEventValue $Row 'Guid';$file=Get-NativeNetEventValue $Row 'LocalFilePath';$size=Get-NativeNetEventValue $Row 'MaxFileSize';$mode=Get-NativeNetEventValue $Row 'CaptureMode'
+    $script:netEventModeValue=$mode;$script:netEventStatusValue=$Row.SessionStatus
     $guid=[guid]::Empty
-    if($Row.Name -isnot [string] -or $Row.Name -cne $Plan.name -or $Row.Guid -isnot [string] -or -not [guid]::TryParse($Row.Guid,[ref]$guid) -or $guid -eq [guid]::Empty){throw 'NetEvent session'}
+    if($name -isnot [string] -or $name -cne $Plan.name -or $id -isnot [string] -or -not [guid]::TryParse($id,[ref]$guid) -or $guid -eq [guid]::Empty){throw 'NetEvent session'}
     if($Plan.guid -and $guid -ne [guid]$Plan.guid){throw 'NetEvent identity'}
-    if($Row.LocalFilePath -isnot [string] -or -not [IO.Path]::GetFullPath($Row.LocalFilePath).Equals($Plan.file,[StringComparison]::OrdinalIgnoreCase) -or $Row.MaxFileSize -is [bool] -or [long]$Row.MaxFileSize -ne 16 -or $null -eq $Row.CaptureMode -or $Row.CaptureMode -is [bool] -or [int]$Row.CaptureMode -ne $Enums.mode){throw 'NetEvent configuration'}
+    if($file -isnot [string] -or -not [IO.Path]::GetFullPath($file).Equals($Plan.file,[StringComparison]::OrdinalIgnoreCase) -or $size -is [bool] -or [long]$size -ne 16 -or $null -eq $mode -or $mode -is [bool] -or [int]$mode -ne $Enums.mode){throw 'NetEvent configuration'}
     return $guid.ToString('D')
 }
 function Get-NativeNetEventState([object]$Row) {
@@ -30,12 +39,13 @@ function Get-NativeNetEventState([object]$Row) {
     return 'unknown'
 }
 function Assert-NativeNetEventProvider([object]$Row,[object]$Plan,[string]$Guid,[object]$Enums) {
-    $script:netEventStage='provider-readback'
+    $script:netEventStage='provider-readback';$values=@{}
+    foreach($key in @('Guid','SessionGuid','SessionName','Level','CaptureType','MultiLayer','TruncationLength','MatchAnyKeyword','MatchAllKeyword','IPAddresses','IPProtocols','EtherType','LinkLayerAddress')){$values[$key]=Get-NativeNetEventValue $Row $key}
     $provider=[guid]::Empty;$session=[guid]::Empty
-    if(-not [guid]::TryParse([string]$Row.Guid,[ref]$provider) -or $provider -ne [guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef' -or -not [guid]::TryParse([string]$Row.SessionGuid,[ref]$session) -or $session -ne [guid]$Guid -or $Row.SessionName -cne $Plan.name){throw 'NetEvent provider'}
-    foreach($key in @('Level','CaptureType','TruncationLength','MatchAnyKeyword','MatchAllKeyword')){if($null -eq $Row.$key -or $Row.$key -is [bool]){throw 'NetEvent filters'}}
-    if([int]$Row.Level -ne 5 -or [int]$Row.CaptureType -ne $Enums.capture -or $Row.MultiLayer -isnot [bool] -or $Row.MultiLayer -or [int]$Row.TruncationLength -ne 65535 -or [System.UInt64]$Row.MatchAnyKeyword -ne [System.UInt64]::MaxValue -or [System.UInt64]$Row.MatchAllKeyword -ne 0){throw 'NetEvent filters'}
-    if(@($Row.IPAddresses).Count -ne 1 -or [string]$Row.IPAddresses[0] -cne '8.8.8.8' -or @($Row.IPProtocols).Count -ne 1 -or [int]$Row.IPProtocols[0] -ne 6 -or @($Row.EtherType).Count -ne 1 -or [int]$Row.EtherType[0] -ne 2048 -or @($Row.LinkLayerAddress | Where-Object {$_}).Count -ne 0){throw 'NetEvent filters'}
+    if(-not [guid]::TryParse([string]$values.Guid,[ref]$provider) -or $provider -ne [guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef' -or -not [guid]::TryParse([string]$values.SessionGuid,[ref]$session) -or $session -ne [guid]$Guid -or $values.SessionName -cne $Plan.name){throw 'NetEvent provider'}
+    foreach($key in @('Level','CaptureType','TruncationLength','MatchAnyKeyword','MatchAllKeyword')){if($null -eq $values[$key] -or $values[$key] -is [bool]){throw 'NetEvent filters'}}
+    if([int]$values.Level -ne 5 -or [int]$values.CaptureType -ne $Enums.capture -or $values.MultiLayer -isnot [bool] -or $values.MultiLayer -or [int]$values.TruncationLength -ne 65535 -or [System.UInt64]$values.MatchAnyKeyword -ne [System.UInt64]::MaxValue -or [System.UInt64]$values.MatchAllKeyword -ne 0){throw 'NetEvent filters'}
+    if(@($values.IPAddresses).Count -ne 1 -or [string]$values.IPAddresses[0] -cne '8.8.8.8' -or @($values.IPProtocols).Count -ne 1 -or [int]$values.IPProtocols[0] -ne 6 -or @($values.EtherType).Count -ne 1 -or [int]$values.EtherType[0] -ne 2048 -or @($values.LinkLayerAddress | Where-Object {$_}).Count -ne 0){throw 'NetEvent filters'}
 }
 function Invoke-NativeNetEventOperation([string]$Operation,[object]$Plan) {
     if($Operation -cnotin @('preflight','create','provider','start','stop','remove') -or $Plan.name -cnotmatch '^awndis-[a-f0-9]{32}$' -or $Plan.file -isnot [string] -or -not [IO.Path]::IsPathRooted($Plan.file) -or [IO.Path]::GetFileName($Plan.file) -cne 'capture.etl' -or $Plan.originalVerified -isnot [bool]){throw 'NetEvent plan'}

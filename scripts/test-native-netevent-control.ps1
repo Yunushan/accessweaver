@@ -19,6 +19,7 @@ $state=$null;$plan=$null;$environmentVerified=$false;$nativeProcessVerified=$fal
 $emptyEvidence=@{stage='not-inspected';family='none';hresult=0;cimStatus=-1;modeKind='not-inspected';statusKind='not-inspected'}
 $control=@{operationEvidence=$emptyEvidence;cleanupEvidence=$emptyEvidence;outcome='failed';phase='preflight';code='not-started';cleanupCode='none';preflightEmpty=$false;sessionVerified=$false;providerVerified=$false;captureStarted=$false;captureStopped=$false;connected=$false;captureBounded=$false;etlBytes=0;originalStateVerified=$false;originalResolverPassed=$false;sessionRemoved=$false;processes=0;joined=0;toolFailure=$false;eventEvidence=$null}
 function Invoke-NativeNDISOperation([string]$Operation) {
+    $script:lastOperationCode='none';$script:lastEvidence=$emptyEvidence
     foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'NDIS source changed'}}
     $payload=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($script:plan | ConvertTo-Json -Compress)))
     $text=Invoke-NativeDNSWireProcess $script:state $script:state.eventTool @('-NoProfile','-NonInteractive','-File',(Join-Path $PSScriptRoot 'netevent-control-operation.ps1'),'-Operation',$Operation,'-PlanBase64',$payload)
