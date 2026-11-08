@@ -32,7 +32,7 @@ test('wireless-and-wan-media-are-refused',()=>{for(const mask of [0x200n,0x10000
 test('missing-or-ambiguous-direction-is-refused',()=>{for(const value of [0xc0000000n,0x3c0000000n])reject({...record(),keywords:value},'fragment-direction');});
 test('fragment-size-is-exact-and-cannot-be-coerced',()=>{for(const value of [false,'54',13,65536,53,55,54.5])reject({...record(),fragmentSize:value},'fragment-length');});
 test('non-buffer-fragments-are-refused',()=>reject({...record(),fragment:new Uint8Array(54)},'fragment-length'));
-test('truncated-ipv4-and-inconsistent-total-length-are-refused',()=>{const b=frame();reject(record(b.subarray(0,-1)),'ipv4-length');const c=Buffer.from(b);c.writeUInt16BE(0,16);reject(record(c),'ipv4-length');});
+test('truncated-ipv4-and-inconsistent-total-length-are-refused',()=>{const b=frame();reject(record(b.subarray(0,-1)),'ipv4-truncated');const c=Buffer.from(b);c.writeUInt16BE(0,16);reject(record(c),'ipv4-zero-length');});
 test('ipv4-version-and-header-length-are-checked',()=>{for(const value of [0x65,0x44,0x4f]){const b=frame();b[14]=value;reject(record(b));}});
 test('ipv4-fragments-are-refused-even-if-byte-lengths-match',()=>{for(const flags of [0x2000,1,0x8000]){const b=frame();b.writeUInt16BE(flags,20);reject(record(b),'ip-fragment');}});
 test('ethernet-ip-length-trailing-bytes-are-not-silently-ignored',()=>reject(record(Buffer.concat([frame({payload:10}),Buffer.from([1])])),'frame-length'));

@@ -12,7 +12,7 @@ function wholeIP(frame){
  if(type===0x0800){
   family=4;need(at+20<=frame.length&&(frame[at]>>>4)===4,'ipv4-header');
   const header=(frame[at]&15)*4,size=frame.readUInt16BE(at+2);
-  need(header>=20&&size>=header&&at+size<=frame.length,'ipv4-length');
+  need(header>=20,'ipv4-header-length');need(size!==0,'ipv4-zero-length');need(size>=header,'ipv4-short-length');need(at+size<=frame.length,'ipv4-truncated');
   need((frame.readUInt16BE(at+6)&0xbfff)===0,'ip-fragment');
   end=at+size;protocol=frame[at+9];at+=header;
  }else if(type===0x86dd){

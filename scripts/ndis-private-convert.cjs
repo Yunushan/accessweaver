@@ -24,7 +24,7 @@ function privateCapturePaths(root,local){
  return {root,input:path.win32.join(root,'frames.json'),output:path.win32.join(root,'capture.pcapng')};
 }
 function ordinaryAncestors(file){let current=file;while(current){need(!fs.lstatSync(current).isSymbolicLink(),'private-path');const parent=path.dirname(current);if(parent===current)break;current=parent;}}
-const CODES=new Set(['environment','private-path','private-file','private-document','private-record','private-encoding','record-shape','fragment-identity','fragment-keywords','fragment-boundaries','fragment-media','fragment-direction','fragment-offload-type','fragment-offload','fragment-length','ethernet-vlan','ethernet-type','ipv4-header','ipv4-length','ipv6-header','ipv6-length','ip-fragment','frame-length','ipv6-extension','tcp-header','udp-length','transport-type','record-bound','capture-bound']);
+const CODES=new Set(['environment','private-path','private-file','private-document','private-record','private-encoding','record-shape','fragment-identity','fragment-keywords','fragment-boundaries','fragment-media','fragment-direction','fragment-offload-type','fragment-offload','fragment-length','ethernet-vlan','ethernet-type','ipv4-header','ipv4-length','ipv4-header-length','ipv4-zero-length','ipv4-short-length','ipv4-truncated','ipv6-header','ipv6-length','ip-fragment','frame-length','ipv6-extension','tcp-header','udp-length','transport-type','record-bound','capture-bound']);
 function runPrivateConversion(root){
  let read=false,input=null,output=null;
  try{
