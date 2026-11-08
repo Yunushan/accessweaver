@@ -25,20 +25,20 @@ $definitions=@($ast.EndBlock.Statements)
 $tokens=$null;$issues=$null;$coordinator=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-doh-scenario.ps1'),[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Native coordinator source did not parse'}
 $definitions+=@($coordinator.EndBlock.Statements)
-$selected=@('Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Invoke-NativeDNSRollbackScenario','New-NativeDNSFailureResponse','Get-NativeDNSVerificationMarker','Get-NativeDNSForwarderFailure','Get-NativeDNSComponentFailure','Get-NativeDNSComponentRetry','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
+$selected=@('Invoke-NativeDNSStaticFixture','Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Invoke-NativeDNSRollbackScenario','New-NativeDNSFailureResponse','Get-NativeDNSVerificationMarker','Get-NativeDNSForwarderFailure','Get-NativeDNSComponentFailure','Get-NativeDNSComponentRetry','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
 $allowed=$selected+@('ConvertTo-Json','Get-NetAdapter','Get-ItemProperty','Get-DnsClientServerAddress','Get-Command','Get-DnsClientDohServerAddress','Where-Object','Get-Service','Clear-DnsClientCache','Resolve-DnsName')
 foreach($name in $selected){
     $nodes=@($definitions | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Acceptance helper function unavailable'}
     foreach($command in $nodes[0].FindAll({param($node)$node -is [Management.Automation.Language.CommandAst]},$true)){
         $commandName=$command.GetCommandName()
-        $callback=(-not $commandName -and $command.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and $command.CommandElements[0] -is [Management.Automation.Language.VariableExpressionAst] -and $command.CommandElements[0].VariablePath.UserPath -cin @('Apply','Capture','Resolve','InduceFailure','ResolveFailed','ResolveRestored','Configure','Observe','EmergencyRestore'))
+        $callback=(-not $commandName -and $command.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and $command.CommandElements[0] -is [Management.Automation.Language.VariableExpressionAst] -and $command.CommandElements[0].VariablePath.UserPath -cin @('Apply','Capture','Resolve','InduceFailure','ResolveFailed','ResolveRestored','Configure','Observe','EmergencyRestore','Stage','Exercise','Unstage'))
         if(-not $callback -and $commandName -notin $allowed){throw 'Acceptance helper command boundary refused'}
     }
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
 $script:checks=0;$script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('component-retry-contract','component-closed-error-map','forwarder-closed-error-map','rollback-native-result','rollback-native-flags','rollback-native-cleanup','rollback-native-order','rollback-native-preflight','fixed-dns-response','verification-marker-boundary','failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
+$script:closedContractCodes=@('static-fixture-result','static-fixture-cleanup','static-fixture-order','static-fixture-flags','static-fixture-preflight','component-retry-contract','component-closed-error-map','forwarder-closed-error-map','rollback-native-result','rollback-native-flags','rollback-native-cleanup','rollback-native-order','rollback-native-preflight','fixed-dns-response','verification-marker-boundary','failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
 function Assert-A([bool]$Value,[string]$Code){if(-not $Value){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('Acceptance contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-A([scriptblock]$Operation){$failed=$false;try{& $Operation | Out-Null}catch{$failed=$true};Assert-A $failed 'expected-refusal'}
 $script:g1='abcdef00-0000-0000-0000-000000000001';$script:g2='abcdef00-0000-0000-0000-000000000002'
@@ -372,6 +372,53 @@ try {
         $script:invalidEffects=0;$boundary={$script:invalidEffects++};$parameters=@{Configure=$boundary;Capture=$boundary;Observe=$boundary;Resolve=$boundary;EmergencyRestore=$boundary};$parameters.Remove($missing)
         $result=Invoke-NativeDNSRollbackScenario @parameters
         Assert-A ($result.operationCode -ceq 'baseline' -and $script:invalidEffects -eq 0 -and -not $result.configurationAttempted -and -not $result.emergencyRestoreAttempted) 'rollback-native-preflight'
+    }
+    foreach($failure in @('none','baseline','baseline-false','baseline-string','stage-throw','stage-false','stage-string','exercise-throw','exercise-false','exercise-string','unstage','state','cleanup-resolver','exercise-and-unstage')){
+        New-ACase;$script:staticTrace=[Collections.Generic.List[string]]::new();$script:staticFailure=$failure;$script:staticResolveCalls=0
+        $result=Invoke-NativeDNSStaticFixture -Capture {
+            $script:staticTrace.Add('capture')
+            if($script:staticFailure -ceq 'baseline'){throw 'fixture-baseline'}
+            return (Read-DNSAcceptanceState)
+        } -Resolve {
+            $script:staticTrace.Add('resolve');$script:staticResolveCalls++
+            if($script:staticResolveCalls -eq 1){
+                if($script:staticFailure -ceq 'baseline-false'){return $false}
+                if($script:staticFailure -ceq 'baseline-string'){return 'true'}
+            }elseif($script:staticFailure -ceq 'cleanup-resolver'){return $false}
+            return $true
+        } -Stage {
+            param($before)
+            $script:staticTrace.Add('stage');$script:data[$script:g1].servers6=@('fe80::53','fe80::54')
+            if($script:staticFailure -ceq 'stage-throw'){throw 'fixture-partial-stage'}
+            if($script:staticFailure -ceq 'stage-false'){return $false}
+            if($script:staticFailure -ceq 'stage-string'){return 'true'}
+            return $true
+        } -Exercise {
+            $script:staticTrace.Add('exercise')
+            if($script:staticFailure -cin @('exercise-throw','exercise-and-unstage')){throw 'fixture-exercise'}
+            if($script:staticFailure -ceq 'exercise-false'){return $false}
+            if($script:staticFailure -ceq 'exercise-string'){return 'true'}
+            return $true
+        } -Unstage {
+            param($before)
+            $script:staticTrace.Add('unstage')
+            if($script:staticFailure -cin @('unstage','exercise-and-unstage')){throw 'fixture-unstage'}
+            if($script:staticFailure -cne 'state'){$script:data[$script:g1].servers6=@('2001:db8::53','2001:db8::54')}
+        }
+        $baselineFailure=$failure -cin @('baseline','baseline-false','baseline-string')
+        $operation=if($baselineFailure){'baseline'}elseif($failure -like 'stage-*'){'stage'}elseif($failure -like 'exercise-*'){'exercise'}else{'none'}
+        $cleanup=if($failure -cin @('unstage','exercise-and-unstage')){'unstage'}elseif($failure -ceq 'state'){'state'}elseif($failure -ceq 'cleanup-resolver'){'resolver'}else{'none'}
+        Assert-A (($result.outcome -ceq 'passed') -eq ($failure -ceq 'none') -and $result.operationCode -ceq $operation -and $result.cleanupCode -ceq $cleanup) 'static-fixture-result'
+        Assert-A ($result.stagingAttempted -eq (-not $baselineFailure) -and $result.cleanupAttempted -eq (-not $baselineFailure) -and @($script:staticTrace | Where-Object {$_ -ceq 'unstage'}).Count -eq $(if($baselineFailure){0}else{1})) 'static-fixture-cleanup'
+        if($failure -ceq 'none'){
+            Assert-A ($result.baselineCaptured -and $result.baselineResolverPassed -and $result.stagingVerified -and $result.exerciseAttempted -and $result.exercisePassed -and $result.originalStateRestored -and $result.originalResolverPassed) 'static-fixture-flags'
+            Assert-A (($script:staticTrace -join ',') -ceq 'capture,resolve,stage,exercise,unstage,capture,resolve') 'static-fixture-order'
+        }
+    }
+    foreach($missing in @('Capture','Resolve','Stage','Exercise','Unstage')){
+        $script:invalidEffects=0;$boundary={$script:invalidEffects++};$parameters=@{Capture=$boundary;Resolve=$boundary;Stage=$boundary;Exercise=$boundary;Unstage=$boundary};$parameters.Remove($missing)
+        $result=Invoke-NativeDNSStaticFixture @parameters
+        Assert-A ($result.operationCode -ceq 'baseline' -and $script:invalidEffects -eq 0 -and -not $result.stagingAttempted -and -not $result.cleanupAttempted) 'static-fixture-preflight'
     }
     $peer=[Net.Sockets.SocketException]::new(10054);$other=[Net.Sockets.SocketException]::new(10013)
     Assert-A ((Get-NativeDNSForwarderFailure $peer) -ceq 'peer-closed') 'forwarder-closed-error-map'

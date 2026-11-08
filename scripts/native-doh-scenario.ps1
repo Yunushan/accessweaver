@@ -150,3 +150,40 @@ function Get-NativeDNSComponentRetry([int]$Status,[int]$Attempt,[long]$Remaining
     if($wait -ge $RemainingMilliseconds){return -1L}
     return $wait
 }
+
+# The fixture changes only a disposable hosted machine. Its outer baseline and
+# resolver are verified again after unconditional teardown of staged DNS state.
+function Invoke-NativeDNSStaticFixture([scriptblock]$Capture,[scriptblock]$Resolve,[scriptblock]$Stage,[scriptblock]$Exercise,[scriptblock]$Unstage) {
+    $result=@{outcome='failed';code='baseline';operationCode='none';cleanupCode='none';baselineCaptured=$false;baselineResolverPassed=$false;stagingAttempted=$false;stagingVerified=$false;exerciseAttempted=$false;exercisePassed=$false;cleanupAttempted=$false;originalStateRestored=$false;originalResolverPassed=$false}
+    try {
+        if($null -eq $Capture -or $null -eq $Resolve -or $null -eq $Stage -or $null -eq $Exercise -or $null -eq $Unstage){throw 'Missing native static fixture boundary'}
+        $before=& $Capture;[void](Get-DNSAcceptanceIndex $before);$result.baselineCaptured=$true
+        $resolved=& $Resolve
+        if($resolved -isnot [bool] -or -not $resolved){throw 'Native fixture baseline resolver failed'}
+        $result.baselineResolverPassed=$true
+    }catch{$result.operationCode='baseline';return $result}
+    $phase='stage'
+    try {
+        $result.stagingAttempted=$true;$staged=& $Stage $before
+        if($staged -isnot [bool] -or -not $staged){throw 'Native static staging failed'}
+        $result.stagingVerified=$true;$phase='exercise';$result.exerciseAttempted=$true
+        $exercised=& $Exercise
+        if($exercised -isnot [bool] -or -not $exercised){throw 'Native static exercise failed'}
+        $result.exercisePassed=$true
+    }catch{$result.operationCode=$phase}
+    finally {
+        $result.cleanupAttempted=$true
+        try {[void](& $Unstage $before)}catch{$result.cleanupCode='unstage'}
+        try {Assert-DNSAcceptanceRestored $before (& $Capture);$result.originalStateRestored=$true}catch{if($result.cleanupCode -ceq 'none'){$result.cleanupCode='state'}}
+        if($result.originalStateRestored){
+            try {
+                $resolved=& $Resolve
+                if($resolved -isnot [bool] -or -not $resolved){throw 'Native fixture original resolver failed'}
+                $result.originalResolverPassed=$true
+            }catch{if($result.cleanupCode -ceq 'none'){$result.cleanupCode='resolver'}}
+        }
+    }
+    if($result.operationCode -ceq 'none' -and $result.cleanupCode -ceq 'none'){$result.outcome='passed';$result.code='none'}
+    elseif($result.operationCode -cne 'none'){$result.code='operation-failed'}else{$result.code='cleanup-failed'}
+    return $result
+}
