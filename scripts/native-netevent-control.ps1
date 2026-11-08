@@ -155,3 +155,56 @@ function Get-NativeNDISLossEvidence([string]$Text) {
 function Test-NativeNDISLossEvidence([object]$Evidence) {
     return ($Evidence.code -ceq 'parsed' -and $Evidence.closed -and $Evidence.finalized -and $Evidence.nativeCode -eq 0 -and $Evidence.eventsLost -eq 0 -and $Evidence.buffersLost -eq 0 -and $Evidence.pointerSize -eq 8 -and $Evidence.maximumFileSize -eq 16 -and $Evidence.bufferSize -ge 1024 -and $Evidence.bufferSize -le 1048576 -and $Evidence.bufferSize%1024 -eq 0 -and $Evidence.buffersWritten -gt 0 -and ($Evidence.logFileMode -band 2) -ne 0 -and ($Evidence.logFileMode -band 8) -eq 0 -and ([decimal]$Evidence.bufferSize*[decimal]$Evidence.buffersWritten) -lt 16777216)
 }
+
+
+# Metadata only: documented NDIS event/keyword categories; never retain raw keywords.
+function New-NativeNDISFragmentEvidence([string]$Code='not-inspected') {
+    $r=@{code=$Code;records=-1;fragmentIDs=-1;singleEvent=-1;partialEvent=-1;ethernet=-1;wireless=-1;rawWan=-1;mediaConflict=-1;sent=-1;received=-1;directionUnknown=-1;missingKeywords=-1;unrecognizedVersions=-1;metadataIDs=-1;unknownProviderIDs=-1;otherProviderRecords=-1;missingProviderIDs=-1}
+    if($Code -cin @('complete','bound')){foreach($key in @('records','fragmentIDs','singleEvent','partialEvent','ethernet','wireless','rawWan','mediaConflict','sent','received','directionUnknown','missingKeywords','unrecognizedVersions','metadataIDs','unknownProviderIDs','otherProviderRecords','missingProviderIDs')){$r[$key]=0}};return $r
+}
+function Add-NativeNDISFragmentHeader([object]$Evidence,[Nullable[guid]]$Provider,[int]$ID,[Nullable[byte]]$Version,[Nullable[long]]$Keywords) {
+    if($Evidence.code -cne 'complete' -or $Evidence.records -ge 4096 -or $ID -lt 0 -or $ID -gt 65535){throw 'NDIS fragment header bound'};$Evidence.records++
+    if($null -eq $Provider){$Evidence.missingProviderIDs++;$Evidence.otherProviderRecords++;return}
+    if($Provider -ne [guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef'){$Evidence.otherProviderRecords++;return}
+    if($ID -eq 1002){$Evidence.metadataIDs++;return}
+    if($ID -ne 1001){$Evidence.unknownProviderIDs++;return}
+    $Evidence.fragmentIDs++;if($null -eq $Version -or $Version -ne 0){$Evidence.unrecognizedVersions++}
+    if($null -eq $Keywords){$Evidence.missingKeywords++;return}
+    $bits=[long]$Keywords
+    if(($bits -band 3221225472) -eq 3221225472){$Evidence.singleEvent++}else{$Evidence.partialEvent++}
+    $wifi=($bits -band 65536) -ne 0;$wan=($bits -band 512) -ne 0
+    if($wifi -and $wan){$Evidence.mediaConflict++}elseif($wifi){$Evidence.wireless++}elseif($wan){$Evidence.rawWan++}else{$Evidence.ethernet++}
+    $send=($bits -band 4294967296) -ne 0;$receive=($bits -band 8589934592) -ne 0
+    if($send -eq $receive){$Evidence.directionUnknown++}elseif($send){$Evidence.sent++}else{$Evidence.received++}
+}
+function Get-NativeNDISFragmentEvidence([string]$Text) {
+    $bad=New-NativeNDISFragmentEvidence 'invalid';if($Text.Length -gt 4096){return $bad}
+    try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{return $bad}
+    $keys=@('records','fragmentIDs','singleEvent','partialEvent','ethernet','wireless','rawWan','mediaConflict','sent','received','directionUnknown','missingKeywords','unrecognizedVersions','metadataIDs','unknownProviderIDs','otherProviderRecords','missingProviderIDs')
+    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 18 -or $v.code -cnotin @('complete','bound','unavailable')){return $bad}
+    foreach($key in $keys){if($null -eq $v.PSObject.Properties[$key]){return $bad};$n=$v.$key;if(($n -isnot [int] -and $n -isnot [long]) -or $n -lt -1 -or $n -gt 4096){return $bad};if(($v.code -ceq 'unavailable' -and $n -ne -1) -or ($v.code -cne 'unavailable' -and $n -lt 0)){return $bad}}
+    if($v.code -cne 'unavailable'){
+        $known=$v.fragmentIDs-$v.missingKeywords
+        if($known -lt 0 -or $v.records -ne $v.fragmentIDs+$v.metadataIDs+$v.unknownProviderIDs+$v.otherProviderRecords -or $known -ne $v.singleEvent+$v.partialEvent -or $known -ne $v.ethernet+$v.wireless+$v.rawWan+$v.mediaConflict -or $known -ne $v.sent+$v.received+$v.directionUnknown -or $v.missingProviderIDs -gt $v.otherProviderRecords -or $v.unrecognizedVersions -gt $v.fragmentIDs){return $bad}
+    }
+    $r=New-NativeNDISFragmentEvidence $v.code;foreach($key in $keys){$r[$key]=[int]$v.$key};return $r
+}
+function Test-NativeNDISFragmentEvidence([object]$Evidence) {
+    return ($null -ne $Evidence -and $Evidence.code -ceq 'complete' -and $Evidence.fragmentIDs -gt 0 -and $Evidence.singleEvent -eq $Evidence.fragmentIDs -and $Evidence.ethernet -eq $Evidence.fragmentIDs -and $Evidence.sent -gt 0 -and $Evidence.received -gt 0 -and $Evidence.directionUnknown -eq 0 -and $Evidence.missingKeywords -eq 0 -and $Evidence.unrecognizedVersions -eq 0 -and $Evidence.missingProviderIDs -eq 0)
+}
+function Get-NativeNDISFragmentProgram([string]$Path) {
+    $prefix='function New-NativeNDISFragmentEvidence {'+${function:New-NativeNDISFragmentEvidence}.ToString()+"}`n"+'function Add-NativeNDISFragmentHeader {'+${function:Add-NativeNDISFragmentHeader}.ToString()+"}`n"
+    $body=@'
+$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$PSModuleAutoLoadingPreference='None'
+Import-Module ([IO.Path]::Combine($PSHOME,'Modules','Microsoft.PowerShell.Utility','Microsoft.PowerShell.Utility.psd1')) -ErrorAction Stop
+$reader=$null;$r=New-NativeNDISFragmentEvidence 'unavailable'
+try{
+    $path=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__PATH__'))
+    $query=[Diagnostics.Eventing.Reader.EventLogQuery]::new($path,[Diagnostics.Eventing.Reader.PathType]::FilePath);$query.ReverseDirection=$false;$query.TolerateQueryErrors=$false
+    $reader=[Diagnostics.Eventing.Reader.EventLogReader]::new($query);$reader.BatchSize=16;$clock=[Diagnostics.Stopwatch]::StartNew();$r=New-NativeNDISFragmentEvidence 'complete'
+    while($true){if($r.records -ge 4096 -or $clock.Elapsed.TotalSeconds -ge 3){$r.code='bound';break};$record=$reader.ReadEvent([TimeSpan]::FromMilliseconds(250));if($null -eq $record){break};try{Add-NativeNDISFragmentHeader $r $record.ProviderId $record.Id $record.Version $record.Keywords}finally{$record.Dispose()}}
+}catch{$r=New-NativeNDISFragmentEvidence 'unavailable'}finally{if($null -ne $reader){$reader.Dispose()}}
+[Console]::Out.WriteLine(($r | ConvertTo-Json -Compress))
+'@
+    return [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($prefix+$body.Replace('__PATH__',[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Path)))))
+}

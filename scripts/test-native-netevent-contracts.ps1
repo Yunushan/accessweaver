@@ -8,7 +8,7 @@ $PSModuleAutoLoadingPreference='None'
 $project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-netevent-control.ps1'),[ref]$tokens,[ref]$issues);if($issues.Count){throw 'Source syntax'}
-$allowed=@('New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
+$allowed=@('New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
 foreach($def in $ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
     if($def.Name -cin @('Get-NativeNetEventEnums','Get-NativeNetEventInventory')){continue}
     foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin $allowed){throw 'Source command boundary'}}
@@ -107,6 +107,38 @@ Case-N 'unavailable-or-unclosed-header-never-becomes-zero-loss' {
     foreach($code in @('open-failed','close-failed','unavailable')){$v=Good-LossN;$v.code=$code;$v.nativeCode=5;$r=Get-NativeNDISLossEvidence ($v | ConvertTo-Json -Compress);Assert-N ($r.eventsLost -eq -1 -and $r.buffersLost -eq -1 -and -not $r.closed -and -not (Test-NativeNDISLossEvidence $r))}
     $v=Good-LossN;$v.nativeCode=87;$r=Get-NativeNDISLossEvidence ($v | ConvertTo-Json -Compress);Assert-N ($r.code -ceq 'invalid')
 }
+
+function Good-FragmentN {
+    $r=New-NativeNDISFragmentEvidence 'complete';$g=[guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef'
+    Add-NativeNDISFragmentHeader $r $g 1001 0 ([long]7516192768)
+    Add-NativeNDISFragmentHeader $r $g 1001 0 ([long]11811160064)
+    return $r
+}
+Case-N 'fragment-keywords-require-single-ethernet-and-both-directions' {
+    $r=Good-FragmentN;$v=Get-NativeNDISFragmentEvidence ($r | ConvertTo-Json -Compress);Assert-N (Test-NativeNDISFragmentEvidence $v)
+    $g=[guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef';$r=New-NativeNDISFragmentEvidence 'complete'
+    Add-NativeNDISFragmentHeader $r $g 1001 0 ([long]::MinValue+7516192768);Add-NativeNDISFragmentHeader $r $g 1001 0 ([long]::MinValue+11811160064)
+    Assert-N (Test-NativeNDISFragmentEvidence (Get-NativeNDISFragmentEvidence ($r | ConvertTo-Json -Compress)))
+}
+Case-N 'split-wireless-wan-or-ambiguous-directions-cannot-qualify' {
+    foreach($bits in @([long]4294967296,[long]7516258304,[long]7516193280,[long]7516258816,[long]16106127360,[long]3221225472)){
+        $r=Good-FragmentN;Add-NativeNDISFragmentHeader $r ([guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef') 1001 0 $bits
+        $v=Get-NativeNDISFragmentEvidence ($r | ConvertTo-Json -Compress);Assert-N ($v.code -ceq 'complete' -and -not (Test-NativeNDISFragmentEvidence $v))
+    }
+}
+Case-N 'missing-keywords-versions-and-unknown-ids-remain-explicit' {
+    $r=Good-FragmentN;$g=[guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef';Add-NativeNDISFragmentHeader $r $g 1001 1 $null;Add-NativeNDISFragmentHeader $r $g 1002 0 0;Add-NativeNDISFragmentHeader $r $g 170 0 0;Add-NativeNDISFragmentHeader $r $null 1001 0 0
+    $v=Get-NativeNDISFragmentEvidence ($r | ConvertTo-Json -Compress);Assert-N ($v.code -ceq 'complete' -and $v.missingKeywords -eq 1 -and $v.unrecognizedVersions -eq 1 -and $v.metadataIDs -eq 1 -and $v.unknownProviderIDs -eq 1 -and $v.missingProviderIDs -eq 1 -and -not (Test-NativeNDISFragmentEvidence $v))
+}
+Case-N 'fragment-report-private-fields-and-inconsistent-counts-refused' {
+    foreach($fault in @('private','boolean','partition','media','direction','missing','overflow')){$r=Good-FragmentN;switch($fault){'private'{$r['private']='PRIVATE-SYNTHETIC'}'boolean'{$r.sent=$false}'partition'{$r.singleEvent=0}'media'{$r.ethernet=0}'direction'{$r.received=0}'missing'{$r.missingKeywords=3}'overflow'{$r.records=4097}};$v=Get-NativeNDISFragmentEvidence ($r | ConvertTo-Json -Compress);Assert-N ($v.code -ceq 'invalid' -and $v.fragmentIDs -eq -1 -and -not (($v | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))}
+    foreach($code in @('unavailable','bound')){$r=New-NativeNDISFragmentEvidence $code;$v=Get-NativeNDISFragmentEvidence ($r | ConvertTo-Json -Compress);Assert-N (-not (Test-NativeNDISFragmentEvidence $v))}
+}
+Case-N 'fragment-program-uses-header-only-bounded-disposed-reader' {
+    $body=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String((Get-NativeNDISFragmentProgram "PRIVATE-SYNTHETIC-'`nthrow 'never'")));$t=$null;$e=$null;[void][Management.Automation.Language.Parser]::ParseInput($body,[ref]$t,[ref]$e)
+    Assert-N ($e.Count -eq 0 -and -not $body.Contains('PRIVATE-SYNTHETIC') -and $body.Contains('$record.Keywords') -and $body.Contains('ReadEvent([TimeSpan]::FromMilliseconds(250))') -and $body.Contains('$record.Dispose()') -and $body.Contains('$reader.Dispose()') -and -not $body.Contains('FormatDescription') -and -not $body.Contains('.Properties') -and -not $body.Contains('.ToXml('))
+}
+
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}
 $passed=@($cases | Where-Object {-not $_.passed}).Count -eq 0
 [Console]::Out.WriteLine((@{schemaVersion=1;scope='actual-native-netevent-source';sourceSHA256=$hashes;cases=@($cases.ToArray());passed=$passed;realCaptureStarted=$false;realDnsChanged=$false;nativeQualified=$false} | ConvertTo-Json -Depth 4 -Compress))
