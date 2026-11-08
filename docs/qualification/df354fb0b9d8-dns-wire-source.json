@@ -1,0 +1,1217 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "df354fb0b9d8cd53f094ba2fdfedaf615f2f5edf",
+  "runID": 42490056360,
+  "workflow": ".github/workflows/dns-wire-contracts.yml",
+  "allRunsTerminal": true,
+  "jobs": [
+    {
+      "id": 128760272028,
+      "target": "DNS wire source (windows/arm64)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128760272207,
+      "target": "DNS wire source (darwin/arm64)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128760272208,
+      "target": "DNS wire source (darwin/amd64)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128760272209,
+      "target": "DNS wire source (linux/amd64)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128760272212,
+      "target": "DNS wire source (windows/amd64)",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 128760272256,
+      "target": "DNS wire source (linux/arm64)",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "artifacts": [
+    {
+      "artifactID": 13621257374,
+      "artifactName": "dns-wire-source-windows-amd64",
+      "providerZIPDigest": "sha256:6c6706ed9a9d4e48f5ad856fd13723588d490b4fb99f107b3af9e23a25729e6a",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "schemaVersion": 1,
+        "scope": "synthetic-doh-wire-decoder",
+        "outcome": "passed",
+        "code": "none",
+        "sourceCommit": "df354fb0b9d8cd53f094ba2fdfedaf615f2f5edf",
+        "sourceSHA256": {
+          "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+          "scripts/dns-wire-evidence.test.cjs": "535a024202f358dd045ce9bc566ad0db0b1a84c153efd1487ee083cf81fd8888",
+          "scripts/dns-wire-contract-report.cjs": "812bb03c3d8b98a8e34fc8c6901c501a7d119b27894df32421b785c6d029d25c",
+          ".github/workflows/dns-wire-contracts.yml": "816aed5d7d80b50b554126d39fb03b3d5c910928ffa844f252cbd6624db52739"
+        },
+        "platform": "windows",
+        "architecture": "amd64",
+        "node": "v26.8.2",
+        "contracts": {
+          "schemaVersion": 1,
+          "scope": "synthetic-doh-wire-decoder",
+          "cases": [
+            {
+              "name": "four-fixed-providers-two-byte-orders",
+              "passed": true
+            },
+            {
+              "name": "split-reordered-tcp-and-sequence-wrap",
+              "passed": true
+            },
+            {
+              "name": "consistent-duplicate-retransmission",
+              "passed": true
+            },
+            {
+              "name": "conflicting-retransmission-refused",
+              "passed": true
+            },
+            {
+              "name": "missing-tcp-bytes-refused",
+              "passed": true
+            },
+            {
+              "name": "unrelated-sni-refused",
+              "passed": true
+            },
+            {
+              "name": "provider-name-mismatch-refused",
+              "passed": true
+            },
+            {
+              "name": "syn-only-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "server-missing-refused",
+              "passed": true
+            },
+            {
+              "name": "missing-initial-syn-refused",
+              "passed": true
+            },
+            {
+              "name": "handshake-only-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "one-direction-encrypted-data-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "different-flows-cannot-combine-evidence",
+              "passed": true
+            },
+            {
+              "name": "plaintext-udp-prevents-positive-evidence",
+              "passed": true
+            },
+            {
+              "name": "plaintext-tcp-prevents-positive-evidence",
+              "passed": true
+            },
+            {
+              "name": "unrelated-endpoint-refused",
+              "passed": true
+            },
+            {
+              "name": "unsupported-port-refused",
+              "passed": true
+            },
+            {
+              "name": "fragmented-ipv4-refused",
+              "passed": true
+            },
+            {
+              "name": "ip-length-truncation-refused",
+              "passed": true
+            },
+            {
+              "name": "tcp-offset-and-reset-refused",
+              "passed": true
+            },
+            {
+              "name": "tls-truncated-or-unknown-record-refused",
+              "passed": true
+            },
+            {
+              "name": "encrypted-record-before-hello-refused",
+              "passed": true
+            },
+            {
+              "name": "malformed-handshake-length-refused",
+              "passed": true
+            },
+            {
+              "name": "capture-size-bound",
+              "passed": true
+            },
+            {
+              "name": "every-prefix-fails-or-remains-insufficient",
+              "passed": true
+            },
+            {
+              "name": "invalid-section-magic-version-and-multiple-sections",
+              "passed": true
+            },
+            {
+              "name": "block-length-and-trailer-refused",
+              "passed": true
+            },
+            {
+              "name": "interface-and-captured-length-refused",
+              "passed": true
+            },
+            {
+              "name": "obsolete-packet-blocks-refused",
+              "passed": true
+            },
+            {
+              "name": "nonzero-capture-drop-statistics-refused",
+              "passed": true
+            },
+            {
+              "name": "stream-and-flow-bounds",
+              "passed": true
+            },
+            {
+              "name": "opaque-metadata-is-not-exported",
+              "passed": true
+            },
+            {
+              "name": "bounded-deterministic-malformed-mutation-sweep",
+              "passed": true
+            },
+            {
+              "name": "read-only-capability-classifiers-fail-closed",
+              "passed": true
+            },
+            {
+              "name": "packet-drop-options-and-section-length-are-not-ignored",
+              "passed": true
+            },
+            {
+              "name": "server-syn-must-acknowledge-client-open",
+              "passed": true
+            }
+          ],
+          "passed": true,
+          "nativeCapturePerformed": false,
+          "encryptedTrafficObserved": false,
+          "productionQualificationComplete": false
+        },
+        "capabilities": {
+          "applicable": true,
+          "toolAvailable": true,
+          "start": true,
+          "fixedEndpointFilter": true,
+          "pcapConversion": true,
+          "session": "stopped",
+          "filters": "empty",
+          "queryCodes": [
+            "complete",
+            "complete",
+            "complete",
+            "complete",
+            "complete"
+          ]
+        },
+        "nativeCapturePerformed": false,
+        "encryptedTrafficObserved": false,
+        "productionQualificationComplete": false
+      }
+    },
+    {
+      "artifactID": 13621207908,
+      "artifactName": "dns-wire-source-windows-arm64",
+      "providerZIPDigest": "sha256:e15a8ff1302f5d78bc1d0a3ab0bd1dfd4f2dcf45b3cdab4bbabc2e54ba59c937",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "schemaVersion": 1,
+        "scope": "synthetic-doh-wire-decoder",
+        "outcome": "passed",
+        "code": "none",
+        "sourceCommit": "df354fb0b9d8cd53f094ba2fdfedaf615f2f5edf",
+        "sourceSHA256": {
+          "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+          "scripts/dns-wire-evidence.test.cjs": "535a024202f358dd045ce9bc566ad0db0b1a84c153efd1487ee083cf81fd8888",
+          "scripts/dns-wire-contract-report.cjs": "812bb03c3d8b98a8e34fc8c6901c501a7d119b27894df32421b785c6d029d25c",
+          ".github/workflows/dns-wire-contracts.yml": "816aed5d7d80b50b554126d39fb03b3d5c910928ffa844f252cbd6624db52739"
+        },
+        "platform": "windows",
+        "architecture": "arm64",
+        "node": "v26.8.2",
+        "contracts": {
+          "schemaVersion": 1,
+          "scope": "synthetic-doh-wire-decoder",
+          "cases": [
+            {
+              "name": "four-fixed-providers-two-byte-orders",
+              "passed": true
+            },
+            {
+              "name": "split-reordered-tcp-and-sequence-wrap",
+              "passed": true
+            },
+            {
+              "name": "consistent-duplicate-retransmission",
+              "passed": true
+            },
+            {
+              "name": "conflicting-retransmission-refused",
+              "passed": true
+            },
+            {
+              "name": "missing-tcp-bytes-refused",
+              "passed": true
+            },
+            {
+              "name": "unrelated-sni-refused",
+              "passed": true
+            },
+            {
+              "name": "provider-name-mismatch-refused",
+              "passed": true
+            },
+            {
+              "name": "syn-only-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "server-missing-refused",
+              "passed": true
+            },
+            {
+              "name": "missing-initial-syn-refused",
+              "passed": true
+            },
+            {
+              "name": "handshake-only-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "one-direction-encrypted-data-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "different-flows-cannot-combine-evidence",
+              "passed": true
+            },
+            {
+              "name": "plaintext-udp-prevents-positive-evidence",
+              "passed": true
+            },
+            {
+              "name": "plaintext-tcp-prevents-positive-evidence",
+              "passed": true
+            },
+            {
+              "name": "unrelated-endpoint-refused",
+              "passed": true
+            },
+            {
+              "name": "unsupported-port-refused",
+              "passed": true
+            },
+            {
+              "name": "fragmented-ipv4-refused",
+              "passed": true
+            },
+            {
+              "name": "ip-length-truncation-refused",
+              "passed": true
+            },
+            {
+              "name": "tcp-offset-and-reset-refused",
+              "passed": true
+            },
+            {
+              "name": "tls-truncated-or-unknown-record-refused",
+              "passed": true
+            },
+            {
+              "name": "encrypted-record-before-hello-refused",
+              "passed": true
+            },
+            {
+              "name": "malformed-handshake-length-refused",
+              "passed": true
+            },
+            {
+              "name": "capture-size-bound",
+              "passed": true
+            },
+            {
+              "name": "every-prefix-fails-or-remains-insufficient",
+              "passed": true
+            },
+            {
+              "name": "invalid-section-magic-version-and-multiple-sections",
+              "passed": true
+            },
+            {
+              "name": "block-length-and-trailer-refused",
+              "passed": true
+            },
+            {
+              "name": "interface-and-captured-length-refused",
+              "passed": true
+            },
+            {
+              "name": "obsolete-packet-blocks-refused",
+              "passed": true
+            },
+            {
+              "name": "nonzero-capture-drop-statistics-refused",
+              "passed": true
+            },
+            {
+              "name": "stream-and-flow-bounds",
+              "passed": true
+            },
+            {
+              "name": "opaque-metadata-is-not-exported",
+              "passed": true
+            },
+            {
+              "name": "bounded-deterministic-malformed-mutation-sweep",
+              "passed": true
+            },
+            {
+              "name": "read-only-capability-classifiers-fail-closed",
+              "passed": true
+            },
+            {
+              "name": "packet-drop-options-and-section-length-are-not-ignored",
+              "passed": true
+            },
+            {
+              "name": "server-syn-must-acknowledge-client-open",
+              "passed": true
+            }
+          ],
+          "passed": true,
+          "nativeCapturePerformed": false,
+          "encryptedTrafficObserved": false,
+          "productionQualificationComplete": false
+        },
+        "capabilities": {
+          "applicable": true,
+          "toolAvailable": true,
+          "start": true,
+          "fixedEndpointFilter": true,
+          "pcapConversion": true,
+          "session": "stopped",
+          "filters": "empty",
+          "queryCodes": [
+            "complete",
+            "complete",
+            "complete",
+            "complete",
+            "complete"
+          ]
+        },
+        "nativeCapturePerformed": false,
+        "encryptedTrafficObserved": false,
+        "productionQualificationComplete": false
+      }
+    },
+    {
+      "artifactID": 13621132798,
+      "artifactName": "dns-wire-source-linux-arm64",
+      "providerZIPDigest": "sha256:c5f6652640a02405931ce2e14ce52c2836b7d123dcb095c91f5dc1abba7a91d4",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "schemaVersion": 1,
+        "scope": "synthetic-doh-wire-decoder",
+        "outcome": "passed",
+        "code": "none",
+        "sourceCommit": "df354fb0b9d8cd53f094ba2fdfedaf615f2f5edf",
+        "sourceSHA256": {
+          "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+          "scripts/dns-wire-evidence.test.cjs": "535a024202f358dd045ce9bc566ad0db0b1a84c153efd1487ee083cf81fd8888",
+          "scripts/dns-wire-contract-report.cjs": "812bb03c3d8b98a8e34fc8c6901c501a7d119b27894df32421b785c6d029d25c",
+          ".github/workflows/dns-wire-contracts.yml": "816aed5d7d80b50b554126d39fb03b3d5c910928ffa844f252cbd6624db52739"
+        },
+        "platform": "linux",
+        "architecture": "arm64",
+        "node": "v26.8.2",
+        "contracts": {
+          "schemaVersion": 1,
+          "scope": "synthetic-doh-wire-decoder",
+          "cases": [
+            {
+              "name": "four-fixed-providers-two-byte-orders",
+              "passed": true
+            },
+            {
+              "name": "split-reordered-tcp-and-sequence-wrap",
+              "passed": true
+            },
+            {
+              "name": "consistent-duplicate-retransmission",
+              "passed": true
+            },
+            {
+              "name": "conflicting-retransmission-refused",
+              "passed": true
+            },
+            {
+              "name": "missing-tcp-bytes-refused",
+              "passed": true
+            },
+            {
+              "name": "unrelated-sni-refused",
+              "passed": true
+            },
+            {
+              "name": "provider-name-mismatch-refused",
+              "passed": true
+            },
+            {
+              "name": "syn-only-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "server-missing-refused",
+              "passed": true
+            },
+            {
+              "name": "missing-initial-syn-refused",
+              "passed": true
+            },
+            {
+              "name": "handshake-only-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "one-direction-encrypted-data-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "different-flows-cannot-combine-evidence",
+              "passed": true
+            },
+            {
+              "name": "plaintext-udp-prevents-positive-evidence",
+              "passed": true
+            },
+            {
+              "name": "plaintext-tcp-prevents-positive-evidence",
+              "passed": true
+            },
+            {
+              "name": "unrelated-endpoint-refused",
+              "passed": true
+            },
+            {
+              "name": "unsupported-port-refused",
+              "passed": true
+            },
+            {
+              "name": "fragmented-ipv4-refused",
+              "passed": true
+            },
+            {
+              "name": "ip-length-truncation-refused",
+              "passed": true
+            },
+            {
+              "name": "tcp-offset-and-reset-refused",
+              "passed": true
+            },
+            {
+              "name": "tls-truncated-or-unknown-record-refused",
+              "passed": true
+            },
+            {
+              "name": "encrypted-record-before-hello-refused",
+              "passed": true
+            },
+            {
+              "name": "malformed-handshake-length-refused",
+              "passed": true
+            },
+            {
+              "name": "capture-size-bound",
+              "passed": true
+            },
+            {
+              "name": "every-prefix-fails-or-remains-insufficient",
+              "passed": true
+            },
+            {
+              "name": "invalid-section-magic-version-and-multiple-sections",
+              "passed": true
+            },
+            {
+              "name": "block-length-and-trailer-refused",
+              "passed": true
+            },
+            {
+              "name": "interface-and-captured-length-refused",
+              "passed": true
+            },
+            {
+              "name": "obsolete-packet-blocks-refused",
+              "passed": true
+            },
+            {
+              "name": "nonzero-capture-drop-statistics-refused",
+              "passed": true
+            },
+            {
+              "name": "stream-and-flow-bounds",
+              "passed": true
+            },
+            {
+              "name": "opaque-metadata-is-not-exported",
+              "passed": true
+            },
+            {
+              "name": "bounded-deterministic-malformed-mutation-sweep",
+              "passed": true
+            },
+            {
+              "name": "read-only-capability-classifiers-fail-closed",
+              "passed": true
+            },
+            {
+              "name": "packet-drop-options-and-section-length-are-not-ignored",
+              "passed": true
+            },
+            {
+              "name": "server-syn-must-acknowledge-client-open",
+              "passed": true
+            }
+          ],
+          "passed": true,
+          "nativeCapturePerformed": false,
+          "encryptedTrafficObserved": false,
+          "productionQualificationComplete": false
+        },
+        "capabilities": {
+          "applicable": false,
+          "toolAvailable": false,
+          "start": false,
+          "fixedEndpointFilter": false,
+          "pcapConversion": false,
+          "session": "not-inspected",
+          "filters": "not-inspected",
+          "queryCodes": []
+        },
+        "nativeCapturePerformed": false,
+        "encryptedTrafficObserved": false,
+        "productionQualificationComplete": false
+      }
+    },
+    {
+      "artifactID": 13621023202,
+      "artifactName": "dns-wire-source-darwin-arm64",
+      "providerZIPDigest": "sha256:d7bb787e059c5eec2757d3fecf7a0b2651d8c29214c9974b0ba7785072293eb2",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "schemaVersion": 1,
+        "scope": "synthetic-doh-wire-decoder",
+        "outcome": "passed",
+        "code": "none",
+        "sourceCommit": "df354fb0b9d8cd53f094ba2fdfedaf615f2f5edf",
+        "sourceSHA256": {
+          "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+          "scripts/dns-wire-evidence.test.cjs": "535a024202f358dd045ce9bc566ad0db0b1a84c153efd1487ee083cf81fd8888",
+          "scripts/dns-wire-contract-report.cjs": "812bb03c3d8b98a8e34fc8c6901c501a7d119b27894df32421b785c6d029d25c",
+          ".github/workflows/dns-wire-contracts.yml": "816aed5d7d80b50b554126d39fb03b3d5c910928ffa844f252cbd6624db52739"
+        },
+        "platform": "darwin",
+        "architecture": "arm64",
+        "node": "v26.8.2",
+        "contracts": {
+          "schemaVersion": 1,
+          "scope": "synthetic-doh-wire-decoder",
+          "cases": [
+            {
+              "name": "four-fixed-providers-two-byte-orders",
+              "passed": true
+            },
+            {
+              "name": "split-reordered-tcp-and-sequence-wrap",
+              "passed": true
+            },
+            {
+              "name": "consistent-duplicate-retransmission",
+              "passed": true
+            },
+            {
+              "name": "conflicting-retransmission-refused",
+              "passed": true
+            },
+            {
+              "name": "missing-tcp-bytes-refused",
+              "passed": true
+            },
+            {
+              "name": "unrelated-sni-refused",
+              "passed": true
+            },
+            {
+              "name": "provider-name-mismatch-refused",
+              "passed": true
+            },
+            {
+              "name": "syn-only-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "server-missing-refused",
+              "passed": true
+            },
+            {
+              "name": "missing-initial-syn-refused",
+              "passed": true
+            },
+            {
+              "name": "handshake-only-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "one-direction-encrypted-data-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "different-flows-cannot-combine-evidence",
+              "passed": true
+            },
+            {
+              "name": "plaintext-udp-prevents-positive-evidence",
+              "passed": true
+            },
+            {
+              "name": "plaintext-tcp-prevents-positive-evidence",
+              "passed": true
+            },
+            {
+              "name": "unrelated-endpoint-refused",
+              "passed": true
+            },
+            {
+              "name": "unsupported-port-refused",
+              "passed": true
+            },
+            {
+              "name": "fragmented-ipv4-refused",
+              "passed": true
+            },
+            {
+              "name": "ip-length-truncation-refused",
+              "passed": true
+            },
+            {
+              "name": "tcp-offset-and-reset-refused",
+              "passed": true
+            },
+            {
+              "name": "tls-truncated-or-unknown-record-refused",
+              "passed": true
+            },
+            {
+              "name": "encrypted-record-before-hello-refused",
+              "passed": true
+            },
+            {
+              "name": "malformed-handshake-length-refused",
+              "passed": true
+            },
+            {
+              "name": "capture-size-bound",
+              "passed": true
+            },
+            {
+              "name": "every-prefix-fails-or-remains-insufficient",
+              "passed": true
+            },
+            {
+              "name": "invalid-section-magic-version-and-multiple-sections",
+              "passed": true
+            },
+            {
+              "name": "block-length-and-trailer-refused",
+              "passed": true
+            },
+            {
+              "name": "interface-and-captured-length-refused",
+              "passed": true
+            },
+            {
+              "name": "obsolete-packet-blocks-refused",
+              "passed": true
+            },
+            {
+              "name": "nonzero-capture-drop-statistics-refused",
+              "passed": true
+            },
+            {
+              "name": "stream-and-flow-bounds",
+              "passed": true
+            },
+            {
+              "name": "opaque-metadata-is-not-exported",
+              "passed": true
+            },
+            {
+              "name": "bounded-deterministic-malformed-mutation-sweep",
+              "passed": true
+            },
+            {
+              "name": "read-only-capability-classifiers-fail-closed",
+              "passed": true
+            },
+            {
+              "name": "packet-drop-options-and-section-length-are-not-ignored",
+              "passed": true
+            },
+            {
+              "name": "server-syn-must-acknowledge-client-open",
+              "passed": true
+            }
+          ],
+          "passed": true,
+          "nativeCapturePerformed": false,
+          "encryptedTrafficObserved": false,
+          "productionQualificationComplete": false
+        },
+        "capabilities": {
+          "applicable": false,
+          "toolAvailable": false,
+          "start": false,
+          "fixedEndpointFilter": false,
+          "pcapConversion": false,
+          "session": "not-inspected",
+          "filters": "not-inspected",
+          "queryCodes": []
+        },
+        "nativeCapturePerformed": false,
+        "encryptedTrafficObserved": false,
+        "productionQualificationComplete": false
+      }
+    },
+    {
+      "artifactID": 13620987076,
+      "artifactName": "dns-wire-source-darwin-amd64",
+      "providerZIPDigest": "sha256:2d6a289d14195606a596205ccb48046b5a70156bf93c4584f646ed96ac876457",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "schemaVersion": 1,
+        "scope": "synthetic-doh-wire-decoder",
+        "outcome": "passed",
+        "code": "none",
+        "sourceCommit": "df354fb0b9d8cd53f094ba2fdfedaf615f2f5edf",
+        "sourceSHA256": {
+          "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+          "scripts/dns-wire-evidence.test.cjs": "535a024202f358dd045ce9bc566ad0db0b1a84c153efd1487ee083cf81fd8888",
+          "scripts/dns-wire-contract-report.cjs": "812bb03c3d8b98a8e34fc8c6901c501a7d119b27894df32421b785c6d029d25c",
+          ".github/workflows/dns-wire-contracts.yml": "816aed5d7d80b50b554126d39fb03b3d5c910928ffa844f252cbd6624db52739"
+        },
+        "platform": "darwin",
+        "architecture": "amd64",
+        "node": "v26.8.2",
+        "contracts": {
+          "schemaVersion": 1,
+          "scope": "synthetic-doh-wire-decoder",
+          "cases": [
+            {
+              "name": "four-fixed-providers-two-byte-orders",
+              "passed": true
+            },
+            {
+              "name": "split-reordered-tcp-and-sequence-wrap",
+              "passed": true
+            },
+            {
+              "name": "consistent-duplicate-retransmission",
+              "passed": true
+            },
+            {
+              "name": "conflicting-retransmission-refused",
+              "passed": true
+            },
+            {
+              "name": "missing-tcp-bytes-refused",
+              "passed": true
+            },
+            {
+              "name": "unrelated-sni-refused",
+              "passed": true
+            },
+            {
+              "name": "provider-name-mismatch-refused",
+              "passed": true
+            },
+            {
+              "name": "syn-only-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "server-missing-refused",
+              "passed": true
+            },
+            {
+              "name": "missing-initial-syn-refused",
+              "passed": true
+            },
+            {
+              "name": "handshake-only-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "one-direction-encrypted-data-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "different-flows-cannot-combine-evidence",
+              "passed": true
+            },
+            {
+              "name": "plaintext-udp-prevents-positive-evidence",
+              "passed": true
+            },
+            {
+              "name": "plaintext-tcp-prevents-positive-evidence",
+              "passed": true
+            },
+            {
+              "name": "unrelated-endpoint-refused",
+              "passed": true
+            },
+            {
+              "name": "unsupported-port-refused",
+              "passed": true
+            },
+            {
+              "name": "fragmented-ipv4-refused",
+              "passed": true
+            },
+            {
+              "name": "ip-length-truncation-refused",
+              "passed": true
+            },
+            {
+              "name": "tcp-offset-and-reset-refused",
+              "passed": true
+            },
+            {
+              "name": "tls-truncated-or-unknown-record-refused",
+              "passed": true
+            },
+            {
+              "name": "encrypted-record-before-hello-refused",
+              "passed": true
+            },
+            {
+              "name": "malformed-handshake-length-refused",
+              "passed": true
+            },
+            {
+              "name": "capture-size-bound",
+              "passed": true
+            },
+            {
+              "name": "every-prefix-fails-or-remains-insufficient",
+              "passed": true
+            },
+            {
+              "name": "invalid-section-magic-version-and-multiple-sections",
+              "passed": true
+            },
+            {
+              "name": "block-length-and-trailer-refused",
+              "passed": true
+            },
+            {
+              "name": "interface-and-captured-length-refused",
+              "passed": true
+            },
+            {
+              "name": "obsolete-packet-blocks-refused",
+              "passed": true
+            },
+            {
+              "name": "nonzero-capture-drop-statistics-refused",
+              "passed": true
+            },
+            {
+              "name": "stream-and-flow-bounds",
+              "passed": true
+            },
+            {
+              "name": "opaque-metadata-is-not-exported",
+              "passed": true
+            },
+            {
+              "name": "bounded-deterministic-malformed-mutation-sweep",
+              "passed": true
+            },
+            {
+              "name": "read-only-capability-classifiers-fail-closed",
+              "passed": true
+            },
+            {
+              "name": "packet-drop-options-and-section-length-are-not-ignored",
+              "passed": true
+            },
+            {
+              "name": "server-syn-must-acknowledge-client-open",
+              "passed": true
+            }
+          ],
+          "passed": true,
+          "nativeCapturePerformed": false,
+          "encryptedTrafficObserved": false,
+          "productionQualificationComplete": false
+        },
+        "capabilities": {
+          "applicable": false,
+          "toolAvailable": false,
+          "start": false,
+          "fixedEndpointFilter": false,
+          "pcapConversion": false,
+          "session": "not-inspected",
+          "filters": "not-inspected",
+          "queryCodes": []
+        },
+        "nativeCapturePerformed": false,
+        "encryptedTrafficObserved": false,
+        "productionQualificationComplete": false
+      }
+    },
+    {
+      "artifactID": 13620602780,
+      "artifactName": "dns-wire-source-linux-amd64",
+      "providerZIPDigest": "sha256:852274b1e0f9066c8c948293269c091427efb397fa581c9442dc7d0cb80b3f25",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "schemaVersion": 1,
+        "scope": "synthetic-doh-wire-decoder",
+        "outcome": "passed",
+        "code": "none",
+        "sourceCommit": "df354fb0b9d8cd53f094ba2fdfedaf615f2f5edf",
+        "sourceSHA256": {
+          "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+          "scripts/dns-wire-evidence.test.cjs": "535a024202f358dd045ce9bc566ad0db0b1a84c153efd1487ee083cf81fd8888",
+          "scripts/dns-wire-contract-report.cjs": "812bb03c3d8b98a8e34fc8c6901c501a7d119b27894df32421b785c6d029d25c",
+          ".github/workflows/dns-wire-contracts.yml": "816aed5d7d80b50b554126d39fb03b3d5c910928ffa844f252cbd6624db52739"
+        },
+        "platform": "linux",
+        "architecture": "amd64",
+        "node": "v26.8.2",
+        "contracts": {
+          "schemaVersion": 1,
+          "scope": "synthetic-doh-wire-decoder",
+          "cases": [
+            {
+              "name": "four-fixed-providers-two-byte-orders",
+              "passed": true
+            },
+            {
+              "name": "split-reordered-tcp-and-sequence-wrap",
+              "passed": true
+            },
+            {
+              "name": "consistent-duplicate-retransmission",
+              "passed": true
+            },
+            {
+              "name": "conflicting-retransmission-refused",
+              "passed": true
+            },
+            {
+              "name": "missing-tcp-bytes-refused",
+              "passed": true
+            },
+            {
+              "name": "unrelated-sni-refused",
+              "passed": true
+            },
+            {
+              "name": "provider-name-mismatch-refused",
+              "passed": true
+            },
+            {
+              "name": "syn-only-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "server-missing-refused",
+              "passed": true
+            },
+            {
+              "name": "missing-initial-syn-refused",
+              "passed": true
+            },
+            {
+              "name": "handshake-only-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "one-direction-encrypted-data-is-insufficient",
+              "passed": true
+            },
+            {
+              "name": "different-flows-cannot-combine-evidence",
+              "passed": true
+            },
+            {
+              "name": "plaintext-udp-prevents-positive-evidence",
+              "passed": true
+            },
+            {
+              "name": "plaintext-tcp-prevents-positive-evidence",
+              "passed": true
+            },
+            {
+              "name": "unrelated-endpoint-refused",
+              "passed": true
+            },
+            {
+              "name": "unsupported-port-refused",
+              "passed": true
+            },
+            {
+              "name": "fragmented-ipv4-refused",
+              "passed": true
+            },
+            {
+              "name": "ip-length-truncation-refused",
+              "passed": true
+            },
+            {
+              "name": "tcp-offset-and-reset-refused",
+              "passed": true
+            },
+            {
+              "name": "tls-truncated-or-unknown-record-refused",
+              "passed": true
+            },
+            {
+              "name": "encrypted-record-before-hello-refused",
+              "passed": true
+            },
+            {
+              "name": "malformed-handshake-length-refused",
+              "passed": true
+            },
+            {
+              "name": "capture-size-bound",
+              "passed": true
+            },
+            {
+              "name": "every-prefix-fails-or-remains-insufficient",
+              "passed": true
+            },
+            {
+              "name": "invalid-section-magic-version-and-multiple-sections",
+              "passed": true
+            },
+            {
+              "name": "block-length-and-trailer-refused",
+              "passed": true
+            },
+            {
+              "name": "interface-and-captured-length-refused",
+              "passed": true
+            },
+            {
+              "name": "obsolete-packet-blocks-refused",
+              "passed": true
+            },
+            {
+              "name": "nonzero-capture-drop-statistics-refused",
+              "passed": true
+            },
+            {
+              "name": "stream-and-flow-bounds",
+              "passed": true
+            },
+            {
+              "name": "opaque-metadata-is-not-exported",
+              "passed": true
+            },
+            {
+              "name": "bounded-deterministic-malformed-mutation-sweep",
+              "passed": true
+            },
+            {
+              "name": "read-only-capability-classifiers-fail-closed",
+              "passed": true
+            },
+            {
+              "name": "packet-drop-options-and-section-length-are-not-ignored",
+              "passed": true
+            },
+            {
+              "name": "server-syn-must-acknowledge-client-open",
+              "passed": true
+            }
+          ],
+          "passed": true,
+          "nativeCapturePerformed": false,
+          "encryptedTrafficObserved": false,
+          "productionQualificationComplete": false
+        },
+        "capabilities": {
+          "applicable": false,
+          "toolAvailable": false,
+          "start": false,
+          "fixedEndpointFilter": false,
+          "pcapConversion": false,
+          "session": "not-inspected",
+          "filters": "not-inspected",
+          "queryCodes": []
+        },
+        "nativeCapturePerformed": false,
+        "encryptedTrafficObserved": false,
+        "productionQualificationComplete": false
+      }
+    }
+  ],
+  "sourceSHA256": {
+    "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+    "scripts/dns-wire-evidence.test.cjs": "535a024202f358dd045ce9bc566ad0db0b1a84c153efd1487ee083cf81fd8888",
+    "scripts/dns-wire-contract-report.cjs": "812bb03c3d8b98a8e34fc8c6901c501a7d119b27894df32421b785c6d029d25c",
+    ".github/workflows/dns-wire-contracts.yml": "816aed5d7d80b50b554126d39fb03b3d5c910928ffa844f252cbd6624db52739"
+  },
+  "allSixPassed": true,
+  "contractsPerHost": 36,
+  "syntheticMutationInputsPerHost": 4096,
+  "nativeCapturePerformed": false,
+  "encryptedTrafficObserved": false,
+  "productionQualificationComplete": false,
+  "rawLogsRead": false,
+  "credentialsQueried": false,
+  "scope": "Synthetic bounded DoH wire decoder and read-only Windows Packet Monitor capability inspection; no native capture or product execution.",
+  "contractGroupsPassed": 216,
+  "syntheticMutationInputsAcrossSixHosts": 24576,
+  "formalGatesPromoted": 0,
+  "limitations": [
+    "TLS record framing alone does not bind an ordinary DNS query, authenticate a peer, establish lossless capture or decrypt DNS.",
+    "No packet capture, DNS/firewall/filter changes or product invocation occurred in this qualification.",
+    "Native DoH wire binding and causal blocking controls, DNSCrypt wire transport, interface renumbering and reboot/power-loss remain unqualified.",
+    "All original fifty gates and ten OS/architecture targets remain unchanged."
+  ]
+}

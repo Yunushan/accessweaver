@@ -18,6 +18,8 @@ node scripts/dns-wire-evidence.test.cjs
 
 The separate `dns-wire-contracts.yml` workflow runs those source contracts on Linux, Windows and macOS AMD64/ARM64 with pinned Node 26.8.2, source hashes and fixed public JSON. Its guarded reporter only queries Packet Monitor help, status and filter listing on Windows, with bounded in-memory output and fixed capability classifications. It does not capture packets, change filters, stop an existing session, change DNS/firewall state or run the product. Unrecognized output remains unrecognized. Hosted results must be verified for the exact source before capability availability is assumed.
 
+At source `df354fb0b9d8`, the [verified source receipt](qualification/df354fb0b9d8-dns-wire-source.json) records all six hosted jobs passing: 216 contract groups and 24,576 synthetic mutation inputs across the six hosts. All six provider ZIP digests and report source hashes verified. Both Windows architectures reported the required start/filter/conversion options, a stopped session, an empty filter set and five completed read-only queries. These observations permit preparation of the controlled native driver; they are not packet-capture or encrypted-transport acceptance.
+
 ## Required native DoH procedure
 
 The future hosted driver must retain the existing fresh non-domain VM, native architecture/source-built controller, absent interop variables, private evidence and independent baseline/state/recovery checks. Both Windows architectures require their own result.
