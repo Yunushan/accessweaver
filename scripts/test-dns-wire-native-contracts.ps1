@@ -1,6 +1,6 @@
 # Hosted actual-source contracts. All native boundaries are replaced before evaluation.
 [CmdletBinding()]param([switch]$RequireWindowsPowerShell)
-$ErrorActionPreference='Stop';Set-StrictMode -Version Latest
+$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';Set-StrictMode -Version Latest
 if($RequireWindowsPowerShell -and ($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1)){throw 'Stock source shell required'}
 $project=Split-Path -Parent $PSScriptRoot;$path=Join-Path $PSScriptRoot 'native-dns-wire.ps1'
 $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
@@ -48,7 +48,7 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
                     if($script:fault -ceq 'partial-filter' -and $script:addOrdinal -eq 2){throw 'Source partial filter'}
                     return ''
                 }
-                'remove' {Assert-Wire (-not $script:running);$script:events.Add('filter-remove');$script:filters.Remove($Arguments[2]);return ''}
+                'remove' {Assert-Wire (-not $script:running -and $Arguments.Count -eq 2);foreach($name in $script:filters.Keys){Assert-Wire (@($State.filters | Where-Object {$_.name -ceq $name}).Count -eq 1)};$script:events.Add('filter-remove');$script:filters.Clear();return ''}
             }
         }
         'start' {
@@ -106,7 +106,7 @@ try {
         $r=Get-NativeDNSWireSummary $script:state
         Assert-Wire ($r.outcome -ceq 'passed' -and -not $script:running -and $script:filters.Count -eq 0 -and $script:rules.Count -eq 0 -and $r.toolProcesses -eq $r.toolProcessesJoined -and $r.providerMask -eq 1)
         Assert-Wire ($script:events.IndexOf('query') -lt $script:events.IndexOf('capture-start') -and $script:events.IndexOf('capture-stop') -lt $script:events.IndexOf('conversion') -and $script:events.IndexOf('original-state') -lt $script:events.IndexOf('filter-remove'))
-        Assert-Wire (-not (($r | ConvertTo-Json -Depth 6 -Compress).Contains('aw-wire-')))
+        Assert-Wire (-not (($r | ConvertTo-Json -Depth 6 -Compress).Contains($script:state.owner)))
     }
     Case-Wire 'filter-semantic-drift-prevents-capture' {New-WireCase;$script:fault='filter-port';Reject-Wire {Start-NativeDNSWireCapture $script:state};Assert-Wire (-not $script:running -and -not $script:state.startAttempted);$script:fault='';Complete-NativeDNSWireCleanup $script:state;Assert-Wire ($script:filters.Count -eq 0)}
     Case-Wire 'partial-filter-creation-retires-only-owned-filters' {New-WireCase;$script:fault='partial-filter';Reject-Wire {Start-NativeDNSWireCapture $script:state};Assert-Wire ($script:filters.Count -eq 2 -and -not $script:running);$script:fault='';Complete-NativeDNSWireCleanup $script:state;Assert-Wire ($script:filters.Count -eq 0)}
@@ -121,6 +121,7 @@ try {
     Case-Wire 'retry-retirement-requires-fresh-state-verification' {New-WireCase;Start-NativeDNSWireCapture $script:state;Measure-NativeDNSWire $script:state;$script:restored=$false;Reject-Wire {Complete-NativeDNSWireCleanup $script:state};$script:restored=$true;Complete-NativeDNSWireCleanup $script:state;Assert-Wire ($script:rules.Count -eq 0 -and $script:filters.Count -eq 0)}
     Case-Wire 'silent-rule-removal-is-not-success' {New-WireCase;Start-NativeDNSWireCapture $script:state;$script:fault='remove-noop';Reject-Wire {Measure-NativeDNSWire $script:state};Assert-Wire (-not $script:state.flags.tlsBlockRemoved);$script:fault='';Complete-NativeDNSWireCleanup $script:state;Assert-Wire ((Get-NativeDNSWireSummary $script:state).outcome -ceq 'failed')}
     Case-Wire 'foreign-rule-ownership-refuses-deletion' {New-WireCase;Start-NativeDNSWireCapture $script:state;Measure-NativeDNSWire $script:state;foreach($rule in $script:rules.Values){$rule.DisplayName='source-foreign'};Reject-Wire {Complete-NativeDNSWireCleanup $script:state};Assert-Wire ($script:rules.Count -eq 2 -and $script:filters.Count -eq 12)}
+    Case-Wire 'foreign-capture-filter-prevents-global-retirement' {New-WireCase;Start-NativeDNSWireCapture $script:state;Measure-NativeDNSWire $script:state;$script:filters['source-foreign']=@{address='203.0.113.1';protocol='TCP';port=443};Reject-Wire {Complete-NativeDNSWireCleanup $script:state};Assert-Wire ($script:filters.Count -eq 13 -and -not $script:state.flags.filtersRemoved)}
     Case-Wire 'strict-stopped-and-empty-classifiers' {Reject-Wire {Assert-NativeDNSWireStopped "PRIVATE`nPacket Monitor is not running."};Reject-Wire {Assert-NativeDNSWireEmptyFilters "No filters.`n1 unknown"};Assert-NativeDNSWireStopped 'Packet Monitor is not running.';Assert-NativeDNSWireEmptyFilters "Packet Filters:`nNone"}
 } finally {$env:SystemRoot=$oldSystemRoot}
 if((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -cne $hash){throw 'Wire source changed'}

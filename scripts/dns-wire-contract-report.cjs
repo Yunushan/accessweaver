@@ -48,20 +48,20 @@ function sourceHashes(){
 function wireSourceContracts(){
  const script=path.join(__dirname,'test-dns-wire-native-contracts.ps1');
  const names=[...fs.readFileSync(script,'utf8').matchAll(/^    Case-Wire '([a-z0-9-]+)'/gm)].map(m=>m[1]);
- if(names.length!==15||new Set(names).size!==15)throw new Error('wire-source-catalog');
+ if(names.length!==16||new Set(names).size!==16)throw new Error('wire-source-catalog');
  const jobs=[['core','pwsh',[]]];
  if(process.platform==='win32')jobs.push(['desktop',path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe'),['-RequireWindowsPowerShell']]);
  return jobs.map(([edition,program,flags])=>{
   const result=spawnSync(program,['-NoProfile','-NonInteractive','-File',script,...flags],{encoding:null,timeout:60000,maxBuffer:16384,windowsHide:true});
   let report=null;try{
-   if(result.error||!Buffer.isBuffer(result.stdout)||result.stdout.length>16384||result.stderr?.length)throw new Error('source-process');
+   if(result.error||!Buffer.isBuffer(result.stdout)||result.stdout.length>16384)throw new Error('source-process');
    const value=JSON.parse(result.stdout.toString('utf8'));
    const keys=['schemaVersion','scope','cases','passed','realDnsChanged','packetCaptureStarted','nativeWireQualified'];
    if(Object.keys(value).length!==keys.length||!keys.every(k=>Object.hasOwn(value,k))||value.schemaVersion!==1||value.scope!=='actual-native-wire-source'||value.realDnsChanged!==false||value.packetCaptureStarted!==false||value.nativeWireQualified!==false||typeof value.passed!=='boolean'||!Array.isArray(value.cases)||value.cases.length!==names.length)throw new Error('source-shape');
    for(let i=0;i<names.length;i++)if(Object.keys(value.cases[i]).length!==2||value.cases[i].name!==names[i]||typeof value.cases[i].passed!=='boolean')throw new Error('source-case');
    if(value.passed!==value.cases.every(c=>c.passed))throw new Error('source-outcome');report=value;
   }catch{}
-  return {edition,code:report?(result.status===0&&report.passed?'complete':'contracts-failed'):'process-failed',report};
+  return {edition,code:report?(result.stderr?.length?'source-stderr':result.status===0&&report.passed?'complete':'contracts-failed'):'process-failed',report,stderrPresent:Boolean(result.stderr?.length),stdoutPresent:Boolean(result.stdout?.length),timedOut:result.error?.code==='ETIMEDOUT',overflow:result.error?.code==='ENOBUFS'};
  });
 }
 function main(){

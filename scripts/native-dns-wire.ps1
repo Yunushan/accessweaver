@@ -4,7 +4,7 @@ function New-NativeDNSWireState([string]$PrivateRoot,[string]$DecoderPath) {
     $node=(Get-Command node -CommandType Application -ErrorAction Stop).Source
     $flags=@{}
     foreach($name in @('baselineResolverPassed','filtersVerified','captureStarted','captureStopped','captureBounded','plaintextBlocked','ordinaryQueryPassed','tlsObserved','tlsBlocked','blockedQueryRejected','tlsBlockRemoved','resumedQueryPassed','originalStateVerified','rulesRemoved','filtersRemoved','originalResolverPassed')){$flags[$name]=$false}
-    return @{decoder=$DecoderPath;etlBytes=0;pcapBytes=0;filterRows=0;filterCode='none';cleanupAttempted=$false;cleanupCompleted=$false;phase='preflight';failurePhase='none';decoderCode='none';before=$null;owner=('aw-wire-'+[guid]::NewGuid().ToString('N'));tool=(Join-Path $env:SystemRoot 'System32\pktmon.exe');node=$node;etl=(Join-Path $PrivateRoot 'wire.etl');pcap=(Join-Path $PrivateRoot 'wire.pcapng');filters=@();rules=@();startAttempted=$false;stopped=$false;processes=0;joined=0;processFailed=$false;flags=$flags;tlsFlows=0;outRecords=0;inRecords=0;providers=0}
+    return @{decoder=$DecoderPath;etlBytes=0;pcapBytes=0;filterRows=0;filterCode='none';cleanupAttempted=$false;cleanupCompleted=$false;phase='preflight';failurePhase='none';decoderCode='none';before=$null;owner=('aw'+[guid]::NewGuid().ToString('N').Substring(0,10));tool=(Join-Path $env:SystemRoot 'System32\pktmon.exe');node=$node;etl=(Join-Path $PrivateRoot 'wire.etl');pcap=(Join-Path $PrivateRoot 'wire.pcapng');filters=@();rules=@();startAttempted=$false;stopped=$false;processes=0;joined=0;processFailed=$false;flags=$flags;tlsFlows=0;outRecords=0;inRecords=0;providers=0}
 }
 function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$Arguments,[byte[]]$InputBytes=$null) {
     if($State.processes -ge 128){throw 'Wire process bound'}
@@ -48,7 +48,7 @@ function Assert-NativeDNSWireEmptyFilters([string]$Text) {
 function Get-NativeDNSWireFilterRows([string]$Text) {
     $rows=@()
     foreach($line in ($Text -split '\r?\n')){if($line -match '^\s*(\d+)\s+(\S+)'){
-        $tokens=@($line.Trim() -split '\s+');$rows+=@{id=[int]$tokens[0];name=$tokens[1];values=@($tokens | Select-Object -Skip 2)}
+        $tokens=@($line.Trim() -split '\s+');$name=$tokens[1];if($name.Length -ge 2 -and $name.StartsWith('"') -and $name.EndsWith('"')){$name=$name.Substring(1,$name.Length-2)};$rows+=@{id=[int]$tokens[0];name=$name;values=@($tokens | Select-Object -Skip 2)}
     }}
     return @($rows)
 }
@@ -189,10 +189,14 @@ function Complete-NativeDNSWireCleanup([object]$State) {
     $State.phase='cleanup-state';Assert-DNSAcceptanceRestored $State.before (Read-DNSAcceptanceState);$State.flags.originalStateVerified=$true
     $State.phase='cleanup-rules';Remove-NativeDNSWireRules $State 'tls';Remove-NativeDNSWireRules $State 'dns';$State.flags.rulesRemoved=$true
     $State.phase='cleanup-filters'
-    foreach($plan in $State.filters){
-        $rows=@(Get-NativeDNSWireFilterRows (Invoke-NativeDNSWireTool $State @('filter','list')) | Where-Object {$_.name -ceq $plan.name})
-        if($rows.Count -gt 1){throw 'Wire cleanup filter identity'}
-        if($rows.Count -eq 1){[void](Invoke-NativeDNSWireTool $State @('filter','remove',$plan.name))}
+    $listing=Invoke-NativeDNSWireTool $State @('filter','list');$rows=@(Get-NativeDNSWireFilterRows $listing)
+    if($rows.Count -gt 0){
+        $remaining=@($State.filters | Where-Object {$planName=$_.name;@($rows | Where-Object {$_.name -ceq $planName}).Count -eq 1})
+        if($remaining.Count -ne $rows.Count){throw 'Wire cleanup filter ownership'}
+        Assert-NativeDNSWireFilters $listing $remaining
+        # The documented remove command clears the set. Admit it only after
+        # proving the complete current set consists of these owned filters.
+        [void](Invoke-NativeDNSWireTool $State @('filter','remove'))
     }
     Assert-NativeDNSWireEmptyFilters (Invoke-NativeDNSWireTool $State @('filter','list'));$State.flags.filtersRemoved=$true
     $State.phase='cleanup-resolver';[void](Invoke-NativeDNSWireQuery 'example.com');$State.flags.originalResolverPassed=$true
