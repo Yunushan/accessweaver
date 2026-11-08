@@ -3,7 +3,7 @@
 const https=require('node:https'),tls=require('node:tls'),os=require('node:os');
 const QUERY='000001000001000000000000076578616d706c6503636f6d0000010001';
 function fixedDohQuery(){return Buffer.from(QUERY,'hex');}
-function requestOptions(){return {hostname:'8.8.8.8',port:443,family:4,servername:'dns.google',rejectUnauthorized:true,ca:tls.rootCertificates,minVersion:'TLSv1.3',maxVersion:'TLSv1.3',ALPNProtocols:['http/1.1'],method:'POST',path:'/dns-query',agent:false,headers:{Host:'dns.google',Accept:'application/dns-message','Content-Type':'application/dns-message','Content-Length':fixedDohQuery().length,Connection:'close'}};}
+function requestOptions(agent=false){return {hostname:'8.8.8.8',port:443,family:4,servername:'dns.google',rejectUnauthorized:true,ca:tls.rootCertificates,minVersion:'TLSv1.3',maxVersion:'TLSv1.3',ALPNProtocols:['http/1.1'],method:'POST',path:'/dns-query',agent,headers:{Host:'dns.google',Accept:'application/dns-message','Content-Type':'application/dns-message','Content-Length':fixedDohQuery().length,Connection:'keep-alive'}};}
 function dnsName(bytes,start){
  let at=start,next=null,jumps=0;const labels=[],seen=new Set();
  while(true){
@@ -25,25 +25,28 @@ function validateDohResponse(status,headers,body){
  }
  return found&&at===body.length;
 }
+function beginDohClose(socket){if(!socket||socket.destroyed||!socket.writable||socket.writableEnded)return false;socket.end();return true;}
 async function runFixedDohStimulus(){
  return await new Promise(resolve=>{
-  let request=null,socket=null,response=null,done=false,authorized=false,validated=false,closed=false,failure=null,total=0;const chunks=[];
-  const finish=()=>{if(done)return;done=true;clearTimeout(deadline);const good=failure===null&&authorized&&validated&&closed;resolve({schemaVersion:1,outcome:good?'passed':'failed',code:good?'none':failure||'close',tlsAuthorized:authorized,responseValidated:validated,closed,productionQualificationComplete:false});};
+  let request=null,socket=null,response=null,agent=null,done=false,authorized=false,validated=false,closed=false,peerEnded=false,failure=null,total=0;const chunks=[];
+  const finish=()=>{if(done)return;done=true;clearTimeout(deadline);if(agent)agent.destroy();const good=failure===null&&authorized&&validated&&closed&&peerEnded;resolve({schemaVersion:1,outcome:good?'passed':'failed',code:good?'none':failure||'close',tlsAuthorized:authorized,responseValidated:validated,closed,productionQualificationComplete:false});};
   const stop=code=>{if(failure===null)failure=code;if(response)response.destroy();if(request)request.destroy();if(socket)socket.destroy();if(!socket)finish();};
   const deadline=setTimeout(()=>{stop('timeout');finish();},8000);
   try{
-   request=https.request(requestOptions(),res=>{
+   agent=new https.Agent({keepAlive:true,maxSockets:1,maxTotalSockets:1,maxFreeSockets:1});
+   agent.once('free',s=>{if(s!==socket||!authorized||!validated||failure!==null||!beginDohClose(s))stop('close');});
+   request=https.request(requestOptions(agent),res=>{
     response=res;
     res.on('data',chunk=>{total+=chunk.length;if(total>4096||chunks.length>=128){stop('bound');return;}chunks.push(chunk);});
     res.on('end',()=>{validated=validateDohResponse(res.statusCode,res.headers,Buffer.concat(chunks,total));if(!validated)stop('response');else if(closed)finish();});
     res.on('error',()=>stop('network'));
    });
-   request.on('socket',s=>{socket=s;s.on('secureConnect',()=>{authorized=s.authorized===true&&s.getProtocol()==='TLSv1.3';if(!authorized)stop('tls');});s.on('close',()=>{closed=true;finish();});s.on('error',()=>{if(failure===null)failure='network';});});
+   request.on('socket',s=>{socket=s;s.on('secureConnect',()=>{authorized=s.authorized===true&&s.getProtocol()==='TLSv1.3';if(!authorized)stop('tls');});s.on('end',()=>{peerEnded=true;});s.on('close',()=>{closed=true;finish();});s.on('error',()=>{if(failure===null)failure='network';});});
    request.on('error',()=>stop('network'));request.end(fixedDohQuery());
   }catch{stop('network');}
  });
 }
-module.exports={fixedDohQuery,requestOptions,validateDohResponse};
+module.exports={fixedDohQuery,requestOptions,validateDohResponse,beginDohClose};
 if(require.main===module){
  const arch={x64:'amd64',arm64:'arm64'}[process.arch],host={x86_64:'amd64',amd64:'amd64',arm64:'arm64',aarch64:'arm64'}[os.machine().toLowerCase()];
  const guarded=process.platform==='win32'&&process.version==='v26.8.2'&&process.env.GITHUB_ACTIONS==='true'&&process.env.RUNNER_ENVIRONMENT==='github-hosted'&&/^[a-f0-9]{40}$/.test(process.env.GITHUB_SHA||'')&&process.env.ACCESSWEAVER_EXPECT_GOOS==='windows'&&arch===host&&arch===process.env.ACCESSWEAVER_EXPECT_GOARCH&&process.argv.length===2&&['ACCESSWEAVER_HISTORY_INTEROP','ACCESSWEAVER_RECONCILIATION_INTEROP','ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP','ACCESSWEAVER_SUPPORT_INTEROP'].every(k=>!Object.hasOwn(process.env,k));

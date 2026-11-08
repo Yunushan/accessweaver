@@ -20,6 +20,16 @@ try{
         foreach($row in @($routes)+@($adapters)+@($settings)){if($row -isnot [Microsoft.Management.Infrastructure.CimInstance]){throw 'Offload native row'}}
         return @{routes=$routes;adapters=$adapters;settings=$settings}
     }
+    function Wait-PrivateOffloadSnapshot([object]$Original,[bool]$Route,[object]$ExpectedIPv4) {
+        for($attempt=0;$attempt -lt 4;$attempt++){
+            try{
+                $inventory=Read-PrivateOffloadInventory $Route
+                $binding=if($Route){Read-NativeOffloadBinding $inventory.routes $inventory.adapters $inventory.settings}else{Read-NativeOffloadOwnerSnapshot $inventory.adapters $inventory.settings $Original.guid}
+                if(Test-NativeOffloadReady $Original $binding $ExpectedIPv4 $Route){return @{inventory=$inventory;binding=$binding}}
+            }catch{}
+            if($attempt -lt 3){Start-Sleep -Milliseconds 500}
+        };throw 'Offload bounded readback unresolved'
+    }
     $stage='read'
     if($Operation -ceq 'stage'){
         $inventory=Read-PrivateOffloadInventory $true;$before=Read-NativeOffloadBinding $inventory.routes $inventory.adapters $inventory.settings
@@ -32,7 +42,7 @@ try{
         $stream=[IO.FileStream]::new($planPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
         $r.changeAttempted=$before.IPv4Enabled
         if($before.IPv4Enabled){$setting=Select-NativeOffloadSetting $check $inventory.settings;$stage='apply';$r.restartRequested=$true;[void](Set-NetAdapterLso -InputObject $setting -IPv4Enabled $false -NoRestart:$false -Confirm:$false -ErrorAction Stop);$r.restartReturned=$true;$r.changed=$true}
-        $stage='read';$inventory=Read-PrivateOffloadInventory $true;$after=Read-NativeOffloadBinding $inventory.routes $inventory.adapters $inventory.settings
+        $stage='read';$settled=Wait-PrivateOffloadSnapshot $before $true $false;$after=$settled.binding
         if(-not (Test-NativeOffloadOwner $before $after) -or $before.index -ne $after.index -or -not [string]::Equals($before.name,$after.name,[StringComparison]::Ordinal)){$stage='identity';throw 'Offload owner drift'}
         $r.preservedOthers=Test-NativeOffloadOtherSettings $before $after;$r.currentIPv4=$after.IPv4Enabled
         if(-not $r.preservedOthers -or $after.IPv4Enabled){$stage='state';throw 'Offload stage readback'};$r.readbackVerified=$true;$r.code='none'
@@ -48,11 +58,11 @@ try{
             $guid=[guid]::Empty;if($before.guid -isnot [string] -or -not [guid]::TryParse($before.guid,[ref]$guid) -or $guid -eq [guid]::Empty -or $before.index -isnot [int] -or $before.index -le 0 -or $before.maximumVersion -isnot [int] -or $before.maximumVersion -ne 2 -or $plan.changeAttempted -ne $before.IPv4Enabled){throw 'Offload plan identity'}
             foreach($key in @('name','description','instance')){if($before[$key] -isnot [string] -or $before[$key].Length -lt 1 -or $before[$key].Length -gt 4096){throw 'Offload plan text'}}
             $r.originalIPv4=$before.IPv4Enabled;$r.changeRequired=$before.IPv4Enabled;$r.changeAttempted=$plan.changeAttempted
-            $stage='read';$inventory=Read-PrivateOffloadInventory $false;$check=Read-NativeOffloadOwnerSnapshot $inventory.adapters $inventory.settings $before.guid
+            $stage='read';$settled=Wait-PrivateOffloadSnapshot $before $false $null;$inventory=$settled.inventory;$check=$settled.binding
             if(-not (Test-NativeOffloadOwner $before $check)){$stage='identity';throw 'Offload restore owner'};$r.identityVerified=$true
             if(-not (Test-NativeOffloadOtherSettings $before $check)){$stage='state';throw 'Offload foreign state drift'}
             if($check.IPv4Enabled -ne $before.IPv4Enabled){$setting=Select-NativeOffloadSetting $check $inventory.settings;$stage='apply';$r.restartRequested=$true;[void](Set-NetAdapterLso -InputObject $setting -V1IPv4Enabled $before.V1IPv4Enabled -IPv4Enabled $before.IPv4Enabled -IPv6Enabled $before.IPv6Enabled -NoRestart:$false -Confirm:$false -ErrorAction Stop);$r.restartReturned=$true;$r.changed=$true}
-            $stage='read';$inventory=Read-PrivateOffloadInventory $false;$after=Read-NativeOffloadOwnerSnapshot $inventory.adapters $inventory.settings $before.guid
+            $stage='read';$settled=Wait-PrivateOffloadSnapshot $before $false $before.IPv4Enabled;$after=$settled.binding
             if(-not (Test-NativeOffloadOwner $before $after)){$stage='identity';throw 'Offload final owner drift'}
             $r.currentIPv4=$after.IPv4Enabled;$r.preservedOthers=Test-NativeOffloadOtherSettings $before $after
             if(-not $r.preservedOthers -or $after.IPv4Enabled -ne $before.IPv4Enabled){$stage='state';throw 'Offload restoration readback'};$r.readbackVerified=$true;$r.restored=$true;$r.code='none'

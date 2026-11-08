@@ -67,3 +67,9 @@ function Get-NativeOffloadChangeEvidence([string]$Text,[string]$Operation) {
     if($v.code -ceq 'not-staged' -and ($Operation -cne 'restore' -or -not $v.restored -or $v.changeRequired -or $v.changeAttempted -or $v.changed -or $v.restartRequested -or $v.restartReturned -or $v.identityVerified -or $v.readbackVerified -or $v.preservedOthers -or $null -ne $v.originalIPv4 -or $null -ne $v.currentIPv4)){return $bad}
     $r=New-NativeOffloadChangeEvidence $Operation;foreach($key in $keys){$r[$key]=$v.$key};return $r
 }
+
+function Test-NativeOffloadReady([object]$Original,[object]$Current,[object]$ExpectedIPv4,[bool]$Route) {
+    if($null -ne $ExpectedIPv4 -and $ExpectedIPv4 -isnot [bool]){return $false}
+    if(-not (Test-NativeOffloadOwner $Original $Current) -or -not (Test-NativeOffloadOtherSettings $Original $Current) -or ($null -ne $ExpectedIPv4 -and $Current.IPv4Enabled -ne $ExpectedIPv4)){return $false}
+    if($Route -and ($Original.index -ne $Current.index -or -not [string]::Equals($Original.name,$Current.name,[StringComparison]::Ordinal))){return $false};return $true
+}
