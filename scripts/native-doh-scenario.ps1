@@ -197,6 +197,15 @@ function Get-NativeDNSStaticFailure([Exception]$Exception) {
             'No active native link-local interface' {return 'no-link-local'}
             'Static fixture adapter identity changed' {return 'adapter-changed'}
             'Static fixture family changed' {return 'family-changed'}
+            'DNS acceptance adapter inventory changed' {return 'state-inventory'}
+            'DNS acceptance original adapter is missing' {return 'state-adapter'}
+            'DNS acceptance original DHCP/static mode differs' {return 'state-mode'}
+            'DNS acceptance dormant registry state differs' {return 'state-dormant'}
+            'DNS acceptance original static server count differs' {return 'state-count'}
+            'DNS acceptance original static server order or value differs' {return 'state-order'}
+            'DNS acceptance original DoH capability or inventory differs' {return 'state-doh-inventory'}
+            'DNS acceptance original DoH entry is missing' {return 'state-doh-entry'}
+            'DNS acceptance original DoH metadata differs' {return 'state-doh-metadata'}
         }
         if($current.GetType().FullName -ceq 'Microsoft.Management.Infrastructure.CimException'){return 'cim'}
         if($current -is [Management.Automation.ParameterBindingException]){return 'parameter'}
