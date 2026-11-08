@@ -347,6 +347,9 @@
   "limitations": [
     "Known job-step metadata proves the contract step failed and the UI experiment was skipped on all six targets; no script-cost or performance result is inferred.",
     "The source defect and its deterministic regression are verified independently; raw provider assertions were not inspected.",
-    "Normal acceptance for this source is tracked separately and remains pending."
-  ]
+    "The separate normal cohort passed all ten jobs and its26fixedZIPs are verified. That normal result does not supply missing script-cost observations for this skipped diagnostic attempt."
+  ],
+  "normalCohortReceipt": "f9484d8e425f-startup-cohort-normal.json",
+  "normalCohortConclusion": "success",
+  "correctedDiagnosticFollowupReceipt": "79e4cda171b2-startup-script-cost-attempt.json"
 }

@@ -2860,7 +2860,7 @@
       "web/system.js": "b0da03f86609e356ecd5a56a63ab7ad02ee18bc8b56ecf94e270ad297b28383b"
     }
   },
-  "productionApplicationChangedFromSVGSource": false,
+  "productionApplicationChangedFromSVGSource": true,
   "productionChange": "No product change from qualified27e4b10. Add only a separate source-bound diagnostic control and workflow; original browser cases and all acceptance workloads remain unchanged.",
   "budgetsOrWorkloadChanged": false,
   "performanceImprovementClaimed": false,
@@ -17404,5 +17404,20 @@
     "applicationCodeUnchanged": true,
     "originalBudgetsAndWorkloadUnchanged": true,
     "controlQualificationCredit": false
-  }
+  },
+  "svgSourceComparison": {
+    "sourceCommit": "f7f9c445ac962799b83ff4ae9f780a43db1cf024",
+    "scope": [
+      "cmd",
+      "internal",
+      "web",
+      "go.mod",
+      "go.sum"
+    ],
+    "changedPaths": [
+      "web/app.js",
+      "web/app.test.cjs"
+    ]
+  },
+  "metadataCorrection": "The application retains the later qualified editor-guidance change and regression test relative to the original SVG source. It remains unchanged from productBaseSource27e4b10. Corrects a copied historical comparison label; no CI result, qualification or performance claim changes."
 }
