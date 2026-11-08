@@ -371,7 +371,7 @@ Case-N 'readonly-offload-entry-never-invokes-a-setter-or-restart' {
 
 
 function OffloadChangeReply-N([string]$Operation) {
-    $r=New-NativeOffloadChangeEvidence $Operation;$r.code='none';$r.identityVerified=$true;$r.changeRequired=$true;$r.changeAttempted=$true;$r.changed=$true;$r.readbackVerified=$true;$r.preservedOthers=$true;$r.originalIPv4=$true;$r.currentIPv4=($Operation -ceq 'restore');$r.restored=($Operation -ceq 'restore');return $r
+    $r=New-NativeOffloadChangeEvidence $Operation;$r.code='none';$r.identityVerified=$true;$r.changeRequired=$true;$r.changeAttempted=$true;$r.changed=$true;$r.restartRequested=$true;$r.restartReturned=$true;$r.readbackVerified=$true;$r.preservedOthers=$true;$r.originalIPv4=$true;$r.currentIPv4=($Operation -ceq 'restore');$r.restored=($Operation -ceq 'restore');return $r
 }
 Case-N 'offload-restoration-binds-guid-after-interface-index-and-name-change' {
     $v=OffloadInputs-N;$a=Read-NativeOffloadBinding $v.routes $v.adapters $v.settings
@@ -403,11 +403,11 @@ Case-N 'offload-change-evidence-excludes-private-fields-and-false-success' {
     $r=New-NativeOffloadChangeEvidence 'restore';$r.code='not-staged';$r.restored=$true;Assert-N ((Get-NativeOffloadChangeEvidence ($r | ConvertTo-Json -Compress) 'restore').code -ceq 'not-staged');$r.changeAttempted=$true;Assert-N ((Get-NativeOffloadChangeEvidence ($r | ConvertTo-Json -Compress) 'restore').code -ceq 'invalid')
     $r=OffloadChangeReply-N 'stage';$r.currentIPv4=$true;Assert-N ((Get-NativeOffloadChangeEvidence ($r | ConvertTo-Json -Compress) 'stage').code -ceq 'invalid')
 }
-Case-N 'offload-instrumentation-setters-require-exact-object-and-no-restart' {
+Case-N 'offload-instrumentation-setters-require-exact-object-and-restart-mode' {
     $t=$null;$e=$null;$a=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'offload-control-operation.ps1'),[ref]$t,[ref]$e);Assert-N ($e.Count -eq 0);$setters=0
     foreach($c in $a.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){
         Assert-N ($c.GetCommandName() -cnotin @('Enable-NetAdapterLso','Disable-NetAdapterLso','Restart-NetAdapter','Disable-NetAdapter','Enable-NetAdapter','Set-NetAdapterAdvancedProperty'))
-        if($c.GetCommandName() -ceq 'Set-NetAdapterLso'){$setters++;$p=@($c.CommandElements | Where-Object {$_ -is [Management.Automation.Language.CommandParameterAst]} | ForEach-Object {$_.ParameterName});Assert-N ('InputObject' -cin $p -and 'IPv4Enabled' -cin $p -and 'NoRestart' -cin $p -and 'Confirm' -cin $p -and 'Name' -cnotin $p)}
+        if($c.GetCommandName() -ceq 'Set-NetAdapterLso'){$setters++;$p=@($c.CommandElements | Where-Object {$_ -is [Management.Automation.Language.CommandParameterAst]} | ForEach-Object {$_.ParameterName});Assert-N ('InputObject' -cin $p -and 'IPv4Enabled' -cin $p -and 'NoRestart' -cin $p -and 'Confirm' -cin $p -and 'Name' -cnotin $p);$mode=@($c.CommandElements | Where-Object {$_ -is [Management.Automation.Language.CommandParameterAst] -and $_.ParameterName -ceq 'NoRestart'});Assert-N ($mode.Count -eq 1 -and $mode[0].Argument -is [Management.Automation.Language.VariableExpressionAst] -and $mode[0].Argument.VariablePath.UserPath -ceq 'false')}
     };Assert-N ($setters -eq 2)
 }
 Case-N 'offload-plan-is-durable-before-mutation-and-restored-before-retirement' {
@@ -417,6 +417,11 @@ Case-N 'offload-plan-is-durable-before-mutation-and-restored-before-retirement' 
 
 Case-N 'offload-private-acl-import-is-explicit-before-autoload-is-disabled' {
     $body=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'offload-control-operation.ps1'));Assert-N ($body.Contains("'Microsoft.PowerShell.Security'") -and $body.IndexOf("'Microsoft.PowerShell.Security'") -lt $body.IndexOf("$"+"PSModuleAutoLoadingPreference='None'") -and $body.Contains('Get-Acl -LiteralPath $root') -and $body.Contains("$"+"stage='path-acl'"))
+}
+
+Case-N 'offload-change-success-requires-returned-restart-for-each-setter' {
+    foreach($op in @('stage','restore')){foreach($field in @('restartRequested','restartReturned')){$r=OffloadChangeReply-N $op;$r[$field]=$false;Assert-N ((Get-NativeOffloadChangeEvidence ($r | ConvertTo-Json -Compress) $op).code -ceq 'invalid')}}
+    $r=OffloadChangeReply-N 'stage';$r.originalIPv4=$false;$r.changeRequired=$false;$r.changeAttempted=$false;$r.changed=$false;$r.restartRequested=$false;$r.restartReturned=$false;Assert-N ((Get-NativeOffloadChangeEvidence ($r | ConvertTo-Json -Compress) 'stage').code -ceq 'none')
 }
 
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}

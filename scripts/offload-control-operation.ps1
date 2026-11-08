@@ -1,7 +1,7 @@
 # Reversible, exact-owner capture instrumentation. Fresh disposable hosted VM only.
 [CmdletBinding()]param([Parameter(Mandatory=$true)][ValidateSet('stage','restore')][string]$Operation,[Parameter(Mandatory=$true)][string]$PrivateRoot)
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$WarningPreference='SilentlyContinue'
-$r=@{schemaVersion=1;operation=$Operation;code='environment';identityVerified=$false;changeRequired=$false;changeAttempted=$false;changed=$false;readbackVerified=$false;restored=$false;originalIPv4=$null;currentIPv4=$null;preservedOthers=$false};$stage='environment'
+$r=@{schemaVersion=1;operation=$Operation;code='environment';identityVerified=$false;changeRequired=$false;changeAttempted=$false;changed=$false;restartRequested=$false;restartReturned=$false;readbackVerified=$false;restored=$false;originalIPv4=$null;currentIPv4=$null;preservedOthers=$false};$stage='environment'
 try{
     if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows' -or $PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1 -or [IntPtr]::Size -ne 8 -or $env:GITHUB_SHA -cnotmatch '^[a-f0-9]{40}$'){throw 'Fresh hosted stock operation required'}
     foreach($name in @('ACCESSWEAVER_HISTORY_INTEROP','ACCESSWEAVER_RECONCILIATION_INTEROP','ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP','ACCESSWEAVER_SUPPORT_INTEROP')){if($null -ne [Environment]::GetEnvironmentVariable($name,'Process')){throw 'Interop offload boundary'}}
@@ -27,11 +27,11 @@ try{
         if(-not (Test-NativeOffloadBindingEqual $before $check)){$stage='identity';throw 'Offload preflight drift'}
         if($before.maximumVersion -ne 2){$stage='state';throw 'Offload LSOv2 unsupported'}
         $r.originalIPv4=$before.IPv4Enabled;$r.changeRequired=$before.IPv4Enabled;$r.identityVerified=$true
-        $plan=@{schemaVersion=1;binding=$before;changeAttempted=$before.IPv4Enabled};$stage='output'
+        $plan=@{schemaVersion=1;binding=$before;changeAttempted=$before.IPv4Enabled;restartOnChange=$true};$stage='output'
         $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($plan | ConvertTo-Json -Depth 3 -Compress));if($bytes.Length -gt 16384){throw 'Offload plan bound'}
         $stream=[IO.FileStream]::new($planPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
         $r.changeAttempted=$before.IPv4Enabled
-        if($before.IPv4Enabled){$setting=Select-NativeOffloadSetting $check $inventory.settings;$stage='apply';[void](Set-NetAdapterLso -InputObject $setting -IPv4Enabled $false -NoRestart -Confirm:$false -ErrorAction Stop);$r.changed=$true}
+        if($before.IPv4Enabled){$setting=Select-NativeOffloadSetting $check $inventory.settings;$stage='apply';$r.restartRequested=$true;[void](Set-NetAdapterLso -InputObject $setting -IPv4Enabled $false -NoRestart:$false -Confirm:$false -ErrorAction Stop);$r.restartReturned=$true;$r.changed=$true}
         $stage='read';$inventory=Read-PrivateOffloadInventory $true;$after=Read-NativeOffloadBinding $inventory.routes $inventory.adapters $inventory.settings
         if(-not (Test-NativeOffloadOwner $before $after) -or $before.index -ne $after.index -or -not [string]::Equals($before.name,$after.name,[StringComparison]::Ordinal)){$stage='identity';throw 'Offload owner drift'}
         $r.preservedOthers=Test-NativeOffloadOtherSettings $before $after;$r.currentIPv4=$after.IPv4Enabled
@@ -41,8 +41,8 @@ try{
         if(-not [IO.File]::Exists($planPath)){$r.code='not-staged';$r.restored=$true}else{
             if(([IO.File]::GetAttributes($planPath) -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Offload plan reparse'}
             $stream=[IO.FileStream]::new($planPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-            try{if($stream.Length -le 0 -or $stream.Length -gt 16384){throw 'Offload plan size'};$text=[IO.StreamReader]::new($stream,[Text.UTF8Encoding]::new($false,$true)).ReadToEnd();$plan=$text | ConvertFrom-Json -ErrorAction Stop}finally{$stream.Dispose()}
-            if($plan -isnot [pscustomobject] -or @($plan.PSObject.Properties).Count -ne 3 -or $plan.schemaVersion -isnot [int] -or $plan.schemaVersion -ne 1 -or $plan.changeAttempted -isnot [bool] -or $plan.binding -isnot [pscustomobject] -or @($plan.binding.PSObject.Properties).Count -ne 9){throw 'Offload plan shape'}
+            try{if($stream.Length -le 0 -or $stream.Length -gt 16384){throw 'Offload plan size'};$reader=[IO.StreamReader]::new($stream,[Text.UTF8Encoding]::new($false,$true));try{$text=$reader.ReadToEnd()}finally{$reader.Dispose()};$plan=$text | ConvertFrom-Json -ErrorAction Stop}finally{$stream.Dispose()}
+            if($plan -isnot [pscustomobject] -or @($plan.PSObject.Properties).Count -ne 4 -or $plan.schemaVersion -isnot [int] -or $plan.schemaVersion -ne 1 -or $plan.changeAttempted -isnot [bool] -or $plan.restartOnChange -isnot [bool] -or -not $plan.restartOnChange -or $plan.binding -isnot [pscustomobject] -or @($plan.binding.PSObject.Properties).Count -ne 9){throw 'Offload plan shape'}
             $before=@{};foreach($key in @('index','guid','name','description','instance','maximumVersion','V1IPv4Enabled','IPv4Enabled','IPv6Enabled')){if($null -eq $plan.binding.PSObject.Properties[$key]){throw 'Offload plan field'};$before[$key]=$plan.binding.$key}
             foreach($key in @('V1IPv4Enabled','IPv4Enabled','IPv6Enabled')){if($before[$key] -isnot [bool]){throw 'Offload plan state'}}
             $guid=[guid]::Empty;if($before.guid -isnot [string] -or -not [guid]::TryParse($before.guid,[ref]$guid) -or $guid -eq [guid]::Empty -or $before.index -isnot [int] -or $before.index -le 0 -or $before.maximumVersion -isnot [int] -or $before.maximumVersion -ne 2 -or $plan.changeAttempted -ne $before.IPv4Enabled){throw 'Offload plan identity'}
@@ -51,7 +51,7 @@ try{
             $stage='read';$inventory=Read-PrivateOffloadInventory $false;$check=Read-NativeOffloadOwnerSnapshot $inventory.adapters $inventory.settings $before.guid
             if(-not (Test-NativeOffloadOwner $before $check)){$stage='identity';throw 'Offload restore owner'};$r.identityVerified=$true
             if(-not (Test-NativeOffloadOtherSettings $before $check)){$stage='state';throw 'Offload foreign state drift'}
-            if($check.IPv4Enabled -ne $before.IPv4Enabled){$setting=Select-NativeOffloadSetting $check $inventory.settings;$stage='apply';[void](Set-NetAdapterLso -InputObject $setting -V1IPv4Enabled $before.V1IPv4Enabled -IPv4Enabled $before.IPv4Enabled -IPv6Enabled $before.IPv6Enabled -NoRestart -Confirm:$false -ErrorAction Stop);$r.changed=$true}
+            if($check.IPv4Enabled -ne $before.IPv4Enabled){$setting=Select-NativeOffloadSetting $check $inventory.settings;$stage='apply';$r.restartRequested=$true;[void](Set-NetAdapterLso -InputObject $setting -V1IPv4Enabled $before.V1IPv4Enabled -IPv4Enabled $before.IPv4Enabled -IPv6Enabled $before.IPv6Enabled -NoRestart:$false -Confirm:$false -ErrorAction Stop);$r.restartReturned=$true;$r.changed=$true}
             $stage='read';$inventory=Read-PrivateOffloadInventory $false;$after=Read-NativeOffloadOwnerSnapshot $inventory.adapters $inventory.settings $before.guid
             if(-not (Test-NativeOffloadOwner $before $after)){$stage='identity';throw 'Offload final owner drift'}
             $r.currentIPv4=$after.IPv4Enabled;$r.preservedOthers=Test-NativeOffloadOtherSettings $before $after
