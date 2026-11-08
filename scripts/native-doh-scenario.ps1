@@ -102,7 +102,7 @@ function Get-NativeDNSVerificationMarker([string]$Previous,[string]$Chunk) {
 # Closed fixture-only I/O vocabulary. Exception text never enters a public report.
 function Get-NativeDNSForwarderFailure([Exception]$Failure) {
     for($depth=0;$null -ne $Failure -and $depth -lt 16;$depth++){
-        if($Failure -is [Net.Sockets.SocketException]){if($Failure.NativeErrorCode -eq 10054){return 'peer-closed'};return 'socket-io'}
+        if($Failure -is [Net.Sockets.SocketException]){if($Failure.SocketErrorCode -eq [Net.Sockets.SocketError]::ConnectionReset){return 'peer-closed'};return 'socket-io'}
         switch -CaseSensitive ($Failure.Message){
             'Forwarded DNS packet bound exceeded' {return 'packet-bound'}
             'Forwarded DNS request count exceeded' {return 'request-bound'}
