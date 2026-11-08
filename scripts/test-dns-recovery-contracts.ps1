@@ -292,7 +292,7 @@ try {
         New-DNSCase;$other=if($family -eq 'IPv4'){'IPv6'}else{'IPv4'};$script:exposure['77/'+$other]=$false;$script:mode6='2001:db8::53'
         Configure-DNS 'doh';$saved=Microsoft.PowerShell.Utility\ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($snapshot));$number=if($family -eq 'IPv4'){'4'}else{'6'};$unused=if($number -eq '4'){'6'}else{'4'}
         Restore-DNS
-        Assert-DNS ($saved.adapters[0].('bound'+$number) -and -not $saved.adapters[0].('bound'+$unused) -and @($saved.adapters[0].('ipv'+$unused)).Count -eq 0 -and $script:registryReads.Count -eq 1 -and @($script:calls | Where-Object {$_.kind -eq 'dns'}).Count -eq 2 -and @($script:calls | Where-Object {$_.kind -eq 'dns' -and $_.family -ne $family}).Count -eq 0 -and -not [IO.File]::Exists($snapshot)) 'single-family-capture-and-restore'
+        Assert-DNS ($saved.adapters[0].('bound'+$number) -and -not $saved.adapters[0].('bound'+$unused) -and @($saved.adapters[0].('ipv'+$unused)).Count -eq 0 -and $script:registryReads.Count -eq 2 -and @($script:calls | Where-Object {$_.kind -eq 'dns'}).Count -eq 2 -and @($script:calls | Where-Object {$_.kind -eq 'dns' -and $_.family -ne $family}).Count -eq 0 -and -not [IO.File]::Exists($snapshot)) 'single-family-capture-and-restore'
     }
     New-DNSCase;$script:exposure['77/IPv6']=$false;$script:currentDoh['8.8.8.8']=Old-DohFixture
     Configure-DNS 'doh';$script:exposure['77/IPv6']=$true;$script:mode4='127.0.0.1';$script:mode6='2001:db8::53';$script:dnsValues['77/IPv4']=@('8.8.8.8','9.9.9.9')
