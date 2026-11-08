@@ -478,9 +478,14 @@ test('keyboard focus returns to the same card control after saves and engine cre
  expect(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight)).toBe(true);
  const backgroundLayout=()=>Array.from(document.querySelectorAll('.app-shell,.main-layout')).map(node=>{const rect=node.getBoundingClientRect();return {left:rect.left,width:rect.width}});
  const beforeModal=await page.evaluate(backgroundLayout);expect(beforeModal).toHaveLength(2);
+ const backgroundFeedback=()=>['#new-profile','.nav-item.active','#all-profiles .profile-card'].map(selector=>{const node=document.querySelector(selector);return {connected:!!node?.isConnected,property:node?getComputedStyle(node).transitionProperty:null,finiteAnimations:node?node.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity).length:null}});
+ const beforeFeedback=await page.evaluate(backgroundFeedback);expect(beforeFeedback).toHaveLength(3);expect(beforeFeedback.every(x=>x.connected&&x.property!=='none')).toBe(true);
+ const foregroundFeedback=await page.locator('#save-profile').evaluate(node=>getComputedStyle(node).transitionProperty);expect(foregroundFeedback).not.toBe('none');
  const expectStableBackground=async()=>{const current=await page.evaluate(backgroundLayout);expect(current).toHaveLength(beforeModal.length);for(let i=0;i<current.length;i++)for(const field of ['left','width'])expect(Math.abs(current[i][field]-beforeModal[i][field]),'modal background '+field).toBeLessThanOrEqual(0.5);};
  await page.keyboard.press('Enter');await expect(page.locator('#p-id')).toHaveValue('perf-0255');
  await expectStableBackground();
+ const inactiveFeedback=await page.evaluate(backgroundFeedback);expect(inactiveFeedback).toHaveLength(3);expect(inactiveFeedback.every(x=>x.connected&&x.property==='none'&&x.finiteAnimations===0)).toBe(true);
+ expect(await page.locator('#save-profile').evaluate(node=>getComputedStyle(node).transitionProperty)).toBe(foregroundFeedback);
  const guidance=await page.locator('#engine-guidance a').elementHandle();
  try{
   await page.locator('#p-name').fill('ZZ distant keyboard fixture');
@@ -491,6 +496,7 @@ test('keyboard focus returns to the same card control after saves and engine cre
  await page.locator('#save-profile').click();
  await expect(page.locator('#editor-modal')).toBeHidden();await expect(distant).toBeFocused();
  await expectStableBackground();
+ const restoredFeedback=await page.evaluate(backgroundFeedback);expect(restoredFeedback.map(x=>({connected:x.connected,property:x.property}))).toEqual(beforeFeedback.map(x=>({connected:x.connected,property:x.property})));
  await expect(distant).toBeInViewport();
  await page.locator('#profile-search').fill('perf-0255');await expect(cards).toHaveCount(1);
  await expect(page.locator('#all-profiles .profile-title')).toHaveText('ZZ distant keyboard fixture');

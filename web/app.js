@@ -614,13 +614,28 @@ function restoreFocus(anchor) {
 function restoreReplacedFocus(anchor) {
   if (anchor && !anchor.element.isConnected && !restoreFocus(anchor)) $('content').focus({preventScroll:true});
 }
+function settleInactiveFeedback(shell) {
+  if (!shell?.inert) return;
+  try {
+    if (typeof document.getAnimations !== 'function') return;
+    for (const animation of document.getAnimations()) {
+      try {
+        const target = animation.effect?.target;
+        if (typeof animation.transitionProperty === 'string' &&
+            target?.matches?.('.btn,.nav-item,.profile-card') && shell.contains(target)) animation.cancel();
+      } catch { /* Cosmetic feedback cleanup must not interrupt modal input. */ }
+    }
+  } catch { /* Older animation APIs retain the CSS-only fallback. */ }
+}
 function setModal(id,open) {
   const modal = $(id);
   if (open) modal.returnFocus = rememberFocus(document.activeElement);
   modal.hidden = !open;
   const modalOpen = $$('.modal-backdrop').some(el => !el.hidden);
-  document.querySelector('.app-shell').inert = modalOpen;
+  const shell = document.querySelector('.app-shell');
+  shell.inert = modalOpen;
   document.body.classList.toggle('modal-open',modalOpen);
+  if (modalOpen) settleInactiveFeedback(shell);
   if (!open) {
     if (!restoreFocus(modal.returnFocus) && !modalOpen) $('content').focus({preventScroll:true});
     modal.returnFocus = null;

@@ -1393,3 +1393,30 @@ test('editor guidance updates for engine, catalog and language changes without c
  for(const language of ['tr','ru','es','en']){env.context.fixtureLanguage=language;env.run('state.lang=fixtureLanguage;updateEditorGuidance()');assert.ok(env.get('engine-guidance').innerHTML.includes(env.run('escapeHTML(t("engineDocs"))')));assert.ok(env.get('engine-guidance').innerHTML.includes(env.run('escapeHTML(engineGuide("wiresock"))')));assert.equal(env.get('rule-capability').textContent,env.run('t("unsupportedIncludes")+" "+t("unsupportedExcludes")'));assert.equal(env.get('p-binary').value,'private-draft-binary');}
  env.run('state.engines=state.engines.map(e=>e.id==="wiresock"?{...e,source:"javascript:untrusted"}:e);updateEditorGuidance()');assert.match(env.get('engine-guidance').innerHTML,/href="#"/);assert.doesNotMatch(env.get('engine-guidance').innerHTML,/javascript:/);
 });
+
+
+test('inactive feedback cleanup cancels only owned background CSS transitions',()=>{
+ const env=environment(),shell=env.get('app-shell'),owned=new Set(),cancelled=[];shell.inert=true;shell.contains=node=>owned.has(node);
+ const target=(kind,inside=true)=>{const node={matches(selector){assert.equal(selector,'.btn,.nav-item,.profile-card');return ['button','navigation','card'].includes(kind)}};if(inside)owned.add(node);return node};
+ const transition=(name,node)=>({transitionProperty:'transform',effect:{target:node},cancel(){cancelled.push(name)}});
+ const button=target('button'),navigation=target('navigation'),card=target('card'),dialog=target('button',false),other=target('other');
+ const rows=[transition('button',button),transition('navigation',navigation),transition('card',card),transition('dialog',dialog),transition('other',other),transition('detached',null),{animationName:'feedback',effect:{target:button},cancel(){cancelled.push('css-animation')}},{effect:{target:button},cancel(){cancelled.push('web-animation')}}];
+ let scans=0;env.context.document.getAnimations=()=>{scans++;return rows};env.run('settleInactiveFeedback(document.querySelector(".app-shell"))');assert.deepEqual(cancelled,['button','navigation','card']);assert.equal(scans,1);
+ shell.inert=false;env.run('settleInactiveFeedback(document.querySelector(".app-shell"))');env.run('settleInactiveFeedback(null)');assert.equal(scans,1);
+});
+
+test('feedback cleanup tolerates unavailable animation APIs and individual failures without exposing errors',()=>{
+ const env=environment(),shell=env.get('app-shell');shell.inert=true;shell.contains=()=>true;env.run('settleInactiveFeedback(document.querySelector(".app-shell"))');
+ env.context.document.getAnimations=()=>{throw Error('SYNTHETIC_PRIVATE_ANIMATION_CANARY')};assert.doesNotThrow(()=>env.run('settleInactiveFeedback(document.querySelector(".app-shell"))'));
+ let cancelled=0;const node={matches(){return true}},brokenName={get transitionProperty(){throw Error('SYNTHETIC_PRIVATE_ANIMATION_CANARY')}},brokenTarget={get effect(){throw Error('SYNTHETIC_PRIVATE_ANIMATION_CANARY')}},brokenCancel={transitionProperty:'transform',effect:{target:node},cancel(){throw Error('SYNTHETIC_PRIVATE_ANIMATION_CANARY')}};
+ env.context.document.getAnimations=()=>[brokenName,brokenTarget,brokenCancel,{transitionProperty:'transform',effect:{target:node},cancel(){cancelled++}}];assert.doesNotThrow(()=>env.run('settleInactiveFeedback(document.querySelector(".app-shell"))'));assert.equal(cancelled,1);
+});
+
+test('modal activation marks its shell inert before feedback cleanup and close restores input',()=>{
+ const env=environment(),shell=env.get('app-shell'),modal=env.get('editor-modal'),states=[];shell.contains=node=>node.id==='owned-feedback';
+ env.context.document.querySelectorAll=selector=>selector==='.modal-backdrop'?[modal]:[];
+ env.context.document.body.classList.toggle=(name,active)=>{assert.equal(name,'modal-open');states.push(active)};
+ let cancelled=0;env.context.document.getAnimations=()=>[{transitionProperty:'transform',effect:{target:{id:'owned-feedback',matches(){return true}}},cancel(){assert.equal(shell.inert,true);cancelled++}}];
+ env.run('setModal("editor-modal",true)');assert.equal(modal.hidden,false);assert.equal(shell.inert,true);assert.equal(cancelled,1);
+ env.run('setModal("editor-modal",false)');assert.equal(modal.hidden,true);assert.equal(shell.inert,false);assert.equal(cancelled,1);assert.deepEqual(states,[true,false]);
+});
