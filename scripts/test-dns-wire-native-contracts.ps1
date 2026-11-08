@@ -2,6 +2,9 @@
 [CmdletBinding()]param([switch]$RequireWindowsPowerShell)
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';Set-StrictMode -Version Latest
 if($RequireWindowsPowerShell -and ($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1)){throw 'Stock source shell required'}
+Import-Module ([IO.Path]::Combine($PSHOME,'Modules','Microsoft.PowerShell.Utility','Microsoft.PowerShell.Utility.psd1')) -ErrorAction Stop
+Import-Module ([IO.Path]::Combine($PSHOME,'Modules','Microsoft.PowerShell.Management','Microsoft.PowerShell.Management.psd1')) -ErrorAction Stop
+$PSModuleAutoLoadingPreference='None'
 $project=Split-Path -Parent $PSScriptRoot;$path=Join-Path $PSScriptRoot 'native-dns-wire.ps1'
 $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$issues)
