@@ -17,24 +17,28 @@ if($ReportPath){
 }
 $project=Split-Path -Parent $PSScriptRoot
 $sourcePath=Join-Path $PSScriptRoot 'dns-acceptance-state.ps1'
-$sourceFiles=@('scripts/dns-acceptance-state.ps1','scripts/test-dns-acceptance-state.ps1','scripts/test-windows-integration.ps1','scripts/test-windows-reboot.ps1','scripts/vmware-test-bootstrap.ps1','scripts/test-windows-workflow.ps1','.github/workflows/dns-recovery-contracts.yml')
+$sourceFiles=@('scripts/native-doh-scenario.ps1','scripts/test-native-doh.ps1','.github/workflows/native-doh.yml','scripts/dns-acceptance-state.ps1','scripts/test-dns-acceptance-state.ps1','scripts/test-windows-integration.ps1','scripts/test-windows-reboot.ps1','scripts/vmware-test-bootstrap.ps1','scripts/test-windows-workflow.ps1','.github/workflows/dns-recovery-contracts.yml')
 $sourceHashes=@{};foreach($file in $sourceFiles){$sourceHashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($sourcePath,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Acceptance helper source did not parse'}
-$selected=@('Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
+$definitions=@($ast.EndBlock.Statements)
+$tokens=$null;$issues=$null;$coordinator=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-doh-scenario.ps1'),[ref]$tokens,[ref]$issues)
+if($issues.Count){throw 'Native coordinator source did not parse'}
+$definitions+=@($coordinator.EndBlock.Statements)
+$selected=@('Invoke-NativeDoHScenario','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
 $allowed=$selected+@('Get-NetAdapter','Get-ItemProperty','Get-DnsClientServerAddress','Get-Command','Get-DnsClientDohServerAddress','Where-Object','Get-Service','Clear-DnsClientCache','Resolve-DnsName')
 foreach($name in $selected){
-    $nodes=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
+    $nodes=@($definitions | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Acceptance helper function unavailable'}
     foreach($command in $nodes[0].FindAll({param($node)$node -is [Management.Automation.Language.CommandAst]},$true)){
         $commandName=$command.GetCommandName()
-        $callback=(-not $commandName -and $command.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and $command.CommandElements[0] -is [Management.Automation.Language.VariableExpressionAst] -and $command.CommandElements[0].VariablePath.UserPath -ceq 'Apply')
+        $callback=(-not $commandName -and $command.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and $command.CommandElements[0] -is [Management.Automation.Language.VariableExpressionAst] -and $command.CommandElements[0].VariablePath.UserPath -cin @('Apply','Capture','Resolve'))
         if(-not $callback -and $commandName -notin $allowed){throw 'Acceptance helper command boundary refused'}
     }
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
 $script:checks=0;$script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
+$script:closedContractCodes=@('capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
 function Assert-A([bool]$Value,[string]$Code){if(-not $Value){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('Acceptance contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-A([scriptblock]$Operation){$failed=$false;try{& $Operation | Out-Null}catch{$failed=$true};Assert-A $failed 'expected-refusal'}
 $script:g1='abcdef00-0000-0000-0000-000000000001';$script:g2='abcdef00-0000-0000-0000-000000000002'
@@ -184,6 +188,35 @@ try {
     Assert-A ($null -ne $aggregate -and $aggregate.InnerExceptions.Count -eq 2 -and ($script:actions -join ',') -ceq 'dns,dns-restore') 'operation-and-cleanup-errors-retained'
     New-ACase;$script:registryFailure='IPv4';Reject-A {Invoke-DNSAcceptanceRoundTrip 'doh' $script:applyFixture};Assert-A ($script:actions.Count -eq 0) 'capture-failure-no-operation'
     New-ACase;Reject-A {Invoke-DNSAcceptanceRoundTrip 'invalid' $script:applyFixture};Assert-A ($script:actions.Count -eq 0 -and $script:dnsReads -eq 0) 'invalid-method-no-operation'
+    New-ACase;$capturePhase='';[void](Read-DNSAcceptanceState ([ref]$capturePhase));Assert-A ($capturePhase -ceq 'complete') 'capture-stage-complete'
+    New-ACase;$script:registryFailure='IPv6';$capturePhase='';$refused=$false
+    try{[void](Read-DNSAcceptanceState ([ref]$capturePhase))}catch{$refused=$true}
+    Assert-A ($refused -and $capturePhase -ceq 'registry-ipv6') 'capture-stage-refusal'
+    foreach($failure in @('none','baseline','capability','selected','configuration','configured-state','ordinary-resolver','restoration','restored-state','dual')){
+        New-ACase;$script:nativeBefore=Read-DNSAcceptanceState;Set-AConfigured 'doh';$script:nativeConfigured=Read-DNSAcceptanceState;$script:nativeAfter=Clone-A $script:nativeBefore
+        $script:nativeActions=[Collections.Generic.List[string]]::new();$script:nativeFailure=$failure;$script:nativeResolves=0
+        if($failure -ceq 'capability'){$script:nativeBefore.dohAvailable=$false;$script:nativeBefore.doh=@()}
+        if($failure -ceq 'selected'){$script:nativeBefore.adapters[0].selected=$false}
+        if($failure -ceq 'configured-state'){$script:nativeConfigured.adapters[0].ipv4.servers=@('192.0.2.53')}
+        if($failure -ceq 'restoration'){$script:nativeAfter=Clone-A $script:nativeConfigured}
+        if($failure -ceq 'restored-state'){$script:nativeAfter.adapters[0].ipv4.mode='static';$script:nativeAfter.adapters[0].ipv4.servers=@('198.51.100.53')}
+        $result=Invoke-NativeDoHScenario -Apply {param($request)
+            $script:nativeActions.Add($request.action)
+            if(($request.action -ceq 'dns' -and $script:nativeFailure -cin @('configuration','dual')) -or ($request.action -ceq 'dns-restore' -and $script:nativeFailure -cin @('restoration','dual'))){throw 'fixture-native-boundary'}
+        } -Capture {
+            if($script:nativeActions.Count -eq 0){if($script:nativeFailure -ceq 'baseline'){throw 'fixture-native-baseline'};return $script:nativeBefore}
+            if($script:nativeActions[$script:nativeActions.Count-1] -ceq 'dns'){return $script:nativeConfigured};return $script:nativeAfter
+        } -Resolve {$script:nativeResolves++;if($script:nativeFailure -ceq 'ordinary-resolver'){throw 'fixture-native-resolver'}}
+        $expectedOperation=if($failure -cin @('baseline','capability','selected')){'baseline'}elseif($failure -ceq 'dual'){'configuration'}elseif($failure -cin @('configuration','configured-state','ordinary-resolver')){$failure}else{'none'}
+        $expectedRestoration=if($failure -ceq 'dual'){'restoration'}elseif($failure -ceq 'restoration'){'restoration'}else{'none'}
+        $expectedVerification=if($failure -cin @('restoration','restored-state')){'restored-state'}else{'none'}
+        Assert-A ($result.verificationCode -ceq $expectedVerification -and $result.operationCode -ceq $expectedOperation -and $result.restorationCode -ceq $expectedRestoration -and ($result.outcome -ceq 'passed') -eq ($failure -ceq 'none')) 'native-coordinator-result'
+        if($expectedOperation -ceq 'baseline'){
+            Assert-A ($script:nativeActions.Count -eq 0 -and -not $result.configurationAttempted -and -not $result.restorationAttempted) 'native-coordinator-cleanup'
+        } else {
+            Assert-A (($script:nativeActions -join ',') -ceq 'dns,dns-restore' -and $result.restorationAttempted -and $result.restoredStateVerified -eq ($expectedVerification -ceq 'none')) 'native-coordinator-cleanup'
+        }
+    }
     foreach($file in @('scripts/test-windows-integration.ps1','scripts/test-windows-reboot.ps1')){
         $tokens=$null;$issues=$null;$native=[Management.Automation.Language.Parser]::ParseFile((Join-Path $project $file),[ref]$tokens,[ref]$issues)
         $calls=@($native.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true) | ForEach-Object {$_.GetCommandName()})

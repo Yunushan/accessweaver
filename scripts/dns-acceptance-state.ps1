@@ -16,7 +16,8 @@ function Convert-DNSAcceptanceAddress([object]$Value,[string]$Family,[int]$Inter
     }
     return $parsed.ToString()
 }
-function Read-DNSAcceptanceState {
+function Read-DNSAcceptanceState([ref]$Stage) {
+    if($null -ne $Stage){$Stage.Value='inventory'}
     $inventory=@(Get-NetAdapter -ErrorAction Stop)
     if($inventory.Count -eq 0){throw 'DNS acceptance adapter inventory is empty'}
     $known=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase);$adapters=@()
@@ -27,11 +28,13 @@ function Read-DNSAcceptanceState {
         foreach($family in @('IPv4','IPv6')){
             $service=if($family -eq 'IPv4'){'Tcpip'}else{'Tcpip6'}
             $path='HKLM:\SYSTEM\CurrentControlSet\Services\'+$service+'\Parameters\Interfaces\{'+$guid+'}'
+            if($null -ne $Stage){$Stage.Value=if($family -ceq 'IPv4'){'registry-ipv4'}else{'registry-ipv6'}}
             $items=@(Get-ItemProperty -LiteralPath $path -ErrorAction Stop)
             if($items.Count -ne 1 -or $null -eq $items[0]){throw 'DNS acceptance registry inspection incomplete'}
             $property=$items[0].PSObject.Properties['NameServer'];$value=if($null -ne $property){$property.Value}else{$null}
             if($null -ne $value -and $value -isnot [string]){throw 'DNS acceptance registry mode is malformed'}
             $mode=if([string]::IsNullOrWhiteSpace($value)){'dhcp'}else{'static'}
+            if($null -ne $Stage){$Stage.Value=if($family -ceq 'IPv4'){'servers-ipv4'}else{'servers-ipv6'}}
             $settings=@(Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily $family -ErrorAction Stop)
             if($settings.Count -ne 1 -or $null -eq $settings[0]){throw 'DNS acceptance address inspection incomplete'}
             $servers=@()
@@ -45,9 +48,11 @@ function Read-DNSAcceptanceState {
         }
         $adapters+=@{guid=$guid;selected=($adapter.Status -eq 'Up' -and $adapter.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN');ipv4=$families.IPv4;ipv6=$families.IPv6}
     }
+    if($null -ne $Stage){$Stage.Value='doh-capability'}
     $available=[bool](Get-Command 'Get-DnsClientDohServerAddress' -ErrorAction SilentlyContinue)
     $doh=@();$seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     if($available){
+        if($null -ne $Stage){$Stage.Value='doh-metadata'}
         foreach($entry in @(Get-DnsClientDohServerAddress -ErrorAction Stop)){
             if($null -eq $entry){throw 'DNS acceptance DoH inspection incomplete'}
             $address=Convert-DNSAcceptanceAddress $entry.ServerAddress ''
@@ -55,6 +60,7 @@ function Read-DNSAcceptanceState {
             $doh+=@{address=$address;template=$entry.DohTemplate;fallback=$entry.AllowFallbackToUdp;upgrade=$entry.AutoUpgrade}
         }
     }
+    if($null -ne $Stage){$Stage.Value='complete'}
     return @{schemaVersion=1;adapters=@($adapters);dohAvailable=$available;doh=@($doh)}
 }
 function Get-DNSAcceptanceIndex([object]$State) {
