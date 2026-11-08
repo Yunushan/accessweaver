@@ -103,7 +103,7 @@ $script:cliCount=0;$script:joined=0;$script:overflow=$false;$script:captureFaile
 $script:captureStage='not-started';$script:captureProgress=@{adapterTotal=0;adapterOrdinal=0;selected=$false};$script:configureExit=-1;$script:restoreExit=-1;$script:answers=0
 $script:forwarderPeerClosures=0;$script:forwarderFailureCode='none';$script:rollbackSnapshotRemoved=$false;$script:rollbackServiceRemoved=$false;$script:resolverVerificationRejected=$false;$script:configureElapsedMilliseconds=0;$script:forwarder=$null;$script:forwarderRequests=0;$script:forwarderResponses=0;$script:forwarderFailed=$false;$script:configuredDuringRejectedApply=$false;$script:installedComponentVerified=$false;$script:rollbackBefore=$null;$rollbackScenario=$null;$script:baselineAnswers=0;$script:rollbackPoll=$null
 $script:failureServiceStopped=$false;$script:resolverProcessExited=$false;$script:failedResolverObserved=$false;$script:restoredAnswers=0
-$staticFixture=$null;$script:staticObservation=@{captured=$false;mode='unknown';count=-1;firstMatches=$false;secondMatches=$false};$script:staticPhase='not-started';$script:staticFailurePhase='none';$script:staticFailureCode='none';$script:staticPlan=$null;$script:staticSnapshotNormalized=$false
+$staticFixture=$null;$script:staticFirewallProtected=$false;$script:staticFirewallRemoved=$false;$script:staticObservation=@{captured=$false;mode='unknown';count=-1;firstMatches=$false;secondMatches=$false};$script:staticPhase='not-started';$script:staticFailurePhase='none';$script:staticFailureCode='none';$script:staticPlan=$null;$script:staticSnapshotNormalized=$false
 $component=$null;$serviceRunning=$false;$serviceAutomatic=$false;$serviceRemoved=$false;$script:cleanupExit=-1
 $adapterShapes=@();$probeOutcome='not-started';$environmentVerified=$false;$nativeProcessVerified=$false;$binaryVerified=$false;$snapshotRemoved=$false;$scenario=$null;$outcome='failed';$code='environment-guard'
 try {
@@ -282,13 +282,32 @@ public static class AccessWeaverNativeDoHIdentity {
         if($addresses.Count -eq 0){throw 'No active native link-local interface'}
         # Save the private original before the first native change. No address,
         # GUID or adapter index is copied to the public fixed report.
-        $local=[Net.IPAddress]$addresses[0].IPAddress;$local.ScopeId=0
-        $script:staticPlan=@{guid=$record.guid;original=$record.ipv6;servers=@($local.ToString(),'::1')}
-        # Both staged DNS destinations belong to this fixture machine. No peer
-        # responder or encrypted/IPv6 query transport is claimed by this test.
-        $local.ScopeId=[long]$row.InterfaceIndex
-        $script:staticPhase='setting'
-        $row | Set-DnsClientServerAddress -ServerAddresses @($local.ToString(),'::1') -ErrorAction Stop
+        $script:staticPhase='firewall-guard'
+        $profiles=@(Get-NetFirewallProfile -PolicyStore ActiveStore -ErrorAction Stop)
+        if($profiles.Count -ne 3 -or @($profiles | Where-Object {[string]$_.Enabled -cne 'True' -or [string]$_.AllowLocalFirewallRules -cnotin @('True','NotConfigured') -or @($_.DisabledInterfaceAliases | Where-Object {-not [string]::IsNullOrWhiteSpace([string]$_) -and [string]$_ -cne 'NotConfigured'}).Count -ne 0}).Count -ne 0 -or (Get-Service -Name 'MpsSvc' -ErrorAction Stop).Status -ne 'Running'){throw 'Static fixture firewall policy unavailable'}
+        $servers=@('fe80::53','fe80::54')
+        foreach($address in @(Get-NetIPAddress -AddressFamily IPv6 -Type Unicast -ErrorAction Stop)){
+            $parsed=[Net.IPAddress]$address.IPAddress;$parsed.ScopeId=0
+            if($parsed.ToString() -cin $servers){throw 'Static fixture address is local'}
+        }
+        $script:staticPlan=@{guid=$record.guid;original=$record.ipv6;servers=$servers;rules=@()}
+        # No DNS query may leave for the staged non-local addresses. Require
+        # enabled firewall profiles and verify both active protocol rules first.
+        foreach($protocol in @('UDP','TCP')){
+            $script:staticPhase='firewall-create';$name='AccessWeaver-NativeStatic-'+[guid]::NewGuid().ToString('N')
+            if(@(Get-NetFirewallRule -PolicyStore PersistentStore -ErrorAction Stop | Where-Object {$_.Name -ceq $name}).Count -ne 0){throw 'Static fixture firewall identity collision'}
+            $script:staticPlan.rules+=@($name)
+            [void](New-NetFirewallRule -Name $name -DisplayName 'AccessWeaver native static DNS fixture' -Group 'AccessWeaver native qualification' -Direction Outbound -Action Block -Enabled True -Profile Any -Protocol $protocol -RemotePort 53 -RemoteAddress $servers -PolicyStore PersistentStore -ErrorAction Stop)
+            $script:staticPhase='firewall-verification'
+            $rules=@(Get-NetFirewallRule -PolicyStore ActiveStore -ErrorAction Stop | Where-Object {$_.Name -ceq $name})
+            if($rules.Count -ne 1 -or [string]$rules[0].Enabled -cne 'True' -or [string]$rules[0].Action -cne 'Block' -or [string]$rules[0].Direction -cne 'Outbound' -or [string]$rules[0].Profile -cne 'Any'){throw 'Static fixture firewall rule not active'}
+            $ports=@($rules[0] | Get-NetFirewallPortFilter -ErrorAction Stop);$remote=@($rules[0] | Get-NetFirewallAddressFilter -ErrorAction Stop)
+            $number=if($protocol -ceq 'UDP'){'17'}else{'6'}
+            if($ports.Count -ne 1 -or [string]$ports[0].Protocol -cnotin @($protocol,$number) -or (@($ports[0].RemotePort) -join ',') -cne '53' -or $remote.Count -ne 1 -or @($remote[0].RemoteAddress).Count -ne 2){throw 'Static fixture firewall filters differ'}
+            foreach($server in $servers){if(@($remote[0].RemoteAddress | Where-Object {$_ -cin @($server,($server+'/128'))}).Count -ne 1){throw 'Static fixture firewall filters differ'}}
+        }
+        $script:staticFirewallProtected=$true;$script:staticPhase='setting'
+        $row | Set-DnsClientServerAddress -ServerAddresses @(('fe80::53%'+$row.InterfaceIndex),('fe80::54%'+$row.InterfaceIndex)) -ErrorAction Stop
         $script:staticPhase='stage-verification'
         $expected=ConvertFrom-Json -InputObject ($Before|ConvertTo-Json -Depth 12)
         $target=@($expected.adapters | Where-Object {$_.guid -ceq $record.guid})[0]
@@ -302,18 +321,34 @@ public static class AccessWeaverNativeDoHIdentity {
     function Remove-NativeStaticIPv6Fixture([object]$Before) {
         # A product snapshot remains authoritative for product-touched families
         # and global DoH state. Do not delete it to make fixture teardown pass.
-        $script:staticPhase='product-teardown'
         try {
-            if(Test-Path -LiteralPath (Join-Path $machineRoot 'profiles\dns-original.json')){Invoke-NativeDoHCLI @{action='dns-restore'}}
+            $script:staticPhase='product-teardown'
+            try {
+                if(Test-Path -LiteralPath (Join-Path $machineRoot 'profiles\dns-original.json')){Invoke-NativeDoHCLI @{action='dns-restore'}}
+            } finally {
+                if($null -ne $script:staticPlan){
+                    $script:staticPhase='family-teardown'
+                    $row=Get-NativeStaticIPv6Row $script:staticPlan.guid;$original=$script:staticPlan.original
+                    if($original.mode -ceq 'dhcp'){$row | Set-DnsClientServerAddress -ResetServerAddresses -ErrorAction Stop}
+                    elseif($original.mode -ceq 'static'){
+                        $servers=@();foreach($value in @($original.servers)){$address=[Net.IPAddress]$value;if($address.IsIPv6LinkLocal){$address.ScopeId=[long]$row.InterfaceIndex};$servers+=@($address.ToString())}
+                        $row | Set-DnsClientServerAddress -ServerAddresses $servers -ErrorAction Stop
+                    }else{throw 'Native fixture original mode unavailable'}
+                }
+            }
         } finally {
-            if($null -ne $script:staticPlan){
-                $script:staticPhase='family-teardown'
-                $row=Get-NativeStaticIPv6Row $script:staticPlan.guid;$original=$script:staticPlan.original
-                if($original.mode -ceq 'dhcp'){$row | Set-DnsClientServerAddress -ResetServerAddresses -ErrorAction Stop}
-                elseif($original.mode -ceq 'static'){
-                    $servers=@();foreach($value in @($original.servers)){$address=[Net.IPAddress]$value;if($address.IsIPv6LinkLocal){$address.ScopeId=[long]$row.InterfaceIndex};$servers+=@($address.ToString())}
-                    $row | Set-DnsClientServerAddress -ServerAddresses $servers -ErrorAction Stop
-                }else{throw 'Native fixture original mode unavailable'}
+            if($null -ne $script:staticPlan -and @($script:staticPlan.rules).Count -gt 0){
+                $script:staticPhase='firewall-teardown';$failed=$false
+                foreach($name in @($script:staticPlan.rules)){
+                    try {
+                        $owned=@(Get-NetFirewallRule -PolicyStore PersistentStore -ErrorAction Stop | Where-Object {$_.Name -ceq $name})
+                        if($owned.Count -ne 1 -or $owned[0].DisplayName -cne 'AccessWeaver native static DNS fixture' -or $owned[0].Group -cne 'AccessWeaver native qualification'){throw 'Static fixture firewall ownership differs'}
+                        Remove-NetFirewallRule -Name $name -PolicyStore PersistentStore -ErrorAction Stop
+                        if(@(Get-NetFirewallRule -PolicyStore PersistentStore -ErrorAction Stop | Where-Object {$_.Name -ceq $name}).Count -ne 0){throw 'Static fixture firewall removal incomplete'}
+                    }catch{$failed=$true}
+                }
+                $script:staticFirewallRemoved=-not $failed
+                if($failed){throw 'Static fixture firewall cleanup failed'}
             }
         }
     }
@@ -432,7 +467,7 @@ public static class AccessWeaverNativeDoHIdentity {
     }
     $snapshotRemoved=-not (Test-Path -LiteralPath (Join-Path $machineRoot 'profiles\dns-original.json'))
     $scenarioPassed=($scenario.outcome -ceq 'passed' -and $snapshotRemoved -and $script:cliCount -eq $(if($Method -ceq 'dnscrypt'){3}else{2}) -and $script:joined -eq $script:cliCount -and ($Method -ceq 'doh' -or ($serviceRunning -and $serviceAutomatic -and $serviceRemoved -and $script:cleanupExit -eq 0)) -and -not $script:overflow -and -not $script:captureFailed)
-    if($ScenarioKind -ceq 'static-ipv6'){$scenarioPassed=($scenarioPassed -and $staticFixture.outcome -ceq 'passed' -and $script:staticSnapshotNormalized)}
+    if($ScenarioKind -ceq 'static-ipv6'){$scenarioPassed=($scenarioPassed -and $staticFixture.outcome -ceq 'passed' -and $script:staticSnapshotNormalized -and $script:staticFirewallProtected -and $script:staticFirewallRemoved)}
     if($ScenarioKind -ceq 'service-loss'){$scenarioPassed=($scenarioPassed -and $scenario.failureInjected -and $scenario.failedResolverVerified -and $scenario.restoredResolverVerified -and $script:failureServiceStopped -and $script:resolverProcessExited -and $script:failedResolverObserved -and $script:restoredAnswers -ge 1)}
     if($ScenarioKind -ceq 'verification-failure'){$scenarioPassed=($rollbackScenario.outcome -ceq 'passed' -and -not $rollbackScenario.emergencyRestoreAttempted -and $script:rollbackSnapshotRemoved -and $script:rollbackServiceRemoved -and $script:configureExit -ne 0 -and $script:resolverVerificationRejected -and $script:configureElapsedMilliseconds -ge 90000 -and $script:restoreExit -eq -1 -and $script:cliCount -eq 2 -and $script:joined -eq 2 -and $snapshotRemoved -and $serviceRunning -and $serviceAutomatic -and $serviceRemoved -and $script:cleanupExit -eq 0 -and $script:installedComponentVerified -and $script:configuredDuringRejectedApply -and $script:forwarderResponses -gt 0 -and -not $script:forwarderFailed -and -not $script:overflow -and -not $script:captureFailed)}
     $code='post-validation';$integrityVerified=$true
@@ -445,7 +480,7 @@ finally {
     # Fixed metadata only: no exception, account, path, DNS value or raw output.
     $parent=Get-Item -LiteralPath $reportParent.FullName -Force -ErrorAction Stop;Assert-NativeOrdinaryPath $ReportPath
     if($parent.CreationTimeUtc.Ticks -ne $reportCreated -or [IO.Directory]::GetFileSystemEntries($parent.FullName).Length -ne 0){throw 'Changed native report parent retained'}
-    $report=@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;platform='windows';architecture=$env:ACCESSWEAVER_EXPECT_GOARCH;goVersion=$env:GO_VERSION;edition=$PSVersionTable.PSEdition;version=$PSVersionTable.PSVersion.ToString();binarySHA256=$BinarySHA256;outcome=$outcome;code=$code;environmentVerified=$environmentVerified;nativeProcessVerified=$nativeProcessVerified;binaryVerified=$binaryVerified;scenario=$scenario;staticFixture=$staticFixture;staticObservation=$script:staticObservation;staticPhase=$script:staticPhase;staticFailurePhase=$script:staticFailurePhase;staticFailureCode=$script:staticFailureCode;staticSnapshotNormalized=$script:staticSnapshotNormalized;rollbackScenario=$rollbackScenario;rollbackSnapshotRemoved=$script:rollbackSnapshotRemoved;rollbackServiceRemoved=$script:rollbackServiceRemoved;resolverVerificationRejected=$script:resolverVerificationRejected;configureElapsedMilliseconds=$script:configureElapsedMilliseconds;forwarderPeerClosures=$script:forwarderPeerClosures;forwarderFailureCode=$script:forwarderFailureCode;forwarderRequests=$script:forwarderRequests;forwarderResponses=$script:forwarderResponses;forwarderFailed=$script:forwarderFailed;configuredDuringRejectedApply=$script:configuredDuringRejectedApply;installedComponentVerified=$script:installedComponentVerified;baselineResolverAnswers=$script:baselineAnswers;probeOutcome=$probeOutcome;adapterShapes=@($adapterShapes);captureStage=$script:captureStage;captureProgress=$script:captureProgress;cliCount=$script:cliCount;processesJoined=$script:joined;configureExitCode=$script:configureExit;restoreExitCode=$script:restoreExit;outputOverflow=$script:overflow;captureFailed=$script:captureFailed;diagnosticWaitExceeded=$script:diagnosticWaitExceeded;ordinaryResolverAnswers=$script:answers;snapshotRemoved=$snapshotRemoved;method=$Method;scenarioKind=$ScenarioKind;failureServiceStopped=$script:failureServiceStopped;resolverProcessExited=$script:resolverProcessExited;failedResolverObserved=$script:failedResolverObserved;restoredResolverAnswers=$script:restoredAnswers;componentRequestAttempts=$script:componentRequestAttempts;componentRetryStatus=$script:componentRetryStatus;componentStage=$script:componentStage;componentFailureCode=$script:componentFailureCode;componentHTTPStatus=$script:componentHTTPStatus;componentDownloadedBytes=$script:componentDownloadedBytes;componentArchiveEntries=$script:componentArchiveEntries;componentVersion=$(if($component){$component.version}else{''});componentArchiveSHA256=$(if($component){$component.archiveSHA256}else{''});componentBinarySHA256=$(if($component){$component.binarySHA256}else{''});componentStaged=($null -ne $component);serviceRunning=$serviceRunning;serviceAutomatic=$serviceAutomatic;serviceRemoved=$serviceRemoved;cleanupExitCode=$script:cleanupExit;encryptedTrafficObserved=$false;rebootExercised=$false;dnscryptExercised=($Method -ceq 'dnscrypt' -and (($null -ne $scenario -and $scenario.configurationAttempted) -or ($null -ne $rollbackScenario -and $rollbackScenario.configurationAttempted)));nativeDnsQualified=$false;productionQualificationComplete=$false}
+    $report=@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;platform='windows';architecture=$env:ACCESSWEAVER_EXPECT_GOARCH;goVersion=$env:GO_VERSION;edition=$PSVersionTable.PSEdition;version=$PSVersionTable.PSVersion.ToString();binarySHA256=$BinarySHA256;outcome=$outcome;code=$code;environmentVerified=$environmentVerified;nativeProcessVerified=$nativeProcessVerified;binaryVerified=$binaryVerified;scenario=$scenario;staticFixture=$staticFixture;staticFirewallProtected=$script:staticFirewallProtected;staticFirewallRemoved=$script:staticFirewallRemoved;staticObservation=$script:staticObservation;staticPhase=$script:staticPhase;staticFailurePhase=$script:staticFailurePhase;staticFailureCode=$script:staticFailureCode;staticSnapshotNormalized=$script:staticSnapshotNormalized;rollbackScenario=$rollbackScenario;rollbackSnapshotRemoved=$script:rollbackSnapshotRemoved;rollbackServiceRemoved=$script:rollbackServiceRemoved;resolverVerificationRejected=$script:resolverVerificationRejected;configureElapsedMilliseconds=$script:configureElapsedMilliseconds;forwarderPeerClosures=$script:forwarderPeerClosures;forwarderFailureCode=$script:forwarderFailureCode;forwarderRequests=$script:forwarderRequests;forwarderResponses=$script:forwarderResponses;forwarderFailed=$script:forwarderFailed;configuredDuringRejectedApply=$script:configuredDuringRejectedApply;installedComponentVerified=$script:installedComponentVerified;baselineResolverAnswers=$script:baselineAnswers;probeOutcome=$probeOutcome;adapterShapes=@($adapterShapes);captureStage=$script:captureStage;captureProgress=$script:captureProgress;cliCount=$script:cliCount;processesJoined=$script:joined;configureExitCode=$script:configureExit;restoreExitCode=$script:restoreExit;outputOverflow=$script:overflow;captureFailed=$script:captureFailed;diagnosticWaitExceeded=$script:diagnosticWaitExceeded;ordinaryResolverAnswers=$script:answers;snapshotRemoved=$snapshotRemoved;method=$Method;scenarioKind=$ScenarioKind;failureServiceStopped=$script:failureServiceStopped;resolverProcessExited=$script:resolverProcessExited;failedResolverObserved=$script:failedResolverObserved;restoredResolverAnswers=$script:restoredAnswers;componentRequestAttempts=$script:componentRequestAttempts;componentRetryStatus=$script:componentRetryStatus;componentStage=$script:componentStage;componentFailureCode=$script:componentFailureCode;componentHTTPStatus=$script:componentHTTPStatus;componentDownloadedBytes=$script:componentDownloadedBytes;componentArchiveEntries=$script:componentArchiveEntries;componentVersion=$(if($component){$component.version}else{''});componentArchiveSHA256=$(if($component){$component.archiveSHA256}else{''});componentBinarySHA256=$(if($component){$component.binarySHA256}else{''});componentStaged=($null -ne $component);serviceRunning=$serviceRunning;serviceAutomatic=$serviceAutomatic;serviceRemoved=$serviceRemoved;cleanupExitCode=$script:cleanupExit;encryptedTrafficObserved=$false;rebootExercised=$false;dnscryptExercised=($Method -ceq 'dnscrypt' -and (($null -ne $scenario -and $scenario.configurationAttempted) -or ($null -ne $rollbackScenario -and $rollbackScenario.configurationAttempted)));nativeDnsQualified=$false;productionQualificationComplete=$false}
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($report|ConvertTo-Json -Depth 5 -Compress));if($bytes.Length -gt 16384){throw 'Native report exceeds fixed metadata bound'}
     $stream=[IO.FileStream]::new($ReportPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush()}finally{$stream.Dispose()}

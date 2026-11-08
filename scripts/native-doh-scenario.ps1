@@ -197,6 +197,14 @@ function Get-NativeDNSStaticFailure([Exception]$Exception) {
             'No active native link-local interface' {return 'no-link-local'}
             'Static fixture adapter identity changed' {return 'adapter-changed'}
             'Static fixture family changed' {return 'family-changed'}
+            'Static fixture firewall policy unavailable' {return 'firewall-policy'}
+            'Static fixture address is local' {return 'fixture-address-local'}
+            'Static fixture firewall identity collision' {return 'firewall-identity'}
+            'Static fixture firewall rule not active' {return 'firewall-active'}
+            'Static fixture firewall filters differ' {return 'firewall-filter'}
+            'Static fixture firewall ownership differs' {return 'firewall-owner'}
+            'Static fixture firewall removal incomplete' {return 'firewall-removal'}
+            'Static fixture firewall cleanup failed' {return 'firewall-cleanup'}
             'DNS acceptance adapter inventory changed' {return 'state-inventory'}
             'DNS acceptance original adapter is missing' {return 'state-adapter'}
             'DNS acceptance original DHCP/static mode differs' {return 'state-mode'}

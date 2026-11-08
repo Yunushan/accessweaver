@@ -87,7 +87,7 @@ function Get-DnsClientServerAddress {
 }
 function Get-Command {[CmdletBinding()]param([string]$Name);if($Name -cne 'Get-DnsClientDohServerAddress'){throw 'Unexpected acceptance command discovery'};if($script:available){return [pscustomobject]@{Name=$Name}}}
 function Get-DnsClientDohServerAddress {[CmdletBinding()]param();if($script:dohFailure){throw 'fixture-doh-inspection'};return $script:doh}
-function Get-Service {[CmdletBinding()]param($Name);if($Name -cne 'AccessWeaver-dnscrypt'){throw 'Unexpected acceptance service'};return [pscustomobject]@{Status=$script:serviceStatus}}
+function Get-Service {[CmdletBinding()]param($Name);if($Name -ceq 'MpsSvc'){return [pscustomobject]@{Status='Running'}};if($Name -cne 'AccessWeaver-dnscrypt'){throw 'Unexpected acceptance service'};return [pscustomobject]@{Status=$script:serviceStatus}}
 function Clear-DnsClientCache {[CmdletBinding()]param()}
 function Resolve-DnsName {[CmdletBinding()]param($Name,[switch]$DnsOnly,[switch]$QuickTimeout);if($Name -cne 'example.com' -or -not $DnsOnly -or -not $QuickTimeout){throw 'Unexpected acceptance resolver boundary'};if($script:resolveFailure){throw 'fixture-resolver-failure'};return [pscustomobject]@{Name='example.com'}}
 function Set-AConfigured([string]$Method) {
@@ -378,6 +378,7 @@ try {
     Assert-A ((Get-NativeDNSStaticFailure ([InvalidOperationException]::new('synthetic-wrapper',[InvalidCastException]::new('synthetic-private-value')))) -ceq 'cast') 'static-closed-failure-map'
     Assert-A ((Get-NativeDNSStaticFailure ([InvalidOperationException]::new('synthetic-private-value'))) -ceq 'unexpected') 'static-closed-failure-map'
     foreach($pair in @(@('DNS acceptance adapter inventory changed','state-inventory'),@('DNS acceptance original adapter is missing','state-adapter'),@('DNS acceptance original DHCP/static mode differs','state-mode'),@('DNS acceptance dormant registry state differs','state-dormant'),@('DNS acceptance original static server count differs','state-count'),@('DNS acceptance original static server order or value differs','state-order'),@('DNS acceptance original DoH capability or inventory differs','state-doh-inventory'),@('DNS acceptance original DoH entry is missing','state-doh-entry'),@('DNS acceptance original DoH metadata differs','state-doh-metadata'))){Assert-A ((Get-NativeDNSStaticFailure ([InvalidOperationException]::new($pair[0]))) -ceq $pair[1]) 'static-closed-failure-map'}
+    foreach($pair in @(@('Static fixture firewall policy unavailable','firewall-policy'),@('Static fixture address is local','fixture-address-local'),@('Static fixture firewall identity collision','firewall-identity'),@('Static fixture firewall rule not active','firewall-active'),@('Static fixture firewall filters differ','firewall-filter'),@('Static fixture firewall ownership differs','firewall-owner'),@('Static fixture firewall removal incomplete','firewall-removal'),@('Static fixture firewall cleanup failed','firewall-cleanup'))){Assert-A ((Get-NativeDNSStaticFailure ([InvalidOperationException]::new($pair[0]))) -ceq $pair[1]) 'static-closed-failure-map'}
     # Execute the actual driver resolver callback under the roundtrip coordinator.
     # Its ScenarioKind parameter shadows the caller's static-ipv6 mode. All file,
     # CIM, service and resolver boundaries below are closed source mocks.
@@ -393,24 +394,50 @@ try {
     foreach($command in $resolver.ScriptBlock.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){
         if($command.GetCommandName() -cnotin @('Get-Service','Get-CimInstance','Get-Content','Join-Path','ConvertFrom-Json','Where-Object','Convert-DNSAcceptanceGuid','Get-NativeDNSAnswerCount')){throw 'Native source resolver callback boundary refused'}
     }
-    foreach($name in @('Get-NativeStaticIPv6Row','Set-NativeStaticIPv6Fixture')){
+    foreach($name in @('Get-NativeStaticIPv6Row','Set-NativeStaticIPv6Fixture','Remove-NativeStaticIPv6Fixture')){
         $nodes=@($driver.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq $name},$true));if($nodes.Count -ne 1){throw 'Static staging source is ambiguous'}
         foreach($command in $nodes[0].FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){
-            if($command.GetCommandName() -cnotin @('Get-NetAdapter','Where-Object','Convert-DNSAcceptanceGuid','Get-DnsClientServerAddress','Get-NativeStaticIPv6Row','Get-NetIPAddress','Set-DnsClientServerAddress','ConvertFrom-Json','ConvertTo-Json','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored')){throw 'Static staging source boundary refused'}
+            if($command.GetCommandName() -cnotin @('Get-NetAdapter','Where-Object','Convert-DNSAcceptanceGuid','Get-DnsClientServerAddress','Get-NativeStaticIPv6Row','Get-NetIPAddress','Set-DnsClientServerAddress','ConvertFrom-Json','ConvertTo-Json','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','New-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Remove-NetFirewallRule','Test-Path','Join-Path','Invoke-NativeDoHCLI')){throw 'Static staging source boundary refused'}
         }
         . ([scriptblock]::Create($nodes[0].Extent.Text))
     }
-    function Get-NetIPAddress {[CmdletBinding()]param($InterfaceIndex,$AddressFamily,$Type);if($InterfaceIndex -ne 77 -or $AddressFamily -cne 'IPv6' -or $Type -cne 'Unicast'){throw 'Unexpected source address inspection'};return [pscustomobject]@{IPAddress='fe80::53%77';AddressState='Preferred'}}
+    $machineRoot=[IO.Path]::GetTempPath();$script:staticSnapshotPath=Join-Path $machineRoot 'profiles\dns-original.json'
+    function Get-NetIPAddress {[CmdletBinding()]param($InterfaceIndex,$AddressFamily,$Type);if(($null -ne $InterfaceIndex -and $InterfaceIndex -ne 77) -or $AddressFamily -cne 'IPv6' -or $Type -cne 'Unicast'){throw 'Unexpected source address inspection'};return [pscustomobject]@{IPAddress='fe80::a77%77';AddressState='Preferred'}}
     function Set-DnsClientServerAddress {
-        [CmdletBinding()]param([Parameter(ValueFromPipeline)]$InputObject,[string[]]$ServerAddresses)
+        [CmdletBinding()]param([Parameter(ValueFromPipeline)]$InputObject,[string[]]$ServerAddresses,[switch]$ResetServerAddresses)
         process {
             if($InputObject.InterfaceIndex -ne 77 -or $InputObject.AddressFamily -ne 23){throw 'Unexpected source static family write'}
-            $script:data[$script:g1].mode6='static';$script:data[$script:g1].servers6=@($ServerAddresses)
+            $script:data[$script:g1].mode6=if($ResetServerAddresses){'dhcp'}else{'static'};$script:data[$script:g1].servers6=if($ResetServerAddresses){@()}else{@($ServerAddresses)}
+            if($script:staticStageFault -ceq 'family-set' -and $script:staticStageFaultPending){$script:staticStageFaultPending=$false;throw 'source-partial-family-set'}
         }
     }
-    New-ACase;$before=Read-DNSAcceptanceState;$script:staticPlan=$null;$stagePassed=$false
-    try{$stagePassed=Set-NativeStaticIPv6Fixture $before}catch{}
-    Assert-A ($stagePassed -is [bool] -and $stagePassed -and $script:staticObservation.captured -and $script:staticObservation.mode -ceq 'static' -and $script:staticObservation.count -eq 2 -and $script:staticObservation.firstMatches -and $script:staticObservation.secondMatches) 'static-stage-source'
+    function Get-NetFirewallProfile {[CmdletBinding()]param($PolicyStore);if($PolicyStore -cne 'ActiveStore'){throw 'Unexpected source firewall store'};foreach($name in @('Domain','Private','Public')){[pscustomobject]@{Name=$name;Enabled=$(if($script:staticStageFault -ceq 'profile-disabled'){'False'}else{'True'});AllowLocalFirewallRules=$(if($script:staticStageFault -ceq 'local-rules-disabled'){'False'}else{'NotConfigured'});DisabledInterfaceAliases=@('NotConfigured')}}}
+    function Get-NetFirewallRule {[CmdletBinding()]param($PolicyStore);if($PolicyStore -cnotin @('ActiveStore','PersistentStore')){throw 'Unexpected source firewall store'};foreach($entry in $script:fixtureRules.Values){$entry}}
+    function New-NetFirewallRule {
+        [CmdletBinding()]param($Name,$DisplayName,$Group,$Direction,$Action,$Enabled,$Profile,$Protocol,$RemotePort,[string[]]$RemoteAddress,$PolicyStore)
+        if($Name -cnotmatch '^AccessWeaver-NativeStatic-[a-f0-9]{32}$' -or $script:fixtureRules.ContainsKey($Name) -or $PolicyStore -cne 'PersistentStore' -or $Profile -cne 'Any' -or $Protocol -cnotin @('UDP','TCP') -or [string]$RemotePort -cne '53' -or ($RemoteAddress -join ',') -cne 'fe80::53,fe80::54'){throw 'Unexpected source firewall mutation'}
+        $script:fixtureRules[$Name]=[pscustomobject]@{Name=$Name;DisplayName=$DisplayName;Group=$Group;Direction=$Direction;Action=$Action;Enabled=$Enabled;Profile=$Profile;Protocol=$Protocol;RemotePort=[string]$RemotePort;RemoteAddress=@($RemoteAddress)}
+        if($script:staticStageFault -ceq 'create-second' -and $script:fixtureRules.Count -eq 2){throw 'source-partial-firewall-create'}
+    }
+    function Get-NetFirewallPortFilter {
+        [CmdletBinding()]param([Parameter(ValueFromPipeline)]$InputObject)
+        process {if(-not $script:fixtureRules.ContainsKey($InputObject.Name)){throw 'Unexpected source firewall inspection'};[pscustomobject]@{Protocol=$InputObject.Protocol;RemotePort=$(if($script:staticStageFault -ceq 'active-filter'){'54'}else{$InputObject.RemotePort})}}
+    }
+    function Get-NetFirewallAddressFilter {
+        [CmdletBinding()]param([Parameter(ValueFromPipeline)]$InputObject)
+        process {if(-not $script:fixtureRules.ContainsKey($InputObject.Name)){throw 'Unexpected source firewall inspection'};[pscustomobject]@{RemoteAddress=$(if($script:staticStageFault -ceq 'active-address'){@('fe80::53','fe80::53')}elseif($script:staticStageFault -ceq 'cidr'){@($InputObject.RemoteAddress | ForEach-Object {$_+'/128'})}else{@($InputObject.RemoteAddress)})}}
+    }
+    function Remove-NetFirewallRule {[CmdletBinding()]param($Name,$PolicyStore);if($PolicyStore -cne 'PersistentStore' -or -not $script:fixtureRules.ContainsKey($Name)){throw 'Unexpected source firewall retirement'};$script:fixtureRules.Remove($Name)}
+    function Test-Path {[CmdletBinding()]param($LiteralPath);if($LiteralPath -cne $script:staticSnapshotPath){throw 'Unexpected source snapshot inspection'};return $false}
+    function Invoke-NativeDoHCLI {throw 'Product execution forbidden in source staging fixture'}
+    foreach($failure in @('none','cidr','create-second','active-filter','active-address','family-set','profile-disabled','local-rules-disabled')){
+        New-ACase;$before=Read-DNSAcceptanceState;$script:staticPlan=$null;$script:fixtureRules=@{};$script:staticStageFault=$failure;$script:staticStageFaultPending=$true;$script:staticFirewallProtected=$false;$script:staticFirewallRemoved=$false;$stagePassed=$false
+        try{$stagePassed=Set-NativeStaticIPv6Fixture $before}catch{}
+        Assert-A ($stagePassed -is [bool] -and $stagePassed -eq ($failure -cin @('none','cidr'))) 'static-stage-source'
+        if($failure -cin @('none','cidr')){Assert-A ($script:staticFirewallProtected -and $script:staticObservation.captured -and $script:staticObservation.mode -ceq 'static' -and $script:staticObservation.count -eq 2 -and $script:staticObservation.firstMatches -and $script:staticObservation.secondMatches) 'static-stage-source'}
+        $removed=$false;try{Remove-NativeStaticIPv6Fixture $before;Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState);$removed=$true}catch{}
+        Assert-A ($removed -and $script:staticFirewallRemoved -eq ($failure -cnotin @('profile-disabled','local-rules-disabled')) -and $script:fixtureRules.Count -eq 0) 'static-stage-source'
+    }
     $body=$resolver.ScriptBlock.Extent.Text;$nativeResolve=[scriptblock]::Create($body.Substring(1,$body.Length-2))
     $machineRoot=[IO.Path]::GetTempPath();$script:staticSnapshotPath=Join-Path $machineRoot 'profiles\dns-original.json'
     function Get-Content {[CmdletBinding()]param($LiteralPath,[switch]$Raw);if($LiteralPath -cne $script:staticSnapshotPath -or -not $Raw){throw 'Unexpected source snapshot read'};return $script:staticSnapshotText}
