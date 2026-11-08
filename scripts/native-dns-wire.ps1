@@ -1,7 +1,12 @@
 # Native-only helpers. Definitions have no top-level effects. Never run locally.
 function New-NativeDNSWireState([string]$PrivateRoot,[string]$DecoderPath) {
     Assert-NativeOrdinaryPath $PrivateRoot
-    $node=(Get-Command node -CommandType Application -ErrorAction Stop).Source
+    # Application discovery may return multiple PATH matches. ProcessStartInfo
+    # needs one application filename, never an array converted to a string.
+    $applications=@(Get-Command node -CommandType Application -ErrorAction Stop)
+    if($applications.Count -eq 0 -or $applications[0].Path -isnot [string] -or [string]::IsNullOrWhiteSpace($applications[0].Path)){throw 'Wire decoder application'}
+    $node=$applications[0].Path
+    Assert-NativeOrdinaryPath $node
     $flags=@{}
     foreach($name in @('baselineResolverPassed','filtersVerified','captureStarted','captureStopped','captureBounded','plaintextBlocked','ordinaryQueryPassed','tlsObserved','tlsBlocked','blockedQueryRejected','tlsBlockRemoved','resumedQueryPassed','originalStateVerified','rulesRemoved','filtersRemoved','originalResolverPassed')){$flags[$name]=$false}
     return @{workdir=$PrivateRoot;processFailureCode='none';failureExitCode=0;failureStdoutChars=0;failureStderrChars=0;failureElapsedMilliseconds=0;captureFileCode='not-inspected';decoder=$DecoderPath;etlBytes=0;pcapBytes=0;filterRows=0;filterCode='none';cleanupAttempted=$false;cleanupCompleted=$false;phase='preflight';failurePhase='none';decoderCode='none';before=$null;owner=('aw'+[guid]::NewGuid().ToString('N').Substring(0,10));tool=(Join-Path $env:SystemRoot 'System32\pktmon.exe');node=$node;etl=(Join-Path $PrivateRoot 'PktMon.etl');pcap=(Join-Path $PrivateRoot 'wire.pcapng');filters=@();rules=@();startAttempted=$false;stopped=$false;processes=0;joined=0;processFailed=$false;flags=$flags;tlsFlows=0;outRecords=0;inRecords=0;providers=0}

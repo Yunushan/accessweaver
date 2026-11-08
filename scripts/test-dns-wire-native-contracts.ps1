@@ -19,7 +19,7 @@ foreach($definition in $definitions){
     . ([scriptblock]::Create($definition.Extent.Text))
 }
 function Assert-NativeOrdinaryPath([string]$Path) {}
-function Get-Command {param($Name,$CommandType,$ErrorAction);if($Name -cne 'node'){throw 'Source command refused'};return [pscustomobject]@{Source='node-source'}}
+function Get-Command {param($Name,$CommandType,$ErrorAction);if($Name -cne 'node'){throw 'Source command refused'};return @([pscustomobject]@{Path='node-source';Source='source-is-not-an-application-path'},[pscustomobject]@{Path='node-other';Source='other-source'})}
 function Assert-Wire([bool]$Condition){if(-not $Condition){throw 'Wire source assertion'}}
 function New-WireCase {
     $script:fault='';$script:filters=@{};$script:rules=@{};$script:running=$false;$script:restored=$true;$script:events=[Collections.Generic.List[string]]::new();$script:addOrdinal=0;$script:etlSize=4096;$script:pcapSize=3;$script:itemReads=0
@@ -116,6 +116,10 @@ function Reject-Wire([scriptblock]$Body){$rejected=$false;try{[void](& $Body)}ca
 $oldSystemRoot=$env:SystemRoot
 try {
     if(-not $env:SystemRoot){$env:SystemRoot=[IO.Path]::GetTempPath()}
+    Case-Wire 'application-discovery-selects-one-file-path' {
+        New-WireCase
+        Assert-Wire ($script:state.node -is [string] -and $script:state.node -ceq 'node-source')
+    }
     Case-Wire 'startup-errors-map-to-fixed-categories' {
         foreach($pair in @(@(2,'start-not-found'),@(5,'start-access'),@(193,'start-image'),@(267,'start-directory'),@(206,'start-path-bound'),@(740,'start-elevation'),@(1260,'start-policy'),@(1234,'start-os-other'))){
             $failure=[ComponentModel.Win32Exception]::new([int]$pair[0],'source-private-error')
