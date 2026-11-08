@@ -4,13 +4,13 @@ function New-NativeDNSWireState([string]$PrivateRoot,[string]$DecoderPath) {
     $node=(Get-Command node -CommandType Application -ErrorAction Stop).Source
     $flags=@{}
     foreach($name in @('baselineResolverPassed','filtersVerified','captureStarted','captureStopped','captureBounded','plaintextBlocked','ordinaryQueryPassed','tlsObserved','tlsBlocked','blockedQueryRejected','tlsBlockRemoved','resumedQueryPassed','originalStateVerified','rulesRemoved','filtersRemoved','originalResolverPassed')){$flags[$name]=$false}
-    return @{processFailureCode='none';failureExitCode=0;failureStdoutChars=0;failureStderrChars=0;failureElapsedMilliseconds=0;captureFileCode='not-inspected';decoder=$DecoderPath;etlBytes=0;pcapBytes=0;filterRows=0;filterCode='none';cleanupAttempted=$false;cleanupCompleted=$false;phase='preflight';failurePhase='none';decoderCode='none';before=$null;owner=('aw'+[guid]::NewGuid().ToString('N').Substring(0,10));tool=(Join-Path $env:SystemRoot 'System32\pktmon.exe');node=$node;etl=(Join-Path $PrivateRoot 'wire.etl');pcap=(Join-Path $PrivateRoot 'wire.pcapng');filters=@();rules=@();startAttempted=$false;stopped=$false;processes=0;joined=0;processFailed=$false;flags=$flags;tlsFlows=0;outRecords=0;inRecords=0;providers=0}
+    return @{workdir=$PrivateRoot;processFailureCode='none';failureExitCode=0;failureStdoutChars=0;failureStderrChars=0;failureElapsedMilliseconds=0;captureFileCode='not-inspected';decoder=$DecoderPath;etlBytes=0;pcapBytes=0;filterRows=0;filterCode='none';cleanupAttempted=$false;cleanupCompleted=$false;phase='preflight';failurePhase='none';decoderCode='none';before=$null;owner=('aw'+[guid]::NewGuid().ToString('N').Substring(0,10));tool=(Join-Path $env:SystemRoot 'System32\pktmon.exe');node=$node;etl=(Join-Path $PrivateRoot 'PktMon.etl');pcap=(Join-Path $PrivateRoot 'wire.pcapng');filters=@();rules=@();startAttempted=$false;stopped=$false;processes=0;joined=0;processFailed=$false;flags=$flags;tlsFlows=0;outRecords=0;inRecords=0;providers=0}
 }
 function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$Arguments,[byte[]]$InputBytes=$null) {
     if($State.processes -ge 128){throw 'Wire process bound'}
     $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$Program
     $quoted=@();foreach($arg in $Arguments){if($arg.Contains('"') -or $arg.Contains("`r") -or $arg.Contains("`n")){throw 'Wire argument shape'};$quoted+=@('"'+$arg+'"')}
-    $start.Arguments=$quoted -join ' ';$start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
+    $start.Arguments=$quoted -join ' ';$start.WorkingDirectory=$State.workdir;$start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.WindowStyle=[Diagnostics.ProcessWindowStyle]::Hidden
     $start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true;$start.RedirectStandardInput=($null -ne $InputBytes)
     $p=[Diagnostics.Process]::new();$p.StartInfo=$start;$started=$false;$wasJoined=$false;$captures=@();$bad=$false;$failureKind='none';$clock=$null;$write=$null;$closed=$null -eq $InputBytes
     try {
@@ -135,7 +135,7 @@ function Start-NativeDNSWireCapture([object]$State) {
         };throw
     };$State.flags.filtersVerified=$true
     $State.phase='capture-start';$State.startAttempted=$true
-    [void](Invoke-NativeDNSWireTool $State @('start','--capture','--comp','nics','--pkt-size','0','--flags','0x012','--file-name',$State.etl,'--file-size','16','--log-mode','memory'))
+    [void](Invoke-NativeDNSWireTool $State @('start','--capture','--comp','nics','--pkt-size','0','--flags','0x012','--file-name',$State.etl,'--file-size','16','--log-mode','circular'))
     $State.flags.captureStarted=$true
 }
 function Stop-NativeDNSWireCapture([object]$State) {
@@ -145,20 +145,24 @@ function Stop-NativeDNSWireCapture([object]$State) {
         $State.stopped=$true;$State.flags.captureStopped=$true
     }
 }
+function Get-NativeDNSWireItem([string]$Path) {
+    Assert-NativeOrdinaryPath $Path
+    return (Get-Item -LiteralPath $Path -Force -ErrorAction Stop)
+}
 function Measure-NativeDNSWireFile([object]$State,[string]$Kind) {
     if($Kind -cnotin @('etl','pcap')){throw 'Wire file kind'};$file=$State[$Kind]
-    try{Assert-NativeOrdinaryPath $file;$item=Get-Item -LiteralPath $file -Force -ErrorAction Stop}catch{$State.captureFileCode='unavailable';throw}
+    try{$item=Get-NativeDNSWireItem $file}catch{$State.captureFileCode='unavailable';throw}
     if($Kind -ceq 'etl'){$State.etlBytes=[Math]::Min(16777217,$item.Length)}else{$State.pcapBytes=[Math]::Min(16777217,$item.Length)}
     $State.captureFileCode='ordinary'
     if($item.PSIsContainer){$State.captureFileCode='container';throw 'Wire capture container'}
     if($item.Length -le 0){$State.captureFileCode='empty';throw 'Wire capture empty'}
-    if($item.Length -ge 16MB){$State.captureFileCode='oversized';throw 'Wire capture file bound'}
+    if($item.Length -gt 16MB){$State.captureFileCode='oversized';throw 'Wire capture file bound'}
 }
 function Read-NativeDNSWireCapture([object]$State) {
     Measure-NativeDNSWireFile $State 'etl';Measure-NativeDNSWireFile $State 'pcap'
     $stream=[IO.FileStream]::new($State.pcap,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)
     try{
-        $length=$stream.Length;if($length -le 0 -or $length -ge 16MB){throw 'Wire capture stream bound'};$bytes=[byte[]]::new([int]$length);$at=0
+        $length=$stream.Length;if($length -le 0 -or $length -gt 16MB){throw 'Wire capture stream bound'};$bytes=[byte[]]::new([int]$length);$at=0
         while($at -lt $bytes.Length){$count=$stream.Read($bytes,$at,$bytes.Length-$at);if($count -le 0){throw 'Wire capture read'};$at+=$count}
         if($stream.ReadByte() -ne -1){throw 'Wire capture grew'};$State.flags.captureBounded=$true;return ,$bytes
     }finally{$stream.Dispose()}
@@ -223,5 +227,5 @@ function Complete-NativeDNSWireCleanup([object]$State) {
 }
 function Get-NativeDNSWireSummary([object]$State) {
     $passed=($State.flags.Count -eq 16 -and @($State.flags.Values | Where-Object {$_ -isnot [bool] -or -not $_}).Count -eq 0 -and $State.processes -eq $State.joined -and -not $State.processFailed -and $State.decoderCode -ceq 'none' -and $State.outRecords -gt 0 -and $State.inRecords -gt 0)
-    return @{processFailureCode=$State.processFailureCode;failureExitCode=$State.failureExitCode;failureStdoutChars=$State.failureStdoutChars;failureStderrChars=$State.failureStderrChars;failureElapsedMilliseconds=$State.failureElapsedMilliseconds;captureFileCode=$State.captureFileCode;etlBytes=$State.etlBytes;pcapBytes=$State.pcapBytes;filterRows=$State.filterRows;filterCode=$State.filterCode;outcome=$(if($passed){'passed'}else{'failed'});phase=$State.phase;failurePhase=$State.failurePhase;decoderCode=$State.decoderCode;controls=$State.flags;toolProcesses=$State.processes;toolProcessesJoined=$State.joined;toolFailure=$State.processFailed;tlsFlows=$State.tlsFlows;outboundEncryptedRecords=$State.outRecords;inboundEncryptedRecords=$State.inRecords;providerMask=$State.providers;rawCapturePublished=$false;productionQualificationComplete=$false}
+    return @{workdir=$PrivateRoot;processFailureCode=$State.processFailureCode;failureExitCode=$State.failureExitCode;failureStdoutChars=$State.failureStdoutChars;failureStderrChars=$State.failureStderrChars;failureElapsedMilliseconds=$State.failureElapsedMilliseconds;captureFileCode=$State.captureFileCode;etlBytes=$State.etlBytes;pcapBytes=$State.pcapBytes;filterRows=$State.filterRows;filterCode=$State.filterCode;outcome=$(if($passed){'passed'}else{'failed'});phase=$State.phase;failurePhase=$State.failurePhase;decoderCode=$State.decoderCode;controls=$State.flags;toolProcesses=$State.processes;toolProcessesJoined=$State.joined;toolFailure=$State.processFailed;tlsFlows=$State.tlsFlows;outboundEncryptedRecords=$State.outRecords;inboundEncryptedRecords=$State.inRecords;providerMask=$State.providers;rawCapturePublished=$false;productionQualificationComplete=$false}
 }

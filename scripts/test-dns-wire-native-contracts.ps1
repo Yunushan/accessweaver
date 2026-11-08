@@ -9,8 +9,8 @@ $project=Split-Path -Parent $PSScriptRoot;$path=Join-Path $PSScriptRoot 'native-
 $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Wire source syntax'}
-$excluded=@('Invoke-NativeDNSWireProcess','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile')
-$allowed=@('Assert-NativeOrdinaryPath','Get-Command','Join-Path','Where-Object','Select-Object','Invoke-NativeDNSWireProcess','Invoke-NativeDNSWireTool','Assert-NativeDNSWireStopped','Assert-NativeDNSWireEmptyFilters','Get-NativeDNSWireFilterRows','Assert-NativeDNSWireFilters','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Assert-NativeDNSWireRule','New-NetFirewallRule','Remove-NetFirewallRule','Assert-NativeDNSWireFirewall','Get-DnsClientNrptPolicy','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Stop-NativeDNSWireCapture','Clear-DnsClientCache','Resolve-DnsName','Invoke-NativeDNSWireQuery','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile','ConvertFrom-Json','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState')
+$excluded=@('Invoke-NativeDNSWireProcess','Read-NativeDNSWireCapture','Get-NativeDNSWireItem')
+$allowed=@('Assert-NativeOrdinaryPath','Get-Command','Join-Path','Where-Object','Select-Object','Invoke-NativeDNSWireProcess','Invoke-NativeDNSWireTool','Assert-NativeDNSWireStopped','Assert-NativeDNSWireEmptyFilters','Get-NativeDNSWireFilterRows','Assert-NativeDNSWireFilters','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Assert-NativeDNSWireRule','New-NetFirewallRule','Remove-NetFirewallRule','Assert-NativeDNSWireFirewall','Get-DnsClientNrptPolicy','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Stop-NativeDNSWireCapture','Clear-DnsClientCache','Resolve-DnsName','Invoke-NativeDNSWireQuery','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile','Get-NativeDNSWireItem','ConvertFrom-Json','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState')
 $definitions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false));$seen=@{}
 foreach($definition in $definitions){
     if($seen.ContainsKey($definition.Name)){throw 'Duplicate wire source function'};$seen[$definition.Name]=$true
@@ -22,7 +22,7 @@ function Assert-NativeOrdinaryPath([string]$Path) {}
 function Get-Command {param($Name,$CommandType,$ErrorAction);if($Name -cne 'node'){throw 'Source command refused'};return [pscustomobject]@{Source='node-source'}}
 function Assert-Wire([bool]$Condition){if(-not $Condition){throw 'Wire source assertion'}}
 function New-WireCase {
-    $script:fault='';$script:filters=@{};$script:rules=@{};$script:running=$false;$script:restored=$true;$script:events=[Collections.Generic.List[string]]::new();$script:addOrdinal=0
+    $script:fault='';$script:filters=@{};$script:rules=@{};$script:running=$false;$script:restored=$true;$script:events=[Collections.Generic.List[string]]::new();$script:addOrdinal=0;$script:etlSize=4096;$script:pcapSize=3;$script:itemReads=0
     $script:state=New-NativeDNSWireState ([IO.Path]::Combine([IO.Path]::GetTempPath(),'aw-wire-source')) ([IO.Path]::Combine([IO.Path]::GetTempPath(),'dns-wire-stdin.cjs'))
     $script:state.before='source-original'
 }
@@ -56,7 +56,7 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
         }
         'start' {
             Assert-Wire ($script:filters.Count -eq 12 -and $State.flags.filtersVerified -and -not $script:running)
-            Assert-Wire (($Arguments -join ',').Contains('--capture,--comp,nics,--pkt-size,0') -and ($Arguments -join ',').Contains('--file-size,16,--log-mode,memory'))
+            Assert-Wire (($Arguments -join ',').Contains('--capture,--comp,nics,--pkt-size,0') -and ($Arguments -join ',').Contains('--file-size,16,--log-mode,circular'))
             $script:running=$true;$script:events.Add('capture-start')
             if($script:fault -ceq 'partial-start'){throw 'Source partial capture start'};return ''
         }
@@ -65,7 +65,12 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
     }
     throw 'Unexpected source tool operation'
 }
-function Measure-NativeDNSWireFile([object]$State,[string]$Kind){Assert-Wire (-not $script:running);$State.captureFileCode='ordinary';if($Kind -ceq 'etl'){$State.etlBytes=4096}else{$State.pcapBytes=3}}
+function Get-NativeDNSWireItem([string]$Path){
+    $script:itemReads++
+    Assert-Wire ($Path -ceq $script:state.etl -or $Path -ceq $script:state.pcap)
+    if($script:fault -ceq 'file-unavailable'){throw 'Source private file unavailable'}
+    return [pscustomobject]@{Length=$(if($Path -ceq $script:state.etl){$script:etlSize}else{$script:pcapSize});PSIsContainer=$false}
+}
 function Read-NativeDNSWireCapture([object]$State){Assert-Wire (-not $script:running);$State.flags.captureBounded=$true;return ,([byte[]]@(1,2,3))}
 function Get-DnsClientNrptPolicy {param([switch]$Effective,$ErrorAction);if($script:fault -ceq 'nrpt'){return [pscustomobject]@{Name='source-policy'}}}
 function Get-NetFirewallProfile {param($PolicyStore,$ErrorAction);return [pscustomobject]@{Enabled=$true;AllowLocalFirewallRules=$true;DisabledInterfaceAliases=@()}}
@@ -126,6 +131,9 @@ try {
     Case-Wire 'silent-rule-removal-is-not-success' {New-WireCase;Start-NativeDNSWireCapture $script:state;$script:fault='remove-noop';Reject-Wire {Measure-NativeDNSWire $script:state};Assert-Wire (-not $script:state.flags.tlsBlockRemoved);$script:fault='';Complete-NativeDNSWireCleanup $script:state;Assert-Wire ((Get-NativeDNSWireSummary $script:state).outcome -ceq 'failed')}
     Case-Wire 'foreign-rule-ownership-refuses-deletion' {New-WireCase;Start-NativeDNSWireCapture $script:state;Measure-NativeDNSWire $script:state;foreach($rule in $script:rules.Values){$rule.DisplayName='source-foreign'};Reject-Wire {Complete-NativeDNSWireCleanup $script:state};Assert-Wire ($script:rules.Count -eq 2 -and $script:filters.Count -eq 12)}
     Case-Wire 'foreign-capture-filter-prevents-global-retirement' {New-WireCase;Start-NativeDNSWireCapture $script:state;Measure-NativeDNSWire $script:state;$script:filters['source-foreign']=@{address='203.0.113.1';protocol='TCP';port=443};Reject-Wire {Complete-NativeDNSWireCleanup $script:state};Assert-Wire ($script:filters.Count -eq 13 -and -not $script:state.flags.filtersRemoved)}
+    Case-Wire 'capture-file-bound-admits-exact-configured-limit' {New-WireCase;$script:etlSize=16777216;Measure-NativeDNSWireFile $script:state 'etl';Assert-Wire ($script:state.etlBytes -eq 16777216 -and $script:state.captureFileCode -ceq 'ordinary')}
+    Case-Wire 'capture-file-overflow-refuses-before-decoding' {New-WireCase;$script:etlSize=16777217;Reject-Wire {Measure-NativeDNSWireFile $script:state 'etl'};Assert-Wire ($script:state.captureFileCode -ceq 'oversized' -and -not $script:state.flags.captureBounded)}
+    Case-Wire 'unavailable-capture-file-never-searches-alternate-paths' {New-WireCase;$script:fault='file-unavailable';Reject-Wire {Measure-NativeDNSWireFile $script:state 'etl'};Assert-Wire ($script:itemReads -eq 1 -and $script:state.captureFileCode -ceq 'unavailable')}
     Case-Wire 'strict-stopped-and-empty-classifiers' {Reject-Wire {Assert-NativeDNSWireStopped "PRIVATE`nPacket Monitor is not running."};Reject-Wire {Assert-NativeDNSWireEmptyFilters "No filters.`n1 unknown"};Assert-NativeDNSWireStopped 'Packet Monitor is not running.';Assert-NativeDNSWireEmptyFilters "Packet Filters:`nNone"}
 } finally {$env:SystemRoot=$oldSystemRoot}
 if((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -cne $hash){throw 'Wire source changed'}
