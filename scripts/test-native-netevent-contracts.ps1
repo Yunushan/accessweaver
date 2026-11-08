@@ -8,7 +8,7 @@ $PSModuleAutoLoadingPreference='None'
 $project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-netevent-control.ps1'),[ref]$tokens,[ref]$issues);if($issues.Count){throw 'Source syntax'}
-$allowed=@('New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
+$allowed=@('Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
 foreach($def in $ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
     if($def.Name -cin @('Get-NativeNetEventEnums','Get-NativeNetEventInventory')){continue}
     foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin $allowed){throw 'Source command boundary'}}
@@ -137,6 +137,44 @@ Case-N 'fragment-report-private-fields-and-inconsistent-counts-refused' {
 Case-N 'fragment-program-uses-header-only-bounded-disposed-reader' {
     $body=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String((Get-NativeNDISFragmentProgram "PRIVATE-SYNTHETIC-'`nthrow 'never'")));$t=$null;$e=$null;[void][Management.Automation.Language.Parser]::ParseInput($body,[ref]$t,[ref]$e)
     Assert-N ($e.Count -eq 0 -and -not $body.Contains('PRIVATE-SYNTHETIC') -and $body.Contains('$record.Keywords') -and $body.Contains('ReadEvent([TimeSpan]::FromMilliseconds(250))') -and $body.Contains('$record.Dispose()') -and $body.Contains('$reader.Dispose()') -and -not $body.Contains('FormatDescription') -and -not $body.Contains('.Properties') -and -not $body.Contains('.ToXml('))
+}
+
+
+function Template-N([string]$Fields) {
+    $body='';foreach($field in $Fields.Split('|')){$parts=$field.Split(':');$body+='<data name="'+$parts[0]+'" inType="win:'+$parts[1]+'"'+$(if($parts.Count -eq 3){' length="'+$parts[2]+'"'}else{''})+'/>'}
+    return '<template xmlns="http://schemas.microsoft.com/win/2004/08/events">'+$body+'</template>'
+}
+Case-N 'catalog-exact-fragment-and-rule-schemas-recognized' {
+    Assert-N ((Get-NativeNDISCatalogClass 1001 0 4 (Template-N 'MiniportIfIndex:UInt32|LowerIfIndex:UInt32|FragmentSize:UInt32|Fragment:Binary:FragmentSize')) -ceq 'fragment')
+    Assert-N ((Get-NativeNDISCatalogClass 1002 0 4 (Template-N 'MiniportIfIndex:UInt32|LowerIfIndex:UInt32|MetadataSize:UInt32|Metadata:Binary:MetadataSize')) -ceq 'metadata')
+    Assert-N ((Get-NativeNDISCatalogClass 1011 0 4 (Template-N 'RulesCount:UInt32')) -ceq 'rules')
+    Assert-N ((Get-NativeNDISCatalogClass 1016 0 4 (Template-N 'RuleId:UInt8|Directive:UInt8|Length:UInt16|Value:Binary:Length')) -ceq 'rules')
+}
+Case-N 'catalog-interface-inventory-requires-exact-primary-schema' {
+    foreach($id in @(1012,1013)){Assert-N ((Get-NativeNDISCatalogClass $id 0 5 (Template-N 'FriendlyName:UnicodeString|UniqueName:UnicodeString|ServiceName:UnicodeString|Version:UnicodeString')) -ceq 'inventory')}
+    foreach($id in @(1014,1015)){Assert-N ((Get-NativeNDISCatalogClass $id 0 5 (Template-N 'MiniportIfIndex:UInt32|LowerIfIndex:UInt32|MediaType:UInt32|ReferenceContext:UInt32')) -ceq 'inventory')}
+}
+Case-N 'catalog-changed-fields-versions-levels-and-ids-stay-unknown' {
+    $template=Template-N 'RulesCount:UInt32'
+    Assert-N ((Get-NativeNDISCatalogClass 1011 1 4 $template) -ceq 'unknown');Assert-N ((Get-NativeNDISCatalogClass 1011 0 2 $template) -ceq 'unknown');Assert-N ((Get-NativeNDISCatalogClass 2001 0 4 $template) -ceq 'unknown')
+    foreach($fields in @('RulesCount:UInt16','Other:UInt32','RulesCount:UInt32|Other:UInt32')){Assert-N ((Get-NativeNDISCatalogClass 1011 0 4 (Template-N $fields)) -ceq 'unknown')}
+}
+Case-N 'catalog-template-parser-refuses-dtd-expansion-and-opaque-fields' {
+    foreach($template in @('<!DOCTYPE template [<!ENTITY x SYSTEM "file:///PRIVATE-SYNTHETIC">]><template>&x;</template>','<template xmlns="PRIVATE-SYNTHETIC"><data name="RulesCount" inType="win:UInt32"/></template>',('<template xmlns="http://schemas.microsoft.com/win/2004/08/events"><struct name="RulesCount"/></template>'),('x'*8193),'<template xmlns="http://schemas.microsoft.com/win/2004/08/events"><data name="RulesCount" inType="win:UInt32" count="Other"/></template>')){Assert-N ((Get-NativeNDISTemplateSignature $template) -ceq '')}
+}
+Case-N 'catalog-unmapped-and-error-events-never-become-inventory' {
+    $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=2;$r.recognizedDefinitions=2;$g=[guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef';$catalog=@{'1001:0'='fragment';'1016:0'='rules'}
+    Add-NativeNDISCatalogHeader $r $catalog $g 1001 0;Add-NativeNDISCatalogHeader $r $catalog $g 1016 0;Assert-N (Test-NativeNDISCatalogEvidence (Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Compress)))
+    Add-NativeNDISCatalogHeader $r $catalog $g 2001 0;Add-NativeNDISCatalogHeader $r $catalog $g 1001 1
+    $v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Compress);Assert-N ($v.unknownRecords -eq 2 -and $v.unrecognizedVersions -eq 1 -and -not (Test-NativeNDISCatalogEvidence $v))
+}
+Case-N 'catalog-report-private-or-contradictory-fields-refused' {
+    foreach($fault in @('private','boolean','sum','definitions','versions')){$r=New-NativeNDISCatalogEvidence 'complete';switch($fault){'private'{$r['private']='PRIVATE-SYNTHETIC'}'boolean'{$r.records=$false}'sum'{$r.records=1}'definitions'{$r.definitions=65}'versions'{$r.unrecognizedVersions=1}};$v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Compress);Assert-N ($v.code -ceq 'invalid' -and $v.fragmentRecords -eq -1 -and -not (($v | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))}
+    $v=Get-NativeNDISCatalogEvidence ((New-NativeNDISCatalogEvidence 'unavailable') | ConvertTo-Json -Compress);Assert-N ($v.code -ceq 'unavailable' -and -not (Test-NativeNDISCatalogEvidence $v))
+}
+Case-N 'catalog-program-keeps-provider-source-and-event-values-separate' {
+    $body=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String((Get-NativeNDISCatalogProgram "PRIVATE-SYNTHETIC-'`nthrow 'never'")));$t=$null;$e=$null;[void][Management.Automation.Language.Parser]::ParseInput($body,[ref]$t,[ref]$e)
+    Assert-N ($e.Count -eq 0 -and -not $body.Contains('PRIVATE-SYNTHETIC') -and $body.Contains('$event.Template') -and $body.Contains('$event.Level.Value') -and $body.Contains('ProviderMetadata') -and $body.Contains('$provider.Dispose()') -and $body.Contains('$record.Dispose()') -and $body.Contains('$reader.Dispose()') -and -not $body.Contains('.Properties') -and -not $body.Contains('.ToXml(') -and -not $body.Contains('FormatDescription'))
 }
 
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}
