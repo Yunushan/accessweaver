@@ -63,5 +63,18 @@ test('private-paths-are-fixed-under-the-exact-owned-local-root',()=>{const path=
 test('private-paths-refuse-other-roots-traversal-and-owner-patterns',()=>{const path=require('node:path').win32,local=path.join('C:','Users','Synthetic','AppData','Local'),owned=path.join(local,'AccessWeaver-NetEventControl-'+'a'.repeat(32));for(const root of [path.join('D:','AccessWeaver-NetEventControl-'+'a'.repeat(32)),path.join(local,'Other'),owned+path.sep+'..'+path.sep+'Other','relative'])assert.throws(()=>privateCapturePaths(root,local),e=>e.code==='private-path');});
 test('private-bridge-import-does-not-consume-a-native-capture',()=>{const d=privateDocument();d.records=[];rejectDocument(d,'private-document');assert.equal(typeof privateCapturePaths,'function');});
 
+
+const {fixedDohQuery,requestOptions,validateDohResponse}=require('./ndis-tls-control.cjs');
+function dohReply(){const header=Buffer.alloc(12);header.writeUInt16BE(0x8180,2);header.writeUInt16BE(1,4);header.writeUInt16BE(1,6);const answer=Buffer.from('c00c000100010000012c0004c0000202','hex');return Buffer.concat([header,fixedDohQuery().subarray(12),answer]);}
+const dohHeaders={'content-type':'application/dns-message'};
+test('tls-stimulus-uses-fixed-endpoint-authenticated-tls-and-no-system-dns',()=>{const q=requestOptions();assert.equal(q.hostname,'8.8.8.8');assert.equal(q.servername,'dns.google');assert.equal(q.rejectUnauthorized,true);assert.equal(q.minVersion,'TLSv1.3');assert.equal(q.maxVersion,'TLSv1.3');assert.equal(q.path,'/dns-query');assert.equal(q.agent,false);assert.ok(q.ca.length>0);});
+test('fixed-query-is-an-independent-bounded-synthetic-dns-message',()=>{const q=fixedDohQuery();assert.equal(q.length,29);assert.equal(q.readUInt16BE(4),1);q.fill(255);assert.equal(fixedDohQuery().readUInt16BE(0),0);});
+test('authenticated-http-dns-response-requires-complete-positive-a-answer',()=>assert.equal(validateDohResponse(200,dohHeaders,dohReply()),true));
+test('http-status-and-dns-media-type-errors-are-refused',()=>{assert.equal(validateDohResponse(302,dohHeaders,dohReply()),false);assert.equal(validateDohResponse(200,{'content-type':'text/html'},dohReply()),false);});
+test('dns-response-id-question-and-error-flags-must-match',()=>{for(const offset of [0,3,4,13]){const b=dohReply();b[offset]^=1;assert.equal(validateDohResponse(200,dohHeaders,b),false);}const b=dohReply();b.writeUInt16BE(0x8182,2);assert.equal(validateDohResponse(200,dohHeaders,b),false);});
+test('dns-response-truncation-trailing-data-or-missing-answer-is-refused',()=>{const b=dohReply();assert.equal(validateDohResponse(200,dohHeaders,b.subarray(0,-1)),false);assert.equal(validateDohResponse(200,dohHeaders,Buffer.concat([b,Buffer.from([0])])),false);b.writeUInt16BE(0,6);assert.equal(validateDohResponse(200,dohHeaders,b),false);});
+test('dns-name-compression-loops-and-out-of-range-offsets-are-refused',()=>{for(const pointer of [0xc01d,0xffff]){const b=dohReply();b.writeUInt16BE(pointer,29);assert.equal(validateDohResponse(200,dohHeaders,b),false);}});
+test('dns-response-size-and-record-count-are-bounded',()=>{assert.equal(validateDohResponse(200,dohHeaders,Buffer.alloc(4097)),false);const b=dohReply();b.writeUInt16BE(65,10);assert.equal(validateDohResponse(200,dohHeaders,b),false);});
+
 process.stdout.write(JSON.stringify({schemaVersion:1,scope:'pure-ndis-frame-converter',cases,passed:cases.every(c=>c.passed),nativeCaptureRead:false,productionQualificationComplete:false})+'\n');
 if(cases.some(c=>!c.passed))process.exitCode=1;

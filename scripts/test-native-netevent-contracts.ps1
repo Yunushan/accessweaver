@@ -5,10 +5,10 @@ if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-host
 if($RequireWindowsPowerShell -and ($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1)){throw 'Stock source shell required'}
 foreach($name in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management')){Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$name,($name+'.psd1'))) -ErrorAction Stop}
 $PSModuleAutoLoadingPreference='None'
-$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/extract-native-ndis.ps1','scripts/ndis-private-convert.cjs','scripts/dns-wire-evidence.cjs','scripts/ndis-frame-converter.cjs','scripts/test-ndis-frame-converter.cjs','scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
+$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/ndis-tls-control.cjs','scripts/dns-wire-stdin.cjs','scripts/extract-native-ndis.ps1','scripts/ndis-private-convert.cjs','scripts/dns-wire-evidence.cjs','scripts/ndis-frame-converter.cjs','scripts/test-ndis-frame-converter.cjs','scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-netevent-control.ps1'),[ref]$tokens,[ref]$issues);if($issues.Count){throw 'Source syntax'}
-$allowed=@('New-NativeNDISExtractionEvidence','New-NativeNDISConversionEvidence','Get-NativeNDISTemplateTree','Add-NativeNDISTemplateTreeNode','Test-NativeNDISTemplateTree','Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
+$allowed=@('New-NativeNDISTlsStimulusEvidence','New-NativeNDISTlsWireEvidence','New-NativeNDISExtractionEvidence','New-NativeNDISConversionEvidence','Get-NativeNDISTemplateTree','Add-NativeNDISTemplateTreeNode','Test-NativeNDISTemplateTree','Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
 foreach($def in $ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
     if($def.Name -cin @('Get-NativeNetEventEnums','Get-NativeNetEventInventory')){continue}
     foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin $allowed){throw 'Source command boundary'}}
@@ -314,6 +314,28 @@ Case-N 'conversion-refusal-never-carries-a-packet-or-positive-summary' {
 Case-N 'native-extractor-selects-fixed-properties-and-disposes-every-reader' {
     $body=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'extract-native-ndis.ps1'))
     Assert-N ($body.Contains('GetPropertyValues($selector)') -and $body.Contains("@('FragmentSize','Fragment')") -and $body.Contains("@('GftFlowEntryId','GftOffloadInformation')") -and $body.Contains('$record.Dispose()') -and $body.Contains('$selector.Dispose()') -and $body.Contains('$reader.Dispose()') -and $body.Contains('$stream.Dispose()') -and $body.Contains('FileMode]::CreateNew') -and -not $body.Contains('.Properties') -and -not $body.Contains('.ToXml(') -and -not $body.Contains('FormatDescription'))
+}
+
+
+function TlsStimulusReply-N {return @{schemaVersion=1;outcome='passed';code='none';tlsAuthorized=$true;responseValidated=$true;closed=$true;productionQualificationComplete=$false}}
+function TlsWireReply-N {return @{schemaVersion=1;outcome='decoded';code='none';evidence=@{schemaVersion=1;observation='tls-observed';packets=10;plaintextPackets=0;flows=@(@{provider='google-v4';clientHello=$true;serverHello=$true;outboundEncryptedRecords=2;inboundEncryptedRecords=3;records=7});dnsPayloadDecrypted=$false;ordinaryResolverBound=$false;negativeControlPassed=$false;productionQualificationComplete=$false}}}
+Case-N 'fixed-tls-stimulus-requires-authenticated-response-and-closed-client' {
+    $r=TlsStimulusReply-N;Assert-N ((Get-NativeNDISTlsStimulusEvidence ($r | ConvertTo-Json -Compress)).outcome -ceq 'passed')
+    foreach($field in @('tlsAuthorized','responseValidated','closed')){$r=TlsStimulusReply-N;$r[$field]=$false;Assert-N ((Get-NativeNDISTlsStimulusEvidence ($r | ConvertTo-Json -Compress)).code -ceq 'invalid')}
+}
+Case-N 'fixed-tls-stimulus-refuses-private-or-qualification-fields' {
+    $r=TlsStimulusReply-N;$r['private']='PRIVATE-SYNTHETIC';$v=Get-NativeNDISTlsStimulusEvidence ($r | ConvertTo-Json -Compress);Assert-N ($v.code -ceq 'invalid' -and -not (($v | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))
+    $r=TlsStimulusReply-N;$r.productionQualificationComplete=$true;Assert-N ((Get-NativeNDISTlsStimulusEvidence ($r | ConvertTo-Json -Compress)).code -ceq 'invalid')
+}
+Case-N 'strict-tls-wire-projection-requires-positive-hello-and-record-evidence' {
+    $r=TlsWireReply-N;$v=Get-NativeNDISTlsWireEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.code -ceq 'none' -and $v.observation -ceq 'tls-observed' -and $v.providerMask -eq 1 -and $v.outboundEncryptedRecords -eq 2 -and $v.inboundEncryptedRecords -eq 3)
+    $r=@{schemaVersion=1;outcome='refused';code='tcp-reset';evidence=$null};$v=Get-NativeNDISTlsWireEvidence ($r | ConvertTo-Json -Compress);Assert-N ($v.code -ceq 'tcp-reset' -and $v.observation -ceq 'refused')
+}
+Case-N 'strict-tls-wire-projection-rejects-contradictions-private-data-and-product-claims' {
+    foreach($fault in @('hello','encrypted','provider','private','binding','production')){
+        $r=TlsWireReply-N;switch($fault){'hello'{$r.evidence.flows[0].serverHello=$false}'encrypted'{$r.evidence.flows[0].outboundEncryptedRecords=0}'provider'{$r.evidence.flows[0].provider='PRIVATE-SYNTHETIC'}'private'{$r.evidence['private']='PRIVATE-SYNTHETIC'}'binding'{$r.evidence.ordinaryResolverBound=$true}'production'{$r.evidence.productionQualificationComplete=$true}}
+        $v=Get-NativeNDISTlsWireEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.code -ceq 'invalid' -and -not (($v | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))
+    }
 }
 
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}

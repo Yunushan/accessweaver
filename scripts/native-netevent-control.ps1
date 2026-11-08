@@ -456,3 +456,31 @@ function Get-NativeNDISConversionEvidence([string]$Text) {
     $summary=@{schemaVersion=1;productionQualificationComplete=$false};foreach($key in $keys){$summary[$key]=[int]$q.$key}
     return @{schemaVersion=1;outcome='converted';code='none';nativeFrameDataRead=$true;summary=$summary}
 }
+
+
+function New-NativeNDISTlsStimulusEvidence {return @{schemaVersion=1;outcome='not-inspected';code='not-inspected';tlsAuthorized=$false;responseValidated=$false;closed=$false;productionQualificationComplete=$false}}
+function Get-NativeNDISTlsStimulusEvidence([string]$Text) {
+    $bad=New-NativeNDISTlsStimulusEvidence;$bad.outcome='failed';$bad.code='invalid';if($Text.Length -gt 4096){return $bad};try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{return $bad}
+    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 7 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin @('schemaVersion','outcome','code','tlsAuthorized','responseValidated','closed','productionQualificationComplete')}).Count -ne 0 -or $v.schemaVersion -isnot [int] -or $v.schemaVersion -ne 1 -or $v.outcome -cnotin @('passed','failed') -or $v.code -cnotin @('none','environment','tls','network','response','bound','timeout','close')){return $bad}
+    foreach($key in @('tlsAuthorized','responseValidated','closed','productionQualificationComplete')){if($v.$key -isnot [bool]){return $bad}}
+    if($v.productionQualificationComplete -or ($v.outcome -ceq 'passed' -and ($v.code -cne 'none' -or -not $v.tlsAuthorized -or -not $v.responseValidated -or -not $v.closed)) -or ($v.outcome -ceq 'failed' -and $v.code -ceq 'none')){return $bad}
+    return @{schemaVersion=1;outcome=$v.outcome;code=$v.code;tlsAuthorized=$v.tlsAuthorized;responseValidated=$v.responseValidated;closed=$v.closed;productionQualificationComplete=$false}
+}
+function New-NativeNDISTlsWireEvidence([string]$Code='not-inspected') {return @{code=$Code;observation='not-inspected';packets=0;tlsFlows=0;outboundEncryptedRecords=0;inboundEncryptedRecords=0;providerMask=0}}
+function Get-NativeNDISTlsWireEvidence([string]$Text) {
+    $bad=New-NativeNDISTlsWireEvidence 'invalid';$bad.observation='refused';if($Text.Length -gt 16384){return $bad};try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{return $bad}
+    $codes=@('ascii','block-bound','block-shape','capture-bound','capture-drops','capture-empty','capture-options','client-hello','client-sni','decoder-failed','environment','ethernet-protocol','ethernet-shape','flow-bound','input-bound','input-incomplete','input-read','interface-bound','interface-link','interface-snaplen','ip-fragment','ipv4-bound','ipv4-shape','ipv6-bound','ipv6-extension','ipv6-shape','none','packet-bound','packet-kind','packet-shape','packet-snaplen','packet-truncated','provider-port','provider-scope','section-length','section-magic','section-required','section-shape','section-version','server-hello','statistics-shape','tcp-bound','tcp-gap','tcp-overlap','tcp-reset','tcp-reuse','tcp-segment-bound','tcp-shape','tcp-stream-bound','tcp-syn-required','tcp-syn-shape','tls-change-cipher','tls-handshake-bound','tls-hello-required','tls-record','tls-truncated','transport-shape','udp-shape')
+    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 4 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin @('schemaVersion','outcome','code','evidence')}).Count -ne 0 -or $v.schemaVersion -isnot [int] -or $v.schemaVersion -ne 1 -or $v.code -cnotin $codes -or $v.outcome -cnotin @('decoded','refused')){return $bad}
+    if($v.outcome -ceq 'refused'){if($v.code -ceq 'none' -or $null -ne $v.evidence){return $bad};$r=New-NativeNDISTlsWireEvidence $v.code;$r.observation='refused';return $r}
+    $e=$v.evidence
+    if($v.code -cne 'none' -or $e -isnot [pscustomobject] -or @($e.PSObject.Properties).Count -ne 9 -or @($e.PSObject.Properties.Name | Where-Object {$_ -cnotin @('schemaVersion','observation','packets','plaintextPackets','flows','dnsPayloadDecrypted','ordinaryResolverBound','negativeControlPassed','productionQualificationComplete')}).Count -ne 0 -or $e.schemaVersion -isnot [int] -or $e.schemaVersion -ne 1 -or $e.observation -cnotin @('tls-observed','insufficient') -or $e.packets -isnot [int] -or $e.packets -lt 1 -or $e.packets -gt 4096 -or $e.plaintextPackets -isnot [int] -or $e.plaintextPackets -ne 0 -or $e.flows -isnot [array] -or $e.flows.Count -gt 32){return $bad}
+    foreach($key in @('dnsPayloadDecrypted','ordinaryResolverBound','negativeControlPassed','productionQualificationComplete')){if($e.$key -isnot [bool] -or $e.$key){return $bad}}
+    $r=New-NativeNDISTlsWireEvidence 'none';$r.observation=$e.observation;$r.packets=$e.packets;$positive=$false
+    foreach($flow in $e.flows){
+        if($flow -isnot [pscustomobject] -or @($flow.PSObject.Properties).Count -ne 6 -or @($flow.PSObject.Properties.Name | Where-Object {$_ -cnotin @('provider','clientHello','serverHello','outboundEncryptedRecords','inboundEncryptedRecords','records')}).Count -ne 0 -or $flow.provider -cne 'google-v4' -or $flow.clientHello -isnot [bool] -or -not $flow.clientHello -or $flow.serverHello -isnot [bool] -or -not $flow.serverHello){return $bad}
+        foreach($key in @('outboundEncryptedRecords','inboundEncryptedRecords','records')){if(($flow.$key -isnot [int] -and $flow.$key -isnot [long]) -or $flow.$key -lt 0 -or $flow.$key -gt 4194304){return $bad}}
+        if($flow.records -lt $flow.outboundEncryptedRecords+$flow.inboundEncryptedRecords+2){return $bad}
+        $r.tlsFlows++;$r.providerMask=1;$r.outboundEncryptedRecords+=$flow.outboundEncryptedRecords;$r.inboundEncryptedRecords+=$flow.inboundEncryptedRecords;if($flow.outboundEncryptedRecords -gt 0 -and $flow.inboundEncryptedRecords -gt 0){$positive=$true}
+    }
+    if(($e.observation -ceq 'tls-observed') -ne $positive){return $bad};return $r
+}

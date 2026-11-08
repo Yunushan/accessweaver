@@ -4,6 +4,8 @@ on:
   push:
     branches: ['main', 'codex/dns-adapter-coverage']
     paths:
+      - 'scripts/ndis-tls-control.cjs'
+      - 'scripts/dns-wire-stdin.cjs'
       - 'scripts/extract-native-ndis.ps1'
       - 'scripts/ndis-private-convert.cjs'
       - 'scripts/dns-wire-evidence.cjs'
