@@ -65,13 +65,14 @@ public static class AccessWeaverNetEventControlIdentity {
     $nativeProcessVerified=$true
     $machineRoot=Join-Path $env:ProgramData 'AccessWeaver';Assert-NativeOrdinaryPath $machineRoot
     if((Test-Path -LiteralPath $machineRoot) -or @(Get-Service -Name 'AccessWeaver*' -ErrorAction SilentlyContinue).Count -ne 0){throw 'Preexisting product state refused'}
-    $environmentVerified=$true;$code='private-root'
+    $environmentVerified=$true;$code='private-root';$control.phase='private-root'
     $privateRoot=[IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'),('AccessWeaver-NetEventControl-'+[guid]::NewGuid().ToString('N')))
     Assert-NativeOrdinaryPath $privateRoot;if(Test-Path -LiteralPath $privateRoot){throw 'Existing private control root'}
     [void][IO.Directory]::CreateDirectory($privateRoot)
     $security=[Security.AccessControl.DirectorySecurity]::new();$security.SetOwner($identity.User);$security.SetAccessRuleProtection($true,$false)
     foreach($sid in @($identity.User.Value,'S-1-5-18','S-1-5-32-544') | Select-Object -Unique){$security.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),'FullControl','ContainerInherit,ObjectInherit','None','Allow'))}
     Set-Acl -LiteralPath $privateRoot -AclObject $security -ErrorAction Stop
+    $control.phase='helper-load'
     . (Join-Path $PSScriptRoot 'native-dns-wire.ps1')
     . (Join-Path $PSScriptRoot 'native-netevent-control.ps1')
     . (Join-Path $PSScriptRoot 'dns-acceptance-state.ps1')
@@ -79,8 +80,9 @@ public static class AccessWeaverNetEventControlIdentity {
     $control.eventEvidence=New-NativeNDISHeaderEvidence
     $control.fragmentEvidence=New-NativeNDISFragmentEvidence
     $control.catalogEvidence=New-NativeNDISCatalogEvidence
-    $code='baseline';$script:state=New-NativeDNSWireState $privateRoot '';$script:state.etl=Join-Path $privateRoot 'capture.etl'
-    $script:state.before=Read-DNSAcceptanceState;[void](Invoke-NativeDNSWireQuery 'example.com')
+    $code='baseline';$control.phase='baseline-tools';$script:state=New-NativeDNSWireState $privateRoot '';$script:state.etl=Join-Path $privateRoot 'capture.etl'
+    $control.phase='baseline-state';$script:state.before=Read-DNSAcceptanceState
+    $control.phase='baseline-resolver';[void](Invoke-NativeDNSWireQuery 'example.com')
     $script:plan=@{name=('awndis-'+[guid]::NewGuid().ToString('N'));file=$script:state.etl;guid='';originalVerified=$false}
     $code='control';$control.phase='preflight';$v=Invoke-NativeNDISOperation 'preflight';$control.preflightEmpty=$v.emptyBefore
     if(-not $v.emptyBefore){throw 'NDIS preflight inventory'}
