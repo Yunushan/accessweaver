@@ -29,17 +29,19 @@ env:
 
 jobs:
   native:
-    name: Native DNS ${{ matrix.method }} (windows/${{ matrix.goarch }})
+    name: Native DNS ${{ matrix.method }}/${{ matrix.scenario }} (windows/${{ matrix.goarch }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: doh}
-          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: doh}
-          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt}
-          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt}
+          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: doh, scenario: roundtrip}
+          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: doh, scenario: roundtrip}
+          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: roundtrip}
+          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: roundtrip}
+          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: service-loss}
+          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: service-loss}
     defaults:
       run:
         shell: pwsh
@@ -85,13 +87,13 @@ jobs:
           $binary=(Resolve-Path 'build/native-doh/accessweaver.exe').Path
           $digest=(Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
           $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-doh.ps1 -Binary $binary -BinarySHA256 $digest -Method ${{ matrix.method }} -ReportPath (Join-Path $evidence 'status.json')
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-doh.ps1 -Binary $binary -BinarySHA256 $digest -Method ${{ matrix.method }} -ScenarioKind ${{ matrix.scenario }} -ReportPath (Join-Path $evidence 'status.json')
           if($LASTEXITCODE -ne 0){throw 'Native encrypted DNS acceptance failed; fixed metadata retained'}
       - name: Retain fixed native DNS metadata only
         if: always() && env.ACCESSWEAVER_NATIVE_DOH_EVIDENCE != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: native-dns-${{ matrix.method }}-windows-${{ matrix.goarch }}
+          name: native-dns-${{ matrix.method }}-${{ matrix.scenario }}-windows-${{ matrix.goarch }}
           path: ${{ env.ACCESSWEAVER_NATIVE_DOH_EVIDENCE }}/status.json
           if-no-files-found: error
           retention-days: 7

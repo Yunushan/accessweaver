@@ -32,13 +32,13 @@ foreach($name in $selected){
     if($nodes.Count -ne 1){throw 'Acceptance helper function unavailable'}
     foreach($command in $nodes[0].FindAll({param($node)$node -is [Management.Automation.Language.CommandAst]},$true)){
         $commandName=$command.GetCommandName()
-        $callback=(-not $commandName -and $command.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and $command.CommandElements[0] -is [Management.Automation.Language.VariableExpressionAst] -and $command.CommandElements[0].VariablePath.UserPath -cin @('Apply','Capture','Resolve'))
+        $callback=(-not $commandName -and $command.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and $command.CommandElements[0] -is [Management.Automation.Language.VariableExpressionAst] -and $command.CommandElements[0].VariablePath.UserPath -cin @('Apply','Capture','Resolve','InduceFailure','ResolveFailed','ResolveRestored'))
         if(-not $callback -and $commandName -notin $allowed){throw 'Acceptance helper command boundary refused'}
     }
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
 $script:checks=0;$script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
+$script:closedContractCodes=@('failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
 function Assert-A([bool]$Value,[string]$Code){if(-not $Value){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('Acceptance contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-A([scriptblock]$Operation){$failed=$false;try{& $Operation | Out-Null}catch{$failed=$true};Assert-A $failed 'expected-refusal'}
 $script:g1='abcdef00-0000-0000-0000-000000000001';$script:g2='abcdef00-0000-0000-0000-000000000002'
@@ -236,6 +236,7 @@ try {
             if($script:nativeActions.Count -eq 0){if($script:nativeFailure -ceq 'baseline'){throw 'fixture-native-baseline'};return $script:nativeBefore}
             if($script:nativeActions[$script:nativeActions.Count-1] -ceq 'dns'){return $script:nativeConfigured};return $script:nativeAfter
         } -Resolve {$script:nativeResolves++;if($script:nativeFailure -ceq 'ordinary-resolver'){throw 'fixture-native-resolver'}}
+        Assert-A (-not $result.failureInjected -and -not $result.failedResolverVerified -and -not $result.restoredResolverVerified) 'roundtrip-does-not-inject'
         $expectedOperation=if($failure -cin @('baseline','selected') -or ($method -ceq 'doh' -and $failure -ceq 'capability')){'baseline'}elseif($failure -ceq 'dual'){'configuration'}elseif($failure -cin @('configuration','configured-state','ordinary-resolver')){$failure}else{'none'}
         $expectedRestoration=if($failure -ceq 'dual'){'restoration'}elseif($failure -ceq 'restoration'){'restoration'}else{'none'}
         $expectedVerification=if($failure -cin @('restoration','restored-state')){'restored-state'}else{'none'}
@@ -251,6 +252,65 @@ try {
         $script:nativeActions.Clear();$script:nativeResolves=0;$script:invalidCaptures=0
         $invalidResult=Invoke-NativeDoHScenario -Method $invalid -Apply {$script:nativeActions.Add('invalid')} -Capture {$script:invalidCaptures++;return $script:nativeBefore} -Resolve {$script:nativeResolves++}
         Assert-A ($invalidResult.operationCode -ceq 'baseline' -and $script:nativeActions.Count -eq 0 -and $script:invalidCaptures -eq 0 -and $script:nativeResolves -eq 0) 'native-invalid-method-no-effects'
+    }
+    foreach($failure in @('none','baseline','configuration','configured-state','ordinary-resolver','fault-injection','failed-resolver','restoration','restored-state','restored-resolver','dual')){
+        New-ACase;$script:nativeBefore=Read-DNSAcceptanceState;Set-AConfigured 'dnscrypt';$script:nativeConfigured=Read-DNSAcceptanceState;$script:nativeAfter=Clone-A $script:nativeBefore
+        $script:nativeFailure=$failure;$script:failureTrace=[Collections.Generic.List[string]]::new();$script:failureRestoreAttempted=$false
+        if($failure -ceq 'configured-state'){$script:nativeConfigured.adapters[0].ipv4.servers=@('192.0.2.53')}
+        if($failure -ceq 'restoration'){$script:nativeAfter=Clone-A $script:nativeConfigured}
+        if($failure -ceq 'restored-state'){$script:nativeAfter.adapters[0].ipv4.mode='static';$script:nativeAfter.adapters[0].ipv4.servers=@('198.51.100.53')}
+        $result=Invoke-NativeDoHScenario -Method 'dnscrypt' -ScenarioKind 'service-loss' -Apply {param($request)
+            if($request.action -ceq 'dns'){
+                $script:failureTrace.Add('configure')
+                if($script:nativeFailure -cin @('configuration','dual')){throw 'fixture-failure-configuration'}
+            }else{
+                $script:failureTrace.Add('restore');$script:failureRestoreAttempted=$true
+                if($script:nativeFailure -cin @('restoration','dual')){throw 'fixture-failure-restoration'}
+            }
+        } -Capture {
+            $script:failureTrace.Add('capture')
+            if($script:failureRestoreAttempted){return $script:nativeAfter}
+            if('configure' -in $script:failureTrace){return $script:nativeConfigured}
+            if($script:nativeFailure -ceq 'baseline'){throw 'fixture-failure-baseline'}
+            return $script:nativeBefore
+        } -Resolve {
+            $script:failureTrace.Add('resolve')
+            if($script:nativeFailure -ceq 'ordinary-resolver'){throw 'fixture-failure-query'}
+        } -InduceFailure {
+            $script:failureTrace.Add('inject')
+            if($script:nativeFailure -ceq 'fault-injection'){throw 'fixture-failure-injection'}
+        } -ResolveFailed {
+            $script:failureTrace.Add('failed-query')
+            if($script:nativeFailure -ceq 'failed-resolver'){throw 'fixture-failure-not-observed'}
+        } -ResolveRestored {
+            $script:failureTrace.Add('recovered-query')
+            if($script:nativeFailure -ceq 'restored-resolver'){throw 'fixture-recovered-query-failed'}
+        }
+        $operation=if($failure -ceq 'dual'){'configuration'}elseif($failure -cin @('baseline','configuration','configured-state','ordinary-resolver','fault-injection','failed-resolver')){$failure}else{'none'}
+        $restore=if($failure -cin @('restoration','dual')){'restoration'}else{'none'}
+        $verify=if($failure -cin @('restoration','restored-state')){'restored-state'}elseif($failure -ceq 'restored-resolver'){'restored-resolver'}else{'none'}
+        Assert-A (($result.outcome -ceq 'passed') -eq ($failure -ceq 'none') -and $result.operationCode -ceq $operation -and $result.restorationCode -ceq $restore -and $result.verificationCode -ceq $verify) 'failure-native-result'
+        $injected=$failure -cin @('none','failed-resolver','restoration','restored-state','restored-resolver')
+        $failedQuery=$failure -cin @('none','restoration','restored-state','restored-resolver')
+        $recovered=$failure -cnotin @('baseline','restoration','restored-state','restored-resolver')
+        Assert-A ($result.failureInjected -eq $injected -and $result.failedResolverVerified -eq $failedQuery -and $result.restoredResolverVerified -eq $recovered) 'failure-native-flags'
+        Assert-A ($result.restorationAttempted -eq ($failure -cne 'baseline') -and @($script:failureTrace | Where-Object {$_ -ceq 'restore'}).Count -eq $(if($failure -ceq 'baseline'){0}else{1})) 'failure-native-cleanup'
+        if($failure -ceq 'none'){Assert-A (($script:failureTrace -join ',') -ceq 'capture,configure,capture,resolve,inject,failed-query,restore,capture,recovered-query') 'failure-native-order'}
+    }
+    foreach($invalid in @('wrong-method','missing-injection','missing-failed-query','missing-recovered-query','unknown-kind','wrong-case-kind')){
+        $script:invalidEffects=0
+        $boundary={$script:invalidEffects++}
+        $parameters=@{Method='dnscrypt';ScenarioKind='service-loss';Apply=$boundary;Capture=$boundary;Resolve=$boundary;InduceFailure=$boundary;ResolveFailed=$boundary;ResolveRestored=$boundary}
+        switch -CaseSensitive ($invalid){
+            'wrong-method' {$parameters.Method='doh'}
+            'missing-injection' {$parameters.Remove('InduceFailure')}
+            'missing-failed-query' {$parameters.Remove('ResolveFailed')}
+            'missing-recovered-query' {$parameters.Remove('ResolveRestored')}
+            'unknown-kind' {$parameters.ScenarioKind='unknown'}
+            'wrong-case-kind' {$parameters.ScenarioKind='SERVICE-LOSS'}
+        }
+        $result=Invoke-NativeDoHScenario @parameters
+        Assert-A ($result.operationCode -ceq 'baseline' -and $script:invalidEffects -eq 0 -and -not $result.configurationAttempted -and -not $result.restorationAttempted) 'failure-native-preflight'
     }
     foreach($file in @('scripts/test-windows-integration.ps1','scripts/test-windows-reboot.ps1')){
         $tokens=$null;$issues=$null;$native=[Management.Automation.Language.Parser]::ParseFile((Join-Path $project $file),[ref]$tokens,[ref]$issues)
