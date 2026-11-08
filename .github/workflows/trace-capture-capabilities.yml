@@ -1,0 +1,65 @@
+name: Read-only Windows capture capabilities
+
+on:
+  push:
+    branches: ['main', 'codex/dns-adapter-coverage']
+    paths:
+      - 'scripts/trace-capture-capabilities.cjs'
+      - 'scripts/test-trace-capture-capabilities.cjs'
+      - 'scripts/read-native-trace-capabilities.ps1'
+      - '.github/workflows/trace-capture-capabilities.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trace-capture-capabilities-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: Read-only trace capabilities (windows/${{ matrix.goarch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {goarch: amd64, os: windows-latest, sdkarch: x64}
+          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '26.8.2'
+          architecture: ${{ matrix.sdkarch }}
+          package-manager-cache: false
+      - name: Verify pure capability reducers
+        run: |
+          node scripts/test-trace-capture-capabilities.cjs
+          if($LASTEXITCODE -ne 0){throw 'Pure capability reducer contracts failed'}
+      - name: Read capture help and metadata only
+        run: |
+          $ErrorActionPreference='Stop'
+          $evidence=Join-Path $env:RUNNER_TEMP ('accessweaver-trace-capabilities-'+[Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $evidence -ErrorAction Stop | Out-Null
+          $env:ACCESSWEAVER_TRACE_CAPABILITIES_EVIDENCE=$evidence
+          "ACCESSWEAVER_TRACE_CAPABILITIES_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          node scripts/trace-capture-capabilities.cjs > (Join-Path $evidence 'status.json')
+          if($LASTEXITCODE -ne 0){throw 'Read-only capability observation incomplete; fixed metadata retained'}
+      - name: Retain closed capability metadata only
+        if: always() && env.ACCESSWEAVER_TRACE_CAPABILITIES_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trace-capture-capabilities-windows-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_TRACE_CAPABILITIES_EVIDENCE }}/status.json
+          if-no-files-found: error
+          retention-days: 7
