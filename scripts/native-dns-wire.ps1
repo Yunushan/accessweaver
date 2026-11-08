@@ -302,14 +302,15 @@ function Get-NativeDNSWireStatsEvidence([string]$Text) {
     return $result
 }
 function New-NativeDNSWireEventEvidence([string]$Code='not-inspected') {
-    $r=@{code=$Code;records=-1;providerRecords=-1;framePayloadIDs=-1;frameDropPayloadIDs=-1;knownMetadataIDs=-1;unknownProviderIDs=-1;otherProviderRecords=-1;unrecognizedVersions=-1}
-    if($Code -cin @('complete','bound')){foreach($key in @('records','providerRecords','framePayloadIDs','frameDropPayloadIDs','knownMetadataIDs','unknownProviderIDs','otherProviderRecords','unrecognizedVersions')){$r[$key]=0}}
+    $r=@{code=$Code;records=-1;providerRecords=-1;framePayloadIDs=-1;frameDropPayloadIDs=-1;knownMetadataIDs=-1;unknownProviderIDs=-1;otherProviderRecords=-1;missingProviderIDs=-1;unrecognizedVersions=-1}
+    if($Code -cin @('complete','bound')){foreach($key in @('records','providerRecords','framePayloadIDs','frameDropPayloadIDs','knownMetadataIDs','unknownProviderIDs','otherProviderRecords','missingProviderIDs','unrecognizedVersions')){$r[$key]=0}}
     return $r
 }
 function Add-NativeDNSWireEventHeader([object]$Evidence,[Nullable[guid]]$Provider,[int]$ID,[Nullable[byte]]$Version) {
     if($Evidence.code -cne 'complete' -or $Evidence.records -ge 4096 -or $ID -lt 0 -or $ID -gt 65535){throw 'Wire event header bound'}
     $Evidence.records++
-    if($null -eq $Provider -or $Provider -ne [guid]'4d4f80d9-c8bd-4d73-bb5b-19c90402c5ac'){$Evidence.otherProviderRecords++;return}
+    if($null -eq $Provider){$Evidence.missingProviderIDs++;$Evidence.otherProviderRecords++;return}
+    if($Provider -ne [guid]'4d4f80d9-c8bd-4d73-bb5b-19c90402c5ac'){$Evidence.otherProviderRecords++;return}
     $Evidence.providerRecords++
     if($null -eq $Version -or $Version -ne 0){$Evidence.unrecognizedVersions++}
     # These are ID counts, never payload-schema assertions. New IDs/versions
@@ -351,16 +352,16 @@ function Get-NativeDNSWireEventEvidence([string]$Text) {
     if($Text.Length -gt 4096){return $invalid}
     try{$value=$Text | ConvertFrom-Json -ErrorAction Stop}catch{return $invalid}
     if($value -isnot [pscustomobject]){return $invalid}
-    $keys=@('records','providerRecords','framePayloadIDs','frameDropPayloadIDs','knownMetadataIDs','unknownProviderIDs','otherProviderRecords','unrecognizedVersions')
+    $keys=@('records','providerRecords','framePayloadIDs','frameDropPayloadIDs','knownMetadataIDs','unknownProviderIDs','otherProviderRecords','missingProviderIDs','unrecognizedVersions')
     $properties=@($value.PSObject.Properties.Name)
-    if($properties.Count -ne 9 -or 'code' -cnotin $properties -or $value.code -cnotin @('complete','bound','unavailable')){return $invalid}
+    if($properties.Count -ne 10 -or 'code' -cnotin $properties -or $value.code -cnotin @('complete','bound','unavailable')){return $invalid}
     foreach($key in $keys){
         if($key -cnotin $properties){return $invalid};$number=$value.$key
         if(($number -isnot [int] -and $number -isnot [long]) -or $number -lt -1 -or $number -gt 4096){return $invalid}
         if(($value.code -ceq 'unavailable' -and $number -ne -1) -or ($value.code -cne 'unavailable' -and $number -lt 0)){return $invalid}
     }
     if($value.code -cne 'unavailable'){
-        if($value.records -ne $value.providerRecords+$value.otherProviderRecords -or $value.providerRecords -ne $value.framePayloadIDs+$value.frameDropPayloadIDs+$value.knownMetadataIDs+$value.unknownProviderIDs -or $value.unrecognizedVersions -gt $value.providerRecords){return $invalid}
+        if($value.records -ne $value.providerRecords+$value.otherProviderRecords -or $value.providerRecords -ne $value.framePayloadIDs+$value.frameDropPayloadIDs+$value.knownMetadataIDs+$value.unknownProviderIDs -or $value.unrecognizedVersions -gt $value.providerRecords -or $value.missingProviderIDs -gt $value.otherProviderRecords){return $invalid}
     }
     $result=New-NativeDNSWireEventEvidence $value.code;foreach($key in $keys){$result[$key]=[int]$value.$key};return $result
 }

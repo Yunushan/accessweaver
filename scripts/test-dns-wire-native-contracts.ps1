@@ -139,9 +139,9 @@ try {
     if(-not $env:SystemRoot){$env:SystemRoot=[IO.Path]::GetTempPath()}
     Case-Wire 'event-headers-partition-known-unknown-and-other-providers' {
         $r=New-NativeDNSWireEventEvidence 'complete';$p=[guid]'4d4f80d9-c8bd-4d73-bb5b-19c90402c5ac'
-        Add-NativeDNSWireEventHeader $r $p 160 0;Add-NativeDNSWireEventHeader $r $p 170 1;Add-NativeDNSWireEventHeader $r $p 20 0;Add-NativeDNSWireEventHeader $r $p 999 $null;Add-NativeDNSWireEventHeader $r ([guid]::Empty) 160 0
+        Add-NativeDNSWireEventHeader $r $p 160 0;Add-NativeDNSWireEventHeader $r $p 170 1;Add-NativeDNSWireEventHeader $r $p 20 0;Add-NativeDNSWireEventHeader $r $p 999 $null;Add-NativeDNSWireEventHeader $r ([guid]::Empty) 160 0;Add-NativeDNSWireEventHeader $r $null 160 0
         $v=Get-NativeDNSWireEventEvidence ($r | ConvertTo-Json -Compress)
-        Assert-Wire ($v.code -ceq 'complete' -and $v.records -eq 5 -and $v.providerRecords -eq 4 -and $v.framePayloadIDs -eq 1 -and $v.frameDropPayloadIDs -eq 1 -and $v.knownMetadataIDs -eq 1 -and $v.unknownProviderIDs -eq 1 -and $v.otherProviderRecords -eq 1 -and $v.unrecognizedVersions -eq 2)
+        Assert-Wire ($v.code -ceq 'complete' -and $v.records -eq 6 -and $v.providerRecords -eq 4 -and $v.framePayloadIDs -eq 1 -and $v.frameDropPayloadIDs -eq 1 -and $v.knownMetadataIDs -eq 1 -and $v.unknownProviderIDs -eq 1 -and $v.otherProviderRecords -eq 2 -and $v.missingProviderIDs -eq 1 -and $v.unrecognizedVersions -eq 2)
     }
     Case-Wire 'event-header-bound-and-unavailable-preserve-uncertainty' {
         $r=New-NativeDNSWireEventEvidence 'complete';$r.records=4096;Reject-Wire {Add-NativeDNSWireEventHeader $r ([guid]::Empty) 1 0}
@@ -150,9 +150,9 @@ try {
         $v=Get-NativeDNSWireEventEvidence ((New-NativeDNSWireEventEvidence 'unavailable') | ConvertTo-Json -Compress);Assert-Wire ($v.code -ceq 'unavailable' -and $v.records -eq -1 -and $v.framePayloadIDs -eq -1)
     }
     Case-Wire 'event-report-refuses-private-fields-and-contradictory-counts' {
-        foreach($fault in @('private','boolean','sum','unknown-count','version','overflow')){
+        foreach($fault in @('private','boolean','sum','unknown-count','version','overflow','missing-provider')){
             $r=New-NativeDNSWireEventEvidence 'complete'
-            switch($fault){'private'{$r['private']='PRIVATE-SYNTHETIC'}'boolean'{$r.records=$false}'sum'{$r.records=1}'unknown-count'{$r.records=-1}'version'{$r.unrecognizedVersions=1}'overflow'{$r.records=4097}}
+            switch($fault){'private'{$r['private']='PRIVATE-SYNTHETIC'}'boolean'{$r.records=$false}'sum'{$r.records=1}'unknown-count'{$r.records=-1}'version'{$r.unrecognizedVersions=1}'overflow'{$r.records=4097}'missing-provider'{$r.missingProviderIDs=1}}
             $v=Get-NativeDNSWireEventEvidence ($r | ConvertTo-Json -Compress);Assert-Wire ($v.code -ceq 'invalid' -and $v.records -eq -1 -and -not (($v | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))
         }
         $v=Get-NativeDNSWireEventEvidence ('x'*4097);Assert-Wire ($v.code -ceq 'invalid' -and $v.records -eq -1)
