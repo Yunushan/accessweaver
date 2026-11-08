@@ -113,7 +113,7 @@ function Assert-DNSAcceptanceConfigured([object]$Before,[object]$Current,[string
         $guid=Convert-DNSAcceptanceGuid $record.guid
         if(-not $actual.adapters.ContainsKey($guid)){throw 'DNS acceptance configured adapter is missing'}
         foreach($family in @('ipv4','ipv6')){
-            $expected=if($family -eq 'ipv4'){@($v4)}else{@($v6)};$observed=$actual.adapters[$guid].$family;$servers=@($observed.servers)
+            [string[]]$expected=if($family -eq 'ipv4'){@($v4)}else{@($v6)};$observed=$actual.adapters[$guid].$family;$servers=@($observed.servers)
             if($observed.mode -cne 'static' -or $servers.Count -ne $expected.Count){throw 'DNS acceptance configured family or mode differs'}
             for($i=0;$i -lt $expected.Count;$i++){if((Convert-DNSAcceptanceAddress $servers[$i] '') -cne $expected[$i]){throw 'DNS acceptance configured server differs'}}
         }
