@@ -4,6 +4,8 @@ on:
   push:
     branches: ['main', 'codex/dns-adapter-coverage']
     paths:
+      - 'scripts/native-doh-offload-plan.ps1'
+      - 'scripts/doh-offload-operation.ps1'
       - 'scripts/native-ipv6-route-table.ps1'
       - 'scripts/read-native-ipv6-route-table.ps1'
       - 'scripts/native-doh-route-state.ps1'

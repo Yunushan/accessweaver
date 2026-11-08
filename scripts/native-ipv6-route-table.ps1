@@ -1,19 +1,22 @@
-# Definitions only. Complete bounded active IPv6 table projection; no route values published.
-function Test-NativeIPv6PrefixMatch([byte[]]$Prefix,[int]$Bits,[byte[]]$Target) {
-    if($Prefix.Length -ne 16 -or $Target.Length -ne 16 -or $Bits -lt 0 -or $Bits -gt 128){throw 'IPv6 route prefix'}
-    $matched=$true;for($i=0;$i -lt 16;$i++){$remaining=[Math]::Max(0,[Math]::Min(8,$Bits-8*$i));$mask=if($remaining -eq 0){0}else{(255 -shl (8-$remaining)) -band 255};if(($Prefix[$i] -band (255 -bxor $mask)) -ne 0){throw 'IPv6 route prefix'};if(($Prefix[$i] -band $mask) -ne ($Target[$i] -band $mask)){$matched=$false}};return $matched
+# Definitions only. Bounded active IPv4/IPv6 table projection; no route values published.
+function Test-NativeIPPrefixMatch([byte[]]$Prefix,[int]$Bits,[byte[]]$Target) {
+    if($Prefix.Length -notin @(4,16) -or $Target.Length -ne $Prefix.Length -or $Bits -lt 0 -or $Bits -gt 8*$Prefix.Length){throw 'IPv6 route prefix'}
+    $matched=$true;for($i=0;$i -lt $Prefix.Length;$i++){$remaining=[Math]::Max(0,[Math]::Min(8,$Bits-8*$i));$mask=if($remaining -eq 0){0}else{(255 -shl (8-$remaining)) -band 255};if(($Prefix[$i] -band (255 -bxor $mask)) -ne 0){throw 'IPv6 route prefix'};if(($Prefix[$i] -band $mask) -ne ($Target[$i] -band $mask)){$matched=$false}};return $matched
 }
-function Read-NativeIPv6RouteTable([object[]]$Rows) {
-    if($Rows.Count -gt 256){throw 'IPv6 route bound'};$keys=[Collections.Generic.List[string]]::new();$google=[Net.IPAddress]::Parse('2001:4860:4860::8888').GetAddressBytes();$quad9=[Net.IPAddress]::Parse('2620:fe::fe').GetAddressBytes();$g=0;$q=0
+function Test-NativeIPv6PrefixMatch([byte[]]$Prefix,[int]$Bits,[byte[]]$Target) {if($Prefix.Length -ne 16 -or $Target.Length -ne 16){throw 'IPv6 route prefix'};return (Test-NativeIPPrefixMatch $Prefix $Bits $Target)}
+function Read-NativeIPv6RouteTable([object[]]$Rows) {return (Read-NativeIPRouteTable $Rows 'IPv6')}
+function Read-NativeIPRouteTable([object[]]$Rows,[string]$Family) {
+    if($Family -cnotin @('IPv4','IPv6')){throw 'IPv6 route family'};$v6=($Family -ceq 'IPv6');$familyNumber=if($v6){23}else{2};$socketFamily=if($v6){[Net.Sockets.AddressFamily]::InterNetworkV6}else{[Net.Sockets.AddressFamily]::InterNetwork};$maximumBits=if($v6){128}else{32}
+    if($Rows.Count -gt 256){throw 'IPv6 route bound'};$keys=[Collections.Generic.List[string]]::new();$google=[Net.IPAddress]::Parse($(if($v6){'2001:4860:4860::8888'}else{'8.8.8.8'})).GetAddressBytes();$quad9=[Net.IPAddress]::Parse($(if($v6){'2620:fe::fe'}else{'9.9.9.9'})).GetAddressBytes();$g=0;$q=0
     foreach($row in $Rows){
         if($row.CimClass.CimClassName -cne 'MSFT_NetRoute'){throw 'IPv6 route class'}
         $family=Get-NativeOffloadRaw $row 'AddressFamily';$store=Get-NativeOffloadRaw $row 'Store';$index=Get-NativeOffloadRaw $row 'InterfaceIndex';$prefix=Get-NativeOffloadRaw $row 'DestinationPrefix';$next=Get-NativeOffloadRaw $row 'NextHop';$metric=Get-NativeOffloadRaw $row 'RouteMetric'
-        if($family -isnot [uint16] -or $family -ne 23){throw 'IPv6 route family'};if($store -isnot [byte] -or $store -ne 1){throw 'IPv6 route store'};if($index -isnot [uint32] -or $index -eq 0){throw 'IPv6 route index'};if($metric -isnot [uint16]){throw 'IPv6 route metric'}
-        if($prefix -isnot [string] -or $prefix.Length -gt 80 -or $prefix -cnotmatch '^[0-9a-fA-F:]+/[0-9]{1,3}$'){throw 'IPv6 route prefix'};$parts=$prefix.Split('/');$ip=$null;$bits=[int]$parts[1]
-        if($bits -gt 128 -or -not [Net.IPAddress]::TryParse($parts[0],[ref]$ip) -or $ip.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetworkV6){throw 'IPv6 route prefix'};$bytes=$ip.GetAddressBytes()
-        if(Test-NativeIPv6PrefixMatch $bytes $bits $google){$g++};if(Test-NativeIPv6PrefixMatch $bytes $bits $quad9){$q++}
-        $hop=$null;if($next -isnot [string] -or $next.Length -gt 80 -or $next -cnotmatch '^[0-9a-fA-F:]+(%[0-9]{1,10})?$' -or -not [Net.IPAddress]::TryParse($next,[ref]$hop) -or $hop.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetworkV6){throw 'IPv6 route next-hop'}
-        if($hop.ScopeId -ne 0){if(-not $hop.IsIPv6LinkLocal -or $hop.ScopeId -ne $index){throw 'IPv6 route next-hop'};$hop.ScopeId=0}
+        if($family -isnot [uint16] -or $family -ne $familyNumber){throw 'IPv6 route family'};if($store -isnot [byte] -or $store -ne 1){throw 'IPv6 route store'};if($index -isnot [uint32] -or $index -eq 0){throw 'IPv6 route index'};if($metric -isnot [uint16]){throw 'IPv6 route metric'}
+        if($prefix -isnot [string] -or $prefix.Length -gt 80 -or $prefix -cnotmatch '^[0-9a-fA-F:.]+/[0-9]{1,3}$'){throw 'IPv6 route prefix'};$parts=$prefix.Split('/');$ip=$null;$bits=[int]$parts[1]
+        if($bits -gt $maximumBits -or -not [Net.IPAddress]::TryParse($parts[0],[ref]$ip) -or $ip.AddressFamily -ne $socketFamily){throw 'IPv6 route prefix'};$bytes=$ip.GetAddressBytes()
+        if(Test-NativeIPPrefixMatch $bytes $bits $google){$g++};if(Test-NativeIPPrefixMatch $bytes $bits $quad9){$q++}
+        $hop=$null;if($next -isnot [string] -or $next.Length -gt 80 -or $next -cnotmatch '^[0-9a-fA-F:.]+(%[0-9]{1,10})?$' -or -not [Net.IPAddress]::TryParse($next,[ref]$hop) -or $hop.AddressFamily -ne $socketFamily){throw 'IPv6 route next-hop'}
+        if($v6 -and $hop.ScopeId -ne 0){if(-not $hop.IsIPv6LinkLocal -or $hop.ScopeId -ne $index){throw 'IPv6 route next-hop'};$hop.ScopeId=0}
         $keys.Add($ip.ToString()+'/'+$bits.ToString([Globalization.CultureInfo]::InvariantCulture)+'|'+$index.ToString([Globalization.CultureInfo]::InvariantCulture)+'|'+$hop.ToString()+'|'+$metric.ToString([Globalization.CultureInfo]::InvariantCulture))
     };$keys.Sort([StringComparer]::Ordinal);return @{rows=$Rows.Count;googleMatches=$g;quad9Matches=$q;signatures=@($keys.ToArray())}
 }
