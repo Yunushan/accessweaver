@@ -40,7 +40,7 @@ $ownerToken=[guid]::NewGuid().ToString('N')
 [IO.File]::WriteAllText($ownerMarker,$ownerToken,[Text.UTF8Encoding]::new($false))
 $script:checks=0;$script:caseNumber=0
 $script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('existing-originals-never-recaptured','new-adapter-originals-persisted','extended-snapshot-restores-both-adapters','extension-failure-before-effects','invalid-configuration-preflight','configuration-uses-current-guid-index','source-uncovered-dns-write','absent','absent-entry-idempotence-and-unrelated-preservation','accessweaver-dns-contracts-','add','all-providers-no-plaintext-fallback','ambiguous-adapter','bad-doh','bad-flags','capture-inspection-failure-not-empty','case','confirmed-absent-entry-not-removed-again','confirmed-absent-mode-is-dhcp','current-doh-query-before-effects','dns','doh','duplicate-doh','empty-adapters','empty-static','exact-original-doh-restored','expected-refusal','false','fixture-cleanup-incomplete','guid-recovery-uses-current-index','invalid-recovery-preflight','legacy-no-doh-recovery-supported','malformed-mode-not-empty','missing-adapter','no-false-restored-event','none','original-snapshot-retained','partial-removal-retains-needed-recovery','profiles','recovery-retry-completes-after-confirmed-inspection','registry-error-not-dhcp','remove','restore-inspection-before-effects','saved-doh-needs-capability','set','snapshot-before-native-effects','source-doh-inspection-failed','source-doh-mutation-failed','source-registry-inspection-failed','source-snapshot-removal-failed','source-snapshot-write-failed','true','unexpected-contract-error','unknown-test-code')
+$script:closedContractCodes=@('invalid-recovery-identities-before-inspection','restore-uses-refreshed-guid-index','changed-adapter-retains-before-dns-read','case-insensitive-down-adapter-restoration','existing-originals-never-recaptured','new-adapter-originals-persisted','extended-snapshot-restores-both-adapters','extension-failure-before-effects','invalid-configuration-preflight','configuration-uses-current-guid-index','source-uncovered-dns-write','absent','absent-entry-idempotence-and-unrelated-preservation','accessweaver-dns-contracts-','add','all-providers-no-plaintext-fallback','ambiguous-adapter','bad-doh','bad-flags','capture-inspection-failure-not-empty','case','confirmed-absent-entry-not-removed-again','confirmed-absent-mode-is-dhcp','current-doh-query-before-effects','dns','doh','duplicate-doh','empty-adapters','empty-static','exact-original-doh-restored','expected-refusal','false','fixture-cleanup-incomplete','guid-recovery-uses-current-index','invalid-recovery-preflight','legacy-no-doh-recovery-supported','malformed-mode-not-empty','missing-adapter','no-false-restored-event','none','original-snapshot-retained','partial-removal-retains-needed-recovery','profiles','recovery-retry-completes-after-confirmed-inspection','registry-error-not-dhcp','remove','restore-inspection-before-effects','saved-doh-needs-capability','set','snapshot-before-native-effects','source-doh-inspection-failed','source-doh-mutation-failed','source-registry-inspection-failed','source-snapshot-removal-failed','source-snapshot-write-failed','true','unexpected-contract-error','unknown-test-code')
 function Assert-DNS([bool]$Condition,[string]$Code){if(-not $Condition){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('DNS contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-DNS([scriptblock]$Operation){$failed=$false;try{& $Operation | Out-Null}catch{$failed=$true};Assert-DNS $failed 'expected-refusal'}
 function New-DNSCase {
@@ -51,7 +51,7 @@ function New-DNSCase {
     $script:present=@{'Get-DnsClientDohServerAddress'=$true;'Set-DnsClientDohServerAddress'=$true;'Add-DnsClientDohServerAddress'=$true;'Remove-DnsClientDohServerAddress'=$true}
     $script:adapters=@([pscustomobject]@{Status='Up';InterfaceDescription='Fixture adapter';InterfaceGuid='{00000000-0000-0000-0000-000000000001}';ifIndex=77})
     $script:mode4='192.0.2.53';$script:mode6='absent';$script:registryFailure='';$script:emptyDnsRead=$false;$script:failDohRead=0;$script:dohReads=0
-    $script:registryReads=[Collections.Generic.List[string]]::new();$script:dnsValues=@{};$script:renumberDuringDoh=$false
+    $script:registryReads=[Collections.Generic.List[string]]::new();$script:dnsValues=@{};$script:renumberDuringDoh=$false;$script:reuseIndexDuringDoh=$false;$script:disappearDuringDoh=$false;$script:dnsReadCount=0
     $script:failAction='';$script:failAddress='';$script:failDelete=$false;$script:failSnapshotWrite=$false
     $script:currentDoh=@{};$script:calls=[Collections.Generic.List[object]]::new();$script:events=[Collections.Generic.List[string]]::new()
     $script:undo=[Collections.Generic.List[object]]::new();$script:dnsTouched=$false;$script:dnsConfigured=$false;$script:journals=0
@@ -78,12 +78,14 @@ function Get-ItemProperty {
     if($value -is [string] -and $value -ceq 'absent'){return [pscustomobject]@{}}
     return [pscustomobject]@{NameServer=$value}
 }
-function Get-DnsClientServerAddress {[CmdletBinding()]param($InterfaceIndex,$AddressFamily);if($script:emptyDnsRead){return};$key=([string]$InterfaceIndex)+'/'+$AddressFamily;if($script:dnsValues.ContainsKey($key)){return [pscustomobject]@{InterfaceIndex=$InterfaceIndex;AddressFamily=$AddressFamily;ServerAddresses=@($script:dnsValues[$key])}};return [pscustomobject]@{InterfaceIndex=$InterfaceIndex;AddressFamily=$AddressFamily;ServerAddresses=@($(if($AddressFamily -eq 'IPv4'){'192.0.2.53'}else{'2001:db8::53'}))}}
+function Get-DnsClientServerAddress {[CmdletBinding()]param($InterfaceIndex,$AddressFamily);$script:dnsReadCount++;if($script:emptyDnsRead){return};$key=([string]$InterfaceIndex)+'/'+$AddressFamily;if($script:dnsValues.ContainsKey($key)){return [pscustomobject]@{InterfaceIndex=$InterfaceIndex;AddressFamily=$AddressFamily;ServerAddresses=@($script:dnsValues[$key])}};return [pscustomobject]@{InterfaceIndex=$InterfaceIndex;AddressFamily=$AddressFamily;ServerAddresses=@($(if($AddressFamily -eq 'IPv4'){'192.0.2.53'}else{'2001:db8::53'}))}}
 function Set-DnsClientServerAddress {[CmdletBinding()]param([Parameter(ValueFromPipeline)]$InputObject,$InterfaceIndex,[string[]]$ServerAddresses,[switch]$ResetServerAddresses);process{$index=if($null -ne $InputObject){$InputObject.InterfaceIndex}else{$InterfaceIndex};$matches=@($script:adapters | Where-Object {$_.ifIndex -eq $index});$saved=Microsoft.PowerShell.Utility\ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($snapshot));if($matches.Count -ne 1 -or @($saved.adapters | Where-Object {$_.guid -eq $matches[0].InterfaceGuid}).Count -ne 1){throw 'source-uncovered-dns-write'};$script:calls.Add(@{kind='dns';index=$index;family=$InputObject.AddressFamily;servers=@($ServerAddresses);reset=[bool]$ResetServerAddresses})}}
 function Get-DnsClientDohServerAddress {
     [CmdletBinding()]param($ServerAddress)
     if(-not $script:present['Get-DnsClientDohServerAddress']){throw 'Unavailable DoH query invoked'}
     if($script:renumberDuringDoh){$script:adapters[0].ifIndex=101;$script:renumberDuringDoh=$false}
+    if($script:reuseIndexDuringDoh){$script:adapters+=@([pscustomobject]@{Status='Up';InterfaceDescription='Replacement fixture adapter';InterfaceGuid='{00000000-0000-0000-0000-000000000002}';ifIndex=77});$script:reuseIndexDuringDoh=$false}
+    if($script:disappearDuringDoh){$script:adapters=@();$script:disappearDuringDoh=$false}
     $script:dohReads++;if($script:failDohRead -eq $script:dohReads){Write-Error 'source-doh-inspection-failed';return}
     if($ServerAddress){throw 'Per-address absent/error inference is not allowed'}
     return @($script:currentDoh.Values)
@@ -190,6 +192,30 @@ try {
         }
         Write-DNSFixture $saved;$hash=Snapshot-Hash;Reject-DNS {Restore-DNS};Assert-SnapshotRetained $hash;Assert-DNS ((Mutation-Count) -eq 0) 'invalid-recovery-preflight'
     }
+    foreach($mode in @('duplicate-identical','duplicate-conflicting','duplicate-case','missing-guid','blank-guid','numeric-guid','null-record')){
+        New-DNSCase;$saved=Original-DNSFixture
+        switch($mode){
+            'duplicate-identical' {$saved.adapters+=@($saved.adapters[0])}
+            'duplicate-conflicting' {$other=Original-DNSFixture;$other.adapters[0].ipv4=@('198.51.100.53');$saved.adapters+=@($other.adapters[0])}
+            'duplicate-case' {$saved.adapters[0].guid='{ABCDEF00-0000-0000-0000-000000000001}';$script:adapters[0].InterfaceGuid=$saved.adapters[0].guid;$other=Original-DNSFixture;$other.adapters[0].guid=$saved.adapters[0].guid.ToLowerInvariant();$saved.adapters+=@($other.adapters[0])}
+            'missing-guid' {$saved.adapters[0].Remove('guid')}
+            'blank-guid' {$saved.adapters[0].guid=' ';$script:adapters[0].InterfaceGuid=' '}
+            'numeric-guid' {$saved.adapters[0].guid=77;$script:adapters[0].InterfaceGuid=77}
+            'null-record' {$saved.adapters+=@($null)}
+        }
+        Write-DNSFixture $saved;$hash=Snapshot-Hash
+        Reject-DNS {Restore-DNS};Assert-SnapshotRetained $hash
+        Assert-DNS ((Mutation-Count) -eq 0 -and $script:dohReads -eq 0 -and $script:dnsReadCount -eq 0) 'invalid-recovery-identities-before-inspection'
+    }
+    New-DNSCase;Write-DNSFixture (Original-DNSFixture);$script:renumberDuringDoh=$true;$script:reuseIndexDuringDoh=$true
+    Restore-DNS
+    Assert-DNS (-not [IO.File]::Exists($snapshot) -and @($script:calls | Where-Object {$_.kind -eq 'dns' -and $_.index -eq 101}).Count -eq 2 -and @($script:calls | Where-Object {$_.kind -eq 'dns' -and $_.index -ne 101}).Count -eq 0) 'restore-uses-refreshed-guid-index'
+    New-DNSCase;Write-DNSFixture (Original-DNSFixture);$hash=Snapshot-Hash;$script:disappearDuringDoh=$true
+    Reject-DNS {Restore-DNS};Assert-SnapshotRetained $hash
+    Assert-DNS ((Mutation-Count) -eq 0 -and $script:dnsReadCount -eq 0) 'changed-adapter-retains-before-dns-read'
+    New-DNSCase;$saved=Original-DNSFixture;$saved.adapters[0].guid='{ABCDEF00-0000-0000-0000-000000000001}';$script:adapters[0].InterfaceGuid=$saved.adapters[0].guid.ToLowerInvariant();$script:adapters[0].Status='Down';Write-DNSFixture $saved
+    Restore-DNS
+    Assert-DNS (-not [IO.File]::Exists($snapshot) -and @($script:calls | Where-Object {$_.kind -eq 'dns' -and $_.index -eq 77}).Count -eq 2) 'case-insensitive-down-adapter-restoration'
     foreach($kind in @('set','add','remove')){
         New-DNSCase;$saved=Original-DNSFixture
         if($kind -ne 'remove'){$saved.doh=@((Old-DohFixture))}

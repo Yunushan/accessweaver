@@ -1132,8 +1132,9 @@ function Restore-DNS {
     if($null -eq $saved.adapters -or @($saved.adapters).Count -eq 0){throw 'Original DNS snapshot has no adapter records; retain it for manual recovery'}
     # Inspect every original adapter and relevant DoH entry before changing any
     # settings. This is preflight, not a guarantee of an atomic OS transaction.
-    $currentAdapters=@(Get-NetAdapter -ErrorAction Stop);$plans=@()
+    $currentAdapters=@(Get-NetAdapter -ErrorAction Stop);$plans=@();$known=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach($record in $saved.adapters){
+        if($null -eq $record -or $record.guid -isnot [string] -or [string]::IsNullOrWhiteSpace($record.guid) -or -not $known.Add($record.guid)){throw 'Original DNS adapter identities are invalid or duplicated; retain the snapshot for manual recovery'}
         if($record.dhcp4 -isnot [bool] -or $record.dhcp6 -isnot [bool]){throw 'Original DNS snapshot has invalid address mode flags; retain it for manual recovery'}
         $matches=@($currentAdapters | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
         if($matches.Count -ne 1){throw 'An original network adapter is missing or ambiguous; retain the snapshot for later recovery'}
@@ -1157,7 +1158,10 @@ function Restore-DNS {
         }
     } elseif(@($saved.doh | Where-Object {$null -ne $_}).Count -gt 0){throw 'Original DoH metadata cannot be restored on this host; retain the DNS snapshot'}
     foreach($plan in $plans){
-        $record=$plan.record;$adapter=$plan.adapter
+        $record=$plan.record
+        $matches=@(Get-NetAdapter -ErrorAction Stop | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
+        if($matches.Count -ne 1){throw 'An original adapter changed before restoration; retain the recovery snapshot'}
+        $adapter=$matches[0]
         foreach($family in @('IPv4','IPv6')){
             $dhcp=if($family -eq 'IPv4'){$record.dhcp4}else{$record.dhcp6};$values=if($family -eq 'IPv4'){@($record.ipv4)}else{@($record.ipv6)}
             $dns=@(Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily $family -ErrorAction Stop)
