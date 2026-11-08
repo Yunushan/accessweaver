@@ -1,0 +1,350 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "302a6c2abbc4a216e9b7f1aa2d910870b32c75c6",
+  "runID": 42452342775,
+  "runURL": "https://github.com/Yunushan/accessweaver/actions/runs/42452342775",
+  "runConclusion": "success",
+  "scope": "Source-only Windows DNS restoration identity validation and current-index lookup",
+  "sourceSHA256": {
+    ".github/workflows/dns-recovery-contracts.yml": "d7d41a9b6aaac87c2de3cb569806875df0a2c9805326e3da9a9281eee4fdd811",
+    "internal/workflow/windows.ps1": "1a59a7d5be8f916eff3dd6aea5672cd8e8acf09cf51d81a76216c417fdb4008c",
+    "scripts/test-dns-recovery-contracts.ps1": "1f33e3ba0f5cd96bb8ce10fb7adf5eb30db253843562d332498f7bc0756e01e8"
+  },
+  "requiredHostJobsPassed": 6,
+  "shellReportsVerified": 8,
+  "checksPerShell": 197,
+  "totalAssertionInstances": 1576,
+  "publicArtifacts": [
+    {
+      "artifactID": 13606272295,
+      "artifactName": "dns-source-contracts-linux-arm64",
+      "providerZIPDigest": "sha256:93379d783ee2f1113b22637abfe5ad075998c584a0364eb699ec3dbb624c5855",
+      "providerZIPDigestVerified": true,
+      "complete": true,
+      "reports": [
+        {
+          "entry": "core/dns-contracts.json",
+          "sha256": "0c75ce18e2598432297533e59ff16328da2f2c425352b1d17032f2eb96ac3d5c",
+          "report": {
+            "workflowSHA256": "1a59a7d5be8f916eff3dd6aea5672cd8e8acf09cf51d81a76216c417fdb4008c",
+            "code": "none",
+            "fixtureSHA256": "1f33e3ba0f5cd96bb8ce10fb7adf5eb30db253843562d332498f7bc0756e01e8",
+            "checks": 197,
+            "schemaVersion": 1,
+            "nativeDnsQualified": false,
+            "edition": "Core",
+            "realDnsChanged": false,
+            "sourceCommit": "302a6c2abbc4a216e9b7f1aa2d910870b32c75c6",
+            "outcome": "passed",
+            "version": "7.6.9"
+          }
+        }
+      ]
+    },
+    {
+      "artifactID": 13606247626,
+      "artifactName": "dns-source-contracts-windows-arm64",
+      "providerZIPDigest": "sha256:f0525b43ebacdf999a7bbcb1f468e94625eebb79672a364c9cd8f93c9b9b8ad7",
+      "providerZIPDigestVerified": true,
+      "complete": true,
+      "reports": [
+        {
+          "entry": "core/dns-contracts.json",
+          "sha256": "af3cb7b01853bb1584bbe0c2733d2993616705cb03e97bc487855eddf6d6b871",
+          "report": {
+            "schemaVersion": 1,
+            "checks": 197,
+            "version": "7.6.9",
+            "outcome": "passed",
+            "code": "none",
+            "nativeDnsQualified": false,
+            "sourceCommit": "302a6c2abbc4a216e9b7f1aa2d910870b32c75c6",
+            "workflowSHA256": "1a59a7d5be8f916eff3dd6aea5672cd8e8acf09cf51d81a76216c417fdb4008c",
+            "edition": "Core",
+            "realDnsChanged": false,
+            "fixtureSHA256": "1f33e3ba0f5cd96bb8ce10fb7adf5eb30db253843562d332498f7bc0756e01e8"
+          }
+        },
+        {
+          "entry": "desktop/dns-contracts.json",
+          "sha256": "5aa7c19a78e88aad2896adb7a4d5242986ae7708c1a714bba2964cad0796e0f5",
+          "report": {
+            "nativeDnsQualified": false,
+            "checks": 197,
+            "version": "5.1.26100.9711",
+            "edition": "Desktop",
+            "workflowSHA256": "1a59a7d5be8f916eff3dd6aea5672cd8e8acf09cf51d81a76216c417fdb4008c",
+            "outcome": "passed",
+            "sourceCommit": "302a6c2abbc4a216e9b7f1aa2d910870b32c75c6",
+            "fixtureSHA256": "1f33e3ba0f5cd96bb8ce10fb7adf5eb30db253843562d332498f7bc0756e01e8",
+            "realDnsChanged": false,
+            "code": "none",
+            "schemaVersion": 1
+          }
+        }
+      ]
+    },
+    {
+      "artifactID": 13605978823,
+      "artifactName": "dns-source-contracts-linux-amd64",
+      "providerZIPDigest": "sha256:fd05f3480e50e55a5d5794d848ec2c0f78b04ffff3b2eceecdc3265fd06c1328",
+      "providerZIPDigestVerified": true,
+      "complete": true,
+      "reports": [
+        {
+          "entry": "core/dns-contracts.json",
+          "sha256": "f70cb250b7aa8d1fbbdc5e0b9ebef6d834d7af53b97e696c008c8ec9faf0cf4f",
+          "report": {
+            "code": "none",
+            "nativeDnsQualified": false,
+            "version": "7.6.9",
+            "workflowSHA256": "1a59a7d5be8f916eff3dd6aea5672cd8e8acf09cf51d81a76216c417fdb4008c",
+            "sourceCommit": "302a6c2abbc4a216e9b7f1aa2d910870b32c75c6",
+            "realDnsChanged": false,
+            "outcome": "passed",
+            "fixtureSHA256": "1f33e3ba0f5cd96bb8ce10fb7adf5eb30db253843562d332498f7bc0756e01e8",
+            "schemaVersion": 1,
+            "edition": "Core",
+            "checks": 197
+          }
+        }
+      ]
+    },
+    {
+      "artifactID": 13605694396,
+      "artifactName": "dns-source-contracts-darwin-arm64",
+      "providerZIPDigest": "sha256:fbdb18e0f9eb746ad551a68fc8985fa472aad1ce1cc1553379e78eaefc773ea3",
+      "providerZIPDigestVerified": true,
+      "complete": true,
+      "reports": [
+        {
+          "entry": "core/dns-contracts.json",
+          "sha256": "161bbbf58dc48f7e5859910f0746dc228eec996af60a30d912794f3055a656e8",
+          "report": {
+            "realDnsChanged": false,
+            "code": "none",
+            "outcome": "passed",
+            "sourceCommit": "302a6c2abbc4a216e9b7f1aa2d910870b32c75c6",
+            "edition": "Core",
+            "fixtureSHA256": "1f33e3ba0f5cd96bb8ce10fb7adf5eb30db253843562d332498f7bc0756e01e8",
+            "version": "7.6.9",
+            "workflowSHA256": "1a59a7d5be8f916eff3dd6aea5672cd8e8acf09cf51d81a76216c417fdb4008c",
+            "nativeDnsQualified": false,
+            "schemaVersion": 1,
+            "checks": 197
+          }
+        }
+      ]
+    },
+    {
+      "artifactID": 13605579806,
+      "artifactName": "dns-source-contracts-windows-amd64",
+      "providerZIPDigest": "sha256:0e1a45ee828f938c52b5e595310e19ab636248262a1341ad3a62006456794873",
+      "providerZIPDigestVerified": true,
+      "complete": true,
+      "reports": [
+        {
+          "entry": "core/dns-contracts.json",
+          "sha256": "f679df7188fe93a4479ce2c9e0bdd5f62fe98f4069e1d5040a63f6ec32874f8a",
+          "report": {
+            "outcome": "passed",
+            "fixtureSHA256": "1f33e3ba0f5cd96bb8ce10fb7adf5eb30db253843562d332498f7bc0756e01e8",
+            "schemaVersion": 1,
+            "checks": 197,
+            "realDnsChanged": false,
+            "nativeDnsQualified": false,
+            "sourceCommit": "302a6c2abbc4a216e9b7f1aa2d910870b32c75c6",
+            "workflowSHA256": "1a59a7d5be8f916eff3dd6aea5672cd8e8acf09cf51d81a76216c417fdb4008c",
+            "edition": "Core",
+            "code": "none",
+            "version": "7.6.9"
+          }
+        },
+        {
+          "entry": "desktop/dns-contracts.json",
+          "sha256": "5d5b576c73d97df43aa835745347e259370413cc6802a758b9d58161b14ab349",
+          "report": {
+            "nativeDnsQualified": false,
+            "checks": 197,
+            "version": "5.1.26100.33648",
+            "edition": "Desktop",
+            "workflowSHA256": "1a59a7d5be8f916eff3dd6aea5672cd8e8acf09cf51d81a76216c417fdb4008c",
+            "outcome": "passed",
+            "sourceCommit": "302a6c2abbc4a216e9b7f1aa2d910870b32c75c6",
+            "fixtureSHA256": "1f33e3ba0f5cd96bb8ce10fb7adf5eb30db253843562d332498f7bc0756e01e8",
+            "realDnsChanged": false,
+            "code": "none",
+            "schemaVersion": 1
+          }
+        }
+      ]
+    },
+    {
+      "artifactID": 13605538379,
+      "artifactName": "dns-source-contracts-darwin-amd64",
+      "providerZIPDigest": "sha256:2f2ae81204d99a053df97c37601c15494eff5f180be821f1401d042a454a69b9",
+      "providerZIPDigestVerified": true,
+      "complete": true,
+      "reports": [
+        {
+          "entry": "core/dns-contracts.json",
+          "sha256": "572d2b5124bb318aab418bab13e555cd8f3904e73f288516e6a6a654006607a9",
+          "report": {
+            "code": "none",
+            "version": "7.6.4",
+            "realDnsChanged": false,
+            "checks": 197,
+            "fixtureSHA256": "1f33e3ba0f5cd96bb8ce10fb7adf5eb30db253843562d332498f7bc0756e01e8",
+            "outcome": "passed",
+            "schemaVersion": 1,
+            "edition": "Core",
+            "nativeDnsQualified": false,
+            "workflowSHA256": "1a59a7d5be8f916eff3dd6aea5672cd8e8acf09cf51d81a76216c417fdb4008c",
+            "sourceCommit": "302a6c2abbc4a216e9b7f1aa2d910870b32c75c6"
+          }
+        }
+      ]
+    }
+  ],
+  "providerZIPDigestsVerified": 6,
+  "regressionsCovered": [
+    "All163previous DNS capture/configuration/recovery assertions are retained.",
+    "Reject identical, conflicting and case-variant duplicate saved GUIDs before DoH/DNS inspection or mutation.",
+    "Reject missing, blank, nonstring or null saved adapter identities before DoH/DNS inspection or mutation.",
+    "When a GUID is renumbered and its old index is reused by another adapter during DoH inspection, restore only the current index for the original GUID.",
+    "Retain the exact snapshot and avoid DNS inspection/mutation when the original adapter disappears during DoH inspection.",
+    "Continue restoring a disconnected adapter and matching a legitimate GUID case-insensitively."
+  ],
+  "localValidation": {
+    "sourceBase": "ff0011877aac9d3cf4d9ea82daf8e81b2607d81d",
+    "sourceSHA256": {
+      "internal/workflow/windows.ps1": "1a59a7d5be8f916eff3dd6aea5672cd8e8acf09cf51d81a76216c417fdb4008c",
+      "scripts/test-dns-recovery-contracts.ps1": "1f33e3ba0f5cd96bb8ce10fb7adf5eb30db253843562d332498f7bc0756e01e8",
+      ".github/workflows/dns-recovery-contracts.yml": "d7d41a9b6aaac87c2de3cb569806875df0a2c9805326e3da9a9281eee4fdd811",
+      "web/app.js": "ed792b48fb71a150c1112e660f24565993d3592979e2d649f4c416ed29c6d99b",
+      "web/index.html": "4de9b17ac88a7c9b304245c08b5c59bbe48fba803f8be67247a2290689c2f4ca",
+      "web/app.css": "2a60b91d0c6c04b8fa3d4fc50f948e326dc1408648ac0fda41ec37ffc77de9d6",
+      "web/locales.js": "3e76feaab403e9356420b183de3eb10d2aa7590f263d33a935730ff02ee63b8c",
+      "web/system.js": "b0da03f86609e356ecd5a56a63ab7ad02ee18bc8b56ecf94e270ad297b28383b"
+    },
+    "compileOnlyTargets": 10,
+    "executedBinaries": false,
+    "powerShellSourceFilesParsed": 2,
+    "powerShellSourceParseErrors": 0,
+    "powerShellFixtureExecutedLocally": false,
+    "formalGatesPromoted": 0
+  },
+  "compileOnlyResults": {
+    "assetsSHA256": {
+      "internal/workflow/windows.ps1": "1a59a7d5be8f916eff3dd6aea5672cd8e8acf09cf51d81a76216c417fdb4008c",
+      "scripts/test-dns-recovery-contracts.ps1": "1f33e3ba0f5cd96bb8ce10fb7adf5eb30db253843562d332498f7bc0756e01e8",
+      ".github/workflows/dns-recovery-contracts.yml": "d7d41a9b6aaac87c2de3cb569806875df0a2c9805326e3da9a9281eee4fdd811",
+      "web/app.js": "ed792b48fb71a150c1112e660f24565993d3592979e2d649f4c416ed29c6d99b",
+      "web/index.html": "4de9b17ac88a7c9b304245c08b5c59bbe48fba803f8be67247a2290689c2f4ca",
+      "web/app.css": "2a60b91d0c6c04b8fa3d4fc50f948e326dc1408648ac0fda41ec37ffc77de9d6",
+      "web/locales.js": "3e76feaab403e9356420b183de3eb10d2aa7590f263d33a935730ff02ee63b8c",
+      "web/system.js": "b0da03f86609e356ecd5a56a63ab7ad02ee18bc8b56ecf94e270ad297b28383b"
+    },
+    "targets": [
+      {
+        "target": "windows/amd64",
+        "exitCode": 0,
+        "compiledOnly": true,
+        "executed": false,
+        "bytes": 15032832,
+        "sha256": "8e7cdbdbec6fb15b405f9e048cf5f4ae2d95bdf01f97780f4672b172602dd7ca"
+      },
+      {
+        "target": "windows/arm64",
+        "exitCode": 0,
+        "compiledOnly": true,
+        "executed": false,
+        "bytes": 13718016,
+        "sha256": "746a2dd6613f94d17daf511248a8d66a5b2668c733346a3bb560b710695f187d"
+      },
+      {
+        "target": "linux/amd64",
+        "exitCode": 0,
+        "compiledOnly": true,
+        "executed": false,
+        "bytes": 14471802,
+        "sha256": "f0142108c345b652fd626d1dc115d627f31337803f9f44c5c7eba26f87d4fb49"
+      },
+      {
+        "target": "linux/arm64",
+        "exitCode": 0,
+        "compiledOnly": true,
+        "executed": false,
+        "bytes": 13314807,
+        "sha256": "69301007044532b44ef67f36f8d0be0b167e12fb663dabec23c2d90ca116b5e0"
+      },
+      {
+        "target": "darwin/amd64",
+        "exitCode": 0,
+        "compiledOnly": true,
+        "executed": false,
+        "bytes": 15292976,
+        "sha256": "4570de81abb3be85333478b8f3fa04d46723f15afbbbc750314b9e46c09c7829"
+      },
+      {
+        "target": "darwin/arm64",
+        "exitCode": 0,
+        "compiledOnly": true,
+        "executed": false,
+        "bytes": 14299250,
+        "sha256": "c92f173c9bed30930118c2e2df6095a045c06af9800aff59f709c8dc3ee98bc2"
+      },
+      {
+        "target": "freebsd/amd64",
+        "exitCode": 0,
+        "compiledOnly": true,
+        "executed": false,
+        "bytes": 13931914,
+        "sha256": "4c346c8155d79fcd5801869eabe42cd2f332cd9d47b1aa000831cd29a6ec55bb"
+      },
+      {
+        "target": "freebsd/arm64",
+        "exitCode": 0,
+        "compiledOnly": true,
+        "executed": false,
+        "bytes": 12846226,
+        "sha256": "793934bd8653ba886d9b8a4c68a3ff12fe9b0a396aee1312281af4865a2f4e42"
+      },
+      {
+        "target": "openbsd/amd64",
+        "exitCode": 0,
+        "compiledOnly": true,
+        "executed": false,
+        "bytes": 13916411,
+        "sha256": "4762b932bd871c32e2179deca36a44b247968e70fc5861b90ffc0393d358ede9"
+      },
+      {
+        "target": "openbsd/arm64",
+        "exitCode": 0,
+        "compiledOnly": true,
+        "executed": false,
+        "bytes": 12905400,
+        "sha256": "061cc239b8c50e71b25f9a96568b1eefddad7a6ff3567fde6b79b8740d3d97b8"
+      }
+    ],
+    "executedBinaries": false
+  },
+  "readinessManifestSHA256": "6aba24860c171a7a3931029589b0e04dac90ed4a6f22da3fc02bd058bf903b0e",
+  "realDnsChanged": false,
+  "nativeDnsQualified": false,
+  "rawLogsRead": false,
+  "credentialQueries": false,
+  "formalGatesPromoted": 0,
+  "productionQualificationComplete": false,
+  "limitations": [
+    "Registry, network adapter, DNS, resolver and service operations are mocked; no real DNS traffic or settings were exercised.",
+    "Native SDK guards verify the host Go target, but these reports do not independently attest each PowerShell process ISA.",
+    "DNSCrypt capture/preflight failure branches run before the mocked forbidden service/component boundary; successful DNSCrypt service execution is not qualified.",
+    "GUID preflight and refresh do not create an atomic OS transaction or eliminate changes racing a native call.",
+    "Installed Windows DoH/DNSCrypt, DHCP/static restoration after failure/reboot and the original functional.dns gate remain open.",
+    "Signing, managed deployment, installed lifecycle, assistive technology and sustained performance acceptance remain separate.",
+    "Invalid-identity cases require zero DoH/DNS reads before refusal, so a mock write refusal cannot falsely satisfy the new preflight regression check."
+  ],
+  "baseCommit": "ff0011877aac9d3cf4d9ea82daf8e81b2607d81d",
+  "previousSourceContractsReceipt": "docs/qualification/5a71489c9bc9-dns-adapter-coverage.json"
+}
