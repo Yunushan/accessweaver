@@ -59,7 +59,7 @@ function Original-ADoh {return [pscustomobject]@{ServerAddress='192.0.2.90';DohT
 function New-ACase {
     $script:adapters=@([pscustomobject]@{InterfaceGuid=$script:g1;ifIndex=77;Status='Up';InterfaceDescription='Fixture adapter'},[pscustomobject]@{InterfaceGuid=$script:g2;ifIndex=88;Status='Down';InterfaceDescription='Second fixture adapter'})
     $script:renumberAfterInventory=$false;$script:exposure=@{};$script:registryAbsent=@{};$script:registryValues=@{};$script:data=New-AData;$script:doh=@((Original-ADoh));$script:available=$true;$script:registryFailure='';$script:dnsFailure='';$script:dohFailure=$false
-    $script:staticWaitCalls=0;$script:staticPendingReads=0;$script:staticPendingShape='';$script:staticTeardownFault='';$script:resolveFailure=$false;$script:operationFailure=$false;$script:restoreFailure=$false;$script:serviceStatus='Running';$script:actions=[Collections.Generic.List[string]]::new();$script:dnsReads=0
+    $script:staticStagingWrites=0;$script:staticWaitCalls=0;$script:staticPendingReads=0;$script:staticPendingShape='';$script:staticTeardownFault='';$script:resolveFailure=$false;$script:operationFailure=$false;$script:restoreFailure=$false;$script:serviceStatus='Running';$script:actions=[Collections.Generic.List[string]]::new();$script:dnsReads=0
 }
 function Clone-A([object]$Value){return Microsoft.PowerShell.Utility\ConvertFrom-Json -InputObject (Microsoft.PowerShell.Utility\ConvertTo-Json -InputObject $Value -Depth 14)}
 function Get-NetAdapter {[CmdletBinding()]param();foreach($a in $script:adapters){[pscustomobject]@{InterfaceGuid=$a.InterfaceGuid;ifIndex=$a.ifIndex;Status=$a.Status;InterfaceDescription=$a.InterfaceDescription}}}
@@ -85,7 +85,7 @@ function Get-DnsClientServerAddress {
             $key=$guid+'/'+$family
             if($script:exposure.ContainsKey($key) -and -not $script:exposure[$key]){continue}
             $values=if($family -ceq 'IPv4'){@($script:data[$guid].servers4)}else{@($script:data[$guid].servers6)}
-            if($null -eq $InterfaceIndex -and $guid -ceq $script:g1 -and $family -ceq 'IPv6' -and ($values -join ',') -ceq 'fe80::53%77,fe80::54%77' -and $script:staticPendingReads -gt 0){
+            if($null -eq $InterfaceIndex -and $guid -ceq $script:g1 -and $family -ceq 'IPv6' -and ($values -join ',') -ceq 'fe80::53,fe80::54' -and $script:staticPendingReads -gt 0){
                 $script:staticPendingReads--;if($script:staticPendingShape -ceq 'empty'){$values=@()}else{$values=@($values[0])}
             }
             $result=[pscustomobject]@{InterfaceIndex=$a.ifIndex;AddressFamily=$(if($family -ceq 'IPv4'){2}else{23});ServerAddresses=@($values)}
@@ -432,10 +432,14 @@ try {
         [CmdletBinding()]param([Parameter(ValueFromPipeline)]$InputObject,[string[]]$ServerAddresses,[switch]$ResetServerAddresses)
         process {
             if($InputObject.InterfaceIndex -ne 77 -or $InputObject.AddressFamily -ne 23){throw 'Unexpected source static family write'}
+            if(-not $ResetServerAddresses -and ($ServerAddresses -join ',') -ceq 'fe80::53,fe80::54'){
+                if(-not $script:staticFirewallProtected -or $script:fixtureRules.Count -ne 2){throw 'Source staging needs verified containment'}
+                $script:staticStagingWrites++
+            }
             if($script:staticTeardownFault -ceq 'write-throw'){throw 'source-original-restore-failed'}
             if($script:staticTeardownFault -ceq 'write-noop'){return}
             $script:data[$script:g1].mode6=if($ResetServerAddresses){'dhcp'}else{'static'};$script:data[$script:g1].servers6=if($ResetServerAddresses){@()}else{@($ServerAddresses)}
-            if(-not $ResetServerAddresses -and ($ServerAddresses -join ',') -ceq 'fe80::53%77,fe80::54%77' -and $script:staticStageFault -cin @('pending-empty','pending-count','permanent-empty','permanent-count')){
+            if(-not $ResetServerAddresses -and ($ServerAddresses -join ',') -ceq 'fe80::53,fe80::54' -and $script:staticStageFault -cin @('pending-empty','pending-count','permanent-empty','permanent-count')){
                 $script:staticPendingReads=if($script:staticStageFault -like 'permanent-*'){40}else{2};$script:staticPendingShape=if($script:staticStageFault -like '*-empty'){'empty'}else{'count'}
             }
             if($script:staticStageFault -ceq 'family-set' -and $script:staticStageFaultPending){$script:staticStageFaultPending=$false;throw 'source-partial-family-set'}
@@ -465,6 +469,7 @@ try {
         try{$stagePassed=Set-NativeStaticIPv6Fixture $before}catch{}
         Assert-A ($stagePassed -is [bool] -and $stagePassed -eq ($failure -cin @('none','cidr','pending-empty','pending-count'))) 'static-stage-source'
         if($failure -cin @('none','cidr','pending-empty','pending-count')){Assert-A ($script:staticFirewallProtected -and $script:staticObservation.captured -and $script:staticObservation.mode -ceq 'static' -and $script:staticObservation.count -eq 2 -and $script:staticObservation.firstMatches -and $script:staticObservation.secondMatches) 'static-stage-source'}
+        Assert-A ($script:staticStagingWrites -eq $(if($failure -cin @('none','cidr','pending-empty','pending-count','permanent-empty','permanent-count','family-set')){1}else{0})) 'static-stage-source'
         Assert-A ($script:staticWaitCalls -eq $(if($failure -like 'pending-*'){2}elseif($failure -like 'permanent-*'){39}else{0})) 'static-stage-source'
         $removed=$false;try{Remove-NativeStaticIPv6Fixture $before;Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState);$removed=$true}catch{}
         Assert-A ($removed -and $script:staticFirewallRemoved -eq ($failure -cnotin @('profile-disabled','local-rules-disabled')) -and $script:fixtureRules.Count -eq 0) 'static-stage-source'

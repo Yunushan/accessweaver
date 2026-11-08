@@ -322,7 +322,11 @@ public static class AccessWeaverNativeDoHIdentity {
             foreach($server in $servers){if(@($remote[0].RemoteAddress | Where-Object {$_ -cin @($server,($server+'/128'))}).Count -ne 1){throw 'Static fixture firewall filters differ'}}
         }
         $script:staticFirewallProtected=$true;$script:staticPhase='setting'
-        $row | Set-DnsClientServerAddress -ServerAddresses @(('fe80::53%'+$row.InterfaceIndex),('fe80::54%'+$row.InterfaceIndex)) -ErrorAction Stop
+        # The freshly GUID-resolved IPv6 CIM row selects the interface. Isolate
+        # the setter's string encoding from scope ownership: stage zone-free
+        # source-owned values, then demand the same exact independent read-back.
+        $row=Get-NativeStaticIPv6Row $script:staticPlan.guid
+        $row | Set-DnsClientServerAddress -ServerAddresses @($script:staticPlan.servers) -ErrorAction Stop
         $script:staticPhase='stage-verification'
         $expected=ConvertFrom-Json -InputObject ($Before|ConvertTo-Json -Depth 12)
         $target=@($expected.adapters | Where-Object {$_.guid -ceq $record.guid})[0]
