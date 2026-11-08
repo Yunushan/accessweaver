@@ -11,3 +11,5 @@ A previously authenticated core can still provide a summary after profile loadin
 Controlled browser-logic tests cover retained ownership, session/navigation/mode/connection invalidation, delayed success and failure during a newer export, body limits, timeout and private-error omission. A separate real-browser fixture serves only static assets and synthetic API replies, verifies actual request cancellation and one current download, and starts no product process. The optional `ACCESSWEAVER_SUPPORT_INTEROP` source fixture validates actual Go API responses against the browser validator and export flow with exact source and payload hashes. These checks do not qualify installed-product support procedures or vendor cleanup.
 
 [Network activity and privacy](PRIVACY.md) lists explicit diagnostic/workflow destinations and distinguishes local downloads from delegated vendor traffic.
+
+For issue intake, severity, escalation ownership and version-lifecycle limits, see [Support and release lifecycle](SUPPORT_POLICY.md). Exporting a local summary does not open a support request or upload its contents.

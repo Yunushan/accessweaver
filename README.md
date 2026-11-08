@@ -142,6 +142,10 @@ CI is configured to run unit tests on Linux, Windows and macOS, a Linux race che
 
 Release archives contain the standalone application, documentation and license notices. They exclude third-party engines and are **unsigned alpha builds**. Checksums detect file changes; they are not publisher signatures. Hosted release builds additionally provide [signed build provenance](docs/RELEASE_PROVENANCE.md), verified against a separately trusted source commit/ref; Windows/macOS publisher signing remains unfinished. [Testing](docs/TESTING.md) · [Contributing](CONTRIBUTING.md) · [Architecture](docs/ARCHITECTURE.md) · [Release process](GITHUB_SETUP.md)
 
+## Support
+
+Read [support and version coverage](docs/SUPPORT_POLICY.md) before filing an issue. Support ownership and response commitments remain unassigned. An optional [local support summary](docs/SUPPORT.md) exports metadata only; nothing is uploaded automatically.
+
 ## License and security
 
 AccessWeaver's original source is [0BSD](LICENSE). External engines retain separate licenses and trademarks; WireSock also has product-specific commercial terms. [Third-party notices](THIRD_PARTY.md) explain the boundary.

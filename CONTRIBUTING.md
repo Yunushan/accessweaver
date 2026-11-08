@@ -17,12 +17,16 @@ node --test web/app.test.cjs
 
 The race detector needs a supported host and C toolchain. CI runs the full suite on native Linux amd64/arm64 and selected paired-policy storage tests on both Mac architectures. `ACCESSWEAVER_HOME` can point at a disposable development directory; `ACCESSWEAVER_NO_BROWSER=1` suppresses automatic browser opening. Do not develop against profiles containing personal VPN credentials.
 
+## Issue triage
+
+Follow [the support policy](docs/SUPPORT_POLICY.md) for safe evidence, impact classification, escalation and version coverage. Confirm severity and reproduction scope, record ownership when assigned, and close with the fixing source or a verified workaround. Sensitive vulnerabilities follow [SECURITY.md](SECURITY.md).
+
 ## Pull requests
 
 - Describe the concrete problem, resulting behavior and validation performed.
 - Preserve explicit engine launch, platform checks and rejection of unsupported rules.
 - Test security-sensitive behavior: profile validation, command construction, local API boundaries, file handling and process lifecycle.
-- Keep UI strings in both English and Turkish. Update both readmes when user-facing behavior changes.
+- Keep UI strings synchronized across English, Turkish, Russian and Spanish. Update both readmes when user-facing behavior changes.
 - Keep platform claims tied to evidence. Record compilation, unit tests, real engine invocation and actual routed connectivity separately.
 - Do not add credentials, capture logs, engine binaries, drivers or installer payloads to the repository.
 - Explain the license and security impact of any new dependency. Prefer standard Go and browser APIs where practical.

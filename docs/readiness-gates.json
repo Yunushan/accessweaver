@@ -541,9 +541,13 @@
         {
           "id": "operations.support",
           "acceptance": "Publish owned support channels, severity handling, escalation and supported-version/end-of-life commitments that maintainers can meet.",
-          "status": "missing",
+          "status": "partial",
           "evidence": [
-            "SECURITY.md"
+            "SECURITY.md",
+            "docs/SUPPORT_POLICY.md",
+            "docs/SUPPORT.md",
+            ".github/ISSUE_TEMPLATE/bug_report.yml",
+            ".github/ISSUE_TEMPLATE/config.yml"
           ]
         },
         {

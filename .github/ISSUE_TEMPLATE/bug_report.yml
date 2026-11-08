@@ -1,32 +1,58 @@
 name: Bug report
 description: Report a reproducible AccessWeaver problem.
 body:
-  - type: markdown
-    attributes:
-      value: "For sensitive vulnerabilities, follow SECURITY.md. Remove credentials and private addresses from examples."
-  - type: textarea
-    id: behavior
-    attributes:
-      label: What happened?
-      description: Include the expected behavior and what you observed.
-    validations:
+- type: markdown
+  attributes:
+    value: For vulnerabilities, follow SECURITY.md and keep sensitive details out of public issues. Review
+      the support policy before sharing evidence; do not attach profiles, raw logs, credentials, private
+      addresses or command arguments.
+- type: dropdown
+  id: impact
+  attributes:
+    label: Impact
+    description: Describe the impact; a maintainer confirms severity during triage. No response deadline
+      is promised.
+    options:
+    - Unsafe operation, data loss, or recovery unavailable
+    - Feature unavailable; no safe workaround
+    - Feature degraded; safe workaround available
+    - Minor issue or question
+  validations:
+    required: true
+- type: textarea
+  id: behavior
+  attributes:
+    label: What happened?
+    description: Describe expected and observed behavior. Include a fixed failure code if available; omit
+      raw error output and private data.
+  validations:
+    required: true
+- type: textarea
+  id: steps
+  attributes:
+    label: Steps to reproduce
+    description: Give reproducible steps using synthetic examples. Do not attach real profiles, logs or
+      command arguments.
+  validations:
+    required: true
+- type: input
+  id: platform
+  attributes:
+    label: OS, architecture and AccessWeaver version
+    placeholder: Windows 11 arm64, AccessWeaver 0.1.0-alpha
+  validations:
+    required: true
+- type: textarea
+  id: engine
+  attributes:
+    label: External engine and evidence
+    description: Known engine name/version, operating mode and privilege level, plus how routing was independently
+      checked. Omit command lines and private evidence; leave blank for UI-only issues.
+- type: checkboxes
+  id: public_evidence
+  attributes:
+    label: Public evidence review
+    options:
+    - label: I reviewed this report and any attachments and removed secrets, profile contents, account/device
+        names, private addresses, paths, command arguments and raw logs.
       required: true
-  - type: textarea
-    id: steps
-    attributes:
-      label: Steps to reproduce
-      description: Include a minimal, sanitized profile if relevant.
-    validations:
-      required: true
-  - type: input
-    id: platform
-    attributes:
-      label: OS, architecture and AccessWeaver version
-      placeholder: Windows 11 arm64, AccessWeaver 0.1.0-alpha
-    validations:
-      required: true
-  - type: textarea
-    id: engine
-    attributes:
-      label: External engine and evidence
-      description: Exact engine version, invocation mode, privilege level, and whether routing was independently checked. Leave blank for UI-only issues.

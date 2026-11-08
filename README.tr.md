@@ -136,3 +136,7 @@ Sürüm arşivlerinde uygulama, belgeler ve lisans bildirimleri bulunur. Harici 
 Özgün AccessWeaver kodu [0BSD](LICENSE) lisanslıdır. Harici motorların ayrı lisansları ve marka hakları vardır; WireSock ürününe özgü ticari şartlar da geçerlidir. [Üçüncü taraf bildirimleri](THIRD_PARTY.md).
 
 Yerel API, loopback adresi, sunucu/kaynak denetimi ve işleme özel istek anahtarı kullanır. Motorlar parametre dizileriyle başlatılır. Bunlar harici programı yalıtmaz veya AccessWeaver'ı denetlenmiş bir güvenlik ürünü yapmaz. [Güvenlik politikası](SECURITY.md).
+
+## Destek
+
+Sorun bildirmeden önce [destek ve sürüm kapsamını](docs/SUPPORT_POLICY.md) okuyun. Destek sorumluları henüz atanmamış, yanıt taahhütleri henüz belirlenmemiştir. İsteğe bağlı [yerel destek özeti](docs/SUPPORT.md) yalnızca üst veri dışa aktarır; otomatik yükleme yapılmaz.

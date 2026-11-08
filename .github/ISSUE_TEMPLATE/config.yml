@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+- name: Security reporting
+  url: https://github.com/Yunushan/accessweaver/blob/main/SECURITY.md
+  about: Read the private-reporting procedure before sharing vulnerability details.
+- name: Support and version policy
+  url: https://github.com/Yunushan/accessweaver/blob/main/docs/SUPPORT_POLICY.md
+  about: Check current support coverage, safe evidence, severity handling and version-lifecycle limits.
