@@ -142,3 +142,11 @@ function Get-NativeDNSComponentFailure([Exception]$Failure,[int]$HTTPStatus=0) {
     }
     return 'unexpected'
 }
+
+# Returns an admitted wait, or -1. All retries share the original90second budget.
+function Get-NativeDNSComponentRetry([int]$Status,[int]$Attempt,[long]$RemainingMilliseconds,[long]$RetryAfterMilliseconds=0) {
+    if($Status -notin @(408,500,502,503,504) -or $Attempt -lt 1 -or $Attempt -ge 3 -or $RemainingMilliseconds -le 0 -or $RemainingMilliseconds -gt 90000 -or $RetryAfterMilliseconds -lt 0){return -1L}
+    $wait=[Math]::Max([long]$Attempt*1000,$RetryAfterMilliseconds)
+    if($wait -ge $RemainingMilliseconds){return -1L}
+    return $wait
+}
