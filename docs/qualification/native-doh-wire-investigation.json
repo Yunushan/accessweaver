@@ -4098,6 +4098,223 @@
       },
       "bothNativeWireScenariosPassed": false,
       "allNativeJobsTerminal": true
+    },
+    {
+      "sourceCommit": "7bdb31496b2c4a8c4751401b4b6d08248b6b5b0c",
+      "sourceRunID": 42502114177,
+      "sourceAllSixPassed": false,
+      "sourceSHA256": {
+        "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+        "scripts/dns-wire-evidence.test.cjs": "6851b5ad925cc3fcba8b2d80821dbf68eb177fd6030b5ca8fdc5980b988ae9ee",
+        "scripts/dns-wire-contract-report.cjs": "93ba1b3f2453db92d174819e9d01bc2fb0f7a87e907f4ab97d84a1db7035947f",
+        ".github/workflows/dns-wire-contracts.yml": "3f57a383b43ec04fd510901e278b5168e33b6d4486a388e20a01572ad3efbf5f",
+        "scripts/dns-wire-stdin.cjs": "b05d259e94b3f89555c645cc9205b922ae6418bf99bfa56581abdb72fa205fa0",
+        "scripts/native-dns-wire.ps1": "e073718c8fff967a6c968185a79bfc7e539f7aa37a654c2938fc1210e50ffc59",
+        "scripts/test-dns-wire-native-contracts.ps1": "41736166e1cf9f09a9b197b372a28ffb96f3e899da0de6595e7f51f045674ede",
+        ".github/workflows/native-doh-wire.yml": "19fd54b25ecb44c6a156af8c4da94398f1c73bb3e29af90a1acfbaa0d50e12e9",
+        "scripts/test-native-doh.ps1": "eef97825b3cf9983f471234ddc3fda80c8dfbc548ef7cbcfd02ff1e33b5e4bd3",
+        "scripts/dns-acceptance-state.ps1": "a8332f9d043c4f3577a5229a4831e7e88df52a1c9733eba4e4e254012622a2de",
+        "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97"
+      },
+      "sourceJobs": [
+        {
+          "id": 128796910460,
+          "target": "DNS wire source (darwin/amd64)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 128796910636,
+          "target": "DNS wire source (windows/amd64)",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "id": 128796910645,
+          "target": "DNS wire source (windows/arm64)",
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "id": 128796910652,
+          "target": "DNS wire source (linux/amd64)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 128796910721,
+          "target": "DNS wire source (linux/arm64)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 128796910727,
+          "target": "DNS wire source (darwin/arm64)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "sourceArtifacts": [
+        {
+          "artifactID": 13626420316,
+          "artifactName": "dns-wire-source-darwin-amd64",
+          "providerZIPDigest": "sha256:2a3545511dbe28531cf554f0b4be72c392392b5d77fb2c70d13d7ca517c04e19",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 32,
+              "passedGroups": 32,
+              "failedGroups": []
+            }
+          ]
+        },
+        {
+          "artifactID": 13626200387,
+          "artifactName": "dns-wire-source-windows-arm64",
+          "providerZIPDigest": "sha256:bb92d0cee73af48311d545f8dd76885926804b3a38a621ed91af83a64c849fc4",
+          "providerZIPDigestVerified": true,
+          "outcome": "failed",
+          "code": "wire-source",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 32,
+              "passedGroups": 32,
+              "failedGroups": []
+            },
+            {
+              "edition": "desktop",
+              "code": "contracts-failed",
+              "groupCount": 32,
+              "passedGroups": 20,
+              "failedGroups": [
+                "packet-counter-summary-ignores-private-metadata",
+                "zero-packet-counters-are-distinct-from-unknown-shape",
+                "invalid-packet-counter-values-never-leak",
+                "complete-real-source-control-and-cleanup-order",
+                "decoder-refusal-cannot-qualify-wire",
+                "decoder-refusal-does-not-mask-failed-causal-control",
+                "successful-blocked-query-is-not-a-negative-control",
+                "resumption-is-required-after-tls-rule-retirement",
+                "unverified-originals-retain-plaintext-blocks-and-filters",
+                "retry-retirement-requires-fresh-state-verification",
+                "foreign-rule-ownership-refuses-deletion",
+                "foreign-capture-filter-prevents-global-retirement"
+              ]
+            }
+          ]
+        },
+        {
+          "artifactID": 13626136204,
+          "artifactName": "dns-wire-source-windows-amd64",
+          "providerZIPDigest": "sha256:6a8e6529e8c5fb50a9d6ff1015aaff82f82cdc77dcba1c77968d69edf4e660f0",
+          "providerZIPDigestVerified": true,
+          "outcome": "failed",
+          "code": "wire-source",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 32,
+              "passedGroups": 32,
+              "failedGroups": []
+            },
+            {
+              "edition": "desktop",
+              "code": "contracts-failed",
+              "groupCount": 32,
+              "passedGroups": 20,
+              "failedGroups": [
+                "packet-counter-summary-ignores-private-metadata",
+                "zero-packet-counters-are-distinct-from-unknown-shape",
+                "invalid-packet-counter-values-never-leak",
+                "complete-real-source-control-and-cleanup-order",
+                "decoder-refusal-cannot-qualify-wire",
+                "decoder-refusal-does-not-mask-failed-causal-control",
+                "successful-blocked-query-is-not-a-negative-control",
+                "resumption-is-required-after-tls-rule-retirement",
+                "unverified-originals-retain-plaintext-blocks-and-filters",
+                "retry-retirement-requires-fresh-state-verification",
+                "foreign-rule-ownership-refuses-deletion",
+                "foreign-capture-filter-prevents-global-retirement"
+              ]
+            }
+          ]
+        },
+        {
+          "artifactID": 13626121217,
+          "artifactName": "dns-wire-source-linux-amd64",
+          "providerZIPDigest": "sha256:fe38f83f0e1af7e5575f71ae1fbba6ef938f41526b3421ff0d5941a5a2b1854f",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 32,
+              "passedGroups": 32,
+              "failedGroups": []
+            }
+          ]
+        },
+        {
+          "artifactID": 13625927046,
+          "artifactName": "dns-wire-source-darwin-arm64",
+          "providerZIPDigest": "sha256:f8141d8b074881ef78dc991a41adaf3e5be55f4f9c4583c41e59fff5d6312c47",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 32,
+              "passedGroups": 32,
+              "failedGroups": []
+            }
+          ]
+        },
+        {
+          "artifactID": 13625614462,
+          "artifactName": "dns-wire-source-linux-arm64",
+          "providerZIPDigest": "sha256:7a027e0b40239b6ad4582ba35171bf5f56e748c2751df4f9d1372842684bd912",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 32,
+              "passedGroups": 32,
+              "failedGroups": []
+            }
+          ]
+        }
+      ],
+      "nativeRunID": 42502114213,
+      "nativeArtifacts": [],
+      "sourceTerminalBasis": "all-six-source-bound-matrix-jobs-completed",
+      "allNativeJobsTerminal": true,
+      "nativeSourcePreflightRefusedBeforeCaptureOrProductExecution": true
     }
   ],
   "defaultScenarioRegressions": [
@@ -4248,8 +4465,8 @@
       ]
     }
   ],
-  "distinctProviderZIPDigestsVerified": 116,
-  "terminalJobsVerified": 112,
+  "distinctProviderZIPDigestsVerified": 122,
+  "terminalJobsVerified": 120,
   "productSourceUnchangedSince": "3ae6417cb9a8a86d6b4e41dea0f25fc3af94c331",
   "readinessManifestSHA256": "9525ee76922c68ec4f3daafe581bffc9d7631bf77947863bc62a807556b4b735",
   "rawLogsRead": false,

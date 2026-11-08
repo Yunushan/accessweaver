@@ -231,18 +231,18 @@ function Get-NativeDNSWireCounterEvidence([string]$Text) {
         $entry=$queue.Dequeue();$visited++
         if($visited -gt 2048 -or $entry.depth -gt 8 -or $queue.Count -gt 2048){$result.code='bound';return $result}
         $value=$entry.value
-        if($value -is [Array]){foreach($child in $value){$queue.Enqueue(@{value=$child;depth=($entry.depth+1)})};continue}
+        if($value -is [Array]){foreach($child in $value){if($visited+$queue.Count -ge 2048){$result.code='bound';return $result};$queue.Enqueue(@{value=$child;depth=($entry.depth+1)})};continue}
         if($value -isnot [pscustomobject]){continue}
         foreach($property in $value.PSObject.Properties){
             $child=$property.Value
-            if($child -is [Array] -or $child -is [pscustomobject]){$queue.Enqueue(@{value=$child;depth=($entry.depth+1)});continue}
+            if($child -is [Array] -or $child -is [pscustomobject]){if($visited+$queue.Count -ge 2048){$result.code='bound';return $result};$queue.Enqueue(@{value=$child;depth=($entry.depth+1)});continue}
             # Only source-known packet counter labels are inspected. Component
             # names, IDs, addresses, byte counters and other fields are ignored.
             if($property.Name -in @('Packets','PacketsIn','PacketsOut')){
-                $numeric=($child -is [int] -or $child -is [long] -or $child -is [ulong] -or $child -is [double] -or $child -is [decimal])
+                $numeric=($child -is [int] -or $child -is [long] -or $child -is [System.UInt64] -or $child -is [double] -or $child -is [decimal])
                 if(-not $numeric){$result.code='invalid-counter';return $result}
                 $number=[double]$child
-                if([double]::IsNaN($number) -or [double]::IsInfinity($number) -or $number -lt 0 -or $number -gt [double][ulong]::MaxValue -or [Math]::Floor($number) -ne $number){$result.code='invalid-counter';return $result}
+                if([double]::IsNaN($number) -or [double]::IsInfinity($number) -or $number -lt 0 -or $number -gt [double][System.UInt64]::MaxValue -or [Math]::Floor($number) -ne $number){$result.code='invalid-counter';return $result}
                 $fields++;if($fields -gt 2048){$result.code='bound';return $result};if($number -gt 0){$nonzero=$true}
             }
         }

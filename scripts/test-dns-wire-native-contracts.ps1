@@ -135,6 +135,7 @@ try {
         $r=Get-NativeDNSWireCounterEvidence (' ' * 65537);Assert-Wire ($r.code -ceq 'bound' -and $r.fields -eq 0 -and -not $r.nonzero)
         $text='{"Packets":1}';for($i=0;$i -lt 9;$i++){$text='{"Next":'+$text+'}'}
         $r=Get-NativeDNSWireCounterEvidence $text;Assert-Wire ($r.code -ceq 'bound' -and $r.fields -eq 0 -and -not $r.nonzero)
+        $text='['+((@('{"Packets":0}') * 2049) -join ',')+']';$r=Get-NativeDNSWireCounterEvidence $text;Assert-Wire ($r.code -ceq 'bound' -and $r.fields -eq 0 -and -not $r.nonzero)
     }
     Case-Wire 'binary-stdin-startup-preserves-header-and-console-encoding' {
         $original=[Console]::InputEncoding;$before=([BitConverter]::ToString($original.GetPreamble()))
