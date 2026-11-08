@@ -26,9 +26,10 @@ async function prepareDocumentResponse(response,originalDocument){
 // or response-policy waiver is involved. It owns no timer or event handler.
 const markerTemplate=String.raw`(()=>{
  const href=STYLESHEET_PATH,expectedRules=EXPECTED_RULES,expectedSelector=EXPECTED_SELECTOR;
+ const canonical=value=>value.split(',').map(s=>s.trim()).map(s=>s==='*::before'?'::before':s==='*::after'?'::after':s).join(',');
  let node=null,sheetReady=false,bodyAbsentAtMarker=false,readyAtMs=null,failed=false;
  try{node=document.getElementById('accessweaver-owned-shadow-control');const sheet=node?.sheet,rules=sheet?.cssRules;
-  sheetReady=!!node&&node.getAttribute('rel')==='stylesheet'&&node.getAttribute('href')===href&&sheet?.ownerNode===node&&sheet.disabled===false&&rules.length===expectedRules&&(expectedRules===0||rules[0].selectorText.split(',').map(s=>s.trim()).join(',')===expectedSelector&&rules[0].style.getPropertyValue('box-shadow')==='none'&&rules[0].style.getPropertyPriority('box-shadow')==='important');
+  sheetReady=!!node&&node.getAttribute('rel')==='stylesheet'&&node.getAttribute('href')===href&&sheet?.ownerNode===node&&sheet.disabled===false&&rules.length===expectedRules&&(expectedRules===0||canonical(rules[0].selectorText)===canonical(expectedSelector)&&rules[0].style.getPropertyValue('box-shadow')==='none'&&rules[0].style.getPropertyPriority('box-shadow')==='important');
   bodyAbsentAtMarker=document.body===null;const at=performance.now();if(typeof at==='number'&&Number.isFinite(at)&&at>=0&&at<=Number.MAX_SAFE_INTEGER)readyAtMs=at;else failed=true;
  }catch{failed=true}
  const capture=()=>{let attached=false,hrefMatches=false;try{attached=node!==null&&node.parentNode===document.head;hrefMatches=node!==null&&node.getAttribute('href')===href}catch{failed=true}return {installed:node!==null,attached,hrefMatches,sheetReady,bodyAbsentAtMarker,readyAtMs,failed}};

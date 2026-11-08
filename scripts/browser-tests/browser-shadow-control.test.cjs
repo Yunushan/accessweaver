@@ -4,7 +4,7 @@ const tinyDocument='<!doctype html><html><head><meta charset="utf-8"><link rel="
 const digest=value=>createHash('sha256').update(value).digest('hex');
 function markerHarness(variant,options={}){
  const head={},attrs={rel:'stylesheet',href:D.controlStylesheetPath},node={parentNode:head,getAttribute(name){return attrs[name]}};
- const rule={selectorText:options.wrongSelector?'.foreign':D.styles[variant].split('{')[0],style:{getPropertyValue(name){assert.equal(name,'box-shadow');return options.wrongValue?'private':'none'},getPropertyPriority(name){assert.equal(name,'box-shadow');return options.wrongPriority?'':'important'}}};
+ const rule={selectorText:options.wrongSelector?'.foreign':(options.selectorText??D.styles[variant].split('{')[0]),style:{getPropertyValue(name){assert.equal(name,'box-shadow');return options.wrongValue?'private':'none'},getPropertyPriority(name){assert.equal(name,'box-shadow');return options.wrongPriority?'':'important'}}};
  node.sheet={ownerNode:options.wrongOwner?{}:node,disabled:!!options.disabled,cssRules:variant==='original'?[]:[rule]};if(options.missingRule)node.sheet.cssRules=[];if(options.missingSheet)node.sheet=null;
  if(options.privateError)Object.defineProperty(node,'sheet',{get(){throw Error('SYNTHETIC_PRIVATE_CANARY')}});
  const document={head,body:options.bodyPresent?{}:null,getElementById(name){assert.equal(name,'accessweaver-owned-shadow-control');return options.missingNode?null:node},get cookie(){throw Error('SYNTHETIC_PRIVATE_CANARY')}};
@@ -88,4 +88,10 @@ test('a computed shadow from the wrong surface family prevents an accepted inter
  for(const variant of D.variants)for(const phase of ['startup','editor']){
   const checks=vm.runInNewContext('('+D.shadowProjection.toString()+')('+JSON.stringify({variant,phase})+')',{document:{querySelector(s){return {selector:s}}},getComputedStyle(node){const decorative=node.selector!=='.nav-item.active',expected=variant==='without-box-shadow'||variant==='without-decorative-shadows'&&decorative||variant==='without-selection-shadows'&&!decorative;return {boxShadow:expected?'0px 0px 10px black':'none'}}});assert.equal(Array.from(checks).some(Boolean),false);
  }
+});
+
+test('marker accepts equivalent optional universal pseudo selectors and rejects changed selector coverage',()=>{
+ for(const selectorText of ['*, ::before, ::after','*, *::before, *::after','*, *::before, ::after'])assert.equal(markerHarness('without-box-shadow',{selectorText}).capture().sheetReady,true);
+ for(const selectorText of ['html, ::before, ::after','*, .before, ::after','*, ::before, ::after, .foreign','|*, ::before, ::after','*, *::before.foreign, ::after','*, ::after, ::before'])assert.equal(markerHarness('without-box-shadow',{selectorText}).capture().sheetReady,false);
+ for(const variant of ['without-decorative-shadows','without-selection-shadows'])assert.equal(markerHarness(variant,{selectorText:'*, ::before, ::after'}).capture().sheetReady,false);
 });
