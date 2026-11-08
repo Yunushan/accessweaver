@@ -22,6 +22,11 @@ function Get-NativeDNSWireSetupCode([Exception]$Failure) {
     if($Failure -is [InvalidOperationException]){return 'start-state'}
     return 'setup'
 }
+function Wait-NativeDNSWireWrite([object]$Task) {
+    # Runtime tasks may expose a generic completion value through PowerShell.
+    # Only child stdout/stderr may contribute to the decoder response stream.
+    [void]$Task.GetAwaiter().GetResult()
+}
 function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$Arguments,[byte[]]$InputBytes=$null) {
     if($State.processes -ge 128){throw 'Wire process bound'}
     $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$Program
@@ -36,7 +41,7 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
         if(-not $closed){$write=$p.StandardInput.BaseStream.WriteAsync($InputBytes,0,$InputBytes.Length)}
         $kill=$false;$total=0
         while(-not $p.HasExited -or @($captures | Where-Object {-not $_.done}).Count -ne 0){
-            if(-not $closed -and $write.IsCompleted){try{$write.GetAwaiter().GetResult()}catch{$bad=$true;if($failureKind -ceq 'none'){$failureKind='write'}};$p.StandardInput.Close();$closed=$true}
+            if(-not $closed -and $write.IsCompleted){try{Wait-NativeDNSWireWrite $write}catch{$bad=$true;if($failureKind -ceq 'none'){$failureKind='write'}};$p.StandardInput.Close();$closed=$true}
             foreach($c in $captures){if(-not $c.done -and $c.task.IsCompleted){
                 try{$n=$c.task.GetAwaiter().GetResult();if($n -eq 0){$c.done=$true}else{$total+=$n;if($total -gt 65536){$bad=$true;if($failureKind -ceq 'none'){$failureKind='output-bound'}}else{[void]$c.text.Append($c.buffer,0,$n)};$c.task=$c.reader.ReadAsync($c.buffer,0,$c.buffer.Length)}}
                 catch{$bad=$true;if($failureKind -ceq 'none'){$failureKind='read'};$c.done=$true;$c.reader.Dispose()}
@@ -46,7 +51,7 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
             if($pending.Length){[void][Threading.Tasks.Task]::WaitAny($pending,10)}else{Start-Sleep -Milliseconds 10}
         }
         $p.WaitForExit();$State.joined++;$wasJoined=$true
-        if(-not $closed){try{$write.GetAwaiter().GetResult()}catch{$bad=$true;if($failureKind -ceq 'none'){$failureKind='write'}};$p.StandardInput.Close()}
+        if(-not $closed){try{Wait-NativeDNSWireWrite $write}catch{$bad=$true;if($failureKind -ceq 'none'){$failureKind='write'}};$p.StandardInput.Close()}
         if($bad -or $p.ExitCode -ne 0){if($failureKind -ceq 'none'){$failureKind='exit'};$State.processFailed=$true;throw 'Wire bounded child failed'}
         return ($captures[0].text.ToString()+$captures[1].text.ToString())
     } catch {
@@ -134,8 +139,8 @@ function Start-NativeDNSWireCapture([object]$State) {
     $State.phase='decoder-preflight'
     $version=Invoke-NativeDNSWireProcess $State $State.node @('--version')
     if($version.Trim() -cne 'v26.8.2'){throw 'Wire decoder version'}
-    $probe=(Invoke-NativeDNSWireProcess $State $State.node @($State.decoder) ([byte[]]@(0))) | ConvertFrom-Json
-    if($probe.schemaVersion -ne 1 -or $probe.outcome -cne 'refused' -or $probe.code -cne 'capture-bound' -or $null -ne $probe.evidence){throw 'Wire decoder preflight'}
+    try{$probe=(Invoke-NativeDNSWireProcess $State $State.node @($State.decoder) ([byte[]]@(0))) | ConvertFrom-Json}catch{$State.decoderCode='invalid-report';throw}
+    if($probe.schemaVersion -ne 1 -or $probe.outcome -cne 'refused' -or $probe.code -cne 'capture-bound' -or $null -ne $probe.evidence){$State.decoderCode='invalid-report';throw 'Wire decoder preflight'}
     $State.phase='monitor-preflight'
     Assert-NativeDNSWireStopped (Invoke-NativeDNSWireTool $State @('status'))
     Assert-NativeDNSWireEmptyFilters (Invoke-NativeDNSWireTool $State @('filter','list'))
