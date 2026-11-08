@@ -62,7 +62,7 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
         }
         'start' {
             Assert-Wire ($script:filters.Count -eq 12 -and $State.flags.filtersVerified -and -not $script:running)
-            Assert-Wire (($Arguments -join ',').Contains('--capture,--comp,all,--pkt-size,0') -and ($Arguments -join ',').Contains('--file-size,16,--log-mode,circular'))
+            Assert-Wire (($Arguments -join ',').Contains('--capture,--comp,all,--pkt-size,0') -and ($Arguments -join ',').Contains('--file-size,16,--log-mode,circular') -and $Arguments -cnotcontains '--flags')
             $script:running=$true;$script:events.Add('capture-start')
             if($script:fault -ceq 'partial-start'){throw 'Source partial capture start'};return ''
         }
