@@ -240,7 +240,15 @@ Case-N 'static-schema-tree-refuses-external-content-depth-and-size' {
     foreach($template in @('<!DOCTYPE template [<!ENTITY x SYSTEM "file:///PRIVATE-SYNTHETIC">]><template>&x;</template>',('<template xmlns="http://schemas.microsoft.com/win/2004/08/events">'+('<struct name="Rows">'*5)+'<data name="Value" inType="win:UInt32"/>'+('</struct>'*5)+'</template>'),('x'*8193),'<template xmlns="http://schemas.microsoft.com/win/2004/08/events"><data name="Value" inType="win:UInt32">PRIVATE-SYNTHETIC</data></template>')){Assert-N (@(Get-NativeNDISTemplateTree $template).Count -eq 0)}
 }
 Case-N 'static-schema-tree-closed-grammar-requires-balanced-bounded-nesting' {
-    foreach($tree in @(@('S:Rows::Count','E:Other'),@('E:Rows'),@('S:Rows::Count'),@('D:PRIVATE/SYNTHETIC:win:UInt32::'),@('S:A::','S:B::','S:C::','S:D::','E:D','E:C','E:B','E:A'),@('D:Value:win:UInt32::')*49)){Assert-N (-not (Test-NativeNDISTemplateTree $tree))}
+    $invalidTrees=[Collections.Generic.List[object]]::new()
+    $invalidTrees.Add([object]@('S:Rows::Count','E:Other'))
+    $invalidTrees.Add([object]@('E:Rows'))
+    $invalidTrees.Add([object]@('S:Rows::Count'))
+    $invalidTrees.Add([object]@('D:PRIVATE/SYNTHETIC:win:UInt32::'))
+    $invalidTrees.Add([object]@('S:A::','S:B::','S:C::','S:D::','E:D','E:C','E:B','E:A'))
+    $overflow=[object[]]::new(49);for($index=0;$index -lt $overflow.Length;$index++){$overflow[$index]='D:Value:win:UInt32::'};$invalidTrees.Add($overflow)
+    Assert-N ($invalidTrees.Count -eq 6)
+    foreach($tree in $invalidTrees){Assert-N ($tree -is [array] -and -not (Test-NativeNDISTemplateTree $tree))}
 }
 Case-N 'structured-definition-projection-never-implies-catalog-recognition' {
     $template=TreeTemplate-N;Assert-N ((Get-NativeNDISCatalogClass 5101 0 4 $template) -ceq 'unknown')
