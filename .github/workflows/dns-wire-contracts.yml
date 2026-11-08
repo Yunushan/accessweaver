@@ -1,0 +1,71 @@
+name: DNS wire decoder source qualification
+
+on:
+  push:
+    branches: ['main', 'codex/dns-adapter-coverage']
+    paths:
+      - 'scripts/dns-wire-*.cjs'
+      - '.github/workflows/dns-wire-contracts.yml'
+  pull_request:
+    paths:
+      - 'scripts/dns-wire-*.cjs'
+      - '.github/workflows/dns-wire-contracts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dns-wire-contracts-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    name: DNS wire source (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {goos: linux, goarch: amd64, os: ubuntu-latest, sdkarch: x64}
+          - {goos: linux, goarch: arm64, os: ubuntu-24.04-arm, sdkarch: arm64}
+          - {goos: windows, goarch: amd64, os: windows-latest, sdkarch: x64}
+          - {goos: windows, goarch: arm64, os: windows-11-arm, sdkarch: arm64}
+          - {goos: darwin, goarch: amd64, os: macos-15-intel, sdkarch: x64}
+          - {goos: darwin, goarch: arm64, os: macos-latest, sdkarch: arm64}
+    env:
+      ACCESSWEAVER_EXPECT_GOOS: ${{ matrix.goos }}
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '26.8.2'
+          architecture: ${{ matrix.sdkarch }}
+          package-manager-cache: false
+      - name: Qualify bounded synthetic decoder and inspect read-only capture capability
+        run: |
+          $ErrorActionPreference='Stop'
+          $evidence=Join-Path $env:RUNNER_TEMP ('accessweaver-dns-wire-source-'+[Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $evidence -ErrorAction Stop | Out-Null
+          $env:ACCESSWEAVER_WIRE_SOURCE_EVIDENCE=$evidence
+          "ACCESSWEAVER_WIRE_SOURCE_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          $result=& node scripts/dns-wire-contract-report.cjs
+          $code=$LASTEXITCODE
+          if(@($result).Count -ne 1 -or [Text.Encoding]::UTF8.GetByteCount([string]$result) -gt 16384){throw 'Wire source report shape refused'}
+          [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),([string]$result),[Text.UTF8Encoding]::new($false))
+          if($code -ne 0){throw 'Wire source contracts failed; fixed metadata retained'}
+      - name: Retain fixed source metadata only
+        if: always() && env.ACCESSWEAVER_WIRE_SOURCE_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dns-wire-source-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_WIRE_SOURCE_EVIDENCE }}/status.json
+          if-no-files-found: error
+          retention-days: 7
