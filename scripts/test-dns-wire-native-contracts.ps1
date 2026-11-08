@@ -9,8 +9,8 @@ $project=Split-Path -Parent $PSScriptRoot;$path=Join-Path $PSScriptRoot 'native-
 $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Wire source syntax'}
-$excluded=@('Invoke-NativeDNSWireProcess','Read-NativeDNSWireCapture','Get-NativeDNSWireItem')
-$allowed=@('Get-NativeDNSWireStatsEvidence','Get-NativeDNSWireMonitorEvidence','Get-NativeDNSWireCounterEvidence','New-NativeDNSWireProbeBytes','Wait-NativeDNSWireWrite','Get-NativeDNSWireSetupCode','Assert-NativeOrdinaryPath','Get-Command','Join-Path','Where-Object','Select-Object','Invoke-NativeDNSWireProcess','Invoke-NativeDNSWireTool','Assert-NativeDNSWireStopped','Assert-NativeDNSWireEmptyFilters','Get-NativeDNSWireFilterRows','Assert-NativeDNSWireFilters','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Assert-NativeDNSWireRule','New-NetFirewallRule','Remove-NetFirewallRule','Assert-NativeDNSWireFirewall','Get-DnsClientNrptPolicy','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Stop-NativeDNSWireCapture','Clear-DnsClientCache','Resolve-DnsName','Invoke-NativeDNSWireQuery','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile','Get-NativeDNSWireItem','ConvertFrom-Json','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState')
+$excluded=@('Invoke-NativeDNSWireProcess','Read-NativeDNSWireCapture','Read-NativeDNSWireStatsInput','Get-NativeDNSWireItem')
+$allowed=@('Read-NativeDNSWireStatsInput','Get-NativeDNSWireStatsEvidence','Get-NativeDNSWireMonitorEvidence','Get-NativeDNSWireCounterEvidence','New-NativeDNSWireProbeBytes','Wait-NativeDNSWireWrite','Get-NativeDNSWireSetupCode','Assert-NativeOrdinaryPath','Get-Command','Join-Path','Where-Object','Select-Object','Invoke-NativeDNSWireProcess','Invoke-NativeDNSWireTool','Assert-NativeDNSWireStopped','Assert-NativeDNSWireEmptyFilters','Get-NativeDNSWireFilterRows','Assert-NativeDNSWireFilters','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Assert-NativeDNSWireRule','New-NetFirewallRule','Remove-NetFirewallRule','Assert-NativeDNSWireFirewall','Get-DnsClientNrptPolicy','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Stop-NativeDNSWireCapture','Clear-DnsClientCache','Resolve-DnsName','Invoke-NativeDNSWireQuery','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile','Get-NativeDNSWireItem','ConvertFrom-Json','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState')
 $definitions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false));$seen=@{}
 foreach($definition in $definitions){
     if($seen.ContainsKey($definition.Name)){throw 'Duplicate wire source function'};$seen[$definition.Name]=$true
@@ -76,10 +76,14 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
             $script:counterReads++;return '{"Components":[{"Name":"PRIVATE-SYNTHETIC","PacketsIn":2,"PacketsOut":3}]}'
         }
         'stop' {$script:running=$false;$script:events.Add('capture-stop');return ''}
-        'etl2txt' {Assert-Wire (-not $script:running -and $State.flags.captureStopped -and $Arguments.Count -eq 3 -and $Arguments[1] -ceq $State.etl -and $Arguments[2] -ceq '--stats-only');return "Total packets: 10`nTotal events: 20`nEvents lost: 0`nBuffers lost: 0"}
+        'etl2txt' {Assert-Wire (-not $script:running -and $State.flags.captureStopped -and $Arguments.Count -eq 5 -and $Arguments[1] -ceq $State.etl -and $Arguments[2] -ceq '--stats-only' -and $Arguments[3] -ceq '--out' -and $Arguments[4] -ceq $State.statsPath);if($script:fault -ceq 'stats-fallback'){return 'PRIVATE-SYNTHETIC-UNRECOGNIZED'};return "Total packets: 10`nTotal events: 20`nEvents lost: 0`nBuffers lost: 0"}
         'etl2pcap' {Assert-Wire (-not $script:running);$script:events.Add('conversion');return ''}
     }
     throw 'Unexpected source tool operation'
+}
+function Read-NativeDNSWireStatsInput([object]$State,[string]$Stdout){
+    Assert-Wire (-not $script:running -and $State.flags.captureStopped)
+    return @{source=$(if($script:fault -ceq 'stats-fallback'){'stdout-fallback'}else{'file'});text=$Stdout}
 }
 function Get-NativeDNSWireItem([string]$Path){
     $script:itemReads++
@@ -126,6 +130,11 @@ function Reject-Wire([scriptblock]$Body){$rejected=$false;try{[void](& $Body)}ca
 $oldSystemRoot=$env:SystemRoot
 try {
     if(-not $env:SystemRoot){$env:SystemRoot=[IO.Path]::GetTempPath()}
+    Case-Wire 'statistics-fallback-retains-unknown-without-private-text' {
+        New-WireCase;Start-NativeDNSWireCapture $script:state;$script:fault='stats-fallback';Measure-NativeDNSWire $script:state;Complete-NativeDNSWireCleanup $script:state
+        $r=Get-NativeDNSWireSummary $script:state
+        Assert-Wire ($r.statsEvidence.source -ceq 'stdout-fallback' -and $r.statsEvidence.code -ceq 'unknown' -and $r.statsEvidence.packets -eq -1 -and $r.statsEvidence.events -eq -1 -and -not (($r | ConvertTo-Json -Depth 4 -Compress).Contains('PRIVATE-SYNTHETIC')))
+    }
     Case-Wire 'etl-statistics-reduces-known-counts-without-private-text' {
         $r=Get-NativeDNSWireStatsEvidence "PRIVATE-SYNTHETIC-PATH`r`nTotal packets: 0`r`nTotal events: 20`r`nEvents lost: 0`r`nBuffers lost: 0`r`n"
         Assert-Wire ($r.code -ceq 'parsed' -and $r.packets -eq 0 -and $r.events -eq 20 -and $r.eventsLost -eq 0 -and $r.buffersLost -eq 0 -and -not (($r | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))
@@ -230,7 +239,7 @@ try {
         $r=Get-NativeDNSWireSummary $script:state
         Assert-Wire ($script:counterReads -eq 2 -and $r.packetCounters.code -ceq 'parsed' -and $r.flowPacketCounters.code -ceq 'parsed')
         Assert-Wire ($r.monitorEvidence.state -ceq 'owned-details' -and $r.monitorEvidence.rawPacketLogging -ceq 'enabled')
-        Assert-Wire ($r.statsEvidence.code -ceq 'parsed' -and $r.statsEvidence.packets -eq 10 -and $r.statsEvidence.events -eq 20)
+        Assert-Wire ($r.statsEvidence.source -ceq 'file' -and $r.statsEvidence.code -ceq 'parsed' -and $r.statsEvidence.packets -eq 10 -and $r.statsEvidence.events -eq 20)
         Assert-Wire ($r.outcome -ceq 'passed' -and -not $script:running -and $script:filters.Count -eq 0 -and $script:rules.Count -eq 0 -and $r.toolProcesses -eq $r.toolProcessesJoined -and $r.providerMask -eq 1)
         Assert-Wire ($script:events.IndexOf('query') -lt $script:events.IndexOf('capture-start') -and $script:events.IndexOf('capture-stop') -lt $script:events.IndexOf('conversion') -and $script:events.IndexOf('original-state') -lt $script:events.IndexOf('filter-remove'))
         Assert-Wire (-not (($r | ConvertTo-Json -Depth 6 -Compress).Contains($script:state.owner)))

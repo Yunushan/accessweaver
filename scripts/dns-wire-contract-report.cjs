@@ -48,7 +48,7 @@ function sourceHashes(){
 function wireSourceContracts(){
  const script=path.join(__dirname,'test-dns-wire-native-contracts.ps1');
  const names=[...fs.readFileSync(script,'utf8').matchAll(/^    Case-Wire '([a-z0-9-]+)'/gm)].map(m=>m[1]);
- if(names.length!==37||new Set(names).size!==37)throw new Error('wire-source-catalog');
+ if(names.length!==38||new Set(names).size!==38)throw new Error('wire-source-catalog');
  const jobs=[['core','pwsh',[]]];
  if(process.platform==='win32')jobs.push(['desktop',path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe'),['-RequireWindowsPowerShell']]);
  return jobs.map(([edition,program,flags])=>{

@@ -9,7 +9,7 @@ function New-NativeDNSWireState([string]$PrivateRoot,[string]$DecoderPath) {
     Assert-NativeOrdinaryPath $node
     $flags=@{}
     foreach($name in @('baselineResolverPassed','filtersVerified','captureStarted','captureStopped','captureBounded','plaintextBlocked','ordinaryQueryPassed','tlsObserved','tlsBlocked','blockedQueryRejected','tlsBlockRemoved','resumedQueryPassed','originalStateVerified','rulesRemoved','filtersRemoved','originalResolverPassed')){$flags[$name]=$false}
-    return @{statsEvidence=@{code='not-inspected';packets=-1;events=-1;eventsLost=-1;buffersLost=-1};monitorEvidence=@{state='not-inspected';ownedPathMentioned=$false;providerMentioned=$false;providerHeaderRecognized=$false;keywordRowRecognized=$false;rawPacketLogging='unknown';circularSettingMentioned=$false};flowPacketCounters=@{code='not-inspected';fields=0;nonzero=$false};packetCounters=@{code='not-inspected';fields=0;nonzero=$false};workdir=$PrivateRoot;processFailureCode='none';failureExitCode=0;failureStdoutChars=0;failureStderrChars=0;failureElapsedMilliseconds=0;captureFileCode='not-inspected';decoder=$DecoderPath;etlBytes=0;pcapBytes=0;filterRows=0;filterCode='none';cleanupAttempted=$false;cleanupCompleted=$false;phase='preflight';failurePhase='none';decoderCode='none';before=$null;owner=('aw'+[guid]::NewGuid().ToString('N').Substring(0,10));tool=(Join-Path $env:SystemRoot 'System32\pktmon.exe');node=$node;etl=(Join-Path $PrivateRoot 'PktMon.etl');pcap=(Join-Path $PrivateRoot 'wire.pcapng');filters=@();rules=@();startAttempted=$false;stopped=$false;processes=0;joined=0;processFailed=$false;flags=$flags;tlsFlows=0;outRecords=0;inRecords=0;providers=0}
+    return @{statsPath=(Join-Path $PrivateRoot 'wire-statistics.txt');statsEvidence=@{source='not-inspected';code='not-inspected';packets=-1;events=-1;eventsLost=-1;buffersLost=-1};monitorEvidence=@{state='not-inspected';ownedPathMentioned=$false;providerMentioned=$false;providerHeaderRecognized=$false;keywordRowRecognized=$false;rawPacketLogging='unknown';circularSettingMentioned=$false};flowPacketCounters=@{code='not-inspected';fields=0;nonzero=$false};packetCounters=@{code='not-inspected';fields=0;nonzero=$false};workdir=$PrivateRoot;processFailureCode='none';failureExitCode=0;failureStdoutChars=0;failureStderrChars=0;failureElapsedMilliseconds=0;captureFileCode='not-inspected';decoder=$DecoderPath;etlBytes=0;pcapBytes=0;filterRows=0;filterCode='none';cleanupAttempted=$false;cleanupCompleted=$false;phase='preflight';failurePhase='none';decoderCode='none';before=$null;owner=('aw'+[guid]::NewGuid().ToString('N').Substring(0,10));tool=(Join-Path $env:SystemRoot 'System32\pktmon.exe');node=$node;etl=(Join-Path $PrivateRoot 'PktMon.etl');pcap=(Join-Path $PrivateRoot 'wire.pcapng');filters=@();rules=@();startAttempted=$false;stopped=$false;processes=0;joined=0;processFailed=$false;flags=$flags;tlsFlows=0;outRecords=0;inRecords=0;providers=0}
 }
 function Get-NativeDNSWireSetupCode([Exception]$Failure) {
     for($depth=0;$null -ne $Failure -and $depth -lt 16;$depth++){
@@ -267,6 +267,20 @@ function Get-NativeDNSWireMonitorEvidence([string]$Text,[string]$ExpectedPath) {
     }
     return $r
 }
+function Read-NativeDNSWireStatsInput([object]$State,[string]$Stdout) {
+    $stream=$null;$reader=$null
+    try{
+        $item=Get-NativeDNSWireItem $State.statsPath
+        if($item.PSIsContainer -or $item.Length -le 0 -or $item.Length -gt 65536){return @{source='stdout-fallback';text=$Stdout}}
+        $stream=[IO.FileStream]::new($State.statsPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)
+        if($stream.Length -le 0 -or $stream.Length -gt 65536){return @{source='stdout-fallback';text=$Stdout}}
+        $reader=[IO.StreamReader]::new($stream,[Text.UTF8Encoding]::new($false),$true,4096,$true)
+        $text=$reader.ReadToEnd()
+        if($text.Length -gt 65536){return @{source='stdout-fallback';text=$Stdout}}
+        return @{source='file';text=$text}
+    }catch{return @{source='stdout-fallback';text=$Stdout}}
+    finally{if($null -ne $reader){$reader.Dispose()};if($null -ne $stream){$stream.Dispose()}}
+}
 function Get-NativeDNSWireStatsEvidence([string]$Text) {
     $empty=@{code='unknown';packets=-1;events=-1;eventsLost=-1;buffersLost=-1}
     if($Text.Length -gt 65536){$empty.code='bound';return $empty}
@@ -295,7 +309,10 @@ function Measure-NativeDNSWire([object]$State) {
     $State.phase='capture-monitor';$State.monitorEvidence=Get-NativeDNSWireMonitorEvidence (Invoke-NativeDNSWireTool $State @('status','--buffer-info')) $State.etl
     $State.phase='capture-stop';Stop-NativeDNSWireCapture $State
     $State.phase='capture-file';Measure-NativeDNSWireFile $State 'etl'
-    $State.phase='capture-statistics';$State.statsEvidence=Get-NativeDNSWireStatsEvidence (Invoke-NativeDNSWireTool $State @('etl2txt',$State.etl,'--stats-only'))
+    $State.phase='capture-statistics'
+    $statsOutput=Invoke-NativeDNSWireTool $State @('etl2txt',$State.etl,'--stats-only','--out',$State.statsPath)
+    $statsInput=Read-NativeDNSWireStatsInput $State $statsOutput
+    $State.statsEvidence=Get-NativeDNSWireStatsEvidence $statsInput.text;$State.statsEvidence['source']=$statsInput.source
     $State.phase='capture-conversion';[void](Invoke-NativeDNSWireTool $State @('etl2pcap',$State.etl,'--out',$State.pcap))
     $State.phase='decode';$bytes=Read-NativeDNSWireCapture $State
     $decoded=(Invoke-NativeDNSWireProcess $State $State.node @($State.decoder) $bytes) | ConvertFrom-Json
