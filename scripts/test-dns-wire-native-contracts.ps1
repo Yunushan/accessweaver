@@ -10,7 +10,7 @@ $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Wire source syntax'}
 $excluded=@('Invoke-NativeDNSWireProcess','Read-NativeDNSWireCapture','Get-NativeDNSWireItem')
-$allowed=@('Wait-NativeDNSWireWrite','Get-NativeDNSWireSetupCode','Assert-NativeOrdinaryPath','Get-Command','Join-Path','Where-Object','Select-Object','Invoke-NativeDNSWireProcess','Invoke-NativeDNSWireTool','Assert-NativeDNSWireStopped','Assert-NativeDNSWireEmptyFilters','Get-NativeDNSWireFilterRows','Assert-NativeDNSWireFilters','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Assert-NativeDNSWireRule','New-NetFirewallRule','Remove-NetFirewallRule','Assert-NativeDNSWireFirewall','Get-DnsClientNrptPolicy','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Stop-NativeDNSWireCapture','Clear-DnsClientCache','Resolve-DnsName','Invoke-NativeDNSWireQuery','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile','Get-NativeDNSWireItem','ConvertFrom-Json','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState')
+$allowed=@('New-NativeDNSWireProbeBytes','Wait-NativeDNSWireWrite','Get-NativeDNSWireSetupCode','Assert-NativeOrdinaryPath','Get-Command','Join-Path','Where-Object','Select-Object','Invoke-NativeDNSWireProcess','Invoke-NativeDNSWireTool','Assert-NativeDNSWireStopped','Assert-NativeDNSWireEmptyFilters','Get-NativeDNSWireFilterRows','Assert-NativeDNSWireFilters','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Assert-NativeDNSWireRule','New-NetFirewallRule','Remove-NetFirewallRule','Assert-NativeDNSWireFirewall','Get-DnsClientNrptPolicy','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Stop-NativeDNSWireCapture','Clear-DnsClientCache','Resolve-DnsName','Invoke-NativeDNSWireQuery','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile','Get-NativeDNSWireItem','ConvertFrom-Json','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState')
 $definitions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false));$seen=@{}
 foreach($definition in $definitions){
     if($seen.ContainsKey($definition.Name)){throw 'Duplicate wire source function'};$seen[$definition.Name]=$true
@@ -30,10 +30,10 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
     $State.processes++;$State.joined++
     if($Program -ceq 'node-source'){
         if($Arguments.Count -eq 1 -and $Arguments[0] -ceq '--version'){return 'v26.8.2'}
-        if($null -ne $InputBytes -and $InputBytes.Length -eq 1){
+        if($null -ne $InputBytes -and $InputBytes.Length -eq 48){
             Assert-Wire (-not $script:running -and $script:filters.Count -eq 0 -and $script:rules.Count -eq 0)
             if($script:fault -ceq 'decoder-preflight'){throw 'Source decoder unavailable'}
-            return '{"schemaVersion":1,"outcome":"refused","code":"capture-bound","evidence":null}'
+            return '{"schemaVersion":1,"outcome":"refused","code":"capture-empty","evidence":null}'
         }
         Assert-Wire ($null -ne $InputBytes -and $InputBytes.Length -eq 3 -and -not $script:running)
         if($script:fault -ceq 'decoder-refusal'){return '{"schemaVersion":1,"outcome":"refused","code":"tcp-gap","evidence":null}'}
@@ -116,6 +116,28 @@ function Reject-Wire([scriptblock]$Body){$rejected=$false;try{[void](& $Body)}ca
 $oldSystemRoot=$env:SystemRoot
 try {
     if(-not $env:SystemRoot){$env:SystemRoot=[IO.Path]::GetTempPath()}
+    Case-Wire 'binary-stdin-startup-preserves-header-and-console-encoding' {
+        $original=[Console]::InputEncoding;$before=([BitConverter]::ToString($original.GetPreamble()))
+        $fake=[pscustomobject]@{Bytes=$null}
+        $fake | Add-Member -MemberType ScriptMethod -Name Start -Value {
+            $stream=[IO.MemoryStream]::new();$writer=[IO.StreamWriter]::new($stream,[Console]::InputEncoding,128,$true)
+            try{$writer.AutoFlush=$true;$writer.BaseStream.Write([byte[]]@(10,13,13,10),0,4);$writer.Close();$this.Bytes=$stream.ToArray();return $true}finally{$writer.Dispose();$stream.Dispose()}
+        }
+        Assert-Wire (Start-NativeDNSWireChild $fake $true)
+        Assert-Wire ($fake.Bytes.Length -eq 4 -and [BitConverter]::ToString($fake.Bytes) -ceq '0A-0D-0D-0A')
+        Assert-Wire ([Console]::InputEncoding.CodePage -eq $original.CodePage -and [BitConverter]::ToString([Console]::InputEncoding.GetPreamble()) -ceq $before)
+    }
+    Case-Wire 'binary-stdin-startup-failure-restores-console-encoding' {
+        $original=[Console]::InputEncoding;$before=[BitConverter]::ToString($original.GetPreamble())
+        $fake=[pscustomobject]@{}
+        $fake | Add-Member -MemberType ScriptMethod -Name Start -Value {throw 'Source synthetic startup failure'}
+        Reject-Wire {Start-NativeDNSWireChild $fake $true}
+        Assert-Wire ([Console]::InputEncoding.CodePage -eq $original.CodePage -and [BitConverter]::ToString([Console]::InputEncoding.GetPreamble()) -ceq $before)
+    }
+    Case-Wire 'preflight-is-a-complete-empty-pcapng-envelope' {
+        $bytes=New-NativeDNSWireProbeBytes
+        Assert-Wire ($bytes -is [byte[]] -and $bytes.Length -eq 48 -and [BitConverter]::ToString($bytes) -ceq '0A-0D-0D-0A-1C-00-00-00-4D-3C-2B-1A-01-00-00-00-FF-FF-FF-FF-FF-FF-FF-FF-1C-00-00-00-01-00-00-00-14-00-00-00-01-00-00-00-FF-FF-00-00-14-00-00-00')
+    }
     Case-Wire 'stdin-write-completion-does-not-enter-json-stream' {
         $done=[Threading.Tasks.TaskCompletionSource[object]]::new();$done.SetResult('PRIVATE-SYNTHETIC-WRITE-RESULT')
         Assert-Wire (@(Wait-NativeDNSWireWrite $done.Task).Count -eq 0)

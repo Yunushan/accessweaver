@@ -322,6 +322,7 @@
           }
         }
       ],
+      "sourceTerminalBasis": "provider-run-and-source-matrix-completed",
       "nativeSHA256": {
         "scripts/test-native-doh.ps1": "eef97825b3cf9983f471234ddc3fda80c8dfbc548ef7cbcfd02ff1e33b5e4bd3",
         "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
@@ -663,6 +664,7 @@
           }
         }
       ],
+      "sourceTerminalBasis": "provider-run-and-source-matrix-completed",
       "nativeSHA256": {
         "scripts/test-native-doh.ps1": "eef97825b3cf9983f471234ddc3fda80c8dfbc548ef7cbcfd02ff1e33b5e4bd3",
         "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
@@ -1004,6 +1006,7 @@
           }
         }
       ],
+      "sourceTerminalBasis": "provider-run-and-source-matrix-completed",
       "nativeSHA256": {
         "scripts/test-native-doh.ps1": "eef97825b3cf9983f471234ddc3fda80c8dfbc548ef7cbcfd02ff1e33b5e4bd3",
         "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
@@ -1357,6 +1360,7 @@
           }
         }
       ],
+      "sourceTerminalBasis": "provider-run-and-source-matrix-completed",
       "nativeSHA256": {
         "scripts/test-native-doh.ps1": "eef97825b3cf9983f471234ddc3fda80c8dfbc548ef7cbcfd02ff1e33b5e4bd3",
         "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
@@ -1613,6 +1617,7 @@
       ],
       "nativeRunID": 42496047824,
       "nativeArtifacts": [],
+      "sourceTerminalBasis": "provider-run-and-source-matrix-completed",
       "allNativeJobsTerminal": true,
       "nativeSourcePreflightRefusedBeforeCaptureOrProductExecution": true
     },
@@ -1948,6 +1953,7 @@
           }
         }
       ],
+      "sourceTerminalBasis": "provider-run-and-source-matrix-completed",
       "nativeSHA256": {
         "scripts/test-native-doh.ps1": "eef97825b3cf9983f471234ddc3fda80c8dfbc548ef7cbcfd02ff1e33b5e4bd3",
         "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
@@ -2301,6 +2307,7 @@
           }
         }
       ],
+      "sourceTerminalBasis": "provider-run-and-source-matrix-completed",
       "nativeSHA256": {
         "scripts/test-native-doh.ps1": "eef97825b3cf9983f471234ddc3fda80c8dfbc548ef7cbcfd02ff1e33b5e4bd3",
         "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
@@ -2654,6 +2661,7 @@
           }
         }
       ],
+      "sourceTerminalBasis": "provider-run-and-source-matrix-completed",
       "nativeSHA256": {
         "scripts/test-native-doh.ps1": "eef97825b3cf9983f471234ddc3fda80c8dfbc548ef7cbcfd02ff1e33b5e4bd3",
         "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
@@ -2668,6 +2676,360 @@
         "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
         "scripts/native-dns-wire.ps1": "c54421effa35c973423e6510c20218cbee76c64031b421e45f30ae268e59743e",
         "scripts/test-dns-wire-native-contracts.ps1": "cf077f3a116eb2c68596ad06772999359e8a1da2043b390fcd4ca3f87828de9c",
+        "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+        "scripts/dns-wire-stdin.cjs": "b05d259e94b3f89555c645cc9205b922ae6418bf99bfa56581abdb72fa205fa0",
+        ".github/workflows/native-doh-wire.yml": "19fd54b25ecb44c6a156af8c4da94398f1c73bb3e29af90a1acfbaa0d50e12e9"
+      },
+      "bothNativeWireScenariosPassed": false,
+      "allNativeJobsTerminal": true
+    },
+    {
+      "sourceCommit": "da47b9d9fd1b8e1670f98b5063b2d5a31d5512d3",
+      "sourceRunID": 42498430346,
+      "sourceAllSixPassed": true,
+      "sourceSHA256": {
+        "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+        "scripts/dns-wire-evidence.test.cjs": "6851b5ad925cc3fcba8b2d80821dbf68eb177fd6030b5ca8fdc5980b988ae9ee",
+        "scripts/dns-wire-contract-report.cjs": "d10e76c25ed2b310fad35c7d16a2a43fa2e33d59683c8f945d9b82eed2f23a62",
+        ".github/workflows/dns-wire-contracts.yml": "3f57a383b43ec04fd510901e278b5168e33b6d4486a388e20a01572ad3efbf5f",
+        "scripts/dns-wire-stdin.cjs": "b05d259e94b3f89555c645cc9205b922ae6418bf99bfa56581abdb72fa205fa0",
+        "scripts/native-dns-wire.ps1": "077480e0dd72ffd3f709f90c9fc8b5eb00e2f5c1204f29fd1d62b16ffda5c553",
+        "scripts/test-dns-wire-native-contracts.ps1": "65da199918456b373fe35cdb2f0a085c04968b60d65237bff5bdc9a55a542867",
+        ".github/workflows/native-doh-wire.yml": "19fd54b25ecb44c6a156af8c4da94398f1c73bb3e29af90a1acfbaa0d50e12e9",
+        "scripts/test-native-doh.ps1": "eef97825b3cf9983f471234ddc3fda80c8dfbc548ef7cbcfd02ff1e33b5e4bd3",
+        "scripts/dns-acceptance-state.ps1": "a8332f9d043c4f3577a5229a4831e7e88df52a1c9733eba4e4e254012622a2de",
+        "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97"
+      },
+      "sourceJobs": [
+        {
+          "id": 128785725238,
+          "target": "DNS wire source (darwin/amd64)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 128785725283,
+          "target": "DNS wire source (windows/amd64)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 128785725314,
+          "target": "DNS wire source (darwin/arm64)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 128785725349,
+          "target": "DNS wire source (linux/amd64)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 128785725352,
+          "target": "DNS wire source (windows/arm64)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 128785725411,
+          "target": "DNS wire source (linux/arm64)",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "sourceArtifacts": [
+        {
+          "artifactID": 13624680622,
+          "artifactName": "dns-wire-source-linux-arm64",
+          "providerZIPDigest": "sha256:3ef72ac9a52a81819986b7bb774a37f38d5977504f036d353f62817e9cb4e7f4",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 24,
+              "passedGroups": 24,
+              "failedGroups": []
+            }
+          ]
+        },
+        {
+          "artifactID": 13624646430,
+          "artifactName": "dns-wire-source-darwin-arm64",
+          "providerZIPDigest": "sha256:8a0aead3d08dc4ad280ee28f2948db8b6e6e69b4a1846faf43c587338a80bb2b",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 24,
+              "passedGroups": 24,
+              "failedGroups": []
+            }
+          ]
+        },
+        {
+          "artifactID": 13624482617,
+          "artifactName": "dns-wire-source-linux-amd64",
+          "providerZIPDigest": "sha256:3575c2ccdad5b6d0baf86c76898235e8d5c8094814a889314002da91f05410a4",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 24,
+              "passedGroups": 24,
+              "failedGroups": []
+            }
+          ]
+        },
+        {
+          "artifactID": 13624432852,
+          "artifactName": "dns-wire-source-darwin-amd64",
+          "providerZIPDigest": "sha256:bab008edc3ce890b1c0f0048743e2122f80939cb8df4d6a35405254e5c18998e",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 24,
+              "passedGroups": 24,
+              "failedGroups": []
+            }
+          ]
+        },
+        {
+          "artifactID": 13624208809,
+          "artifactName": "dns-wire-source-windows-amd64",
+          "providerZIPDigest": "sha256:0eecbd4deb96728a274fcc52deb55f85a5a6d1a28aa185b749f6b11d97ffc29d",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 24,
+              "passedGroups": 24,
+              "failedGroups": []
+            },
+            {
+              "edition": "desktop",
+              "code": "complete",
+              "groupCount": 24,
+              "passedGroups": 24,
+              "failedGroups": []
+            }
+          ]
+        },
+        {
+          "artifactID": 13623674077,
+          "artifactName": "dns-wire-source-windows-arm64",
+          "providerZIPDigest": "sha256:ff93e159bf2b9f87923568bcfb858a251651c5532f9b8c3a07e72ee321f39fd1",
+          "providerZIPDigestVerified": true,
+          "outcome": "passed",
+          "code": "none",
+          "pureDecoderGroups": 40,
+          "pureDecoderPassed": true,
+          "sourceShells": [
+            {
+              "edition": "core",
+              "code": "complete",
+              "groupCount": 24,
+              "passedGroups": 24,
+              "failedGroups": []
+            },
+            {
+              "edition": "desktop",
+              "code": "complete",
+              "groupCount": 24,
+              "passedGroups": 24,
+              "failedGroups": []
+            }
+          ]
+        }
+      ],
+      "nativeRunID": 42498430427,
+      "nativeArtifacts": [
+        {
+          "artifactID": 13624343590,
+          "artifactName": "native-doh-wire-windows-arm64",
+          "providerZIPDigest": "sha256:fb64076e47ac8db7630d2ac43c140df4799ef11099b9c9b7bcc9f5c40bef6737",
+          "providerZIPDigestVerified": true,
+          "outcome": "failed",
+          "code": "native-roundtrip-failed",
+          "configureExitCode": 0,
+          "restoreExitCode": 0,
+          "snapshotRemoved": true,
+          "scenario": {
+            "verificationCode": "none",
+            "failureInjected": false,
+            "operationCode": "ordinary-resolver",
+            "configurationAccepted": true,
+            "restorationAccepted": true,
+            "baselineCaptured": true,
+            "restoredStateVerified": true,
+            "code": "operation-failed",
+            "restorationCode": "none",
+            "outcome": "failed",
+            "failedResolverVerified": false,
+            "resolverPassed": false,
+            "configurationAttempted": true,
+            "restoredResolverVerified": false,
+            "configuredStateVerified": true,
+            "restorationAttempted": true
+          },
+          "wire": {
+            "outboundEncryptedRecords": 0,
+            "failureExitCode": 0,
+            "failureStdoutChars": 0,
+            "phase": "complete",
+            "etlBytes": 3820,
+            "outcome": "failed",
+            "filterCode": "none",
+            "tlsFlows": 0,
+            "rawCapturePublished": false,
+            "pcapBytes": 180,
+            "controls": {
+              "baselineResolverPassed": true,
+              "originalStateVerified": true,
+              "tlsBlockRemoved": false,
+              "tlsObserved": false,
+              "captureBounded": true,
+              "blockedQueryRejected": false,
+              "captureStarted": true,
+              "rulesRemoved": true,
+              "tlsBlocked": false,
+              "ordinaryQueryPassed": true,
+              "filtersRemoved": true,
+              "captureStopped": true,
+              "plaintextBlocked": true,
+              "filtersVerified": true,
+              "originalResolverPassed": true,
+              "resumedQueryPassed": false
+            },
+            "toolFailure": false,
+            "productionQualificationComplete": false,
+            "toolProcesses": 25,
+            "providerMask": 0,
+            "filterRows": 12,
+            "failureElapsedMilliseconds": 0,
+            "inboundEncryptedRecords": 0,
+            "captureFileCode": "ordinary",
+            "decoderCode": "section-required",
+            "failureStderrChars": 0,
+            "toolProcessesJoined": 25,
+            "processFailureCode": "none",
+            "failurePhase": "decode"
+          }
+        },
+        {
+          "artifactID": 13623639190,
+          "artifactName": "native-doh-wire-windows-amd64",
+          "providerZIPDigest": "sha256:041ac4be759ded67e7687c98b053d7880131d67f5bad50cf530a004750e822cc",
+          "providerZIPDigestVerified": true,
+          "outcome": "failed",
+          "code": "native-roundtrip-failed",
+          "configureExitCode": 0,
+          "restoreExitCode": 0,
+          "snapshotRemoved": true,
+          "scenario": {
+            "verificationCode": "none",
+            "failureInjected": false,
+            "operationCode": "ordinary-resolver",
+            "configurationAccepted": true,
+            "restorationAccepted": true,
+            "baselineCaptured": true,
+            "restoredStateVerified": true,
+            "code": "operation-failed",
+            "restorationCode": "none",
+            "outcome": "failed",
+            "failedResolverVerified": false,
+            "resolverPassed": false,
+            "configurationAttempted": true,
+            "restoredResolverVerified": false,
+            "configuredStateVerified": true,
+            "restorationAttempted": true
+          },
+          "wire": {
+            "outboundEncryptedRecords": 0,
+            "failureExitCode": 0,
+            "failureStdoutChars": 0,
+            "phase": "complete",
+            "etlBytes": 3670,
+            "outcome": "failed",
+            "filterCode": "none",
+            "tlsFlows": 0,
+            "rawCapturePublished": false,
+            "pcapBytes": 188,
+            "controls": {
+              "baselineResolverPassed": true,
+              "originalStateVerified": true,
+              "tlsBlockRemoved": false,
+              "tlsObserved": false,
+              "captureBounded": true,
+              "blockedQueryRejected": false,
+              "captureStarted": true,
+              "rulesRemoved": true,
+              "tlsBlocked": false,
+              "ordinaryQueryPassed": true,
+              "filtersRemoved": true,
+              "captureStopped": true,
+              "plaintextBlocked": true,
+              "filtersVerified": true,
+              "originalResolverPassed": true,
+              "resumedQueryPassed": false
+            },
+            "toolFailure": false,
+            "productionQualificationComplete": false,
+            "toolProcesses": 25,
+            "providerMask": 0,
+            "filterRows": 12,
+            "failureElapsedMilliseconds": 0,
+            "inboundEncryptedRecords": 0,
+            "captureFileCode": "ordinary",
+            "decoderCode": "section-required",
+            "failureStderrChars": 0,
+            "toolProcessesJoined": 25,
+            "processFailureCode": "none",
+            "failurePhase": "decode"
+          }
+        }
+      ],
+      "sourceTerminalBasis": "all-six-source-bound-matrix-jobs-completed",
+      "nativeSHA256": {
+        "scripts/test-native-doh.ps1": "eef97825b3cf9983f471234ddc3fda80c8dfbc548ef7cbcfd02ff1e33b5e4bd3",
+        "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
+        "scripts/dns-acceptance-state.ps1": "a8332f9d043c4f3577a5229a4831e7e88df52a1c9733eba4e4e254012622a2de",
+        "scripts/test-dns-acceptance-state.ps1": "66f5e1d0743143781f92dec066e5e2439832c620dd8d9d27a3c3632d041150d2",
+        "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+        ".github/workflows/native-doh.yml": "7a373b86da9de96909db6ff01dcf7f4aa0115c5efc719b5540f1f84a4643df40",
+        "internal/workflow/windows.ps1": "57599bcec6c09ec499e681b758f88c99ea4fe789d12131948261e35ab81ecfd2",
+        "internal/workflow/manager.go": "e1eae98c45c8ccd7b77675d9a05be300c2d02cb85b8a372c1b3f8f74c04f8f1d",
+        "cmd/accessweaver/system.go": "205880642ec0814629f754b7f44ae3d36b00a584ee937e2705849b2ddead1f94",
+        "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+        "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+        "scripts/native-dns-wire.ps1": "077480e0dd72ffd3f709f90c9fc8b5eb00e2f5c1204f29fd1d62b16ffda5c553",
+        "scripts/test-dns-wire-native-contracts.ps1": "65da199918456b373fe35cdb2f0a085c04968b60d65237bff5bdc9a55a542867",
         "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
         "scripts/dns-wire-stdin.cjs": "b05d259e94b3f89555c645cc9205b922ae6418bf99bfa56581abdb72fa205fa0",
         ".github/workflows/native-doh-wire.yml": "19fd54b25ecb44c6a156af8c4da94398f1c73bb3e29af90a1acfbaa0d50e12e9"
@@ -2824,8 +3186,8 @@
       ]
     }
   ],
-  "distinctProviderZIPDigestsVerified": 84,
-  "terminalJobsVerified": 80,
+  "distinctProviderZIPDigestsVerified": 92,
+  "terminalJobsVerified": 88,
   "productSourceUnchangedSince": "3ae6417cb9a8a86d6b4e41dea0f25fc3af94c331",
   "readinessManifestSHA256": "9525ee76922c68ec4f3daafe581bffc9d7631bf77947863bc62a807556b4b735",
   "rawLogsRead": false,

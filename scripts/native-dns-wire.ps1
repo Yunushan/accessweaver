@@ -22,6 +22,18 @@ function Get-NativeDNSWireSetupCode([Exception]$Failure) {
     if($Failure -is [InvalidOperationException]){return 'start-state'}
     return 'setup'
 }
+function Start-NativeDNSWireChild([object]$Process,[bool]$BinaryInput) {
+    if(-not $BinaryInput){return $Process.Start()}
+    # .NET Framework constructs stdin with Console.InputEncoding and enables
+    # AutoFlush in Start(). Use a BOM-free encoding during that construction.
+    $original=[Console]::InputEncoding
+    try{[Console]::InputEncoding=[Text.UTF8Encoding]::new($false);return $Process.Start()}
+    finally{[Console]::InputEncoding=$original}
+}
+function New-NativeDNSWireProbeBytes {
+    # Little-endian PCAPNG section + Ethernet interface, deliberately no packets.
+    return ,([byte[]]@(0x0a,0x0d,0x0d,0x0a,0x1c,0,0,0,0x4d,0x3c,0x2b,0x1a,1,0,0,0,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x1c,0,0,0,1,0,0,0,0x14,0,0,0,1,0,0,0,0xff,0xff,0,0,0x14,0,0,0))
+}
 function Wait-NativeDNSWireWrite([object]$Task) {
     # Runtime tasks may expose a generic completion value through PowerShell.
     # Only child stdout/stderr may contribute to the decoder response stream.
@@ -35,7 +47,7 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
     $start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true;$start.RedirectStandardInput=($null -ne $InputBytes)
     $p=[Diagnostics.Process]::new();$p.StartInfo=$start;$started=$false;$wasJoined=$false;$captures=@();$bad=$false;$failureKind='none';$clock=$null;$write=$null;$closed=$null -eq $InputBytes
     try {
-        if(-not $p.Start()){throw 'Wire process start'};$State.processes++;$started=$true
+        if(-not (Start-NativeDNSWireChild $p (-not $closed))){throw 'Wire process start'};$State.processes++;$started=$true
         $clock=[Diagnostics.Stopwatch]::StartNew();$captures=@()
         foreach($reader in @($p.StandardOutput,$p.StandardError)){$buffer=[char[]]::new(4096);$captures+=@{reader=$reader;buffer=$buffer;text=[Text.StringBuilder]::new();done=$false;task=$reader.ReadAsync($buffer,0,$buffer.Length)}}
         if(-not $closed){$write=$p.StandardInput.BaseStream.WriteAsync($InputBytes,0,$InputBytes.Length)}
@@ -139,8 +151,11 @@ function Start-NativeDNSWireCapture([object]$State) {
     $State.phase='decoder-preflight'
     $version=Invoke-NativeDNSWireProcess $State $State.node @('--version')
     if($version.Trim() -cne 'v26.8.2'){throw 'Wire decoder version'}
-    try{$probe=(Invoke-NativeDNSWireProcess $State $State.node @($State.decoder) ([byte[]]@(0))) | ConvertFrom-Json}catch{$State.decoderCode='invalid-report';throw}
-    if($probe.schemaVersion -ne 1 -or $probe.outcome -cne 'refused' -or $probe.code -cne 'capture-bound' -or $null -ne $probe.evidence){$State.decoderCode='invalid-report';throw 'Wire decoder preflight'}
+    try{$probe=(Invoke-NativeDNSWireProcess $State $State.node @($State.decoder) (New-NativeDNSWireProbeBytes)) | ConvertFrom-Json}catch{$State.decoderCode='invalid-report';throw}
+    if($probe.schemaVersion -ne 1 -or $probe.outcome -cne 'refused' -or $probe.code -cne 'capture-empty' -or $null -ne $probe.evidence){
+        $State.decoderCode=if($probe.outcome -ceq 'refused' -and $probe.code -is [string] -and $probe.code -cmatch '^[a-z0-9-]{1,48}$'){$probe.code}else{'invalid-report'}
+        throw 'Wire decoder preflight'
+    }
     $State.phase='monitor-preflight'
     Assert-NativeDNSWireStopped (Invoke-NativeDNSWireTool $State @('status'))
     Assert-NativeDNSWireEmptyFilters (Invoke-NativeDNSWireTool $State @('filter','list'))
