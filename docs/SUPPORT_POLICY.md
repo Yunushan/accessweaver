@@ -4,7 +4,7 @@ AccessWeaver is an experimental alpha. There is no production-supported or long-
 
 ## Current service and ownership
 
-Product-support ownership, escalation coverage and response targets have not yet been assigned. No on-call service, response deadline, resolution deadline or enterprise support contract is advertised. The intake and triage procedure below can be used for development reports; production support requires an accepted owner and published commitments.
+The repository maintainer owns product-support intake and triage through [GitHub issues](https://github.com/Yunushan/accessweaver/issues). Support is best effort: there is no guaranteed initial response, update interval or resolution time. No on-call service, coverage hours or enterprise support contract is offered. Private security escalation follows [SECURITY.md](../SECURITY.md). A backup maintainer and dedicated escalation coverage have not been assigned.
 
 A deploying organization owns its endpoint administration, incident response and recovery decisions. Repository issue intake does not supply those operational roles. Before managed rollout, record the responsible people and available contact channels using [the incident procedure](INCIDENT_RESPONSE.md).
 
@@ -27,7 +27,7 @@ The optional [local support summary](SUPPORT.md) provides metadata-only JSON aft
 
 ## Triage and escalation
 
-The reporter chooses an impact category. A support owner confirms severity after checking scope and reproduction; it is recorded independently of response targets, which remain unassigned.
+The reporter chooses an impact category. The repository maintainer confirms severity after checking scope and reproduction. Severity determines triage priority; it does not create a response or resolution deadline under best-effort support.
 
 | Severity | Impact | Handling |
 | --- | --- | --- |
@@ -36,17 +36,17 @@ The reporter chooses an impact category. A support owner confirms severity after
 | S2 — degraded operation | A feature fails but a safe workaround exists | Record and verify the workaround and its limits. |
 | S3 — minor issue or question | Cosmetic, documentation or informational issue | Group duplicates and identify the affected screen or documentation. |
 
-Triage records the source/version, OS/architecture, impact, reproduction status, owner when assigned, related issue and next update. Distinguish a product defect, an upstream-engine problem, an unsupported configuration and an environment/preparation failure. Keep private evidence in its agreed restricted location.
+Triage records the source/version, OS/architecture, impact, reproduction status, responsible maintainer, related issue and any planned next update. Distinguish a product defect, an upstream-engine problem, an unsupported configuration and an environment/preparation failure. Keep private evidence in its agreed restricted location.
 
 Preserve DNS originals, recovery journals and independent checkpoints until recovery is verified. Follow the documented [Windows recovery behavior](WINDOWS_WORKFLOWS.md) and the deploying administrator's procedures. Do not delete recovery state, lower policy revisions or retry privileged changes just to clear an error.
 
-A closure records the fixing commit or verified workaround, the actual validation scope and remaining limits. Compilation, mocked callbacks and a running engine alone do not establish installed lifecycle, traffic routing or recovery. An issue without a confirmed support owner or response commitment remains best-effort intake.
+A closure records the fixing commit or verified workaround, the actual validation scope and remaining limits. Compilation, mocked callbacks and a running engine alone do not establish installed lifecycle, traffic routing or recovery. Issue intake remains best effort even when a maintainer accepts an issue; accepting it does not create a response or resolution deadline.
 
 ## Version lifecycle
 
 | Build line | Current treatment |
 | --- | --- |
-| Current alpha development | Reproduction and fixes can be considered on an identified source commit. Production support, response targets and a maintenance period remain uncommitted. |
+| Current alpha development | Reproduction and fixes can be considered on an identified source commit. The repository maintainer provides best-effort issue support. Production support, guaranteed response targets and a maintenance period remain uncommitted. |
 | Older alpha builds and arbitrary source snapshots | No backport or ongoing-maintenance commitment is advertised. Preserve the affected build identity when reporting a regression. |
 | Stable or LTS releases | No such supported line is currently offered. |
 
@@ -54,4 +54,4 @@ Before a production or LTS line is promoted, its owner must publish the supporte
 
 ## Conditions still required for production support
 
-Confirm a named primary and backup owner, working public/private channels, severity ownership, response/update targets and coverage hours. Accept a supported-version and end-of-life policy that those owners can meet. Exercise an intake, private escalation, recovery handoff and closure on an intended managed endpoint. Until those commitments and exercises are verified, support operations remain partially implemented.
+The repository maintainer and best-effort GitHub issue intake are assigned. Before production support is advertised, verify working public/private channels, assign backup and escalation coverage, and publish any response/update targets and coverage hours that will actually be offered. Accept a supported-version and end-of-life policy that the owners can meet. Exercise an intake, private escalation, recovery handoff and closure on an intended managed endpoint. Until those commitments and exercises are verified, support operations remain partially implemented.

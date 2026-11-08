@@ -139,4 +139,4 @@ Yerel API, loopback adresi, sunucu/kaynak denetimi ve işleme özel istek anahta
 
 ## Destek
 
-Sorun bildirmeden önce [destek ve sürüm kapsamını](docs/SUPPORT_POLICY.md) okuyun. Destek sorumluları henüz atanmamış, yanıt taahhütleri henüz belirlenmemiştir. İsteğe bağlı [yerel destek özeti](docs/SUPPORT.md) yalnızca üst veri dışa aktarır; otomatik yükleme yapılmaz.
+Sorun bildirmeden önce [destek ve sürüm kapsamını](docs/SUPPORT_POLICY.md) okuyun. Depo bakım sorumlusu GitHub sorunları üzerinden olanakları ölçüsünde destek sağlar; yanıt veya çözüm süresi garanti edilmez. İsteğe bağlı [yerel destek özeti](docs/SUPPORT.md) yalnızca üst veri dışa aktarır; otomatik yükleme yapılmaz.

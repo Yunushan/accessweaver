@@ -144,7 +144,7 @@ Release archives contain the standalone application, documentation and license n
 
 ## Support
 
-Read [support and version coverage](docs/SUPPORT_POLICY.md) before filing an issue. Support ownership and response commitments remain unassigned. An optional [local support summary](docs/SUPPORT.md) exports metadata only; nothing is uploaded automatically.
+Read [support and version coverage](docs/SUPPORT_POLICY.md) before filing an issue. The repository maintainer provides best-effort support through GitHub issues, with no guaranteed response or resolution time. An optional [local support summary](docs/SUPPORT.md) exports metadata only; nothing is uploaded automatically.
 
 ## License and security
 
