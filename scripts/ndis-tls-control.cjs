@@ -3,7 +3,7 @@
 const tls=require('node:tls'),os=require('node:os');
 const QUERY='000001000001000000000000076578616d706c6503636f6d0000010001';
 function fixedDohQuery(){return Buffer.from(QUERY,'hex');}
-function requestOptions(){return {hostname:'8.8.8.8',port:443,family:4,servername:'dns.google',rejectUnauthorized:true,ca:tls.rootCertificates,minVersion:'TLSv1.3',maxVersion:'TLSv1.3',ALPNProtocols:['http/1.1'],method:'POST',path:'/dns-query',agent:false,headers:{Host:'dns.google',Accept:'application/dns-message','Content-Type':'application/dns-message','Content-Length':fixedDohQuery().length,Connection:'close'}};}
+function requestOptions(){return {hostname:'8.8.8.8',port:443,family:4,servername:'dns.google',rejectUnauthorized:true,ca:tls.rootCertificates,minVersion:'TLSv1.3',maxVersion:'TLSv1.3',ALPNProtocols:['http/1.1'],method:'POST',path:'/dns-query',agent:false,headers:{Host:'dns.google',Accept:'application/dns-message','Content-Type':'application/dns-message','Content-Length':fixedDohQuery().length,Connection:'keep-alive'}};}
 function dnsName(bytes,start){
  let at=start,next=null,jumps=0;const labels=[],seen=new Set();
  while(true){
@@ -25,7 +25,7 @@ function validateDohResponse(status,headers,body){
  }
  return found&&at===body.length;
 }
-function beginDohClose(socket,peerEnded=false){if(!peerEnded||!socket||socket.destroyed||!socket.writable||socket.writableEnded)return false;socket.end();return true;}
+function beginDohClose(socket,responseComplete=false){if(!responseComplete||!socket||socket.destroyed||!socket.writable||socket.writableEnded)return false;socket.end();return true;}
 
 function fixedHttpDohRequest(){const q=requestOptions();return Buffer.concat([Buffer.from(q.method+' '+q.path+' HTTP/1.1\r\n'+Object.entries(q.headers).map(([k,v])=>k+': '+v+'\r\n').join('')+'\r\n','ascii'),fixedDohQuery()]);}
 function readHttpDohReply(bytes,ended=false){
@@ -51,7 +51,7 @@ async function runFixedDohStimulus(){
   let socket=null,done=false,authorized=false,validated=false,closed=false,peerEnded=false,failure=null,total=0;const chunks=[];
   const finish=()=>{if(done)return;done=true;clearTimeout(deadline);const good=failure===null&&authorized&&validated&&closed&&peerEnded;resolve({schemaVersion:1,outcome:good?'passed':'failed',code:good?'none':failure||'close',tlsAuthorized:authorized,responseValidated:validated,closed,productionQualificationComplete:false});};
   const stop=code=>{if(failure===null)failure=code;if(socket)socket.destroy();else finish();};
-  const inspect=ended=>{try{const r=readHttpDohReply(Buffer.concat(chunks,total),ended);if(!r)return;validated=validateDohResponse(r.status,r.headers,r.body);if(!validated)stop('response');else if(ended&&!socket.writableEnded&&!beginDohClose(socket,ended))stop('close');}catch{stop('response');}};
+  const inspect=ended=>{try{const r=readHttpDohReply(Buffer.concat(chunks,total),ended);if(!r)return;validated=validateDohResponse(r.status,r.headers,r.body);if(!validated)stop('response');else if(!socket.writableEnded&&!beginDohClose(socket,validated))stop('close');}catch{stop('response');}};
   const deadline=setTimeout(()=>{stop('timeout');finish();},8000);
   try{
    const q=requestOptions();socket=tls.connect({host:q.hostname,port:q.port,family:q.family,servername:q.servername,rejectUnauthorized:q.rejectUnauthorized,ca:q.ca,minVersion:q.minVersion,maxVersion:q.maxVersion,ALPNProtocols:q.ALPNProtocols,allowHalfOpen:true});
