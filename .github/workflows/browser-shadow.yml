@@ -2,7 +2,7 @@ name: Owned box-shadow rendering control
 
 on:
   push:
-    branches: ['codex/browser-shadow-control']
+    branches: ['codex/browser-shadow-control', 'codex/browser-shadow-csp']
     paths-ignore: ['docs/**', 'README.md']
   workflow_dispatch:
 
