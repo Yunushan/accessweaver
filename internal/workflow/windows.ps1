@@ -1043,17 +1043,59 @@ function Read-OriginalDNSNameServer([string]$path) {
     if($property.Value -isnot [string]){throw 'Original DNS mode has an unsupported value; no new DNS configuration was applied'}
     return [string]$property.Value
 }
+function Read-OriginalDNSAdapter([object]$adapter) {
+    $guid=[string]$adapter.InterfaceGuid
+    $reg='HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\'+$guid
+    $reg6='HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\'+$guid
+    $names=Read-OriginalDNSNameServer $reg;$names6=Read-OriginalDNSNameServer $reg6
+    $dns4=@(Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction Stop)
+    $dns6=@(Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv6 -ErrorAction Stop)
+    if($dns4.Count -ne 1 -or $null -eq $dns4[0] -or $dns6.Count -ne 1 -or $null -eq $dns6[0]){throw 'Original adapter DNS addresses could not be inspected; no new DNS configuration was applied'}
+    $values4=@($dns4[0].ServerAddresses);$values6=@($dns6[0].ServerAddresses)
+    $dhcp4=[string]::IsNullOrWhiteSpace($names);$dhcp6=[string]::IsNullOrWhiteSpace($names6)
+    foreach($family in @('IPv4','IPv6')){
+        $dhcp=if($family -eq 'IPv4'){$dhcp4}else{$dhcp6};$values=if($family -eq 'IPv4'){$values4}else{$values6}
+        if(-not $dhcp -and ($values.Count -eq 0 -or @($values | Where-Object {$_ -isnot [string] -or [string]::IsNullOrWhiteSpace($_)}).Count -ne 0)){throw 'Original static DNS addresses are unavailable; no new DNS configuration was applied'}
+    }
+    return @{guid=$guid;index=$adapter.ifIndex;ipv4=$values4;ipv6=$values6;dhcp4=$dhcp4;dhcp6=$dhcp6}
+}
 function Configure-DNS([string]$method) {
     if($method -notin @('doh','dnscrypt')){throw 'Choose doh or dnscrypt'}
     if($method -eq 'doh'){foreach($command in @('Get-DnsClientDohServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'This Windows version does not expose native DoH management; choose DNSCrypt instead'}}}
     $snapshot=Join-Path $root 'profiles\dns-original.json'
-    $adapters=@(Get-NetAdapter | Where-Object {$_.Status -eq 'Up' -and $_.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN'})
+    $inventory=@(Get-NetAdapter -ErrorAction Stop)
+    $adapters=@($inventory | Where-Object {$_.Status -eq 'Up' -and $_.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN'})
     if(-not $adapters.Count){throw 'No active physical network adapter found'}
-    if(-not (Test-Path -LiteralPath $snapshot)){
-        $records=@();foreach($adapter in $adapters){$reg='HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\'+$adapter.InterfaceGuid;$names=Read-OriginalDNSNameServer $reg;$reg6='HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\'+$adapter.InterfaceGuid;$names6=Read-OriginalDNSNameServer $reg6;$records+=@{guid=[string]$adapter.InterfaceGuid;index=$adapter.ifIndex;ipv4=@((Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4).ServerAddresses);ipv6=@((Get-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv6).ServerAddresses);dhcp4=[string]::IsNullOrWhiteSpace($names);dhcp6=[string]::IsNullOrWhiteSpace($names6)}}
-        $dohSettings=@();if(Get-Command 'Get-DnsClientDohServerAddress' -ErrorAction SilentlyContinue){$dohSettings=@(Get-DnsClientDohServerAddress -ErrorAction Stop)}
-        Write-Atomic $snapshot (@{adapters=@($records);doh=$dohSettings}|ConvertTo-Json -Depth 10)
+    $hadSnapshot=[bool](Test-Path -LiteralPath $snapshot)
+    $original=if($hadSnapshot){Get-Content -LiteralPath $snapshot -Raw -ErrorAction Stop | ConvertFrom-Json}else{[pscustomobject]@{adapters=@();doh=@()}}
+    if($hadSnapshot -and ($null -eq $original.adapters -or @($original.adapters).Count -eq 0)){throw 'Original DNS snapshot has no adapter records; no new DNS configuration was applied'}
+    $records=@($original.adapters);$known=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach($record in $records){
+        if($null -eq $record -or $record.guid -isnot [string] -or [string]::IsNullOrWhiteSpace($record.guid) -or -not $known.Add($record.guid)){throw 'Original DNS adapter identities are invalid or duplicated; no new DNS configuration was applied'}
+        $matches=@($inventory | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
+        if($matches.Count -ne 1){throw 'An original network adapter is missing or ambiguous; no new DNS configuration was applied'}
+        if($record.dhcp4 -isnot [bool] -or $record.dhcp6 -isnot [bool]){throw 'Original DNS snapshot has invalid address mode flags; no new DNS configuration was applied'}
+        foreach($family in @('IPv4','IPv6')){
+            $dhcp=if($family -eq 'IPv4'){$record.dhcp4}else{$record.dhcp6};$values=if($family -eq 'IPv4'){@($record.ipv4)}else{@($record.ipv6)}
+            if(-not $dhcp -and ($values.Count -eq 0 -or @($values | Where-Object {$_ -isnot [string] -or [string]::IsNullOrWhiteSpace($_)}).Count -ne 0)){throw 'Original static DNS addresses are unavailable; no new DNS configuration was applied'}
+        }
     }
+    # Extend only for newly selected adapters. Never recapture an already-owned
+    # adapter's managed settings or replace the first global DoH originals.
+    $needsSnapshotWrite=-not $hadSnapshot
+    foreach($adapter in $adapters){
+        $guid=[string]$adapter.InterfaceGuid;$matches=@($inventory | Where-Object {[string]$_.InterfaceGuid -eq $guid})
+        if([string]::IsNullOrWhiteSpace($guid) -or $matches.Count -ne 1){throw 'Selected DNS adapter identities are unavailable or ambiguous; no new DNS configuration was applied'}
+        if(-not $known.Contains($guid)){
+            $records+=@(Read-OriginalDNSAdapter $adapter)
+            [void]$known.Add($guid);$needsSnapshotWrite=$true
+        }
+    }
+    if(-not $hadSnapshot){
+        $dohSettings=@();if(Get-Command 'Get-DnsClientDohServerAddress' -ErrorAction SilentlyContinue){$dohSettings=@(Get-DnsClientDohServerAddress -ErrorAction Stop)}
+        $original.doh=$dohSettings
+    }
+    if($needsSnapshotWrite){$original.adapters=@($records);Write-Atomic $snapshot ($original|ConvertTo-Json -Depth 10)}
     $script:dnsTouched=$true
     $script:undo.Add(@{kind='dns'});Save-Journal
     if($method -eq 'dnscrypt') {
@@ -1072,7 +1114,11 @@ function Configure-DNS([string]$method) {
         foreach($provider in $providers){if(@($currentDoh | Where-Object {$_.ServerAddress -eq $provider.address}).Count -eq 1){Set-DnsClientDohServerAddress -ServerAddress $provider.address -DohTemplate $provider.url -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop}else{Add-DnsClientDohServerAddress -ServerAddress $provider.address -DohTemplate $provider.url -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop}}
         $servers=@($providers | ForEach-Object {$_.address})
     } else {throw 'Choose doh or dnscrypt'}
-    foreach($adapter in $adapters){Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses $servers}
+    foreach($adapter in $adapters){
+        $matches=@(Get-NetAdapter -ErrorAction Stop | Where-Object {[string]$_.InterfaceGuid -eq [string]$adapter.InterfaceGuid})
+        if($matches.Count -ne 1 -or $matches[0].Status -ne 'Up'){throw 'A selected DNS adapter changed before configuration; retain the recovery snapshot'}
+        Set-DnsClientServerAddress -InterfaceIndex $matches[0].ifIndex -ServerAddresses $servers
+    }
     $ready=$false;$deadline=[DateTime]::UtcNow.AddSeconds(90)
     $lastResolverError=''
     do{try{Clear-DnsClientCache;[void](Resolve-DnsName 'example.com' -DnsOnly -QuickTimeout -ErrorAction Stop);$ready=$true;break}catch{$lastResolverError=$_.Exception.Message;Start-Sleep -Seconds 2}}while([DateTime]::UtcNow -lt $deadline)

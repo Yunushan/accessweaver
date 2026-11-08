@@ -1,0 +1,95 @@
+name: DNS recovery source contracts
+
+on:
+  push:
+    branches: ['main', 'codex/dns-adapter-coverage']
+    paths:
+      - 'internal/workflow/windows.ps1'
+      - 'scripts/test-dns-recovery-contracts.ps1'
+      - '.github/workflows/dns-recovery-contracts.yml'
+  pull_request:
+    paths:
+      - 'internal/workflow/windows.ps1'
+      - 'scripts/test-dns-recovery-contracts.ps1'
+      - '.github/workflows/dns-recovery-contracts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dns-recovery-contracts-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: '1.27.3'
+  GOTOOLCHAIN: local
+
+jobs:
+  contracts:
+    name: DNS source (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: pwsh
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {goos: linux, goarch: amd64, os: ubuntu-latest, sdkarch: x64}
+          - {goos: linux, goarch: arm64, os: ubuntu-24.04-arm, sdkarch: arm64}
+          - {goos: windows, goarch: amd64, os: windows-latest, sdkarch: x64}
+          - {goos: windows, goarch: arm64, os: windows-11-arm, sdkarch: arm64}
+          - {goos: darwin, goarch: amd64, os: macos-15-intel, sdkarch: x64}
+          - {goos: darwin, goarch: arm64, os: macos-latest, sdkarch: arm64}
+    env:
+      ACCESSWEAVER_EXPECT_GOOS: ${{ matrix.goos }}
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          architecture: ${{ matrix.sdkarch }}
+          cache: false
+      - name: Verify native host and pinned SDK identity
+        run: |
+          $ErrorActionPreference='Stop'
+          $native=go env -json GOHOSTOS GOHOSTARCH GOOS GOARCH GOVERSION GOTOOLCHAIN | ConvertFrom-Json
+          if($LASTEXITCODE -ne 0){throw 'Native SDK identity unavailable'}
+          if($native.GOHOSTOS -ne $env:ACCESSWEAVER_EXPECT_GOOS -or $native.GOOS -ne $env:ACCESSWEAVER_EXPECT_GOOS -or $native.GOHOSTARCH -ne $env:ACCESSWEAVER_EXPECT_GOARCH -or $native.GOARCH -ne $env:ACCESSWEAVER_EXPECT_GOARCH){throw 'Native SDK target mismatch'}
+          if($native.GOVERSION -ne ('go'+$env:GO_VERSION) -or $native.GOTOOLCHAIN -ne 'local'){throw 'Pinned SDK mismatch'}
+          foreach($name in @('ACCESSWEAVER_HISTORY_INTEROP','ACCESSWEAVER_RECONCILIATION_INTEROP','ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP','ACCESSWEAVER_SUPPORT_INTEROP')){
+            if($null -ne [Environment]::GetEnvironmentVariable($name,'Process')){throw 'Unexpected interop environment'}
+          }
+      - name: PowerShell Core source-only DNS contracts
+        run: |
+          $ErrorActionPreference='Stop'
+          $evidence=Join-Path $env:RUNNER_TEMP ('accessweaver-dns-contracts-'+[Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $evidence -ErrorAction Stop | Out-Null
+          $env:ACCESSWEAVER_DNS_CONTRACT_EVIDENCE=$evidence
+          "ACCESSWEAVER_DNS_CONTRACT_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          $core=Join-Path $evidence 'core'
+          New-Item -ItemType Directory -Path $core -ErrorAction Stop | Out-Null
+          & pwsh -NoProfile -NonInteractive -File ./scripts/test-dns-recovery-contracts.ps1 -ReportPath (Join-Path $core 'dns-contracts.json')
+          if($LASTEXITCODE -ne 0){throw 'PowerShell Core DNS contracts failed'}
+      - name: Windows PowerShell 5.1 source-only DNS contracts
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference='Stop'
+          $desktop=Join-Path $env:ACCESSWEAVER_DNS_CONTRACT_EVIDENCE 'desktop'
+          New-Item -ItemType Directory -Path $desktop -ErrorAction Stop | Out-Null
+          $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-dns-recovery-contracts.ps1 -RequireWindowsPowerShell -ReportPath (Join-Path $desktop 'dns-contracts.json')
+          if($LASTEXITCODE -ne 0){throw 'Windows PowerShell DNS contracts failed'}
+      - name: Retain fixed source-only DNS results
+        if: always() && env.ACCESSWEAVER_DNS_CONTRACT_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dns-source-contracts-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_DNS_CONTRACT_EVIDENCE }}/**/dns-contracts.json
+          if-no-files-found: error
+          retention-days: 7
