@@ -422,3 +422,37 @@ function Test-NativeNDISTemplateTree([object]$Tree) {
         if($token -cnotmatch '^D:[A-Za-z][A-Za-z0-9_]{0,47}:win:(UInt8|UInt16|UInt32|UInt64|Int8|Int16|Int32|Int64|HexInt32|HexInt64|UnicodeString|AnsiString|Binary|Boolean|GUID|Pointer|FILETIME|SYSTEMTIME|SID|SizeT):([A-Za-z][A-Za-z0-9_]{0,47}|[0-9]{1,5})?:([A-Za-z][A-Za-z0-9_]{0,47}|[0-9]{1,5})?$'){return $false}
     };return ($stack.Count -eq 0)
 }
+
+
+# Private projection only: never include this object in a published report.
+function ConvertTo-NativeNDISPrivateRecord([object]$Provider,[object]$ID,[object]$Version,[object]$Keywords,[object]$Values,[bool]$Modern) {
+    if($Provider -isnot [guid] -or $Provider -ne [guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef' -or $ID -isnot [int] -or $ID -ne 1001 -or $Version -isnot [byte] -or $Version -ne 0 -or $Keywords -isnot [long]){throw 'NDIS private record identity'}
+    if(($Keywords -band 3221225472) -ne 3221225472 -or ($Keywords -band 66048) -ne 0 -or ($Keywords -band 12884901888) -notin @(4294967296,8589934592)){throw 'NDIS private record keywords'}
+    $count=if($Modern){4}else{2}
+    if($Values -isnot [Collections.IList] -or $Values.Count -ne $count -or $Values[0] -isnot [uint32] -or $Values[1] -isnot [byte[]] -or $Values[0] -lt 14 -or $Values[0] -gt 65535 -or $Values[1].Length -ne $Values[0]){throw 'NDIS private record values'}
+    $r=@{provider='2ed6006e-4729-4609-b423-3ee7bcd678ef';id=1001;version=0;keywords=$Keywords.ToString([Globalization.CultureInfo]::InvariantCulture);fragmentSize=[int]$Values[0];fragment=[Convert]::ToBase64String($Values[1])}
+    if($Modern){if($Values[2] -isnot [uint64] -or $Values[3] -isnot [uint64]){throw 'NDIS private record values'};if($Values[2] -ne 0 -or $Values[3] -ne 0){throw 'NDIS private record offload'};$r.gftFlowEntryId=$Values[2].ToString([Globalization.CultureInfo]::InvariantCulture);$r.gftOffloadInformation=$Values[3].ToString([Globalization.CultureInfo]::InvariantCulture)}
+    return $r
+}
+function New-NativeNDISExtractionEvidence([string]$Code='not-inspected') {return @{code=$Code;records=0;frames=0;bytesWritten=0;payloadRead=$false}}
+function Get-NativeNDISExtractionEvidence([string]$Text) {
+    $bad=New-NativeNDISExtractionEvidence 'invalid';if($Text.Length -gt 4096){return $bad};try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{return $bad}
+    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 5 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin @('code','records','frames','bytesWritten','payloadRead')}).Count -ne 0 -or $v.code -cnotin @('none','environment','path','source-schema','read','record','offload','bound','output') -or $v.payloadRead -isnot [bool]){return $bad}
+    foreach($key in @('records','frames','bytesWritten')){if(($v.$key -isnot [int] -and $v.$key -isnot [long]) -or $v.$key -lt 0){return $bad}}
+    if($v.records -gt 4096 -or $v.frames -gt $v.records -or $v.bytesWritten -gt 16777216 -or ($v.code -ceq 'none' -and ($v.frames -le 0 -or $v.bytesWritten -le 0 -or -not $v.payloadRead))){return $bad}
+    return @{code=$v.code;records=[int]$v.records;frames=[int]$v.frames;bytesWritten=[int]$v.bytesWritten;payloadRead=$v.payloadRead}
+}
+function New-NativeNDISConversionEvidence {return @{schemaVersion=1;outcome='not-inspected';code='not-inspected';nativeFrameDataRead=$false;summary=$null}}
+function Get-NativeNDISConversionEvidence([string]$Text) {
+    $bad=New-NativeNDISConversionEvidence;$bad.outcome='refused';$bad.code='invalid';if($Text.Length -gt 4096){return $bad};try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{return $bad}
+    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 5 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin @('schemaVersion','outcome','code','nativeFrameDataRead','summary')}).Count -ne 0 -or $v.schemaVersion -isnot [int] -or $v.schemaVersion -ne 1 -or $v.outcome -cnotin @('converted','refused') -or $v.nativeFrameDataRead -isnot [bool]){return $bad}
+    $codes=@('none','environment','private-path','private-file','private-document','private-record','private-encoding','conversion-unavailable','record-shape','fragment-identity','fragment-keywords','fragment-boundaries','fragment-media','fragment-direction','fragment-offload-type','fragment-offload','fragment-length','ethernet-vlan','ethernet-type','ipv4-header','ipv4-length','ipv6-header','ipv6-length','ip-fragment','frame-length','ipv6-extension','tcp-header','udp-length','transport-type','record-bound','capture-bound')
+    if($v.code -cnotin $codes){return $bad}
+    if($v.outcome -ceq 'refused'){if($v.code -ceq 'none' -or $null -ne $v.summary){return $bad};return @{schemaVersion=1;outcome='refused';code=$v.code;nativeFrameDataRead=$v.nativeFrameDataRead;summary=$null}}
+    $q=$v.summary;$keys=@('frames','ipv4','ipv6','tcp','udp','sent','received','captureBytes')
+    if($v.code -cne 'none' -or -not $v.nativeFrameDataRead -or $q -isnot [pscustomobject] -or @($q.PSObject.Properties).Count -ne 10 -or $q.schemaVersion -isnot [int] -or $q.schemaVersion -ne 1 -or $q.productionQualificationComplete -isnot [bool] -or $q.productionQualificationComplete){return $bad}
+    foreach($key in $keys){if($null -eq $q.PSObject.Properties[$key] -or ($q.$key -isnot [int] -and $q.$key -isnot [long]) -or $q.$key -lt 0 -or $q.$key -gt 16777216){return $bad}}
+    if($q.frames -le 0 -or $q.frames -gt 4096 -or $q.frames -ne $q.ipv4+$q.ipv6 -or $q.frames -ne $q.tcp+$q.udp -or $q.frames -ne $q.sent+$q.received -or $q.captureBytes -le 48){return $bad}
+    $summary=@{schemaVersion=1;productionQualificationComplete=$false};foreach($key in $keys){$summary[$key]=[int]$q.$key}
+    return @{schemaVersion=1;outcome='converted';code='none';nativeFrameDataRead=$true;summary=$summary}
+}

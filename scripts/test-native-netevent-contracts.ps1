@@ -5,10 +5,10 @@ if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-host
 if($RequireWindowsPowerShell -and ($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1)){throw 'Stock source shell required'}
 foreach($name in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management')){Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$name,($name+'.psd1'))) -ErrorAction Stop}
 $PSModuleAutoLoadingPreference='None'
-$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/dns-wire-evidence.cjs','scripts/ndis-frame-converter.cjs','scripts/test-ndis-frame-converter.cjs','scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
+$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/extract-native-ndis.ps1','scripts/ndis-private-convert.cjs','scripts/dns-wire-evidence.cjs','scripts/ndis-frame-converter.cjs','scripts/test-ndis-frame-converter.cjs','scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-netevent-control.ps1'),[ref]$tokens,[ref]$issues);if($issues.Count){throw 'Source syntax'}
-$allowed=@('Get-NativeNDISTemplateTree','Add-NativeNDISTemplateTreeNode','Test-NativeNDISTemplateTree','Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
+$allowed=@('New-NativeNDISExtractionEvidence','New-NativeNDISConversionEvidence','Get-NativeNDISTemplateTree','Add-NativeNDISTemplateTreeNode','Test-NativeNDISTemplateTree','Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
 foreach($def in $ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
     if($def.Name -cin @('Get-NativeNetEventEnums','Get-NativeNetEventInventory')){continue}
     foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin $allowed){throw 'Source command boundary'}}
@@ -274,6 +274,46 @@ Case-N 'complete-primary-catalog-retains-three-rundown-records-explicitly' {
     $r=New-NativeNDISCatalogEvidence 'complete';$r.definitions=3;$r.recognizedDefinitions=3;$g=[guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef';$catalog=@{'1001:0'='fragment';'5100:0'='rundown';'5101:0'='rundown'}
     Add-NativeNDISCatalogHeader $r $catalog $g 1001 0;Add-NativeNDISCatalogHeader $r $catalog $g 5100 0;Add-NativeNDISCatalogHeader $r $catalog $g 5100 0;Add-NativeNDISCatalogHeader $r $catalog $g 5101 0
     $v=Get-NativeNDISCatalogEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.rundownRecords -eq 3 -and $v.unknownRecords -eq 0 -and (Test-NativeNDISCatalogEvidence $v))
+}
+
+
+function PrivateValues-N([bool]$Modern=$false) {$n=if($Modern){4}else{2};$values=[object[]]::new($n);$values[0]=[uint32]14;$values[1]=[byte[]]::new(14);if($Modern){$values[2]=[uint64]0;$values[3]=[uint64]0};return ,$values}
+function PrivateRecord-N([object]$Values,[bool]$Modern=$false) {return (ConvertTo-NativeNDISPrivateRecord ([guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef') ([int]1001) ([byte]0) ([long]7516192768) $Values $Modern)}
+function ConversionReply-N {
+    return @{schemaVersion=1;outcome='converted';code='none';nativeFrameDataRead=$true;summary=@{schemaVersion=1;frames=2;ipv4=2;ipv6=0;tcp=2;udp=0;sent=1;received=1;captureBytes=200;productionQualificationComplete=$false}}
+}
+Case-N 'private-fragment-projection-preserves-typed-legacy-bytes' {
+    $r=PrivateRecord-N (PrivateValues-N);Assert-N ($r.Count -eq 6 -and $r.keywords -ceq '7516192768' -and $r.fragmentSize -eq 14 -and [Convert]::FromBase64String($r.fragment).Length -eq 14)
+}
+Case-N 'private-modern-projection-requires-typed-zero-offload-values' {
+    $r=PrivateRecord-N (PrivateValues-N $true) $true;Assert-N ($r.gftFlowEntryId -ceq '0' -and $r.gftOffloadInformation -ceq '0')
+    foreach($field in @(2,3)){$v=PrivateValues-N $true;$v[$field]=[uint64]1;Reject-N {PrivateRecord-N $v $true};$v[$field]=[int]0;Reject-N {PrivateRecord-N $v $true}}
+}
+Case-N 'private-projection-refuses-coerced-types-and-size-mismatches' {
+    foreach($fault in @('size-type','bytes-type','size-value')){$v=PrivateValues-N;switch($fault){'size-type'{$v[0]=[int]14}'bytes-type'{$v[1]=@('PRIVATE-SYNTHETIC')}'size-value'{$v[0]=[uint32]15}};Reject-N {PrivateRecord-N $v}}
+}
+Case-N 'private-projection-refuses-identity-media-and-boundary-drift' {
+    $v=PrivateValues-N
+    foreach($bits in @([long]4294967296,[long]7516193280,[long]7516258304,[long]16106127360)){Reject-N {ConvertTo-NativeNDISPrivateRecord ([guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef') ([int]1001) ([byte]0) $bits $v $false}}
+    Reject-N {ConvertTo-NativeNDISPrivateRecord ([guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef') ([int]1001) ([int]0) ([long]7516192768) $v $false}
+}
+Case-N 'extraction-public-summary-excludes-bytes-and-contradictory-counts' {
+    $r=@{code='none';records=3;frames=2;bytesWritten=1000;payloadRead=$true};Assert-N ((Get-NativeNDISExtractionEvidence ($r | ConvertTo-Json -Compress)).code -ceq 'none')
+    $r['private']='PRIVATE-SYNTHETIC';$v=Get-NativeNDISExtractionEvidence ($r | ConvertTo-Json -Compress);Assert-N ($v.code -ceq 'invalid' -and -not (($v | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))
+    $r.Remove('private');$r.frames=4;Assert-N ((Get-NativeNDISExtractionEvidence ($r | ConvertTo-Json -Compress)).code -ceq 'invalid')
+}
+Case-N 'conversion-public-summary-requires-closed-count-partitions' {
+    $r=ConversionReply-N;Assert-N ((Get-NativeNDISConversionEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).outcome -ceq 'converted')
+    foreach($field in @('sent','tcp','ipv4')){$r=ConversionReply-N;$r.summary[$field]=0;Assert-N ((Get-NativeNDISConversionEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')}
+    $r=ConversionReply-N;$r.summary['private']='PRIVATE-SYNTHETIC';Assert-N ((Get-NativeNDISConversionEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+}
+Case-N 'conversion-refusal-never-carries-a-packet-or-positive-summary' {
+    $r=@{schemaVersion=1;outcome='refused';code='fragment-offload';nativeFrameDataRead=$true;summary=$null};$v=Get-NativeNDISConversionEvidence ($r | ConvertTo-Json -Compress);Assert-N ($v.outcome -ceq 'refused' -and $v.code -ceq 'fragment-offload' -and $null -eq $v.summary)
+    $r.code='PRIVATE-SYNTHETIC';$v=Get-NativeNDISConversionEvidence ($r | ConvertTo-Json -Compress);Assert-N ($v.code -ceq 'invalid' -and -not (($v | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))
+}
+Case-N 'native-extractor-selects-fixed-properties-and-disposes-every-reader' {
+    $body=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'extract-native-ndis.ps1'))
+    Assert-N ($body.Contains('GetPropertyValues($selector)') -and $body.Contains("@('FragmentSize','Fragment')") -and $body.Contains("@('GftFlowEntryId','GftOffloadInformation')") -and $body.Contains('$record.Dispose()') -and $body.Contains('$selector.Dispose()') -and $body.Contains('$reader.Dispose()') -and $body.Contains('$stream.Dispose()') -and $body.Contains('FileMode]::CreateNew') -and -not $body.Contains('.Properties') -and -not $body.Contains('.ToXml(') -and -not $body.Contains('FormatDescription'))
 }
 
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}

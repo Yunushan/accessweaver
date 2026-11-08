@@ -13,11 +13,11 @@ $ReportPath=[IO.Path]::GetFullPath($ReportPath);Assert-NativeOrdinaryPath $Repor
 $reportParent=Get-Item -LiteralPath ([IO.Path]::GetDirectoryName($ReportPath)) -Force -ErrorAction Stop
 if([IO.Path]::GetFileName($ReportPath) -cne 'status.json' -or -not $reportParent.PSIsContainer -or [IO.Directory]::GetFileSystemEntries($reportParent.FullName).Length -ne 0){throw 'Empty ordinary control report parent required'}
 $reportCreated=$reportParent.CreationTimeUtc.Ticks;$project=Split-Path -Parent $PSScriptRoot
-$sources=@('scripts/dns-wire-evidence.cjs','scripts/ndis-frame-converter.cjs','scripts/test-ndis-frame-converter.cjs','scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
+$sources=@('scripts/extract-native-ndis.ps1','scripts/ndis-private-convert.cjs','scripts/dns-wire-evidence.cjs','scripts/ndis-frame-converter.cjs','scripts/test-ndis-frame-converter.cjs','scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $state=$null;$plan=$null;$environmentVerified=$false;$nativeProcessVerified=$false;$outcome='failed';$code='environment'
 $emptyEvidence=@{stage='not-inspected';family='none';hresult=0;cimStatus=-1;modeKind='not-inspected';statusKind='not-inspected'}
-$control=@{catalogEvidence=$null;fragmentEvidence=$null;lossEvidence=$null;operationEvidence=$emptyEvidence;cleanupEvidence=$emptyEvidence;outcome='failed';phase='preflight';code='not-started';cleanupCode='none';preflightEmpty=$false;sessionVerified=$false;providerVerified=$false;captureStarted=$false;captureStopped=$false;connected=$false;captureBounded=$false;etlBytes=0;originalStateVerified=$false;originalResolverPassed=$false;sessionRemoved=$false;processes=0;joined=0;toolFailure=$false;eventEvidence=$null}
+$control=@{extractionEvidence=$null;conversionEvidence=$null;pcapBytes=0;catalogEvidence=$null;fragmentEvidence=$null;lossEvidence=$null;operationEvidence=$emptyEvidence;cleanupEvidence=$emptyEvidence;outcome='failed';phase='preflight';code='not-started';cleanupCode='none';preflightEmpty=$false;sessionVerified=$false;providerVerified=$false;captureStarted=$false;captureStopped=$false;connected=$false;captureBounded=$false;etlBytes=0;originalStateVerified=$false;originalResolverPassed=$false;sessionRemoved=$false;processes=0;joined=0;toolFailure=$false;eventEvidence=$null}
 function Invoke-NativeNDISOperation([string]$Operation) {
     $script:lastOperationCode='none';$script:lastEvidence=$emptyEvidence
     foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'NDIS source changed'}}
@@ -80,6 +80,8 @@ public static class AccessWeaverNetEventControlIdentity {
     $control.eventEvidence=New-NativeNDISHeaderEvidence
     $control.fragmentEvidence=New-NativeNDISFragmentEvidence
     $control.catalogEvidence=New-NativeNDISCatalogEvidence
+    $control.extractionEvidence=New-NativeNDISExtractionEvidence
+    $control.conversionEvidence=New-NativeNDISConversionEvidence
     $code='baseline';$control.phase='baseline-tools';$script:state=New-NativeDNSWireState $privateRoot '';$script:state.etl=Join-Path $privateRoot 'capture.etl'
     $control.phase='baseline-state';$script:state.before=Read-DNSAcceptanceState
     $control.phase='baseline-resolver';[void](Invoke-NativeDNSWireQuery 'example.com')
@@ -109,6 +111,16 @@ public static class AccessWeaverNetEventControlIdentity {
     if(-not (Test-NativeNDISCatalogEvidence $control.catalogEvidence)){throw 'NDIS provider catalog unresolved'}
     $catalog=$control.catalogEvidence
     if($catalog.records -ne $e.records -or $catalog.fragmentRecords -ne $e.fragmentIDs -or $catalog.metadataRecords+$catalog.ruleRecords+$catalog.inventoryRecords+$catalog.lifecycleRecords+$catalog.rundownRecords+$catalog.unknownRecords -ne $e.unknownProviderIDs -or $catalog.otherProviderRecords -ne $e.otherProviderRecords -or $catalog.missingProviderIDs -ne $e.missingProviderIDs -or $catalog.unrecognizedVersions -ne $e.unrecognizedVersions){throw 'NDIS catalog enumeration disagrees'}
+    $control.phase='frame-extraction';$text=Invoke-NativeDNSWireProcess $script:state $script:state.eventTool @('-NoProfile','-NonInteractive','-File',(Join-Path $PSScriptRoot 'extract-native-ndis.ps1'),'-CapturePath',$script:state.etl,'-ExpectedFragments',([string]$f.fragmentIDs),'-ExpectedCaptureBytes',([string]$control.etlBytes))
+    $control.extractionEvidence=Get-NativeNDISExtractionEvidence $text;$ex=$control.extractionEvidence
+    if($ex.code -cne 'none' -or $ex.records -ne $catalog.records -or $ex.frames -ne $f.fragmentIDs -or -not $ex.payloadRead){throw 'Private NDIS extraction refused'}
+    $control.phase='frame-conversion';$text=Invoke-NativeDNSWireProcess $script:state $script:state.node @((Join-Path $PSScriptRoot 'ndis-private-convert.cjs'),$privateRoot)
+    $control.conversionEvidence=Get-NativeNDISConversionEvidence $text;$cv=$control.conversionEvidence
+    if($cv.outcome -cne 'converted' -or $cv.code -cne 'none' -or -not $cv.nativeFrameDataRead){throw 'Private NDIS conversion refused'}
+    $q=$cv.summary
+    if($q.frames -ne $f.fragmentIDs -or $q.ipv4 -ne $q.frames -or $q.tcp -ne $q.frames -or $q.ipv6 -ne 0 -or $q.udp -ne 0 -or $q.sent -ne $f.sent -or $q.received -ne $f.received){throw 'Private conversion counts disagree'}
+    $control.phase='pcap-file';$script:state.pcap=Join-Path $privateRoot 'capture.pcapng';Measure-NativeDNSWireFile $script:state 'pcap';$control.pcapBytes=$script:state.pcapBytes
+    if($control.pcapBytes -ne $q.captureBytes){throw 'Private conversion file size disagrees'}
     if($control.eventEvidence.code -cne 'complete' -or $control.eventEvidence.fragmentIDs -le 0){$control.code='fragment-events-missing'}else{$control.code='none';$control.outcome='passed'}
 }catch{$control.operationEvidence=$script:lastEvidence;$control.outcome='failed';$control.code=if($script:lastOperationCode -cne 'none'){$script:lastOperationCode}else{$control.phase}}
 finally{
@@ -121,7 +133,7 @@ finally{
         }catch{$control.cleanupEvidence=$script:lastEvidence;if($control.cleanupCode -ceq 'none'){$control.cleanupCode=if($script:lastOperationCode -cne 'none'){$script:lastOperationCode}else{'recovery'}}}
     }
     if($null -ne $script:state){$control.processes=$script:state.processes;$control.joined=$script:state.joined;$control.toolFailure=$script:state.processFailed}
-    $good=($control.outcome -ceq 'passed' -and (Test-NativeNDISLossEvidence $control.lossEvidence) -and (Test-NativeNDISFragmentEvidence $control.fragmentEvidence) -and (Test-NativeNDISCatalogEvidence $control.catalogEvidence) -and $control.preflightEmpty -and $control.sessionVerified -and $control.providerVerified -and $control.captureStarted -and $control.captureStopped -and $control.connected -and $control.captureBounded -and $control.originalStateVerified -and $control.originalResolverPassed -and $control.sessionRemoved -and $control.cleanupCode -ceq 'none' -and -not $control.toolFailure -and $control.processes -eq $control.joined)
+    $good=($control.outcome -ceq 'passed' -and (Test-NativeNDISLossEvidence $control.lossEvidence) -and (Test-NativeNDISFragmentEvidence $control.fragmentEvidence) -and (Test-NativeNDISCatalogEvidence $control.catalogEvidence) -and $control.extractionEvidence.code -ceq 'none' -and $control.conversionEvidence.outcome -ceq 'converted' -and $control.pcapBytes -gt 0 -and $control.preflightEmpty -and $control.sessionVerified -and $control.providerVerified -and $control.captureStarted -and $control.captureStopped -and $control.connected -and $control.captureBounded -and $control.originalStateVerified -and $control.originalResolverPassed -and $control.sessionRemoved -and $control.cleanupCode -ceq 'none' -and -not $control.toolFailure -and $control.processes -eq $control.joined)
     if($good){$outcome='passed';$code='none'}else{$outcome='failed';$code='control-failed';$control.outcome='failed'}
     foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){$outcome='failed';$code='source-changed'}}
     Assert-NativeOrdinaryPath $ReportPath;$parent=Get-Item -LiteralPath $reportParent.FullName -Force -ErrorAction Stop
