@@ -25,7 +25,7 @@ $definitions=@($ast.EndBlock.Statements)
 $tokens=$null;$issues=$null;$coordinator=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-doh-scenario.ps1'),[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Native coordinator source did not parse'}
 $definitions+=@($coordinator.EndBlock.Statements)
-$selected=@('Invoke-NativeDNSStaticFixture','Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Invoke-NativeDNSRollbackScenario','New-NativeDNSFailureResponse','Get-NativeDNSVerificationMarker','Get-NativeDNSForwarderFailure','Get-NativeDNSComponentFailure','Get-NativeDNSComponentRetry','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
+$selected=@('Get-NativeDNSStaticFailure','Invoke-NativeDNSStaticFixture','Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Invoke-NativeDNSRollbackScenario','New-NativeDNSFailureResponse','Get-NativeDNSVerificationMarker','Get-NativeDNSForwarderFailure','Get-NativeDNSComponentFailure','Get-NativeDNSComponentRetry','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
 $allowed=$selected+@('ConvertTo-Json','Get-NetAdapter','Get-ItemProperty','Get-DnsClientServerAddress','Get-Command','Get-DnsClientDohServerAddress','Where-Object','Get-Service','Clear-DnsClientCache','Resolve-DnsName')
 foreach($name in $selected){
     $nodes=@($definitions | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
@@ -38,7 +38,7 @@ foreach($name in $selected){
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
 $script:checks=0;$script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('static-fixture-result','static-fixture-cleanup','static-fixture-order','static-fixture-flags','static-fixture-preflight','component-retry-contract','component-closed-error-map','forwarder-closed-error-map','rollback-native-result','rollback-native-flags','rollback-native-cleanup','rollback-native-order','rollback-native-preflight','fixed-dns-response','verification-marker-boundary','failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
+$script:closedContractCodes=@('static-resolver-source-callback','static-closed-failure-map','static-fixture-result','static-fixture-cleanup','static-fixture-order','static-fixture-flags','static-fixture-preflight','component-retry-contract','component-closed-error-map','forwarder-closed-error-map','rollback-native-result','rollback-native-flags','rollback-native-cleanup','rollback-native-order','rollback-native-preflight','fixed-dns-response','verification-marker-boundary','failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
 function Assert-A([bool]$Value,[string]$Code){if(-not $Value){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('Acceptance contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-A([scriptblock]$Operation){$failed=$false;try{& $Operation | Out-Null}catch{$failed=$true};Assert-A $failed 'expected-refusal'}
 $script:g1='abcdef00-0000-0000-0000-000000000001';$script:g2='abcdef00-0000-0000-0000-000000000002'
@@ -373,6 +373,38 @@ try {
         $result=Invoke-NativeDNSRollbackScenario @parameters
         Assert-A ($result.operationCode -ceq 'baseline' -and $script:invalidEffects -eq 0 -and -not $result.configurationAttempted -and -not $result.emergencyRestoreAttempted) 'rollback-native-preflight'
     }
+    foreach($pair in @(@('No dual-family native static fixture adapter','no-family'),@('No active native link-local interface','no-link-local'),@('Static fixture adapter identity changed','adapter-changed'),@('Static fixture family changed','family-changed'))){Assert-A ((Get-NativeDNSStaticFailure ([InvalidOperationException]::new($pair[0]))) -ceq $pair[1]) 'static-closed-failure-map'}
+    Assert-A ((Get-NativeDNSStaticFailure ([ArgumentException]::new('synthetic-private-value'))) -ceq 'argument') 'static-closed-failure-map'
+    Assert-A ((Get-NativeDNSStaticFailure ([InvalidOperationException]::new('synthetic-wrapper',[InvalidCastException]::new('synthetic-private-value')))) -ceq 'cast') 'static-closed-failure-map'
+    Assert-A ((Get-NativeDNSStaticFailure ([InvalidOperationException]::new('synthetic-private-value'))) -ceq 'unexpected') 'static-closed-failure-map'
+    # Execute the actual driver resolver callback under the roundtrip coordinator.
+    # Its ScenarioKind parameter shadows the caller's static-ipv6 mode. All file,
+    # CIM, service and resolver boundaries below are closed source mocks.
+    $tokens=$null;$issues=$null;$driver=[Management.Automation.Language.Parser]::ParseFile((Join-Path $project 'scripts/test-native-doh.ps1'),[ref]$tokens,[ref]$issues)
+    if($issues.Count){throw 'Native driver callback source did not parse'}
+    $calls=@($driver.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -ceq 'Invoke-NativeDoHScenario'},$true));if($calls.Count -ne 1){throw 'Native driver coordinator call is ambiguous'}
+    $resolver=$null
+    for($i=0;$i -lt $calls[0].CommandElements.Count-1;$i++){
+        $element=$calls[0].CommandElements[$i]
+        if($element -is [Management.Automation.Language.CommandParameterAst] -and $element.ParameterName -ceq 'Resolve'){$resolver=$calls[0].CommandElements[$i+1]}
+    }
+    if($resolver -isnot [Management.Automation.Language.ScriptBlockExpressionAst]){throw 'Native driver resolver callback unavailable'}
+    foreach($command in $resolver.ScriptBlock.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){
+        if($command.GetCommandName() -cnotin @('Get-Service','Get-CimInstance','Get-Content','Join-Path','ConvertFrom-Json','Where-Object','Convert-DNSAcceptanceGuid','Get-NativeDNSAnswerCount')){throw 'Native source resolver callback boundary refused'}
+    }
+    $body=$resolver.ScriptBlock.Extent.Text;$nativeResolve=[scriptblock]::Create($body.Substring(1,$body.Length-2))
+    $machineRoot=[IO.Path]::GetTempPath();$script:staticSnapshotPath=Join-Path $machineRoot 'profiles\dns-original.json'
+    function Get-Content {[CmdletBinding()]param($LiteralPath,[switch]$Raw);if($LiteralPath -cne $script:staticSnapshotPath -or -not $Raw){throw 'Unexpected source snapshot read'};return $script:staticSnapshotText}
+    function Get-CimInstance {throw 'CIM access forbidden in source resolver callback'}
+    function Get-NativeDNSAnswerCount {$script:sourceResolverCalls++;return 1}
+    foreach($badSnapshot in @($false,$true)){
+        New-ACase;$script:sourceResolverCalls=0;$script:staticSnapshotNormalized=$false;$script:staticPlan=@{guid=$script:g1;servers=@('fe80::53','::1')}
+        $servers=if($badSnapshot){@('fe80::53%77','::1')}else{@('fe80::53','::1')}
+        $script:staticSnapshotText=ConvertTo-Json -InputObject @{adapters=@(@{guid=$script:g1;dhcp6=$false;ipv6=$servers})} -Depth 5
+        $result=Invoke-NativeDoHScenario -Method doh -ScenarioKind roundtrip -Capture {Read-DNSAcceptanceState} -Apply $script:applyFixture -Resolve $nativeResolve
+        Assert-A (($result.outcome -ceq 'passed') -eq (-not $badSnapshot) -and $script:staticSnapshotNormalized -eq (-not $badSnapshot) -and $script:sourceResolverCalls -eq $(if($badSnapshot){0}else{1}) -and $result.restoredStateVerified) 'static-resolver-source-callback'
+    }
+    $script:staticPlan=$null
     foreach($failure in @('none','baseline','baseline-false','baseline-string','stage-throw','stage-false','stage-string','exercise-throw','exercise-false','exercise-string','unstage','state','cleanup-resolver','exercise-and-unstage')){
         New-ACase;$script:staticTrace=[Collections.Generic.List[string]]::new();$script:staticFailure=$failure;$script:staticResolveCalls=0
         $result=Invoke-NativeDNSStaticFixture -Capture {

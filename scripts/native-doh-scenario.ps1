@@ -187,3 +187,22 @@ function Invoke-NativeDNSStaticFixture([scriptblock]$Capture,[scriptblock]$Resol
     elseif($result.operationCode -cne 'none'){$result.code='operation-failed'}else{$result.code='cleanup-failed'}
     return $result
 }
+
+# Closed diagnostics only. Exception text/type names never leave this boundary.
+function Get-NativeDNSStaticFailure([Exception]$Exception) {
+    $current=$Exception
+    for($depth=0;$null -ne $current -and $depth -lt 16;$depth++){
+        switch -CaseSensitive ($current.Message){
+            'No dual-family native static fixture adapter' {return 'no-family'}
+            'No active native link-local interface' {return 'no-link-local'}
+            'Static fixture adapter identity changed' {return 'adapter-changed'}
+            'Static fixture family changed' {return 'family-changed'}
+        }
+        if($current.GetType().FullName -ceq 'Microsoft.Management.Infrastructure.CimException'){return 'cim'}
+        if($current -is [Management.Automation.ParameterBindingException]){return 'parameter'}
+        if($current -is [InvalidCastException]){return 'cast'}
+        if($current -is [ArgumentException]){return 'argument'}
+        $current=$current.InnerException
+    }
+    return 'unexpected'
+}
