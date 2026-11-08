@@ -473,7 +473,14 @@ test('keyboard focus returns to the same card control after saves and engine cre
  const cards=page.locator('#all-profiles .profile-card');await expect(cards).toHaveCount(256);
  const distant=page.locator('#all-profiles .profile-card-actions [data-profile-id="perf-0255"][data-profile-action="edit"]');
  await distant.focus();await expect(distant).toBeFocused();await expect(distant).toBeInViewport();
+ // Scroll locking must retain the background width, including when classic
+ // scrollbars occupy space. Keep all 256 cards and the actual keyboard flow.
+ expect(await page.evaluate(()=>document.documentElement.scrollHeight>innerHeight)).toBe(true);
+ const backgroundLayout=()=>Array.from(document.querySelectorAll('.app-shell,.main-layout')).map(node=>{const rect=node.getBoundingClientRect();return {left:rect.left,width:rect.width}});
+ const beforeModal=await page.evaluate(backgroundLayout);expect(beforeModal).toHaveLength(2);
+ const expectStableBackground=async()=>{const current=await page.evaluate(backgroundLayout);expect(current).toHaveLength(beforeModal.length);for(let i=0;i<current.length;i++)for(const field of ['left','width'])expect(Math.abs(current[i][field]-beforeModal[i][field]),'modal background '+field).toBeLessThanOrEqual(0.5);};
  await page.keyboard.press('Enter');await expect(page.locator('#p-id')).toHaveValue('perf-0255');
+ await expectStableBackground();
  const guidance=await page.locator('#engine-guidance a').elementHandle();
  try{
   await page.locator('#p-name').fill('ZZ distant keyboard fixture');
@@ -483,6 +490,7 @@ test('keyboard focus returns to the same card control after saves and engine cre
  }finally{await guidance.dispose();}
  await page.locator('#save-profile').click();
  await expect(page.locator('#editor-modal')).toBeHidden();await expect(distant).toBeFocused();
+ await expectStableBackground();
  await expect(distant).toBeInViewport();
  await page.locator('#profile-search').fill('perf-0255');await expect(cards).toHaveCount(1);
  await expect(page.locator('#all-profiles .profile-title')).toHaveText('ZZ distant keyboard fixture');
