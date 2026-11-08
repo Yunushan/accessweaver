@@ -196,6 +196,11 @@ check('stdin-adapter-does-not-upgrade-insufficient-or-plaintext-evidence',()=>{
  const {decodeBytes}=require('./dns-wire-stdin.cjs');
  for(const f of [conversation().slice(0,2),[...conversation(),frame(Buffer.alloc(3),{udp:true,port:53})]]){const r=decodeBytes(capture(f));assert.equal(r.outcome,'decoded');assert.equal(r.evidence.observation,'insufficient');}
 });
+check('closed-refusal-is-protocol-success-without-wire-success',()=>{
+ const {decodeBytes,protocolExitCode}=require('./dns-wire-stdin.cjs');const r=decodeBytes(Buffer.from('PRIVATE-SYNTHETIC'));
+ assert.equal(r.outcome,'refused');assert.equal(r.evidence,null);assert.equal(protocolExitCode(r,true),0);assert.equal(protocolExitCode(r,false),1);
+ assert.equal(protocolExitCode({outcome:'refused',code:'environment'},false),1);
+});
 function runContracts(){
  const results=cases.map(([name,fn])=>{try{fn();return {name,passed:true};}catch{return {name,passed:false};}});
  return {schemaVersion:1,scope:'synthetic-doh-wire-decoder',cases:results,passed:results.every(r=>r.passed),nativeCapturePerformed:false,encryptedTrafficObserved:false,productionQualificationComplete:false};

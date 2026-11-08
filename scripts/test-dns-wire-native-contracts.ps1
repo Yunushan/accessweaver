@@ -9,8 +9,8 @@ $project=Split-Path -Parent $PSScriptRoot;$path=Join-Path $PSScriptRoot 'native-
 $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Wire source syntax'}
-$excluded=@('Invoke-NativeDNSWireProcess','Read-NativeDNSWireCapture')
-$allowed=@('Assert-NativeOrdinaryPath','Get-Command','Join-Path','Where-Object','Select-Object','Invoke-NativeDNSWireProcess','Invoke-NativeDNSWireTool','Assert-NativeDNSWireStopped','Assert-NativeDNSWireEmptyFilters','Get-NativeDNSWireFilterRows','Assert-NativeDNSWireFilters','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Assert-NativeDNSWireRule','New-NetFirewallRule','Remove-NetFirewallRule','Assert-NativeDNSWireFirewall','Get-DnsClientNrptPolicy','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Stop-NativeDNSWireCapture','Clear-DnsClientCache','Resolve-DnsName','Invoke-NativeDNSWireQuery','Read-NativeDNSWireCapture','ConvertFrom-Json','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState')
+$excluded=@('Invoke-NativeDNSWireProcess','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile')
+$allowed=@('Assert-NativeOrdinaryPath','Get-Command','Join-Path','Where-Object','Select-Object','Invoke-NativeDNSWireProcess','Invoke-NativeDNSWireTool','Assert-NativeDNSWireStopped','Assert-NativeDNSWireEmptyFilters','Get-NativeDNSWireFilterRows','Assert-NativeDNSWireFilters','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Assert-NativeDNSWireRule','New-NetFirewallRule','Remove-NetFirewallRule','Assert-NativeDNSWireFirewall','Get-DnsClientNrptPolicy','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Stop-NativeDNSWireCapture','Clear-DnsClientCache','Resolve-DnsName','Invoke-NativeDNSWireQuery','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile','ConvertFrom-Json','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState')
 $definitions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false));$seen=@{}
 foreach($definition in $definitions){
     if($seen.ContainsKey($definition.Name)){throw 'Duplicate wire source function'};$seen[$definition.Name]=$true
@@ -65,6 +65,7 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
     }
     throw 'Unexpected source tool operation'
 }
+function Measure-NativeDNSWireFile([object]$State,[string]$Kind){Assert-Wire (-not $script:running);$State.captureFileCode='ordinary';if($Kind -ceq 'etl'){$State.etlBytes=4096}else{$State.pcapBytes=3}}
 function Read-NativeDNSWireCapture([object]$State){Assert-Wire (-not $script:running);$State.flags.captureBounded=$true;return ,([byte[]]@(1,2,3))}
 function Get-DnsClientNrptPolicy {param([switch]$Effective,$ErrorAction);if($script:fault -ceq 'nrpt'){return [pscustomobject]@{Name='source-policy'}}}
 function Get-NetFirewallProfile {param($PolicyStore,$ErrorAction);return [pscustomobject]@{Enabled=$true;AllowLocalFirewallRules=$true;DisabledInterfaceAliases=@()}}
@@ -91,7 +92,7 @@ function Remove-NetFirewallRule {
 function Clear-DnsClientCache {param($ErrorAction);if($script:fault -ceq 'cache-failure'){throw 'Source cache refusal'}}
 function Resolve-DnsName {
     param($Name,$Type,[switch]$DnsOnly,[switch]$NoHostsFile,[switch]$QuickTimeout,$ErrorAction)
-    Assert-Wire ($Name -cin @('example.com','example.net') -and $Type -ceq 'A' -and $DnsOnly -and $NoHostsFile -and $QuickTimeout)
+    Assert-Wire ($Name -cin @('example.com','example.net','example.org') -and $Type -ceq 'A' -and $DnsOnly -and $NoHostsFile -and $QuickTimeout)
     $blocked=@($script:rules.Values | Where-Object {($_.RemotePort -join ',') -ceq '443'}).Count -gt 0
     if(($blocked -and $script:fault -cne 'negative-succeeds') -or ($script:fault -ceq 'resumed-fails' -and $script:state.phase -ceq 'resumed-query')){throw 'Source query rejected'}
     $script:events.Add('query');return @([pscustomobject]@{NameHost='source-alias'},[pscustomobject]@{IPAddress='192.0.2.1'})
