@@ -6,11 +6,23 @@ on:
     paths:
       - 'internal/workflow/windows.ps1'
       - 'scripts/test-dns-recovery-contracts.ps1'
+      - 'scripts/dns-acceptance-state.ps1'
+      - 'scripts/test-dns-acceptance-state.ps1'
+      - 'scripts/test-windows-integration.ps1'
+      - 'scripts/test-windows-reboot.ps1'
+      - 'scripts/vmware-test-bootstrap.ps1'
+      - 'scripts/test-windows-workflow.ps1'
       - '.github/workflows/dns-recovery-contracts.yml'
   pull_request:
     paths:
       - 'internal/workflow/windows.ps1'
       - 'scripts/test-dns-recovery-contracts.ps1'
+      - 'scripts/dns-acceptance-state.ps1'
+      - 'scripts/test-dns-acceptance-state.ps1'
+      - 'scripts/test-windows-integration.ps1'
+      - 'scripts/test-windows-reboot.ps1'
+      - 'scripts/vmware-test-bootstrap.ps1'
+      - 'scripts/test-windows-workflow.ps1'
       - '.github/workflows/dns-recovery-contracts.yml'
   workflow_dispatch:
 
@@ -85,6 +97,32 @@ jobs:
           $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
           & $stock -NoProfile -NonInteractive -File ./scripts/test-dns-recovery-contracts.ps1 -RequireWindowsPowerShell -ReportPath (Join-Path $desktop 'dns-contracts.json')
           if($LASTEXITCODE -ne 0){throw 'Windows PowerShell DNS contracts failed'}
+      - name: PowerShell Core DNS acceptance oracle contracts
+        run: |
+          $ErrorActionPreference='Stop'
+          $acceptance=Join-Path $env:ACCESSWEAVER_DNS_CONTRACT_EVIDENCE 'acceptance'
+          New-Item -ItemType Directory -Path $acceptance -ErrorAction Stop | Out-Null
+          $core=Join-Path $acceptance 'core'
+          New-Item -ItemType Directory -Path $core -ErrorAction Stop | Out-Null
+          & pwsh -NoProfile -NonInteractive -File ./scripts/test-dns-acceptance-state.ps1 -ReportPath (Join-Path $core 'dns-acceptance-contracts.json')
+          if($LASTEXITCODE -ne 0){throw 'PowerShell Core DNS acceptance contracts failed'}
+      - name: Windows PowerShell 5.1 DNS acceptance oracle contracts
+        if: runner.os == 'Windows'
+        run: |
+          $ErrorActionPreference='Stop'
+          $desktop=Join-Path (Join-Path $env:ACCESSWEAVER_DNS_CONTRACT_EVIDENCE 'acceptance') 'desktop'
+          New-Item -ItemType Directory -Path $desktop -ErrorAction Stop | Out-Null
+          $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-dns-acceptance-state.ps1 -RequireWindowsPowerShell -ReportPath (Join-Path $desktop 'dns-acceptance-contracts.json')
+          if($LASTEXITCODE -ne 0){throw 'Windows PowerShell DNS acceptance contracts failed'}
+      - name: Retain fixed DNS acceptance oracle results
+        if: always() && env.ACCESSWEAVER_DNS_CONTRACT_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dns-acceptance-source-contracts-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_DNS_CONTRACT_EVIDENCE }}/acceptance/**/dns-acceptance-contracts.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Retain fixed source-only DNS results
         if: always() && env.ACCESSWEAVER_DNS_CONTRACT_EVIDENCE != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

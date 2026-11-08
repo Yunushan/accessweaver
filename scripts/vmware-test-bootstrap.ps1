@@ -24,7 +24,8 @@ function Copy-TestTree([string]$source,[string]$destination) {
 }
 function Copy-TestInputs([string]$executable) {
     if($executable -notmatch '^accessweaver[a-zA-Z0-9-]*\.exe$'){throw 'Unsupported controller filename'}
-    foreach($name in @($executable,'setup.exe','wgpeer.exe','probe-selected.exe','probe-direct.exe','test-windows-integration.ps1','test-windows-apps.ps1','test-windows-wiresock.ps1','test-windows-reboot.ps1','vmware-reboot-resume.ps1')){
+    if(-not (Test-Path -LiteralPath (Join-Path $share 'dns-acceptance-state.ps1'))){throw 'DNS acceptance state helper must be staged with the candidate scripts'}
+    foreach($name in @($executable,'setup.exe','wgpeer.exe','probe-selected.exe','probe-direct.exe','test-windows-integration.ps1','dns-acceptance-state.ps1','test-windows-apps.ps1','test-windows-wiresock.ps1','test-windows-reboot.ps1','vmware-reboot-resume.ps1')){
         $source=Join-Path $share $name;if(Test-Path $source){Copy-Item -LiteralPath $source -Destination (Join-Path $local $name) -Force}
     }
     foreach($name in @('components','fixture-licenses')){$source=Join-Path $share $name;if(Test-Path $source){Copy-TestTree $source (Join-Path $local $name)}}
