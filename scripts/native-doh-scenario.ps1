@@ -114,3 +114,31 @@ function Get-NativeDNSForwarderFailure([Exception]$Failure) {
     }
     return 'unexpected-io'
 }
+
+# Closed component preparation diagnostics; caller sanitizes HTTP status first.
+function Get-NativeDNSComponentFailure([Exception]$Failure,[int]$HTTPStatus=0) {
+    if($HTTPStatus -in @(400,401,403,404,408,429,500,502,503,504)){return ('http-'+$HTTPStatus)}
+    if($HTTPStatus -eq -1){return 'http-other'}
+    for($depth=0;$null -ne $Failure -and $depth -lt 16;$depth++){
+        switch -CaseSensitive ($Failure.Message){
+            'DNSCrypt native architecture refused' {return 'native-architecture'}
+            'DNSCrypt upstream size differs' {return 'upstream-size'}
+            'DNSCrypt upstream bound exceeded' {return 'upstream-bound'}
+            'DNSCrypt upstream digest differs' {return 'upstream-digest'}
+            'DNSCrypt upstream entry bound exceeded' {return 'archive-count'}
+            'DNSCrypt upstream member shape differs' {return 'member-shape'}
+            'DNSCrypt member bound exceeded' {return 'member-bound'}
+            'DNSCrypt member incomplete' {return 'member-incomplete'}
+            'DNSCrypt PE header differs' {return 'pe-header'}
+            'DNSCrypt PE offset differs' {return 'pe-offset'}
+            'DNSCrypt PE native machine differs' {return 'pe-machine'}
+        }
+        if($Failure -is [OperationCanceledException]){return 'timeout'}
+        if($Failure -is [UnauthorizedAccessException]){return 'access'}
+        if($Failure -is [IO.InvalidDataException]){return 'archive-data'}
+        if($Failure.GetType().FullName -ceq 'System.Net.Http.HttpRequestException'){return 'http-request'}
+        if($Failure -is [IO.IOException]){return 'io'}
+        $Failure=$Failure.InnerException
+    }
+    return 'unexpected'
+}
