@@ -10,7 +10,7 @@ $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Wire source syntax'}
 $excluded=@('Invoke-NativeDNSWireProcess','Read-NativeDNSWireCapture','Read-NativeDNSWireStatsInput','Get-NativeDNSWireItem')
-$allowed=@('Read-NativeDNSWireStatsInput','Get-NativeDNSWireStatsEvidence','Get-NativeDNSWireMonitorEvidence','Get-NativeDNSWireCounterEvidence','New-NativeDNSWireProbeBytes','Wait-NativeDNSWireWrite','Get-NativeDNSWireSetupCode','Assert-NativeOrdinaryPath','Get-Command','Join-Path','Where-Object','Select-Object','Invoke-NativeDNSWireProcess','Invoke-NativeDNSWireTool','Assert-NativeDNSWireStopped','Assert-NativeDNSWireEmptyFilters','Get-NativeDNSWireFilterRows','Assert-NativeDNSWireFilters','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Assert-NativeDNSWireRule','New-NetFirewallRule','Remove-NetFirewallRule','Assert-NativeDNSWireFirewall','Get-DnsClientNrptPolicy','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Stop-NativeDNSWireCapture','Clear-DnsClientCache','Resolve-DnsName','Invoke-NativeDNSWireQuery','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile','Get-NativeDNSWireItem','ConvertFrom-Json','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState')
+$allowed=@('New-NativeDNSWireEventEvidence','Add-NativeDNSWireEventHeader','Get-NativeDNSWireEventProgram','Get-NativeDNSWireEventEvidence','Read-NativeDNSWireStatsInput','Get-NativeDNSWireStatsEvidence','Get-NativeDNSWireMonitorEvidence','Get-NativeDNSWireCounterEvidence','New-NativeDNSWireProbeBytes','Wait-NativeDNSWireWrite','Get-NativeDNSWireSetupCode','Assert-NativeOrdinaryPath','Get-Command','Join-Path','Where-Object','Select-Object','Invoke-NativeDNSWireProcess','Invoke-NativeDNSWireTool','Assert-NativeDNSWireStopped','Assert-NativeDNSWireEmptyFilters','Get-NativeDNSWireFilterRows','Assert-NativeDNSWireFilters','Get-NetFirewallProfile','Get-Service','Get-NetFirewallRule','Get-NetFirewallPortFilter','Get-NetFirewallAddressFilter','Assert-NativeDNSWireRule','New-NetFirewallRule','Remove-NetFirewallRule','Assert-NativeDNSWireFirewall','Get-DnsClientNrptPolicy','Add-NativeDNSWireRule','Remove-NativeDNSWireRules','Stop-NativeDNSWireCapture','Clear-DnsClientCache','Resolve-DnsName','Invoke-NativeDNSWireQuery','Read-NativeDNSWireCapture','Measure-NativeDNSWireFile','Get-NativeDNSWireItem','ConvertFrom-Json','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState')
 $definitions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false));$seen=@{}
 foreach($definition in $definitions){
     if($seen.ContainsKey($definition.Name)){throw 'Duplicate wire source function'};$seen[$definition.Name]=$true
@@ -38,6 +38,13 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
         Assert-Wire ($null -ne $InputBytes -and $InputBytes.Length -eq 3 -and -not $script:running)
         if($script:fault -cin @('decoder-refusal','decoder-refusal-negative-succeeds')){return '{"schemaVersion":1,"outcome":"refused","code":"tcp-gap","evidence":null}'}
         return '{"schemaVersion":1,"outcome":"decoded","code":"none","evidence":{"schemaVersion":1,"observation":"tls-observed","plaintextPackets":0,"productionQualificationComplete":false,"flows":[{"provider":"google-v4","clientHello":true,"serverHello":true,"outboundEncryptedRecords":1,"inboundEncryptedRecords":1}]}}'
+    }
+    if($Program -ceq $State.eventTool){
+        Assert-Wire (-not $script:running -and $State.flags.captureStopped -and $Arguments.Count -eq 4 -and $Arguments[0] -ceq '-NoProfile' -and $Arguments[1] -ceq '-NonInteractive' -and $Arguments[2] -ceq '-EncodedCommand')
+        $body=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Arguments[3]));$t=$null;$e=$null;[void][Management.Automation.Language.Parser]::ParseInput($body,[ref]$t,[ref]$e)
+        Assert-Wire ($e.Count -eq 0 -and $body.Contains([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($State.etl))))
+        $r=New-NativeDNSWireEventEvidence 'complete';Add-NativeDNSWireEventHeader $r ([guid]'4d4f80d9-c8bd-4d73-bb5b-19c90402c5ac') 160 0
+        return ($r | ConvertTo-Json -Compress)
     }
     Assert-Wire ($Program -ceq $State.tool)
     switch -CaseSensitive ($Arguments[0]){
@@ -130,6 +137,32 @@ function Reject-Wire([scriptblock]$Body){$rejected=$false;try{[void](& $Body)}ca
 $oldSystemRoot=$env:SystemRoot
 try {
     if(-not $env:SystemRoot){$env:SystemRoot=[IO.Path]::GetTempPath()}
+    Case-Wire 'event-headers-partition-known-unknown-and-other-providers' {
+        $r=New-NativeDNSWireEventEvidence 'complete';$p=[guid]'4d4f80d9-c8bd-4d73-bb5b-19c90402c5ac'
+        Add-NativeDNSWireEventHeader $r $p 160 0;Add-NativeDNSWireEventHeader $r $p 170 1;Add-NativeDNSWireEventHeader $r $p 20 0;Add-NativeDNSWireEventHeader $r $p 999 $null;Add-NativeDNSWireEventHeader $r ([guid]::Empty) 160 0
+        $v=Get-NativeDNSWireEventEvidence ($r | ConvertTo-Json -Compress)
+        Assert-Wire ($v.code -ceq 'complete' -and $v.records -eq 5 -and $v.providerRecords -eq 4 -and $v.framePayloadIDs -eq 1 -and $v.frameDropPayloadIDs -eq 1 -and $v.knownMetadataIDs -eq 1 -and $v.unknownProviderIDs -eq 1 -and $v.otherProviderRecords -eq 1 -and $v.unrecognizedVersions -eq 2)
+    }
+    Case-Wire 'event-header-bound-and-unavailable-preserve-uncertainty' {
+        $r=New-NativeDNSWireEventEvidence 'complete';$r.records=4096;Reject-Wire {Add-NativeDNSWireEventHeader $r ([guid]::Empty) 1 0}
+        $r=New-NativeDNSWireEventEvidence 'bound';Reject-Wire {Add-NativeDNSWireEventHeader $r ([guid]::Empty) 1 0}
+        $v=Get-NativeDNSWireEventEvidence ($r | ConvertTo-Json -Compress);Assert-Wire ($v.code -ceq 'bound' -and $v.records -eq 0)
+        $v=Get-NativeDNSWireEventEvidence ((New-NativeDNSWireEventEvidence 'unavailable') | ConvertTo-Json -Compress);Assert-Wire ($v.code -ceq 'unavailable' -and $v.records -eq -1 -and $v.framePayloadIDs -eq -1)
+    }
+    Case-Wire 'event-report-refuses-private-fields-and-contradictory-counts' {
+        foreach($fault in @('private','boolean','sum','unknown-count','version','overflow')){
+            $r=New-NativeDNSWireEventEvidence 'complete'
+            switch($fault){'private'{$r['private']='PRIVATE-SYNTHETIC'}'boolean'{$r.records=$false}'sum'{$r.records=1}'unknown-count'{$r.records=-1}'version'{$r.unrecognizedVersions=1}'overflow'{$r.records=4097}}
+            $v=Get-NativeDNSWireEventEvidence ($r | ConvertTo-Json -Compress);Assert-Wire ($v.code -ceq 'invalid' -and $v.records -eq -1 -and -not (($v | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))
+        }
+        $v=Get-NativeDNSWireEventEvidence ('x'*4097);Assert-Wire ($v.code -ceq 'invalid' -and $v.records -eq -1)
+    }
+    Case-Wire 'event-program-is-syntax-only-and-cannot-interpolate-path-code' {
+        $private="PRIVATE-SYNTHETIC-'`nthrow 'never'";$encoded=Get-NativeDNSWireEventProgram $private
+        $body=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($encoded));$t=$null;$e=$null;$programAst=[Management.Automation.Language.Parser]::ParseInput($body,[ref]$t,[ref]$e)
+        $programFunctions=@($programAst.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false));Assert-Wire ($programFunctions.Count -eq 2 -and $programFunctions[0].Body.ParamBlock.Parameters.Count -eq 1 -and $programFunctions[1].Body.ParamBlock.Parameters.Count -eq 4)
+        Assert-Wire ($e.Count -eq 0 -and -not $body.Contains($private) -and $body.Contains('ReadEvent([TimeSpan]::FromMilliseconds(250))') -and $body.Contains('$record.Dispose()') -and $body.Contains('$reader.Dispose()') -and -not $body.Contains('FormatDescription') -and -not $body.Contains('.ToXml('))
+    }
     Case-Wire 'statistics-fallback-retains-unknown-without-private-text' {
         New-WireCase;Start-NativeDNSWireCapture $script:state;$script:fault='stats-fallback';Measure-NativeDNSWire $script:state;Complete-NativeDNSWireCleanup $script:state
         $r=Get-NativeDNSWireSummary $script:state
@@ -239,6 +272,7 @@ try {
         $r=Get-NativeDNSWireSummary $script:state
         Assert-Wire ($script:counterReads -eq 2 -and $r.packetCounters.code -ceq 'parsed' -and $r.flowPacketCounters.code -ceq 'parsed')
         Assert-Wire ($r.monitorEvidence.state -ceq 'owned-details' -and $r.monitorEvidence.rawPacketLogging -ceq 'enabled')
+        Assert-Wire ($r.eventEvidence.code -ceq 'complete' -and $r.eventEvidence.framePayloadIDs -eq 1)
         Assert-Wire ($r.statsEvidence.source -ceq 'file' -and $r.statsEvidence.code -ceq 'parsed' -and $r.statsEvidence.packets -eq 10 -and $r.statsEvidence.events -eq 20)
         Assert-Wire ($r.outcome -ceq 'passed' -and -not $script:running -and $script:filters.Count -eq 0 -and $script:rules.Count -eq 0 -and $r.toolProcesses -eq $r.toolProcessesJoined -and $r.providerMask -eq 1)
         Assert-Wire ($script:events.IndexOf('query') -lt $script:events.IndexOf('capture-start') -and $script:events.IndexOf('capture-stop') -lt $script:events.IndexOf('conversion') -and $script:events.IndexOf('original-state') -lt $script:events.IndexOf('filter-remove'))
@@ -275,7 +309,7 @@ try {
     Case-Wire 'wire-summary-excludes-private-paths-and-unknown-fields' {
         New-WireCase;$script:state.workdir='PRIVATE-SYNTHETIC-DIRECTORY'
         $r=Get-NativeDNSWireSummary $script:state
-        $keys=@('statsEvidence','monitorEvidence','flowPacketCounters','packetCounters','processFailureCode','failureExitCode','failureStdoutChars','failureStderrChars','failureElapsedMilliseconds','captureFileCode','etlBytes','pcapBytes','filterRows','filterCode','outcome','phase','failurePhase','decoderCode','controls','toolProcesses','toolProcessesJoined','toolFailure','tlsFlows','outboundEncryptedRecords','inboundEncryptedRecords','providerMask','rawCapturePublished','productionQualificationComplete')
+        $keys=@('eventEvidence','statsEvidence','monitorEvidence','flowPacketCounters','packetCounters','processFailureCode','failureExitCode','failureStdoutChars','failureStderrChars','failureElapsedMilliseconds','captureFileCode','etlBytes','pcapBytes','filterRows','filterCode','outcome','phase','failurePhase','decoderCode','controls','toolProcesses','toolProcessesJoined','toolFailure','tlsFlows','outboundEncryptedRecords','inboundEncryptedRecords','providerMask','rawCapturePublished','productionQualificationComplete')
         Assert-Wire ((@($r.Keys | Sort-Object) -join ',') -ceq (@($keys | Sort-Object) -join ',') -and -not (($r | ConvertTo-Json -Depth 4 -Compress).Contains('PRIVATE-SYNTHETIC')))
     }
     Case-Wire 'strict-stopped-and-empty-classifiers' {Reject-Wire {Assert-NativeDNSWireStopped "PRIVATE`nPacket Monitor is not running."};Reject-Wire {Assert-NativeDNSWireEmptyFilters "No filters.`n1 unknown"};Assert-NativeDNSWireStopped 'Packet Monitor is not running.';Assert-NativeDNSWireEmptyFilters "Packet Filters:`nNone"}
