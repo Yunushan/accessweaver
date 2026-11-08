@@ -8,7 +8,7 @@ $PSModuleAutoLoadingPreference='None'
 $project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/offload-control-operation.ps1','scripts/native-offload-state.ps1','scripts/read-native-offload-state.ps1','scripts/ndis-tls-control.cjs','scripts/dns-wire-stdin.cjs','scripts/extract-native-ndis.ps1','scripts/ndis-private-convert.cjs','scripts/dns-wire-evidence.cjs','scripts/ndis-frame-converter.cjs','scripts/test-ndis-frame-converter.cjs','scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-netevent-control.ps1'),[ref]$tokens,[ref]$issues);if($issues.Count){throw 'Source syntax'}
-$allowed=@('Get-NativeNDISTcpClosureEvidence','Test-NativeOffloadOwner','Test-NativeOffloadOtherSettings','Read-NativeOffloadAdapterSnapshot','New-NativeOffloadChangeEvidence','Get-NativeOffloadRaw','New-NativeOffloadEvidence','New-NativeNDISTlsStimulusEvidence','New-NativeNDISTlsWireEvidence','New-NativeNDISExtractionEvidence','New-NativeNDISConversionEvidence','Get-NativeNDISTemplateTree','Add-NativeNDISTemplateTreeNode','Test-NativeNDISTemplateTree','Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
+$allowed=@('Get-NativeNetEventCapturePolicy','Assert-NativeNetEventFilterSet','Get-NativeNDISTcpClosureEvidence','Test-NativeOffloadOwner','Test-NativeOffloadOtherSettings','Read-NativeOffloadAdapterSnapshot','New-NativeOffloadChangeEvidence','Get-NativeOffloadRaw','New-NativeOffloadEvidence','New-NativeNDISTlsStimulusEvidence','New-NativeNDISTlsWireEvidence','New-NativeNDISExtractionEvidence','New-NativeNDISConversionEvidence','Get-NativeNDISTemplateTree','Add-NativeNDISTemplateTreeNode','Test-NativeNDISTemplateTree','Get-NativeNDISTemplateSignature','New-NativeNDISCatalogEvidence','New-NativeNDISFragmentEvidence','New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
 foreach($sourceFile in @('native-netevent-control.ps1','native-offload-state.ps1')){
     $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $sourceFile),[ref]$tokens,[ref]$issues);if($issues.Count){throw 'Source syntax'}
 foreach($def in $ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
@@ -21,7 +21,7 @@ function Assert-N([bool]$Value){if(-not $Value){throw 'Synthetic source assertio
 function Reject-N([scriptblock]$Body){$rejected=$false;try{[void](& $Body)}catch{$rejected=$true};Assert-N $rejected}
 function Reset-N {
     $script:sessions=@();$script:providers=@();$script:starts=0;$script:stops=0;$script:removes=0;$script:fault=''
-    $script:plan=@{name=('awndis-'+('a'*32));file=([IO.Path]::Combine([IO.Path]::GetTempPath(),'capture.etl'));guid='';originalVerified=$false}
+    $script:plan=@{name=('awndis-'+('a'*32));file=([IO.Path]::Combine([IO.Path]::GetTempPath(),'capture.etl'));guid='';originalVerified=$false;capturePolicy='control-google-v4'}
 }
 function Get-NativeNetEventEnums {return @{mode=0;capture=0}}
 function Get-NativeNetEventInventory {return @{sessions=@($script:sessions);providers=@($script:providers)}}
@@ -39,7 +39,8 @@ function New-NetEventSession {
 function Add-NetEventPacketCaptureProvider {
     param($SessionName,$CaptureType,$MultiLayer,$EtherType,$IpAddresses,$IpProtocols,$TruncationLength,$Level,$MatchAnyKeyword,$MatchAllKeyword,$ErrorAction)
     Assert-N ($SessionName -ceq $script:plan.name -and $CaptureType -ceq 'Physical' -and -not $MultiLayer -and $EtherType[0] -eq 2048 -and $IpAddresses[0] -ceq '8.8.8.8' -and $IpProtocols[0] -eq 6 -and $TruncationLength -eq 65535 -and $Level -eq 5 -and $MatchAnyKeyword -eq [System.UInt64]::MaxValue -and $MatchAllKeyword -eq 0)
-    $script:providers=@([pscustomobject]@{Guid='2ed6006e-4729-4609-b423-3ee7bcd678ef';SessionGuid=$script:sessions[0].Guid;SessionName=$SessionName;Level=5;CaptureType=0;MultiLayer=$false;EtherType=@(2048);IPAddresses=@('8.8.8.8');IPProtocols=@(6);TruncationLength=65535;MatchAnyKeyword=[System.UInt64]::MaxValue;MatchAllKeyword=[System.UInt64]0;LinkLayerAddress=@()})
+    if($script:plan.capturePolicy -ceq 'product-doh-all'){Assert-N (($EtherType -join ',') -ceq '2048,34525' -and ($IpProtocols -join ',') -ceq '6,17' -and ($IpAddresses -join ',') -ceq '8.8.8.8,9.9.9.9,2001:4860:4860::8888,2620:fe::fe')}else{Assert-N ($EtherType.Count -eq 1 -and $IpProtocols.Count -eq 1 -and $IpAddresses.Count -eq 1)}
+    $script:providers=@([pscustomobject]@{Guid='2ed6006e-4729-4609-b423-3ee7bcd678ef';SessionGuid=$script:sessions[0].Guid;SessionName=$SessionName;Level=5;CaptureType=0;MultiLayer=$false;EtherType=@($EtherType);IPAddresses=@($IpAddresses);IPProtocols=@($IpProtocols);TruncationLength=65535;MatchAnyKeyword=[System.UInt64]::MaxValue;MatchAllKeyword=[System.UInt64]0;LinkLayerAddress=@()})
     Set-RawN $script:providers[0]
 }
 function Start-NetEventSession {param($InputObject,$ErrorAction);Assert-N ($InputObject -eq $script:sessions[0]);$script:starts++;$InputObject.SessionStatus='Running'}
@@ -437,6 +438,31 @@ Case-N 'tcp-closure-reducer-preserves-closed-reset-direction-and-order-counts' {
 }
 Case-N 'tcp-closure-reducer-refuses-private-fields-and-inconsistent-counts' {
     foreach($fault in @('private','boolean','partition','flow','fin','qualification')){$r=ConversionReply-N;switch($fault){'private'{$r.summary.tcpClosure['private']='PRIVATE-SYNTHETIC'}'boolean'{$r.summary.tcpClosure.sentReset=$false}'partition'{$r.summary.tcpClosure.beforeFin=1}'flow'{$r.summary.tcpClosure.resetFlows=2}'fin'{$r.summary.tcpClosure.sentFin=2}'qualification'{$r.summary.tcpClosure.productionQualificationComplete=$true}};$v=Get-NativeNDISConversionEvidence ($r | ConvertTo-Json -Depth 5 -Compress);Assert-N ($v.code -ceq 'invalid' -and -not (($v | ConvertTo-Json -Depth 5 -Compress).Contains('PRIVATE-SYNTHETIC')))}
+}
+
+Case-N 'full-doh-policy-contains-all-fixed-endpoints-families-and-protocols' {
+    $p=Get-NativeNetEventCapturePolicy 'product-doh-all';Assert-N (($p.addresses -join ',') -ceq '8.8.8.8,9.9.9.9,2001:4860:4860::8888,2620:fe::fe' -and ($p.etherTypes -join ',') -ceq '2048,34525' -and ($p.protocols -join ',') -ceq '6,17' -and $p.endpointMask -eq 15 -and $p.etherTypeMask -eq 3 -and $p.protocolMask -eq 3)
+    $p=Get-NativeNetEventCapturePolicy 'control-google-v4';Assert-N ($p.addresses.Count -eq 1 -and $p.endpointMask -eq 1 -and $p.etherTypeMask -eq 1 -and $p.protocolMask -eq 1)
+}
+Case-N 'unknown-capture-policy-refuses-before-session-creation' {
+    Reset-N;$script:plan.capturePolicy='PRIVATE-SYNTHETIC';Reject-N {Create-N};Assert-N ($script:sessions.Count -eq 0 -and $script:starts -eq 0 -and $script:removes -eq 0)
+}
+Case-N 'full-doh-policy-uses-owned-session-for-complete-native-boundary' {
+    Reset-N;$script:plan.capturePolicy='product-doh-all';Assert-N (Invoke-NativeNetEventOperation 'preflight' $script:plan).emptyBefore;Assert-N (Create-N).sessionVerified;Assert-N (Invoke-NativeNetEventOperation 'provider' $script:plan).providerVerified
+    Assert-N ((Invoke-NativeNetEventOperation 'start' $script:plan).state -ceq 'running');Assert-N ((Invoke-NativeNetEventOperation 'stop' $script:plan).state -ceq 'stopped');$script:plan.originalVerified=$true;Assert-N (Invoke-NativeNetEventOperation 'remove' $script:plan).emptyAfter
+}
+Case-N 'full-endpoint-readback-is-an-exact-semantic-set' {
+    $p=Get-NativeNetEventCapturePolicy 'product-doh-all';Assert-NativeNetEventFilterSet @('2620:FE:0000:0000:0000:0000:0000:00FE','2001:4860:4860:0:0:0:0:8888','9.9.9.9','8.8.8.8') $p.addresses 'address'
+    foreach($values in @(@('8.8.8.8','9.9.9.9'),@('8.8.8.8','9.9.9.9','2001:4860:4860::8888','8.8.8.8'),@('8.8.8.8','9.9.9.9','2001:4860:4860::8888%2','2620:fe::fe'),@('8.8.8.8','9.9.9.9','2001:4860:4860::8888','2001:db8::1'))){Reject-N {Assert-NativeNetEventFilterSet $values $p.addresses 'address'}}
+}
+Case-N 'full-family-and-protocol-readbacks-refuse-coercion-and-missing-values' {
+    $p=Get-NativeNetEventCapturePolicy 'product-doh-all';Assert-NativeNetEventFilterSet @([byte]17,[uint32]6) $p.protocols 'number';Assert-NativeNetEventFilterSet @([uint16]34525,[int]2048) $p.etherTypes 'number'
+    foreach($values in @(@('6',17),@($false,17),@(6),@(6,6),@(6,18))){Reject-N {Assert-NativeNetEventFilterSet $values $p.protocols 'number'}}
+    Reject-N {Assert-NativeNetEventFilterSet @(2048) $p.etherTypes 'number'};Reject-N {Assert-NativeNetEventFilterSet @('2048',34525) $p.etherTypes 'number'}
+}
+Case-N 'full-filter-drift-prevents-start-and-destructive-session-retirement' {
+    Reset-N;$script:plan.capturePolicy='product-doh-all';[void](Create-N);[void](Invoke-NativeNetEventOperation 'provider' $script:plan);$script:providers[0].CimInstanceProperties['IPAddresses'].Value=@('8.8.8.8','9.9.9.9','2001:4860:4860::8888','2001:db8::1')
+    Reject-N {Invoke-NativeNetEventOperation 'start' $script:plan};$script:plan.originalVerified=$true;Reject-N {Invoke-NativeNetEventOperation 'remove' $script:plan};Assert-N ($script:starts -eq 0 -and $script:removes -eq 0 -and $script:sessions.Count -eq 1)
 }
 
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}

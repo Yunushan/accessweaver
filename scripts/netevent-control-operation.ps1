@@ -20,7 +20,7 @@ $r=@{code='operation';sessionGuid='';state='unknown';sessionVerified=$false;prov
 try{
     if($PlanBase64.Length -gt 8192){throw 'NetEvent plan'}
     $plan=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($PlanBase64)) | ConvertFrom-Json -ErrorAction Stop
-    if(@($plan.PSObject.Properties).Count -ne 4 -or @($plan.PSObject.Properties.Name | Where-Object {$_ -cnotin @('name','file','guid','originalVerified')}).Count -ne 0){throw 'NetEvent plan'}
+    if(@($plan.PSObject.Properties).Count -ne 5 -or @($plan.PSObject.Properties.Name | Where-Object {$_ -cnotin @('name','file','guid','originalVerified','capturePolicy')}).Count -ne 0){throw 'NetEvent plan'}
     $file=[IO.Path]::GetFullPath($plan.file);$parent=[IO.Path]::GetDirectoryName($file);$local=[Environment]::GetFolderPath('LocalApplicationData')
     if([IO.Path]::GetFileName($parent) -cnotmatch '^AccessWeaver-NetEventControl-[a-f0-9]{32}$' -or -not [IO.Path]::GetDirectoryName($parent).Equals($local,[StringComparison]::OrdinalIgnoreCase) -or -not $file.Equals($plan.file,[StringComparison]::Ordinal)){throw 'NetEvent plan'}
     Assert-NativeOrdinaryPath $parent;Assert-NativeOrdinaryPath $file

@@ -38,6 +38,25 @@ function Get-NativeNetEventState([object]$Row) {
     if($name -cin @('NotRunning','Stopped')){return 'stopped'}
     return 'unknown'
 }
+function Get-NativeNetEventCapturePolicy([string]$Name) {
+    if($Name -ceq 'control-google-v4'){return @{name=$Name;addresses=@('8.8.8.8');protocols=@(6);etherTypes=@(2048);endpointMask=1;etherTypeMask=1;protocolMask=1}}
+    if($Name -ceq 'product-doh-all'){return @{name=$Name;addresses=@('8.8.8.8','9.9.9.9','2001:4860:4860::8888','2620:fe::fe');protocols=@(6,17);etherTypes=@(2048,34525);endpointMask=15;etherTypeMask=3;protocolMask=3}}
+    throw 'NetEvent plan'
+}
+function Assert-NativeNetEventFilterSet([object[]]$Actual,[object[]]$Expected,[string]$Kind) {
+    if($Kind -cnotin @('address','number') -or $Actual.Count -ne $Expected.Count -or $Actual.Count -lt 1 -or $Actual.Count -gt 4){throw 'NetEvent filters'}
+    $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach($value in $Actual){
+        if($Kind -ceq 'address'){
+            if($value -isnot [string] -or $value.Length -gt 64 -or $value -cnotmatch '^[0-9a-fA-F:.]+$'){throw 'NetEvent filters'}
+            $ip=$null;if(-not [Net.IPAddress]::TryParse($value,[ref]$ip)){throw 'NetEvent filters'};$key=$ip.ToString()
+        }else{
+            if(($value -isnot [byte] -and $value -isnot [uint16] -and $value -isnot [uint32] -and $value -isnot [int] -and $value -isnot [long]) -or [long]$value -lt 0 -or [long]$value -gt 65535){throw 'NetEvent filters'};$key=([long]$value).ToString([Globalization.CultureInfo]::InvariantCulture)
+        }
+        $matched=$false;foreach($wanted in $Expected){$canonical=if($Kind -ceq 'address'){([Net.IPAddress]::Parse([string]$wanted)).ToString()}else{([long]$wanted).ToString([Globalization.CultureInfo]::InvariantCulture)};if($key -ceq $canonical){$matched=$true;break}}
+        if(-not $matched -or -not $seen.Add($key)){throw 'NetEvent filters'}
+    }
+}
 function Assert-NativeNetEventProvider([object]$Row,[object]$Plan,[string]$Guid,[object]$Enums) {
     $script:netEventStage='provider-readback';$values=@{}
     foreach($key in @('Guid','SessionGuid','SessionName','Level','CaptureType','MultiLayer','TruncationLength','MatchAnyKeyword','MatchAllKeyword','IPAddresses','IPProtocols','EtherType','LinkLayerAddress')){$values[$key]=Get-NativeNetEventValue $Row $key}
@@ -45,11 +64,16 @@ function Assert-NativeNetEventProvider([object]$Row,[object]$Plan,[string]$Guid,
     if(-not [guid]::TryParse([string]$values.Guid,[ref]$provider) -or $provider -ne [guid]'2ed6006e-4729-4609-b423-3ee7bcd678ef' -or -not [guid]::TryParse([string]$values.SessionGuid,[ref]$session) -or $session -ne [guid]$Guid -or $values.SessionName -cne $Plan.name){throw 'NetEvent provider'}
     foreach($key in @('Level','CaptureType','TruncationLength','MatchAnyKeyword','MatchAllKeyword')){if($null -eq $values[$key] -or $values[$key] -is [bool]){throw 'NetEvent filters'}}
     if([int]$values.Level -ne 5 -or [int]$values.CaptureType -ne $Enums.capture -or $values.MultiLayer -isnot [bool] -or $values.MultiLayer -or [int]$values.TruncationLength -ne 65535 -or [System.UInt64]$values.MatchAnyKeyword -ne [System.UInt64]::MaxValue -or [System.UInt64]$values.MatchAllKeyword -ne 0){throw 'NetEvent filters'}
-    if(@($values.IPAddresses).Count -ne 1 -or [string]$values.IPAddresses[0] -cne '8.8.8.8' -or @($values.IPProtocols).Count -ne 1 -or [int]$values.IPProtocols[0] -ne 6 -or @($values.EtherType).Count -ne 1 -or [int]$values.EtherType[0] -ne 2048 -or @($values.LinkLayerAddress | Where-Object {$_}).Count -ne 0){throw 'NetEvent filters'}
+    $policy=Get-NativeNetEventCapturePolicy $Plan.capturePolicy
+    Assert-NativeNetEventFilterSet @($values.IPAddresses) $policy.addresses 'address'
+    Assert-NativeNetEventFilterSet @($values.IPProtocols) $policy.protocols 'number'
+    Assert-NativeNetEventFilterSet @($values.EtherType) $policy.etherTypes 'number'
+    if(@($values.LinkLayerAddress | Where-Object {$_}).Count -ne 0){throw 'NetEvent filters'}
 }
 function Invoke-NativeNetEventOperation([string]$Operation,[object]$Plan) {
     if($Operation -cnotin @('preflight','create','provider','start','stop','remove') -or $Plan.name -cnotmatch '^awndis-[a-f0-9]{32}$' -or $Plan.file -isnot [string] -or -not [IO.Path]::IsPathRooted($Plan.file) -or [IO.Path]::GetFileName($Plan.file) -cne 'capture.etl' -or $Plan.originalVerified -isnot [bool]){throw 'NetEvent plan'}
     if($Plan.guid -and ([string]$Plan.guid -cnotmatch '^[a-f0-9-]{36}$')){throw 'NetEvent plan'}
+    $policy=Get-NativeNetEventCapturePolicy $Plan.capturePolicy
     $r=@{code='none';sessionGuid='';state='absent';sessionVerified=$false;providerVerified=$false;emptyBefore=$false;emptyAfter=$false}
     $inventory=Get-NativeNetEventInventory
     if($inventory.sessions.Count -gt 1 -or $inventory.providers.Count -gt 1){throw 'NetEvent inventory'}
@@ -71,7 +95,7 @@ function Invoke-NativeNetEventOperation([string]$Operation,[object]$Plan) {
     if($Operation -ceq 'provider'){
         if($r.state -cne 'stopped' -or $inventory.providers.Count -ne 0){throw 'NetEvent inventory'}
         $script:netEventStage='provider-request'
-        [void](Add-NetEventPacketCaptureProvider -SessionName $Plan.name -CaptureType Physical -MultiLayer $false -EtherType ([uint16[]]@(2048)) -IpAddresses @('8.8.8.8') -IpProtocols ([byte[]]@(6)) -TruncationLength 65535 -Level 5 -MatchAnyKeyword ([System.UInt64]::MaxValue) -MatchAllKeyword ([System.UInt64]0) -ErrorAction Stop)
+        [void](Add-NetEventPacketCaptureProvider -SessionName $Plan.name -CaptureType Physical -MultiLayer $false -EtherType ([uint16[]]$policy.etherTypes) -IpAddresses ([string[]]$policy.addresses) -IpProtocols ([byte[]]$policy.protocols) -TruncationLength 65535 -Level 5 -MatchAnyKeyword ([System.UInt64]::MaxValue) -MatchAllKeyword ([System.UInt64]0) -ErrorAction Stop)
     }elseif($Operation -ceq 'start'){
         if($r.state -cne 'stopped' -or -not $r.providerVerified){throw 'NetEvent state'}
         $script:netEventStage='start-request'

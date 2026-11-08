@@ -85,7 +85,7 @@ jobs:
           $env:ACCESSWEAVER_NETEVENT_CONTROL=$evidence
           "ACCESSWEAVER_NETEVENT_CONTROL=$evidence" >> $env:GITHUB_ENV
           $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-netevent-control.ps1 -ReportPath (Join-Path $evidence 'status.json')
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-netevent-control.ps1 -CapturePolicy product-doh-all -ReportPath (Join-Path $evidence 'status.json')
           if($LASTEXITCODE -ne 0){throw 'NetEvent capture control failed; fixed metadata retained'}
       - name: Retain fixed source contract metadata only
         if: always() && env.ACCESSWEAVER_NETEVENT_SOURCE != ''
