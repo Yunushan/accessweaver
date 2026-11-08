@@ -36,7 +36,7 @@ function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$
             return '{"schemaVersion":1,"outcome":"refused","code":"capture-empty","evidence":null}'
         }
         Assert-Wire ($null -ne $InputBytes -and $InputBytes.Length -eq 3 -and -not $script:running)
-        if($script:fault -ceq 'decoder-refusal'){return '{"schemaVersion":1,"outcome":"refused","code":"tcp-gap","evidence":null}'}
+        if($script:fault -cin @('decoder-refusal','decoder-refusal-negative-succeeds')){return '{"schemaVersion":1,"outcome":"refused","code":"tcp-gap","evidence":null}'}
         return '{"schemaVersion":1,"outcome":"decoded","code":"none","evidence":{"schemaVersion":1,"observation":"tls-observed","plaintextPackets":0,"productionQualificationComplete":false,"flows":[{"provider":"google-v4","clientHello":true,"serverHello":true,"outboundEncryptedRecords":1,"inboundEncryptedRecords":1}]}}'
     }
     Assert-Wire ($Program -ceq $State.tool)
@@ -105,7 +105,7 @@ function Resolve-DnsName {
     param($Name,$Type,[switch]$DnsOnly,[switch]$NoHostsFile,[switch]$QuickTimeout,$ErrorAction)
     Assert-Wire ($Name -cin @('example.com','example.net','example.org') -and $Type -ceq 'A' -and $DnsOnly -and $NoHostsFile -and $QuickTimeout)
     $blocked=@($script:rules.Values | Where-Object {($_.RemotePort -join ',') -ceq '443'}).Count -gt 0
-    if(($blocked -and $script:fault -cne 'negative-succeeds') -or ($script:fault -ceq 'resumed-fails' -and $script:state.phase -ceq 'resumed-query')){throw 'Source query rejected'}
+    if(($blocked -and $script:fault -cnotin @('negative-succeeds','decoder-refusal-negative-succeeds')) -or ($script:fault -ceq 'resumed-fails' -and $script:state.phase -ceq 'resumed-query')){throw 'Source query rejected'}
     $script:events.Add('query');return @([pscustomobject]@{NameHost='source-alias'},[pscustomobject]@{IPAddress='192.0.2.1'})
 }
 function Read-DNSAcceptanceState {if($script:restored){return 'source-original'};return 'source-changed'}
@@ -175,7 +175,18 @@ try {
     Case-Wire 'partial-start-is-stopped-and-joined-before-cleanup' {New-WireCase;$script:fault='partial-start';Reject-Wire {Start-NativeDNSWireCapture $script:state};Assert-Wire $script:running;$script:fault='';Complete-NativeDNSWireCleanup $script:state;Assert-Wire (-not $script:running -and $script:state.flags.captureStopped)}
     Case-Wire 'existing-monitor-is-never-stopped' {New-WireCase;$script:running=$true;Reject-Wire {Start-NativeDNSWireCapture $script:state};Assert-Wire ($script:running -and -not $script:state.startAttempted -and -not $script:events.Contains('capture-stop'))}
     Case-Wire 'effective-name-policy-refuses-before-new-filters' {New-WireCase;$script:fault='nrpt';Reject-Wire {Start-NativeDNSWireCapture $script:state};Assert-Wire ($script:filters.Count -eq 0 -and -not $script:state.startAttempted)}
-    Case-Wire 'decoder-refusal-cannot-qualify-wire' {New-WireCase;Start-NativeDNSWireCapture $script:state;$script:fault='decoder-refusal';Reject-Wire {Measure-NativeDNSWire $script:state};$script:fault='';Complete-NativeDNSWireCleanup $script:state;Assert-Wire ((Get-NativeDNSWireSummary $script:state).outcome -ceq 'failed' -and $script:state.decoderCode -ceq 'tcp-gap')}
+    Case-Wire 'decoder-refusal-cannot-qualify-wire' {
+        New-WireCase;Start-NativeDNSWireCapture $script:state;$script:fault='decoder-refusal';Reject-Wire {Measure-NativeDNSWire $script:state}
+        Assert-Wire (-not $script:state.flags.tlsObserved -and $script:state.flags.tlsBlocked -and $script:state.flags.blockedQueryRejected -and $script:state.flags.tlsBlockRemoved -and $script:state.flags.resumedQueryPassed -and $script:state.phase -ceq 'decode')
+        $script:fault='';Complete-NativeDNSWireCleanup $script:state
+        Assert-Wire ((Get-NativeDNSWireSummary $script:state).outcome -ceq 'failed' -and $script:state.decoderCode -ceq 'tcp-gap')
+    }
+    Case-Wire 'decoder-refusal-does-not-mask-failed-causal-control' {
+        New-WireCase;Start-NativeDNSWireCapture $script:state;$script:fault='decoder-refusal-negative-succeeds';Reject-Wire {Measure-NativeDNSWire $script:state}
+        Assert-Wire ($script:state.decoderCode -ceq 'tcp-gap' -and $script:state.failurePhase -ceq 'blocked-query' -and -not $script:state.flags.tlsObserved -and -not $script:state.flags.blockedQueryRejected -and $script:state.flags.tlsBlockRemoved -and -not $script:state.flags.resumedQueryPassed)
+        $script:fault='';Complete-NativeDNSWireCleanup $script:state
+        Assert-Wire ((Get-NativeDNSWireSummary $script:state).outcome -ceq 'failed' -and $script:rules.Count -eq 0 -and $script:filters.Count -eq 0)
+    }
     Case-Wire 'successful-blocked-query-is-not-a-negative-control' {New-WireCase;Start-NativeDNSWireCapture $script:state;$script:fault='negative-succeeds';Reject-Wire {Measure-NativeDNSWire $script:state};Assert-Wire (-not $script:state.flags.blockedQueryRejected -and $script:state.flags.tlsBlockRemoved);$script:fault='';Complete-NativeDNSWireCleanup $script:state;Assert-Wire ((Get-NativeDNSWireSummary $script:state).outcome -ceq 'failed')}
     Case-Wire 'cache-clear-failure-is-not-resolution-rejection' {New-WireCase;$script:fault='cache-failure';Reject-Wire {Invoke-NativeDNSWireQuery 'example.net' -ExpectFailure};Assert-Wire (-not $script:events.Contains('query'))}
     Case-Wire 'resumption-is-required-after-tls-rule-retirement' {New-WireCase;Start-NativeDNSWireCapture $script:state;$script:fault='resumed-fails';Reject-Wire {Measure-NativeDNSWire $script:state};Assert-Wire (-not $script:state.flags.resumedQueryPassed -and $script:state.flags.tlsBlockRemoved);$script:fault='';Complete-NativeDNSWireCleanup $script:state;Assert-Wire ((Get-NativeDNSWireSummary $script:state).outcome -ceq 'failed')}

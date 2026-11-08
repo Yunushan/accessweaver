@@ -231,15 +231,20 @@ function Measure-NativeDNSWire([object]$State) {
     $State.phase='decode';$bytes=Read-NativeDNSWireCapture $State
     $decoded=(Invoke-NativeDNSWireProcess $State $State.node @($State.decoder) $bytes) | ConvertFrom-Json
     if($decoded.code -is [string] -and $decoded.code -cmatch '^[a-z0-9-]{1,48}$'){$State.decoderCode=$decoded.code}else{$State.decoderCode='invalid-report'}
-    if($decoded.schemaVersion -ne 1 -or $decoded.outcome -cne 'decoded' -or $State.decoderCode -cne 'none' -or $null -eq $decoded.evidence){throw 'Wire decoder refused'}
-    $e=$decoded.evidence
-    if($e.schemaVersion -ne 1 -or $e.observation -cne 'tls-observed' -or $e.plaintextPackets -ne 0 -or @($e.flows).Count -eq 0 -or @($e.flows).Count -gt 32 -or $e.productionQualificationComplete -isnot [bool] -or $e.productionQualificationComplete){throw 'Wire TLS evidence missing'}
-    foreach($flow in $e.flows){
-        $mask=switch -CaseSensitive ($flow.provider){'google-v4'{1}'quad9-v4'{2}'google-v6'{4}'quad9-v6'{8}default{throw 'Wire provider label'}}
-        if($flow.clientHello -isnot [bool] -or -not $flow.clientHello -or $flow.serverHello -isnot [bool] -or -not $flow.serverHello -or $flow.outboundEncryptedRecords -lt 0 -or $flow.outboundEncryptedRecords -gt 4194304 -or $flow.inboundEncryptedRecords -lt 0 -or $flow.inboundEncryptedRecords -gt 4194304){throw 'Wire flow shape'}
-        $State.providers=$State.providers -bor $mask;$State.outRecords+=$flow.outboundEncryptedRecords;$State.inRecords+=$flow.inboundEncryptedRecords;$State.tlsFlows++
+    # A handled refusal still fails acceptance. Complete the independent causal
+    # control so an empty capture cannot hide a resolver-path contradiction.
+    $refused=($decoded.schemaVersion -eq 1 -and $decoded.outcome -ceq 'refused' -and $State.decoderCode -cnotin @('none','invalid-report') -and $null -eq $decoded.evidence)
+    if(-not $refused){
+        if($decoded.schemaVersion -ne 1 -or $decoded.outcome -cne 'decoded' -or $State.decoderCode -cne 'none' -or $null -eq $decoded.evidence){throw 'Wire decoder refused'}
+        $e=$decoded.evidence
+        if($e.schemaVersion -ne 1 -or $e.observation -cne 'tls-observed' -or $e.plaintextPackets -ne 0 -or @($e.flows).Count -eq 0 -or @($e.flows).Count -gt 32 -or $e.productionQualificationComplete -isnot [bool] -or $e.productionQualificationComplete){throw 'Wire TLS evidence missing'}
+        foreach($flow in $e.flows){
+            $mask=switch -CaseSensitive ($flow.provider){'google-v4'{1}'quad9-v4'{2}'google-v6'{4}'quad9-v6'{8}default{throw 'Wire provider label'}}
+            if($flow.clientHello -isnot [bool] -or -not $flow.clientHello -or $flow.serverHello -isnot [bool] -or -not $flow.serverHello -or $flow.outboundEncryptedRecords -lt 0 -or $flow.outboundEncryptedRecords -gt 4194304 -or $flow.inboundEncryptedRecords -lt 0 -or $flow.inboundEncryptedRecords -gt 4194304){throw 'Wire flow shape'}
+            $State.providers=$State.providers -bor $mask;$State.outRecords+=$flow.outboundEncryptedRecords;$State.inRecords+=$flow.inboundEncryptedRecords;$State.tlsFlows++
+        }
+        $State.flags.tlsObserved=$true
     }
-    $State.flags.tlsObserved=$true
     try{
         $State.phase='tls-block';Add-NativeDNSWireRule $State 'tls' 'TCP';$State.flags.tlsBlocked=$true
         $State.phase='blocked-query';[void](Invoke-NativeDNSWireQuery 'example.org' -ExpectFailure);$State.flags.blockedQueryRejected=$true
@@ -247,6 +252,7 @@ function Measure-NativeDNSWire([object]$State) {
         $State.phase='tls-unblock';Remove-NativeDNSWireRules $State 'tls';$State.flags.tlsBlockRemoved=$true
     }
     $State.phase='resumed-query';[void](Invoke-NativeDNSWireQuery 'example.org');$State.flags.resumedQueryPassed=$true
+    if($refused){$State.phase='decode';throw 'Wire decoder refused'}
 }
 function Complete-NativeDNSWireCleanup([object]$State) {
     $State.cleanupAttempted=$true
