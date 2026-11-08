@@ -443,6 +443,14 @@ function Get-NativeNDISExtractionEvidence([string]$Text) {
     return @{code=$v.code;records=[int]$v.records;frames=[int]$v.frames;bytesWritten=[int]$v.bytesWritten;payloadRead=$v.payloadRead}
 }
 function New-NativeNDISConversionEvidence {return @{schemaVersion=1;outcome='not-inspected';code='not-inspected';nativeFrameDataRead=$false;summary=$null}}
+function Get-NativeNDISTcpClosureEvidence([object]$Value,[object]$Summary) {
+    $v=$Value;$keys=@('flows','sentFin','receivedFin','sentReset','receivedReset','beforeFin','afterSentFin','afterReceivedFin','afterBothFin','resetFlows','resetFlowsWithPayloadBoth')
+    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 13 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin (@('schemaVersion','productionQualificationComplete')+$keys)}).Count -ne 0 -or $v.schemaVersion -isnot [int] -or $v.schemaVersion -ne 1 -or $v.productionQualificationComplete -isnot [bool] -or $v.productionQualificationComplete){return $null}
+    foreach($key in $keys){if(($v.$key -isnot [int] -and $v.$key -isnot [long]) -or $v.$key -lt 0 -or $v.$key -gt 4096){return $null}}
+    $resets=$v.sentReset+$v.receivedReset
+    if($resets -ne $v.beforeFin+$v.afterSentFin+$v.afterReceivedFin+$v.afterBothFin -or $resets -gt $Summary.tcp -or $v.flows -gt $Summary.tcp -or (($v.flows -eq 0) -ne ($Summary.tcp -eq 0)) -or $v.sentFin -gt $Summary.sent -or $v.receivedFin -gt $Summary.received -or $v.sentFin+$v.receivedFin -gt $Summary.tcp -or $v.sentReset -gt $Summary.sent -or $v.receivedReset -gt $Summary.received -or $v.resetFlows -gt $v.flows -or $v.resetFlows -gt $resets -or (($v.resetFlows -eq 0) -ne ($resets -eq 0)) -or $v.resetFlowsWithPayloadBoth -gt $v.resetFlows){return $null}
+    $r=@{schemaVersion=1;productionQualificationComplete=$false};foreach($key in $keys){$r[$key]=[int]$v.$key};return $r
+}
 function Get-NativeNDISConversionEvidence([string]$Text) {
     $bad=New-NativeNDISConversionEvidence;$bad.outcome='refused';$bad.code='invalid';if($Text.Length -gt 4096){return $bad};try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{return $bad}
     if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 5 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin @('schemaVersion','outcome','code','nativeFrameDataRead','summary')}).Count -ne 0 -or $v.schemaVersion -isnot [int] -or $v.schemaVersion -ne 1 -or $v.outcome -cnotin @('converted','refused') -or $v.nativeFrameDataRead -isnot [bool]){return $bad}
@@ -450,10 +458,11 @@ function Get-NativeNDISConversionEvidence([string]$Text) {
     if($v.code -cnotin $codes){return $bad}
     if($v.outcome -ceq 'refused'){if($v.code -ceq 'none' -or $null -ne $v.summary){return $bad};return @{schemaVersion=1;outcome='refused';code=$v.code;nativeFrameDataRead=$v.nativeFrameDataRead;summary=$null}}
     $q=$v.summary;$keys=@('frames','ipv4','ipv6','tcp','udp','sent','received','captureBytes')
-    if($v.code -cne 'none' -or -not $v.nativeFrameDataRead -or $q -isnot [pscustomobject] -or @($q.PSObject.Properties).Count -ne 10 -or $q.schemaVersion -isnot [int] -or $q.schemaVersion -ne 1 -or $q.productionQualificationComplete -isnot [bool] -or $q.productionQualificationComplete){return $bad}
+    if($v.code -cne 'none' -or -not $v.nativeFrameDataRead -or $q -isnot [pscustomobject] -or @($q.PSObject.Properties).Count -ne 11 -or $null -eq $q.PSObject.Properties['tcpClosure'] -or $q.schemaVersion -isnot [int] -or $q.schemaVersion -ne 1 -or $q.productionQualificationComplete -isnot [bool] -or $q.productionQualificationComplete){return $bad}
     foreach($key in $keys){if($null -eq $q.PSObject.Properties[$key] -or ($q.$key -isnot [int] -and $q.$key -isnot [long]) -or $q.$key -lt 0 -or $q.$key -gt 16777216){return $bad}}
     if($q.frames -le 0 -or $q.frames -gt 4096 -or $q.frames -ne $q.ipv4+$q.ipv6 -or $q.frames -ne $q.tcp+$q.udp -or $q.frames -ne $q.sent+$q.received -or $q.captureBytes -le 48){return $bad}
-    $summary=@{schemaVersion=1;productionQualificationComplete=$false};foreach($key in $keys){$summary[$key]=[int]$q.$key}
+    $closure=Get-NativeNDISTcpClosureEvidence $q.tcpClosure $q;if($null -eq $closure){return $bad}
+    $summary=@{schemaVersion=1;productionQualificationComplete=$false;tcpClosure=$closure};foreach($key in $keys){$summary[$key]=[int]$q.$key}
     return @{schemaVersion=1;outcome='converted';code='none';nativeFrameDataRead=$true;summary=$summary}
 }
 
