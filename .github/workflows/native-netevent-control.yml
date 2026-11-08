@@ -5,6 +5,8 @@ on:
     branches: ['main', 'codex/dns-adapter-coverage']
     paths:
       - 'scripts/native-netevent-control.ps1'
+      - 'scripts/native-etl-header.cs'
+      - 'scripts/read-native-etl-loss.ps1'
       - 'scripts/netevent-control-operation.ps1'
       - 'scripts/test-native-netevent-control.ps1'
       - 'scripts/test-native-netevent-contracts.ps1'

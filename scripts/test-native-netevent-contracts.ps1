@@ -5,10 +5,10 @@ if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-host
 if($RequireWindowsPowerShell -and ($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1)){throw 'Stock source shell required'}
 foreach($name in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management')){Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$name,($name+'.psd1'))) -ErrorAction Stop}
 $PSModuleAutoLoadingPreference='None'
-$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-netevent-control.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
+$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-netevent-control.ps1'),[ref]$tokens,[ref]$issues);if($issues.Count){throw 'Source syntax'}
-$allowed=@('Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
+$allowed=@('New-NativeNDISLossEvidence','Get-NativeNDISLossEvidence','Test-NativeNDISLossEvidence','Get-NativeNetEventValue','Get-NativeNetEventInventory','Get-NativeNetEventEnums','Assert-NativeNetEventSession','Get-NativeNetEventState','Assert-NativeNetEventProvider','New-NetEventSession','Add-NetEventPacketCaptureProvider','Start-NetEventSession','Stop-NetEventSession','Remove-NetEventSession','Where-Object','New-NativeNDISHeaderEvidence','ConvertFrom-Json')
 foreach($def in $ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
     if($def.Name -cin @('Get-NativeNetEventEnums','Get-NativeNetEventInventory')){continue}
     foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin $allowed){throw 'Source command boundary'}}
@@ -87,6 +87,25 @@ Case-N 'ndis-bound-and-unavailable-counts-remain-distinct' {$r=New-NativeNDISHea
 Case-N 'ndis-header-program-retains-bounds-and-no-payload-access' {
     $body=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String((Get-NativeNDISHeaderProgram "PRIVATE-SYNTHETIC-'`nthrow 'never'")));$t=$null;$e=$null;[void][Management.Automation.Language.Parser]::ParseInput($body,[ref]$t,[ref]$e)
     Assert-N ($e.Count -eq 0 -and -not $body.Contains('PRIVATE-SYNTHETIC') -and $body.Contains('ReadEvent([TimeSpan]::FromMilliseconds(250))') -and $body.Contains('$record.Dispose()') -and $body.Contains('$reader.Dispose()') -and -not $body.Contains('FormatDescription') -and -not $body.Contains('.Properties') -and -not $body.Contains('.ToXml('))
+}
+function Good-LossN {
+    return @{code='parsed';eventsLost=0;buffersLost=0;bufferSize=65536;buffersWritten=5;maximumFileSize=16;pointerSize=8;logFileMode=2;finalized=$true;closed=$true;nativeCode=0}
+}
+Case-N 'loss-metadata-requires-finalized-zero-loss-unwrapped-file' {
+    $v=Get-NativeNDISLossEvidence ((Good-LossN) | ConvertTo-Json -Compress);Assert-N (Test-NativeNDISLossEvidence $v)
+}
+Case-N 'reported-loss-unfinalized-or-wrapped-metadata-cannot-pass' {
+    foreach($field in @('eventsLost','buffersLost','finalized','closed','buffersWritten','pointerSize','maximumFileSize','logFileMode')){
+        $v=Good-LossN;switch($field){'eventsLost'{$v.eventsLost=1}'buffersLost'{$v.buffersLost=1}'finalized'{$v.finalized=$false}'closed'{$v.closed=$false}'buffersWritten'{$v.buffersWritten=256}'pointerSize'{$v.pointerSize=4}'maximumFileSize'{$v.maximumFileSize=0}'logFileMode'{$v.logFileMode=8}}
+        $r=Get-NativeNDISLossEvidence ($v | ConvertTo-Json -Compress);Assert-N (-not (Test-NativeNDISLossEvidence $r))
+    }
+}
+Case-N 'loss-metadata-private-fields-and-invalid-numbers-are-refused' {
+    foreach($fault in @('private','boolean','overflow')){$v=Good-LossN;switch($fault){'private'{$v['private']='PRIVATE-SYNTHETIC'}'boolean'{$v.eventsLost=$false}'overflow'{$v.buffersWritten=4294967296}};$r=Get-NativeNDISLossEvidence ($v | ConvertTo-Json -Compress);Assert-N ($r.code -ceq 'invalid' -and $r.eventsLost -eq -1 -and -not (($r | ConvertTo-Json -Compress).Contains('PRIVATE-SYNTHETIC')))}
+}
+Case-N 'unavailable-or-unclosed-header-never-becomes-zero-loss' {
+    foreach($code in @('open-failed','close-failed','unavailable')){$v=Good-LossN;$v.code=$code;$v.nativeCode=5;$r=Get-NativeNDISLossEvidence ($v | ConvertTo-Json -Compress);Assert-N ($r.eventsLost -eq -1 -and $r.buffersLost -eq -1 -and -not $r.closed -and -not (Test-NativeNDISLossEvidence $r))}
+    $v=Good-LossN;$v.nativeCode=87;$r=Get-NativeNDISLossEvidence ($v | ConvertTo-Json -Compress);Assert-N ($r.code -ceq 'invalid')
 }
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}
 $passed=@($cases | Where-Object {-not $_.passed}).Count -eq 0

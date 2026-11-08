@@ -134,3 +134,24 @@ try{
 '@
     return [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($prefix+$body.Replace('__PATH__',[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Path)))))
 }
+
+function New-NativeNDISLossEvidence([string]$Code='not-inspected') {
+    return @{code=$Code;eventsLost=-1;buffersLost=-1;bufferSize=-1;buffersWritten=-1;maximumFileSize=-1;pointerSize=-1;logFileMode=-1;finalized=$false;closed=$false;nativeCode=-1}
+}
+function Get-NativeNDISLossEvidence([string]$Text) {
+    $bad=New-NativeNDISLossEvidence 'invalid';if($Text.Length -gt 4096){return $bad}
+    try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{return $bad}
+    $keys=@('eventsLost','buffersLost','bufferSize','buffersWritten','maximumFileSize','pointerSize','logFileMode')
+    $all=@('code','eventsLost','buffersLost','bufferSize','buffersWritten','maximumFileSize','pointerSize','logFileMode','finalized','closed','nativeCode')
+    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 11 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin $all}).Count -ne 0 -or $v.code -cnotin @('parsed','layout','open-failed','close-failed','unavailable') -or $v.finalized -isnot [bool] -or $v.closed -isnot [bool]){return $bad}
+    foreach($key in $keys){$n=$v.$key;if(($n -isnot [int] -and $n -isnot [long]) -or $n -lt -1 -or $n -gt 4294967295){return $bad}}
+    if(($v.nativeCode -isnot [int] -and $v.nativeCode -isnot [long]) -or $v.nativeCode -lt -1 -or $v.nativeCode -gt 65535){return $bad}
+    $r=New-NativeNDISLossEvidence $v.code;$r.nativeCode=[int]$v.nativeCode
+    if($v.code -ceq 'parsed'){
+        if(@($keys | Where-Object {$v.$_ -lt 0}).Count -ne 0 -or -not $v.closed -or $v.nativeCode -ne 0){return $bad}
+        foreach($key in $keys){$r[$key]=[long]$v.$key};$r.finalized=$v.finalized;$r.closed=$v.closed
+    };return $r
+}
+function Test-NativeNDISLossEvidence([object]$Evidence) {
+    return ($Evidence.code -ceq 'parsed' -and $Evidence.closed -and $Evidence.finalized -and $Evidence.nativeCode -eq 0 -and $Evidence.eventsLost -eq 0 -and $Evidence.buffersLost -eq 0 -and $Evidence.pointerSize -eq 8 -and $Evidence.maximumFileSize -eq 16 -and $Evidence.bufferSize -ge 1024 -and $Evidence.bufferSize -le 1048576 -and $Evidence.bufferSize%1024 -eq 0 -and $Evidence.buffersWritten -gt 0 -and ($Evidence.logFileMode -band 2) -ne 0 -and ($Evidence.logFileMode -band 8) -eq 0 -and ([decimal]$Evidence.bufferSize*[decimal]$Evidence.buffersWritten) -lt 16777216)
+}

@@ -13,11 +13,11 @@ $ReportPath=[IO.Path]::GetFullPath($ReportPath);Assert-NativeOrdinaryPath $Repor
 $reportParent=Get-Item -LiteralPath ([IO.Path]::GetDirectoryName($ReportPath)) -Force -ErrorAction Stop
 if([IO.Path]::GetFileName($ReportPath) -cne 'status.json' -or -not $reportParent.PSIsContainer -or [IO.Directory]::GetFileSystemEntries($reportParent.FullName).Length -ne 0){throw 'Empty ordinary control report parent required'}
 $reportCreated=$reportParent.CreationTimeUtc.Ticks;$project=Split-Path -Parent $PSScriptRoot
-$sources=@('scripts/native-netevent-control.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
+$sources=@('scripts/native-netevent-control.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/netevent-control-operation.ps1','scripts/test-native-netevent-control.ps1','scripts/test-native-netevent-contracts.ps1','.github/workflows/native-netevent-control.yml','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $state=$null;$plan=$null;$environmentVerified=$false;$nativeProcessVerified=$false;$outcome='failed';$code='environment'
 $emptyEvidence=@{stage='not-inspected';family='none';hresult=0;cimStatus=-1;modeKind='not-inspected';statusKind='not-inspected'}
-$control=@{operationEvidence=$emptyEvidence;cleanupEvidence=$emptyEvidence;outcome='failed';phase='preflight';code='not-started';cleanupCode='none';preflightEmpty=$false;sessionVerified=$false;providerVerified=$false;captureStarted=$false;captureStopped=$false;connected=$false;captureBounded=$false;etlBytes=0;originalStateVerified=$false;originalResolverPassed=$false;sessionRemoved=$false;processes=0;joined=0;toolFailure=$false;eventEvidence=$null}
+$control=@{lossEvidence=$null;operationEvidence=$emptyEvidence;cleanupEvidence=$emptyEvidence;outcome='failed';phase='preflight';code='not-started';cleanupCode='none';preflightEmpty=$false;sessionVerified=$false;providerVerified=$false;captureStarted=$false;captureStopped=$false;connected=$false;captureBounded=$false;etlBytes=0;originalStateVerified=$false;originalResolverPassed=$false;sessionRemoved=$false;processes=0;joined=0;toolFailure=$false;eventEvidence=$null}
 function Invoke-NativeNDISOperation([string]$Operation) {
     $script:lastOperationCode='none';$script:lastEvidence=$emptyEvidence
     foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'NDIS source changed'}}
@@ -75,6 +75,7 @@ public static class AccessWeaverNetEventControlIdentity {
     . (Join-Path $PSScriptRoot 'native-dns-wire.ps1')
     . (Join-Path $PSScriptRoot 'native-netevent-control.ps1')
     . (Join-Path $PSScriptRoot 'dns-acceptance-state.ps1')
+    $control.lossEvidence=New-NativeNDISLossEvidence
     $control.eventEvidence=New-NativeNDISHeaderEvidence
     $code='baseline';$script:state=New-NativeDNSWireState $privateRoot '';$script:state.etl=Join-Path $privateRoot 'capture.etl'
     $script:state.before=Read-DNSAcceptanceState;[void](Invoke-NativeDNSWireQuery 'example.com')
@@ -90,6 +91,8 @@ public static class AccessWeaverNetEventControlIdentity {
     $control.phase='stop';$v=Invoke-NativeNDISOperation 'stop';$control.captureStopped=($v.state -ceq 'stopped')
     if(-not $control.captureStopped){throw 'NDIS stop state'}
     $control.phase='capture-file';Measure-NativeDNSWireFile $script:state 'etl';$control.etlBytes=$script:state.etlBytes;$control.captureBounded=$true
+    $control.phase='loss-metadata';$text=Invoke-NativeDNSWireProcess $script:state $script:state.eventTool @('-NoProfile','-NonInteractive','-File',(Join-Path $PSScriptRoot 'read-native-etl-loss.ps1'),'-CapturePath',$script:state.etl)
+    $control.lossEvidence=Get-NativeNDISLossEvidence $text;if(-not (Test-NativeNDISLossEvidence $control.lossEvidence)){throw 'NDIS loss metadata unverified'}
     $control.phase='headers';$text=Invoke-NativeDNSWireProcess $script:state $script:state.eventTool @('-NoProfile','-NonInteractive','-EncodedCommand',(Get-NativeNDISHeaderProgram $script:state.etl))
     $control.eventEvidence=Get-NativeNDISHeaderEvidence $text
     if($control.eventEvidence.code -cne 'complete' -or $control.eventEvidence.fragmentIDs -le 0){$control.code='fragment-events-missing'}else{$control.code='none';$control.outcome='passed'}
@@ -104,7 +107,7 @@ finally{
         }catch{$control.cleanupEvidence=$script:lastEvidence;if($control.cleanupCode -ceq 'none'){$control.cleanupCode=if($script:lastOperationCode -cne 'none'){$script:lastOperationCode}else{'recovery'}}}
     }
     if($null -ne $script:state){$control.processes=$script:state.processes;$control.joined=$script:state.joined;$control.toolFailure=$script:state.processFailed}
-    $good=($control.outcome -ceq 'passed' -and $control.preflightEmpty -and $control.sessionVerified -and $control.providerVerified -and $control.captureStarted -and $control.captureStopped -and $control.connected -and $control.captureBounded -and $control.originalStateVerified -and $control.originalResolverPassed -and $control.sessionRemoved -and $control.cleanupCode -ceq 'none' -and -not $control.toolFailure -and $control.processes -eq $control.joined)
+    $good=($control.outcome -ceq 'passed' -and (Test-NativeNDISLossEvidence $control.lossEvidence) -and $control.preflightEmpty -and $control.sessionVerified -and $control.providerVerified -and $control.captureStarted -and $control.captureStopped -and $control.connected -and $control.captureBounded -and $control.originalStateVerified -and $control.originalResolverPassed -and $control.sessionRemoved -and $control.cleanupCode -ceq 'none' -and -not $control.toolFailure -and $control.processes -eq $control.joined)
     if($good){$outcome='passed';$code='none'}else{$outcome='failed';$code='control-failed';$control.outcome='failed'}
     foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){$outcome='failed';$code='source-changed'}}
     Assert-NativeOrdinaryPath $ReportPath;$parent=Get-Item -LiteralPath $reportParent.FullName -Force -ErrorAction Stop
