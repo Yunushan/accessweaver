@@ -1217,6 +1217,41 @@ function Configure-DNS([string]$method) {
     Event ('Encrypted DNS configured: '+$method)
     $script:dnsConfigured=$true
 }
+# A successful setter is not proof of restored state. Keep the first originals
+# until fresh GUID-bound DNS reads and managed DoH metadata match the snapshot.
+function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$DohAvailable) {
+    $clients=@(Read-DNSClientInventory)
+    foreach($plan in $Plans){
+        $record=$plan.record
+        $matches=@(Get-NetAdapter -ErrorAction Stop | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
+        if($matches.Count -ne 1){throw 'An original adapter changed during restoration verification; retain the recovery snapshot'}
+        foreach($number in @('4','6')){
+            if(-not $plan.bounds['bound'+$number]){continue}
+            $family='IPv'+$number
+            $actual=Read-OriginalDNSFamily $matches[0] $family $clients
+            if($actual.dhcp -ne $record.('dhcp'+$number)){throw 'Restored DNS mode could not be verified; retain the recovery snapshot'}
+            if(-not $actual.dhcp){
+                $expected=@(Get-StaticDNSServers @($record.('ipv'+$number)) $family $record.index)
+                $values=@($actual.values)
+                if($values.Count -ne $expected.Count){throw 'Restored static DNS count could not be verified; retain the recovery snapshot'}
+                for($i=0;$i -lt $expected.Count;$i++){
+                    if($values[$i] -cne $expected[$i]){throw 'Restored static DNS order or value could not be verified; retain the recovery snapshot'}
+                }
+            }
+        }
+    }
+    if($DohAvailable){
+        $observed=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
+        foreach($plan in $DohPlans){
+            $current=@($observed | Where-Object {$_.ServerAddress -eq $plan.address})
+            if($current.Count -ne $plan.old.Count){throw 'Restored DoH entry could not be verified; retain the recovery snapshot'}
+            if($plan.old.Count -eq 1){
+                $old=$plan.old[0];$actual=$current[0]
+                if($actual.DohTemplate -isnot [string] -or $actual.DohTemplate -cne $old.DohTemplate -or $actual.AllowFallbackToUdp -isnot [bool] -or $actual.AllowFallbackToUdp -ne $old.AllowFallbackToUdp -or $actual.AutoUpgrade -isnot [bool] -or $actual.AutoUpgrade -ne $old.AutoUpgrade){throw 'Restored DoH metadata could not be verified; retain the recovery snapshot'}
+            }
+        }
+    }
+}
 function Restore-DNS {
     $snapshot=Join-Path $root 'profiles\dns-original.json';if(-not (Test-Path -LiteralPath $snapshot)){throw 'No original DNS snapshot exists; no settings were changed'}
     $saved=Get-Content -LiteralPath $snapshot -Raw -ErrorAction Stop | ConvertFrom-Json
@@ -1266,6 +1301,7 @@ function Restore-DNS {
             else{Add-DnsClientDohServerAddress -ServerAddress $plan.address -DohTemplate $old.DohTemplate -AllowFallbackToUdp $old.AllowFallbackToUdp -AutoUpgrade $old.AutoUpgrade -ErrorAction Stop}
         } elseif($plan.current.Count -eq 1){Remove-DnsClientDohServerAddress -ServerAddress $plan.address -ErrorAction Stop}
     }
+    Assert-RestoredDNSState $plans $dohPlans $dohAvailable
     Remove-Item -LiteralPath $snapshot -ErrorAction Stop;Event 'Original DNS and DoH settings restored'
 }
 
