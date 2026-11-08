@@ -386,6 +386,20 @@ try {
     Assert-A ((Get-NativeDNSStaticFailure ([InvalidOperationException]::new('synthetic-private-value'))) -ceq 'unexpected') 'static-closed-failure-map'
     foreach($pair in @(@('DNS acceptance adapter inventory changed','state-inventory'),@('DNS acceptance original adapter is missing','state-adapter'),@('DNS acceptance original DHCP/static mode differs','state-mode'),@('DNS acceptance dormant registry state differs','state-dormant'),@('DNS acceptance original static server count differs','state-count'),@('DNS acceptance original static server order or value differs','state-order'),@('DNS acceptance original DoH capability or inventory differs','state-doh-inventory'),@('DNS acceptance original DoH entry is missing','state-doh-entry'),@('DNS acceptance original DoH metadata differs','state-doh-metadata'))){Assert-A ((Get-NativeDNSStaticFailure ([InvalidOperationException]::new($pair[0]))) -ceq $pair[1]) 'static-closed-failure-map'}
     foreach($pair in @(@('Static fixture firewall policy unavailable','firewall-policy'),@('Static fixture address is local','fixture-address-local'),@('Static fixture firewall identity collision','firewall-identity'),@('Static fixture firewall rule not active','firewall-active'),@('Static fixture firewall filters differ','firewall-filter'),@('Static fixture firewall ownership differs','firewall-owner'),@('Static fixture firewall removal incomplete','firewall-removal'),@('Static fixture firewall cleanup failed','firewall-cleanup'))){Assert-A ((Get-NativeDNSStaticFailure ([InvalidOperationException]::new($pair[0]))) -ceq $pair[1]) 'static-closed-failure-map'}
+    # Actual independent-reader refusals must reach fixed public categories.
+    foreach($failure in @('inventory','registry','scope','address','doh')){
+        New-ACase
+        $expectedCode=switch($failure){
+            'inventory' {$script:adapters=@();'read-empty-inventory'}
+            'registry' {$script:registryValues[($script:g1+'/IPv6')]=@('synthetic','array');'read-registry-mode'}
+            'scope' {$script:data[$script:g1].servers6=@('fe80::53%99');'read-scope'}
+            'address' {$script:data[$script:g1].servers6=@('synthetic-not-an-address');'read-address'}
+            'doh' {$script:doh[0].DohTemplate='';'read-doh-metadata'}
+        }
+        $refused=$false;$actualCode='none'
+        try{[void](Read-DNSAcceptanceState)}catch{$refused=$true;$actualCode=Get-NativeDNSStaticFailure $_.Exception}
+        Assert-A ($refused -and $actualCode -ceq $expectedCode) 'static-closed-failure-map'
+    }
     # Execute the actual driver resolver callback under the roundtrip coordinator.
     # Its ScenarioKind parameter shadows the caller's static-ipv6 mode. All file,
     # CIM, service and resolver boundaries below are closed source mocks.

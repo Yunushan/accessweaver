@@ -205,6 +205,29 @@ function Get-NativeDNSStaticFailure([Exception]$Exception) {
             'Static fixture firewall ownership differs' {return 'firewall-owner'}
             'Static fixture firewall removal incomplete' {return 'firewall-removal'}
             'Static fixture firewall cleanup failed' {return 'firewall-cleanup'}
+            'Invalid DNS acceptance adapter identity' {return 'read-adapter-identity'}
+            'Invalid DNS acceptance address' {return 'read-address'}
+            'DNS acceptance address family mismatch' {return 'read-family'}
+            'DNS acceptance IPv6 scope does not identify this adapter' {return 'read-scope'}
+            'DNS acceptance dormant registry state exceeds its bound' {return 'read-dormant-bound'}
+            'DNS acceptance adapter inventory is empty' {return 'read-empty-inventory'}
+            'DNS acceptance client identity malformed' {return 'read-client-identity'}
+            'DNS acceptance client family malformed' {return 'read-client-family'}
+            'DNS acceptance client family duplicated' {return 'read-client-duplicate'}
+            'Duplicate DNS acceptance adapter identity' {return 'read-adapter-duplicate'}
+            'DNS acceptance adapter changed during capture' {return 'read-adapter-changed'}
+            'DNS acceptance exposed-family registry state is missing' {return 'read-registry-missing'}
+            'DNS acceptance registry mode is malformed' {return 'read-registry-mode'}
+            'DNS acceptance static servers are missing' {return 'read-static-empty'}
+            'DNS acceptance DoH metadata malformed or duplicated' {return 'read-doh-metadata'}
+            'DNS acceptance state schema is invalid; prepare a new baseline' {return 'saved-schema'}
+            'DNS acceptance adapter state is duplicated or malformed' {return 'saved-adapter'}
+            'DNS acceptance saved mode is invalid' {return 'saved-mode'}
+            'DNS acceptance saved server list is invalid' {return 'saved-servers'}
+            'DNS acceptance dormant state fingerprint is missing' {return 'saved-dormant'}
+            'DNS acceptance selected adapter exposes no client' {return 'saved-selected'}
+            'DNS acceptance saved DoH metadata is malformed or duplicated' {return 'saved-doh'}
+            'DNS acceptance DoH capability metadata is inconsistent' {return 'saved-doh-capability'}
             'DNS acceptance adapter inventory changed' {return 'state-inventory'}
             'DNS acceptance original adapter is missing' {return 'state-adapter'}
             'DNS acceptance original DHCP/static mode differs' {return 'state-mode'}
