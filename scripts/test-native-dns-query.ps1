@@ -32,10 +32,10 @@ $state=New-NativeDNSWireState $root (Join-Path $PSScriptRoot 'dns-wire-stdin.cjs
 $outcome='failed';$code='preflight';$cleanupCode='none';$before=$null;$rulesRemoved=$false;$stateVerified=$false;$rootRemoved=$false;$evidence=@{probe=$null;positive=$null;blocked=$null;resumed=$null}
 $unblockClock=$null;$resumptionTiming=@{attempted=$false;startMilliseconds=0L;endMilliseconds=0L};$recoveryObservation=New-NativeDNSRecoveryObservation
 try {
-    Assert-NativeFreshDNSSources $state
-    if(@(Get-DnsClientNrptPolicy -Effective -ErrorAction Stop).Count -ne 0){throw 'Query name policy boundary'}
-    Assert-NativeDNSWireFirewall
-    $before=Read-DNSAcceptanceState
+    $code='preflight-source';Assert-NativeFreshDNSSources $state
+    $code='preflight-nrpt';if(@(Get-DnsClientNrptPolicy -Effective -ErrorAction Stop).Count -ne 0){throw 'Query name policy boundary'}
+    $code='preflight-firewall';Assert-NativeDNSWireFirewall
+    $code='preflight-baseline';$before=Read-DNSAcceptanceState
     $code='probe';$evidence.probe=Invoke-NativeFreshDNSQuery $state -Probe
     $code='positive';$evidence.positive=Invoke-NativeFreshDNSQuery $state 'example.net'
     $code='block';foreach($kind in @('dns','tls')){foreach($protocol in @('TCP','UDP')){Add-NativeDNSWireRule $state $kind $protocol}}

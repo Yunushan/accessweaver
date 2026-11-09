@@ -91,6 +91,12 @@ Case-Q 'recovery-caller-keeps-original-verdict-and-query-policy' {
     $text=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'native-dns-recovery-observation.ps1'));foreach($boundary in @('Clear-DnsClientCache','Set-DnsClient','New-NetFirewallRule','Remove-NetFirewallRule','DateTime','UtcTicks')){Assert-Q (-not $text.Contains($boundary))}
     Assert-Q ($text.Contains('@(5000,10000,15000,35000,65000)') -and $text.Contains("Invoke-NativeFreshDNSQuery $"+"State 'example.net'"))
 }
+Case-Q 'preflight-stages-are-distinct-and-precede-native-effects' {
+    $text=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-native-dns-query.ps1'))
+    $markers=@("$"+"code='preflight-source'","$"+"code='preflight-nrpt'","$"+"code='preflight-firewall'","$"+"code='preflight-baseline'","$"+"code='probe'")
+    $previous=-1;foreach($marker in $markers){$index=$text.IndexOf($marker);Assert-Q ($index -gt $previous);$previous=$index}
+    Assert-Q (-not $text.Contains('Exception.Message'))
+}
 $passed=@($cases | Where-Object {-not $_.passed}).Count -eq 0
 [Console]::Out.WriteLine((@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;cases=@($cases.ToArray());passed=$passed;nativeQueryInvoked=$false;productInvoked=$false} | ConvertTo-Json -Depth 5 -Compress))
 if(-not $passed){exit 1}
