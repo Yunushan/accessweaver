@@ -1,0 +1,551 @@
+{
+  "schemaVersion": 1,
+  "scope": "scan-common-section-source-contracts",
+  "sourceCommit": "27c033b89f528072e67bf815719ffe5e50137627",
+  "runID": 42610265783,
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "364de5790d1094c0285efa054d8ce1159166a3b699a964506fbe25eb5cfe534e",
+    "scripts/test-windows-workflow.ps1": "9f46434a0a52ea3e9e5325a7290ea799da79c07eb90d569324b027a38e02d5c1",
+    ".github/workflows/windows-component-discovery.yml": "34e5b6939e5b4dfc79be1774b74abce729dbf4eeb63040df74fd48b7b8a70f05"
+  },
+  "reports": [
+    {
+      "artifactID": 13669103994,
+      "name": "windows-component-source-amd64",
+      "providerZIPDigest": "sha256:bdcd1b1d408f96c15257e947cf4ad44a221af99a9b406d0cd15398cfe7470a5b",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "outcome": "passed",
+      "suitePassed": true,
+      "cases": [
+        {
+          "name": "zapret selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "zapret2 selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret2 refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-incomplete before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-missing before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-incomplete before installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-missing before installation",
+          "passed": true
+        },
+        {
+          "name": "Complete complete scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Complete complete-default scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Complete complete-multi scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Single-target scan does not require a common section",
+          "passed": true
+        },
+        {
+          "name": "Multi-target complete-default scan requires a common section",
+          "passed": true
+        },
+        {
+          "name": "Multi-target complete-multi scan requires a common section",
+          "passed": true
+        }
+      ],
+      "milestones": {
+        "service": true,
+        "archive": true,
+        "vendor": true,
+        "child": true,
+        "arguments": true,
+        "dns": true,
+        "staging": true,
+        "main": true
+      }
+    },
+    {
+      "artifactID": 13670385989,
+      "name": "windows-component-source-arm64",
+      "providerZIPDigest": "sha256:2f2ba3da7ea2f0995593789c2d08e90e83a1157793268582f4ceee3d530bcb4a",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "outcome": "passed",
+      "suitePassed": true,
+      "cases": [
+        {
+          "passed": true,
+          "name": "zapret selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret refuses a preferred folder containing only the other executable"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 refuses a preferred folder containing only the other executable"
+        },
+        {
+          "passed": true,
+          "name": "Scan rejects scan-incomplete before saving or installation"
+        },
+        {
+          "passed": true,
+          "name": "Scan rejects scan-missing before saving or installation"
+        },
+        {
+          "passed": true,
+          "name": "Scan rejects parser-incomplete before installation"
+        },
+        {
+          "passed": true,
+          "name": "Scan rejects parser-missing before installation"
+        },
+        {
+          "passed": true,
+          "name": "Complete complete scan reaches only the mocked installer"
+        },
+        {
+          "passed": true,
+          "name": "Complete complete-default scan reaches only the mocked installer"
+        },
+        {
+          "passed": true,
+          "name": "Complete complete-multi scan reaches only the mocked installer"
+        },
+        {
+          "passed": true,
+          "name": "Single-target scan does not require a common section"
+        },
+        {
+          "passed": true,
+          "name": "Multi-target complete-default scan requires a common section"
+        },
+        {
+          "passed": true,
+          "name": "Multi-target complete-multi scan requires a common section"
+        }
+      ],
+      "milestones": {
+        "service": true,
+        "main": true,
+        "archive": true,
+        "staging": true,
+        "vendor": true,
+        "arguments": true,
+        "dns": true,
+        "child": true
+      }
+    }
+  ],
+  "realVendorExecuted": false,
+  "productionQualificationComplete": false,
+  "wireCohort": {
+    "runID": 42610265715,
+    "sealedDoNotRepoll": true,
+    "sourceCommit": "27c033b89f528072e67bf815719ffe5e50137627",
+    "sourceSHA256": {
+      "scripts/native-doh-baseline-evidence.ps1": "22f08623ceabb81dc860d00fe79262d74b1d05687d8873cb7ccc088ff36a7e79",
+      "scripts/dns-wire-ip-policy.cjs": "4ef726c45d7085c70300e632341bf0e454c847fee648cd43fce499938bf9b5c5",
+      "scripts/dns-wire-ip-stdin.cjs": "dd00f588ebc9d91bdca5aca5f675dea5a19b25d71d99406263c12b5d234c0331",
+      "scripts/native-doh-ip-binding.ps1": "def932a4a9d615a440c2b6592967ddfbfaab77628905a488606921df96a2f323",
+      "docs/qualification/3e2314a8de82-ip-authority-http2.json": "f283959a6b8267a5a576e2d0b1725728d9647276db8421242c3f3b54716c703c",
+      "scripts/test-native-doh.ps1": "17a1b14431197021cd1b6588f68bbae0de3cbf7e8d6cf61849a3779ef8acb661",
+      "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
+      "scripts/dns-acceptance-state.ps1": "8bb62601742700d74f1fa455c3008c37fe5a95588c79d80a808e9efbd6e8db7e",
+      "scripts/test-dns-acceptance-state.ps1": "c558f19085c62d4c7afe65e7b5d96d49a2095daf33c9e494d517a37f07565b20",
+      "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+      ".github/workflows/native-doh.yml": "7a373b86da9de96909db6ff01dcf7f4aa0115c5efc719b5540f1f84a4643df40",
+      "internal/workflow/windows.ps1": "364de5790d1094c0285efa054d8ce1159166a3b699a964506fbe25eb5cfe534e",
+      "internal/workflow/manager.go": "e1eae98c45c8ccd7b77675d9a05be300c2d02cb85b8a372c1b3f8f74c04f8f1d",
+      "cmd/accessweaver/system.go": "902f4b94cfecdfa6baa62a2e563cb01a12bf551f1fd76fac87915224430cca44",
+      "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+      "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+      "scripts/native-dns-wire.ps1": "628ca31341babc247390d14dfcadea2d772d33a666570edbbd6c6b05ebee2850",
+      "scripts/test-dns-wire-native-contracts.ps1": "4af781a7e51c184efab8f826a6be41672df4135e9b452aafe836ae8e83095f6a",
+      "scripts/dns-wire-evidence.cjs": "a97a74930831fca28146b1b043f26b9b26cca6eb5d0e56587bc4cbb2fa9eaf81",
+      "scripts/dns-wire-stdin.cjs": "b05d259e94b3f89555c645cc9205b922ae6418bf99bfa56581abdb72fa205fa0",
+      ".github/workflows/native-doh-wire.yml": "7cfe8443d0fc85de8309f80de2240aff01c53412a3f23baaa648a7e1fbb1a4d2",
+      "scripts/read-native-ndis-phases.ps1": "f1af74724a00265a5b2a88868518e019e077ecc9ed71632380213751a0d7dc96",
+      "scripts/ndis-private-phases.cjs": "e4222a36a1396563d4d331a1315206040a5e025cd9d3bbefa0623f4fac6b5eea",
+      "scripts/native-doh-phase-evidence.ps1": "dc5e1e584287196ca1d1911ebbd68491494f555b7045b9b210883292f9a0b2f5",
+      "scripts/test-ndis-private-phases.cjs": "3be1bbef982fa426af29e73eb6e0007396d6d2695761d508117b179c69614323",
+      "scripts/native-doh-netevent-wire.ps1": "f352a82c3d4757aa8492a967564963bc7d601e1bbddcfbc562573d83c178d179",
+      "scripts/test-native-doh-netevent-contracts.ps1": "09f883de6bf7343dc6e098e9ec2a63b8aa251d04aa52f814840531752051ef37",
+      "scripts/native-netevent-control.ps1": "3d157d483aa010666d65249e898cb71c917d923e3ed0046b80e2972076d6e0b1",
+      "scripts/netevent-control-operation.ps1": "147b1d5772ab65da2d7eef0790f70dc5b779880e6d411acc13ee864a47c070aa",
+      "scripts/native-doh-offload-plan.ps1": "6fcd202c6df94339555fefb3cd791483744ea9813bff6371f3cdb92806a4c4c9",
+      "scripts/doh-offload-operation.ps1": "6548176b036308a80cf802940585f97de9102f753be5038bef43ad8813d88bb6",
+      "scripts/native-offload-state.ps1": "fb12b941676bc792cacfe17fdfa26b5a0bb03fa85ae1cf98da29ef88711f7290",
+      "scripts/native-doh-route-state.ps1": "0b7ace73631dcc2d9448c7986436c46d99bfde1809109f9974251ea09f89831a",
+      "scripts/native-ipv6-route-table.ps1": "d5679cff72d40bccd319f1b1de3dbac873d645503494d5da4eca8a9b1fba69ed",
+      "scripts/native-etl-header.cs": "2624836059feb17a5b284bc8c9abbdb46978231fe4b7e319b0354ca6dfdadb5a",
+      "scripts/read-native-etl-loss.ps1": "e54c62b9550bb10d288997e1a32a84c7b0a45883bdec2eb48e9a6b9db66535e7",
+      "scripts/extract-native-ndis.ps1": "cc0f5a88d4ef43e8b77f77e94112ddeca049eefc0e7772618af92391c52deaf9",
+      "scripts/ndis-frame-converter.cjs": "c4e7923eb9d904a4ad138b095033064ab62550e6c26a00551fd9c5068098f8f7",
+      "scripts/ndis-private-convert.cjs": "ff56ac3be7537508a6cd2de89602e0bd7b981062c7df485fd8f3e7e34d25a787",
+      "scripts/native-dns-query.ps1": "d7f162cc861d380c3e758efbd11600e14c32c9105765b89c67e1b10f1d2f703d",
+      "scripts/native-dns-query/main_windows.go": "e5563572affca0f86c66c953e7c100ec435b813d115c7ccf4adfe79f6a82548a",
+      "scripts/native-dns-query/main_windows_test.go": "eeda487cbf5f067e4ca5b34b2160bf531332da65a936cf0fffae13596d090caa",
+      "scripts/native-dns-direct/direct.go": "3a0e965a95113499da90d7209fc222b5fb1811e7c407ec68ad6a2b6488cea7bd",
+      "scripts/native-dns-direct/direct_test.go": "53866a55c14c7d46a7db12d3b97443e87b3af4a9c07c3dc71d85352916e22582",
+      "scripts/native-dns-recovery-observation.ps1": "0fe86eeba8fa32ed04135c32815eb1f0c07d85e2fa4badc11d7061b956e9944e",
+      "scripts/test-native-dns-query-contracts.ps1": "95eb860212993183eab5df71ec59e4c75f8298d1faeea79695bd13bfdc4885eb"
+    },
+    "sourceArtifactDigests": [
+      {
+        "artifactID": 13670570918,
+        "name": "native-doh-netevent-source-windows-arm64",
+        "providerZIPDigest": "sha256:def47123f399d30fcd2418800a5af430e05a2ec7994aaba2d7b336eb0ef7ca44"
+      },
+      {
+        "artifactID": 13668874375,
+        "name": "native-doh-netevent-source-windows-amd64",
+        "providerZIPDigest": "sha256:6e0b2f55dc17edb0305f08acfb7ed87a8ffdb18cbf5888d90ed8ab04aac7b65c"
+      }
+    ],
+    "reports": [
+      {
+        "architecture": "arm64",
+        "artifactID": 13670840316,
+        "providerZIPDigest": "sha256:42f2e835a780eed725f17baaceb969d60ea5accdd15a48aba262d82477f54913",
+        "outcome": "failed",
+        "failurePhase": "decode",
+        "decoderCode": "none",
+        "tlsObservation": "insufficient",
+        "plaintextPackets": 8,
+        "snapshotRemoved": true,
+        "restoredStateVerified": true,
+        "toolProcesses": 29,
+        "toolProcessesJoined": 29
+      },
+      {
+        "architecture": "amd64",
+        "artifactID": 13670026930,
+        "providerZIPDigest": "sha256:c7718687c66586002cdb63de835de829b3e75a8060ab5bfad17e68b83e7297eb",
+        "outcome": "passed",
+        "failurePhase": "none",
+        "decoderCode": "none",
+        "tlsObservation": "tls-observed",
+        "plaintextPackets": 0,
+        "snapshotRemoved": true,
+        "restoredStateVerified": true,
+        "toolProcesses": 29,
+        "toolProcessesJoined": 29
+      }
+    ],
+    "nativeDnsGateQualified": false,
+    "rawLogsRead": false
+  },
+  "goRegression": {
+    "runID": 42610265546,
+    "sealedDoNotRepoll": true,
+    "sourceTree": "09f8e53d9fa3781793a013b48ef370b7d2f00961",
+    "allScanTestsPassed": true,
+    "records": [
+      {
+        "artifact": "root-regression-windows-amd64",
+        "artifactID": 13670905140,
+        "digest": "sha256:7ce111f26240d3b9664b63c8e2541463f1b2da95de89c3b3b33732524818c4c6",
+        "digestVerified": true,
+        "mode": "unit",
+        "outcome": "passed",
+        "tests": [
+          {
+            "name": "TestScanNeverPromotesCoverageToCommon",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanSelectsOnlyActualCommonSection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanRejectsMalformedSectionOrderAndMarkers",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanDoesNotTreatCommonTextAsASection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestMultiTargetScanRequiresExplicitCommonSection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestParseScanCLIRequiresCommonWhenRequested",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          }
+        ]
+      },
+      {
+        "artifact": "root-regression-windows-arm64",
+        "artifactID": 13670500951,
+        "digest": "sha256:d86203c68775170a7cee88fbebc809aea266290a899441c7872ce5303070d39d",
+        "digestVerified": true,
+        "mode": "unit",
+        "outcome": "passed",
+        "tests": [
+          {
+            "name": "TestScanNeverPromotesCoverageToCommon",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanSelectsOnlyActualCommonSection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanRejectsMalformedSectionOrderAndMarkers",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanDoesNotTreatCommonTextAsASection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestMultiTargetScanRequiresExplicitCommonSection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestParseScanCLIRequiresCommonWhenRequested",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          }
+        ]
+      },
+      {
+        "artifact": "root-regression-linux-amd64",
+        "artifactID": 13669509377,
+        "digest": "sha256:0d976210c30738a8d905f2a4c7a21eb37c26b36e094ec6ace1ac17d1bc63eba5",
+        "digestVerified": true,
+        "mode": "unit",
+        "outcome": "passed",
+        "tests": [
+          {
+            "name": "TestScanNeverPromotesCoverageToCommon",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanSelectsOnlyActualCommonSection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanRejectsMalformedSectionOrderAndMarkers",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanDoesNotTreatCommonTextAsASection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestMultiTargetScanRequiresExplicitCommonSection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestParseScanCLIRequiresCommonWhenRequested",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          }
+        ]
+      },
+      {
+        "artifact": "root-regression-linux-amd64",
+        "artifactID": 13669509377,
+        "digest": "sha256:0d976210c30738a8d905f2a4c7a21eb37c26b36e094ec6ace1ac17d1bc63eba5",
+        "digestVerified": true,
+        "mode": "race",
+        "outcome": "passed",
+        "tests": [
+          {
+            "name": "TestScanNeverPromotesCoverageToCommon",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanSelectsOnlyActualCommonSection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanRejectsMalformedSectionOrderAndMarkers",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanDoesNotTreatCommonTextAsASection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestMultiTargetScanRequiresExplicitCommonSection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestParseScanCLIRequiresCommonWhenRequested",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          }
+        ]
+      },
+      {
+        "artifact": "root-regression-linux-arm64",
+        "artifactID": 13669578262,
+        "digest": "sha256:47fcf5d0d92332fa0e6d3f4c41044aaa190fe77a38ba35c74938f2f220217eeb",
+        "digestVerified": true,
+        "mode": "unit",
+        "outcome": "passed",
+        "tests": [
+          {
+            "name": "TestScanNeverPromotesCoverageToCommon",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanSelectsOnlyActualCommonSection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanRejectsMalformedSectionOrderAndMarkers",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanDoesNotTreatCommonTextAsASection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestMultiTargetScanRequiresExplicitCommonSection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestParseScanCLIRequiresCommonWhenRequested",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          }
+        ]
+      },
+      {
+        "artifact": "root-regression-linux-arm64",
+        "artifactID": 13669578262,
+        "digest": "sha256:47fcf5d0d92332fa0e6d3f4c41044aaa190fe77a38ba35c74938f2f220217eeb",
+        "digestVerified": true,
+        "mode": "race",
+        "outcome": "passed",
+        "tests": [
+          {
+            "name": "TestScanNeverPromotesCoverageToCommon",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanSelectsOnlyActualCommonSection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanRejectsMalformedSectionOrderAndMarkers",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestScanDoesNotTreatCommonTextAsASection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestMultiTargetScanRequiresExplicitCommonSection",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          },
+          {
+            "name": "TestParseScanCLIRequiresCommonWhenRequested",
+            "status": "passed",
+            "attempts": 1,
+            "childFailed": 0
+          }
+        ]
+      }
+    ]
+  }
+}
