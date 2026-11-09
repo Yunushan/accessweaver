@@ -46,6 +46,43 @@ foreach($engine in @('proxifyre','dnscrypt','wiresock')){
         $cases+=@{engine=$engine;transport=$transport;passed=$passed}
     }
 }
+# Dynamic signed-installer routes have no source pin. Compare independent
+# product transport downloads in memory only by digest; never execute them or
+# export installer bytes, URLs, certificate contents or computed digests.
+$discordPrefix='https://discord.com/api/downloads/distributions/app/installers/latest?channel='
+$microsoftUrl='https://aka.ms/vs/17/release/vc_redist.x64.exe'
+if(-not $sourceText.Contains($discordPrefix) -or -not $sourceText.Contains($microsoftUrl)){throw 'Product installer routes changed'}
+foreach($route in @(
+    @{engine='discord-stable';url=($discordPrefix+'stable&platform=win&arch=x64')},
+    @{engine='discord-ptb';url=($discordPrefix+'ptb&platform=win&arch=x64')},
+    @{engine='microsoft-vc';url=$microsoftUrl}
+)){
+    $routeCases=@();$routeDigests=@()
+    foreach($transport in @('dotnet','curl')){
+        $passed=$false;$cleaned=$false;$output=$null;$owned=$false
+        $path=Join-Path $env:RUNNER_TEMP ('accessweaver-native-download-'+[guid]::NewGuid().ToString('N')+'.tmp')
+        try {
+            Allowed-Download $route.url
+            $output=[IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None);$owned=$true
+            $budget=New-ComponentDownloadBudget -MaximumBytes 256MB -TimeoutMilliseconds 120000
+            if($transport -ceq 'dotnet'){Invoke-ComponentDownloadDotNet $route.url $output $budget}
+            else {Invoke-ComponentDownloadCurl $route.url $output $budget}
+            if($output.Length -le 0){throw 'Empty installer'}
+            $output.Position=0;$sha256=[Security.Cryptography.SHA256]::Create()
+            try {$digest=([BitConverter]::ToString($sha256.ComputeHash($output))).Replace('-','').ToLowerInvariant()}finally{$sha256.Dispose()}
+            $routeDigests+=@($digest);$passed=$true
+        } catch {$failed=$true} finally {
+            if($output){try {$output.Dispose()}catch {$passed=$false;$failed=$true}}
+            if($owned){try {[IO.File]::Delete($path);$cleaned=-not [IO.File]::Exists($path)}catch {$cleaned=$false}}
+            else {$cleaned=$true}
+            if(-not $cleaned){$passed=$false;$failed=$true}
+        }
+        $routeCases+=@{engine=$route.engine;transport=$transport;passed=$passed;temporaryFileRemoved=$cleaned}
+    }
+    $same=($routeDigests.Count -eq 2 -and $routeDigests[0] -ceq $routeDigests[1])
+    if(-not $same){$failed=$true}
+    foreach($case in $routeCases){$case['independentDownloadsMatch']=$same;$cases+=@($case)}
+}
 $report=@{schemaVersion=1;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;cases=$cases;vendorDownloadsAttempted=$true;vendorCodeExecuted=$false;proxyPathQualified=$false;allVendorRoutesQualified=$false;productionQualificationComplete=$false}
 $directory=Join-Path $project 'build/native-download-checks';[void][IO.Directory]::CreateDirectory($directory)
 [IO.File]::WriteAllText((Join-Path $directory ('native-download-'+$Architecture+'.json')),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
