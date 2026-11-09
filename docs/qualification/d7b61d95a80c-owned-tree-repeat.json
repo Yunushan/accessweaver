@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "scope": "owned-windows-process-tree-repeated-test",
+  "sourceCommit": "d7b61d95a80c08d79c734130ed864777c445d35d",
+  "runID": 42605033768,
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/nativeprocess/terminate_windows_test.go": "79174fb55f74d1352c762ea26782850b769c7d7fa7972deee5499e4e02244be6",
+    "internal/nativeprocess/terminate_windows.go": "7228fece90fe3f1a3a4e37f41279eaacacc07485d10e24b8bab504b71e32ce73",
+    "scripts/windows-tree-fixed-report.cjs": "ada32b84b3a37465d0769d283abe572dc596e4415979b22246ff4cd85fcc5557",
+    "scripts/test-windows-tree-fixed-report.cjs": "80d93d3af0aded9c15cfeefb4dfb91db14161783346fa1d8e68fbd2518e7b075",
+    ".github/workflows/windows-tree-regression.yml": "aa5c3f98cf53229648006048324fa32fe18ba65673ee5c2e12ab44bb1111ab6b",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00"
+  },
+  "reports": [
+    {
+      "artifactID": 13668240591,
+      "name": "windows-tree-regression-arm64",
+      "providerZIPDigest": "sha256:83886958309efce03c431c3cc74a189829a6f88bcb663c757cf5ef69ab03e53a",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "outcome": "passed",
+      "attempts": 10,
+      "passed": 10,
+      "failed": 0,
+      "stages": {
+        "parent-create": 0,
+        "parent-bind": 0,
+        "parent-start-tree": 0,
+        "tree-inventory": 0,
+        "unrelated-create": 0,
+        "unrelated-bind": 0,
+        "tree-cancel": 0,
+        "parent-wait": 0,
+        "owner-close": 0,
+        "tree-empty": 0,
+        "unrelated-alive": 0,
+        "closed-protocol": 0,
+        "fixture-cleanup": 0
+      }
+    },
+    {
+      "artifactID": 13668066853,
+      "name": "windows-tree-regression-amd64",
+      "providerZIPDigest": "sha256:090f41a5e2ede165ec6a361882af54c6f389ceed2aa5ea9b013d22c01b2d7c56",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "outcome": "passed",
+      "attempts": 10,
+      "passed": 10,
+      "failed": 0,
+      "stages": {
+        "parent-create": 0,
+        "parent-bind": 0,
+        "parent-start-tree": 0,
+        "tree-inventory": 0,
+        "unrelated-create": 0,
+        "unrelated-bind": 0,
+        "tree-cancel": 0,
+        "parent-wait": 0,
+        "owner-close": 0,
+        "tree-empty": 0,
+        "unrelated-alive": 0,
+        "closed-protocol": 0,
+        "fixture-cleanup": 0
+      }
+    }
+  ],
+  "earlierFailureExplained": false,
+  "generalContainmentQualified": false,
+  "rawLogsRead": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0
+}
