@@ -400,39 +400,59 @@ func (f *treeWindowsFixture) close() {
 }
 
 func TestNativeWindowsTerminationKillsOwnedTree(t *testing.T) {
+	// Only fixed source-known stages are emitted, and only on failure. Register
+	// first so this observes fixture cleanup failures as well as test failures.
+	stage := "parent-create"
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("ACCESSWEAVER_TREE_STAGE=%s", stage)
+		}
+	})
 	parent := newTreeWindowsFixture(t, "tree", nil, nil)
+	stage = "parent-bind"
 	if parent.bind() != nil {
 		t.Fatal("source tree binding failed")
 	}
+	stage = "parent-start-tree"
 	parent.beginWait() // Every duplicate and job binding is established first.
 	parent.write('g')
 	parent.read('t')
+	stage = "tree-inventory"
 	if active, err := treeWindowsActive(parent.job); err != nil || active != 2 {
 		t.Fatal("private source job did not contain the exact inert tree")
 	}
+	stage = "unrelated-create"
 	unrelated := newTreeWindowsFixture(t, "controlled", nil, nil)
+	stage = "unrelated-bind"
 	if unrelated.bind() != nil {
 		t.Fatal("unrelated source binding failed")
 	}
 	unrelatedHandle, _, _, _ := unrelated.backend.snapshot()
+	stage = "tree-cancel"
 	if parent.owner.Cancel() != nil {
 		t.Fatal("native tree helper did not terminate the owned source tree")
 	}
+	stage = "parent-wait"
 	parent.wait()
 	if parent.waitErr == nil {
 		t.Fatal("native owned tree termination lost its real Wait error")
 	}
+	stage = "owner-close"
 	if parent.owner.Close() != nil {
 		t.Fatal("native tree owner did not close after actual Wait")
 	}
+	stage = "tree-empty"
 	treeWindowsAwaitEmpty(t, parent.job)
+	stage = "unrelated-alive"
 	state, err := windows.WaitForSingleObject(windows.Handle(unrelatedHandle), 0)
 	if err != nil || state != uint32(windows.WAIT_TIMEOUT) {
 		t.Fatal("distinct source process was terminated by tree cleanup")
 	}
+	stage = "closed-protocol"
 	if !parent.output.valid() || !unrelated.output.valid() {
 		t.Fatal("native source output exceeded closed protocol")
 	}
+	stage = "fixture-cleanup"
 }
 
 func TestNativeWindowsDuplicatePinsIdentityAfterGoWaitAndIsNoninheritable(t *testing.T) {
