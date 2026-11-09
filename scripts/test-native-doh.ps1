@@ -158,8 +158,8 @@ public static class AccessWeaverNativeDoHIdentity {
     $controllerHome=Join-Path $privateRoot 'controller';[void][IO.Directory]::CreateDirectory($controllerHome);Assert-NativeOrdinaryPath $privateRoot
     if($WireTransport){
         . (Join-Path $PSScriptRoot 'native-dns-wire.ps1')
-        foreach($file in @('scripts/native-doh-netevent-wire.ps1','scripts/test-native-doh-netevent-contracts.ps1','scripts/native-netevent-control.ps1','scripts/netevent-control-operation.ps1','scripts/native-doh-offload-plan.ps1','scripts/doh-offload-operation.ps1','scripts/native-offload-state.ps1','scripts/native-doh-route-state.ps1','scripts/native-ipv6-route-table.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/extract-native-ndis.ps1','scripts/ndis-frame-converter.cjs','scripts/ndis-private-convert.cjs','scripts/native-dns-wire.ps1','scripts/test-dns-wire-native-contracts.ps1','scripts/dns-wire-evidence.cjs','scripts/dns-wire-stdin.cjs','.github/workflows/native-doh-wire.yml')){$sources+=@($file);$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
-        foreach($helper in @('native-netevent-control.ps1','native-offload-state.ps1','native-doh-route-state.ps1','native-ipv6-route-table.ps1','native-doh-offload-plan.ps1','native-doh-netevent-wire.ps1')){. (Join-Path $PSScriptRoot $helper)}
+        foreach($file in @('scripts/read-native-ndis-phases.ps1','scripts/ndis-private-phases.cjs','scripts/native-doh-phase-evidence.ps1','scripts/test-ndis-private-phases.cjs','scripts/native-doh-netevent-wire.ps1','scripts/test-native-doh-netevent-contracts.ps1','scripts/native-netevent-control.ps1','scripts/netevent-control-operation.ps1','scripts/native-doh-offload-plan.ps1','scripts/doh-offload-operation.ps1','scripts/native-offload-state.ps1','scripts/native-doh-route-state.ps1','scripts/native-ipv6-route-table.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/extract-native-ndis.ps1','scripts/ndis-frame-converter.cjs','scripts/ndis-private-convert.cjs','scripts/native-dns-wire.ps1','scripts/test-dns-wire-native-contracts.ps1','scripts/dns-wire-evidence.cjs','scripts/dns-wire-stdin.cjs','.github/workflows/native-doh-wire.yml')){$sources+=@($file);$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
+        foreach($helper in @('native-netevent-control.ps1','native-offload-state.ps1','native-doh-route-state.ps1','native-ipv6-route-table.ps1','native-doh-offload-plan.ps1','native-doh-phase-evidence.ps1','native-doh-netevent-wire.ps1')){. (Join-Path $PSScriptRoot $helper)}
         $capture=New-NativeDNSWireState $privateRoot (Join-Path $PSScriptRoot 'dns-wire-stdin.cjs')
         Initialize-DoHNetEventState $capture $project $hashes
         $script:wire=$capture
@@ -434,6 +434,7 @@ public static class AccessWeaverNativeDoHIdentity {
         try{
             if($null -ne $script:wire -and $request.action -ceq 'dns'){Start-DoHNetEventCapture $script:wire;$script:wire.phase='product-configuration'}
             Invoke-NativeDoHCLI $request
+            if($null -ne $script:wire -and $request.action -ceq 'dns'){$script:wire.ndis.configuredUtcTicks=[DateTime]::UtcNow.Ticks}
         }catch{if($null -ne $script:wire -and $script:wire.failurePhase -ceq 'none'){$script:wire.failurePhase=$script:wire.phase};throw}
     } -Capture {
         $current=Read-DNSAcceptanceState ([ref]$script:captureStage) ([ref]$script:captureProgress)

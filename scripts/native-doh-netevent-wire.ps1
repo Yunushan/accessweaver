@@ -19,8 +19,8 @@ function Initialize-DoHNetEventState([object]$State,[string]$Project,[hashtable]
     foreach($sid in @($identity.User.Value,'S-1-5-18','S-1-5-32-544') | Select-Object -Unique){$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),'FullControl','ContainerInherit,ObjectInherit','None','Allow'))}
     Set-Acl -LiteralPath $root -AclObject $acl -ErrorAction Stop
     $State.etl=Join-Path $root 'capture.etl';$State.pcap=Join-Path $root 'capture.pcapng'
-    $State.ndis=@{root=$root;project=$Project;hashes=$Hashes.Clone();plan=$null;digest='';prepared=$false;count=0;created=$false;public=@{
-        operationEvidence=(New-DoHNetEventOperationEvidence);cleanupCode='none';sessionVerified=$false;sessionRemoved=$false;preflightEmpty=$false;
+    $State.ndis=@{root=$root;project=$Project;hashes=$Hashes.Clone();plan=$null;digest='';prepared=$false;count=0;created=$false;configuredUtcTicks=0L;phaseVerified=$false;public=@{
+        phaseReadEvidence=(New-DoHPhaseReadEvidence);phaseEvidence=(New-DoHPhaseEvidence);operationEvidence=(New-DoHNetEventOperationEvidence);cleanupCode='none';sessionVerified=$false;sessionRemoved=$false;preflightEmpty=$false;
         filterEvidence=@{policy='product-doh-all';endpointMask=15;etherTypeMask=3;protocolMask=3;portsFiltered=$false;verified=$false};
         offloadPrepareEvidence=(New-NativeDoHOffloadEvidence 'prepare');offloadStageEvidence=@();offloadVerifyEvidence=(New-NativeDoHOffloadEvidence 'verify');offloadMeasureEvidence=(New-NativeDoHOffloadEvidence 'verify');offloadRestoreEvidence=@();
         lossEvidence=(New-NativeNDISLossEvidence);eventEvidence=(New-NativeNDISHeaderEvidence);fragmentEvidence=(New-NativeNDISFragmentEvidence);catalogEvidence=(New-NativeNDISCatalogEvidence);extractionEvidence=(New-NativeNDISExtractionEvidence);conversionEvidence=(New-NativeNDISConversionEvidence);tlsWireEvidence=(New-DoHNetEventTlsEvidence);etlBytes=0;pcapBytes=0;captureBounded=$false
@@ -124,6 +124,13 @@ function Read-DoHNetEventCapture([object]$State) {
     $State.phase='pcap-file';$State.pcap=Join-Path $State.ndis.root 'capture.pcapng';Measure-NativeDNSWireFile $State 'pcap';$State.ndis.public.pcapBytes=$State.pcapBytes
     if($State.ndis.public.pcapBytes -ne $q.captureBytes){throw 'Private conversion file size disagrees'}
 
+    $State.phase='phase-headers';$text=Invoke-DoHNetEventProcess $State $State.eventTool @('-NoProfile','-NonInteractive','-File',(Join-Path $PSScriptRoot 'read-native-ndis-phases.ps1'),'-CapturePath',$State.etl,'-ExpectedFragments',([string]$f.fragmentIDs),'-ExpectedCaptureBytes',([string]$State.etlBytes),'-BoundaryUtcTicks',([string]$State.ndis.configuredUtcTicks))
+    $State.ndis.public.phaseReadEvidence=Get-DoHPhaseReadEvidence $text;$pr=$State.ndis.public.phaseReadEvidence
+    if($pr.code -ceq 'none' -and $pr.privateMapWritten -and $pr.records -eq $catalog.records -and $pr.frames -eq $f.fragmentIDs){
+        $State.phase='phase-counts';$text=Invoke-DoHNetEventProcess $State $State.node @((Join-Path $PSScriptRoot 'ndis-private-phases.cjs'),$State.ndis.root)
+        $State.ndis.public.phaseEvidence=Get-DoHPhaseEvidence $text;$pe=$State.ndis.public.phaseEvidence
+        $State.ndis.phaseVerified=($pe.outcome -ceq 'complete' -and $pe.code -ceq 'none' -and $pe.records -eq $catalog.records -and $pe.frames -eq $q.frames -and $pe.tcpBefore+$pe.tcpAt+$pe.tcpAfter -eq $q.tcp -and $pe.udpBefore+$pe.udpAt+$pe.udpAfter -eq $q.udp -and $pe.sentBefore+$pe.sentAt+$pe.sentAfter -eq $q.sent -and $pe.receivedBefore+$pe.receivedAt+$pe.receivedAfter -eq $q.received)
+    }
     $State.phase='tls-decode';$bytes=Read-NativeDNSWireCapture $State
     $text=Invoke-DoHNetEventProcess $State $State.node @($State.decoder) $bytes
     $State.ndis.public.tlsWireEvidence=Get-DoHNetEventTlsEvidence $text
@@ -148,6 +155,7 @@ function Measure-DoHNetEventWire([object]$State) {
     }
     $State.phase='resumed-query';[void](Invoke-NativeDNSWireQuery 'example.org');$State.flags.resumedQueryPassed=$true
     if($refused){$State.phase='decode';throw 'Product wire decoder refused'}
+    if(-not $State.ndis.phaseVerified){$State.phase='phase-evidence';throw 'Product phase evidence unresolved'}
 }
 function Complete-DoHNetEventCleanup([object]$State) {
     $State.cleanupAttempted=$true;$good=$true
@@ -169,6 +177,6 @@ function Complete-DoHNetEventCleanup([object]$State) {
 }
 function Get-DoHNetEventSummary([object]$State) {
     $p=$State.ndis.public
-    $passed=($State.flags.Count -eq 16 -and @($State.flags.Values | Where-Object {$_ -isnot [bool] -or -not $_}).Count -eq 0 -and $State.processes -eq $State.joined -and -not $State.processFailed -and $State.decoderCode -ceq 'none' -and $State.outRecords -gt 0 -and $State.inRecords -gt 0 -and $State.cleanupCompleted -and $p.cleanupCode -ceq 'none' -and $p.preflightEmpty -and $p.sessionVerified -and $p.sessionRemoved -and $p.conversionEvidence.summary.tcpClosure.resetFlows -eq 0)
+    $passed=($State.flags.Count -eq 16 -and @($State.flags.Values | Where-Object {$_ -isnot [bool] -or -not $_}).Count -eq 0 -and $State.processes -eq $State.joined -and -not $State.processFailed -and $State.decoderCode -ceq 'none' -and $State.outRecords -gt 0 -and $State.inRecords -gt 0 -and $State.cleanupCompleted -and $State.ndis.phaseVerified -and $p.cleanupCode -ceq 'none' -and $p.preflightEmpty -and $p.sessionVerified -and $p.sessionRemoved -and $p.conversionEvidence.summary.tcpClosure.resetFlows -eq 0)
     return @{schemaVersion=1;backend='netevent-ndis';outcome=$(if($passed){'passed'}else{'failed'});phase=$State.phase;failurePhase=$State.failurePhase;decoderCode=$State.decoderCode;controls=$State.flags;capture=$p;toolProcesses=$State.processes;toolProcessesJoined=$State.joined;toolFailure=$State.processFailed;processFailureCode=$State.processFailureCode;etlBytes=$State.etlBytes;pcapBytes=$State.pcapBytes;tlsFlows=$State.tlsFlows;outboundEncryptedRecords=$State.outRecords;inboundEncryptedRecords=$State.inRecords;providerMask=$State.providers;rawCapturePublished=$false;productionQualificationComplete=$false}
 }

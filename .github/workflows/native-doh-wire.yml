@@ -16,6 +16,10 @@ on:
       - 'scripts/check-native-environment.cjs'
       - '.github/workflows/native-doh.yml'
       - '.github/workflows/native-doh-wire.yml'
+      - 'scripts/read-native-ndis-phases.ps1'
+      - 'scripts/ndis-private-phases.cjs'
+      - 'scripts/native-doh-phase-evidence.ps1'
+      - 'scripts/test-ndis-private-phases.cjs'
       - 'scripts/native-doh-netevent-wire.ps1'
       - 'scripts/test-native-doh-netevent-contracts.ps1'
       - 'scripts/native-netevent-control.ps1'
@@ -93,6 +97,10 @@ jobs:
         run: |
           node scripts/test-ndis-frame-converter.cjs
           if($LASTEXITCODE -ne 0){throw 'Pure complete-frame contracts failed'}
+      - name: Verify pure phase attribution contracts
+        run: |
+          node scripts/test-ndis-private-phases.cjs
+          if($LASTEXITCODE -ne 0){throw 'Pure phase attribution contracts failed'}
       - name: Verify product NetEvent lifecycle source contracts
         run: |
           $fixed=Join-Path $env:RUNNER_TEMP ('accessweaver-netevent-source-'+[Guid]::NewGuid().ToString('N'))
