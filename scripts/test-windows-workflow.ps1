@@ -388,6 +388,31 @@ try {
     Set-Item Function:Find-App $previousFindApp;Set-Item Function:Require-DesktopUser $previousDesktopGuard
     $script:externalEffectsPending=$false
 }
+# Mock installer acquisition and user operations; never execute a vendor process.
+$appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Remove-App','Download','Native','Wait-App','Event')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
+$previousAppRequest=$r
+try {
+    function Require-DesktopUser {}
+    function Find-App {param($variant);$script:appInstallTrace.Add('find-stable');return 'C:\fixture\Discord.exe'}
+    function Remove-App {param($variant);$script:appInstallTrace.Add('remove-stable');if($script:appRemoveFailure){throw 'fixture remove failure'}}
+    function Download {param($Url,$Hash,$Destination,[switch]$Signed);$script:appInstallTrace.Add('download');if($script:appDownloadFailure){throw 'fixture download failure'}}
+    function Native {param($Program,$Arguments,$Timeout);$script:appInstallTrace.Add('installer');return @{exitCode=0;outputComplete=$true}}
+    function Wait-App {param($variant,$installed,$seconds);$script:appInstallTrace.Add('verify-ptb')}
+    function Event {param($text);$script:appInstallTrace.Add('event')}
+    $r=[pscustomobject]@{clean=$true;sha256=''}
+    $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$true;$script:appRemoveFailure=$false
+    $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$true}
+    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download')) 'PTB clean download failure preserves the existing client'
+    $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$false;$script:appRemoveFailure=$false
+    Install-App 'discord-ptb'
+    Assert (($script:appInstallTrace -join ',') -ceq 'download,find-stable,remove-stable,installer,verify-ptb,event') 'PTB clean stages the replacement before removing the existing client'
+    $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$false;$script:appRemoveFailure=$true
+    $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$true}
+    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download,find-stable,remove-stable')) 'PTB clean removal failure prevents installer execution'
+} finally {
+    foreach($name in $appInstallSaved.Keys){Set-Item ('Function:'+ $name) $appInstallSaved[$name]}
+    $r=$previousAppRequest
+}
 # Exercise both direct helper calls and the dispatcher before any real OS work.
 $desktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
 $machineInitializer=(Get-Command Initialize-Changes).ScriptBlock
