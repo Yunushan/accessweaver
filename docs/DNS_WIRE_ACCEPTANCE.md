@@ -550,3 +550,8 @@ An independent success overlapping an ordinary-client timeout would support a re
 
 
 A separate independent DNS-query component is prepared for the comparison. It uses Go’s DNS client with an explicitly supplied server, fixed allowlisted names, IPv4 lookups, a three-second deadline and fixed outcome categories; it does not publish server addresses, records or error text. Invalid, loopback, multicast and link-local servers are refused. Synthetic contract tests are wired to the existing two-architecture hosted workflow, and their test binaries compile for both Windows architectures. The component is not yet connected to the trial: same-server selection, baseline/block controls, concurrent child ownership and a fresh hosted comparison remain required. No native recovery or production gate is qualified by this preparation.
+
+
+The hosted cohort at `e2e92a34b3d9`, run `42572635678`, passed the independent component’s synthetic tests and static analysis on AMD64 and ARM64. The existing native prerequisite passed on AMD64. ARM64 retained its immediate resumed-query timeout and then answered all five later diagnostic samples; all nine helper children joined, the rules were removed, the original DNS state was verified and the private root was retired. The independent client was not invoked by the native trial, so this does not explain the timeout.
+
+The sealed receipt is `docs/qualification/e2e92a34b3d9-independent-dns-component.json`. Cumulative evidence now contains 596 verified ZIP digests and 456 terminal jobs; historical entries remain unchanged. Same-server selection, baseline and block controls, overlapping independent and ordinary queries, and the full actual-product comparison remain pending. No readiness gate is promoted.
