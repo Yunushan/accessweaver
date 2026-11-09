@@ -5,6 +5,7 @@ on:
     branches: ['main', 'codex/dns-adapter-coverage']
     paths:
       - 'scripts/native-dns-query/**'
+      - 'scripts/native-dns-direct/**'
       - 'scripts/native-dns-query.ps1'
       - 'scripts/native-dns-recovery-observation.ps1'
       - 'scripts/test-native-dns-query*.ps1'
@@ -12,6 +13,7 @@ on:
   pull_request:
     paths:
       - 'scripts/native-dns-query/**'
+      - 'scripts/native-dns-direct/**'
       - 'scripts/native-dns-query.ps1'
       - 'scripts/native-dns-recovery-observation.ps1'
       - 'scripts/test-native-dns-query*.ps1'
@@ -88,6 +90,12 @@ jobs:
           $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
           & $stock -NoProfile -NonInteractive -File ./scripts/test-native-dns-query-contracts.ps1 -RequireWindowsPowerShell > (Join-Path $fixed 'projection.json')
           if($LASTEXITCODE -ne 0){throw 'Native query closed projection contracts failed'}
+      - name: Verify independent DNS query contracts
+        run: |
+          go test -mod=readonly ./scripts/native-dns-direct
+          if($LASTEXITCODE -ne 0){throw 'Independent DNS query contracts failed'}
+          go vet -mod=readonly ./scripts/native-dns-direct
+          if($LASTEXITCODE -ne 0){throw 'Independent DNS query static analysis failed'}
       - name: Build source-bound native resolver helper
         run: |
           go build -mod=readonly -trimpath -ldflags "-X main.sourceCommit=$env:GITHUB_SHA" -o build/native-dns-query/query.exe ./scripts/native-dns-query
