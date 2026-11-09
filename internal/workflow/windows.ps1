@@ -305,11 +305,32 @@ function Read-RemoteJSON([string]$Uri,[hashtable]$Headers) {
 }
 function Allowed-Download([string]$url) {
     $uri=[uri]$url
-    if ($uri.Scheme -ne 'https' -or $uri.UserInfo -or $uri.Fragment) {throw 'Downloads must use an official HTTPS URL'}
+    if ($uri.Scheme -ne 'https' -or -not $uri.IsDefaultPort -or $uri.UserInfo -or $uri.Fragment) {throw 'Downloads must use an official HTTPS URL'}
     $repos=@('hufrea/byedpi','wiresock/proxifyre','wiresock/ndisapi','ViRb3/wgcf','bol-van/zapret-win-bundle','bol-van/zapret2','ValdikSS/GoodbyeDPI','DNSCrypt/dnscrypt-proxy','cagritaskn/SplitCord-Turkey','cagritaskn/SplitWire-Turkey','hdrover/discord-drover')
     if ($uri.Host -eq 'github.com') {foreach ($repo in $repos) {if ($uri.AbsolutePath.StartsWith('/'+$repo+'/releases/download/',[StringComparison]::OrdinalIgnoreCase)){return}}}
     if ($uri.Host -in @('www.wiresock.net','wiresock.net','discord.com','dl.discordapp.net','download.discordapp.net','aka.ms','download.visualstudio.microsoft.com')) {return}
     throw 'URL is not an allowlisted component download source'
+}
+# Check each redirect before opening it. This is an origin-specific host policy,
+# not an IP-address, DNS-rebinding, certificate-pinning or proxy guarantee.
+function Resolve-ComponentDownloadRedirect([string]$origin,[string]$current,[string]$location) {
+    if([string]::IsNullOrWhiteSpace($location) -or $location.Length -gt 8192){Throw-ComponentDownloadFailure 'protocol'}
+    try {$first=[uri]$origin;$base=[uri]$current;$next=[uri]::new($base,$location)}catch{Throw-ComponentDownloadFailure 'protocol'}
+    foreach($item in @($first,$base,$next)){
+        if(-not $item.IsAbsoluteUri -or $item.Scheme -cne 'https' -or -not $item.IsDefaultPort -or $item.UserInfo -or $item.Fragment){Throw-ComponentDownloadFailure 'protocol'}
+    }
+    $hostName=$first.DnsSafeHost.ToLowerInvariant();$target=$next.DnsSafeHost.ToLowerInvariant()
+    $allowed=switch($hostName){
+        'api.github.com' {@('api.github.com')}
+        'github.com' {@('github.com','release-assets.githubusercontent.com','objects.githubusercontent.com','objects-origin.githubusercontent.com','github-releases.githubusercontent.com')}
+        {$_ -in @('discord.com','dl.discordapp.net','download.discordapp.net')} {@('discord.com','dl.discordapp.net','download.discordapp.net','stable.dl2.discordapp.net','ptb.dl2.discordapp.net')}
+        {$_ -in @('wiresock.net','www.wiresock.net')} {@('wiresock.net','www.wiresock.net')}
+        {$_ -in @('aka.ms','download.visualstudio.microsoft.com')} {@('aka.ms','go.microsoft.com','download.visualstudio.microsoft.com','download.microsoft.com','download.visualstudio.com')}
+        default {@()}
+    }
+    if($target -notin @($allowed)){Throw-ComponentDownloadFailure 'protocol'}
+    if($target -ceq 'github.com'){try{Allowed-Download $next.AbsoluteUri}catch{Throw-ComponentDownloadFailure 'protocol'}}
+    return $next.AbsoluteUri
 }
 function Throw-ComponentDownloadFailure([string]$Code) {
     $messages=@{
@@ -411,6 +432,9 @@ function Set-ComponentDownloadHeaders($Request,[hashtable]$Headers) {
         }
     }
 }
+function New-ComponentDownloadRequest([uri]$Uri) {
+    return [Net.HttpWebRequest]::CreateHttp($Uri)
+}
 function Invoke-ComponentDownloadDotNet([string]$Url,[IO.Stream]$Output,$Budget,[hashtable]$Headers=@{}) {
     $current=[uri]$Url
     for($redirects=0;$redirects -le 5;$redirects++){
@@ -418,7 +442,7 @@ function Invoke-ComponentDownloadDotNet([string]$Url,[IO.Stream]$Output,$Budget,
         $request=$null;$response=$null;$stream=$null;$pending=$null;$cleanupFailed=$false
         try {
             $remaining=Get-ComponentDownloadRemaining $Budget
-            $request=[Net.HttpWebRequest]::CreateHttp($current)
+            $request=New-ComponentDownloadRequest $current
             $request.Method='GET';$request.AllowAutoRedirect=$false
             Set-ComponentDownloadHeaders $request $Headers
             $request.Timeout=$remaining;$request.ReadWriteTimeout=$remaining
@@ -429,7 +453,7 @@ function Invoke-ComponentDownloadDotNet([string]$Url,[IO.Stream]$Output,$Budget,
             $status=[int]$response.StatusCode
             if($status -in @(301,302,303,307,308)){
                 if($redirects -eq 5 -or -not $response.Headers['Location']){Throw-ComponentDownloadFailure 'protocol'}
-                $current=[uri]::new($current,[string]$response.Headers['Location'])
+                $current=[uri](Resolve-ComponentDownloadRedirect $Url $current.AbsoluteUri ([string]$response.Headers['Location']))
                 continue
             }
             if($status -ne 200){Throw-ComponentDownloadFailure 'protocol'}
@@ -462,7 +486,7 @@ function New-ComponentDownloadCurlStart([string]$Url,$Budget,[switch]$Proxy) {
     $curl=Join-Path $env:SystemRoot 'System32\curl.exe'
     if(-not (Test-Path -LiteralPath $curl)){Throw-ComponentDownloadFailure 'transport'}
     $seconds=([double](Get-ComponentDownloadRemaining $Budget)/1000).ToString('0.000',[Globalization.CultureInfo]::InvariantCulture)
-    $arguments=@('--disable','--globoff','--fail','--location','--max-redirs','5','--proto','=https','--proto-redir','=https','--connect-timeout','30','--max-time',$seconds,'--silent','--show-error','--output','-')
+    $arguments=@('--disable','--globoff','--fail','--proto','=https','--connect-timeout','30','--max-time',$seconds,'--silent','--output','-','--write-out','%{stderr}AWC1 %{http_code}\n%{redirect_url}\n')
     if($Proxy){$arguments+=@('--socks5-hostname','127.0.0.1:1080')}
     $arguments+=@($Url)
     $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$curl
@@ -491,11 +515,12 @@ function Wait-ComponentDownloadProcessExit($Process) {
         }
     }
 }
-function Invoke-ComponentDownloadCurl([string]$Url,[IO.Stream]$Output,$Budget,[switch]$Proxy) {
+function Invoke-ComponentDownloadCurlOnce([string]$Url,[IO.Stream]$Output,$Budget,[switch]$Proxy) {
     $start=New-ComponentDownloadCurlStart $Url $Budget -Proxy:$Proxy
     $process=New-ComponentDownloadCurlProcess $start
     $started=$false;$heldHandle=[IntPtr]::Zero;$stdout=$null;$stderr=$null
-    $readOut=$null;$readErr=$null;$failure=$null;$cleanupFailed=$false;$waitFault=$false
+    $readOut=$null;$readErr=$null;$failure=$null;$cleanupFailed=$false;$waitFault=$false;$hop=$null
+    $metadata=[IO.MemoryStream]::new()
     try {
         [void](Get-ComponentDownloadRemaining $Budget)
         [void]$process.Start();$started=$true
@@ -520,8 +545,13 @@ function Invoke-ComponentDownloadCurl([string]$Url,[IO.Stream]$Output,$Budget,[s
             }
             if(-not $errDone -and $readErr.IsCompleted){
                 $count=$readErr.GetAwaiter().GetResult();$readErr=$null
-                # Drain/discard stderr fairly: never retain private URL/tool text.
-                if($count -eq 0){$errDone=$true}else{$readErr=$stderr.ReadAsync($errBuffer,0,$errBuffer.Length)}
+                # Curl writes only the fixed status/redirect record to stderr.
+                # Keep it bounded and private; never emit a redirect URL.
+                if($count -eq 0){$errDone=$true}else{
+                    if($count -gt 16384-$metadata.Length){Throw-ComponentDownloadFailure 'protocol'}
+                    $metadata.Write($errBuffer,0,$count)
+                    $readErr=$stderr.ReadAsync($errBuffer,0,$errBuffer.Length)
+                }
             }
             if(-not ($outDone -and $errDone -and $process.HasExited)){
                 [Threading.Thread]::Sleep([Math]::Min(10,(Get-ComponentDownloadRemaining $Budget)))
@@ -530,6 +560,12 @@ function Invoke-ComponentDownloadCurl([string]$Url,[IO.Stream]$Output,$Budget,[s
         try {$process.WaitForExit()}catch {$waitFault=$true;throw}
         if($process.ExitCode -ne 0){Throw-ComponentDownloadFailure 'transport'}
         [void](Get-ComponentDownloadRemaining $Budget)
+        $metadataBytes=$metadata.ToArray()
+        try {$text=[Text.UTF8Encoding]::new($false,$true).GetString($metadataBytes)}finally{[Array]::Clear($metadataBytes,0,$metadataBytes.Length)}
+        if($text -cnotmatch '^AWC1 ([0-9]{3})\r?\n([^\r\n]*)\r?\n$'){Throw-ComponentDownloadFailure 'protocol'}
+        $status=[int]$matches[1];$location=[string]$matches[2]
+        if(($status -eq 200 -and $location) -or ($status -notin @(200,301,302,303,307,308)) -or ($status -ne 200 -and -not $location)){Throw-ComponentDownloadFailure 'protocol'}
+        $hop=@{status=$status;location=$location}
     }catch {$failure=$_}finally {
         if($started){
             # A failed transfer cannot release an accepted curl or pending pipe
@@ -548,10 +584,23 @@ function Invoke-ComponentDownloadCurl([string]$Url,[IO.Stream]$Output,$Budget,[s
             $waitFault=$waitFault -or $finalWaitFault
         }
         try {$process.Dispose()}catch {$cleanupFailed=$true}
+        try {[Array]::Clear($metadata.GetBuffer(),0,[int]$metadata.Length);$metadata.Dispose()}catch {$cleanupFailed=$true}
     }
     if($cleanupFailed){Throw-ComponentDownloadFailure 'cleanup'}
     if($waitFault){Throw-ComponentDownloadFailure 'cleanup-observation'}
     if($failure){if(Test-ComponentDownloadTerminal $failure){throw $failure};Throw-ComponentDownloadFailure 'transport'}
+    return $hop
+}
+function Invoke-ComponentDownloadCurl([string]$Url,[IO.Stream]$Output,$Budget,[switch]$Proxy) {
+    $current=$Url
+    for($redirects=0;$redirects -le 5;$redirects++){
+        $hop=Invoke-ComponentDownloadCurlOnce $current $Output $Budget -Proxy:$Proxy
+        if($hop.status -eq 200){return}
+        if($redirects -eq 5){Throw-ComponentDownloadFailure 'protocol'}
+        $current=Resolve-ComponentDownloadRedirect $Url $current $hop.location
+        try {$Output.SetLength(0);$Output.Position=0}catch{Throw-ComponentDownloadFailure 'storage'}
+    }
+    Throw-ComponentDownloadFailure 'protocol'
 }
 function Save-ComponentDownloadAttempt([string]$Url,[string]$Path,$Budget,[switch]$Curl,[switch]$Proxy) {
     $output=$null;$owned=$false;$complete=$false;$failure=$null;$cleanupFailed=$false

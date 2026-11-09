@@ -655,8 +655,16 @@ Write-Output 'Windows workflow contract tests completed. Test artifacts are unde
 $dnsShell=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
 & $dnsShell -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'test-dns-recovery-contracts.ps1') -RequireWindowsPowerShell | Out-Null
 Assert ($LASTEXITCODE -eq 0) 'Dedicated DNS recovery contracts pass in an isolated stock shell'
-& $dnsShell -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'test-windows-component-downloads.ps1') -RequireWindowsPowerShell | Out-Null
-Assert ($LASTEXITCODE -eq 0) 'Dedicated component download contracts pass in an isolated stock shell'
+$downloadFixtureOut=@(& $dnsShell -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'test-windows-component-downloads.ps1') -RequireWindowsPowerShell 2>$null)
+$downloadFixtureExit=$LASTEXITCODE
+$downloadStages=@(
+    @('STAGE-REDIRECT-POLICY-PASS','Component redirect policy fixture completed'),
+    @('STAGE-DOTNET-HOPS-PASS','Component .NET redirect fixture completed'),
+    @('STAGE-CURL-OWNER-PASS','Component curl owner fixture completed'),
+    @('STAGE-CURL-HOPS-PASS','Component curl redirect fixture completed')
+)
+foreach($stage in $downloadStages){if(@($downloadFixtureOut | Where-Object {$_ -ceq $stage[0]}).Count -eq 1){Write-Output ('PASS '+$stage[1])}else{Write-Output ('FAIL '+$stage[1])}}
+Assert ($downloadFixtureExit -eq 0) 'Dedicated component download contracts pass in an isolated stock shell'
 
 $oldInputData=$inputData
 $inputData=[pscustomobject]@{managedPolicy=$true;allowDownloads=$false}

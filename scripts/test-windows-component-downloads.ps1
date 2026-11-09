@@ -9,7 +9,7 @@ $downloadProject=Split-Path -Parent $PSScriptRoot
 $downloadTokens=$null;$downloadParseErrors=$null
 $downloadAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $downloadProject 'internal\workflow\windows.ps1'),[ref]$downloadTokens,[ref]$downloadParseErrors)
 if($downloadParseErrors.Count){throw 'Component download source did not parse'}
-$downloadNames=@('Throw-ComponentDownloadFailure','New-ComponentDownloadBudget','Get-ComponentDownloadRemaining','Wait-ComponentDownloadTask','Write-ComponentDownloadChunk','Receive-ComponentDownloadStream','Assert-ComponentDownloadLength','Test-ComponentDownloadTerminal','Save-ComponentDownloadAttempt','Invoke-ComponentDownloadDotNet','Set-ComponentDownloadHeaders','Invoke-ComponentDownloadCurl','New-ComponentDownloadCurlStart','New-ComponentDownloadCurlProcess','Wait-ComponentDownloadProcessExit','Native-Argument','Quote-Arg','Require-DownloadPermission','Approved-DownloadHash','Read-RemoteJSON','Test-InstallerPublisher','Download')
+$downloadNames=@('Throw-ComponentDownloadFailure','New-ComponentDownloadBudget','Get-ComponentDownloadRemaining','Wait-ComponentDownloadTask','Write-ComponentDownloadChunk','Receive-ComponentDownloadStream','Assert-ComponentDownloadLength','Test-ComponentDownloadTerminal','Save-ComponentDownloadAttempt','Invoke-ComponentDownloadDotNet','Set-ComponentDownloadHeaders','Invoke-ComponentDownloadCurl','New-ComponentDownloadCurlStart','New-ComponentDownloadCurlProcess','Wait-ComponentDownloadProcessExit','Native-Argument','Quote-Arg','Require-DownloadPermission','Approved-DownloadHash','Allowed-Download','Read-RemoteJSON','Resolve-ComponentDownloadRedirect','New-ComponentDownloadRequest','Invoke-ComponentDownloadCurlOnce','Test-InstallerPublisher','Download')
 foreach($downloadName in $downloadNames){
     $downloadNodes=@($downloadAst.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $downloadName})
     if($downloadNodes.Count -ne 1){throw 'Required component download function is unavailable'}
@@ -194,6 +194,7 @@ try{
 # Capture real pure helpers before scope-local transport replacements. The
 # orchestration still calls the real exclusive-file attempt and real byte copier.
 $script:downloadOriginalApproval=(Get-Command Approved-DownloadHash).ScriptBlock
+$script:downloadOriginalAllowed=(Get-Command Allowed-Download).ScriptBlock
 $script:downloadOriginalBudget=(Get-Command New-ComponentDownloadBudget).ScriptBlock
 $script:downloadOriginalDotNet=(Get-Command Invoke-ComponentDownloadDotNet).ScriptBlock
 $script:downloadOriginalCurl=(Get-Command Invoke-ComponentDownloadCurl).ScriptBlock
@@ -427,6 +428,85 @@ Assert-DownloadFixture ($script:downloadMetadataState.Calls -eq 0 -and $script:d
     Assert-DownloadFixture ($script:downloadMetadataState.Calls -eq 0 -and $script:downloadMetadataState.Parses -eq 0) 'Download policy denial reached transport'
 }
 
+# Redirect policy is evaluated with synthetic URI strings only.
+foreach($redirectCase in @(
+    @{origin='https://github.com/hufrea/byedpi/releases/download/v1/a.zip';location='https://release-assets.githubusercontent.com/fixture';accept=$true},
+    @{origin='https://discord.com/api/downloads/fixture';location='https://stable.dl2.discordapp.net/fixture';accept=$true},
+    @{origin='https://aka.ms/fixture';location='https://download.visualstudio.microsoft.com/fixture';accept=$true},
+    @{origin='https://api.github.com/repos/fixture';location='/repositories/123/releases';accept=$true},
+    @{origin='https://github.com/hufrea/byedpi/releases/download/v1/a.zip';location='https://127.0.0.1/private';accept=$false},
+    @{origin='https://github.com/hufrea/byedpi/releases/download/v1/a.zip';location='https://release-assets.githubusercontent.com.example.invalid/a';accept=$false},
+    @{origin='https://github.com/hufrea/byedpi/releases/download/v1/a.zip';location='https://user@release-assets.githubusercontent.com/a';accept=$false},
+    @{origin='https://github.com/hufrea/byedpi/releases/download/v1/a.zip';location='https://release-assets.githubusercontent.com:444/a';accept=$false},
+    @{origin='https://github.com/hufrea/byedpi/releases/download/v1/a.zip';location='http://release-assets.githubusercontent.com/a';accept=$false},
+    @{origin='https://discord.com/api/downloads/fixture';location='https://download.visualstudio.microsoft.com/a';accept=$false}
+)){
+    $redirectAccepted=$true;try{$null=Resolve-ComponentDownloadRedirect $redirectCase.origin $redirectCase.origin $redirectCase.location}catch{$redirectAccepted=$false}
+    Assert-DownloadFixture ($redirectAccepted -eq $redirectCase.accept) 'Origin-specific redirect policy accepted or rejected an unexpected target'
+}
+& {
+    function Allowed-Download([string]$url){& $script:downloadOriginalAllowed $url}
+    $origin='https://github.com/hufrea/byedpi/releases/download/v1/a.zip'
+    $failure=Reject-DownloadFixture {Resolve-ComponentDownloadRedirect $origin $origin 'https://github.com/unrelated/project/releases/download/v1/a.zip'}
+    Assert-DownloadFixture (Test-ComponentDownloadTerminal $failure) 'Redirect to an unapproved GitHub release must be terminal'
+    $failure=Reject-DownloadFixture {Allowed-Download 'https://github.com:444/hufrea/byedpi/releases/download/v1/a.zip'}
+    Assert-DownloadFixture ($null -ne $failure) 'Initial component URL must not use a nonstandard port'
+}
+Write-Output 'STAGE-REDIRECT-POLICY-PASS'
+# The real .NET redirect loop uses inert WebResponse objects and a fake factory.
+Add-Type -TypeDefinition @"
+using System;
+using System.IO;
+using System.Net;
+using System.Threading.Tasks;
+namespace AccessWeaverDownloadFixture {
+ public sealed class HopResponse : WebResponse {
+  public int StatusCode; private WebHeaderCollection headers = new WebHeaderCollection();
+  public override WebHeaderCollection Headers { get { return headers; } }
+  public bool Closed; public byte[] Bytes;
+  public HopResponse(int status,string location,byte[] bytes) { StatusCode=status;Bytes=bytes;if(location!=null)Headers["Location"]=location; }
+  public override long ContentLength { get { return Bytes.Length; } set { throw new NotSupportedException(); } }
+  public override Stream GetResponseStream() { return new MemoryStream(Bytes,false); }
+  public override void Close() { Closed=true;base.Close(); }
+ }
+ public sealed class HopRequest {
+  public string Method; public bool AllowAutoRedirect; public int Timeout,ReadWriteTimeout; public HopResponse Response;
+  public HopRequest(HopResponse response) { Response=response; }
+  public Task<WebResponse> GetResponseAsync() { return Task.FromResult<WebResponse>(Response); }
+  public void Abort() { }
+ }
+}
+"@
+& {
+    function New-ComponentDownloadRequest([uri]$Uri) {$script:dotNetHopCalls++;return $script:dotNetHopQueue.Dequeue()}
+    $origin='https://github.com/hufrea/byedpi/releases/download/fixture/component.zip'
+    $script:dotNetHopCalls=0;$script:dotNetHopQueue=[Collections.Generic.Queue[object]]::new()
+    $first=[AccessWeaverDownloadFixture.HopResponse]::new(302,'https://release-assets.githubusercontent.com/fixture',[byte[]]@())
+    $second=[AccessWeaverDownloadFixture.HopResponse]::new(200,$null,(New-DownloadFixtureBytes 32))
+    $script:dotNetHopQueue.Enqueue([AccessWeaverDownloadFixture.HopRequest]::new($first));$script:dotNetHopQueue.Enqueue([AccessWeaverDownloadFixture.HopRequest]::new($second))
+    $budget=& $script:downloadOriginalBudget -MaximumBytes 64 -TimeoutMilliseconds 2000;$out=[AccessWeaverDownloadFixture.Output]::new()
+    try {
+        & $script:downloadOriginalDotNet $origin $out $budget
+        Assert-DownloadFixture ($script:dotNetHopCalls -eq 2 -and $first.Closed -and $second.Closed -and $budget.Written -eq 32 -and $out.Length -eq 32) 'Allowed .NET redirect must retain its budget and close both responses'
+    } finally {$out.Dispose()}
+    $script:dotNetHopCalls=0;$script:dotNetHopQueue=[Collections.Generic.Queue[object]]::new()
+    $blocked=[AccessWeaverDownloadFixture.HopResponse]::new(302,'https://127.0.0.1/private',[byte[]]@());$script:dotNetHopQueue.Enqueue([AccessWeaverDownloadFixture.HopRequest]::new($blocked))
+    $budget=& $script:downloadOriginalBudget -MaximumBytes 64 -TimeoutMilliseconds 2000;$out=[AccessWeaverDownloadFixture.Output]::new()
+    try {
+        $failure=Reject-DownloadFixture {& $script:downloadOriginalDotNet $origin $out $budget}
+        Assert-DownloadFixture ((Test-ComponentDownloadTerminal $failure) -and $script:dotNetHopCalls -eq 1 -and $blocked.Closed -and $out.Length -eq 0) 'Disallowed .NET redirect must not open another request'
+    } finally {$out.Dispose()}
+    $script:dotNetHopCalls=0;$script:dotNetHopQueue=[Collections.Generic.Queue[object]]::new();$loopResponses=@()
+    for($i=0;$i -lt 6;$i++){
+        $response=[AccessWeaverDownloadFixture.HopResponse]::new(302,'https://release-assets.githubusercontent.com/fixture',[byte[]]@());$loopResponses+=@($response);$script:dotNetHopQueue.Enqueue([AccessWeaverDownloadFixture.HopRequest]::new($response))
+    }
+    $budget=& $script:downloadOriginalBudget -MaximumBytes 64 -TimeoutMilliseconds 2000;$out=[AccessWeaverDownloadFixture.Output]::new()
+    try {
+        $failure=Reject-DownloadFixture {& $script:downloadOriginalDotNet $origin $out $budget}
+        Assert-DownloadFixture ((Test-ComponentDownloadTerminal $failure) -and $script:dotNetHopCalls -eq 6 -and @($loopResponses | Where-Object {-not $_.Closed}).Count -eq 0) 'The .NET redirect limit must close every response'
+    } finally {$out.Dispose()}
+}
+Write-Output 'STAGE-DOTNET-HOPS-PASS'
 # Only the actual reusable StartInfo builder runs. Test-Path is scoped to this
 # pure construction block; no curl image is opened, executed or downloaded.
 & {
@@ -439,7 +519,7 @@ Assert-DownloadFixture ($script:downloadMetadataState.Calls -eq 0 -and $script:d
             $downloadBudget=New-ComponentDownloadBudget -MaximumBytes 32 -TimeoutMilliseconds 5000
             $downloadStart=New-ComponentDownloadCurlStart 'https://github.com/hufrea/byedpi/releases/download/fixture/file.zip' $downloadBudget -Proxy:$downloadProxy
             Assert-DownloadFixture ($downloadStart.FileName -ceq $downloadExpectedCurl -and $downloadStart.WorkingDirectory -ceq (Split-Path -Parent $downloadExpectedCurl)) 'Curl executable was not bound to the system directory'
-            Assert-DownloadFixture ($downloadStart.Arguments -cmatch '^--disable --globoff ' -and $downloadStart.Arguments -cmatch '--output -(?: |$)' -and $downloadStart.Arguments -cmatch '--proto =https --proto-redir =https' -and $downloadStart.Arguments -cmatch '--max-redirs 5(?: |$)') 'Curl binary streaming or HTTPS redirect restrictions changed'
+            Assert-DownloadFixture ($downloadStart.Arguments -cmatch '^--disable --globoff ' -and $downloadStart.Arguments -cmatch '--output -(?: |$)' -and $downloadStart.Arguments -cmatch '--proto =https' -and $downloadStart.Arguments -cmatch '--write-out' -and $downloadStart.Arguments -cnotmatch '--location') 'Curl must stream one HTTPS hop with fixed status metadata'
             Assert-DownloadFixture ($downloadStart.Arguments -cmatch '--max-time [0-9]+\.[0-9]{3}(?: |$)' -and $downloadStart.Arguments -cnotmatch '--max-time [^ ]*,') 'Curl deadline formatting depends on host culture'
             Assert-DownloadFixture ((($downloadStart.Arguments -cmatch '--socks5-hostname 127\.0\.0\.1:1080(?: |$)') -eq $downloadProxy)) 'Curl unexpectedly admitted or dropped the explicit repair proxy'
             Assert-DownloadFixture (-not $downloadStart.UseShellExecute -and $downloadStart.CreateNoWindow -and $downloadStart.RedirectStandardInput -and $downloadStart.RedirectStandardOutput -and $downloadStart.RedirectStandardError) 'Curl process redirection no longer supports bounded binary transfer'
@@ -488,7 +568,8 @@ namespace AccessWeaverDownloadFixture {
   public int FailFrom=1,FailCount;
   public bool DisposedDuringFailure,UnjoinedFinalWait,DisposedBeforeConfirmation;
   public List<string> Order=new List<string>();
-  public Process(byte[] output) { StandardOutput=new Reader(output);StandardError=new Reader(new byte[]{1,2,3,4}); }
+  public Process(byte[] output) : this(output,System.Text.Encoding.UTF8.GetBytes("AWC1 200\n\n")) { }
+  public Process(byte[] output, byte[] metadata) { StandardOutput=new Reader(output);StandardError=new Reader(metadata); }
   public bool Start() { Starts++;Order.Add("start");return true; }
   public void WaitForExit() {
    Waits++;Order.Add("wait");
@@ -569,6 +650,59 @@ namespace AccessWeaverDownloadFixture {
         [IO.Directory]::Delete($downloadCurlRoot,$false)
     }
 }
+Write-Output 'STAGE-CURL-OWNER-PASS'
+# Real hop orchestration against in-memory fake processes: no network or curl.
+& {
+    $downloadExpectedCurl=Join-Path $env:SystemRoot 'System32\curl.exe'
+    function Test-Path {param([string]$LiteralPath) if($LiteralPath -cne $downloadExpectedCurl){throw 'Virtual curl checked an unexpected executable path'};return $true}
+    function New-ComponentDownloadCurlProcess([Diagnostics.ProcessStartInfo]$StartInfo){
+        $script:redirectFactoryCalls++;$p=$script:redirectQueue.Dequeue();$p.StartInfo=$StartInfo;return $p
+    }
+    $origin='https://github.com/hufrea/byedpi/releases/download/fixture/component.zip'
+    $script:redirectFactoryCalls=0;$script:redirectQueue=[Collections.Generic.Queue[object]]::new()
+    $first=[AccessWeaverDownloadFixture.Process]::new((New-DownloadFixtureBytes 4),[Text.Encoding]::UTF8.GetBytes("AWC1 302`nhttps://release-assets.githubusercontent.com/fixture`n"))
+    $second=[AccessWeaverDownloadFixture.Process]::new((New-DownloadFixtureBytes 32))
+    $script:redirectQueue.Enqueue($first);$script:redirectQueue.Enqueue($second)
+    $budget=& $script:downloadOriginalBudget -MaximumBytes 64 -TimeoutMilliseconds 2000;$out=[AccessWeaverDownloadFixture.Output]::new()
+    try {
+        & $script:downloadOriginalCurl $origin $out $budget
+        Assert-DownloadFixture ($script:redirectFactoryCalls -eq 2 -and $budget.Written -eq 36 -and $out.Length -eq 32) 'Allowed redirects must keep a cumulative budget and replace intermediate bodies'
+        Assert-DownloadFixture ((Get-DownloadFixtureHash ($out.ToArray())) -ceq (Get-DownloadFixtureHash (New-DownloadFixtureBytes 32)) -and $first.Disposals -eq 1 -and $second.Disposals -eq 1) 'Redirect transfer changed final bytes or lost a process owner'
+    } finally {$out.Dispose()}
+    $script:redirectFactoryCalls=0;$script:redirectQueue=[Collections.Generic.Queue[object]]::new()
+    $blocked=[AccessWeaverDownloadFixture.Process]::new((New-DownloadFixtureBytes 4),[Text.Encoding]::UTF8.GetBytes("AWC1 302`nhttps://127.0.0.1/private`n"));$script:redirectQueue.Enqueue($blocked)
+    $budget=& $script:downloadOriginalBudget -MaximumBytes 64 -TimeoutMilliseconds 2000;$out=[AccessWeaverDownloadFixture.Output]::new()
+    try {
+        $failure=Reject-DownloadFixture {& $script:downloadOriginalCurl $origin $out $budget}
+        Assert-DownloadFixture ((Test-ComponentDownloadTerminal $failure) -and $script:redirectFactoryCalls -eq 1 -and $blocked.Disposals -eq 1) 'Disallowed redirect reached another process or lost its owner'
+    } finally {$out.Dispose()}
+    $script:redirectFactoryCalls=0;$script:redirectQueue=[Collections.Generic.Queue[object]]::new();$loopProcesses=@()
+    for($i=0;$i -lt 6;$i++){
+        $p=[AccessWeaverDownloadFixture.Process]::new((New-DownloadFixtureBytes 1),[Text.Encoding]::UTF8.GetBytes("AWC1 302`nhttps://release-assets.githubusercontent.com/fixture`n"));$script:redirectQueue.Enqueue($p);$loopProcesses+=@($p)
+    }
+    $budget=& $script:downloadOriginalBudget -MaximumBytes 64 -TimeoutMilliseconds 2000;$out=[AccessWeaverDownloadFixture.Output]::new()
+    try {
+        $failure=Reject-DownloadFixture {& $script:downloadOriginalCurl $origin $out $budget}
+        Assert-DownloadFixture ((Test-ComponentDownloadTerminal $failure) -and $script:redirectFactoryCalls -eq 6 -and @($loopProcesses | Where-Object {$_.Disposals -ne 1}).Count -eq 0) 'Redirect limit must retain and dispose every owned process'
+    } finally {$out.Dispose()}
+    $script:redirectFactoryCalls=0;$script:redirectQueue=[Collections.Generic.Queue[object]]::new()
+    $first=[AccessWeaverDownloadFixture.Process]::new((New-DownloadFixtureBytes 4),[Text.Encoding]::UTF8.GetBytes("AWC1 302`nhttps://release-assets.githubusercontent.com/fixture`n"));$second=[AccessWeaverDownloadFixture.Process]::new((New-DownloadFixtureBytes 32));$script:redirectQueue.Enqueue($first);$script:redirectQueue.Enqueue($second)
+    $budget=& $script:downloadOriginalBudget -MaximumBytes 35 -TimeoutMilliseconds 2000;$out=[AccessWeaverDownloadFixture.Output]::new()
+    try {
+        $failure=Reject-DownloadFixture {& $script:downloadOriginalCurl $origin $out $budget}
+        Assert-DownloadFixture ((Test-ComponentDownloadTerminal $failure) -and $script:redirectFactoryCalls -eq 2 -and $budget.Written -eq 4 -and $first.Disposals -eq 1 -and $second.Disposals -eq 1) 'Redirect bodies must count toward the shared byte budget'
+    } finally {$out.Dispose()}
+    foreach($metadata in @("AWC1 302`n`n","AWC1 200`nhttps://example.invalid/private`n",'PRIVATE_FIXTURE',('X'*16385))){
+        $script:redirectFactoryCalls=0;$script:redirectQueue=[Collections.Generic.Queue[object]]::new()
+        $fake=[AccessWeaverDownloadFixture.Process]::new([byte[]]@(),[Text.Encoding]::UTF8.GetBytes($metadata));$script:redirectQueue.Enqueue($fake)
+        $budget=& $script:downloadOriginalBudget -MaximumBytes 64 -TimeoutMilliseconds 2000;$out=[AccessWeaverDownloadFixture.Output]::new()
+        try {
+            $failure=Reject-DownloadFixture {& $script:downloadOriginalCurl $origin $out $budget}
+            Assert-DownloadFixture ((Test-ComponentDownloadTerminal $failure) -and $script:redirectFactoryCalls -eq 1 -and $fake.Disposals -eq 1 -and $failure.Message -cnotmatch 'PRIVATE_FIXTURE') 'Invalid curl status metadata must fail privately and retain the process owner'
+        } finally {$out.Dispose()}
+    }
+}
+Write-Output 'STAGE-CURL-HOPS-PASS'
 # This constructs a managed request object only. No request is sent, no DNS or
 # proxy method runs, and no response or network stream is obtained. Unlike the
 # metadata transport spy, this exercises the actual restricted-header mapper.
