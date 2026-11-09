@@ -19739,6 +19739,139 @@
         "nativeCaptureRead": false,
         "productionQualificationComplete": false
       }
+    },
+    {
+      "sourceCommit": "65524cb0c388bdb4bb2181d8a5514819e1271ce2",
+      "runID": 42537621388,
+      "allJobsTerminal": true,
+      "sourceSHA256": {
+        "scripts/native-doh-offload-plan.ps1": "6fcd202c6df94339555fefb3cd791483744ea9813bff6371f3cdb92806a4c4c9",
+        "scripts/doh-offload-operation.ps1": "6548176b036308a80cf802940585f97de9102f753be5038bef43ad8813d88bb6",
+        "scripts/native-ipv6-route-table.ps1": "5db6d3d091589afa43952d6e7c1523c9f61ab93f6a6164e4c88e542c38c16f99",
+        "scripts/read-native-ipv6-route-table.ps1": "6622725dbd900bafe2f040e993e0576d5d683ffbd806730fa248a72ff6488c07",
+        "scripts/native-doh-route-state.ps1": "0b7ace73631dcc2d9448c7986436c46d99bfde1809109f9974251ea09f89831a",
+        "scripts/read-native-doh-route-state.ps1": "a63c9158596031b61f725a64f8836439e76e1f78c12b73ba31beb5b4f0e965b1",
+        "scripts/offload-control-operation.ps1": "46bc55a460e2c6cbfdfbd530e0447600774f282ffa9c0e9866c0a11c4bc632ad",
+        "scripts/native-offload-state.ps1": "fb12b941676bc792cacfe17fdfa26b5a0bb03fa85ae1cf98da29ef88711f7290",
+        "scripts/read-native-offload-state.ps1": "0a71d6dbacbeadb2ade886aa55c80778645ea3866709fc4d26c3e048d2c3784b",
+        "scripts/ndis-tls-control.cjs": "6254b7c5600ad7da1b1eb3ca6c9694b68fa616e812fc16d57faba062325a79a1",
+        "scripts/dns-wire-stdin.cjs": "b05d259e94b3f89555c645cc9205b922ae6418bf99bfa56581abdb72fa205fa0",
+        "scripts/extract-native-ndis.ps1": "cc0f5a88d4ef43e8b77f77e94112ddeca049eefc0e7772618af92391c52deaf9",
+        "scripts/ndis-private-convert.cjs": "ff56ac3be7537508a6cd2de89602e0bd7b981062c7df485fd8f3e7e34d25a787",
+        "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+        "scripts/ndis-frame-converter.cjs": "c4e7923eb9d904a4ad138b095033064ab62550e6c26a00551fd9c5068098f8f7",
+        "scripts/test-ndis-frame-converter.cjs": "a7f746de7eb292291eed95c4b5b99e34ad4f12210b45d1eb92baa977eca60516",
+        "scripts/native-etl-header.cs": "2624836059feb17a5b284bc8c9abbdb46978231fe4b7e319b0354ca6dfdadb5a",
+        "scripts/read-native-etl-loss.ps1": "e54c62b9550bb10d288997e1a32a84c7b0a45883bdec2eb48e9a6b9db66535e7",
+        "scripts/native-netevent-control.ps1": "3d157d483aa010666d65249e898cb71c917d923e3ed0046b80e2972076d6e0b1",
+        "scripts/netevent-control-operation.ps1": "147b1d5772ab65da2d7eef0790f70dc5b779880e6d411acc13ee864a47c070aa",
+        "scripts/test-native-netevent-control.ps1": "aa532a7ee4bf2d3c1d0ceed858414ac851ef9ea5a165220caf365421a972a625",
+        "scripts/test-native-netevent-contracts.ps1": "a99858fb59fc512d28c8dbef6b2802fea3a3a932cac5df6bbc42d3aafdb416c3",
+        ".github/workflows/native-netevent-control.yml": "a7430b7a5805c05cb6bdb6553803f6a21a2344c9ff3149d4f8cd94b0364196b9",
+        "scripts/native-dns-wire.ps1": "628ca31341babc247390d14dfcadea2d772d33a666570edbbd6c6b05ebee2850",
+        "scripts/dns-acceptance-state.ps1": "a8332f9d043c4f3577a5229a4831e7e88df52a1c9733eba4e4e254012622a2de"
+      },
+      "jobs": [
+        {
+          "id": 128905322632,
+          "name": "NetEvent capture control (windows/arm64)",
+          "status": "completed",
+          "conclusion": "failure",
+          "passedSteps": [
+            "Verify native Node host",
+            "Verify pure complete-frame contracts",
+            "Retain fixed source contract metadata only"
+          ],
+          "failedSteps": [
+            "Verify source contracts before capture"
+          ],
+          "activeSteps": []
+        },
+        {
+          "id": 128905322979,
+          "name": "NetEvent capture control (windows/amd64)",
+          "status": "completed",
+          "conclusion": "failure",
+          "passedSteps": [
+            "Verify native Node host",
+            "Verify pure complete-frame contracts",
+            "Retain fixed source contract metadata only"
+          ],
+          "failedSteps": [
+            "Verify source contracts before capture"
+          ],
+          "activeSteps": []
+        }
+      ],
+      "bothSourceContractsPassed": false,
+      "bothControlsPassed": false,
+      "missingNative": [
+        "amd64",
+        "arm64"
+      ],
+      "artifacts": [
+        {
+          "artifactID": 13640360340,
+          "artifactName": "netevent-source-windows-arm64",
+          "providerZIPDigest": "sha256:93e98d367790c39958f12d32befeada8381e056bc3a92c52ece8e94e86388bac",
+          "providerZIPDigestVerified": true,
+          "kind": "source",
+          "architecture": "arm64",
+          "passed": false,
+          "groupCount": 110,
+          "failedCases": [
+            "active-ipv6-table-zero-matches-requires-complete-stable-scan",
+            "active-ipv6-table-default-and-specific-prefixes-match-fixed-targets",
+            "active-ipv6-table-equal-counts-cannot-hide-canonical-route-drift",
+            "active-ipv6-table-public-evidence-refuses-private-and-false-absence",
+            "general-ipv4-table-matches-targets-and-refuses-host-bits",
+            "general-offload-plan-preserves-unrouted-family-with-complete-table-proof",
+            "general-offload-plan-supports-ipv6-only-routing",
+            "general-offload-plan-supports-four-adapters-and-merges-dual-family-owners",
+            "general-offload-plan-refuses-uncertified-or-contradictory-route-absence",
+            "general-offload-plan-refuses-conflicting-and-aliased-owner-bindings",
+            "general-offload-private-plan-roundtrip-refuses-extra-or-inconsistent-fields",
+            "general-offload-state-restores-guid-owner-after-index-name-changes",
+            "general-offload-state-refuses-unowned-mode-drift-and-unexpected-enables"
+          ]
+        },
+        {
+          "artifactID": 13639659099,
+          "artifactName": "netevent-source-windows-amd64",
+          "providerZIPDigest": "sha256:3544ab9f680c33794b9d8ac39fec5a23cd6a14e5b6338087786d64f715b9b1ac",
+          "providerZIPDigestVerified": true,
+          "kind": "source",
+          "architecture": "amd64",
+          "passed": false,
+          "groupCount": 110,
+          "failedCases": [
+            "active-ipv6-table-zero-matches-requires-complete-stable-scan",
+            "active-ipv6-table-default-and-specific-prefixes-match-fixed-targets",
+            "active-ipv6-table-equal-counts-cannot-hide-canonical-route-drift",
+            "active-ipv6-table-public-evidence-refuses-private-and-false-absence",
+            "general-ipv4-table-matches-targets-and-refuses-host-bits",
+            "general-offload-plan-preserves-unrouted-family-with-complete-table-proof",
+            "general-offload-plan-supports-ipv6-only-routing",
+            "general-offload-plan-supports-four-adapters-and-merges-dual-family-owners",
+            "general-offload-plan-refuses-uncertified-or-contradictory-route-absence",
+            "general-offload-plan-refuses-conflicting-and-aliased-owner-bindings",
+            "general-offload-private-plan-roundtrip-refuses-extra-or-inconsistent-fields",
+            "general-offload-state-restores-guid-owner-after-index-name-changes",
+            "general-offload-state-refuses-unowned-mode-drift-and-unexpected-enables"
+          ]
+        }
+      ],
+      "pureFrameConverterContracts": {
+        "basis": "terminal-fixed-provider-step-status-and-immutable-source",
+        "casesPerHost": 60,
+        "passedHostJobs": [
+          "NetEvent capture control (windows/arm64)",
+          "NetEvent capture control (windows/amd64)"
+        ],
+        "allHostsPassed": true,
+        "nativeCaptureRead": false,
+        "productionQualificationComplete": false
+      }
     }
   ],
   "defaultScenarioRegressions": [
@@ -19889,8 +20022,8 @@
       ]
     }
   ],
-  "distinctProviderZIPDigestsVerified": 322,
-  "terminalJobsVerified": 268,
+  "distinctProviderZIPDigestsVerified": 324,
+  "terminalJobsVerified": 270,
   "productSourceUnchangedSince": "3ae6417cb9a8a86d6b4e41dea0f25fc3af94c331",
   "readinessManifestSHA256": "9525ee76922c68ec4f3daafe581bffc9d7631bf77947863bc62a807556b4b735",
   "rawLogsRead": false,

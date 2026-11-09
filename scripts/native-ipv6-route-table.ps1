@@ -10,8 +10,8 @@ function Read-NativeIPRouteTable([object[]]$Rows,[string]$Family) {
     if($Rows.Count -gt 256){throw 'IPv6 route bound'};$keys=[Collections.Generic.List[string]]::new();$google=[Net.IPAddress]::Parse($(if($v6){'2001:4860:4860::8888'}else{'8.8.8.8'})).GetAddressBytes();$quad9=[Net.IPAddress]::Parse($(if($v6){'2620:fe::fe'}else{'9.9.9.9'})).GetAddressBytes();$g=0;$q=0
     foreach($row in $Rows){
         if($row.CimClass.CimClassName -cne 'MSFT_NetRoute'){throw 'IPv6 route class'}
-        $family=Get-NativeOffloadRaw $row 'AddressFamily';$store=Get-NativeOffloadRaw $row 'Store';$index=Get-NativeOffloadRaw $row 'InterfaceIndex';$prefix=Get-NativeOffloadRaw $row 'DestinationPrefix';$next=Get-NativeOffloadRaw $row 'NextHop';$metric=Get-NativeOffloadRaw $row 'RouteMetric'
-        if($family -isnot [uint16] -or $family -ne $familyNumber){throw 'IPv6 route family'};if($store -isnot [byte] -or $store -ne 1){throw 'IPv6 route store'};if($index -isnot [uint32] -or $index -eq 0){throw 'IPv6 route index'};if($metric -isnot [uint16]){throw 'IPv6 route metric'}
+        $routeFamily=Get-NativeOffloadRaw $row 'AddressFamily';$store=Get-NativeOffloadRaw $row 'Store';$index=Get-NativeOffloadRaw $row 'InterfaceIndex';$prefix=Get-NativeOffloadRaw $row 'DestinationPrefix';$next=Get-NativeOffloadRaw $row 'NextHop';$metric=Get-NativeOffloadRaw $row 'RouteMetric'
+        if($routeFamily -isnot [uint16] -or $routeFamily -ne $familyNumber){throw 'IPv6 route family'};if($store -isnot [byte] -or $store -ne 1){throw 'IPv6 route store'};if($index -isnot [uint32] -or $index -eq 0){throw 'IPv6 route index'};if($metric -isnot [uint16]){throw 'IPv6 route metric'}
         if($prefix -isnot [string] -or $prefix.Length -gt 80 -or $prefix -cnotmatch '^[0-9a-fA-F:.]+/[0-9]{1,3}$'){throw 'IPv6 route prefix'};$parts=$prefix.Split('/');$ip=$null;$bits=[int]$parts[1]
         if($bits -gt $maximumBits -or -not [Net.IPAddress]::TryParse($parts[0],[ref]$ip) -or $ip.AddressFamily -ne $socketFamily){throw 'IPv6 route prefix'};$bytes=$ip.GetAddressBytes()
         if(Test-NativeIPPrefixMatch $bytes $bits $google){$g++};if(Test-NativeIPPrefixMatch $bytes $bits $quad9){$q++}
