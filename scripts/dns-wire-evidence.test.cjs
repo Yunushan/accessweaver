@@ -7,8 +7,8 @@ const b24=n=>{const b=Buffer.alloc(3);b.writeUIntBE(n,0,3);return b;};
 function record(kind,body){return Buffer.concat([Buffer.from([kind,3,3]),b16(body.length),body]);}
 function handshake(kind,body){return Buffer.concat([Buffer.from([kind]),b24(body.length),body]);}
 function client(name='dns.google'){
- const host=Buffer.from(name,'ascii'),entry=Buffer.concat([Buffer.from([0]),b16(host.length),host]);
- const sni=Buffer.concat([b16(entry.length),entry]),ext=Buffer.concat([b16(0),b16(sni.length),sni]);
+ const host=Buffer.from(name===null?'':name,'ascii'),entry=Buffer.concat([Buffer.from([0]),b16(host.length),host]);
+ const sni=Buffer.concat([b16(entry.length),entry]),ext=name===null?Buffer.alloc(0):Buffer.concat([b16(0),b16(sni.length),sni]);
  return handshake(1,Buffer.concat([b16(0x0303),Buffer.alloc(32,7),Buffer.from([0]),b16(2),b16(0x1301),Buffer.from([1,0]),b16(ext.length),ext]));
 }
 function server(){return handshake(2,Buffer.concat([b16(0x0303),Buffer.alloc(32,9),Buffer.from([0]),b16(0x1301),Buffer.from([0]),b16(6),b16(43),b16(2),b16(0x0304)]));}
@@ -39,7 +39,7 @@ function capture(frames,{be=false,link=1,snap=0}={}){
  return Buffer.concat([block(0x0a0d0d0a,sh,be),block(1,id,be),...frames.map(f=>{const e=Buffer.alloc(20);u32(e,12,f.length);u32(e,16,f.length);return block(6,Buffer.concat([e,f]),be);})]);
 }
 function conversation({v6=false,provider='google',name,segment=false,sequence=100,localPort=50123}={}){
- const o={v6,provider,localPort},hello=record(22,client(name||(provider==='google'?'dns.google':'dns.quad9.net'))),response=record(22,server());
+ const o={v6,provider,localPort},hello=record(22,client(name===undefined?(provider==='google'?'dns.google':'dns.quad9.net'):name)),response=record(22,server());
  const outbound=Buffer.concat([hello,record(23,Buffer.alloc(41,0x71))]),inbound=Buffer.concat([response,record(23,Buffer.alloc(57,0x91))]);
  const frames=[frame(Buffer.alloc(0),{...o,seq:sequence,flags:2}),frame(Buffer.alloc(0),{...o,incoming:true,seq:200,flags:0x12})];
  if(segment){frames.push(frame(outbound.subarray(8),{...o,seq:(sequence+9)>>>0}),frame(outbound.subarray(0,8),{...o,seq:(sequence+1)>>>0}));}
@@ -71,8 +71,23 @@ check('conflicting-retransmission-refused',()=>{
 check('missing-tcp-bytes-refused',()=>{
  const f=conversation({segment:true});f.splice(3,1);refusal(capture(f),'tcp-gap');
 });
-check('unrelated-sni-refused',()=>refusal(capture(conversation({name:'private.invalid'})),'client-sni'));
-check('provider-name-mismatch-refused',()=>refusal(capture(conversation({provider:'quad9',name:'dns.google'})),'client-sni'));
+check('unrelated-sni-refused',()=>refusal(capture(conversation({name:'private.invalid'})),'client-sni-mismatch'));
+check('provider-name-mismatch-refused',()=>refusal(capture(conversation({provider:'quad9',name:'dns.google'})),'client-sni-mismatch'));
+check('absent-sni-remains-refused-with-fixed-reason',()=>{
+ for(const v6 of [false,true])for(const provider of ['google','quad9'])for(const be of [false,true])refusal(capture(conversation({v6,provider,name:null}),{be}),'client-sni-absent');
+});
+check('literal-ip-sni-is-mismatch-and-never-enables-ip-mode',()=>{
+ for(const name of ['8.8.8.8','9.9.9.9','2001:4860:4860::8888','[2001:4860:4860::8888]','2620:fe::fe','[2620:fe::fe]'])refusal(capture(conversation({name})),'client-sni-mismatch');
+});
+check('empty-sni-is-malformed-rather-than-absent-or-mismatched',()=>{
+ for(const v6 of [false,true])for(const provider of ['google','quad9'])refusal(capture(conversation({v6,provider,name:''})),'client-sni');
+});
+check('sni-refusal-reasons-never-publish-identity-or-evidence',()=>{
+ const {decodeBytes}=require('./dns-wire-stdin.cjs');
+ for(const [name,code] of [[null,'client-sni-absent'],['private.synthetic.invalid','client-sni-mismatch'],['','client-sni']]){
+  const r=decodeBytes(capture(conversation({name})));assert.deepEqual(r,{schemaVersion:1,outcome:'refused',code,evidence:null});assert(!JSON.stringify(r).includes('private.synthetic'));
+ }
+});
 check('syn-only-is-insufficient',()=>assert.equal(inspectDoHWire(capture(conversation().slice(0,2))).observation,'insufficient'));
 check('server-missing-refused',()=>refusal(capture(conversation().slice(0,3)),'tls-hello-required'));
 check('missing-initial-syn-refused',()=>refusal(capture(conversation().slice(1)),'tcp-segment-bound'));

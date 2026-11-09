@@ -109,12 +109,12 @@ function clientHello(body,expected){
   need(p+4<=body.length,'client-hello');const kind=body.readUInt16BE(p),size=body.readUInt16BE(p+2);p+=4;
   need(p+size<=body.length&&!seen.has(kind),'client-hello');seen.add(kind);
   if(kind===0){
-   need(size>=5&&body.readUInt16BE(p)===size-2&&body[p+2]===0&&body.readUInt16BE(p+3)===size-5,'client-sni');
-   need(body.subarray(p+5,p+size).equals(Buffer.from(expected,'ascii')),'client-sni');sni=true;
+   need(size>5&&body.readUInt16BE(p)===size-2&&body[p+2]===0&&body.readUInt16BE(p+3)===size-5,'client-sni');
+   need(body.subarray(p+5,p+size).equals(Buffer.from(expected,'ascii')),'client-sni-mismatch');sni=true;
   }
   p+=size;
  }
- need(sni,'client-sni');
+ need(sni,'client-sni-absent');
 }
 function serverHello(body){
  need(body.length>=40&&body.readUInt16BE(0)===0x0303,'server-hello');
