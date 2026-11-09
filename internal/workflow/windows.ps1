@@ -1508,7 +1508,7 @@ function Stop-AppProcesses([string]$variant) {
             $script:externalEffectsPending=$true
             try{Stop-Process -Id $process.Id -ErrorAction Stop}catch{
                 $exited=$false;try{$exited=($process.HasExited -eq $true)}catch{}
-                if(-not $exited){throw 'A matching application process could not be stopped; removal was not started'}
+                if(-not $exited){throw 'A matching application process could not be stopped; the operation was not continued'}
             }
         }
     }

@@ -373,7 +373,7 @@ try {
     function Stop-Process {param($Id,$ErrorAction);$script:appStopCalls++;if($script:appStopFailure){throw 'private fixture detail'}}
     $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false
     $script:appStopRecord=[pscustomobject]@{Path=$fixtureApp;Id=123;HasExited=$false}
-    $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process could not be stopped; removal was not started'}
+    $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process could not be stopped; the operation was not continued'}
     Assert ($rejected -and $script:appStopCalls -eq 1 -and $script:externalEffectsPending) 'Application removal stops on a matching process failure and records an external effect'
     $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false
     $script:appStopRecord=[pscustomobject]@{Path=$fixtureApp;Id=123;HasExited=$true}
