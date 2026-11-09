@@ -1,0 +1,109 @@
+name: Native Windows DNS cache-bypass prerequisite
+
+on:
+  push:
+    branches: ['main', 'codex/dns-adapter-coverage']
+    paths:
+      - 'scripts/native-dns-query/**'
+      - 'scripts/native-dns-query.ps1'
+      - 'scripts/test-native-dns-query*.ps1'
+      - '.github/workflows/native-dns-query.yml'
+  pull_request:
+    paths:
+      - 'scripts/native-dns-query/**'
+      - 'scripts/native-dns-query.ps1'
+      - 'scripts/test-native-dns-query*.ps1'
+      - '.github/workflows/native-dns-query.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-dns-query-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: '1.27.3'
+  GOTOOLCHAIN: local
+  CGO_ENABLED: '0'
+
+jobs:
+  native:
+    name: Native DNS cache bypass (windows/${{ matrix.goarch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {goarch: amd64, os: windows-latest, sdkarch: x64}
+          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      ACCESSWEAVER_EXPECT_GOOS: windows
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          architecture: ${{ matrix.sdkarch }}
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '26.8.2'
+          architecture: ${{ matrix.sdkarch }}
+          package-manager-cache: false
+      - name: Verify hosted native SDK and machine identity
+        run: node scripts/check-native-environment.cjs
+      - name: Verify synthetic record ownership and closed query projection
+        run: |
+          $fixed=Join-Path $env:RUNNER_TEMP ('accessweaver-query-source-'+[Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $fixed -ErrorAction Stop | Out-Null
+          "ACCESSWEAVER_DNS_QUERY_SOURCE=$fixed" >> $env:GITHUB_ENV
+          $env:ACCESSWEAVER_DNS_QUERY_UNIT_REPORT=Join-Path $fixed 'unit.json'
+          go test -mod=readonly ./scripts/native-dns-query
+          if($LASTEXITCODE -ne 0){throw 'Native query synthetic ownership contracts failed'}
+          go vet -mod=readonly ./scripts/native-dns-query
+          if($LASTEXITCODE -ne 0){throw 'Native query static analysis failed'}
+          $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-dns-query-contracts.ps1 -RequireWindowsPowerShell > (Join-Path $fixed 'projection.json')
+          if($LASTEXITCODE -ne 0){throw 'Native query closed projection contracts failed'}
+      - name: Build source-bound native resolver helper
+        run: |
+          go build -mod=readonly -trimpath -ldflags "-X main.sourceCommit=$env:GITHUB_SHA" -o build/native-dns-query/query.exe ./scripts/native-dns-query
+          if($LASTEXITCODE -ne 0){throw 'Native query compilation failed'}
+          node scripts/check-native-environment.cjs --binary build/native-dns-query/query.exe
+          if($LASTEXITCODE -ne 0){throw 'Native query binary architecture failed'}
+      - name: Native positive block rejection unblock and resume
+        run: |
+          $ErrorActionPreference='Stop'
+          $fixed=Join-Path $env:RUNNER_TEMP ('accessweaver-query-native-'+[Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $fixed -ErrorAction Stop | Out-Null
+          "ACCESSWEAVER_DNS_QUERY_NATIVE=$fixed" >> $env:GITHUB_ENV
+          $binary=(Resolve-Path build/native-dns-query/query.exe).Path
+          $digest=(Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+          $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-dns-query.ps1 -Binary $binary -BinarySHA256 $digest -ReportPath (Join-Path $fixed 'status.json')
+          if($LASTEXITCODE -ne 0){throw 'Native DNS cache-bypass prerequisite failed; fixed metadata retained'}
+      - name: Retain fixed query source metadata only
+        if: always() && env.ACCESSWEAVER_DNS_QUERY_SOURCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-dns-query-source-windows-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_DNS_QUERY_SOURCE }}/*.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain fixed native query metadata only
+        if: always() && env.ACCESSWEAVER_DNS_QUERY_NATIVE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-dns-query-windows-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_DNS_QUERY_NATIVE }}/status.json
+          if-no-files-found: error
+          retention-days: 7
