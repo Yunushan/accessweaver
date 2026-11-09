@@ -4,6 +4,7 @@ package direct
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -25,21 +26,93 @@ func allowedName(name string) bool {
 	return name == "example.com" || name == "example.net" || name == "example.org"
 }
 
-// ParseServer accepts only a single literal unicast address without a scope.
+// ParseServer accepts a unicast literal; link-local IPv6 requires a numeric scope.
 // The input must be obtained privately by the guarded caller.
 func ParseServer(text string) (netip.Addr, error) {
 	if len(text) == 0 || len(text) > 64 {
 		return netip.Addr{}, errors.New("server")
 	}
 	server, err := netip.ParseAddr(text)
-	if err != nil || server.Zone() != "" {
+	if err != nil {
 		return netip.Addr{}, errors.New("server")
 	}
+	zone := server.Zone()
 	server = server.Unmap()
-	if !server.IsGlobalUnicast() || server.IsLinkLocalUnicast() {
+	if server.IsLinkLocalUnicast() {
+		index, err := strconv.ParseUint(zone, 10, 32)
+		if !server.Is6() || err != nil || index == 0 || strconv.FormatUint(index, 10) != zone {
+			return netip.Addr{}, errors.New("server")
+		}
+		return server, nil
+	}
+	if zone != "" || !server.IsGlobalUnicast() {
 		return netip.Addr{}, errors.New("server")
 	}
 	return server, nil
+}
+
+// ReadServers accepts only a bounded JSON array of distinct literal servers.
+// The array and scope identifiers stay inside the guarded process.
+func ReadServers(input io.Reader) ([]netip.Addr, error) {
+	if input == nil {
+		return nil, errors.New("server-set")
+	}
+	data, err := io.ReadAll(io.LimitReader(input, 2049))
+	if err != nil || len(data) == 0 || len(data) > 2048 {
+		return nil, errors.New("server-set")
+	}
+	var values []string
+	if json.Unmarshal(data, &values) != nil || len(values) == 0 || len(values) > 8 {
+		return nil, errors.New("server-set")
+	}
+	out := make([]netip.Addr, 0, len(values))
+	seen := make(map[netip.Addr]bool, len(values))
+	for _, value := range values {
+		address, err := ParseServer(value)
+		if err != nil || seen[address] {
+			return nil, errors.New("server-set")
+		}
+		seen[address] = true
+		out = append(out, address)
+	}
+	return out, nil
+}
+
+type SetResult struct {
+	Total         int `json:"total"`
+	Answered      int `json:"answered"`
+	Rejected      int `json:"rejected"`
+	OtherFailures int `json:"otherFailures"`
+}
+
+// QuerySet sends independent queries concurrently and publishes only counts.
+// A timeout or ordinary DNS query failure counts as rejection; malformed or
+// otherwise unusable responses cannot satisfy a blocked-path control.
+func QuerySet(ctx context.Context, servers []netip.Addr) SetResult {
+	return querySet(ctx, servers, Query)
+}
+func querySet(ctx context.Context, servers []netip.Addr, run func(context.Context, netip.Addr, string) Result) SetResult {
+	if ctx == nil || run == nil || len(servers) == 0 || len(servers) > 8 {
+		return SetResult{}
+	}
+	results := make([]Result, len(servers))
+	var done sync.WaitGroup
+	for i, server := range servers {
+		done.Add(1)
+		go func(i int, server netip.Addr) { defer done.Done(); results[i] = run(ctx, server, "example.net") }(i, server)
+	}
+	done.Wait()
+	summary := SetResult{Total: len(results)}
+	for _, result := range results {
+		if result.Outcome == "answered" && result.Code == "none" && result.AnswerCount > 0 && result.AnswerCount <= 64 {
+			summary.Answered++
+		} else if result.Outcome == "refused" && result.AnswerCount == 0 && (result.Code == "timeout" || result.Code == "query-failed") {
+			summary.Rejected++
+		} else {
+			summary.OtherFailures++
+		}
+	}
+	return summary
 }
 
 // QueryInput reads only a bounded literal server from a private pipe. The
@@ -120,11 +193,11 @@ func Concurrent[A, B any](first func() A, second func() B) TimedPair[A, B] {
 // Server selection, trial concurrency, process ownership and firewall controls
 // are the caller's responsibility. This result cannot qualify a production gate.
 func Query(ctx context.Context, server netip.Addr, name string) Result {
-	if !server.IsValid() || server.Zone() != "" {
+	if !server.IsValid() {
 		return Result{Outcome: "refused", Code: "server"}
 	}
-	server = server.Unmap()
-	if !server.IsGlobalUnicast() || server.IsLinkLocalUnicast() {
+	server, err := ParseServer(server.String())
+	if err != nil {
 		return Result{Outcome: "refused", Code: "server"}
 	}
 	endpoint := net.JoinHostPort(server.String(), strconv.Itoa(53))

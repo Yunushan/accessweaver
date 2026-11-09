@@ -64,12 +64,12 @@ func TestRejectInvalidServerWithoutNetwork(t *testing.T) {
 }
 
 func TestParseServer(t *testing.T) {
-	for _, text := range []string{"", "127.0.0.1", "::ffff:127.0.0.1", "255.255.255.255", "fe80::1", "fe80::1%4", "192.0.2.1\n", "192.0.2.1:53", "private.example"} {
+	for _, text := range []string{"", "127.0.0.1", "::ffff:127.0.0.1", "255.255.255.255", "fe80::1", "fe80::1%0", "fe80::1%04", "2001:db8::1%4", "192.0.2.1\n", "192.0.2.1:53", "private.example"} {
 		if _, err := ParseServer(text); err == nil {
 			t.Fatal("invalid input accepted")
 		}
 	}
-	for _, text := range []string{"192.0.2.1", "2001:db8::1", "10.0.0.53"} {
+	for _, text := range []string{"192.0.2.1", "2001:db8::1", "fe80::1%4", "10.0.0.53"} {
 		if _, err := ParseServer(text); err != nil {
 			t.Fatal("valid literal rejected")
 		}
@@ -113,5 +113,33 @@ func TestConcurrentPairsWaitForBothAndReportOverlap(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("concurrent callbacks failed to join")
+	}
+}
+
+func TestReadServersAndAggregate(t *testing.T) {
+	for _, input := range []string{"", "[]", `["127.0.0.1"]`, `["192.0.2.1","::ffff:192.0.2.1"]`, `["fe80::1"]`, strings.Repeat("x", 2049)} {
+		if _, err := ReadServers(strings.NewReader(input)); err == nil {
+			t.Fatal("invalid server set accepted")
+		}
+	}
+	servers, err := ReadServers(strings.NewReader(`["192.0.2.1","fe80::1%4","2001:db8::53"]`))
+	if err != nil || len(servers) != 3 {
+		t.Fatal("valid server set refused")
+	}
+	result := querySet(context.Background(), servers, func(_ context.Context, addr netip.Addr, name string) Result {
+		if name != "example.net" {
+			t.Error("unexpected name")
+		}
+		switch addr.String() {
+		case "192.0.2.1":
+			return Result{Outcome: "answered", Code: "none", AnswerCount: 1}
+		case "fe80::1%4":
+			return Result{Outcome: "refused", Code: "timeout"}
+		default:
+			return Result{Outcome: "refused", Code: "answer-shape"}
+		}
+	})
+	if result.Total != 3 || result.Answered != 1 || result.Rejected != 1 || result.OtherFailures != 1 {
+		t.Fatal("invalid aggregate")
 	}
 }

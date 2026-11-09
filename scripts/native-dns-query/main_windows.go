@@ -168,6 +168,44 @@ func guarded() bool {
 func main() {
 	result := emptyReport("environment")
 	if guarded() {
+		if len(os.Args) == 2 && (os.Args[1] == "--direct-set" || os.Args[1] == "--compare-set") {
+			report := struct {
+				SchemaVersion                   int                                              `json:"schemaVersion"`
+				SourceCommit                    string                                           `json:"sourceCommit"`
+				Architecture                    string                                           `json:"architecture"`
+				Mode                            string                                           `json:"mode"`
+				Outcome                         string                                           `json:"outcome"`
+				Code                            string                                           `json:"code"`
+				Result                          *direct.SetResult                                `json:"result"`
+				Pair                            *direct.TimedPair[queryReport, direct.SetResult] `json:"pair"`
+				ProductionQualificationComplete bool                                             `json:"productionQualificationComplete"`
+			}{SchemaVersion: 1, SourceCommit: sourceCommit, Architecture: runtime.GOARCH, Mode: os.Args[1][2:], Outcome: "refused", Code: "server-set"}
+			if servers, err := direct.ReadServers(os.Stdin); err == nil {
+				if report.Mode == "direct-set" {
+					value := direct.QuerySet(context.Background(), servers)
+					report.Result = &value
+					report.Outcome = "observed"
+					report.Code = "none"
+				} else {
+					pair := direct.Concurrent(func() queryReport {
+						q := runQuery("example.net", windows.DnsQuery, windows.DnsRecordListFree)
+						q.SourceCommit = sourceCommit
+						return q
+					}, func() direct.SetResult { return direct.QuerySet(context.Background(), servers) })
+					report.Pair = &pair
+					if pair.Overlapped {
+						report.Outcome = "observed"
+						report.Code = "none"
+					} else {
+						report.Code = "no-overlap"
+					}
+				}
+			}
+			if json.NewEncoder(os.Stdout).Encode(report) != nil {
+				os.Exit(2)
+			}
+			return
+		}
 		if len(os.Args) == 2 && os.Args[1] == "--direct" {
 			report := struct {
 				SchemaVersion                   int           `json:"schemaVersion"`

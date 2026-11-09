@@ -96,3 +96,67 @@ function Invoke-NativeDNSDiagnostic([object]$State,[string]$Server,[string]$Mode
     if((Get-FileHash -LiteralPath $State.queryBinary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $State.queryBinarySHA256){throw 'Diagnostic DNS binary changed'}
     return (Get-NativeDNSDiagnosticReport $text $State.querySourceCommit $State.queryArchitecture $Mode)
 }
+function Select-NativeDNSDiagnosticServers([object[]]$Adapters,[object[]]$Rows) {
+    $active=@($Adapters | Where-Object {$_.Status -ceq 'Up' -and $_.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN'} | ForEach-Object {[int]$_.ifIndex})
+    if($active.Count -eq 0){return @{servers=@();code='no-active-adapter'}}
+    $found=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach($row in $Rows){
+        $index=[int]$row.InterfaceIndex;if($index -notin $active){continue}
+        foreach($value in @($row.ServerAddresses)){
+            $address=$null
+            if($value -isnot [string] -or -not [Net.IPAddress]::TryParse($value,[ref]$address)){return @{servers=@();code='invalid-address'}}
+            if($address.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork){
+                $bytes=$address.GetAddressBytes();if($bytes[0] -eq 0 -or $bytes[0] -eq 127 -or $bytes[0] -ge 224 -or ($bytes[0] -eq 169 -and $bytes[1] -eq 254)){return @{servers=@();code='ineligible-address'}}
+            }elseif($address.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetworkV6){
+                if($address.IsIPv6Multicast -or $address.IsIPv4MappedToIPv6 -or $address.Equals([Net.IPAddress]::IPv6Any) -or $address.Equals([Net.IPAddress]::IPv6Loopback)){return @{servers=@();code='ineligible-address'}}
+                if($address.IsIPv6LinkLocal){if($index -le 0 -or ($address.ScopeId -ne 0 -and $address.ScopeId -ne $index)){return @{servers=@();code='scope'}};$address.ScopeId=$index}
+                elseif($address.ScopeId -ne 0){return @{servers=@();code='scope'}}
+            }else{return @{servers=@();code='invalid-address'}}
+            [void]$found.Add($address.ToString());if($found.Count -gt 8){return @{servers=@();code='server-bound'}}
+        }
+    }
+    if($found.Count -eq 0){return @{servers=@();code='no-server'}}
+    return @{servers=@($found | Sort-Object);code='selected'}
+}
+function Get-NativeDNSSetValue([object]$Value) {
+    $keys=@('total','answered','rejected','otherFailures')
+    if($Value -isnot [pscustomobject] -or @($Value.PSObject.Properties).Count -ne 4 -or @($Value.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0){throw 'DNS set value'}
+    foreach($key in $keys){if(($Value.$key -isnot [int] -and $Value.$key -isnot [long]) -or $Value.$key -lt 0 -or $Value.$key -gt 8){throw 'DNS set count'}}
+    if($Value.total -lt 1 -or $Value.answered+$Value.rejected+$Value.otherFailures -ne $Value.total){throw 'DNS set partition'}
+    return $Value
+}
+function Get-NativeDNSSetReport([string]$Text,[string]$Source,[string]$Architecture,[string]$Mode) {
+    if($Text.Length -gt 4096 -or $Source -cnotmatch '^[a-f0-9]{40}$' -or $Architecture -cnotin @('amd64','arm64') -or $Mode -cnotin @('direct-set','compare-set')){throw 'DNS set boundary'}
+    try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{throw 'DNS set JSON'}
+    $keys=@('schemaVersion','sourceCommit','architecture','mode','outcome','code','result','pair','productionQualificationComplete')
+    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 9 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or $v.schemaVersion -isnot [int] -or $v.schemaVersion -ne 1 -or $v.sourceCommit -cne $Source -or $v.architecture -cne $Architecture -or $v.mode -cne $Mode -or $v.productionQualificationComplete -isnot [bool] -or $v.productionQualificationComplete){throw 'DNS set envelope'}
+    if($v.outcome -ceq 'refused' -and $v.code -ceq 'server-set' -and $null -eq $v.result -and $null -eq $v.pair){return $v}
+    if($Mode -ceq 'direct-set'){
+        if($v.outcome -cne 'observed' -or $v.code -cne 'none' -or $null -ne $v.pair){throw 'DNS set direct envelope'}
+        [void](Get-NativeDNSSetValue $v.result);return $v
+    }
+    if($null -ne $v.result -or $v.outcome -cnotin @('observed','refused') -or $v.code -cnotin @('none','no-overlap')){throw 'DNS set comparison envelope'}
+    $pair=$v.pair;$pairKeys=@('first','second','overlapped')
+    if($pair -isnot [pscustomobject] -or @($pair.PSObject.Properties).Count -ne 3 -or @($pair.PSObject.Properties.Name | Where-Object {$_ -cnotin $pairKeys}).Count -ne 0 -or $pair.overlapped -isnot [bool]){throw 'DNS set pair'}
+    foreach($part in @($pair.first,$pair.second)){
+        $partKeys=@('startMicroseconds','endMicroseconds','value')
+        if($part -isnot [pscustomobject] -or @($part.PSObject.Properties).Count -ne 3 -or @($part.PSObject.Properties.Name | Where-Object {$_ -cnotin $partKeys}).Count -ne 0){throw 'DNS set timing shape'}
+        foreach($key in @('startMicroseconds','endMicroseconds')){if(($part.$key -isnot [int] -and $part.$key -isnot [long]) -or $part.$key -lt 0 -or $part.$key -gt 15000000){throw 'DNS set timing bound'}}
+        if($part.endMicroseconds -lt $part.startMicroseconds){throw 'DNS set timing order'}
+    }
+    [void](Get-NativeFreshDNSQueryReport ($pair.first.value | ConvertTo-Json -Compress -Depth 4) $Source $Architecture);[void](Get-NativeDNSSetValue $pair.second.value)
+    $overlap=($pair.first.startMicroseconds -lt $pair.second.endMicroseconds -and $pair.second.startMicroseconds -lt $pair.first.endMicroseconds)
+    if($pair.overlapped -ne $overlap -or ($overlap -and ($v.outcome -cne 'observed' -or $v.code -cne 'none')) -or (-not $overlap -and ($v.outcome -cne 'refused' -or $v.code -cne 'no-overlap'))){throw 'DNS set overlap'}
+    return $v
+}
+function Invoke-NativeDNSSetDiagnostic([object]$State,[string[]]$Servers,[string]$Mode) {
+    if($Mode -cnotin @('direct-set','compare-set') -or $Servers.Count -lt 1 -or $Servers.Count -gt 8){throw 'DNS set request'}
+    $inputText=ConvertTo-Json -InputObject @($Servers) -Compress
+    if($inputText.Length -gt 2048 -or $inputText -notmatch '^\[[0-9a-fA-F:.,%"\-]+\]$'){throw 'DNS set request shape'}
+    Assert-NativeFreshDNSSources $State
+    if((Get-FileHash -LiteralPath $State.queryBinary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $State.queryBinarySHA256){throw 'DNS set binary changed'}
+    $text=Invoke-NativeDNSWireProcess $State $State.queryBinary @('--'+$Mode) ([Text.Encoding]::ASCII.GetBytes($inputText))
+    Assert-NativeFreshDNSSources $State
+    if((Get-FileHash -LiteralPath $State.queryBinary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $State.queryBinarySHA256){throw 'DNS set binary changed'}
+    return (Get-NativeDNSSetReport $text $State.querySourceCommit $State.queryArchitecture $Mode)
+}

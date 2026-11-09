@@ -40,17 +40,17 @@ try {
     $code='probe';$evidence.probe=Invoke-NativeFreshDNSQuery $state -Probe
     $code='positive';$evidence.positive=Invoke-NativeFreshDNSQuery $state 'example.net'
     try {
-        $selection=Select-NativeDNSDiagnosticServer @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop);$candidate=$selection.server;$diagnostic.selectionCode=$selection.code
-        if($candidate){$diagnostic.outcome='refused';$diagnostic.baseline=Invoke-NativeDNSDiagnostic $state $candidate 'direct';$diagnostic.code=if($diagnostic.baseline.result.outcome -ceq 'answered'){'blocked-pending'}else{'baseline-refused'}}
+        $selection=Select-NativeDNSDiagnosticServers @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop);$candidate=@($selection.servers);$diagnostic.selectionCode=$selection.code
+        if($candidate.Count -gt 0){$diagnostic.outcome='refused';$diagnostic.baseline=Invoke-NativeDNSSetDiagnostic $state $candidate 'direct-set';$diagnostic.code=if($diagnostic.baseline.outcome -ceq 'observed' -and $diagnostic.baseline.result.answered -eq $candidate.Count){'blocked-pending'}else{'baseline-refused'}}
     }catch{if($diagnostic.selectionCode -ceq 'not-inspected'){$diagnostic.selectionCode='inventory-error'};$diagnostic.outcome='refused';$diagnostic.code='baseline-refused'}
     $code='block';foreach($kind in @('dns','tls')){foreach($protocol in @('TCP','UDP')){Add-NativeDNSWireRule $state $kind $protocol}}
     $code='blocked';$evidence.blocked=Invoke-NativeFreshDNSQuery $state 'example.net' -ExpectFailure
     if($diagnostic.code -ceq 'blocked-pending'){
         try{
-            $current=Select-NativeDNSDiagnosticServer @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop)
-            if($current.code -cne 'selected' -or $current.server -cne $candidate){$diagnostic.code='server-changed'}else{
-                $diagnostic.blocked=Invoke-NativeDNSDiagnostic $state $candidate 'direct'
-                $diagnostic.code=if($diagnostic.blocked.result.outcome -ceq 'refused' -and $diagnostic.blocked.result.code -cin @('timeout','query-failed')){'comparison-pending'}else{'block-control-refused'}
+            $current=Select-NativeDNSDiagnosticServers @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop)
+            if($current.code -cne 'selected' -or (@($current.servers) -join '|') -cne ($candidate -join '|')){$diagnostic.code='server-changed'}else{
+                $diagnostic.blocked=Invoke-NativeDNSSetDiagnostic $state $candidate 'direct-set'
+                $diagnostic.code=if($diagnostic.blocked.outcome -ceq 'observed' -and $diagnostic.blocked.result.total -eq $candidate.Count -and $diagnostic.blocked.result.rejected -eq $candidate.Count){'comparison-pending'}else{'block-control-refused'}
             }
         }catch{$diagnostic.code='block-control-refused'}
     }
@@ -72,10 +72,10 @@ try {
             if($null -ne $evidence.resumed -and $evidence.resumed.code -ceq 'query-failed' -and $evidence.resumed.failureKind -ceq 'timeout' -and $rulesRemoved -and -not $state.processFailed){
                 if($diagnostic.code -ceq 'comparison-pending'){
                     try{
-                        $current=Select-NativeDNSDiagnosticServer @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop)
-                        if($current.code -cne 'selected' -or $current.server -cne $candidate){$diagnostic.code='server-changed'}else{
-                            $diagnostic.comparison=Invoke-NativeDNSDiagnostic $state $candidate 'compare'
-                            if($diagnostic.comparison.outcome -ceq 'observed'){$diagnostic.outcome='observed';$diagnostic.code='none'}else{$diagnostic.code='comparison-refused'}
+                        $current=Select-NativeDNSDiagnosticServers @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop)
+                        if($current.code -cne 'selected' -or (@($current.servers) -join '|') -cne ($candidate -join '|')){$diagnostic.code='server-changed'}else{
+                            $diagnostic.comparison=Invoke-NativeDNSSetDiagnostic $state $candidate 'compare-set'
+                            if($diagnostic.comparison.outcome -ceq 'observed' -and $diagnostic.comparison.pair.second.value.total -eq $candidate.Count){$diagnostic.outcome='observed';$diagnostic.code='none'}else{$diagnostic.code='comparison-refused'}
                         }
                     }catch{$diagnostic.code='comparison-refused'}
                 }
