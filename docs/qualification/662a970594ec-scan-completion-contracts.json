@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "scope": "scan-capture-completion-and-component-source-contracts",
+  "sourceCommit": "662a970594ecc9f8225fedb7041f565e4363afa9",
+  "runID": 42607232613,
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "545d9cca1bb94524829999700d1cdd6934f1de48f1f9d7b7a09a4181904cf72d",
+    "scripts/test-windows-workflow.ps1": "95ac2aace0d27f2a6eb8eb2d863ee792e07f3d46afd4806060a46f78232ea8ef",
+    ".github/workflows/windows-component-discovery.yml": "7b42e32a207cfd6c82bdba98808f68470710a51ba9920103ad39de8b855b8e09"
+  },
+  "reports": [
+    {
+      "artifactID": 13669196039,
+      "name": "windows-component-source-arm64",
+      "providerZIPDigest": "sha256:781dcd2dee8f30182cca0c9c7fbfd32b38be0fa90cc87845d742ffeeb8bc9a1a",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "outcome": "passed",
+      "suitePassed": true,
+      "cases": [
+        {
+          "name": "zapret selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "zapret2 selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret2 refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-incomplete before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-missing before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-incomplete before installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-missing before installation",
+          "passed": true
+        },
+        {
+          "name": "Complete scan and selection reach only the mocked installer",
+          "passed": true
+        }
+      ],
+      "milestones": {
+        "service": true,
+        "vendor": true,
+        "child": true,
+        "arguments": true,
+        "staging": true,
+        "dns": true,
+        "main": true,
+        "archive": true
+      }
+    },
+    {
+      "artifactID": 13668173634,
+      "name": "windows-component-source-amd64",
+      "providerZIPDigest": "sha256:5b37b5a89f75d59e74ef8d36c6535e98fb495aad6eeb1bc33f720a91dcd7724b",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "outcome": "passed",
+      "suitePassed": true,
+      "cases": [
+        {
+          "name": "zapret selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "zapret2 selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret2 refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-incomplete before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-missing before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-incomplete before installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-missing before installation",
+          "passed": true
+        },
+        {
+          "name": "Complete scan and selection reach only the mocked installer",
+          "passed": true
+        }
+      ],
+      "milestones": {
+        "vendor": true,
+        "archive": true,
+        "dns": true,
+        "service": true,
+        "arguments": true,
+        "main": true,
+        "child": true,
+        "staging": true
+      }
+    }
+  ],
+  "allCasesPassed": true,
+  "realVendorExecuted": false,
+  "rawLogsRead": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0
+}
