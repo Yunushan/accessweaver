@@ -49,8 +49,8 @@ func systemCommand(args []string, root string) error {
 		defer stop()
 		return runSystemHistory(ctx, manager, args[1:], os.Stdout)
 	case "parse-scan":
-		if len(args) != 3 {
-			return errors.New("usage: system parse-scan REPORT.txt zapret|zapret2")
+		if len(args) < 3 || len(args) > 4 || (len(args) == 4 && args[3] != "--require-common") {
+			return errors.New("usage: system parse-scan REPORT.txt zapret|zapret2 [--require-common]")
 		}
 		file, err := os.Open(args[1])
 		if err != nil {
@@ -61,7 +61,7 @@ func systemCommand(args []string, root string) error {
 		if err != nil {
 			return err
 		}
-		strategy, err := workflow.SelectScanStrategy(string(data), args[2])
+		strategy, err := workflow.SelectScanStrategyWithCommonRequirement(string(data), args[2], len(args) == 4)
 		if err != nil {
 			return err
 		}

@@ -73,3 +73,64 @@ test_https ipv4 : "C:\tools\WINWS2.EXE" --lua-desync=correct`
 		t.Fatalf("valid matching strategy was not selected: %+v, %v", strategy, err)
 	}
 }
+
+func TestScanNeverPromotesCoverageToCommon(t *testing.T) {
+	report := `* SUMMARY
+ test_https ipv4 example.com : winws2 --lua-desync=individual
+* COMMON
+* COVERAGE
+1/2 : test_https ipv4 : winws2 --lua-desync=partial`
+	if _, err := SelectScanStrategy(report, "zapret2"); err == nil {
+		t.Fatal("coverage-only result was promoted to the common intersection")
+	}
+}
+
+func TestScanSelectsOnlyActualCommonSection(t *testing.T) {
+	report := `* SUMMARY
+ test_https ipv4 example.com : winws2 --lua-desync=individual
+* COMMON
+ test_http ipv4 : winws2 --lua-desync=common
+* COVERAGE
+1/2 : test_https ipv4 : winws2 --lua-desync=partial`
+	strategy, err := SelectScanStrategy(report, "zapret2")
+	if err != nil || strategy.Protocol != "http" || !strategy.Common || len(strategy.Args) != 1 || strategy.Args[0] != "--lua-desync=common" {
+		t.Fatalf("did not retain the actual common result: %+v, %v", strategy, err)
+	}
+}
+
+func TestScanRejectsMalformedSectionOrderAndMarkers(t *testing.T) {
+	for _, report := range []string{
+		"* COMMON\ntest_https ipv4 : winws2 --lua-desync=x",
+		"* SUMMARY EXTRA\ntest_https ipv4 : winws2 --lua-desync=x",
+		"* SUMMARY\ntest_https ipv4 : winws2 --lua-desync=x\n* COVERAGE",
+		"* SUMMARY\ntest_https ipv4 : winws2 --lua-desync=x\n* SUMMARY",
+		"* SUMMARY\ntest_https ipv4 : winws2 --lua-desync=x\n* OTHER\n* COMMON",
+	} {
+		if _, err := SelectScanStrategy(report, "zapret2"); err == nil {
+			t.Fatal("malformed section sequence was accepted")
+		}
+	}
+}
+
+func TestScanDoesNotTreatCommonTextAsASection(t *testing.T) {
+	report := "* SUMMARY\ntest_https ipv4 example.com : winws2 --lua-desync=ok\nNote: * COMMON is not a heading"
+	strategy, err := SelectScanStrategy(report, "zapret2")
+	if err != nil || strategy.Common || len(strategy.Args) != 1 || strategy.Args[0] != "--lua-desync=ok" {
+		t.Fatalf("prose was treated as a common section: %+v, %v", strategy, err)
+	}
+}
+
+func TestMultiTargetScanRequiresExplicitCommonSection(t *testing.T) {
+	individual := "* SUMMARY\ntest_https ipv4 example.com : winws2 --lua-desync=individual"
+	if _, err := SelectScanStrategyWithCommonRequirement(individual, "zapret2", true); err == nil {
+		t.Fatal("multi-target scan accepted a report without a common section")
+	}
+	if _, err := SelectScanStrategyWithCommonRequirement(individual, "zapret2", false); err != nil {
+		t.Fatalf("single-target selection was refused: %v", err)
+	}
+	common := individual + "\n* COMMON\ntest_https ipv4 : winws2 --lua-desync=common"
+	strategy, err := SelectScanStrategyWithCommonRequirement(common, "zapret2", true)
+	if err != nil || !strategy.Common || len(strategy.Args) != 1 || strategy.Args[0] != "--lua-desync=common" {
+		t.Fatalf("valid common strategy was not selected: %+v, %v", strategy, err)
+	}
+}

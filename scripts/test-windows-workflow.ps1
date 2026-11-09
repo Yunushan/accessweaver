@@ -219,6 +219,7 @@ try {
     function Native {
         param($program,$arguments,$codes,[switch]$Secret,[int]$Timeout)
         if($program -ceq 'fixture-controller'){
+            $script:scanSelectionArgs=@($arguments)
             if($script:scanMode -ceq 'parser-missing'){return @{stdout='{"protocol":"https","args":["--lua-desync=fixture"]}'}}
             return @{stdout='{"protocol":"https","args":["--lua-desync=fixture"]}';outputComplete=($script:scanMode -cne 'parser-incomplete')}
         }
@@ -226,13 +227,17 @@ try {
         if($script:scanMode -ceq 'scan-missing'){return @{stdout='* SUMMARY fixture'}}
         return @{stdout='* SUMMARY fixture';outputComplete=($script:scanMode -cne 'scan-incomplete')}
     }
-    foreach($mode in @('scan-incomplete','scan-missing','parser-incomplete','parser-missing','complete')){
-        $script:scanMode=$mode;$script:scanWrites=0;$script:scanInstalls=0
-        $r=[pscustomobject]@{engine='zapret2';bundlePath=$scanBundle;scan='quick';targets=@('example.com');dns='unchanged'}
+    foreach($mode in @('scan-incomplete','scan-missing','parser-incomplete','parser-missing','complete','complete-default','complete-multi')){
+        $script:scanMode=$mode;$script:scanWrites=0;$script:scanInstalls=0;$script:scanSelectionArgs=@()
+        $targets=@();if($mode -eq 'complete-multi'){$targets=@('example.com','example.net')}elseif($mode -ne 'complete-default'){$targets=@('example.com')}
+        $r=[pscustomobject]@{engine='zapret2';bundlePath=$scanBundle;scan='quick';targets=@($targets);dns='unchanged'}
         $oldPath=$env:PATH;$rejected=$false
         try {[void](Auto-Install)}catch{$rejected=$true}
-        if($mode -eq 'complete'){
-            Assert (-not $rejected -and $script:scanWrites -eq 1 -and $script:scanInstalls -eq 1) 'Complete scan and selection reach only the mocked installer'
+        if($mode -like 'complete*'){
+            Assert (-not $rejected -and $script:scanWrites -eq 1 -and $script:scanInstalls -eq 1) ('Complete '+$mode+' scan reaches only the mocked installer')
+            $requireCommon=(@($script:scanSelectionArgs | Where-Object {$_ -ceq '--require-common'}).Count -eq 1)
+            if($mode -eq 'complete'){Assert (-not $requireCommon) 'Single-target scan does not require a common section'}
+            else{Assert $requireCommon ('Multi-target '+$mode+' scan requires a common section')}
         }elseif($mode -like 'scan-*'){
             Assert ($rejected -and $script:scanWrites -eq 0 -and $script:scanInstalls -eq 0) ('Scan rejects '+$mode+' before saving or installation')
         }else{

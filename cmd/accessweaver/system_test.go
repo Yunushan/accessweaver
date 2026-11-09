@@ -40,3 +40,17 @@ func TestSystemRequestWindowsEncodingAndSize(t *testing.T) {
 		t.Fatalf("oversized request accepted: %v", err)
 	}
 }
+
+func TestParseScanCLIRequiresCommonWhenRequested(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "report.txt")
+	if err := os.WriteFile(file, []byte("* SUMMARY\ntest_https ipv4 example.com : winws2 --lua-desync=one"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := systemCommand([]string{"parse-scan", file, "zapret2", "--require-common"}, root); err == nil {
+		t.Fatal("multi-target selection accepted a report without a common section")
+	}
+	if err := systemCommand([]string{"parse-scan", file, "zapret2", "--unknown"}, root); err == nil {
+		t.Fatal("unknown parse-scan option was accepted")
+	}
+}

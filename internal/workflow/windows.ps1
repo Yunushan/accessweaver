@@ -1554,7 +1554,9 @@ function Scan-Strategies {
 function Auto-Install {
     if($r.dns -and $r.dns -ne 'unchanged' -and -not $script:dnsConfigured){Configure-DNS $r.dns}
     $scan=Scan-Strategies
-    $selectionResult=Native $inputData.controller @('system','parse-scan',$scan.reportPath,$r.engine)
+    $selectionArgs=@('system','parse-scan',$scan.reportPath,$r.engine)
+    if(-not $r.targets -or @($r.targets).Count -gt 1){$selectionArgs+=@('--require-common')}
+    $selectionResult=Native $inputData.controller $selectionArgs
     if($null -eq $selectionResult -or $selectionResult.outputComplete -ne $true){throw 'Scan strategy selection output was incomplete; no strategy was installed'}
     $selected=$selectionResult.stdout|ConvertFrom-Json
     $capture=if($r.engine -eq 'zapret2'){@('--wf-tcp-out=80,443','--wf-udp-out=443,50000-65535')}else{@('--wf-tcp=80,443','--wf-udp=443,50000-65535')}
