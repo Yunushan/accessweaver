@@ -3,7 +3,9 @@
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto');
 const {convertNdisFrames}=require('./ndis-frame-converter.cjs');
 const {decodePrivateFrames,privateCapturePaths}=require('./ndis-private-convert.cjs');
-const NUMBERS=['records','frames','before','at','after','tcpBefore','tcpAt','tcpAfter','udpBefore','udpAt','udpAfter','sentBefore','sentAt','sentAfter','receivedBefore','receivedAt','receivedAfter','udp53Before','udp53At','udp53After','udp443Before','udp443At','udp443After','udpOtherBefore','udpOtherAt','udpOtherAfter'];
+const NUMBERS=['records','frames','before','at','after','tcpBefore','tcpAt','tcpAfter','udpBefore','udpAt','udpAfter','sentBefore','sentAt','sentAfter','receivedBefore','receivedAt','receivedAfter','udp53Before','udp53At','udp53After','udp443Before','udp443At','udp443After','udpOtherBefore','udpOtherAt','udpOtherAfter','preStart','tcpPreStart','udpPreStart','sentPreStart','receivedPreStart','udp53PreStart','udp443PreStart','udpOtherPreStart','startAt','tcpStartAt','udpStartAt','sentStartAt','receivedStartAt','udp53StartAt','udp443StartAt','udpOtherStartAt','during','tcpDuring','udpDuring','sentDuring','receivedDuring','udp53During','udp443During','udpOtherDuring'];
+const BUCKETS=Object.freeze(['Before','At','After','PreStart','StartAt','During']);
+const BUCKET_KEYS=Object.freeze({Before:'before',At:'at',After:'after',PreStart:'preStart',StartAt:'startAt',During:'during'});
 const DNS_KEYS=['queries','responses','productProbe','positiveProbe','negativeProbe','providerBootstrap','otherName','a','aaaa','otherType','unclassified','googleV4','quad9V4','googleV6','quad9V6'];
 function dnsCounters(){return Object.fromEntries(DNS_KEYS.map(k=>[k,0]));}
 const UDP_PROVIDERS=Object.freeze({'08080808':'googleV4','09090909':'quad9V4','20014860486000000000000000008888':'googleV6','262000fe0000000000000000000000fe':'quad9V6'});
@@ -42,16 +44,20 @@ function need(ok,code){if(!ok)throw new PhaseError(code);}
 function closed(value,keys){return value!==null&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).length===keys.length&&keys.every(k=>Object.hasOwn(value,k));}
 function joinFramePhases(records,document,sourceDigest){
  need(Array.isArray(records)&&records.length>0&&records.length<=4096,'phase-count');
- need(closed(document,['schemaVersion','records','sourceFramesSHA256','phases'])&&document.schemaVersion===1&&Number.isSafeInteger(document.records)&&document.records>=records.length&&document.records<=4096,'phase-document');
+ need(closed(document,['schemaVersion','records','sourceFramesSHA256','phases','starts'])&&document.schemaVersion===2&&Number.isSafeInteger(document.records)&&document.records>=records.length&&document.records<=4096,'phase-document');
  need(typeof document.sourceFramesSHA256==='string'&&/^[a-f0-9]{64}$/.test(document.sourceFramesSHA256)&&document.sourceFramesSHA256===sourceDigest,'phase-source');
  need(Array.isArray(document.phases)&&document.phases.length===records.length&&document.phases.every(p=>Number.isSafeInteger(p)&&p>=0&&p<=2),'phase-count');
- const result={schemaVersion:1,outcome:'complete',code:'none',nativeFrameDataRead:true,sourceBound:true,productionQualificationComplete:false};for(const k of NUMBERS)result[k]=0;for(const bucket of ['Before','At','After'])result['dns'+bucket]=dnsCounters();result.records=document.records;
+ need(Array.isArray(document.starts)&&document.starts.length===records.length&&document.starts.every(p=>Number.isSafeInteger(p)&&p>=0&&p<=2),'phase-count');
+ need(document.phases.every((p,i)=>p===0||document.starts[i]===2),'phase-boundaries');
+ const result={schemaVersion:2,outcome:'complete',code:'none',nativeFrameDataRead:true,sourceBound:true,productionQualificationComplete:false};for(const k of NUMBERS)result[k]=0;for(const bucket of BUCKETS)result['dns'+bucket]=dnsCounters();result.records=document.records;
  for(let i=0;i<records.length;i++){
   const {summary:q,capture}=convertNdisFrames([records[i]]),bucket=['Before','At','After'][document.phases[i]];
   need(q.frames===1&&q.tcp+q.udp===1&&q.sent+q.received===1,'conversion');
-  result.frames++;result[bucket.toLowerCase()]++;result[(q.tcp?'tcp':'udp')+bucket]++;result[(q.sent?'sent':'received')+bucket]++;if(q.udp){const frame=capture.subarray(76,76+records[i].fragmentSize),counters=classifyUDP(frame);result['udp'+classifyUDPPort(frame)+bucket]++;for(const key of DNS_KEYS)result['dns'+bucket][key]+=counters[key];}
+  result.frames++;const frame=q.udp?capture.subarray(76,76+records[i].fragmentSize):null,counters=q.udp?classifyUDP(frame):null,port=q.udp?classifyUDPPort(frame):null;
+  const partitions=[bucket];if(document.phases[i]===0)partitions.push(['PreStart','StartAt','During'][document.starts[i]]);
+  for(const part of partitions){result[BUCKET_KEYS[part]]++;result[(q.tcp?'tcp':'udp')+part]++;result[(q.sent?'sent':'received')+part]++;if(q.udp){result['udp'+port+part]++;for(const key of DNS_KEYS)result['dns'+part][key]+=counters[key];}}
  }
- for(const bucket of ['Before','At','After'])Object.freeze(result['dns'+bucket]);return Object.freeze(result);
+ for(const bucket of BUCKETS)Object.freeze(result['dns'+bucket]);return Object.freeze(result);
 }
 function ordinary(file){let p=file;while(p){need(!fs.lstatSync(p).isSymbolicLink(),'private-path');const next=path.dirname(p);if(next===p)break;p=next;}}
 function boundedRead(file,limit){ordinary(file);let fd=null;try{fd=fs.openSync(file,'r');const before=fs.fstatSync(fd);need(before.isFile()&&before.nlink===1&&before.size>0&&before.size<=limit,'private-file');const raw=Buffer.alloc(before.size);let at=0;while(at<raw.length){const n=fs.readSync(fd,raw,at,raw.length-at,null);need(n>0,'private-file');at+=n;}const after=fs.fstatSync(fd);need(fs.readSync(fd,Buffer.alloc(1),0,1,null)===0&&before.size===after.size&&before.mtimeMs===after.mtimeMs,'private-file');return raw;}finally{if(fd!==null)fs.closeSync(fd);}}
@@ -61,12 +67,12 @@ function privatePhases(root){
   const raw=boundedRead(files.input,16777216),map=boundedRead(path.win32.join(root,'frame-phases.json'),65536);read=true;let document,frames;
   try{const decoder=new TextDecoder('utf-8',{fatal:true});document=JSON.parse(decoder.decode(map));frames=JSON.parse(decoder.decode(raw));}catch{throw new PhaseError('private-document');}
   return joinFramePhases(decodePrivateFrames(frames),document,crypto.createHash('sha256').update(raw).digest('hex'));
- }catch(e){const allowed=new Set(['private-path','private-file','private-document','phase-document','phase-source','phase-count','conversion']);const r={schemaVersion:1,outcome:'refused',code:e instanceof PhaseError&&allowed.has(e.code)?e.code:'conversion',nativeFrameDataRead:read,sourceBound:false,productionQualificationComplete:false};for(const k of NUMBERS)r[k]=0;for(const bucket of ['Before','At','After'])r['dns'+bucket]=dnsCounters();return r;}
+ }catch(e){const allowed=new Set(['private-path','private-file','private-document','phase-document','phase-source','phase-count','phase-boundaries','conversion']);const r={schemaVersion:2,outcome:'refused',code:e instanceof PhaseError&&allowed.has(e.code)?e.code:'conversion',nativeFrameDataRead:read,sourceBound:false,productionQualificationComplete:false};for(const k of NUMBERS)r[k]=0;for(const bucket of BUCKETS)r['dns'+bucket]=dnsCounters();return r;}
 }
-module.exports={joinFramePhases,NUMBERS,DNS_KEYS,PhaseError};
+module.exports={joinFramePhases,NUMBERS,DNS_KEYS,BUCKETS,BUCKET_KEYS,PhaseError};
 if(require.main===module){
  const arch={x64:'amd64',arm64:'arm64'}[process.arch],host={x86_64:'amd64',amd64:'amd64',arm64:'arm64',aarch64:'arm64'}[os.machine().toLowerCase()];
  const guarded=process.platform==='win32'&&process.version==='v26.8.2'&&process.env.GITHUB_ACTIONS==='true'&&process.env.RUNNER_ENVIRONMENT==='github-hosted'&&process.env.RUNNER_OS==='Windows'&&/^[a-f0-9]{40}$/.test(process.env.GITHUB_SHA||'')&&arch===host&&process.env.ACCESSWEAVER_EXPECT_GOOS==='windows'&&arch===process.env.ACCESSWEAVER_EXPECT_GOARCH&&['ACCESSWEAVER_HISTORY_INTEROP','ACCESSWEAVER_RECONCILIATION_INTEROP','ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP','ACCESSWEAVER_SUPPORT_INTEROP'].every(k=>!Object.hasOwn(process.env,k))&&process.argv.length===3;
- if(!guarded){const r={schemaVersion:1,outcome:'refused',code:'environment',nativeFrameDataRead:false,sourceBound:false,productionQualificationComplete:false};for(const k of NUMBERS)r[k]=0;for(const bucket of ['Before','At','After'])r['dns'+bucket]=dnsCounters();process.stdout.write(JSON.stringify(r)+'\n');}
+ if(!guarded){const r={schemaVersion:2,outcome:'refused',code:'environment',nativeFrameDataRead:false,sourceBound:false,productionQualificationComplete:false};for(const k of NUMBERS)r[k]=0;for(const bucket of BUCKETS)r['dns'+bucket]=dnsCounters();process.stdout.write(JSON.stringify(r)+'\n');}
  else process.stdout.write(JSON.stringify(privatePhases(process.argv[2]))+'\n');
 }

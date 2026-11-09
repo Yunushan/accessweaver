@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict');const {joinFramePhases,NUMBERS,DNS_KEYS}=require('./ndis-private-phases.cjs');
 const digest='a'.repeat(64),provider='2ed6006e-4729-4609-b423-3ee7bcd678ef';
 function frame(sent=true,tcp=false){const n=tcp?20:8,b=Buffer.alloc(14+20+n);b.writeUInt16BE(0x0800,12);b[14]=0x45;b.writeUInt16BE(20+n,16);b[22]=64;b[23]=tcp?6:17;b.set([10,0,0,2],26);b.set([8,8,8,8],30);b.writeUInt16BE(40000,34);b.writeUInt16BE(tcp?443:53,36);if(tcp){b[46]=0x50;b[47]=2;}else b.writeUInt16BE(8,38);return {provider,id:1001,version:0,keywords:sent?0x1c0000000n:0x2c0000000n,fragmentSize:b.length,fragment:b};}
-function doc(phases,records=phases.length){return {schemaVersion:1,records,sourceFramesSHA256:digest,phases};}
+function doc(phases,records=phases.length,starts=phases.map(()=>2)){return {schemaVersion:2,records,sourceFramesSHA256:digest,phases,starts};}
 let passed=0;function test(name,body){body();passed++;process.stdout.write(JSON.stringify({name,passed:true})+'\n');}
 test('phase-before-boundary-udp-sent-counts',()=>{const r=joinFramePhases([frame()],doc([0],4),digest);assert.equal(r.before,1);assert.equal(r.udpBefore,1);assert.equal(r.sentBefore,1);assert.equal(r.records,4);});
 test('phase-exact-boundary-is-explicit',()=>{const r=joinFramePhases([frame(false)],doc([1]),digest);assert.equal(r.at,1);assert.equal(r.receivedAt,1);assert.equal(r.udpAt,1);});
@@ -15,7 +15,7 @@ test('phase-private-or-unknown-document-field-refused',()=>assert.throws(()=>joi
 test('phase-incomplete-or-excessive-header-count-refused',()=>{for(const count of [0,4097,1.5])assert.throws(()=>joinFramePhases([frame()],doc([0],count),digest),/phase-document/);});
 test('phase-empty-and-excessive-record-sets-refused',()=>{for(const frames of [[],Array(4097).fill(frame())])assert.throws(()=>joinFramePhases(frames,doc([0]),digest),/phase-count/);});
 test('phase-incomplete-frame-not-repaired-or-dropped',()=>{const f=frame();f.fragment=f.fragment.subarray(0,20);assert.throws(()=>joinFramePhases([f],doc([0]),digest));});
-test('phase-public-projection-excludes-private-source-and-vectors',()=>{const r=joinFramePhases([frame()],doc([0]),digest);assert.equal(Object.keys(r).length,NUMBERS.length+9);assert.equal(r.productionQualificationComplete,false);const text=JSON.stringify(r);for(const forbidden of ['sourceFramesSHA256','phases','ticks',digest,'fragment','"provider":'])assert(!text.includes(forbidden));assert(Object.isFrozen(r));});
+test('phase-public-projection-excludes-private-source-and-vectors',()=>{const r=joinFramePhases([frame()],doc([0]),digest);assert.equal(Object.keys(r).length,NUMBERS.length+12);assert.equal(r.productionQualificationComplete,false);const text=JSON.stringify(r);for(const forbidden of ['sourceFramesSHA256','phases','ticks',digest,'fragment','"provider":'])assert(!text.includes(forbidden));assert(Object.isFrozen(r));});
 function dnsFrame(name,type=1,response=false,v6=false,quad=false){
  const parts=name.split('.'),question=Buffer.concat(parts.flatMap(label=>[Buffer.from([label.length]),Buffer.from(label)]).concat([Buffer.from([0])])),data=Buffer.alloc(12+question.length+4);data.writeUInt16BE(response?0x8180:0x0100,2);data.writeUInt16BE(1,4);question.copy(data,12);data.writeUInt16BE(type,12+question.length);data.writeUInt16BE(1,14+question.length);
  const n=v6?40:20,b=Buffer.alloc(14+n+8+data.length);b.writeUInt16BE(v6?0x86dd:0x0800,12);
@@ -55,4 +55,24 @@ test('google-ipv6-role-matches-independent-network-byte-literal',()=>{
 test('udp-port-publication-contains-only-bounded-counts',()=>{
  const r=joinFramePhases([withPort(dnsFrame('private.synthetic.test'),443)],doc([0]),digest);assert.equal(r.udp443Before,1);assert.equal(r.dnsBefore.unclassified,1);assert(!JSON.stringify(r).includes('private.synthetic'));for(const key of NUMBERS)assert(Number.isSafeInteger(r[key])&&r[key]>=0&&r[key]<=4096);
 });
-assert.equal(passed,24);
+
+test('start-partitions-distinguish-before-exact-and-during-dispatch',()=>{
+ const r=joinFramePhases([dnsFrame('dns.google'),dnsFrame('example.net'),dnsFrame('example.com')],doc([0,0,0],3,[0,1,2]),digest);assert.equal(r.preStart,1);assert.equal(r.startAt,1);assert.equal(r.during,1);assert.equal(r.before,3);assert.equal(r.dnsPreStart.providerBootstrap,1);assert.equal(r.dnsStartAt.positiveProbe,1);assert.equal(r.dnsDuring.productProbe,1);assert.equal(r.udp53PreStart+r.udp53StartAt+r.udp53During,r.udp53Before);
+});
+test('start-partitions-preserve-every-original-protocol-direction-and-role',()=>{
+ const rows=[dnsFrame('dns.google'),withPort(dnsFrame('example.net'),443),frame(false,true),dnsFrame('example.com'),frame(true,true)],r=joinFramePhases(rows,doc([0,0,0,1,2],5,[0,1,2,2,2]),digest);assert.equal(r.frames,5);assert.equal(r.before,3);assert.equal(r.at,1);assert.equal(r.after,1);
+ for(const prefix of ['tcp','udp','sent','received','udp53','udp443','udpOther'])assert.equal(r[prefix+'PreStart']+r[prefix+'StartAt']+r[prefix+'During'],r[prefix+'Before']);for(const key of DNS_KEYS)assert.equal(r.dnsPreStart[key]+r.dnsStartAt[key]+r.dnsDuring[key],r.dnsBefore[key]);
+});
+test('start-and-return-boundaries-refuse-impossible-private-classifications',()=>{
+ for(const returned of [1,2])for(const started of [0,1])assert.throws(()=>joinFramePhases([frame()],doc([returned],1,[started]),digest),/phase-boundaries/);
+});
+test('start-map-missing-extra-coerced-and-legacy-documents-refused',()=>{
+ for(const starts of [[],[0,1],['0'],[true],[-1],[3],[0.5]])assert.throws(()=>joinFramePhases([frame()],doc([0],2,starts),digest));const missing=doc([0]);delete missing.starts;assert.throws(()=>joinFramePhases([frame()],missing,digest),/phase-document/);assert.throws(()=>joinFramePhases([frame()],{...doc([0]),schemaVersion:1},digest),/phase-document/);
+});
+test('start-count-publication-never-leaks-vectors-timestamps-or-names',()=>{
+ const r=joinFramePhases([dnsFrame('private.synthetic.test')],doc([0],1,[0]),digest),text=JSON.stringify(r);assert.equal(r.schemaVersion,2);assert.equal(r.dnsPreStart.otherName,1);assert(Object.isFrozen(r.dnsPreStart));for(const privateValue of ['private.synthetic','"starts"','"phases"','UtcTicks','sourceFramesSHA256',digest])assert(!text.includes(privateValue));
+});
+test('start-count-closed-schema-stays-within-existing-public-report-bound',()=>{
+ const r=JSON.parse(JSON.stringify(joinFramePhases([frame()],doc([0]),digest)));for(const key of NUMBERS)r[key]=4096;for(const bucket of ['Before','At','After','PreStart','StartAt','During'])for(const key of DNS_KEYS)r['dns'+bucket][key]=4096;assert(Buffer.byteLength(JSON.stringify(r))<=4096);assert.equal(Object.keys(r).length,NUMBERS.length+12);
+});
+assert.equal(passed,30);

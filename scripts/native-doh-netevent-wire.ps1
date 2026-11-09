@@ -19,8 +19,8 @@ function Initialize-DoHNetEventState([object]$State,[string]$Project,[hashtable]
     foreach($sid in @($identity.User.Value,'S-1-5-18','S-1-5-32-544') | Select-Object -Unique){$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),'FullControl','ContainerInherit,ObjectInherit','None','Allow'))}
     Set-Acl -LiteralPath $root -AclObject $acl -ErrorAction Stop
     $State.etl=Join-Path $root 'capture.etl';$State.pcap=Join-Path $root 'capture.pcapng'
-    $State.ndis=@{sourceCommit=$env:GITHUB_SHA;root=$root;project=$Project;hashes=$Hashes.Clone();plan=$null;digest='';prepared=$false;count=0;created=$false;configuredUtcTicks=0L;phaseVerified=$false;public=@{
-        identityBinding=(New-DoHIPAuthorityBinding);phaseReadEvidence=(New-DoHPhaseReadEvidence);phaseEvidence=(New-DoHPhaseEvidence);operationEvidence=(New-DoHNetEventOperationEvidence);cleanupCode='none';sessionVerified=$false;sessionRemoved=$false;preflightEmpty=$false;
+    $State.ndis=@{sourceCommit=$env:GITHUB_SHA;root=$root;project=$Project;hashes=$Hashes.Clone();plan=$null;digest='';prepared=$false;count=0;created=$false;configureStartUtcTicks=0L;configuredUtcTicks=0L;phaseVerified=$false;public=@{
+        baselineEvidence=(New-DoHBaselineResolverEvidence);identityBinding=(New-DoHIPAuthorityBinding);phaseReadEvidence=(New-DoHPhaseReadEvidence);phaseEvidence=(New-DoHPhaseEvidence);operationEvidence=(New-DoHNetEventOperationEvidence);cleanupCode='none';sessionVerified=$false;sessionRemoved=$false;preflightEmpty=$false;
         filterEvidence=@{policy='product-doh-all';endpointMask=15;etherTypeMask=3;protocolMask=3;portsFiltered=$false;verified=$false};
         offloadPrepareEvidence=(New-NativeDoHOffloadEvidence 'prepare');offloadStageEvidence=@();offloadVerifyEvidence=(New-NativeDoHOffloadEvidence 'verify');offloadMeasureEvidence=(New-NativeDoHOffloadEvidence 'verify');offloadRestoreEvidence=@();
         lossEvidence=(New-NativeNDISLossEvidence);eventEvidence=(New-NativeNDISHeaderEvidence);fragmentEvidence=(New-NativeNDISFragmentEvidence);catalogEvidence=(New-NativeNDISCatalogEvidence);extractionEvidence=(New-NativeNDISExtractionEvidence);conversionEvidence=(New-NativeNDISConversionEvidence);tlsWireEvidence=(New-DoHNetEventTlsEvidence);etlBytes=0;pcapBytes=0;captureBounded=$false
@@ -72,6 +72,10 @@ function Get-DoHNetEventTlsEvidence([string]$Text) {
     }
     if(($e.observation -ceq 'tls-observed') -ne ($positive -and $e.plaintextPackets -eq 0)){return $bad};return $r
 }
+function Read-DoHBaselineResolverEvidence([object]$State) {
+    $first=@(Get-NetAdapter -ErrorAction Stop);$clients=@(Get-DnsClientServerAddress -ErrorAction Stop);$last=@(Get-NetAdapter -ErrorAction Stop)
+    return (Get-DoHBaselineResolverEvidence $State.before $first $clients $last)
+}
 function Start-DoHNetEventCapture([object]$State) {
     $State.phase='decoder-preflight';$version=Invoke-DoHNetEventProcess $State $State.node @('--version')
     if($version.Trim() -cne 'v26.8.2'){throw 'Product capture Node version'}
@@ -79,7 +83,9 @@ function Start-DoHNetEventCapture([object]$State) {
     $e=Get-DoHNetEventTlsEvidence $probe;if($e.code -cne 'capture-empty' -or $e.observation -cne 'refused'){throw 'Product capture decoder preflight'}
     if(@(Get-DnsClientNrptPolicy -Effective -ErrorAction Stop).Count -ne 0){throw 'Product capture name policy'}
     $State.phase='firewall-preflight';Assert-NativeDNSWireFirewall
-    $State.phase='baseline-resolver';[void](Invoke-NativeDNSWireQuery 'example.com');$State.flags.baselineResolverPassed=$true
+    $State.phase='baseline-resolver'
+    try{$State.ndis.public.baselineEvidence=Read-DoHBaselineResolverEvidence $State}catch{$State.ndis.public.baselineEvidence=New-DoHBaselineResolverEvidence (Get-DoHBaselineFailure $_.Exception);throw 'Product baseline resolver evidence refused'}
+    [void](Invoke-NativeDNSWireQuery 'example.com');$State.flags.baselineResolverPassed=$true
     $State.ndis.plan=@{name=('awndis-'+[guid]::NewGuid().ToString('N'));file=$State.etl;guid='';originalVerified=$false;capturePolicy='product-doh-all'}
     $State.phase='monitor-preflight';$v=Invoke-DoHNetEventOperation $State 'preflight';$State.ndis.public.preflightEmpty=$v.emptyBefore
     if(-not $v.emptyBefore){throw 'Product capture inventory'}
@@ -124,7 +130,7 @@ function Read-DoHNetEventCapture([object]$State) {
     $State.phase='pcap-file';$State.pcap=Join-Path $State.ndis.root 'capture.pcapng';Measure-NativeDNSWireFile $State 'pcap';$State.ndis.public.pcapBytes=$State.pcapBytes
     if($State.ndis.public.pcapBytes -ne $q.captureBytes){throw 'Private conversion file size disagrees'}
 
-    $State.phase='phase-headers';$text=Invoke-DoHNetEventProcess $State $State.eventTool @('-NoProfile','-NonInteractive','-File',(Join-Path $PSScriptRoot 'read-native-ndis-phases.ps1'),'-CapturePath',$State.etl,'-ExpectedFragments',([string]$f.fragmentIDs),'-ExpectedCaptureBytes',([string]$State.etlBytes),'-BoundaryUtcTicks',([string]$State.ndis.configuredUtcTicks))
+    $State.phase='phase-headers';$text=Invoke-DoHNetEventProcess $State $State.eventTool @('-NoProfile','-NonInteractive','-File',(Join-Path $PSScriptRoot 'read-native-ndis-phases.ps1'),'-CapturePath',$State.etl,'-ExpectedFragments',([string]$f.fragmentIDs),'-ExpectedCaptureBytes',([string]$State.etlBytes),'-BoundaryUtcTicks',([string]$State.ndis.configuredUtcTicks),'-ConfigureStartUtcTicks',([string]$State.ndis.configureStartUtcTicks))
     $State.ndis.public.phaseReadEvidence=Get-DoHPhaseReadEvidence $text;$pr=$State.ndis.public.phaseReadEvidence
     if($pr.code -ceq 'none' -and $pr.privateMapWritten -and $pr.records -eq $catalog.records -and $pr.frames -eq $f.fragmentIDs){
         $State.phase='phase-counts';$text=Invoke-DoHNetEventProcess $State $State.node @((Join-Path $PSScriptRoot 'ndis-private-phases.cjs'),$State.ndis.root)
@@ -189,6 +195,6 @@ function Complete-DoHNetEventCleanup([object]$State) {
 }
 function Get-DoHNetEventSummary([object]$State) {
     $p=$State.ndis.public
-    $passed=($State.flags.Count -eq 16 -and @($State.flags.Values | Where-Object {$_ -isnot [bool] -or -not $_}).Count -eq 0 -and $State.processes -eq $State.joined -and -not $State.processFailed -and $State.decoderCode -ceq 'none' -and $State.outRecords -gt 0 -and $State.inRecords -gt 0 -and $State.cleanupCompleted -and $State.ndis.phaseVerified -and $p.cleanupCode -ceq 'none' -and $p.preflightEmpty -and $p.sessionVerified -and $p.sessionRemoved -and $p.conversionEvidence.summary.tcpClosure.resetFlows -eq 0 -and (Test-DoHIPAuthorityBinding $p.identityBinding $State.ndis.sourceCommit))
+    $passed=($State.flags.Count -eq 16 -and @($State.flags.Values | Where-Object {$_ -isnot [bool] -or -not $_}).Count -eq 0 -and $State.processes -eq $State.joined -and -not $State.processFailed -and $State.decoderCode -ceq 'none' -and $State.outRecords -gt 0 -and $State.inRecords -gt 0 -and $State.cleanupCompleted -and $State.ndis.phaseVerified -and $p.cleanupCode -ceq 'none' -and $p.preflightEmpty -and $p.sessionVerified -and $p.sessionRemoved -and $p.conversionEvidence.summary.tcpClosure.resetFlows -eq 0 -and (Test-DoHIPAuthorityBinding $p.identityBinding $State.ndis.sourceCommit) -and $p.baselineEvidence.captured -and $p.baselineEvidence.code -ceq 'complete')
     return @{schemaVersion=1;backend='netevent-ndis';outcome=$(if($passed){'passed'}else{'failed'});phase=$State.phase;failurePhase=$State.failurePhase;decoderCode=$State.decoderCode;controls=$State.flags;capture=$p;toolProcesses=$State.processes;toolProcessesJoined=$State.joined;toolFailure=$State.processFailed;processFailureCode=$State.processFailureCode;etlBytes=$State.etlBytes;pcapBytes=$State.pcapBytes;tlsFlows=$State.tlsFlows;outboundEncryptedRecords=$State.outRecords;inboundEncryptedRecords=$State.inRecords;providerMask=$State.providers;rawCapturePublished=$false;productionQualificationComplete=$false}
 }
