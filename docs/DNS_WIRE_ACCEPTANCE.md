@@ -566,3 +566,8 @@ The focused receipt is `docs/qualification/7b93e4a49290-direct-dns-helper.json`;
 
 
 The source-bound helper also has a guarded concurrent comparison mode. It reads the server through the same bounded private input, starts ordinary Windows and independent queries behind a common barrier, joins both and emits closed results with relative microsecond invocation intervals. It refuses to call the observation overlapping unless the intervals overlap. Invocation overlap does not establish packet-level overlap or identify the server actually chosen by Windows. The parent must enforce the helper deadline; server selection, baseline and block controls, validation of the closed comparison report, and integration into a fresh hosted trial remain pending. Both test packages compile for Windows AMD64 and ARM64; hosted synthetic validation is pending. No native comparison or readiness gate is qualified by this mode.
+
+
+The concurrent-helper cohort at `1ed99960b6ef`, run `42574689616`, is sealed. Both hosts passed the source-bound synthetic checks, including the synchronization contract, and independent-client static analysis. AMD64 passed the existing native prerequisite. ARM64 retained its immediate resumed-query timeout and answered all five later diagnostic queries; all helper processes joined, rules were removed, DNS state was verified and private roots were retired. The new comparison mode was not invoked in this native trial, so it supplies no live comparison or root-cause evidence.
+
+The focused receipt is `docs/qualification/1ed99960b6ef-concurrent-dns-helper.json`; cumulative evidence contains 604 verified ZIP digests and 460 terminal jobs. Historical entries remain unchanged and no readiness gate is promoted.
