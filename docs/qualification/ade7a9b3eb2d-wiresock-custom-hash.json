@@ -1,0 +1,490 @@
+{
+  "schemaVersion": 1,
+  "scope": "wiresock-custom-installer-hash-source-contracts",
+  "sourceCommit": "ade7a9b3eb2d4e7546ad2ea8689600ad0454a9c1",
+  "runID": 42632223423,
+  "sealedDoNotRepoll": true,
+  "metadataSource": "public GitHub workflow page",
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "a3e15a1d2c061c2b37b20e74e2feaadb2db80643173b71fc70e9a246095ff5cb",
+    "scripts/test-windows-workflow.ps1": "7f4081967e092f5d54ffe9753199d3e90e03f89d3e8f7ad294d6b27550401555",
+    "scripts/test-windows-component-downloads.ps1": "57765291aef7e5a83668c26b9740bb5c5554b0986629c564fbc26a5972dcf264",
+    ".github/workflows/windows-component-discovery.yml": "82e43792462e05c8fbf360e3cc3aaf82bff1aee7303d8008b86c309f0c3fe0f2"
+  },
+  "reports": [
+    {
+      "artifactID": 13680777654,
+      "name": "windows-component-source-amd64",
+      "providerZIPDigest": "sha256:db907bcbc9127f9748dce0567a16c6ca05a7348fbb811925335e2701756f7db0",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "outcome": "passed",
+      "suitePassed": true,
+      "cases": [
+        {
+          "name": "zapret selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "zapret2 selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret2 refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-incomplete before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-missing before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-incomplete before installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-missing before installation",
+          "passed": true
+        },
+        {
+          "name": "Complete complete scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Complete complete-default scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Complete complete-multi scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Single-target scan does not require a common section",
+          "passed": true
+        },
+        {
+          "name": "Multi-target complete-default scan requires a common section",
+          "passed": true
+        },
+        {
+          "name": "Multi-target complete-multi scan requires a common section",
+          "passed": true
+        },
+        {
+          "name": "App launch ignores matching processes in another session",
+          "passed": true
+        },
+        {
+          "name": "App launch ignores another executable in the current session",
+          "passed": true
+        },
+        {
+          "name": "App launch accepts the matching executable in the current session",
+          "passed": true
+        },
+        {
+          "name": "Application removal stops on a matching process failure and records an external effect",
+          "passed": true
+        },
+        {
+          "name": "Application process exit race remains a recorded external effect",
+          "passed": true
+        },
+        {
+          "name": "Application process stop records an external effect",
+          "passed": true
+        },
+        {
+          "name": "PTB clean download failure preserves the existing client",
+          "passed": true
+        },
+        {
+          "name": "PTB clean stages the replacement before removing the existing client",
+          "passed": true
+        },
+        {
+          "name": "PTB clean removal failure prevents installer execution",
+          "passed": true
+        },
+        {
+          "name": "Discord installer rejects other publisher categories",
+          "passed": true
+        },
+        {
+          "name": "Microsoft installer rejects other publisher categories",
+          "passed": true
+        },
+        {
+          "name": "WireSock installer requires its own publisher category",
+          "passed": true
+        },
+        {
+          "name": "Dedicated component download contracts pass in an isolated stock shell",
+          "passed": true
+        },
+        {
+          "name": "Custom WireSock installer without a hash is rejected before discovery",
+          "passed": true
+        },
+        {
+          "name": "Hashed custom WireSock request reaches mocked discovery",
+          "passed": true
+        },
+        {
+          "name": "Default WireSock request reaches mocked discovery",
+          "passed": true
+        }
+      ],
+      "milestones": {
+        "main": true,
+        "service": true,
+        "staging": true,
+        "vendor": true,
+        "child": true,
+        "dns": true,
+        "arguments": true,
+        "archive": true
+      }
+    },
+    {
+      "artifactID": 13681701556,
+      "name": "windows-component-source-arm64",
+      "providerZIPDigest": "sha256:f6947bd2d649fcbab6e585e4fe07edfd628f43806ce90872b060bb1ee734426d",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "outcome": "passed",
+      "suitePassed": true,
+      "cases": [
+        {
+          "passed": true,
+          "name": "zapret selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret refuses a preferred folder containing only the other executable"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 refuses a preferred folder containing only the other executable"
+        },
+        {
+          "passed": true,
+          "name": "Scan rejects scan-incomplete before saving or installation"
+        },
+        {
+          "passed": true,
+          "name": "Scan rejects scan-missing before saving or installation"
+        },
+        {
+          "passed": true,
+          "name": "Scan rejects parser-incomplete before installation"
+        },
+        {
+          "passed": true,
+          "name": "Scan rejects parser-missing before installation"
+        },
+        {
+          "passed": true,
+          "name": "Complete complete scan reaches only the mocked installer"
+        },
+        {
+          "passed": true,
+          "name": "Complete complete-default scan reaches only the mocked installer"
+        },
+        {
+          "passed": true,
+          "name": "Complete complete-multi scan reaches only the mocked installer"
+        },
+        {
+          "passed": true,
+          "name": "Single-target scan does not require a common section"
+        },
+        {
+          "passed": true,
+          "name": "Multi-target complete-default scan requires a common section"
+        },
+        {
+          "passed": true,
+          "name": "Multi-target complete-multi scan requires a common section"
+        },
+        {
+          "passed": true,
+          "name": "App launch ignores matching processes in another session"
+        },
+        {
+          "passed": true,
+          "name": "App launch ignores another executable in the current session"
+        },
+        {
+          "passed": true,
+          "name": "App launch accepts the matching executable in the current session"
+        },
+        {
+          "passed": true,
+          "name": "Application removal stops on a matching process failure and records an external effect"
+        },
+        {
+          "passed": true,
+          "name": "Application process exit race remains a recorded external effect"
+        },
+        {
+          "passed": true,
+          "name": "Application process stop records an external effect"
+        },
+        {
+          "passed": true,
+          "name": "PTB clean download failure preserves the existing client"
+        },
+        {
+          "passed": true,
+          "name": "PTB clean stages the replacement before removing the existing client"
+        },
+        {
+          "passed": true,
+          "name": "PTB clean removal failure prevents installer execution"
+        },
+        {
+          "passed": true,
+          "name": "Discord installer rejects other publisher categories"
+        },
+        {
+          "passed": true,
+          "name": "Microsoft installer rejects other publisher categories"
+        },
+        {
+          "passed": true,
+          "name": "WireSock installer requires its own publisher category"
+        },
+        {
+          "passed": true,
+          "name": "Dedicated component download contracts pass in an isolated stock shell"
+        },
+        {
+          "passed": true,
+          "name": "Custom WireSock installer without a hash is rejected before discovery"
+        },
+        {
+          "passed": true,
+          "name": "Hashed custom WireSock request reaches mocked discovery"
+        },
+        {
+          "passed": true,
+          "name": "Default WireSock request reaches mocked discovery"
+        }
+      ],
+      "milestones": {
+        "service": true,
+        "archive": true,
+        "staging": true,
+        "main": true,
+        "vendor": true,
+        "dns": true,
+        "arguments": true,
+        "child": true
+      }
+    }
+  ],
+  "realVendorExecuted": false,
+  "productionQualificationComplete": false,
+  "goRegression": {
+    "runID": 42632223446,
+    "sourceTree": "5779021cec3da4ab8a0ca097b6148e2eff0180b5",
+    "outcome": "passed",
+    "metadataSource": "public GitHub workflow page",
+    "sealedDoNotRepoll": true,
+    "reports": [
+      {
+        "artifact": "root-regression-windows-amd64",
+        "artifactID": 13681996901,
+        "providerZIPDigest": "sha256:eeb6a12a0e7196b65e542bd3958d5054fdbcae72d4e9132dfc738fa4284684be",
+        "digestVerified": true,
+        "mode": "unit",
+        "outcome": "passed",
+        "test": {
+          "name": "TestWireSockCustomInstallerRequiresHash",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        }
+      },
+      {
+        "artifact": "root-regression-windows-arm64",
+        "artifactID": 13680649579,
+        "providerZIPDigest": "sha256:884dee12d9c26823f0bc6c42d266acee4dcaaea340d48432db207bef4d06f2cf",
+        "digestVerified": true,
+        "mode": "unit",
+        "outcome": "passed",
+        "test": {
+          "name": "TestWireSockCustomInstallerRequiresHash",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        }
+      },
+      {
+        "artifact": "root-regression-linux-amd64",
+        "artifactID": 13680803028,
+        "providerZIPDigest": "sha256:2547b1604f2861e7be7c00abe44fdc527c9178832e0138c3c94aeda65a0dad97",
+        "digestVerified": true,
+        "mode": "unit",
+        "outcome": "passed",
+        "test": {
+          "name": "TestWireSockCustomInstallerRequiresHash",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        }
+      },
+      {
+        "artifact": "root-regression-linux-amd64",
+        "artifactID": 13680803028,
+        "providerZIPDigest": "sha256:2547b1604f2861e7be7c00abe44fdc527c9178832e0138c3c94aeda65a0dad97",
+        "digestVerified": true,
+        "mode": "race",
+        "outcome": "passed",
+        "test": {
+          "name": "TestWireSockCustomInstallerRequiresHash",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        }
+      },
+      {
+        "artifact": "root-regression-linux-arm64",
+        "artifactID": 13681057899,
+        "providerZIPDigest": "sha256:2397c09bd2f729eba4021c44c48ac6e16777cdb13e4b6f853e5835a145674a95",
+        "digestVerified": true,
+        "mode": "unit",
+        "outcome": "passed",
+        "test": {
+          "name": "TestWireSockCustomInstallerRequiresHash",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        }
+      },
+      {
+        "artifact": "root-regression-linux-arm64",
+        "artifactID": 13681057899,
+        "providerZIPDigest": "sha256:2397c09bd2f729eba4021c44c48ac6e16777cdb13e4b6f853e5835a145674a95",
+        "digestVerified": true,
+        "mode": "race",
+        "outcome": "passed",
+        "test": {
+          "name": "TestWireSockCustomInstallerRequiresHash",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        }
+      }
+    ]
+  },
+  "wireCohort": {
+    "runID": 42632223164,
+    "sealedDoNotRepoll": true,
+    "sourceCommit": "ade7a9b3eb2d4e7546ad2ea8689600ad0454a9c1",
+    "sourceSHA256": {
+      "scripts/native-doh-baseline-evidence.ps1": "22f08623ceabb81dc860d00fe79262d74b1d05687d8873cb7ccc088ff36a7e79",
+      "scripts/dns-wire-ip-policy.cjs": "4ef726c45d7085c70300e632341bf0e454c847fee648cd43fce499938bf9b5c5",
+      "scripts/dns-wire-ip-stdin.cjs": "dd00f588ebc9d91bdca5aca5f675dea5a19b25d71d99406263c12b5d234c0331",
+      "scripts/native-doh-ip-binding.ps1": "def932a4a9d615a440c2b6592967ddfbfaab77628905a488606921df96a2f323",
+      "docs/qualification/3e2314a8de82-ip-authority-http2.json": "f283959a6b8267a5a576e2d0b1725728d9647276db8421242c3f3b54716c703c",
+      "scripts/test-native-doh.ps1": "17a1b14431197021cd1b6588f68bbae0de3cbf7e8d6cf61849a3779ef8acb661",
+      "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
+      "scripts/dns-acceptance-state.ps1": "8bb62601742700d74f1fa455c3008c37fe5a95588c79d80a808e9efbd6e8db7e",
+      "scripts/test-dns-acceptance-state.ps1": "c558f19085c62d4c7afe65e7b5d96d49a2095daf33c9e494d517a37f07565b20",
+      "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+      ".github/workflows/native-doh.yml": "7a373b86da9de96909db6ff01dcf7f4aa0115c5efc719b5540f1f84a4643df40",
+      "internal/workflow/windows.ps1": "a3e15a1d2c061c2b37b20e74e2feaadb2db80643173b71fc70e9a246095ff5cb",
+      "internal/workflow/manager.go": "63551f3253e549df474792a13209a186dd740c9303687c52eda471dc3b598962",
+      "cmd/accessweaver/system.go": "902f4b94cfecdfa6baa62a2e563cb01a12bf551f1fd76fac87915224430cca44",
+      "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+      "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+      "scripts/native-dns-wire.ps1": "628ca31341babc247390d14dfcadea2d772d33a666570edbbd6c6b05ebee2850",
+      "scripts/test-dns-wire-native-contracts.ps1": "4af781a7e51c184efab8f826a6be41672df4135e9b452aafe836ae8e83095f6a",
+      "scripts/dns-wire-evidence.cjs": "a97a74930831fca28146b1b043f26b9b26cca6eb5d0e56587bc4cbb2fa9eaf81",
+      "scripts/dns-wire-stdin.cjs": "b05d259e94b3f89555c645cc9205b922ae6418bf99bfa56581abdb72fa205fa0",
+      ".github/workflows/native-doh-wire.yml": "7cfe8443d0fc85de8309f80de2240aff01c53412a3f23baaa648a7e1fbb1a4d2",
+      "scripts/read-native-ndis-phases.ps1": "f1af74724a00265a5b2a88868518e019e077ecc9ed71632380213751a0d7dc96",
+      "scripts/ndis-private-phases.cjs": "e4222a36a1396563d4d331a1315206040a5e025cd9d3bbefa0623f4fac6b5eea",
+      "scripts/native-doh-phase-evidence.ps1": "dc5e1e584287196ca1d1911ebbd68491494f555b7045b9b210883292f9a0b2f5",
+      "scripts/test-ndis-private-phases.cjs": "3be1bbef982fa426af29e73eb6e0007396d6d2695761d508117b179c69614323",
+      "scripts/native-doh-netevent-wire.ps1": "f352a82c3d4757aa8492a967564963bc7d601e1bbddcfbc562573d83c178d179",
+      "scripts/test-native-doh-netevent-contracts.ps1": "09f883de6bf7343dc6e098e9ec2a63b8aa251d04aa52f814840531752051ef37",
+      "scripts/native-netevent-control.ps1": "3d157d483aa010666d65249e898cb71c917d923e3ed0046b80e2972076d6e0b1",
+      "scripts/netevent-control-operation.ps1": "147b1d5772ab65da2d7eef0790f70dc5b779880e6d411acc13ee864a47c070aa",
+      "scripts/native-doh-offload-plan.ps1": "6fcd202c6df94339555fefb3cd791483744ea9813bff6371f3cdb92806a4c4c9",
+      "scripts/doh-offload-operation.ps1": "6548176b036308a80cf802940585f97de9102f753be5038bef43ad8813d88bb6",
+      "scripts/native-offload-state.ps1": "fb12b941676bc792cacfe17fdfa26b5a0bb03fa85ae1cf98da29ef88711f7290",
+      "scripts/native-doh-route-state.ps1": "0b7ace73631dcc2d9448c7986436c46d99bfde1809109f9974251ea09f89831a",
+      "scripts/native-ipv6-route-table.ps1": "d5679cff72d40bccd319f1b1de3dbac873d645503494d5da4eca8a9b1fba69ed",
+      "scripts/native-etl-header.cs": "2624836059feb17a5b284bc8c9abbdb46978231fe4b7e319b0354ca6dfdadb5a",
+      "scripts/read-native-etl-loss.ps1": "e54c62b9550bb10d288997e1a32a84c7b0a45883bdec2eb48e9a6b9db66535e7",
+      "scripts/extract-native-ndis.ps1": "cc0f5a88d4ef43e8b77f77e94112ddeca049eefc0e7772618af92391c52deaf9",
+      "scripts/ndis-frame-converter.cjs": "c4e7923eb9d904a4ad138b095033064ab62550e6c26a00551fd9c5068098f8f7",
+      "scripts/ndis-private-convert.cjs": "ff56ac3be7537508a6cd2de89602e0bd7b981062c7df485fd8f3e7e34d25a787",
+      "scripts/native-dns-query.ps1": "d7f162cc861d380c3e758efbd11600e14c32c9105765b89c67e1b10f1d2f703d",
+      "scripts/native-dns-query/main_windows.go": "e5563572affca0f86c66c953e7c100ec435b813d115c7ccf4adfe79f6a82548a",
+      "scripts/native-dns-query/main_windows_test.go": "eeda487cbf5f067e4ca5b34b2160bf531332da65a936cf0fffae13596d090caa",
+      "scripts/native-dns-direct/direct.go": "3a0e965a95113499da90d7209fc222b5fb1811e7c407ec68ad6a2b6488cea7bd",
+      "scripts/native-dns-direct/direct_test.go": "53866a55c14c7d46a7db12d3b97443e87b3af4a9c07c3dc71d85352916e22582",
+      "scripts/native-dns-recovery-observation.ps1": "0fe86eeba8fa32ed04135c32815eb1f0c07d85e2fa4badc11d7061b956e9944e",
+      "scripts/test-native-dns-query-contracts.ps1": "95eb860212993183eab5df71ec59e4c75f8298d1faeea79695bd13bfdc4885eb"
+    },
+    "sourceArtifactDigests": [
+      {
+        "artifactID": 13680699387,
+        "name": "native-doh-netevent-source-windows-arm64",
+        "providerZIPDigest": "sha256:272d4b849fce2731de6fb4b4f3be4256a9533ef334d1926c8ebf69f4bf44d361"
+      },
+      {
+        "artifactID": 13680659312,
+        "name": "native-doh-netevent-source-windows-amd64",
+        "providerZIPDigest": "sha256:98946a3f279d16349da3e51155a882524edf7fb55a6888f8f2829b2dd0c9edf7"
+      }
+    ],
+    "reports": [
+      {
+        "architecture": "arm64",
+        "artifactID": 13681627105,
+        "providerZIPDigest": "sha256:4a9212a5834deae2a5dd11e2b2fc6e33a71f52715f2741dfaf6b1e92fdc487ee",
+        "outcome": "failed",
+        "failurePhase": "decode",
+        "decoderCode": "none",
+        "tlsObservation": "insufficient",
+        "plaintextPackets": 8,
+        "restoredStateVerified": true,
+        "snapshotRemoved": true,
+        "toolProcesses": 29,
+        "toolProcessesJoined": 29
+      },
+      {
+        "architecture": "amd64",
+        "artifactID": 13680654294,
+        "providerZIPDigest": "sha256:f3da64ac8b40f38b6c5752943471cce51833f7fab5ce8eed18f6f32c78e32b41",
+        "outcome": "passed",
+        "failurePhase": "none",
+        "decoderCode": "none",
+        "tlsObservation": "tls-observed",
+        "plaintextPackets": 0,
+        "restoredStateVerified": true,
+        "snapshotRemoved": true,
+        "toolProcesses": 29,
+        "toolProcessesJoined": 29
+      }
+    ],
+    "nativeDnsGateQualified": false,
+    "rawLogsRead": false
+  }
+}
