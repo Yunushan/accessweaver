@@ -91,6 +91,46 @@ function New-NativeDNSCryptBundle([string]$PrivateRoot,[string]$Architecture) {
         return @{directory=$directory;version='2.1.20';archiveSHA256=$pin.hash;binarySHA256=$binaryHash}
     }finally{if($null -ne $zip){$zip.Dispose()};if($null -ne $zipStream){$zipStream.Dispose()};if($null -ne $output){$output.Dispose()};if($null -ne $inputStream){$inputStream.Dispose()};if($null -ne $response){$response.Dispose()};$client.Dispose()}
 }
+# Read-only control of the exact product readback function against the state
+# the product just configured. Only fixed categories and booleans are retained.
+function Test-NativeConfiguredDNSReadback([object]$State) {
+    $result=@{schemaVersion=1;outcome='failed';code='source';sourceBound=$false;positiveVerified=$false;ipv4MismatchRejected=$false;ipv6MismatchRejected=$false;dnsConfigurationChanged=$false;networkQueryInvoked=$false;productionQualificationComplete=$false}
+    try{
+        Assert-DoHNetEventSources $State
+        $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $State.ndis.project 'internal/workflow/windows.ps1'),[ref]$tokens,[ref]$errors)
+        if($errors.Count){throw 'Readback source syntax'}
+        $selected=@('Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Get-StaticDNSServers','Assert-ConfiguredDNSServers')
+        $allowed=$selected+@('Get-NetAdapter','Get-DnsClientServerAddress','Where-Object')
+        foreach($name in $selected){
+            $nodes=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
+            if($nodes.Count -ne 1){throw 'Readback function identity'}
+            foreach($command in $nodes[0].FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($command.GetCommandName() -cnotin $allowed){throw 'Readback command boundary'}}
+            . ([scriptblock]::Create($nodes[0].Extent.Text))
+        }
+        Assert-DoHNetEventSources $State;$result.sourceBound=$true;$result.code='inventory'
+        $inventory=@(Get-NetAdapter -ErrorAction Stop);if($inventory.Count -gt 256 -or $null -eq $State.before){throw 'Readback inventory bound'}
+        $adapters=@();$records=@();$has4=$false;$has6=$false
+        foreach($old in @($State.before.adapters | Where-Object {$_.selected})){
+            $matches=@($inventory | Where-Object {[string]$_.InterfaceGuid -eq [string]$old.guid})
+            if($matches.Count -ne 1 -or $matches[0].Status -ne 'Up'){throw 'Readback adapter unavailable'}
+            $b4=($old.ipv4.mode -cne 'not-exposed');$b6=($old.ipv6.mode -cne 'not-exposed')
+            if(-not $b4 -and -not $b6){throw 'Readback families unavailable'}
+            $adapters+=@($matches[0]);$records+=@(@{guid=[string]$old.guid;bound4=$b4;bound6=$b6});$has4=$has4 -or $b4;$has6=$has6 -or $b6
+        }
+        if($adapters.Count -eq 0 -or -not $has4 -or -not $has6){throw 'Readback dual-family coverage unavailable'}
+        $expected=@('8.8.8.8','9.9.9.9','2001:4860:4860::8888','2620:fe::fe')
+        $result.code='positive';Assert-ConfiguredDNSServers $adapters $records $expected;$result.positiveVerified=$true
+        $result.code='ipv4-negative';$bad4=@('192.0.2.254','9.9.9.9','2001:4860:4860::8888','2620:fe::fe')
+        try{Assert-ConfiguredDNSServers $adapters $records $bad4}catch{if($_.Exception.Message -cne 'Configured DNS servers differ'){throw 'IPv4 readback indeterminate'};$result.ipv4MismatchRejected=$true}
+        if(-not $result.ipv4MismatchRejected){throw 'IPv4 mismatch accepted'}
+        $result.code='ipv6-negative';$bad6=@('8.8.8.8','9.9.9.9','2001:db8::254','2620:fe::fe')
+        try{Assert-ConfiguredDNSServers $adapters $records $bad6}catch{if($_.Exception.Message -cne 'Configured DNS servers differ'){throw 'IPv6 readback indeterminate'};$result.ipv6MismatchRejected=$true}
+        if(-not $result.ipv6MismatchRejected){throw 'IPv6 mismatch accepted'}
+        $result.code='final-readback';Assert-ConfiguredDNSServers $adapters $records $expected;Assert-DoHNetEventSources $State
+        $result.outcome='passed';$result.code='none'
+    }catch{}
+    return $result
+}
 if(-not [IO.Path]::IsPathRooted($ReportPath)){throw 'Native report requires an absolute path'}
 $ReportPath=[IO.Path]::GetFullPath($ReportPath);Assert-NativeOrdinaryPath $ReportPath
 $reportParent=Get-Item -LiteralPath ([IO.Path]::GetDirectoryName($ReportPath)) -Force -ErrorAction Stop
@@ -98,7 +138,7 @@ if(-not $reportParent.PSIsContainer -or [IO.Directory]::GetFileSystemEntries($re
 $reportCreated=$reportParent.CreationTimeUtc.Ticks;$project=Split-Path -Parent $PSScriptRoot
 $sources=@('scripts/test-native-doh.ps1','scripts/native-doh-scenario.ps1','scripts/dns-acceptance-state.ps1','scripts/test-dns-acceptance-state.ps1','scripts/check-native-environment.cjs','.github/workflows/native-doh.yml','internal/workflow/windows.ps1','internal/workflow/manager.go','cmd/accessweaver/system.go','go.mod','go.sum')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
-$script:wire=$null;$wireSummary=$null;$queryBinaryVerified=$false;$queryProbeReady=$false
+$script:wire=$null;$wireSummary=$null;$queryBinaryVerified=$false;$queryProbeReady=$false;$script:configuredReadbackControl=@{schemaVersion=1;outcome='not-run';code='not-started';sourceBound=$false;positiveVerified=$false;ipv4MismatchRejected=$false;ipv6MismatchRejected=$false;dnsConfigurationChanged=$false;networkQueryInvoked=$false;productionQualificationComplete=$false}
 $script:componentRequestAttempts=0;$script:componentRetryStatus=0;$script:componentStage='not-started';$script:componentFailureCode='none';$script:componentHTTPStatus=0;$script:componentDownloadedBytes=0;$script:componentArchiveEntries=0
 $script:cliCount=0;$script:joined=0;$script:overflow=$false;$script:captureFailed=$false;$script:diagnosticWaitExceeded=$false
 $script:captureStage='not-started';$script:captureProgress=@{adapterTotal=0;adapterOrdinal=0;selected=$false};$script:configureExit=-1;$script:restoreExit=-1;$script:answers=0
@@ -464,6 +504,7 @@ public static class AccessWeaverNativeDoHIdentity {
             $script:staticSnapshotNormalized=($owned.Count -eq 1 -and $owned[0].dhcp6 -is [bool] -and -not $owned[0].dhcp6 -and @($owned[0].ipv6).Count -eq 2 -and $owned[0].ipv6[0] -ceq $script:staticPlan.servers[0] -and $owned[0].ipv6[1] -ceq $script:staticPlan.servers[1])
             if(-not $script:staticSnapshotNormalized){throw 'Native product static snapshot was not normalized'}
         }
+        if($null -ne $script:wire){$script:configuredReadbackControl=Test-NativeConfiguredDNSReadback $script:wire;if($script:configuredReadbackControl.outcome -cne 'passed'){throw 'Configured DNS readback control refused'}}
         $script:answers=Get-NativeDNSAnswerCount
         if($null -ne $script:wire){try{Measure-DoHNetEventWire $script:wire}catch{if($script:wire.failurePhase -ceq 'none'){$script:wire.failurePhase=$script:wire.phase};throw}}
     } -InduceFailure {
@@ -542,7 +583,7 @@ finally {
     $parent=Get-Item -LiteralPath $reportParent.FullName -Force -ErrorAction Stop;Assert-NativeOrdinaryPath $ReportPath
     if($parent.CreationTimeUtc.Ticks -ne $reportCreated -or [IO.Directory]::GetFileSystemEntries($parent.FullName).Length -ne 0){throw 'Changed native report parent retained'}
     $report=@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;platform='windows';architecture=$env:ACCESSWEAVER_EXPECT_GOARCH;goVersion=$env:GO_VERSION;edition=$PSVersionTable.PSEdition;version=$PSVersionTable.PSVersion.ToString();binarySHA256=$BinarySHA256;outcome=$outcome;code=$code;environmentVerified=$environmentVerified;nativeProcessVerified=$nativeProcessVerified;binaryVerified=$binaryVerified;scenario=$scenario;staticFixture=$staticFixture;staticFirewallProtected=$script:staticFirewallProtected;staticFirewallRemoved=$script:staticFirewallRemoved;staticObservation=$script:staticObservation;staticPhase=$script:staticPhase;staticFailurePhase=$script:staticFailurePhase;staticFailureCode=$script:staticFailureCode;staticSnapshotNormalized=$script:staticSnapshotNormalized;rollbackScenario=$rollbackScenario;rollbackSnapshotRemoved=$script:rollbackSnapshotRemoved;rollbackServiceRemoved=$script:rollbackServiceRemoved;resolverVerificationRejected=$script:resolverVerificationRejected;configureElapsedMilliseconds=$script:configureElapsedMilliseconds;forwarderPeerClosures=$script:forwarderPeerClosures;forwarderFailureCode=$script:forwarderFailureCode;forwarderRequests=$script:forwarderRequests;forwarderResponses=$script:forwarderResponses;forwarderFailed=$script:forwarderFailed;configuredDuringRejectedApply=$script:configuredDuringRejectedApply;installedComponentVerified=$script:installedComponentVerified;baselineResolverAnswers=$script:baselineAnswers;probeOutcome=$probeOutcome;adapterShapes=@($adapterShapes);captureStage=$script:captureStage;captureProgress=$script:captureProgress;cliCount=$script:cliCount;processesJoined=$script:joined;configureExitCode=$script:configureExit;restoreExitCode=$script:restoreExit;outputOverflow=$script:overflow;captureFailed=$script:captureFailed;diagnosticWaitExceeded=$script:diagnosticWaitExceeded;ordinaryResolverAnswers=$script:answers;snapshotRemoved=$snapshotRemoved;method=$Method;scenarioKind=$ScenarioKind;failureServiceStopped=$script:failureServiceStopped;resolverProcessExited=$script:resolverProcessExited;failedResolverObserved=$script:failedResolverObserved;restoredResolverAnswers=$script:restoredAnswers;componentRequestAttempts=$script:componentRequestAttempts;componentRetryStatus=$script:componentRetryStatus;componentStage=$script:componentStage;componentFailureCode=$script:componentFailureCode;componentHTTPStatus=$script:componentHTTPStatus;componentDownloadedBytes=$script:componentDownloadedBytes;componentArchiveEntries=$script:componentArchiveEntries;componentVersion=$(if($component){$component.version}else{''});componentArchiveSHA256=$(if($component){$component.archiveSHA256}else{''});componentBinarySHA256=$(if($component){$component.binarySHA256}else{''});componentStaged=($null -ne $component);serviceRunning=$serviceRunning;serviceAutomatic=$serviceAutomatic;serviceRemoved=$serviceRemoved;cleanupExitCode=$script:cleanupExit;encryptedTrafficObserved=$false;rebootExercised=$false;dnscryptExercised=($Method -ceq 'dnscrypt' -and (($null -ne $scenario -and $scenario.configurationAttempted) -or ($null -ne $rollbackScenario -and $rollbackScenario.configurationAttempted)));nativeDnsQualified=$false;productionQualificationComplete=$false}
-    if($WireTransport){$report.queryBinarySHA256=$(if($queryBinaryVerified){$QueryBinarySHA256}else{''});$report.queryBinaryVerified=$queryBinaryVerified;$report.queryProbeReady=$queryProbeReady;$report.wire=$wireSummary;$report.encryptedTrafficObserved=($outcome -ceq 'passed' -and $null -ne $wireSummary -and $wireSummary.outcome -ceq 'passed')}
+    if($WireTransport){$report.configuredReadbackControl=$script:configuredReadbackControl;$report.queryBinarySHA256=$(if($queryBinaryVerified){$QueryBinarySHA256}else{''});$report.queryBinaryVerified=$queryBinaryVerified;$report.queryProbeReady=$queryProbeReady;$report.wire=$wireSummary;$report.encryptedTrafficObserved=($outcome -ceq 'passed' -and $null -ne $wireSummary -and $wireSummary.outcome -ceq 'passed')}
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($report|ConvertTo-Json -Depth 8 -Compress));if($bytes.Length -gt 24576){throw 'Native report exceeds fixed metadata bound'}
     $stream=[IO.FileStream]::new($ReportPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush()}finally{$stream.Dispose()}
