@@ -1,0 +1,21 @@
+# Hosted pure source contracts. No native or network boundary is loaded.
+[CmdletBinding()]param([switch]$RequireWindowsPowerShell)
+$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';Set-StrictMode -Version Latest
+if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted'){throw 'Hosted source contracts only'}
+if($RequireWindowsPowerShell -and ($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1)){throw 'Stock source shell required'}
+foreach($name in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management')){Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$name,($name+'.psd1'))) -ErrorAction Stop};$PSModuleAutoLoadingPreference='None'
+$t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'doh-ip-authority-evidence.ps1'),[ref]$t,[ref]$e);if($e.Count){throw 'Source syntax'}
+foreach($def in $ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin @('New-DoHIPAuthorityEndpoint','ConvertFrom-Json','Where-Object')){throw 'Source command boundary'}};. ([scriptblock]::Create($def.Extent.Text))}
+function Assert-I([bool]$Value){if(-not $Value){throw 'Synthetic endpoint assertion'}}
+function Good-I([int]$Mask) {$r=New-DoHIPAuthorityEndpoint $Mask 'none';$r.outcome='passed';$r.certificateMask=$Mask*5;foreach($k in @('tlsAuthorized','ipIdentityVerified','responseValidated','socketStarted','closed','peerEnded','socketJoined')){$r[$k]=$true};return $r}
+$cases=[Collections.Generic.List[object]]::new();function Case-I([string]$Name,[scriptblock]$Body){$passed=$true;try{& $Body}catch{$passed=$false};$cases.Add(@{name=$Name;passed=$passed})}
+Case-I 'closed-valid-endpoint-preserves-only-fixed-proof-fields' {$r=Get-DoHIPAuthorityEndpoint ((Good-I 1) | ConvertTo-Json -Compress) 1;Assert-I ($r.outcome -ceq 'passed' -and $r.certificateMask -eq 5 -and $r.socketJoined -and $r.Count -eq 13)}
+Case-I 'ipv6-san-absence-keeps-ipv4-endpoint-but-fails-full-coverage' {$r=Good-I 1;$r.certificateMask=1;$r=Get-DoHIPAuthorityEndpoint ($r | ConvertTo-Json -Compress) 1;Assert-I ($r.outcome -ceq 'passed');Assert-I (-not (Test-DoHIPAuthorityCoverage @($r,(Good-I 2))))}
+Case-I 'private-certificate-or-name-fields-refused' {$r=Good-I 1;$r.raw='private';Assert-I ((Get-DoHIPAuthorityEndpoint ($r | ConvertTo-Json -Compress) 1).code -ceq 'invalid')}
+Case-I 'false-join-claim-refused' {$r=Good-I 1;$r.closed=$false;Assert-I ((Get-DoHIPAuthorityEndpoint ($r | ConvertTo-Json -Compress) 1).code -ceq 'invalid')}
+Case-I 'certificate-coverage-requires-chain-and-ip-identity' {$r=Good-I 1;$r.tlsAuthorized=$false;Assert-I ((Get-DoHIPAuthorityEndpoint ($r | ConvertTo-Json -Compress) 1).code -ceq 'invalid')}
+Case-I 'failed-result-cannot-use-success-code-or-production-claim' {$r=Good-I 1;$r.outcome='failed';Assert-I ((Get-DoHIPAuthorityEndpoint ($r | ConvertTo-Json -Compress) 1).code -ceq 'invalid');$r=Good-I 1;$r.productionQualificationComplete=$true;Assert-I ((Get-DoHIPAuthorityEndpoint ($r | ConvertTo-Json -Compress) 1).code -ceq 'invalid')}
+Case-I 'full-coverage-requires-both-provider-results-and-four-ip-identities' {Assert-I (Test-DoHIPAuthorityCoverage @((Good-I 1),(Good-I 2)));Assert-I (-not (Test-DoHIPAuthorityCoverage @((Good-I 1),(Good-I 1))));$r=Good-I 1;$r.closed=$false;Assert-I (-not (Test-DoHIPAuthorityCoverage @($r,(Good-I 2))))}
+Case-I 'unstarted-failure-has-no-live-socket-or-private-details' {$r=New-DoHIPAuthorityEndpoint 1 'network';$v=Get-DoHIPAuthorityEndpoint ($r | ConvertTo-Json -Compress) 1;Assert-I ($v.code -ceq 'network' -and -not $v.socketStarted -and $v.socketJoined)}
+$passed=@($cases | Where-Object {-not $_.passed}).Count -eq 0
+[Console]::Out.WriteLine((@{schemaVersion=1;scope='pure-ip-authority-source-contracts';cases=@($cases.ToArray());passed=$passed;nativeNetworkUsed=$false;productionQualificationComplete=$false} | ConvertTo-Json -Depth 5 -Compress));if(-not $passed){exit 1}

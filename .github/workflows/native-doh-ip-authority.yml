@@ -1,0 +1,92 @@
+name: Native authenticated DoH IP-authority prerequisite
+
+on:
+  push:
+    branches: ['main', 'codex/dns-adapter-coverage']
+    paths:
+      - 'scripts/doh-ip-authority-control.cjs'
+      - 'scripts/test-doh-ip-authority-control.cjs'
+      - 'scripts/doh-ip-authority-evidence.ps1'
+      - 'scripts/test-doh-ip-authority-source.ps1'
+      - 'scripts/test-doh-ip-authority.ps1'
+      - 'scripts/ndis-tls-control.cjs'
+      - 'scripts/native-dns-wire.ps1'
+      - '.github/workflows/native-doh-ip-authority.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-doh-ip-authority-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prerequisite:
+    name: IP-authority prerequisite (windows/${{ matrix.goarch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {goarch: amd64, os: windows-latest, sdkarch: x64}
+          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      ACCESSWEAVER_EXPECT_GOOS: windows
+      ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '26.8.2'
+          architecture: ${{ matrix.sdkarch }}
+          package-manager-cache: false
+      - name: Verify native pinned Node identity
+        run: |
+          node -e "const os=require('node:os');const arch={x64:'amd64',arm64:'arm64'}[process.arch];const host={x86_64:'amd64',amd64:'amd64',arm64:'arm64',aarch64:'arm64'}[os.machine().toLowerCase()];if(process.platform!=='win32'||process.version!=='v26.8.2'||arch!==host||arch!==process.env.ACCESSWEAVER_EXPECT_GOARCH)process.exit(1)"
+          if($LASTEXITCODE -ne 0){throw 'Native Node identity refused'}
+      - name: Verify pure and closed source contracts
+        run: |
+          $fixed=Join-Path $env:RUNNER_TEMP ('accessweaver-ip-authority-source-'+[Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $fixed -ErrorAction Stop | Out-Null
+          "ACCESSWEAVER_IP_AUTHORITY_SOURCE=$fixed" >> $env:GITHUB_ENV
+          $nodeText=& node ./scripts/test-doh-ip-authority-control.cjs
+          $nodeExit=$LASTEXITCODE
+          $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          $psText=& $stock -NoProfile -NonInteractive -File ./scripts/test-doh-ip-authority-source.ps1 -RequireWindowsPowerShell
+          $psExit=$LASTEXITCODE
+          $paths=@('scripts/doh-ip-authority-control.cjs','scripts/test-doh-ip-authority-control.cjs','scripts/doh-ip-authority-evidence.ps1','scripts/test-doh-ip-authority-source.ps1','scripts/test-doh-ip-authority.ps1','scripts/ndis-tls-control.cjs','scripts/native-dns-wire.ps1','.github/workflows/native-doh-ip-authority.yml')
+          $hashes=@{};foreach($file in $paths){$hashes[$file]=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()}
+          $r=@{schemaVersion=1;scope='ip-authority-actual-source-contracts';sourceSHA256=$hashes;node=($nodeText | ConvertFrom-Json);powershell=($psText | ConvertFrom-Json);passed=($nodeExit -eq 0 -and $psExit -eq 0);nativeNetworkUsed=$false;productionQualificationComplete=$false}
+          [IO.File]::WriteAllText((Join-Path $fixed 'status.json'),($r | ConvertTo-Json -Depth 7 -Compress),[Text.UTF8Encoding]::new($false))
+          if(-not $r.passed){throw 'IP authority source contracts refused'}
+      - name: Run guarded authenticated IP-authority prerequisite
+        run: |
+          $fixed=Join-Path $env:RUNNER_TEMP ('accessweaver-ip-authority-'+[Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $fixed -ErrorAction Stop | Out-Null
+          "ACCESSWEAVER_IP_AUTHORITY_NATIVE=$fixed" >> $env:GITHUB_ENV
+          $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-doh-ip-authority.ps1 -ReportPath (Join-Path $fixed 'status.json')
+          if($LASTEXITCODE -ne 0){throw 'Authenticated IP-authority prerequisite refused; fixed metadata retained'}
+      - name: Retain fixed IP-authority source metadata only
+        if: always() && env.ACCESSWEAVER_IP_AUTHORITY_SOURCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ip-authority-source-windows-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_IP_AUTHORITY_SOURCE }}/status.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain fixed IP-authority native metadata only
+        if: always() && env.ACCESSWEAVER_IP_AUTHORITY_NATIVE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ip-authority-native-windows-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_IP_AUTHORITY_NATIVE }}/status.json
+          if-no-files-found: error
+          retention-days: 7
