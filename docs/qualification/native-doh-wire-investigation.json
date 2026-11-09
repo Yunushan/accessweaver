@@ -22598,10 +22598,754 @@
           }
         }
       ]
+    },
+    {
+      "sourceCommit": "ebbcc52563e3a2a1d980a20540d484b28a3874f9",
+      "nativeRunID": 42540832860,
+      "allJobsTerminal": true,
+      "terminalBasis": "all-two-source-bound-matrix-jobs-completed",
+      "lastProviderRunStatus": "in_progress",
+      "bothNativeWireScenariosPassed": false,
+      "sourceSHA256": {
+        "scripts/test-native-doh.ps1": "8e39ff885ac1d771bb4adf85879a3f6807db48ba350c86fdbe157b3b8b4f3ec7",
+        "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
+        "scripts/dns-acceptance-state.ps1": "a8332f9d043c4f3577a5229a4831e7e88df52a1c9733eba4e4e254012622a2de",
+        "scripts/test-dns-acceptance-state.ps1": "6d69bec4f6c622837e3296468be88926e7fd0032b6bdc8799330c05c0821e1fb",
+        "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+        ".github/workflows/native-doh.yml": "7a373b86da9de96909db6ff01dcf7f4aa0115c5efc719b5540f1f84a4643df40",
+        "internal/workflow/windows.ps1": "57599bcec6c09ec499e681b758f88c99ea4fe789d12131948261e35ab81ecfd2",
+        "internal/workflow/manager.go": "e1eae98c45c8ccd7b77675d9a05be300c2d02cb85b8a372c1b3f8f74c04f8f1d",
+        "cmd/accessweaver/system.go": "205880642ec0814629f754b7f44ae3d36b00a584ee937e2705849b2ddead1f94",
+        "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+        "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+        "scripts/native-dns-wire.ps1": "628ca31341babc247390d14dfcadea2d772d33a666570edbbd6c6b05ebee2850",
+        "scripts/test-dns-wire-native-contracts.ps1": "4af781a7e51c184efab8f826a6be41672df4135e9b452aafe836ae8e83095f6a",
+        "scripts/dns-wire-evidence.cjs": "c487035247f65de90a1ba5773def33e30120129997057a48c6c0f65c3398a939",
+        "scripts/dns-wire-stdin.cjs": "b05d259e94b3f89555c645cc9205b922ae6418bf99bfa56581abdb72fa205fa0",
+        ".github/workflows/native-doh-wire.yml": "03877828f8f3315aae8683bd8c04a0e717c45cf71bac5bce4a7b3beba1918e07",
+        "scripts/native-doh-netevent-wire.ps1": "d654402d0459d0b47175690445b2fefe48ecbd35774be172f6de3a05d824ea42",
+        "scripts/test-native-doh-netevent-contracts.ps1": "0a1ab8b158be916c0a4ea6f4d137616931f09d0c3d75b79dc5d65e2eb8d495e2",
+        "scripts/native-netevent-control.ps1": "3d157d483aa010666d65249e898cb71c917d923e3ed0046b80e2972076d6e0b1",
+        "scripts/netevent-control-operation.ps1": "147b1d5772ab65da2d7eef0790f70dc5b779880e6d411acc13ee864a47c070aa",
+        "scripts/native-doh-offload-plan.ps1": "6fcd202c6df94339555fefb3cd791483744ea9813bff6371f3cdb92806a4c4c9",
+        "scripts/doh-offload-operation.ps1": "6548176b036308a80cf802940585f97de9102f753be5038bef43ad8813d88bb6",
+        "scripts/native-offload-state.ps1": "fb12b941676bc792cacfe17fdfa26b5a0bb03fa85ae1cf98da29ef88711f7290",
+        "scripts/native-doh-route-state.ps1": "0b7ace73631dcc2d9448c7986436c46d99bfde1809109f9974251ea09f89831a",
+        "scripts/native-ipv6-route-table.ps1": "d5679cff72d40bccd319f1b1de3dbac873d645503494d5da4eca8a9b1fba69ed",
+        "scripts/native-etl-header.cs": "2624836059feb17a5b284bc8c9abbdb46978231fe4b7e319b0354ca6dfdadb5a",
+        "scripts/read-native-etl-loss.ps1": "e54c62b9550bb10d288997e1a32a84c7b0a45883bdec2eb48e9a6b9db66535e7",
+        "scripts/extract-native-ndis.ps1": "cc0f5a88d4ef43e8b77f77e94112ddeca049eefc0e7772618af92391c52deaf9",
+        "scripts/ndis-frame-converter.cjs": "c4e7923eb9d904a4ad138b095033064ab62550e6c26a00551fd9c5068098f8f7",
+        "scripts/ndis-private-convert.cjs": "ff56ac3be7537508a6cd2de89602e0bd7b981062c7df485fd8f3e7e34d25a787"
+      },
+      "nativeJobs": [
+        {
+          "id": 128915137084,
+          "name": "Native DoH wire (windows/arm64)",
+          "status": "completed",
+          "conclusion": "failure",
+          "steps": [
+            {
+              "name": "Verify hosted native SDK and machine identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify coordinator source contracts before native changes",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify pure complete-frame contracts",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify product NetEvent lifecycle source contracts",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build the actual native controller",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify source-built controller identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native ordinary resolver, wire controls and original-state restoration",
+              "status": "completed",
+              "conclusion": "failure"
+            },
+            {
+              "name": "Retain fixed native DNS metadata only",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain fixed product NetEvent source metadata only",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        },
+        {
+          "id": 128915137431,
+          "name": "Native DoH wire (windows/amd64)",
+          "status": "completed",
+          "conclusion": "success",
+          "steps": [
+            {
+              "name": "Verify hosted native SDK and machine identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify coordinator source contracts before native changes",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify pure complete-frame contracts",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify product NetEvent lifecycle source contracts",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Build the actual native controller",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Verify source-built controller identity",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Native ordinary resolver, wire controls and original-state restoration",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain fixed native DNS metadata only",
+              "status": "completed",
+              "conclusion": "success"
+            },
+            {
+              "name": "Retain fixed product NetEvent source metadata only",
+              "status": "completed",
+              "conclusion": "success"
+            }
+          ]
+        }
+      ],
+      "productSourceArtifacts": [
+        {
+          "artifactID": 13641631600,
+          "artifactName": "native-doh-netevent-source-windows-arm64",
+          "providerZIPDigest": "sha256:d43ca6fc00aba70050150c9ad7e69f9eddaf61edd371fcd68a56566bf6e87741",
+          "providerZIPDigestVerified": true,
+          "passed": true,
+          "groupCount": 24,
+          "failedCases": []
+        },
+        {
+          "artifactID": 13641525854,
+          "artifactName": "native-doh-netevent-source-windows-amd64",
+          "providerZIPDigest": "sha256:f59b27bebf7037cc7144b179c1d2cbb904443305e5f7359a8d724d2632b91208",
+          "providerZIPDigestVerified": true,
+          "passed": true,
+          "groupCount": 24,
+          "failedCases": []
+        }
+      ],
+      "nativeArtifacts": [
+        {
+          "artifactID": 13641701413,
+          "artifactName": "native-doh-wire-windows-arm64",
+          "providerZIPDigest": "sha256:fd3337a33a5c924fdd97f458a629326e6ca27ea46ce6b2560bf03fbb9f6a5526",
+          "providerZIPDigestVerified": true,
+          "architecture": "arm64",
+          "outcome": "failed",
+          "code": "native-roundtrip-failed",
+          "scenario": {
+            "verificationCode": "none",
+            "failureInjected": false,
+            "operationCode": "ordinary-resolver",
+            "configurationAccepted": true,
+            "restorationAccepted": true,
+            "baselineCaptured": true,
+            "restoredStateVerified": true,
+            "code": "operation-failed",
+            "restorationCode": "none",
+            "outcome": "failed",
+            "failedResolverVerified": false,
+            "resolverPassed": false,
+            "configurationAttempted": true,
+            "restoredResolverVerified": false,
+            "configuredStateVerified": true,
+            "restorationAttempted": true
+          },
+          "snapshotRemoved": true,
+          "encryptedTrafficObserved": false,
+          "wire": {
+            "phase": "complete",
+            "toolProcesses": 20,
+            "etlBytes": 327680,
+            "toolProcessesJoined": 20,
+            "decoderCode": "none",
+            "controls": {
+              "baselineResolverPassed": true,
+              "originalStateVerified": true,
+              "tlsBlockRemoved": true,
+              "tlsObserved": false,
+              "captureBounded": true,
+              "blockedQueryRejected": true,
+              "captureStarted": true,
+              "rulesRemoved": true,
+              "tlsBlocked": true,
+              "ordinaryQueryPassed": true,
+              "filtersRemoved": true,
+              "captureStopped": true,
+              "plaintextBlocked": true,
+              "filtersVerified": true,
+              "originalResolverPassed": true,
+              "resumedQueryPassed": true
+            },
+            "productionQualificationComplete": false,
+            "failurePhase": "decode",
+            "outboundEncryptedRecords": 0,
+            "tlsFlows": 0,
+            "capture": {
+              "cleanupCode": "none",
+              "eventEvidence": {
+                "missingProviderIDs": 0,
+                "providerRecords": 236,
+                "code": "complete",
+                "records": 237,
+                "unknownProviderIDs": 40,
+                "fragmentIDs": 196,
+                "otherProviderRecords": 1,
+                "unrecognizedVersions": 0
+              },
+              "offloadMeasureEvidence": {
+                "readbackVerified": true,
+                "identityVerified": true,
+                "restartRequested": false,
+                "restored": false,
+                "code": "none",
+                "adapters": 1,
+                "ordinal": -1,
+                "topologyVerified": true,
+                "restartReturned": false,
+                "matchedMask": 3,
+                "operation": "verify",
+                "schemaVersion": 1,
+                "unroutedMask": 12,
+                "changed": false
+              },
+              "offloadStageEvidence": [
+                {
+                  "readbackVerified": true,
+                  "identityVerified": true,
+                  "restartRequested": true,
+                  "restored": false,
+                  "code": "none",
+                  "adapters": 1,
+                  "ordinal": 0,
+                  "topologyVerified": false,
+                  "restartReturned": true,
+                  "matchedMask": 3,
+                  "operation": "stage",
+                  "schemaVersion": 1,
+                  "unroutedMask": 12,
+                  "changed": true
+                }
+              ],
+              "filterEvidence": {
+                "protocolMask": 3,
+                "policy": "product-doh-all",
+                "endpointMask": 15,
+                "portsFiltered": false,
+                "etherTypeMask": 3,
+                "verified": true
+              },
+              "offloadRestoreEvidence": [
+                {
+                  "readbackVerified": true,
+                  "identityVerified": true,
+                  "restartRequested": true,
+                  "restored": true,
+                  "code": "none",
+                  "adapters": 1,
+                  "ordinal": 0,
+                  "topologyVerified": false,
+                  "restartReturned": true,
+                  "matchedMask": 3,
+                  "operation": "restore",
+                  "schemaVersion": 1,
+                  "unroutedMask": 12,
+                  "changed": true
+                }
+              ],
+              "sessionRemoved": true,
+              "pcapBytes": 55128,
+              "lossEvidence": {
+                "maximumFileSize": 16,
+                "finalized": true,
+                "eventsLost": 0,
+                "logFileMode": 2,
+                "bufferSize": 65536,
+                "buffersWritten": 5,
+                "closed": true,
+                "nativeCode": 0,
+                "code": "parsed",
+                "pointerSize": 8,
+                "buffersLost": 0
+              },
+              "sessionVerified": true,
+              "catalogEvidence": {
+                "metadataRecords": 0,
+                "rundownRecords": 3,
+                "unknownRecords": 0,
+                "missingProviderIDs": 0,
+                "lifecycleRecords": 20,
+                "records": 237,
+                "unrecognizedVersions": 0,
+                "code": "complete",
+                "inventoryRecords": 10,
+                "recognizedDefinitions": 12,
+                "ruleRecords": 7,
+                "fragmentRecords": 196,
+                "schemas": [],
+                "otherProviderRecords": 1,
+                "providerVerified": true,
+                "definitions": 20
+              },
+              "operationEvidence": {
+                "modeKind": "numeric",
+                "hresult": 0,
+                "stage": "inventory-readback",
+                "family": "none",
+                "statusKind": "enum",
+                "cimStatus": -1
+              },
+              "extractionEvidence": {
+                "records": 237,
+                "bytesWritten": 101931,
+                "code": "none",
+                "frames": 196,
+                "payloadRead": true
+              },
+              "offloadPrepareEvidence": {
+                "readbackVerified": true,
+                "identityVerified": true,
+                "restartRequested": false,
+                "restored": false,
+                "code": "none",
+                "adapters": 1,
+                "ordinal": -1,
+                "topologyVerified": true,
+                "restartReturned": false,
+                "matchedMask": 3,
+                "operation": "prepare",
+                "schemaVersion": 1,
+                "unroutedMask": 12,
+                "changed": false
+              },
+              "tlsWireEvidence": {
+                "providerMask": 1,
+                "outboundEncryptedRecords": 40,
+                "packets": 196,
+                "code": "none",
+                "tlsFlows": 6,
+                "inboundEncryptedRecords": 56,
+                "observation": "insufficient",
+                "plaintextPackets": 8
+              },
+              "fragmentEvidence": {
+                "missingProviderIDs": 0,
+                "metadataIDs": 0,
+                "rawWan": 0,
+                "fragmentIDs": 196,
+                "otherProviderRecords": 1,
+                "ethernet": 196,
+                "received": 97,
+                "directionUnknown": 0,
+                "unknownProviderIDs": 40,
+                "unrecognizedVersions": 0,
+                "mediaConflict": 0,
+                "records": 237,
+                "code": "complete",
+                "partialEvent": 0,
+                "singleEvent": 196,
+                "missingKeywords": 0,
+                "wireless": 0,
+                "sent": 99
+              },
+              "etlBytes": 327680,
+              "conversionEvidence": {
+                "outcome": "converted",
+                "nativeFrameDataRead": true,
+                "schemaVersion": 1,
+                "code": "none",
+                "summary": {
+                  "ipv4": 196,
+                  "tcp": 188,
+                  "sent": 99,
+                  "tcpClosure": {
+                    "afterSentFin": 0,
+                    "schemaVersion": 1,
+                    "resetFlowsWithPayloadBoth": 0,
+                    "flows": 7,
+                    "beforeFin": 0,
+                    "sentReset": 0,
+                    "productionQualificationComplete": false,
+                    "afterReceivedFin": 0,
+                    "afterBothFin": 0,
+                    "resetFlows": 0,
+                    "receivedFin": 3,
+                    "sentFin": 3,
+                    "receivedReset": 0
+                  },
+                  "received": 97,
+                  "ipv6": 0,
+                  "frames": 196,
+                  "udp": 8,
+                  "captureBytes": 55128,
+                  "schemaVersion": 1,
+                  "productionQualificationComplete": false
+                }
+              },
+              "offloadVerifyEvidence": {
+                "readbackVerified": true,
+                "identityVerified": true,
+                "restartRequested": false,
+                "restored": false,
+                "code": "none",
+                "adapters": 1,
+                "ordinal": -1,
+                "topologyVerified": true,
+                "restartReturned": false,
+                "matchedMask": 3,
+                "operation": "verify",
+                "schemaVersion": 1,
+                "unroutedMask": 12,
+                "changed": false
+              },
+              "captureBounded": true,
+              "preflightEmpty": true
+            },
+            "pcapBytes": 55128,
+            "inboundEncryptedRecords": 0,
+            "providerMask": 0,
+            "schemaVersion": 1,
+            "outcome": "failed",
+            "toolFailure": false,
+            "backend": "netevent-ndis",
+            "processFailureCode": "none",
+            "rawCapturePublished": false
+          }
+        },
+        {
+          "artifactID": 13640882805,
+          "artifactName": "native-doh-wire-windows-amd64",
+          "providerZIPDigest": "sha256:d16332b14d29f60a46bcb34dc19c274f00975975ddf1ff4a296895aebd9417fe",
+          "providerZIPDigestVerified": true,
+          "architecture": "amd64",
+          "outcome": "passed",
+          "code": "none",
+          "scenario": {
+            "verificationCode": "none",
+            "failureInjected": false,
+            "operationCode": "none",
+            "configurationAccepted": true,
+            "restorationAccepted": true,
+            "baselineCaptured": true,
+            "restoredStateVerified": true,
+            "code": "none",
+            "restorationCode": "none",
+            "outcome": "passed",
+            "failedResolverVerified": false,
+            "resolverPassed": true,
+            "configurationAttempted": true,
+            "restoredResolverVerified": false,
+            "configuredStateVerified": true,
+            "restorationAttempted": true
+          },
+          "snapshotRemoved": true,
+          "encryptedTrafficObserved": true,
+          "wire": {
+            "phase": "complete",
+            "toolProcesses": 20,
+            "etlBytes": 327680,
+            "toolProcessesJoined": 20,
+            "decoderCode": "none",
+            "controls": {
+              "baselineResolverPassed": true,
+              "originalStateVerified": true,
+              "tlsBlockRemoved": true,
+              "tlsObserved": true,
+              "captureBounded": true,
+              "blockedQueryRejected": true,
+              "captureStarted": true,
+              "rulesRemoved": true,
+              "tlsBlocked": true,
+              "ordinaryQueryPassed": true,
+              "filtersRemoved": true,
+              "captureStopped": true,
+              "plaintextBlocked": true,
+              "filtersVerified": true,
+              "originalResolverPassed": true,
+              "resumedQueryPassed": true
+            },
+            "productionQualificationComplete": false,
+            "failurePhase": "none",
+            "outboundEncryptedRecords": 29,
+            "tlsFlows": 4,
+            "capture": {
+              "cleanupCode": "none",
+              "eventEvidence": {
+                "missingProviderIDs": 0,
+                "providerRecords": 168,
+                "code": "complete",
+                "records": 169,
+                "unknownProviderIDs": 40,
+                "fragmentIDs": 128,
+                "otherProviderRecords": 1,
+                "unrecognizedVersions": 0
+              },
+              "offloadMeasureEvidence": {
+                "readbackVerified": true,
+                "identityVerified": true,
+                "restartRequested": false,
+                "restored": false,
+                "code": "none",
+                "adapters": 1,
+                "ordinal": -1,
+                "topologyVerified": true,
+                "restartReturned": false,
+                "matchedMask": 3,
+                "operation": "verify",
+                "schemaVersion": 1,
+                "unroutedMask": 12,
+                "changed": false
+              },
+              "offloadStageEvidence": [
+                {
+                  "readbackVerified": true,
+                  "identityVerified": true,
+                  "restartRequested": true,
+                  "restored": false,
+                  "code": "none",
+                  "adapters": 1,
+                  "ordinal": 0,
+                  "topologyVerified": false,
+                  "restartReturned": true,
+                  "matchedMask": 3,
+                  "operation": "stage",
+                  "schemaVersion": 1,
+                  "unroutedMask": 12,
+                  "changed": true
+                }
+              ],
+              "filterEvidence": {
+                "protocolMask": 3,
+                "policy": "product-doh-all",
+                "endpointMask": 15,
+                "portsFiltered": false,
+                "etherTypeMask": 3,
+                "verified": true
+              },
+              "offloadRestoreEvidence": [
+                {
+                  "readbackVerified": true,
+                  "identityVerified": true,
+                  "restartRequested": true,
+                  "restored": true,
+                  "code": "none",
+                  "adapters": 1,
+                  "ordinal": 0,
+                  "topologyVerified": false,
+                  "restartReturned": true,
+                  "matchedMask": 3,
+                  "operation": "restore",
+                  "schemaVersion": 1,
+                  "unroutedMask": 12,
+                  "changed": true
+                }
+              ],
+              "sessionRemoved": true,
+              "pcapBytes": 31684,
+              "lossEvidence": {
+                "maximumFileSize": 16,
+                "finalized": true,
+                "eventsLost": 0,
+                "logFileMode": 2,
+                "bufferSize": 65536,
+                "buffersWritten": 5,
+                "closed": true,
+                "nativeCode": 0,
+                "code": "parsed",
+                "pointerSize": 8,
+                "buffersLost": 0
+              },
+              "sessionVerified": true,
+              "catalogEvidence": {
+                "metadataRecords": 0,
+                "rundownRecords": 3,
+                "unknownRecords": 0,
+                "missingProviderIDs": 0,
+                "lifecycleRecords": 20,
+                "records": 169,
+                "unrecognizedVersions": 0,
+                "code": "complete",
+                "inventoryRecords": 10,
+                "recognizedDefinitions": 12,
+                "ruleRecords": 7,
+                "fragmentRecords": 128,
+                "schemas": [],
+                "otherProviderRecords": 1,
+                "providerVerified": true,
+                "definitions": 20
+              },
+              "operationEvidence": {
+                "modeKind": "numeric",
+                "hresult": 0,
+                "stage": "inventory-readback",
+                "family": "none",
+                "statusKind": "enum",
+                "cimStatus": -1
+              },
+              "extractionEvidence": {
+                "records": 169,
+                "bytesWritten": 60799,
+                "code": "none",
+                "frames": 128,
+                "payloadRead": true
+              },
+              "offloadPrepareEvidence": {
+                "readbackVerified": true,
+                "identityVerified": true,
+                "restartRequested": false,
+                "restored": false,
+                "code": "none",
+                "adapters": 1,
+                "ordinal": -1,
+                "topologyVerified": true,
+                "restartReturned": false,
+                "matchedMask": 3,
+                "operation": "prepare",
+                "schemaVersion": 1,
+                "unroutedMask": 12,
+                "changed": false
+              },
+              "tlsWireEvidence": {
+                "providerMask": 1,
+                "outboundEncryptedRecords": 29,
+                "packets": 128,
+                "code": "none",
+                "tlsFlows": 4,
+                "inboundEncryptedRecords": 38,
+                "observation": "tls-observed",
+                "plaintextPackets": 0
+              },
+              "fragmentEvidence": {
+                "missingProviderIDs": 0,
+                "metadataIDs": 0,
+                "rawWan": 0,
+                "fragmentIDs": 128,
+                "otherProviderRecords": 1,
+                "ethernet": 128,
+                "received": 65,
+                "directionUnknown": 0,
+                "unknownProviderIDs": 40,
+                "unrecognizedVersions": 0,
+                "mediaConflict": 0,
+                "records": 169,
+                "code": "complete",
+                "partialEvent": 0,
+                "singleEvent": 128,
+                "missingKeywords": 0,
+                "wireless": 0,
+                "sent": 63
+              },
+              "etlBytes": 327680,
+              "conversionEvidence": {
+                "outcome": "converted",
+                "nativeFrameDataRead": true,
+                "schemaVersion": 1,
+                "code": "none",
+                "summary": {
+                  "ipv4": 128,
+                  "tcp": 128,
+                  "sent": 63,
+                  "tcpClosure": {
+                    "afterSentFin": 0,
+                    "schemaVersion": 1,
+                    "resetFlowsWithPayloadBoth": 0,
+                    "flows": 4,
+                    "beforeFin": 0,
+                    "sentReset": 0,
+                    "productionQualificationComplete": false,
+                    "afterReceivedFin": 0,
+                    "afterBothFin": 0,
+                    "resetFlows": 0,
+                    "receivedFin": 3,
+                    "sentFin": 3,
+                    "receivedReset": 0
+                  },
+                  "received": 65,
+                  "ipv6": 0,
+                  "frames": 128,
+                  "udp": 0,
+                  "captureBytes": 31684,
+                  "schemaVersion": 1,
+                  "productionQualificationComplete": false
+                }
+              },
+              "offloadVerifyEvidence": {
+                "readbackVerified": true,
+                "identityVerified": true,
+                "restartRequested": false,
+                "restored": false,
+                "code": "none",
+                "adapters": 1,
+                "ordinal": -1,
+                "topologyVerified": true,
+                "restartReturned": false,
+                "matchedMask": 3,
+                "operation": "verify",
+                "schemaVersion": 1,
+                "unroutedMask": 12,
+                "changed": false
+              },
+              "captureBounded": true,
+              "preflightEmpty": true
+            },
+            "pcapBytes": 31684,
+            "inboundEncryptedRecords": 38,
+            "providerMask": 1,
+            "schemaVersion": 1,
+            "outcome": "passed",
+            "toolFailure": false,
+            "backend": "netevent-ndis",
+            "processFailureCode": "none",
+            "rawCapturePublished": false
+          }
+        }
+      ]
     }
   ],
-  "distinctProviderZIPDigestsVerified": 364,
-  "terminalJobsVerified": 298,
+  "distinctProviderZIPDigestsVerified": 368,
+  "terminalJobsVerified": 300,
   "productSourceUnchangedSince": "3ae6417cb9a8a86d6b4e41dea0f25fc3af94c331",
   "readinessManifestSHA256": "9525ee76922c68ec4f3daafe581bffc9d7631bf77947863bc62a807556b4b735",
   "rawLogsRead": false,
