@@ -111,11 +111,11 @@ function Test-NativeConfiguredDNSReadback([object]$State) {
         $inventory=@(Get-NetAdapter -ErrorAction Stop);if($inventory.Count -gt 256 -or $null -eq $State.before){throw 'Readback inventory bound'}
         $adapters=@();$records=@();$has4=$false;$has6=$false
         foreach($old in @($State.before.adapters | Where-Object {$_.selected})){
-            $matches=@($inventory | Where-Object {[string]$_.InterfaceGuid -eq [string]$old.guid})
+            $matches=@($inventory | Where-Object {(Convert-DNSAcceptanceGuid ([string]$_.InterfaceGuid)) -ceq $old.guid})
             if($matches.Count -ne 1 -or $matches[0].Status -ne 'Up'){throw 'Readback adapter unavailable'}
             $b4=($old.ipv4.mode -cne 'not-exposed');$b6=($old.ipv6.mode -cne 'not-exposed')
             if(-not $b4 -and -not $b6){throw 'Readback families unavailable'}
-            $adapters+=@($matches[0]);$records+=@(@{guid=[string]$old.guid;bound4=$b4;bound6=$b6});$has4=$has4 -or $b4;$has6=$has6 -or $b6
+            $adapters+=@($matches[0]);$records+=@(@{guid=[string]$matches[0].InterfaceGuid;bound4=$b4;bound6=$b6});$has4=$has4 -or $b4;$has6=$has6 -or $b6
         }
         if($adapters.Count -eq 0 -or -not $has4 -or -not $has6){throw 'Readback dual-family coverage unavailable'}
         $expected=@('8.8.8.8','9.9.9.9','2001:4860:4860::8888','2620:fe::fe')

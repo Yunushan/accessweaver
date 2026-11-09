@@ -188,7 +188,7 @@ Case-P 'configured-readback-control-is-read-only-and-checks-both-families' {
     $t=$null;$e=$null;$driver=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'test-native-doh.ps1'),[ref]$t,[ref]$e);Assert-P ($e.Count -eq 0)
     $nodes=@($driver.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'Test-NativeConfiguredDNSReadback'});Assert-P ($nodes.Count -eq 1)
     foreach($command in $nodes[0].FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){Assert-P ($command.GetCommandName() -cnotin @('Set-DnsClientServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress','Clear-DnsClientCache','Resolve-DnsName'))}
-    $text=$nodes[0].Extent.Text;Assert-P ($text.Contains('ipv4MismatchRejected') -and $text.Contains('ipv6MismatchRejected') -and $text.Contains("'Configured DNS servers differ'") -and $text.Contains('Assert-DoHNetEventSources $State'))
+    $text=$nodes[0].Extent.Text;Assert-P ($text.Contains('ipv4MismatchRejected') -and $text.Contains('ipv6MismatchRejected') -and $text.Contains("'Configured DNS servers differ'") -and $text.Contains('Assert-DoHNetEventSources $State') -and $text.Contains('Convert-DNSAcceptanceGuid') -and $text.Contains('guid=[string]$matches[0].InterfaceGuid'))
 }
 $passed=@($cases | Where-Object {-not $_.passed}).Count -eq 0
 [Console]::Out.WriteLine((@{schemaVersion=1;scope='actual-product-netevent-lifecycle-source';sourceSHA256=$hashes;cases=@($cases.ToArray());passed=$passed;realCaptureStarted=$false;realDnsChanged=$false;productInvoked=$false;productionQualificationComplete=$false} | ConvertTo-Json -Depth 6 -Compress))
