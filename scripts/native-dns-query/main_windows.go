@@ -183,6 +183,35 @@ func main() {
 			}
 			return
 		}
+		if len(os.Args) == 2 && os.Args[1] == "--compare" {
+			report := struct {
+				SchemaVersion                   int                                           `json:"schemaVersion"`
+				SourceCommit                    string                                        `json:"sourceCommit"`
+				Architecture                    string                                        `json:"architecture"`
+				Outcome                         string                                        `json:"outcome"`
+				Code                            string                                        `json:"code"`
+				Pair                            *direct.TimedPair[queryReport, direct.Result] `json:"pair"`
+				ProductionQualificationComplete bool                                          `json:"productionQualificationComplete"`
+			}{SchemaVersion: 1, SourceCommit: sourceCommit, Architecture: runtime.GOARCH, Outcome: "refused", Code: "server"}
+			if server, err := direct.ReadServer(os.Stdin); err == nil {
+				pair := direct.Concurrent(func() queryReport {
+					q := runQuery("example.net", windows.DnsQuery, windows.DnsRecordListFree)
+					q.SourceCommit = sourceCommit
+					return q
+				}, func() direct.Result { return direct.Query(context.Background(), server, "example.net") })
+				report.Pair = &pair
+				if pair.Overlapped {
+					report.Outcome = "observed"
+					report.Code = "none"
+				} else {
+					report.Code = "no-overlap"
+				}
+			}
+			if json.NewEncoder(os.Stdout).Encode(report) != nil {
+				os.Exit(2)
+			}
+			return
+		}
 		result.Code = "arguments"
 		if len(os.Args) == 2 && os.Args[1] == "--probe" {
 			result.Outcome = "ready"

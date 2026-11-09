@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -49,18 +50,69 @@ func QueryInput(ctx context.Context, input io.Reader) Result {
 
 func queryInput(ctx context.Context, input io.Reader, run func(context.Context, netip.Addr, string) Result) Result {
 	refused := Result{Outcome: "refused", Code: "server"}
-	if input == nil || run == nil {
+	if run == nil {
 		return refused
 	}
-	data, err := io.ReadAll(io.LimitReader(input, 65))
-	if err != nil || len(data) > 64 {
-		return refused
-	}
-	server, err := ParseServer(string(data))
+	server, err := ReadServer(input)
 	if err != nil {
 		return refused
 	}
 	return run(ctx, server, "example.net")
+}
+
+// ReadServer reads a single literal, bounded by the caller's process deadline.
+func ReadServer(input io.Reader) (netip.Addr, error) {
+	if input == nil {
+		return netip.Addr{}, errors.New("server")
+	}
+	data, err := io.ReadAll(io.LimitReader(input, 65))
+	if err != nil || len(data) > 64 {
+		return netip.Addr{}, errors.New("server")
+	}
+	return ParseServer(string(data))
+}
+
+// TimedPair records monotonic offsets only. Callers must ensure that both
+// functions terminate; the hosted parent enforces the process deadline.
+type TimedValue[T any] struct {
+	StartMicroseconds int64 `json:"startMicroseconds"`
+	EndMicroseconds   int64 `json:"endMicroseconds"`
+	Value             T     `json:"value"`
+}
+type TimedPair[A, B any] struct {
+	First      TimedValue[A] `json:"first"`
+	Second     TimedValue[B] `json:"second"`
+	Overlapped bool          `json:"overlapped"`
+}
+
+func Concurrent[A, B any](first func() A, second func() B) TimedPair[A, B] {
+	var result TimedPair[A, B]
+	start := make(chan struct{})
+	var ready, done sync.WaitGroup
+	ready.Add(2)
+	done.Add(2)
+	clock := time.Now()
+	go func() {
+		defer done.Done()
+		ready.Done()
+		<-start
+		result.First.StartMicroseconds = time.Since(clock).Microseconds()
+		result.First.Value = first()
+		result.First.EndMicroseconds = time.Since(clock).Microseconds()
+	}()
+	go func() {
+		defer done.Done()
+		ready.Done()
+		<-start
+		result.Second.StartMicroseconds = time.Since(clock).Microseconds()
+		result.Second.Value = second()
+		result.Second.EndMicroseconds = time.Since(clock).Microseconds()
+	}()
+	ready.Wait()
+	close(start)
+	done.Wait()
+	result.Overlapped = result.First.StartMicroseconds < result.Second.EndMicroseconds && result.Second.StartMicroseconds < result.First.EndMicroseconds
+	return result
 }
 
 // Query uses Go's DNS protocol client and the specified IP server, avoiding the

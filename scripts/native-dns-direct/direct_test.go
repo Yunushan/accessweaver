@@ -99,3 +99,19 @@ func TestPrivateInputBoundAndDispatch(t *testing.T) {
 		t.Fatal("valid input not dispatched")
 	}
 }
+
+func TestConcurrentPairsWaitForBothAndReportOverlap(t *testing.T) {
+	firstEntered, secondEntered := make(chan struct{}), make(chan struct{})
+	done := make(chan TimedPair[int, int], 1)
+	go func() {
+		done <- Concurrent(func() int { close(firstEntered); <-secondEntered; time.Sleep(time.Millisecond); return 1 }, func() int { close(secondEntered); <-firstEntered; time.Sleep(time.Millisecond); return 2 })
+	}()
+	select {
+	case result := <-done:
+		if !result.Overlapped || result.First.Value != 1 || result.Second.Value != 2 || result.First.EndMicroseconds < result.First.StartMicroseconds || result.Second.EndMicroseconds < result.Second.StartMicroseconds {
+			t.Fatal("concurrent timing or joining failed")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("concurrent callbacks failed to join")
+	}
+}
