@@ -655,8 +655,18 @@ Write-Output 'Windows workflow contract tests completed. Test artifacts are unde
 $dnsShell=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
 & $dnsShell -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'test-dns-recovery-contracts.ps1') -RequireWindowsPowerShell | Out-Null
 Assert ($LASTEXITCODE -eq 0) 'Dedicated DNS recovery contracts pass in an isolated stock shell'
-$downloadFixtureOut=@(& $dnsShell -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'test-windows-component-downloads.ps1') -RequireWindowsPowerShell 2>$null)
-$downloadFixtureExit=$LASTEXITCODE
+$downloadFixtureOut=@()
+$downloadFixtureExit=-1
+$downloadSavedErrorPreference=$ErrorActionPreference
+try {
+    # Windows PowerShell can turn redirected native stderr into error records.
+    # Keep the child exit code authoritative while suppressing private details.
+    $ErrorActionPreference='Continue'
+    $downloadFixtureOut=@(& $dnsShell -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'test-windows-component-downloads.ps1') -RequireWindowsPowerShell 2>$null)
+    $downloadFixtureExit=$LASTEXITCODE
+} finally {
+    $ErrorActionPreference=$downloadSavedErrorPreference
+}
 $downloadStages=@(
     @('STAGE-ENTRY-PASS','Component download fixture entered'),
     @('STAGE-SOURCE-PARSE-PASS','Component download source parsed'),
