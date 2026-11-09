@@ -3,7 +3,6 @@
 package servicehost
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -48,12 +47,13 @@ func Run(file string) error {
 	if !inside(absolute, filepath.Join(root, "services")) {
 		return errors.New("service configuration must be in protected AccessWeaver service storage")
 	}
-	b, err := os.ReadFile(absolute)
+	configFile, err := os.Open(absolute)
 	if err != nil {
 		return err
 	}
-	var cfg Config
-	if err = json.Unmarshal(b, &cfg); err != nil {
+	cfg, readErr := readConfig(configFile)
+	closeErr := configFile.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
 		return err
 	}
 	if !strings.HasPrefix(cfg.Name, "AccessWeaver-") || !inside(cfg.Binary, filepath.Join(root, "components")) || !inside(cfg.Directory, filepath.Join(root, "components")) || !inside(cfg.LogPath, filepath.Join(root, "logs")) {
