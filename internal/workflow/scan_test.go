@@ -134,3 +134,21 @@ func TestMultiTargetScanRequiresExplicitCommonSection(t *testing.T) {
 		t.Fatalf("valid common strategy was not selected: %+v, %v", strategy, err)
 	}
 }
+
+func TestScanProtocolUsesTestNameNotTarget(t *testing.T) {
+	for _, tc := range []struct{ test, target, want string }{
+		{"curl_test_http", "https.example.com", "http"},
+		{"curl_test_https_tls12", "http3.example.com", "https"},
+		{"curl_test_https_tls13", "quic.example.com", "https"},
+		{"curl_test_http3", "https.example.com", "quic"},
+	} {
+		report := "* SUMMARY\n" + tc.test + " ipv4 " + tc.target + " : winws2 --lua-desync=fixture"
+		got, err := SelectScanStrategy(report, "zapret2")
+		if err != nil || got.Protocol != tc.want {
+			t.Fatalf("test %s classified as %s, want %s: %v", tc.test, got.Protocol, tc.want, err)
+		}
+	}
+	if _, err := SelectScanStrategy("* SUMMARY\nunknown ipv4 https.example.com : winws2 --lua-desync=fixture", "zapret2"); err == nil {
+		t.Fatal("unknown test accepted based on hostname")
+	}
+}

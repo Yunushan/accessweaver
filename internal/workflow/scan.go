@@ -92,14 +92,19 @@ func parseScanOutput(output, engine string) ([]ScanStrategy, bool, error) {
 		if !valid || !hasStrategy {
 			continue
 		}
-		prefix := strings.ToLower(line[:strings.Index(line, match[0])])
+		// The first field is the blockcheck test function; later fields include
+		// the target hostname and must not influence the reported protocol.
+		fields := strings.Fields(line[:strings.Index(line, match[0])])
+		if len(fields) == 0 {
+			continue
+		}
 		protocol := ""
-		switch {
-		case strings.Contains(prefix, "http3") || strings.Contains(prefix, "quic"):
+		switch strings.ToLower(fields[0]) {
+		case "curl_test_http3", "test_http3":
 			protocol = "quic"
-		case strings.Contains(prefix, "https") || strings.Contains(prefix, "tls"):
+		case "curl_test_https_tls12", "curl_test_https_tls13", "test_https", "test_https_tls12", "test_https_tls13":
 			protocol = "https"
-		case strings.Contains(prefix, "http"):
+		case "curl_test_http", "test_http":
 			protocol = "http"
 		default:
 			continue
