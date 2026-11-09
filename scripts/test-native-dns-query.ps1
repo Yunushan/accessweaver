@@ -30,6 +30,7 @@ foreach($sid in @($identity.User.Value,'S-1-5-18','S-1-5-32-544') | Select-Objec
 Set-Acl -LiteralPath $root -AclObject $acl -ErrorAction Stop
 $state=New-NativeDNSWireState $root (Join-Path $PSScriptRoot 'dns-wire-stdin.cjs');$state.queryProject=$project;$state.querySourceHashes=$hashes.Clone();$state.queryBinary=$Binary;$state.queryBinarySHA256=$BinarySHA256;$state.querySourceCommit=$env:GITHUB_SHA;$state.queryArchitecture=$env:ACCESSWEAVER_EXPECT_GOARCH
 $outcome='failed';$code='preflight';$cleanupCode='none';$before=$null;$rulesRemoved=$false;$stateVerified=$false;$rootRemoved=$false;$evidence=@{probe=$null;positive=$null;blocked=$null;resumed=$null}
+$diagnostic=@{schemaVersion=1;outcome='not-run';code='server-unavailable';baseline=$null;blocked=$null;comparison=$null;diagnosticOnly=$true;productionQualificationComplete=$false};$candidate=$null
 $unblockClock=$null;$resumptionTiming=@{attempted=$false;startMilliseconds=0L;endMilliseconds=0L};$recoveryObservation=New-NativeDNSRecoveryObservation
 try {
     $code='preflight-source';Assert-NativeFreshDNSSources $state
@@ -38,13 +39,27 @@ try {
     $code='preflight-baseline';$before=Read-DNSAcceptanceState
     $code='probe';$evidence.probe=Invoke-NativeFreshDNSQuery $state -Probe
     $code='positive';$evidence.positive=Invoke-NativeFreshDNSQuery $state 'example.net'
+    try {
+        $candidate=Select-NativeDNSDiagnosticServer @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop)
+        if($candidate){$diagnostic.outcome='refused';$diagnostic.baseline=Invoke-NativeDNSDiagnostic $state $candidate 'direct';$diagnostic.code=if($diagnostic.baseline.result.outcome -ceq 'answered'){'blocked-pending'}else{'baseline-refused'}}
+    }catch{$diagnostic.outcome='refused';$diagnostic.code='baseline-refused'}
     $code='block';foreach($kind in @('dns','tls')){foreach($protocol in @('TCP','UDP')){Add-NativeDNSWireRule $state $kind $protocol}}
     $code='blocked';$evidence.blocked=Invoke-NativeFreshDNSQuery $state 'example.net' -ExpectFailure
+    if($diagnostic.code -ceq 'blocked-pending'){
+        try{
+            $current=Select-NativeDNSDiagnosticServer @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop)
+            if($current -cne $candidate){$diagnostic.code='server-changed'}else{
+                $diagnostic.blocked=Invoke-NativeDNSDiagnostic $state $candidate 'direct'
+                $diagnostic.code=if($diagnostic.blocked.result.outcome -ceq 'refused' -and $diagnostic.blocked.result.code -cin @('timeout','query-failed')){'comparison-pending'}else{'block-control-refused'}
+            }
+        }catch{$diagnostic.code='block-control-refused'}
+    }
     $code='unblock';Remove-NativeDNSWireRules $state 'tls';Remove-NativeDNSWireRules $state 'dns';$rulesRemoved=$true
     $unblockClock=[Diagnostics.Stopwatch]::StartNew()
     $code='resumed';$state.queryLastEvidence=$null;$resumptionTiming.attempted=$true;$resumptionTiming.startMilliseconds=Read-NativeDNSRecoveryMilliseconds $unblockClock
     $evidence.resumed=Invoke-NativeFreshDNSQuery $state 'example.net'
     $resumptionTiming.endMilliseconds=Read-NativeDNSRecoveryMilliseconds $unblockClock
+    if($diagnostic.code -ceq 'comparison-pending'){$diagnostic.outcome='not-run';$diagnostic.code='not-needed'}
     $code='readback';Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState);$stateVerified=$true
     Assert-NativeFreshDNSSources $state
     $outcome='passed';$code='none'
@@ -55,6 +70,15 @@ try {
         try{
             $resumptionTiming.endMilliseconds=Read-NativeDNSRecoveryMilliseconds $unblockClock
             if($null -ne $evidence.resumed -and $evidence.resumed.code -ceq 'query-failed' -and $evidence.resumed.failureKind -ceq 'timeout' -and $rulesRemoved -and -not $state.processFailed){
+                if($diagnostic.code -ceq 'comparison-pending'){
+                    try{
+                        $current=Select-NativeDNSDiagnosticServer @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop)
+                        if($current -cne $candidate){$diagnostic.code='server-changed'}else{
+                            $diagnostic.comparison=Invoke-NativeDNSDiagnostic $state $candidate 'compare'
+                            if($diagnostic.comparison.outcome -ceq 'observed'){$diagnostic.outcome='observed';$diagnostic.code='none'}else{$diagnostic.code='comparison-refused'}
+                        }
+                    }catch{$diagnostic.code='comparison-refused'}
+                }
                 $recoveryObservation=Observe-NativeDNSRecovery $state $unblockClock $evidence.resumed $resumptionTiming $outcome $code
             }
         }catch{}
@@ -69,7 +93,7 @@ try {
     if(-not $cleanupGood -or $state.processes -ne $state.joined -or $state.processFailed){$outcome='failed';if($cleanupCode -ceq 'none'){$cleanupCode='process'}}
     $currentParent=Get-Item -LiteralPath $parent.FullName -Force -ErrorAction Stop
     if($currentParent.CreationTimeUtc.Ticks -ne $parentCreated -or ($currentParent.Attributes -band [IO.FileAttributes]::ReparsePoint) -or [IO.Directory]::GetFileSystemEntries($parent.FullName).Length -ne 0){throw 'Query report parent changed'}
-    $report=@{schemaVersion=2;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;architecture=$env:ACCESSWEAVER_EXPECT_GOARCH;binarySHA256=$BinarySHA256;outcome=$outcome;code=$code;cleanupCode=$cleanupCode;queryEvidence=$evidence;resumptionTiming=$resumptionTiming;recoveryObservation=$recoveryObservation;toolProcesses=$state.processes;toolProcessesJoined=$state.joined;toolFailure=$state.processFailed;processFailureCode=$state.processFailureCode;rulesPrepared=$state.rules.Count;rulesRemoved=$rulesRemoved;originalStateVerified=$stateVerified;privateRootRemoved=$rootRemoved;globalCacheFlushed=$false;dnsSettingsChangesAttempted=$false;captureStarted=$false;productInvoked=$false;encryptedTrafficQualified=$false;productionQualificationComplete=$false}
+    $report=@{schemaVersion=2;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;architecture=$env:ACCESSWEAVER_EXPECT_GOARCH;binarySHA256=$BinarySHA256;outcome=$outcome;code=$code;cleanupCode=$cleanupCode;queryEvidence=$evidence;resumptionTiming=$resumptionTiming;recoveryObservation=$recoveryObservation;directComparison=$diagnostic;toolProcesses=$state.processes;toolProcessesJoined=$state.joined;toolFailure=$state.processFailed;processFailureCode=$state.processFailureCode;rulesPrepared=$state.rules.Count;rulesRemoved=$rulesRemoved;originalStateVerified=$stateVerified;privateRootRemoved=$rootRemoved;globalCacheFlushed=$false;dnsSettingsChangesAttempted=$false;captureStarted=$false;productInvoked=$false;encryptedTrafficQualified=$false;productionQualificationComplete=$false}
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($report | ConvertTo-Json -Depth 6 -Compress));if($bytes.Length -gt 8192){throw 'Query report bound'}
     $stream=[IO.FileStream]::new($ReportPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush()}finally{$stream.Dispose()}

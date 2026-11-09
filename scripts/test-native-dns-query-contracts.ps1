@@ -7,8 +7,8 @@ $project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-dns-query.p
 foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-dns-query.ps1'),[ref]$t,[ref]$e);if($e.Count){throw 'Query source syntax'}
 foreach($def in $ast.EndBlock.Statements){
-    if($def -isnot [Management.Automation.Language.FunctionDefinitionAst] -or $def.Name -cnotin @('Get-NativeFreshDNSQueryReport','Invoke-NativeFreshDNSQuery')){continue}
-    foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin @('ConvertFrom-Json','Where-Object','Assert-NativeFreshDNSSources','Get-FileHash','Invoke-NativeDNSWireProcess','Get-NativeFreshDNSQueryReport')){throw 'Query source command boundary'}}
+    if($def -isnot [Management.Automation.Language.FunctionDefinitionAst] -or $def.Name -cnotin @('Get-NativeFreshDNSQueryReport','Invoke-NativeFreshDNSQuery','Select-NativeDNSDiagnosticServer','Get-NativeDNSDirectValue','Get-NativeDNSDiagnosticReport','Invoke-NativeDNSDiagnostic')){continue}
+    foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin @('ConvertFrom-Json','Where-Object','Assert-NativeFreshDNSSources','Get-FileHash','Invoke-NativeDNSWireProcess','Get-NativeFreshDNSQueryReport','Get-NativeDNSDirectValue','Get-NativeDNSDiagnosticReport','ConvertTo-Json','ForEach-Object')){throw 'Query source command boundary'}}
     . ([scriptblock]::Create($def.Extent.Text))
 }
 $t=$null;$e=$null;$recoveryAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-dns-recovery-observation.ps1'),[ref]$t,[ref]$e);if($e.Count){throw 'Recovery source syntax'}
@@ -25,7 +25,7 @@ function New-Q {return @{schemaVersion=2;sourceCommit=$source;architecture=$arch
 function Reset-Q {$script:recoveryNow=0L;$script:recoveryReplies=$null;$script:recoveryClockFault='';$script:reply=New-Q;$script:events=[Collections.Generic.List[string]]::new();$script:fault='';$script:sourceChecks=0;$script:hashReads=0;$script:state=@{querySourceCommit=$source;queryArchitecture=$arch;queryBinary='synthetic-query-binary';queryBinarySHA256=('b'*64);processFailed=$false}}
 function Assert-NativeFreshDNSSources([object]$State){$script:sourceChecks++;if($script:fault -ceq 'source'){throw 'Synthetic source refusal'}}
 function Get-FileHash {param($LiteralPath,$Algorithm);$script:hashReads++;return @{Hash=$(if($script:fault -ceq 'binary'){'c'*64}else{'b'*64})}}
-function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$Arguments){$script:events.Add('process');Assert-Q ($Program -ceq 'synthetic-query-binary');if($script:fault -ceq 'process'){$State.processFailed=$true;throw 'Synthetic timeout'};if($null -ne $script:recoveryReplies -and $script:recoveryReplies.Count -gt 0){$script:reply=$script:recoveryReplies.Dequeue();$script:recoveryNow+=10L};return ($script:reply | ConvertTo-Json -Compress)}
+function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$Arguments,[byte[]]$InputBytes=$null){$script:events.Add('process');Assert-Q ($Program -ceq 'synthetic-query-binary');if($Arguments[0] -ceq '--direct'){Assert-Q ($null -ne $InputBytes -and [Text.Encoding]::ASCII.GetString($InputBytes) -ceq '192.0.2.53')};if($script:fault -ceq 'process'){$State.processFailed=$true;throw 'Synthetic timeout'};if($null -ne $script:recoveryReplies -and $script:recoveryReplies.Count -gt 0){$script:reply=$script:recoveryReplies.Dequeue();$script:recoveryNow+=10L};return ($script:reply | ConvertTo-Json -Compress)}
 function Read-NativeDNSRecoveryMilliseconds([object]$Clock){if($script:recoveryClockFault -ceq 'end-regression'){return 0L};return $script:recoveryNow}
 function Wait-NativeDNSRecoveryOffset([object]$Clock,[long]$TargetMilliseconds){if($script:recoveryClockFault -ceq 'start-regression'){return ($TargetMilliseconds-1L)};if($script:recoveryClockFault -ceq 'bound'){return 120001L};$script:recoveryNow=[long][Math]::Max($script:recoveryNow,$TargetMilliseconds);return $script:recoveryNow}
 function New-QTimeout {$r=New-Q;$r.outcome='refused';$r.code='query-failed';$r.failureKind='timeout';$r.answerCount=0;$r.recordCount=0;return $r}
@@ -96,6 +96,31 @@ Case-Q 'preflight-stages-are-distinct-and-precede-native-effects' {
     $markers=@('$code=''preflight-source''','$code=''preflight-nrpt''','$code=''preflight-firewall''','$code=''preflight-baseline''','$code=''probe''')
     $previous=-1;foreach($marker in $markers){$index=$text.IndexOf($marker);Assert-Q ($index -gt $previous);$previous=$index}
     Assert-Q (-not $text.Contains('Exception.Message'))
+}
+Case-Q 'diagnostic-server-selection-refuses-ambiguity' {
+    $a=@(@{Status='Up';InterfaceDescription='Ethernet';ifIndex=1});$r=@(@{InterfaceIndex=1;ServerAddresses=@('192.0.2.53')})
+    Assert-Q ((Select-NativeDNSDiagnosticServer $a $r) -ceq '192.0.2.53')
+    $r[0].ServerAddresses=@('192.0.2.53','192.0.2.54');Assert-Q ($null -eq (Select-NativeDNSDiagnosticServer $a $r))
+    $r[0].ServerAddresses=@('192.0.2.53','2001:db8::1');Assert-Q ($null -eq (Select-NativeDNSDiagnosticServer $a $r))
+    $r[0].ServerAddresses=@('127.0.0.1');Assert-Q ($null -eq (Select-NativeDNSDiagnosticServer $a $r))
+}
+Case-Q 'diagnostic-direct-projection-is-closed-and-source-bound' {
+    $r=@{schemaVersion=1;sourceCommit=$source;architecture=$arch;result=@{outcome='answered';code='none';answerCount=1};productionQualificationComplete=$false}
+    $v=Get-NativeDNSDiagnosticReport ($r|ConvertTo-Json -Depth 6 -Compress) $source $arch 'direct';Assert-Q ($v.result.answerCount -eq 1)
+    $r.result.privateAddress='192.0.2.53';Reject-Q {Get-NativeDNSDiagnosticReport ($r|ConvertTo-Json -Depth 6 -Compress) $source $arch 'direct'};$r.result.Remove('privateAddress')
+    $r.sourceCommit='b'*40;Reject-Q {Get-NativeDNSDiagnosticReport ($r|ConvertTo-Json -Depth 6 -Compress) $source $arch 'direct'}
+}
+Case-Q 'diagnostic-comparison-requires-real-interval-overlap' {
+    $r=@{schemaVersion=1;sourceCommit=$source;architecture=$arch;outcome='observed';code='none';productionQualificationComplete=$false;pair=@{first=@{startMicroseconds=1;endMicroseconds=10;value=(New-Q)};second=@{startMicroseconds=2;endMicroseconds=9;value=@{outcome='answered';code='none';answerCount=1}};overlapped=$true}}
+    $v=Get-NativeDNSDiagnosticReport ($r|ConvertTo-Json -Depth 8 -Compress) $source $arch 'compare';Assert-Q $v.pair.overlapped
+    $r.pair.second.startMicroseconds=10;Reject-Q {Get-NativeDNSDiagnosticReport ($r|ConvertTo-Json -Depth 8 -Compress) $source $arch 'compare'}
+    $r.pair.second.startMicroseconds=2;$r.pair.first.value.privateAddress='192.0.2.53';Reject-Q {Get-NativeDNSDiagnosticReport ($r|ConvertTo-Json -Depth 8 -Compress) $source $arch 'compare'}
+}
+Case-Q 'diagnostic-process-binds-source-and-keeps-server-private' {
+    Reset-Q;$script:reply=@{schemaVersion=1;sourceCommit=$source;architecture=$arch;result=@{outcome='answered';code='none';answerCount=1};productionQualificationComplete=$false}
+    $v=Invoke-NativeDNSDiagnostic $state '192.0.2.53' 'direct';Assert-Q ($v.result.answerCount -eq 1 -and $script:sourceChecks -eq 2 -and $script:hashReads -eq 2)
+    Assert-Q (-not (($v|ConvertTo-Json -Depth 6 -Compress).Contains('192.0.2.53')))
+    Reset-Q;$script:fault='binary';Reject-Q {Invoke-NativeDNSDiagnostic $state '192.0.2.53' 'direct'};Assert-Q ($script:events.Count -eq 0)
 }
 $passed=@($cases | Where-Object {-not $_.passed}).Count -eq 0
 [Console]::Out.WriteLine((@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;cases=@($cases.ToArray());passed=$passed;nativeQueryInvoked=$false;productInvoked=$false} | ConvertTo-Json -Depth 5 -Compress))
