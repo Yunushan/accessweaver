@@ -354,6 +354,14 @@ func (r Request) Validate() error {
 	if r.Action == "install" && (r.Browsers || len(r.Applications) > 0) && !allowed(r.Engine, "byedpi", "wiresock") {
 		return errors.New("application selection requires WireSock or ByeDPI interception")
 	}
+	if r.Action == "install" && r.Engine == "wiresock" && r.DownloadURL != "" {
+		if !strings.HasPrefix(r.DownloadURL, "https://") || len(r.SHA256) != 64 {
+			return errors.New("custom WireSock installer requires an HTTPS URL and SHA-256")
+		}
+		if _, err := hex.DecodeString(r.SHA256); err != nil {
+			return errors.New("invalid custom WireSock installer SHA-256")
+		}
+	}
 	if r.Action == "download" {
 		if !strings.HasPrefix(r.DownloadURL, "https://") || len(r.SHA256) != 64 {
 			return errors.New("official HTTPS download URL and SHA-256 are required")

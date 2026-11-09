@@ -309,5 +309,12 @@
     "outcome": "cancelled",
     "evidence": "public workflow page",
     "sealedDoNotRepoll": true
+  },
+  "broadRegression": {
+    "runID": 42630417810,
+    "sourceCommit": "4d1aa28a0b3d5d58b150a9be93ce9c0b22eab563",
+    "outcome": "passed",
+    "evidence": "public workflow page",
+    "sealedDoNotRepoll": true
   }
 }

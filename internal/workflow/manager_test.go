@@ -256,3 +256,21 @@ func TestByeDPIInstallRejectsReservedOptionsBeforeRetainingPlan(t *testing.T) {
 		t.Fatalf("normal strategy: %+v %v", p, err)
 	}
 }
+
+func TestWireSockCustomInstallerRequiresHash(t *testing.T) {
+	for _, tc := range []struct {
+		url, hash string
+		valid     bool
+	}{
+		{"", "", true},
+		{"https://example.com/installer.exe", "", false},
+		{"https://example.com/installer.exe", strings.Repeat("z", 64), false},
+		{"http://example.com/installer.exe", strings.Repeat("a", 64), false},
+		{"https://example.com/installer.exe", strings.Repeat("a", 64), true},
+	} {
+		r := Request{Action: "install", Engine: "wiresock", DownloadURL: tc.url, SHA256: tc.hash}
+		if err := r.Validate(); (err == nil) != tc.valid {
+			t.Fatalf("custom installer validation valid=%t: %v", tc.valid, err)
+		}
+	}
+}

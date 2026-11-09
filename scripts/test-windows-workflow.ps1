@@ -355,6 +355,20 @@ try {
         Assert ([Net.ServicePointManager]::SecurityProtocol -eq $expected) ('Process-local TLS setup preserves the contract for '+$action)
     }
 } finally {[Net.ServicePointManager]::SecurityProtocol=$previousTLS;$r=$previousRequest}
+# Custom installer admission is exercised without discovery or network access.
+$previousWireSockCLI=(Get-Command WireSock-CLI).ScriptBlock;$previousWireSockRequest=$r
+try {
+    function WireSock-CLI {$script:wireSockDiscoveryCount++;return 'C:\fixture\wiresock.exe'}
+    $script:wireSockDiscoveryCount=0;$r=[pscustomobject]@{downloadUrl='https://example.invalid/setup.exe';sha256=''}
+    $rejected=$false;try{Install-WireSock}catch{$rejected=$true}
+    Assert ($rejected -and $script:wireSockDiscoveryCount -eq 0) 'Custom WireSock installer without a hash is rejected before discovery'
+    $script:wireSockDiscoveryCount=0;$r=[pscustomobject]@{downloadUrl='https://example.invalid/setup.exe';sha256=('a'*64)}
+    $result=Install-WireSock
+    Assert ($result -ceq 'C:\fixture\wiresock.exe' -and $script:wireSockDiscoveryCount -eq 1) 'Hashed custom WireSock request reaches mocked discovery'
+    $script:wireSockDiscoveryCount=0;$r=[pscustomobject]@{downloadUrl='';sha256=''}
+    $result=Install-WireSock
+    Assert ($result -ceq 'C:\fixture\wiresock.exe' -and $script:wireSockDiscoveryCount -eq 1) 'Default WireSock request reaches mocked discovery'
+} finally {Set-Item Function:WireSock-CLI $previousWireSockCLI;$r=$previousWireSockRequest}
 # Publisher-category checks use synthetic signature records only.
 $signatureDiscord=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Discord fixture'}}
 $signatureMicrosoft=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Microsoft fixture'}}

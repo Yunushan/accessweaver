@@ -861,6 +861,7 @@ function WireSock-CLI {
     return $null
 }
 function Install-WireSock {
+    if($r.downloadUrl -and ($r.downloadUrl -cnotmatch '^https://' -or ([string]$r.sha256).Length -ne 64 -or $r.sha256 -notmatch '^[a-fA-F0-9]{64}$')){throw 'Custom WireSock installer requires an HTTPS URL and SHA-256'}
     $cli=WireSock-CLI;if($cli){return $cli}
     $installer=$null
     foreach($base in @($r.bundlePath,(Join-Path $env:ProgramFiles 'SplitWire-Turkey\res'))) {if($base -and (Test-Path -LiteralPath $base)){$installer=Get-ChildItem -LiteralPath $base -Recurse -Filter 'wiresock-secure-connect-x64-*.exe' | Sort-Object Name -Descending | Select-Object -First 1;if($installer){break}}}
