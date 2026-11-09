@@ -1,0 +1,313 @@
+{
+  "schemaVersion": 1,
+  "scope": "signed-installer-publisher-category-source-contracts",
+  "sourceCommit": "4d1aa28a0b3d5d58b150a9be93ce9c0b22eab563",
+  "runID": 42630417637,
+  "sealedDoNotRepoll": true,
+  "metadataSource": "public GitHub workflow page",
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "bad109aedb507963bc38f9415d4dda05b45ac7f5623ea825d42ad249b826d536",
+    "scripts/test-windows-workflow.ps1": "701d8ee4a41193845f148cea0ffe4bd2a79db1f28b34e92c428df4b20d4ba9c9",
+    "scripts/test-windows-component-downloads.ps1": "57765291aef7e5a83668c26b9740bb5c5554b0986629c564fbc26a5972dcf264",
+    ".github/workflows/windows-component-discovery.yml": "44626d8062f40c557817c9d746fac655450648c358d90063d984872cba34194b"
+  },
+  "reports": [
+    {
+      "artifactID": 13680158905,
+      "name": "windows-component-source-amd64",
+      "providerZIPDigest": "sha256:96e74b51bcf6f8f47103decd5d31da83bf842542ea245be0e9914d6996841990",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "outcome": "passed",
+      "suitePassed": true,
+      "cases": [
+        {
+          "name": "zapret selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "zapret2 selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret2 refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-incomplete before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects scan-missing before saving or installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-incomplete before installation",
+          "passed": true
+        },
+        {
+          "name": "Scan rejects parser-missing before installation",
+          "passed": true
+        },
+        {
+          "name": "Complete complete scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Complete complete-default scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Complete complete-multi scan reaches only the mocked installer",
+          "passed": true
+        },
+        {
+          "name": "Single-target scan does not require a common section",
+          "passed": true
+        },
+        {
+          "name": "Multi-target complete-default scan requires a common section",
+          "passed": true
+        },
+        {
+          "name": "Multi-target complete-multi scan requires a common section",
+          "passed": true
+        },
+        {
+          "name": "App launch ignores matching processes in another session",
+          "passed": true
+        },
+        {
+          "name": "App launch ignores another executable in the current session",
+          "passed": true
+        },
+        {
+          "name": "App launch accepts the matching executable in the current session",
+          "passed": true
+        },
+        {
+          "name": "Application removal stops on a matching process failure and records an external effect",
+          "passed": true
+        },
+        {
+          "name": "Application process exit race remains a recorded external effect",
+          "passed": true
+        },
+        {
+          "name": "Application process stop records an external effect",
+          "passed": true
+        },
+        {
+          "name": "PTB clean download failure preserves the existing client",
+          "passed": true
+        },
+        {
+          "name": "PTB clean stages the replacement before removing the existing client",
+          "passed": true
+        },
+        {
+          "name": "PTB clean removal failure prevents installer execution",
+          "passed": true
+        },
+        {
+          "name": "Discord installer rejects other publisher categories",
+          "passed": true
+        },
+        {
+          "name": "Microsoft installer rejects other publisher categories",
+          "passed": true
+        },
+        {
+          "name": "WireSock installer requires its own publisher category",
+          "passed": true
+        },
+        {
+          "name": "Dedicated component download contracts pass in an isolated stock shell",
+          "passed": true
+        }
+      ],
+      "milestones": {
+        "vendor": true,
+        "dns": true,
+        "staging": true,
+        "arguments": true,
+        "child": true,
+        "main": true,
+        "service": true,
+        "archive": true
+      }
+    },
+    {
+      "artifactID": 13681090773,
+      "name": "windows-component-source-arm64",
+      "providerZIPDigest": "sha256:edaa6a574f829a8c7dae463f4fac79cc2fac711524b4879eb5ac6a102bbbf0d0",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "outcome": "passed",
+      "suitePassed": true,
+      "cases": [
+        {
+          "passed": true,
+          "name": "zapret selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret refuses a preferred folder containing only the other executable"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 refuses a preferred folder containing only the other executable"
+        },
+        {
+          "passed": true,
+          "name": "Scan rejects scan-incomplete before saving or installation"
+        },
+        {
+          "passed": true,
+          "name": "Scan rejects scan-missing before saving or installation"
+        },
+        {
+          "passed": true,
+          "name": "Scan rejects parser-incomplete before installation"
+        },
+        {
+          "passed": true,
+          "name": "Scan rejects parser-missing before installation"
+        },
+        {
+          "passed": true,
+          "name": "Complete complete scan reaches only the mocked installer"
+        },
+        {
+          "passed": true,
+          "name": "Complete complete-default scan reaches only the mocked installer"
+        },
+        {
+          "passed": true,
+          "name": "Complete complete-multi scan reaches only the mocked installer"
+        },
+        {
+          "passed": true,
+          "name": "Single-target scan does not require a common section"
+        },
+        {
+          "passed": true,
+          "name": "Multi-target complete-default scan requires a common section"
+        },
+        {
+          "passed": true,
+          "name": "Multi-target complete-multi scan requires a common section"
+        },
+        {
+          "passed": true,
+          "name": "App launch ignores matching processes in another session"
+        },
+        {
+          "passed": true,
+          "name": "App launch ignores another executable in the current session"
+        },
+        {
+          "passed": true,
+          "name": "App launch accepts the matching executable in the current session"
+        },
+        {
+          "passed": true,
+          "name": "Application removal stops on a matching process failure and records an external effect"
+        },
+        {
+          "passed": true,
+          "name": "Application process exit race remains a recorded external effect"
+        },
+        {
+          "passed": true,
+          "name": "Application process stop records an external effect"
+        },
+        {
+          "passed": true,
+          "name": "PTB clean download failure preserves the existing client"
+        },
+        {
+          "passed": true,
+          "name": "PTB clean stages the replacement before removing the existing client"
+        },
+        {
+          "passed": true,
+          "name": "PTB clean removal failure prevents installer execution"
+        },
+        {
+          "passed": true,
+          "name": "Discord installer rejects other publisher categories"
+        },
+        {
+          "passed": true,
+          "name": "Microsoft installer rejects other publisher categories"
+        },
+        {
+          "passed": true,
+          "name": "WireSock installer requires its own publisher category"
+        },
+        {
+          "passed": true,
+          "name": "Dedicated component download contracts pass in an isolated stock shell"
+        }
+      ],
+      "milestones": {
+        "archive": true,
+        "service": true,
+        "staging": true,
+        "arguments": true,
+        "vendor": true,
+        "child": true,
+        "main": true,
+        "dns": true
+      }
+    }
+  ],
+  "realVendorExecuted": false,
+  "productionQualificationComplete": false,
+  "relatedWorkflowStatus": [
+    {
+      "runID": 42630417740,
+      "scope": "dns-recovery-source-contracts",
+      "outcome": "passed",
+      "evidence": "public workflow page",
+      "sealedDoNotRepoll": true
+    },
+    {
+      "runID": 42630417878,
+      "scope": "local-preview-input-qualification",
+      "outcome": "passed",
+      "evidence": "public workflow page",
+      "sealedDoNotRepoll": true
+    },
+    {
+      "runID": 42630417672,
+      "scope": "native-dns-roundtrips",
+      "outcome": "passed",
+      "evidence": "public workflow page",
+      "sealedDoNotRepoll": true
+    },
+    {
+      "runID": 42630417550,
+      "scope": "native-dns-wire",
+      "outcome": "failed",
+      "evidence": "public workflow page; fixed reports not yet verified",
+      "sealedDoNotRepoll": false
+    }
+  ],
+  "priorCancelledRun": {
+    "runID": 42628947610,
+    "sourceCommit": "bf4739e085aca627d35b3ddc4f7985bc547f58f5",
+    "outcome": "cancelled",
+    "evidence": "public workflow page",
+    "sealedDoNotRepoll": true
+  }
+}
