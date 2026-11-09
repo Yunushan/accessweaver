@@ -46,3 +46,30 @@ test_https_tls13 ipv4 example.com : winws --dpi-desync=fake "--comment=literal;$
 		t.Fatal("literal argument changed")
 	}
 }
+
+func TestScanRejectsStrategiesFromAnotherEngine(t *testing.T) {
+	for _, tc := range []struct {
+		engine, executable, flag string
+	}{
+		{"zapret", "winws2", "--dpi-desync=fake"},
+		{"zapret2", "winws", "--lua-desync=fake"},
+	} {
+		t.Run(tc.engine, func(t *testing.T) {
+			report := "* SUMMARY\ntest_https ipv4 : " + tc.executable + " " + tc.flag
+			if _, err := SelectScanStrategy(report, tc.engine); err == nil {
+				t.Fatal("accepted a strategy reported for the other executable")
+			}
+		})
+	}
+}
+
+func TestScanSkipsMismatchedExecutableBeforeValidCommonStrategy(t *testing.T) {
+	report := `* SUMMARY
+* COMMON
+test_https ipv4 : winws --lua-desync=incorrect
+test_https ipv4 : "C:\tools\WINWS2.EXE" --lua-desync=correct`
+	strategy, err := SelectScanStrategy(report, "zapret2")
+	if err != nil || len(strategy.Args) != 1 || strategy.Args[0] != "--lua-desync=correct" || !strategy.Common {
+		t.Fatalf("valid matching strategy was not selected: %+v, %v", strategy, err)
+	}
+}

@@ -46,6 +46,15 @@ func ParseScanOutput(output, engine string) ([]ScanStrategy, error) {
 		if match == nil {
 			continue
 		}
+		// A reported strategy belongs to the executable that produced it.
+		// Never install a winws result with winws2, or the reverse.
+		expected := "winws"
+		if engine == "zapret2" {
+			expected = "winws2"
+		}
+		if !strings.EqualFold(match[1], expected) {
+			continue
+		}
 		args, err := ParseArguments(match[2])
 		if err != nil {
 			continue
