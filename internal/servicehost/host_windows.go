@@ -5,7 +5,6 @@ package servicehost
 import (
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/Yunushan/accessweaver/internal/fileidentity"
 	"github.com/Yunushan/accessweaver/internal/logfile"
 	"github.com/Yunushan/accessweaver/internal/managed"
 	"github.com/Yunushan/accessweaver/internal/nativepath"
@@ -47,13 +47,8 @@ func Run(file string) error {
 	if !inside(absolute, filepath.Join(root, "services")) {
 		return errors.New("service configuration must be in protected AccessWeaver service storage")
 	}
-	configFile, err := os.Open(absolute)
+	cfg, err := readLocalServiceConfig(absolute)
 	if err != nil {
-		return err
-	}
-	cfg, readErr := readConfig(configFile)
-	closeErr := configFile.Close()
-	if err := errors.Join(readErr, closeErr); err != nil {
 		return err
 	}
 	if !strings.HasPrefix(cfg.Name, "AccessWeaver-") || !inside(cfg.Binary, filepath.Join(root, "components")) || !inside(cfg.Directory, filepath.Join(root, "components")) || !inside(cfg.LogPath, filepath.Join(root, "logs")) {
@@ -149,4 +144,18 @@ func inside(file, root string) bool {
 	}
 	rel, e := filepath.Rel(r, a)
 	return e == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
+// This binds the bounded read to a verified local regular-file handle. Local
+// links may still resolve locally; this is not an ACL or containment proof.
+func readLocalServiceConfig(path string) (Config, error) {
+	file, err := fileidentity.OpenLocal(path)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg, readErr := readConfig(file)
+	if err := errors.Join(readErr, file.Close()); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
 }
