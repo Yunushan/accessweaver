@@ -19,7 +19,7 @@ test('phase-public-projection-excludes-private-source-and-vectors',()=>{const r=
 function dnsFrame(name,type=1,response=false,v6=false,quad=false){
  const parts=name.split('.'),question=Buffer.concat(parts.flatMap(label=>[Buffer.from([label.length]),Buffer.from(label)]).concat([Buffer.from([0])])),data=Buffer.alloc(12+question.length+4);data.writeUInt16BE(response?0x8180:0x0100,2);data.writeUInt16BE(1,4);question.copy(data,12);data.writeUInt16BE(type,12+question.length);data.writeUInt16BE(1,14+question.length);
  const n=v6?40:20,b=Buffer.alloc(14+n+8+data.length);b.writeUInt16BE(v6?0x86dd:0x0800,12);
- if(v6){b[14]=0x60;b.writeUInt16BE(8+data.length,18);b[20]=17;b[21]=64;const client=Buffer.from('fd000000000000000000000000000002','hex'),server=Buffer.from(quad?'262000fe0000000000000000000000fe':'20014860000000000000000000008888','hex');(response?server:client).copy(b,22);(response?client:server).copy(b,38);}
+ if(v6){b[14]=0x60;b.writeUInt16BE(8+data.length,18);b[20]=17;b[21]=64;const client=Buffer.from('fd000000000000000000000000000002','hex'),server=Buffer.from(quad?'262000fe0000000000000000000000fe':'20014860486000000000000000008888','hex');(response?server:client).copy(b,22);(response?client:server).copy(b,38);}
  else{b[14]=0x45;b.writeUInt16BE(n+8+data.length,16);b[22]=64;b[23]=17;const client=Buffer.from([10,0,0,2]),server=Buffer.from(quad?[9,9,9,9]:[8,8,8,8]);(response?server:client).copy(b,26);(response?client:server).copy(b,30);}
  const t=14+n;b.writeUInt16BE(response?53:40000,t);b.writeUInt16BE(response?40000:53,t+2);b.writeUInt16BE(8+data.length,t+4);data.copy(b,t+8);return {...frame(!response),fragmentSize:b.length,fragment:b};
 }
@@ -32,4 +32,27 @@ test('dns-aaaa-and-other-question-types-counted',()=>{assert.equal(dnsResult(dns
 test('dns-malformed-question-and-pointer-cycle-unclassified',()=>{const zero=dnsFrame('example.com');zero.fragment.writeUInt16BE(0,46);assert.equal(dnsResult(zero).unclassified,1);const loop=dnsFrame('example.com');loop.fragment[54]=0xc0;loop.fragment[55]=12;assert.equal(dnsResult(loop).unclassified,1);assert.equal(dnsResult(frame()).unclassified,1);const dot=dnsFrame('example.com');dot.fragment[54]=11;dot.fragment[62]=46;assert.equal(dnsResult(dot).unclassified,1);});
 test('dns-all-fixed-provider-slots-include-ipv6',()=>{assert.equal(dnsResult(dnsFrame('example.com',1,false,false,true)).quad9V4,1);assert.equal(dnsResult(dnsFrame('example.com',1,false,true,false)).googleV6,1);assert.equal(dnsResult(dnsFrame('example.com',1,true,true,true)).quad9V6,1);});
 test('dns-phase-partitions-preserve-all-udp-frames',()=>{const r=joinFramePhases([dnsFrame('example.com'),dnsFrame('example.net'),dnsFrame('dns.google')],doc([0,1,2]),digest);assert.equal(r.dnsBefore.productProbe,1);assert.equal(r.dnsAt.positiveProbe,1);assert.equal(r.dnsAfter.providerBootstrap,1);for(const bucket of ['Before','At','After']){const d=r['dns'+bucket];assert.equal(d.queries+d.responses+d.unclassified,r['udp'+bucket]);assert(Object.isFrozen(d));}});
-assert.equal(passed,20);
+
+function withPort(record,port,response=false){const b=Buffer.from(record.fragment),t=b.readUInt16BE(12)===0x86dd?54:34;b.writeUInt16BE(port,t+(response?0:2));return {...record,fragment:b};}
+test('udp-port-partitions-cover-all-fixed-providers-both-directions',()=>{
+ for(const v6 of [false,true])for(const quad of [false,true])for(const response of [false,true])for(const port of [53,443,853]){
+  const r=joinFramePhases([withPort(dnsFrame('example.com',1,response,v6,quad),port,response)],doc([0]),digest);
+  assert.equal(r.udpBefore,1);assert.equal(r.udp53Before+r.udp443Before+r.udpOtherBefore,1);assert.equal(r['udp'+(port===53?'53':port===443?'443':'Other')+'Before'],1);
+  if(port!==53){assert.equal(r.dnsBefore.unclassified,1);assert.equal(r.dnsBefore.productProbe,0);}
+ }
+});
+test('udp-ports-close-at-every-phase-without-discarding-tcp',()=>{
+ const rows=[withPort(frame(),53),withPort(frame(),443),withPort(frame(),853),frame(true,true)];
+ for(const phase of [0,1,2]){const r=joinFramePhases(rows,doc(rows.map(()=>phase)),digest),bucket=['Before','At','After'][phase];assert.equal(r.frames,4);assert.equal(r['udp'+bucket],3);for(const port of ['53','443','Other'])assert.equal(r['udp'+port+bucket],1);assert.equal(r['tcp'+bucket],1);}
+});
+test('google-ipv6-role-matches-independent-network-byte-literal',()=>{
+ const row=dnsFrame('example.com',1,false,true,false),b=Buffer.from(row.fragment);
+ b.set([0x20,0x01,0x48,0x60,0x48,0x60,0,0,0,0,0,0,0,0,0x88,0x88],38);
+ assert.equal(dnsResult({...row,fragment:b}).googleV6,1);
+ b.set([0x20,0x01,0x48,0x60,0,0,0,0,0,0,0,0,0,0,0x88,0x88],38);
+ const r=joinFramePhases([{...row,fragment:b}],doc([0]),digest);assert.equal(r.dnsBefore.unclassified,1);assert.equal(r.udpOtherBefore,1);assert.equal(r.dnsBefore.googleV6,0);
+});
+test('udp-port-publication-contains-only-bounded-counts',()=>{
+ const r=joinFramePhases([withPort(dnsFrame('private.synthetic.test'),443)],doc([0]),digest);assert.equal(r.udp443Before,1);assert.equal(r.dnsBefore.unclassified,1);assert(!JSON.stringify(r).includes('private.synthetic'));for(const key of NUMBERS)assert(Number.isSafeInteger(r[key])&&r[key]>=0&&r[key]<=4096);
+});
+assert.equal(passed,24);

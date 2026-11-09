@@ -1,5 +1,5 @@
 # Pure closed count-only phase projections. Private ticks/vectors never enter these objects.
-function Get-DoHPhaseNumberKeys {return @('records','frames','before','at','after','tcpBefore','tcpAt','tcpAfter','udpBefore','udpAt','udpAfter','sentBefore','sentAt','sentAfter','receivedBefore','receivedAt','receivedAfter')}
+function Get-DoHPhaseNumberKeys {return @('records','frames','before','at','after','tcpBefore','tcpAt','tcpAfter','udpBefore','udpAt','udpAfter','sentBefore','sentAt','sentAfter','receivedBefore','receivedAt','receivedAfter','udp53Before','udp53At','udp53After','udp443Before','udp443At','udp443After','udpOtherBefore','udpOtherAt','udpOtherAfter')}
 function Get-DoHPhaseDNSKeys {return @('queries','responses','productProbe','positiveProbe','negativeProbe','providerBootstrap','otherName','a','aaaa','otherType','unclassified','googleV4','quad9V4','googleV6','quad9V6')}
 function New-DoHPhaseReadEvidence([string]$Code='not-inspected'){return @{schemaVersion=1;code=$Code;records=0;frames=0;privateMapWritten=$false}}
 function Get-DoHPhaseReadEvidence([string]$Text) {
@@ -23,6 +23,7 @@ function Get-DoHPhaseEvidence([string]$Text) {
         $d=$v.('dns'+$bucket)
         if($d -isnot [pscustomobject] -or @($d.PSObject.Properties).Count -ne $dnsKeys.Count -or @($d.PSObject.Properties.Name | Where-Object {$_ -cnotin $dnsKeys}).Count -ne 0){return $bad}
         foreach($key in $dnsKeys){if(($d.$key -isnot [int] -and $d.$key -isnot [long]) -or $d.$key -lt 0 -or $d.$key -gt 4096){return $bad}}
+        if($v.('udp53'+$bucket)+$v.('udp443'+$bucket)+$v.('udpOther'+$bucket) -ne $v.('udp'+$bucket) -or $d.queries+$d.responses -gt $v.('udp53'+$bucket)){return $bad}
         if($d.queries+$d.responses+$d.unclassified -ne $v.('udp'+$bucket) -or $d.productProbe+$d.positiveProbe+$d.negativeProbe+$d.providerBootstrap+$d.otherName+$d.unclassified -ne $v.('udp'+$bucket) -or $d.a+$d.aaaa+$d.otherType+$d.unclassified -ne $v.('udp'+$bucket) -or $d.googleV4+$d.quad9V4+$d.googleV6+$d.quad9V6+$d.unclassified -ne $v.('udp'+$bucket)){return $bad}
     }
     if($v.outcome -ceq 'complete'){
