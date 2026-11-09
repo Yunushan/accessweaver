@@ -20,13 +20,16 @@ $selected=$pins.targets.$Architecture
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($workflow,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Workflow parse failed'}
-$functions=@('No-Reparse','Under','Quote-Arg','Native-Argument','New-ToolCapture','Receive-ToolCapture','Wait-ToolCapture','Stop-ToolTreeWithHelper','Stop-ToolTree','Run-Tool','Native','Assert-ComponentZipBudget','Component-ArchivePlan','Expand-Safe','Backup-File','Expected-Hash','Save-Journal','Get-PEMachine','Component-ArchitecturePlan','Find-Source','Get-DriverServiceControllers','Get-ServiceInspection')
+$functions=@('No-Reparse','Under','Quote-Arg','Native-Argument','New-ToolCapture','Receive-ToolCapture','Wait-ToolCapture','Stop-ToolTreeWithHelper','Stop-ToolTree','Run-Tool','Native','Assert-ComponentZipBudget','Component-ArchivePlan','Expand-Safe','Backup-File','Expected-Hash','Save-Journal','Get-PEMachine','Component-ArchitecturePlan','Find-Source','Get-DriverServiceControllers','Get-ServiceInspection','Allowed-Download','Resolve-ComponentDownloadRedirect','Throw-ComponentDownloadFailure')
 foreach($name in $functions){
     $nodes=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Required workflow helper missing or duplicated'}
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
 function Require([bool]$ok,[string]$message){if(-not $ok){throw $message}}
+function Resolve-PinnedAssetRedirect([string]$origin,[uri]$current,[uri]$location){
+    return [uri](Resolve-ComponentDownloadRedirect $origin $current.AbsoluteUri ([string]$location))
+}
 function Receive-PinnedAsset($pin,[string]$path){
     Require ($pin.url -match '^https://github[.]com/(wiresock/proxifyre|ViRb3/wgcf|DNSCrypt/dnscrypt-proxy)/releases/download/[^/]+/[^/]+$' -and $pin.sha256 -cmatch '^[a-f0-9]{64}$' -and $pin.bytes -gt 0 -and $pin.bytes -le 32MB) 'Invalid bounded upstream pin'
     $handler=[Net.Http.HttpClientHandler]::new();$handler.AllowAutoRedirect=$false
@@ -39,7 +42,7 @@ function Receive-PinnedAsset($pin,[string]$path){
             $response=$client.GetAsync($url,[Net.Http.HttpCompletionOption]::ResponseHeadersRead,$cancel.Token).GetAwaiter().GetResult()
             if([int]$response.StatusCode -in @(301,302,303,307,308)){
                 Require ($null -ne $response.Headers.Location) 'Missing redirect location'
-                $url=[uri]::new($url,$response.Headers.Location);continue
+                $url=Resolve-PinnedAssetRedirect $pin.url $url $response.Headers.Location;continue
             }
             break
         }

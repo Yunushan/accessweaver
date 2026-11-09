@@ -66,7 +66,7 @@ jobs:
             foreach($name in $expected){$seen+=@{name=$name.Substring(5);passed=(@($lines | Where-Object {$_ -ceq $name}).Count -eq 1)}}
             if($suite -and @($seen | Where-Object {-not $_.passed}).Count -eq 0){$status='passed'}
           } finally {
-            $sources=@{};foreach($file in @('internal/workflow/windows.ps1','scripts/test-windows-workflow.ps1','scripts/test-windows-component-downloads.ps1','.github/workflows/windows-component-discovery.yml')){$sources[$file]=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()}
+            $sources=@{};foreach($file in @('internal/workflow/windows.ps1','scripts/test-windows-workflow.ps1','scripts/test-windows-component-downloads.ps1','scripts/test-windows-vendor-preflight.ps1','.github/workflows/windows-component-discovery.yml')){$sources[$file]=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()}
             $report=@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;architecture=$env:EXPECTED_ARCH;outcome=$status;suitePassed=$suite;cases=@($seen);milestones=$milestones;sourceSHA256=$sources;realVendorExecuted=$false;productionQualificationComplete=$false}
             [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
           }

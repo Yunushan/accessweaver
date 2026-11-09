@@ -461,6 +461,23 @@ foreach($redirectCase in @(
     $failure=Reject-DownloadFixture {Allowed-Download 'https://github.com:444/hufrea/byedpi/releases/download/v1/a.zip'}
     Assert-DownloadFixture ($null -ne $failure) 'Initial component URL must not use a nonstandard port'
 }
+# Exercise the vendor preflight's actual redirect adapter with the same policy.
+$vendorTokens=$null;$vendorErrors=$null
+$vendorAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $downloadProject 'scripts\test-windows-vendor-preflight.ps1'),[ref]$vendorTokens,[ref]$vendorErrors)
+if($vendorErrors.Count){throw 'Vendor preflight source did not parse'}
+$vendorNodes=@($vendorAst.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'Resolve-PinnedAssetRedirect'})
+if($vendorNodes.Count -ne 1){throw 'Vendor redirect adapter is unavailable'}
+. ([scriptblock]::Create($vendorNodes[0].Extent.Text))
+& {
+    function Allowed-Download([string]$url){& $script:downloadOriginalAllowed $url}
+    $origin='https://github.com/hufrea/byedpi/releases/download/v1/a.zip'
+    $accepted=Resolve-PinnedAssetRedirect $origin ([uri]$origin) ([uri]'https://release-assets.githubusercontent.com/fixture')
+    Assert-DownloadFixture ($accepted.Host -ceq 'release-assets.githubusercontent.com') 'Vendor preflight must accept the approved GitHub asset host'
+    foreach($location in @('https://127.0.0.1/private','https://github.com/unrelated/project/releases/download/v1/a.zip','http://release-assets.githubusercontent.com/a')){
+        $failure=Reject-DownloadFixture {Resolve-PinnedAssetRedirect $origin ([uri]$origin) ([uri]$location)}
+        Assert-DownloadFixture (Test-ComponentDownloadTerminal $failure) 'Vendor preflight must reject an unapproved redirect before another request'
+    }
+}
 Write-Output 'STAGE-REDIRECT-POLICY-PASS'
 # The real .NET redirect loop uses inert WebResponse objects and a fake factory.
 Add-Type -TypeDefinition @"
