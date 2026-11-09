@@ -8,6 +8,7 @@ navProfiles|Профили и правила|Perfiles y reglas
 navEngines|Каталог движков|Biblioteca de motores
 navDiagnostics|Диагностика|Diagnóstico
 navSettings|Настройки|Ajustes
+primaryNavigation|Основная навигация|Navegación principal
 preferences|ПАРАМЕТРЫ|PREFERENCIAS
 privacy|Конфиденциальность|Privacidad
 privacyText|В AccessWeaver нет аккаунтов и телеметрии. У внешних движков свои условия.|AccessWeaver no usa cuentas ni telemetría. Los motores externos tienen sus propias condiciones.
