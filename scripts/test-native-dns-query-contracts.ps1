@@ -57,15 +57,15 @@ Case-Q 'query-error-category-is-closed-and-cannot-upgrade-refusal' {
     $r=New-Q;$r.failureKind='timeout';Reject-Q {Get-NativeFreshDNSQueryReport ($r|ConvertTo-Json -Compress) $source $arch}
     $r.outcome='refused';$r.code='query-failed';$r.answerCount=0;$r.recordCount=0;$v=Get-NativeFreshDNSQueryReport ($r|ConvertTo-Json -Compress) $source $arch;Assert-Q ($v.failureKind -ceq 'timeout' -and $v.outcome -ceq 'refused')
 }
-Case-Q 'recovery-three-fixed-offsets-close-and-retain-first-failure' {
-    Reset-Q;$first=New-QTimeout;$timing=@{attempted=$true;startMilliseconds=0L;endMilliseconds=10L};Set-QRecovery @((New-QTimeout),(New-Q),(New-Q))
+Case-Q 'recovery-five-fixed-offsets-close-and-retain-first-failure' {
+    Reset-Q;$first=New-QTimeout;$timing=@{attempted=$true;startMilliseconds=0L;endMilliseconds=10L};Set-QRecovery @((New-QTimeout),(New-QTimeout),(New-Q),(New-Q),(New-Q))
     $v=Observe-NativeDNSRecovery $state 'fake-clock' $first $timing 'failed' 'resumed'
-    Assert-Q ($v.outcome -ceq 'observed' -and $v.code -ceq 'none' -and $v.samples.Count -eq 3 -and $v.initialOutcome -ceq 'failed' -and $v.initialFailureKind -ceq 'timeout' -and $v.laterSuccessObserved -and $v.diagnosticOnly -and -not $v.productionQualificationComplete)
-    Assert-Q (($v.samples.targetMilliseconds -join ',') -ceq '15000,35000,65000' -and $first.outcome -ceq 'refused' -and $first.failureKind -ceq 'timeout')
+    Assert-Q ($v.outcome -ceq 'observed' -and $v.code -ceq 'none' -and $v.samples.Count -eq 5 -and $v.initialOutcome -ceq 'failed' -and $v.initialFailureKind -ceq 'timeout' -and $v.laterSuccessObserved -and $v.diagnosticOnly -and -not $v.productionQualificationComplete)
+    Assert-Q (($v.samples.targetMilliseconds -join ',') -ceq '5000,10000,15000,35000,65000' -and $first.outcome -ceq 'refused' -and $first.failureKind -ceq 'timeout')
     foreach($row in $v.samples){Assert-Q ($row.startMilliseconds -ge $row.targetMilliseconds -and $row.endMilliseconds -ge $row.startMilliseconds -and $row.queryEvidence.recordsReleased)}
 }
 Case-Q 'recovery-no-answer-remains-observation-not-qualification' {
-    Reset-Q;$first=New-QTimeout;Set-QRecovery @((New-QTimeout),(New-QTimeout),(New-QTimeout));$v=Observe-NativeDNSRecovery $state 'fake-clock' $first @{attempted=$true;startMilliseconds=0L;endMilliseconds=10L} 'failed' 'resumed'
+    Reset-Q;$first=New-QTimeout;Set-QRecovery @((New-QTimeout),(New-QTimeout),(New-QTimeout),(New-QTimeout),(New-QTimeout));$v=Observe-NativeDNSRecovery $state 'fake-clock' $first @{attempted=$true;startMilliseconds=0L;endMilliseconds=10L} 'failed' 'resumed'
     Assert-Q ($v.outcome -ceq 'observed' -and -not $v.laterSuccessObserved -and $v.initialOutcome -ceq 'failed' -and -not $v.productionQualificationComplete)
 }
 Case-Q 'recovery-refuses-non-timeout-and-private-initial-proof' {
@@ -82,14 +82,14 @@ Case-Q 'recovery-process-source-and-private-query-refusal-do-not-upgrade' {
     foreach($fault in @('process','source','private')){Reset-Q;Set-QRecovery @((New-Q));if($fault -ceq 'private'){$r=New-Q;$r.privateRecord='private.synthetic';Set-QRecovery @($r)}else{$script:fault=$fault};$v=Observe-NativeDNSRecovery $state 'fake-clock' (New-QTimeout) @{attempted=$true;startMilliseconds=0L;endMilliseconds=10L} 'failed' 'resumed';Assert-Q ($v.outcome -ceq 'refused' -and $v.samples.Count -eq 0 -and -not $v.laterSuccessObserved -and $v.initialOutcome -ceq 'failed');Assert-Q (-not ($v|ConvertTo-Json -Depth 6 -Compress).Contains('private.synthetic'))}
 }
 Case-Q 'recovery-public-report-is-bounded-and-contains-no-private-time-or-data' {
-    Reset-Q;Set-QRecovery @((New-Q),(New-Q),(New-Q));$v=Observe-NativeDNSRecovery $state 'fake-clock' (New-QTimeout) @{attempted=$true;startMilliseconds=0L;endMilliseconds=10L} 'failed' 'resumed';$text=$v|ConvertTo-Json -Depth 6 -Compress
-    Assert-Q ($text.Length -le 2048 -and $v.Count -eq 9);foreach($secret in @('example.net','UtcTicks','DateTime','private.synthetic','IPAddress','sourceFramesSHA256')){Assert-Q (-not $text.Contains($secret))}
+    Reset-Q;Set-QRecovery @((New-Q),(New-Q),(New-Q),(New-Q),(New-Q));$v=Observe-NativeDNSRecovery $state 'fake-clock' (New-QTimeout) @{attempted=$true;startMilliseconds=0L;endMilliseconds=10L} 'failed' 'resumed';$text=$v|ConvertTo-Json -Depth 6 -Compress
+    Assert-Q ($text.Length -le 3072 -and $v.Count -eq 9);foreach($secret in @('example.net','UtcTicks','DateTime','private.synthetic','IPAddress','sourceFramesSHA256')){Assert-Q (-not $text.Contains($secret))}
 }
 Case-Q 'recovery-caller-keeps-original-verdict-and-query-policy' {
     $text=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-native-dns-query.ps1'));$call='Observe-NativeDNSRecovery $state $unblockClock $evidence.resumed $resumptionTiming $outcome $code'
     Assert-Q ($text.Contains($call) -and ([regex]::Matches($text,[regex]::Escape("$"+"outcome='passed'"))).Count -eq 1 -and $text.IndexOf("$"+"outcome='passed'") -lt $text.IndexOf($call))
     $text=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'native-dns-recovery-observation.ps1'));foreach($boundary in @('Clear-DnsClientCache','Set-DnsClient','New-NetFirewallRule','Remove-NetFirewallRule','DateTime','UtcTicks')){Assert-Q (-not $text.Contains($boundary))}
-    Assert-Q ($text.Contains('@(15000,35000,65000)') -and $text.Contains("Invoke-NativeFreshDNSQuery $"+"State 'example.net'"))
+    Assert-Q ($text.Contains('@(5000,10000,15000,35000,65000)') -and $text.Contains("Invoke-NativeFreshDNSQuery $"+"State 'example.net'"))
 }
 $passed=@($cases | Where-Object {-not $_.passed}).Count -eq 0
 [Console]::Out.WriteLine((@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;cases=@($cases.ToArray());passed=$passed;nativeQueryInvoked=$false;productInvoked=$false} | ConvertTo-Json -Depth 5 -Compress))

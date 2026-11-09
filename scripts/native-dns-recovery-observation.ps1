@@ -9,7 +9,7 @@ function Read-NativeDNSRecoveryMilliseconds([object]$Clock) {
     return $value
 }
 function Wait-NativeDNSRecoveryOffset([object]$Clock,[long]$TargetMilliseconds) {
-    if($TargetMilliseconds -notin @(15000,35000,65000)){throw 'Recovery schedule boundary'}
+    if($TargetMilliseconds -notin @(5000,10000,15000,35000,65000)){throw 'Recovery schedule boundary'}
     while($true){
         $now=Read-NativeDNSRecoveryMilliseconds $Clock
         if($now -ge $TargetMilliseconds){return $now}
@@ -26,7 +26,7 @@ function Observe-NativeDNSRecovery([object]$State,[object]$Clock,[object]$Initia
         foreach($key in @('startMilliseconds','endMilliseconds')){if(($InitialTiming[$key] -isnot [int] -and $InitialTiming[$key] -isnot [long]) -or $InitialTiming[$key] -lt 0 -or $InitialTiming[$key] -gt 120000){return $result}}
         if($InitialTiming.endMilliseconds -lt $InitialTiming.startMilliseconds -or $State.processFailed){return $result}
         $result.initialOutcome='failed';$result.initialFailureKind='timeout';$previous=[long]$InitialTiming.endMilliseconds
-        foreach($target in @(15000,35000,65000)){
+        foreach($target in @(5000,10000,15000,35000,65000)){
             $result.code='clock';$start=Wait-NativeDNSRecoveryOffset $Clock $target
             if(($start -isnot [int] -and $start -isnot [long]) -or $start -lt $target -or $start -lt $previous -or $start -gt 120000){return $result}
             $result.code='query';$query=$null
