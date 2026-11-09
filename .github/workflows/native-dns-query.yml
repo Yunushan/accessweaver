@@ -6,12 +6,14 @@ on:
     paths:
       - 'scripts/native-dns-query/**'
       - 'scripts/native-dns-query.ps1'
+      - 'scripts/native-dns-recovery-observation.ps1'
       - 'scripts/test-native-dns-query*.ps1'
       - '.github/workflows/native-dns-query.yml'
   pull_request:
     paths:
       - 'scripts/native-dns-query/**'
       - 'scripts/native-dns-query.ps1'
+      - 'scripts/native-dns-recovery-observation.ps1'
       - 'scripts/test-native-dns-query*.ps1'
       - '.github/workflows/native-dns-query.yml'
   workflow_dispatch:

@@ -14,10 +14,11 @@ if(-not [IO.Path]::IsPathRooted($ReportPath)){throw 'Query report path'}
 Assert-NativeOrdinaryPath $ReportPath;$ReportPath=[IO.Path]::GetFullPath($ReportPath);$parent=Get-Item -LiteralPath ([IO.Path]::GetDirectoryName($ReportPath)) -Force -ErrorAction Stop
 if(-not $parent.PSIsContainer -or [IO.Directory]::GetFileSystemEntries($parent.FullName).Length -ne 0){throw 'Query report parent'}
 $parentCreated=$parent.CreationTimeUtc.Ticks
-$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-dns-query/main_windows.go','scripts/native-dns-query/main_windows_test.go','scripts/native-dns-query.ps1','scripts/test-native-dns-query-contracts.ps1','scripts/test-native-dns-query.ps1','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1','scripts/check-native-environment.cjs','.github/workflows/native-dns-query.yml','go.mod','go.sum');$hashes=@{}
+$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-dns-query/main_windows.go','scripts/native-dns-query/main_windows_test.go','scripts/native-dns-query.ps1','scripts/native-dns-recovery-observation.ps1','scripts/test-native-dns-query-contracts.ps1','scripts/test-native-dns-query.ps1','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1','scripts/check-native-environment.cjs','.github/workflows/native-dns-query.yml','go.mod','go.sum');$hashes=@{}
 foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 . (Join-Path $PSScriptRoot 'native-dns-wire.ps1')
 . (Join-Path $PSScriptRoot 'native-dns-query.ps1')
+. (Join-Path $PSScriptRoot 'native-dns-recovery-observation.ps1')
 . (Join-Path $PSScriptRoot 'dns-acceptance-state.ps1')
 $Binary=[IO.Path]::GetFullPath($Binary);Assert-NativeOrdinaryPath $Binary;$item=Get-Item -LiteralPath $Binary -Force -ErrorAction Stop;$workspace=[IO.Path]::GetFullPath($env:GITHUB_WORKSPACE).TrimEnd('\')+'\'
 if(-not $Binary.StartsWith($workspace,[StringComparison]::OrdinalIgnoreCase) -or $item.PSIsContainer -or $item.Length -le 0 -or $item.Length -gt 128MB -or $BinarySHA256 -cnotmatch '^[a-f0-9]{64}$' -or (Get-FileHash -LiteralPath $Binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $BinarySHA256){throw 'Query binary identity'}
@@ -29,6 +30,7 @@ foreach($sid in @($identity.User.Value,'S-1-5-18','S-1-5-32-544') | Select-Objec
 Set-Acl -LiteralPath $root -AclObject $acl -ErrorAction Stop
 $state=New-NativeDNSWireState $root (Join-Path $PSScriptRoot 'dns-wire-stdin.cjs');$state.queryProject=$project;$state.querySourceHashes=$hashes.Clone();$state.queryBinary=$Binary;$state.queryBinarySHA256=$BinarySHA256;$state.querySourceCommit=$env:GITHUB_SHA;$state.queryArchitecture=$env:ACCESSWEAVER_EXPECT_GOARCH
 $outcome='failed';$code='preflight';$cleanupCode='none';$before=$null;$rulesRemoved=$false;$stateVerified=$false;$rootRemoved=$false;$evidence=@{probe=$null;positive=$null;blocked=$null;resumed=$null}
+$unblockClock=$null;$resumptionTiming=@{attempted=$false;startMilliseconds=0L;endMilliseconds=0L};$recoveryObservation=New-NativeDNSRecoveryObservation
 try {
     Assert-NativeFreshDNSSources $state
     if(@(Get-DnsClientNrptPolicy -Effective -ErrorAction Stop).Count -ne 0){throw 'Query name policy boundary'}
@@ -39,13 +41,24 @@ try {
     $code='block';foreach($kind in @('dns','tls')){foreach($protocol in @('TCP','UDP')){Add-NativeDNSWireRule $state $kind $protocol}}
     $code='blocked';$evidence.blocked=Invoke-NativeFreshDNSQuery $state 'example.net' -ExpectFailure
     $code='unblock';Remove-NativeDNSWireRules $state 'tls';Remove-NativeDNSWireRules $state 'dns';$rulesRemoved=$true
-    $code='resumed';$evidence.resumed=Invoke-NativeFreshDNSQuery $state 'example.net'
+    $unblockClock=[Diagnostics.Stopwatch]::StartNew()
+    $code='resumed';$state.queryLastEvidence=$null;$resumptionTiming.attempted=$true;$resumptionTiming.startMilliseconds=Read-NativeDNSRecoveryMilliseconds $unblockClock
+    $evidence.resumed=Invoke-NativeFreshDNSQuery $state 'example.net'
+    $resumptionTiming.endMilliseconds=Read-NativeDNSRecoveryMilliseconds $unblockClock
     $code='readback';Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState);$stateVerified=$true
     Assert-NativeFreshDNSSources $state
     $outcome='passed';$code='none'
 } catch {
     $outcome='failed'
     if($code -cin @('probe','positive','blocked','resumed') -and $null -ne $state.queryLastEvidence){$evidence[$code]=$state.queryLastEvidence}
+    if($code -ceq 'resumed' -and $null -ne $unblockClock){
+        try{
+            $resumptionTiming.endMilliseconds=Read-NativeDNSRecoveryMilliseconds $unblockClock
+            if($null -ne $evidence.resumed -and $evidence.resumed.code -ceq 'query-failed' -and $evidence.resumed.failureKind -ceq 'timeout' -and $rulesRemoved -and -not $state.processFailed){
+                $recoveryObservation=Observe-NativeDNSRecovery $state $unblockClock $evidence.resumed $resumptionTiming $outcome $code
+            }
+        }catch{}
+    }
 } finally {
     $cleanupGood=$true
     foreach($kind in @('tls','dns')){try{Remove-NativeDNSWireRules $state $kind}catch{$cleanupGood=$false;$cleanupCode='rules'}}
@@ -56,7 +69,7 @@ try {
     if(-not $cleanupGood -or $state.processes -ne $state.joined -or $state.processFailed){$outcome='failed';if($cleanupCode -ceq 'none'){$cleanupCode='process'}}
     $currentParent=Get-Item -LiteralPath $parent.FullName -Force -ErrorAction Stop
     if($currentParent.CreationTimeUtc.Ticks -ne $parentCreated -or ($currentParent.Attributes -band [IO.FileAttributes]::ReparsePoint) -or [IO.Directory]::GetFileSystemEntries($parent.FullName).Length -ne 0){throw 'Query report parent changed'}
-    $report=@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;architecture=$env:ACCESSWEAVER_EXPECT_GOARCH;binarySHA256=$BinarySHA256;outcome=$outcome;code=$code;cleanupCode=$cleanupCode;queryEvidence=$evidence;toolProcesses=$state.processes;toolProcessesJoined=$state.joined;toolFailure=$state.processFailed;processFailureCode=$state.processFailureCode;rulesPrepared=$state.rules.Count;rulesRemoved=$rulesRemoved;originalStateVerified=$stateVerified;privateRootRemoved=$rootRemoved;globalCacheFlushed=$false;dnsSettingsChangesAttempted=$false;captureStarted=$false;productInvoked=$false;encryptedTrafficQualified=$false;productionQualificationComplete=$false}
+    $report=@{schemaVersion=2;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;architecture=$env:ACCESSWEAVER_EXPECT_GOARCH;binarySHA256=$BinarySHA256;outcome=$outcome;code=$code;cleanupCode=$cleanupCode;queryEvidence=$evidence;resumptionTiming=$resumptionTiming;recoveryObservation=$recoveryObservation;toolProcesses=$state.processes;toolProcessesJoined=$state.joined;toolFailure=$state.processFailed;processFailureCode=$state.processFailureCode;rulesPrepared=$state.rules.Count;rulesRemoved=$rulesRemoved;originalStateVerified=$stateVerified;privateRootRemoved=$rootRemoved;globalCacheFlushed=$false;dnsSettingsChangesAttempted=$false;captureStarted=$false;productInvoked=$false;encryptedTrafficQualified=$false;productionQualificationComplete=$false}
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($report | ConvertTo-Json -Depth 6 -Compress));if($bytes.Length -gt 8192){throw 'Query report bound'}
     $stream=[IO.FileStream]::new($ReportPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush()}finally{$stream.Dispose()}
