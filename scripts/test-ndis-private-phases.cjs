@@ -70,9 +70,31 @@ test('start-map-missing-extra-coerced-and-legacy-documents-refused',()=>{
  for(const starts of [[],[0,1],['0'],[true],[-1],[3],[0.5]])assert.throws(()=>joinFramePhases([frame()],doc([0],2,starts),digest));const missing=doc([0]);delete missing.starts;assert.throws(()=>joinFramePhases([frame()],missing,digest),/phase-document/);assert.throws(()=>joinFramePhases([frame()],{...doc([0]),schemaVersion:1},digest),/phase-document/);
 });
 test('start-count-publication-never-leaks-vectors-timestamps-or-names',()=>{
- const r=joinFramePhases([dnsFrame('private.synthetic.test')],doc([0],1,[0]),digest),text=JSON.stringify(r);assert.equal(r.schemaVersion,2);assert.equal(r.dnsPreStart.otherName,1);assert(Object.isFrozen(r.dnsPreStart));for(const privateValue of ['private.synthetic','"starts"','"phases"','UtcTicks','sourceFramesSHA256',digest])assert(!text.includes(privateValue));
+ const r=joinFramePhases([dnsFrame('private.synthetic.test')],doc([0],1,[0]),digest),text=JSON.stringify(r);assert.equal(r.schemaVersion,3);assert.equal(r.dnsPreStart.otherName,1);assert(Object.isFrozen(r.dnsPreStart));for(const privateValue of ['private.synthetic','"starts"','"phases"','UtcTicks','sourceFramesSHA256',digest])assert(!text.includes(privateValue));
 });
 test('start-count-closed-schema-stays-within-existing-public-report-bound',()=>{
  const r=JSON.parse(JSON.stringify(joinFramePhases([frame()],doc([0]),digest)));for(const key of NUMBERS)r[key]=4096;for(const bucket of ['Before','At','After','PreStart','StartAt','During'])for(const key of DNS_KEYS)r['dns'+bucket][key]=4096;assert(Buffer.byteLength(JSON.stringify(r))<=4096);assert.equal(Object.keys(r).length,NUMBERS.length+12);
 });
-assert.equal(passed,30);
+function resetFrame(sent=true){const r=frame(sent,true);r.fragment[47]=0x14;return r;}
+test('reset-flags-have-exact-start-and-return-phase-counts',()=>{
+ const rows=[resetFrame(),resetFrame(false),resetFrame(),resetFrame(false),resetFrame()],r=joinFramePhases(rows,doc([0,0,0,1,2],5,[0,1,2,2,2]),digest);
+ assert.equal(r.tcpResetBefore,3);assert.equal(r.tcpResetPreStart,1);assert.equal(r.tcpResetStartAt,1);assert.equal(r.tcpResetDuring,1);assert.equal(r.tcpResetAt,1);assert.equal(r.tcpResetAfter,1);assert.equal(r.frames,5);
+});
+test('reset-counts-do-not-reclassify-normal-tcp-udp-or-fin',()=>{
+ const fin=frame(true,true);fin.fragment[47]=0x11;const r=joinFramePhases([frame(),frame(false,true),fin,resetFrame()],doc([0,0,0,0]),digest);
+ assert.equal(r.frames,4);assert.equal(r.tcpBefore,3);assert.equal(r.udpBefore,1);assert.equal(r.tcpResetBefore,1);assert.equal(r.tcpResetDuring,1);
+});
+test('reset-phase-partitions-close-for-both-directions',()=>{
+ for(const sent of [true,false]){const r=joinFramePhases([resetFrame(sent),resetFrame(sent),resetFrame(sent)],doc([0,1,2]),digest);assert.equal(r.tcpResetBefore+r.tcpResetAt+r.tcpResetAfter,3);assert.equal(r.tcpResetPreStart+r.tcpResetStartAt+r.tcpResetDuring,r.tcpResetBefore);assert.equal(r[sent?'sentBefore':'receivedBefore'],1);}
+});
+test('reset-counts-include-ipv6-and-vlan-frames-without-private-fields',()=>{
+ const a=resetFrame(),b=Buffer.alloc(14+40+20);b.writeUInt16BE(0x86dd,12);b[14]=0x60;b.writeUInt16BE(20,18);b[20]=6;b[21]=64;b.set(Buffer.from('fd000000000000000000000000000002','hex'),22);b.set(Buffer.from('20014860486000000000000000008888','hex'),38);a.fragment.copy(b,54,34);const v6={...a,fragment:b,fragmentSize:b.length};
+ const tagged=Buffer.concat([a.fragment.subarray(0,12),Buffer.from([0x81,0,0,1]),a.fragment.subarray(12)]),vlan={...a,fragment:tagged,fragmentSize:tagged.length};const r=joinFramePhases([v6,vlan],doc([0,2]),digest);assert.equal(r.tcpResetBefore,1);assert.equal(r.tcpResetAfter,1);assert.equal(r.frames,2);assert(!JSON.stringify(r).includes('fd0000'));
+});
+test('reset-counts-remain-bounded-frozen-and-closed',()=>{
+ const r=joinFramePhases([resetFrame()],doc([0]),digest);assert(Object.isFrozen(r));assert.equal(Object.keys(r).length,NUMBERS.length+12);for(const key of NUMBERS)assert(Number.isSafeInteger(r[key])&&r[key]>=0&&r[key]<=4096);for(const secret of ['fragment','phases','starts','sourceFramesSHA256',digest])assert(!JSON.stringify(r).includes(secret));
+});
+test('reset-bearing-malformed-frame-is-refused-without-count-repair',()=>{
+ const r=resetFrame();r.fragment=Buffer.from(r.fragment);r.fragment[46]=0xf0;assert.throws(()=>joinFramePhases([r],doc([0]),digest));
+});
+assert.equal(passed,36);

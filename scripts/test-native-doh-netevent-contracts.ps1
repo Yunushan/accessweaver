@@ -55,7 +55,7 @@ function New-PBaselineFixture {
  return @{before=$before;first=$adapters;clients=$clients;last=$adapters}
 }
 function Read-DoHBaselineResolverEvidence([object]$State){$script:events.Add('baseline-evidence');if($script:fault -ceq 'baseline-evidence'){throw 'Synthetic baseline refusal'};$f=New-PBaselineFixture;return (Get-DoHBaselineResolverEvidence $f.before $f.first $f.clients $f.last)}
-function Close-PDuringPhase([object]$r){$r.during=$r.before;foreach($prefix in @('tcp','udp','sent','received','udp53','udp443','udpOther')){$r[$prefix+'During']=$r[$prefix+'Before']};foreach($key in (Get-DoHPhaseDNSKeys)){$r.dnsDuring[$key]=$r.dnsBefore[$key]}}
+function Close-PDuringPhase([object]$r){$r.during=$r.before;foreach($prefix in @('tcp','udp','sent','received','udp53','udp443','udpOther','tcpReset')){$r[$prefix+'During']=$r[$prefix+'Before']};foreach($key in (Get-DoHPhaseDNSKeys)){$r.dnsDuring[$key]=$r.dnsBefore[$key]}}
 
 function Assert-P([bool]$Value){if(-not $Value){throw 'Synthetic product capture assertion'}}
 function Reject-P([scriptblock]$Body){$rejected=$false;try{[void](& $Body)}catch{$rejected=$true};Assert-P $rejected}
@@ -151,6 +151,24 @@ Case-P 'start-phase-projection-closes-every-before-return-partition' {$r=New-DoH
 Case-P 'start-phase-exact-boundary-and-private-fields-stay-explicit' {$r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true;$r.records=1;$r.frames=1;$r.before=1;$r.startAt=1;$r.udpBefore=1;$r.udpStartAt=1;$r.udp443Before=1;$r.udp443StartAt=1;$r.sentBefore=1;$r.sentStartAt=1;$r.dnsBefore.unclassified=1;$r.dnsStartAt.unclassified=1;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).outcome -ceq 'complete');$r.starts=@(1);Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')}
 Case-P 'start-timestamp-is-recorded-immediately-before-controller-dispatch' {$s=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-native-doh.ps1'));$marker='$script:wire.ndis.configureStartUtcTicks=[DateTime]::UtcNow.Ticks';$dispatch='if(-not $process.Start())';Assert-P ($s.Contains($marker) -and $s.IndexOf($marker) -lt $s.IndexOf($dispatch));$s=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'read-native-ndis-phases.ps1'));Assert-P ($s.Contains('$ConfigureStartUtcTicks -ge $BoundaryUtcTicks') -and $s.Contains('schemaVersion=2') -and $s.Contains('starts=@($starts.ToArray())') -and -not $s.Contains('GetPropertyValues'))}
 Case-P 'baseline-readback-uses-stable-inventories-before-capture-effects' {$s=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'native-doh-netevent-wire.ps1'));Assert-P ($s.Contains('$first=@(Get-NetAdapter -ErrorAction Stop)') -and $s.Contains('$last=@(Get-NetAdapter -ErrorAction Stop)') -and $s.Contains('Get-DnsClientServerAddress -ErrorAction Stop') -and $s.IndexOf('Read-DoHBaselineResolverEvidence $State') -lt $s.IndexOf('Invoke-DoHNetEventOperation $State'))}
+
+
+Case-P 'reset-phase-counts-close-and-cannot-exceed-tcp-frames' {
+    $r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true;$r.records=3;$r.frames=3;$r.before=2;$r.during=2;$r.after=1;$r.tcpBefore=2;$r.tcpDuring=2;$r.tcpAfter=1;$r.sentBefore=2;$r.sentDuring=2;$r.receivedAfter=1;$r.tcpResetBefore=1;$r.tcpResetDuring=1;$r.tcpResetAfter=1
+    $text=$r | ConvertTo-Json -Depth 4 -Compress;$v=Get-DoHPhaseEvidence $text;Assert-P ($v.schemaVersion -eq 3 -and $v.outcome -ceq 'complete' -and $v.tcpResetDuring -eq 1 -and $v.tcpResetAfter -eq 1)
+    $r.tcpResetDuring=0;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+    $r.tcpResetDuring=1;$r.tcpResetAfter=2;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+    $r.tcpResetAfter='1';Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+    $r.tcpResetAfter=1;$r.schemaVersion=2;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+}
+Case-P 'reset-phase-total-is-bound-to-complete-conversion-counts' {
+    $s=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'native-doh-netevent-wire.ps1'))
+    Assert-P ($s.Contains('$pe.tcpResetBefore+$pe.tcpResetAt+$pe.tcpResetAfter -eq $q.tcpClosure.sentReset+$q.tcpClosure.receivedReset'))
+    $r=New-DoHPhaseEvidence 'conversion';$r.outcome='refused';$r.tcpResetDuring=1
+    Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+    $r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true;$r.records=1;$r.frames=1;$r.before=1;$r.during=1;$r.tcpBefore=1;$r.tcpDuring=1;$r.sentBefore=1;$r.sentDuring=1;$r.tcpResetBefore=1;$r.tcpResetDuring=1;$r.resetFlowIdentity='private.synthetic'
+    Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+}
 
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}
 $passed=@($cases | Where-Object {-not $_.passed}).Count -eq 0

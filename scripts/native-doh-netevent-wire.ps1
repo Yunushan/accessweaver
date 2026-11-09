@@ -135,7 +135,7 @@ function Read-DoHNetEventCapture([object]$State) {
     if($pr.code -ceq 'none' -and $pr.privateMapWritten -and $pr.records -eq $catalog.records -and $pr.frames -eq $f.fragmentIDs){
         $State.phase='phase-counts';$text=Invoke-DoHNetEventProcess $State $State.node @((Join-Path $PSScriptRoot 'ndis-private-phases.cjs'),$State.ndis.root)
         $State.ndis.public.phaseEvidence=Get-DoHPhaseEvidence $text;$pe=$State.ndis.public.phaseEvidence
-        $State.ndis.phaseVerified=($pe.outcome -ceq 'complete' -and $pe.code -ceq 'none' -and $pe.records -eq $catalog.records -and $pe.frames -eq $q.frames -and $pe.tcpBefore+$pe.tcpAt+$pe.tcpAfter -eq $q.tcp -and $pe.udpBefore+$pe.udpAt+$pe.udpAfter -eq $q.udp -and $pe.sentBefore+$pe.sentAt+$pe.sentAfter -eq $q.sent -and $pe.receivedBefore+$pe.receivedAt+$pe.receivedAfter -eq $q.received)
+        $State.ndis.phaseVerified=($pe.outcome -ceq 'complete' -and $pe.code -ceq 'none' -and $pe.records -eq $catalog.records -and $pe.frames -eq $q.frames -and $pe.tcpBefore+$pe.tcpAt+$pe.tcpAfter -eq $q.tcp -and $pe.udpBefore+$pe.udpAt+$pe.udpAfter -eq $q.udp -and $pe.sentBefore+$pe.sentAt+$pe.sentAfter -eq $q.sent -and $pe.receivedBefore+$pe.receivedAt+$pe.receivedAfter -eq $q.received -and $pe.tcpResetBefore+$pe.tcpResetAt+$pe.tcpResetAfter -eq $q.tcpClosure.sentReset+$q.tcpClosure.receivedReset)
     }
     $State.phase='tls-decode';$bytes=Read-NativeDNSWireCapture $State
     # Admission uses fresh independent state while the product remains configured.
