@@ -1504,16 +1504,21 @@ function Stop-AppProcesses([string]$variant) {
         if($match){Stop-Process -Id $process.Id -ErrorAction Stop}
     }catch{}}
 }
+function Test-AppProcessInSession([string]$path,[int]$sessionId,$processes) {
+    foreach($process in @($processes)){try{if($process.Path -eq $path -and $process.SessionId -eq $sessionId){return $true}}catch{}}
+    return $false
+}
 function Start-App([string]$variant) {
     Require-DesktopUser
     $app=Find-App $variant;if(-not $app){throw 'Application is not installed'};No-Reparse $app
-    if([Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0){throw 'Start user applications from the signed-in Windows desktop, not the SYSTEM session'}
+    $sessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId
+    if($sessionId -eq 0){throw 'Start user applications from the signed-in Windows desktop, not the SYSTEM session'}
     # Explorer brokers the launch in the signed-in desktop user's context.
     # Its external application lifetime is not owned or certified by this worker.
     $script:externalEffectsPending=$true
     Start-Process -FilePath (Join-Path $env:SystemRoot 'explorer.exe') -ArgumentList @((Quote-Arg $app)) -WindowStyle Hidden
     $deadline=[DateTime]::UtcNow.AddSeconds(10)
-    do{foreach($process in Get-Process -ErrorAction SilentlyContinue){try{if($process.Path -eq $app){Event 'Application process is running in the desktop session';return}}catch{}};Start-Sleep -Milliseconds 500}while([DateTime]::UtcNow -lt $deadline)
+    do{if(Test-AppProcessInSession $app $sessionId @(Get-Process -ErrorAction SilentlyContinue)){Event 'Application process is running in the desktop session';return};Start-Sleep -Milliseconds 500}while([DateTime]::UtcNow -lt $deadline)
     throw 'Application launch could not be verified; inspect its desktop and logs'
 }
 function Start-RepairProxy {

@@ -355,6 +355,14 @@ try {
         Assert ([Net.ServicePointManager]::SecurityProtocol -eq $expected) ('Process-local TLS setup preserves the contract for '+$action)
     }
 } finally {[Net.ServicePointManager]::SecurityProtocol=$previousTLS;$r=$previousRequest}
+# Synthetic process records verify session-scoped launch observation without launching an app.
+$fixtureApp='C:\fixture\SplitCord.exe'
+$otherSession=[pscustomobject]@{Path=$fixtureApp;SessionId=9}
+$sameSession=[pscustomobject]@{Path=$fixtureApp;SessionId=7}
+$otherPath=[pscustomobject]@{Path='C:\fixture\Other.exe';SessionId=7}
+Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($otherSession))) 'App launch ignores matching processes in another session'
+Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($otherPath))) 'App launch ignores another executable in the current session'
+Assert (Test-AppProcessInSession $fixtureApp 7 @($otherSession,$sameSession)) 'App launch accepts the matching executable in the current session'
 # Exercise both direct helper calls and the dispatcher before any real OS work.
 $desktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
 $machineInitializer=(Get-Command Initialize-Changes).ScriptBlock

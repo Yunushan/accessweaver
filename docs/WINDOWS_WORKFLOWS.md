@@ -85,6 +85,8 @@ Native integration and reboot tests now use a separate acceptance oracle for GUI
 
 `app-install`, `app-start` and `app-remove` support `discord`, `discord-ptb` and `splitcord`. PTB's `clean` option first removes stable Discord. These operations reject administrator/SYSTEM tokens and session zero before discovering or executing user applications. They use a per-job `application/` staging directory and journal under the ordinary workflow directory, avoiding protected machine storage. Configure DNS with a separate reviewed machine operation. Do not run multiple controllers against the same application at once. Removal can sign you out; existing account sessions are not test fixtures.
 
+Application launch observation now checks both the executable path and the worker's Windows session ID. A matching process in another session cannot establish success. The fixture uses synthetic process records; interactive application launch, account behavior and installed lifecycle remain unqualified.
+
 `app-repair` is currently blocked in both preview and execution. Its combined user uninstallation/reinstallation and privileged proxy/DLL steps require a privilege-separated broker. To reinstall an application, review separate unelevated remove/install operations. Manage the proxy and DLL setup separately through elevated machine operations. The protected-journal `recover` command handles machine journals only; a user application journal records outcomes and does not guarantee reversal of vendor installer changes.
 
 `updates` checks AccessWeaver's official GitHub release metadata. It does not install an update.
