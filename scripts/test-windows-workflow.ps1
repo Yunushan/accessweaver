@@ -658,6 +658,10 @@ Assert ($LASTEXITCODE -eq 0) 'Dedicated DNS recovery contracts pass in an isolat
 $downloadFixtureOut=@(& $dnsShell -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'test-windows-component-downloads.ps1') -RequireWindowsPowerShell 2>$null)
 $downloadFixtureExit=$LASTEXITCODE
 $downloadStages=@(
+    @('STAGE-DEFINITIONS-PASS','Component download definitions fixture completed'),
+    @('STAGE-STREAM-PASS','Component download stream fixture completed'),
+    @('STAGE-COMPOSITION-PASS','Component download composition fixture completed'),
+    @('STAGE-METADATA-PASS','Component download metadata fixture completed'),
     @('STAGE-REDIRECT-POLICY-PASS','Component redirect policy fixture completed'),
     @('STAGE-DOTNET-HOPS-PASS','Component .NET redirect fixture completed'),
     @('STAGE-CURL-OWNER-PASS','Component curl owner fixture completed'),

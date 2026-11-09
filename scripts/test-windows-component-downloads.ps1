@@ -15,6 +15,7 @@ foreach($downloadName in $downloadNames){
     if($downloadNodes.Count -ne 1){throw 'Required component download function is unavailable'}
     . ([scriptblock]::Create($downloadNodes[0].Extent.Text))
 }
+Write-Output 'STAGE-DEFINITIONS-PASS'
 # These types allocate only tiny buffers. Length is deliberately independent of
 # actual data, so the actual-byte guard cannot rely on a declared stream size.
 Add-Type -TypeDefinition @"
@@ -191,6 +192,7 @@ try{
     Assert-DownloadFixture ((Test-ComponentDownloadTerminal $downloadFailure) -and $downloadOutput.Closed -and $downloadOutput.Pending.Task.IsCompleted -and $downloadBudget.Written -eq 4) 'Deadline abandoned the admitted destination write or its buffer'
 }finally{$downloadOutput.Dispose()}
 
+Write-Output 'STAGE-STREAM-PASS'
 # Capture real pure helpers before scope-local transport replacements. The
 # orchestration still calls the real exclusive-file attempt and real byte copier.
 $script:downloadOriginalApproval=(Get-Command Approved-DownloadHash).ScriptBlock
@@ -322,6 +324,7 @@ try{
     [IO.Directory]::Delete($downloadFixtureRoot,$false)
 }
 
+Write-Output 'STAGE-COMPOSITION-PASS'
 # A late response is still owned by the pending task until Abort resolves and
 # the actual task is joined. No native HTTP response is constructed here.
 $downloadBudget=& $script:downloadOriginalBudget -MaximumBytes 32 -TimeoutMilliseconds 30
@@ -428,6 +431,7 @@ Assert-DownloadFixture ($script:downloadMetadataState.Calls -eq 0 -and $script:d
     Assert-DownloadFixture ($script:downloadMetadataState.Calls -eq 0 -and $script:downloadMetadataState.Parses -eq 0) 'Download policy denial reached transport'
 }
 
+Write-Output 'STAGE-METADATA-PASS'
 # Redirect policy is evaluated with synthetic URI strings only.
 foreach($redirectCase in @(
     @{origin='https://github.com/hufrea/byedpi/releases/download/v1/a.zip';location='https://release-assets.githubusercontent.com/fixture';accept=$true},
