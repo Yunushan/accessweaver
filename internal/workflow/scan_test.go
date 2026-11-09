@@ -152,3 +152,25 @@ func TestScanProtocolUsesTestNameNotTarget(t *testing.T) {
 		t.Fatal("unknown test accepted based on hostname")
 	}
 }
+
+func TestScanGeneratedArgumentsRespectWorkflowLimits(t *testing.T) {
+	prefix := "* SUMMARY\ncurl_test_http ipv4 example.com : winws2 "
+	for _, args := range []string{
+		"--lua-desync=" + strings.Repeat("x", 4096),
+		"--lua-desync=x " + strings.Repeat("--x ", 125),
+		"--lua-desync=x --x=\"" + strings.Repeat(" ", 32767) + "\"",
+	} {
+		if _, err := SelectScanStrategy(prefix+args, "zapret2"); err == nil {
+			t.Fatal("scan accepted arguments outside the workflow limits")
+		}
+	}
+	maxArg := "--lua-desync=" + strings.Repeat("x", 4096-len("--lua-desync="))
+	if _, err := SelectScanStrategy(prefix+maxArg, "zapret2"); err != nil {
+		t.Fatalf("maximum-length argument rejected: %v", err)
+	}
+	valid := "--lua-desync=x " + strings.Repeat("--x ", 124)
+	strategy, err := SelectScanStrategy(prefix+valid, "zapret2")
+	if err != nil || len(strategy.Args) != 125 {
+		t.Fatalf("valid limit rejected: %d arguments, %v", len(strategy.Args), err)
+	}
+}

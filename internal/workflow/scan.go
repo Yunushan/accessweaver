@@ -73,12 +73,21 @@ func parseScanOutput(output, engine string) ([]ScanStrategy, bool, error) {
 		if !strings.EqualFold(match[1], expected) {
 			continue
 		}
+		// Auto-install prepends three capture/filter arguments after the request
+		// has been validated. Keep generated arguments within the same request
+		// limits, and bound parsing before allocating an argument slice.
+		if len(match[2]) > 32767 {
+			continue
+		}
 		args, err := ParseArguments(match[2])
-		if err != nil {
+		if err != nil || len(args) > 125 {
 			continue
 		}
 		valid, hasStrategy := true, false
 		for _, arg := range args {
+			if len(arg) > 4096 {
+				valid = false
+			}
 			if arg == "--" || strings.HasPrefix(arg, "--daemon") || strings.HasPrefix(arg, "--service") || strings.HasPrefix(arg, "--hostlist") || arg == "-D" {
 				valid = false
 			}
