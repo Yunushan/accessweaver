@@ -19,17 +19,26 @@ if($issues.Count){throw 'Product source parse failed'}
 $names=@('Quote-Arg','Native-Argument','Allowed-Download','Resolve-ComponentDownloadRedirect','Throw-ComponentDownloadFailure','Test-ComponentDownloadTerminal','New-ComponentDownloadBudget','Get-ComponentDownloadRemaining','Wait-ComponentDownloadTask','Write-ComponentDownloadChunk','Receive-ComponentDownloadStream','Assert-ComponentDownloadLength','Set-ComponentDownloadHeaders','New-ComponentDownloadRequest','Invoke-ComponentDownloadDotNet','New-ComponentDownloadCurlStart','New-ComponentDownloadCurlProcess','Wait-ComponentDownloadProcessExit','Invoke-ComponentDownloadCurlOnce','Invoke-ComponentDownloadCurl')
 foreach($name in $names){$nodes=@($ast.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name});if($nodes.Count -ne 1){throw 'Product transport function unavailable'};. ([scriptblock]::Create($nodes[0].Extent.Text))}
 $cases=@();$failed=$false
-foreach($engine in @('proxifyre','dnscrypt')){
-    $pin=$pins.targets.$Architecture.$engine
-    if($pin.url -cnotmatch '^https://github[.]com/(wiresock/proxifyre|DNSCrypt/dnscrypt-proxy)/releases/download/[^/]+/[^/]+$' -or $pin.sha256 -cnotmatch '^[a-f0-9]{64}$' -or $pin.bytes -le 0 -or $pin.bytes -gt 8MB){throw 'Unexpected pinned asset'}
+$wireUrl='https://wiresock.net/_api/download-release.php?product=wiresock-secure-connect&platform=windows_x64&version=3.8.1.1'
+$wireHash='bd5a7eba32177b1022eda42d233b6b7848ea38604a63b0205666b4060b89a375'
+# Fail closed if the duplicated qualification pin diverges from the product.
+$sourceText=[IO.File]::ReadAllText((Join-Path $project $paths[0]))
+if(-not $sourceText.Contains($wireUrl) -or -not $sourceText.Contains($wireHash)){throw 'Built-in WireSock source pin changed'}
+foreach($engine in @('proxifyre','dnscrypt','wiresock')){
+    if($engine -ceq 'wiresock'){$pin=@{url=$wireUrl;sha256=$wireHash;bytes=0};$maximum=64MB}
+    else {
+        $pin=$pins.targets.$Architecture.$engine
+        if($pin.url -cnotmatch '^https://github[.]com/(wiresock/proxifyre|DNSCrypt/dnscrypt-proxy)/releases/download/[^/]+/[^/]+$' -or $pin.sha256 -cnotmatch '^[a-f0-9]{64}$' -or $pin.bytes -le 0 -or $pin.bytes -gt 8MB){throw 'Unexpected pinned asset'}
+        $maximum=[long]$pin.bytes+1MB
+    }
     foreach($transport in @('dotnet','curl')){
         $passed=$false;$output=[IO.MemoryStream]::new();$sha256=[Security.Cryptography.SHA256]::Create()
         try {
             Allowed-Download $pin.url
-            $budget=New-ComponentDownloadBudget -MaximumBytes ([long]$pin.bytes+1MB) -TimeoutMilliseconds 90000
+            $budget=New-ComponentDownloadBudget -MaximumBytes $maximum -TimeoutMilliseconds 90000
             if($transport -ceq 'dotnet'){Invoke-ComponentDownloadDotNet $pin.url $output $budget}
             else {Invoke-ComponentDownloadCurl $pin.url $output $budget}
-            if($output.Length -ne $pin.bytes){throw 'Asset length mismatch'}
+            if($output.Length -le 0 -or ($pin.bytes -gt 0 -and $output.Length -ne $pin.bytes)){throw 'Asset length mismatch'}
             $output.Position=0;$digest=([BitConverter]::ToString($sha256.ComputeHash($output))).Replace('-','').ToLowerInvariant()
             if($digest -cne $pin.sha256){throw 'Asset hash mismatch'}
             $passed=$true
@@ -37,7 +46,7 @@ foreach($engine in @('proxifyre','dnscrypt')){
         $cases+=@{engine=$engine;transport=$transport;passed=$passed}
     }
 }
-$report=@{schemaVersion=1;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;cases=$cases;realVendorAssetsDownloaded=$true;vendorCodeExecuted=$false;proxyPathQualified=$false;allVendorRoutesQualified=$false;productionQualificationComplete=$false}
+$report=@{schemaVersion=1;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;cases=$cases;vendorDownloadsAttempted=$true;vendorCodeExecuted=$false;proxyPathQualified=$false;allVendorRoutesQualified=$false;productionQualificationComplete=$false}
 $directory=Join-Path $project 'build/native-download-checks';[void][IO.Directory]::CreateDirectory($directory)
 [IO.File]::WriteAllText((Join-Path $directory ('native-download-'+$Architecture+'.json')),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
 if($failed){throw 'One or more fixed native download checks failed'}
