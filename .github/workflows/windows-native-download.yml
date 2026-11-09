@@ -1,0 +1,43 @@
+name: Windows native component download contracts
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, codex/dns-adapter-coverage]
+    paths:
+      - internal/workflow/windows.ps1
+      - scripts/vendor-windows-pins.json
+      - scripts/test-windows-native-download.ps1
+      - .github/workflows/windows-native-download.yml
+
+permissions:
+  contents: read
+
+jobs:
+  native-download:
+    name: Native component download (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, os: windows-latest}
+          - {arch: arm64, os: windows-11-arm}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify pinned downloads with product transports
+        shell: powershell
+        env:
+          ACCESSWEAVER_NATIVE_DOWNLOAD_CHECK: '1'
+        run: ./scripts/test-windows-native-download.ps1 -Architecture '${{ matrix.arch }}'
+      - name: Retain fixed source-bound transport results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-download-windows-${{ matrix.arch }}
+          path: build/native-download-checks/
+          if-no-files-found: error
+          retention-days: 14
