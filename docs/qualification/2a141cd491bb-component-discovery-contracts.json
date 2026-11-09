@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "scope": "component-discovery-source-contracts",
+  "sourceCommit": "2a141cd491bb8351ed9d594b441d37df56d4b582",
+  "runID": 42603725916,
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "712356b8caf0adf37246edd9926fb69495e76e79f3458bc8487cfe580ef5fd45",
+    "scripts/test-windows-workflow.ps1": "47d9440564b233b3937f6e844d2e3e095dd4ca4ffd95704db16d43488afbe8a4",
+    ".github/workflows/windows-component-discovery.yml": "fc6869a19a2b141f460a0edc7efa7ee8c6cb445a7bee2754cc54a825b59e0928"
+  },
+  "rows": [
+    {
+      "artifactID": 13667495239,
+      "name": "windows-component-source-arm64",
+      "digest": "sha256:dcda9da5e82dad90a0d2e4f14180b538aed6dbf5193e13687ea5b3a15ff7b652",
+      "providerZIPDigestVerified": true,
+      "outcome": "passed",
+      "suitePassed": true,
+      "cases": [
+        {
+          "passed": true,
+          "name": "zapret selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret refuses a preferred folder containing only the other executable"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 refuses a preferred folder containing only the other executable"
+        }
+      ],
+      "milestones": {
+        "archive": true,
+        "dns": true,
+        "child": true,
+        "service": true,
+        "main": true,
+        "staging": true,
+        "vendor": true,
+        "arguments": true
+      }
+    },
+    {
+      "artifactID": 13667311166,
+      "name": "windows-component-source-amd64",
+      "digest": "sha256:30a0ea46c9e0df149103c923f95515385bf4e6f6980ca95b3b2fb20c32e13dcf",
+      "providerZIPDigestVerified": true,
+      "outcome": "passed",
+      "suitePassed": true,
+      "cases": [
+        {
+          "passed": true,
+          "name": "zapret selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret refuses a preferred folder containing only the other executable"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 refuses a preferred folder containing only the other executable"
+        }
+      ],
+      "milestones": {
+        "dns": true,
+        "vendor": true,
+        "service": true,
+        "staging": true,
+        "child": true,
+        "archive": true,
+        "arguments": true,
+        "main": true
+      }
+    }
+  ],
+  "allCasesPassed": true,
+  "realVendorExecuted": false,
+  "rawLogsRead": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0
+}
