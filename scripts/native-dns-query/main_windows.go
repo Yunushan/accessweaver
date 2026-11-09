@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/netip"
@@ -12,6 +13,7 @@ import (
 	"runtime"
 	"syscall"
 
+	direct "github.com/Yunushan/accessweaver/scripts/native-dns-direct"
 	"golang.org/x/sys/windows"
 )
 
@@ -166,6 +168,21 @@ func guarded() bool {
 func main() {
 	result := emptyReport("environment")
 	if guarded() {
+		if len(os.Args) == 2 && os.Args[1] == "--direct" {
+			report := struct {
+				SchemaVersion                   int           `json:"schemaVersion"`
+				SourceCommit                    string        `json:"sourceCommit"`
+				Architecture                    string        `json:"architecture"`
+				Result                          direct.Result `json:"result"`
+				ProductionQualificationComplete bool          `json:"productionQualificationComplete"`
+			}{SchemaVersion: 1, SourceCommit: sourceCommit, Architecture: runtime.GOARCH,
+				Result: direct.Result{Outcome: "refused", Code: "server"}}
+			report.Result = direct.QueryInput(context.Background(), os.Stdin)
+			if json.NewEncoder(os.Stdout).Encode(report) != nil {
+				os.Exit(2)
+			}
+			return
+		}
 		result.Code = "arguments"
 		if len(os.Args) == 2 && os.Args[1] == "--probe" {
 			result.Outcome = "ready"

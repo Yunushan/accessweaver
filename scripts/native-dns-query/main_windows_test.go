@@ -222,7 +222,7 @@ func TestMain(m *testing.M) {
 	workspace := os.Getenv("GITHUB_WORKSPACE")
 	if path != "" {
 		hashes := map[string]string{}
-		for _, name := range []string{"scripts/native-dns-query/main_windows.go", "scripts/native-dns-query/main_windows_test.go"} {
+		for _, name := range []string{"scripts/native-dns-query/main_windows.go", "scripts/native-dns-query/main_windows_test.go", "scripts/native-dns-direct/direct.go", "scripts/native-dns-direct/direct_test.go"} {
 			b, err := os.ReadFile(filepath.Join(workspace, name))
 			if err != nil {
 				os.Exit(2)

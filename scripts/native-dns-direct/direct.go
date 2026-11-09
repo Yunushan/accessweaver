@@ -5,6 +5,7 @@ package direct
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/netip"
 	"strconv"
@@ -23,6 +24,45 @@ func allowedName(name string) bool {
 	return name == "example.com" || name == "example.net" || name == "example.org"
 }
 
+// ParseServer accepts only a single literal unicast address without a scope.
+// The input must be obtained privately by the guarded caller.
+func ParseServer(text string) (netip.Addr, error) {
+	if len(text) == 0 || len(text) > 64 {
+		return netip.Addr{}, errors.New("server")
+	}
+	server, err := netip.ParseAddr(text)
+	if err != nil || server.Zone() != "" {
+		return netip.Addr{}, errors.New("server")
+	}
+	server = server.Unmap()
+	if !server.IsGlobalUnicast() || server.IsLinkLocalUnicast() {
+		return netip.Addr{}, errors.New("server")
+	}
+	return server, nil
+}
+
+// QueryInput reads only a bounded literal server from a private pipe. The
+// caller must enforce the lifetime of the process supplying that pipe.
+func QueryInput(ctx context.Context, input io.Reader) Result {
+	return queryInput(ctx, input, Query)
+}
+
+func queryInput(ctx context.Context, input io.Reader, run func(context.Context, netip.Addr, string) Result) Result {
+	refused := Result{Outcome: "refused", Code: "server"}
+	if input == nil || run == nil {
+		return refused
+	}
+	data, err := io.ReadAll(io.LimitReader(input, 65))
+	if err != nil || len(data) > 64 {
+		return refused
+	}
+	server, err := ParseServer(string(data))
+	if err != nil {
+		return refused
+	}
+	return run(ctx, server, "example.net")
+}
+
 // Query uses Go's DNS protocol client and the specified IP server, avoiding the
 // Windows DNS Client service. It is intended for an already-guarded hosted caller.
 // Server selection, trial concurrency, process ownership and firewall controls
@@ -32,7 +72,7 @@ func Query(ctx context.Context, server netip.Addr, name string) Result {
 		return Result{Outcome: "refused", Code: "server"}
 	}
 	server = server.Unmap()
-	if server.IsUnspecified() || server.IsMulticast() || server.IsLoopback() || server.IsLinkLocalUnicast() {
+	if !server.IsGlobalUnicast() || server.IsLinkLocalUnicast() {
 		return Result{Outcome: "refused", Code: "server"}
 	}
 	endpoint := net.JoinHostPort(server.String(), strconv.Itoa(53))

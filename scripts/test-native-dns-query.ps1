@@ -14,7 +14,7 @@ if(-not [IO.Path]::IsPathRooted($ReportPath)){throw 'Query report path'}
 Assert-NativeOrdinaryPath $ReportPath;$ReportPath=[IO.Path]::GetFullPath($ReportPath);$parent=Get-Item -LiteralPath ([IO.Path]::GetDirectoryName($ReportPath)) -Force -ErrorAction Stop
 if(-not $parent.PSIsContainer -or [IO.Directory]::GetFileSystemEntries($parent.FullName).Length -ne 0){throw 'Query report parent'}
 $parentCreated=$parent.CreationTimeUtc.Ticks
-$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-dns-query/main_windows.go','scripts/native-dns-query/main_windows_test.go','scripts/native-dns-query.ps1','scripts/native-dns-recovery-observation.ps1','scripts/test-native-dns-query-contracts.ps1','scripts/test-native-dns-query.ps1','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1','scripts/check-native-environment.cjs','.github/workflows/native-dns-query.yml','go.mod','go.sum');$hashes=@{}
+$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-dns-query/main_windows.go','scripts/native-dns-query/main_windows_test.go', 'scripts/native-dns-direct/direct.go', 'scripts/native-dns-direct/direct_test.go','scripts/native-dns-query.ps1','scripts/native-dns-recovery-observation.ps1','scripts/test-native-dns-query-contracts.ps1','scripts/test-native-dns-query.ps1','scripts/native-dns-wire.ps1','scripts/dns-acceptance-state.ps1','scripts/check-native-environment.cjs','.github/workflows/native-dns-query.yml','go.mod','go.sum');$hashes=@{}
 foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 . (Join-Path $PSScriptRoot 'native-dns-wire.ps1')
 . (Join-Path $PSScriptRoot 'native-dns-query.ps1')

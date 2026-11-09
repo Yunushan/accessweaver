@@ -3,7 +3,7 @@
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';Set-StrictMode -Version Latest
 if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted'){throw 'Hosted source contracts only'}
 if($RequireWindowsPowerShell -and ($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1)){throw 'Stock source shell required'}
-$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-dns-query.ps1','scripts/native-dns-recovery-observation.ps1','scripts/test-native-dns-query-contracts.ps1','scripts/native-dns-query/main_windows.go','scripts/native-dns-query/main_windows_test.go','.github/workflows/native-dns-query.yml');$hashes=@{}
+$project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-dns-query.ps1','scripts/native-dns-recovery-observation.ps1','scripts/test-native-dns-query-contracts.ps1','scripts/native-dns-query/main_windows.go','scripts/native-dns-query/main_windows_test.go', 'scripts/native-dns-direct/direct.go', 'scripts/native-dns-direct/direct_test.go','.github/workflows/native-dns-query.yml');$hashes=@{}
 foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-dns-query.ps1'),[ref]$t,[ref]$e);if($e.Count){throw 'Query source syntax'}
 foreach($def in $ast.EndBlock.Statements){

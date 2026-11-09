@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 )
@@ -59,5 +60,42 @@ func TestRejectInvalidServerWithoutNetwork(t *testing.T) {
 		if r := Query(context.Background(), addr, "example.net"); r.Code != "server" {
 			t.Fatal("invalid server accepted")
 		}
+	}
+}
+
+func TestParseServer(t *testing.T) {
+	for _, text := range []string{"", "127.0.0.1", "::ffff:127.0.0.1", "255.255.255.255", "fe80::1", "fe80::1%4", "192.0.2.1\n", "192.0.2.1:53", "private.example"} {
+		if _, err := ParseServer(text); err == nil {
+			t.Fatal("invalid input accepted")
+		}
+	}
+	for _, text := range []string{"192.0.2.1", "2001:db8::1", "10.0.0.53"} {
+		if _, err := ParseServer(text); err != nil {
+			t.Fatal("valid literal rejected")
+		}
+	}
+}
+
+func TestPrivateInputBoundAndDispatch(t *testing.T) {
+	for _, text := range []string{"", "127.0.0.1", "192.0.2.1\n", strings.Repeat("a", 65)} {
+		calls := 0
+		result := queryInput(context.Background(), strings.NewReader(text), func(context.Context, netip.Addr, string) Result {
+			calls++
+			return Result{Outcome: "answered", Code: "none", AnswerCount: 1}
+		})
+		if calls != 0 || result.Code != "server" {
+			t.Fatal("invalid input dispatched")
+		}
+	}
+	calls := 0
+	result := queryInput(context.Background(), strings.NewReader("192.0.2.53"), func(_ context.Context, server netip.Addr, name string) Result {
+		calls++
+		if server.String() != "192.0.2.53" || name != "example.net" {
+			t.Fatal("input changed")
+		}
+		return Result{Outcome: "answered", Code: "none", AnswerCount: 1}
+	})
+	if calls != 1 || result.Outcome != "answered" || result.AnswerCount != 1 {
+		t.Fatal("valid input not dispatched")
 	}
 }
