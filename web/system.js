@@ -59,6 +59,7 @@ function refreshSystemFields(){
   if(!engines.includes($('system-engine').value))$('system-engine').value=engines[0];
   const engine=$('system-engine').value;
   for(const [id,show]of Object.entries(systemFieldsFor(action,engine))){const label=$(id).closest('label');if(label)label.hidden=!show}
+  $('system-doh-notice').hidden=!systemFieldsFor(action,engine)['system-dns']||$('system-dns').value!=='doh';
   $('system-folder-actions').hidden=!systemFieldsFor(action,engine)['system-applications'];
   const modes=engine==='wiresock'?['alternative','standard','custom']:engine==='byedpi'?['split','dll','service','once']:['service','once'];
   for(const option of $('system-mode').options){option.hidden=!modes.includes(option.value);option.disabled=option.hidden}
@@ -576,6 +577,7 @@ $('system-form').addEventListener('submit',event=>{event.preventDefault();previe
 $('system-form').addEventListener('input',invalidateSystemPlan);$('system-form').addEventListener('change',invalidateSystemPlan);
 $('system-engine').addEventListener('change',()=>{renderSystemPresets();refreshSystemFields()});
 $('system-action').addEventListener('change',()=>{refreshSystemFields()});
+$('system-dns').addEventListener('change',()=>{refreshSystemFields()});
 $('system-folder').addEventListener('click',chooseSystemFolder);
 $('system-clear-apps').addEventListener('click',()=>{$('system-applications').value='';invalidateSystemPlan()});
 $('system-preset').addEventListener('change',()=>{const p=systemUI.presets[Number($('system-preset').value)];if($('system-preset').value!==''&&p){$('system-args').value=p.args.join('\n');invalidateSystemPlan()}});

@@ -303,6 +303,7 @@ applicationSelection|Дополнительные приложения или п
 includeBrowsers|Включить браузеры|Incluir navegadores
 periodicReconnect|Периодически переподключать WireSock|Reconexión periódica de WireSock
 dnsMethod|Метод DNS|Método DNS
+dohSetupNotice|В тестах Windows ARM64 при настройке DoH наблюдались незашифрованные DNS-запросы.|En pruebas de Windows ARM64 se observaron consultas DNS sin cifrar durante la configuración de DoH.
 leaveDNS|Сохранить текущий DNS|Conservar DNS actual
 scanLevel|Уровень поиска стратегии|Nivel de búsqueda de estrategia
 quickScan|Быстрый|Rápido
