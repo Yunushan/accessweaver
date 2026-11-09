@@ -129,5 +129,64 @@
   "realVendorExecuted": false,
   "rawLogsRead": false,
   "productionQualificationComplete": false,
-  "formalGatesPromoted": 0
+  "formalGatesPromoted": 0,
+  "wireCohort": {
+    "runID": 42607232672,
+    "sealedDoNotRepoll": true,
+    "sourceReports": [
+      {
+        "artifactName": "native-doh-netevent-source-windows-amd64",
+        "providerZIPDigest": "sha256:1a8e5c44d911007528e0bea6de957b0c5203e92d24e52ccf495bafda161d99d3",
+        "providerZIPDigestVerified": true,
+        "passed": true,
+        "cases": 56
+      },
+      {
+        "artifactName": "native-doh-netevent-source-windows-arm64",
+        "providerZIPDigest": "sha256:f352275d46f3de84ca07b6986b8c7ef1842b28d2fa15ef29a2c07ec0d078e088",
+        "providerZIPDigestVerified": true,
+        "passed": true,
+        "cases": 56
+      }
+    ],
+    "reports": [
+      {
+        "artifactName": "native-doh-wire-windows-amd64",
+        "providerZIPDigest": "sha256:b8a0df25449f01d0628467eaa59e4cfcc92de6972541420126a7aa6a3af05b09",
+        "providerZIPDigestVerified": true,
+        "architecture": "amd64",
+        "outcome": "passed",
+        "failurePhase": "none",
+        "decoderCode": "none",
+        "tlsObservation": "tls-observed",
+        "udp53During": 0,
+        "googleBootstrap": 0,
+        "quad9Bootstrap": 0,
+        "snapshotRemoved": true,
+        "restored": true,
+        "toolProcesses": 29,
+        "toolProcessesJoined": 29,
+        "cleanupCode": "none"
+      },
+      {
+        "artifactName": "native-doh-wire-windows-arm64",
+        "providerZIPDigest": "sha256:2094b1af18f136af0f5aad83f19c527ac6f6ec2802acdd7609ad1228c0b155cf",
+        "providerZIPDigestVerified": true,
+        "architecture": "arm64",
+        "outcome": "failed",
+        "failurePhase": "decode",
+        "decoderCode": "none",
+        "tlsObservation": "insufficient",
+        "udp53During": 8,
+        "googleBootstrap": 8,
+        "quad9Bootstrap": 0,
+        "snapshotRemoved": true,
+        "restored": true,
+        "toolProcesses": 29,
+        "toolProcessesJoined": 29,
+        "cleanupCode": "none"
+      }
+    ],
+    "encryptedTrafficQualified": false
+  }
 }
