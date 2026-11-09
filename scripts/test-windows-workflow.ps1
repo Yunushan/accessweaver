@@ -39,7 +39,7 @@ try {
     $script:prerequisiteSignature='Valid'
     function Get-AuthenticodeSignature {param($LiteralPath);$script:prerequisiteCalls.Add(@{kind='signature';path=$LiteralPath});return @{Status=$script:prerequisiteSignature}}
     function Read-RemoteJSON {param($Headers,$Uri);$script:prerequisiteCalls.Add(@{kind='release';url=$Uri});return @{assets=$script:prerequisiteAssets}}
-    function Download {param($url,$hash,$destination,[switch]$Signed);$script:prerequisiteCalls.Add(@{kind='download';url=$url;hash=$hash});Copy-Item -LiteralPath $script:prerequisiteDownloadFixture -Destination $destination -Force}
+    function Download {param($url,$hash,$destination,[switch]$Signed,[string]$Publisher);$script:prerequisiteCalls.Add(@{kind='download';url=$url;hash=$hash});Copy-Item -LiteralPath $script:prerequisiteDownloadFixture -Destination $destination -Force}
     function Native {param($Program,$Arguments,$SuccessCodes);$script:prerequisiteCalls.Add(@{kind='launch';program=$Program;arguments=$Arguments;codes=$SuccessCodes});return @{exitCode=0}}
     function Event {param($text)}
     [void](New-Item -ItemType Directory -Force -Path (Join-Path $root 'downloads'))
@@ -355,6 +355,13 @@ try {
         Assert ([Net.ServicePointManager]::SecurityProtocol -eq $expected) ('Process-local TLS setup preserves the contract for '+$action)
     }
 } finally {[Net.ServicePointManager]::SecurityProtocol=$previousTLS;$r=$previousRequest}
+# Publisher-category checks use synthetic signature records only.
+$signatureDiscord=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Discord fixture'}}
+$signatureMicrosoft=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Microsoft fixture'}}
+$signatureWireSock=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=NT Kernel fixture'}}
+Assert ((Test-InstallerPublisher 'discord' $signatureDiscord) -and -not (Test-InstallerPublisher 'discord' $signatureMicrosoft) -and -not (Test-InstallerPublisher 'discord' $signatureWireSock)) 'Discord installer rejects other publisher categories'
+Assert ((Test-InstallerPublisher 'microsoft' $signatureMicrosoft) -and -not (Test-InstallerPublisher 'microsoft' $signatureDiscord) -and -not (Test-InstallerPublisher 'microsoft' $signatureWireSock)) 'Microsoft installer rejects other publisher categories'
+Assert ((Test-InstallerPublisher 'wiresock' $signatureWireSock) -and -not (Test-InstallerPublisher 'wiresock' $signatureDiscord) -and -not (Test-InstallerPublisher 'wiresock' $signatureMicrosoft) -and -not (Test-InstallerPublisher '' $signatureWireSock)) 'WireSock installer requires its own publisher category'
 # Synthetic process records verify session-scoped launch observation without launching an app.
 $fixtureApp='C:\fixture\SplitCord.exe'
 $otherSession=[pscustomobject]@{Path=$fixtureApp;SessionId=9}
@@ -395,20 +402,20 @@ try {
     function Require-DesktopUser {}
     function Find-App {param($variant);$script:appInstallTrace.Add('find-stable');return 'C:\fixture\Discord.exe'}
     function Remove-App {param($variant);$script:appInstallTrace.Add('remove-stable');if($script:appRemoveFailure){throw 'fixture remove failure'}}
-    function Download {param($Url,$Hash,$Destination,[switch]$Signed);$script:appInstallTrace.Add('download');if($script:appDownloadFailure){throw 'fixture download failure'}}
+    function Download {param($Url,$Hash,$Destination,[switch]$Signed,[string]$Publisher);$script:appInstallTrace.Add('download:'+ $Publisher);if($script:appDownloadFailure){throw 'fixture download failure'}}
     function Native {param($Program,$Arguments,$Timeout);$script:appInstallTrace.Add('installer');return @{exitCode=0;outputComplete=$true}}
     function Wait-App {param($variant,$installed,$seconds);$script:appInstallTrace.Add('verify-ptb')}
     function Event {param($text);$script:appInstallTrace.Add('event')}
     $r=[pscustomobject]@{clean=$true;sha256=''}
     $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$true;$script:appRemoveFailure=$false
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$true}
-    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download')) 'PTB clean download failure preserves the existing client'
+    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download:discord')) 'PTB clean download failure preserves the existing client'
     $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$false;$script:appRemoveFailure=$false
     Install-App 'discord-ptb'
-    Assert (($script:appInstallTrace -join ',') -ceq 'download,find-stable,remove-stable,installer,verify-ptb,event') 'PTB clean stages the replacement before removing the existing client'
+    Assert (($script:appInstallTrace -join ',') -ceq 'download:discord,find-stable,remove-stable,installer,verify-ptb,event') 'PTB clean stages the replacement before removing the existing client'
     $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$false;$script:appRemoveFailure=$true
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$true}
-    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download,find-stable,remove-stable')) 'PTB clean removal failure prevents installer execution'
+    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download:discord,find-stable,remove-stable')) 'PTB clean removal failure prevents installer execution'
 } finally {
     foreach($name in $appInstallSaved.Keys){Set-Item ('Function:'+ $name) $appInstallSaved[$name]}
     $r=$previousAppRequest
@@ -617,6 +624,8 @@ Write-Output 'Windows workflow contract tests completed. Test artifacts are unde
 $dnsShell=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
 & $dnsShell -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'test-dns-recovery-contracts.ps1') -RequireWindowsPowerShell | Out-Null
 Assert ($LASTEXITCODE -eq 0) 'Dedicated DNS recovery contracts pass in an isolated stock shell'
+& $dnsShell -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'test-windows-component-downloads.ps1') -RequireWindowsPowerShell | Out-Null
+Assert ($LASTEXITCODE -eq 0) 'Dedicated component download contracts pass in an isolated stock shell'
 
 $oldInputData=$inputData
 $inputData=[pscustomobject]@{managedPolicy=$true;allowDownloads=$false}

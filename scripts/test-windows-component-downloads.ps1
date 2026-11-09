@@ -9,7 +9,7 @@ $downloadProject=Split-Path -Parent $PSScriptRoot
 $downloadTokens=$null;$downloadParseErrors=$null
 $downloadAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $downloadProject 'internal\workflow\windows.ps1'),[ref]$downloadTokens,[ref]$downloadParseErrors)
 if($downloadParseErrors.Count){throw 'Component download source did not parse'}
-$downloadNames=@('Throw-ComponentDownloadFailure','New-ComponentDownloadBudget','Get-ComponentDownloadRemaining','Wait-ComponentDownloadTask','Write-ComponentDownloadChunk','Receive-ComponentDownloadStream','Assert-ComponentDownloadLength','Test-ComponentDownloadTerminal','Save-ComponentDownloadAttempt','Invoke-ComponentDownloadDotNet','Set-ComponentDownloadHeaders','Invoke-ComponentDownloadCurl','New-ComponentDownloadCurlStart','New-ComponentDownloadCurlProcess','Wait-ComponentDownloadProcessExit','Native-Argument','Quote-Arg','Require-DownloadPermission','Approved-DownloadHash','Read-RemoteJSON','Download')
+$downloadNames=@('Throw-ComponentDownloadFailure','New-ComponentDownloadBudget','Get-ComponentDownloadRemaining','Wait-ComponentDownloadTask','Write-ComponentDownloadChunk','Receive-ComponentDownloadStream','Assert-ComponentDownloadLength','Test-ComponentDownloadTerminal','Save-ComponentDownloadAttempt','Invoke-ComponentDownloadDotNet','Set-ComponentDownloadHeaders','Invoke-ComponentDownloadCurl','New-ComponentDownloadCurlStart','New-ComponentDownloadCurlProcess','Wait-ComponentDownloadProcessExit','Native-Argument','Quote-Arg','Require-DownloadPermission','Approved-DownloadHash','Read-RemoteJSON','Test-InstallerPublisher','Download')
 foreach($downloadName in $downloadNames){
     $downloadNodes=@($downloadAst.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $downloadName})
     if($downloadNodes.Count -ne 1){throw 'Required component download function is unavailable'}
@@ -275,6 +275,7 @@ try{
         @{mode='hash-mismatch';accept=$false;signed=$false;proxy=$false;calls='dotnet';promotions=0},
         @{mode='signature-invalid';accept=$false;signed=$true;proxy=$false;calls='dotnet';promotions=0},
         @{mode='publisher-invalid';accept=$false;signed=$true;proxy=$false;calls='dotnet';promotions=0},
+        @{mode='publisher-other-category';accept=$false;signed=$true;proxy=$false;calls='dotnet';promotions=0},
         @{mode='signature-error';accept=$false;signed=$true;proxy=$false;calls='dotnet';promotions=0},
         @{mode='promotion-failure';accept=$false;signed=$false;proxy=$false;calls='dotnet';promotions=1}
     )){
@@ -284,7 +285,7 @@ try{
         $downloadExpectedHash=Get-DownloadFixtureHash (New-DownloadFixtureBytes 32)
         if($downloadCase.mode -eq 'hash-mismatch'){$downloadExpectedHash='a'*64}
         try{
-            $downloadAction={Download 'https://github.com/hufrea/byedpi/releases/download/fixture/component.zip' $downloadExpectedHash $downloadDestination -Signed:$downloadCase.signed}
+            $downloadAction={if($downloadCase.signed){$fixturePublisher=if($downloadCase.mode -eq 'publisher-other-category'){'discord'}else{'microsoft'};Download 'https://github.com/hufrea/byedpi/releases/download/fixture/component.zip' $downloadExpectedHash $downloadDestination -Signed -Publisher $fixturePublisher}else{Download 'https://github.com/hufrea/byedpi/releases/download/fixture/component.zip' $downloadExpectedHash $downloadDestination}}
             if($downloadCase.accept){& $downloadAction}else{$null=Reject-DownloadFixture $downloadAction}
             Assert-DownloadFixture (($script:downloadFixtureState.Calls -join ',') -ceq $downloadCase.calls) 'Download attempted an unexpected transport or retry'
             Assert-DownloadFixture ($script:downloadFixtureState.Budgets -eq 1 -and $script:downloadFixtureState.Approvals -eq 1 -and $script:downloadFixtureState.Allowed -eq 1) 'Download repeated policy admission or reset its deadline'

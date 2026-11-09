@@ -573,7 +573,17 @@ function Save-ComponentDownloadAttempt([string]$Url,[string]$Path,$Budget,[switc
     if($cleanupFailed){Throw-ComponentDownloadFailure 'cleanup'}
     if($failure){throw $failure}
 }
-function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signed) {
+function Test-InstallerPublisher([string]$publisher,$signature) {
+    if($null -eq $signature -or $signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or $signature.SignerCertificate.Subject -isnot [string]){return $false}
+    switch($publisher){
+        'discord' {return $signature.SignerCertificate.Subject -match 'Discord'}
+        'microsoft' {return $signature.SignerCertificate.Subject -match 'Microsoft'}
+        'wiresock' {return $signature.SignerCertificate.Subject -match 'NT Kernel|WireSock'}
+        default {return $false}
+    }
+}
+function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signed,[string]$Publisher='') {
+    if($Signed -and $Publisher -notin @('discord','microsoft','wiresock')){throw 'A signed installer requires an expected publisher category'}
     $hash=Approved-DownloadHash $url $hash
     Allowed-Download $url
     if (-not $Signed -and $hash -notmatch '^[a-fA-F0-9]{64}$'){throw 'A SHA-256 from the release asset digest or an independently verified source is required'}
@@ -596,7 +606,7 @@ function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signe
         $owned=$true
         [void](Get-ComponentDownloadRemaining $budget)
         if ($hash -and (Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash -ne $hash) {throw 'Downloaded component SHA-256 mismatch'}
-        if ($Signed) {$signature=Get-AuthenticodeSignature -LiteralPath $temp;if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Discord|Microsoft|NT Kernel|WireSock'){throw 'Installer publisher signature could not be verified'}}
+        if ($Signed) {$signature=Get-AuthenticodeSignature -LiteralPath $temp;if(-not (Test-InstallerPublisher $Publisher $signature)){throw 'Installer publisher signature could not be verified'}}
         [void](Get-ComponentDownloadRemaining $budget)
         Copy-Checked $temp $destination
     }finally {
@@ -854,7 +864,7 @@ function Install-WireSock {
     $cli=WireSock-CLI;if($cli){return $cli}
     $installer=$null
     foreach($base in @($r.bundlePath,(Join-Path $env:ProgramFiles 'SplitWire-Turkey\res'))) {if($base -and (Test-Path -LiteralPath $base)){$installer=Get-ChildItem -LiteralPath $base -Recurse -Filter 'wiresock-secure-connect-x64-*.exe' | Sort-Object Name -Descending | Select-Object -First 1;if($installer){break}}}
-    if(-not $installer){$url=$r.downloadUrl;$hash=$r.sha256;if(-not $url){$url='https://wiresock.net/_api/download-release.php?product=wiresock-secure-connect&platform=windows_x64&version=3.8.1.1';$hash='bd5a7eba32177b1022eda42d233b6b7848ea38604a63b0205666b4060b89a375'};$target=Join-Path $root 'downloads\wiresock-setup.exe';Download $url $hash $target -Signed;$installer=Get-Item -LiteralPath $target}
+    if(-not $installer){$url=$r.downloadUrl;$hash=$r.sha256;if(-not $url){$url='https://wiresock.net/_api/download-release.php?product=wiresock-secure-connect&platform=windows_x64&version=3.8.1.1';$hash='bd5a7eba32177b1022eda42d233b6b7848ea38604a63b0205666b4060b89a375'};$target=Join-Path $root 'downloads\wiresock-setup.exe';Download $url $hash $target -Signed -Publisher wiresock;$installer=Get-Item -LiteralPath $target}
     $sig=Get-AuthenticodeSignature -LiteralPath $installer.FullName;if($sig.Status -ne 'Valid'){throw 'WireSock installer signature is invalid'}
     [void](Native $installer.FullName @('/install','/quiet','/norestart') @(0,3010,1641))
     $cli=WireSock-CLI;if(-not $cli){throw 'WireSock installation did not produce a CLI; reboot may be required'}
@@ -989,7 +999,7 @@ function Install-Prerequisite([string]$component) {
             if($assets.Count -ne 1){throw 'Exactly one architecture-compatible Windows Packet Filter installer is required'}
             $asset=$assets[0];$destination=Join-Path $root 'downloads\packet-filter.msi'
             Download $asset.browser_download_url (([string]$asset.digest)-replace '^sha256:','') $destination;$installer=Get-Item -LiteralPath $destination
-        }else{$destination=Join-Path $root 'downloads\VC_redist.x64.exe';Download 'https://aka.ms/vs/17/release/vc_redist.x64.exe' '' $destination -Signed;$installer=Get-Item -LiteralPath $destination}
+        }else{$destination=Join-Path $root 'downloads\VC_redist.x64.exe';Download 'https://aka.ms/vs/17/release/vc_redist.x64.exe' '' $destination -Signed -Publisher microsoft;$installer=Get-Item -LiteralPath $destination}
     }
     if((Get-AuthenticodeSignature -LiteralPath $installer.FullName).Status -ne 'Valid'){throw 'Prerequisite signature is invalid'}
     if($component -eq 'ndisapi' -and (Get-MSIPlatform $installer.FullName) -ine $plan.platform){throw 'Windows Packet Filter MSI platform does not match the native OS architecture'}
@@ -1479,7 +1489,7 @@ function Install-App([string]$variant) {
     Require-DesktopUser
     if($variant -notin @('discord','discord-ptb','splitcord')){throw 'Choose Discord, Discord PTB or SplitCord'}
     if($variant -eq 'splitcord'){$release=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/cagritaskn/SplitCord-Turkey/releases/latest';$asset=$release.assets | Where-Object {$_.name -match '(Setup|Install).*exe'}|Select-Object -First 1;if(-not $asset){throw 'Official SplitCord installer not found'};$url=$asset.browser_download_url;$hash=([string]$asset.digest)-replace '^sha256:','';if(-not $hash){$hash=$r.sha256};$file=Join-Path $root 'downloads\splitcord-setup.exe';Download $url $hash $file}
-    else{$url='https://discord.com/api/downloads/distributions/app/installers/latest?channel='+$(if($variant -eq 'discord-ptb'){'ptb'}else{'stable'})+'&platform=win&arch=x64';$file=Join-Path $root ('downloads\'+$variant+'-setup.exe');Download $url '' $file -Signed}
+    else{$url='https://discord.com/api/downloads/distributions/app/installers/latest?channel='+$(if($variant -eq 'discord-ptb'){'ptb'}else{'stable'})+'&platform=win&arch=x64';$file=Join-Path $root ('downloads\'+$variant+'-setup.exe');Download $url '' $file -Signed -Publisher discord}
     # Verify the replacement installer before removing the existing client.
     if($r.clean -and $variant -eq 'discord-ptb' -and (Find-App 'discord')){Remove-App 'discord'}
     $installerArgs=if($variant -eq 'splitcord'){@('/S')}else{@('-s')}
