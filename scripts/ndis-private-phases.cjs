@@ -6,7 +6,7 @@ const {decodePrivateFrames,privateCapturePaths}=require('./ndis-private-convert.
 const NUMBERS=['records','frames','before','at','after','tcpBefore','tcpAt','tcpAfter','udpBefore','udpAt','udpAfter','sentBefore','sentAt','sentAfter','receivedBefore','receivedAt','receivedAfter','udp53Before','udp53At','udp53After','udp443Before','udp443At','udp443After','udpOtherBefore','udpOtherAt','udpOtherAfter','preStart','tcpPreStart','udpPreStart','sentPreStart','receivedPreStart','udp53PreStart','udp443PreStart','udpOtherPreStart','startAt','tcpStartAt','udpStartAt','sentStartAt','receivedStartAt','udp53StartAt','udp443StartAt','udpOtherStartAt','during','tcpDuring','udpDuring','sentDuring','receivedDuring','udp53During','udp443During','udpOtherDuring','tcpResetBefore','tcpResetAt','tcpResetAfter','tcpResetPreStart','tcpResetStartAt','tcpResetDuring'];
 const BUCKETS=Object.freeze(['Before','At','After','PreStart','StartAt','During']);
 const BUCKET_KEYS=Object.freeze({Before:'before',At:'at',After:'after',PreStart:'preStart',StartAt:'startAt',During:'during'});
-const DNS_KEYS=['queries','responses','productProbe','positiveProbe','negativeProbe','providerBootstrap','otherName','a','aaaa','otherType','unclassified','googleV4','quad9V4','googleV6','quad9V6'];
+const DNS_KEYS=['queries','responses','productProbe','positiveProbe','negativeProbe','providerBootstrap','googleBootstrap','quad9Bootstrap','otherName','a','aaaa','otherType','unclassified','googleV4','quad9V4','googleV6','quad9V6'];
 function dnsCounters(){return Object.fromEntries(DNS_KEYS.map(k=>[k,0]));}
 const UDP_PROVIDERS=Object.freeze({'08080808':'googleV4','09090909':'quad9V4','20014860486000000000000000008888':'googleV6','262000fe0000000000000000000000fe':'quad9V6'});
 function udpTuple(frame){
@@ -36,6 +36,7 @@ function classifyUDP(frame){
   need(end+4<=data.length&&data.readUInt16BE(end+2)===1,'dns');const name=labels.join('.').toLowerCase(),type=data.readUInt16BE(end),r=dnsCounters();
   r[(data.readUInt16BE(2)&0x8000)?'responses':'queries']=1;
   r[name==='example.com'?'productProbe':name==='example.net'?'positiveProbe':name==='example.org'?'negativeProbe':name==='dns.google'||name==='dns.quad9.net'?'providerBootstrap':'otherName']=1;
+  if(name==='dns.google')r.googleBootstrap=1;else if(name==='dns.quad9.net')r.quad9Bootstrap=1;
   r[type===1?'a':type===28?'aaaa':'otherType']=1;r[providers[from?source:destination]]=1;return r;
  }catch{return bad;}
 }
@@ -49,7 +50,7 @@ function joinFramePhases(records,document,sourceDigest){
  need(Array.isArray(document.phases)&&document.phases.length===records.length&&document.phases.every(p=>Number.isSafeInteger(p)&&p>=0&&p<=2),'phase-count');
  need(Array.isArray(document.starts)&&document.starts.length===records.length&&document.starts.every(p=>Number.isSafeInteger(p)&&p>=0&&p<=2),'phase-count');
  need(document.phases.every((p,i)=>p===0||document.starts[i]===2),'phase-boundaries');
- const result={schemaVersion:3,outcome:'complete',code:'none',nativeFrameDataRead:true,sourceBound:true,productionQualificationComplete:false};for(const k of NUMBERS)result[k]=0;for(const bucket of BUCKETS)result['dns'+bucket]=dnsCounters();result.records=document.records;
+ const result={schemaVersion:4,outcome:'complete',code:'none',nativeFrameDataRead:true,sourceBound:true,productionQualificationComplete:false};for(const k of NUMBERS)result[k]=0;for(const bucket of BUCKETS)result['dns'+bucket]=dnsCounters();result.records=document.records;
  for(let i=0;i<records.length;i++){
   const {summary:q,capture}=convertNdisFrames([records[i]]),bucket=['Before','At','After'][document.phases[i]];
   need(q.frames===1&&q.tcp+q.udp===1&&q.sent+q.received===1,'conversion');
@@ -67,12 +68,12 @@ function privatePhases(root){
   const raw=boundedRead(files.input,16777216),map=boundedRead(path.win32.join(root,'frame-phases.json'),65536);read=true;let document,frames;
   try{const decoder=new TextDecoder('utf-8',{fatal:true});document=JSON.parse(decoder.decode(map));frames=JSON.parse(decoder.decode(raw));}catch{throw new PhaseError('private-document');}
   return joinFramePhases(decodePrivateFrames(frames),document,crypto.createHash('sha256').update(raw).digest('hex'));
- }catch(e){const allowed=new Set(['private-path','private-file','private-document','phase-document','phase-source','phase-count','phase-boundaries','conversion']);const r={schemaVersion:3,outcome:'refused',code:e instanceof PhaseError&&allowed.has(e.code)?e.code:'conversion',nativeFrameDataRead:read,sourceBound:false,productionQualificationComplete:false};for(const k of NUMBERS)r[k]=0;for(const bucket of BUCKETS)r['dns'+bucket]=dnsCounters();return r;}
+ }catch(e){const allowed=new Set(['private-path','private-file','private-document','phase-document','phase-source','phase-count','phase-boundaries','conversion']);const r={schemaVersion:4,outcome:'refused',code:e instanceof PhaseError&&allowed.has(e.code)?e.code:'conversion',nativeFrameDataRead:read,sourceBound:false,productionQualificationComplete:false};for(const k of NUMBERS)r[k]=0;for(const bucket of BUCKETS)r['dns'+bucket]=dnsCounters();return r;}
 }
 module.exports={joinFramePhases,NUMBERS,DNS_KEYS,BUCKETS,BUCKET_KEYS,PhaseError};
 if(require.main===module){
  const arch={x64:'amd64',arm64:'arm64'}[process.arch],host={x86_64:'amd64',amd64:'amd64',arm64:'arm64',aarch64:'arm64'}[os.machine().toLowerCase()];
  const guarded=process.platform==='win32'&&process.version==='v26.8.2'&&process.env.GITHUB_ACTIONS==='true'&&process.env.RUNNER_ENVIRONMENT==='github-hosted'&&process.env.RUNNER_OS==='Windows'&&/^[a-f0-9]{40}$/.test(process.env.GITHUB_SHA||'')&&arch===host&&process.env.ACCESSWEAVER_EXPECT_GOOS==='windows'&&arch===process.env.ACCESSWEAVER_EXPECT_GOARCH&&['ACCESSWEAVER_HISTORY_INTEROP','ACCESSWEAVER_RECONCILIATION_INTEROP','ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP','ACCESSWEAVER_SUPPORT_INTEROP'].every(k=>!Object.hasOwn(process.env,k))&&process.argv.length===3;
- if(!guarded){const r={schemaVersion:3,outcome:'refused',code:'environment',nativeFrameDataRead:false,sourceBound:false,productionQualificationComplete:false};for(const k of NUMBERS)r[k]=0;for(const bucket of BUCKETS)r['dns'+bucket]=dnsCounters();process.stdout.write(JSON.stringify(r)+'\n');}
+ if(!guarded){const r={schemaVersion:4,outcome:'refused',code:'environment',nativeFrameDataRead:false,sourceBound:false,productionQualificationComplete:false};for(const k of NUMBERS)r[k]=0;for(const bucket of BUCKETS)r['dns'+bucket]=dnsCounters();process.stdout.write(JSON.stringify(r)+'\n');}
  else process.stdout.write(JSON.stringify(privatePhases(process.argv[2]))+'\n');
 }
