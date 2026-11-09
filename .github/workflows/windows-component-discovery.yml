@@ -54,7 +54,7 @@ jobs:
             child='PASS Exited installer does not wait for a GUI child holding inherited output pipes'
             archive='PASS Independent archive fixture generation succeeds without vendor execution'
             main='Windows workflow contract tests completed. Test artifacts are under build/.'
-            dns='PASS Native DoH configuration disables plaintext fallback'
+            dns='PASS Dedicated DNS recovery contracts pass in an isolated stock shell'
             staging='PASS Component metadata cannot select the staging filename or escape its directory'
           }
           $milestones=@{};foreach($key in $milestoneNames.Keys){$milestones[$key]=$false}

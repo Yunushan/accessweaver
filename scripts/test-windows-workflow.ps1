@@ -506,32 +506,11 @@ try{
 }finally{$env:APPDATA=$previousAppData;$script:undo.Clear()}
 Write-Output 'Windows workflow contract tests completed. Test artifacts are under build/.'
 
-# Mock OS cmdlets to exercise DNS snapshot/restore semantics without changing
-# the host's real DNS, services, registry or network adapters.
-$script:dnsCalls=[Collections.Generic.List[object]]::new()
-$script:dohCalls=[Collections.Generic.List[object]]::new()
-function Get-NetAdapter { [pscustomobject]@{Status='Up';InterfaceDescription='Fixture adapter';InterfaceGuid='{00000000-0000-0000-0000-000000000001}';ifIndex=77} }
-function Get-ItemProperty {param($LiteralPath,$Name,$ErrorAction);[pscustomobject]@{NameServer=$(if($LiteralPath -match 'Tcpip6') {''}else{'192.0.2.53'})} }
-function Get-DnsClientServerAddress {param($InterfaceIndex,$AddressFamily);[pscustomobject]@{InterfaceIndex=$InterfaceIndex;AddressFamily=$AddressFamily;ServerAddresses=@($(if($AddressFamily -eq 'IPv4'){'192.0.2.53'}else{'2001:db8::53'}))} }
-function Set-DnsClientServerAddress { [CmdletBinding()]param([Parameter(ValueFromPipeline)]$InputObject,$InterfaceIndex,[string[]]$ServerAddresses,[switch]$ResetServerAddresses);process{$script:dnsCalls.Add(@{family=$InputObject.AddressFamily;index=$InterfaceIndex;servers=@($ServerAddresses);reset=[bool]$ResetServerAddresses})} }
-function Get-DnsClientDohServerAddress {param($ServerAddress,$ErrorAction);if(-not $ServerAddress){[pscustomobject]@{ServerAddress='8.8.8.8';DohTemplate='https://original.invalid/dns-query';AllowFallbackToUdp=$true;AutoUpgrade=$false}} }
-function Add-DnsClientDohServerAddress {param($ServerAddress,$DohTemplate,$AllowFallbackToUdp,$AutoUpgrade);$script:dohCalls.Add(@{action='add';address=$ServerAddress;template=$DohTemplate;fallback=$AllowFallbackToUdp})}
-function Set-DnsClientDohServerAddress {param($ServerAddress,$DohTemplate,$AllowFallbackToUdp,$AutoUpgrade);$script:dohCalls.Add(@{action='set';address=$ServerAddress;template=$DohTemplate;fallback=$AllowFallbackToUdp})}
-function Remove-DnsClientDohServerAddress {param($ServerAddress,$ErrorAction);$script:dohCalls.Add(@{action='remove';address=$ServerAddress})}
-function Get-Service {param($Name,$ErrorAction);return $null}
-function Clear-DnsClientCache {}
-function Resolve-DnsName {param($Name,[switch]$DnsOnly,[switch]$QuickTimeout,$ErrorAction);return [pscustomobject]@{Name='example.com'}}
-Configure-DNS 'doh'
-$dnsSnapshot=Join-Path $root 'profiles\dns-original.json'
-Assert (Test-Path -LiteralPath $dnsSnapshot) 'DNS snapshot persisted before changes'
-Assert ($script:dnsCalls[0].servers.Count -eq 4) 'DNS configuration covers IPv4 and IPv6 providers'
-Assert (@($script:dohCalls | Where-Object {$_.action -in @('add','set') -and $_.fallback -eq $false}).Count -eq 4) 'Native DoH configuration disables plaintext fallback'
-Restore-DNS
-Assert (@($script:dnsCalls|Where-Object {$_.family -eq 'IPv4' -and $_.servers -contains '192.0.2.53'}).Count -eq 1) 'Original static IPv4 DNS is restored'
-Assert (@($script:dnsCalls|Where-Object {$_.family -eq 'IPv6' -and $_.reset}).Count -eq 1) 'Original DHCP IPv6 DNS is restored independently'
-Assert (@($script:dohCalls|Where-Object {$_.action -eq 'set' -and $_.template -eq 'https://original.invalid/dns-query'}).Count -eq 1) 'Original DoH metadata is restored'
-Assert (-not (Test-Path -LiteralPath $dnsSnapshot)) 'DNS snapshot removed only after successful recovery'
-Write-Output 'DNS workflow contracts completed using mock OS cmdlets.'
+# Run the current isolated DNS contracts in a fresh stock shell. The older
+# inline mock predates per-family inventory and could not model readback.
+$dnsShell=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+& $dnsShell -NoProfile -NonInteractive -File (Join-Path $PSScriptRoot 'test-dns-recovery-contracts.ps1') -RequireWindowsPowerShell | Out-Null
+Assert ($LASTEXITCODE -eq 0) 'Dedicated DNS recovery contracts pass in an isolated stock shell'
 
 $oldInputData=$inputData
 $inputData=[pscustomobject]@{managedPolicy=$true;allowDownloads=$false}
