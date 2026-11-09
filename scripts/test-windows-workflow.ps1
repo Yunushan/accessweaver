@@ -363,6 +363,31 @@ $otherPath=[pscustomobject]@{Path='C:\fixture\Other.exe';SessionId=7}
 Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($otherSession))) 'App launch ignores matching processes in another session'
 Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($otherPath))) 'App launch ignores another executable in the current session'
 Assert (Test-AppProcessInSession $fixtureApp 7 @($otherSession,$sameSession)) 'App launch accepts the matching executable in the current session'
+# Inert process records and command mocks exercise failure before uninstallation.
+$previousFindApp=(Get-Command Find-App).ScriptBlock
+$previousDesktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
+try {
+    function Find-App {param($variant);return $fixtureApp}
+    function Require-DesktopUser {}
+    function Get-Process {param($ErrorAction);return $script:appStopRecord}
+    function Stop-Process {param($Id,$ErrorAction);$script:appStopCalls++;if($script:appStopFailure){throw 'private fixture detail'}}
+    $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false
+    $script:appStopRecord=[pscustomobject]@{Path=$fixtureApp;Id=123;HasExited=$false}
+    $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process could not be stopped; removal was not started'}
+    Assert ($rejected -and $script:appStopCalls -eq 1 -and $script:externalEffectsPending) 'Application removal stops on a matching process failure and records an external effect'
+    $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false
+    $script:appStopRecord=[pscustomobject]@{Path=$fixtureApp;Id=123;HasExited=$true}
+    Stop-AppProcesses 'splitcord'
+    Assert ($script:appStopCalls -eq 1 -and $script:externalEffectsPending) 'Application process exit race remains a recorded external effect'
+    $script:appStopCalls=0;$script:appStopFailure=$false;$script:externalEffectsPending=$false
+    $script:appStopRecord=[pscustomobject]@{Path=$fixtureApp;Id=123;HasExited=$false}
+    Stop-AppProcesses 'splitcord'
+    Assert ($script:appStopCalls -eq 1 -and $script:externalEffectsPending) 'Application process stop records an external effect'
+} finally {
+    Remove-Item Function:Get-Process;Remove-Item Function:Stop-Process
+    Set-Item Function:Find-App $previousFindApp;Set-Item Function:Require-DesktopUser $previousDesktopGuard
+    $script:externalEffectsPending=$false
+}
 # Exercise both direct helper calls and the dispatcher before any real OS work.
 $desktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
 $machineInitializer=(Get-Command Initialize-Changes).ScriptBlock
