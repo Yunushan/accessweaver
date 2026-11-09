@@ -871,5 +871,262 @@
   "nativeDnsGateQualified": false,
   "formalGatesPromoted": 0,
   "rawLogsRead": false,
-  "productionQualificationComplete": false
+  "productionQualificationComplete": false,
+  "sourceContracts": {
+    "runID": 42589886657,
+    "sealedDoNotRepoll": true,
+    "allSixteenShellRunsPassed": true,
+    "summaries": {
+      "recovery": {
+        "reports": 8,
+        "allEightPassed": true,
+        "checksPerShell": 831
+      },
+      "acceptance": {
+        "reports": 8,
+        "allEightPassed": true,
+        "checksPerShell": 673
+      }
+    },
+    "sourceSHA256": {
+      "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
+      "scripts/test-native-doh.ps1": "17a1b14431197021cd1b6588f68bbae0de3cbf7e8d6cf61849a3779ef8acb661",
+      ".github/workflows/native-doh.yml": "7a373b86da9de96909db6ff01dcf7f4aa0115c5efc719b5540f1f84a4643df40",
+      "scripts/dns-acceptance-state.ps1": "8bb62601742700d74f1fa455c3008c37fe5a95588c79d80a808e9efbd6e8db7e",
+      "scripts/test-dns-acceptance-state.ps1": "c558f19085c62d4c7afe65e7b5d96d49a2095daf33c9e494d517a37f07565b20",
+      "scripts/test-windows-integration.ps1": "87d5dff8c97f8f0400fbe7b5f2b490adb2b19196fd270607bfdd8d2cb2b1645d",
+      "scripts/test-windows-reboot.ps1": "8cac8e650b2d3bad1224457f7cb2acd703355b0e3ee3d0e5fc1a42c8deccdfe7",
+      "scripts/vmware-test-bootstrap.ps1": "715c3272a720279d7b129bd0ed427e7a4ae4f2c69056479c704ab5d203220bc7",
+      "scripts/test-windows-workflow.ps1": "b9bdfc75db4a58b7efba80e335b9521ac3bc8c01ec9c44ea77a42e74ba9d8aa1",
+      ".github/workflows/dns-recovery-contracts.yml": "367a49c5a1c3fd303b95eb5681e9ea9331b779df23d09bbcb822a01d4f812848"
+    },
+    "recoverySourceSHA256": {
+      "internal/workflow/windows.ps1": "3861bd04bfa3596018d20637e8b4264d1edaeee8fb43d96a2c8fd0b7de2c428a",
+      "scripts/test-dns-recovery-contracts.ps1": "65ea30b4095bbce39631814c2da50f155ccf5067a4efdf1bd1737aeca90e9356"
+    },
+    "artifacts": [
+      {
+        "artifactID": 13661261042,
+        "artifactName": "dns-acceptance-source-contracts-linux-amd64",
+        "providerZIPDigest": "sha256:22a95caa6044283320bcae04854af81d46c55248a37a6e8f48b84ed118df70ff",
+        "providerZIPDigestVerified": true,
+        "complete": true,
+        "reports": [
+          {
+            "entry": "core/dns-acceptance-contracts.json",
+            "sha256": "31f4441857a6b2e4ee685e978804c2fddf56ef61669e9b7d47b6c1de1b551fcc",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 673
+          }
+        ]
+      },
+      {
+        "artifactID": 13661186262,
+        "artifactName": "dns-source-contracts-linux-amd64",
+        "providerZIPDigest": "sha256:4630efb9c34cf174391418e587b178bf287babfb7eebed097b9a6acb0b0b418e",
+        "providerZIPDigestVerified": true,
+        "complete": true,
+        "reports": [
+          {
+            "entry": "core/dns-contracts.json",
+            "sha256": "be391d80fa5c552cb27df6e2c3338e9d82de2e716e0dc7c26d80e509f691d07d",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 831
+          }
+        ]
+      },
+      {
+        "artifactID": 13661091505,
+        "artifactName": "dns-source-contracts-linux-arm64",
+        "providerZIPDigest": "sha256:133688171132dddcb40ae177c91126ce738cc632b84e54e964c5337d6e5b04fa",
+        "providerZIPDigestVerified": true,
+        "complete": true,
+        "reports": [
+          {
+            "entry": "core/dns-contracts.json",
+            "sha256": "923a8a3bbc12b7dfe074d97d531eb533c48f9914752bff2e9cc58c9b32f79a24",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 831
+          }
+        ]
+      },
+      {
+        "artifactID": 13660997330,
+        "artifactName": "dns-acceptance-source-contracts-windows-arm64",
+        "providerZIPDigest": "sha256:0b378fd223e4d82cddd5898620b7e6d81f76e3aa4f653edfd8effdda6fd1b388",
+        "providerZIPDigestVerified": true,
+        "complete": true,
+        "reports": [
+          {
+            "entry": "core/dns-acceptance-contracts.json",
+            "sha256": "829e94a98997abf219bd90768144fe0607b7f82a2ab2b895443c2878e8ea15a2",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 673
+          },
+          {
+            "entry": "desktop/dns-acceptance-contracts.json",
+            "sha256": "cb8bee86b8e297c2c8b096f492b389a063d9f40e8871f431d38121c18a184b95",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 673
+          }
+        ]
+      },
+      {
+        "artifactID": 13660966593,
+        "artifactName": "dns-source-contracts-windows-amd64",
+        "providerZIPDigest": "sha256:666a7d1418649bdc781bc8b7054ba4a8a45f1aea475bf1124237334e78a8baaf",
+        "providerZIPDigestVerified": true,
+        "complete": true,
+        "reports": [
+          {
+            "entry": "core/dns-contracts.json",
+            "sha256": "56e61b7e791b2e768feef4d0ec9da2791abb0b24e37ee7090327a9ead3d978ce",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 831
+          },
+          {
+            "entry": "desktop/dns-contracts.json",
+            "sha256": "4f088413fc869841b92db38e013111526e74ebfa1942007fb3071a0fab6710a7",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 831
+          }
+        ]
+      },
+      {
+        "artifactID": 13660836951,
+        "artifactName": "dns-acceptance-source-contracts-windows-amd64",
+        "providerZIPDigest": "sha256:273c3f3d8a16249b97bda492f14373a12f3497efcfeb11c862452d971ebba5d9",
+        "providerZIPDigestVerified": true,
+        "complete": true,
+        "reports": [
+          {
+            "entry": "core/dns-acceptance-contracts.json",
+            "sha256": "b5a0649d071dde2bbf1dd5f0016f21a4ac9f80e9474ca0c4fad3336f493643a2",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 673
+          },
+          {
+            "entry": "desktop/dns-acceptance-contracts.json",
+            "sha256": "3ad58ecd5e25359166288d33b68fb350653be8003c5fa8745f286213bc409cc4",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 673
+          }
+        ]
+      },
+      {
+        "artifactID": 13660791901,
+        "artifactName": "dns-source-contracts-darwin-arm64",
+        "providerZIPDigest": "sha256:8b889c2a7fc19238d1dfd754593403e8f9b3d7a3f439207ef2cbcd4bd840f311",
+        "providerZIPDigestVerified": true,
+        "complete": true,
+        "reports": [
+          {
+            "entry": "core/dns-contracts.json",
+            "sha256": "4352bb24ac699991c861c0ea89decfbf536ca8b0e73d846e2f238ee46a7bc9d7",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 831
+          }
+        ]
+      },
+      {
+        "artifactID": 13660677371,
+        "artifactName": "dns-acceptance-source-contracts-darwin-arm64",
+        "providerZIPDigest": "sha256:48b9be4e376bf3c09034333b5cc977d29af911633753776ba2c61a26145d13bf",
+        "providerZIPDigestVerified": true,
+        "complete": true,
+        "reports": [
+          {
+            "entry": "core/dns-acceptance-contracts.json",
+            "sha256": "9a220fc9b791617d240801f1877c593ad897def8e4276c296060ff90fd20e74e",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 673
+          }
+        ]
+      },
+      {
+        "artifactID": 13660558629,
+        "artifactName": "dns-source-contracts-windows-arm64",
+        "providerZIPDigest": "sha256:f4c0e788d1f335b96c9dc1d027d0ffb10ec635604623651c72c7ed5022763083",
+        "providerZIPDigestVerified": true,
+        "complete": true,
+        "reports": [
+          {
+            "entry": "core/dns-contracts.json",
+            "sha256": "8addea80f99edbb082105ecaea5784d57453c11faeb8e13fe8315416330d19dc",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 831
+          },
+          {
+            "entry": "desktop/dns-contracts.json",
+            "sha256": "0529e7bf9567e3dcdd03851d35f58d862a11fad686c278693bfb5f44f5c2ccf7",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 831
+          }
+        ]
+      },
+      {
+        "artifactID": 13660378144,
+        "artifactName": "dns-source-contracts-darwin-amd64",
+        "providerZIPDigest": "sha256:7a18e945c2b2efc2cd6bd872cf74d871226fa8629f2a6dd286e95490da686f31",
+        "providerZIPDigestVerified": true,
+        "complete": true,
+        "reports": [
+          {
+            "entry": "core/dns-contracts.json",
+            "sha256": "8bbfa5007d1753b8bf6656d2979760427e85bc4c34abfd5d6f426b14bf44cd59",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 831
+          }
+        ]
+      },
+      {
+        "artifactID": 13660348703,
+        "artifactName": "dns-acceptance-source-contracts-linux-arm64",
+        "providerZIPDigest": "sha256:edf8fb2752d275b7bc1b2cef57987201ca09b3d697fa7729666d3bd671650a81",
+        "providerZIPDigestVerified": true,
+        "complete": true,
+        "reports": [
+          {
+            "entry": "core/dns-acceptance-contracts.json",
+            "sha256": "f5b2d63451891a4729a777911b135303487980254d89e2a88bab0758451ef12d",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 673
+          }
+        ]
+      },
+      {
+        "artifactID": 13660138745,
+        "artifactName": "dns-acceptance-source-contracts-darwin-amd64",
+        "providerZIPDigest": "sha256:8e0119304418e66ef0a7d58f6b614444d25e3ecd11e26d39feef3c5334b2af78",
+        "providerZIPDigestVerified": true,
+        "complete": true,
+        "reports": [
+          {
+            "entry": "core/dns-acceptance-contracts.json",
+            "sha256": "b8311765df27181dc912d66f1ea1b88209320af059ddd1516eb5cfda9f619067",
+            "outcome": "passed",
+            "code": "none",
+            "checks": 673
+          }
+        ]
+      }
+    ],
+    "realDnsChanged": false,
+    "rawLogsRead": false
+  }
 }
