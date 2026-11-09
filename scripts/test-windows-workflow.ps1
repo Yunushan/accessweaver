@@ -355,6 +355,23 @@ try {
         Assert ([Net.ServicePointManager]::SecurityProtocol -eq $expected) ('Process-local TLS setup preserves the contract for '+$action)
     }
 } finally {[Net.ServicePointManager]::SecurityProtocol=$previousTLS;$r=$previousRequest}
+# Inert version directories verify application selection without launching Discord.
+$previousLocalAppData=$env:LOCALAPPDATA
+try {
+    $env:LOCALAPPDATA=Join-Path $testRoot 'discord-selection-fixture'
+    $appBase=Join-Path $env:LOCALAPPDATA 'Discord'
+    foreach($name in @('app-1.0.9','app-1.0.10','app-unknown')){
+        $directory=Join-Path $appBase $name;[void](New-Item -ItemType Directory -Path $directory -Force)
+        [IO.File]::WriteAllText((Join-Path $directory 'Discord.exe'),'inert fixture')
+    }
+    (Get-Item -LiteralPath (Join-Path $appBase 'app-1.0.9')).LastWriteTimeUtc=[DateTime]::UtcNow
+    (Get-Item -LiteralPath (Join-Path $appBase 'app-1.0.10')).LastWriteTimeUtc=[DateTime]::UtcNow.AddHours(-1)
+    (Get-Item -LiteralPath (Join-Path $appBase 'app-unknown')).LastWriteTimeUtc=[DateTime]::UtcNow.AddHours(1)
+    $found=@(Discord-Directories 'discord')
+    Assert ($found.Count -eq 3 -and $found[0] -ceq (Join-Path $appBase 'app-1.0.10') -and $found[1] -ceq (Join-Path $appBase 'app-1.0.9')) 'Discord discovery selects the highest version before modification time'
+    Assert ($found[2] -ceq (Join-Path $appBase 'app-unknown')) 'Discord discovery retains nonstandard directory fallback after valid versions'
+    Assert ((Find-App 'discord') -ceq (Join-Path $appBase 'app-1.0.10\Discord.exe')) 'Discord application lookup uses the highest discovered version'
+} finally {$env:LOCALAPPDATA=$previousLocalAppData}
 # Custom installer admission is exercised without discovery or network access.
 $previousWireSockCLI=(Get-Command WireSock-CLI).ScriptBlock;$previousWireSockRequest=$r
 try {

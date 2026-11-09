@@ -1011,7 +1011,13 @@ function Discord-Directories([string]$variant='discord') {
     $folder=if($variant -eq 'discord-ptb'){'DiscordPTB'}else{'Discord'}
     $base=Join-Path $env:LOCALAPPDATA $folder
     if(-not (Test-Path -LiteralPath $base)){return @()}
-    return @(Get-ChildItem -LiteralPath $base -Directory -Filter 'app-*' | Where-Object {Test-Path -LiteralPath (Join-Path $_.FullName ($folder+'.exe'))} | Sort-Object LastWriteTime -Descending | ForEach-Object {$_.FullName})
+    $candidates=@(foreach($item in Get-ChildItem -LiteralPath $base -Directory -Filter 'app-*'){
+        if(-not (Test-Path -LiteralPath (Join-Path $item.FullName ($folder+'.exe')) -PathType Leaf)){continue}
+        [version]$parsed=$null;$hasVersion=[version]::TryParse($item.Name.Substring(4),[ref]$parsed)
+        if(-not $hasVersion){$parsed=[version]'0.0'}
+        [pscustomobject]@{path=$item.FullName;hasVersion=$hasVersion;version=$parsed;modified=$item.LastWriteTimeUtc;name=$item.Name}
+    })
+    return @($candidates | Sort-Object @{Expression='hasVersion';Descending=$true},@{Expression='version';Descending=$true},@{Expression='modified';Descending=$true},@{Expression='name';Descending=$false} | ForEach-Object {$_.path})
 }
 function Install-Drover {
     $dll=Ensure-Asset 'drover';$ini=Join-Path (Split-Path -Parent $dll) 'drover.ini'
