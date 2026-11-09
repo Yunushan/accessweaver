@@ -43,7 +43,10 @@ try {
     $code='readback';Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState);$stateVerified=$true
     Assert-NativeFreshDNSSources $state
     $outcome='passed';$code='none'
-} catch {$outcome='failed'} finally {
+} catch {
+    $outcome='failed'
+    if($code -cin @('probe','positive','blocked','resumed') -and $null -ne $state.queryLastEvidence){$evidence[$code]=$state.queryLastEvidence}
+} finally {
     $cleanupGood=$true
     foreach($kind in @('tls','dns')){try{Remove-NativeDNSWireRules $state $kind}catch{$cleanupGood=$false;$cleanupCode='rules'}}
     $rulesRemoved=$cleanupGood

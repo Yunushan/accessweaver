@@ -22,6 +22,7 @@ function Assert-NativeFreshDNSSources([object]$State) {
     foreach($file in $State.querySourceHashes.Keys){if((Get-FileHash -LiteralPath (Join-Path $State.queryProject $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $State.querySourceHashes[$file]){throw 'Fresh DNS source changed'}}
 }
 function Invoke-NativeFreshDNSQuery([object]$State,[string]$Name,[switch]$ExpectFailure,[switch]$Probe) {
+    $State.queryLastEvidence=$null
     if(($Probe -and ($Name -or $ExpectFailure)) -or (-not $Probe -and $Name -cnotin @('example.com','example.net','example.org'))){throw 'Fresh DNS request boundary'}
     Assert-NativeFreshDNSSources $State
     if((Get-FileHash -LiteralPath $State.queryBinary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $State.queryBinarySHA256){throw 'Fresh DNS binary changed'}
@@ -30,6 +31,8 @@ function Invoke-NativeFreshDNSQuery([object]$State,[string]$Name,[switch]$Expect
     Assert-NativeFreshDNSSources $State
     if((Get-FileHash -LiteralPath $State.queryBinary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $State.queryBinarySHA256){throw 'Fresh DNS binary changed'}
     $v=Get-NativeFreshDNSQueryReport $text $State.querySourceCommit $State.queryArchitecture
+    # Preserve only the fully normalized closed report, including refusals.
+    $State.queryLastEvidence=$v
     if($Probe){if($v.outcome -cne 'ready'){throw 'Fresh DNS readiness refused'}}
     elseif($ExpectFailure){if($v.outcome -cne 'refused' -or $v.code -cne 'query-failed' -or -not $v.queryInvoked){throw 'Fresh DNS blocked query not rejected'}}
     elseif($v.outcome -cne 'answered'){throw 'Fresh DNS ordinary lookup refused'}

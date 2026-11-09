@@ -33,6 +33,15 @@ Case-Q 'query-wrapper-refuses-success-as-negative-control' {Reset-Q;Reject-Q {In
 Case-Q 'query-wrapper-rejects-unknown-names-before-any-boundary' {Reset-Q;Reject-Q {Invoke-NativeFreshDNSQuery $state 'private.synthetic'};Assert-Q ($script:events.Count -eq 0 -and $script:sourceChecks -eq 0)}
 Case-Q 'query-wrapper-probe-makes-no-dns-request' {Reset-Q;$script:reply.outcome='ready';$script:reply.answerCount=0;$script:reply.recordCount=0;$script:reply.queryInvoked=$false;$v=Invoke-NativeFreshDNSQuery $state -Probe;Assert-Q (-not $v.queryInvoked);Reject-Q {Invoke-NativeFreshDNSQuery $state 'example.net' -Probe}}
 Case-Q 'query-projection-size-and-qualification-boundaries' {Reject-Q {Get-NativeFreshDNSQueryReport (' '*2049) $source $arch};$r=New-Q;$r.productionQualificationComplete=$true;Reject-Q {Get-NativeFreshDNSQueryReport ($r|ConvertTo-Json -Compress) $source $arch}}
+Case-Q 'query-wrapper-retains-only-normalized-failures-and-clears-stale-proof' {
+    Reset-Q;$script:reply.outcome='refused';$script:reply.code='query-failed';$script:reply.answerCount=0;$script:reply.recordCount=0
+    Reject-Q {Invoke-NativeFreshDNSQuery $state 'example.net'}
+    Assert-Q ($state.queryLastEvidence.code -ceq 'query-failed' -and $state.queryLastEvidence.queryInvoked -and $state.queryLastEvidence.recordsReleased)
+    $script:reply=New-Q;$script:reply.privateRecord='synthetic';Reject-Q {Invoke-NativeFreshDNSQuery $state 'example.net'}
+    Assert-Q ($null -eq $state.queryLastEvidence)
+    $script:reply=New-Q;[void](Invoke-NativeFreshDNSQuery $state 'example.net');$script:fault='process';Reject-Q {Invoke-NativeFreshDNSQuery $state 'example.net'}
+    Assert-Q ($null -eq $state.queryLastEvidence)
+}
 $passed=@($cases | Where-Object {-not $_.passed}).Count -eq 0
 [Console]::Out.WriteLine((@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;cases=@($cases.ToArray());passed=$passed;nativeQueryInvoked=$false;productInvoked=$false} | ConvertTo-Json -Depth 5 -Compress))
 if(-not $passed){exit 1}

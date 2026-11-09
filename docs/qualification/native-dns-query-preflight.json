@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "scope": "native-windows-per-lookup-cache-bypass-prerequisite-preflight",
-  "parentCommit": "1e29ac8b7094afa22536aa44e8af3a8cf7a1318b",
+  "parentCommit": "3ebae61f27457b3490f5f2dd28a7145688872ced",
   "sourceSHA256": {
     "scripts/native-dns-query/main_windows.go": "112924737d1098f3195c6d155ffb8e3f456e025db392243891a9b9474a5eb5a7",
     "scripts/native-dns-query/main_windows_test.go": "3816daffc1dcc7f208cbc1609b3c923554b0749ed65eb260d62d915856c05796",
-    "scripts/native-dns-query.ps1": "37a32c067b948bb8ed145882e6213ee07022556cb0e83afdfae2fccf9a11c97e",
-    "scripts/test-native-dns-query-contracts.ps1": "09c473731dc7712685b025121b0a439732d8f98fa1b2df58e606d3489d41df31",
-    "scripts/test-native-dns-query.ps1": "3646277ef286d028ca9f50008bc8448f95371134489da9ebbdf936c231401f43",
+    "scripts/native-dns-query.ps1": "173c9c6c680f15e9a0ec3b23c5591ecd46d4d010d3099b4d0bdb9906f89b5dc9",
+    "scripts/test-native-dns-query-contracts.ps1": "0cb3b98419fdbc0f9fa23473c85099fc40a6dcee61128b1281632736577f9697",
+    "scripts/test-native-dns-query.ps1": "0b7f3e40023b119a7db69de85482a31cc7d9310f5c4c4b8a95bd365704884fc2",
     ".github/workflows/native-dns-query.yml": "b2de718fc088629b518daf231f0457bd80d82e7c954c3c498195aeff9eaaf54d"
   },
   "compileOnlyTargetsPassed": [
@@ -20,7 +20,7 @@
   "powerShellFilesParsed": 3,
   "powerShellParseErrors": 0,
   "goSyntheticGroupsPrepared": 13,
-  "powerShellProjectionGroupsPrepared": 13,
+  "powerShellProjectionGroupsPrepared": 14,
   "nativeQueryOptions": 6600,
   "maxRecords": 128,
   "maxAnswers": 64,
@@ -41,5 +41,9 @@
   "readerMalformedProjectionsRefused": 8,
   "helperOwnCompilerSourceNativeIdentityRequired": true,
   "productCLIVersionProtocolUsedForHelper": false,
-  "initialFailureReceipt": "docs/qualification/1e29ac8b7094-native-query-preflight-refusal.json"
+  "initialFailureReceipt": "docs/qualification/1e29ac8b7094-native-query-preflight-refusal.json",
+  "closedFailedAttemptRetainedBeforeRefusal": true,
+  "stalePrivateOrProcessFailureEvidenceRefused": true,
+  "nativeHelperGoSourceUnchangedFrom": "3ebae61f27457b3490f5f2dd28a7145688872ced",
+  "resumptionFailureReceipt": "docs/qualification/3ebae61f2745-native-query-prerequisite.json"
 }
