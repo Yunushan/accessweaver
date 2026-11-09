@@ -36,7 +36,9 @@ func workflowPermission(guard *managed.Guard, r Request) (managed.WorkflowPermis
 	if err == nil && permission.Managed && !permission.AllowDownloads && (r.Action == "download" || r.Action == "updates") {
 		return managed.WorkflowPermission{}, fmt.Errorf("%w: remote downloads and release checks are disabled", managed.ErrDenied)
 	}
-	if err == nil && permission.Managed && len(r.Args) > 0 {
+	if err == nil && permission.Managed && (len(r.Args) > 0 || r.Action == "auto-install") {
+		// Auto-install derives native arguments from a scan after request approval.
+		// They need the same protected asset validation as caller-provided args.
 		return managed.WorkflowPermission{}, fmt.Errorf("%w: managed native-argument asset validation is not implemented", managed.ErrDenied)
 	}
 	// A reviewed standalone download request already signs its URL and hash.
