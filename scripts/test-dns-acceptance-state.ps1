@@ -416,7 +416,7 @@ try {
     }
     if($resolver -isnot [Management.Automation.Language.ScriptBlockExpressionAst]){throw 'Native driver resolver callback unavailable'}
     foreach($command in $resolver.ScriptBlock.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){
-        if($command.GetCommandName() -cnotin @('Get-Service','Get-CimInstance','Get-Content','Join-Path','ConvertFrom-Json','Where-Object','Convert-DNSAcceptanceGuid','Get-NativeDNSAnswerCount','Measure-NativeDNSWire')){throw 'Native source resolver callback boundary refused'}
+        if($command.GetCommandName() -cnotin @('Get-Service','Get-CimInstance','Get-Content','Join-Path','ConvertFrom-Json','Where-Object','Convert-DNSAcceptanceGuid','Get-NativeDNSAnswerCount','Measure-DoHNetEventWire')){throw 'Native source resolver callback boundary refused'}
     }
     foreach($name in @('Get-NativeStaticIPv6Row','Wait-NativeStaticIPv6FixtureState','Set-NativeStaticIPv6Fixture','Remove-NativeStaticIPv6Fixture')){
         $nodes=@($driver.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq $name},$true));if($nodes.Count -ne 1){throw 'Static staging source is ambiguous'}
@@ -426,7 +426,7 @@ try {
         . ([scriptblock]::Create($nodes[0].Extent.Text))
     }
     $script:wire=$null
-    function Measure-NativeDNSWire {throw 'Native wire effects are forbidden in source resolver contracts'}
+    function Measure-DoHNetEventWire {throw 'Native wire effects are forbidden in source resolver contracts'}
     $machineRoot=[IO.Path]::GetTempPath();$script:staticSnapshotPath=Join-Path $machineRoot 'profiles\dns-original.json'
     function Start-Sleep {[CmdletBinding()]param([int]$Milliseconds);if($Milliseconds -ne 250 -or $script:staticWaitCalls -ge 39){throw 'Unexpected source observation delay'};$script:staticWaitCalls++}
     function Get-NetIPAddress {[CmdletBinding()]param($InterfaceIndex,$AddressFamily,$Type);if(($null -ne $InterfaceIndex -and $InterfaceIndex -ne 77) -or $AddressFamily -cne 'IPv6' -or $Type -cne 'Unicast'){throw 'Unexpected source address inspection'};return [pscustomobject]@{IPAddress='fe80::a77%77';AddressState='Preferred'}}

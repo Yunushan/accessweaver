@@ -16,6 +16,20 @@ on:
       - 'scripts/check-native-environment.cjs'
       - '.github/workflows/native-doh.yml'
       - '.github/workflows/native-doh-wire.yml'
+      - 'scripts/native-doh-netevent-wire.ps1'
+      - 'scripts/test-native-doh-netevent-contracts.ps1'
+      - 'scripts/native-netevent-control.ps1'
+      - 'scripts/netevent-control-operation.ps1'
+      - 'scripts/native-doh-offload-plan.ps1'
+      - 'scripts/doh-offload-operation.ps1'
+      - 'scripts/native-offload-state.ps1'
+      - 'scripts/native-doh-route-state.ps1'
+      - 'scripts/native-ipv6-route-table.ps1'
+      - 'scripts/native-etl-header.cs'
+      - 'scripts/read-native-etl-loss.ps1'
+      - 'scripts/extract-native-ndis.ps1'
+      - 'scripts/ndis-frame-converter.cjs'
+      - 'scripts/ndis-private-convert.cjs'
       - 'scripts/native-dns-wire.ps1'
       - 'scripts/test-dns-wire-native-contracts.ps1'
       - 'scripts/dns-wire-*.cjs'
@@ -75,6 +89,18 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Native coordinator source preflight failed'}
           & $stock -NoProfile -NonInteractive -File ./scripts/test-dns-wire-native-contracts.ps1 -RequireWindowsPowerShell
           if($LASTEXITCODE -ne 0){throw 'Native wire source preflight failed'}
+      - name: Verify pure complete-frame contracts
+        run: |
+          node scripts/test-ndis-frame-converter.cjs
+          if($LASTEXITCODE -ne 0){throw 'Pure complete-frame contracts failed'}
+      - name: Verify product NetEvent lifecycle source contracts
+        run: |
+          $fixed=Join-Path $env:RUNNER_TEMP ('accessweaver-netevent-source-'+[Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $fixed -ErrorAction Stop | Out-Null
+          "ACCESSWEAVER_DOH_NETEVENT_SOURCE=$fixed" >> $env:GITHUB_ENV
+          $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-doh-netevent-contracts.ps1 -RequireWindowsPowerShell > (Join-Path $fixed 'status.json')
+          if($LASTEXITCODE -ne 0){throw 'Product NetEvent lifecycle source contracts failed'}
       - name: Build the actual native controller
         run: |
           go build -trimpath -o build/native-doh/accessweaver.exe ./cmd/accessweaver
@@ -99,5 +125,13 @@ jobs:
         with:
           name: native-doh-wire-windows-${{ matrix.goarch }}
           path: ${{ env.ACCESSWEAVER_NATIVE_DOH_EVIDENCE }}/status.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Retain fixed product NetEvent source metadata only
+        if: always() && env.ACCESSWEAVER_DOH_NETEVENT_SOURCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-doh-netevent-source-windows-${{ matrix.goarch }}
+          path: ${{ env.ACCESSWEAVER_DOH_NETEVENT_SOURCE }}/status.json
           if-no-files-found: error
           retention-days: 7

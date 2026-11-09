@@ -158,8 +158,11 @@ public static class AccessWeaverNativeDoHIdentity {
     $controllerHome=Join-Path $privateRoot 'controller';[void][IO.Directory]::CreateDirectory($controllerHome);Assert-NativeOrdinaryPath $privateRoot
     if($WireTransport){
         . (Join-Path $PSScriptRoot 'native-dns-wire.ps1')
-        $script:wire=New-NativeDNSWireState $privateRoot (Join-Path $PSScriptRoot 'dns-wire-stdin.cjs')
-        foreach($file in @('scripts/native-dns-wire.ps1','scripts/test-dns-wire-native-contracts.ps1','scripts/dns-wire-evidence.cjs','scripts/dns-wire-stdin.cjs','.github/workflows/native-doh-wire.yml')){$sources+=@($file);$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
+        foreach($file in @('scripts/native-doh-netevent-wire.ps1','scripts/test-native-doh-netevent-contracts.ps1','scripts/native-netevent-control.ps1','scripts/netevent-control-operation.ps1','scripts/native-doh-offload-plan.ps1','scripts/doh-offload-operation.ps1','scripts/native-offload-state.ps1','scripts/native-doh-route-state.ps1','scripts/native-ipv6-route-table.ps1','scripts/native-etl-header.cs','scripts/read-native-etl-loss.ps1','scripts/extract-native-ndis.ps1','scripts/ndis-frame-converter.cjs','scripts/ndis-private-convert.cjs','scripts/native-dns-wire.ps1','scripts/test-dns-wire-native-contracts.ps1','scripts/dns-wire-evidence.cjs','scripts/dns-wire-stdin.cjs','.github/workflows/native-doh-wire.yml')){$sources+=@($file);$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
+        foreach($helper in @('native-netevent-control.ps1','native-offload-state.ps1','native-doh-route-state.ps1','native-ipv6-route-table.ps1','native-doh-offload-plan.ps1','native-doh-netevent-wire.ps1')){. (Join-Path $PSScriptRoot $helper)}
+        $capture=New-NativeDNSWireState $privateRoot (Join-Path $PSScriptRoot 'dns-wire-stdin.cjs')
+        Initialize-DoHNetEventState $capture $project $hashes
+        $script:wire=$capture
     }
     $environmentVerified=$true;$code='component-stage'
     . (Join-Path $PSScriptRoot 'native-doh-scenario.ps1')
@@ -429,7 +432,7 @@ public static class AccessWeaverNativeDoHIdentity {
     function Invoke-NativeDoHExercise {
     $script:scenario=Invoke-NativeDoHScenario -Method $Method -ScenarioKind $(if($ScenarioKind -ceq 'static-ipv6'){'roundtrip'}else{$ScenarioKind}) -Apply {param($request)
         try{
-            if($null -ne $script:wire -and $request.action -ceq 'dns'){Start-NativeDNSWireCapture $script:wire;$script:wire.phase='product-configuration'}
+            if($null -ne $script:wire -and $request.action -ceq 'dns'){Start-DoHNetEventCapture $script:wire;$script:wire.phase='product-configuration'}
             Invoke-NativeDoHCLI $request
         }catch{if($null -ne $script:wire -and $script:wire.failurePhase -ceq 'none'){$script:wire.failurePhase=$script:wire.phase};throw}
     } -Capture {
@@ -450,7 +453,7 @@ public static class AccessWeaverNativeDoHIdentity {
             if(-not $script:staticSnapshotNormalized){throw 'Native product static snapshot was not normalized'}
         }
         $script:answers=Get-NativeDNSAnswerCount
-        if($null -ne $script:wire){try{Measure-NativeDNSWire $script:wire}catch{if($script:wire.failurePhase -ceq 'none'){$script:wire.failurePhase=$script:wire.phase};throw}}
+        if($null -ne $script:wire){try{Measure-DoHNetEventWire $script:wire}catch{if($script:wire.failurePhase -ceq 'none'){$script:wire.failurePhase=$script:wire.phase};throw}}
     } -InduceFailure {
         # The fresh-state guard and successful real product configuration establish
         # ownership. Stop only this fixture's actual managed resolver service.
@@ -493,8 +496,8 @@ public static class AccessWeaverNativeDoHIdentity {
     }else{[void](Invoke-NativeDoHExercise)}
     }
     if($null -ne $script:wire){
-        try{Complete-NativeDNSWireCleanup $script:wire}catch{if($script:wire.failurePhase -ceq 'none'){$script:wire.failurePhase=$script:wire.phase};throw}
-        $wireSummary=Get-NativeDNSWireSummary $script:wire
+        try{Complete-DoHNetEventCleanup $script:wire}catch{if($script:wire.failurePhase -ceq 'none'){$script:wire.failurePhase=$script:wire.phase};throw}
+        $wireSummary=Get-DoHNetEventSummary $script:wire
     }
     if($Method -ceq 'dnscrypt'){
         # Remove through the actual product after the independent restore attempt.
@@ -519,8 +522,8 @@ public static class AccessWeaverNativeDoHIdentity {
 } catch {$outcome='failed'}
 finally {
     if($null -ne $script:wire){
-        if(-not $script:wire.cleanupAttempted){try{Complete-NativeDNSWireCleanup $script:wire}catch{if($script:wire.failurePhase -ceq 'none'){$script:wire.failurePhase=$script:wire.phase};$outcome='failed';$code='wire-cleanup-failed'}}
-        $wireSummary=Get-NativeDNSWireSummary $script:wire
+        if(-not $script:wire.cleanupAttempted){try{Complete-DoHNetEventCleanup $script:wire}catch{if($script:wire.failurePhase -ceq 'none'){$script:wire.failurePhase=$script:wire.phase};$outcome='failed';$code='wire-cleanup-failed'}}
+        $wireSummary=Get-DoHNetEventSummary $script:wire
     }
     if($null -ne $script:forwarder){$script:forwarder.Dispose();$script:forwarder=$null}
     # Fixed metadata only: no exception, account, path, DNS value or raw output.
@@ -528,7 +531,7 @@ finally {
     if($parent.CreationTimeUtc.Ticks -ne $reportCreated -or [IO.Directory]::GetFileSystemEntries($parent.FullName).Length -ne 0){throw 'Changed native report parent retained'}
     $report=@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;platform='windows';architecture=$env:ACCESSWEAVER_EXPECT_GOARCH;goVersion=$env:GO_VERSION;edition=$PSVersionTable.PSEdition;version=$PSVersionTable.PSVersion.ToString();binarySHA256=$BinarySHA256;outcome=$outcome;code=$code;environmentVerified=$environmentVerified;nativeProcessVerified=$nativeProcessVerified;binaryVerified=$binaryVerified;scenario=$scenario;staticFixture=$staticFixture;staticFirewallProtected=$script:staticFirewallProtected;staticFirewallRemoved=$script:staticFirewallRemoved;staticObservation=$script:staticObservation;staticPhase=$script:staticPhase;staticFailurePhase=$script:staticFailurePhase;staticFailureCode=$script:staticFailureCode;staticSnapshotNormalized=$script:staticSnapshotNormalized;rollbackScenario=$rollbackScenario;rollbackSnapshotRemoved=$script:rollbackSnapshotRemoved;rollbackServiceRemoved=$script:rollbackServiceRemoved;resolverVerificationRejected=$script:resolverVerificationRejected;configureElapsedMilliseconds=$script:configureElapsedMilliseconds;forwarderPeerClosures=$script:forwarderPeerClosures;forwarderFailureCode=$script:forwarderFailureCode;forwarderRequests=$script:forwarderRequests;forwarderResponses=$script:forwarderResponses;forwarderFailed=$script:forwarderFailed;configuredDuringRejectedApply=$script:configuredDuringRejectedApply;installedComponentVerified=$script:installedComponentVerified;baselineResolverAnswers=$script:baselineAnswers;probeOutcome=$probeOutcome;adapterShapes=@($adapterShapes);captureStage=$script:captureStage;captureProgress=$script:captureProgress;cliCount=$script:cliCount;processesJoined=$script:joined;configureExitCode=$script:configureExit;restoreExitCode=$script:restoreExit;outputOverflow=$script:overflow;captureFailed=$script:captureFailed;diagnosticWaitExceeded=$script:diagnosticWaitExceeded;ordinaryResolverAnswers=$script:answers;snapshotRemoved=$snapshotRemoved;method=$Method;scenarioKind=$ScenarioKind;failureServiceStopped=$script:failureServiceStopped;resolverProcessExited=$script:resolverProcessExited;failedResolverObserved=$script:failedResolverObserved;restoredResolverAnswers=$script:restoredAnswers;componentRequestAttempts=$script:componentRequestAttempts;componentRetryStatus=$script:componentRetryStatus;componentStage=$script:componentStage;componentFailureCode=$script:componentFailureCode;componentHTTPStatus=$script:componentHTTPStatus;componentDownloadedBytes=$script:componentDownloadedBytes;componentArchiveEntries=$script:componentArchiveEntries;componentVersion=$(if($component){$component.version}else{''});componentArchiveSHA256=$(if($component){$component.archiveSHA256}else{''});componentBinarySHA256=$(if($component){$component.binarySHA256}else{''});componentStaged=($null -ne $component);serviceRunning=$serviceRunning;serviceAutomatic=$serviceAutomatic;serviceRemoved=$serviceRemoved;cleanupExitCode=$script:cleanupExit;encryptedTrafficObserved=$false;rebootExercised=$false;dnscryptExercised=($Method -ceq 'dnscrypt' -and (($null -ne $scenario -and $scenario.configurationAttempted) -or ($null -ne $rollbackScenario -and $rollbackScenario.configurationAttempted)));nativeDnsQualified=$false;productionQualificationComplete=$false}
     if($WireTransport){$report.wire=$wireSummary;$report.encryptedTrafficObserved=($outcome -ceq 'passed' -and $null -ne $wireSummary -and $wireSummary.outcome -ceq 'passed')}
-    $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($report|ConvertTo-Json -Depth 5 -Compress));if($bytes.Length -gt 16384){throw 'Native report exceeds fixed metadata bound'}
+    $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($report|ConvertTo-Json -Depth 8 -Compress));if($bytes.Length -gt 16384){throw 'Native report exceeds fixed metadata bound'}
     $stream=[IO.FileStream]::new($ReportPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush()}finally{$stream.Dispose()}
 }
