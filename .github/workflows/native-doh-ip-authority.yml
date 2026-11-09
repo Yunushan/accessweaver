@@ -4,6 +4,8 @@ on:
   push:
     branches: ['main', 'codex/dns-adapter-coverage']
     paths:
+      - 'scripts/doh-ip-authority-h2.cjs'
+      - 'scripts/test-doh-ip-authority-h2.cjs'
       - 'scripts/doh-ip-authority-control.cjs'
       - 'scripts/test-doh-ip-authority-control.cjs'
       - 'scripts/doh-ip-authority-evidence.ps1'
@@ -58,12 +60,15 @@ jobs:
           "ACCESSWEAVER_IP_AUTHORITY_SOURCE=$fixed" >> $env:GITHUB_ENV
           $nodeText=& node ./scripts/test-doh-ip-authority-control.cjs
           $nodeExit=$LASTEXITCODE
+          $h2Text=& node ./scripts/test-doh-ip-authority-h2.cjs
+          $h2Exit=$LASTEXITCODE
           $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
           $psText=& $stock -NoProfile -NonInteractive -File ./scripts/test-doh-ip-authority-source.ps1 -RequireWindowsPowerShell
           $psExit=$LASTEXITCODE
-          $paths=@('scripts/doh-ip-authority-control.cjs','scripts/test-doh-ip-authority-control.cjs','scripts/doh-ip-authority-evidence.ps1','scripts/test-doh-ip-authority-source.ps1','scripts/test-doh-ip-authority.ps1','scripts/ndis-tls-control.cjs','scripts/native-dns-wire.ps1','.github/workflows/native-doh-ip-authority.yml')
+          $paths=@('scripts/doh-ip-authority-h2.cjs','scripts/test-doh-ip-authority-h2.cjs','scripts/doh-ip-authority-control.cjs','scripts/test-doh-ip-authority-control.cjs','scripts/doh-ip-authority-evidence.ps1','scripts/test-doh-ip-authority-source.ps1','scripts/test-doh-ip-authority.ps1','scripts/ndis-tls-control.cjs','scripts/native-dns-wire.ps1','.github/workflows/native-doh-ip-authority.yml')
           $hashes=@{};foreach($file in $paths){$hashes[$file]=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()}
-          $r=@{schemaVersion=1;scope='ip-authority-actual-source-contracts';sourceSHA256=$hashes;node=($nodeText | ConvertFrom-Json);powershell=($psText | ConvertFrom-Json);passed=($nodeExit -eq 0 -and $psExit -eq 0);nativeNetworkUsed=$false;productionQualificationComplete=$false}
+          $r=@{schemaVersion=1;scope='ip-authority-actual-source-contracts';sourceSHA256=$hashes;node=($nodeText | ConvertFrom-Json);h2=($h2Text | ConvertFrom-Json);powershell=($psText | ConvertFrom-Json);passed=($nodeExit -eq 0 -and $h2Exit -eq 0 -and $psExit -eq 0);nativeNetworkUsed=$false;productionQualificationComplete=$false}
+          foreach($kind in @('node','h2','powershell')){if($null -eq $r[$kind] -or $r[$kind].schemaVersion -ne 1 -or $r[$kind].passed -isnot [bool] -or -not $r[$kind].passed){$r.passed=$false}}
           [IO.File]::WriteAllText((Join-Path $fixed 'status.json'),($r | ConvertTo-Json -Depth 7 -Compress),[Text.UTF8Encoding]::new($false))
           if(-not $r.passed){throw 'IP authority source contracts refused'}
       - name: Run guarded authenticated IP-authority prerequisite

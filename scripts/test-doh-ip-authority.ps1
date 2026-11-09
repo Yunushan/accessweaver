@@ -3,7 +3,7 @@
 $ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';$WarningPreference='SilentlyContinue'
 function Assert-NativeOrdinaryPath([string]$Path){$current=[IO.Path]::GetFullPath($Path);while($current){if(Test-Path -LiteralPath $current){if((Get-Item -LiteralPath $current -Force -ErrorAction Stop).Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Ordinary path required'}};$next=Split-Path -Parent $current;if($next -eq $current){break};$current=$next}}
 $project=Split-Path -Parent $PSScriptRoot
-$sources=@('scripts/doh-ip-authority-control.cjs','scripts/test-doh-ip-authority-control.cjs','scripts/doh-ip-authority-evidence.ps1','scripts/test-doh-ip-authority-source.ps1','scripts/test-doh-ip-authority.ps1','scripts/ndis-tls-control.cjs','scripts/native-dns-wire.ps1','.github/workflows/native-doh-ip-authority.yml')
+$sources=@('scripts/doh-ip-authority-h2.cjs','scripts/test-doh-ip-authority-h2.cjs','scripts/doh-ip-authority-control.cjs','scripts/test-doh-ip-authority-control.cjs','scripts/doh-ip-authority-evidence.ps1','scripts/test-doh-ip-authority-source.ps1','scripts/test-doh-ip-authority.ps1','scripts/ndis-tls-control.cjs','scripts/native-dns-wire.ps1','.github/workflows/native-doh-ip-authority.yml')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $rows=[Collections.Generic.List[object]]::new();$state=$null;$environmentVerified=$false;$nativeProcessVerified=$false;$outcome='failed';$code='environment';$coverage=0
 try{
@@ -20,7 +20,7 @@ try{
     $code='endpoint'
     foreach($ordinal in @(0,1)){
         foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}
-        try{$text=Invoke-NativeDNSWireProcess $state $state.node @((Join-Path $PSScriptRoot 'doh-ip-authority-control.cjs'),([string]$ordinal));$v=Get-DoHIPAuthorityEndpoint $text ($ordinal+1)}catch{$v=New-DoHIPAuthorityEndpoint ($ordinal+1) 'tool'}
+        try{$text=Invoke-NativeDNSWireProcess $state $state.node @((Join-Path $PSScriptRoot 'doh-ip-authority-h2.cjs'),([string]$ordinal));$v=Get-DoHIPAuthorityEndpoint $text ($ordinal+1)}catch{$v=New-DoHIPAuthorityEndpoint ($ordinal+1) 'tool'}
         $rows.Add($v);$coverage=$coverage -bor $v.certificateMask
     }
     $code=if(@($rows | Where-Object {$_.outcome -cne 'passed'}).Count -ne 0){'endpoint'}else{'coverage'};if((Test-DoHIPAuthorityCoverage @($rows.ToArray())) -and -not $state.processFailed -and $state.processes -eq 3 -and $state.joined -eq 3){$outcome='passed';$code='none'}
