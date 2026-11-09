@@ -13,7 +13,7 @@ $ReportPath=[IO.Path]::GetFullPath($ReportPath);Assert-NativeOrdinaryPath $Repor
 $reportParent=Get-Item -LiteralPath ([IO.Path]::GetDirectoryName($ReportPath)) -Force -ErrorAction Stop
 if([IO.Path]::GetFileName($ReportPath) -cne 'status.json' -or -not $reportParent.PSIsContainer -or [IO.Directory]::GetFileSystemEntries($reportParent.FullName).Length -ne 0){throw 'Empty ordinary control report parent required'}
 $reportCreated=$reportParent.CreationTimeUtc.Ticks;$project=Split-Path -Parent $PSScriptRoot
-$sources=@('scripts/test-native-capture-control.ps1','scripts/native-dns-wire.ps1','scripts/test-dns-wire-native-contracts.ps1','scripts/dns-wire-evidence.cjs','scripts/dns-wire-stdin.cjs','scripts/dns-acceptance-state.ps1','.github/workflows/native-capture-control.yml')
+$sources=@('scripts/test-native-capture-control.ps1','scripts/native-dns-wire.ps1','scripts/test-dns-wire-native-contracts.ps1','scripts/dns-wire-ip-policy.cjs','scripts/dns-wire-evidence.cjs','scripts/dns-wire-stdin.cjs','scripts/dns-acceptance-state.ps1','.github/workflows/native-capture-control.yml')
 $hashes=@{};foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $state=$null;$control=$null;$environmentVerified=$false;$nativeProcessVerified=$false;$toolSHA256='';$outcome='failed';$code='environment'
 try{

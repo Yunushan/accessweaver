@@ -5,6 +5,8 @@ on:
     branches: ['main', 'codex/dns-adapter-coverage']
     paths:
       - 'scripts/dns-wire-*.cjs'
+      - 'scripts/native-doh-ip-binding.ps1'
+      - 'docs/qualification/3e2314a8de82-ip-authority-http2.json'
       - '.github/workflows/dns-wire-contracts.yml'
       - 'scripts/native-dns-wire.ps1'
       - 'scripts/test-dns-wire-native-contracts.ps1'
@@ -15,6 +17,8 @@ on:
   pull_request:
     paths:
       - 'scripts/dns-wire-*.cjs'
+      - 'scripts/native-doh-ip-binding.ps1'
+      - 'docs/qualification/3e2314a8de82-ip-authority-http2.json'
       - '.github/workflows/dns-wire-contracts.yml'
       - 'scripts/native-dns-wire.ps1'
       - 'scripts/test-dns-wire-native-contracts.ps1'

@@ -19,8 +19,8 @@ function Initialize-DoHNetEventState([object]$State,[string]$Project,[hashtable]
     foreach($sid in @($identity.User.Value,'S-1-5-18','S-1-5-32-544') | Select-Object -Unique){$acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),'FullControl','ContainerInherit,ObjectInherit','None','Allow'))}
     Set-Acl -LiteralPath $root -AclObject $acl -ErrorAction Stop
     $State.etl=Join-Path $root 'capture.etl';$State.pcap=Join-Path $root 'capture.pcapng'
-    $State.ndis=@{root=$root;project=$Project;hashes=$Hashes.Clone();plan=$null;digest='';prepared=$false;count=0;created=$false;configuredUtcTicks=0L;phaseVerified=$false;public=@{
-        phaseReadEvidence=(New-DoHPhaseReadEvidence);phaseEvidence=(New-DoHPhaseEvidence);operationEvidence=(New-DoHNetEventOperationEvidence);cleanupCode='none';sessionVerified=$false;sessionRemoved=$false;preflightEmpty=$false;
+    $State.ndis=@{sourceCommit=$env:GITHUB_SHA;root=$root;project=$Project;hashes=$Hashes.Clone();plan=$null;digest='';prepared=$false;count=0;created=$false;configuredUtcTicks=0L;phaseVerified=$false;public=@{
+        identityBinding=(New-DoHIPAuthorityBinding);phaseReadEvidence=(New-DoHPhaseReadEvidence);phaseEvidence=(New-DoHPhaseEvidence);operationEvidence=(New-DoHNetEventOperationEvidence);cleanupCode='none';sessionVerified=$false;sessionRemoved=$false;preflightEmpty=$false;
         filterEvidence=@{policy='product-doh-all';endpointMask=15;etherTypeMask=3;protocolMask=3;portsFiltered=$false;verified=$false};
         offloadPrepareEvidence=(New-NativeDoHOffloadEvidence 'prepare');offloadStageEvidence=@();offloadVerifyEvidence=(New-NativeDoHOffloadEvidence 'verify');offloadMeasureEvidence=(New-NativeDoHOffloadEvidence 'verify');offloadRestoreEvidence=@();
         lossEvidence=(New-NativeNDISLossEvidence);eventEvidence=(New-NativeNDISHeaderEvidence);fragmentEvidence=(New-NativeNDISFragmentEvidence);catalogEvidence=(New-NativeNDISCatalogEvidence);extractionEvidence=(New-NativeNDISExtractionEvidence);conversionEvidence=(New-NativeNDISConversionEvidence);tlsWireEvidence=(New-DoHNetEventTlsEvidence);etlBytes=0;pcapBytes=0;captureBounded=$false
@@ -57,7 +57,7 @@ function New-DoHNetEventTlsEvidence([string]$Code='not-inspected') {
 }
 function Get-DoHNetEventTlsEvidence([string]$Text) {
     $bad=New-DoHNetEventTlsEvidence 'invalid';$bad.observation='refused';if($Text.Length -gt 16384){return $bad};try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{return $bad}
-    $codes=@('ascii','block-bound','block-shape','capture-bound','capture-drops','capture-empty','capture-options','client-hello','client-sni','client-sni-absent','client-sni-mismatch','decoder-failed','environment','ethernet-protocol','ethernet-shape','flow-bound','input-bound','input-incomplete','input-read','interface-bound','interface-link','interface-snaplen','ip-fragment','ipv4-bound','ipv4-shape','ipv6-bound','ipv6-extension','ipv6-shape','none','packet-bound','packet-kind','packet-shape','packet-snaplen','packet-truncated','provider-port','provider-scope','section-length','section-magic','section-required','section-shape','section-version','server-hello','statistics-shape','tcp-bound','tcp-gap','tcp-overlap','tcp-reset','tcp-reuse','tcp-segment-bound','tcp-shape','tcp-stream-bound','tcp-syn-required','tcp-syn-shape','tls-change-cipher','tls-handshake-bound','tls-hello-required','tls-record','tls-truncated','transport-shape','udp-shape')
+    $codes=@('ascii','block-bound','block-shape','capture-bound','capture-drops','capture-empty','capture-options','client-hello','client-sni','client-sni-absent','client-sni-mismatch','identity-binding','decoder-failed','environment','ethernet-protocol','ethernet-shape','flow-bound','input-bound','input-incomplete','input-read','interface-bound','interface-link','interface-snaplen','ip-fragment','ipv4-bound','ipv4-shape','ipv6-bound','ipv6-extension','ipv6-shape','none','packet-bound','packet-kind','packet-shape','packet-snaplen','packet-truncated','provider-port','provider-scope','section-length','section-magic','section-required','section-shape','section-version','server-hello','statistics-shape','tcp-bound','tcp-gap','tcp-overlap','tcp-reset','tcp-reuse','tcp-segment-bound','tcp-shape','tcp-stream-bound','tcp-syn-required','tcp-syn-shape','tls-change-cipher','tls-handshake-bound','tls-hello-required','tls-record','tls-truncated','transport-shape','udp-shape')
     if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 4 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin @('schemaVersion','outcome','code','evidence')}).Count -ne 0 -or $v.schemaVersion -isnot [int] -or $v.schemaVersion -ne 1 -or $v.code -cnotin $codes -or $v.outcome -cnotin @('decoded','refused')){return $bad}
     if($v.outcome -ceq 'refused'){if($v.code -ceq 'none' -or $null -ne $v.evidence){return $bad};$r=New-DoHNetEventTlsEvidence $v.code;$r.observation='refused';return $r}
     $e=$v.evidence
@@ -132,8 +132,20 @@ function Read-DoHNetEventCapture([object]$State) {
         $State.ndis.phaseVerified=($pe.outcome -ceq 'complete' -and $pe.code -ceq 'none' -and $pe.records -eq $catalog.records -and $pe.frames -eq $q.frames -and $pe.tcpBefore+$pe.tcpAt+$pe.tcpAfter -eq $q.tcp -and $pe.udpBefore+$pe.udpAt+$pe.udpAfter -eq $q.udp -and $pe.sentBefore+$pe.sentAt+$pe.sentAfter -eq $q.sent -and $pe.receivedBefore+$pe.receivedAt+$pe.receivedAfter -eq $q.received)
     }
     $State.phase='tls-decode';$bytes=Read-NativeDNSWireCapture $State
-    $text=Invoke-DoHNetEventProcess $State $State.node @($State.decoder) $bytes
-    $State.ndis.public.tlsWireEvidence=Get-DoHNetEventTlsEvidence $text
+    # Admission uses fresh independent state while the product remains configured.
+    # A failed binding stays a handled refusal so causal/recovery checks still run.
+    try{
+        $current=Read-DNSAcceptanceState
+        $binding=New-DoHVerifiedIPAuthorityBinding $State.before $current $State.ndis.sourceCommit $State.ndis.hashes['docs/qualification/3e2314a8de82-ip-authority-http2.json']
+        $State.ndis.public.identityBinding=$binding
+    }catch{
+        $State.ndis.public.identityBinding=New-DoHIPAuthorityBinding
+        $State.ndis.public.tlsWireEvidence=New-DoHNetEventTlsEvidence 'identity-binding';$State.ndis.public.tlsWireEvidence.observation='refused'
+        return $State.ndis.public.tlsWireEvidence
+    }
+    $arguments=@((Join-Path $PSScriptRoot 'dns-wire-ip-stdin.cjs'),'--configured-ip-authority',$binding.sourceCommit,$binding.policySHA256,$binding.prerequisiteSHA256)
+    $text=Invoke-DoHNetEventProcess $State $State.node $arguments $bytes
+    $State.ndis.public.tlsWireEvidence=Get-DoHIPAuthorityTlsEvidence $text $binding $State.ndis.sourceCommit
     return $State.ndis.public.tlsWireEvidence
 }
 function Measure-DoHNetEventWire([object]$State) {
@@ -177,6 +189,6 @@ function Complete-DoHNetEventCleanup([object]$State) {
 }
 function Get-DoHNetEventSummary([object]$State) {
     $p=$State.ndis.public
-    $passed=($State.flags.Count -eq 16 -and @($State.flags.Values | Where-Object {$_ -isnot [bool] -or -not $_}).Count -eq 0 -and $State.processes -eq $State.joined -and -not $State.processFailed -and $State.decoderCode -ceq 'none' -and $State.outRecords -gt 0 -and $State.inRecords -gt 0 -and $State.cleanupCompleted -and $State.ndis.phaseVerified -and $p.cleanupCode -ceq 'none' -and $p.preflightEmpty -and $p.sessionVerified -and $p.sessionRemoved -and $p.conversionEvidence.summary.tcpClosure.resetFlows -eq 0)
+    $passed=($State.flags.Count -eq 16 -and @($State.flags.Values | Where-Object {$_ -isnot [bool] -or -not $_}).Count -eq 0 -and $State.processes -eq $State.joined -and -not $State.processFailed -and $State.decoderCode -ceq 'none' -and $State.outRecords -gt 0 -and $State.inRecords -gt 0 -and $State.cleanupCompleted -and $State.ndis.phaseVerified -and $p.cleanupCode -ceq 'none' -and $p.preflightEmpty -and $p.sessionVerified -and $p.sessionRemoved -and $p.conversionEvidence.summary.tcpClosure.resetFlows -eq 0 -and (Test-DoHIPAuthorityBinding $p.identityBinding $State.ndis.sourceCommit))
     return @{schemaVersion=1;backend='netevent-ndis';outcome=$(if($passed){'passed'}else{'failed'});phase=$State.phase;failurePhase=$State.failurePhase;decoderCode=$State.decoderCode;controls=$State.flags;capture=$p;toolProcesses=$State.processes;toolProcessesJoined=$State.joined;toolFailure=$State.processFailed;processFailureCode=$State.processFailureCode;etlBytes=$State.etlBytes;pcapBytes=$State.pcapBytes;tlsFlows=$State.tlsFlows;outboundEncryptedRecords=$State.outRecords;inboundEncryptedRecords=$State.inRecords;providerMask=$State.providers;rawCapturePublished=$false;productionQualificationComplete=$false}
 }

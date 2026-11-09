@@ -1,6 +1,7 @@
 'use strict';
 // Pure, bounded decoder for a future fixed-provider hosted DoH wire check.
 // No packet bytes, addresses, names, timestamps or arbitrary errors leave this API.
+const {assertIPBinding}=require('./dns-wire-ip-policy.cjs');
 const LIMITS=Object.freeze({bytes:16*1024*1024,blocks:65536,interfaces:32,packets:16384,flows:32,stream:512*1024,segments:8192});
 const PROVIDERS=Object.freeze([
  {id:'google-v4',hex:'08080808',sni:'dns.google'},
@@ -98,7 +99,7 @@ function decodeFrame(frame){
  need(header>=20&&at+header<=end,'tcp-bound');
  return {plain:port===53,provider,direction,key:provider.id+'/'+local+'/'+localPort,seq:frame.readUInt32BE(at+4),flags:frame[at+13],payload:frame.subarray(at+header,end)};
 }
-function clientHello(body,expected){
+function clientHello(body,expected,allowAbsent){
  need(body.length>=38&&body.readUInt16BE(0)===0x0303,'client-hello');
  let p=34;const session=body[p++];need(session<=32&&p+session+2<=body.length,'client-hello');p+=session;
  const ciphers=body.readUInt16BE(p);p+=2;need(ciphers>=2&&ciphers%2===0&&p+ciphers+1<=body.length,'client-hello');p+=ciphers;
@@ -114,7 +115,7 @@ function clientHello(body,expected){
   }
   p+=size;
  }
- need(sni,'client-sni-absent');
+ need(sni||allowAbsent,'client-sni-absent');
 }
 function serverHello(body){
  need(body.length>=40&&body.readUInt16BE(0)===0x0303,'server-hello');
@@ -133,7 +134,7 @@ function streamBytes(state){
  }
  return out.subarray(0,length);
 }
-function tlsRecords(bytes,direction,expected){
+function tlsRecords(bytes,direction,expected,allowAbsent){
  let p=0,handshake=Buffer.alloc(0),hello=false,cipher=false,application=0,records=0;
  while(p<bytes.length){
   need(p+5<=bytes.length,'tls-truncated');const kind=bytes[p],version=bytes.readUInt16BE(p+1),size=bytes.readUInt16BE(p+3);p+=5;
@@ -148,7 +149,7 @@ function tlsRecords(bytes,direction,expected){
     need(n<=LIMITS.stream-4,'tls-handshake-bound');if(n+4>handshake.length)break;
     if(!hello){
      need(type===(direction==='out'?1:2),'tls-hello-required');
-     if(direction==='out')clientHello(handshake.subarray(4,n+4),expected);else serverHello(handshake.subarray(4,n+4));hello=true;
+     if(direction==='out')clientHello(handshake.subarray(4,n+4),expected,allowAbsent);else serverHello(handshake.subarray(4,n+4));hello=true;
     }
     handshake=handshake.subarray(n+4);
    }
@@ -157,7 +158,7 @@ function tlsRecords(bytes,direction,expected){
  need(hello&&handshake.length===0,'tls-hello-required');
  return {application,records};
 }
-function inspectDoHWire(input){
+function inspectWire(input,allowAbsent){
  const frames=parseCapture(input),flows=new Map();let plaintextPackets=0,segments=0;
  for(const frame of frames){
   const p=decodeFrame(frame);if(p.plain){plaintextPackets++;continue;}
@@ -175,13 +176,18 @@ function inspectDoHWire(input){
  for(const flow of flows.values()){
   // SYN-only connection attempts must not become positive TLS evidence.
   if(!flow.out.segments.length&&!flow.in.segments.length)continue;
-  const out=tlsRecords(streamBytes(flow.out),'out',flow.provider.sni),incoming=tlsRecords(streamBytes(flow.in),'in',flow.provider.sni);
+  const out=tlsRecords(streamBytes(flow.out),'out',flow.provider.sni,allowAbsent),incoming=tlsRecords(streamBytes(flow.in),'in',flow.provider.sni);
   results.push({provider:flow.provider.id,clientHello:true,serverHello:true,outboundEncryptedRecords:out.application,inboundEncryptedRecords:incoming.application,records:out.records+incoming.records});
  }
  const observed=plaintextPackets===0&&results.some(r=>r.outboundEncryptedRecords>0&&r.inboundEncryptedRecords>0);
  return {schemaVersion:1,observation:observed?'tls-observed':'insufficient',packets:frames.length,plaintextPackets,flows:results,
   dnsPayloadDecrypted:false,ordinaryResolverBound:false,negativeControlPassed:false,productionQualificationComplete:false};
 }
-module.exports={inspectDoHWire,WireError,LIMITS};
+function inspectDoHWire(input){return inspectWire(input,false);}
+function inspectConfiguredIPDoHWire(input,binding){
+ try{assertIPBinding(binding);}catch{fail('identity-binding');}
+ return inspectWire(input,true);
+}
+module.exports={inspectDoHWire,inspectConfiguredIPDoHWire,WireError,LIMITS};
 // No CLI accepting arbitrary capture paths: only an explicitly authorized hosted
 // driver may supply private bytes in memory and publish this fixed projection.

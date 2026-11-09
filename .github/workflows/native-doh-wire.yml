@@ -16,6 +16,8 @@ on:
       - 'scripts/check-native-environment.cjs'
       - '.github/workflows/native-doh.yml'
       - '.github/workflows/native-doh-wire.yml'
+      - 'scripts/native-doh-ip-binding.ps1'
+      - 'docs/qualification/3e2314a8de82-ip-authority-http2.json'
       - 'scripts/read-native-ndis-phases.ps1'
       - 'scripts/ndis-private-phases.cjs'
       - 'scripts/native-doh-phase-evidence.ps1'

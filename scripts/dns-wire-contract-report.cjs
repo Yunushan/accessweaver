@@ -3,7 +3,7 @@
 // Never starts/stops capture, edits filters or firewall/DNS state, or launches the product.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),os=require('node:os');
 const {spawnSync}=require('node:child_process');
-const SOURCES=Object.freeze(['scripts/dns-wire-evidence.cjs','scripts/dns-wire-evidence.test.cjs','scripts/dns-wire-contract-report.cjs','.github/workflows/dns-wire-contracts.yml','scripts/dns-wire-stdin.cjs','scripts/native-dns-wire.ps1','scripts/test-dns-wire-native-contracts.ps1','.github/workflows/native-doh-wire.yml','scripts/test-native-doh.ps1','scripts/dns-acceptance-state.ps1','scripts/native-doh-scenario.ps1','scripts/test-native-capture-control.ps1','.github/workflows/native-capture-control.yml']);
+const SOURCES=Object.freeze(['scripts/dns-wire-ip-policy.cjs','scripts/dns-wire-ip-stdin.cjs','scripts/native-doh-ip-binding.ps1','docs/qualification/3e2314a8de82-ip-authority-http2.json','scripts/dns-wire-evidence.cjs','scripts/dns-wire-evidence.test.cjs','scripts/dns-wire-contract-report.cjs','.github/workflows/dns-wire-contracts.yml','scripts/dns-wire-stdin.cjs','scripts/native-dns-wire.ps1','scripts/test-dns-wire-native-contracts.ps1','.github/workflows/native-doh-wire.yml','scripts/test-native-doh.ps1','scripts/dns-acceptance-state.ps1','scripts/native-doh-scenario.ps1','scripts/test-native-capture-control.ps1','.github/workflows/native-capture-control.yml']);
 function classifyStatus(text){
  const s=text.trim();
  if(/^(?:Packet Monitor|Packet monitoring|Logger) is not (?:currently )?(?:running|active)\.?$/i.test(s))return 'stopped';

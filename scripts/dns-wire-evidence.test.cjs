@@ -216,6 +216,59 @@ check('closed-refusal-is-protocol-success-without-wire-success',()=>{
  assert.equal(r.outcome,'refused');assert.equal(r.evidence,null);assert.equal(protocolExitCode(r,true),0);assert.equal(protocolExitCode(r,false),1);
  assert.equal(protocolExitCode({outcome:'refused',code:'environment'},false),1);
 });
+// The explicit API is exercised separately; default inspectDoHWire stays strict.
+const {inspectConfiguredIPDoHWire}=require('./dns-wire-evidence.cjs');
+const {declaredIPBinding,POLICY_SHA256,PREREQUISITE_SHA256,BINDING_KEYS}=require('./dns-wire-ip-policy.cjs');
+const {decodeConfiguredIPBytes,hostedGuard}=require('./dns-wire-ip-stdin.cjs');
+const ipBinding=declaredIPBinding('a'.repeat(40));
+function ipRefusal(input,code,binding=ipBinding){assert.throws(()=>inspectConfiguredIPDoHWire(input,binding),e=>e instanceof WireError&&e.code===code);}
+check('explicit-bound-ip-mode-covers-all-four-providers-and-byte-orders',()=>{
+ const bytes=require('node:fs').readFileSync(require('node:path').join(__dirname,'..',require('./dns-wire-ip-policy.cjs').PREREQUISITE_RECEIPT));assert.equal(require('node:crypto').createHash('sha256').update(bytes).digest('hex'),PREREQUISITE_SHA256);
+ for(const v6 of [false,true])for(const provider of ['google','quad9'])for(const be of [false,true]){
+  const input=capture(conversation({v6,provider,name:null}),{be});refusal(input,'client-sni-absent');const r=inspectConfiguredIPDoHWire(input,ipBinding);assert.equal(r.observation,'tls-observed');assert.equal(r.flows[0].provider,provider+(v6?'-v6':'-v4'));assert.equal(r.productionQualificationComplete,false);
+ }
+});
+check('bound-ip-mode-refuses-missing-private-coerced-or-wrong-proof',()=>{
+ const input=capture(conversation());const invalid=[null,{},[],{...ipBinding,private:'PRIVATE'}];
+ for(const [key,value] of [['schemaVersion','1'],['mode','named-sni'],['sourceCommit','A'.repeat(40)],['policySHA256','b'.repeat(64)],['prerequisiteSHA256','c'.repeat(64)],['providerMask',3],['providerMask',true],['readbackVerified','true'],['readbackVerified',false]])invalid.push({...ipBinding,[key]:value});
+ for(const key of BINDING_KEYS){const v={...ipBinding};delete v[key];invalid.push(v);}
+ for(const binding of invalid)ipRefusal(input,'identity-binding',binding);
+});
+check('default-decoder-extra-arguments-never-enable-ip-authority',()=>{
+ const input=capture(conversation({name:null}));for(const option of [true,ipBinding,{allowAbsent:true}])assert.throws(()=>inspectDoHWire(input,option),e=>e.code==='client-sni-absent');
+});
+check('bound-ip-mode-retains-exact-provider-named-sni',()=>{
+ for(const v6 of [false,true])for(const provider of ['google','quad9'])assert.deepEqual(inspectConfiguredIPDoHWire(capture(conversation({v6,provider})),ipBinding),inspectDoHWire(capture(conversation({v6,provider}))));
+});
+check('bound-ip-mode-never-accepts-mismatched-or-literal-ip-sni',()=>{
+ for(const name of ['private.synthetic.invalid','8.8.8.8','9.9.9.9','2001:4860:4860::8888','[2620:fe::fe]'])ipRefusal(capture(conversation({name})),'client-sni-mismatch');ipRefusal(capture(conversation({provider:'quad9',name:'dns.google'})),'client-sni-mismatch');
+});
+check('bound-ip-mode-still-refuses-malformed-and-truncated-client-hellos',()=>{
+ ipRefusal(capture(conversation({name:''})),'client-sni');const f=conversation({name:null});f[2]=f[2].subarray(0,f[2].length-1);assert.throws(()=>inspectConfiguredIPDoHWire(capture(f),ipBinding));
+ const data=capture(conversation({name:null}));for(let n=0;n<data.length;n++){try{const r=inspectConfiguredIPDoHWire(data.subarray(0,n),ipBinding);assert.notEqual(r.observation,'tls-observed');}catch(e){assert(e instanceof WireError);}}
+});
+check('bound-ip-mode-preserves-plaintext-reset-endpoint-and-port-rules',()=>{
+ for(const udp of [false,true]){const r=inspectConfiguredIPDoHWire(capture([...conversation({name:null}),frame(Buffer.from('PRIVATE'),{udp,port:53})]),ipBinding);assert.equal(r.observation,'insufficient');assert.equal(r.plaintextPackets,1);}
+ ipRefusal(capture([...conversation({name:null}),frame(Buffer.alloc(8),{udp:true,port:443})]),'provider-port');
+ const f=conversation({name:null});f[2][47]|=4;ipRefusal(capture(f),'tcp-reset');
+ const g=conversation({name:null});g[2][30]=1;ipRefusal(capture(g),'provider-scope');
+});
+check('bound-ip-mode-preserves-reassembly-overlap-gap-and-sequence-bounds',()=>{
+ for(const sequence of [100,0xfffffffc])assert.equal(inspectConfiguredIPDoHWire(capture(conversation({name:null,segment:true,sequence})),ipBinding).observation,'tls-observed');
+ const f=conversation({name:null});const duplicate=Buffer.from(f[2]);duplicate[duplicate.length-1]^=1;f.splice(3,0,duplicate);ipRefusal(capture(f),'tcp-overlap');
+ const g=conversation({name:null,segment:true});g.splice(3,1);ipRefusal(capture(g),'tcp-gap');
+});
+check('ip-stdin-report-requires-closed-binding-without-private-payload',()=>{
+ const r=decodeConfiguredIPBytes(capture(conversation({name:null})),ipBinding);assert.deepEqual(Object.keys(r),['schemaVersion','outcome','code','evidence','identityBinding']);assert.equal(r.outcome,'decoded');assert.deepEqual(r.identityBinding,ipBinding);assert(Object.isFrozen(r.identityBinding));assert.equal(r.evidence.productionQualificationComplete,false);
+ const bad=decodeConfiguredIPBytes(Buffer.from('PRIVATE'),{...ipBinding,private:'PRIVATE'});assert.deepEqual(bad,{schemaVersion:1,outcome:'refused',code:'identity-binding',evidence:null,identityBinding:null});assert(!JSON.stringify(bad).includes('PRIVATE'));
+ const refused=decodeConfiguredIPBytes(Buffer.from('PRIVATE'),ipBinding);assert.equal(refused.evidence,null);assert.equal(refused.outcome,'refused');assert.deepEqual(refused.identityBinding,ipBinding);assert(!JSON.stringify(refused).includes('PRIVATE'));
+});
+check('ip-stdin-host-guard-requires-exact-source-policy-and-no-interop',()=>{
+ const ctx={platform:'win32',version:'v26.8.2',arch:'x64',machine:'AMD64',env:{GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted',RUNNER_OS:'Windows',GITHUB_SHA:'a'.repeat(40),ACCESSWEAVER_EXPECT_GOOS:'windows',ACCESSWEAVER_EXPECT_GOARCH:'amd64'},argv:['node','fixed-script','--configured-ip-authority','a'.repeat(40),POLICY_SHA256,PREREQUISITE_SHA256]};assert(hostedGuard(ctx));assert(hostedGuard({...ctx,arch:'arm64',machine:'ARM64',env:{...ctx.env,ACCESSWEAVER_EXPECT_GOARCH:'arm64'}}));
+ for(const change of [{platform:'linux'},{version:'v26.8.1'},{machine:'ARM64'},{arch:'ia32'},{env:{...ctx.env,RUNNER_ENVIRONMENT:'self-hosted'}},{env:{...ctx.env,GITHUB_SHA:{toString:()=>ctx.env.GITHUB_SHA}}},{argv:ctx.argv.concat('extra')},{argv:ctx.argv.map((v,i)=>i===3?'b'.repeat(40):v)},{argv:ctx.argv.map((v,i)=>i===4?'b'.repeat(64):v)}])assert.equal(hostedGuard({...ctx,...change}),false);
+ for(const key of ['ACCESSWEAVER_HISTORY_INTEROP','ACCESSWEAVER_RECONCILIATION_INTEROP','ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP','ACCESSWEAVER_SUPPORT_INTEROP'])assert.equal(hostedGuard({...ctx,env:{...ctx.env,[key]:'0'}}),false);assert.equal(hostedGuard(null),false);
+});
+
 function runContracts(){
  const results=cases.map(([name,fn])=>{try{fn();return {name,passed:true};}catch{return {name,passed:false};}});
  return {schemaVersion:1,scope:'synthetic-doh-wire-decoder',cases:results,passed:results.every(r=>r.passed),nativeCapturePerformed:false,encryptedTrafficObserved:false,productionQualificationComplete:false};
