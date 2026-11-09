@@ -1,0 +1,973 @@
+{
+  "schemaVersion": 1,
+  "scope": "configured-ip-mode-initial-qualification-and-preflight-refusal",
+  "sourceCommit": "00860690db5cd7ed26c1bca1bda1e2696884930d",
+  "allSixCohortsTerminal": true,
+  "sealedDoNotRepoll": true,
+  "sourceRunID": 42554899196,
+  "sourceAllSixPassed": true,
+  "sourceSHA256": {
+    "scripts/dns-wire-ip-policy.cjs": "4ef726c45d7085c70300e632341bf0e454c847fee648cd43fce499938bf9b5c5",
+    "scripts/dns-wire-ip-stdin.cjs": "dd00f588ebc9d91bdca5aca5f675dea5a19b25d71d99406263c12b5d234c0331",
+    "scripts/native-doh-ip-binding.ps1": "def932a4a9d615a440c2b6592967ddfbfaab77628905a488606921df96a2f323",
+    "docs/qualification/3e2314a8de82-ip-authority-http2.json": "f283959a6b8267a5a576e2d0b1725728d9647276db8421242c3f3b54716c703c",
+    "scripts/dns-wire-evidence.cjs": "a97a74930831fca28146b1b043f26b9b26cca6eb5d0e56587bc4cbb2fa9eaf81",
+    "scripts/dns-wire-evidence.test.cjs": "282479a4c8c049e44d32a72909fd2b8bcec815d76d8277f54a6c6060dc9f868c",
+    "scripts/dns-wire-contract-report.cjs": "b1e891ee9082fda5f7e3e384f6cf5785c03b34853e718542ee4231f9b1899906",
+    ".github/workflows/dns-wire-contracts.yml": "3506a12d666751c6b0e3617cfeb6cc2f849e5bd65560c5767d86de9247d74f92",
+    "scripts/dns-wire-stdin.cjs": "b05d259e94b3f89555c645cc9205b922ae6418bf99bfa56581abdb72fa205fa0",
+    "scripts/native-dns-wire.ps1": "628ca31341babc247390d14dfcadea2d772d33a666570edbbd6c6b05ebee2850",
+    "scripts/test-dns-wire-native-contracts.ps1": "4af781a7e51c184efab8f826a6be41672df4135e9b452aafe836ae8e83095f6a",
+    ".github/workflows/native-doh-wire.yml": "31e206b2d002b5b4c6a39e390900b8a5b2e2afe43bfd8b3b8ba95738466dc2d1",
+    "scripts/test-native-doh.ps1": "aee099bc1628bd18b930bd24ab902eac0a925788035249739f514b6ee555c415",
+    "scripts/dns-acceptance-state.ps1": "8bb62601742700d74f1fa455c3008c37fe5a95588c79d80a808e9efbd6e8db7e",
+    "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
+    "scripts/test-native-capture-control.ps1": "445c90c82f0a83399f7cba8fd1f07e2645ec6ac12683fd5a24e099172759ae7f",
+    ".github/workflows/native-capture-control.yml": "8c9312ee9417e8c3a9f51469027a4c423db9dcab8cea43a1afa42afcd4367a37"
+  },
+  "sourceArtifacts": [
+    {
+      "artifactID": 13647196406,
+      "artifactName": "dns-wire-source-darwin-arm64",
+      "providerZIPDigest": "sha256:c0d74f0d88acabea010b2ba271c4d1fc1e467f3b353bc78c408e30b13ebd5a35",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13647007209,
+      "artifactName": "dns-wire-source-windows-arm64",
+      "providerZIPDigest": "sha256:d47863e63ba51360ada411adef60ea5fef18779d7e4eedc7312e09c2bfb3b5ee",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646768008,
+      "artifactName": "dns-wire-source-linux-amd64",
+      "providerZIPDigest": "sha256:0d02456023cd1e7f6c39992091aeab8f7ed35ace9e508f8d8907ff24016e3fed",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646728352,
+      "artifactName": "dns-wire-source-linux-arm64",
+      "providerZIPDigest": "sha256:424009e1a0978b58930a2b1dd59f998c9629a1d8f7efad6376a6f30ec3e1eb05",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646643960,
+      "artifactName": "dns-wire-source-darwin-amd64",
+      "providerZIPDigest": "sha256:fa8a655dd2472e9aa1873d785bd404b08bfaa31f301b06e8bf36e10879db1209",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646628804,
+      "artifactName": "dns-wire-source-windows-amd64",
+      "providerZIPDigest": "sha256:694bd5bca7a9e5197158f9265fb2ec37790f0b7021645c7c2f633a93fe410cbc",
+      "providerZIPDigestVerified": true
+    }
+  ],
+  "wireRunID": 42554898620,
+  "wireAllJobsTerminal": true,
+  "wireTerminalBasis": "all-two-source-bound-matrix-jobs-completed",
+  "wireLastProviderRunStatus": "in_progress",
+  "initialProductPreflightRefusedBeforeBuildCaptureOrProduct": true,
+  "initialProductNativeReportsAbsent": [
+    "native-doh-wire-windows-amd64",
+    "native-doh-wire-windows-arm64"
+  ],
+  "productSourceArtifacts": [
+    {
+      "artifactID": 13646532872,
+      "artifactName": "native-doh-netevent-source-windows-arm64",
+      "providerZIPDigest": "sha256:248b8e0b15e2077e63fcd00644c0e96fedd8fccf21eaf96e5b2e8b0bbfc05e7d",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "realDnsChanged": false,
+        "productionQualificationComplete": false,
+        "productInvoked": false,
+        "passed": false,
+        "realCaptureStarted": false,
+        "scope": "actual-product-netevent-lifecycle-source",
+        "sourceSHA256": {
+          "scripts/test-dns-acceptance-state.ps1": "49bf79bdadfeaba45e3821a0d06f9ef7d1398fecc10f0c02f45d149d7369b53a",
+          "scripts/test-ndis-private-phases.cjs": "dd3abade7487e9b662a9e860daa13964cafd317a6ca04582990352f8ba8655fb",
+          "scripts/native-doh-ip-binding.ps1": "def932a4a9d615a440c2b6592967ddfbfaab77628905a488606921df96a2f323",
+          ".github/workflows/native-doh-wire.yml": "31e206b2d002b5b4c6a39e390900b8a5b2e2afe43bfd8b3b8ba95738466dc2d1",
+          "scripts/test-native-doh.ps1": "aee099bc1628bd18b930bd24ab902eac0a925788035249739f514b6ee555c415",
+          "scripts/native-doh-phase-evidence.ps1": "9809b2d9c40a196d2c4099b580619c3358f2d1776f0bdb7f1746764649aaff07",
+          "scripts/dns-wire-ip-stdin.cjs": "dd00f588ebc9d91bdca5aca5f675dea5a19b25d71d99406263c12b5d234c0331",
+          "scripts/native-doh-netevent-wire.ps1": "b2b2633c7a9e0e9acccd112e45b62a861919d2dd2a95a24a6f0a09698ea01d8f",
+          "scripts/ndis-private-phases.cjs": "e0705277d0a97fcb617963414dce732a27501fef8191d8ca5b5105634564e1fd",
+          "scripts/test-native-doh-netevent-contracts.ps1": "77154d360fd6f3884c37e42eb502ee10fff2ed52b610d6f16e5e74b1ce6ce162",
+          "docs/qualification/3e2314a8de82-ip-authority-http2.json": "f283959a6b8267a5a576e2d0b1725728d9647276db8421242c3f3b54716c703c",
+          "scripts/dns-acceptance-state.ps1": "8bb62601742700d74f1fa455c3008c37fe5a95588c79d80a808e9efbd6e8db7e",
+          "scripts/read-native-ndis-phases.ps1": "162bf83350343c8652e4a27719de4e659c7440d4180a18a739d4be18d6eaa3ec",
+          "scripts/dns-wire-ip-policy.cjs": "4ef726c45d7085c70300e632341bf0e454c847fee648cd43fce499938bf9b5c5"
+        },
+        "schemaVersion": 1,
+        "cases": [
+          {
+            "name": "capture-ownership-before-all-offload-setters",
+            "passed": true
+          },
+          {
+            "name": "four-adapters-staged-and-restored-individually",
+            "passed": true
+          },
+          {
+            "name": "ipv6-only-mask-not-narrowed-to-google-ipv4",
+            "passed": true
+          },
+          {
+            "name": "foreign-inventory-refused-before-offload",
+            "passed": true
+          },
+          {
+            "name": "decoder-preflight-refused-before-native-effects",
+            "passed": true
+          },
+          {
+            "name": "foreign-name-policy-refused-before-native-effects",
+            "passed": true
+          },
+          {
+            "name": "partial-stage-failure-restores-all-prepared-adapters",
+            "passed": true
+          },
+          {
+            "name": "topology-refusal-prevents-capture-start",
+            "passed": true
+          },
+          {
+            "name": "ordinary-resolver-and-causal-block-order-preserved",
+            "passed": true
+          },
+          {
+            "name": "handled-decoder-refusal-still-runs-causal-control",
+            "passed": true
+          },
+          {
+            "name": "causal-query-contradiction-always-unblocks-owned-rule",
+            "passed": true
+          },
+          {
+            "name": "restore-failure-attempts-remaining-adapters-and-retains-session",
+            "passed": true
+          },
+          {
+            "name": "stop-refusal-still-attempts-all-offload-recovery",
+            "passed": true
+          },
+          {
+            "name": "full-dns-readback-required-before-session-retirement",
+            "passed": true
+          },
+          {
+            "name": "original-resolver-required-before-session-retirement",
+            "passed": true
+          },
+          {
+            "name": "all-four-provider-labels-reduce-without-payloads",
+            "passed": true
+          },
+          {
+            "name": "ipv6-only-tls-evidence-accepted-with-exact-mask",
+            "passed": true
+          },
+          {
+            "name": "private-or-unknown-tls-fields-and-labels-refused",
+            "passed": true
+          },
+          {
+            "name": "positive-tls-claims-require-bidirectional-records",
+            "passed": true
+          },
+          {
+            "name": "summary-excludes-private-root-plan-and-digest",
+            "passed": true
+          },
+          {
+            "name": "native-boundaries-use-attested-bounded-child-wrapper",
+            "passed": false
+          },
+          {
+            "name": "actual-cli-starts-only-after-new-capture-and-finally-cleans",
+            "passed": true
+          },
+          {
+            "name": "insufficient-plaintext-evidence-keeps-fixed-count-without-success",
+            "passed": true
+          },
+          {
+            "name": "insufficient-decoding-completes-causal-control-and-still-fails",
+            "passed": true
+          },
+          {
+            "name": "phase-read-projection-refuses-private-ticks-and-false-write-claim",
+            "passed": true
+          },
+          {
+            "name": "phase-count-projection-closes-protocol-and-direction-partitions",
+            "passed": true
+          },
+          {
+            "name": "phase-refusal-cannot-publish-partial-or-qualified-counts",
+            "passed": true
+          },
+          {
+            "name": "phase-incomplete-still-finishes-causal-check-and-fails",
+            "passed": true
+          },
+          {
+            "name": "phase-worker-reads-headers-only-and-never-publishes-vectors",
+            "passed": true
+          },
+          {
+            "name": "dns-phase-projection-closes-role-type-and-provider-partitions",
+            "passed": true
+          },
+          {
+            "name": "dns-phase-projection-refuses-private-names-or-coerced-counts",
+            "passed": true
+          },
+          {
+            "name": "udp-port-counts-close-over-all-udp-and-dns-roles",
+            "passed": true
+          },
+          {
+            "name": "udp-non-dns-ports-cannot-claim-classified-dns-questions",
+            "passed": true
+          },
+          {
+            "name": "sni-reasons-are-closed-refusals-without-positive-or-private-evidence",
+            "passed": true
+          },
+          {
+            "name": "sni-refusals-still-finish-causal-controls-and-fail-qualification",
+            "passed": true
+          },
+          {
+            "name": "ip-binding-pins-all-four-uris-flags-source-and-prerequisite",
+            "passed": true
+          },
+          {
+            "name": "ip-binding-refuses-old-hostnames-foreign-authorities-and-unsafe-flags",
+            "passed": true
+          },
+          {
+            "name": "ip-binding-refuses-coerced-private-missing-and-unverified-proof",
+            "passed": true
+          },
+          {
+            "name": "ip-decoder-projection-requires-exact-binding-and-closed-envelope",
+            "passed": true
+          },
+          {
+            "name": "ip-decoder-binding-never-upgrades-private-or-plaintext-evidence",
+            "passed": true
+          },
+          {
+            "name": "ip-wire-summary-cannot-pass-without-verified-current-binding",
+            "passed": true
+          },
+          {
+            "name": "ip-mode-admission-reads-independent-policy-after-full-capture",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "artifactID": 13646409957,
+      "artifactName": "native-doh-netevent-source-windows-amd64",
+      "providerZIPDigest": "sha256:68a2c09fbea2e665de45dff2ca1b66c3dfd23bec5935caa683339fd2575f1b47",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "realDnsChanged": false,
+        "productionQualificationComplete": false,
+        "productInvoked": false,
+        "passed": false,
+        "realCaptureStarted": false,
+        "scope": "actual-product-netevent-lifecycle-source",
+        "sourceSHA256": {
+          "scripts/test-dns-acceptance-state.ps1": "49bf79bdadfeaba45e3821a0d06f9ef7d1398fecc10f0c02f45d149d7369b53a",
+          "scripts/test-ndis-private-phases.cjs": "dd3abade7487e9b662a9e860daa13964cafd317a6ca04582990352f8ba8655fb",
+          "scripts/native-doh-ip-binding.ps1": "def932a4a9d615a440c2b6592967ddfbfaab77628905a488606921df96a2f323",
+          ".github/workflows/native-doh-wire.yml": "31e206b2d002b5b4c6a39e390900b8a5b2e2afe43bfd8b3b8ba95738466dc2d1",
+          "scripts/test-native-doh.ps1": "aee099bc1628bd18b930bd24ab902eac0a925788035249739f514b6ee555c415",
+          "scripts/native-doh-phase-evidence.ps1": "9809b2d9c40a196d2c4099b580619c3358f2d1776f0bdb7f1746764649aaff07",
+          "scripts/dns-wire-ip-stdin.cjs": "dd00f588ebc9d91bdca5aca5f675dea5a19b25d71d99406263c12b5d234c0331",
+          "scripts/native-doh-netevent-wire.ps1": "b2b2633c7a9e0e9acccd112e45b62a861919d2dd2a95a24a6f0a09698ea01d8f",
+          "scripts/ndis-private-phases.cjs": "e0705277d0a97fcb617963414dce732a27501fef8191d8ca5b5105634564e1fd",
+          "scripts/test-native-doh-netevent-contracts.ps1": "77154d360fd6f3884c37e42eb502ee10fff2ed52b610d6f16e5e74b1ce6ce162",
+          "docs/qualification/3e2314a8de82-ip-authority-http2.json": "f283959a6b8267a5a576e2d0b1725728d9647276db8421242c3f3b54716c703c",
+          "scripts/dns-acceptance-state.ps1": "8bb62601742700d74f1fa455c3008c37fe5a95588c79d80a808e9efbd6e8db7e",
+          "scripts/read-native-ndis-phases.ps1": "162bf83350343c8652e4a27719de4e659c7440d4180a18a739d4be18d6eaa3ec",
+          "scripts/dns-wire-ip-policy.cjs": "4ef726c45d7085c70300e632341bf0e454c847fee648cd43fce499938bf9b5c5"
+        },
+        "schemaVersion": 1,
+        "cases": [
+          {
+            "name": "capture-ownership-before-all-offload-setters",
+            "passed": true
+          },
+          {
+            "name": "four-adapters-staged-and-restored-individually",
+            "passed": true
+          },
+          {
+            "name": "ipv6-only-mask-not-narrowed-to-google-ipv4",
+            "passed": true
+          },
+          {
+            "name": "foreign-inventory-refused-before-offload",
+            "passed": true
+          },
+          {
+            "name": "decoder-preflight-refused-before-native-effects",
+            "passed": true
+          },
+          {
+            "name": "foreign-name-policy-refused-before-native-effects",
+            "passed": true
+          },
+          {
+            "name": "partial-stage-failure-restores-all-prepared-adapters",
+            "passed": true
+          },
+          {
+            "name": "topology-refusal-prevents-capture-start",
+            "passed": true
+          },
+          {
+            "name": "ordinary-resolver-and-causal-block-order-preserved",
+            "passed": true
+          },
+          {
+            "name": "handled-decoder-refusal-still-runs-causal-control",
+            "passed": true
+          },
+          {
+            "name": "causal-query-contradiction-always-unblocks-owned-rule",
+            "passed": true
+          },
+          {
+            "name": "restore-failure-attempts-remaining-adapters-and-retains-session",
+            "passed": true
+          },
+          {
+            "name": "stop-refusal-still-attempts-all-offload-recovery",
+            "passed": true
+          },
+          {
+            "name": "full-dns-readback-required-before-session-retirement",
+            "passed": true
+          },
+          {
+            "name": "original-resolver-required-before-session-retirement",
+            "passed": true
+          },
+          {
+            "name": "all-four-provider-labels-reduce-without-payloads",
+            "passed": true
+          },
+          {
+            "name": "ipv6-only-tls-evidence-accepted-with-exact-mask",
+            "passed": true
+          },
+          {
+            "name": "private-or-unknown-tls-fields-and-labels-refused",
+            "passed": true
+          },
+          {
+            "name": "positive-tls-claims-require-bidirectional-records",
+            "passed": true
+          },
+          {
+            "name": "summary-excludes-private-root-plan-and-digest",
+            "passed": true
+          },
+          {
+            "name": "native-boundaries-use-attested-bounded-child-wrapper",
+            "passed": false
+          },
+          {
+            "name": "actual-cli-starts-only-after-new-capture-and-finally-cleans",
+            "passed": true
+          },
+          {
+            "name": "insufficient-plaintext-evidence-keeps-fixed-count-without-success",
+            "passed": true
+          },
+          {
+            "name": "insufficient-decoding-completes-causal-control-and-still-fails",
+            "passed": true
+          },
+          {
+            "name": "phase-read-projection-refuses-private-ticks-and-false-write-claim",
+            "passed": true
+          },
+          {
+            "name": "phase-count-projection-closes-protocol-and-direction-partitions",
+            "passed": true
+          },
+          {
+            "name": "phase-refusal-cannot-publish-partial-or-qualified-counts",
+            "passed": true
+          },
+          {
+            "name": "phase-incomplete-still-finishes-causal-check-and-fails",
+            "passed": true
+          },
+          {
+            "name": "phase-worker-reads-headers-only-and-never-publishes-vectors",
+            "passed": true
+          },
+          {
+            "name": "dns-phase-projection-closes-role-type-and-provider-partitions",
+            "passed": true
+          },
+          {
+            "name": "dns-phase-projection-refuses-private-names-or-coerced-counts",
+            "passed": true
+          },
+          {
+            "name": "udp-port-counts-close-over-all-udp-and-dns-roles",
+            "passed": true
+          },
+          {
+            "name": "udp-non-dns-ports-cannot-claim-classified-dns-questions",
+            "passed": true
+          },
+          {
+            "name": "sni-reasons-are-closed-refusals-without-positive-or-private-evidence",
+            "passed": true
+          },
+          {
+            "name": "sni-refusals-still-finish-causal-controls-and-fail-qualification",
+            "passed": true
+          },
+          {
+            "name": "ip-binding-pins-all-four-uris-flags-source-and-prerequisite",
+            "passed": true
+          },
+          {
+            "name": "ip-binding-refuses-old-hostnames-foreign-authorities-and-unsafe-flags",
+            "passed": true
+          },
+          {
+            "name": "ip-binding-refuses-coerced-private-missing-and-unverified-proof",
+            "passed": true
+          },
+          {
+            "name": "ip-decoder-projection-requires-exact-binding-and-closed-envelope",
+            "passed": true
+          },
+          {
+            "name": "ip-decoder-binding-never-upgrades-private-or-plaintext-evidence",
+            "passed": true
+          },
+          {
+            "name": "ip-wire-summary-cannot-pass-without-verified-current-binding",
+            "passed": true
+          },
+          {
+            "name": "ip-mode-admission-reads-independent-policy-after-full-capture",
+            "passed": true
+          }
+        ]
+      }
+    }
+  ],
+  "allSevenNewBindingGroupsPassedBothHosts": true,
+  "independentNetEventRunID": 42554898582,
+  "independentNamedSNIControlsPassedBoth": true,
+  "independentNetEventArtifacts": [
+    {
+      "artifactID": 13647325914,
+      "artifactName": "netevent-source-windows-arm64",
+      "providerZIPDigest": "sha256:001ffbf29338373c5a35bc7c2c446c294ec823b452892a89d67b25c5155ccb05",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13647165761,
+      "artifactName": "netevent-source-windows-amd64",
+      "providerZIPDigest": "sha256:fb50c731398aa30d56f57e5d0474880632bd7e7272cd1c8c830434601c10a4c3",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646818027,
+      "artifactName": "netevent-control-windows-arm64",
+      "providerZIPDigest": "sha256:2d98ae525d71508aee02b2f8caa21cb2e98e8397bd233ca1f1f80210d6294601",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646089526,
+      "artifactName": "netevent-control-windows-amd64",
+      "providerZIPDigest": "sha256:09a9ea6d16736947ed6563707d0989ab454f2ec21811068d1820e32c07cb0b3c",
+      "providerZIPDigestVerified": true
+    }
+  ],
+  "legacyCaptureRunID": 42554898493,
+  "legacyCaptureControlsPassedBoth": false,
+  "legacyCaptureFailure": "frame-events-missing",
+  "legacyCaptureArtifacts": [
+    {
+      "artifactID": 13647365633,
+      "artifactName": "capture-positive-control-windows-arm64",
+      "providerZIPDigest": "sha256:9d9a15f05f34cff872ed9782d5964159bce7c543366e33ba95b320b70a8232de",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646638861,
+      "artifactName": "capture-positive-control-windows-amd64",
+      "providerZIPDigest": "sha256:4e70b874b72ffe09a97849bfa9edc40de395ef4696eb8657339010596badf1b5",
+      "providerZIPDigestVerified": true
+    }
+  ],
+  "ordinarySourceRunID": 42554899524,
+  "ordinarySourceChecks": {
+    "recovery": {
+      "reports": 8,
+      "allEightPassed": true,
+      "checksPerShell": 560
+    },
+    "acceptance": {
+      "reports": 8,
+      "allEightPassed": true,
+      "checksPerShell": 673
+    }
+  },
+  "ordinarySourceArtifacts": [
+    {
+      "artifactID": 13647310927,
+      "artifactName": "dns-source-contracts-linux-arm64",
+      "providerZIPDigest": "sha256:811160a85f2a095acb880c250ef8cac8884b41c773580ab1ef3a143d15999c35",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13647260460,
+      "artifactName": "dns-source-contracts-linux-amd64",
+      "providerZIPDigest": "sha256:8a8ad00e50d5050ea41e9a4c20bc47a17d54aa30d05b335bef3554b99bf2ec16",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13647071297,
+      "artifactName": "dns-source-contracts-darwin-amd64",
+      "providerZIPDigest": "sha256:0a118c08e9b692fb44c6b87e9bebe3d1064335484c60f5723d0e4f21efa14b98",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13647071281,
+      "artifactName": "dns-acceptance-source-contracts-windows-amd64",
+      "providerZIPDigest": "sha256:8dfd389955d8672148f0a0d397df4cf3bb50bd848585552eeb5eb16468aff87c",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646572845,
+      "artifactName": "dns-acceptance-source-contracts-linux-amd64",
+      "providerZIPDigest": "sha256:df13756610926895dd3cd154b9f5fbfaed4ba17c0b4f967c80285bd8238824ad",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646527874,
+      "artifactName": "dns-source-contracts-windows-arm64",
+      "providerZIPDigest": "sha256:5fa4e78f7f7346ba363c3f349a2d181425461a12b1de80e147d091f8a44c97c9",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646449752,
+      "artifactName": "dns-acceptance-source-contracts-linux-arm64",
+      "providerZIPDigest": "sha256:46b830a1c4eafe297de7af58aebe9acab217b426dcbdac76e3191da6cb08134e",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646254049,
+      "artifactName": "dns-acceptance-source-contracts-windows-arm64",
+      "providerZIPDigest": "sha256:7df93623ee1c7eb1676f3af5cd3f08a580c465c59c8062920cb6e967f2df911f",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646229036,
+      "artifactName": "dns-acceptance-source-contracts-darwin-arm64",
+      "providerZIPDigest": "sha256:f9b03e2ebab76d027fcfea71cdc017c8d98e72442b2859ab1cfe3197c7c16b09",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646164408,
+      "artifactName": "dns-source-contracts-windows-amd64",
+      "providerZIPDigest": "sha256:eb7163f51887a9c061e556f464cb85e166cf63f9191b245821bb5a5ae8003be4",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646149394,
+      "artifactName": "dns-acceptance-source-contracts-darwin-amd64",
+      "providerZIPDigest": "sha256:0d0041035c027873f691df253d804d185c95f9c8c755f04c862cfb555dd948ba",
+      "providerZIPDigestVerified": true
+    },
+    {
+      "artifactID": 13646074697,
+      "artifactName": "dns-source-contracts-darwin-arm64",
+      "providerZIPDigest": "sha256:5d49b9851f4f470ab34b62030ce4ea3f81bd26fe9b6e12563e7ed81ddcb4c955",
+      "providerZIPDigestVerified": true
+    }
+  ],
+  "ordinaryNativeRunID": 42554898568,
+  "ordinaryAllTenNativeScenariosPassed": true,
+  "ordinaryNativeArtifacts": [
+    {
+      "artifactID": 13647281093,
+      "artifactName": "native-dns-doh-static-ipv6-windows-amd64",
+      "providerZIPDigest": "sha256:40bfbcd0dad1ab28166abc4adaec6489f5bcee1420358d7fced80aa038d9c545",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "method": "doh",
+      "scenarioKind": "static-ipv6",
+      "outcome": "passed",
+      "scenario": {
+        "verificationCode": "none",
+        "failureInjected": false,
+        "operationCode": "none",
+        "configurationAccepted": true,
+        "restorationAccepted": true,
+        "baselineCaptured": true,
+        "restoredStateVerified": true,
+        "code": "none",
+        "restorationCode": "none",
+        "outcome": "passed",
+        "failedResolverVerified": false,
+        "resolverPassed": true,
+        "configurationAttempted": true,
+        "restoredResolverVerified": false,
+        "configuredStateVerified": true,
+        "restorationAttempted": true
+      },
+      "staticFixture": {
+        "stagingVerified": true,
+        "exercisePassed": true,
+        "cleanupAttempted": true,
+        "originalResolverPassed": true,
+        "operationCode": "none",
+        "code": "none",
+        "stagingAttempted": true,
+        "baselineResolverPassed": true,
+        "originalStateRestored": true,
+        "baselineCaptured": true,
+        "cleanupCode": "none",
+        "outcome": "passed",
+        "exerciseAttempted": true
+      },
+      "rollbackScenario": null,
+      "snapshotRemoved": true,
+      "cliCount": 2,
+      "processesJoined": 2
+    },
+    {
+      "artifactID": 13647265784,
+      "artifactName": "native-dns-doh-static-ipv6-windows-arm64",
+      "providerZIPDigest": "sha256:c73543a1dcf7f41f0bdf7a3fa89e5e32269f7245699e0a3164742f824583b6a5",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "method": "doh",
+      "scenarioKind": "static-ipv6",
+      "outcome": "passed",
+      "scenario": {
+        "verificationCode": "none",
+        "failureInjected": false,
+        "operationCode": "none",
+        "configurationAccepted": true,
+        "restorationAccepted": true,
+        "baselineCaptured": true,
+        "restoredStateVerified": true,
+        "code": "none",
+        "restorationCode": "none",
+        "outcome": "passed",
+        "failedResolverVerified": false,
+        "resolverPassed": true,
+        "configurationAttempted": true,
+        "restoredResolverVerified": false,
+        "configuredStateVerified": true,
+        "restorationAttempted": true
+      },
+      "staticFixture": {
+        "stagingVerified": true,
+        "exercisePassed": true,
+        "cleanupAttempted": true,
+        "originalResolverPassed": true,
+        "operationCode": "none",
+        "code": "none",
+        "stagingAttempted": true,
+        "baselineResolverPassed": true,
+        "originalStateRestored": true,
+        "baselineCaptured": true,
+        "cleanupCode": "none",
+        "outcome": "passed",
+        "exerciseAttempted": true
+      },
+      "rollbackScenario": null,
+      "snapshotRemoved": true,
+      "cliCount": 2,
+      "processesJoined": 2
+    },
+    {
+      "artifactID": 13647087155,
+      "artifactName": "native-dns-doh-roundtrip-windows-amd64",
+      "providerZIPDigest": "sha256:4086c6eed90be317a8b50c6b6e910b0c959dae3d06959258990f3afd149e1cbe",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "method": "doh",
+      "scenarioKind": "roundtrip",
+      "outcome": "passed",
+      "scenario": {
+        "verificationCode": "none",
+        "failureInjected": false,
+        "operationCode": "none",
+        "configurationAccepted": true,
+        "restorationAccepted": true,
+        "baselineCaptured": true,
+        "restoredStateVerified": true,
+        "code": "none",
+        "restorationCode": "none",
+        "outcome": "passed",
+        "failedResolverVerified": false,
+        "resolverPassed": true,
+        "configurationAttempted": true,
+        "restoredResolverVerified": false,
+        "configuredStateVerified": true,
+        "restorationAttempted": true
+      },
+      "staticFixture": null,
+      "rollbackScenario": null,
+      "snapshotRemoved": true,
+      "cliCount": 2,
+      "processesJoined": 2
+    },
+    {
+      "artifactID": 13646952918,
+      "artifactName": "native-dns-dnscrypt-roundtrip-windows-arm64",
+      "providerZIPDigest": "sha256:2092186d1af6e7bc0dca54d8fa02c19f1b5c8a21b0f6c6b05067f5cf7608b977",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "method": "dnscrypt",
+      "scenarioKind": "roundtrip",
+      "outcome": "passed",
+      "scenario": {
+        "verificationCode": "none",
+        "failureInjected": false,
+        "operationCode": "none",
+        "configurationAccepted": true,
+        "restorationAccepted": true,
+        "baselineCaptured": true,
+        "restoredStateVerified": true,
+        "code": "none",
+        "restorationCode": "none",
+        "outcome": "passed",
+        "failedResolverVerified": false,
+        "resolverPassed": true,
+        "configurationAttempted": true,
+        "restoredResolverVerified": false,
+        "configuredStateVerified": true,
+        "restorationAttempted": true
+      },
+      "staticFixture": null,
+      "rollbackScenario": null,
+      "snapshotRemoved": true,
+      "cliCount": 3,
+      "processesJoined": 3
+    },
+    {
+      "artifactID": 13646917949,
+      "artifactName": "native-dns-doh-roundtrip-windows-arm64",
+      "providerZIPDigest": "sha256:2ec9375cd87c32302ac4efcc0faee16ccc72b42f2e9ab086ebceaf79cbb4cf6b",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "method": "doh",
+      "scenarioKind": "roundtrip",
+      "outcome": "passed",
+      "scenario": {
+        "verificationCode": "none",
+        "failureInjected": false,
+        "operationCode": "none",
+        "configurationAccepted": true,
+        "restorationAccepted": true,
+        "baselineCaptured": true,
+        "restoredStateVerified": true,
+        "code": "none",
+        "restorationCode": "none",
+        "outcome": "passed",
+        "failedResolverVerified": false,
+        "resolverPassed": true,
+        "configurationAttempted": true,
+        "restoredResolverVerified": false,
+        "configuredStateVerified": true,
+        "restorationAttempted": true
+      },
+      "staticFixture": null,
+      "rollbackScenario": null,
+      "snapshotRemoved": true,
+      "cliCount": 2,
+      "processesJoined": 2
+    },
+    {
+      "artifactID": 13646788565,
+      "artifactName": "native-dns-dnscrypt-service-loss-windows-arm64",
+      "providerZIPDigest": "sha256:fa3da8c2bf3aefdfa8c12c7db9bb8073dfaabd5d29876a738628748a2d7a48c2",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "method": "dnscrypt",
+      "scenarioKind": "service-loss",
+      "outcome": "passed",
+      "scenario": {
+        "verificationCode": "none",
+        "failureInjected": true,
+        "operationCode": "none",
+        "configurationAccepted": true,
+        "restorationAccepted": true,
+        "baselineCaptured": true,
+        "restoredStateVerified": true,
+        "code": "none",
+        "restorationCode": "none",
+        "outcome": "passed",
+        "failedResolverVerified": true,
+        "resolverPassed": true,
+        "configurationAttempted": true,
+        "restoredResolverVerified": true,
+        "configuredStateVerified": true,
+        "restorationAttempted": true
+      },
+      "staticFixture": null,
+      "rollbackScenario": null,
+      "snapshotRemoved": true,
+      "cliCount": 3,
+      "processesJoined": 3
+    },
+    {
+      "artifactID": 13646773722,
+      "artifactName": "native-dns-dnscrypt-verification-failure-windows-arm64",
+      "providerZIPDigest": "sha256:fc1d416d97c8eb581c7d66313b0c4c899b0c377c22ab61e0c466a7385d5b5db9",
+      "providerZIPDigestVerified": true,
+      "architecture": "arm64",
+      "method": "dnscrypt",
+      "scenarioKind": "verification-failure",
+      "outcome": "passed",
+      "scenario": null,
+      "staticFixture": null,
+      "rollbackScenario": {
+        "configurationRejected": true,
+        "originalStateRestored": true,
+        "restoredResolverPassed": true,
+        "operationCode": "none",
+        "code": "none",
+        "forwardedFailureObserved": true,
+        "baselineResolverPassed": true,
+        "baselineCaptured": true,
+        "outcome": "passed",
+        "recoveryCode": "none",
+        "emergencyRestoreAttempted": false,
+        "configurationAttempted": true,
+        "configuredStateObserved": true
+      },
+      "snapshotRemoved": true,
+      "cliCount": 2,
+      "processesJoined": 2
+    },
+    {
+      "artifactID": 13646688794,
+      "artifactName": "native-dns-dnscrypt-service-loss-windows-amd64",
+      "providerZIPDigest": "sha256:673feadc068e52dba655a05118b0d6a83ae553caf30b59bdad9e5a44ba38bc43",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "method": "dnscrypt",
+      "scenarioKind": "service-loss",
+      "outcome": "passed",
+      "scenario": {
+        "verificationCode": "none",
+        "failureInjected": true,
+        "operationCode": "none",
+        "configurationAccepted": true,
+        "restorationAccepted": true,
+        "baselineCaptured": true,
+        "restoredStateVerified": true,
+        "code": "none",
+        "restorationCode": "none",
+        "outcome": "passed",
+        "failedResolverVerified": true,
+        "resolverPassed": true,
+        "configurationAttempted": true,
+        "restoredResolverVerified": true,
+        "configuredStateVerified": true,
+        "restorationAttempted": true
+      },
+      "staticFixture": null,
+      "rollbackScenario": null,
+      "snapshotRemoved": true,
+      "cliCount": 3,
+      "processesJoined": 3
+    },
+    {
+      "artifactID": 13646549315,
+      "artifactName": "native-dns-dnscrypt-verification-failure-windows-amd64",
+      "providerZIPDigest": "sha256:f9353c2b0b3f87bf3754ab88b307daa57c92990d80e69d6fd50e6d7da732d8c6",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "method": "dnscrypt",
+      "scenarioKind": "verification-failure",
+      "outcome": "passed",
+      "scenario": null,
+      "staticFixture": null,
+      "rollbackScenario": {
+        "configurationRejected": true,
+        "originalStateRestored": true,
+        "restoredResolverPassed": true,
+        "operationCode": "none",
+        "code": "none",
+        "forwardedFailureObserved": true,
+        "baselineResolverPassed": true,
+        "baselineCaptured": true,
+        "outcome": "passed",
+        "recoveryCode": "none",
+        "emergencyRestoreAttempted": false,
+        "configurationAttempted": true,
+        "configuredStateObserved": true
+      },
+      "snapshotRemoved": true,
+      "cliCount": 2,
+      "processesJoined": 2
+    },
+    {
+      "artifactID": 13646034924,
+      "artifactName": "native-dns-dnscrypt-roundtrip-windows-amd64",
+      "providerZIPDigest": "sha256:8a2cb8ff4f37ca3bc13a6cfabbb414b248530407fca51642601a641ac98b3571",
+      "providerZIPDigestVerified": true,
+      "architecture": "amd64",
+      "method": "dnscrypt",
+      "scenarioKind": "roundtrip",
+      "outcome": "passed",
+      "scenario": {
+        "verificationCode": "none",
+        "failureInjected": false,
+        "operationCode": "none",
+        "configurationAccepted": true,
+        "restorationAccepted": true,
+        "baselineCaptured": true,
+        "restoredStateVerified": true,
+        "code": "none",
+        "restorationCode": "none",
+        "outcome": "passed",
+        "failedResolverVerified": false,
+        "resolverPassed": true,
+        "configurationAttempted": true,
+        "restoredResolverVerified": false,
+        "configuredStateVerified": true,
+        "restorationAttempted": true
+      },
+      "staticFixture": null,
+      "rollbackScenario": null,
+      "snapshotRemoved": true,
+      "cliCount": 3,
+      "processesJoined": 3
+    }
+  ],
+  "sourceCorrectionRequired": true,
+  "rawLogsRead": false,
+  "rawCapturePublished": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0
+}
