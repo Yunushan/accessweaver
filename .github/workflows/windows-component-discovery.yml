@@ -1,0 +1,69 @@
+name: Windows component discovery contracts
+
+on:
+  push:
+    branches: ['main', 'codex/dns-adapter-coverage']
+    paths:
+      - 'internal/workflow/windows.ps1'
+      - 'scripts/test-windows-workflow.ps1'
+      - '.github/workflows/windows-component-discovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    name: Component discovery source (windows/${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, os: windows-latest, nodearch: x64}
+          - {arch: arm64, os: windows-11-arm, nodearch: arm64}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: '26.8.2'
+          architecture: ${{ matrix.nodearch }}
+          package-manager-cache: false
+      - name: Run bounded inert component contracts
+        shell: pwsh
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows'){throw 'Hosted Windows fixture required'}
+          $actualArch=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+          if(($env:EXPECTED_ARCH -ceq 'amd64' -and $actualArch -cne 'x64') -or ($env:EXPECTED_ARCH -ceq 'arm64' -and $actualArch -cne 'arm64')){throw 'Native architecture mismatch'}
+          if((node --version) -cne 'v26.8.2'){throw 'Node identity mismatch'}
+          $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          $evidence=Join-Path $env:RUNNER_TEMP ('accessweaver-component-source-'+[Guid]::NewGuid().ToString('N'))
+          [void](New-Item -ItemType Directory -Path $evidence -ErrorAction Stop)
+          "ACCESSWEAVER_COMPONENT_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          $expected=@('PASS zapret selects only its expected executable in the preferred folder','PASS zapret refuses a preferred folder containing only the other executable','PASS zapret2 selects only its expected executable in the preferred folder','PASS zapret2 refuses a preferred folder containing only the other executable')
+          $suite=$false;$seen=@();$status='failed'
+          try {
+            $lines=@(& $stock -NoProfile -NonInteractive -File ./scripts/test-windows-workflow.ps1 2>$null)
+            $suite=($LASTEXITCODE -eq 0)
+            foreach($name in $expected){$seen+=@{name=$name.Substring(5);passed=(@($lines | Where-Object {$_ -ceq $name}).Count -eq 1)}}
+            if($suite -and @($seen | Where-Object {-not $_.passed}).Count -eq 0){$status='passed'}
+          } finally {
+            $sources=@{};foreach($file in @('internal/workflow/windows.ps1','scripts/test-windows-workflow.ps1','.github/workflows/windows-component-discovery.yml')){$sources[$file]=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()}
+            $report=@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;architecture=$env:EXPECTED_ARCH;outcome=$status;suitePassed=$suite;cases=@($seen);sourceSHA256=$sources;realVendorExecuted=$false;productionQualificationComplete=$false}
+            [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
+          }
+          if($status -cne 'passed'){throw 'Component source contracts failed; fixed report retained'}
+      - name: Retain fixed component source report
+        if: always() && env.ACCESSWEAVER_COMPONENT_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-component-source-${{ matrix.arch }}
+          path: ${{ env.ACCESSWEAVER_COMPONENT_EVIDENCE }}/status.json
+          if-no-files-found: error
+          retention-days: 7

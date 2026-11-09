@@ -118,7 +118,7 @@ function Write-InertPE([string]$path,[uint16]$machine) {
     [IO.File]::WriteAllBytes($path,$bytes)
 }
 try {
-    $assetNames=@{proxifyre='ProxiFyre.exe';wgcf='wgcf.exe';dnscrypt='dnscrypt-proxy.exe'}
+    $assetNames=@{proxifyre='ProxiFyre.exe';wgcf='wgcf.exe';dnscrypt='dnscrypt-proxy.exe';zapret='winws.exe';zapret2='winws2.exe'}
     $script:componentCalls=[Collections.Generic.List[object]]::new();$script:componentTamperStaging=$false
     function Read-RemoteJSON {param($Headers,$Uri);$script:componentCalls.Add(@{kind='release';url=$Uri});return @{assets=$script:componentAssets}}
     function Protect-Dir {param($path);[void](New-Item -ItemType Directory -Force -Path $path)}
@@ -179,6 +179,23 @@ try {
         try {Ensure-Asset $engine|Out-Null}catch{$rejected=$_.Exception.Message -like 'Native Windows architecture is unavailable*'}
         Assert ($rejected -and $null -eq (Find-Source $engine) -and $script:componentCalls.Count -eq 0) ($engine+' unknown host identity refuses native component retrieval and readiness')
     }
+    # Inert names only: discovery must never return another engine's file and
+    # staging must not rename it into the requested executable.
+    $previousProgramFiles=$env:ProgramFiles
+    try {
+        $env:ProgramFiles=Join-Path $componentBase 'empty-program-files';[void](New-Item -ItemType Directory -Force -Path $env:ProgramFiles)
+        foreach($fixture in @(@('zapret','zapret-winws','winws.exe','winws2.exe'),@('zapret2','zapret-winws2','winws2.exe','winws.exe'))){
+            $engine=$fixture[0];$bundle=Join-Path $componentBase ('preferred-'+$engine);$folder=Join-Path $bundle $fixture[1]
+            [void](New-Item -ItemType Directory -Force -Path $folder)
+            $expected=Join-Path $folder $fixture[2];[IO.File]::WriteAllText($expected,'correct inert file');[IO.File]::WriteAllText((Join-Path $folder $fixture[3]),'wrong inert file')
+            $root=Join-Path $componentBase ('isolated-'+$engine);$r=[pscustomobject]@{bundlePath=$bundle}
+            Assert ((Find-Source $engine) -ceq $expected) ($engine+' selects only its expected executable in the preferred folder')
+            $wrongBundle=Join-Path $componentBase ('wrong-only-'+$engine);$wrongFolder=Join-Path $wrongBundle $fixture[1]
+            [void](New-Item -ItemType Directory -Force -Path $wrongFolder);[IO.File]::WriteAllText((Join-Path $wrongFolder $fixture[3]),'wrong inert file')
+            $r=[pscustomobject]@{bundlePath=$wrongBundle}
+            Assert ($null -eq (Find-Source $engine)) ($engine+' refuses a preferred folder containing only the other executable')
+        }
+    } finally {$env:ProgramFiles=$previousProgramFiles}
 } finally {
     foreach($name in $componentFunctions.Keys){Set-Item ('Function:'+$name) $componentFunctions[$name]}
     Remove-Item Function:Write-InertPE

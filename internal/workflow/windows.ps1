@@ -800,7 +800,7 @@ function Find-Source([string]$engine) {
         if($engine -in @('zapret','zapret2')){
             $folder=if($engine -eq 'zapret2'){'zapret-winws2'}else{'zapret-winws'}
             $preferred=Get-ChildItem -LiteralPath $base -Directory -Recurse -Filter $folder | Select-Object -First 1
-            if($preferred -and (Test-Path -LiteralPath (Join-Path $preferred.FullName 'winws.exe'))){return (Join-Path $preferred.FullName 'winws.exe')}
+            if($preferred -and (Test-Path -LiteralPath (Join-Path $preferred.FullName $name))){return (Join-Path $preferred.FullName $name)}
         }
         $match=Get-ChildItem -LiteralPath $base -Recurse -Filter $name -File | Where-Object {$_.FullName -notmatch '\\x86\\|\\32\\|\\arm64\\|\\win7\\'} | Select-Object -First 1
         if($match){return $match.FullName}
