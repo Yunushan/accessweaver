@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "scope": "scan-executable-binding-regression",
+  "sourceCommit": "7bb92a17fc6c42397dca103b6505be6608f357ce",
+  "runID": 42599934424,
+  "allScanTestsPassed": true,
+  "records": [
+    {
+      "artifact": "root-regression-windows-arm64",
+      "digest": "sha256:4cf65b3fd6f2f4b621f6186385c42fef929fc41168f57cd346b9bfecffa58af5",
+      "digestVerified": true,
+      "mode": "unit",
+      "outcome": "passed",
+      "tests": [
+        {
+          "name": "TestScanRejectsStrategiesFromAnotherEngine",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        },
+        {
+          "name": "TestScanSkipsMismatchedExecutableBeforeValidCommonStrategy",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        }
+      ]
+    },
+    {
+      "artifact": "root-regression-windows-amd64",
+      "digest": "sha256:1aa51b9bb40c46140ec30cab6981fac8f419aa596b19b75da8f79945dab654fe",
+      "digestVerified": true,
+      "mode": "unit",
+      "outcome": "failed",
+      "tests": [
+        {
+          "name": "TestScanRejectsStrategiesFromAnotherEngine",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        },
+        {
+          "name": "TestScanSkipsMismatchedExecutableBeforeValidCommonStrategy",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        }
+      ]
+    },
+    {
+      "artifact": "root-regression-linux-amd64",
+      "digest": "sha256:0a6e7afc81aaedde796c1a51cadc31db9b3eecf1c3985cf7a68cd6b35276e1eb",
+      "digestVerified": true,
+      "mode": "unit",
+      "outcome": "passed",
+      "tests": [
+        {
+          "name": "TestScanRejectsStrategiesFromAnotherEngine",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        },
+        {
+          "name": "TestScanSkipsMismatchedExecutableBeforeValidCommonStrategy",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        }
+      ]
+    },
+    {
+      "artifact": "root-regression-linux-amd64",
+      "digest": "sha256:0a6e7afc81aaedde796c1a51cadc31db9b3eecf1c3985cf7a68cd6b35276e1eb",
+      "digestVerified": true,
+      "mode": "race",
+      "outcome": "passed",
+      "tests": [
+        {
+          "name": "TestScanRejectsStrategiesFromAnotherEngine",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        },
+        {
+          "name": "TestScanSkipsMismatchedExecutableBeforeValidCommonStrategy",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        }
+      ]
+    },
+    {
+      "artifact": "root-regression-linux-arm64",
+      "digest": "sha256:229237b3b678534b6964a9387203a11f2a9ffb6e567783e152c9bfe5cbac239e",
+      "digestVerified": true,
+      "mode": "unit",
+      "outcome": "passed",
+      "tests": [
+        {
+          "name": "TestScanRejectsStrategiesFromAnotherEngine",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        },
+        {
+          "name": "TestScanSkipsMismatchedExecutableBeforeValidCommonStrategy",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        }
+      ]
+    },
+    {
+      "artifact": "root-regression-linux-arm64",
+      "digest": "sha256:229237b3b678534b6964a9387203a11f2a9ffb6e567783e152c9bfe5cbac239e",
+      "digestVerified": true,
+      "mode": "race",
+      "outcome": "passed",
+      "tests": [
+        {
+          "name": "TestScanRejectsStrategiesFromAnotherEngine",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        },
+        {
+          "name": "TestScanSkipsMismatchedExecutableBeforeValidCommonStrategy",
+          "status": "passed",
+          "attempts": 1,
+          "childFailed": 0
+        }
+      ]
+    }
+  ],
+  "otherFailedFixedTest": "TestNativeWindowsTerminationKillsOwnedTree",
+  "otherFailureArchitecture": "windows/amd64",
+  "nativeRealScanPerformed": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0,
+  "rawLogsRead": false
+}
