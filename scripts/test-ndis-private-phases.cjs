@@ -1,5 +1,5 @@
 "use strict";
-const assert=require('node:assert/strict');const {joinFramePhases,NUMBERS}=require('./ndis-private-phases.cjs');
+const assert=require('node:assert/strict');const {joinFramePhases,NUMBERS,DNS_KEYS}=require('./ndis-private-phases.cjs');
 const digest='a'.repeat(64),provider='2ed6006e-4729-4609-b423-3ee7bcd678ef';
 function frame(sent=true,tcp=false){const n=tcp?20:8,b=Buffer.alloc(14+20+n);b.writeUInt16BE(0x0800,12);b[14]=0x45;b.writeUInt16BE(20+n,16);b[22]=64;b[23]=tcp?6:17;b.set([10,0,0,2],26);b.set([8,8,8,8],30);b.writeUInt16BE(40000,34);b.writeUInt16BE(tcp?443:53,36);if(tcp){b[46]=0x50;b[47]=2;}else b.writeUInt16BE(8,38);return {provider,id:1001,version:0,keywords:sent?0x1c0000000n:0x2c0000000n,fragmentSize:b.length,fragment:b};}
 function doc(phases,records=phases.length){return {schemaVersion:1,records,sourceFramesSHA256:digest,phases};}
@@ -15,5 +15,21 @@ test('phase-private-or-unknown-document-field-refused',()=>assert.throws(()=>joi
 test('phase-incomplete-or-excessive-header-count-refused',()=>{for(const count of [0,4097,1.5])assert.throws(()=>joinFramePhases([frame()],doc([0],count),digest),/phase-document/);});
 test('phase-empty-and-excessive-record-sets-refused',()=>{for(const frames of [[],Array(4097).fill(frame())])assert.throws(()=>joinFramePhases(frames,doc([0]),digest),/phase-count/);});
 test('phase-incomplete-frame-not-repaired-or-dropped',()=>{const f=frame();f.fragment=f.fragment.subarray(0,20);assert.throws(()=>joinFramePhases([f],doc([0]),digest));});
-test('phase-public-projection-excludes-private-source-and-vectors',()=>{const r=joinFramePhases([frame()],doc([0]),digest);assert.equal(Object.keys(r).length,NUMBERS.length+6);assert.equal(r.productionQualificationComplete,false);const text=JSON.stringify(r);for(const forbidden of ['sourceFramesSHA256','phases','ticks',digest,'fragment','provider'])assert(!text.includes(forbidden));assert(Object.isFrozen(r));});
-assert.equal(passed,12);
+test('phase-public-projection-excludes-private-source-and-vectors',()=>{const r=joinFramePhases([frame()],doc([0]),digest);assert.equal(Object.keys(r).length,NUMBERS.length+9);assert.equal(r.productionQualificationComplete,false);const text=JSON.stringify(r);for(const forbidden of ['sourceFramesSHA256','phases','ticks',digest,'fragment','"provider":'])assert(!text.includes(forbidden));assert(Object.isFrozen(r));});
+function dnsFrame(name,type=1,response=false,v6=false,quad=false){
+ const parts=name.split('.'),question=Buffer.concat(parts.flatMap(label=>[Buffer.from([label.length]),Buffer.from(label)]).concat([Buffer.from([0])])),data=Buffer.alloc(12+question.length+4);data.writeUInt16BE(response?0x8180:0x0100,2);data.writeUInt16BE(1,4);question.copy(data,12);data.writeUInt16BE(type,12+question.length);data.writeUInt16BE(1,14+question.length);
+ const n=v6?40:20,b=Buffer.alloc(14+n+8+data.length);b.writeUInt16BE(v6?0x86dd:0x0800,12);
+ if(v6){b[14]=0x60;b.writeUInt16BE(8+data.length,18);b[20]=17;b[21]=64;const client=Buffer.from('fd000000000000000000000000000002','hex'),server=Buffer.from(quad?'262000fe0000000000000000000000fe':'20014860000000000000000000008888','hex');(response?server:client).copy(b,22);(response?client:server).copy(b,38);}
+ else{b[14]=0x45;b.writeUInt16BE(n+8+data.length,16);b[22]=64;b[23]=17;const client=Buffer.from([10,0,0,2]),server=Buffer.from(quad?[9,9,9,9]:[8,8,8,8]);(response?server:client).copy(b,26);(response?client:server).copy(b,30);}
+ const t=14+n;b.writeUInt16BE(response?53:40000,t);b.writeUInt16BE(response?40000:53,t+2);b.writeUInt16BE(8+data.length,t+4);data.copy(b,t+8);return {...frame(!response),fragmentSize:b.length,fragment:b};
+}
+function dnsResult(record){return joinFramePhases([record],doc([0]),digest).dnsBefore;}
+test('dns-product-probe-request-and-response-classified',()=>{for(const response of [false,true]){const r=dnsResult(dnsFrame('Example.COM',1,response));assert.equal(r.productProbe,1);assert.equal(r[response?'responses':'queries'],1);assert.equal(r.a,1);assert.equal(r.googleV4,1);assert.equal(r.unclassified,0);}});
+test('dns-positive-and-negative-fixture-roles-closed',()=>{assert.equal(dnsResult(dnsFrame('example.net')).positiveProbe,1);assert.equal(dnsResult(dnsFrame('example.org')).negativeProbe,1);});
+test('dns-provider-bootstrap-roles-are-source-known-only',()=>{for(const name of ['dns.google','dns.quad9.net'])assert.equal(dnsResult(dnsFrame(name)).providerBootstrap,1);});
+test('dns-unknown-name-is-counted-without-publication',()=>{const r=dnsResult(dnsFrame('private.synthetic.test'));assert.equal(r.otherName,1);assert(!JSON.stringify(r).includes('private.synthetic'));assert.deepEqual(Object.keys(r),DNS_KEYS);});
+test('dns-aaaa-and-other-question-types-counted',()=>{assert.equal(dnsResult(dnsFrame('example.com',28)).aaaa,1);assert.equal(dnsResult(dnsFrame('example.com',65)).otherType,1);});
+test('dns-malformed-question-and-pointer-cycle-unclassified',()=>{const zero=dnsFrame('example.com');zero.fragment.writeUInt16BE(0,46);assert.equal(dnsResult(zero).unclassified,1);const loop=dnsFrame('example.com');loop.fragment[54]=0xc0;loop.fragment[55]=12;assert.equal(dnsResult(loop).unclassified,1);assert.equal(dnsResult(frame()).unclassified,1);const dot=dnsFrame('example.com');dot.fragment[54]=11;dot.fragment[62]=46;assert.equal(dnsResult(dot).unclassified,1);});
+test('dns-all-fixed-provider-slots-include-ipv6',()=>{assert.equal(dnsResult(dnsFrame('example.com',1,false,false,true)).quad9V4,1);assert.equal(dnsResult(dnsFrame('example.com',1,false,true,false)).googleV6,1);assert.equal(dnsResult(dnsFrame('example.com',1,true,true,true)).quad9V6,1);});
+test('dns-phase-partitions-preserve-all-udp-frames',()=>{const r=joinFramePhases([dnsFrame('example.com'),dnsFrame('example.net'),dnsFrame('dns.google')],doc([0,1,2]),digest);assert.equal(r.dnsBefore.productProbe,1);assert.equal(r.dnsAt.positiveProbe,1);assert.equal(r.dnsAfter.providerBootstrap,1);for(const bucket of ['Before','At','After']){const d=r['dns'+bucket];assert.equal(d.queries+d.responses+d.unclassified,r['udp'+bucket]);assert(Object.isFrozen(d));}});
+assert.equal(passed,20);
