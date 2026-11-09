@@ -202,6 +202,49 @@ try {
     $inputData=$previousComponentInput;$r=$previousComponentRequest;$root=$previousComponentRoot;$assetNames=$previousAssetNames
 }
 
+# Isolated scan boundaries: inert files and closed mocks only. A plausible
+# partial summary must never be saved or reach installation as a success.
+$previousScanInput=$inputData;$previousScanRequest=$r;$previousScanRoot=$root
+$scanFunctions=@{};foreach($name in @('Ensure-Asset','Native','Write-Atomic','Install-Method')){$scanFunctions[$name]=(Get-Command $name).ScriptBlock}
+try {
+    $root=Join-Path $testRoot 'scan-completion';$scanBundle=Join-Path $root 'bundle'
+    [void](New-Item -ItemType Directory -Force -Path $scanBundle)
+    [IO.File]::WriteAllText((Join-Path $scanBundle 'blockcheck2.sh'),'inert')
+    [IO.File]::WriteAllText((Join-Path $scanBundle 'bash.exe'),'inert')
+    $script:scanBinary=Join-Path $scanBundle 'winws2.exe';[IO.File]::WriteAllText($script:scanBinary,'inert')
+    $inputData=[pscustomobject]@{ispHook=$null;controller='fixture-controller'}
+    function Ensure-Asset {param($engine);if($engine -cne 'zapret2'){throw 'Unexpected fixture engine'};return $script:scanBinary}
+    function Write-Atomic {param($path,$text);$script:scanWrites++}
+    function Install-Method {$script:scanInstalls++;return @{fixture=$true}}
+    function Native {
+        param($program,$arguments,$codes,[switch]$Secret,[int]$Timeout)
+        if($program -ceq 'fixture-controller'){
+            if($script:scanMode -ceq 'parser-missing'){return @{stdout='{"protocol":"https","args":["--lua-desync=fixture"]}'}}
+            return @{stdout='{"protocol":"https","args":["--lua-desync=fixture"]}';outputComplete=($script:scanMode -cne 'parser-incomplete')}
+        }
+        if([IO.Path]::GetFileName($program) -cne 'bash.exe'){throw 'Unexpected fixture process'}
+        if($script:scanMode -ceq 'scan-missing'){return @{stdout='* SUMMARY fixture'}}
+        return @{stdout='* SUMMARY fixture';outputComplete=($script:scanMode -cne 'scan-incomplete')}
+    }
+    foreach($mode in @('scan-incomplete','scan-missing','parser-incomplete','parser-missing','complete')){
+        $script:scanMode=$mode;$script:scanWrites=0;$script:scanInstalls=0
+        $r=[pscustomobject]@{engine='zapret2';bundlePath=$scanBundle;scan='quick';targets=@('example.com');dns='unchanged'}
+        $oldPath=$env:PATH;$rejected=$false
+        try {[void](Auto-Install)}catch{$rejected=$true}
+        if($mode -eq 'complete'){
+            Assert (-not $rejected -and $script:scanWrites -eq 1 -and $script:scanInstalls -eq 1) 'Complete scan and selection reach only the mocked installer'
+        }elseif($mode -like 'scan-*'){
+            Assert ($rejected -and $script:scanWrites -eq 0 -and $script:scanInstalls -eq 0) ('Scan rejects '+$mode+' before saving or installation')
+        }else{
+            Assert ($rejected -and $script:scanWrites -eq 1 -and $script:scanInstalls -eq 0) ('Scan rejects '+$mode+' before installation')
+        }
+        Assert ($env:PATH -ceq $oldPath) 'Scan restores the process PATH after success or refusal'
+    }
+} finally {
+    foreach($name in $scanFunctions.Keys){Set-Item ('Function:'+$name) $scanFunctions[$name]}
+    $inputData=$previousScanInput;$r=$previousScanRequest;$root=$previousScanRoot
+}
+
 # Failed real-vendor probes may export only bounded, sanitized error details.
 $vendorTokens=$null;$vendorIssues=$null
 $vendorAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'test-windows-vendor-preflight.ps1'),[ref]$vendorTokens,[ref]$vendorIssues)

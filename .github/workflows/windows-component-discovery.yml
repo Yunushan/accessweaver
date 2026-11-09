@@ -46,7 +46,7 @@ jobs:
           $evidence=Join-Path $env:RUNNER_TEMP ('accessweaver-component-source-'+[Guid]::NewGuid().ToString('N'))
           [void](New-Item -ItemType Directory -Path $evidence -ErrorAction Stop)
           "ACCESSWEAVER_COMPONENT_EVIDENCE=$evidence" >> $env:GITHUB_ENV
-          $expected=@('PASS zapret selects only its expected executable in the preferred folder','PASS zapret refuses a preferred folder containing only the other executable','PASS zapret2 selects only its expected executable in the preferred folder','PASS zapret2 refuses a preferred folder containing only the other executable')
+          $expected=@('PASS zapret selects only its expected executable in the preferred folder','PASS zapret refuses a preferred folder containing only the other executable','PASS zapret2 selects only its expected executable in the preferred folder','PASS zapret2 refuses a preferred folder containing only the other executable','PASS Scan rejects scan-incomplete before saving or installation','PASS Scan rejects scan-missing before saving or installation','PASS Scan rejects parser-incomplete before installation','PASS Scan rejects parser-missing before installation','PASS Complete scan and selection reach only the mocked installer')
           $milestoneNames=@{
             vendor='PASS Vendor failure detail excludes ordinary non-error output'
             service='PASS Native service and driver enumeration succeeds with an explicit array result'
