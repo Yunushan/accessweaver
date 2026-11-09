@@ -178,6 +178,7 @@ Case-P 'wire-query-helper-preserves-answer-bound' {
 }
 Case-P 'wire-query-helper-preserves-capture-and-source-boundaries' {
     $driver=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-native-doh.ps1'));$wire=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'native-doh-netevent-wire.ps1'))
+    Assert-P ($driver.Contains('if($bytes.Length -gt 24576)'))
     Assert-P ($driver.Contains('QueryBinarySHA256') -and $driver.Contains('Invoke-NativeFreshDNSQuery $capture -Probe') -and $driver.Contains("Invoke-NativeFreshDNSQuery $"+"script:wire 'example.com'") -and $driver.Contains('querySourceHashes=$hashes.Clone()'))
     $answerStart=$driver.IndexOf('function Get-NativeDNSAnswerCount');$guarded=$driver.IndexOf('if($WireTransport)', $answerStart);$return=$driver.IndexOf('return $answer.answerCount', $guarded);$legacyFlush=$driver.IndexOf('Clear-DnsClientCache', $answerStart)
     Assert-P ($answerStart -ge 0 -and $guarded -gt $answerStart -and $return -gt $guarded -and $legacyFlush -gt $return)
