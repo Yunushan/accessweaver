@@ -78,11 +78,19 @@ func ReadServers(input io.Reader) ([]netip.Addr, error) {
 	return out, nil
 }
 
-type SetResult struct {
+type SetCounts struct {
 	Total         int `json:"total"`
 	Answered      int `json:"answered"`
 	Rejected      int `json:"rejected"`
 	OtherFailures int `json:"otherFailures"`
+}
+type SetResult struct {
+	Total         int       `json:"total"`
+	Answered      int       `json:"answered"`
+	Rejected      int       `json:"rejected"`
+	OtherFailures int       `json:"otherFailures"`
+	IPv4          SetCounts `json:"ipv4"`
+	IPv6          SetCounts `json:"ipv6"`
 }
 
 // QuerySet sends independent queries concurrently and publishes only counts.
@@ -103,13 +111,21 @@ func querySet(ctx context.Context, servers []netip.Addr, run func(context.Contex
 	}
 	done.Wait()
 	summary := SetResult{Total: len(results)}
-	for _, result := range results {
+	for i, result := range results {
+		family := &summary.IPv6
+		if servers[i].Unmap().Is4() {
+			family = &summary.IPv4
+		}
+		family.Total++
 		if result.Outcome == "answered" && result.Code == "none" && result.AnswerCount > 0 && result.AnswerCount <= 64 {
 			summary.Answered++
+			family.Answered++
 		} else if result.Outcome == "refused" && result.AnswerCount == 0 && (result.Code == "timeout" || result.Code == "query-failed") {
 			summary.Rejected++
+			family.Rejected++
 		} else {
 			summary.OtherFailures++
+			family.OtherFailures++
 		}
 	}
 	return summary

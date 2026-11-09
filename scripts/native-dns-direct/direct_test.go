@@ -138,7 +138,7 @@ func TestReadServersAndAggregate(t *testing.T) {
 			return Result{Outcome: "refused", Code: "answer-shape"}
 		}
 	})
-	if result.Total != 3 || result.Answered != 1 || result.Rejected != 1 || result.OtherFailures != 1 {
+	if result.Total != 3 || result.Answered != 1 || result.Rejected != 1 || result.OtherFailures != 1 || result.IPv4 != (SetCounts{Total: 1, Answered: 1}) || result.IPv6 != (SetCounts{Total: 2, Rejected: 1, OtherFailures: 1}) {
 		t.Fatal("invalid aggregate")
 	}
 }

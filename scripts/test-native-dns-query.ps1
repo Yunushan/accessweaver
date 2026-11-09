@@ -94,7 +94,7 @@ try {
     $currentParent=Get-Item -LiteralPath $parent.FullName -Force -ErrorAction Stop
     if($currentParent.CreationTimeUtc.Ticks -ne $parentCreated -or ($currentParent.Attributes -band [IO.FileAttributes]::ReparsePoint) -or [IO.Directory]::GetFileSystemEntries($parent.FullName).Length -ne 0){throw 'Query report parent changed'}
     $report=@{schemaVersion=2;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;architecture=$env:ACCESSWEAVER_EXPECT_GOARCH;binarySHA256=$BinarySHA256;outcome=$outcome;code=$code;cleanupCode=$cleanupCode;queryEvidence=$evidence;resumptionTiming=$resumptionTiming;recoveryObservation=$recoveryObservation;directComparison=$diagnostic;toolProcesses=$state.processes;toolProcessesJoined=$state.joined;toolFailure=$state.processFailed;processFailureCode=$state.processFailureCode;rulesPrepared=$state.rules.Count;rulesRemoved=$rulesRemoved;originalStateVerified=$stateVerified;privateRootRemoved=$rootRemoved;globalCacheFlushed=$false;dnsSettingsChangesAttempted=$false;captureStarted=$false;productInvoked=$false;encryptedTrafficQualified=$false;productionQualificationComplete=$false}
-    $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($report | ConvertTo-Json -Depth 6 -Compress));if($bytes.Length -gt 8192){throw 'Query report bound'}
+    $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($report | ConvertTo-Json -Depth 8 -Compress));if($bytes.Length -gt 8192){throw 'Query report bound'}
     $stream=[IO.FileStream]::new($ReportPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush()}finally{$stream.Dispose()}
 }

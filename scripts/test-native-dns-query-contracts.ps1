@@ -25,7 +25,7 @@ function New-Q {return @{schemaVersion=2;sourceCommit=$source;architecture=$arch
 function Reset-Q {$script:recoveryNow=0L;$script:recoveryReplies=$null;$script:recoveryClockFault='';$script:reply=New-Q;$script:events=[Collections.Generic.List[string]]::new();$script:fault='';$script:sourceChecks=0;$script:hashReads=0;$script:state=@{querySourceCommit=$source;queryArchitecture=$arch;queryBinary='synthetic-query-binary';queryBinarySHA256=('b'*64);processFailed=$false}}
 function Assert-NativeFreshDNSSources([object]$State){$script:sourceChecks++;if($script:fault -ceq 'source'){throw 'Synthetic source refusal'}}
 function Get-FileHash {param($LiteralPath,$Algorithm);$script:hashReads++;return @{Hash=$(if($script:fault -ceq 'binary'){'c'*64}else{'b'*64})}}
-function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$Arguments,[byte[]]$InputBytes=$null){$script:events.Add('process');Assert-Q ($Program -ceq 'synthetic-query-binary');if($Arguments[0] -ceq '--direct'){Assert-Q ($null -ne $InputBytes -and [Text.Encoding]::ASCII.GetString($InputBytes) -ceq '192.0.2.53')};if($script:fault -ceq 'process'){$State.processFailed=$true;throw 'Synthetic timeout'};if($null -ne $script:recoveryReplies -and $script:recoveryReplies.Count -gt 0){$script:reply=$script:recoveryReplies.Dequeue();$script:recoveryNow+=10L};return ($script:reply | ConvertTo-Json -Compress)}
+function Invoke-NativeDNSWireProcess([object]$State,[string]$Program,[string[]]$Arguments,[byte[]]$InputBytes=$null){$script:events.Add('process');Assert-Q ($Program -ceq 'synthetic-query-binary');if($Arguments[0] -ceq '--direct'){Assert-Q ($null -ne $InputBytes -and [Text.Encoding]::ASCII.GetString($InputBytes) -ceq '192.0.2.53')};if($script:fault -ceq 'process'){$State.processFailed=$true;throw 'Synthetic timeout'};if($null -ne $script:recoveryReplies -and $script:recoveryReplies.Count -gt 0){$script:reply=$script:recoveryReplies.Dequeue();$script:recoveryNow+=10L};return ($script:reply | ConvertTo-Json -Depth 8 -Compress)}
 function Read-NativeDNSRecoveryMilliseconds([object]$Clock){if($script:recoveryClockFault -ceq 'end-regression'){return 0L};return $script:recoveryNow}
 function Wait-NativeDNSRecoveryOffset([object]$Clock,[long]$TargetMilliseconds){if($script:recoveryClockFault -ceq 'start-regression'){return ($TargetMilliseconds-1L)};if($script:recoveryClockFault -ceq 'bound'){return 120001L};$script:recoveryNow=[long][Math]::Max($script:recoveryNow,$TargetMilliseconds);return $script:recoveryNow}
 function New-QTimeout {$r=New-Q;$r.outcome='refused';$r.code='query-failed';$r.failureKind='timeout';$r.answerCount=0;$r.recordCount=0;return $r}
@@ -137,15 +137,16 @@ Case-Q 'diagnostic-server-set-bounds-and-deduplicates' {
     $r[0].ServerAddresses=@(1..9 | ForEach-Object {"192.0.2.$_"});Assert-Q ((Select-NativeDNSDiagnosticServers $a $r).code -ceq 'server-bound')
 }
 Case-Q 'diagnostic-server-set-report-closes-counts-and-overlap' {
-    $r=@{schemaVersion=1;sourceCommit=$source;architecture=$arch;mode='direct-set';outcome='observed';code='none';result=@{total=2;answered=2;rejected=0;otherFailures=0};pair=$null;productionQualificationComplete=$false}
+    $r=@{schemaVersion=1;sourceCommit=$source;architecture=$arch;mode='direct-set';outcome='observed';code='none';result=@{total=2;answered=2;rejected=0;otherFailures=0;ipv4=@{total=1;answered=1;rejected=0;otherFailures=0};ipv6=@{total=1;answered=1;rejected=0;otherFailures=0}};pair=$null;productionQualificationComplete=$false}
     $v=Get-NativeDNSSetReport ($r|ConvertTo-Json -Depth 8 -Compress) $source $arch 'direct-set';Assert-Q ($v.result.answered -eq 2)
     $r.result.otherFailures=1;Reject-Q {Get-NativeDNSSetReport ($r|ConvertTo-Json -Depth 8 -Compress) $source $arch 'direct-set'}
-    $r.result=$null;$r.mode='compare-set';$r.pair=@{first=@{startMicroseconds=1;endMicroseconds=10;value=(New-Q)};second=@{startMicroseconds=2;endMicroseconds=9;value=@{total=2;answered=2;rejected=0;otherFailures=0}};overlapped=$true}
+    $r.result.otherFailures=0;$r.result.ipv6.answered=0;Reject-Q {Get-NativeDNSSetReport ($r|ConvertTo-Json -Depth 8 -Compress) $source $arch 'direct-set'}
+    $r.result=$null;$r.mode='compare-set';$r.pair=@{first=@{startMicroseconds=1;endMicroseconds=10;value=(New-Q)};second=@{startMicroseconds=2;endMicroseconds=9;value=@{total=2;answered=2;rejected=0;otherFailures=0;ipv4=@{total=1;answered=1;rejected=0;otherFailures=0};ipv6=@{total=1;answered=1;rejected=0;otherFailures=0}}};overlapped=$true}
     $v=Get-NativeDNSSetReport ($r|ConvertTo-Json -Depth 8 -Compress) $source $arch 'compare-set';Assert-Q $v.pair.overlapped
     $r.pair.first.value.privateAddress='192.0.2.53';Reject-Q {Get-NativeDNSSetReport ($r|ConvertTo-Json -Depth 8 -Compress) $source $arch 'compare-set'}
 }
 Case-Q 'diagnostic-server-set-process-uses-private-input' {
-    Reset-Q;$script:reply=@{schemaVersion=1;sourceCommit=$source;architecture=$arch;mode='direct-set';outcome='observed';code='none';result=@{total=2;answered=2;rejected=0;otherFailures=0};pair=$null;productionQualificationComplete=$false}
+    Reset-Q;$script:reply=@{schemaVersion=1;sourceCommit=$source;architecture=$arch;mode='direct-set';outcome='observed';code='none';result=@{total=2;answered=2;rejected=0;otherFailures=0;ipv4=@{total=1;answered=1;rejected=0;otherFailures=0};ipv6=@{total=1;answered=1;rejected=0;otherFailures=0}};pair=$null;productionQualificationComplete=$false}
     $v=Invoke-NativeDNSSetDiagnostic $state @('192.0.2.53','fe80::1%4') 'direct-set';Assert-Q ($v.result.answered -eq 2 -and $script:sourceChecks -eq 2 -and $script:hashReads -eq 2)
     $text=$v|ConvertTo-Json -Depth 8 -Compress;Assert-Q (-not $text.Contains('192.0.2.53') -and -not $text.Contains('fe80::1'))
 }

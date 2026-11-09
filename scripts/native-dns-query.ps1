@@ -119,10 +119,17 @@ function Select-NativeDNSDiagnosticServers([object[]]$Adapters,[object[]]$Rows) 
     return @{servers=@($found | Sort-Object);code='selected'}
 }
 function Get-NativeDNSSetValue([object]$Value) {
-    $keys=@('total','answered','rejected','otherFailures')
-    if($Value -isnot [pscustomobject] -or @($Value.PSObject.Properties).Count -ne 4 -or @($Value.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0){throw 'DNS set value'}
-    foreach($key in $keys){if(($Value.$key -isnot [int] -and $Value.$key -isnot [long]) -or $Value.$key -lt 0 -or $Value.$key -gt 8){throw 'DNS set count'}}
-    if($Value.total -lt 1 -or $Value.answered+$Value.rejected+$Value.otherFailures -ne $Value.total){throw 'DNS set partition'}
+    $keys=@('total','answered','rejected','otherFailures');$outer=@($keys)+@('ipv4','ipv6')
+    if($Value -isnot [pscustomobject] -or @($Value.PSObject.Properties).Count -ne 6 -or @($Value.PSObject.Properties.Name | Where-Object {$_ -cnotin $outer}).Count -ne 0){throw 'DNS set value'}
+    foreach($family in @($Value.ipv4,$Value.ipv6)){
+        if($family -isnot [pscustomobject] -or @($family.PSObject.Properties).Count -ne 4 -or @($family.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0){throw 'DNS set family shape'}
+    }
+    foreach($part in @($Value,$Value.ipv4,$Value.ipv6)){
+        foreach($key in $keys){if(($part.$key -isnot [int] -and $part.$key -isnot [long]) -or $part.$key -lt 0 -or $part.$key -gt 8){throw 'DNS set count'}}
+        if($part.answered+$part.rejected+$part.otherFailures -ne $part.total){throw 'DNS set partition'}
+    }
+    if($Value.total -lt 1){throw 'DNS set empty'}
+    foreach($key in $keys){if($Value.ipv4.$key+$Value.ipv6.$key -ne $Value.$key){throw 'DNS set family partition'}}
     return $Value
 }
 function Get-NativeDNSSetReport([string]$Text,[string]$Source,[string]$Architecture,[string]$Mode) {
