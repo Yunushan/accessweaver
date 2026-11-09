@@ -23,7 +23,7 @@ function Initialize-DoHNetEventState([object]$State,[string]$Project,[hashtable]
         operationEvidence=(New-DoHNetEventOperationEvidence);cleanupCode='none';sessionVerified=$false;sessionRemoved=$false;preflightEmpty=$false;
         filterEvidence=@{policy='product-doh-all';endpointMask=15;etherTypeMask=3;protocolMask=3;portsFiltered=$false;verified=$false};
         offloadPrepareEvidence=(New-NativeDoHOffloadEvidence 'prepare');offloadStageEvidence=@();offloadVerifyEvidence=(New-NativeDoHOffloadEvidence 'verify');offloadMeasureEvidence=(New-NativeDoHOffloadEvidence 'verify');offloadRestoreEvidence=@();
-        lossEvidence=(New-NativeNDISLossEvidence);eventEvidence=(New-NativeNDISHeaderEvidence);fragmentEvidence=(New-NativeNDISFragmentEvidence);catalogEvidence=(New-NativeNDISCatalogEvidence);extractionEvidence=(New-NativeNDISExtractionEvidence);conversionEvidence=(New-NativeNDISConversionEvidence);tlsWireEvidence=(New-NativeNDISTlsWireEvidence);etlBytes=0;pcapBytes=0;captureBounded=$false
+        lossEvidence=(New-NativeNDISLossEvidence);eventEvidence=(New-NativeNDISHeaderEvidence);fragmentEvidence=(New-NativeNDISFragmentEvidence);catalogEvidence=(New-NativeNDISCatalogEvidence);extractionEvidence=(New-NativeNDISExtractionEvidence);conversionEvidence=(New-NativeNDISConversionEvidence);tlsWireEvidence=(New-DoHNetEventTlsEvidence);etlBytes=0;pcapBytes=0;captureBounded=$false
     }}
 }
 function Invoke-DoHNetEventOperation([object]$State,[string]$Operation) {
@@ -52,22 +52,25 @@ function Invoke-DoHNetEventOffload([object]$State,[string]$Operation,[int]$Ordin
     if($Operation -ceq 'prepare' -and $summary.code -ceq 'none'){if($reply.digest -cnotmatch '^[a-f0-9]{64}$'){throw 'Private offload digest'};$State.ndis.digest=$reply.digest}elseif($reply.digest){throw 'Unexpected private offload digest'}
     return $summary
 }
+function New-DoHNetEventTlsEvidence([string]$Code='not-inspected') {
+    $r=New-NativeNDISTlsWireEvidence $Code;$r['plaintextPackets']=0;return $r
+}
 function Get-DoHNetEventTlsEvidence([string]$Text) {
-    $bad=New-NativeNDISTlsWireEvidence 'invalid';$bad.observation='refused';if($Text.Length -gt 16384){return $bad};try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{return $bad}
+    $bad=New-DoHNetEventTlsEvidence 'invalid';$bad.observation='refused';if($Text.Length -gt 16384){return $bad};try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{return $bad}
     $codes=@('ascii','block-bound','block-shape','capture-bound','capture-drops','capture-empty','capture-options','client-hello','client-sni','decoder-failed','environment','ethernet-protocol','ethernet-shape','flow-bound','input-bound','input-incomplete','input-read','interface-bound','interface-link','interface-snaplen','ip-fragment','ipv4-bound','ipv4-shape','ipv6-bound','ipv6-extension','ipv6-shape','none','packet-bound','packet-kind','packet-shape','packet-snaplen','packet-truncated','provider-port','provider-scope','section-length','section-magic','section-required','section-shape','section-version','server-hello','statistics-shape','tcp-bound','tcp-gap','tcp-overlap','tcp-reset','tcp-reuse','tcp-segment-bound','tcp-shape','tcp-stream-bound','tcp-syn-required','tcp-syn-shape','tls-change-cipher','tls-handshake-bound','tls-hello-required','tls-record','tls-truncated','transport-shape','udp-shape')
     if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 4 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin @('schemaVersion','outcome','code','evidence')}).Count -ne 0 -or $v.schemaVersion -isnot [int] -or $v.schemaVersion -ne 1 -or $v.code -cnotin $codes -or $v.outcome -cnotin @('decoded','refused')){return $bad}
-    if($v.outcome -ceq 'refused'){if($v.code -ceq 'none' -or $null -ne $v.evidence){return $bad};$r=New-NativeNDISTlsWireEvidence $v.code;$r.observation='refused';return $r}
+    if($v.outcome -ceq 'refused'){if($v.code -ceq 'none' -or $null -ne $v.evidence){return $bad};$r=New-DoHNetEventTlsEvidence $v.code;$r.observation='refused';return $r}
     $e=$v.evidence
-    if($v.code -cne 'none' -or $e -isnot [pscustomobject] -or @($e.PSObject.Properties).Count -ne 9 -or @($e.PSObject.Properties.Name | Where-Object {$_ -cnotin @('schemaVersion','observation','packets','plaintextPackets','flows','dnsPayloadDecrypted','ordinaryResolverBound','negativeControlPassed','productionQualificationComplete')}).Count -ne 0 -or $e.schemaVersion -isnot [int] -or $e.schemaVersion -ne 1 -or $e.observation -cnotin @('tls-observed','insufficient') -or $e.packets -isnot [int] -or $e.packets -lt 1 -or $e.packets -gt 4096 -or $e.plaintextPackets -isnot [int] -or $e.plaintextPackets -ne 0 -or $e.flows -isnot [array] -or $e.flows.Count -gt 32){return $bad}
+    if($v.code -cne 'none' -or $e -isnot [pscustomobject] -or @($e.PSObject.Properties).Count -ne 9 -or @($e.PSObject.Properties.Name | Where-Object {$_ -cnotin @('schemaVersion','observation','packets','plaintextPackets','flows','dnsPayloadDecrypted','ordinaryResolverBound','negativeControlPassed','productionQualificationComplete')}).Count -ne 0 -or $e.schemaVersion -isnot [int] -or $e.schemaVersion -ne 1 -or $e.observation -cnotin @('tls-observed','insufficient') -or $e.packets -isnot [int] -or $e.packets -lt 1 -or $e.packets -gt 4096 -or $e.plaintextPackets -isnot [int] -or $e.plaintextPackets -lt 0 -or $e.plaintextPackets -gt $e.packets -or $e.flows -isnot [array] -or $e.flows.Count -gt 32){return $bad}
     foreach($key in @('dnsPayloadDecrypted','ordinaryResolverBound','negativeControlPassed','productionQualificationComplete')){if($e.$key -isnot [bool] -or $e.$key){return $bad}}
-    $r=New-NativeNDISTlsWireEvidence 'none';$r.observation=$e.observation;$r.packets=$e.packets;$positive=$false
+    $r=New-DoHNetEventTlsEvidence 'none';$r.observation=$e.observation;$r.packets=$e.packets;$r.plaintextPackets=$e.plaintextPackets;$positive=$false
     foreach($flow in $e.flows){
         if($flow -isnot [pscustomobject] -or @($flow.PSObject.Properties).Count -ne 6 -or @($flow.PSObject.Properties.Name | Where-Object {$_ -cnotin @('provider','clientHello','serverHello','outboundEncryptedRecords','inboundEncryptedRecords','records')}).Count -ne 0 -or $flow.provider -cnotin @('google-v4','quad9-v4','google-v6','quad9-v6') -or $flow.clientHello -isnot [bool] -or -not $flow.clientHello -or $flow.serverHello -isnot [bool] -or -not $flow.serverHello){return $bad}
         foreach($key in @('outboundEncryptedRecords','inboundEncryptedRecords','records')){if(($flow.$key -isnot [int] -and $flow.$key -isnot [long]) -or $flow.$key -lt 0 -or $flow.$key -gt 4194304){return $bad}}
         if($flow.records -lt $flow.outboundEncryptedRecords+$flow.inboundEncryptedRecords+2){return $bad}
         $r.tlsFlows++;$r.providerMask=$r.providerMask -bor $(switch -CaseSensitive ($flow.provider){'google-v4'{1}'quad9-v4'{2}'google-v6'{4}'quad9-v6'{8}});$r.outboundEncryptedRecords+=$flow.outboundEncryptedRecords;$r.inboundEncryptedRecords+=$flow.inboundEncryptedRecords;if($flow.outboundEncryptedRecords -gt 0 -and $flow.inboundEncryptedRecords -gt 0){$positive=$true}
     }
-    if(($e.observation -ceq 'tls-observed') -ne $positive){return $bad};return $r
+    if(($e.observation -ceq 'tls-observed') -ne ($positive -and $e.plaintextPackets -eq 0)){return $bad};return $r
 }
 function Start-DoHNetEventCapture([object]$State) {
     $State.phase='decoder-preflight';$version=Invoke-DoHNetEventProcess $State $State.node @('--version')
@@ -121,7 +124,7 @@ function Read-DoHNetEventCapture([object]$State) {
     $State.phase='pcap-file';$State.pcap=Join-Path $State.ndis.root 'capture.pcapng';Measure-NativeDNSWireFile $State 'pcap';$State.ndis.public.pcapBytes=$State.pcapBytes
     if($State.ndis.public.pcapBytes -ne $q.captureBytes){throw 'Private conversion file size disagrees'}
 
-    $bytes=Read-NativeDNSWireCapture $State
+    $State.phase='tls-decode';$bytes=Read-NativeDNSWireCapture $State
     $text=Invoke-DoHNetEventProcess $State $State.node @($State.decoder) $bytes
     $State.ndis.public.tlsWireEvidence=Get-DoHNetEventTlsEvidence $text
     return $State.ndis.public.tlsWireEvidence
@@ -132,9 +135,9 @@ function Measure-DoHNetEventWire([object]$State) {
     $State.phase='offload-measure';$v=Invoke-DoHNetEventOffload $State 'verify';$State.ndis.public.offloadMeasureEvidence=$v;if($v.code -cne 'none'){throw 'Product capture topology changed'}
     $State.phase='capture-stop';Stop-DoHNetEventCapture $State
     $State.phase='capture-read';$tw=Read-DoHNetEventCapture $State;$State.decoderCode=$tw.code
-    $refused=($tw.observation -ceq 'refused' -and $tw.code -cnotin @('none','invalid','not-inspected'))
+    $refused=(($tw.observation -ceq 'refused' -and $tw.code -cnotin @('none','invalid','not-inspected')) -or ($tw.observation -ceq 'insufficient' -and $tw.code -ceq 'none'))
     if(-not $refused){
-        if($tw.code -cne 'none' -or $tw.observation -cne 'tls-observed' -or $tw.packets -ne $State.ndis.public.fragmentEvidence.fragmentIDs -or $tw.tlsFlows -lt 1 -or $tw.providerMask -lt 1 -or $tw.providerMask -gt 15 -or $tw.outboundEncryptedRecords -lt 1 -or $tw.inboundEncryptedRecords -lt 1){throw 'Product TLS evidence refused'}
+        if($tw.code -cne 'none' -or $tw.observation -cne 'tls-observed' -or $tw.plaintextPackets -ne 0 -or $tw.packets -ne $State.ndis.public.fragmentEvidence.fragmentIDs -or $tw.tlsFlows -lt 1 -or $tw.providerMask -lt 1 -or $tw.providerMask -gt 15 -or $tw.outboundEncryptedRecords -lt 1 -or $tw.inboundEncryptedRecords -lt 1){throw 'Product TLS evidence refused'}
         $State.flags.tlsObserved=$true;$State.providers=$tw.providerMask;$State.outRecords=$tw.outboundEncryptedRecords;$State.inRecords=$tw.inboundEncryptedRecords;$State.tlsFlows=$tw.tlsFlows
     }
     try{
