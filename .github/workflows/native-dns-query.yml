@@ -69,6 +69,18 @@ jobs:
           $env:ACCESSWEAVER_DNS_QUERY_UNIT_REPORT=Join-Path $fixed 'unit.json'
           go test -mod=readonly ./scripts/native-dns-query
           if($LASTEXITCODE -ne 0){throw 'Native query synthetic ownership contracts failed'}
+          # Synthetic unit tests also support ordinary developer environments.
+          $taskActions=$env:GITHUB_ACTIONS
+          $taskUnitReport=$env:ACCESSWEAVER_DNS_QUERY_UNIT_REPORT
+          try {
+            Remove-Item Env:GITHUB_ACTIONS -ErrorAction SilentlyContinue
+            Remove-Item Env:ACCESSWEAVER_DNS_QUERY_UNIT_REPORT -ErrorAction SilentlyContinue
+            go test -mod=readonly -count=1 ./scripts/native-dns-query
+            if($LASTEXITCODE -ne 0){throw 'Synthetic query tests failed without hosted metadata'}
+          } finally {
+            $env:GITHUB_ACTIONS=$taskActions
+            $env:ACCESSWEAVER_DNS_QUERY_UNIT_REPORT=$taskUnitReport
+          }
           go vet -mod=readonly ./scripts/native-dns-query
           if($LASTEXITCODE -ne 0){throw 'Native query static analysis failed'}
           $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'

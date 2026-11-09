@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -177,7 +178,7 @@ func TestReportIsClosedAndPrivateDataFree(t *testing.T) {
 	r, _ := invoke(t, record(), nil)
 	b, err := json.Marshal(r)
 	var v map[string]any
-	if err != nil || json.Unmarshal(b, &v) != nil || len(v) != 11 || len(b) > 1024 {
+	if err != nil || json.Unmarshal(b, &v) != nil || len(v) != 12 || len(b) > 1024 {
 		t.Fatal("report shape")
 	}
 	for _, secret := range []string{"192.0.2.53", "example.com", "synthetic", "Next", "Ttl", "Data"} {
@@ -186,10 +187,36 @@ func TestReportIsClosedAndPrivateDataFree(t *testing.T) {
 		}
 	}
 }
-func TestMain(m *testing.M) {
-	if os.Getenv("GITHUB_ACTIONS") != "true" || os.Getenv("RUNNER_ENVIRONMENT") != "github-hosted" {
-		os.Exit(2)
+func TestNativeErrorCategoriesNeverPublishRawErrors(t *testing.T) {
+	mark(t)
+	for _, c := range []struct {
+		err  error
+		kind string
+	}{
+		{nil, "none"}, {windows.ERROR_TIMEOUT, "timeout"}, {windows.WSAETIMEDOUT, "timeout"},
+		{windows.DNS_ERROR_RCODE_NAME_ERROR, "name-error"}, {windows.DNS_ERROR_RCODE_SERVER_FAILURE, "server-failure"},
+		{windows.DNS_ERROR_RCODE_REFUSED, "refused"}, {windows.DNS_INFO_NO_RECORDS, "no-records"},
+		{windows.ERROR_NO_NETWORK, "no-network"}, {windows.ERROR_HOST_UNREACHABLE, "no-network"},
+		{fmt.Errorf("private.synthetic: %w", windows.ERROR_TIMEOUT), "timeout"}, {errors.New("private.synthetic"), "other"},
+	} {
+		if queryFailureKind(c.err) != c.kind {
+			t.Error("closed category")
+		}
+		if c.err != nil {
+			r, _ := invoke(t, nil, c.err)
+			if r.FailureKind != c.kind || r.Code != "query-failed" {
+				t.Error("category projection")
+			}
+			b, _ := json.Marshal(r)
+			if strings.Contains(string(b), "private.synthetic") {
+				t.Error("raw error publication")
+			}
+		}
 	}
+}
+
+func TestMain(m *testing.M) {
+	// All tests inject query/free functions; ordinary go test needs no hosted guard.
 	code := m.Run()
 	path := os.Getenv("ACCESSWEAVER_DNS_QUERY_UNIT_REPORT")
 	workspace := os.Getenv("GITHUB_WORKSPACE")

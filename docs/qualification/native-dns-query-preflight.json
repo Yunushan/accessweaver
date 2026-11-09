@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "scope": "native-windows-per-lookup-cache-bypass-prerequisite-preflight",
-  "parentCommit": "3ebae61f27457b3490f5f2dd28a7145688872ced",
+  "parentCommit": "a4a0d643ba8da16428c67ccbb327c5b3c145e4d9",
   "sourceSHA256": {
-    "scripts/native-dns-query/main_windows.go": "112924737d1098f3195c6d155ffb8e3f456e025db392243891a9b9474a5eb5a7",
-    "scripts/native-dns-query/main_windows_test.go": "3816daffc1dcc7f208cbc1609b3c923554b0749ed65eb260d62d915856c05796",
-    "scripts/native-dns-query.ps1": "173c9c6c680f15e9a0ec3b23c5591ecd46d4d010d3099b4d0bdb9906f89b5dc9",
-    "scripts/test-native-dns-query-contracts.ps1": "0cb3b98419fdbc0f9fa23473c85099fc40a6dcee61128b1281632736577f9697",
+    "scripts/native-dns-query/main_windows.go": "3e4cb3d4eaa08f02376fbfe957624cbd3d7e897735e4c93099c97ba92b1be462",
+    "scripts/native-dns-query/main_windows_test.go": "6c3b124ea3f2ae6ea87acd1954fc96bb86b08f06934938b3c2a4c3a104a8cd44",
+    "scripts/native-dns-query.ps1": "978777e7333dc8ae2bceeeb1a1bf92aaec0589bd2b6454f853d63b268c6ea869",
+    "scripts/test-native-dns-query-contracts.ps1": "aec7a80503b8790518e8881546727da1e21533e19f6cdfb8bd864243c9baadc8",
     "scripts/test-native-dns-query.ps1": "0b7f3e40023b119a7db69de85482a31cc7d9310f5c4c4b8a95bd365704884fc2",
-    ".github/workflows/native-dns-query.yml": "b2de718fc088629b518daf231f0457bd80d82e7c954c3c498195aeff9eaaf54d"
+    ".github/workflows/native-dns-query.yml": "d57f96846ac576723419c1671cf1e6826a4df0095ee7cf1b3dce01a97c4b355a"
   },
   "compileOnlyTargetsPassed": [
     "windows/amd64",
@@ -19,12 +19,12 @@
   "goFixtureExecutionLocal": false,
   "powerShellFilesParsed": 3,
   "powerShellParseErrors": 0,
-  "goSyntheticGroupsPrepared": 13,
-  "powerShellProjectionGroupsPrepared": 14,
+  "goSyntheticGroupsPrepared": 14,
+  "powerShellProjectionGroupsPrepared": 15,
   "nativeQueryOptions": 6600,
   "maxRecords": 128,
   "maxAnswers": 64,
-  "publicQueryReportKeys": 11,
+  "publicQueryReportKeys": 12,
   "publicQueryReportTextBound": 2048,
   "nativeAPI": "DnsQuery_W",
   "recordReleaseAPI": "DnsRecordListFree/DnsFreeRecordList",
@@ -38,12 +38,16 @@
   "encryptedTrafficQualified": false,
   "productionQualificationComplete": false,
   "formalGatesPromoted": 0,
-  "readerMalformedProjectionsRefused": 8,
+  "readerMalformedProjectionsRefused": 10,
   "helperOwnCompilerSourceNativeIdentityRequired": true,
   "productCLIVersionProtocolUsedForHelper": false,
   "initialFailureReceipt": "docs/qualification/1e29ac8b7094-native-query-preflight-refusal.json",
   "closedFailedAttemptRetainedBeforeRefusal": true,
   "stalePrivateOrProcessFailureEvidenceRefused": true,
-  "nativeHelperGoSourceUnchangedFrom": "3ebae61f27457b3490f5f2dd28a7145688872ced",
-  "resumptionFailureReceipt": "docs/qualification/3ebae61f2745-native-query-prerequisite.json"
+  "resumptionFailureReceipt": "docs/qualification/3ebae61f2745-native-query-prerequisite.json",
+  "publicQueryReportSchema": 2,
+  "rawNativeErrorTextOrStatusNumberPublished": false,
+  "syntheticUnitsCanRunWithoutHostedMetadata": true,
+  "actualNativeExecutionGuardsRetained": true,
+  "retainedRefusalReceipt": "docs/qualification/a4a0d643ba8d-query-failure-retention.json"
 }

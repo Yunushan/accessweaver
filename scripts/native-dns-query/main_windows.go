@@ -5,10 +5,12 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/netip"
 	"os"
 	"regexp"
 	"runtime"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 )
@@ -32,6 +34,7 @@ type queryReport struct {
 	QueryOptions                    uint32 `json:"queryOptions"`
 	Outcome                         string `json:"outcome"`
 	Code                            string `json:"code"`
+	FailureKind                     string `json:"failureKind"`
 	AnswerCount                     int    `json:"answerCount"`
 	RecordCount                     int    `json:"recordCount"`
 	QueryInvoked                    bool   `json:"queryInvoked"`
@@ -43,7 +46,34 @@ type queryFunc func(string, uint16, uint32, *byte, **windows.DNSRecord, *byte) e
 type freeFunc func(*windows.DNSRecord, uint32)
 
 func emptyReport(code string) queryReport {
-	return queryReport{SchemaVersion: 1, Architecture: runtime.GOARCH, QueryOptions: queryOptions, Outcome: "refused", Code: code, RecordsReleased: true}
+	return queryReport{SchemaVersion: 2, Architecture: runtime.GOARCH, QueryOptions: queryOptions, Outcome: "refused", Code: code, FailureKind: "none", RecordsReleased: true}
+}
+
+// Only fixed API-status categories are published. Never inspect error text.
+func queryFailureKind(err error) string {
+	if err == nil {
+		return "none"
+	}
+	var status syscall.Errno
+	if !errors.As(err, &status) {
+		return "other"
+	}
+	switch status {
+	case windows.ERROR_TIMEOUT, windows.WSAETIMEDOUT:
+		return "timeout"
+	case windows.DNS_ERROR_RCODE_NAME_ERROR:
+		return "name-error"
+	case windows.DNS_ERROR_RCODE_SERVER_FAILURE:
+		return "server-failure"
+	case windows.DNS_ERROR_RCODE_REFUSED:
+		return "refused"
+	case windows.DNS_INFO_NO_RECORDS:
+		return "no-records"
+	case windows.ERROR_NO_NETWORK, windows.ERROR_NETWORK_UNREACHABLE, windows.ERROR_HOST_UNREACHABLE, windows.ERROR_PROTOCOL_UNREACHABLE, windows.ERROR_PORT_UNREACHABLE:
+		return "no-network"
+	default:
+		return "other"
+	}
 }
 
 func allowedName(name string) bool {
@@ -66,6 +96,7 @@ func runQuery(name string, query queryFunc, free freeFunc) (result queryReport) 
 	}
 	if err != nil {
 		result.Code = "query-failed"
+		result.FailureKind = queryFailureKind(err)
 		return result
 	}
 	seen := make(map[*windows.DNSRecord]struct{})
