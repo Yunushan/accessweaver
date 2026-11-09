@@ -137,5 +137,66 @@
   "nativeRealScanPerformed": false,
   "productionQualificationComplete": false,
   "formalGatesPromoted": 0,
-  "rawLogsRead": false
+  "rawLogsRead": false,
+  "wireCohort": {
+    "runID": 42599934322,
+    "sealedDoNotRepoll": true,
+    "sourceReports": [
+      {
+        "artifactName": "native-doh-netevent-source-windows-amd64",
+        "providerZIPDigest": "sha256:913b75fcb74b8d042fad319222357b55e9697acd110d3bdd252082a3dcd9c227",
+        "providerZIPDigestVerified": true,
+        "passed": true,
+        "cases": 56
+      },
+      {
+        "artifactName": "native-doh-netevent-source-windows-arm64",
+        "providerZIPDigest": "sha256:ef5d32d57f3e370785f551e1edbfc314bc319d089c810d881d688b3011d849ff",
+        "providerZIPDigestVerified": true,
+        "passed": true,
+        "cases": 56
+      }
+    ],
+    "reports": [
+      {
+        "artifactName": "native-doh-wire-windows-arm64",
+        "providerZIPDigest": "sha256:685429bfe42b62378a700cb559d06a39d934e05272c229cbad8afe7f4c78d479",
+        "providerZIPDigestVerified": true,
+        "architecture": "arm64",
+        "outcome": "failed",
+        "failurePhase": "decode",
+        "decoderCode": "none",
+        "tlsObservation": "insufficient",
+        "plaintextPackets": 8,
+        "udp53During": 8,
+        "googleBootstrap": 8,
+        "quad9Bootstrap": 0,
+        "snapshotRemoved": true,
+        "restored": true,
+        "toolProcesses": 29,
+        "toolProcessesJoined": 29,
+        "cleanupCode": "none"
+      },
+      {
+        "artifactName": "native-doh-wire-windows-amd64",
+        "providerZIPDigest": "sha256:c7c587d83f6990606c6596a0316ab2b2a1848934b7466da7e30fb2db4bc06b46",
+        "providerZIPDigestVerified": true,
+        "architecture": "amd64",
+        "outcome": "passed",
+        "failurePhase": "none",
+        "decoderCode": "none",
+        "tlsObservation": "tls-observed",
+        "plaintextPackets": 0,
+        "udp53During": 0,
+        "googleBootstrap": 0,
+        "quad9Bootstrap": 0,
+        "snapshotRemoved": true,
+        "restored": true,
+        "toolProcesses": 29,
+        "toolProcessesJoined": 29,
+        "cleanupCode": "none"
+      }
+    ],
+    "encryptedTrafficQualified": false
+  }
 }
