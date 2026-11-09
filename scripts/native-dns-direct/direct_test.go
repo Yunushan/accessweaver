@@ -55,9 +55,8 @@ func TestQueryContract(t *testing.T) {
 }
 
 func TestRejectInvalidServerWithoutNetwork(t *testing.T) {
-	for _, s := range []string{"", "0.0.0.0", "127.0.0.1", "::ffff:127.0.0.1", "224.0.0.1", "fe80::1", "fe80::1%4"} {
-		addr, _ := netip.ParseAddr(s)
-		if r := Query(context.Background(), addr, "example.net"); r.Code != "server" {
+	for _, s := range []string{"", "0.0.0.0", "127.0.0.1", "::ffff:127.0.0.1", "224.0.0.1", "fe80::1", "fe80::1%0"} {
+		if _, err := ParseServer(s); err == nil {
 			t.Fatal("invalid server accepted")
 		}
 	}
