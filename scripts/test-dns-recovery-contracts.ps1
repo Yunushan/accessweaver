@@ -244,6 +244,9 @@ try {
     $saved=Microsoft.PowerShell.Utility\ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($snapshot))
     Assert-DNS ($saved.adapters[0].dhcp4 -and $saved.adapters[0].dhcp6) 'confirmed-absent-mode-is-dhcp'
     Assert-DNS ($script:currentDoh.Count -eq 4 -and @($script:currentDoh.Values | Where-Object {$_.AllowFallbackToUdp -ne $false -or $_.AutoUpgrade -ne $true}).Count -eq 0) 'all-providers-no-plaintext-fallback'
+    # Independently pin all four authorities, including bracketed IPv6 URIs.
+    $expectedTemplates=@{'8.8.8.8'='https://8.8.8.8/dns-query';'9.9.9.9'='https://9.9.9.9/dns-query';'2001:4860:4860::8888'='https://[2001:4860:4860::8888]/dns-query';'2620:fe::fe'='https://[2620:fe::fe]/dns-query'}
+    foreach($address in $expectedTemplates.Keys){Assert-DNS ($script:currentDoh[$address].DohTemplate -ceq $expectedTemplates[$address]) 'all-providers-no-plaintext-fallback'}
     # Reconfiguration must not overwrite first originals with managed DNS state.
     New-DNSCase;$saved=Original-DNSFixture;$saved.doh=@((Old-DohFixture));Write-DNSFixture $saved;$hash=Snapshot-Hash;$script:mode4='127.0.0.1'
     Configure-DNS 'doh'

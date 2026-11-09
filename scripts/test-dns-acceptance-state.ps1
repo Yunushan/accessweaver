@@ -106,7 +106,7 @@ function Set-AConfigured([string]$Method) {
     $script:data[$script:g1].servers6=if($Method -ceq 'doh'){@('2001:4860:4860::8888','2620:fe::fe')}else{@('::1')}
     if($Method -ceq 'doh'){
         foreach($address in @('8.8.8.8','9.9.9.9','2001:4860:4860::8888','2620:fe::fe')){
-            $template=if($address -in @('8.8.8.8','2001:4860:4860::8888')){'https://dns.google/dns-query'}else{'https://dns.quad9.net/dns-query'}
+            $template=switch -CaseSensitive ($address){'8.8.8.8'{'https://8.8.8.8/dns-query'}'9.9.9.9'{'https://9.9.9.9/dns-query'}'2001:4860:4860::8888'{'https://[2001:4860:4860::8888]/dns-query'}'2620:fe::fe'{'https://[2620:fe::fe]/dns-query'}default{throw 'Unexpected fixed DoH provider'}}
             $script:doh+=@([pscustomobject]@{ServerAddress=$address;DohTemplate=$template;AllowFallbackToUdp=$false;AutoUpgrade=$true})
         }
     }
@@ -198,6 +198,16 @@ try {
             'capability' {$current.dohAvailable=$false;$current.doh=@()}
         }
         Reject-A {Assert-DNSAcceptanceConfigured $before $current 'doh'};Assert-A $true 'configured-method-negative'
+    }
+    # Each provider must reject its old hostname bootstrap and a foreign IP
+    # authority. These mutations exercise the independent native readback oracle.
+    foreach($address in @('8.8.8.8','9.9.9.9','2001:4860:4860::8888','2620:fe::fe')){
+        $legacy=if($address -in @('8.8.8.8','2001:4860:4860::8888')){'https://dns.google/dns-query'}else{'https://dns.quad9.net/dns-query'}
+        foreach($wrong in @($legacy,'https://192.0.2.90/dns-query')){
+            New-ACase;$before=Read-DNSAcceptanceState;Set-AConfigured 'doh';$current=Read-DNSAcceptanceState
+            @($current.doh | Where-Object {$_.address -ceq $address})[0].template=$wrong
+            Reject-A {Assert-DNSAcceptanceConfigured $before $current 'doh'};Assert-A $true 'configured-method-negative'
+        }
     }
     New-ACase;$before=Read-DNSAcceptanceState;$script:resolveFailure=$true
     Reject-A {Invoke-DNSAcceptanceRoundTrip 'doh' $script:applyFixture};Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState);Assert-A (($script:actions -join ',') -ceq 'dns,dns-restore') 'resolver-failure-restores'

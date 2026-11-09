@@ -1193,7 +1193,9 @@ function Configure-DNS([string]$method) {
         $servers=@('127.0.0.1','::1')
     } elseif($method -eq 'doh') {
         if(Get-Service 'AccessWeaver-dnscrypt' -ErrorAction SilentlyContinue){Stop-Service 'AccessWeaver-dnscrypt';Set-Service 'AccessWeaver-dnscrypt' -StartupType Manual}
-        $providers=@(@{address='8.8.8.8';url='https://dns.google/dns-query'},@{address='9.9.9.9';url='https://dns.quad9.net/dns-query'},@{address='2001:4860:4860::8888';url='https://dns.google/dns-query'},@{address='2620:fe::fe';url='https://dns.quad9.net/dns-query'})
+        # Literal authorities avoid plaintext resolution of the DoH bootstrap host.
+        # Keep each provider/family paired with its own authenticated IP identity.
+        $providers=@(@{address='8.8.8.8';url='https://8.8.8.8/dns-query'},@{address='9.9.9.9';url='https://9.9.9.9/dns-query'},@{address='2001:4860:4860::8888';url='https://[2001:4860:4860::8888]/dns-query'},@{address='2620:fe::fe';url='https://[2620:fe::fe]/dns-query'})
         $currentDoh=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
         foreach($provider in $providers){if(@($currentDoh | Where-Object {$_.ServerAddress -eq $provider.address}).Count -gt 1){throw 'Current DoH configuration is ambiguous; retain the original DNS snapshot'}}
         foreach($provider in $providers){if(@($currentDoh | Where-Object {$_.ServerAddress -eq $provider.address}).Count -eq 1){Set-DnsClientDohServerAddress -ServerAddress $provider.address -DohTemplate $provider.url -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop}else{Add-DnsClientDohServerAddress -ServerAddress $provider.address -DohTemplate $provider.url -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop}}

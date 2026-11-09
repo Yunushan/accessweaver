@@ -170,7 +170,7 @@ function Assert-DNSAcceptanceConfigured([object]$Before,[object]$Current,[string
     if($Method -ceq 'doh'){
         if(-not $Current.dohAvailable){throw 'Native DoH acceptance capability missing'}
         foreach($address in @('8.8.8.8','9.9.9.9','2001:4860:4860::8888','2620:fe::fe')){
-            $template=if($address -in @('8.8.8.8','2001:4860:4860::8888')){'https://dns.google/dns-query'}else{'https://dns.quad9.net/dns-query'}
+            $template=switch -CaseSensitive ($address){'8.8.8.8'{'https://8.8.8.8/dns-query'}'9.9.9.9'{'https://9.9.9.9/dns-query'}'2001:4860:4860::8888'{'https://[2001:4860:4860::8888]/dns-query'}'2620:fe::fe'{'https://[2620:fe::fe]/dns-query'}default{throw 'Unexpected fixed DoH provider'}}
             if(-not $actual.doh.ContainsKey($address)){throw 'Native DoH acceptance provider missing'}
             $entry=$actual.doh[$address]
             if($entry.template -cne $template -or $entry.fallback -or -not $entry.upgrade){throw 'Native DoH acceptance provider policy differs'}
