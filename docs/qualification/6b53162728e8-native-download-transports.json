@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "scope": "native-windows-pinned-product-download-transports",
+  "sourceCommit": "6b53162728e87b01759198150cab6373787140b2",
+  "runID": 42644550817,
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "4106dee0dc6728221a3f915da7ada03acf41744a1a4f74f2d19739c984bcc1d0",
+    "scripts/vendor-windows-pins.json": "b37a318955ad658063700b970dfd251ee159984d5edfeb0b543d3457cb1b8cc9",
+    "scripts/test-windows-native-download.ps1": "feb7ffe1a39144844bf3ada92724efa618dfc69165fee2dfb8f865c84c679af2",
+    ".github/workflows/windows-native-download.yml": "2e6df59b575ffc447aa3fd5687da1208c87bd3ddf28c073f10b24efbe52787fb"
+  },
+  "reports": [
+    {
+      "architecture": "amd64",
+      "artifactID": 13685714748,
+      "providerZIPDigest": "sha256:5e074eb9ee7cd5c96ea7852437dcab258202c5dec8f2a9d3c2f4aadedd654e20",
+      "providerZIPDigestVerified": true,
+      "cases": [
+        {
+          "transport": "dotnet",
+          "engine": "proxifyre",
+          "passed": true
+        },
+        {
+          "transport": "curl",
+          "engine": "proxifyre",
+          "passed": true
+        },
+        {
+          "transport": "dotnet",
+          "engine": "dnscrypt",
+          "passed": true
+        },
+        {
+          "transport": "curl",
+          "engine": "dnscrypt",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "architecture": "arm64",
+      "artifactID": 13686603405,
+      "providerZIPDigest": "sha256:83c30769c2abe71b2f6906023540daabd704f6b2b06f74cceaad8ee9278e6426",
+      "providerZIPDigestVerified": true,
+      "cases": [
+        {
+          "transport": "dotnet",
+          "engine": "proxifyre",
+          "passed": true
+        },
+        {
+          "transport": "curl",
+          "engine": "proxifyre",
+          "passed": true
+        },
+        {
+          "transport": "dotnet",
+          "engine": "dnscrypt",
+          "passed": true
+        },
+        {
+          "transport": "curl",
+          "engine": "dnscrypt",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "vendorCodeExecuted": false,
+  "proxyPathQualified": false,
+  "allVendorRoutesQualified": false,
+  "productionQualificationComplete": false
+}
