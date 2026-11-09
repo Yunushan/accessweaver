@@ -93,7 +93,7 @@ Case-Q 'recovery-caller-keeps-original-verdict-and-query-policy' {
 }
 Case-Q 'preflight-stages-are-distinct-and-precede-native-effects' {
     $text=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-native-dns-query.ps1'))
-    $markers=@("$"+"code='preflight-source'","$"+"code='preflight-nrpt'","$"+"code='preflight-firewall'","$"+"code='preflight-baseline'","$"+"code='probe'")
+    $markers=@('$code=''preflight-source''','$code=''preflight-nrpt''','$code=''preflight-firewall''','$code=''preflight-baseline''','$code=''probe''')
     $previous=-1;foreach($marker in $markers){$index=$text.IndexOf($marker);Assert-Q ($index -gt $previous);$previous=$index}
     Assert-Q (-not $text.Contains('Exception.Message'))
 }
