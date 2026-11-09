@@ -1,0 +1,875 @@
+{
+  "schemaVersion": 1,
+  "scope": "native-dns-roundtrip-and-recovery",
+  "sourceCommit": "374e0b97d4de6fb4e5526b47f81636f00859c696",
+  "runID": 42589886704,
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "scripts/test-native-doh.ps1": "17a1b14431197021cd1b6588f68bbae0de3cbf7e8d6cf61849a3779ef8acb661",
+    "scripts/native-doh-scenario.ps1": "cbf457dd4623ba82ae00b5d56336bce7a723c70831113aeded6f1a065af31a97",
+    "scripts/dns-acceptance-state.ps1": "8bb62601742700d74f1fa455c3008c37fe5a95588c79d80a808e9efbd6e8db7e",
+    "scripts/test-dns-acceptance-state.ps1": "c558f19085c62d4c7afe65e7b5d96d49a2095daf33c9e494d517a37f07565b20",
+    "scripts/check-native-environment.cjs": "02707d8535a4b027090d5e9a7da7f9b3050f2c788bddf40694798af45ad43e6e",
+    ".github/workflows/native-doh.yml": "7a373b86da9de96909db6ff01dcf7f4aa0115c5efc719b5540f1f84a4643df40",
+    "internal/workflow/windows.ps1": "3861bd04bfa3596018d20637e8b4264d1edaeee8fb43d96a2c8fd0b7de2c428a",
+    "internal/workflow/manager.go": "e1eae98c45c8ccd7b77675d9a05be300c2d02cb85b8a372c1b3f8f74c04f8f1d",
+    "cmd/accessweaver/system.go": "205880642ec0814629f754b7f44ae3d36b00a584ee937e2705849b2ddead1f94",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00"
+  },
+  "jobs": [
+    {
+      "id": 129068670884,
+      "name": "Native DNS doh/roundtrip (windows/amd64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Verify hosted native SDK and machine identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify coordinator source contracts before native changes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the actual native controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-built controller identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native ordinary resolver and original-state restoration",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed native DNS metadata only",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 129068671027,
+      "name": "Native DNS dnscrypt/verification-failure (windows/arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Verify hosted native SDK and machine identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify coordinator source contracts before native changes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the actual native controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-built controller identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native ordinary resolver and original-state restoration",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed native DNS metadata only",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 129068671066,
+      "name": "Native DNS doh/roundtrip (windows/arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Verify hosted native SDK and machine identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify coordinator source contracts before native changes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the actual native controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-built controller identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native ordinary resolver and original-state restoration",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed native DNS metadata only",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 129068671137,
+      "name": "Native DNS doh/static-ipv6 (windows/amd64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Verify hosted native SDK and machine identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify coordinator source contracts before native changes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the actual native controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-built controller identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native ordinary resolver and original-state restoration",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed native DNS metadata only",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 129068671150,
+      "name": "Native DNS dnscrypt/roundtrip (windows/arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Verify hosted native SDK and machine identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify coordinator source contracts before native changes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the actual native controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-built controller identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native ordinary resolver and original-state restoration",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed native DNS metadata only",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 129068671162,
+      "name": "Native DNS dnscrypt/service-loss (windows/arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Verify hosted native SDK and machine identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify coordinator source contracts before native changes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the actual native controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-built controller identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native ordinary resolver and original-state restoration",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed native DNS metadata only",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 129068671194,
+      "name": "Native DNS doh/static-ipv6 (windows/arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Verify hosted native SDK and machine identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify coordinator source contracts before native changes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the actual native controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-built controller identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native ordinary resolver and original-state restoration",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed native DNS metadata only",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 129068671204,
+      "name": "Native DNS dnscrypt/verification-failure (windows/amd64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Verify hosted native SDK and machine identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify coordinator source contracts before native changes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the actual native controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-built controller identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native ordinary resolver and original-state restoration",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed native DNS metadata only",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 129068671218,
+      "name": "Native DNS dnscrypt/roundtrip (windows/amd64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Verify hosted native SDK and machine identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify coordinator source contracts before native changes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the actual native controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-built controller identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native ordinary resolver and original-state restoration",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed native DNS metadata only",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 129068671238,
+      "name": "Native DNS dnscrypt/service-loss (windows/amd64)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Verify hosted native SDK and machine identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify coordinator source contracts before native changes",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Build the actual native controller",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify source-built controller identity",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Native ordinary resolver and original-state restoration",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain fixed native DNS metadata only",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "artifactID": 13661475462,
+      "artifactName": "native-dns-dnscrypt-verification-failure-windows-arm64",
+      "parsedReportSHA256": "814f975d56cc004c09d00631d3229d85a99a21bf51ea5181e01f0da02c15a723",
+      "providerZIPDigest": "sha256:79392d6f9f8ffec457e1bc693245da1ca3748554da15083a1a75573d1d2f6d9f",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "platform": "windows",
+        "architecture": "arm64",
+        "outcome": "passed",
+        "code": "none",
+        "method": "dnscrypt",
+        "scenarioKind": "verification-failure",
+        "scenario": null,
+        "rollbackScenario": {
+          "configurationRejected": true,
+          "originalStateRestored": true,
+          "restoredResolverPassed": true,
+          "operationCode": "none",
+          "code": "none",
+          "forwardedFailureObserved": true,
+          "baselineResolverPassed": true,
+          "baselineCaptured": true,
+          "outcome": "passed",
+          "recoveryCode": "none",
+          "emergencyRestoreAttempted": false,
+          "configurationAttempted": true,
+          "configuredStateObserved": true
+        },
+        "snapshotRemoved": true,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "failureServiceStopped": false,
+        "resolverProcessExited": false,
+        "failedResolverObserved": false,
+        "resolverVerificationRejected": true,
+        "rollbackSnapshotRemoved": true,
+        "rollbackServiceRemoved": true,
+        "staticSnapshotNormalized": false,
+        "staticFirewallRemoved": false,
+        "serviceRemoved": true,
+        "cleanupExitCode": 0
+      }
+    },
+    {
+      "artifactID": 13660917902,
+      "artifactName": "native-dns-dnscrypt-roundtrip-windows-arm64",
+      "parsedReportSHA256": "c31f0221ad6cc1bff5c21c644fa06e3d4b25f528f069dc31b1a2d0530a5efa24",
+      "providerZIPDigest": "sha256:ccdf9da946addf65abfecd5e61780f38e2e43a98747005e4b71bf616f3f595ae",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "platform": "windows",
+        "architecture": "arm64",
+        "outcome": "passed",
+        "code": "none",
+        "method": "dnscrypt",
+        "scenarioKind": "roundtrip",
+        "scenario": {
+          "verificationCode": "none",
+          "failureInjected": false,
+          "operationCode": "none",
+          "configurationAccepted": true,
+          "restorationAccepted": true,
+          "baselineCaptured": true,
+          "restoredStateVerified": true,
+          "code": "none",
+          "restorationCode": "none",
+          "outcome": "passed",
+          "failedResolverVerified": false,
+          "resolverPassed": true,
+          "configurationAttempted": true,
+          "restoredResolverVerified": false,
+          "configuredStateVerified": true,
+          "restorationAttempted": true
+        },
+        "rollbackScenario": null,
+        "snapshotRemoved": true,
+        "cliCount": 3,
+        "processesJoined": 3,
+        "failureServiceStopped": false,
+        "resolverProcessExited": false,
+        "failedResolverObserved": false,
+        "resolverVerificationRejected": false,
+        "rollbackSnapshotRemoved": false,
+        "rollbackServiceRemoved": false,
+        "staticSnapshotNormalized": false,
+        "staticFirewallRemoved": false,
+        "serviceRemoved": true,
+        "cleanupExitCode": 0
+      }
+    },
+    {
+      "artifactID": 13660912672,
+      "artifactName": "native-dns-dnscrypt-verification-failure-windows-amd64",
+      "parsedReportSHA256": "ba445aa39b6584fea47e0ff9f7b499368d1648d5977a4cb22398af4d2d4744e7",
+      "providerZIPDigest": "sha256:21498104ace4e6bd74a33ca67dcbc0355e12c2c73c28906d3e6bbcb0a7e38861",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "platform": "windows",
+        "architecture": "amd64",
+        "outcome": "passed",
+        "code": "none",
+        "method": "dnscrypt",
+        "scenarioKind": "verification-failure",
+        "scenario": null,
+        "rollbackScenario": {
+          "configurationRejected": true,
+          "originalStateRestored": true,
+          "restoredResolverPassed": true,
+          "operationCode": "none",
+          "code": "none",
+          "forwardedFailureObserved": true,
+          "baselineResolverPassed": true,
+          "baselineCaptured": true,
+          "outcome": "passed",
+          "recoveryCode": "none",
+          "emergencyRestoreAttempted": false,
+          "configurationAttempted": true,
+          "configuredStateObserved": true
+        },
+        "snapshotRemoved": true,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "failureServiceStopped": false,
+        "resolverProcessExited": false,
+        "failedResolverObserved": false,
+        "resolverVerificationRejected": true,
+        "rollbackSnapshotRemoved": true,
+        "rollbackServiceRemoved": true,
+        "staticSnapshotNormalized": false,
+        "staticFirewallRemoved": false,
+        "serviceRemoved": true,
+        "cleanupExitCode": 0
+      }
+    },
+    {
+      "artifactID": 13660877346,
+      "artifactName": "native-dns-doh-static-ipv6-windows-amd64",
+      "parsedReportSHA256": "b49faee268c1db12ea9a06790cbbcf1250f123bf5a9db946ea1f089fd9724143",
+      "providerZIPDigest": "sha256:76a4792cf5f86f189dc273c3079f7204e059b42ab0856d6d08fdf33b9e591db7",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "platform": "windows",
+        "architecture": "amd64",
+        "outcome": "passed",
+        "code": "none",
+        "method": "doh",
+        "scenarioKind": "static-ipv6",
+        "scenario": {
+          "verificationCode": "none",
+          "failureInjected": false,
+          "operationCode": "none",
+          "configurationAccepted": true,
+          "restorationAccepted": true,
+          "baselineCaptured": true,
+          "restoredStateVerified": true,
+          "code": "none",
+          "restorationCode": "none",
+          "outcome": "passed",
+          "failedResolverVerified": false,
+          "resolverPassed": true,
+          "configurationAttempted": true,
+          "restoredResolverVerified": false,
+          "configuredStateVerified": true,
+          "restorationAttempted": true
+        },
+        "rollbackScenario": null,
+        "snapshotRemoved": true,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "failureServiceStopped": false,
+        "resolverProcessExited": false,
+        "failedResolverObserved": false,
+        "resolverVerificationRejected": false,
+        "rollbackSnapshotRemoved": false,
+        "rollbackServiceRemoved": false,
+        "staticSnapshotNormalized": true,
+        "staticFirewallRemoved": true,
+        "serviceRemoved": false,
+        "cleanupExitCode": -1
+      }
+    },
+    {
+      "artifactID": 13660668368,
+      "artifactName": "native-dns-dnscrypt-service-loss-windows-amd64",
+      "parsedReportSHA256": "afe4d7f5203785698d1d07762b44a1b3d4ae63977e0923bc9fd34d5e64502f78",
+      "providerZIPDigest": "sha256:68ec068f5bb6701b69e16aa9192df31c96cd6be0f983705625f2989e4d07e94f",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "platform": "windows",
+        "architecture": "amd64",
+        "outcome": "passed",
+        "code": "none",
+        "method": "dnscrypt",
+        "scenarioKind": "service-loss",
+        "scenario": {
+          "verificationCode": "none",
+          "failureInjected": true,
+          "operationCode": "none",
+          "configurationAccepted": true,
+          "restorationAccepted": true,
+          "baselineCaptured": true,
+          "restoredStateVerified": true,
+          "code": "none",
+          "restorationCode": "none",
+          "outcome": "passed",
+          "failedResolverVerified": true,
+          "resolverPassed": true,
+          "configurationAttempted": true,
+          "restoredResolverVerified": true,
+          "configuredStateVerified": true,
+          "restorationAttempted": true
+        },
+        "rollbackScenario": null,
+        "snapshotRemoved": true,
+        "cliCount": 3,
+        "processesJoined": 3,
+        "failureServiceStopped": true,
+        "resolverProcessExited": true,
+        "failedResolverObserved": true,
+        "resolverVerificationRejected": false,
+        "rollbackSnapshotRemoved": false,
+        "rollbackServiceRemoved": false,
+        "staticSnapshotNormalized": false,
+        "staticFirewallRemoved": false,
+        "serviceRemoved": true,
+        "cleanupExitCode": 0
+      }
+    },
+    {
+      "artifactID": 13660617538,
+      "artifactName": "native-dns-doh-roundtrip-windows-amd64",
+      "parsedReportSHA256": "d7b158d310de6ff41109258d6d7a6d98071699b52b61ef452c7cb7b2a3d837d1",
+      "providerZIPDigest": "sha256:3a59d7568c2c4a5e3750e447340f0b349b371c4c4ddc11a4afbcf604b9d9adc5",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "platform": "windows",
+        "architecture": "amd64",
+        "outcome": "passed",
+        "code": "none",
+        "method": "doh",
+        "scenarioKind": "roundtrip",
+        "scenario": {
+          "verificationCode": "none",
+          "failureInjected": false,
+          "operationCode": "none",
+          "configurationAccepted": true,
+          "restorationAccepted": true,
+          "baselineCaptured": true,
+          "restoredStateVerified": true,
+          "code": "none",
+          "restorationCode": "none",
+          "outcome": "passed",
+          "failedResolverVerified": false,
+          "resolverPassed": true,
+          "configurationAttempted": true,
+          "restoredResolverVerified": false,
+          "configuredStateVerified": true,
+          "restorationAttempted": true
+        },
+        "rollbackScenario": null,
+        "snapshotRemoved": true,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "failureServiceStopped": false,
+        "resolverProcessExited": false,
+        "failedResolverObserved": false,
+        "resolverVerificationRejected": false,
+        "rollbackSnapshotRemoved": false,
+        "rollbackServiceRemoved": false,
+        "staticSnapshotNormalized": false,
+        "staticFirewallRemoved": false,
+        "serviceRemoved": false,
+        "cleanupExitCode": -1
+      }
+    },
+    {
+      "artifactID": 13660468838,
+      "artifactName": "native-dns-doh-static-ipv6-windows-arm64",
+      "parsedReportSHA256": "741251649a38625996698f96c41130586a28975afe449b9796af4450a8af6469",
+      "providerZIPDigest": "sha256:1346b0440891d25bcffa0221c99df5975e2d1ce9e5b45ee4398afe20c1d80a27",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "platform": "windows",
+        "architecture": "arm64",
+        "outcome": "passed",
+        "code": "none",
+        "method": "doh",
+        "scenarioKind": "static-ipv6",
+        "scenario": {
+          "verificationCode": "none",
+          "failureInjected": false,
+          "operationCode": "none",
+          "configurationAccepted": true,
+          "restorationAccepted": true,
+          "baselineCaptured": true,
+          "restoredStateVerified": true,
+          "code": "none",
+          "restorationCode": "none",
+          "outcome": "passed",
+          "failedResolverVerified": false,
+          "resolverPassed": true,
+          "configurationAttempted": true,
+          "restoredResolverVerified": false,
+          "configuredStateVerified": true,
+          "restorationAttempted": true
+        },
+        "rollbackScenario": null,
+        "snapshotRemoved": true,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "failureServiceStopped": false,
+        "resolverProcessExited": false,
+        "failedResolverObserved": false,
+        "resolverVerificationRejected": false,
+        "rollbackSnapshotRemoved": false,
+        "rollbackServiceRemoved": false,
+        "staticSnapshotNormalized": true,
+        "staticFirewallRemoved": true,
+        "serviceRemoved": false,
+        "cleanupExitCode": -1
+      }
+    },
+    {
+      "artifactID": 13660344062,
+      "artifactName": "native-dns-dnscrypt-roundtrip-windows-amd64",
+      "parsedReportSHA256": "5efa16aff81eeaf56e69917cff8da93b15742f007d1c6774c63f9140d5b2e41c",
+      "providerZIPDigest": "sha256:291322ea1959e18f0213e1a22ff0bc0c355e6a2da2be0b39fb0e974e5c33a266",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "platform": "windows",
+        "architecture": "amd64",
+        "outcome": "passed",
+        "code": "none",
+        "method": "dnscrypt",
+        "scenarioKind": "roundtrip",
+        "scenario": {
+          "verificationCode": "none",
+          "failureInjected": false,
+          "operationCode": "none",
+          "configurationAccepted": true,
+          "restorationAccepted": true,
+          "baselineCaptured": true,
+          "restoredStateVerified": true,
+          "code": "none",
+          "restorationCode": "none",
+          "outcome": "passed",
+          "failedResolverVerified": false,
+          "resolverPassed": true,
+          "configurationAttempted": true,
+          "restoredResolverVerified": false,
+          "configuredStateVerified": true,
+          "restorationAttempted": true
+        },
+        "rollbackScenario": null,
+        "snapshotRemoved": true,
+        "cliCount": 3,
+        "processesJoined": 3,
+        "failureServiceStopped": false,
+        "resolverProcessExited": false,
+        "failedResolverObserved": false,
+        "resolverVerificationRejected": false,
+        "rollbackSnapshotRemoved": false,
+        "rollbackServiceRemoved": false,
+        "staticSnapshotNormalized": false,
+        "staticFirewallRemoved": false,
+        "serviceRemoved": true,
+        "cleanupExitCode": 0
+      }
+    },
+    {
+      "artifactID": 13660284338,
+      "artifactName": "native-dns-doh-roundtrip-windows-arm64",
+      "parsedReportSHA256": "119b62f825b87fb7b0054de44830d0a801058d60dad20938e723f18d503b5907",
+      "providerZIPDigest": "sha256:1cfc2d5d04781386bc5ee280483e219e2bcf01c455bad40d9065eafa38b1a762",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "platform": "windows",
+        "architecture": "arm64",
+        "outcome": "passed",
+        "code": "none",
+        "method": "doh",
+        "scenarioKind": "roundtrip",
+        "scenario": {
+          "verificationCode": "none",
+          "failureInjected": false,
+          "operationCode": "none",
+          "configurationAccepted": true,
+          "restorationAccepted": true,
+          "baselineCaptured": true,
+          "restoredStateVerified": true,
+          "code": "none",
+          "restorationCode": "none",
+          "outcome": "passed",
+          "failedResolverVerified": false,
+          "resolverPassed": true,
+          "configurationAttempted": true,
+          "restoredResolverVerified": false,
+          "configuredStateVerified": true,
+          "restorationAttempted": true
+        },
+        "rollbackScenario": null,
+        "snapshotRemoved": true,
+        "cliCount": 2,
+        "processesJoined": 2,
+        "failureServiceStopped": false,
+        "resolverProcessExited": false,
+        "failedResolverObserved": false,
+        "resolverVerificationRejected": false,
+        "rollbackSnapshotRemoved": false,
+        "rollbackServiceRemoved": false,
+        "staticSnapshotNormalized": false,
+        "staticFirewallRemoved": false,
+        "serviceRemoved": false,
+        "cleanupExitCode": -1
+      }
+    },
+    {
+      "artifactID": 13660179980,
+      "artifactName": "native-dns-dnscrypt-service-loss-windows-arm64",
+      "parsedReportSHA256": "ddcf37bcd450166ae09d62583780693c18c26c1c290039cfcf73037b39127d75",
+      "providerZIPDigest": "sha256:2790da94f4040bf4ef1e55e27d2d19574f4fedecc0bc4a557e4e5b8662f370a0",
+      "providerZIPDigestVerified": true,
+      "report": {
+        "platform": "windows",
+        "architecture": "arm64",
+        "outcome": "passed",
+        "code": "none",
+        "method": "dnscrypt",
+        "scenarioKind": "service-loss",
+        "scenario": {
+          "verificationCode": "none",
+          "failureInjected": true,
+          "operationCode": "none",
+          "configurationAccepted": true,
+          "restorationAccepted": true,
+          "baselineCaptured": true,
+          "restoredStateVerified": true,
+          "code": "none",
+          "restorationCode": "none",
+          "outcome": "passed",
+          "failedResolverVerified": true,
+          "resolverPassed": true,
+          "configurationAttempted": true,
+          "restoredResolverVerified": true,
+          "configuredStateVerified": true,
+          "restorationAttempted": true
+        },
+        "rollbackScenario": null,
+        "snapshotRemoved": true,
+        "cliCount": 3,
+        "processesJoined": 3,
+        "failureServiceStopped": true,
+        "resolverProcessExited": true,
+        "failedResolverObserved": true,
+        "resolverVerificationRejected": false,
+        "rollbackSnapshotRemoved": false,
+        "rollbackServiceRemoved": false,
+        "staticSnapshotNormalized": false,
+        "staticFirewallRemoved": false,
+        "serviceRemoved": true,
+        "cleanupExitCode": 0
+      }
+    }
+  ],
+  "allTenNativeScenariosPassed": true,
+  "encryptedTrafficQualified": false,
+  "rebootQualified": false,
+  "nativeDnsGateQualified": false,
+  "formalGatesPromoted": 0,
+  "rawLogsRead": false,
+  "productionQualificationComplete": false
+}
