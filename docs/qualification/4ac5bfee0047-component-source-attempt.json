@@ -1,0 +1,67 @@
+{
+  "sourceCommit": "4ac5bfee004794c5db4a196319206470fedbc575",
+  "runID": 42602213445,
+  "rows": [
+    {
+      "name": "windows-component-source-amd64",
+      "digest": "sha256:af036acd4e8f290f8443bb7d882a70f07c82c6a45a46e6c66f54afbd1b497a31",
+      "outcome": "failed",
+      "suitePassed": false,
+      "cases": [
+        {
+          "passed": true,
+          "name": "zapret selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret refuses a preferred folder containing only the other executable"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 selects only its expected executable in the preferred folder"
+        },
+        {
+          "passed": true,
+          "name": "zapret2 refuses a preferred folder containing only the other executable"
+        }
+      ]
+    },
+    {
+      "name": "windows-component-source-arm64",
+      "digest": "sha256:2847793c16a20a2855551c5abfc5469cf24f8bcc06022bf35df03404188b840e",
+      "outcome": "failed",
+      "suitePassed": false,
+      "cases": [
+        {
+          "name": "zapret selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret refuses a preferred folder containing only the other executable",
+          "passed": true
+        },
+        {
+          "name": "zapret2 selects only its expected executable in the preferred folder",
+          "passed": true
+        },
+        {
+          "name": "zapret2 refuses a preferred folder containing only the other executable",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "rawLogsRead": false,
+  "schemaVersion": 1,
+  "scope": "component-discovery-source-attempt",
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "712356b8caf0adf37246edd9926fb69495e76e79f3458bc8487cfe580ef5fd45",
+    "scripts/test-windows-workflow.ps1": "ac463a8a45f21f8ed6710684ad2101b1abc1dddddd036ec4dd95ad184d092809",
+    ".github/workflows/windows-component-discovery.yml": "c93c7bc19893d3af5b9cc93fcd8ae70772318140a74090e724b5ad74776ed50f"
+  },
+  "allFourNewCasesPassed": true,
+  "wholeFixturePassed": false,
+  "productionQualificationComplete": false,
+  "formalGatesPromoted": 0
+}

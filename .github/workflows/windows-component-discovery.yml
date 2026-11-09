@@ -47,15 +47,27 @@ jobs:
           [void](New-Item -ItemType Directory -Path $evidence -ErrorAction Stop)
           "ACCESSWEAVER_COMPONENT_EVIDENCE=$evidence" >> $env:GITHUB_ENV
           $expected=@('PASS zapret selects only its expected executable in the preferred folder','PASS zapret refuses a preferred folder containing only the other executable','PASS zapret2 selects only its expected executable in the preferred folder','PASS zapret2 refuses a preferred folder containing only the other executable')
+          $milestoneNames=@{
+            vendor='PASS Vendor failure detail excludes ordinary non-error output'
+            service='PASS Native service and driver enumeration succeeds with an explicit array result'
+            arguments='PASS Native processes receive literal Windows arguments without shell evaluation'
+            child='PASS Exited installer does not wait for a GUI child holding inherited output pipes'
+            archive='PASS Independent archive fixture generation succeeds without vendor execution'
+            main='Windows workflow contract tests completed. Test artifacts are under build/.'
+            dns='PASS Native DoH configuration disables plaintext fallback'
+            staging='PASS Component metadata cannot select the staging filename or escape its directory'
+          }
+          $milestones=@{};foreach($key in $milestoneNames.Keys){$milestones[$key]=$false}
           $suite=$false;$seen=@();$status='failed'
           try {
             $lines=@(& $stock -NoProfile -NonInteractive -File ./scripts/test-windows-workflow.ps1 2>$null)
             $suite=($LASTEXITCODE -eq 0)
+            foreach($key in $milestoneNames.Keys){$milestones[$key]=(@($lines | Where-Object {$_ -ceq $milestoneNames[$key]}).Count -ge 1)}
             foreach($name in $expected){$seen+=@{name=$name.Substring(5);passed=(@($lines | Where-Object {$_ -ceq $name}).Count -eq 1)}}
             if($suite -and @($seen | Where-Object {-not $_.passed}).Count -eq 0){$status='passed'}
           } finally {
             $sources=@{};foreach($file in @('internal/workflow/windows.ps1','scripts/test-windows-workflow.ps1','.github/workflows/windows-component-discovery.yml')){$sources[$file]=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()}
-            $report=@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;architecture=$env:EXPECTED_ARCH;outcome=$status;suitePassed=$suite;cases=@($seen);sourceSHA256=$sources;realVendorExecuted=$false;productionQualificationComplete=$false}
+            $report=@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;architecture=$env:EXPECTED_ARCH;outcome=$status;suitePassed=$suite;cases=@($seen);milestones=$milestones;sourceSHA256=$sources;realVendorExecuted=$false;productionQualificationComplete=$false}
             [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
           }
           if($status -cne 'passed'){throw 'Component source contracts failed; fixed report retained'}
