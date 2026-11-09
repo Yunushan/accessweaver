@@ -30,7 +30,7 @@ foreach($sid in @($identity.User.Value,'S-1-5-18','S-1-5-32-544') | Select-Objec
 Set-Acl -LiteralPath $root -AclObject $acl -ErrorAction Stop
 $state=New-NativeDNSWireState $root (Join-Path $PSScriptRoot 'dns-wire-stdin.cjs');$state.queryProject=$project;$state.querySourceHashes=$hashes.Clone();$state.queryBinary=$Binary;$state.queryBinarySHA256=$BinarySHA256;$state.querySourceCommit=$env:GITHUB_SHA;$state.queryArchitecture=$env:ACCESSWEAVER_EXPECT_GOARCH
 $outcome='failed';$code='preflight';$cleanupCode='none';$before=$null;$rulesRemoved=$false;$stateVerified=$false;$rootRemoved=$false;$evidence=@{probe=$null;positive=$null;blocked=$null;resumed=$null}
-$diagnostic=@{schemaVersion=1;outcome='not-run';code='server-unavailable';baseline=$null;blocked=$null;comparison=$null;diagnosticOnly=$true;productionQualificationComplete=$false};$candidate=$null
+$diagnostic=@{schemaVersion=1;outcome='not-run';code='server-unavailable';selectionCode='not-inspected';baseline=$null;blocked=$null;comparison=$null;diagnosticOnly=$true;productionQualificationComplete=$false};$candidate=$null
 $unblockClock=$null;$resumptionTiming=@{attempted=$false;startMilliseconds=0L;endMilliseconds=0L};$recoveryObservation=New-NativeDNSRecoveryObservation
 try {
     $code='preflight-source';Assert-NativeFreshDNSSources $state
@@ -40,15 +40,15 @@ try {
     $code='probe';$evidence.probe=Invoke-NativeFreshDNSQuery $state -Probe
     $code='positive';$evidence.positive=Invoke-NativeFreshDNSQuery $state 'example.net'
     try {
-        $candidate=Select-NativeDNSDiagnosticServer @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop)
+        $selection=Select-NativeDNSDiagnosticServer @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop);$candidate=$selection.server;$diagnostic.selectionCode=$selection.code
         if($candidate){$diagnostic.outcome='refused';$diagnostic.baseline=Invoke-NativeDNSDiagnostic $state $candidate 'direct';$diagnostic.code=if($diagnostic.baseline.result.outcome -ceq 'answered'){'blocked-pending'}else{'baseline-refused'}}
-    }catch{$diagnostic.outcome='refused';$diagnostic.code='baseline-refused'}
+    }catch{if($diagnostic.selectionCode -ceq 'not-inspected'){$diagnostic.selectionCode='inventory-error'};$diagnostic.outcome='refused';$diagnostic.code='baseline-refused'}
     $code='block';foreach($kind in @('dns','tls')){foreach($protocol in @('TCP','UDP')){Add-NativeDNSWireRule $state $kind $protocol}}
     $code='blocked';$evidence.blocked=Invoke-NativeFreshDNSQuery $state 'example.net' -ExpectFailure
     if($diagnostic.code -ceq 'blocked-pending'){
         try{
             $current=Select-NativeDNSDiagnosticServer @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop)
-            if($current -cne $candidate){$diagnostic.code='server-changed'}else{
+            if($current.code -cne 'selected' -or $current.server -cne $candidate){$diagnostic.code='server-changed'}else{
                 $diagnostic.blocked=Invoke-NativeDNSDiagnostic $state $candidate 'direct'
                 $diagnostic.code=if($diagnostic.blocked.result.outcome -ceq 'refused' -and $diagnostic.blocked.result.code -cin @('timeout','query-failed')){'comparison-pending'}else{'block-control-refused'}
             }
@@ -73,7 +73,7 @@ try {
                 if($diagnostic.code -ceq 'comparison-pending'){
                     try{
                         $current=Select-NativeDNSDiagnosticServer @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop)
-                        if($current -cne $candidate){$diagnostic.code='server-changed'}else{
+                        if($current.code -cne 'selected' -or $current.server -cne $candidate){$diagnostic.code='server-changed'}else{
                             $diagnostic.comparison=Invoke-NativeDNSDiagnostic $state $candidate 'compare'
                             if($diagnostic.comparison.outcome -ceq 'observed'){$diagnostic.outcome='observed';$diagnostic.code='none'}else{$diagnostic.code='comparison-refused'}
                         }

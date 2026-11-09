@@ -42,21 +42,22 @@ function Invoke-NativeFreshDNSQuery([object]$State,[string]$Name,[switch]$Expect
 # Independent diagnostic definitions. Never publish candidate server addresses.
 function Select-NativeDNSDiagnosticServer([object[]]$Adapters,[object[]]$Rows) {
     $active=@($Adapters | Where-Object {$_.Status -ceq 'Up' -and $_.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN'} | ForEach-Object {[int]$_.ifIndex})
-    if($active.Count -eq 0){return $null}
+    if($active.Count -eq 0){return @{server=$null;code='no-active-adapter'}}
     $found=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach($row in $Rows){
         if([int]$row.InterfaceIndex -notin $active){continue}
         foreach($value in @($row.ServerAddresses)){
             $address=$null
-            if($value -isnot [string] -or -not [Net.IPAddress]::TryParse($value,[ref]$address)){return $null}
-            if($address.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork){return $null}
+            if($value -isnot [string] -or -not [Net.IPAddress]::TryParse($value,[ref]$address)){return @{server=$null;code='invalid-address'}}
+            if($address.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork){return @{server=$null;code='ipv6-present'}}
             $bytes=$address.GetAddressBytes()
-            if($bytes[0] -eq 0 -or $bytes[0] -eq 127 -or $bytes[0] -ge 224 -or ($bytes[0] -eq 169 -and $bytes[1] -eq 254)){return $null}
+            if($bytes[0] -eq 0 -or $bytes[0] -eq 127 -or $bytes[0] -ge 224 -or ($bytes[0] -eq 169 -and $bytes[1] -eq 254)){return @{server=$null;code='ineligible-address'}}
             [void]$found.Add($address.ToString())
         }
     }
-    if($found.Count -ne 1){return $null}
-    return @($found)[0]
+    if($found.Count -eq 0){return @{server=$null;code='no-server'}}
+    if($found.Count -ne 1){return @{server=$null;code='multiple-servers'}}
+    return @{server=@($found)[0];code='selected'}
 }
 function Get-NativeDNSDirectValue([object]$Value) {
     $keys=@('outcome','code','answerCount')

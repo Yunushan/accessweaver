@@ -99,10 +99,13 @@ Case-Q 'preflight-stages-are-distinct-and-precede-native-effects' {
 }
 Case-Q 'diagnostic-server-selection-refuses-ambiguity' {
     $a=@(@{Status='Up';InterfaceDescription='Ethernet';ifIndex=1});$r=@(@{InterfaceIndex=1;ServerAddresses=@('192.0.2.53')})
-    Assert-Q ((Select-NativeDNSDiagnosticServer $a $r) -ceq '192.0.2.53')
-    $r[0].ServerAddresses=@('192.0.2.53','192.0.2.54');Assert-Q ($null -eq (Select-NativeDNSDiagnosticServer $a $r))
-    $r[0].ServerAddresses=@('192.0.2.53','2001:db8::1');Assert-Q ($null -eq (Select-NativeDNSDiagnosticServer $a $r))
-    $r[0].ServerAddresses=@('127.0.0.1');Assert-Q ($null -eq (Select-NativeDNSDiagnosticServer $a $r))
+    $v=Select-NativeDNSDiagnosticServer $a $r;Assert-Q ($v.code -ceq 'selected' -and $v.server -ceq '192.0.2.53')
+    $r[0].ServerAddresses=@('192.0.2.53','192.0.2.54');Assert-Q ((Select-NativeDNSDiagnosticServer $a $r).code -ceq 'multiple-servers')
+    $r[0].ServerAddresses=@('192.0.2.53','2001:db8::1');Assert-Q ((Select-NativeDNSDiagnosticServer $a $r).code -ceq 'ipv6-present')
+    $r[0].ServerAddresses=@('127.0.0.1');Assert-Q ((Select-NativeDNSDiagnosticServer $a $r).code -ceq 'ineligible-address')
+    $r[0].ServerAddresses=@('invalid');Assert-Q ((Select-NativeDNSDiagnosticServer $a $r).code -ceq 'invalid-address')
+    $r[0].ServerAddresses=@();Assert-Q ((Select-NativeDNSDiagnosticServer $a $r).code -ceq 'no-server')
+    $a[0].Status='Down';Assert-Q ((Select-NativeDNSDiagnosticServer $a $r).code -ceq 'no-active-adapter')
 }
 Case-Q 'diagnostic-direct-projection-is-closed-and-source-bound' {
     $r=@{schemaVersion=1;sourceCommit=$source;architecture=$arch;result=@{outcome='answered';code='none';answerCount=1};productionQualificationComplete=$false}
