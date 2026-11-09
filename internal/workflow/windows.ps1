@@ -1199,6 +1199,15 @@ function Configure-DNS([string]$method) {
         $currentDoh=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
         foreach($provider in $providers){if(@($currentDoh | Where-Object {$_.ServerAddress -eq $provider.address}).Count -gt 1){throw 'Current DoH configuration is ambiguous; retain the original DNS snapshot'}}
         foreach($provider in $providers){if(@($currentDoh | Where-Object {$_.ServerAddress -eq $provider.address}).Count -eq 1){Set-DnsClientDohServerAddress -ServerAddress $provider.address -DohTemplate $provider.url -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop}else{Add-DnsClientDohServerAddress -ServerAddress $provider.address -DohTemplate $provider.url -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop}}
+        # Do not switch adapters to a resolver whose encryption policy did not
+        # survive the native setters. Keep first originals for rollback on refusal.
+        $verifiedDoh=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
+        foreach($provider in $providers){
+            $verified=@($verifiedDoh | Where-Object {$_.ServerAddress -is [string] -and $_.ServerAddress -eq $provider.address})
+            if($verified.Count -ne 1){throw 'Configured DoH entry could not be verified; retain the original DNS snapshot'}
+            $entry=$verified[0]
+            if($entry.DohTemplate -isnot [string] -or $entry.DohTemplate -cne $provider.url -or $entry.AllowFallbackToUdp -isnot [bool] -or $entry.AllowFallbackToUdp -ne $false -or $entry.AutoUpgrade -isnot [bool] -or $entry.AutoUpgrade -ne $true){throw 'Configured DoH policy could not be verified; retain the original DNS snapshot'}
+        }
         $servers=@($providers | ForEach-Object {$_.address})
     } else {throw 'Choose doh or dnscrypt'}
     foreach($adapter in $adapters){
