@@ -537,3 +537,8 @@ AMD64 failed at preflight before any helper child started. Its private root was 
 
 
 The first preflight-stage attribution run at `e9604d995222`, `42570808727`, stopped both hosts in source contracts before the native prerequisite. Both Go unit reports passed; the only failed PowerShell group was `preflight-stages-are-distinct-and-precede-native-effects`. Its exact failing assertion is not present in the fixed report. The prepared source correction uses literal PowerShell markers and requires fresh hosted validation; it does not alter DNS behavior or acceptance. The terminal failure is retained in `docs/qualification/e9604d995222-preflight-source-refusal.json`. The cumulative investigation contains 588 verified ZIP digests and 452 terminal jobs; no readiness gate is promoted.
+
+
+The corrected preflight-stage contract cohort at `9a298ec66ca8`, run `42571268038`, is sealed. Both hosts passed the source checks, and AMD64 passed the native prerequisite. ARM64 retained its immediate native timeout, then returned two answers in each diagnostic query at 5, 10, 15, 35 and 65 seconds after unblocking; the first sample ran from 5001 to 5153 milliseconds. Owned rules were removed, original DNS state was verified, and the private root was retired on both hosts. Later answers do not upgrade the initial failure or establish its cause.
+
+The earlier AMD64 preflight failure did not recur, so its cause remains undetermined. The focused receipt is `docs/qualification/9a298ec66ca8-dns-recovery-observation.json`. The cumulative investigation contains 592 verified ZIP digests and 454 terminal jobs; all earlier evidence is unchanged. The actual-product wire comparison, ARM64 recovery, and original readiness gates remain unqualified.
