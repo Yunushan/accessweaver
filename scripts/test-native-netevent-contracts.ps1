@@ -569,6 +569,15 @@ Case-N 'general-offload-native-entry-journals-before-exact-object-setter' {
     foreach($c in $a.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){Assert-N ($c.GetCommandName() -cnotin @('Disable-NetAdapterLso','Enable-NetAdapterLso','Restart-NetAdapter','Disable-NetAdapter','Enable-NetAdapter'));if($c.GetCommandName() -ceq 'Set-NetAdapterLso'){$count++;$parameters=@($c.CommandElements | Where-Object {$_ -is [Management.Automation.Language.CommandParameterAst]} | ForEach-Object {$_.ParameterName});Assert-N ('InputObject' -cin $parameters -and 'Name' -cnotin $parameters -and 'IPv4Enabled' -cin $parameters -and 'IPv6Enabled' -cin $parameters -and 'V1IPv4Enabled' -cin $parameters -and 'NoRestart' -cin $parameters)}};Assert-N ($count -eq 1)
 }
 
+Case-N 'general-offload-digest-refusal-keeps-all-mutation-proof-flags-false' {
+    $r=New-NativeDoHOffloadEvidence 'stage';$r.code='plan';$r.ordinal=0;$v=Get-NativeDoHOffloadEvidence ($r | ConvertTo-Json -Compress) 'stage';Assert-N ($v.code -ceq 'plan' -and -not $v.identityVerified -and -not $v.changed -and -not $v.restartRequested -and -not $v.readbackVerified -and $v.adapters -eq 0)
+    $r.code='none';Assert-N ((Get-NativeDoHOffloadEvidence ($r | ConvertTo-Json -Compress) 'stage').code -ceq 'invalid')
+}
+
+Case-N 'capture-ownership-preflight-precedes-any-offload-stage' {
+    $body=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-native-netevent-control.ps1'));Assert-N ($body.IndexOf("Invoke-NativeNDISOperation 'preflight'") -lt $body.IndexOf("Invoke-NativeOffloadOperation 'prepare'") -and $body.IndexOf("Invoke-NativeNDISOperation 'create'") -lt $body.IndexOf("Invoke-NativeOffloadOperation 'stage' 0 -RejectDigest") -and $body.IndexOf("Invoke-NativeNDISOperation 'create'") -lt $body.IndexOf("Invoke-NativeOffloadOperation 'stage' $"+'ordinal'))
+}
+
 foreach($file in $sources){if((Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $hashes[$file]){throw 'Source changed'}}
 $passed=@($cases | Where-Object {-not $_.passed}).Count -eq 0
 [Console]::Out.WriteLine((@{schemaVersion=1;scope='actual-native-netevent-source';sourceSHA256=$hashes;cases=@($cases.ToArray());passed=$passed;realCaptureStarted=$false;realDnsChanged=$false;nativeQualified=$false} | ConvertTo-Json -Depth 6 -Compress))
