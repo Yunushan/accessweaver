@@ -292,6 +292,8 @@ test('machine review exports the exact request while unavailable apply stays dis
   await page.locator('.nav-item[data-view="system"]').click();
   await page.locator('#system-action').selectOption('dns');
   await page.locator('#system-dns').selectOption('doh');
+  await expect(page.locator('#system-doh-notice')).toBeVisible();
+  await expect(page.locator('#system-dns')).toHaveAccessibleDescription('Tests on Windows ARM64 observed unencrypted DNS queries during DoH setup.');
   await page.locator('#system-preview').click();
   await expect(page.locator('#system-export')).toBeEnabled();
   await expect(page.locator('#system-consent')).toBeDisabled();
@@ -305,6 +307,7 @@ test('machine review exports the exact request while unavailable apply stays dis
   expect(JSON.parse(await fs.readFile(await download.path(),'utf8'))).toEqual(reviewed.operation);
   await expect(fs.stat(path.join(core.home,'state','workflows'))).rejects.toMatchObject({code:'ENOENT'});
   await page.locator('#system-dns').selectOption('dnscrypt');
+  await expect(page.locator('#system-doh-notice')).toBeHidden();
   await expect(page.locator('#system-export')).toBeDisabled();
 });
 
