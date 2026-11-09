@@ -78,8 +78,8 @@ jobs:
         run: |
           go build -mod=readonly -trimpath -ldflags "-X main.sourceCommit=$env:GITHUB_SHA" -o build/native-dns-query/query.exe ./scripts/native-dns-query
           if($LASTEXITCODE -ne 0){throw 'Native query compilation failed'}
-          node scripts/check-native-environment.cjs --binary build/native-dns-query/query.exe
-          if($LASTEXITCODE -ne 0){throw 'Native query binary architecture failed'}
+          # The mandatory --probe below verifies this helper's own source and
+          # IsWow64Process2 identity; the product CLI version protocol is separate.
       - name: Native positive block rejection unblock and resume
         run: |
           $ErrorActionPreference='Stop'

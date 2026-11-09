@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "scope": "native-windows-per-lookup-cache-bypass-prerequisite-preflight",
-  "parentCommit": "9e9f2064501fcb756e4a88fa4f867ceac90cfdc7",
+  "parentCommit": "1e29ac8b7094afa22536aa44e8af3a8cf7a1318b",
   "sourceSHA256": {
-    "scripts/native-dns-query/main_windows.go": "2e80790fa0e5f8973a87d51330a057c73ecf09f830c38593bf969fd7b6a06875",
+    "scripts/native-dns-query/main_windows.go": "112924737d1098f3195c6d155ffb8e3f456e025db392243891a9b9474a5eb5a7",
     "scripts/native-dns-query/main_windows_test.go": "3816daffc1dcc7f208cbc1609b3c923554b0749ed65eb260d62d915856c05796",
     "scripts/native-dns-query.ps1": "37a32c067b948bb8ed145882e6213ee07022556cb0e83afdfae2fccf9a11c97e",
     "scripts/test-native-dns-query-contracts.ps1": "09c473731dc7712685b025121b0a439732d8f98fa1b2df58e606d3489d41df31",
     "scripts/test-native-dns-query.ps1": "3646277ef286d028ca9f50008bc8448f95371134489da9ebbdf936c231401f43",
-    ".github/workflows/native-dns-query.yml": "12a63256b8aa05c26b6de183bb7db73585d962420b3f48ec3bc882291943cb71"
+    ".github/workflows/native-dns-query.yml": "b2de718fc088629b518daf231f0457bd80d82e7c954c3c498195aeff9eaaf54d"
   },
   "compileOnlyTargetsPassed": [
     "windows/amd64",
@@ -37,5 +37,9 @@
   "hostedNativeValidationComplete": false,
   "encryptedTrafficQualified": false,
   "productionQualificationComplete": false,
-  "formalGatesPromoted": 0
+  "formalGatesPromoted": 0,
+  "readerMalformedProjectionsRefused": 8,
+  "helperOwnCompilerSourceNativeIdentityRequired": true,
+  "productCLIVersionProtocolUsedForHelper": false,
+  "initialFailureReceipt": "docs/qualification/1e29ac8b7094-native-query-preflight-refusal.json"
 }

@@ -108,7 +108,7 @@ func runQuery(name string, query queryFunc, free freeFunc) (result queryReport) 
 }
 
 func guarded() bool {
-	if !sourcePattern.MatchString(sourceCommit) || os.Getenv("GITHUB_SHA") != sourceCommit ||
+	if runtime.Version() != "go1.27.3" || !sourcePattern.MatchString(sourceCommit) || os.Getenv("GITHUB_SHA") != sourceCommit ||
 		os.Getenv("GITHUB_ACTIONS") != "true" || os.Getenv("RUNNER_ENVIRONMENT") != "github-hosted" ||
 		os.Getenv("RUNNER_OS") != "Windows" || os.Getenv("ACCESSWEAVER_EXPECT_GOOS") != "windows" ||
 		os.Getenv("ACCESSWEAVER_EXPECT_GOARCH") != runtime.GOARCH {
