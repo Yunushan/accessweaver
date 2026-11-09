@@ -21,7 +21,7 @@ func TestServiceConfigStrictAndBounded(t *testing.T) {
 		strings.Replace(valid, `"binary":`, `"unknown":true,"binary":`, 1),
 		valid + `{}`,
 		strings.Replace(valid, `"binary":"binary.exe"`, `"binary":""`, 1),
-		strings.Replace(valid, `"--example=x"`, `"--example=\\u0000"`, 1),
+		strings.Replace(valid, `"--example=x"`, `"--example=\u0000"`, 1),
 		strings.Replace(valid, `"--example=x"`, `"`+strings.Repeat("x", 4097)+`"`, 1),
 		strings.Replace(valid, `["--example=x"]`, `[`+strings.Repeat(`"x",`, 128)+`"x"]`, 1),
 		valid + strings.Repeat(" ", jsoninput.MaxBytes),
