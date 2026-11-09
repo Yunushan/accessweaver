@@ -25280,8 +25280,186 @@
       ]
     }
   ],
-  "distinctProviderZIPDigestsVerified": 404,
-  "terminalJobsVerified": 326,
+  "ipAuthorityControls": [
+    {
+      "sourceCommit": "71f4a56ba5d362c6644bfd91d95b8cbaea03dcbc",
+      "runID": 42545669826,
+      "allJobsTerminal": true,
+      "terminalBasis": "all-two-source-bound-matrix-jobs-completed",
+      "lastProviderRunStatus": "in_progress",
+      "sourceSHA256": {
+        "scripts/doh-ip-authority-control.cjs": "c5ce48c96e608545716a8bc1b0243baf7519d4e8b5ce7b0d0946726a192681ad",
+        "scripts/test-doh-ip-authority-control.cjs": "abd20a7e5389e88a8cf21c7372c3b10d38d0953fd9ec7f1f6c3ed4991c2c93ec",
+        "scripts/doh-ip-authority-evidence.ps1": "b463237041d749cb2c1e9752b168fac7eff75023172ecc42f2724d35d3bd69cb",
+        "scripts/test-doh-ip-authority-source.ps1": "640e7652de8b160504b7c5b8c345aa97228ed42d06e223dda55d4b5bf14d2f94",
+        "scripts/test-doh-ip-authority.ps1": "a13b327f84e3f79517a61064be3c4e978f63dd3333334a15704fcb7d24bade65",
+        "scripts/ndis-tls-control.cjs": "6254b7c5600ad7da1b1eb3ca6c9694b68fa616e812fc16d57faba062325a79a1",
+        "scripts/native-dns-wire.ps1": "628ca31341babc247390d14dfcadea2d772d33a666570edbbd6c6b05ebee2850",
+        ".github/workflows/native-doh-ip-authority.yml": "9680647d664a6232f0e5ed7a135570ee9299542ef466a5f2c5ce896483c8ae92"
+      },
+      "jobs": [
+        {
+          "id": 128930019155,
+          "name": "IP-authority prerequisite (windows/arm64)",
+          "status": "completed",
+          "conclusion": "failure",
+          "passedSteps": [
+            "Verify native pinned Node identity",
+            "Verify pure and closed source contracts",
+            "Retain fixed IP-authority source metadata only",
+            "Retain fixed IP-authority native metadata only"
+          ],
+          "failedSteps": [
+            "Run guarded authenticated IP-authority prerequisite"
+          ],
+          "activeSteps": []
+        },
+        {
+          "id": 128930019195,
+          "name": "IP-authority prerequisite (windows/amd64)",
+          "status": "completed",
+          "conclusion": "failure",
+          "passedSteps": [
+            "Verify native pinned Node identity",
+            "Verify pure and closed source contracts",
+            "Retain fixed IP-authority source metadata only",
+            "Retain fixed IP-authority native metadata only"
+          ],
+          "failedSteps": [
+            "Run guarded authenticated IP-authority prerequisite"
+          ],
+          "activeSteps": []
+        }
+      ],
+      "bothSourceContractsPassed": true,
+      "bothNativePrerequisitesPassed": false,
+      "ipv6TransportQualified": false,
+      "artifacts": [
+        {
+          "artifactID": 13643720689,
+          "artifactName": "ip-authority-native-windows-arm64",
+          "providerZIPDigest": "sha256:d643f1c13a0bdbd66bc4c966559ce001c4493d670feaf535e91ea2715a3181b4",
+          "providerZIPDigestVerified": true,
+          "kind": "native",
+          "architecture": "arm64",
+          "outcome": "failed",
+          "code": "endpoint",
+          "endpoints": [
+            {
+              "socketStarted": true,
+              "closed": true,
+              "tlsAuthorized": true,
+              "code": "none",
+              "socketJoined": true,
+              "ipIdentityVerified": true,
+              "endpointMask": 1,
+              "responseValidated": true,
+              "outcome": "passed",
+              "productionQualificationComplete": false,
+              "peerEnded": true,
+              "schemaVersion": 1,
+              "certificateMask": 5
+            },
+            {
+              "socketStarted": true,
+              "closed": true,
+              "tlsAuthorized": true,
+              "code": "http",
+              "socketJoined": true,
+              "ipIdentityVerified": true,
+              "endpointMask": 2,
+              "responseValidated": false,
+              "outcome": "failed",
+              "productionQualificationComplete": false,
+              "peerEnded": false,
+              "schemaVersion": 1,
+              "certificateMask": 10
+            }
+          ],
+          "certificateIPCoverageMask": 15,
+          "ipv6TransportTested": false,
+          "processes": 3,
+          "joined": 3,
+          "toolFailure": false
+        },
+        {
+          "artifactID": 13643066995,
+          "artifactName": "ip-authority-native-windows-amd64",
+          "providerZIPDigest": "sha256:847f2480d14e6fc550e14141fec139a0e7ab19f8a3ce5e1d7eb949a9065349a6",
+          "providerZIPDigestVerified": true,
+          "kind": "native",
+          "architecture": "amd64",
+          "outcome": "failed",
+          "code": "endpoint",
+          "endpoints": [
+            {
+              "socketStarted": true,
+              "closed": true,
+              "tlsAuthorized": true,
+              "code": "none",
+              "socketJoined": true,
+              "ipIdentityVerified": true,
+              "endpointMask": 1,
+              "responseValidated": true,
+              "outcome": "passed",
+              "productionQualificationComplete": false,
+              "peerEnded": true,
+              "schemaVersion": 1,
+              "certificateMask": 5
+            },
+            {
+              "socketStarted": true,
+              "closed": true,
+              "tlsAuthorized": true,
+              "code": "http",
+              "socketJoined": true,
+              "ipIdentityVerified": true,
+              "endpointMask": 2,
+              "responseValidated": false,
+              "outcome": "failed",
+              "productionQualificationComplete": false,
+              "peerEnded": false,
+              "schemaVersion": 1,
+              "certificateMask": 10
+            }
+          ],
+          "certificateIPCoverageMask": 15,
+          "ipv6TransportTested": false,
+          "processes": 3,
+          "joined": 3,
+          "toolFailure": false
+        },
+        {
+          "artifactID": 13642874617,
+          "artifactName": "ip-authority-source-windows-arm64",
+          "providerZIPDigest": "sha256:c4861a8f5e2d79ae729d4eeb00a5f73f9af6c1cc828b6814d371d0c268b72111",
+          "providerZIPDigestVerified": true,
+          "kind": "source",
+          "architecture": "arm64",
+          "passed": true,
+          "nodeGroups": 23,
+          "psGroups": 8,
+          "failedNodeCases": [],
+          "failedPSCases": []
+        },
+        {
+          "artifactID": 13642793231,
+          "artifactName": "ip-authority-source-windows-amd64",
+          "providerZIPDigest": "sha256:8618862f118836a73f83d5edbc93759abef0508d6d1f59c3a8e903641c21c623",
+          "providerZIPDigestVerified": true,
+          "kind": "source",
+          "architecture": "amd64",
+          "passed": true,
+          "nodeGroups": 23,
+          "psGroups": 8,
+          "failedNodeCases": [],
+          "failedPSCases": []
+        }
+      ]
+    }
+  ],
+  "distinctProviderZIPDigestsVerified": 408,
+  "terminalJobsVerified": 328,
   "productSourceUnchangedSince": "3ae6417cb9a8a86d6b4e41dea0f25fc3af94c331",
   "readinessManifestSHA256": "9525ee76922c68ec4f3daafe581bffc9d7631bf77947863bc62a807556b4b735",
   "rawLogsRead": false,

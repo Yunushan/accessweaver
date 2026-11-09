@@ -1,7 +1,7 @@
 "use strict";
 // Pure dependency-injected tests only. No socket or certificate store is opened.
 const assert=require('node:assert/strict'),{EventEmitter}=require('node:events');
-const {specFor,requestBytes,endpointOptions,emptyResult,runEndpoint,hostedGuard,socketFailure}=require('./doh-ip-authority-control.cjs');
+const {specFor,requestBytes,endpointOptions,emptyResult,runEndpoint,hostedGuard,socketFailure,httpDiagnostic}=require('./doh-ip-authority-control.cjs');
 const {fixedDohQuery}=require('./ndis-tls-control.cjs');
 function response(){const b=Buffer.concat([fixedDohQuery(),Buffer.from('c00c000100010000003c0004c0000201','hex')]);b.writeUInt16BE(0x8180,2);b.writeUInt16BE(1,6);return Buffer.concat([Buffer.from('HTTP/1.1 200 OK\r\nContent-Type: application/dns-message\r\nContent-Length: '+b.length+'\r\n\r\n'),b]);}
 function fake(ordinal=0,fault=''){
@@ -29,7 +29,7 @@ await test('tls-version-downgrade-refused',async()=>{const {r}=await scenario('v
 await test('certificate-ip-callback-mismatch-refused',async()=>{const {r,hooks}=await scenario('identity-callback');assert.equal(r.code,'identity');assert.equal(hooks.request,null);assert.equal(r.certificateMask,0);});
 await test('certificate-ip-san-mismatch-refused',async()=>{const {r}=await scenario('ip-san');assert.equal(r.code,'identity');assert(!r.ipIdentityVerified);});
 await test('oversized-public-peer-certificate-refused',async()=>{const {r}=await scenario('certificate-bound');assert.equal(r.code,'identity');});
-await test('http-redirect-is-refused-without-bootstrap-followup',async()=>{const {r}=await scenario('redirect');assert.equal(r.code,'http');assert(!r.responseValidated);});
+await test('http-redirect-is-refused-without-bootstrap-followup',async()=>{const {r}=await scenario('redirect');assert.equal(r.code,'http');assert.equal(r.httpStatus,301);assert.equal(r.httpStage,'status');assert(!r.responseValidated);});
 await test('invalid-dns-response-fails-after-valid-http-framing',async()=>{const {r}=await scenario('dns');assert.equal(r.code,'response');});
 await test('bounded-response-aborts-and-joins-socket',async()=>{const {r}=await scenario('bound');assert.equal(r.code,'bound');assert(r.closed&&r.socketJoined);});
 await test('network-error-is-fixed-code-and-private-text-is-absent',async()=>{const {r}=await scenario('network');assert.equal(r.code,'network');assert(!JSON.stringify(r).includes('PRIVATE'));});
@@ -41,5 +41,7 @@ await test('hosted-guard-requires-native-identity-and-absent-interop',()=>{const
 await test('public-report-is-closed-and-never-claims-production',async()=>{const {r}=await scenario('');assert.equal(Object.keys(r).length,Object.keys(emptyResult(0)).length);assert.equal(r.productionQualificationComplete,false);for(const key of ['certificate','subject','raw','path','address','peerIPv6','error'])assert(!Object.hasOwn(r,key));assert(Object.isFrozen(r));});
 await test('known-certificate-errors-map-to-closed-identity-and-tls-codes',()=>{assert.equal(socketFailure({code:'ERR_TLS_CERT_ALTNAME_INVALID'}),'identity');for(const code of ['CERT_HAS_EXPIRED','UNABLE_TO_VERIFY_LEAF_SIGNATURE','ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE'])assert.equal(socketFailure({code}),'tls');});
 await test('unknown-socket-error-never-exports-error-code-or-text',()=>{assert.equal(socketFailure({code:'PRIVATE-ACCOUNT',message:'PRIVATE-PATH'}),'network');assert.equal(socketFailure(null),'network');});
-const report={schemaVersion:1,scope:'pure-fixed-ip-authority-contracts',cases,passed:cases.length===23&&cases.every(c=>c.passed),nativeNetworkUsed:false,productionQualificationComplete:false};process.stdout.write(JSON.stringify(report)+'\n');if(!report.passed)process.exitCode=1;
+await test('http-diagnostic-publishes-only-fixed-status-and-stage',()=>{const r=httpDiagnostic(Buffer.from('HTTP/1.1 421 Misdirected Request\r\nX-Private: PRIVATE-HEADER\r\n\r\n'));assert.deepEqual(r,{status:421,stage:'status'});assert(!JSON.stringify(r).includes('PRIVATE'));assert.equal(httpDiagnostic(Buffer.from('HTTP/1.1 499 PRIVATE\r\n\r\n')).status,-1);});
+await test('http-duplicate-and-ambiguous-framing-stay-refused',()=>{assert.equal(httpDiagnostic(Buffer.from('HTTP/1.1 200 OK\r\nX-Private: one\r\nX-Private: two\r\n\r\n')).stage,'duplicate-header');assert.equal(httpDiagnostic(Buffer.from('HTTP/1.1 200 OK\r\nContent-Length: 0\r\nTransfer-Encoding: chunked\r\n\r\n')).stage,'framing');});
+const report={schemaVersion:1,scope:'pure-fixed-ip-authority-contracts',cases,passed:cases.length===25&&cases.every(c=>c.passed),nativeNetworkUsed:false,productionQualificationComplete:false};process.stdout.write(JSON.stringify(report)+'\n');if(!report.passed)process.exitCode=1;
 })();
