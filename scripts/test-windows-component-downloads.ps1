@@ -4,16 +4,21 @@
 [CmdletBinding()]
 param([switch]$RequireWindowsPowerShell)
 $ErrorActionPreference='Stop'
+Write-Output 'STAGE-ENTRY-PASS'
 if($RequireWindowsPowerShell -and ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1 -or $PSVersionTable.PSEdition -cne 'Desktop')){throw 'Windows PowerShell 5.1 Desktop is required'}
 $downloadProject=Split-Path -Parent $PSScriptRoot
 $downloadTokens=$null;$downloadParseErrors=$null
 $downloadAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $downloadProject 'internal\workflow\windows.ps1'),[ref]$downloadTokens,[ref]$downloadParseErrors)
 if($downloadParseErrors.Count){throw 'Component download source did not parse'}
+Write-Output 'STAGE-SOURCE-PARSE-PASS'
 $downloadNames=@('Throw-ComponentDownloadFailure','New-ComponentDownloadBudget','Get-ComponentDownloadRemaining','Wait-ComponentDownloadTask','Write-ComponentDownloadChunk','Receive-ComponentDownloadStream','Assert-ComponentDownloadLength','Test-ComponentDownloadTerminal','Save-ComponentDownloadAttempt','Invoke-ComponentDownloadDotNet','Set-ComponentDownloadHeaders','Invoke-ComponentDownloadCurl','New-ComponentDownloadCurlStart','New-ComponentDownloadCurlProcess','Wait-ComponentDownloadProcessExit','Native-Argument','Quote-Arg','Require-DownloadPermission','Approved-DownloadHash','Allowed-Download','Read-RemoteJSON','Resolve-ComponentDownloadRedirect','New-ComponentDownloadRequest','Invoke-ComponentDownloadCurlOnce','Test-InstallerPublisher','Download')
+$downloadDefinitionIndex=0
 foreach($downloadName in $downloadNames){
     $downloadNodes=@($downloadAst.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $downloadName})
     if($downloadNodes.Count -ne 1){throw 'Required component download function is unavailable'}
     . ([scriptblock]::Create($downloadNodes[0].Extent.Text))
+    $downloadDefinitionIndex++
+    if($downloadDefinitionIndex -in @(5,10,15,20,25)){Write-Output ('STAGE-DEFINITION-'+$downloadDefinitionIndex+'-PASS')}
 }
 Write-Output 'STAGE-DEFINITIONS-PASS'
 # These types allocate only tiny buffers. Length is deliberately independent of
