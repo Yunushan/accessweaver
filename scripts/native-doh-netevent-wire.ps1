@@ -76,6 +76,13 @@ function Read-DoHBaselineResolverEvidence([object]$State) {
     $first=@(Get-NetAdapter -ErrorAction Stop);$clients=@(Get-DnsClientServerAddress -ErrorAction Stop);$last=@(Get-NetAdapter -ErrorAction Stop)
     return (Get-DoHBaselineResolverEvidence $State.before $first $clients $last)
 }
+function Invoke-DoHWireFreshDNSQuery([object]$State,[string]$Name,[switch]$ExpectFailure) {
+    $result=Invoke-NativeFreshDNSQuery $State $Name -ExpectFailure:$ExpectFailure
+    # The former wire resolver accepted at most 32 returned rows. Preserve
+    # that bound even though the standalone helper permits up to 64 answers.
+    if(-not $ExpectFailure -and ($result.answerCount -gt 32 -or $result.recordCount -gt 32)){throw 'Wire answer bound'}
+    return $result
+}
 function Start-DoHNetEventCapture([object]$State) {
     $State.phase='decoder-preflight';$version=Invoke-DoHNetEventProcess $State $State.node @('--version')
     if($version.Trim() -cne 'v26.8.2'){throw 'Product capture Node version'}
@@ -85,7 +92,7 @@ function Start-DoHNetEventCapture([object]$State) {
     $State.phase='firewall-preflight';Assert-NativeDNSWireFirewall
     $State.phase='baseline-resolver'
     try{$State.ndis.public.baselineEvidence=Read-DoHBaselineResolverEvidence $State}catch{$State.ndis.public.baselineEvidence=New-DoHBaselineResolverEvidence (Get-DoHBaselineFailure $_.Exception);throw 'Product baseline resolver evidence refused'}
-    [void](Invoke-NativeDNSWireQuery 'example.com');$State.flags.baselineResolverPassed=$true
+    [void](Invoke-DoHWireFreshDNSQuery $State 'example.com');$State.flags.baselineResolverPassed=$true
     $State.ndis.plan=@{name=('awndis-'+[guid]::NewGuid().ToString('N'));file=$State.etl;guid='';originalVerified=$false;capturePolicy='product-doh-all'}
     $State.phase='monitor-preflight';$v=Invoke-DoHNetEventOperation $State 'preflight';$State.ndis.public.preflightEmpty=$v.emptyBefore
     if(-not $v.emptyBefore){throw 'Product capture inventory'}
@@ -156,7 +163,7 @@ function Read-DoHNetEventCapture([object]$State) {
 }
 function Measure-DoHNetEventWire([object]$State) {
     $State.phase='plaintext-block';Assert-NativeDNSWireFirewall;Add-NativeDNSWireRule $State 'dns' 'UDP';Add-NativeDNSWireRule $State 'dns' 'TCP';$State.flags.plaintextBlocked=$true
-    $State.phase='ordinary-query';[void](Invoke-NativeDNSWireQuery 'example.net');$State.flags.ordinaryQueryPassed=$true
+    $State.phase='ordinary-query';[void](Invoke-DoHWireFreshDNSQuery $State 'example.net');$State.flags.ordinaryQueryPassed=$true
     $State.phase='offload-measure';$v=Invoke-DoHNetEventOffload $State 'verify';$State.ndis.public.offloadMeasureEvidence=$v;if($v.code -cne 'none'){throw 'Product capture topology changed'}
     $State.phase='capture-stop';Stop-DoHNetEventCapture $State
     $State.phase='capture-read';$tw=Read-DoHNetEventCapture $State;$State.decoderCode=$tw.code
@@ -167,11 +174,11 @@ function Measure-DoHNetEventWire([object]$State) {
     }
     try{
         $State.phase='tls-block';Add-NativeDNSWireRule $State 'tls' 'TCP';$State.flags.tlsBlocked=$true
-        $State.phase='blocked-query';[void](Invoke-NativeDNSWireQuery 'example.org' -ExpectFailure);$State.flags.blockedQueryRejected=$true
+        $State.phase='blocked-query';[void](Invoke-DoHWireFreshDNSQuery $State 'example.org' -ExpectFailure);$State.flags.blockedQueryRejected=$true
     }catch{if($State.failurePhase -ceq 'none'){$State.failurePhase=$State.phase};throw}finally{
         $State.phase='tls-unblock';Remove-NativeDNSWireRules $State 'tls';$State.flags.tlsBlockRemoved=$true
     }
-    $State.phase='resumed-query';[void](Invoke-NativeDNSWireQuery 'example.org');$State.flags.resumedQueryPassed=$true
+    $State.phase='resumed-query';[void](Invoke-DoHWireFreshDNSQuery $State 'example.org');$State.flags.resumedQueryPassed=$true
     if($refused){$State.phase='decode';throw 'Product wire decoder refused'}
     if(-not $State.ndis.phaseVerified){$State.phase='phase-evidence';throw 'Product phase evidence unresolved'}
 }
@@ -186,7 +193,7 @@ function Complete-DoHNetEventCleanup([object]$State) {
     }
     $State.phase='cleanup-state';try{if($null -eq $State.before){throw 'Product original state missing'};Assert-DNSAcceptanceRestored $State.before (Read-DNSAcceptanceState);$State.flags.originalStateVerified=$true}catch{$good=$false;$State.ndis.public.cleanupCode='original'}
     $State.phase='cleanup-rules';try{Remove-NativeDNSWireRules $State 'tls';Remove-NativeDNSWireRules $State 'dns';$State.flags.rulesRemoved=$true}catch{$good=$false;$State.ndis.public.cleanupCode='rules'}
-    $State.phase='cleanup-resolver';try{[void](Invoke-NativeDNSWireQuery 'example.com');$State.flags.originalResolverPassed=$true}catch{$good=$false;$State.ndis.public.cleanupCode='resolver'}
+    $State.phase='cleanup-resolver';try{[void](Invoke-DoHWireFreshDNSQuery $State 'example.com');$State.flags.originalResolverPassed=$true}catch{$good=$false;$State.ndis.public.cleanupCode='resolver'}
     if(-not $good){throw 'Product capture recovery unresolved'}
     $State.phase='cleanup-session'
     if($null -ne $State.ndis.plan){$State.ndis.plan.originalVerified=$true;$v=Invoke-DoHNetEventOperation $State 'remove';if(-not $v.emptyAfter){throw 'Product capture retirement refused'};$State.ndis.public.sessionRemoved=$true;$State.flags.filtersRemoved=$true}

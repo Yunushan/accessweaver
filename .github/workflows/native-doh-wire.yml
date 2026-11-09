@@ -37,6 +37,11 @@ on:
       - 'scripts/extract-native-ndis.ps1'
       - 'scripts/ndis-frame-converter.cjs'
       - 'scripts/ndis-private-convert.cjs'
+      - 'scripts/native-dns-query/**'
+      - 'scripts/native-dns-direct/**'
+      - 'scripts/native-dns-query.ps1'
+      - 'scripts/native-dns-recovery-observation.ps1'
+      - 'scripts/test-native-dns-query-contracts.ps1'
       - 'scripts/native-dns-wire.ps1'
       - 'scripts/test-dns-wire-native-contracts.ps1'
       - 'scripts/dns-wire-*.cjs'
@@ -112,6 +117,19 @@ jobs:
           $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
           & $stock -NoProfile -NonInteractive -File ./scripts/test-native-doh-netevent-contracts.ps1 -RequireWindowsPowerShell > (Join-Path $fixed 'status.json')
           if($LASTEXITCODE -ne 0){throw 'Product NetEvent lifecycle source contracts failed'}
+      - name: Verify cache-bypass helper contracts
+        run: |
+          go test -mod=readonly ./scripts/native-dns-query ./scripts/native-dns-direct
+          if($LASTEXITCODE -ne 0){throw 'Cache-bypass synthetic contracts failed'}
+          go vet -mod=readonly ./scripts/native-dns-query ./scripts/native-dns-direct
+          if($LASTEXITCODE -ne 0){throw 'Cache-bypass static analysis failed'}
+          $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-dns-query-contracts.ps1 -RequireWindowsPowerShell | Out-Null
+          if($LASTEXITCODE -ne 0){throw 'Cache-bypass projection contracts failed'}
+      - name: Build source-bound cache-bypass query helper
+        run: |
+          go build -mod=readonly -trimpath -ldflags "-X main.sourceCommit=$env:GITHUB_SHA" -o build/native-doh/query.exe ./scripts/native-dns-query
+          if($LASTEXITCODE -ne 0){throw 'Cache-bypass helper compilation failed'}
       - name: Build the actual native controller
         run: |
           go build -trimpath -o build/native-doh/accessweaver.exe ./cmd/accessweaver
@@ -127,8 +145,10 @@ jobs:
           "ACCESSWEAVER_NATIVE_DOH_EVIDENCE=$evidence" >> $env:GITHUB_ENV
           $binary=(Resolve-Path 'build/native-doh/accessweaver.exe').Path
           $digest=(Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+          $queryBinary=(Resolve-Path 'build/native-doh/query.exe').Path
+          $queryDigest=(Get-FileHash -LiteralPath $queryBinary -Algorithm SHA256).Hash.ToLowerInvariant()
           $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
-          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-doh.ps1 -Binary $binary -BinarySHA256 $digest -Method ${{ matrix.method }} -ScenarioKind ${{ matrix.scenario }} -WireTransport -ReportPath (Join-Path $evidence 'status.json')
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-native-doh.ps1 -Binary $binary -BinarySHA256 $digest -Method ${{ matrix.method }} -ScenarioKind ${{ matrix.scenario }} -WireTransport -QueryBinary $queryBinary -QueryBinarySHA256 $queryDigest -ReportPath (Join-Path $evidence 'status.json')
           if($LASTEXITCODE -ne 0){throw 'Native encrypted DNS acceptance failed; fixed metadata retained'}
       - name: Retain fixed native DNS metadata only
         if: always() && env.ACCESSWEAVER_NATIVE_DOH_EVIDENCE != ''
