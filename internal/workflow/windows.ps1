@@ -1780,8 +1780,10 @@ function Uninstall-WireSockProduct {
     }else{
         $program=$null;if($command -match '^"([^"]+\.exe)"'){$program=$matches[1]}elseif($command -match '^(.+?\.exe)(?:\s|$)'){$program=$matches[1]}
         if(-not $program -or (-not (Under $program $env:ProgramFiles) -and -not (Under $program (Join-Path $env:ProgramData 'Package Cache')))){throw 'Registered vendor uninstaller is outside protected installation storage'}
-        No-Reparse $program;$signature=Get-AuthenticodeSignature -LiteralPath $program
-        if($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'NT Kernel|WireSock'){throw 'Vendor uninstaller publisher signature could not be verified'}
+        No-Reparse $program
+        $signature=Get-AuthenticodeSignature -LiteralPath $program
+        $digest=(Get-FileHash -LiteralPath $program -Algorithm SHA256).Hash.ToLowerInvariant()
+        if(-not (Test-InstallerPublisher 'wiresock' $signature $digest $inputData.nativeArchitecture)){throw 'Vendor uninstaller publisher signature could not be verified'}
         [void](Native $program @('/uninstall','/quiet','/norestart') @(0,3010,1641) -Timeout 900)
     }
     $deadline=[DateTime]::UtcNow.AddSeconds(30)

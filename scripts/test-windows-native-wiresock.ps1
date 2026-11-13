@@ -22,6 +22,7 @@ $checks=[ordered]@{
 }
 $workflowOutcomes=[ordered]@{install='not-run';disconnect='not-run';remove='not-run';'vendor-uninstall'='not-run'}
 $connectionState='not-checked'
+$vendorCLI=[ordered]@{profileList='not-checked';directStatus='not-checked'}
 $stage='baseline'
 $bin=Join-Path $env:RUNNER_TEMP ('accessweaver-wiresock-'+[guid]::NewGuid().ToString('N'))
 $controller=Join-Path $bin 'accessweaver.exe'
@@ -70,6 +71,13 @@ function Get-WorkflowOutcome($run,$job) {
         default {return 'other-workflow-failure'}
     }
 }
+function Get-FixedConnectionState([string]$text){
+    if([string]::IsNullOrWhiteSpace($text)){return 'empty'}
+    $states=@([regex]::Matches($text,'(?<![A-Za-z])(NotConnected|Connecting|Connected|Disconnecting|Disconnected)(?![A-Za-z])') | ForEach-Object {$_.Value} | Sort-Object -Unique)
+    if($states.Count -eq 1){return $states[0]}
+    if($states.Count -gt 1){return 'ambiguous'}
+    return 'unrecognized'
+}
 function Invoke-TestWorkflow([hashtable]$request){
     $action=$request.action
     $workflowOutcomes[$action]='fixture-error'
@@ -82,9 +90,7 @@ function Invoke-TestWorkflow([hashtable]$request){
         $outcome=Get-WorkflowOutcome $run $job
         $workflowOutcomes[$action]=$outcome
         if($action -ceq 'install' -and $outcome -ceq 'succeeded'){
-            $statusText=[string]$job.result.data.status
-            $states=@([regex]::Matches($statusText,'(?<![A-Za-z])(NotConnected|Connecting|Connected|Disconnecting|Disconnected)(?![A-Za-z])') | ForEach-Object {$_.Value} | Sort-Object -Unique)
-            $script:connectionState=if($states.Count -eq 1){$states[0]}elseif($states.Count -gt 1){'ambiguous'}else{'unrecognized'}
+            $script:connectionState=Get-FixedConnectionState ([string]$job.result.data.status)
         }
         return @{passed=($outcome -ceq 'succeeded');restart=($outcome -ceq 'restart-required')}
     } finally {[IO.File]::Delete($path)}
@@ -131,6 +137,21 @@ try {
     $checks.restartRequested=$installed.restart
     $checks.installCompleted=$installed.passed -and -not $installed.restart -and (Test-Path -LiteralPath $owned -PathType Leaf)
     if(-not $checks.installCompleted){throw 'WireSock installation and connection not confirmed'}
+    # Query only the vendor CLI selected by the normal product installation.
+    # The generated profile is compared in memory and never leaves the runner.
+    $cli=Join-Path $env:ProgramFiles $cliPaths[0]
+    if(Test-Path -LiteralPath $cli -PathType Leaf){
+        $owner=Get-Item -LiteralPath $owned
+        if($owner.Length -gt 0 -and $owner.Length -le 8192){
+            $record=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($owner.FullName))
+            if($record.profile -cmatch '^AccessWeaver-[a-f0-9]{32}$' -and $record.cli -ieq $cli){
+                $list=Invoke-PrivateNative $cli @('list')
+                $vendorCLI.profileList=if($list.exitCode -ne 0){'command-failed'}elseif([string]::IsNullOrWhiteSpace($list.stdout)){'empty'}elseif($list.stdout -cmatch ('(?<![a-zA-Z0-9-])'+[regex]::Escape($record.profile)+'(?![a-zA-Z0-9-])')){'profile-observed'}else{'profile-absent'}
+                $status=Invoke-PrivateNative $cli @('status')
+                $vendorCLI.directStatus=if($status.exitCode -ne 0){'command-failed'}else{Get-FixedConnectionState $status.stdout}
+            }
+        }
+    }
     $stage='traffic'
     foreach($probe in @(
         @{name='selectedTCP4';args=@('http','http://198.51.100.1:8080/')},
@@ -182,7 +203,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=3;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;productionQualificationComplete=$false}
+$report=@{schemaVersion=4;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;vendorCLI=$vendorCLI;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))

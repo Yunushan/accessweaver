@@ -813,6 +813,50 @@ $unknownSigner=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobjec
 $invalidSigner=[pscustomobject]@{Status='NotTrusted';SignerCertificate=$unknownSigner.SignerCertificate}
 Assert ((Test-InstallerPublisher 'wiresock' $unknownSigner $x64Pin 'amd64') -and (Test-InstallerPublisher 'wiresock' $unknownSigner $armPin 'arm64')) 'WireSock recognizes its exact native installer pin with a Windows-valid signature'
 Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64') -and -not (Test-InstallerPublisher 'wiresock' $unknownSigner ('a'*64) 'amd64') -and -not (Test-InstallerPublisher 'wiresock' $unknownSigner $armPin 'amd64') -and -not (Test-InstallerPublisher 'wiresock' $unknownSigner $x64Pin '') -and -not (Test-InstallerPublisher 'discord' $unknownSigner $x64Pin 'amd64')) 'WireSock pin recognition refuses invalid signatures and unrelated pins and categories'
+# Model only an HKLM registration and a trusted installer cache. Nothing is executed.
+& {
+    $cacheRoot=Join-Path $testRoot 'wiresock-uninstall-fixture'
+    $program=Join-Path $cacheRoot 'Package Cache\fixture.exe'
+    $registration='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\fixture'
+    $inputData=[pscustomobject]@{nativeArchitecture='amd64'}
+    $calls=[Collections.Generic.List[string]]::new()
+    $previousProgramData=$env:ProgramData
+    try {
+        $env:ProgramData=$cacheRoot
+        function WireSock-CLI {}
+        function Test-Path {
+            param($LiteralPath)
+            return $LiteralPath -ceq 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+        }
+        function Get-ChildItem {param($LiteralPath);return @{PSPath=$registration}}
+        function Get-ItemProperty {param($LiteralPath);return @{PSPath=$registration;DisplayName='WireSock Secure Connect';UninstallString=('"'+$program+'" /uninstall')}}
+        function Get-AuthenticodeSignature {param($LiteralPath);return $fixtureSignature}
+        function Get-FileHash {param($LiteralPath,$Algorithm);return @{Hash=$fixtureDigest}}
+        function No-Reparse {param($Path);if($Path -cne $program){throw 'Unexpected cached executable'}}
+        function Remove-WireSockRefreshTask {}
+        function Remove-Method {}
+        function Remove-Item {}
+        function Event {}
+        function Native {
+            param($Program,$Arguments,$Codes,$Timeout)
+            if($Program -cne $expectedProgram -or ($Arguments -join ',') -cne '/uninstall,/quiet,/norestart'){throw 'Unexpected uninstall invocation'}
+            $calls.Add('uninstall')
+        }
+        $expectedProgram=$program
+        $fixtureSignature=$unknownSigner
+        $fixtureDigest=$x64Pin
+        $result=Uninstall-WireSockProduct
+        Assert ($result.product -ceq 'WireSock Secure Connect' -and $calls.Count -eq 1) 'WireSock uninstall accepts a signed cached copy of its exact native installer'
+        $fixtureDigest=$armPin
+        $refused=$false
+        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
+        $wrongPinRefused=$refused
+        $fixtureDigest=$x64Pin;$fixtureSignature=$invalidSigner
+        $refused=$false
+        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
+        Assert ($wrongPinRefused -and $refused -and $calls.Count -eq 1) 'WireSock uninstall refuses a different native pin or invalid signature before execution'
+    } finally {$env:ProgramData=$previousProgramData}
+}
 # Synthetic process records verify session-scoped launch observation without launching an app.
 $fixtureApp='C:\fixture\SplitCord.exe'
 $otherSession=[pscustomobject]@{Path=$fixtureApp;SessionId=9}
