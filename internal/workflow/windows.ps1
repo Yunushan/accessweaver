@@ -1243,7 +1243,8 @@ function Disconnect-OwnedWireSock($record) {
         $script:externalEffectsPending=$true
         Stop-Service 'wiresock-client-service' -ErrorAction Stop
     }else{
-        [void](Native $record.cli @('disconnect') -Secret)
+        try {[void](Native $record.cli @('disconnect') -Secret)}
+        catch {throw 'WireSock disconnect command failed; the managed profile was retained'}
     }
     Event 'Managed WireSock connection disconnected'
 }
@@ -1804,7 +1805,10 @@ function Remove-Method([string]$engine,[switch]$OwnedOnly) {
         if($owned){
             Disconnect-OwnedWireSock $owned
             if($owned.legacy){[void](Native $owned.cli @('uninstall') -Secret)}
-            else{[void](Native $owned.cli @('delete',$owned.profile) -Secret)}
+            else {
+                try {[void](Native $owned.cli @('delete',$owned.profile) -Secret)}
+                catch {throw 'WireSock profile deletion command failed; the ownership record was retained'}
+            }
             Remove-Item -LiteralPath $recordPath
         }
         return

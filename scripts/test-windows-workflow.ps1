@@ -695,7 +695,13 @@ try {
             $script:fixtureRefreshCalls.Add('unregister')
             $script:fixtureRefreshPresent=$script:fixtureRefreshRetained
         }
-        function Native {param($program,$arguments,[switch]$Secret);$script:fixtureRefreshCalls.Add($arguments[0]);return @{exitCode=0}}
+        $vendorFailure=''
+        function Native {
+            param($program,$arguments,[switch]$Secret)
+            $script:fixtureRefreshCalls.Add($arguments[0])
+            if($arguments[0] -ceq $vendorFailure){throw 'Private synthetic vendor detail'}
+            return @{exitCode=0}
+        }
         $effectsBeforeCleanup=$script:externalEffectsPending
         try {
             $refused=$false
@@ -711,8 +717,26 @@ try {
             $refused=$false
             try {Remove-Method 'wiresock'}catch{$refused=$_.Exception.Message -ceq 'WireSock reconnect task removal could not be verified'}
             Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq 'disable,stop,unregister' -and (Test-Path -LiteralPath $recordPath)) 'WireSock retains the profile when reconnect task removal is unconfirmed'
-            $script:fixtureRefreshCalls.Clear()
             $script:fixtureRefreshRetained=$false
+            $recordHash=(Get-FileHash -LiteralPath $recordPath -Algorithm SHA256).Hash
+            foreach($case in @(
+                @{verb='disconnect';calls='disconnect';message='WireSock disconnect command failed; the managed profile was retained'},
+                @{verb='delete';calls='disconnect,delete';message='WireSock profile deletion command failed; the ownership record was retained'}
+            )){
+                $script:fixtureRefreshPresent=$true
+                $script:fixtureRefreshCalls.Clear()
+                $vendorFailure=$case.verb
+                $refused=$false
+                try {Remove-Method 'wiresock'}catch{$refused=$_.Exception.Message -ceq $case.message}
+                if(-not $refused -or ($script:fixtureRefreshCalls -join ',') -cne ('disable,stop,unregister,'+$case.calls) -or
+                    (Get-FileHash -LiteralPath $recordPath -Algorithm SHA256).Hash -cne $recordHash){
+                    throw 'WireSock removal failure did not preserve its fixed outcome and ownership record'
+                }
+            }
+            Assert $true 'WireSock distinguishes disconnect and deletion failures and retains ownership'
+            $script:fixtureRefreshPresent=$true
+            $vendorFailure=''
+            $script:fixtureRefreshCalls.Clear()
             Remove-Method 'wiresock'
             Assert (($script:fixtureRefreshCalls -join ',') -ceq 'disable,stop,unregister,disconnect,delete' -and -not (Test-Path -LiteralPath $recordPath)) 'WireSock retires the reconnect task before disconnecting or deleting the profile'
         } finally {$script:externalEffectsPending=$effectsBeforeCleanup}
