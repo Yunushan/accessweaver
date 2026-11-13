@@ -9,10 +9,13 @@ $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 
 function Assert-DNSRebootAdmission($Saved,$Current) {
-    if($Saved.schemaVersion -ne 3 -or $Saved.method -cnotin @('doh','dnscrypt') -or
+    if($Saved.schemaVersion -ne 4 -or $Saved.method -cnotin @('doh','dnscrypt') -or
        $Saved.guestID -cne $Current.guestID -or $Saved.binarySHA256 -cne $Current.binarySHA256 -or
        $Saved.oracleSHA256 -cne $Current.oracleSHA256 -or $Saved.fixtureSHA256 -cne $Current.fixtureSHA256 -or
-       $Saved.snapshotSHA256 -notmatch '\A[a-fA-F0-9]{64}\z' -or $Saved.snapshotSHA256 -cne $Current.snapshotSHA256){
+       $Saved.snapshotSHA256 -cnotmatch '\A[A-F0-9]{64}\z' -or $Saved.snapshotSHA256 -cne $Current.snapshotSHA256 -or
+       $Saved.journalId -isnot [string] -or $Saved.journalId -cnotmatch '\Aworkflow-[a-f0-9]{32}\.json\z' -or
+       $Saved.journalId -cne $Current.journalId -or $Saved.journalSHA256 -cnotmatch '\A[A-F0-9]{64}\z' -or
+       $Saved.journalSHA256 -cne $Current.journalSHA256){
         throw 'DNS reboot candidate or recovery baseline differs'
     }
     $earlier=0L;$later=0L
@@ -43,7 +46,32 @@ function Get-DNSRebootDigest([string]$Path,[long]$Maximum) {
     } finally {$stream.Dispose()}
 }
 
-if((Get-CimInstance Win32_ComputerSystem).Model -notmatch 'Virtual|VMware'){throw 'Disposable Windows guest required'}
+function Get-DNSRebootJournalID([string]$Path,[string]$LogDirectory) {
+    if(-not [IO.Path]::IsPathRooted($Path)){throw 'Expected a protected DNS workflow journal'}
+    $id=[IO.Path]::GetFileName($Path)
+    if($id -cnotmatch '\Aworkflow-[a-f0-9]{32}\.json\z' -or $Path -ine [IO.Path]::Combine($LogDirectory,$id)){
+        throw 'Expected a protected DNS workflow journal'
+    }
+    return $id
+}
+function Assert-DNSRebootJournal($Journal,[string]$SnapshotSHA256) {
+    $undo=@($Journal.undo)
+    $dns=@($undo | Where-Object {$_.kind -ceq 'dns'})
+    if($Journal.action -cne 'dns' -or $Journal.state -cne 'succeeded' -or $dns.Count -ne 1 -or
+        $dns[0].snapshotSHA256 -isnot [string] -or $dns[0].snapshotSHA256 -ine $SnapshotSHA256){
+        throw 'Prepared DNS workflow journal does not bind the snapshot'
+    }
+}
+$computer=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+if(@($computer).Count -ne 1 -or $computer.Model -notmatch 'Virtual|VMware' -or $computer.PartOfDomain -ne $false){
+    throw 'Non-domain disposable Windows guest required'
+}
+$tools=Join-Path $env:ProgramFiles 'VMware\VMware Tools\vmtoolsd.exe'
+if(-not (Test-Path -LiteralPath $tools -PathType Leaf)){throw 'Disposable VMware guest tools required'}
+$marker=& $tools --cmd 'info-get guestinfo.accessweaverParity'
+if($LASTEXITCODE -ne 0 -or ($marker -join '').Trim() -cne 'AccessWeaver-Clean-Windows-Test'){
+    throw 'Disposable VMware guest identity marker required'
+}
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
 try {
     if(-not ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){
@@ -65,7 +93,7 @@ if(@($guest).Count -ne 1 -or -not [guid]::TryParseExact([string]$guest.UUID,'D',
 $os=Get-CimInstance Win32_OperatingSystem
 if(@($os).Count -ne 1 -or $os.LastBootUpTime -isnot [DateTime]){throw 'Cannot identify guest boot'}
 $current=@{
-    schemaVersion=3;guestID=$guestID.ToString('D');
+    schemaVersion=4;guestID=$guestID.ToString('D');
     binarySHA256=(Get-DNSRebootDigest $Executable 128MB);oracleSHA256=(Get-DNSRebootDigest $oracle 1MB);
     fixtureSHA256=(Get-DNSRebootDigest $PSCommandPath 1MB);
     boot=$os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
@@ -74,7 +102,9 @@ $current=@{
 $private=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'AccessWeaver DNS reboot fixture'
 $results='C:\AccessWeaver-Results'
 $baseline=Join-Path $private 'prepared.json'
-$snapshot=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'AccessWeaver\profiles\dns-original.json'
+$machineRoot=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'AccessWeaver'
+$snapshot=Join-Path $machineRoot 'profiles\dns-original.json'
+$logDirectory=Join-Path $machineRoot 'logs'
 $report=Join-Path $results 'reboot-results.json'
 
 function Invoke-TestWorkflow([hashtable]$Request) {
@@ -89,9 +119,13 @@ function Invoke-TestWorkflow([hashtable]$Request) {
         } finally {$ErrorActionPreference=$old}
         if($code -ne 0){throw 'DNS reboot workflow failed'}
         $text=$output -join "`n"
-        if($text.Length -gt 1MB -or (ConvertFrom-Json -InputObject $text).state -cne 'succeeded'){
+        if($text.Length -gt 1MB){throw 'DNS reboot workflow response exceeds its size limit'}
+        $job=ConvertFrom-Json -InputObject $text -ErrorAction Stop
+        if($job.state -cne 'succeeded' -or $job.action -cne $Request.action -or
+            $job.result.ok -isnot [bool] -or -not $job.result.ok -or @($job.result.finalizationFailures).Count -ne 0){
             throw 'DNS reboot workflow did not return a successful job'
         }
+        return $job.result
     } finally {[IO.File]::Delete($path)}
 }
 function Assert-RebootResolver {
@@ -131,31 +165,51 @@ try {
         Assert-RebootResolver
         if($DNS -eq 'auto'){$DNS=if(Get-Command Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue){'doh'}else{'dnscrypt'}}
         [void][IO.Directory]::CreateDirectory($private)
-        Save-DNSRebootRecord (Join-Path $private 'original.json') @{schemaVersion=3;dns=$before}
-        Invoke-TestWorkflow @{action='install';engine='byedpi';mode='service';bundlePath='C:\AccessWeaver-Test\components'}
-        Invoke-TestWorkflow @{action='dns';dns=$DNS;bundlePath='C:\AccessWeaver-Test\components'}
+        $security=[Security.AccessControl.DirectorySecurity]::new()
+        $security.SetAccessRuleProtection($true,$false)
+        foreach($sid in @('S-1-5-32-544','S-1-5-18')){
+            $principal=[Security.Principal.SecurityIdentifier]::new($sid)
+            $rule=[Security.AccessControl.FileSystemAccessRule]::new($principal,'FullControl','ContainerInherit,ObjectInherit','None','Allow')
+            $security.AddAccessRule($rule)
+        }
+        Set-Acl -LiteralPath $private -AclObject $security -ErrorAction Stop
+        Save-DNSRebootRecord (Join-Path $private 'original.json') @{schemaVersion=4;dns=$before}
+        [void](Invoke-TestWorkflow @{action='install';engine='byedpi';mode='service';bundlePath='C:\AccessWeaver-Test\components'})
+        $applied=Invoke-TestWorkflow @{action='dns';dns=$DNS;bundlePath='C:\AccessWeaver-Test\components'}
         Assert-RebootServices $DNS
         Assert-DNSAcceptanceConfigured $before (Read-DNSAcceptanceState) $DNS
         Assert-RebootResolver
         $current.method=$DNS
         $current.dns=$before
-        $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 1MB
+        $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 8MB
+        $current.journalId=Get-DNSRebootJournalID $applied.journal $logDirectory
+        $journalPath=Join-Path $logDirectory $current.journalId
+        $current.journalSHA256=Get-DNSRebootDigest $journalPath 8MB
+        Assert-DNSRebootJournal (Get-Content -LiteralPath $journalPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop) $current.snapshotSHA256
         Save-DNSRebootRecord $baseline $current
         return
     }
 
     [void](Get-DNSRebootDigest $baseline 1MB)
     $saved=Get-Content -LiteralPath $baseline -Raw -ErrorAction Stop | ConvertFrom-Json
-    $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 1MB
+    if($saved.journalId -isnot [string] -or $saved.journalId -cnotmatch '\Aworkflow-[a-f0-9]{32}\.json\z'){
+        throw 'Prepared DNS reboot journal name is invalid'
+    }
+    $current.journalId=$saved.journalId
+    $journalPath=Join-Path $logDirectory $current.journalId
+    $current.journalSHA256=Get-DNSRebootDigest $journalPath 8MB
+    $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 8MB
     Assert-DNSRebootAdmission $saved $current
+    Assert-DNSRebootJournal (Get-Content -LiteralPath $journalPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop) $current.snapshotSHA256
     [void](Get-DNSAcceptanceIndex $saved.dns)
     if(Test-Path -LiteralPath $report){throw 'DNS reboot evidence already exists'}
-    Save-DNSRebootRecord (Join-Path $private 'verification-started.json') @{schemaVersion=3}
-    $outcome=[ordered]@{schemaVersion=3;method=$saved.method;binarySHA256=$current.binarySHA256;
+    Save-DNSRebootRecord (Join-Path $private 'verification-started.json') @{schemaVersion=4}
+    $outcome=[ordered]@{schemaVersion=4;method=$saved.method;binarySHA256=$current.binarySHA256;
         fixtureSHA256=$current.fixtureSHA256;oracleSHA256=$current.oracleSHA256;
         rebootVerified=$true;servicesVerified=$false;configuredStateVerified=$false;
-        resolverVerified=$false;originalStateRestored=$false;originalResolverVerified=$false;
-        snapshotRetired=$false;servicesRemoved=$false;passed=$false;stage='services';cleanupStage='not-started'}
+        resolverVerified=$false;journalBindingVerified=$true;journalRecoveryAccepted=$false;
+        originalStateRestored=$false;originalResolverVerified=$false;snapshotRetired=$false;
+        servicesRemoved=$false;passed=$false;stage='services';cleanupStage='not-started'}
     try {
         Assert-RebootServices $saved.method
         $outcome.servicesVerified=$true
@@ -170,20 +224,31 @@ try {
         # Record only the source-defined stage.
     } finally {
         try {
-            $outcome.cleanupStage='remove'
-            Invoke-TestWorkflow @{action='remove-all'}
+            $outcome.cleanupStage='journal-recovery'
+            [void](Invoke-TestWorkflow @{action='recover';journalId=$saved.journalId})
+            $outcome.journalRecoveryAccepted=$true
             $outcome.cleanupStage='original-state'
             Assert-DNSAcceptanceRestored $saved.dns (Read-DNSAcceptanceState)
             $outcome.originalStateRestored=$true
             $outcome.cleanupStage='original-resolver'
             Assert-RebootResolver
             $outcome.originalResolverVerified=$true
-            $outcome.cleanupStage='owned-state'
-            $outcome.snapshotRetired=-not (Test-Path -LiteralPath $snapshot)
-            $outcome.servicesRemoved=-not @(Get-Service 'AccessWeaver-*' -ErrorAction SilentlyContinue).Count
-            if($outcome.snapshotRetired -and $outcome.servicesRemoved){$outcome.cleanupStage='complete'}
+            $outcome.cleanupStage='snapshot-retirement'
+            $outcome.snapshotRetired=-not (Test-Path -LiteralPath $snapshot -ErrorAction Stop)
+            if(-not $outcome.snapshotRetired){throw 'Journal recovery retained the active snapshot'}
+            $outcome.cleanupStage='recovered'
         } catch {
-            # Keep the fixed failing cleanup stage and private guest evidence.
+            # Keep the first fixed recovery failure even if teardown later restores DNS.
+        }
+        try {
+            [void](Invoke-TestWorkflow @{action='remove-all'})
+            $outcome.servicesRemoved=-not @(Get-Service 'AccessWeaver-*' -ErrorAction SilentlyContinue).Count
+            Assert-DNSAcceptanceRestored $saved.dns (Read-DNSAcceptanceState)
+            Assert-RebootResolver
+            if($outcome.cleanupStage -ceq 'recovered' -and $outcome.servicesRemoved -and
+                -not (Test-Path -LiteralPath $snapshot -ErrorAction Stop)){$outcome.cleanupStage='complete'}
+        } catch {
+            # A recovery result remains available even when later teardown fails.
         }
         $outcome.passed=$outcome.stage -ceq 'complete' -and $outcome.cleanupStage -ceq 'complete'
         Save-DNSRebootRecord $report $outcome

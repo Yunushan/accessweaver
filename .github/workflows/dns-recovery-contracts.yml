@@ -111,6 +111,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Windows PowerShell DNS contracts failed'}
           & $stock -NoProfile -NonInteractive -File ./scripts/test-windows-dns-journal.ps1
           if($LASTEXITCODE -ne 0){throw 'Windows PowerShell DNS journal contracts failed'}
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-windows-reboot-contracts.ps1
+          if($LASTEXITCODE -ne 0){throw 'Windows PowerShell DNS reboot contracts failed'}
       - name: Verify DNS journal binding and rollback
         run: ./scripts/test-windows-dns-journal.ps1
       - name: Verify DNS reboot admission and publication
