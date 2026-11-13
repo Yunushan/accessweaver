@@ -16,9 +16,10 @@ $pins=Get-Content -Raw -LiteralPath (Join-Path $project $paths[1]) | ConvertFrom
 if($pins.schemaVersion -ne 1){throw 'Unknown pin schema'}
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $project $paths[0]),[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Product source parse failed'}
-$names=@('Quote-Arg','Native-Argument','Allowed-Download','Resolve-ComponentDownloadRedirect','Throw-ComponentDownloadFailure','Test-ComponentDownloadTerminal','New-ComponentDownloadBudget','Get-ComponentDownloadRemaining','Wait-ComponentDownloadTask','Write-ComponentDownloadChunk','Receive-ComponentDownloadStream','Assert-ComponentDownloadLength','Set-ComponentDownloadHeaders','New-ComponentDownloadRequest','Invoke-ComponentDownloadDotNet','New-ComponentDownloadCurlStart','New-ComponentDownloadCurlProcess','Wait-ComponentDownloadProcessExit','Invoke-ComponentDownloadCurlOnce', 'Invoke-ComponentDownloadCurl','WireSock-InstallerPlan')
+$names=@('Quote-Arg','Native-Argument','Allowed-Download','Resolve-ComponentDownloadRedirect','Throw-ComponentDownloadFailure','Test-ComponentDownloadTerminal','New-ComponentDownloadBudget','Get-ComponentDownloadRemaining','Wait-ComponentDownloadTask','Write-ComponentDownloadChunk','Receive-ComponentDownloadStream','Assert-ComponentDownloadLength','Set-ComponentDownloadHeaders','New-ComponentDownloadRequest','Invoke-ComponentDownloadDotNet','New-ComponentDownloadCurlStart','New-ComponentDownloadCurlProcess','Wait-ComponentDownloadProcessExit','Invoke-ComponentDownloadCurlOnce', 'Invoke-ComponentDownloadCurl','WireSock-InstallerPlan','Test-InstallerPublisher')
 foreach($name in $names){$nodes=@($ast.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name});if($nodes.Count -ne 1){throw 'Product transport function unavailable'};. ([scriptblock]::Create($nodes[0].Extent.Text))}
 $cases=@();$failed=$false
+$wireTrust=@{status='not-checked';publisherMatched=$false;temporaryFileRemoved=$false}
 $wirePlan=WireSock-InstallerPlan $Architecture
 $sourceText=[IO.File]::ReadAllText((Join-Path $project $paths[0]))
 foreach($engine in @('proxifyre','dnscrypt','wiresock')){
@@ -39,6 +40,29 @@ foreach($engine in @('proxifyre','dnscrypt','wiresock')){
             $output.Position=0;$digest=([BitConverter]::ToString($sha256.ComputeHash($output))).Replace('-','').ToLowerInvariant()
             if($digest -cne $pin.sha256){throw 'Asset hash mismatch'}
             $passed=$true
+            if($engine -ceq 'wiresock' -and $transport -ceq 'dotnet'){
+                # Inspect only the source-pinned installer. Publish the status
+                # enum and the product decision, with no certificate fields.
+                $path=Join-Path $env:RUNNER_TEMP ('accessweaver-wiresock-signature-'+[guid]::NewGuid().ToString('N')+'.exe')
+                $file=$null;$owned=$false
+                try {
+                    $file=[IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+                    $owned=$true
+                    $output.Position=0
+                    $output.CopyTo($file)
+                    $file.Dispose();$file=$null
+                    $signature=Get-AuthenticodeSignature -LiteralPath $path
+                    $status=[string]$signature.Status
+                    $wireTrust.status=if($status -cin @('Valid','UnknownError','NotSigned','HashMismatch','NotTrusted','NotSupportedFileFormat','Incompatible')){$status}else{'unclassified'}
+                    $wireTrust.publisherMatched=Test-InstallerPublisher 'wiresock' $signature
+                } catch {
+                    $wireTrust.status='check-error'
+                } finally {
+                    try {if($file){$file.Dispose()}}catch{}
+                    if($owned){try {[IO.File]::Delete($path);$wireTrust.temporaryFileRemoved=-not [IO.File]::Exists($path)}catch{}}
+                }
+                if($wireTrust.status -cne 'Valid' -or -not $wireTrust.publisherMatched -or -not $wireTrust.temporaryFileRemoved){$failed=$true}
+            }
         } catch {$failed=$true} finally {$sha256.Dispose();$output.Dispose()}
         $cases+=@{engine=$engine;transport=$transport;passed=$passed}
     }
@@ -139,7 +163,7 @@ try {
     $output.Dispose()
 }
 if(-not $proxyFailedClosed){$failed=$true}
-$report=@{schemaVersion=3;proxyConnectionObserved=$proxyObserved;proxyBypassRejected=$proxyFailedClosed;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;cases=$cases;vendorDownloadsAttempted=$true;vendorCodeExecuted=$false;proxyPathQualified=$false;allVendorRoutesQualified=$false;productionQualificationComplete=$false}
+$report=@{schemaVersion=4;wireSockTrust=$wireTrust;proxyConnectionObserved=$proxyObserved;proxyBypassRejected=$proxyFailedClosed;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;cases=$cases;vendorDownloadsAttempted=$true;vendorCodeExecuted=$false;proxyPathQualified=$false;allVendorRoutesQualified=$false;productionQualificationComplete=$false}
 $directory=Join-Path $project 'build/native-download-checks';[void][IO.Directory]::CreateDirectory($directory)
 [IO.File]::WriteAllText((Join-Path $directory ('native-download-'+$Architecture+'.json')),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
 if($failed){throw 'One or more fixed native download checks failed'}

@@ -27,6 +27,8 @@ The following tools are independent projects. Catalog entries and links do not g
 
 AccessWeaver's foreground adapter targets the Windows SDK client, `wiresock-client.exe`. Windows system workflows separately support the modern Secure Connect CLI and vendor services. Their CLI behavior and licensing are not interchangeable.
 
+For commercial managed desktops, WireSock publishes a separate Secure Connect PRO license. Confirm coverage for the deployed seats and pinned version with the vendor. [Secure Connect licensing](https://wiresock.net/wiresock-secure-connect/licensing).
+
 The [SDK vendor page](https://wiresock.net/wiresock-sdk) describes a free evaluation tier with limited permitted use and telemetry, and separate commercial/OEM arrangements. Read the applicable agreement for your deployment. AccessWeaver's own no-telemetry design and 0BSD license do not extend to an engine launched by it.
 
 ## Adding or distributing an engine
