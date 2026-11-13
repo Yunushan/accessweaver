@@ -1341,8 +1341,61 @@ function Install-EngineService([string]$engine,[string]$binary,[string[]]$argume
     if((Get-Service $serviceName).Status -ne 'Running'){throw ('Engine exited during startup: '+$engine)}
     Event ('Installed and started '+$serviceName)
 }
+function Get-ManagedFirewallRule([string]$Name,[string]$Instance,[switch]$Journal) {
+    $match=[regex]::Match($Name,'\AAccessWeaver-(byedpi|proxifyre)-(Inbound|Outbound)\z')
+    if(-not $match.Success){throw 'Unrecognized managed firewall rule name'}
+    if($Instance -and $Instance -cnotmatch '\A[a-f0-9]{32}\z'){throw 'Invalid managed firewall recovery identity'}
+    $engine=$match.Groups[1].Value;$direction=$match.Groups[2].Value
+    $warnings=@()
+    $rules=@(Get-NetFirewallRule -PolicyStore PersistentStore -ErrorAction Stop -WarningAction SilentlyContinue -WarningVariable warnings | Where-Object {
+        $_.Name -ieq $Name -or $_.Name -ilike ($Name+'-*')
+    })
+    if($warnings.Count){throw 'Managed firewall rule inventory could not be verified'}
+    if(-not $rules.Count){return}
+    if($rules.Count -ne 1){throw 'Managed firewall rule identity is ambiguous'}
+    $rule=$rules[0]
+    $program=Join-Path $root ('components\'+$engine+'\'+$assetNames[$engine])
+    $filter=@(Get-NetFirewallApplicationFilter -AssociatedNetFirewallRule $rule -PolicyStore PersistentStore -ErrorAction Stop -WarningAction SilentlyContinue -WarningVariable warnings)
+    if($warnings.Count){throw 'Managed firewall application filter could not be verified'}
+    $marker=[string]$rule.Description
+    $legacy=$rule.Name -ceq $Name -and -not $marker
+    $modern=$marker -cmatch '\AAccessWeaver managed rule [a-f0-9]{32}\z' -and
+        $rule.Name -ceq ($Name+'-'+$marker.Substring($marker.Length-32))
+    if($rule.DisplayName -cne $Name -or [string]$rule.Direction -cne $direction -or [string]$rule.Action -cne 'Allow' -or
+        [string]$rule.Profile -cne 'Any' -or [string]$rule.Enabled -cne 'True' -or
+        $filter.Count -ne 1 -or $filter[0].Program -ine $program -or
+        (-not $legacy -and -not $modern)){
+        throw 'Managed firewall rule differs from its expected local configuration'
+    }
+    if(($Journal -or $Instance) -and (-not $Instance -or $marker -cne ('AccessWeaver managed rule '+$Instance))){
+        throw 'Managed firewall rule does not match the recovery journal'
+    }
+    return $rule
+}
+function Remove-ManagedFirewallRule([string]$Name,[string]$Instance,[switch]$Journal) {
+    $rule=Get-ManagedFirewallRule $Name $Instance -Journal:$Journal
+    if($null -eq $rule){return}
+    $script:externalEffectsPending=$true
+    Remove-NetFirewallRule -InputObject $rule -Confirm:$false -ErrorAction Stop
+    if($null -ne (Get-ManagedFirewallRule $Name $Instance -Journal:$Journal)){
+        throw 'Managed firewall rule removal could not be verified'
+    }
+}
 function Firewall([string]$engine,[string]$binary) {
-    foreach($direction in @('Inbound','Outbound')){$name='AccessWeaver-'+$engine+'-'+$direction;if(-not (Get-NetFirewallRule -Name $name -ErrorAction SilentlyContinue)){[void](New-NetFirewallRule -Name $name -DisplayName $name -Program $binary -Direction $direction -Action Allow -Profile Any);$script:undo.Add(@{kind='firewall';name=$name});Save-Journal}}
+    if($engine -cnotin @('byedpi','proxifyre') -or
+       $binary -ine (Join-Path $root ('components\'+$engine+'\'+$assetNames[$engine]))){
+        throw 'Managed firewall rule requires the installed component path'
+    }
+    foreach($direction in @('Inbound','Outbound')){
+        $name='AccessWeaver-'+$engine+'-'+$direction
+        if($null -ne (Get-ManagedFirewallRule $name)){continue}
+        $instance=[guid]::NewGuid().ToString('N')
+        $script:undo.Add(@{kind='firewall';name=$name;instance=$instance})
+        Save-Journal
+        $script:externalEffectsPending=$true
+        [void](New-NetFirewallRule -Name ($name+'-'+$instance) -DisplayName $name -Description ('AccessWeaver managed rule '+$instance) -Program $binary -Direction $direction -Action Allow -Profile Any -PolicyStore PersistentStore -ErrorAction Stop)
+        if($null -eq (Get-ManagedFirewallRule $name $instance)){throw 'New managed firewall rule could not be verified'}
+    }
 }
 function Test-ProxiFyreRuntimeRegistered {
     $runtime=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64' -Name Installed -ErrorAction SilentlyContinue
@@ -2280,10 +2333,15 @@ function Remove-Method([string]$engine,[switch]$OwnedOnly) {
     }
     $name='AccessWeaver-'+$engine
     $entry=Assert-ManagedServiceOwnership $name
+    $firewallNames=@()
+    if($engine -cin @('byedpi','proxifyre')){
+        $firewallNames=@($name+'-Inbound';$name+'-Outbound')
+        foreach($ruleName in $firewallNames){[void](Get-ManagedFirewallRule $ruleName)}
+    }
     if($engine -eq 'byedpi'){Remove-Method 'proxifyre';Restore-Drover}
     if($engine -eq 'dnscrypt' -and (Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json'))){Restore-DNS}
     if($entry){Remove-RecordedService $name -Entry $entry}
-    foreach($direction in @('Inbound','Outbound')){Remove-NetFirewallRule -Name ('AccessWeaver-'+$engine+'-'+$direction) -ErrorAction SilentlyContinue}
+    foreach($ruleName in $firewallNames){Remove-ManagedFirewallRule $ruleName}
     Event ('Managed method removed: '+$engine)
 }
 function Remove-All {
@@ -3015,7 +3073,7 @@ function Rollback {
         'started-service' {
             if((Assert-RecordedServiceBinding $item) -eq 0){Stop-Service -Name $item.name -ErrorAction Stop}
         }
-        'firewall' {Remove-NetFirewallRule -Name $item.name -ErrorAction SilentlyContinue}
+        'firewall' {Remove-ManagedFirewallRule $item.name $item.instance -Journal}
         'task' {
             if($item.name -ne 'AccessWeaver-WireSock-Refresh'){throw 'Recovery journal contains an unmanaged task'}
             Remove-WireSockRefreshTask
@@ -3037,8 +3095,8 @@ function Rollback {
         'file' {if($item.path -ieq (Join-Path $root 'profiles\dns-original.json')){continue};No-Reparse $item.path;if(Test-Path -LiteralPath $item.path){$currentHash=(Get-FileHash -LiteralPath $item.path -Algorithm SHA256).Hash;if($currentHash -eq $item.originalHash){continue};if(-not $item.expectedHash -or $currentHash -ne $item.expectedHash){throw ('File changed outside this operation; review before restoring: '+$item.path)}};if($item.backup){if(-not (Under $item.backup (Join-Path $root 'backups'))){throw 'Recovery backup is outside protected storage'};No-Reparse $item.backup;if(-not $item.originalHash -or (Get-FileHash -LiteralPath $item.backup -Algorithm SHA256).Hash -ne $item.originalHash){throw 'Recovery backup content does not match the recorded original digest'};Copy-Item -LiteralPath $item.backup -Destination $item.path -Force}else{Remove-Item -LiteralPath $item.path -ErrorAction SilentlyContinue}}
     }}catch{
         $rollbackErrors+=@($_.Exception.Message)
-        # A registered service can still need any earlier file in this journal.
-        if($item.kind -eq 'service'){break}
+        # Keep earlier files when a service or firewall rule still refers to them.
+        if($item.kind -in @('service','firewall')){break}
     }}
     return $rollbackErrors
 }
@@ -3159,7 +3217,7 @@ function Recover-Operation {
                 if($entry.name -ne 'AccessWeaver-byedpi'){throw 'Recovery journal contains an unmanaged restarted service'}
                 [void](Assert-RecordedServiceBinding $entry)
             }
-            'firewall' {if($entry.name -notmatch '^AccessWeaver-[a-z]+-(Inbound|Outbound)$'){throw 'Recovery journal contains an unmanaged firewall rule'}}
+            'firewall' {[void](Get-ManagedFirewallRule $entry.name $entry.instance -Journal)}
             'task' {if($entry.name -ne 'AccessWeaver-WireSock-Refresh'){throw 'Recovery journal contains an unmanaged task'}}
             'dns' {[void](Confirm-DNSRecoveryEntry $entry)}
             'wiresock' {

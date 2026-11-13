@@ -4,7 +4,7 @@ $path=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS journal source failed parsing'}
-foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Rollback','Remove-All','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Remove-RecordedService')){
+foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Remove-RecordedService')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -122,6 +122,99 @@ try {
         $calls.Clear();$fixture.methodFails=$false
         Remove-All
         Require (($calls -join ',') -ceq 'proxifyre,byedpi,zapret,zapret2,goodbyedpi,wiresock,windivert,dnscrypt,drover') 'Remove-all retry repeated DNS restoration or changed cleanup order'
+    }
+
+    & {
+        $assetNames=@{byedpi='ciadpi.exe';proxifyre='ProxiFyre.exe'}
+        $name='AccessWeaver-byedpi-Inbound'
+        $program=Join-Path $root 'components\byedpi\ciadpi.exe'
+        $state=@{rules=@{};journal=0;creates=0;removes=0;keep=$false;failRead=$false;warn=$false;failJournal=$false}
+        function Get-NetFirewallRule {
+            [CmdletBinding()]param($PolicyStore)
+            Require ($PolicyStore -ceq 'PersistentStore' -and $ErrorActionPreference -eq 'Stop') 'Unexpected firewall inventory scope'
+            if($state.failRead){throw 'Synthetic inventory refusal'}
+            if($state.warn){Write-Warning 'Synthetic incomplete rule inventory'}
+            return @($state.rules.Values)
+        }
+        function Get-NetFirewallApplicationFilter {
+            [CmdletBinding()]param($AssociatedNetFirewallRule,$PolicyStore)
+            Require ($PolicyStore -ceq 'PersistentStore' -and $ErrorActionPreference -eq 'Stop') 'Unexpected firewall filter scope'
+            return @{Program=$AssociatedNetFirewallRule.Program}
+        }
+        function Save-Journal {
+            if($state.failJournal){throw 'Synthetic journal refusal'}
+            $state.journal++
+        }
+        function New-NetFirewallRule {
+            [CmdletBinding()]param($Name,$DisplayName,$Description,$Program,$Direction,$Action,$Profile,$PolicyStore)
+            Require ($PolicyStore -ceq 'PersistentStore' -and $ErrorActionPreference -eq 'Stop' -and
+                $state.journal -gt $state.creates -and $script:undo[$state.creates].instance -ceq ($Description.Split(' ')[-1])) 'Firewall rule creation preceded its journal binding'
+            $state.creates++
+            $state.rules[$Name]=[pscustomobject]@{Name=$Name;DisplayName=$DisplayName;Description=$Description;
+                Program=$Program;Direction=$Direction;Action=$Action;Profile=$Profile;Enabled='True'}
+        }
+        function Remove-NetFirewallRule {
+            [CmdletBinding(SupportsShouldProcess)]param($InputObject)
+            Require ([object]::ReferenceEquals($InputObject,$state.rules[$InputObject.Name]) -and
+                $ErrorActionPreference -eq 'Stop') 'Firewall removal did not use the verified rule object'
+            $state.removes++
+            if(-not $state.keep){$state.rules.Remove($InputObject.Name)}
+        }
+        $state.failJournal=$true
+        $failed=$false
+        try{Firewall 'byedpi' $program}catch{$failed=$_.Exception.Message -ceq 'Synthetic journal refusal'}
+        Require ($failed -and $state.creates -eq 0) 'Firewall rule was created after journal failure'
+        $script:undo.Clear()
+        $state.failJournal=$false
+        Firewall 'byedpi' $program
+        Require ($state.creates -eq 2 -and $state.journal -eq 2 -and $script:undo.Count -eq 2) 'Firewall rules lack independently journaled identities'
+        Firewall 'byedpi' $program
+        Require ($state.creates -eq 2) 'Existing matching firewall rules were replaced'
+        $instance=$script:undo[0].instance;$ruleID=$name+'-'+$instance;$rule=$state.rules[$ruleID]
+        foreach($change in @('stale','legacy','program','direction','inventory','warning','duplicate')){
+            $rule.Program=$program;$rule.Direction='Inbound';$state.failRead=$false;$state.warn=$false
+            $pin=$instance
+            switch($change){
+                'stale' {$pin='f'*32}
+                'legacy' {$pin=''}
+                'program' {$rule.Program='C:\Other\ciadpi.exe'}
+                'direction' {$rule.Direction='Outbound'}
+                'inventory' {$state.failRead=$true}
+                'warning' {$state.warn=$true}
+                'duplicate' {$duplicate=$rule.PSObject.Copy();$duplicate.Name=$name;$state.rules[$name]=$duplicate}
+            }
+            $failed=$false
+            try{Remove-ManagedFirewallRule $name $pin -Journal}catch{$failed=$true}
+            Require ($failed -and $state.removes -eq 0) 'Unverified firewall rule reached removal'
+        }
+        $state.rules.Remove($name)
+        $rule.Program=$program;$rule.Direction='Inbound';$state.failRead=$false;$state.keep=$true
+        $file=Join-Path $root 'synthetic-firewall-component.exe'
+        [IO.File]::WriteAllText($file,'inert component')
+        try {
+            $script:undo.Clear()
+            $script:undo.Add(@{kind='file';path=$file;expectedHash=(Get-FileHash -LiteralPath $file).Hash})
+            $script:undo.Add(@{kind='firewall';name=$name;instance=$instance})
+            $errors=@(Rollback)
+            Require ($errors.Count -eq 1 -and [IO.File]::Exists($file)) 'Firewall rollback failure removed an earlier component file'
+        } finally {[IO.File]::Delete($file)}
+        $outbound='AccessWeaver-byedpi-Outbound'
+        $outboundID=@($state.rules.Keys | Where-Object {$_ -clike ($outbound+'-*')})[0]
+        $failed=$false
+        try{Remove-ManagedFirewallRule $name $instance -Journal}catch{$failed=$_.Exception.Message -ceq 'Managed firewall rule removal could not be verified'}
+        Require ($failed -and $state.removes -eq 2) 'Firewall rule persistence after delete was credited as cleanup'
+        $state.keep=$false
+        Remove-ManagedFirewallRule $name $instance -Journal
+        Remove-ManagedFirewallRule $name $instance -Journal
+        Require ($state.removes -eq 3 -and -not $state.rules.ContainsKey($ruleID)) 'Firewall rollback did not verify removal or tolerate retry'
+        $legacy=$state.rules[$outboundID]
+        $state.rules.Remove($outboundID)
+        $legacy.Name=$outbound;$legacy.Description=''
+        $state.rules[$outbound]=$legacy
+        Remove-ManagedFirewallRule $outbound
+        Require ($state.removes -eq 4 -and $state.rules.Count -eq 0) 'Explicit cleanup did not accept a matching legacy rule'
+        $script:undo.Clear()
+        $script:externalEffectsPending=$false
     }
 
     [IO.File]::WriteAllText($snapshot,'first synthetic snapshot')
@@ -321,4 +414,4 @@ try {
     [IO.Directory]::Delete($profiles)
     [IO.Directory]::Delete($root)
 }
-Write-Output 'DNS journal binding, DNS-first remove-all, service ownership, retirement, rollback and publication checks passed.'
+Write-Output 'DNS journal binding, DNS-first remove-all, firewall and service ownership, retirement, rollback and publication checks passed.'
