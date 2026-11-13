@@ -1990,7 +1990,14 @@ function Find-App([string]$variant) {
 }
 function Wait-App([string]$variant,[bool]$installed,[int]$seconds=120) {
     $deadline=[DateTime]::UtcNow.AddSeconds($seconds)
-    do{if([bool](Find-App $variant) -eq $installed){return};Start-Sleep -Milliseconds 500}while([DateTime]::UtcNow -lt $deadline)
+    do {
+        $app=Find-App $variant
+        if($installed -and $app){
+            No-Reparse $app
+            if(Test-Path -LiteralPath $app -PathType Leaf){return}
+        }elseif(-not $installed -and -not $app){return}
+        Start-Sleep -Milliseconds 500
+    }while([DateTime]::UtcNow -lt $deadline)
     throw 'Application installation state did not reach the expected result; inspect installer logs'
 }
 function Get-SplitCordInstaller {
@@ -2042,12 +2049,15 @@ function Install-App([string]$variant) {
     try {
         $stagedHash=(Get-FileHash -InputStream $lockedInstaller -Algorithm SHA256).Hash
         if($verifiedHash -isnot [string] -or $stagedHash -ine $verifiedHash){throw 'Staged application installer differs from the verified download'}
+        $previouslyInstalled=[bool](Find-App $variant)
         if($r.clean -and $variant -eq 'discord-ptb' -and (Find-App 'discord')){Remove-App 'discord'}
         $installerArgs=if($variant -eq 'splitcord'){@('/S')}else{@('-s')}
         [void](Native $file $installerArgs -Timeout 900)
     } finally {$lockedInstaller.Dispose()}
     Wait-App $variant $true 180
-    Event ('Application installed: '+$variant)
+    if($previouslyInstalled){Event ('Application was already present before setup: '+$variant)}
+    else{Event ('Application installed: '+$variant)}
+    return @{application=$variant;installed=$true;previouslyInstalled=$previouslyInstalled}
 }
 function Remove-App([string]$variant) {
     Require-DesktopUser
