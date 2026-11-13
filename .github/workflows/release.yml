@@ -25,6 +25,9 @@ on:
       - scripts/verify_release_provenance.py
       - scripts/verify_release_rebuild.py
       - scripts/publish_prerelease.py
+      - scripts/verify-windows-installer-publisher.ps1
+      - scripts/windows-installer-common.ps1
+      - scripts/test-windows-installer-contracts.ps1
       - scripts/check-vulnerabilities.sh
       - scripts/check-vulnerability-report.py
       - scripts/browser-tests/core-fixture.test.cjs

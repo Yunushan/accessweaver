@@ -1,4 +1,4 @@
-# Build-time checks only. These helpers never install software or change the OS.
+# Installer build and verification checks. These helpers never install software or change the OS.
 function Assert-InstallerReleaseVersion([string]$Version) {
     if($Version.Length -gt 256){throw 'Installer release version exceeds 256 characters'}
     $match=[regex]::Match($Version,'\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?<pre>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\z')
@@ -63,4 +63,24 @@ function Assert-InstallerSetupScript([string]$Path, [string]$TargetArch, [string
     }
     foreach($key in $expected.Keys){if($actual[$key] -cne $expected[$key]){throw ('Preprocessed installer directive mismatch: '+$key)}}
     return $actual
+}
+
+function Assert-WindowsPublisherSignature($Signature,[string]$PublisherCertificateSHA256) {
+    if($PublisherCertificateSHA256 -cnotmatch '\A[a-fA-F0-9]{64}\z'){
+        throw 'Expected a SHA-256 fingerprint of the approved publisher certificate'
+    }
+    if($null -eq $Signature -or $Signature.Status -ne 'Valid' -or
+        $Signature.SignatureType -ne 'Authenticode' -or
+        $null -eq $Signature.SignerCertificate -or $null -eq $Signature.TimeStamperCertificate){
+        throw 'Artifact requires a Windows-valid embedded Authenticode signature and timestamp'
+    }
+    $certificateBytes=$Signature.SignerCertificate.RawData
+    if($certificateBytes -isnot [byte[]] -or $certificateBytes.Length -eq 0 -or $certificateBytes.Length -gt 64KB){
+        throw 'Artifact publisher certificate could not be verified'
+    }
+    $sha256=[Security.Cryptography.SHA256]::Create()
+    try {
+        $actual=[BitConverter]::ToString($sha256.ComputeHash($certificateBytes)).Replace('-','')
+    } finally {$sha256.Dispose()}
+    if($actual -ine $PublisherCertificateSHA256){throw 'Artifact publisher certificate differs from the approved certificate'}
 }

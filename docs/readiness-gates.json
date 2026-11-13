@@ -231,6 +231,8 @@
             "scripts/verify_release_provenance.py",
             "scripts/test_release_provenance.py",
             "scripts/check_provenance_rejections.py",
+            "scripts/verify-windows-installer-publisher.ps1",
+            "scripts/test-windows-installer-contracts.ps1",
             "docs/RELEASE_PROVENANCE.md"
           ]
         },

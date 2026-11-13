@@ -59,6 +59,14 @@ The [manual preview for exact source `00a5122bef6d58607186fcd22e9e32fd5cd542c0`]
 
 The manifest's `unsigned: true` and the unsigned-alpha artifact labels still describe the OS binaries. Build provenance identifies a GitHub workflow and source; it does not provide Windows Authenticode, macOS Developer ID/notarization, an installer signature or authenticated in-product update selection. Publisher certificates, signing-key ownership, deployment application control and those native distribution checks remain required.
 
+On Windows, verify each signed executable or MSI before deployment using an independently approved SHA-256 for the final signed artifact and the SHA-256 fingerprint of the organization's leaf code-signing certificate in DER form. Run this in a private candidate directory from the approved source checkout.
+
+```powershell
+.\scripts\verify-windows-installer-publisher.ps1 -Artifact SIGNED_ARTIFACT -ArtifactSHA256 APPROVED_ARTIFACT_SHA256 -PublisherCertificateSHA256 APPROVED_CERTIFICATE_SHA256
+```
+
+The verifier requires a Windows-valid embedded Authenticode signature, a timestamp certificate and the exact approved publisher fingerprint. It holds a read-only handle while checking the file and returns a fixed JSON receipt with the two digests. The check covers the supplied file. Verify the signed setup and shipped executable payload individually. Retain separately authenticated provenance covering the final signed bytes and the approved signing handoff. The existing unsigned-alpha attestation covers the unsigned candidate. An approved organization signer and signed candidate are still required for native acceptance. [Windows Authenticode verification](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/get-authenticodesignature).
+
 The current workflow is not claimed SLSA Build Level 3 or a proof that build code is benign. A compromised approved workflow/runner/dependency can falsify its build behavior. Review, branch/tag protection, separation of duties, trusted builder isolation, independent rebuilds and release revocation/recovery remain requirements. Attested alpha artifacts are still subject to every unfinished functional, security, desktop and enterprise readiness gate.
 
 

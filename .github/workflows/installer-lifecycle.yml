@@ -67,9 +67,9 @@ jobs:
       - name: Pure provenance contracts
         shell: powershell
         run: python -m unittest discover -s scripts -p test_windows_installer_provenance.py -v
-      - name: Pure state comparison diagnostics
+      - name: Pure installer and publisher verification contracts
         shell: powershell
-        run: ./scripts/test-windows-installer-state.ps1
+        run: ./scripts/test-windows-installer-contracts.ps1
       - name: Pure event correlation diagnostics
         shell: powershell
         run: ./scripts/test-windows-installer-event-state.ps1

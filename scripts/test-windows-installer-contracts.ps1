@@ -18,6 +18,28 @@ foreach($arch in @('amd64','arm64')){
 foreach($case in @(@('linux','amd64','amd64'),@('windows','386','amd64'),@('windows','amd64','arm64'),@('windows','arm64','amd64'),@('windows','arm64','ARM64'),@('windows','amd64','386'))){
     Reject {Resolve-InstallerTarget $case[0] $case[1] $case[2]} 'Unsupported or cross-host target was accepted'
 }
+$publisherBytes=[byte[]]@(1,2,3)
+$publisherPin='039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81'
+$signature=@{
+    Status='Valid'
+    SignatureType='Authenticode'
+    SignerCertificate=@{RawData=$publisherBytes}
+    TimeStamperCertificate=@{}
+}
+Assert-WindowsPublisherSignature $signature $publisherPin
+Reject {Assert-WindowsPublisherSignature $signature ('f'*64)} 'An unapproved publisher certificate was accepted'
+Reject {Assert-WindowsPublisherSignature $signature ('1'*40)} 'A SHA-1 thumbprint was accepted as a SHA-256 pin'
+foreach($case in @(
+    @{key='Status';value='NotTrusted'},
+    @{key='SignatureType';value='Catalog'},
+    @{key='TimeStamperCertificate';value=$null},
+    @{key='SignerCertificate';value=$null},
+    @{key='SignerCertificate';value=@{RawData=[byte[]]@()}}
+)){
+    $untrusted=$signature.Clone()
+    $untrusted[$case.key]=$case.value
+    Reject {Assert-WindowsPublisherSignature $untrusted $publisherPin} 'An incomplete or untrusted Windows signature was accepted'
+}
 $project=Split-Path -Parent $PSScriptRoot
 $fixture=Join-Path $project ('build\installer-contracts-'+[guid]::NewGuid().ToString('N'))
 [void](New-Item -ItemType Directory -Path $fixture)
