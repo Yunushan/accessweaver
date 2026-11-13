@@ -104,7 +104,22 @@ function Enter-AccessWeaverDetection {
     return $mutex
 }
 
+function Assert-NoPendingAccessWeaverInstallation {
+    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+    $key=$null
+    try {
+        $key=$base.OpenSubKey('SOFTWARE\AccessWeaver\Installer',$false)
+        if($null -ne $key -and $key.GetValueNames() -icontains 'PendingInstall'){
+            throw 'An AccessWeaver installation is incomplete'
+        }
+    } finally {
+        if($null -ne $key){$key.Dispose()}
+        $base.Dispose()
+    }
+}
+
 function Test-AccessWeaverInstallation([string]$directory) {
+    Assert-NoPendingAccessWeaverInstallation
     $registration=Read-AccessWeaverRegistration Registry64
     if($null -ne (Read-AccessWeaverRegistration Registry32)){throw 'Unexpected alternate machine registration'}
     if($null -eq $registration -or $registration.version -cne $Version){return $false}

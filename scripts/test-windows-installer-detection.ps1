@@ -59,6 +59,12 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
     }
     $fixtureLock='Global\AccessWeaver-DetectionTest-'+[guid]::NewGuid().ToString('N')
     $mocked=$original.Substring(0,$node.StartOffset)+$mock+$original.Substring($node.EndOffset)
+    $markerBoundary=@($ast.EndBlock.Statements | Where-Object {
+        $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'Assert-NoPendingAccessWeaverInstallation'
+    })
+    if($markerBoundary.Count -ne 1){throw 'Expected one pending installation marker boundary'}
+    $markerMock='function Assert-NoPendingAccessWeaverInstallation { if($env:AW_DETECTION_FIXTURE -ceq ''pending''){throw ''Pending installation fixture''} }'
+    $mocked=$mocked.Replace($markerBoundary[0].Extent.Text,$markerMock)
     [IO.File]::WriteAllText($fixture,$mocked.Replace($productionLock,$fixtureLock))
     $arch=@{X64='amd64';Arm64='arm64'}[[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()]
     $stock=Join-Path $PSHOME 'powershell.exe'
@@ -66,6 +72,7 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
     $saved=$env:AW_DETECTION_FIXTURE
     try {
         $cases=@(
+            @{mode='pending';code=1;count=0;hash=$hash},
             @{mode='approved';code=0;count=1;hash=$hash},
             @{mode='approved';code=0;count=0;hash=('0'*64)},
             @{mode='absent';code=0;count=0;hash=$hash},

@@ -57,6 +57,93 @@ Name: "{group}\AccessWeaver"; Filename: "{app}\accessweaver.exe"; Parameters: "u
 #include "windows-installer-registry.iss"
 #include "windows-installer-restore.iss"
 
+const
+  AWLifecycleRegistry = 'SOFTWARE\AccessWeaver\Installer';
+  AWPendingInstall = 'PendingInstall';
+
+var AWInstallFinished: Boolean;
+
+function AWFlushRegistryKey(Key: LongWord): LongWord;
+  external 'RegFlushKey@advapi32.dll stdcall';
+
+function AWReadPendingVersion(var Version, Directory: String): String;
+var Key, Status, Kind, Bytes: LongWord;
+    Buffer, RecordValue: String; Units, Separator: Integer;
+begin
+  Result := ''; Version := ''; Directory := '';
+  Status := AWOpenRegistrationKey($80000002, AWLifecycleRegistry, 0, $0101, Key);
+  if (Status = 2) or (Status = 3) then Exit;
+  Result := 'Cannot verify the AccessWeaver pending installation record.';
+  if Status <> 0 then Exit;
+  try
+    SetLength(Buffer, 518); Bytes := 1036; Kind := 0;
+    Status := AWGetRegistrationValue(Key, '', AWPendingInstall, $30000002, Kind, Buffer, Bytes);
+    if Status = 2 then begin Result := ''; Exit; end;
+    if (Status <> 0) or (Kind <> 1) or (Bytes < 4) or (Bytes > 1036) or ((Bytes mod 2) <> 0) then Exit;
+    Units := Bytes div 2;
+    if Buffer[Units] <> #0 then Exit;
+    RecordValue := Copy(Buffer, 1, Units - 1);
+    Separator := Pos('|', RecordValue);
+    if (Pos(#0, RecordValue) <> 0) or (Separator < 2) or (Separator > 257) then Exit;
+    Version := Copy(RecordValue, 1, Separator - 1);
+    Directory := Copy(RecordValue, Separator + 1, Length(RecordValue));
+    if (Directory <> '') and (Length(Directory) <= 260) and (Pos('|', Directory) = 0) then Result := '';
+  finally
+    AWCloseRegistrationKey(Key);
+  end;
+end;
+
+function AWFlushLifecycleRecord: Boolean;
+var Key: LongWord;
+begin
+  Result := False;
+  if AWOpenRegistrationKey($80000002, AWLifecycleRegistry, 0, $0101, Key) <> 0 then Exit;
+  try
+    Result := AWFlushRegistryKey(Key) = 0;
+  finally
+    AWCloseRegistrationKey(Key);
+  end;
+end;
+
+function AWCompareDestination(const Left: String; LeftLength: Integer;
+  const Right: String; RightLength, IgnoreCase: Integer): Integer;
+  external 'CompareStringOrdinal@kernel32.dll stdcall';
+
+function AWPendingSetupPreflight(const Destination: String): String;
+var Version, Directory: String; Ordering: Integer;
+begin
+  Result := AWReadPendingVersion(Version, Directory);
+  if (Result <> '') or (Version = '') then Exit;
+  if not AWCompare('{#ReleaseVersion}', Version, Ordering) then
+    Result := 'The AccessWeaver pending installation version is invalid.'
+  else if Ordering < 0 then
+    Result := 'An AccessWeaver installation is incomplete. Retry with the same or a newer approved installer.'
+  else if (Destination <> '') and (AWCompareDestination(Destination, Length(Destination), Directory, Length(Directory), 1) <> 2) then
+    Result := 'Retry the approved installer in the original AccessWeaver installation directory.';
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var Failure, Destination: String;
+begin
+  if CurStep = ssInstall then begin
+    if not AWLifecycleOwned then RaiseException('The AccessWeaver installation lock is not held.');
+    Destination := ExpandConstant('{app}');
+    if (Destination = '') or (Length(Destination) > 260) or (Pos('|', Destination) <> 0) or
+      (Length('{#ReleaseVersion}') > 256) then
+      RaiseException('Cannot record the AccessWeaver installation destination.');
+    Failure := AWPendingSetupPreflight(Destination);
+    if Failure <> '' then RaiseException(Failure);
+    if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, '{#ReleaseVersion}|' + Destination) or
+      not AWFlushLifecycleRecord then
+      RaiseException('Cannot persist the AccessWeaver pending installation record.');
+  end else if CurStep = ssPostInstall then begin
+    AWInstallFinished := True;
+  end else if (CurStep = ssDone) and AWInstallFinished then begin
+    if not RegDeleteValue(HKLM64, AWLifecycleRegistry, AWPendingInstall) or not AWFlushLifecycleRecord then
+      RaiseException('Cannot retire the AccessWeaver pending installation record.');
+  end;
+end;
+
 function AWVersionPreflight: String;
 var Found64, Found32: Boolean; Version64, Version32, Installed: String; Ordering: Integer;
 begin
@@ -83,6 +170,7 @@ function InitializeSetup: Boolean;
 var Failure: String;
 begin
   Failure := AWAcquireLifecycle;
+  if Failure = '' then Failure := AWPendingSetupPreflight('');
   if Failure = '' then Failure := AWVersionPreflight;
   Result := Failure = '';
   if not Result then begin
@@ -122,6 +210,7 @@ begin
   if not AWLifecycleOwned then Result := 'The AccessWeaver installation lock is not held. Retry setup.'
   else begin
     Result := AWVersionPreflight;
+    if Result = '' then Result := AWPendingSetupPreflight(ExpandConstant('{app}'));
     if Result = '' then Result := AWPayloadReplacementPreflight;
   end;
 end;
@@ -139,13 +228,19 @@ end;
 function InitializeUninstall: Boolean;
 var
   ResultCode: LongWord;
-  Failure: String;
+  Failure, PendingVersion, PendingDirectory: String;
 begin
   { Respect an already active older setup, as well as corrected lifecycle owners. }
   if CheckForMutexes('Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092') then
     Failure := 'An AccessWeaver setup is active. Wait for it to finish before uninstalling.'
   else Failure := AWAcquireLifecycle;
+  if Failure = '' then begin
+    Failure := AWReadPendingVersion(PendingVersion, PendingDirectory);
+    if (Failure = '') and (PendingVersion <> '') then
+      Failure := 'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.';
+  end;
   if Failure <> '' then begin
+    AWReleaseLifecycle;
     Log(Failure);
     if not UninstallSilent then SuppressibleMsgBox(Failure, mbCriticalError, MB_OK, IDOK);
     Result := False; Exit;

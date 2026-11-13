@@ -61,7 +61,17 @@ function Assert-LifecycleRegistrationAbsent([string]$Failure) {
         }
     }
 }
+$installerLifecycleKey='SOFTWARE\AccessWeaver\Installer'
+function Get-PendingInstallFixtureValue {
+    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+    $key=$null
+    try {
+        $key=$base.OpenSubKey($installerLifecycleKey,$false)
+        if($key){return $key.GetValue('PendingInstall')}
+    } finally {if($key){$key.Dispose()};$base.Dispose()}
+}
 Assert-LifecycleRegistrationAbsent 'An existing product registration must never be used by this fixture'
+Require ($null -eq (Get-PendingInstallFixtureValue)) 'An existing pending installation must never be used by this fixture'
 Require (-not (Test-Path -LiteralPath $managed) -and -not (Test-Path -LiteralPath 'HKLM:\SOFTWARE\Policies\AccessWeaver')) 'An existing managed installation must never be used by this fixture'
 Require (-not (Test-Path -LiteralPath $install) -and -not (Test-Path -LiteralPath $capsule) -and -not (Test-Path -LiteralPath (Join-Path $programFiles 'AccessWeaver'))) 'Fixture and default product destinations must be new'
 [void][IO.Directory]::CreateDirectory($capsule)
@@ -418,6 +428,33 @@ try {
     Assert-ManagedDetection 'after-lifecycle-locks' $builds[1] $true
     $lifecycleLockCases+=,@{name='released-lifecycle-allows-setup';exitCode=$resumed.result.exitCode;elapsedMilliseconds=$resumed.milliseconds;payloadAndRegistrationVerified=$true;profilePreserved=$true}
     $null=State-Checkpoint 'after-lifecycle-locks'
+    $stage='pending-installation'
+    $pendingValue=$builds[1].version+'|'+$install
+    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+    $key=$null
+    try {
+        $key=$base.OpenSubKey($installerLifecycleKey,$true)
+        Require ($null -ne $key -and $key.GetValueNames() -inotcontains 'PendingInstall') 'Successful Setup did not clear its pending record'
+        $key.SetValue('PendingInstall',$pendingValue,[Microsoft.Win32.RegistryValueKind]::String)
+        $key.Flush()
+    } finally {if($key){$key.Dispose()};$base.Dispose()}
+    $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
+    Assert-DetectorBusy 'pending-install-refused'
+    $null=Native-Record (Join-Path $install 'unins000.exe') $uninstallArguments @(1)
+    $other=Join-Path $capsule 'wrong-install-destination'
+    $redirected=@($arguments | Where-Object {$_ -notlike '/DIR=*'})+@('/DIR='+$other)
+    $null=Native-Record $second $redirected @(7)
+    $pendingLog=Join-Path $capsule 'older-pending-setup.log'
+    $null=Native-Record $first ($arguments+@('/LOG='+$pendingLog)) @(1)
+    Require ((Get-Item -LiteralPath $pendingLog).Length -le 1MB) 'Pending upgrade refusal log exceeds its bound'
+    Require ([IO.File]::ReadAllText($pendingLog).Contains('Retry with the same or a newer approved installer.')) 'Older Setup did not report the pending version refusal'
+    Require ((Get-PendingInstallFixtureValue) -ceq $pendingValue -and -not (Test-Path -LiteralPath $other)) 'Refused lifecycle operations changed the pending record or alternate destination'
+    Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint) -ceq $registrationBefore) 'Pending-install refusal changed installed files or registration'
+    Assert-UserState
+    $null=Native-Record $second $arguments
+    Assert-Installed $builds[1]
+    Require ($null -eq (Get-PendingInstallFixtureValue)) 'Successful retry left the pending installation record'
+    Assert-ManagedDetection 'after-pending-install-retry' $builds[1] $true
     $stage='refused-downgrade'
     $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
     $downgrade=Native-Record $first $arguments (0..255)
@@ -828,7 +865,7 @@ try {
 $eventDiagnostics=New-InstallerFirewallEventDiagnostic
 if(-not $complete){$eventDiagnostics=Read-FirewallEventDiagnostic}
 $originDiagnostics=[ordered]@{schemaVersion=1;source='captured-rule-properties';maxRecords=16;maxPropertyBytes=4096;records=@($script:firewallOriginObservations);truncated=$script:firewallOriginTruncated;unavailable=$script:firewallOriginUnavailable;extraNativeQueriesPerformed=$false;processOriginEstablished=$false}
-$record=[ordered]@{schemaVersion=17;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=18;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'

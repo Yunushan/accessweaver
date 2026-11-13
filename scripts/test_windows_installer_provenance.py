@@ -243,6 +243,16 @@ class ManagedDetectionEvidenceTests(unittest.TestCase):
         ]
         upgraded = {**report, "schemaVersion": 17, "managedDetectionCases": with_lock}
         self.assertEqual(validate_managed_detection(upgraded), {"managedDetectionChecksVerified": 12})
+        pending = [
+            *with_lock[:9],
+            {"phase": "pending-install-refused", "detected": False, "inspectionRefused": True},
+            {"phase": "after-pending-install-retry", "detected": True},
+            *with_lock[9:],
+        ]
+        self.assertEqual(validate_managed_detection({**upgraded, "schemaVersion": 18, "managedDetectionCases": pending}),
+                         {"managedDetectionChecksVerified": 14})
+        with self.assertRaises(ValueError):
+            validate_managed_detection({**upgraded, "schemaVersion": 18})
         with self.assertRaises(ValueError):
             validate_managed_detection({**report, "schemaVersion": 17})
         for index in (6, 7):
