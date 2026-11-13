@@ -146,10 +146,10 @@ $script:forwarderPeerClosures=0;$script:forwarderFailureCode='none';$script:roll
 $script:failureServiceStopped=$false;$script:resolverProcessExited=$false;$script:failedResolverObserved=$false;$script:restoredAnswers=0
 $staticFixture=$null;$script:staticFirewallProtected=$false;$script:staticFirewallRemoved=$false;$script:staticObservation=@{captured=$false;mode='unknown';count=-1;firstMatches=$false;secondMatches=$false};$script:staticPhase='not-started';$script:staticFailurePhase='none';$script:staticFailureCode='none';$script:staticPlan=$null;$script:staticSnapshotNormalized=$false
 $component=$null;$serviceRunning=$false;$serviceAutomatic=$false;$serviceRemoved=$false;$script:cleanupExit=-1
-$adapterShapes=@();$probeOutcome='not-started';$environmentVerified=$false;$nativeProcessVerified=$false;$binaryVerified=$false;$snapshotRemoved=$false;$scenario=$null;$journalScenario=$null;$outcome='failed';$code='environment-guard'
+$adapterShapes=@();$probeOutcome='not-started';$environmentVerified=$false;$nativeProcessVerified=$false;$binaryVerified=$false;$snapshotRemoved=$false;$scenario=$null;$journalScenario=$null;$missingSnapshotScenario=$null;$outcome='failed';$code='environment-guard'
 try {
     if($WireTransport -and ($Method -cne 'doh' -or $ScenarioKind -cne 'roundtrip')){throw 'Native wire scenario refused'}
-    if($ScenarioKind -cnotin @('roundtrip','service-loss','verification-failure','static-ipv6','journal-recovery') -or ($ScenarioKind -cin @('service-loss','verification-failure') -and $Method -cne 'dnscrypt') -or ($ScenarioKind -cin @('static-ipv6','journal-recovery') -and $Method -cne 'doh') -or $Method -cnotin @('doh','dnscrypt')){throw 'Native DNS method refused'}
+    if($ScenarioKind -cnotin @('roundtrip','service-loss','verification-failure','static-ipv6','journal-recovery','missing-snapshot') -or ($ScenarioKind -cin @('service-loss','verification-failure','missing-snapshot') -and $Method -cne 'dnscrypt') -or ($ScenarioKind -cin @('static-ipv6','journal-recovery') -and $Method -cne 'doh') -or $Method -cnotin @('doh','dnscrypt')){throw 'Native DNS method refused'}
     if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows' -or $env:ACCESSWEAVER_EXPECT_GOOS -cne 'windows' -or $env:ACCESSWEAVER_EXPECT_GOARCH -cnotin @('amd64','arm64')){throw 'Hosted native Windows guard refused'}
     if($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1){throw 'Stock Windows PowerShell5.1 required'}
     if($env:GITHUB_SHA -notmatch '^[a-f0-9]{40}$' -or $env:GO_VERSION -cne '1.27.4'){throw 'Native source or SDK identity missing'}
@@ -236,7 +236,9 @@ public static class AccessWeaverNativeDoHIdentity {
             if($item.PSIsContainer -or $item.Length -le 0 -or $item.Length -gt 8MB){throw 'Native DNS recovery file size or type refused'}
         }
         $journal=[IO.File]::ReadAllText($path,[Text.UTF8Encoding]::new($false,$true)) | ConvertFrom-Json -ErrorAction Stop
-        $undo=@($journal.undo)
+        $entries=@($journal.undo)
+        $undo=@($entries | Where-Object {$_.kind -ceq 'dns'})
+        if($Method -ceq 'doh' -and $entries.Count -ne 1){throw 'Unexpected DoH recovery entries'}
         $digest=(Get-FileHash -LiteralPath $snapshotPath -Algorithm SHA256 -ErrorAction Stop).Hash
         if($journal.action -cne 'dns' -or $journal.state -cne 'succeeded' -or $undo.Count -ne 1 -or
             $undo[0].kind -cne 'dns' -or $undo[0].snapshotActive -isnot [bool] -or -not $undo[0].snapshotActive -or
@@ -245,12 +247,15 @@ public static class AccessWeaverNativeDoHIdentity {
         }
         return @{journalId=$CurrentJournal;digest=$digest}
     }
-    function Invoke-NativeDoHCLI([hashtable]$Request,[switch]$ExpectStaleJournal) {
+    function Invoke-NativeDoHCLI([hashtable]$Request,[switch]$ExpectStaleJournal,[switch]$ExpectMissingSnapshot) {
         $valid=($Request.action -ceq 'dns' -and $Request.dns -ceq $Method -and $Request.Count -eq 2) -or ($Request.action -ceq 'dns-restore' -and $Request.Count -eq 1) -or ($Method -ceq 'dnscrypt' -and $Request.action -ceq 'remove' -and $Request.engine -ceq 'dnscrypt' -and $Request.Count -eq 2)
-        $journalRecovery=($ScenarioKind -ceq 'journal-recovery' -and $Request.action -ceq 'recover' -and
+        $journalRecovery=($ScenarioKind -cin @('journal-recovery','missing-snapshot') -and $Request.action -ceq 'recover' -and
             $Request.Count -eq 2 -and $Request.journalId -is [string] -and $Request.journalId -cmatch '\Aworkflow-[a-f0-9]{32}\.json\z')
-        if((-not $valid -and -not $journalRecovery) -or ($ExpectStaleJournal -and -not $journalRecovery)){throw 'Native fixture request refused'}
-        $staleMarkerSeen=$false
+        $expectRefusal=$ExpectStaleJournal -or $ExpectMissingSnapshot
+        if((-not $valid -and -not $journalRecovery) -or ($expectRefusal -and -not $journalRecovery) -or
+            ($ExpectStaleJournal -and $ScenarioKind -cne 'journal-recovery') -or
+            ($ExpectMissingSnapshot -and $ScenarioKind -cne 'missing-snapshot')){throw 'Native fixture request refused'}
+        $refusalMarkerSeen=$false
         if($Request.action -ceq 'dns' -and $Method -ceq 'dnscrypt'){$Request.bundlePath=$component.directory}
         $requestPath=Join-Path $privateRoot ($Request.action+'.request.json');[IO.File]::WriteAllText($requestPath,($Request|ConvertTo-Json -Compress),[Text.UTF8Encoding]::new($false))
         if((Get-FileHash -LiteralPath $Binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $BinarySHA256){throw 'Native binary changed before dispatch'}
@@ -273,9 +278,9 @@ public static class AccessWeaverNativeDoHIdentity {
                         try{
                             $count=$capture.task.GetAwaiter().GetResult()
                             if($count -eq 0){$capture.done=$true}else{
-                                $marker=Get-NativeDNSVerificationMarker $capture.suffix ([string]::new($capture.buffer,0,$count)) -StaleJournal:$ExpectStaleJournal
+                                $marker=Get-NativeDNSVerificationMarker $capture.suffix ([string]::new($capture.buffer,0,$count)) -StaleJournal:$ExpectStaleJournal -MissingSnapshot:$ExpectMissingSnapshot
                                 if($marker.matched){
-                                    if($ExpectStaleJournal){$staleMarkerSeen=$true}else{$script:resolverVerificationRejected=$true}
+                                    if($expectRefusal){$refusalMarkerSeen=$true}else{$script:resolverVerificationRejected=$true}
                                 }
                                 $capture.suffix=$marker.suffix
                                 $capture.count=[Math]::Min(1048577,$capture.count+$count);if($capture.count -gt 1048576){$script:overflow=$true}
@@ -298,7 +303,7 @@ public static class AccessWeaverNativeDoHIdentity {
             }
             $process.WaitForExit();$script:joined++
             if($Request.action -ceq 'dns'){$script:configureExit=$process.ExitCode;$script:configureElapsedMilliseconds=[int64][Math]::Floor($clock.Elapsed.TotalMilliseconds)}elseif($Request.action -ceq 'dns-restore'){$script:restoreExit=$process.ExitCode}elseif($Request.action -ceq 'remove'){$script:cleanupExit=$process.ExitCode}
-            $exitAccepted=if($ExpectStaleJournal){$process.ExitCode -ne 0 -and $staleMarkerSeen}else{
+            $exitAccepted=if($expectRefusal){$process.ExitCode -ne 0 -and $refusalMarkerSeen}else{
                 $process.ExitCode -eq 0 -or ($Request.action -ceq 'dns' -and $ScenarioKind -ceq 'verification-failure')
             }
             if(-not $exitAccepted -or $script:overflow -or $script:captureFailed -or $script:forwarderFailed){throw 'Native CLI or bounded capture failed'}
@@ -563,7 +568,50 @@ public static class AccessWeaverNativeDoHIdentity {
     } -ResolveRestored {$script:restoredAnswers=Get-NativeDNSAnswerCount}
     return ($script:scenario.outcome -ceq 'passed')
     }
-    if($ScenarioKind -ceq 'journal-recovery'){
+    if($ScenarioKind -ceq 'missing-snapshot'){
+        $activeSnapshot=Join-Path $machineRoot 'profiles\dns-original.json'
+        $heldSnapshot=Join-Path (Split-Path -Parent $activeSnapshot) ('fixture-held-'+[guid]::NewGuid().ToString('N')+'.tmp')
+        $missingSnapshotScenario=Invoke-NativeDNSMissingSnapshotScenario -Apply {
+            param($Request,$ExpectedRefusal)
+            Invoke-NativeDoHCLI $Request -ExpectMissingSnapshot:($ExpectedRefusal -ceq 'missing-snapshot')
+        } -Capture {Read-DNSAcceptanceState ([ref]$script:captureStage) ([ref]$script:captureProgress)} -Resolve {
+            [void](Get-NativeDNSAnswerCount)
+        } -ReadBinding {
+            Read-NativeDoHJournalBinding ''
+        } -HoldSnapshot {
+            param($Digest)
+            Assert-NativeOrdinaryPath $activeSnapshot
+            Assert-NativeOrdinaryPath $heldSnapshot
+            if((Get-FileHash -LiteralPath $activeSnapshot -Algorithm SHA256).Hash -cne $Digest){throw 'Active DNS snapshot changed'}
+            [IO.File]::Move($activeSnapshot,$heldSnapshot)
+            if((Test-Path -LiteralPath $activeSnapshot) -or (Get-FileHash -LiteralPath $heldSnapshot -Algorithm SHA256).Hash -cne $Digest){
+                throw 'Snapshot hold could not be verified'
+            }
+        } -ReturnSnapshot {
+            param($Digest)
+            Assert-NativeOrdinaryPath $activeSnapshot
+            Assert-NativeOrdinaryPath $heldSnapshot
+            if(Test-Path -LiteralPath $heldSnapshot){
+                if((Get-FileHash -LiteralPath $heldSnapshot -Algorithm SHA256).Hash -cne $Digest){throw 'Held DNS snapshot changed'}
+                [IO.File]::Move($heldSnapshot,$activeSnapshot)
+            }
+            if((Get-FileHash -LiteralPath $activeSnapshot -Algorithm SHA256).Hash -cne $Digest){throw 'Snapshot return could not be verified'}
+        } -ReadResolver {
+            $service=Get-CimInstance Win32_Service -Filter "Name='AccessWeaver-dnscrypt'" -ErrorAction Stop
+            if(@($service).Count -ne 1 -or $service.State -cne 'Running' -or $service.StartMode -cne 'Auto' -or $service.ProcessId -le 0){
+                throw 'Managed DNSCrypt service is not running'
+            }
+            $digest=@()
+            foreach($file in @('services\dnscrypt.json','components\dnscrypt\dnscrypt-proxy.toml','components\dnscrypt\dnscrypt-proxy.exe')){
+                $path=Join-Path $machineRoot $file
+                Assert-NativeOrdinaryPath $path
+                $digest+=@((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)
+            }
+            if($digest[2].ToLowerInvariant() -cne $component.binarySHA256){throw 'Installed DNSCrypt identity differs'}
+            $script:installedComponentVerified=$true;$script:serviceRunning=$true;$script:serviceAutomatic=$true
+            return ([string]$service.ProcessId+':'+($digest -join ':'))
+        }
+    }elseif($ScenarioKind -ceq 'journal-recovery'){
         $journalScenario=Invoke-NativeDNSJournalScenario -Apply {
             param($Request,[switch]$ExpectStaleJournal)
             Invoke-NativeDoHCLI $Request -ExpectStaleJournal:$ExpectStaleJournal
@@ -598,7 +646,13 @@ public static class AccessWeaverNativeDoHIdentity {
         try{Complete-DoHNetEventCleanup $script:wire}catch{if($script:wire.failurePhase -ceq 'none'){$script:wire.failurePhase=$script:wire.phase};throw}
         $wireSummary=Get-DoHNetEventSummary $script:wire
     }
-    if($Method -ceq 'dnscrypt'){
+    if($ScenarioKind -ceq 'missing-snapshot'){
+        $serviceRemoved=(@(Get-Service -Name 'AccessWeaver-dnscrypt' -ErrorAction SilentlyContinue).Count -eq 0)
+        if(-not $missingSnapshotScenario.retryAccepted -and $missingSnapshotScenario.emergencyStateVerified -and
+            -not (Test-Path -LiteralPath $activeSnapshot -ErrorAction Stop) -and -not (Test-Path -LiteralPath $heldSnapshot -ErrorAction Stop)){
+            try{Invoke-NativeDoHCLI @{action='remove';engine='dnscrypt'}}finally{$serviceRemoved=(@(Get-Service -Name 'AccessWeaver-dnscrypt' -ErrorAction SilentlyContinue).Count -eq 0)}
+        }
+    }elseif($Method -ceq 'dnscrypt'){
         # Remove through the actual product after the independent restore attempt.
         # Keep all private output under the same bounded, joined CLI boundary.
         try{Invoke-NativeDoHCLI @{action='remove';engine='dnscrypt'}}finally{$serviceRemoved=(@(Get-Service -Name 'AccessWeaver-dnscrypt' -ErrorAction SilentlyContinue).Count -eq 0)}
@@ -610,6 +664,16 @@ public static class AccessWeaverNativeDoHIdentity {
     }
     $snapshotRemoved=-not (Test-Path -LiteralPath (Join-Path $machineRoot 'profiles\dns-original.json'))
     $scenarioPassed=($scenario.outcome -ceq 'passed' -and $snapshotRemoved -and $script:cliCount -eq $(if($Method -ceq 'dnscrypt'){3}else{2}) -and $script:joined -eq $script:cliCount -and ($Method -ceq 'doh' -or ($serviceRunning -and $serviceAutomatic -and $serviceRemoved -and $script:cleanupExit -eq 0)) -and -not $script:overflow -and -not $script:captureFailed)
+    if($ScenarioKind -ceq 'missing-snapshot'){
+        $serviceConfig=Join-Path $machineRoot 'services\dnscrypt.json'
+        $resolverConfig=Join-Path $machineRoot 'components\dnscrypt\dnscrypt-proxy.toml'
+        $missingSnapshotScenario.serviceFilesRemoved=(-not (Test-Path -LiteralPath $serviceConfig -ErrorAction Stop) -and
+            -not (Test-Path -LiteralPath $resolverConfig -ErrorAction Stop))
+        $scenarioPassed=($missingSnapshotScenario.outcome -ceq 'passed' -and $snapshotRemoved -and $serviceRemoved -and
+            $missingSnapshotScenario.serviceFilesRemoved -and
+            $script:installedComponentVerified -and $script:cliCount -eq 3 -and $script:joined -eq 3 -and
+            -not (Test-Path -LiteralPath $heldSnapshot) -and -not $script:overflow -and -not $script:captureFailed)
+    }
     if($ScenarioKind -ceq 'journal-recovery'){
         $scenarioPassed=($journalScenario.outcome -ceq 'passed' -and $snapshotRemoved -and $script:cliCount -eq 4 -and
             $script:joined -eq 4 -and -not $script:overflow -and -not $script:captureFailed)
@@ -632,8 +696,9 @@ finally {
     # Fixed metadata only: no exception, account, path, DNS value or raw output.
     $parent=Get-Item -LiteralPath $reportParent.FullName -Force -ErrorAction Stop;Assert-NativeOrdinaryPath $ReportPath
     if($parent.CreationTimeUtc.Ticks -ne $reportCreated -or [IO.Directory]::GetFileSystemEntries($parent.FullName).Length -ne 0){throw 'Changed native report parent retained'}
-    $report=@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;platform='windows';architecture=$env:ACCESSWEAVER_EXPECT_GOARCH;goVersion=$env:GO_VERSION;edition=$PSVersionTable.PSEdition;version=$PSVersionTable.PSVersion.ToString();binarySHA256=$BinarySHA256;outcome=$outcome;code=$code;environmentVerified=$environmentVerified;nativeProcessVerified=$nativeProcessVerified;binaryVerified=$binaryVerified;scenario=$scenario;staticFixture=$staticFixture;staticFirewallProtected=$script:staticFirewallProtected;staticFirewallRemoved=$script:staticFirewallRemoved;staticObservation=$script:staticObservation;staticPhase=$script:staticPhase;staticFailurePhase=$script:staticFailurePhase;staticFailureCode=$script:staticFailureCode;staticSnapshotNormalized=$script:staticSnapshotNormalized;rollbackScenario=$rollbackScenario;rollbackSnapshotRemoved=$script:rollbackSnapshotRemoved;rollbackServiceRemoved=$script:rollbackServiceRemoved;resolverVerificationRejected=$script:resolverVerificationRejected;configureElapsedMilliseconds=$script:configureElapsedMilliseconds;forwarderPeerClosures=$script:forwarderPeerClosures;forwarderFailureCode=$script:forwarderFailureCode;forwarderRequests=$script:forwarderRequests;forwarderResponses=$script:forwarderResponses;forwarderFailed=$script:forwarderFailed;configuredDuringRejectedApply=$script:configuredDuringRejectedApply;installedComponentVerified=$script:installedComponentVerified;baselineResolverAnswers=$script:baselineAnswers;probeOutcome=$probeOutcome;adapterShapes=@($adapterShapes);captureStage=$script:captureStage;captureProgress=$script:captureProgress;cliCount=$script:cliCount;processesJoined=$script:joined;configureExitCode=$script:configureExit;restoreExitCode=$script:restoreExit;outputOverflow=$script:overflow;captureFailed=$script:captureFailed;diagnosticWaitExceeded=$script:diagnosticWaitExceeded;ordinaryResolverAnswers=$script:answers;snapshotRemoved=$snapshotRemoved;method=$Method;scenarioKind=$ScenarioKind;failureServiceStopped=$script:failureServiceStopped;resolverProcessExited=$script:resolverProcessExited;failedResolverObserved=$script:failedResolverObserved;restoredResolverAnswers=$script:restoredAnswers;componentRequestAttempts=$script:componentRequestAttempts;componentRetryStatus=$script:componentRetryStatus;componentStage=$script:componentStage;componentFailureCode=$script:componentFailureCode;componentHTTPStatus=$script:componentHTTPStatus;componentDownloadedBytes=$script:componentDownloadedBytes;componentArchiveEntries=$script:componentArchiveEntries;componentVersion=$(if($component){$component.version}else{''});componentArchiveSHA256=$(if($component){$component.archiveSHA256}else{''});componentBinarySHA256=$(if($component){$component.binarySHA256}else{''});componentStaged=($null -ne $component);serviceRunning=$serviceRunning;serviceAutomatic=$serviceAutomatic;serviceRemoved=$serviceRemoved;cleanupExitCode=$script:cleanupExit;encryptedTrafficObserved=$false;rebootExercised=$false;dnscryptExercised=($Method -ceq 'dnscrypt' -and (($null -ne $scenario -and $scenario.configurationAttempted) -or ($null -ne $rollbackScenario -and $rollbackScenario.configurationAttempted)));nativeDnsQualified=$false;productionQualificationComplete=$false}
+    $report=@{schemaVersion=1;sourceCommit=$env:GITHUB_SHA;sourceSHA256=$hashes;platform='windows';architecture=$env:ACCESSWEAVER_EXPECT_GOARCH;goVersion=$env:GO_VERSION;edition=$PSVersionTable.PSEdition;version=$PSVersionTable.PSVersion.ToString();binarySHA256=$BinarySHA256;outcome=$outcome;code=$code;environmentVerified=$environmentVerified;nativeProcessVerified=$nativeProcessVerified;binaryVerified=$binaryVerified;scenario=$scenario;staticFixture=$staticFixture;staticFirewallProtected=$script:staticFirewallProtected;staticFirewallRemoved=$script:staticFirewallRemoved;staticObservation=$script:staticObservation;staticPhase=$script:staticPhase;staticFailurePhase=$script:staticFailurePhase;staticFailureCode=$script:staticFailureCode;staticSnapshotNormalized=$script:staticSnapshotNormalized;rollbackScenario=$rollbackScenario;rollbackSnapshotRemoved=$script:rollbackSnapshotRemoved;rollbackServiceRemoved=$script:rollbackServiceRemoved;resolverVerificationRejected=$script:resolverVerificationRejected;configureElapsedMilliseconds=$script:configureElapsedMilliseconds;forwarderPeerClosures=$script:forwarderPeerClosures;forwarderFailureCode=$script:forwarderFailureCode;forwarderRequests=$script:forwarderRequests;forwarderResponses=$script:forwarderResponses;forwarderFailed=$script:forwarderFailed;configuredDuringRejectedApply=$script:configuredDuringRejectedApply;installedComponentVerified=$script:installedComponentVerified;baselineResolverAnswers=$script:baselineAnswers;probeOutcome=$probeOutcome;adapterShapes=@($adapterShapes);captureStage=$script:captureStage;captureProgress=$script:captureProgress;cliCount=$script:cliCount;processesJoined=$script:joined;configureExitCode=$script:configureExit;restoreExitCode=$script:restoreExit;outputOverflow=$script:overflow;captureFailed=$script:captureFailed;diagnosticWaitExceeded=$script:diagnosticWaitExceeded;ordinaryResolverAnswers=$script:answers;snapshotRemoved=$snapshotRemoved;method=$Method;scenarioKind=$ScenarioKind;failureServiceStopped=$script:failureServiceStopped;resolverProcessExited=$script:resolverProcessExited;failedResolverObserved=$script:failedResolverObserved;restoredResolverAnswers=$script:restoredAnswers;componentRequestAttempts=$script:componentRequestAttempts;componentRetryStatus=$script:componentRetryStatus;componentStage=$script:componentStage;componentFailureCode=$script:componentFailureCode;componentHTTPStatus=$script:componentHTTPStatus;componentDownloadedBytes=$script:componentDownloadedBytes;componentArchiveEntries=$script:componentArchiveEntries;componentVersion=$(if($component){$component.version}else{''});componentArchiveSHA256=$(if($component){$component.archiveSHA256}else{''});componentBinarySHA256=$(if($component){$component.binarySHA256}else{''});componentStaged=($null -ne $component);serviceRunning=$serviceRunning;serviceAutomatic=$serviceAutomatic;serviceRemoved=$serviceRemoved;cleanupExitCode=$script:cleanupExit;encryptedTrafficObserved=$false;rebootExercised=$false;dnscryptExercised=($Method -ceq 'dnscrypt' -and (($null -ne $scenario -and $scenario.configurationAttempted) -or ($null -ne $rollbackScenario -and $rollbackScenario.configurationAttempted) -or ($null -ne $missingSnapshotScenario -and $missingSnapshotScenario.configurationAttempted)));nativeDnsQualified=$false;productionQualificationComplete=$false}
     if($ScenarioKind -ceq 'journal-recovery'){$report.journalScenario=$journalScenario}
+    if($ScenarioKind -ceq 'missing-snapshot'){$report.missingSnapshotScenario=$missingSnapshotScenario}
     if($WireTransport){$report.configuredReadbackControl=$script:configuredReadbackControl;$report.queryBinarySHA256=$(if($queryBinaryVerified){$QueryBinarySHA256}else{''});$report.queryBinaryVerified=$queryBinaryVerified;$report.queryProbeReady=$queryProbeReady;$report.wire=$wireSummary;$report.encryptedTrafficObserved=($outcome -ceq 'passed' -and $null -ne $wireSummary -and $wireSummary.outcome -ceq 'passed')}
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($report|ConvertTo-Json -Depth 8 -Compress));if($bytes.Length -gt 24576){throw 'Native report exceeds fixed metadata bound'}
     $stream=[IO.FileStream]::new($ReportPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)

@@ -99,6 +99,66 @@ function Invoke-NativeDNSJournalScenario([scriptblock]$Apply,[scriptblock]$Captu
     return $result
 }
 
+# Run against a fresh guest with a real managed resolver and a reversible
+# snapshot move. Callback state and private paths stay out of the report.
+function Invoke-NativeDNSMissingSnapshotScenario([scriptblock]$Apply,[scriptblock]$Capture,[scriptblock]$Resolve,[scriptblock]$ReadBinding,[scriptblock]$HoldSnapshot,[scriptblock]$ReturnSnapshot,[scriptblock]$ReadResolver) {
+    $result=@{outcome='failed';code='baseline';configurationAttempted=$false;bindingVerified=$false;snapshotHeld=$false;
+        recoveryRefused=$false;resolverPreserved=$false;configuredStatePreserved=$false;snapshotReturned=$false;
+        retryAccepted=$false;originalStateRestored=$false;originalResolverVerified=$false;emergencyRestoreAttempted=$false;emergencyStateVerified=$false}
+    try {
+        $before=& $Capture
+        [void](Get-DNSAcceptanceIndex $before)
+        [void](& $Resolve)
+    }catch{return $result}
+    $holdingAttempted=$false
+    try {
+        $result.code='configuration';$result.configurationAttempted=$true
+        [void](& $Apply @{action='dns';dns='dnscrypt'})
+        $configured=& $Capture
+        Assert-DNSAcceptanceConfigured $before $configured 'dnscrypt'
+        [void](& $Resolve)
+        $result.code='binding'
+        $binding=& $ReadBinding
+        $resolver=& $ReadResolver
+        $result.bindingVerified=$true
+        $result.code='snapshot-hold';$holdingAttempted=$true
+        [void](& $HoldSnapshot $binding.digest)
+        $result.snapshotHeld=$true
+        $result.code='missing-snapshot-refusal'
+        [void](& $Apply @{action='recover';journalId=$binding.journalId} -ExpectedRefusal missing-snapshot)
+        $result.recoveryRefused=$true
+        $result.code='resolver-preservation'
+        if((& $ReadResolver) -cne $resolver){throw 'DNSCrypt service or files changed'}
+        $result.resolverPreserved=$true
+        Assert-DNSAcceptanceRestored $configured (& $Capture)
+        [void](& $Resolve)
+        $result.configuredStatePreserved=$true
+        $result.code='snapshot-return'
+        [void](& $ReturnSnapshot $binding.digest)
+        $result.snapshotReturned=$true
+        $result.code='journal-retry'
+        [void](& $Apply @{action='recover';journalId=$binding.journalId})
+        $result.retryAccepted=$true
+        $result.code='original-state'
+        Assert-DNSAcceptanceRestored $before (& $Capture)
+        $result.originalStateRestored=$true
+        $result.code='original-resolver'
+        [void](& $Resolve)
+        $result.originalResolverVerified=$true
+        $result.outcome='passed';$result.code='none'
+    }catch{}finally{
+        if($holdingAttempted -and -not $result.snapshotReturned){
+            try{[void](& $ReturnSnapshot $binding.digest);$result.snapshotReturned=$true}catch{}
+        }
+        if($result.outcome -cne 'passed' -and (-not $holdingAttempted -or $result.snapshotReturned)){
+            $result.emergencyRestoreAttempted=$true
+            try{[void](& $Apply @{action='dns-restore'})}catch{}
+            try{Assert-DNSAcceptanceRestored $before (& $Capture);$result.emergencyStateVerified=$true}catch{}
+        }
+    }
+    return $result
+}
+
 # Pure fixed-domain DNS fixture: no network, process or OS operations here.
 function New-NativeDNSFailureResponse([byte[]]$Packet) {
     if($null -eq $Packet -or $Packet.Length -lt 29 -or $Packet.Length -gt 4096 -or ($Packet[2] -band 0xf8) -ne 0 -or $Packet[4] -ne 0 -or $Packet[5] -ne 1 -or $Packet[6] -ne 0 -or $Packet[7] -ne 0 -or $Packet[8] -ne 0 -or $Packet[9] -ne 0){throw 'Fixed DNS query shape refused'}
@@ -148,8 +208,10 @@ function Invoke-NativeDNSRollbackScenario([scriptblock]$Configure,[scriptblock]$
 }
 
 # Only a source-known marker leaves the private bounded output stream as a bool.
-function Get-NativeDNSVerificationMarker([string]$Previous,[string]$Chunk,[switch]$StaleJournal) {
-    $marker=if($StaleJournal){'DNS recovery journal does not match the active snapshot; review dns-restore'}else{'Resolver verification failed; original DNS settings restored:'}
+function Get-NativeDNSVerificationMarker([string]$Previous,[string]$Chunk,[switch]$StaleJournal,[switch]$MissingSnapshot) {
+    $marker=if($MissingSnapshot){'DNS recovery snapshot is missing without a verified restoration receipt'}
+        elseif($StaleJournal){'DNS recovery journal does not match the active snapshot; review dns-restore'}
+        else{'Resolver verification failed; original DNS settings restored:'}
     if($Previous.Length -ge $marker.Length -or $Chunk.Length -gt 4096){throw 'DNS verification marker input bound exceeded'}
     $combined=$Previous+$Chunk;$start=[Math]::Max(0,$combined.Length-($marker.Length-1))
     return @{matched=$combined.Contains($marker);suffix=$combined.Substring($start)}
