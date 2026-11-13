@@ -67,6 +67,9 @@ jobs:
       - name: Pure provenance contracts
         shell: powershell
         run: python -m unittest discover -s scripts -p test_windows_installer_provenance.py -v
+      - name: Pure installer reboot evidence contracts
+        shell: pwsh
+        run: ./scripts/test-windows-installer-reboot-contracts.ps1
       - name: Pure managed detection contracts
         shell: pwsh
         run: ./scripts/test-windows-installer-detection.ps1

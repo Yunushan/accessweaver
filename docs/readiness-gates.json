@@ -143,6 +143,8 @@
           "evidence": [
             "scripts/test-windows-integration.ps1",
             "docs/SPLITWIRE_IMPLEMENTATION.md",
+            "scripts/test-windows-installer-reboot.ps1",
+            "scripts/test-windows-installer-reboot-contracts.ps1",
             "docs/qualification/56924863f63e-installer-lifecycle.json"
           ]
         }
