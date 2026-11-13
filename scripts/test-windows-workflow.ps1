@@ -731,10 +731,20 @@ try {
             $script:fixtureRefreshPresent=$script:fixtureRefreshRetained
         }
         $vendorFailure=''
+        $disconnectStatus=@{outputComplete=$true;stdout='Connected'}
+        $disconnectFailure='Tool failed: wiresock-connect-cli.exe (exit 1)'
         function Native {
-            param($program,$arguments,[switch]$Secret)
+            param($program,$arguments,[switch]$Secret,[int]$Timeout)
+            if(-not $Secret){throw 'Expected private WireSock command'}
             $script:fixtureRefreshCalls.Add($arguments[0])
-            if($arguments[0] -ceq $vendorFailure){throw 'Private synthetic vendor detail'}
+            if($arguments[0] -ceq $vendorFailure){
+                if($vendorFailure -ceq 'disconnect'){throw $disconnectFailure}
+                throw 'Private synthetic vendor detail'
+            }
+            if($arguments[0] -ceq 'status'){
+                if($Timeout -ne 15){throw 'Expected bounded WireSock status query'}
+                return $disconnectStatus
+            }
             return @{exitCode=0}
         }
         $effectsBeforeCleanup=$script:externalEffectsPending
@@ -755,7 +765,7 @@ try {
             $script:fixtureRefreshRetained=$false
             $recordHash=(Get-FileHash -LiteralPath $recordPath -Algorithm SHA256).Hash
             foreach($case in @(
-                @{verb='disconnect';calls='disconnect';message='WireSock disconnect command failed; the managed profile was retained'},
+                @{verb='disconnect';calls='disconnect,status';message='WireSock disconnect command failed; the managed profile was retained'},
                 @{verb='delete';calls='disconnect,delete';message='WireSock profile deletion command failed; the ownership record was retained'}
             )){
                 $script:fixtureRefreshPresent=$true
@@ -769,6 +779,27 @@ try {
                 }
             }
             Assert $true 'WireSock distinguishes disconnect and deletion failures and retains ownership'
+            $script:fixtureRefreshPresent=$false
+            $vendorFailure='disconnect'
+            $disconnectStatus=@{outputComplete=$false;stdout='Disconnected'}
+            $script:fixtureRefreshCalls.Clear()
+            $refused=$false
+            try {Remove-Method 'wiresock'}catch{$refused=$_.Exception.Message -ceq 'WireSock disconnect command failed; the managed profile was retained'}
+            Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq 'disconnect,status' -and
+                (Test-Path -LiteralPath $recordPath)) 'WireSock retains ownership when idle status output is incomplete'
+            $disconnectStatus=@{outputComplete=$true;stdout='Status: NotConnected'}
+            $disconnectFailure='Timed out: wiresock-connect-cli.exe'
+            $script:fixtureRefreshCalls.Clear()
+            $refused=$false
+            try {Remove-Method 'wiresock'}catch{$refused=$_.Exception.Message -ceq 'WireSock disconnect command failed; the managed profile was retained'}
+            Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq 'disconnect' -and
+                (Test-Path -LiteralPath $recordPath)) 'WireSock retains ownership after an unconfirmed disconnect process exit'
+            $disconnectFailure='Tool failed: wiresock-connect-cli.exe (exit 1)'
+            $script:fixtureRefreshCalls.Clear()
+            Remove-Method 'wiresock'
+            Assert (($script:fixtureRefreshCalls -join ',') -ceq 'disconnect,status,delete' -and
+                -not (Test-Path -LiteralPath $recordPath)) 'WireSock can remove its profile after a failed disconnect and confirmed idle status'
+            @{cli=$paths[0];profile=$profile} | ConvertTo-Json -Compress | Set-Content -LiteralPath $recordPath -Encoding ASCII
             $script:fixtureRefreshPresent=$true
             $vendorFailure=''
             $script:fixtureRefreshCalls.Clear()
@@ -787,12 +818,19 @@ try {
     $previousUndo=$script:undo
     try {
         $script:undo=[Collections.Generic.List[object]]::new()
+        $failDisconnect=$false
+        $idleStatus='Disconnected'
         function Native {
-            param($program,$arguments,[switch]$Secret)
+            param($program,$arguments,[switch]$Secret,[int]$Timeout)
             if(-not $Secret -or ($arguments[0] -eq 'delete' -and $arguments[1] -cne $profileName)){
                 throw 'Unexpected vendor cleanup command'
             }
             $script:fixtureWireSockRollbackCalls.Add($arguments[0])
+            if($arguments[0] -ceq 'disconnect' -and $failDisconnect){throw 'Tool failed: wiresock-connect-cli.exe (exit 1)'}
+            if($arguments[0] -ceq 'status'){
+                if($Timeout -ne 15){throw 'Expected bounded WireSock status query'}
+                return @{outputComplete=$true;stdout=$idleStatus}
+            }
             return @{exitCode=0}
         }
         $entry=@{kind='wiresock';cli='C:\fixture\wiresock-connect-cli.exe';profile=$profileName;importOnly=$true}
@@ -801,6 +839,12 @@ try {
         $entry.importOnly=$false
         $script:fixtureWireSockRollbackCalls.Clear()
         Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'disconnect,delete') 'WireSock recovery after a connection attempt retains both cleanup steps'
+        $failDisconnect=$true
+        $script:fixtureWireSockRollbackCalls.Clear()
+        Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'disconnect,status,delete') 'WireSock recovery can delete its recorded profile after confirmed idle status'
+        $idleStatus='Disconnecting'
+        $script:fixtureWireSockRollbackCalls.Clear()
+        Assert (@(Rollback).Count -eq 1 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'disconnect,status') 'WireSock recovery refuses deletion while the vendor is still disconnecting'
     } finally {$script:undo=$previousUndo}
 }
 # Drive the actual connection function and recover its generated undo entry.

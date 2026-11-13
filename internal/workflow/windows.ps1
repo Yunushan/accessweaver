@@ -1239,13 +1239,27 @@ function Connect-WireSock([string]$config) {
     Write-Atomic (Join-Path $root 'profiles\wiresock-owned.json') (@{profile=[IO.Path]::GetFileNameWithoutExtension($config);cli=$cli;legacy=$true}|ConvertTo-Json)
     return 'Vendor service running; tunnel traffic requires independent verification'
 }
+function Confirm-WireSockDisconnected([string]$cli) {
+    $refusal='WireSock disconnect command failed; the managed profile was retained'
+    try {
+        [void](Native $cli @('disconnect') -Secret)
+        return
+    } catch {
+        # A consumed nonzero exit can mean the tunnel is already idle. A
+        # timeout or uncertain process cleanup keeps the recovery entry intact.
+        $program=[regex]::Escape([IO.Path]::GetFileName($cli))
+        if($_.Exception.Message -cnotmatch ('\ATool failed: '+$program+' \(exit -?[0-9]{1,10}\)\z')){throw $refusal}
+    }
+    $state='Unknown'
+    try {$state=Get-WireSockReportedState (Native $cli @('status') -Secret -Timeout 15)}catch{}
+    if($state -cnotin @('NotConnected','Disconnected')){throw $refusal}
+}
 function Disconnect-OwnedWireSock($record) {
     if($record.legacy){
         $script:externalEffectsPending=$true
         Stop-Service 'wiresock-client-service' -ErrorAction Stop
     }else{
-        try {[void](Native $record.cli @('disconnect') -Secret)}
-        catch {throw 'WireSock disconnect command failed; the managed profile was retained'}
+        Confirm-WireSockDisconnected $record.cli
     }
     Event 'Managed WireSock connection disconnected'
 }
@@ -2421,7 +2435,7 @@ function Rollback {
                 [void](Native $item.cli @('uninstall') -Secret)
             }else{
                 if($item.importOnly -isnot [bool] -or -not $item.importOnly){
-                    [void](Native $item.cli @('disconnect') -Secret)
+                    Confirm-WireSockDisconnected $item.cli
                 }
                 [void](Native $item.cli @('delete',$item.profile) -Secret)
             }
