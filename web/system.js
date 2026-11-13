@@ -87,10 +87,13 @@ async function applySystem(){
   try {const job=await apiRequest('/api/v1/system/start','POST',{planId:id,confirm:true});renderSystemJob(job);pollSystemJob();}
   catch(error){if(context!==historyContext()||state.view!=='system')return;if(!handleWorkflowLifecycleAdmission(error)&&!handleControllerStorageAdmission(error)){setTextOutput('system-output',error.message);toast(error.message,true)}}finally{systemUI.busy=false}
 }
+function isApplicationWorkflow(action){
+ return ['app-install','app-reinstall','app-remove','app-start','app-repair'].includes(action);
+}
 function renderSystemJob(job){
  if(!job?.id)return;
  notifySystemUpdate(job);showSystemOutput(job);$('system-cancel').disabled=job.state!=='running';
- const application=['app-install','app-reinstall','app-remove','app-start','app-repair'].includes(job.action);
+ const application=isApplicationWorkflow(job.action);
  if(application&&job.state==='failed'&&job.result?.externalEffectsPending===true){
   const notice=$('system-application-recovery'),output=$('system-output');
   notice.hidden=false;
@@ -255,15 +258,30 @@ function renderHistoryRows(){
  $('history-rows').replaceChildren(...rows);
 }
 function renderHistoryDetail(){
- const record=historyUI.selected;$('history-detail-panel').hidden=!record;
+ const record=historyUI.selected,notice=$('history-application-recovery'),output=$('history-detail');
+ $('history-detail-panel').hidden=!record;notice.hidden=true;notice.textContent='';
+ output.removeAttribute('aria-describedby');
  if(!record)return;
+ if(isApplicationWorkflow(record.action)){
+  const job=historyUI.detailReady?historyUI.job:null;
+  if(record.state==='interrupted'){
+   notice.textContent=t('applicationInterruptedNotice');
+  }else if(record.state==='failed'&&job?.id===record.id&&job.action===record.action&&
+           job.state==='failed'&&job.result?.externalEffectsPending===true){
+   notice.textContent=t('applicationRecoveryNotice');
+  }
+  notice.hidden=!notice.textContent;
+ }
  $('history-detail-title').textContent=historyText('historyDetailTitle',{record:historyRecordName(record)});
  $('history-detail-summary').textContent=[historyOperation(record),t('historyState_'+record.state),t('historyClass_'+record.classification),historySize(record.size),t('historyProtected')].join(' · ');
  let text=t(historyUI.detailing?'historyDetailLoading':!record.rawAvailable?'historyRawUnavailable':'historyDetailUnavailable'),limited=false;
  if(historyUI.detailReady&&historyUI.largePreview)text=t('historyLargePreview');
  if(historyUI.detailReady&&historyUI.job!==null){const preview=formatJSONPreview(historyUI.job);text=preview.text;limited=preview.limited;}
  setTextOutput('history-detail',text);$('history-detail-limited').hidden=!limited;
- if(limited)$('history-detail').setAttribute('aria-describedby','history-detail-limited');else $('history-detail').removeAttribute('aria-describedby');
+ const descriptions=[];
+ if(!notice.hidden)descriptions.push(notice.id);
+ if(limited)descriptions.push('history-detail-limited');
+ if(descriptions.length)output.setAttribute('aria-describedby',descriptions.join(' '));
 }
 function refreshHistoryLanguage(){renderControllerStorage();renderReconciliation();renderWorkflowLifecycle();renderHistoryMessage();renderHistoryRows();renderHistoryDetail();updateHistoryAvailability();}
 function historyError(error){

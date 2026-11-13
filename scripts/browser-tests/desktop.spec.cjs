@@ -675,8 +675,8 @@ test('pending lifecycle blocks launch while retaining profile editing and local 
 test('history fixture: explicit capture, paging, exact detail and private raw export',async({page},testInfo)=>{
  const origin='http://127.0.0.1:43102',session='a'.repeat(43),revisionA='c'.repeat(64),revisionB='e'.repeat(64);
  const refA=Buffer.from('source-history-record-A').toString('base64url'),refB=Buffer.from('source-history-record-B').toString('base64url'),refC=Buffer.from('source-history-record-C').toString('base64url'),cursor=Buffer.from('source-history-next-page').toString('base64url');
- const a={recordRef:refA,revision:revisionA,id:'1'.repeat(48),action:'discover',state:'failed',startedAt:'2026-11-01T00:00:00Z',finishedAt:'2026-11-01T00:01:00Z',size:128,classification:'canonical',protection:'retirement-unavailable',errorPresent:true,resultPresent:true,rawAvailable:true};
- const b={...a,recordRef:refB,revision:revisionB,id:'2'.repeat(48),classification:'malformed',size:3*1024*1024};
+ const a={recordRef:refA,revision:revisionA,id:'1'.repeat(48),action:'app-reinstall',state:'failed',startedAt:'2026-11-01T00:00:00Z',finishedAt:'2026-11-01T00:01:00Z',size:128,classification:'canonical',protection:'retirement-unavailable',errorPresent:true,resultPresent:true,rawAvailable:true};
+ const b={...a,recordRef:refB,revision:revisionB,id:'2'.repeat(48),action:'discover',classification:'malformed',size:3*1024*1024};
  const c={...a,recordRef:refC,revision:'',id:'',state:'unknown',classification:'special',rawAvailable:false};
  const d={...c,recordRef:Buffer.from('source-history-record-D').toString('base64url'),classification:'oversized',size:20*1024*1024*1024};
  const raw=Buffer.alloc(b.size);raw.set([0xff,0,13,10,60,38,65]);const assets=new Map();
@@ -706,7 +706,7 @@ test('history fixture: explicit capture, paging, exact detail and private raw ex
    if(url.pathname==='/api/v1/system/history/records/'+refA){
     expect(url.searchParams.get('revision')).toBe(revisionA);
     if(firstA){firstA=false;enteredA();await heldA;await route.fulfill({json:{record:a,job:{id:'STALE_HISTORY_DETAIL'},rawAvailable:true}}).catch(()=>{});return;}
-    await route.fulfill({json:{record:a,job:{id:a.id,state:'failed',result:{text:'<img src=x onerror="globalThis.historyPayloadExecuted=true">'+'x'.repeat(200000)}},rawAvailable:true}});return;
+    await route.fulfill({json:{record:a,job:{id:a.id,action:a.action,state:'failed',result:{externalEffectsPending:true,text:'<img src=x onerror="globalThis.historyPayloadExecuted=true">'+'x'.repeat(200000)}},rawAvailable:true}});return;
    }
    if(url.pathname==='/api/v1/system/history/records/'+refB){expect(url.searchParams.get('revision')).toBe(revisionB);await route.fulfill({json:{record:b,rawAvailable:true}});return;}
    if(url.pathname==='/api/v1/system/history/records/'+d.recordRef){expect(url.searchParams.has('revision')).toBe(true);expect(url.searchParams.get('revision')).toBe('');await route.fulfill({json:{record:d,rawAvailable:false}});return;}
@@ -731,8 +731,11 @@ test('history fixture: explicit capture, paging, exact detail and private raw ex
   await page.getByTitle(b.id,{exact:true}).click();await expect(page.locator('#history-detail-title')).toContainText(b.id);
   releaseA();await expect(page.locator('#history-detail')).not.toContainText('STALE_HISTORY_DETAIL');await expect(page.locator('#history-detail')).toContainText('too large for the desktop preview');expect(requests.some(item=>item.path==='/api/v1/system/history/records/'+refB)).toBe(false);
   await page.getByTitle(a.id,{exact:true}).click();await expect(page.locator('#history-detail-limited')).toBeVisible();
+  await expect(page.locator('#history-application-recovery')).toBeVisible();
+  await expect(page.locator('#history-detail')).toHaveAttribute('aria-describedby','history-application-recovery history-detail-limited');
   expect((await page.locator('#history-detail').textContent()).length).toBeLessThanOrEqual(128*1024);await expect(page.locator('#history-detail img')).toHaveCount(0);expect(await page.evaluate(()=>globalThis.historyPayloadExecuted)).toBeUndefined();
   await page.getByTitle(b.id,{exact:true}).click();await expect(page.locator('#history-export-record')).toBeEnabled();
+  await expect(page.locator('#history-application-recovery')).toBeHidden();
   const pendingDownload=page.waitForEvent('download');await page.locator('#history-export-record').click();const download=await pendingDownload;
   expect(download.suggestedFilename()).toBe('accessweaver-workflow-record.bin');expect(await fs.readFile(await download.path())).toEqual(raw);
   await page.locator('#history-next').focus();await page.keyboard.press('Enter');await expect(page.locator('#history-rows button')).toHaveCount(2);await expect(page.locator('#history-detail-panel')).toBeHidden();

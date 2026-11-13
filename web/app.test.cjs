@@ -720,6 +720,36 @@ test('exact history detail is independent from current status and rejects stale 
  assert.equal(env.get('system-journal').value,'reviewed.json');assert.equal(env.get('system-cancel').disabled,false);assert.equal(env.run('systemUI.plan.id'),'reviewed-operation');assert.equal(env.get('system-consent').checked,true);
 });
 
+test('retained application history distinguishes interrupted work and confirmed external uncertainty',()=>{
+ const env=onlineHistory(),notice=env.get('history-application-recovery'),output=env.get('history-detail');
+ const interrupted=historyFixtureRecord({action:'app-reinstall',state:'interrupted',resultPresent:false});
+ const failed={...interrupted,state:'failed',resultPresent:true};
+ const job={id:failed.id,action:failed.action,state:'failed',result:{externalEffectsPending:true,detail:'x'.repeat(10000)}};
+ const render=(record,value,ready=true)=>{
+  env.put('recordFixture',record);env.put('historyJobFixture',value);env.put('historyReadyFixture',ready);
+  env.run('historyUI.selected=recordFixture;historyUI.job=historyJobFixture;historyUI.detailReady=historyReadyFixture;renderHistoryDetail()');
+ };
+ env.get('system-journal').value='protected selection';
+ render(interrupted,null,false);
+ assert.equal(notice.hidden,false);assert.match(notice.textContent,/no final outcome/);
+ assert.equal(output.getAttribute('aria-describedby'),notice.id);
+ render(failed,job);
+ assert.equal(notice.hidden,false);assert.match(notice.textContent,/may have changed/);
+ assert.equal(output.getAttribute('aria-describedby'),notice.id+' history-detail-limited');
+ for(const value of [null,{...job,id:'different'},{...job,action:'app-remove'},{...job,state:'running'},{...job,result:{externalEffectsPending:'true'}}]){
+  render(failed,value);assert.equal(notice.hidden,true);assert.equal(notice.textContent,'');
+ }
+ render(failed,job,false);assert.equal(notice.hidden,true);
+ render({...interrupted,action:'install'},null);assert.equal(notice.hidden,true);
+ render(null,null);assert.equal(output.getAttribute('aria-describedby'),null);
+ assert.equal(env.get('system-journal').value,'protected selection');
+ const messages=['en','tr','ru','es'].map(lang=>{
+  env.put('fixtureLanguage',lang);env.run('state.lang=fixtureLanguage');render(interrupted,null,false);
+  return notice.textContent;
+ });
+ assert.equal(new Set(messages).size,4);
+});
+
 test('unreadable captured records use explicit empty revision detail and cannot be exported',async()=>{
  const env=onlineHistory(),record=historyFixtureRecord({classification:'special',state:'unknown',rawAvailable:false,revision:'',id:''});env.put('historyRows',[record]);env.run('historyUI.items=historyRows');
  let route;env.context.fetch=async path=>{route=path;return historyFixtureResponse({record,rawAvailable:false});};
