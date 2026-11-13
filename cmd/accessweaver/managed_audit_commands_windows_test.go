@@ -2051,7 +2051,7 @@ func windowsAliasPreserveBase(w *windowsCommandWorker, path string) {
 	}
 }
 
-func windowsAliasNew(w *windowsCommandWorker, source, variant string, readonly bool) (*windowsAliasDestination, error) {
+func windowsAliasNew(w *windowsCommandWorker, source, variant string) (*windowsAliasDestination, error) {
 	destination := &windowsAliasDestination{worker: w, source: source, path: source, variant: variant}
 	handle, err := ordinaryOpen(source, windows.FILE_READ_ATTRIBUTES|windows.READ_CONTROL)
 	if err != nil {
@@ -2063,10 +2063,10 @@ func windowsAliasNew(w *windowsCommandWorker, source, variant string, readonly b
 		return destination, errOrdinary
 	}
 	destination.object = original
-	access := uint32(windows.GENERIC_READ | windows.FILE_APPEND_DATA)
-	if readonly {
-		access = windows.GENERIC_READ
-	}
+	// Bound inputs deny write sharing. A read-only destination on the
+	// same stream lets the command reach its identity check without
+	// conflicting with the input open. Named streams share independently.
+	access := uint32(windows.GENERIC_READ)
 	disposition := uint32(windows.OPEN_EXISTING)
 	switch variant {
 	case "direct":
@@ -2087,6 +2087,7 @@ func windowsAliasNew(w *windowsCommandWorker, source, variant string, readonly b
 	case "ads":
 		// CREATE_NEW refuses a preexisting unknown stream, without truncation.
 		destination.path = source + ":accessweaver-native-output"
+		access |= windows.FILE_APPEND_DATA
 		disposition = windows.CREATE_NEW
 	default:
 		return destination, errOrdinary
@@ -2210,7 +2211,7 @@ func windowsAliasInvoke(w *windowsCommandWorker, action string, stdout, stderr *
 	return out, notice, err, <-stopped
 }
 
-func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string, role int, readonly bool) (failure error) {
+func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string, role int) (failure error) {
 	before := w.sources()
 	if before == nil {
 		return errOrdinary
@@ -2223,7 +2224,7 @@ func windowsAliasAttempt(w *windowsCommandWorker, action, source, variant string
 	if err != nil || sourceState.Kind != fileidentity.Regular {
 		return errOrdinary
 	}
-	destination, err := windowsAliasNew(w, source, variant, readonly)
+	destination, err := windowsAliasNew(w, source, variant)
 	defer func() {
 		if destination.close() != nil {
 			failure = errOrdinary
@@ -2286,7 +2287,7 @@ func (w *windowsCommandWorker) aliasAdmission() error {
 			for _, variant := range []string{"direct", "case", "hardlink", "ads"} {
 				for role := 0; role < roles; role++ {
 					if time.Now().After(deadline) || child.ctx.Err() != nil ||
-						windowsAliasAttempt(child, action, source, variant, role, false) != nil {
+						windowsAliasAttempt(child, action, source, variant, role) != nil {
 						return errOrdinary
 					}
 				}
@@ -2296,7 +2297,7 @@ func (w *windowsCommandWorker) aliasAdmission() error {
 	// The approved executable is administrator-owned/read-only to this child.
 	// Its actual resolved identity is protected by run's second admission pass.
 	for role := 0; role < 2; role++ {
-		if windowsAliasAttempt(child, "run", child.engine, "direct", role, true) != nil {
+		if windowsAliasAttempt(child, "run", child.engine, "direct", role) != nil {
 			return errOrdinary
 		}
 	}
@@ -2307,7 +2308,7 @@ func (w *windowsCommandWorker) aliasAdmission() error {
 		if child.ownFile(path, nil) != nil {
 			return errOrdinary
 		}
-		destination, err := windowsAliasNew(child, path, "direct", false)
+		destination, err := windowsAliasNew(child, path, "direct")
 		if err != nil {
 			if destination != nil {
 				_ = destination.close()

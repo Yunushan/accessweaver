@@ -554,6 +554,7 @@
           "status": "partial",
           "evidence": [
             "docs/qualification/4914ada21b27-release-windows-audit-commands.json",
+            "docs/qualification/eb5395fba156-release-windows-audit-commands.json",
             "docs/AUDIT_EVENTS.md",
             "docs/RECORDED_AUDIT_EXPORT.md",
             "docs/WINDOWS_AUDIT_STORAGE.md",

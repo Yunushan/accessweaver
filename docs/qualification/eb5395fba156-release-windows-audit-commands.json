@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "scope": "windows-release-recorded-audit-command-prerequisite",
+  "sourceCommit": "eb5395fba15678c4a7452604f2f242c1bee45fde",
+  "sourceSHA256": {
+    "cmd/accessweaver/managed_audit_ordinary_windows_test.go": "810c0823bf2cea01a8596d2c1f8877de473112f302078c5ebfa3bd7d4d5370a6",
+    "cmd/accessweaver/managed_audit_commands_windows_test.go": "b66df298708709acd8fa5c51281c46845b540860824fa1368da5f77f5916908f",
+    "internal/uiaccess/access_windows.go": "ecc29472bfbfe8d5e0af9f37d6c75609c19b466cd48312c184f5e3076e0d2630",
+    ".github/workflows/windows-audit-storage.yml": "0a2653281edd44f709ecbf9e5cbabb27b85f2eaf415150efe4f1b36239847cc3"
+  },
+  "runID": 43439637407,
+  "reports": [
+    {
+      "architecture": "arm64",
+      "artifactID": 14045859066,
+      "providerZIPDigest": "sha256:693327d5029dd93fbaca97e291f0282df4d93fd46a3e86af3d2a257b19bb4533",
+      "providerZIPDigestVerified": true,
+      "passed": false,
+      "cleanupComplete": false,
+      "desktopFailureStage": "none",
+      "cases": [
+        {
+          "id": "host-context",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "fresh-normal-account",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "protected-source-staging",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "private-windowstation-desktop",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "suspended-primary-token",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "bound-loaded-profile",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "held-job-before-resume",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "pid-bound-pipe",
+          "executed": true,
+          "passed": false
+        },
+        {
+          "id": "worker-primary-token",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-loaded-profile-hkcu",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-native-image",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-isolated-console-interrupt",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-public-recording-support-contract",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "worker-exit",
+          "executed": true,
+          "passed": false
+        },
+        {
+          "id": "exact-owned-cleanup",
+          "executed": true,
+          "passed": false
+        },
+        {
+          "id": "signed-required-audit-admission",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "initialize-import-retained-head",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "audited-private-http-desktop",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "read-only-export-verify",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "current-recorded-export-key-boundary",
+          "executed": true,
+          "passed": true
+        },
+        {
+          "id": "actual-output-alias-admission",
+          "executed": true,
+          "passed": false
+        },
+        {
+          "id": "full-journal-reservation-refusal",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "approved-recorded-foreground-run",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "recorded-foreground-output-cancellation-drain",
+          "executed": false,
+          "passed": false
+        },
+        {
+          "id": "private-command-workspace-cleanup",
+          "executed": true,
+          "passed": false
+        }
+      ]
+    }
+  ],
+  "productionQualificationComplete": false
+}
