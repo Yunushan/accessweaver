@@ -78,6 +78,10 @@ def verify(directory, commit, ref, gh="gh"):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     require(manifest.get("sourceCommit") == commit and manifest.get("sourceState") == "clean",
             "Authenticated manifest does not describe the expected clean source")
+    if ref.startswith("refs/tags/"):
+        tag = ref.removeprefix("refs/tags/")
+        require(manifest.get("releaseLabel") == tag and manifest.get("version") == tag.removeprefix("v"),
+                "Authenticated manifest release label and version must match the expected tag")
     require(manifest.get("unsigned") is True, "Current core binaries must retain their unsigned label")
     targets, archives = set(), set()
     require(isinstance(manifest.get("artifacts"), list) and len(manifest["artifacts"]) == 10,

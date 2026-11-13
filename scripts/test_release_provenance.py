@@ -61,6 +61,32 @@ class ProvenanceTests(unittest.TestCase):
                 self.assertEqual(result["subjectsVerified"], 12)
                 self.assertFalse(result["publisherSignatureVerified"])
 
+    def test_tag_must_match_authenticated_manifest_version_and_release_label(self):
+        for label, version, accepted in (
+            ("v1.2.3-alpha", "1.2.3-alpha", True),
+            ("v1.2.4-alpha", "1.2.3-alpha", False),
+            ("v1.2.3-alpha", "1.2.3", False),
+            (None, None, False),
+        ):
+            with self.subTest(label=label, version=version), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                self.fixture(root)
+                path = root / "BUILD-MANIFEST.json"
+                manifest = json.loads(path.read_text(encoding="utf-8"))
+                if label is not None:
+                    manifest.update(releaseLabel=label, version=version)
+                path.write_text(json.dumps(manifest), encoding="utf-8")
+                with patch("verify_release_provenance.authenticate") as authenticate, patch("verify_release_provenance.verify_contents") as contents:
+                    if accepted:
+                        verify(root, COMMIT, "refs/tags/v1.2.3-alpha")
+                        self.assertEqual(authenticate.call_count, 12)
+                        contents.assert_called_once()
+                    else:
+                        with self.assertRaisesRegex(ValueError, "label and version"):
+                            verify(root, COMMIT, "refs/tags/v1.2.3-alpha")
+                        authenticate.assert_called_once()
+                        contents.assert_not_called()
+
     def test_missing_bundle_extra_files_and_wrong_manifest_fail_closed(self):
         for mode in ("missing", "extra", "wrong-source", "modified"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
