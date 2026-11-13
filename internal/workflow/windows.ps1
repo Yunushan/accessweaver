@@ -1814,9 +1814,23 @@ function Get-WireSockMsiProductCode($record,[string]$program) {
     }
     return $product.ToString('B')
 }
+function Test-WireSockServicesPresent([string[]]$names) {
+    $present=$false
+    try {
+        Get-Service -ErrorAction Stop | ForEach-Object {
+            try {if($_.ServiceName -in $names){$present=$true}}
+            finally {if($_ -is [IDisposable]){$_.Dispose()}}
+        }
+    } catch {throw 'Vendor service removal could not be verified'}
+    return $present
+}
 function Uninstall-WireSockProduct {
     $cli=WireSock-CLI
-    $names=if($cli -and [IO.Path]::GetFileName($cli) -eq 'wiresock-client.exe'){@('WireSock VPN Client','WireSock VPN Client for Windows')}else{@('WireSock Secure Connect')}
+    $knownPaths=@(Get-WireSockCLIPaths)
+    $legacy=$cli -and $cli -ieq $knownPaths[2]
+    $names=if($legacy){@('WireSock VPN Client','WireSock VPN Client for Windows')}else{@('WireSock Secure Connect')}
+    $paths=if($legacy){@($knownPaths[2])}else{@($knownPaths[0],$knownPaths[1])}
+    $serviceNames=if($legacy){@('wiresock-client-service')}else{@('WireSockAppService','WireSockConnectService')}
     $records=@();foreach($base in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')){
         if(Test-Path -LiteralPath $base){$records+=@(Get-ChildItem -LiteralPath $base|ForEach-Object {Get-ItemProperty -LiteralPath $_.PSPath}|Where-Object {$_.DisplayName -in $names})}
     }
@@ -1869,17 +1883,26 @@ function Uninstall-WireSockProduct {
     }
     $deadline=[Diagnostics.Stopwatch]::StartNew()
     do {
-        $cliPresent=$cli -and (Test-Path -LiteralPath $cli)
+        $cliPresent=$false
+        foreach($path in $paths){
+            if(Test-Path -LiteralPath $path){$cliPresent=$true}
+        }
+        $servicesPresent=Test-WireSockServicesPresent $serviceNames
         $registrationPresent=$false
         foreach($entry in $records){
             if(Test-Path -LiteralPath $entry.PSPath){$registrationPresent=$true}
         }
-        if(-not ($cliPresent -or $registrationPresent) -or $deadline.Elapsed.TotalSeconds -ge 30){break}
+        if(-not ($cliPresent -or $registrationPresent -or $servicesPresent) -or $deadline.Elapsed.TotalSeconds -ge 30){break}
         Start-Sleep -Milliseconds 500
     } while($true)
     if($cliPresent){throw 'Vendor CLI remains installed; inspect vendor uninstall logs'}
     if($registrationPresent){throw 'Vendor uninstall registration remains; inspect vendor uninstall logs'}
-    Remove-Item -LiteralPath (Join-Path $root 'profiles\wiresock-owned.json') -ErrorAction SilentlyContinue
+    if($servicesPresent){throw 'Vendor services remain installed; inspect vendor uninstall logs'}
+    $owned=Join-Path $root 'profiles\wiresock-owned.json'
+    try {
+        if(Test-Path -LiteralPath $owned){Remove-Item -LiteralPath $owned -ErrorAction Stop}
+        if(Test-Path -LiteralPath $owned){throw 'Ownership record still present'}
+    } catch {throw 'Vendor uninstall completed but the managed ownership record could not be retired'}
     Event ('Vendor uninstall completed: '+$record.DisplayName)
     return @{product=$record.DisplayName;rebootRequired=$false}
 }

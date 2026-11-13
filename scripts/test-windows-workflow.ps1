@@ -923,11 +923,25 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
     $script:rebootRequired=$false
     $verifyRemoval=$false
     $requestRestart=$false
+    $remainingCLI=$false
+    $remainingService=$false
+    $serviceQueryFails=$false
+    $ownershipRetirementFails=$false
+    $ownedPath=Join-Path $root 'profiles\wiresock-owned.json'
+    $fallbackCLI=Join-Path $env:ProgramFiles 'WireSock Secure Connect\bin\wiresock-client.exe'
     try {
         $env:ProgramData=$cacheRoot
         function WireSock-CLI {}
+        function Get-Service {
+            param($ErrorAction)
+            if($serviceQueryFails){throw 'Private fixture service error'}
+            if($remainingService -and -not $calls.Contains('wait')){[pscustomobject]@{ServiceName='WireSockConnectService'}}
+            [pscustomobject]@{ServiceName='UnrelatedFixtureService'}
+        }
         function Test-Path {
             param($LiteralPath)
+            if($LiteralPath -ceq $ownedPath){return $verifyRemoval -and -not $calls.Contains('retire-ownership')}
+            if($LiteralPath -ceq $fallbackCLI){return $remainingCLI -and -not $calls.Contains('wait')}
             if($verifyRemoval -and $LiteralPath -ceq $registration){
                 $calls.Add('check-registration')
                 return -not $calls.Contains('wait') -and -not $hiddenRecord
@@ -953,7 +967,10 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         function Remove-WireSockRefreshTask {$calls.Add('task')}
         function Remove-Method {$calls.Add('profile')}
         function Start-Sleep {param($Milliseconds);$calls.Add('wait')}
-        function Remove-Item {if($verifyRemoval){$calls.Add('retire-ownership')}}
+        function Remove-Item {
+            if($ownershipRetirementFails){throw 'Private fixture ownership error'}
+            if($verifyRemoval){$calls.Add('retire-ownership')}
+        }
         function Event {
             param($Text)
             if($verifyRemoval -and $Text -like 'Vendor uninstall*'){$calls.Add($Text)}
@@ -1037,6 +1054,33 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         $verifyRemoval=$true
         $result=Uninstall-WireSockProduct
         Assert (-not $result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,check-registration,wait,check-registration,retire-ownership,Vendor uninstall completed: WireSock Secure Connect') 'WireSock uninstall waits for the registered package to disappear'
+        $calls.Clear()
+        $verifyRemoval=$false
+        foreach($mode in @('service','cli')){
+            $calls.Clear()
+            $remainingCLI=$mode -ceq 'cli'
+            $remainingService=$mode -ceq 'service'
+            $result=Uninstall-WireSockProduct
+            if($result.rebootRequired -or ($calls -join ',') -cne 'task,profile,uninstall,wait'){
+                throw 'Vendor uninstall did not wait for the remaining resource'
+            }
+        }
+        Assert $true 'WireSock uninstall waits for remaining vendor services and secondary CLI paths'
+        $remainingCLI=$false
+        $remainingService=$false
+        $serviceQueryFails=$true
+        $calls.Clear()
+        $refused=$false
+        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor service removal could not be verified'}
+        Assert ($refused -and -not $calls.Contains('retire-ownership')) 'WireSock uninstall refuses completion when service removal cannot be verified'
+        $serviceQueryFails=$false
+        $verifyRemoval=$true
+        $ownershipRetirementFails=$true
+        $calls.Clear()
+        $refused=$false
+        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstall completed but the managed ownership record could not be retired'}
+        Assert ($refused -and -not $calls.Contains('Vendor uninstall completed: WireSock Secure Connect')) 'WireSock uninstall reports an ownership record that could not be retired'
+        $ownershipRetirementFails=$false
         $calls.Clear()
         $requestRestart=$true
         $result=Uninstall-WireSockProduct
