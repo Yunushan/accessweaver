@@ -539,7 +539,11 @@ Write-Output 'STAGE-DOTNET-HOPS-PASS'
     $downloadExpectedCurl=Join-Path $env:SystemRoot 'System32\curl.exe'
     function Test-Path {param([string]$LiteralPath) if($LiteralPath -cne $downloadExpectedCurl){throw 'Curl builder checked an unexpected executable path'};return $true}
     $downloadOldCulture=[Threading.Thread]::CurrentThread.CurrentCulture
+    $downloadOldKeyLog=[Environment]::GetEnvironmentVariable('SSLKEYLOGFILE')
+    $downloadOldQlog=[Environment]::GetEnvironmentVariable('QLOGDIR')
     try{
+        [Environment]::SetEnvironmentVariable('SSLKEYLOGFILE','fixture-key-log')
+        [Environment]::SetEnvironmentVariable('QLOGDIR','fixture-qlog')
         [Threading.Thread]::CurrentThread.CurrentCulture=[Globalization.CultureInfo]::GetCultureInfo('fr-FR')
         foreach($downloadProxy in @($false,$true)){
             $downloadBudget=New-ComponentDownloadBudget -MaximumBytes 32 -TimeoutMilliseconds 5000
@@ -550,8 +554,14 @@ Write-Output 'STAGE-DOTNET-HOPS-PASS'
             Assert-DownloadFixture ((($downloadStart.Arguments -cmatch '--socks5-hostname 127\.0\.0\.1:1080(?: |$)') -eq $downloadProxy)) 'Curl unexpectedly admitted or dropped the explicit repair proxy'
             Assert-DownloadFixture ((($downloadStart.Arguments -cmatch '--noproxy ""(?: |$)') -eq $downloadProxy)) 'Only an explicit repair proxy should override the bypass list'
             Assert-DownloadFixture (-not $downloadStart.UseShellExecute -and $downloadStart.CreateNoWindow -and $downloadStart.RedirectStandardInput -and $downloadStart.RedirectStandardOutput -and $downloadStart.RedirectStandardError) 'Curl process redirection no longer supports bounded binary transfer'
+            Assert-DownloadFixture (-not $downloadStart.EnvironmentVariables.ContainsKey('SSLKEYLOGFILE') -and -not $downloadStart.EnvironmentVariables.ContainsKey('QLOGDIR')) 'Curl child inherited external TLS diagnostic output settings'
+            Assert-DownloadFixture ($env:SSLKEYLOGFILE -ceq 'fixture-key-log' -and $env:QLOGDIR -ceq 'fixture-qlog') 'Curl child setup mutated the parent environment'
         }
-    }finally{[Threading.Thread]::CurrentThread.CurrentCulture=$downloadOldCulture}
+    }finally{
+        [Environment]::SetEnvironmentVariable('SSLKEYLOGFILE',$downloadOldKeyLog)
+        [Environment]::SetEnvironmentVariable('QLOGDIR',$downloadOldQlog)
+        [Threading.Thread]::CurrentThread.CurrentCulture=$downloadOldCulture
+    }
 }
 
 # This fake has no operating-system process identity. The actual curl runner

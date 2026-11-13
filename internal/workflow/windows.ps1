@@ -499,6 +499,10 @@ function New-ComponentDownloadCurlStart([string]$Url,$Budget,[switch]$Proxy) {
     $start.WorkingDirectory=Split-Path -Parent $curl
     $start.UseShellExecute=$false;$start.CreateNoWindow=$true
     $start.RedirectStandardInput=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+    # Curl builds that support these variables can write TLS secrets or
+    # connection diagnostics to paths inherited from the caller.
+    $start.EnvironmentVariables.Remove('SSLKEYLOGFILE')
+    $start.EnvironmentVariables.Remove('QLOGDIR')
     return $start
 }
 function New-ComponentDownloadCurlProcess([Diagnostics.ProcessStartInfo]$StartInfo) {
