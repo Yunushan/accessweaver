@@ -70,6 +70,7 @@ jobs:
           GOTOOLCHAIN: local
         run: |
           python3 -m unittest discover -s scripts -p test_macos_installer.py -v
+          python3 -m unittest discover -s scripts -p test_macos_installer_publisher.py -v
           python3 -m unittest discover -s scripts -p test_macos_package_archive.py -v
           python3 -m unittest discover -s scripts -p test_macos_installer_provenance.py -v
           python3 -m unittest discover -s scripts -p test_sbom.py -v

@@ -233,6 +233,8 @@
             "scripts/check_provenance_rejections.py",
             "scripts/verify-windows-installer-publisher.ps1",
             "scripts/test-windows-installer-contracts.ps1",
+            "scripts/verify_macos_installer_publisher.py",
+            "scripts/test_macos_installer_publisher.py",
             "docs/RELEASE_PROVENANCE.md"
           ]
         },

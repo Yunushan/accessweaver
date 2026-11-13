@@ -26,6 +26,8 @@ on:
       - scripts/verify_release_rebuild.py
       - scripts/publish_prerelease.py
       - scripts/verify-windows-installer-publisher.ps1
+      - scripts/verify_macos_installer_publisher.py
+      - scripts/test_macos_installer_publisher.py
       - scripts/windows-installer-common.ps1
       - scripts/test-windows-installer-contracts.ps1
       - scripts/check-vulnerabilities.sh
@@ -302,6 +304,7 @@ jobs:
           python3 scripts/check_readiness_evidence.py
           python3 -m unittest discover -s scripts -p test_release_archive.py -v
           python3 -m unittest discover -s scripts -p test_release_provenance.py -v
+          python3 -m unittest discover -s scripts -p test_macos_installer_publisher.py -v
           python3 -m unittest discover -s scripts -p test_publish_prerelease.py -v
           python3 -m unittest discover -s scripts -p test_release_rebuild.py -v
           python3 -m unittest discover -s scripts -p test_stage_packaged_native.py -v

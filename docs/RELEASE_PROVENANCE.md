@@ -67,6 +67,14 @@ On Windows, verify each signed executable or MSI before deployment using an inde
 
 The verifier requires a Windows-valid embedded Authenticode signature, a timestamp certificate and the exact approved publisher fingerprint. It holds a read-only handle while checking the file and returns a fixed JSON receipt with the two digests. The check covers the supplied file. Verify the signed setup and shipped executable payload individually. Retain separately authenticated provenance covering the final signed bytes and the approved signing handoff. The existing unsigned-alpha attestation covers the unsigned candidate. An approved organization signer and signed candidate are still required for native acceptance. [Windows Authenticode verification](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/get-authenticodesignature).
 
+For a signed macOS flat package, place the final stapled package alone in a private directory. Supply its independently approved SHA-256, Developer ID Team ID and SHA-256 fingerprint of the approved Developer ID Installer leaf certificate.
+
+```sh
+python3 scripts/verify_macos_installer_publisher.py PRIVATE_PACKAGE_DIRECTORY --artifact-sha256 APPROVED_PKG_SHA256 --team-id APPROVED_TEAM_ID --publisher-certificate-sha256 APPROVED_CERTIFICATE_SHA256
+```
+
+The verifier checks the digest before invoking macOS signature tools on a private copy. It requires the matching Developer ID Installer leaf, a successful Gatekeeper installation assessment and a valid stapled ticket. It does not install the package. Check the signed application payload's Developer ID Application identity and validate installation on the supported native matrix. Native acceptance with the organization's signed package and final signed-byte provenance is pending. [Apple's packaging and notarization guidance](https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution).
+
 The current workflow is not claimed SLSA Build Level 3 or a proof that build code is benign. A compromised approved workflow/runner/dependency can falsify its build behavior. Review, branch/tag protection, separation of duties, trusted builder isolation, independent rebuilds and release revocation/recovery remain requirements. Attested alpha artifacts are still subject to every unfinished functional, security, desktop and enterprise readiness gate.
 
 
