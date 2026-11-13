@@ -13,6 +13,8 @@ on:
       - '.github/workflows/native-doh.yml'
       - 'scripts/test-windows-integration.ps1'
       - 'scripts/test-windows-reboot.ps1'
+      - 'scripts/test-windows-reboot-contracts.ps1'
+      - 'scripts/vmware-reboot-resume.ps1'
       - 'scripts/vmware-test-bootstrap.ps1'
       - 'scripts/test-windows-workflow.ps1'
       - '.github/workflows/dns-recovery-contracts.yml'
@@ -27,6 +29,8 @@ on:
       - '.github/workflows/native-doh.yml'
       - 'scripts/test-windows-integration.ps1'
       - 'scripts/test-windows-reboot.ps1'
+      - 'scripts/test-windows-reboot-contracts.ps1'
+      - 'scripts/vmware-reboot-resume.ps1'
       - 'scripts/vmware-test-bootstrap.ps1'
       - 'scripts/test-windows-workflow.ps1'
       - '.github/workflows/dns-recovery-contracts.yml'
@@ -103,6 +107,8 @@ jobs:
           $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
           & $stock -NoProfile -NonInteractive -File ./scripts/test-dns-recovery-contracts.ps1 -RequireWindowsPowerShell -ReportPath (Join-Path $desktop 'dns-contracts.json')
           if($LASTEXITCODE -ne 0){throw 'Windows PowerShell DNS contracts failed'}
+      - name: Verify DNS reboot admission and publication
+        run: ./scripts/test-windows-reboot-contracts.ps1
       - name: PowerShell Core DNS acceptance oracle contracts
         run: |
           $ErrorActionPreference='Stop'

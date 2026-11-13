@@ -8,9 +8,11 @@ try{
     & C:\AccessWeaver-Test\test-windows-reboot.ps1 -Phase Verify -Executable $binary
 }finally{
     $deadline=[DateTime]::UtcNow.AddMinutes(2)
-    do{
-        & robocopy.exe C:\AccessWeaver-Results $share /E /R:1 /W:1 /NFL /NDL /NJH /NJS | Out-Null
-        if($LASTEXITCODE -le 7){break};Start-Sleep -Seconds 5
-    }while([DateTime]::UtcNow -lt $deadline)
+    if(Test-Path -LiteralPath 'C:\AccessWeaver-Results\reboot-results.json' -PathType Leaf){
+        do{
+            & robocopy.exe C:\AccessWeaver-Results $share reboot-results.json /R:1 /W:1 /NFL /NDL /NJH /NJS | Out-Null
+            if($LASTEXITCODE -le 7){break};Start-Sleep -Seconds 5
+        }while([DateTime]::UtcNow -lt $deadline)
+    }
     Unregister-ScheduledTask -TaskName 'AccessWeaver-Parity-Reboot-Verify' -Confirm:$false -ErrorAction SilentlyContinue
 }

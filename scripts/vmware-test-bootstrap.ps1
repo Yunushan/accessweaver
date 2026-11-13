@@ -53,15 +53,28 @@ try{
                 'apps' {throw 'Application tests require an unelevated desktop window. Run test-windows-apps.ps1 -DisposableVM there and collect its LocalAppData\AccessWeaver-App-Test-Results separately.'}
                 'wiresock' {& (Join-Path $local 'test-windows-wiresock.ps1') -Executable $binary -DisposableVM -RemoveVendor}
                 'reboot-prepare' {
-                    & (Join-Path $local 'test-windows-reboot.ps1') -Phase Prepare -Executable $binary
+                    $taskName='AccessWeaver-Parity-Reboot-Verify'
+                    if(Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue){
+                        throw 'A DNS reboot verification task is already registered'
+                    }
+                    $method=if($request.dns){[string]$request.dns}else{'auto'}
+                    if($method -cnotin @('auto','doh','dnscrypt')){throw 'Unknown DNS reboot method'}
+                    & (Join-Path $local 'test-windows-reboot.ps1') -Phase Prepare -Executable $binary -DNS $method
                     [IO.File]::WriteAllText((Join-Path $results 'reboot-controller.txt'),$binary)
                     $action=New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\AccessWeaver-Test\vmware-reboot-resume.ps1'
                     $trigger=New-ScheduledTaskTrigger -AtStartup;$trigger.Delay='PT30S'
-                    [void](Register-ScheduledTask -TaskName 'AccessWeaver-Parity-Reboot-Verify' -Action $action -Trigger $trigger -User 'SYSTEM' -RunLevel Highest -Force)
+                    [void](Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -User 'SYSTEM' -RunLevel Highest)
                 }
             }
-            $status.state='completed';Publish-TestResults
-        }catch{$status.state='failed';$status.error=$_.Exception.Message;try{Publish-TestResults}catch{}}
+            $status.state='completed'
+            if($request.stage -ne 'reboot-prepare'){Publish-TestResults}
+        }catch{
+            $status.state='failed';$status.error=$_.Exception.Message
+            if($request.stage -ne 'reboot-prepare'){try{Publish-TestResults}catch{}}
+        }
         Publish-TestStatus
+        if($request.stage -eq 'reboot-prepare'){return}
     }
-}finally{$status.state='stopped';Publish-TestStatus}
+}finally{
+    if($status.stage -ne 'reboot-prepare'){$status.state='stopped';Publish-TestStatus}
+}
