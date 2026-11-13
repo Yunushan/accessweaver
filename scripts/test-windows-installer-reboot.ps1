@@ -221,8 +221,8 @@ function Save-RebootFixtureProfile([string]$Controller,[string]$UserStore,[strin
 function Assert-RebootUserProfile([string]$Path,[string]$Digest){
     if((Get-RebootDigest $Path) -cne $Digest){throw 'Saved user profile changed during installer lifecycle'}
 }
-function Assert-InstalledDetection([bool]$Detected,[string]$CandidateVersion=$Version,[string]$CandidateSHA256=$PayloadSHA256){
-    $output=@(& $detector -Version $CandidateVersion -Architecture $Architecture -PayloadSHA256 $CandidateSHA256 2>&1)
+function Assert-InstalledDetection([bool]$Detected,[string]$CandidateVersion=$Version,[string]$CandidateSHA256=$PayloadSHA256,[string]$UninstallerDigest=''){
+    $output=@(& $detector -Version $CandidateVersion -Architecture $Architecture -PayloadSHA256 $CandidateSHA256 -UninstallerSHA256 $UninstallerDigest 2>&1)
     if($LASTEXITCODE -ne 0){throw 'Installed candidate detection could not complete'}
     if($Detected){
         if($output.Count -ne 1 -or $output[0] -cne 'AccessWeaver detected'){throw 'Approved installed payload was not detected'}
@@ -352,6 +352,7 @@ if($Phase -ceq 'Prepare'){
         $expected.uninstallerSHA256=Get-RebootDigest $uninstaller
         $null=@(& $publisher -Artifact $uninstaller -ArtifactSHA256 $expected.uninstallerSHA256 -PublisherCertificateSHA256 $PublisherCertificateSHA256)
         if($LASTEXITCODE -ne 0){throw 'Installed uninstaller publisher verification failed'}
+        Assert-InstalledDetection $true -UninstallerDigest $expected.uninstallerSHA256
         $expected.installedTreeSHA256=Get-RebootInstalledTreeDigest $install
         $expected.registrationSHA256=Get-RebootRegistrationDigest
         if($installMode -ceq 'upgrade'){
@@ -392,7 +393,7 @@ $result=[ordered]@{schemaVersion=5;runID=$RunID;architecture=$Architecture;versi
     guestRebootVerified=$true;installedPayloadVerifiedBeforeRestart=$true;installedPayloadVerified=$false;uninstallerIdentityVerified=$false;
     registrationRemoved=$false;passed=$false;stage='installed-after-reboot'}
 try {
-    Assert-InstalledDetection $true
+    Assert-InstalledDetection $true -UninstallerDigest $saved.uninstallerSHA256
     $result.installedPayloadVerified=$true
     $result.stage='installed-state'
     Assert-RebootInstalledState $saved (Get-RebootInstalledTreeDigest $install) (Get-RebootRegistrationDigest)
@@ -417,7 +418,7 @@ try {
         Assert-RebootDowngradeLog $downgradeLog
         $result.downgradeRefused=$true
         $result.stage='downgrade-readback'
-        Assert-InstalledDetection $true
+        Assert-InstalledDetection $true -UninstallerDigest $saved.uninstallerSHA256
         Assert-RebootInstalledState $saved (Get-RebootInstalledTreeDigest $install) (Get-RebootRegistrationDigest)
         Assert-RebootUserProfile $userProfile $saved.userProfileSHA256
         $result.downgradeStatePreserved=$true

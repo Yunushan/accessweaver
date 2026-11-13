@@ -4,7 +4,8 @@ param(
     [string]$Version = '',
     [string]$Architecture = '',
     [string]$PayloadSHA256 = '',
-    [string]$InstallDirectory = ''
+    [string]$InstallDirectory = '',
+    [string]$UninstallerSHA256 = ''
 )
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
@@ -25,7 +26,18 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
            $key.GetValueKind('InstallLocation') -ne [Microsoft.Win32.RegistryValueKind]::String){
             throw 'Invalid installed registration'
         }
-        return @{version=$version;location=$location}
+        $record=@{version=$version;location=$location}
+        if($UninstallerSHA256 -and $View -eq [Microsoft.Win32.RegistryView]::Registry64){
+            foreach($name in @('UninstallString','QuietUninstallString')){
+                $value=$key.GetValue($name,$null,$options)
+                if($value -isnot [string] -or $value.Length -eq 0 -or $value.Length -gt 300 -or
+                    $key.GetValueKind($name) -ne [Microsoft.Win32.RegistryValueKind]::String){
+                    throw 'Invalid installed uninstall command'
+                }
+                $record[$name]=$value
+            }
+        }
+        return $record
     } finally {
         if($null -ne $key){$key.Dispose()}
         $base.Dispose()
@@ -49,7 +61,21 @@ function Get-AccessWeaverLocalDirectory([string]$Path) {
     return $directory
 }
 
-function Test-AccessWeaverPayload([string]$Path,[string]$ExpectedSHA256) {
+function Get-AccessWeaverRegisteredUninstaller($Registration,[string]$Directory) {
+    $command=$Registration.UninstallString
+    $quiet=$Registration.QuietUninstallString
+    if($command -isnot [string] -or $quiet -isnot [string] -or $command.Length -gt 300 -or $quiet.Length -gt 300){
+        throw 'Invalid installed uninstall command'
+    }
+    $match=[regex]::Match($command,'\A"(?<file>[^"\r\n]+\\unins[0-9]{3}\.exe)"(?<log> /LOG)?\z',[Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if(-not $match.Success){throw 'Invalid installed uninstall command'}
+    $path=$match.Groups['file'].Value
+    $expected=Join-Path $Directory ([IO.Path]::GetFileName($path))
+    $expectedQuiet='"'+$expected+'" /SILENT'+$match.Groups['log'].Value
+    if($path -ine $expected -or $quiet -ine $expectedQuiet){throw 'Uninstall registration differs from the installed directory'}
+    return $expected
+}
+function Open-AccessWeaverInstalledFile([string]$Path,[long]$Maximum) {
     $root=[IO.Path]::GetPathRoot($Path)
     $current=$root
     foreach($component in $Path.Substring($root.Length).Split('\')){
@@ -60,9 +86,9 @@ function Test-AccessWeaverPayload([string]$Path,[string]$ExpectedSHA256) {
     if($entry.PSIsContainer){throw 'Expected a payload file'}
     $file=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
     try {
-        if($file.Length -le 0 -or $file.Length -gt 128MB){throw 'Payload size outside detection limits'}
-        return (Microsoft.PowerShell.Utility\Get-FileHash -InputStream $file -Algorithm SHA256).Hash -ieq $ExpectedSHA256
-    } finally {$file.Dispose()}
+        if($file.Length -le 0 -or $file.Length -gt $Maximum){throw 'Installed file size outside detection limits'}
+        return ,$file
+    } catch {$file.Dispose();throw}
 }
 
 try {
@@ -71,7 +97,8 @@ try {
        $targets[$Architecture] -cne [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -or
        -not [Environment]::Is64BitProcess -or $Version.Length -gt 256 -or
        $Version -cnotmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?(?:\+[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?\z' -or
-       $PayloadSHA256 -notmatch '\A[a-fA-F0-9]{64}\z'){
+       $PayloadSHA256 -notmatch '\A[a-fA-F0-9]{64}\z' -or
+       ($UninstallerSHA256 -and $UninstallerSHA256 -notmatch '\A[a-fA-F0-9]{64}\z')){
         throw 'Expected pinned Windows payload identity and a matching 64-bit host'
     }
     if(-not $InstallDirectory){$InstallDirectory=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'AccessWeaver'}
@@ -80,12 +107,24 @@ try {
     if($null -ne (Read-AccessWeaverRegistration Registry32)){throw 'Unexpected alternate machine registration'}
     if($null -eq $registration -or $registration.version -cne $Version){exit 0}
     if((Get-AccessWeaverLocalDirectory $registration.location) -ine $directory){throw 'Unexpected registered installation directory'}
-    $payload=Join-Path $directory 'accessweaver.exe'
-    if(-not (Test-AccessWeaverPayload $payload $PayloadSHA256)){exit 0}
-    $confirmed=Read-AccessWeaverRegistration Registry64
-    if($null -eq $confirmed -or $confirmed.version -cne $registration.version -or
-       $confirmed.location -cne $registration.location -or $null -ne (Read-AccessWeaverRegistration Registry32)){
-        throw 'Installation registration changed during detection'
+    $payload=$null;$uninstaller=$null
+    try {
+        $payload=Open-AccessWeaverInstalledFile (Join-Path $directory 'accessweaver.exe') 128MB
+        if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $payload -Algorithm SHA256).Hash -ine $PayloadSHA256){exit 0}
+        if($UninstallerSHA256){
+            $path=Get-AccessWeaverRegisteredUninstaller $registration $directory
+            $uninstaller=Open-AccessWeaverInstalledFile $path 512MB
+            if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $uninstaller -Algorithm SHA256).Hash -ine $UninstallerSHA256){exit 0}
+        }
+        $confirmed=Read-AccessWeaverRegistration Registry64
+        if($null -eq $confirmed -or $confirmed.version -cne $registration.version -or
+            $confirmed.location -cne $registration.location -or $confirmed.UninstallString -cne $registration.UninstallString -or
+            $confirmed.QuietUninstallString -cne $registration.QuietUninstallString -or $null -ne (Read-AccessWeaverRegistration Registry32)){
+            throw 'Installation registration changed during detection'
+        }
+    } finally {
+        try {if($null -ne $uninstaller){$uninstaller.Dispose()}}
+        finally {if($null -ne $payload){$payload.Dispose()}}
     }
     Microsoft.PowerShell.Utility\Write-Output 'AccessWeaver detected'
     exit 0

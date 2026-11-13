@@ -228,7 +228,9 @@ function Create-UserProfile {
 function Assert-ManagedDetection([string]$Phase,$Expected,[bool]$Detected,[string]$DigestOverride=''){
     $hash=$Expected.payloadSha256
     if($DigestOverride){$hash=$DigestOverride}
-    $output=@(& $detector -Version $Expected.version -Architecture $Architecture -PayloadSHA256 $hash -InstallDirectory $install 2>&1)
+    $uninstallerDigest=''
+    if($Detected){$uninstallerDigest=Digest (Join-Path $install 'unins000.exe')}
+    $output=@(& $detector -Version $Expected.version -Architecture $Architecture -PayloadSHA256 $hash -InstallDirectory $install -UninstallerSHA256 $uninstallerDigest 2>&1)
     Require ($LASTEXITCODE -eq 0) 'Managed detection reported an inspection error'
     if($Detected){
         Require ($output.Count -eq 1 -and $output[0] -ceq 'AccessWeaver detected') 'Managed detection missed the approved payload'

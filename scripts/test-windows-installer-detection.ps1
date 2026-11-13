@@ -13,9 +13,12 @@ $testRoot=Join-Path ([IO.Path]::GetTempPath()) ('accessweaver-detection-'+[guid]
 $fixtureDirectory=[IO.Directory]::CreateDirectory($testRoot)
 $payload=Join-Path $testRoot 'accessweaver.exe'
 $fixture=Join-Path $testRoot 'fixture.ps1'
+$uninstaller=Join-Path $testRoot 'unins001.exe'
 try {
     [IO.File]::WriteAllText($payload,'inert detection test data')
     $hash=(Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash
+    [IO.File]::WriteAllText($uninstaller,'inert uninstaller fixture')
+    $uninstallerHash=(Get-FileHash -LiteralPath $uninstaller -Algorithm SHA256).Hash
     $mock=@'
 $script:mockReads=0
 function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
@@ -25,7 +28,23 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
     $changed=$env:AW_DETECTION_FIXTURE -ceq 'registration-changed' -and $script:mockReads -gt 1
     $version=if($env:AW_DETECTION_FIXTURE -ceq 'other-version' -or $changed){'0.1.1-alpha'}else{'0.1.0-alpha'}
     $location=if($env:AW_DETECTION_FIXTURE -ceq 'other-path'){$PSScriptRoot+'-other'}else{$PSScriptRoot}
-    return @{version=$version;location=$location+'\'}
+    $record=@{version=$version;location=$location+'\'}
+    if($UninstallerSHA256 -and $env:AW_DETECTION_FIXTURE -cne 'missing-command'){
+        $leaf=switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
+            'redirected' {'..\unins001.exe'}
+            'missing-uninstaller' {'unins002.exe'}
+            default {'unins001.exe'}
+        }
+        $command='"'+(Join-Path $PSScriptRoot $leaf)+'"'
+        $log=if($env:AW_DETECTION_FIXTURE -ceq 'logging'){' /LOG'}else{''}
+        $record.UninstallString=$command+$log
+        $record.QuietUninstallString=$command+' /SILENT'+$log
+        if($env:AW_DETECTION_FIXTURE -ceq 'extra-arguments' -or
+            ($env:AW_DETECTION_FIXTURE -ceq 'uninstaller-changed' -and $script:mockReads -gt 1)){
+            $record.QuietUninstallString+=' /DIR=other'
+        }
+    }
+    return $record
 }
 '@
     $original=[IO.File]::ReadAllText($source)
@@ -42,18 +61,31 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
             @{mode='other-version';code=0;count=0;hash=$hash},
             @{mode='other-path';code=1;count=0;hash=$hash},
             @{mode='alternate';code=1;count=0;hash=$hash},
-            @{mode='registration-changed';code=1;count=0;hash=$hash}
+            @{mode='registration-changed';code=1;count=0;hash=$hash},
+            @{mode='approved';code=0;count=1;hash=$hash;uninstaller=$uninstallerHash},
+            @{mode='logging';code=0;count=1;hash=$hash;uninstaller=$uninstallerHash},
+            @{mode='approved';code=0;count=0;hash=$hash;uninstaller=('0'*64)},
+            @{mode='approved';code=1;count=0;hash=$hash;uninstaller='invalid'},
+            @{mode='missing-command';code=1;count=0;hash=$hash;uninstaller=$uninstallerHash},
+            @{mode='redirected';code=1;count=0;hash=$hash;uninstaller=$uninstallerHash},
+            @{mode='missing-uninstaller';code=1;count=0;hash=$hash;uninstaller=$uninstallerHash},
+            @{mode='extra-arguments';code=1;count=0;hash=$hash;uninstaller=$uninstallerHash},
+            @{mode='uninstaller-changed';code=1;count=0;hash=$hash;uninstaller=$uninstallerHash},
+            @{mode='absent';code=0;count=0;hash=$hash;uninstaller=$uninstallerHash},
+            @{mode='other-version';code=0;count=0;hash=$hash;uninstaller=$uninstallerHash}
         )){
             $env:AW_DETECTION_FIXTURE=$case.mode
-            $output=@(& $stock -NoProfile -NonInteractive -File $fixture -Version '0.1.0-alpha' -Architecture $arch -PayloadSHA256 $case.hash -InstallDirectory $testRoot 2>&1)
+            $arguments=@('-NoProfile','-NonInteractive','-File',$fixture,'-Version','0.1.0-alpha','-Architecture',$arch,'-PayloadSHA256',$case.hash,'-InstallDirectory',$testRoot)
+            if($case.uninstaller){$arguments+=@('-UninstallerSHA256',$case.uninstaller)}
+            $output=@(& $stock @arguments 2>&1)
             if($LASTEXITCODE -ne $case.code -or $output.Count -ne $case.count -or
                ($case.count -eq 1 -and $output[0] -cne 'AccessWeaver detected')){throw 'Unexpected managed detection fixture result'}
         }
     } finally {$env:AW_DETECTION_FIXTURE=$saved}
 } finally {
-    foreach($file in @($payload,$fixture)){
+    foreach($file in @($payload,$fixture,$uninstaller)){
         if(Test-Path -LiteralPath $file){Remove-Item -LiteralPath $file -Force}
     }
     $fixtureDirectory.Delete()
 }
-Write-Output 'Seven managed detection contracts passed.'
+Write-Output 'Eighteen managed detection contracts passed.'
