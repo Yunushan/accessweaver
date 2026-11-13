@@ -1877,11 +1877,19 @@ function Configure-DNS([string]$method) {
 # A successful setter is not proof of restored state. Keep the first originals
 # until fresh GUID-bound DNS reads and managed DoH metadata match the snapshot.
 function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$DohAvailable) {
+    $before=@(Get-NetAdapter -ErrorAction Stop)
     $clients=@(Read-DNSClientInventory)
+    $after=@(Get-NetAdapter -ErrorAction Stop)
     foreach($plan in $Plans){
         $record=$plan.record
-        $matches=@(Get-NetAdapter -ErrorAction Stop | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
-        if($matches.Count -ne 1){throw 'An original adapter changed during restoration verification; retain the recovery snapshot'}
+        $previous=@($before | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
+        $matches=@($after | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
+        if($previous.Count -ne 1 -or $matches.Count -ne 1 -or $previous[0].ifIndex -le 0 -or
+           $previous[0].ifIndex -ne $matches[0].ifIndex -or
+           @($before | Where-Object {$_.ifIndex -eq $previous[0].ifIndex}).Count -ne 1 -or
+           @($after | Where-Object {$_.ifIndex -eq $matches[0].ifIndex}).Count -ne 1){
+            throw 'An original adapter changed during restoration verification; retain the recovery snapshot'
+        }
         foreach($number in @('4','6')){
             if(-not $plan.bounds['bound'+$number]){continue}
             $family='IPv'+$number
@@ -1947,7 +1955,15 @@ function Restore-DNS {
             $matches=@(Get-NetAdapter -ErrorAction Stop | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
             if($matches.Count -ne 1){throw 'An original adapter changed before restoration; retain the recovery snapshot'}
             $dns=@(Get-DnsClientServerAddress -InterfaceIndex $matches[0].ifIndex -AddressFamily ('IPv'+$number) -ErrorAction Stop)
-            if($dns.Count -ne 1 -or $null -eq $dns[0]){throw 'Original adapter DNS settings could not be inspected; retain the recovery snapshot'}
+            if($dns.Count -ne 1 -or $null -eq $dns[0] -or
+               @(Get-DNSClientRows $dns $matches[0].ifIndex ('IPv'+$number)).Count -ne 1){
+                throw 'Original adapter DNS settings could not be inspected; retain the recovery snapshot'
+            }
+            $current=@(Get-NetAdapter -ErrorAction Stop | Where-Object {$_.ifIndex -eq $matches[0].ifIndex})
+            if($current.Count -ne 1 -or [string]$current[0].InterfaceGuid -ne $record.guid){
+                throw 'An original adapter changed before restoration; retain the recovery snapshot'
+            }
+            $script:externalEffectsPending=$true
             if($record.('dhcp'+$number)){$dns[0] | Set-DnsClientServerAddress -ResetServerAddresses -ErrorAction Stop}else{$dns[0] | Set-DnsClientServerAddress -ServerAddresses @(Get-StaticDNSServers @($record.('ipv'+$number)) ('IPv'+$number) $record.index) -ErrorAction Stop}
         }
     }
@@ -1958,8 +1974,20 @@ function Restore-DNS {
             else{Add-DnsClientDohServerAddress -ServerAddress $plan.address -DohTemplate $old.DohTemplate -AllowFallbackToUdp $old.AllowFallbackToUdp -AutoUpgrade $old.AutoUpgrade -ErrorAction Stop}
         } elseif($plan.current.Count -eq 1){Remove-DnsClientDohServerAddress -ServerAddress $plan.address -ErrorAction Stop}
     }
-    Assert-RestoredDNSState $plans $dohPlans $dohAvailable
-    Remove-Item -LiteralPath $snapshot -ErrorAction Stop;Event 'Original DNS and DoH settings restored'
+    # A DNS client row can lag behind the setter after service or adapter
+    # startup. Retry observations while preserving the original snapshot.
+    for($attempt=0;$attempt -lt 40;$attempt++){
+        try {
+            Assert-RestoredDNSState $plans $dohPlans $dohAvailable
+            break
+        } catch {
+            if($attempt -eq 39){throw}
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    Remove-Item -LiteralPath $snapshot -ErrorAction Stop
+    if(Test-Path -LiteralPath $snapshot -ErrorAction Stop){throw 'Original DNS snapshot retirement could not be verified'}
+    Event 'Original DNS and DoH settings restored'
 }
 
 function Remove-WireSockRefreshTask {
