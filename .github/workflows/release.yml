@@ -311,6 +311,7 @@ jobs:
       - name: Portable archive metadata regression checks
         run: |
           python3 scripts/check_readiness_evidence.py
+          python3 -m unittest discover -s scripts -p test_readiness_evidence.py -v
           python3 -m unittest discover -s scripts -p test_release_archive.py -v
           python3 -m unittest discover -s scripts -p test_release_provenance.py -v
           python3 -m unittest discover -s scripts -p test_macos_installer_publisher.py -v
