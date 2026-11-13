@@ -15,6 +15,9 @@ on:
       - scripts/verify_release_provenance.py
       - scripts/verify_release_rebuild.py
       - scripts/publish_prerelease.py
+      - scripts/check-vulnerabilities.sh
+      - scripts/check-vulnerability-report.py
+      - scripts/browser-tests/core-fixture.test.cjs
 
 permissions:
   contents: read
@@ -90,6 +93,14 @@ jobs:
           retention-days: 14
       - name: Check known vulnerabilities for all core targets and fixture environments
         run: GOVULNCHECK="$GOBIN/govulncheck" bash scripts/check-vulnerabilities.sh
+      - name: Retain fixed vulnerability matrix outcomes
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: go-vulnerability-matrix-status
+          path: build/security-checks/matrix-status.tsv
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Retain scanner evidence, including failed reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

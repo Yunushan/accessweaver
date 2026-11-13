@@ -7,22 +7,44 @@ output_dir="${1:-build/security-checks}"
 mkdir -p "$output_dir"
 output_dir="$(cd "$output_dir" && pwd)"
 scanner="${GOVULNCHECK:-govulncheck}"
+status_file="$output_dir/matrix-status.tsv"
+source_commit="$(git rev-parse HEAD)"
+printf 'schemaVersion\t1\nsourceCommit\t%s\n' "$source_commit" > "$status_file"
 scanner_version="$(go -C scripts/security-tools list -m -f '{{.Version}}' golang.org/x/vuln)"
 go_version="$(go env GOVERSION)"
 "$scanner" -version > "$output_dir/tool-version.txt"
 
+failed=0
 scan() {
   local scope="$1" target_os="$2" target_arch="$3" module_dir="$4" module_path="$5"
-  local label="$scope-$target_os-$target_arch"
-  (
-    cd "$project_root/$module_dir"
+  local label="$scope-$target_os-$target_arch" outcome status
+  printf '%s\tstarted\n' "$label" >> "$status_file"
+  if (
+    cd "$project_root/$module_dir" &&
     GOOS="$target_os" GOARCH="$target_arch" CGO_ENABLED=0 \
       "$scanner" -db https://vuln.go.dev -json ./... > "$output_dir/$label.json" \
       2> "$output_dir/$label.stderr"
-  ) || { cat "$output_dir/$label.stderr" >&2; return 1; }
-  python3 "$project_root/scripts/check-vulnerability-report.py" "$output_dir/$label.json" \
-    --module "$module_path" --target "$target_os/$target_arch" --scanner-version "$scanner_version" --go-version "$go_version" \
-    --summary "$output_dir/$label-summary.json"
+  ); then
+    if python3 "$project_root/scripts/check-vulnerability-report.py" "$output_dir/$label.json" \
+      --module "$module_path" --target "$target_os/$target_arch" --scanner-version "$scanner_version" --go-version "$go_version" \
+      --summary "$output_dir/$label-summary.json"; then
+      outcome=passed
+    else
+      status=$?
+      case "$status" in
+        1) outcome=affected ;;
+        2) outcome=invalid-report ;;
+        *) outcome=checker-failed ;;
+      esac
+    fi
+  else
+    outcome=scanner-failed
+  fi
+  printf '%s\t%s\n' "$label" "$outcome" >> "$status_file"
+  if [[ "$outcome" != passed ]]; then
+    printf '%s: %s\n' "$label" "$outcome" >&2
+    failed=1
+  fi
 }
 
 for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64 darwin/amd64 darwin/arm64 freebsd/amd64 freebsd/arm64 openbsd/amd64 openbsd/arm64; do
@@ -35,3 +57,4 @@ done
 for target in linux/amd64 windows/amd64; do
   scan sbom-tools "${target%/*}" "${target#*/}" scripts/sbom-tools accessweaver.tools/sbom
 done
+exit "$failed"
