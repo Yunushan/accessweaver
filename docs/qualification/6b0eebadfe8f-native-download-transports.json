@@ -1,0 +1,231 @@
+{
+  "schemaVersion": 1,
+  "scope": "native-windows-pinned-product-download-transports",
+  "sourceCommit": "6b0eebadfe8f4d1a9a23eb576b0b9dd71d351766",
+  "runID": 43390040676,
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "fa669d56d11c2cca22f2ff5b3d18993dfba30d0b28d284ccb00cf3e688039b2d",
+    "scripts/vendor-windows-pins.json": "b37a318955ad658063700b970dfd251ee159984d5edfeb0b543d3457cb1b8cc9",
+    "scripts/test-windows-native-download.ps1": "600893bd4a4f0411704685d791b92e473ed00a70a30f9aa8c14b5c89a35ae70e",
+    ".github/workflows/windows-native-download.yml": "25b24f12e5a9cc5707fb132256aecf7de3b634903bd29379294205662c7593b2"
+  },
+  "reports": [
+    {
+      "proxyConnectionObserved": true,
+      "proxyBypassRejected": true,
+      "architecture": "amd64",
+      "artifactID": 14020184217,
+      "providerZIPDigest": "sha256:d377e92bbab6e74fe0860950a2f1742acf8f022e43cb7d93b89986ccf505b1e1",
+      "providerZIPDigestVerified": true,
+      "cases": [
+        {
+          "transport": "dotnet",
+          "engine": "proxifyre",
+          "passed": true
+        },
+        {
+          "transport": "curl",
+          "engine": "proxifyre",
+          "passed": true
+        },
+        {
+          "transport": "dotnet",
+          "engine": "dnscrypt",
+          "passed": true
+        },
+        {
+          "transport": "curl",
+          "engine": "dnscrypt",
+          "passed": true
+        },
+        {
+          "transport": "dotnet",
+          "engine": "wiresock",
+          "passed": true
+        },
+        {
+          "transport": "curl",
+          "engine": "wiresock",
+          "passed": true
+        },
+        {
+          "failureStage": "none",
+          "passed": true,
+          "budgetExpired": false,
+          "terminalFailure": false,
+          "independentDownloadsMatch": true,
+          "admittedMiB": 153,
+          "transport": "dotnet",
+          "engine": "discord-stable",
+          "temporaryFileRemoved": true
+        },
+        {
+          "failureStage": "none",
+          "passed": true,
+          "budgetExpired": false,
+          "terminalFailure": false,
+          "independentDownloadsMatch": true,
+          "admittedMiB": 153,
+          "transport": "curl",
+          "engine": "discord-stable",
+          "temporaryFileRemoved": true
+        },
+        {
+          "failureStage": "none",
+          "passed": true,
+          "budgetExpired": false,
+          "terminalFailure": false,
+          "independentDownloadsMatch": true,
+          "admittedMiB": 153,
+          "transport": "dotnet",
+          "engine": "discord-ptb",
+          "temporaryFileRemoved": true
+        },
+        {
+          "failureStage": "none",
+          "passed": true,
+          "budgetExpired": false,
+          "terminalFailure": false,
+          "independentDownloadsMatch": true,
+          "admittedMiB": 153,
+          "transport": "curl",
+          "engine": "discord-ptb",
+          "temporaryFileRemoved": true
+        },
+        {
+          "failureStage": "none",
+          "passed": true,
+          "budgetExpired": false,
+          "terminalFailure": false,
+          "independentDownloadsMatch": true,
+          "admittedMiB": 24,
+          "transport": "dotnet",
+          "engine": "microsoft-vc",
+          "temporaryFileRemoved": true
+        },
+        {
+          "failureStage": "none",
+          "passed": true,
+          "budgetExpired": false,
+          "terminalFailure": false,
+          "independentDownloadsMatch": true,
+          "admittedMiB": 24,
+          "transport": "curl",
+          "engine": "microsoft-vc",
+          "temporaryFileRemoved": true
+        }
+      ]
+    },
+    {
+      "proxyConnectionObserved": true,
+      "proxyBypassRejected": true,
+      "architecture": "arm64",
+      "artifactID": 14019784973,
+      "providerZIPDigest": "sha256:f37a1efbac94ef3933161ab9fb6289c4e8343c42b62dd77970459cb5d6807b0e",
+      "providerZIPDigestVerified": true,
+      "cases": [
+        {
+          "transport": "dotnet",
+          "engine": "proxifyre",
+          "passed": true
+        },
+        {
+          "transport": "curl",
+          "engine": "proxifyre",
+          "passed": true
+        },
+        {
+          "transport": "dotnet",
+          "engine": "dnscrypt",
+          "passed": true
+        },
+        {
+          "transport": "curl",
+          "engine": "dnscrypt",
+          "passed": true
+        },
+        {
+          "transport": "dotnet",
+          "engine": "wiresock",
+          "passed": true
+        },
+        {
+          "transport": "curl",
+          "engine": "wiresock",
+          "passed": true
+        },
+        {
+          "failureStage": "none",
+          "passed": true,
+          "budgetExpired": false,
+          "terminalFailure": false,
+          "independentDownloadsMatch": true,
+          "admittedMiB": 153,
+          "transport": "dotnet",
+          "engine": "discord-stable",
+          "temporaryFileRemoved": true
+        },
+        {
+          "failureStage": "none",
+          "passed": true,
+          "budgetExpired": false,
+          "terminalFailure": false,
+          "independentDownloadsMatch": true,
+          "admittedMiB": 153,
+          "transport": "curl",
+          "engine": "discord-stable",
+          "temporaryFileRemoved": true
+        },
+        {
+          "failureStage": "none",
+          "passed": true,
+          "budgetExpired": false,
+          "terminalFailure": false,
+          "independentDownloadsMatch": true,
+          "admittedMiB": 153,
+          "transport": "dotnet",
+          "engine": "discord-ptb",
+          "temporaryFileRemoved": true
+        },
+        {
+          "failureStage": "none",
+          "passed": true,
+          "budgetExpired": false,
+          "terminalFailure": false,
+          "independentDownloadsMatch": true,
+          "admittedMiB": 153,
+          "transport": "curl",
+          "engine": "discord-ptb",
+          "temporaryFileRemoved": true
+        },
+        {
+          "failureStage": "none",
+          "passed": true,
+          "budgetExpired": false,
+          "terminalFailure": false,
+          "independentDownloadsMatch": true,
+          "admittedMiB": 24,
+          "transport": "dotnet",
+          "engine": "microsoft-vc",
+          "temporaryFileRemoved": true
+        },
+        {
+          "failureStage": "none",
+          "passed": true,
+          "budgetExpired": false,
+          "terminalFailure": false,
+          "independentDownloadsMatch": true,
+          "admittedMiB": 24,
+          "transport": "curl",
+          "engine": "microsoft-vc",
+          "temporaryFileRemoved": true
+        }
+      ]
+    }
+  ],
+  "vendorCodeExecuted": false,
+  "proxyPathQualified": false,
+  "allVendorRoutesQualified": false,
+  "productionQualificationComplete": false
+}
