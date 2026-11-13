@@ -3,8 +3,10 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import shutil
 import ssl
 import stat
 import subprocess
@@ -324,10 +326,31 @@ def managed_update(files, target, current_version, candidate_version):
     }
 
 
+def stage_managed_update(root, directory, update):
+    name = update["installer"]
+    with tempfile.TemporaryDirectory(prefix=".accessweaver-update-", dir=directory) as temporary:
+        staged = Path(temporary) / name
+        with (root / name).open("rb") as source, staged.open("xb") as output:
+            shutil.copyfileobj(source, output, length=1 << 20)
+            output.flush()
+            os.fsync(output.fileno())
+        require(digest(staged) == update["installerSHA256"], "Staged installer differs from the approved digest")
+        os.link(staged, directory / name)
+
+
 def verify(directory, certificate, certificate_sha256, commit, ref, openssl="openssl",
-           *, revocation_list, revocation_list_sha256, current_version=None, target=None):
+           *, revocation_list, revocation_list_sha256, current_version=None, target=None, stage_directory=None):
     require((current_version is None) == (target is None),
             "Managed update evaluation requires an installed version and target")
+    if stage_directory is not None:
+        require(target is not None, "Managed update staging requires an installed version and target")
+        info = stage_directory.lstat()
+        require(stat.S_ISDIR(info.st_mode)
+                and not getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT,
+                "Expected a real managed update staging directory")
+        stage_directory = stage_directory.resolve(strict=True)
+        require(not stage_directory.is_relative_to(directory.resolve()),
+                "Stage the installer outside the release input directory")
     subjects = release_subjects(commit, ref)
     der = independently_pinned_file(directory, certificate, certificate_sha256)
     certificate_sha256 = certificate_sha256.lower()
@@ -383,6 +406,11 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                  "payloadSBOMSHA256": payload_sboms[entry["target"]]}
                 for entry in entries
             ]
+        if stage_directory is not None:
+            update = report["managedUpdate"]
+            require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
+            stage_managed_update(root, stage_directory, update)
+            update["installerStaged"] = True
         return report
 
 
@@ -402,6 +430,8 @@ def main():
     verify_args.add_argument("--current-version", help="installed version from trusted endpoint inventory")
     verify_args.add_argument("--target", choices=("windows/amd64", "windows/arm64", "darwin/amd64", "darwin/arm64"),
                              help="native managed endpoint target")
+    verify_args.add_argument("--stage-directory", type=Path,
+                             help="existing trusted directory for the authenticated eligible installer")
     for command in (prepare_args, verify_args):
         command.add_argument("directory", type=Path)
         command.add_argument("--source-commit", required=True)
@@ -416,7 +446,8 @@ def main():
                                     args.source_commit, args.source_ref, args.openssl,
                                     revocation_list=args.revocation_list,
                                     revocation_list_sha256=args.revocation_list_sha256,
-                                    current_version=args.current_version, target=args.target)))
+                                    current_version=args.current_version, target=args.target,
+                                    stage_directory=args.stage_directory)))
     except (ValueError, OSError, subprocess.SubprocessError):
         print("Signed release inventory, approval or revocation verification failed.", file=sys.stderr)
         return 1

@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import signed_release_manifest as release
 from sbom import properties
@@ -279,6 +280,56 @@ class SignedReleaseManifestTests(unittest.TestCase):
             })
         with self.assertRaisesRegex(ValueError, "installed version and target"):
             self.verify(approved, pin, target="windows/arm64")
+        staging = self.root / "staging"
+        staging.mkdir()
+        update = {"current_version": "1.2.2-alpha", "target": "windows/arm64", "stage_directory": staging}
+        installer = f"accessweaver-{VERSION}-windows-arm64-setup.exe"
+        input_file = self.candidate / installer
+        staged_file = staging / installer
+        original_installer = input_file.read_bytes()
+        for version in ("1.0.0", VERSION, "2.0.0-rc.1"):
+            with self.subTest(version=version), self.assertRaisesRegex(ValueError, "eligible managed upgrade"):
+                self.verify(approved, pin, **{**update, "current_version": version})
+            self.assertEqual(list(staging.iterdir()), [])
+        with self.assertRaisesRegex(ValueError, "outside the release"):
+            self.verify(approved, pin, **{**update, "stage_directory": self.candidate})
+        with self.assertRaisesRegex(ValueError, "staging requires"):
+            self.verify(approved, pin, stage_directory=staging)
+
+        real_stage = release.stage_managed_update
+        def replace_input_after_verification(snapshot, directory, decision):
+            input_file.write_bytes(b"replacement after verification")
+            real_stage(snapshot, directory, decision)
+
+        with patch.object(release, "stage_managed_update", side_effect=replace_input_after_verification):
+            staged = self.verify(approved, pin, **update)["managedUpdate"]
+        self.assertTrue(staged["installerStaged"])
+        self.assertEqual(staged["installerSHA256"], release.digest(staged_file))
+        self.assertEqual(staged_file.read_bytes(), original_installer)
+        self.assertEqual(list(staging.iterdir()), [staged_file])
+        input_file.write_bytes(original_installer)
+
+        staged_file.write_bytes(b"existing assignment")
+        with self.assertRaises(FileExistsError):
+            self.verify(approved, pin, **update)
+        self.assertEqual(staged_file.read_bytes(), b"existing assignment")
+        self.assertEqual(list(staging.iterdir()), [staged_file])
+        staged_file.unlink()
+
+        macos = self.verify(approved, pin, **{**update, "target": "darwin/amd64"})["managedUpdate"]
+        macos_file = staging / macos["installer"]
+        self.assertEqual(macos_file.suffix, ".pkg")
+        self.assertEqual(release.digest(macos_file), macos["installerSHA256"])
+        self.assertEqual(list(staging.iterdir()), [macos_file])
+        macos_file.unlink()
+
+        def corrupt_copy(source, output, length):
+            output.write(b"corrupted copy")
+
+        with patch.object(release.shutil, "copyfileobj", side_effect=corrupt_copy):
+            with self.assertRaisesRegex(ValueError, "Staged installer differs"):
+                self.verify(approved, pin, **update)
+        self.assertEqual(list(staging.iterdir()), [])
         self.assertEqual(report["sbomArtifactBindingsVerified"], 6)
         self.assertEqual(report["macosDetection"], [
             {"target": target, "version": VERSION, "detectorSHA256": pin,
@@ -305,7 +356,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
         original = manifest.read_bytes()
         manifest.write_bytes(original + b" ")
         with self.assertRaises(subprocess.CalledProcessError):
-            self.verify(approved, pin, current_version="1.2.2-alpha", target="windows/arm64")
+            self.verify(approved, pin, **update)
+        self.assertEqual(list(staging.iterdir()), [])
         manifest.write_bytes(original)
 
         subject = self.candidate / next(iter(self.subjects))
@@ -345,8 +397,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
             with self.subTest(field=field):
                 current_pin = self.write_policy({**self.policy, field: [revoked]})
                 with self.assertRaisesRegex(ValueError, "revoked"):
-                    self.verify(approved, pin, policy_pin=current_pin,
-                                current_version="1.2.2-alpha", target="windows/arm64")
+                    self.verify(approved, pin, policy_pin=current_pin, **update)
+                self.assertEqual(list(staging.iterdir()), [])
                 with self.assertRaisesRegex(ValueError, "fingerprint"):
                     self.verify(approved, pin)
 
