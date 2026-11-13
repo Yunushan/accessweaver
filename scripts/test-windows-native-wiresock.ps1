@@ -182,12 +182,13 @@ function Get-HiddenMSIIdentity($record){
     if($command.Length -gt 4096){return 'command-unrecognized'}
     $program=[regex]::Escape((Join-Path $env:SystemRoot 'System32\msiexec.exe'))
     $pattern='(?i)^(?:msiexec(?:\.exe)?|"'+$program+'"|'+$program+')[ \t]+/[ix][ \t]*(\{[0-9a-f-]{36}\})(?=$|[ \t])'
-    if($command -notmatch $pattern){return 'command-unrecognized'}
+    $identity=[regex]::Match($command,$pattern,[Text.RegularExpressions.RegexOptions]::CultureInvariant)
+    if(-not $identity.Success){return 'command-unrecognized'}
     $product=[guid]::Empty
-    if(-not [guid]::TryParseExact($matches[1],'B',[ref]$product) -or $product -ne $key){
+    if(-not [guid]::TryParseExact($identity.Groups[1].Value,'B',[ref]$product) -or $product -ne $key){
         return 'product-mismatch'
     }
-    if($matches[0].Length -ne $command.Length){return 'extra-command-arguments'}
+    if($identity.Length -ne $command.Length){return 'extra-command-arguments'}
     return 'product-matched'
 }
 function Get-NativeInstallerPins {

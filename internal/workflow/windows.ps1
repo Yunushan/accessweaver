@@ -2258,8 +2258,9 @@ function Get-WireSockMsiProductCode($record,[string]$program,[switch]$BundleOwns
     $command=[Environment]::ExpandEnvironmentVariables([string]$record.UninstallString).Trim()
     $escapedProgram=[regex]::Escape($program)
     $msiCommand='(?i)^(?:msiexec(?:\.exe)?|"'+$escapedProgram+'"|'+$escapedProgram+')[ \t]+/[ix][ \t]*(\{[0-9a-f-]{36}\})$'
+    $identity=[regex]::Match($command,$msiCommand,[Text.RegularExpressions.RegexOptions]::CultureInvariant)
     $product=[guid]::Empty
-    if($command -notmatch $msiCommand -or -not [guid]::TryParseExact($matches[1],'B',[ref]$product) -or
+    if(-not $identity.Success -or -not [guid]::TryParseExact($identity.Groups[1].Value,'B',[ref]$product) -or
         $product -ne $key){
         throw $failure
     }
@@ -2599,22 +2600,46 @@ function Test-AppImagePath([string]$path,[string]$base,[string]$app) {
     }
     return [bool]($app -and $path -ieq $app)
 }
+function Get-AppProcessMatch($process,[string]$base,[string]$app,[string[]]$names) {
+    $image=$null
+    try {$image=$process.Path}catch{}
+    if($image -is [string] -and -not [string]::IsNullOrWhiteSpace($image)){
+        return (Test-AppImagePath $image $base $app)
+    }
+    $name=$null
+    try {$name=$process.ProcessName}catch{}
+    if($name -is [string] -and -not [string]::IsNullOrWhiteSpace($name) -and $name -notin $names){
+        return $false
+    }
+    try {
+        $exited=$process.HasExited
+        if($exited -is [bool] -and $exited){return $false}
+    }catch{}
+    # A potentially matching process without a readable image remains unresolved.
+    return $null
+}
+function Get-AppProcessNames([string]$base,[string]$app) {
+    if($base){return @('Discord','DiscordPTB','Update','crashpad_handler')}
+    if($app){return [IO.Path]::GetFileNameWithoutExtension($app)}
+}
 function Wait-AppProcessesExited([string]$variant,[string]$app,[int]$seconds=10) {
     $base=Get-AppProcessBase $variant
+    $names=@(Get-AppProcessNames $base $app)
     $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
         $running=$false
-        foreach($process in Get-Process -ErrorAction Stop){
-            try {
-                $path=$null
-                try {$path=$process.Path}catch{}
-                if(Test-AppImagePath $path $base $app){
-                    # A matching process with unreadable exit state is still unresolved.
-                    $exited=$false
-                    try {$exited=$process.HasExited -eq $true}catch{}
-                    if(-not $exited){$running=$true}
-                }
-            } finally {
+        $processes=@(Get-Process -ErrorAction Stop)
+        try {
+            foreach($process in $processes){
+                $match=Get-AppProcessMatch $process $base $app $names
+                if($null -eq $match){$running=$true;break}
+                if(-not $match){continue}
+                $exited=$null
+                try {$exited=$process.HasExited}catch{}
+                if($exited -isnot [bool] -or -not $exited){$running=$true;break}
+            }
+        } finally {
+            foreach($process in $processes){
                 if($process -is [IDisposable]){$process.Dispose()}
             }
         }
@@ -2627,18 +2652,23 @@ function Wait-AppProcessesExited([string]$variant,[string]$app,[int]$seconds=10)
 function Stop-AppProcesses([string]$variant,[string]$app) {
     $base=Get-AppProcessBase $variant
     if(-not $base -and -not $app){$app=Find-App $variant}
-    $sessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId
+    $names=@(Get-AppProcessNames $base $app)
+    if(-not $names.Count){return}
+    $current=[Diagnostics.Process]::GetCurrentProcess()
+    try {$sessionId=$current.SessionId} finally {$current.Dispose()}
     $matching=[Collections.Generic.List[object]]::new()
+    $processes=@(Get-Process -ErrorAction Stop)
     try {
         # Check all observed matches before stopping a client. A shared install
         # may still be in use by a disconnected or concurrent desktop session.
-        foreach($process in Get-Process -ErrorAction SilentlyContinue){
-            try{$path=$process.Path}catch{continue}
-            if(-not (Test-AppImagePath $path $base $app)){continue}
+        foreach($process in $processes){
+            $match=Get-AppProcessMatch $process $base $app $names
+            if($null -eq $match){throw 'A possible application process executable could not be verified'}
+            if(-not $match){continue}
             $matching.Add($process)
             $processSession=$null
             try {$processSession=$process.SessionId}catch{}
-            if($null -eq $processSession){throw 'A matching application process session could not be verified'}
+            if($processSession -isnot [int] -or $processSession -lt 0){throw 'A matching application process session could not be verified'}
             if($processSession -ne $sessionId){throw 'A matching application is running in another Windows session'}
         }
         foreach($process in $matching){
@@ -2652,13 +2682,13 @@ function Stop-AppProcesses([string]$variant,[string]$app) {
                 $process.Kill()
                 if(-not $process.WaitForExit(5000)){throw 'Application exit was not observed'}
             } catch {
-                $exited=$false
-                try {$exited=$process.HasExited -eq $true}catch{}
-                if(-not $exited){throw 'A matching application process could not be stopped; the operation was not continued'}
+                $exited=$null
+                try {$exited=$process.HasExited}catch{}
+                if($exited -isnot [bool] -or -not $exited){throw 'A matching application process could not be stopped; the operation was not continued'}
             }
         }
     } finally {
-        foreach($process in $matching){$process.Dispose()}
+        foreach($process in $processes){$process.Dispose()}
     }
 }
 function Test-AppProcessInSession([string]$path,[int]$sessionId,$processes) {

@@ -16,7 +16,7 @@ $root=$testRoot;$script:undo=[Collections.Generic.List[object]]::new();$script:e
 function Assert([bool]$condition,[string]$message){if(-not $condition){throw $message};Write-Output ('PASS '+$message)}
 # The OS identity comes from IsWow64Process2 in Go, outside the reviewed request.
 # These fixtures only read inert MSI databases; signature/network/launch are mocked.
-$previousPrerequisiteInput=$inputData;$previousPrerequisiteRequest=$r
+$previousPrerequisiteInput=$inputData;$previousPrerequisiteRequest=$r;$previousPrerequisiteProgramFiles=$env:ProgramFiles
 $prerequisiteFunctions=@{}
 foreach($name in @('Read-RemoteJSON','Download','Get-AuthenticodeSignature','Native','Event')){$prerequisiteFunctions[$name]=(Get-Command $name).ScriptBlock}
 $prerequisiteRoot=Join-Path $testRoot 'prerequisites';[void](New-Item -ItemType Directory -Path $prerequisiteRoot)
@@ -48,6 +48,7 @@ try {
     function Native {param($Program,$Arguments,$SuccessCodes);$script:prerequisiteCalls.Add(@{kind='launch';program=$Program;arguments=$Arguments;codes=$SuccessCodes});return @{exitCode=0}}
     function Event {param($text)}
     [void](New-Item -ItemType Directory -Force -Path (Join-Path $root 'downloads'))
+    $env:ProgramFiles=Join-Path $prerequisiteRoot 'program-files'
     foreach($architecture in @('amd64','arm64')) {
         $inputData=[pscustomobject]@{nativeArchitecture=$architecture}
         $platform=if($architecture -eq 'amd64'){'x64'}else{'Arm64'}
@@ -124,31 +125,27 @@ try {
     $runtimeStage=$runtimeLaunches[0].program
     Assert ((Under $runtimeStage (Join-Path $root 'downloads')) -and -not (Test-Path -LiteralPath $runtimeStage) -and (Test-Path -LiteralPath $runtimeFixture)) 'Bundled prerequisite launches only its verified protected copy and retires it'
 
-    $previousPrerequisiteProgramFiles=$env:ProgramFiles
+    $implicitRoot=Join-Path $env:ProgramFiles 'SplitWire-Turkey\Prerequisites'
+    [void](New-Item -ItemType Directory -Path $implicitRoot -Force)
+    Copy-Item -LiteralPath $runtimeFixture -Destination $implicitRoot
+    $r=[pscustomobject]@{bundlePath=$null}
+    $inputData=[pscustomobject]@{managedPolicy=$true;allowDownloads=$false}
+    $script:prerequisiteCalls.Clear()
+    $previousDownload=(Get-Command Download).ScriptBlock
     try {
-        $env:ProgramFiles=Join-Path $prerequisiteRoot 'program-files'
-        $implicitRoot=Join-Path $env:ProgramFiles 'SplitWire-Turkey\Prerequisites'
-        [void](New-Item -ItemType Directory -Path $implicitRoot -Force)
-        Copy-Item -LiteralPath $runtimeFixture -Destination $implicitRoot
-        $r=[pscustomobject]@{bundlePath=$null}
-        $inputData=[pscustomobject]@{managedPolicy=$true;allowDownloads=$false}
-        $script:prerequisiteCalls.Clear()
-        $previousDownload=(Get-Command Download).ScriptBlock
-        try {
-            function Download { Require-DownloadPermission;throw 'Fixture reached an unauthorized download' }
-            $rejected=$false
-            try {Install-Prerequisite 'vcredist'}catch{$rejected=$_.Exception.Message -ceq 'Administrator policy disables remote component and release requests'}
-            Assert ($rejected -and $script:prerequisiteCalls.Count -eq 0) 'Managed prerequisite ignores implicit unapproved local bundles'
-        } finally {Set-Item Function:Download $previousDownload}
-        $inputData=[pscustomobject]@{managedPolicy=$false}
-        Install-Prerequisite 'vcredist'
-        Assert (@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'}).Count -eq 1) 'Unmanaged prerequisite can still use the implicit local bundle'
-    } finally {$env:ProgramFiles=$previousPrerequisiteProgramFiles}
+        function Download { Require-DownloadPermission;throw 'Fixture reached an unauthorized download' }
+        $rejected=$false
+        try {Install-Prerequisite 'vcredist'}catch{$rejected=$_.Exception.Message -ceq 'Administrator policy disables remote component and release requests'}
+        Assert ($rejected -and $script:prerequisiteCalls.Count -eq 0) 'Managed prerequisite ignores implicit unapproved local bundles'
+    } finally {Set-Item Function:Download $previousDownload}
+    $inputData=[pscustomobject]@{managedPolicy=$false}
+    Install-Prerequisite 'vcredist'
+    Assert (@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'}).Count -eq 1) 'Unmanaged prerequisite can still use the implicit local bundle'
     $rejected=$false;try{Prerequisite-Plan 'unknown'|Out-Null}catch{$rejected=$_.Exception.Message -eq 'Unknown prerequisite component'}
     Assert $rejected 'Unknown prerequisite names cannot fall back to Visual C runtime installation'
 } finally {
     foreach($name in $prerequisiteFunctions.Keys){if($null -eq $prerequisiteFunctions[$name]){Remove-Item ('Function:'+$name)}else{Set-Item ('Function:'+$name) $prerequisiteFunctions[$name]}}
-    $inputData=$previousPrerequisiteInput;$r=$previousPrerequisiteRequest
+    $inputData=$previousPrerequisiteInput;$r=$previousPrerequisiteRequest;$env:ProgramFiles=$previousPrerequisiteProgramFiles
 }
 
 # Model prerequisite outcomes with no registry access or service changes.
@@ -222,7 +219,7 @@ try {
 
 # Native component metadata fixtures are deliberately non-executable. No DLL
 # is loaded; download, expansion, staging and event hooks stay within this fixture.
-$previousComponentInput=$inputData;$previousComponentRequest=$r;$previousComponentRoot=$root;$previousAssetNames=$assetNames
+$previousComponentInput=$inputData;$previousComponentRequest=$r;$previousComponentRoot=$root;$previousAssetNames=$assetNames;$previousComponentProgramFiles=$env:ProgramFiles
 $componentFunctions=@{}
 foreach($name in @('Read-RemoteJSON','Download','Expand-Safe','Protect-Dir','Copy-Checked','Copy-Tree','Event')){$componentFunctions[$name]=(Get-Command $name).ScriptBlock}
 function Write-InertPE([string]$path,[uint16]$machine) {
@@ -242,6 +239,7 @@ try {
     function Expand-Safe {param($archive,$destination);Write-InertPE (Join-Path $destination ('payload\'+$assetNames[$script:componentEngine])) $script:componentDownloadMachine}
     function Event {param($text);$script:componentCalls.Add(@{kind='event';text=$text})}
     $componentBase=Join-Path $testRoot 'native-components';[void](New-Item -ItemType Directory -Path $componentBase)
+    $env:ProgramFiles=Join-Path $componentBase 'empty-program-files'
     foreach($machine in @(0x8664,0xaa64,0x014c)) {
         $path=Join-Path $componentBase ('machine-'+$machine+'.exe');Write-InertPE $path $machine
         Assert ((Get-PEMachine $path) -eq $machine) 'Bounded PE inspection reads the COFF machine without executing a fixture'
@@ -295,25 +293,21 @@ try {
     }
     # Inert names only: discovery must never return another engine's file and
     # staging must not rename it into the requested executable.
-    $previousProgramFiles=$env:ProgramFiles
-    try {
-        $env:ProgramFiles=Join-Path $componentBase 'empty-program-files';[void](New-Item -ItemType Directory -Force -Path $env:ProgramFiles)
-        foreach($fixture in @(@('zapret','zapret-winws','winws.exe','winws2.exe'),@('zapret2','zapret-winws2','winws2.exe','winws.exe'))){
-            $engine=$fixture[0];$bundle=Join-Path $componentBase ('preferred-'+$engine);$folder=Join-Path $bundle $fixture[1]
-            [void](New-Item -ItemType Directory -Force -Path $folder)
-            $expected=Join-Path $folder $fixture[2];[IO.File]::WriteAllText($expected,'correct inert file');[IO.File]::WriteAllText((Join-Path $folder $fixture[3]),'wrong inert file')
-            $root=Join-Path $componentBase ('isolated-'+$engine);$r=[pscustomobject]@{bundlePath=$bundle}
-            Assert ((Find-Source $engine) -ceq $expected) ($engine+' selects only its expected executable in the preferred folder')
-            $wrongBundle=Join-Path $componentBase ('wrong-only-'+$engine);$wrongFolder=Join-Path $wrongBundle $fixture[1]
-            [void](New-Item -ItemType Directory -Force -Path $wrongFolder);[IO.File]::WriteAllText((Join-Path $wrongFolder $fixture[3]),'wrong inert file')
-            $r=[pscustomobject]@{bundlePath=$wrongBundle}
-            Assert ($null -eq (Find-Source $engine)) ($engine+' refuses a preferred folder containing only the other executable')
-        }
-    } finally {$env:ProgramFiles=$previousProgramFiles}
+    foreach($fixture in @(@('zapret','zapret-winws','winws.exe','winws2.exe'),@('zapret2','zapret-winws2','winws2.exe','winws.exe'))){
+        $engine=$fixture[0];$bundle=Join-Path $componentBase ('preferred-'+$engine);$folder=Join-Path $bundle $fixture[1]
+        [void](New-Item -ItemType Directory -Force -Path $folder)
+        $expected=Join-Path $folder $fixture[2];[IO.File]::WriteAllText($expected,'correct inert file');[IO.File]::WriteAllText((Join-Path $folder $fixture[3]),'wrong inert file')
+        $root=Join-Path $componentBase ('isolated-'+$engine);$r=[pscustomobject]@{bundlePath=$bundle}
+        Assert ((Find-Source $engine) -ceq $expected) ($engine+' selects only its expected executable in the preferred folder')
+        $wrongBundle=Join-Path $componentBase ('wrong-only-'+$engine);$wrongFolder=Join-Path $wrongBundle $fixture[1]
+        [void](New-Item -ItemType Directory -Force -Path $wrongFolder);[IO.File]::WriteAllText((Join-Path $wrongFolder $fixture[3]),'wrong inert file')
+        $r=[pscustomobject]@{bundlePath=$wrongBundle}
+        Assert ($null -eq (Find-Source $engine)) ($engine+' refuses a preferred folder containing only the other executable')
+    }
 } finally {
     foreach($name in $componentFunctions.Keys){Set-Item ('Function:'+$name) $componentFunctions[$name]}
     Remove-Item Function:Write-InertPE
-    $inputData=$previousComponentInput;$r=$previousComponentRequest;$root=$previousComponentRoot;$assetNames=$previousAssetNames
+    $inputData=$previousComponentInput;$r=$previousComponentRequest;$root=$previousComponentRoot;$assetNames=$previousAssetNames;$env:ProgramFiles=$previousComponentProgramFiles
 }
 
 # Isolated scan boundaries: inert files and closed mocks only. A plausible
@@ -1301,6 +1295,13 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         $refused=$false
         try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
         Assert ($cacheMismatchRefused -and $refused -and $calls.Count -eq 0) 'WireSock paired uninstall refuses mismatched cache or MSI identity before cleanup'
+        $previousCulture=[Threading.Thread]::CurrentThread.CurrentCulture
+        try {
+            [Threading.Thread]::CurrentThread.CurrentCulture=[Globalization.CultureInfo]::GetCultureInfo('tr-TR')
+            $localizedRecord=@{PSChildName=$productCode;UninstallString=('MSIEXEC.EXE /I'+$productCode)}
+            $parsed=Get-WireSockMsiProductCode $localizedRecord (Join-Path $env:SystemRoot 'System32\msiexec.exe') -BundleOwnsUninstall
+            Assert ($parsed -ceq $productCode) 'WireSock parses MSI command identity independently of Windows culture'
+        } finally {[Threading.Thread]::CurrentThread.CurrentCulture=$previousCulture}
         $hiddenRecord.UninstallString=$null
         $hiddenRecord.PSChildName='not-a-product-code'
         $refused=$false
@@ -1467,6 +1468,15 @@ try {
     $rejected=$false
     try {Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process session could not be verified'}
     Assert ($rejected -and $script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) 'Application removal refuses an unverified matching session before stopping any process'
+    $hiddenImage=[pscustomobject]@{ProcessName='SplitCord';HasExited=$false}
+    $hiddenImage | Add-Member ScriptProperty Path {throw 'Synthetic inaccessible executable'}
+    $script:hiddenImageDisposals=0
+    $hiddenImage | Add-Member ScriptMethod Dispose {$script:hiddenImageDisposals++}
+    $appStopRecords=@($script:appStopRecord,$hiddenImage)
+    $rejected=$false
+    try {Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A possible application process executable could not be verified'}
+    Assert ($rejected -and $script:appStopCalls -eq 0 -and $script:hiddenImageDisposals -eq 1 -and
+        -not $script:externalEffectsPending) 'Application removal preserves processes when a plausible executable cannot be verified'
     $appStopRecords=@($script:appStopRecord)
     $script:appStopDisposals=0
     $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process could not be stopped; the operation was not continued'}
@@ -1520,6 +1530,15 @@ try {
     $rejected=$false
     try {Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
     Assert $rejected 'Application removal refuses an unreadable matching process exit state'
+    $hiddenImage=[pscustomobject]@{ProcessName='SplitCord';Path=$null;HasExited=$false}
+    $unrelatedHiddenImage=[pscustomobject]@{ProcessName='Unrelated';Path=$null;HasExited=$false}
+    $appRemovalProcesses=@($unrelatedHiddenImage,$hiddenImage)
+    $rejected=$false
+    try {Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+    Assert $rejected 'Application removal refuses an inaccessible possibly matching live process after uninstall'
+    $hiddenImage.HasExited=$true
+    Wait-AppProcessesExited 'splitcord' $fixtureApp 0
+    Assert $true 'Application removal accepts an exited hidden process and ignores an unrelated hidden image'
     $discordBase=Join-Path $testRoot 'Discord'
     $discordHelper=Join-Path $discordBase 'app-1.0.0\crashpad_handler.exe'
     $otherDiscord=Join-Path ($discordBase+'PTB') 'app-1.0.0\crashpad_handler.exe'
