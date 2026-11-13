@@ -1,5 +1,5 @@
 import copy
-from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt, validate_architecture_refusal, validate_fixed_restoration, validate_locked_upgrade, validate_failed_copy_recovery
+from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt, validate_architecture_refusal, validate_fixed_restoration, validate_locked_upgrade, validate_failed_copy_recovery, validate_pending_marker_access
 import os
 from pathlib import Path
 import subprocess
@@ -80,6 +80,27 @@ class FailedCopyRecoveryTests(unittest.TestCase):
                              ("pendingRecordCreatedBySetup", 1), ("approvedPackageDetectedAfterRetry", False)):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 validate_failed_copy_recovery({**observation, field: value})
+
+
+class PendingMarkerAccessTests(unittest.TestCase):
+    def test_native_denial_requires_all_refusals_and_verified_restoration(self):
+        observation = {
+            "nativeQueryStatus": 5, "nativeUninstallExitCode": 1,
+            "discoveryReportedUnavailable": True, "managedDetectionRefused": True,
+            "controllerUninstallBindingRefused": True, "nativeUninstallerRefusalLogged": True,
+            "installationRegistrationAndMarkerPreserved": True, "profilePreserved": True,
+            "fixtureDACLRestored": True, "pendingStateObservedAfterRestore": True,
+        }
+        self.assertEqual(validate_pending_marker_access(observation), {"pendingMarkerAccessDenialVerified": True})
+        for field in observation:
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_pending_marker_access({key: value for key, value in observation.items() if key != field})
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_pending_marker_access({**observation, field: False})
+        with self.assertRaises(ValueError):
+            validate_pending_marker_access({**observation, "nativeQueryStatus": 2})
+        with self.assertRaises(ValueError):
+            validate_pending_marker_access({**observation, "nativeUninstallExitCode": True})
 
 
 class FixedRestorationTests(unittest.TestCase):
@@ -279,6 +300,15 @@ class ManagedDetectionEvidenceTests(unittest.TestCase):
         ]
         self.assertEqual(validate_managed_detection({**upgraded, "schemaVersion": 18, "managedDetectionCases": pending}),
                          {"managedDetectionChecksVerified": 14})
+        with_denial = [
+            *pending[:10],
+            {"phase": "pending-marker-access-denied", "detected": False, "inspectionRefused": True},
+            *pending[10:],
+        ]
+        self.assertEqual(validate_managed_detection({**upgraded, "schemaVersion": 21, "managedDetectionCases": with_denial}),
+                         {"managedDetectionChecksVerified": 15})
+        with self.assertRaises(ValueError):
+            validate_managed_detection({**upgraded, "schemaVersion": 21, "managedDetectionCases": pending})
         with self.assertRaises(ValueError):
             validate_managed_detection({**upgraded, "schemaVersion": 18})
         with self.assertRaises(ValueError):
