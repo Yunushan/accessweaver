@@ -853,17 +853,22 @@ try {
 }
 # Exercise the updates dispatch helper with fixed public-shape release metadata.
 & {
-    $inputData=@{controller='C:\fixture\accessweaver.exe'}
+    $inputData=@{controller='C:\fixture\accessweaver.exe';nativeArchitecture='amd64'}
     $calls=[Collections.Generic.List[string]]::new()
     $published='2026-01-02T00:00:00Z'
+    function New-ReleaseAssets([string]$tag,[string]$arch){
+        foreach($name in @('BUILD-MANIFEST.json','SHA256SUMS.txt','BUILD-PROVENANCE.sigstore.json',('accessweaver-'+$tag+'-windows-'+$arch+'.zip'))){
+            @{name=$name;state='uploaded';digest=('sha256:'+('a'*64))}
+        }
+    }
     $metadata=@(
         @{draft=$true;prerelease=$false;tag_name='v99.0.0'},
         @{draft=$false;prerelease=$true;tag_name='v88.0.0'},
         @{draft='false';prerelease=$false;tag_name='v77.0.0'},
         @{draft=$false;prerelease=$false;tag_name=('1'*257)},
         @{draft=$false;prerelease=$false;tag_name=('v8.0.0'+[char]0)},
-        @{draft=$false;prerelease=$true;tag_name='v2.0.0-rc.1'},
-        @{draft=$false;prerelease=$false;tag_name='v1.9.0+build.3';html_url='https://outside.invalid/ignored';published_at=$published}
+        @{draft=$false;prerelease=$true;tag_name='v2.0.0-rc.1';assets=@(New-ReleaseAssets 'v2.0.0-rc.1' 'amd64')},
+        @{draft=$false;prerelease=$false;tag_name='v1.9.0+build.3';html_url='https://outside.invalid/ignored';published_at=$published;assets=@(New-ReleaseAssets 'v1.9.0+build.3' 'amd64')}
     )
     function Read-RemoteJSON {
         param($Uri,$Headers)
@@ -874,8 +879,9 @@ try {
         param($Program,$Arguments,[switch]$Secret)
         if($Program -cne $inputData.controller -or -not $Secret){throw 'Unexpected update comparison process'}
         $calls.Add(($Arguments -join ','))
-        return @{stdout=$comparison}
+        return @{stdout=$comparison;outputComplete=$outputComplete}
     }
+    $outputComplete=$true
     $comparison='{"version":"v1.9.0+build.3","currentVersion":"1.8.0","updateAvailable":true}'
     $result=Check-AccessWeaverUpdates
     Assert ($calls.Count -eq 1 -and $calls[0] -ceq 'system,check-version,--follow-channel,v2.0.0-rc.1,v1.9.0+build.3' -and
@@ -897,6 +903,41 @@ try {
         if(-not $refused){throw 'Unexpected release metadata shape outcome'}
     }
     Assert ($calls.Count -eq 3) 'Update discovery rejects invalid list shapes before comparison'
+    $calls.Clear()
+    $inputData.nativeArchitecture='arm64'
+    $wrongArch=@(New-ReleaseAssets 'v9.0.0' 'amd64')
+    $incomplete=@(New-ReleaseAssets 'v8.0.0' 'arm64' | Where-Object {$_.name -cne 'BUILD-PROVENANCE.sigstore.json'})
+    $duplicate=@(New-ReleaseAssets 'v7.0.0' 'arm64')
+    $duplicate+=@($duplicate[0])
+    $badDigest=@(New-ReleaseAssets 'v6.0.0' 'arm64')
+    $badDigest[0].digest='sha256:short'
+    $pending=@(New-ReleaseAssets 'v5.0.0' 'arm64')
+    $pending[0].state='starter'
+    $metadata=@(
+        @{draft=$false;prerelease=$false;tag_name='v9.0.0';assets=$wrongArch},
+        @{draft=$false;prerelease=$false;tag_name='v8.0.0';assets=$incomplete},
+        @{draft=$false;prerelease=$false;tag_name='v7.0.0';assets=$duplicate},
+        @{draft=$false;prerelease=$false;tag_name='v6.0.0';assets=$badDigest},
+        @{draft=$false;prerelease=$false;tag_name='v5.0.0';assets=$pending},
+        @{draft=$false;prerelease=$false;tag_name='v4.0.0';assets=@(New-ReleaseAssets 'v4.0.0' 'arm64')}
+    )
+    $comparison='{"version":"v4.0.0","currentVersion":"1.8.0","updateAvailable":true}'
+    $result=Check-AccessWeaverUpdates
+    Assert ($result.version -ceq 'v4.0.0' -and $calls.Count -eq 1 -and $calls[0] -ceq 'system,check-version,--follow-channel,v4.0.0') 'Update discovery requires architecture-specific uploaded assets with digests'
+    $calls.Clear()
+    $inputData.nativeArchitecture=''
+    $refused=$false
+    try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Native Windows architecture is unavailable or unsupported for release discovery'}
+    Assert ($refused -and $calls.Count -eq 0) 'Update discovery refuses unsupported native architecture'
+    $inputData.nativeArchitecture='arm64'
+    $outputComplete=$false
+    $refused=$false
+    try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'AccessWeaver release comparison returned an invalid result'}
+    $outputComplete=$true
+    $comparison='{"version":"v4.0.0","currentVersion":"1.8.0","updateAvailable":"true"}'
+    $badType=$false
+    try{Check-AccessWeaverUpdates | Out-Null}catch{$badType=$_.Exception.Message -ceq 'AccessWeaver release comparison returned an invalid result'}
+    Assert ($refused -and $badType -and $calls.Count -eq 2) 'Update discovery rejects incomplete and invalid comparison results'
 }
 # Publisher-category checks use synthetic signature records only.
 $signatureDiscord=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Discord fixture'}}

@@ -327,17 +327,41 @@ function Read-RemoteJSON([string]$Uri,[hashtable]$Headers) {
         return ,$envelope.value
     }finally {$memory.Dispose()}
 }
+function Test-AccessWeaverReleaseAssets($release,[string]$architecture) {
+    $assets=$release.assets
+    if($assets -isnot [array] -or $assets.Count -gt 100){return $false}
+    $archive='accessweaver-'+$release.tag_name+'-windows-'+$architecture+'.zip'
+    $required=@($archive,'BUILD-MANIFEST.json','SHA256SUMS.txt','BUILD-PROVENANCE.sigstore.json')
+    $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach($asset in $assets){
+        if($asset.name -isnot [string] -or $asset.name -cnotin $required){continue}
+        if(-not $seen.Add($asset.name) -or $asset.state -cne 'uploaded' -or
+            $asset.digest -isnot [string] -or $asset.digest -cnotmatch '\Asha256:[0-9a-f]{64}\z'){
+            return $false
+        }
+    }
+    return $seen.Count -eq $required.Count
+}
 function Check-AccessWeaverUpdates {
+    $architecture=[string]$inputData.nativeArchitecture
+    if($architecture -cnotin @('amd64','arm64')){throw 'Native Windows architecture is unavailable or unsupported for release discovery'}
     $allReleases=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/Yunushan/accessweaver/releases?per_page=30'
     if($allReleases -isnot [array] -or $allReleases.Count -gt 30){throw 'AccessWeaver release metadata did not contain a valid release list'}
     $releases=@($allReleases | Where-Object {
         $_.draft -is [bool] -and -not $_.draft -and $_.prerelease -is [bool] -and $_.tag_name -is [string] -and $_.tag_name.Length -le 256 -and
         $_.tag_name -cmatch '\Av?[0-9][0-9A-Za-z.+-]*\z' -and
-        (-not $_.prerelease -or $_.tag_name -cmatch '^[^+]+-[^+]+')
+        (-not $_.prerelease -or $_.tag_name -cmatch '^[^+]+-[^+]+') -and
+        (Test-AccessWeaverReleaseAssets $_ $architecture)
     })
-    if(-not $releases.Count){throw 'No published AccessWeaver releases found'}
+    if(-not $releases.Count){throw 'No published AccessWeaver releases include a Windows archive and verification files for this architecture'}
     $comparison=Native $inputData.controller (@('system','check-version','--follow-channel')+@($releases|ForEach-Object {$_.tag_name})) -Secret
-    $check=$comparison.stdout|ConvertFrom-Json
+    $invalidComparison='AccessWeaver release comparison returned an invalid result'
+    if($comparison.outputComplete -ne $true -or $comparison.stdout -isnot [string] -or $comparison.stdout.Length -gt 4096){throw $invalidComparison}
+    try {$check=ConvertFrom-Json -InputObject $comparison.stdout -ErrorAction Stop}catch{throw $invalidComparison}
+    if($check -isnot [pscustomobject] -or $check.version -isnot [string] -or
+        $check.currentVersion -isnot [string] -or -not $check.currentVersion -or $check.updateAvailable -isnot [bool]){
+        throw $invalidComparison
+    }
     if($check.version -ceq '' -and $check.updateAvailable -eq $false){
         return @{version='';currentVersion=$check.currentVersion;updateAvailable=$false;url=$null;publishedAt=$null}
     }
@@ -1844,7 +1868,7 @@ function Uninstall-WireSockProduct {
         $bundles=@($records | Where-Object {$_.WindowsInstaller -ne 1 -and $_.SystemComponent -ne 1 -and
             -not [string]::IsNullOrWhiteSpace($_.BundleCachePath) -and -not [string]::IsNullOrWhiteSpace($_.BundleProviderKey)})
         $hiddenMSIs=@($records | Where-Object {$_.WindowsInstaller -eq 1 -and $_.SystemComponent -eq 1})
-        if($names[0] -ne 'WireSock Secure Connect' -or $records.Count -ne 2 -or $bundles.Count -ne 1 -or $hiddenMSIs.Count -ne 1){
+        if($legacy -or $records.Count -ne 2 -or $bundles.Count -ne 1 -or $hiddenMSIs.Count -ne 1){
             throw 'Multiple registered WireSock products matched; select the intended product in Windows Apps settings'
         }
         $record=$bundles[0]
