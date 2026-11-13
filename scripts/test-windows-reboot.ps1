@@ -9,7 +9,8 @@ $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 
 function Assert-DNSRebootAdmission($Saved,$Current) {
-    if($Saved.schemaVersion -ne 4 -or $Saved.method -cnotin @('doh','dnscrypt') -or
+    if($Saved.schemaVersion -ne 5 -or $Saved.method -cnotin @('doh','dnscrypt') -or
+       $Saved.qualificationID -isnot [string] -or $Saved.qualificationID -cnotmatch '\A[a-f0-9]{32}\z' -or
        $Saved.guestID -cne $Current.guestID -or $Saved.binarySHA256 -cne $Current.binarySHA256 -or
        $Saved.oracleSHA256 -cne $Current.oracleSHA256 -or $Saved.fixtureSHA256 -cne $Current.fixtureSHA256 -or
        $Saved.snapshotSHA256 -cnotmatch '\A[A-F0-9]{64}\z' -or $Saved.snapshotSHA256 -cne $Current.snapshotSHA256 -or
@@ -28,8 +29,12 @@ function Assert-DNSRebootAdmission($Saved,$Current) {
 function Save-DNSRebootRecord([string]$Path,$Record) {
     $data=[Text.UTF8Encoding]::new($false).GetBytes((ConvertTo-Json -InputObject $Record -Depth 16))
     if($data.Length -gt 1MB){throw 'DNS reboot record exceeds its size limit'}
-    $stream=[IO.File]::Open($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
-    try {$stream.Write($data,0,$data.Length);$stream.Flush($true)} finally {$stream.Dispose()}
+    $staged=Join-Path (Split-Path -Parent $Path) ([guid]::NewGuid().ToString('N')+'.tmp')
+    $stream=[IO.File]::Open($staged,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+        try {$stream.Write($data,0,$data.Length);$stream.Flush($true)} finally {$stream.Dispose()}
+        [IO.File]::Move($staged,$Path)
+    } finally {[IO.File]::Delete($staged)}
 }
 function Get-DNSRebootDigest([string]$Path,[long]$Maximum) {
     $entry=Get-Item -LiteralPath $Path -Force -ErrorAction Stop
@@ -93,19 +98,18 @@ if(@($guest).Count -ne 1 -or -not [guid]::TryParseExact([string]$guest.UUID,'D',
 $os=Get-CimInstance Win32_OperatingSystem
 if(@($os).Count -ne 1 -or $os.LastBootUpTime -isnot [DateTime]){throw 'Cannot identify guest boot'}
 $current=@{
-    schemaVersion=4;guestID=$guestID.ToString('D');
+    schemaVersion=5;guestID=$guestID.ToString('D');
     binarySHA256=(Get-DNSRebootDigest $Executable 128MB);oracleSHA256=(Get-DNSRebootDigest $oracle 1MB);
     fixtureSHA256=(Get-DNSRebootDigest $PSCommandPath 1MB);
     boot=$os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
 }
 . $oracle
 $private=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'AccessWeaver DNS reboot fixture'
-$results='C:\AccessWeaver-Results'
 $baseline=Join-Path $private 'prepared.json'
 $machineRoot=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'AccessWeaver'
 $snapshot=Join-Path $machineRoot 'profiles\dns-original.json'
 $logDirectory=Join-Path $machineRoot 'logs'
-$report=Join-Path $results 'reboot-results.json'
+$report=Join-Path $private 'reboot-results.json'
 
 function Invoke-TestWorkflow([hashtable]$Request) {
     $path=Join-Path $private ('request-'+[guid]::NewGuid().ToString('N')+'.json')
@@ -173,12 +177,13 @@ try {
             $security.AddAccessRule($rule)
         }
         Set-Acl -LiteralPath $private -AclObject $security -ErrorAction Stop
-        Save-DNSRebootRecord (Join-Path $private 'original.json') @{schemaVersion=4;dns=$before}
+        Save-DNSRebootRecord (Join-Path $private 'original.json') @{schemaVersion=5;dns=$before}
         [void](Invoke-TestWorkflow @{action='install';engine='byedpi';mode='service';bundlePath='C:\AccessWeaver-Test\components'})
         $applied=Invoke-TestWorkflow @{action='dns';dns=$DNS;bundlePath='C:\AccessWeaver-Test\components'}
         Assert-RebootServices $DNS
         Assert-DNSAcceptanceConfigured $before (Read-DNSAcceptanceState) $DNS
         Assert-RebootResolver
+        $current.qualificationID=[guid]::NewGuid().ToString('N')
         $current.method=$DNS
         $current.dns=$before
         $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 8MB
@@ -203,8 +208,11 @@ try {
     Assert-DNSRebootJournal (Get-Content -LiteralPath $journalPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop) $current.snapshotSHA256
     [void](Get-DNSAcceptanceIndex $saved.dns)
     if(Test-Path -LiteralPath $report){throw 'DNS reboot evidence already exists'}
-    Save-DNSRebootRecord (Join-Path $private 'verification-started.json') @{schemaVersion=4}
-    $outcome=[ordered]@{schemaVersion=4;method=$saved.method;binarySHA256=$current.binarySHA256;
+    if(Test-Path -LiteralPath (Join-Path $private 'verification-started.json')){
+        throw 'Interrupted DNS reboot verification requires a fresh checkpoint'
+    }
+    Save-DNSRebootRecord (Join-Path $private 'verification-started.json') @{schemaVersion=5}
+    $outcome=[ordered]@{schemaVersion=5;qualificationID=$saved.qualificationID;method=$saved.method;binarySHA256=$current.binarySHA256;
         fixtureSHA256=$current.fixtureSHA256;oracleSHA256=$current.oracleSHA256;
         rebootVerified=$true;servicesVerified=$false;configuredStateVerified=$false;
         resolverVerified=$false;journalBindingVerified=$true;journalRecoveryAccepted=$false;

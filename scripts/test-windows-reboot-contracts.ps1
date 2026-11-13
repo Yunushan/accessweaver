@@ -17,7 +17,7 @@ function Refuse([scriptblock]$Action){
     if(-not $rejected){throw 'Invalid DNS reboot evidence was accepted'}
 }
 $journalId='workflow-'+('a'*32)+'.json'
-$saved=@{schemaVersion=4;method='doh';guestID='synthetic';
+$saved=@{schemaVersion=5;qualificationID=('a'*32);method='doh';guestID='synthetic';
     binarySHA256=('a'*64);fixtureSHA256=('b'*64);oracleSHA256=('c'*64);snapshotSHA256=('D'*64);
     journalId=$journalId;journalSHA256=('E'*64);boot='639303000000000000'}
 $current=$saved.Clone()
@@ -34,7 +34,7 @@ foreach($value in @($saved.boot,'639302000000000000','unknown')){
     Refuse {Assert-DNSRebootAdmission $saved $changed}
 }
 $legacy=$saved.Clone()
-$legacy.schemaVersion=3
+$legacy.schemaVersion=4
 Refuse {Assert-DNSRebootAdmission $legacy $current}
 foreach($value in @('..\\'+$journalId,'workflow-'+('A'*32)+'.json','foreign.json')){
     $invalid=$saved.Clone();$invalid.journalId=$value
@@ -127,4 +127,88 @@ try {
     Refuse {Save-DNSRebootRecord $target $current}
     if([IO.File]::ReadAllText($target) -cne $before){throw 'Replay overwrote existing evidence'}
 } finally {[IO.File]::Delete($target)}
-Write-Output 'DNS reboot admission, protected journal, recovery ordering and publication checks passed.'
+# Exercise only the startup handoff functions against owned inert files.
+$startupSource=Join-Path $PSScriptRoot 'vmware-reboot-resume.ps1'
+$startup=[Management.Automation.Language.Parser]::ParseFile($startupSource,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'DNS reboot startup failed parsing'}
+$selected=@('Read-DNSRebootReport','Assert-DNSRebootPublicReport','Publish-DNSRebootPublicReport','Complete-DNSRebootStartup')
+foreach($name in $selected){
+    $nodes=@($startup.EndBlock.Statements | Where-Object {
+        $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
+    })
+    if($nodes.Count -ne 1){throw 'Expected one DNS startup handoff function'}
+    foreach($command in $nodes[0].FindAll({param($node)$node -is [Management.Automation.Language.CommandAst]},$true)){
+        $callback=$command.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and
+            $command.CommandElements[0] -is [Management.Automation.Language.VariableExpressionAst] -and
+            $command.CommandElements[0].VariablePath.UserPath -cin @('Verify','Retire')
+        if(-not $callback -and $command.GetCommandName() -cnotin ($selected+@('Get-Item','Where-Object','ConvertFrom-Json','Join-Path','Split-Path'))){
+            throw 'DNS startup handoff source has an unexpected command boundary'
+        }
+    }
+    . ([scriptblock]::Create($nodes[0].Extent.Text))
+}
+$root=[IO.Path]::Combine([IO.Path]::GetTempPath(),('aw-dns-reboot-publication-'+[guid]::NewGuid().ToString('N')))
+[void][IO.Directory]::CreateDirectory($root)
+$shared=Join-Path $root 'share'
+$destination=Join-Path $shared 'reboot-results.json'
+$report=Join-Path $root 'reboot-results.json'
+$record=@{schemaVersion=5;qualificationID=('a'*32);method='doh';binarySHA256=('A'*64);fixtureSHA256=('B'*64);oracleSHA256=('C'*64)
+    rebootVerified=$true;servicesVerified=$true;configuredStateVerified=$true;resolverVerified=$true
+    journalBindingVerified=$true;journalRecoveryAccepted=$true;originalStateRestored=$true;originalResolverVerified=$true
+    snapshotRetired=$true;servicesRemoved=$true;passed=$true;stage='complete';cleanupStage='complete'}
+$script:verifications=0;$script:retirements=0
+$verify={
+    $script:verifications++
+    Save-DNSRebootRecord $report $record
+}
+$retire={$script:retirements++}
+try {
+    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire}
+    if($script:verifications -ne 1 -or $script:retirements -ne 0 -or -not [IO.File]::Exists($report)){
+        throw 'Unavailable share discarded the result or retired the task'
+    }
+    [void][IO.Directory]::CreateDirectory($shared)
+    Refuse {Complete-DNSRebootStartup $report $destination $verify {throw 'Synthetic task retirement failure'}}
+    if(-not [IO.File]::Exists($destination)){throw 'Task retirement failure lost the published result'}
+    if(-not (Complete-DNSRebootStartup $report $destination $verify $retire) -or $script:verifications -ne 1 -or
+        $script:retirements -ne 1 -or [IO.Directory]::GetFileSystemEntries($shared).Length -ne 1){
+        throw 'Publication retry repeated verification or left a staging file'
+    }
+    [IO.File]::Delete($destination)
+    $different=$record.Clone();$different.qualificationID=('b'*32)
+    Save-DNSRebootRecord $destination $different
+    $before=[IO.File]::ReadAllText($destination)
+    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire}
+    if([IO.File]::ReadAllText($destination) -cne $before -or $script:retirements -ne 1){
+        throw 'Publication replaced different evidence or retired its task'
+    }
+    [IO.File]::Delete($destination)
+    [IO.File]::Delete($report)
+    $record.servicesVerified=$false
+    Save-DNSRebootRecord $report $record
+    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire}
+    if([IO.File]::Exists($destination) -or $script:retirements -ne 1){
+        throw 'Inconsistent passing report was published'
+    }
+    [IO.File]::Delete($report)
+    $record.stage='services';$record.passed=$false
+    $passed=Complete-DNSRebootStartup $report $destination {
+        Save-DNSRebootRecord $report $record
+        throw 'Synthetic acceptance failure with evidence'
+    } $retire
+    if($passed -or -not [IO.File]::Exists($destination) -or $script:retirements -ne 2){
+        throw 'Completed failed report was lost or reported as passed'
+    }
+    [IO.File]::Delete($destination)
+    [IO.File]::Delete($report)
+    Refuse {Complete-DNSRebootStartup $report $destination {throw 'Synthetic interruption before publication'} $retire}
+    if([IO.File]::Exists($destination) -or $script:retirements -ne 2){
+        throw 'Interrupted verification fabricated evidence or retired the task'
+    }
+} finally {
+    [IO.File]::Delete($destination)
+    [IO.File]::Delete($report)
+    if([IO.Directory]::Exists($shared)){[IO.Directory]::Delete($shared)}
+    [IO.Directory]::Delete($root)
+}
+Write-Output 'DNS reboot admission, journal recovery, atomic results and startup publication checks passed.'
