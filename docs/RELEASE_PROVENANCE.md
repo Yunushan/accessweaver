@@ -125,6 +125,18 @@ python scripts/signed_release_manifest.py verify PRIVATE_CANDIDATE --approval-ce
 
 The verifier checks the approval signature with the supplied certificate and compares the exact inventory, sizes and SHA-256 digests against the received bytes. It also refuses a revoked commit, tag, subject digest or approval certificate and records the revocation-list fingerprint in its result. Release control must distribute the latest list and fingerprint, and deployment operators must fetch them again before retrying or approving a cached candidate. An old list and its matching old fingerprint can still authenticate that older policy. Retain the separate build provenance, native publisher checks and installed-product results for that candidate. [OpenSSL CMS verification](https://docs.openssl.org/3.5/man1/openssl-cms/).
 
+### Approve Windows managed detection pins
+
+Release control can add Windows uninstaller digests to its approval by supplying the final `result.json` from a completed disposable Windows installer reboot exercise. Obtain the report and its SHA-256 through the controlled qualification handoff. Keep the report outside the candidate directory and match the setup and payload to the signed package being approved. Repeat `--windows-reboot-evidence` for each qualified architecture and install path, supplying the independently approved digest beside each report path.
+
+```text
+python scripts/signed_release_manifest.py prepare PRIVATE_CANDIDATE --output APPROVAL_DIRECTORY/SIGNED-RELEASE.json --source-commit FULL_APPROVED_COMMIT --source-ref refs/tags/APPROVED_TAG --windows-reboot-evidence CLEAN_RESULT_JSON CLEAN_RESULT_SHA256 --windows-reboot-evidence UPGRADE_RESULT_JSON UPGRADE_RESULT_SHA256
+```
+
+The resulting schema 2 manifest includes the measured uninstaller, publisher certificate and report digests, scoped to the architecture and install path. Upgrade entries also identify the previous version and payload digest. The verifier emits the approved entries as `windowsDetection` with the current version, setup and payload digests. Revocations in `subjectSHA256` can also block these entries by uninstaller, qualification report, previous payload or publisher certificate digest. Retain the reports privately for release review. Schema 1 approvals still verify and carry no managed uninstaller pins.
+
+For a managed assignment, select the verified entry that matches the approved architecture and the tested install path. Assignments covering multiple starting states can use a single pin if every applicable path has a verified entry with the same measured uninstaller digest. Confirm starting state through deployment inventory before using an upgrade-specific pin. The verifier authenticates the release approval and its detection metadata. The organization supplies native publisher verification and controls the collection and approval of the guest evidence.
+
 ## Packaged FreeBSD guest acceptance
 
 The release workflow configures separate archived-candidate jobs for FreeBSD amd64 and arm64 on matching-architecture Linux hosts. `stage_packaged_native.py --freebsd-guest` uses an explicit guest-only target policy; the ordinary native entry point continues to reject cross-host/BSD selection. The credential-scoped step snapshots and authenticates all twelve distribution subjects before staging the selected archived binary and its build receipt. It never executes candidate code. The subsequent guest step receives no `GH_TOKEN` setting.

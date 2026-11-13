@@ -36,6 +36,26 @@ class SignedReleaseManifestTests(unittest.TestCase):
                               revocation_list=self.revocation_list,
                               revocation_list_sha256=policy_pin or self.policy_pin)
 
+    def write_reboot_report(self, filename, architecture="amd64", **overrides):
+        version = REF.removeprefix("refs/tags/v")
+        stem = f"accessweaver-{version}-windows-{architecture}"
+        report = {
+            "schemaVersion": 5, "stage": "complete", "architecture": architecture, "version": version,
+            "installMode": "clean", "previousVersion": "", "previousPayloadSHA256": "",
+            "setupSHA256": release.digest(self.candidate / (stem + "-setup.exe")),
+            "payloadSHA256": release.digest(self.candidate / (stem + ".exe")),
+            "publisherSHA256": "b" * 64, "uninstallerSHA256": "c" * 64,
+            "passed": True, "guestRebootVerified": True, "installedPayloadVerifiedBeforeRestart": True,
+            "installedPayloadVerified": True, "uninstallerIdentityVerified": True,
+            "installedTreeVerified": True, "registrationPreserved": True, "registrationRemoved": True,
+            "packageFilesRemoved": True, "userProfileVerifiedAfterReboot": True,
+            "userProfilePreservedAfterUninstall": True, "userProfilePreservedThroughUpgrade": False,
+            "downgradeRequested": False, "downgradeRefused": False, "downgradeStatePreserved": False,
+        }
+        evidence = self.root / filename
+        evidence.write_text(json.dumps({**report, **overrides}), encoding="utf-8")
+        return evidence, release.digest(evidence)
+
     def test_prepare_closes_target_and_subject_inventory(self):
         output = self.root / release.MANIFEST
         self.assertEqual(len(self.subjects), 12)
@@ -54,6 +74,33 @@ class SignedReleaseManifestTests(unittest.TestCase):
         (self.candidate / "extra.exe").write_bytes(b"unexpected")
         with self.assertRaises(ValueError):
             release.prepare(self.candidate, output, COMMIT, REF)
+
+    def test_prepare_rejects_untrusted_or_incomplete_windows_detection_evidence(self):
+        output = self.root / release.MANIFEST
+        valid = self.write_reboot_report("valid.json")
+        tampered = self.write_reboot_report("tampered.json")
+        tampered[0].write_bytes(tampered[0].read_bytes() + b" ")
+        invalid = [
+            (tampered,),
+            (valid, valid),
+            (self.write_reboot_report("incomplete.json", uninstallerIdentityVerified=1),),
+            (self.write_reboot_report("wrong-setup.json", setupSHA256="d" * 64),),
+            (self.write_reboot_report("wrong-payload.json", payloadSHA256="d" * 64),),
+            (self.write_reboot_report("wrong-version.json", version="1.2.3"),),
+            (self.write_reboot_report("bad-baseline.json", previousVersion="1.2.2"),),
+            (self.write_reboot_report("bad-digest.json", uninstallerSHA256="c" * 63),),
+            (self.write_reboot_report("partial-upgrade.json", installMode="upgrade",
+                                      previousVersion="1.2.2", previousPayloadSHA256="d" * 64),),
+            (self.write_reboot_report("downgrade.json", downgradeRequested=True,
+                                      downgradeRefused=True, downgradeStatePreserved=True),),
+        ]
+        duplicate = self.root / "duplicate.json"
+        duplicate.write_bytes(valid[0].read_bytes().replace(b'"passed": true', b'"passed": false, "passed": true'))
+        invalid.append(((duplicate, release.digest(duplicate)),))
+        for evidence in invalid:
+            with self.subTest(evidence=evidence), self.assertRaises(ValueError):
+                release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=evidence)
+            self.assertFalse(output.exists())
 
     def test_real_cms_approval_and_refusals(self):
         self.assertIsNotNone(OPENSSL, "OpenSSL is required for CMS signing fixtures")
@@ -78,9 +125,12 @@ class SignedReleaseManifestTests(unittest.TestCase):
         release.prepare(self.candidate, prepared, COMMIT, REF)
         manifest = self.candidate / release.MANIFEST
         signature = self.candidate / release.SIGNATURE
+        def sign_manifest():
+            openssl("cms", "-sign", "-binary", "-md", "sha256", "-in", manifest,
+                    "-signer", pem, "-inkey", key, "-outform", "DER", "-out", signature)
+
         shutil.copyfile(prepared, manifest)
-        openssl("cms", "-sign", "-binary", "-md", "sha256", "-in", manifest,
-                "-signer", pem, "-inkey", key, "-outform", "DER", "-out", signature)
+        sign_manifest()
 
         report = self.verify(approved, pin)
         self.assertEqual(report["subjectsVerified"], 12)
@@ -127,6 +177,53 @@ class SignedReleaseManifestTests(unittest.TestCase):
                     self.verify(approved, pin, policy_pin=current_pin)
                 with self.assertRaisesRegex(ValueError, "fingerprint"):
                     self.verify(approved, pin)
+
+        self.write_policy(self.policy)
+        prepared.unlink()
+        manifest.unlink()
+        signature.unlink()
+        clean = self.write_reboot_report("clean.json")
+        upgrade = self.write_reboot_report("upgrade.json", installMode="upgrade",
+                                           previousVersion="1.2.2", previousPayloadSHA256="d" * 64,
+                                           userProfilePreservedThroughUpgrade=True, uninstallerSHA256="e" * 64)
+        arm = self.write_reboot_report("arm.json", architecture="arm64", uninstallerSHA256="f" * 64)
+        release.prepare(self.candidate, prepared, COMMIT, REF, windows_reboot_evidence=[arm, upgrade, clean])
+        shutil.copyfile(prepared, manifest)
+        sign_manifest()
+        report = self.verify(approved, pin)
+        self.assertEqual(report["schemaVersion"], 2)
+        self.assertEqual(report["subjectsVerified"], 12)
+        clean_entry, upgrade_entry, arm_entry = report["windowsDetection"]
+        self.assertEqual(clean_entry, {
+            "target": "windows/amd64", "installMode": "clean", "previousVersion": "",
+            "previousPayloadSHA256": "", "uninstallerSHA256": "c" * 64,
+            "publisherCertificateSHA256": "b" * 64, "rebootEvidenceSHA256": clean[1],
+            "version": "1.2.3-rc.1",
+            "setupSHA256": release.digest(self.candidate / "accessweaver-1.2.3-rc.1-windows-amd64-setup.exe"),
+            "payloadSHA256": release.digest(self.candidate / "accessweaver-1.2.3-rc.1-windows-amd64.exe"),
+        })
+        self.assertEqual(upgrade_entry, {
+            **clean_entry, "installMode": "upgrade", "previousVersion": "1.2.2",
+            "previousPayloadSHA256": "d" * 64, "uninstallerSHA256": "e" * 64, "rebootEvidenceSHA256": upgrade[1],
+        })
+        self.assertEqual(arm_entry["target"], "windows/arm64")
+        self.assertEqual(arm_entry["uninstallerSHA256"], "f" * 64)
+        for revoked in (clean[1], "b" * 64, "d" * 64, "e" * 64):
+            current_pin = self.write_policy({**self.policy, "subjectSHA256": [revoked]})
+            with self.subTest(revoked=revoked), self.assertRaisesRegex(ValueError, "revoked"):
+                self.verify(approved, pin, policy_pin=current_pin)
+        self.write_policy(self.policy)
+
+        data = json.loads(manifest.read_bytes())
+        data["windowsDetection"][0]["uninstallerSHA256"] = "a" * 64
+        manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.verify(approved, pin)
+        del data["windowsDetection"][0]["previousPayloadSHA256"]
+        manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        sign_manifest()
+        with self.assertRaisesRegex(ValueError, "Malformed Windows detection entry"):
+            self.verify(approved, pin)
 
         self.revocation_list.unlink()
         with self.assertRaises(FileNotFoundError):
