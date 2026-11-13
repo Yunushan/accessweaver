@@ -5,15 +5,17 @@ import argparse
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 from urllib.parse import urlencode
 
-from verify_release_provenance import REPOSITORY, validate_identity, verify
+from verify_release_provenance import BUNDLE_NAME, REPOSITORY, regular_file, validate_identity, verify
 from verify_release_rebuild import digest, snapshot
 
 REMOTE = "https://github.com/" + REPOSITORY + ".git"
+MAX_BUNDLE = 16 << 20
 
 
 def git_tag_commit(tag):
@@ -76,7 +78,7 @@ def promote_draft(release_id):
     require_success(result)
 
 
-def missing_assets(release, tag, expected):
+def missing_assets(release, tag, expected, *, allow_existing_bundle=False):
     if (
         type(release.get("databaseId")) is not int
         or release["databaseId"] <= 0
@@ -92,7 +94,10 @@ def missing_assets(release, tag, expected):
         if (
             name in names or name not in expected
             or asset.get("state") != "uploaded"
-            or asset.get("digest") != expected[name]
+            or (asset.get("digest") != expected[name]
+                and not (allow_existing_bundle and name == BUNDLE_NAME
+                         and isinstance(asset.get("digest"), str)
+                         and re.fullmatch(r"sha256:[a-f0-9]{64}", asset["digest"])))
         ):
             raise ValueError("Release contains an unexpected, incomplete or different asset")
         names.add(name)
@@ -100,6 +105,39 @@ def missing_assets(release, tag, expected):
     if missing and not release["isDraft"]:
         raise ValueError("Published release is missing verified assets")
     return missing
+
+
+def reuse_existing_bundle(directory, release, commit, tag, expected):
+    bundle = next((asset for asset in release["assets"] if asset["name"] == BUNDLE_NAME), None)
+    if bundle is None or bundle["digest"] == expected[BUNDLE_NAME]:
+        return expected
+    api_url = bundle.get("apiUrl")
+    asset_url = rf"https://api\.github\.com/repos/{re.escape(REPOSITORY)}/releases/assets/([1-9][0-9]{{0,18}})"
+    asset_id = re.fullmatch(asset_url, api_url) if isinstance(api_url, str) else None
+    size = bundle.get("size")
+    if asset_id is None or type(size) is not int or not 0 < size <= MAX_BUNDLE:
+        raise ValueError("Existing provenance bundle metadata differs")
+
+    with tempfile.TemporaryDirectory(prefix="accessweaver-existing-bundle-") as temporary:
+        download = Path(temporary) / BUNDLE_NAME
+        with download.open("xb") as output:
+            result = subprocess.run(
+                ["gh", "api", "--hostname", "github.com", "--method", "GET",
+                 f"repos/{REPOSITORY}/releases/assets/{asset_id[1]}",
+                 "--header", "Accept: application/octet-stream"],
+                stdout=output, stderr=subprocess.PIPE, timeout=240,
+            )
+        if result.returncode != 0:
+            raise ValueError("Existing provenance bundle could not be downloaded")
+        regular_file(download, MAX_BUNDLE)
+        if download.stat().st_size != size or "sha256:" + digest(download) != bundle["digest"]:
+            raise ValueError("Existing provenance bundle bytes differ")
+        # The directory is the private snapshot owned by publish(). Verify the
+        # original bundle against the exact unsigned subjects before any write
+        # to GitHub, including when resuming an already published prerelease.
+        shutil.copyfile(download, directory / BUNDLE_NAME)
+        verify(directory, commit, "refs/tags/" + tag)
+    return {**expected, BUNDLE_NAME: bundle["digest"]}
 
 
 def publish(directory, commit, ref):
@@ -129,11 +167,15 @@ def publish_verified(directory, tag, commit, expected):
         release = view(tag)
         if release is None or release.get("isDraft") is not True:
             raise ValueError("Created release draft could not be verified")
+    missing_assets(release, tag, expected, allow_existing_bundle=True)
+    expected = reuse_existing_bundle(directory, release, commit, tag, expected)
     missing = missing_assets(release, tag, expected)
     release_id = release["databaseId"]
     if not release["isDraft"]:
         return
-    for name in missing:
+    # Upload the time-bound provenance last so a partially uploaded build
+    # can usually resume from a new attestation without fetching the old one.
+    for name in sorted(missing, key=lambda name: (name == BUNDLE_NAME, name)):
         upload_asset(release_id, directory / name, expected[name])
     release = view(tag)
     if release is None or release.get("databaseId") != release_id or missing_assets(release, tag, expected):

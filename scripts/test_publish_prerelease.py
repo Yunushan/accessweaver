@@ -146,6 +146,103 @@ class PrereleasePublicationTests(unittest.TestCase):
             ), self.assertRaisesRegex(ValueError, "asset could not be verified"):
                 publisher.upload_asset(456, self.directory / asset["name"], asset["digest"])
 
+    def test_new_draft_uploads_the_provenance_bundle_last(self):
+        name = publisher.BUNDLE_NAME
+        (self.directory / "fixture-00.zip").rename(self.directory / name)
+        self.assets[name] = {**self.assets.pop("fixture-00.zip"), "name": name}
+        self.run_publisher([self.release(True, 0), self.release(True), self.release(False)])
+        uploaded_names = [call.args[1].name for call in self.upload.call_args_list]
+        self.assertEqual(uploaded_names, sorted(self.assets.keys() - {name}) + [name])
+        self.promote.assert_called_once_with(456)
+
+    def test_retry_reuses_an_authenticated_existing_bundle(self):
+        bundle_name = publisher.BUNDLE_NAME
+        new_bundle = b"fresh attestation"
+        old_bundle = b"previous attestation"
+        (self.directory / "fixture-00.zip").rename(self.directory / bundle_name)
+        (self.directory / bundle_name).write_bytes(new_bundle)
+        del self.assets["fixture-00.zip"]
+        self.assets[bundle_name] = {
+            "name": bundle_name, "state": "uploaded",
+            "size": len(old_bundle),
+            "apiUrl": f"https://api.github.com/repos/{publisher.REPOSITORY}/releases/assets/987",
+            "digest": "sha256:" + hashlib.sha256(old_bundle).hexdigest(),
+        }
+        draft = self.release(True)
+        draft["assets"] = [asset for asset in draft["assets"] if asset["name"] != "fixture-12.zip"]
+        for published in (False, True):
+            with self.subTest(already_published=published):
+                existing = self.release(False) if published else draft
+                releases = [existing] if published else [existing, self.release(True), self.release(False)]
+                seen = []
+
+                def verify(directory, commit, ref):
+                    self.assertEqual((commit, ref), (self.commit, self.ref))
+                    seen.append((directory / bundle_name).read_bytes())
+                    self.assertEqual((directory / "fixture-12.zip").read_bytes(), b"fixture-12.zip")
+
+                def download(args, *, stdout, **kwargs):
+                    self.assertEqual(args, [
+                        "gh", "api", "--hostname", "github.com", "--method", "GET",
+                        f"repos/{publisher.REPOSITORY}/releases/assets/987",
+                        "--header", "Accept: application/octet-stream",
+                    ])
+                    stdout.write(old_bundle)
+                    return subprocess.CompletedProcess(args, 0)
+
+                with (
+                    patch.object(publisher, "verify", side_effect=verify),
+                    patch.object(publisher, "git_tag_commit", return_value=self.commit),
+                    patch.object(publisher, "view", side_effect=releases),
+                    patch.object(publisher, "upload_asset") as upload,
+                    patch.object(publisher, "promote_draft") as promote,
+                    patch.object(publisher.subprocess, "run", side_effect=download) as fetch,
+                ):
+                    publisher.publish(self.directory, self.commit, self.ref)
+                self.assertEqual(seen, [new_bundle, old_bundle])
+                self.assertEqual((self.directory / bundle_name).read_bytes(), new_bundle)
+                fetch.assert_called_once()
+                if published:
+                    upload.assert_not_called()
+                    promote.assert_not_called()
+                else:
+                    upload.assert_called_once()
+                    self.assertEqual(upload.call_args.args[1].name, "fixture-12.zip")
+                    promote.assert_called_once_with(456)
+
+    def test_retry_rejects_changed_or_untrusted_existing_bundle_before_any_write(self):
+        bundle_name = publisher.BUNDLE_NAME
+        (self.directory / "fixture-00.zip").rename(self.directory / bundle_name)
+        del self.assets["fixture-00.zip"]
+        good = b"prior signed bundle"
+        self.assets[bundle_name] = {
+            "name": bundle_name, "state": "uploaded",
+            "size": len(good), "digest": "sha256:" + hashlib.sha256(good).hexdigest(),
+            "apiUrl": f"https://api.github.com/repos/{publisher.REPOSITORY}/releases/assets/987",
+        }
+        for payload, trusted in ((b"x" * len(good), True), (good, False)):
+            with self.subTest(trusted=trusted):
+                def download(args, *, stdout, **kwargs):
+                    stdout.write(payload)
+                    return subprocess.CompletedProcess(args, 0)
+
+                def verify(directory, _commit, _ref):
+                    if (directory / bundle_name).read_bytes() == good and not trusted:
+                        raise ValueError("Synthetic authentication failure")
+
+                with (
+                    patch.object(publisher, "verify", side_effect=verify),
+                    patch.object(publisher, "git_tag_commit", return_value=self.commit),
+                    patch.object(publisher, "view", return_value=self.release(True)),
+                    patch.object(publisher, "upload_asset") as upload,
+                    patch.object(publisher, "promote_draft") as promote,
+                    patch.object(publisher.subprocess, "run", side_effect=download),
+                    self.assertRaises(ValueError),
+                ):
+                    publisher.publish(self.directory, self.commit, self.ref)
+                upload.assert_not_called()
+                promote.assert_not_called()
+
     def test_interrupted_upload_does_not_promote_or_continue(self):
         with self.assertRaisesRegex(ValueError, "synthetic upload failure"):
             self.run_publisher([self.release(True, 11)], upload_error=ValueError("synthetic upload failure"))
