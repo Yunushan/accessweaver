@@ -1443,14 +1443,79 @@ function Discord-Directories([string]$variant='discord') {
     return @($candidates | Sort-Object @{Expression='hasVersion';Descending=$true},@{Expression='version';Descending=$true},@{Expression='modified';Descending=$true},@{Expression='name';Descending=$false} | ForEach-Object {$_.path})
 }
 function Install-Drover {
-    $dll=Ensure-Asset 'drover';$ini=Join-Path (Split-Path -Parent $dll) 'drover.ini'
+    $manifest=Join-Path $root 'profiles\drover-owned.json'
+    No-Reparse $manifest
+    if(Test-Path -LiteralPath $manifest -ErrorAction Stop){throw 'Restore the existing managed drover installation before replacing it'}
+    $dirs=@(Discord-Directories)
+    if($dirs.Count -eq 0 -or $dirs.Count -gt 256){throw 'Expected a bounded stable Discord installation inventory'}
+    $dll=Ensure-Asset 'drover'
+    $ini=Join-Path (Split-Path -Parent $dll) 'drover.ini'
     if(-not (Test-Path -LiteralPath $ini)){Write-Atomic $ini "[drover]`r`nproxy = socks5://127.0.0.1:1080`r`n"}
-    $dirs=@(Discord-Directories);if(-not $dirs.Count){throw 'Install Discord before applying drover'}
+
+    $sources=@{'version.dll'=$dll;'drover.ini'=$ini}
+    $hashes=@{}
+    foreach($name in $sources.Keys){
+        Assert-TrustedItem $sources[$name]
+        $hashes[$name]=Get-DroverFileHash $sources[$name]
+        if(-not $hashes[$name]){throw 'Drover input is missing'}
+    }
+    $deploymentID=[guid]::NewGuid().ToString('N')
+    $records=@(foreach($dir in $dirs){
+        foreach($name in @('version.dll','drover.ini')){
+            $target=Join-Path $dir $name
+            $original=Get-DroverFileHash $target
+            $backup=$null
+            if($original){
+                $backup=Join-Path $root ('backups\'+[guid]::NewGuid().ToString('N'))
+                [IO.File]::Copy($target,$backup,$false)
+            }
+            [pscustomobject]@{deploymentID=$deploymentID;path=$target;backup=$backup;originalHash=$original;installedHash=$hashes[$name]}
+        }
+    })
+    foreach($item in @(Get-DroverRestorePlan $records)){
+        if(-not $item.directoryExists -or $item.current -ine $item.original){throw 'Discord files changed before Drover deployment'}
+    }
+    $payload=[Text.UTF8Encoding]::new($false).GetBytes((ConvertTo-Json -InputObject $records -Depth 5))
+    if($payload.Length -gt 1MB){throw 'Drover ownership record exceeds its size limit'}
+    $sha256=[Security.Cryptography.SHA256]::Create()
+    try {$digest=[BitConverter]::ToString($sha256.ComputeHash($payload)).Replace('-','')} finally {$sha256.Dispose()}
+    $script:undo.Add(@{kind='drover';manifestSHA256=$digest})
+    Save-Journal
+    $staged=Join-Path (Split-Path -Parent $manifest) ([guid]::NewGuid().ToString('N')+'.tmp')
+    $stream=[IO.File]::Open($staged,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+        try {$stream.Write($payload,0,$payload.Length);$stream.Flush($true)} finally {$stream.Dispose()}
+        [IO.File]::Move($staged,$manifest)
+    } finally {
+        if([IO.File]::Exists($staged)){[IO.File]::Delete($staged)}
+    }
+
     Stop-AppProcesses 'discord'
-    $manifest=Join-Path $root 'profiles\drover-owned.json';$records=@()
-    if(Test-Path -LiteralPath $manifest){throw 'Restore the existing managed drover installation before replacing it'}
-    foreach($dir in $dirs){foreach($name in @('version.dll','drover.ini')){$target=Join-Path $dir $name;Copy-Checked $(if($name -eq 'version.dll'){$dll}else{$ini}) $target;$entry=$script:undo | Where-Object {$_.kind -eq 'file' -and $_.path -eq $target} | Select-Object -Last 1;$records+=@{path=$target;backup=$entry.backup;originalHash=$entry.originalHash;installedHash=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash}}}
-    Write-Atomic $manifest (ConvertTo-Json -InputObject @($records) -Depth 5);Event 'Discord drover files installed with original-file backups'
+    foreach($item in $records){
+        $name=Split-Path -Leaf $item.path
+        Set-DroverFile $sources[$name] $item.path $item.originalHash $item.installedHash
+    }
+    foreach($item in $records){
+        if((Get-DroverFileHash $item.path) -ine $item.installedHash){throw 'Installed Drover file could not be verified'}
+    }
+    Event 'Discord drover files installed with original-file backups'
+}
+function Set-DroverFile([string]$source,[string]$target,[string]$before,[string]$expected) {
+    if((Get-DroverFileHash $source) -ine $expected){throw 'Drover source changed before publication'}
+    $directory=Split-Path -Parent $target
+    No-Reparse $target
+    $staged=Join-Path $directory ('accessweaver-drover-'+[guid]::NewGuid().ToString('N')+'.tmp')
+    [IO.File]::Copy($source,$staged,$false)
+    try {
+        if((Get-DroverFileHash $staged) -ine $expected){throw 'Staged Drover bytes changed before publication'}
+        $current=Get-DroverFileHash $target
+        if(($before -and $current -ine $before) -or (-not $before -and $current)){throw 'Drover file changed before publication'}
+        $script:externalEffectsPending=$true
+        if($before){[IO.File]::Replace($staged,$target,[NullString]::Value)}
+        else{[IO.File]::Move($staged,$target)}
+    } finally {
+        if([IO.File]::Exists($staged)){[IO.File]::Delete($staged)}
+    }
 }
 function Get-DroverFileHash([string]$path) {
     No-Reparse $path
@@ -1500,7 +1565,7 @@ function Get-DroverRestorePlan($records) {
         [pscustomobject]@{path=$path;backup=$item.backup;current=$current;original=$original;directoryExists=$directoryExists}
     }
 }
-function Restore-Drover {
+function Restore-Drover([string]$ExpectedManifestSHA256) {
     $manifest=Join-Path $root 'profiles\drover-owned.json'
     No-Reparse $manifest
     if(-not (Test-Path -LiteralPath $manifest -ErrorAction Stop)){return}
@@ -1508,6 +1573,7 @@ function Restore-Drover {
     $entry=Get-Item -LiteralPath $manifest -Force -ErrorAction Stop
     if($entry.PSIsContainer -or $entry.Length -le 0 -or $entry.Length -gt 1MB){throw 'Invalid Drover ownership record'}
     $manifestHash=Get-DroverFileHash $manifest
+    if($ExpectedManifestSHA256 -and $manifestHash -ine $ExpectedManifestSHA256){throw 'Drover recovery journal differs from the current ownership record'}
     $records=@(Get-Content -LiteralPath $manifest -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop)
     if((Get-DroverFileHash $manifest) -cne $manifestHash){throw 'Drover ownership record changed during inspection'}
     if($records.Count -eq 0 -or $records.Count -gt 512){throw 'Invalid Drover ownership record'}
@@ -1524,7 +1590,7 @@ function Restore-Drover {
             $script:externalEffectsPending=$true
             if($item.backup){
                 if((Get-DroverFileHash $item.backup) -ine $item.original){throw 'Original Drover backup changed during restoration'}
-                Copy-Item -LiteralPath $item.backup -Destination $item.path -Force -ErrorAction Stop
+                Set-DroverFile $item.backup $item.path $item.current $item.original
             }else{
                 Remove-Item -LiteralPath $item.path -ErrorAction Stop
             }
@@ -2634,6 +2700,7 @@ function Rollback {
                 [void](Native $item.cli @('delete',$item.profile) -Secret)
             }
         }
+        'drover' {Restore-Drover $item.manifestSHA256}
         'cache' {if(-not (Under $item.path $env:APPDATA) -or -not (Under $item.backup (Join-Path $root 'backups'))){throw 'Invalid cache recovery path'};No-Reparse $item.path;No-Reparse $item.backup;if(Test-Path -LiteralPath $item.backup){if(Test-Path -LiteralPath $item.path){throw 'Discord created new cache; original cache backup retained for manual review'};Move-Item -LiteralPath $item.backup -Destination $item.path}}
         'file' {No-Reparse $item.path;if(Test-Path -LiteralPath $item.path){$currentHash=(Get-FileHash -LiteralPath $item.path -Algorithm SHA256).Hash;if($currentHash -eq $item.originalHash){continue};if(-not $item.expectedHash -or $currentHash -ne $item.expectedHash){throw ('File changed outside this operation; review before restoring: '+$item.path)}};if($item.backup){if(-not (Under $item.backup (Join-Path $root 'backups'))){throw 'Recovery backup is outside protected storage'};No-Reparse $item.backup;if(-not $item.originalHash -or (Get-FileHash -LiteralPath $item.backup -Algorithm SHA256).Hash -ne $item.originalHash){throw 'Recovery backup content does not match the recorded original digest'};Copy-Item -LiteralPath $item.backup -Destination $item.path -Force}else{Remove-Item -LiteralPath $item.path -ErrorAction SilentlyContinue}}
     }}catch{$rollbackErrors+=@($_.Exception.Message)}}
@@ -2739,6 +2806,15 @@ function Recover-Operation {
                         if($phase){$entry.importOnly=$true}
                         else{$entry | Add-Member -NotePropertyName importOnly -NotePropertyValue $true}
                     }
+                }
+            }
+            'drover' {
+                if($entry.manifestSHA256 -isnot [string] -or $entry.manifestSHA256 -notmatch '\A[a-fA-F0-9]{64}\z'){
+                    throw 'Recovery journal contains an invalid Drover ownership digest'
+                }
+                $currentDrover=Get-DroverFileHash (Join-Path $root 'profiles\drover-owned.json')
+                if($currentDrover -and $currentDrover -ine $entry.manifestSHA256){
+                    throw 'Drover recovery journal differs from the current ownership record'
                 }
             }
             'cache' {if($entry.path -ne (Join-Path $env:APPDATA 'discord') -or -not (Under $entry.backup (Join-Path $root 'backups'))){throw 'Recovery journal contains an unmanaged cache path'}}

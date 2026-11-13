@@ -4,7 +4,7 @@ $source=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Windows workflow source failed parsing'}
-foreach($name in @('No-Reparse','Get-DroverFileHash','Get-DroverRestorePlan','Restore-Drover')){
+foreach($name in @('No-Reparse','Install-Drover','Recover-Operation','Rollback','Set-DroverFile','Get-DroverFileHash','Get-DroverRestorePlan','Restore-Drover')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -15,12 +15,29 @@ function Assert-TrustedItem([string]$path){No-Reparse $path}
 function Stop-AppProcesses([string]$variant){
     if($variant -cne 'discord'){throw 'Wrong client selected'}
     $script:stops++
+    if($script:verifyPrepared){
+        if(-not [IO.File]::Exists($manifest) -or $script:undo.Count -ne 1 -or
+           $script:undo[0].kind -cne 'drover' -or
+           $script:undo[0].manifestSHA256 -ine (Get-DroverFileHash $manifest) -or
+           [IO.File]::Exists($first) -or [IO.File]::Exists($second)){throw 'Install changed files before publishing recovery'}
+        if($script:breakInstall){[IO.File]::WriteAllText($ini,'changed input')}
+    }
 }
 function Event([string]$text){$script:events++}
+function Save-Journal {
+    if([IO.File]::Exists($manifest)){throw 'Ownership was published before journaling'}
+    $script:journaled=$true
+}
+function Ensure-Asset([string]$asset){
+    if($asset -cne 'drover'){throw 'Unexpected fixture asset'}
+    return $dll
+}
+function Discord-Directories {return $version}
+function Read-WorkflowRecoveryJournal([string]$Path){return @{undo=@($script:savedRecovery)}}
 function Remove-Item {
     param($LiteralPath,$ErrorAction)
     if($LiteralPath -ieq $second -and $script:denySecond){throw 'Synthetic failed removal'}
-    if($LiteralPath -ine $second -and $LiteralPath -ine $manifest){throw 'Unexpected fixture mutation'}
+    if($LiteralPath -ine $first -and $LiteralPath -ine $second -and $LiteralPath -ine $manifest){throw 'Unexpected fixture mutation'}
     Microsoft.PowerShell.Management\Remove-Item -LiteralPath $LiteralPath -ErrorAction Stop
 }
 function Require([bool]$condition,[string]$reason){if(-not $condition){throw $reason}}
@@ -40,7 +57,10 @@ $manifest=Join-Path $profiles 'drover-owned.json'
 $first=Join-Path $version 'version.dll'
 $second=Join-Path $version 'drover.ini'
 $backup=Join-Path $backups ('a'*32)
-$files=@($first,$second,$backup,$manifest)
+$assets=Join-Path $root 'components'
+$dll=Join-Path $assets 'fixture.dll'
+$ini=Join-Path $assets 'drover.ini'
+$files=@($first,$second,$backup,$manifest,$dll,$ini)
 try {
     foreach($path in @($version,$profiles,$backups)){[void][IO.Directory]::CreateDirectory($path)}
     [IO.File]::WriteAllText($backup,'original DLL')
@@ -96,11 +116,58 @@ try {
     Require (-not [IO.Directory]::Exists($version) -and [IO.File]::Exists($backup) -and
              -not [IO.File]::Exists($manifest) -and $script:stops -eq $before) 'Retired version was recreated or lost its backup'
 
+    foreach($path in @($version,$assets)){[void][IO.Directory]::CreateDirectory($path)}
+    [IO.File]::WriteAllText($dll,'new DLL')
+    [IO.File]::WriteAllText($ini,'new INI')
+    $script:undo=[Collections.Generic.List[object]]::new()
+    $script:verifyPrepared=$true
+    $script:breakInstall=$true
+    $script:journaled=$false
+    $failed=$false
+    try {Install-Drover}catch{
+        if($_.Exception.Message -cne 'Drover source changed before publication'){throw}
+        $failed=$true
+    }
+    Require ($failed -and $script:journaled -and [IO.File]::Exists($first) -and
+             -not [IO.File]::Exists($second) -and [IO.File]::Exists($manifest)) 'Partial install could not be identified'
+    $oldDigest=$script:undo[0].manifestSHA256
+    $script:verifyPrepared=$false
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 0 -and -not [IO.File]::Exists($first) -and
+             -not [IO.File]::Exists($manifest)) 'Digest-bound rollback did not restore the incomplete install'
+
+    [IO.File]::WriteAllText($ini,'new INI')
+    $script:undo.Clear()
+    $script:breakInstall=$false
+    $script:verifyPrepared=$true
+    Install-Drover
+    $script:verifyPrepared=$false
+    Require ([IO.File]::Exists($first) -and [IO.File]::Exists($second)) 'Complete install did not publish both files'
+    $script:undo.Clear()
+    $script:undo.Add(@{kind='drover';manifestSHA256=$oldDigest})
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and [IO.File]::Exists($manifest) -and
+             [IO.File]::Exists($first) -and [IO.File]::Exists($second)) 'Stale rollback changed the current installation'
+    $script:savedRecovery=@(
+        @{kind='drover';manifestSHA256=$oldDigest},
+        @{kind='service';name='AccessWeaver-byedpi'}
+    )
+    function Stop-Service {throw 'Stale explicit recovery reached service mutation'}
+    $r=@{journalId=('workflow-'+('a'*32)+'.json')}
+    $refused=$false
+    try {Recover-Operation}catch{$refused=$_.Exception.Message -ceq 'Drover recovery journal differs from the current ownership record'}
+    Require ($refused -and $script:undo.Count -eq 1 -and [IO.File]::Exists($first) -and
+             [IO.File]::Exists($second)) 'Stale explicit recovery reached rollback'
+    Restore-Drover
+    Require (-not [IO.File]::Exists($manifest) -and -not [IO.File]::Exists($first) -and
+             -not [IO.File]::Exists($second)) 'Normal removal could not restore the latest installation'
+
+
 } finally {
     $env:LOCALAPPDATA=$previous
     foreach($path in $files){if([IO.File]::Exists($path)){[IO.File]::Delete($path)}}
-    foreach($directory in @($version,(Split-Path -Parent $version),(Join-Path $temp 'user'),$profiles,$backups,$root,$temp)){
+    foreach($directory in @($version,(Split-Path -Parent $version),(Join-Path $temp 'user'),$profiles,$backups,$assets,$root,$temp)){
         if([IO.Directory]::Exists($directory)){[IO.Directory]::Delete($directory)}
     }
 }
-Write-Output 'Eight bounded Drover restoration scenarios passed.'
+Write-Output 'Twelve bounded Drover install and restoration scenarios passed.'
