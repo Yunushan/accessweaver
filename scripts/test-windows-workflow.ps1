@@ -414,9 +414,21 @@ try {
     function Find-App {param($variant);return $fixtureApp}
     function Require-DesktopUser {}
     function Get-Process {param($ErrorAction);return $script:appStopRecord}
-    function Stop-Process {param($Id,$ErrorAction);$script:appStopCalls++;if($script:appStopFailure){throw 'private fixture detail'}}
     $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false
-    $script:appStopRecord=[pscustomobject]@{Path=$fixtureApp;Id=123;HasExited=$false}
+    $script:appStopWaits=0
+    $script:appStopDisposals=0
+    $script:appStopRecord=[pscustomobject]@{Path=$fixtureApp;Handle=[IntPtr]123;HasExited=$false;ExitObserved=$false}
+    $script:appStopRecord | Add-Member ScriptMethod Kill {
+        $script:appStopCalls++
+        if($script:appStopFailure){throw 'private fixture detail'}
+    }
+    $script:appStopRecord | Add-Member ScriptMethod Dispose { $script:appStopDisposals++ }
+    $script:appStopRecord | Add-Member ScriptMethod WaitForExit {
+        param($milliseconds)
+        $script:appStopWaits++
+        if($milliseconds -ne 5000){throw 'Unexpected exit deadline'}
+        return $this.ExitObserved
+    }
     $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Expected exactly one SplitCord uninstaller'}
     Assert ($rejected -and $script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) 'Application removal leaves processes running when the uninstaller is missing'
     [IO.File]::WriteAllBytes($fixtureUninstaller,[byte[]]@(0))
@@ -427,15 +439,20 @@ try {
     $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process could not be stopped; the operation was not continued'}
     Assert ($rejected -and $script:appStopCalls -eq 1 -and $script:externalEffectsPending) 'Application removal stops on a matching process failure and records an external effect'
     $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false
-    $script:appStopRecord=[pscustomobject]@{Path=$fixtureApp;Id=123;HasExited=$true}
+    $script:appStopRecord.HasExited=$true
     Stop-AppProcesses 'splitcord'
     Assert ($script:appStopCalls -eq 1 -and $script:externalEffectsPending) 'Application process exit race remains a recorded external effect'
     $script:appStopCalls=0;$script:appStopFailure=$false;$script:externalEffectsPending=$false
-    $script:appStopRecord=[pscustomobject]@{Path=$fixtureApp;Id=123;HasExited=$false}
+    $script:appStopRecord.HasExited=$false
+    $rejected=$false
+    try {Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process could not be stopped; the operation was not continued'}
+    Assert ($rejected -and $script:appStopCalls -eq 1 -and $script:appStopWaits -eq 1 -and $script:externalEffectsPending) 'Application removal refuses an unconfirmed process exit'
+    $script:appStopCalls=0;$script:appStopWaits=0;$script:externalEffectsPending=$false
+    $script:appStopRecord.ExitObserved=$true
     Stop-AppProcesses 'splitcord'
-    Assert ($script:appStopCalls -eq 1 -and $script:externalEffectsPending) 'Application process stop records an external effect'
+    Assert ($script:appStopCalls -eq 1 -and $script:appStopWaits -eq 1 -and $script:appStopDisposals -eq 4 -and $script:externalEffectsPending) 'Application process stop records an external effect'
 } finally {
-    Remove-Item Function:Get-Process;Remove-Item Function:Stop-Process
+    Remove-Item Function:Get-Process
     Set-Item Function:Find-App $previousFindApp;Set-Item Function:Require-DesktopUser $previousDesktopGuard
     $script:externalEffectsPending=$false
 }

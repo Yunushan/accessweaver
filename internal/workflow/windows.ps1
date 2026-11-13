@@ -1608,9 +1608,18 @@ function Stop-AppProcesses([string]$variant) {
             # Terminating a user application is an external effect even if a
             # later stop or uninstall fails; it cannot be rolled back here.
             $script:externalEffectsPending=$true
-            try{Stop-Process -Id $process.Id -ErrorAction Stop}catch{
-                $exited=$false;try{$exited=($process.HasExited -eq $true)}catch{}
+            try {
+                # Cache the native handle on this Process instance. Stop and
+                # wait use that instance rather than reopening a numeric PID.
+                if($process.Handle -eq [IntPtr]::Zero){throw 'Application process handle is unavailable'}
+                $process.Kill()
+                if(-not $process.WaitForExit(5000)){throw 'Application exit was not observed'}
+            } catch {
+                $exited=$false
+                try {$exited=$process.HasExited -eq $true}catch{}
                 if(-not $exited){throw 'A matching application process could not be stopped; the operation was not continued'}
+            } finally {
+                $process.Dispose()
             }
         }
     }
