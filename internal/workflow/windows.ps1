@@ -2804,31 +2804,48 @@ function Install-App([string]$variant,[switch]$Reinstall) {
     else{Event ('Application installed: '+$variant)}
     return @{application=$variant;installed=$true;previouslyInstalled=$previouslyInstalled}
 }
+function Get-AppUninstaller([string]$variant,[string]$app) {
+    if($variant -in @('discord','discord-ptb')){
+        $folder=if($variant -eq 'discord'){'Discord'}else{'DiscordPTB'}
+        $path=Join-Path $env:LOCALAPPDATA ($folder+'\Update.exe')
+        $arguments=@('--uninstall','-s')
+        $timeout=300
+    }else{
+        $directory=Split-Path -Parent $app
+        $candidates=@(Get-ChildItem -LiteralPath $directory -Filter 'Uninstall*.exe' -File -ErrorAction Stop)
+        if($candidates.Count -ne 1){throw 'Expected exactly one SplitCord uninstaller'}
+        $path=$candidates[0].FullName
+        $arguments=@('/S')
+        $timeout=600
+    }
+    No-Reparse $path
+    if(-not (Test-Path -LiteralPath $path -PathType Leaf -ErrorAction Stop)){throw 'Application uninstaller not found'}
+    return @{path=$path;arguments=$arguments;timeout=$timeout}
+}
+function Get-AppUninstallerDigest([string]$path) {
+    $file=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($file.Length -le 0 -or $file.Length -gt 512MB){throw 'Application uninstaller exceeds inspection limits'}
+        return (Get-FileHash -InputStream $file -Algorithm SHA256 -ErrorAction Stop).Hash
+    } finally {$file.Dispose()}
+}
 function Remove-App([string]$variant,[string]$expectedApp) {
     Require-DesktopUser
     $app=Find-App $variant
     if($expectedApp -and $app -ine $expectedApp){throw 'Application installation changed before removal'}
     if(-not $app){return}
     No-Reparse $app
-    if($variant -in @('discord','discord-ptb')){
-        $folder=if($variant -eq 'discord'){'Discord'}else{'DiscordPTB'}
-        $uninstaller=Join-Path $env:LOCALAPPDATA ($folder+'\Update.exe')
-        $arguments=@('--uninstall','-s')
-        $timeout=300
-    }else{
-        $directory=Split-Path -Parent $app
-        $candidates=@(Get-ChildItem -LiteralPath $directory -Filter 'Uninstall*.exe' -File)
-        if($candidates.Count -ne 1){throw 'Expected exactly one SplitCord uninstaller'}
-        $uninstaller=$candidates[0].FullName
-        $arguments=@('/S')
-        $timeout=600
-    }
-    No-Reparse $uninstaller
-    if(-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)){throw 'Application uninstaller not found'}
+    $uninstaller=Get-AppUninstaller $variant $app
+    $digest=Get-AppUninstallerDigest $uninstaller.path
     Stop-AppProcesses $variant $app
-    No-Reparse $uninstaller
+    if((Find-App $variant) -ine $app){throw 'Application installation changed before uninstall launch'}
+    No-Reparse $app
+    $confirmed=Get-AppUninstaller $variant $app
+    if($confirmed.path -ine $uninstaller.path -or (Get-AppUninstallerDigest $confirmed.path) -cne $digest){
+        throw 'Application uninstaller changed before launch'
+    }
     Save-ApplicationEffectBoundary
-    [void](Native $uninstaller $arguments -Timeout $timeout)
+    [void](Native $confirmed.path $confirmed.arguments -Timeout $confirmed.timeout)
     Wait-App $variant $false 60 $app
     Wait-AppProcessesExited $variant $app
     Event ('Application uninstalled: '+$variant)

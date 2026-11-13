@@ -1501,12 +1501,16 @@ try {
 }
 # Verify vendor completion against the previous executable and a fresh process snapshot.
 $appRemovalSaved=@{}
-foreach($name in @('Require-DesktopUser','Find-App','Native','Event')){
+foreach($name in @('Require-DesktopUser','Find-App','Native','Event','Stop-AppProcesses')){
     $appRemovalSaved[$name]=(Get-Command $name).ScriptBlock
 }
 try {
     function Require-DesktopUser {}
-    function Find-App {param($variant);if(-not $script:appRemovalInvoked){return $fixtureApp}}
+    function Find-App {
+        param($variant)
+        if($script:appRemovalMoved){return $fixtureApp+'.replacement'}
+        if(-not $script:appRemovalInvoked){return $fixtureApp}
+    }
     function Native {
         param($program,$arguments,$Timeout)
         $script:appRemovalInvoked=$true
@@ -1552,6 +1556,7 @@ try {
     Assert $true 'Application removal accepts exited matches and ignores unrelated processes'
     $appRemovalProcesses=@()
     $script:appRemovalEvents=[Collections.Generic.List[string]]::new()
+    $script:appRemovalMoved=$false
     $script:appRemovalDelete=$false
     $script:appRemovalFail=$true
     $script:appRemovalInvoked=$false
@@ -1559,6 +1564,30 @@ try {
     $rejected=$false
     try {Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'synthetic vendor failure'}
     Assert ($rejected -and $script:appRemovalInvoked -and $script:externalEffectsPending -and $script:appRemovalEvents.Count -eq 0) 'Application removal records vendor side effects even without a process stop'
+    function Stop-AppProcesses {
+        param($variant,$app)
+        switch ($script:appRemovalChange) {
+            'client' {$script:appRemovalMoved=$true}
+            'uninstaller' {[IO.File]::WriteAllBytes($fixtureUninstaller,[byte[]]@(1))}
+            'ambiguous' {[IO.File]::WriteAllBytes($secondUninstaller,[byte[]]@(0))}
+        }
+    }
+    foreach($case in @(
+        @{kind='client';error='Application installation changed before uninstall launch'},
+        @{kind='uninstaller';error='Application uninstaller changed before launch'},
+        @{kind='ambiguous';error='Expected exactly one SplitCord uninstaller'}
+    )){
+        $script:appRemovalInvoked=$false
+        $script:appRemovalChange=$case.kind
+        $script:externalEffectsPending=$false
+        $rejected=$false
+        try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq $case.error}
+        Assert ($rejected -and -not $script:appRemovalInvoked -and -not $script:externalEffectsPending) ('Application removal refuses '+$case.kind+' changes before vendor launch')
+        $script:appRemovalMoved=$false
+        [IO.File]::WriteAllBytes($fixtureUninstaller,[byte[]]@(0))
+        [IO.File]::Delete($secondUninstaller)
+    }
+    $script:appRemovalChange=$null
     $script:appRemovalInvoked=$false
     $script:appRemovalFail=$false
     $script:appRemovalDelete=$true
