@@ -953,14 +953,51 @@ function WireSock-CLI {
     foreach($path in @((Join-Path $env:ProgramFiles 'WireSock Secure Connect\command-line\wiresock-connect-cli.exe'),(Join-Path $env:ProgramFiles 'WireSock Secure Connect\bin\wiresock-client.exe'),(Join-Path $env:ProgramFiles 'WireSock VPN Client\bin\wiresock-client.exe'))) {if(Test-Path -LiteralPath $path){return $path}}
     return $null
 }
+function Copy-BundledInstaller([IO.FileInfo]$installer,[ref]$OwnedPath) {
+    # Use the same protected bytes for signature validation and execution.
+    No-Reparse $installer.FullName
+    $directory=Join-Path $root 'downloads'
+    No-Reparse $directory
+    $candidate=Join-Path $directory ([guid]::NewGuid().ToString('N')+'-'+$installer.Name)
+    $source=[IO.File]::Open($installer.FullName,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($source.Length -le 0 -or $source.Length -gt (2147483648L+32MB)){
+            throw 'Bundled installer exceeds the supported size or is empty'
+        }
+        $target=[IO.File]::Open($candidate,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        $OwnedPath.Value=$candidate
+        try {$source.CopyTo($target)}finally{$target.Dispose()}
+    } finally {$source.Dispose()}
+}
 function Install-WireSock {
     if($r.downloadUrl -and ($r.downloadUrl -cnotmatch '^https://' -or ([string]$r.sha256).Length -ne 64 -or $r.sha256 -notmatch '^[a-fA-F0-9]{64}$')){throw 'Custom WireSock installer requires an HTTPS URL and SHA-256'}
     $cli=WireSock-CLI;if($cli){return $cli}
     $installer=$null
-    foreach($base in @($r.bundlePath,(Join-Path $env:ProgramFiles 'SplitWire-Turkey\res'))) {if($base -and (Test-Path -LiteralPath $base)){$installer=Get-ChildItem -LiteralPath $base -Recurse -Filter 'wiresock-secure-connect-x64-*.exe' | Sort-Object Name -Descending | Select-Object -First 1;if($installer){break}}}
+    $bundleRoots=@($r.bundlePath)
+    if(-not $inputData.managedPolicy){$bundleRoots+=@(Join-Path $env:ProgramFiles 'SplitWire-Turkey\res')}
+    foreach($base in $bundleRoots){
+        if($base -and (Test-Path -LiteralPath $base -PathType Container)){
+            No-Reparse $base
+            $installer=Get-ChildItem -LiteralPath $base -Recurse -Filter 'wiresock-secure-connect-x64-*.exe' -File | Sort-Object Name -Descending | Select-Object -First 1
+            if($installer){break}
+        }
+    }
+    $bundleInstaller=$installer
     if(-not $installer){$url=$r.downloadUrl;$hash=$r.sha256;if(-not $url){$url='https://wiresock.net/_api/download-release.php?product=wiresock-secure-connect&platform=windows_x64&version=3.8.1.1';$hash='bd5a7eba32177b1022eda42d233b6b7848ea38604a63b0205666b4060b89a375'};$target=Join-Path $root 'downloads\wiresock-setup.exe';Download $url $hash $target -Signed -Publisher wiresock;$installer=Get-Item -LiteralPath $target}
-    $sig=Get-AuthenticodeSignature -LiteralPath $installer.FullName;if($sig.Status -ne 'Valid'){throw 'WireSock installer signature is invalid'}
-    [void](Native $installer.FullName @('/install','/quiet','/norestart') @(0,3010,1641))
+    $staged=$null
+    try {
+        $installerPath=$installer.FullName
+        if($bundleInstaller){
+            Copy-BundledInstaller $installer ([ref]$staged)
+            $installerPath=$staged
+        }
+        No-Reparse $installerPath
+        $sig=Get-AuthenticodeSignature -LiteralPath $installerPath
+        if(-not (Test-InstallerPublisher 'wiresock' $sig)){throw 'WireSock installer publisher signature could not be verified'}
+        [void](Native $installerPath @('/install','/quiet','/norestart') @(0,3010,1641))
+    } finally {
+        if($staged){[IO.File]::Delete($staged)}
+    }
     $cli=WireSock-CLI;if(-not $cli){throw 'WireSock installation did not produce a CLI; reboot may be required'}
     return $cli
 }
@@ -1138,29 +1175,12 @@ function Install-Prerequisite([string]$component) {
     }
     $installerPath=$installer.FullName
     $staged=$null
-    $source=$null
-    $target=$null
     try {
-        No-Reparse $installerPath
         if($bundleInstaller){
-            # Validate and run the same bytes from the machine-owned download
-            # directory. The original bundle can be writable by the caller.
-            $directory=Join-Path $root 'downloads'
-            No-Reparse $directory
-            $candidate=Join-Path $directory ([guid]::NewGuid().ToString('N')+'-'+$installer.Name)
-            $source=[IO.File]::Open($installerPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-            if($source.Length -le 0 -or $source.Length -gt (2147483648L+32MB)){
-                throw 'Bundled prerequisite exceeds the supported size or is empty'
-            }
-            $target=[IO.File]::Open($candidate,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
-            $staged=$candidate
-            $source.CopyTo($target)
-            $target.Dispose()
-            $target=$null
-            $source.Dispose()
-            $source=$null
+            Copy-BundledInstaller $installer ([ref]$staged)
             $installerPath=$staged
         }
+        No-Reparse $installerPath
         $signature=Get-AuthenticodeSignature -LiteralPath $installerPath
         if($signature.Status -ne 'Valid'){throw 'Prerequisite signature is invalid'}
         if($component -eq 'vcredist' -and -not (Test-InstallerPublisher 'microsoft' $signature)){
@@ -1175,15 +1195,7 @@ function Install-Prerequisite([string]$component) {
             [void](Native $installerPath @('/install','/quiet','/norestart') @(0,3010,1641))
         }
     } finally {
-        try {
-            if($target){$target.Dispose()}
-        } finally {
-            try {
-                if($source){$source.Dispose()}
-            } finally {
-                if($staged){[IO.File]::Delete($staged)}
-            }
-        }
+        if($staged){[IO.File]::Delete($staged)}
     }
     if($script:rebootRequired){
         Event ('Prerequisite installer requires a Windows restart: '+$component)

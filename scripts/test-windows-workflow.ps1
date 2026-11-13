@@ -530,6 +530,48 @@ try {
     $result=Install-WireSock
     Assert ($result -ceq 'C:\fixture\wiresock.exe' -and $script:wireSockDiscoveryCount -eq 1) 'Default WireSock request reaches mocked discovery'
 } finally {Set-Item Function:WireSock-CLI $previousWireSockCLI;$r=$previousWireSockRequest}
+# Exercise the bundled WireSock path using an inert file and mocked launch.
+$previousWireSockRequest=$r
+$wireSockFixtureFunctions=@{}
+foreach($name in @('WireSock-CLI','Get-AuthenticodeSignature','Native')){
+    $wireSockFixtureFunctions[$name]=(Get-Command $name).ScriptBlock
+}
+try {
+    $wireSockBundle=Join-Path $testRoot 'wiresock-bundle'
+    [void](New-Item -ItemType Directory -Path $wireSockBundle)
+    $wireSockInstaller=Join-Path $wireSockBundle 'wiresock-secure-connect-x64-fixture.exe'
+    [IO.File]::WriteAllBytes($wireSockInstaller,[byte[]]@(0))
+    $r=[pscustomobject]@{bundlePath=$wireSockBundle}
+    $script:fixtureWireSockInstalled=$false
+    $script:fixtureWireSockLaunch=$null
+    $script:fixtureWireSockSignedPath=$null
+    $script:fixtureWireSockSubject='CN=Other fixture publisher'
+    function WireSock-CLI {if($script:fixtureWireSockInstalled){return 'C:\fixture\wiresock.exe'}}
+    function Get-AuthenticodeSignature {
+        param($LiteralPath)
+        $script:fixtureWireSockSignedPath=$LiteralPath
+        return @{Status='Valid';SignerCertificate=@{Subject=$script:fixtureWireSockSubject}}
+    }
+    function Native {
+        param($program,$arguments,$codes)
+        if(-not (Test-Path -LiteralPath $program -PathType Leaf)){throw 'Missing staged installer at mocked launch'}
+        $script:fixtureWireSockLaunch=$program
+        $script:fixtureWireSockInstalled=$true
+        return @{exitCode=0}
+    }
+    $rejected=$false
+    try {Install-WireSock | Out-Null}catch{$rejected=$_.Exception.Message -ceq 'WireSock installer publisher signature could not be verified'}
+    Assert ($rejected -and -not $script:fixtureWireSockLaunch -and (Under $script:fixtureWireSockSignedPath (Join-Path $root 'downloads')) -and -not (Test-Path -LiteralPath $script:fixtureWireSockSignedPath)) 'Bundled WireSock rejects an unrelated publisher and retires the staged copy'
+    $script:fixtureWireSockSubject='CN=WireSock fixture'
+    $wireSockResult=Install-WireSock
+    Assert ($wireSockResult -ceq 'C:\fixture\wiresock.exe' -and $script:fixtureWireSockLaunch -ceq $script:fixtureWireSockSignedPath -and (Under $script:fixtureWireSockLaunch (Join-Path $root 'downloads')) -and -not (Test-Path -LiteralPath $script:fixtureWireSockLaunch) -and (Test-Path -LiteralPath $wireSockInstaller)) 'Bundled WireSock launches only the verified staged installer and retires it'
+} finally {
+    foreach($name in $wireSockFixtureFunctions.Keys){
+        if($null -eq $wireSockFixtureFunctions[$name]){Remove-Item ('Function:'+$name)}
+        else{Set-Item ('Function:'+$name) $wireSockFixtureFunctions[$name]}
+    }
+    $r=$previousWireSockRequest
+}
 # Publisher-category checks use synthetic signature records only.
 $signatureDiscord=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Discord fixture'}}
 $signatureMicrosoft=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Microsoft fixture'}}
