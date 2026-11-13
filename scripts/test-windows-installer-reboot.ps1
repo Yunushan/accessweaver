@@ -10,6 +10,8 @@ param(
     [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$PublisherCertificateSHA256,
     [string]$PreviousVersion='',
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousPayloadSHA256='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousPayloadSBOMSHA256='',
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousPayloadPublisherCertificateSHA256='',
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousSetupSHA256='',
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousPublisherCertificateSHA256='',
     [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$PayloadSBOMSHA256
@@ -39,11 +41,16 @@ function Write-NewRebootEvidence([string]$Path,$Data){
         [IO.File]::Move($staged,$Path)
     } finally {[IO.File]::Delete($staged)}
 }
-function Get-RebootInstallMode([string]$Version,[string]$PayloadSHA256,[string]$PreviousVersion,[string]$PreviousPayloadSHA256){
-    if(-not $PreviousVersion -and -not $PreviousPayloadSHA256){return 'clean'}
-    if(-not $PreviousVersion -or $PreviousPayloadSHA256 -notmatch '\A[a-fA-F0-9]{64}\z' -or
-        $Version -ceq $PreviousVersion -or $PayloadSHA256 -ieq $PreviousPayloadSHA256){
-        throw 'Upgrade qualification requires distinct approved previous version and payload identities'
+function Get-RebootInstallMode([string]$Version,[string]$PayloadSHA256,[string]$PreviousVersion,[string]$PreviousPayloadSHA256,
+        [string]$PreviousPayloadSBOMSHA256,[string]$PreviousPayloadPublisherSHA256){
+    if(-not ($PreviousVersion -or $PreviousPayloadSHA256 -or $PreviousPayloadSBOMSHA256 -or $PreviousPayloadPublisherSHA256)){
+        return 'clean'
+    }
+    if(-not $PreviousVersion -or $Version -ceq $PreviousVersion -or $PayloadSHA256 -ieq $PreviousPayloadSHA256){
+        throw 'Upgrade qualification requires a distinct approved previous release'
+    }
+    foreach($pin in @($PreviousPayloadSHA256,$PreviousPayloadSBOMSHA256,$PreviousPayloadPublisherSHA256)){
+        if($pin -notmatch '\A[a-fA-F0-9]{64}\z'){throw 'Upgrade qualification requires approved previous payload, SBOM and publisher digests'}
     }
     return 'upgrade'
 }
@@ -62,10 +69,14 @@ function Assert-RebootUpgradeOrder($Comparison,[string]$PreviousVersion,[string]
     }
 }
 function Assert-RebootIdentity($Record,$Expected){
-    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 7 -or
+    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 8 -or
        $Record.runID -cne $Expected.runID -or $Record.architecture -cne $Expected.architecture -or
        $Record.installMode -cne $Expected.installMode -or $Record.previousVersion -cne $Expected.previousVersion -or
        $Record.previousPayloadSHA256 -cne $Expected.previousPayloadSHA256 -or
+       $Record.previousPayloadSBOMSHA256 -cne $Expected.previousPayloadSBOMSHA256 -or
+       $Record.previousPayloadPublisherSHA256 -cne $Expected.previousPayloadPublisherSHA256 -or
+       $Record.previousPayloadTrustVerified -isnot [bool] -or
+       $Record.previousPayloadTrustVerified -ne ($Expected.installMode -ceq 'upgrade') -or
        $Record.previousSetupSHA256 -cne $Expected.previousSetupSHA256 -or
        $Record.previousPublisherSHA256 -cne $Expected.previousPublisherSHA256 -or
        $Record.userProfilePreservedThroughUpgrade -isnot [bool] -or
@@ -262,8 +273,8 @@ function Assert-InstalledDetection([bool]$Detected,[string]$CandidateVersion=$Ve
         if($output.Count -ne 1 -or $output[0] -cne 'AccessWeaver detected'){throw 'Approved installed payload was not detected'}
     } elseif($output.Count -ne 0){throw 'Unexpected approved installation already exists'}
 }
-function Assert-InstalledPublisher {
-    $null=@(& $publisher -Artifact $controller -ArtifactSHA256 $PayloadSHA256 -PublisherCertificateSHA256 $PublisherCertificateSHA256)
+function Assert-InstalledPublisher([string]$ArtifactSHA256=$PayloadSHA256,[string]$PublisherSHA256=$PublisherCertificateSHA256) {
+    $null=@(& $publisher -Artifact $controller -ArtifactSHA256 $ArtifactSHA256 -PublisherCertificateSHA256 $PublisherSHA256)
     if($LASTEXITCODE -ne 0){throw 'Installed payload publisher verification failed'}
 }
 function Assert-RegistrationAbsent {
@@ -316,7 +327,7 @@ $common=Join-Path $PSScriptRoot 'windows-installer-common.ps1'
 Assert-RebootPath $common
 . $common
 Assert-InstallerReleaseVersion $Version
-$installMode=Get-RebootInstallMode $Version $PayloadSHA256 $PreviousVersion $PreviousPayloadSHA256
+$installMode=Get-RebootInstallMode $Version $PayloadSHA256 $PreviousVersion $PreviousPayloadSHA256 $PreviousPayloadSBOMSHA256 $PreviousPayloadPublisherCertificateSHA256
 if($installMode -ceq 'upgrade'){Assert-InstallerReleaseVersion $PreviousVersion}
 $testDowngrade=Test-RebootDowngradeInputs $installMode $SetupSHA256 $PreviousSetupSHA256 $PreviousPublisherCertificateSHA256
 $setup=Join-Path $PSScriptRoot 'setup.exe'
@@ -329,8 +340,10 @@ $registrationKey='SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{B13D4677-
 $capsule=Join-Path $programFiles ('AccessWeaver reboot fixture '+$RunID)
 $baseline=Join-Path $capsule 'prepared.json'
 $report=Join-Path $capsule 'result.json'
-$expected=[ordered]@{schemaVersion=7;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+$expected=[ordered]@{schemaVersion=8;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
     previousVersion=$PreviousVersion;previousPayloadSHA256=$PreviousPayloadSHA256.ToLowerInvariant();
+    previousPayloadSBOMSHA256=$PreviousPayloadSBOMSHA256.ToLowerInvariant();
+    previousPayloadPublisherSHA256=$PreviousPayloadPublisherCertificateSHA256.ToLowerInvariant();previousPayloadTrustVerified=$false;
     previousSetupSHA256=$PreviousSetupSHA256.ToLowerInvariant();previousPublisherSHA256=$PreviousPublisherCertificateSHA256.ToLowerInvariant();
     userProfilePreservedThroughUpgrade=$false;
     setupSHA256=$SetupSHA256.ToLowerInvariant();payloadSHA256=$PayloadSHA256.ToLowerInvariant();
@@ -344,8 +357,6 @@ if($Phase -ceq 'Prepare'){
     if($installMode -ceq 'clean'){
         Assert-RegistrationAbsent
         if(Test-Path -LiteralPath $install){throw 'Clean qualification requires an unused installation directory'}
-    }else{
-        Assert-InstalledDetection $true $PreviousVersion $PreviousPayloadSHA256 -CandidateSBOMSHA256 ''
     }
     $managed=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'AccessWeaver'
     if((Test-Path -LiteralPath $capsule) -or (Test-Path -LiteralPath $userStore) -or
@@ -365,9 +376,9 @@ if($Phase -ceq 'Prepare'){
             Assert-RebootPath $controller
             $guard=[IO.File]::Open($controller,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
             try {
-                if((Get-FileHash -InputStream $guard -Algorithm SHA256).Hash -ine $PreviousPayloadSHA256){
-                    throw 'Previous installed payload differs from the approved baseline'
-                }
+                Assert-InstalledDetection $true $PreviousVersion $PreviousPayloadSHA256 -CandidateSBOMSHA256 $PreviousPayloadSBOMSHA256
+                Assert-InstalledPublisher $PreviousPayloadSHA256 $PreviousPayloadPublisherCertificateSHA256
+                $expected.previousPayloadTrustVerified=$true
                 $comparison=@(& $controller system check-version $Version 2>$null) -join ""
                 if($LASTEXITCODE -ne 0 -or $comparison.Length -gt 4096){throw 'Previous controller could not compare release versions'}
                 Assert-RebootUpgradeOrder (ConvertFrom-Json -InputObject $comparison -ErrorAction Stop) $PreviousVersion $Version
@@ -406,7 +417,7 @@ if($Phase -ceq 'Prepare'){
         }
         Write-NewRebootEvidence $baseline $expected
     } catch {
-        Write-NewRebootEvidence $report @{schemaVersion=7;runID=$RunID;stage=$stage;passed=$false}
+        Write-NewRebootEvidence $report @{schemaVersion=8;runID=$RunID;stage=$stage;passed=$false}
         throw 'Windows installer reboot preparation failed. Retain the disposable guest for review.'
     }
     Write-Output 'Prepared the approved installation. Reboot the disposable guest before verification.'
@@ -418,9 +429,11 @@ if((Get-Item -LiteralPath $baseline).Length -gt 8192 -or (Test-Path -LiteralPath
 $saved=Get-Content -LiteralPath $baseline -Raw|ConvertFrom-Json
 Assert-RebootIdentity $saved $expected
 Assert-LaterGuestBoot $saved.boot $boot
-Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=7;runID=$RunID}
-$result=[ordered]@{schemaVersion=7;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=8;runID=$RunID}
+$result=[ordered]@{schemaVersion=8;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
     previousVersion=$expected.previousVersion;previousPayloadSHA256=$expected.previousPayloadSHA256;
+    previousPayloadSBOMSHA256=$expected.previousPayloadSBOMSHA256;previousPayloadPublisherSHA256=$expected.previousPayloadPublisherSHA256;
+    previousPayloadTrustVerified=$saved.previousPayloadTrustVerified;
     previousSetupSHA256=$expected.previousSetupSHA256;previousPublisherSHA256=$expected.previousPublisherSHA256;
     downgradeRequested=$testDowngrade;downgradeRefused=$false;downgradeStatePreserved=$false;
     userProfilePreservedThroughUpgrade=$saved.userProfilePreservedThroughUpgrade;

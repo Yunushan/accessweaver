@@ -22,8 +22,9 @@ Assert-Refused {Assert-LaterGuestBoot '639303000000000001' '639303000000000000'}
 Assert-Refused {Assert-LaterGuestBoot 'missing' '639303000000000000'}
 $pin='a'*64
 $expected=@{
-    schemaVersion=7;runID=('b'*32);architecture='amd64';version='1.0.0';
+    schemaVersion=8;runID=('b'*32);architecture='amd64';version='1.0.0';
     installMode='clean';previousVersion='';previousPayloadSHA256='';previousSetupSHA256='';previousPublisherSHA256='';userProfilePreservedThroughUpgrade=$false;
+    previousPayloadSBOMSHA256='';previousPayloadPublisherSHA256='';previousPayloadTrustVerified=$false;
     setupSHA256=$pin;payloadSHA256=$pin;payloadSBOMSHA256=('f'*64);publisherSHA256=$pin;userSID='synthetic-user';guestID='10000000-2000-3000-4000-000000000005';
     detectorSHA256=$pin;fixtureSHA256=$pin;commonSHA256=$pin;publisherVerifierSHA256=$pin
 }
@@ -39,7 +40,7 @@ foreach($key in $saved.Keys){
     $changed[$key]='changed'
     Assert-Refused {Assert-RebootIdentity $changed $expected}
 }
-$oldSchema=$saved.Clone();$oldSchema.schemaVersion=6
+$oldSchema=$saved.Clone();$oldSchema.schemaVersion=7
 Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
 
 & {
@@ -69,9 +70,11 @@ Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
            $trace[1].artifact -cne $controller -or $trace[1].sha256 -cne $PayloadSHA256 -or $trace[1].publisher -cne $PublisherCertificateSHA256){
             throw 'Installed candidate pins did not reach verification'
         }
-        Assert-InstalledDetection $true '1.0.0' ('e'*64) -CandidateSBOMSHA256 ''
-        if($trace[2].version -cne '1.0.0' -or $trace[2].payload -cne ('e'*64) -or $trace[2].sbom){
-            throw 'The previous installation received the current SBOM pin'
+        Assert-InstalledDetection $true '1.0.0' ('e'*64) -CandidateSBOMSHA256 ('f'*64)
+        Assert-InstalledPublisher ('e'*64) ('a'*64)
+        if($trace[2].version -cne '1.0.0' -or $trace[2].payload -cne ('e'*64) -or $trace[2].sbom -cne ('f'*64) -or
+           $trace[3].artifact -cne $controller -or $trace[3].sha256 -cne ('e'*64) -or $trace[3].publisher -cne ('a'*64)){
+            throw 'Prior installed payload verification did not receive the independent pins'
         }
         $behavior.detected=$false
         Assert-Refused {Assert-InstalledDetection $true}
@@ -88,11 +91,17 @@ Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
 }
 if((Get-RebootInstallMode '2.0.0' $pin '' '') -cne 'clean'){throw 'Clean baseline was refused'}
 $priorDigest='e'*64
-if((Get-RebootInstallMode '2.0.0' $pin '1.0.0' $priorDigest) -cne 'upgrade'){throw 'Pinned upgrade baseline was refused'}
-Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '1.0.0' ''}
-Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '' $priorDigest}
-Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '2.0.0' $priorDigest}
-Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '1.0.0' $pin}
+$priorSBOM='2'*64
+$priorPublisher='3'*64
+if((Get-RebootInstallMode '2.0.0' $pin '1.0.0' $priorDigest $priorSBOM $priorPublisher) -cne 'upgrade'){
+    throw 'Pinned upgrade baseline was refused'
+}
+Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '1.0.0' '' $priorSBOM $priorPublisher}
+Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '1.0.0' $priorDigest '' $priorPublisher}
+Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '1.0.0' $priorDigest $priorSBOM ''}
+Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '' '' '' $priorPublisher}
+Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '2.0.0' $priorDigest $priorSBOM $priorPublisher}
+Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '1.0.0' $pin $priorSBOM $priorPublisher}
 $olderSetupDigest='f'*64
 if(Test-RebootDowngradeInputs 'upgrade' $pin '' ''){throw 'Unrequested downgrade was enabled'}
 if(-not (Test-RebootDowngradeInputs 'upgrade' $pin $olderSetupDigest $pin)){throw 'Approved downgrade fixture was refused'}
@@ -111,10 +120,19 @@ Assert-Refused {Assert-RebootUpgradeOrder $comparison '1.0.1' '2.0.0'}
 Assert-Refused {Assert-RebootUpgradeOrder $comparison '1.0.0' '2.0.1'}
 $upgradeExpected=$expected.Clone()
 $upgradeExpected.installMode='upgrade';$upgradeExpected.previousVersion='0.9.0';$upgradeExpected.previousPayloadSHA256=$priorDigest
+$upgradeExpected.previousPayloadSBOMSHA256=$priorSBOM;$upgradeExpected.previousPayloadPublisherSHA256=$priorPublisher
 $upgraded=$saved.Clone()
 $upgraded.installMode='upgrade';$upgraded.previousVersion='0.9.0';$upgraded.previousPayloadSHA256=$priorDigest
+$upgraded.previousPayloadSBOMSHA256=$priorSBOM;$upgraded.previousPayloadPublisherSHA256=$priorPublisher
 $upgraded.userProfilePreservedThroughUpgrade=$true
+Assert-Refused {Assert-RebootIdentity $upgraded $upgradeExpected}
+$upgraded.previousPayloadTrustVerified=$true
 Assert-RebootIdentity $upgraded $upgradeExpected
+foreach($pinName in @('previousPayloadSBOMSHA256','previousPayloadPublisherSHA256')){
+    $mismatched=$upgraded.Clone()
+    $mismatched[$pinName]='0'*64
+    Assert-Refused {Assert-RebootIdentity $mismatched $upgradeExpected}
+}
 $upgraded.previousSetupSHA256=$olderSetupDigest
 $upgraded.previousPublisherSHA256=$pin
 Assert-Refused {Assert-RebootIdentity $upgraded $upgradeExpected}

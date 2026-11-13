@@ -155,7 +155,8 @@ def validate_detection(entries, subjects, version):
         previous_payload = entry["previousPayloadSHA256"]
         if entry["installMode"] == "upgrade":
             version_parts(previous_version)
-            require(previous_version != version and re.fullmatch(SHA256, previous_payload)
+            require(update_order(*parse_release_version(previous_version)) < update_order(*parse_release_version(version))
+                    and re.fullmatch(SHA256, previous_payload)
                     and previous_payload != targets[target, "payload"], "Invalid previous Windows package")
         else:
             require(previous_version == previous_payload == "", "Unexpected previous Windows package")
@@ -173,7 +174,7 @@ def load_detection_evidence(directory, evidence, subjects, version):
         content = independently_pinned_file(directory, path, fingerprint, maximum=8192)
         report = decode_json(content)
         require(isinstance(report, dict) and type(report.get("schemaVersion")) is int
-                and report["schemaVersion"] in (5, 6, 7) and report.get("stage") == "complete"
+                and report["schemaVersion"] in (5, 6, 7, 8) and report.get("stage") == "complete"
                 and all(report.get(field) is True for field in REBOOT_CHECKS),
                 "Windows reboot qualification is incomplete")
         architecture = report.get("architecture")
@@ -192,6 +193,14 @@ def load_detection_evidence(directory, evidence, subjects, version):
         if report["schemaVersion"] >= 7:
             require(report.get("userProfileOpenedByInstalledController") is True,
                     "Windows reboot evidence does not verify installed controller profile readback")
+        if report["schemaVersion"] >= 8:
+            prior_trust = report.get("previousPayloadTrustVerified")
+            prior_pins = (report.get("previousPayloadSBOMSHA256"), report.get("previousPayloadPublisherSHA256"))
+            if mode == "upgrade":
+                require(prior_trust is True and all(isinstance(pin, str) and re.fullmatch(SHA256, pin) for pin in prior_pins),
+                        "Windows upgrade evidence does not verify the previous installed payload publisher and SBOM")
+            else:
+                require(prior_trust is False and prior_pins == ("", ""), "Clean Windows evidence contains prior payload trust data")
         require(mode != "upgrade" or report.get("userProfilePreservedThroughUpgrade") is True,
                 "Windows upgrade qualification is incomplete")
         downgrade = report.get("downgradeRequested")

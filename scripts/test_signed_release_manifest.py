@@ -109,6 +109,13 @@ class SignedReleaseManifestTests(unittest.TestCase):
             )
         if overrides.get("schemaVersion", 5) >= 7:
             report["userProfileOpenedByInstalledController"] = True
+        if overrides.get("schemaVersion", 5) >= 8:
+            upgrade = overrides.get("installMode") == "upgrade"
+            report.update(
+                previousPayloadTrustVerified=upgrade,
+                previousPayloadSBOMSHA256="1" * 64 if upgrade else "",
+                previousPayloadPublisherSHA256="2" * 64 if upgrade else "",
+            )
         evidence = self.root / filename
         evidence.write_text(json.dumps({**report, **overrides}), encoding="utf-8")
         return evidence, release.digest(evidence)
@@ -210,6 +217,23 @@ class SignedReleaseManifestTests(unittest.TestCase):
                                       userProfileOpenedByInstalledController=1),),
             (self.write_reboot_report("partial-upgrade.json", installMode="upgrade",
                                       previousVersion="1.2.2", previousPayloadSHA256="d" * 64),),
+            (self.write_reboot_report("prior-trust-on-clean.json", schemaVersion=8,
+                                      previousPayloadTrustVerified=True),),
+            (self.write_reboot_report("unverified-prior-publisher.json", schemaVersion=8,
+                                      installMode="upgrade", previousVersion="1.2.2", previousPayloadSHA256="d" * 64,
+                                      userProfilePreservedThroughUpgrade=True, previousPayloadTrustVerified=False),),
+            (self.write_reboot_report("missing-prior-sbom.json", schemaVersion=8,
+                                      installMode="upgrade", previousVersion="1.2.2", previousPayloadSHA256="d" * 64,
+                                      userProfilePreservedThroughUpgrade=True, previousPayloadSBOMSHA256=""),),
+            (self.write_reboot_report("missing-prior-publisher.json", schemaVersion=8,
+                                      installMode="upgrade", previousVersion="1.2.2", previousPayloadSHA256="d" * 64,
+                                      userProfilePreservedThroughUpgrade=True, previousPayloadPublisherSHA256=""),),
+            (self.write_reboot_report("newer-baseline.json", schemaVersion=8,
+                                      installMode="upgrade", previousVersion="1.2.3", previousPayloadSHA256="d" * 64,
+                                      userProfilePreservedThroughUpgrade=True),),
+            (self.write_reboot_report("equal-precedence-baseline.json", schemaVersion=8,
+                                      installMode="upgrade", previousVersion="1.2.3-rc.1+build", previousPayloadSHA256="d" * 64,
+                                      userProfilePreservedThroughUpgrade=True),),
             (self.write_reboot_report("downgrade.json", downgradeRequested=True,
                                       downgradeRefused=True, downgradeStatePreserved=True),),
         ]
@@ -413,7 +437,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         manifest.unlink()
         signature.unlink()
         clean = self.write_reboot_report("clean.json")
-        upgrade = self.write_reboot_report("upgrade.json", installMode="upgrade",
+        upgrade = self.write_reboot_report("upgrade.json", schemaVersion=8, installMode="upgrade",
                                            previousVersion="1.2.2", previousPayloadSHA256="d" * 64,
                                            userProfilePreservedThroughUpgrade=True, uninstallerSHA256="e" * 64)
         arm = self.write_reboot_report("arm.json", architecture="arm64", schemaVersion=7, uninstallerSHA256="f" * 64)
