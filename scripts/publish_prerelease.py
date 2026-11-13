@@ -175,8 +175,22 @@ def publish_verified(directory, tag, commit, expected):
         return
     # Upload the time-bound provenance last so a partially uploaded build
     # can usually resume from a new attestation without fetching the old one.
+    pending = set(missing)
     for name in sorted(missing, key=lambda name: (name == BUNDLE_NAME, name)):
-        upload_asset(release_id, directory / name, expected[name])
+        if name not in pending:
+            continue
+        try:
+            upload_asset(release_id, directory / name, expected[name])
+        except (ValueError, OSError, subprocess.SubprocessError):
+            # A transport failure can occur after GitHub stored the bytes.
+            # Recover only after the original draft confirms the exact asset.
+            observed = view(tag)
+            if (observed is None or observed.get("databaseId") != release_id
+                    or observed.get("isDraft") is not True):
+                raise
+            pending = set(missing_assets(observed, tag, expected))
+            if name in pending:
+                raise
     release = view(tag)
     if release is None or release.get("databaseId") != release_id or missing_assets(release, tag, expected):
         raise ValueError("Release draft identity or asset verification is incomplete")

@@ -245,10 +245,33 @@ class PrereleasePublicationTests(unittest.TestCase):
 
     def test_interrupted_upload_does_not_promote_or_continue(self):
         with self.assertRaisesRegex(ValueError, "synthetic upload failure"):
-            self.run_publisher([self.release(True, 11)], upload_error=ValueError("synthetic upload failure"))
+            self.run_publisher([self.release(True, 11), self.release(True, 11)],
+                               upload_error=ValueError("synthetic upload failure"))
         self.calls.assert_not_called()
         self.assertEqual(self.upload.call_count, 1)
         self.promote.assert_not_called()
+
+    def test_upload_response_loss_resumes_after_exact_same_draft_readback(self):
+        timeout = subprocess.TimeoutExpired(["gh", "api"], 240)
+        self.run_publisher(
+            [self.release(True, 11), self.release(True, 12), self.release(True), self.release(False)],
+            upload_error=[timeout, None],
+        )
+        self.assertEqual([call.args[1].name for call in self.upload.call_args_list],
+                         ["fixture-11.zip", "fixture-12.zip"])
+        self.promote.assert_called_once_with(456)
+
+    def test_upload_response_loss_refuses_replaced_or_invalid_draft(self):
+        wrong_digest = self.release(True, 12)
+        wrong_digest["assets"][-1]["digest"] = "sha256:" + "0" * 64
+        starter = self.release(True, 12)
+        starter["assets"][-1].update(state="starter", digest=None, size=0)
+        for observed in (wrong_digest, starter, self.release(True, 12, release_id=789), self.release(False)):
+            with self.subTest(observed=observed), self.assertRaises(ValueError):
+                self.run_publisher([self.release(True, 11), observed],
+                                   upload_error=ValueError("synthetic upload failure"))
+            self.assertEqual(self.upload.call_count, 1)
+            self.promote.assert_not_called()
 
     def test_replaced_draft_is_refused_before_publication(self):
         with self.assertRaisesRegex(ValueError, "draft identity"):
