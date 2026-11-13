@@ -65,7 +65,7 @@ try {
         $r=[pscustomobject]@{bundlePath=$bundle};$script:prerequisiteCalls.Clear()
         Install-Prerequisite 'ndisapi'
         $launch=@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'})
-        Assert ($launch.Count -eq 1 -and $launch[0].arguments[1].EndsWith('.'+$platform+'.msi',[StringComparison]::OrdinalIgnoreCase) -and $launch[0].program -eq 'msiexec.exe' -and ($launch[0].codes -join ',') -eq '0,3010,1641') ($architecture+' bundle selects only its platform and preserves reboot exit codes')
+        Assert ($launch.Count -eq 1 -and $launch[0].arguments[1].EndsWith('.'+$platform+'.msi',[StringComparison]::OrdinalIgnoreCase) -and $launch[0].program -ceq (Join-Path $env:SystemRoot 'System32\msiexec.exe') -and ($launch[0].codes -join ',') -eq '0,3010,1641') ($architecture+' bundle selects only its platform, uses system MSI and preserves reboot exit codes')
         Assert (@($script:prerequisiteCalls | Where-Object {$_.kind -in @('release','download')}).Count -eq 0) ($architecture+' compatible bundle avoids remote retrieval')
         # A correct filename cannot override an incompatible MSI template.
         $selected=Join-Path $bundle ('Windows.Packet.Filter.3.6.2.1.'+$platform+'.msi')

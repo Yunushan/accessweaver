@@ -1104,7 +1104,7 @@ function Install-Prerequisite([string]$component) {
             throw 'Windows Packet Filter MSI platform does not match the native OS architecture'
         }
         if($component -eq 'ndisapi'){
-            [void](Native 'msiexec.exe' @('/i',$installerPath,'/qn','/norestart') @(0,3010,1641))
+            [void](Native (Join-Path $env:SystemRoot 'System32\msiexec.exe') @('/i',$installerPath,'/qn','/norestart') @(0,3010,1641))
         }else{
             [void](Native $installerPath @('/install','/quiet','/norestart') @(0,3010,1641))
         }
@@ -1509,13 +1509,13 @@ function Remove-Method([string]$engine,[switch]$OwnedOnly) {
             if(-not (Under $path (Join-Path $root 'components'))){if($OwnedOnly){continue};throw 'WinDivert is owned by another application; remove it through that application after checking its dependents'}
             No-Reparse $path
             # WinDivert can unregister itself when its final handle closes.
-            [void](Native 'sc.exe' @('stop',$driver.Name) @(0,1060,1062));[void](Native 'sc.exe' @('delete',$driver.Name) @(0,1060));Event ('Removed managed WinDivert driver: '+$driver.Name)
+            [void](Native (Join-Path $env:SystemRoot 'System32\sc.exe') @('stop',$driver.Name) @(0,1060,1062));[void](Native (Join-Path $env:SystemRoot 'System32\sc.exe') @('delete',$driver.Name) @(0,1060));Event ('Removed managed WinDivert driver: '+$driver.Name)
         };return
     }
     if($engine -eq 'byedpi'){Remove-Method 'proxifyre';Restore-Drover}
     if($engine -eq 'dnscrypt' -and (Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json'))){Restore-DNS}
     $name='AccessWeaver-'+$engine;$service=Get-Service -Name $name -ErrorAction SilentlyContinue
-    if($service){if(-not (Test-Path -LiteralPath (Join-Path $root ('services\'+$engine+'.json'))) -and $engine -ne 'proxifyre'){throw 'Missing service ownership record; refusing deletion'};if($service.Status -ne 'Stopped'){Stop-Service -Name $name;$service.WaitForStatus('Stopped',[TimeSpan]::FromSeconds(20))};[void](Native 'sc.exe' @('delete',$name));for($i=0;$i -lt 20;$i++){if(-not (Get-Service $name -ErrorAction SilentlyContinue)){break};Start-Sleep -Milliseconds 250};if(Get-Service $name -ErrorAction SilentlyContinue){throw 'Service is marked for deletion; close Services and retry after reboot'}}
+    if($service){if(-not (Test-Path -LiteralPath (Join-Path $root ('services\'+$engine+'.json'))) -and $engine -ne 'proxifyre'){throw 'Missing service ownership record; refusing deletion'};if($service.Status -ne 'Stopped'){Stop-Service -Name $name;$service.WaitForStatus('Stopped',[TimeSpan]::FromSeconds(20))};[void](Native (Join-Path $env:SystemRoot 'System32\sc.exe') @('delete',$name));for($i=0;$i -lt 20;$i++){if(-not (Get-Service $name -ErrorAction SilentlyContinue)){break};Start-Sleep -Milliseconds 250};if(Get-Service $name -ErrorAction SilentlyContinue){throw 'Service is marked for deletion; close Services and retry after reboot'}}
     foreach($direction in @('Inbound','Outbound')){Remove-NetFirewallRule -Name ('AccessWeaver-'+$engine+'-'+$direction) -ErrorAction SilentlyContinue}
     Event ('Managed method removed: '+$engine)
 }
@@ -1814,7 +1814,7 @@ function Discover {
 function Rollback {
     $rollbackErrors=@()
     for($i=$script:undo.Count-1;$i -ge 0;$i--){$item=$script:undo[$i];try{switch($item.kind){
-        'service' {Stop-Service -Name $item.name -Force -ErrorAction SilentlyContinue;[void](Native 'sc.exe' @('delete',$item.name) @(0,1060))}
+        'service' {Stop-Service -Name $item.name -Force -ErrorAction SilentlyContinue;[void](Native (Join-Path $env:SystemRoot 'System32\sc.exe') @('delete',$item.name) @(0,1060))}
         'started-service' {Stop-Service -Name $item.name -ErrorAction Stop}
         'firewall' {Remove-NetFirewallRule -Name $item.name -ErrorAction SilentlyContinue}
         'task' {Unregister-ScheduledTask -TaskName $item.name -Confirm:$false -ErrorAction SilentlyContinue}
