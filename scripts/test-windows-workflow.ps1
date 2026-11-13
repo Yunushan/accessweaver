@@ -532,6 +532,7 @@ try {
 } finally {Set-Item Function:WireSock-CLI $previousWireSockCLI;$r=$previousWireSockRequest}
 # Exercise the bundled WireSock path using an inert file and mocked launch.
 $previousWireSockRequest=$r
+$previousWireSockRebootRequired=$script:rebootRequired
 $wireSockFixtureFunctions=@{}
 foreach($name in @('WireSock-CLI','Get-AuthenticodeSignature','Native')){
     $wireSockFixtureFunctions[$name]=(Get-Command $name).ScriptBlock
@@ -546,7 +547,13 @@ try {
     $script:fixtureWireSockLaunch=$null
     $script:fixtureWireSockSignedPath=$null
     $script:fixtureWireSockSubject='CN=Other fixture publisher'
-    function WireSock-CLI {if($script:fixtureWireSockInstalled){return 'C:\fixture\wiresock.exe'}}
+    $script:fixtureWireSockReboot=$false
+    $script:fixtureWireSockLookups=0
+    $script:rebootRequired=$false
+    function WireSock-CLI {
+        $script:fixtureWireSockLookups++
+        if($script:fixtureWireSockInstalled){return 'C:\fixture\wiresock.exe'}
+    }
     function Get-AuthenticodeSignature {
         param($LiteralPath)
         $script:fixtureWireSockSignedPath=$LiteralPath
@@ -557,6 +564,10 @@ try {
         if(-not (Test-Path -LiteralPath $program -PathType Leaf)){throw 'Missing staged installer at mocked launch'}
         $script:fixtureWireSockLaunch=$program
         $script:fixtureWireSockInstalled=$true
+        if($script:fixtureWireSockReboot){
+            $script:rebootRequired=$true
+            return @{exitCode=3010}
+        }
         return @{exitCode=0}
     }
     $rejected=$false
@@ -565,7 +576,15 @@ try {
     $script:fixtureWireSockSubject='CN=WireSock fixture'
     $wireSockResult=Install-WireSock
     Assert ($wireSockResult -ceq 'C:\fixture\wiresock.exe' -and $script:fixtureWireSockLaunch -ceq $script:fixtureWireSockSignedPath -and (Under $script:fixtureWireSockLaunch (Join-Path $root 'downloads')) -and -not (Test-Path -LiteralPath $script:fixtureWireSockLaunch) -and (Test-Path -LiteralPath $wireSockInstaller)) 'Bundled WireSock launches only the verified staged installer and retires it'
+    $script:fixtureWireSockInstalled=$false
+    $script:fixtureWireSockReboot=$true
+    $script:fixtureWireSockLookups=0
+    $script:fixtureWireSockLaunch=$null
+    $refused=$false
+    try {Install-WireSock | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Restart Windows after WireSock installation, then retry setup'}
+    Assert ($refused -and $script:rebootRequired -and $script:fixtureWireSockLookups -eq 1 -and $script:fixtureWireSockLaunch -and -not (Test-Path -LiteralPath $script:fixtureWireSockLaunch)) 'WireSock defers connection after an installer restart request'
 } finally {
+    $script:rebootRequired=$previousWireSockRebootRequired
     foreach($name in $wireSockFixtureFunctions.Keys){
         if($null -eq $wireSockFixtureFunctions[$name]){Remove-Item ('Function:'+$name)}
         else{Set-Item ('Function:'+$name) $wireSockFixtureFunctions[$name]}

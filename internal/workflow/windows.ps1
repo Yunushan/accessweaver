@@ -971,6 +971,7 @@ function Copy-BundledInstaller([IO.FileInfo]$installer,[ref]$OwnedPath) {
 }
 function Install-WireSock {
     if($r.downloadUrl -and ($r.downloadUrl -cnotmatch '^https://' -or ([string]$r.sha256).Length -ne 64 -or $r.sha256 -notmatch '^[a-fA-F0-9]{64}$')){throw 'Custom WireSock installer requires an HTTPS URL and SHA-256'}
+    if($script:rebootRequired){throw 'Restart Windows before continuing WireSock setup'}
     $cli=WireSock-CLI;if($cli){return $cli}
     $installer=$null
     $bundleRoots=@($r.bundlePath)
@@ -998,7 +999,9 @@ function Install-WireSock {
     } finally {
         if($staged){[IO.File]::Delete($staged)}
     }
-    $cli=WireSock-CLI;if(-not $cli){throw 'WireSock installation did not produce a CLI; reboot may be required'}
+    if($script:rebootRequired){throw 'Restart Windows after WireSock installation, then retry setup'}
+    $cli=WireSock-CLI
+    if(-not $cli){throw 'WireSock installation did not produce a CLI'}
     return $cli
 }
 function Application-Names {

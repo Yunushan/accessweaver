@@ -35,7 +35,7 @@ An optional `bundlePath` supplies a local official Windows component bundle. Oth
 
 ## WireSock
 
-`install` with `engine: "wiresock"` supports `alternative` (WireSock only), `standard` (WireSock plus ByeDPI/drover) and `custom` (selected apps). `config` generates only a private configuration. `connect`, `disconnect`, `refresh` and `remove` manage its lifecycle. Modern Secure Connect uses its vendor CLI; the legacy SDK client retains its different service commands.
+`install` with `engine: "wiresock"` supports `alternative` (WireSock only), `standard` (WireSock plus ByeDPI/drover) and `custom` (selected apps). `config` generates only a private configuration. `connect`, `disconnect`, `refresh` and `remove` manage its lifecycle. Modern Secure Connect uses its vendor CLI, and the legacy SDK client retains its own service commands. If the WireSock installer requests a Windows restart, setup stops before starting services or importing a profile. Restart Windows before retrying setup.
 
 Supply `configPath` to avoid registering an account. A new wgcf/WARP account requires explicitly setting `acceptCloudflareTerms: true` after reviewing [Cloudflare's terms](https://www.cloudflare.com/application/terms/). AccessWeaver does not reuse another application's wgcf account or private keys. Command hooks in supplied tunnel configurations are rejected. Application rules replace existing `AllowedApps`/`DisallowedApps` in a private copy; the original file is preserved.
 
