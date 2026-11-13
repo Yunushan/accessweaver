@@ -8,6 +8,8 @@ on:
       - scripts/test-macos-installer-lifecycle.py
       - scripts/*macos*deployment*
       - scripts/build-macos-installer.py
+      - scripts/verify_macos_installer_publisher.py
+      - scripts/test_macos_installer_publisher.py
       - scripts/macos_installer.py
       - scripts/macos_package_archive.py
       - scripts/sbom.py
@@ -73,6 +75,7 @@ jobs:
           CGO_ENABLED: '0'
         run: |
           python3 -m unittest discover -s scripts -p test_macos_deployment.py -v
+          python3 -m unittest discover -s scripts -p test_macos_installer_publisher.py -v
           python3 -m unittest discover -s scripts -p test_macos_deployment_provenance.py -v
           python3 -m unittest discover -s scripts -p test_macos_launcher.py -v
           go test ./internal/packageupgrade ./cmd/accessweaver-launcher ./cmd/accessweaver-installer -count=1

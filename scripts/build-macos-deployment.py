@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build/inspect an unsigned experimental versioned deployment package; never install it."""
+"""Build and inspect a versioned macOS deployment package without installing it."""
 import argparse
 import datetime
 import stat
@@ -9,14 +9,17 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import re
 import shutil
 import tempfile
 
 from macos_deployment import BUNDLE_NAME,PACKAGE_ID,MANIFEST,DETACHED_MANIFEST,PAYLOAD_SBOM,EMBEDDED_SBOM,detached_payload_manifest,verify_deployment_bundle,install_location,inspect_deployment,deployment_sbom,manifest_contract
-from macos_installer import bundle_manifest,digest,macho_identity,require,version_parts,MAX_BYTES
+from macos_installer import BUNDLE_ID,bundle_manifest,digest,macho_identity,require,version_parts,MAX_BYTES
 from macos_package_archive import flat_members,cpio,inflate,inspect as inspect_legacy
 from sbom import generate,validate
 from macos_launcher import archive_name,inspect_launcher,BINARY
+
+from verify_macos_installer_publisher import FINGERPRINT, check_package_certificate, check_package_publisher
 
 REPO=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location("accessweaver_native_package_builder",Path(__file__).with_name("build-macos-installer.py"))
@@ -25,7 +28,40 @@ run=legacy.run
 encode=legacy.encode
 
 
-def build(version,arch,go="go"):
+def publisher_options(application, installer, team, fingerprint, notary_profile):
+    values=(application,installer,team,fingerprint,notary_profile)
+    if not any(values):
+        return None
+    require(all(values) and re.fullmatch(r"[A-Z0-9]{10}",team) and FINGERPRINT.fullmatch(fingerprint)
+            and all(0<len(value)<=256 and not value.startswith("-") and value.isprintable()
+                    for value in (application,installer,notary_profile)),
+            "Expected both Developer ID identities, team, installer certificate SHA-256 and notary profile")
+    return application,installer,team,fingerprint.lower(),notary_profile
+
+
+def sign_code(path, publisher, *, bundle=False):
+    application,_,team,_,_=publisher
+    run(["/usr/bin/codesign","--force","--sign",application,"--options","runtime","--timestamp",path])
+    requirement=('anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists '
+                 'and certificate leaf[field.1.2.840.113635.100.6.1.13] exists '
+                 f'and certificate leaf[subject.OU] = "{team}"')
+    if bundle:
+        requirement+=f' and identifier "{BUNDLE_ID}"'
+    run(["/usr/bin/codesign","--verify","--strict","--all-architectures","-R="+requirement,path])
+
+
+def sign_package(unsigned, signed, publisher):
+    _,installer,team,fingerprint,profile=publisher
+    run(["/usr/bin/productsign","--sign",installer,"--timestamp",unsigned,signed])
+    check_package_certificate(signed,team,fingerprint)
+    result=run(["/usr/bin/xcrun","notarytool","submit",signed,"--keychain-profile",profile,
+                "--wait","--timeout","30m","--output-format","json"],timeout=1920)
+    require(json.loads(result.stdout).get("status")=="Accepted","Apple did not accept the package for notarization")
+    run(["/usr/bin/xcrun","stapler","staple",signed])
+    check_package_publisher(signed,team,fingerprint)
+
+
+def build(version,arch,go="go",publisher=None):
     version_parts(version)
     filename="accessweaver-"+version+"-darwin-"+arch+"-deployment-experimental.pkg"
     require(arch in ("amd64","arm64") and len(filename.encode())<=255,"Invalid deployment package target/name")
@@ -40,7 +76,7 @@ def build(version,arch,go="go"):
     entries=cpio(inflate(flat_members(old_package)["Payload"],MAX_BYTES,31));prefix="Applications/"+BUNDLE_NAME+"/"
     require(entries[prefix+MANIFEST]["data"]==encoded,"Core manifest sidecar differs from actual package")
     environment=dict(os.environ,GOTOOLCHAIN="local",GOFLAGS="",GOOS="darwin",GOARCH=arch,CGO_ENABLED="0")
-    output=REPO/"build/macos-deployment-checks"/arch/version
+    output=REPO/"build"/("macos-signed-deployment" if publisher else "macos-deployment-checks")/arch/version
     require(not output.exists(),"Deployment output exists; preserve it and use a new workspace")
     output.mkdir(parents=True)
     stage=Path(tempfile.mkdtemp(prefix="macos-deployment-stage-",dir=REPO/"build"))
@@ -55,6 +91,11 @@ def build(version,arch,go="go"):
             path.chmod(int(record["mode"],8))
         payload_raw=(source/PAYLOAD_SBOM).read_bytes()
         require(entries[prefix+EMBEDDED_SBOM]["data"]==payload_raw,"Legacy payload SBOM input differs")
+        if publisher:
+            sign_code(app,publisher,bundle=True)
+            signed_payload=app/"Contents/MacOS/accessweaver"
+            signed_bom=generate(signed_payload,REPO,"./cmd/accessweaver",identity,stage/"payload-licenses",go)
+            payload_raw=(json.dumps(signed_bom,indent=2,ensure_ascii=True)+"\n").encode("utf-8")
         (payload/PAYLOAD_SBOM).write_bytes(payload_raw);(payload/PAYLOAD_SBOM).chmod(0o644)
         manifest=detached_payload_manifest(bundle_manifest(app),payload_raw)
         encoded=(json.dumps(manifest,indent=2,sort_keys=True)+"\n").encode("utf-8")
@@ -67,6 +108,8 @@ def build(version,arch,go="go"):
         flags.extend("-X github.com/Yunushan/accessweaver/internal/packageupgrade."+key+"="+value for key,value in {"sealedVersion":version,"sealedManifestSHA256":digest(encoded),"sealedPayloadSHA256":digest(core)}.items())
         helper=stage/"accessweaver-installer"
         run([go,"build","-mod=readonly","-trimpath","-buildvcs=false","-ldflags"," ".join(flags),"-o",helper,"./cmd/accessweaver-installer"],env=environment)
+        if publisher:
+            sign_code(helper,publisher)
         helper_bytes=helper.read_bytes();helper_native=macho_identity(helper_bytes,arch)
         private=stage/"user";private.mkdir()
         child_env={"PATH":"/usr/bin:/bin:/usr/sbin:/sbin","HOME":str(private),"TMPDIR":str(private),"LANG":"C","LC_ALL":"C","TZ":"UTC"}
@@ -89,7 +132,7 @@ def build(version,arch,go="go"):
             data=path.read_bytes();scripts_manifest.append({"path":path.relative_to(scripts).as_posix(),"mode":f"{path.stat().st_mode&0o7777:04o}","bytes":len(data),"sha256":digest(data)})
         component=stage/"components.plist"
         with component.open("wb") as stream:plistlib.dump([{"RootRelativeBundlePath":BUNDLE_NAME,"BundleIsRelocatable":False,"BundleHasStrictIdentifier":True,"BundleIsVersionChecked":False,"BundleOverwriteAction":"upgrade"}],stream)
-        package=output/filename
+        package=(stage if publisher else output)/filename
         run(["/usr/bin/pkgbuild","--root",payload,"--identifier",PACKAGE_ID,"--version",version,"--install-location",install_location(digest(encoded)),"--ownership","recommended","--component-plist",component,"--scripts",scripts,package],env=child_env)
         package_bytes=package.read_bytes();inspected=inspect_deployment(package_bytes,encoded,identity,scripts_manifest)
         require(inspected["payloadSHA256"]==digest(core) and inspected["helperSHA256"]==digest(helper_bytes),"Actual deployment package subjects differ")
@@ -100,6 +143,27 @@ def build(version,arch,go="go"):
             require(path.is_file() and not path.is_symlink() and digest(path.read_bytes())==record["sha256"],"Expanded package script differs")
         signature=run(["/usr/sbin/pkgutil","--check-signature",package],env=child_env,codes=(0,1))
         require(signature.returncode!=0 and b"no signature" in (signature.stdout+signature.stderr).lower(),"Experimental package unexpectedly has a publisher signature")
+        if publisher:
+            candidate=stage/"signed"/filename
+            candidate.parent.mkdir()
+            sign_package(package,candidate,publisher)
+            signed_expanded=stage/"signed-expanded"
+            run(["/usr/sbin/pkgutil","--expand-full",candidate,signed_expanded],env=child_env)
+            verify_deployment_bundle(signed_expanded/"Payload"/BUNDLE_NAME,manifest,identity,encoded)
+            require((signed_expanded/"PackageInfo").read_bytes()==(expanded/"PackageInfo").read_bytes()
+                    and (signed_expanded/"Bom").read_bytes()==(expanded/"Bom").read_bytes(),
+                    "Signed package metadata differs from the inspected component")
+            require({p.relative_to(signed_expanded/"Scripts") for p in (signed_expanded/"Scripts").rglob("*")}
+                    =={p.relative_to(expanded/"Scripts") for p in (expanded/"Scripts").rglob("*")},
+                    "Signed package script inventory differs")
+            for record in scripts_manifest:
+                path=signed_expanded/"Scripts"/record["path"]
+                metadata=path.lstat()
+                require(stat.S_ISREG(metadata.st_mode) and metadata.st_nlink==1
+                        and metadata.st_mode&0o7777==int(record["mode"],8) and metadata.st_size==record["bytes"]
+                        and digest(path.read_bytes())==record["sha256"],"Signed package script differs")
+            require(0<candidate.stat().st_size<=64<<20,"Signed package exceeds inspection budget")
+            package_bytes=candidate.read_bytes()
         bom=deployment_sbom(package_bytes,payload_raw,helper_bom,encoded,scripts_manifest,original["pkgbuild"],core,helper_bytes)
         encode(output/(filename+".cdx.json"),bom)
         encode(output/"BUILD-INFO.json",identity);encode(output/"SCRIPT-MANIFEST.json",scripts_manifest)
@@ -109,6 +173,13 @@ def build(version,arch,go="go"):
         run([go,"-C",REPO/"scripts/sbom-tools","build","-mod=readonly","-trimpath","-o",validator,"."],env=environment)
         run([validator,"--schemas",REPO/"scripts/sbom/schema",output/(filename+".cdx.json"),output/"payload-SBOM.cdx.json",output/"helper-SBOM.cdx.json"],env=child_env)
         report={"schemaVersion":1,"sourceCommit":identity["commit"],"sourceState":"clean","target":"darwin/"+arch,"payloadBuild":identity,"packageFile":filename,"packageBytes":len(package_bytes),"packageSHA256":digest(package_bytes),"payloadSHA256":digest(core),"manifestSHA256":digest(encoded),"helperSHA256":digest(helper_bytes),"helperBuild":actual,"helperBuildMetadata":helper_build,"helperLinkerFlags":" ".join(flags),"helperMachO":helper_native,"pkgbuild":original["pkgbuild"],"archiveInspection":inspected,"actualExpandedPayloadAndScriptsVerified":True,"packageScriptsIntegrated":True,"detachedManifestOutsideAppVerified":True,"detachedPayloadSBOMOutsideAppVerified":True,"payloadSBOMSHA256":digest(payload_raw),"unsigned":True,"publisherSignatureVerified":False,"notarized":False,"installationExecuted":False,"upgradeQualified":False,"productUninstallQualified":False,"launcherIntegrated":False,"managedEndpointQualified":False,"productionQualificationComplete":False}
+        if publisher:
+            report["unsignedComponentInspection"]=report.pop("archiveInspection")
+            report.update(unsigned=False,publisherSignatureVerified=True,notarized=True,
+                          developerTeamID=publisher[2],publisherCertificateSHA256=publisher[3],
+                          signedPayloadAndScriptsVerified=True)
+            with (output/filename).open("xb") as stream:
+                stream.write(package_bytes)
         encode(output/"compiler-artifact.json",report)
         return report
     finally:
@@ -156,10 +227,18 @@ def build_launcher(arch,go="go",version="0.1.1-alpha"):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);choice=parser.add_mutually_exclusive_group(required=True);choice.add_argument("--version");choice.add_argument("--launcher",action="store_true");parser.add_argument("--architecture",choices=("amd64","arm64"),required=True);parser.add_argument("--go",default="go")
+    parser.add_argument("--application-identity")
+    parser.add_argument("--installer-identity")
+    parser.add_argument("--team-id")
+    parser.add_argument("--publisher-certificate-sha256")
+    parser.add_argument("--notary-keychain-profile")
     args=parser.parse_args()
+    publisher=publisher_options(args.application_identity,args.installer_identity,args.team_id,
+                                args.publisher_certificate_sha256,args.notary_keychain_profile)
     if args.launcher:
+        require(publisher is None,"Organization signing is available for versioned deployment packages")
         print(json.dumps(build_launcher(args.architecture,args.go)));return
-    report=build(args.version,args.architecture,args.go)
+    report=build(args.version,args.architecture,args.go,publisher)
     print(json.dumps({"sourceCommit":report["sourceCommit"],"target":report["target"],"packageSHA256":report["packageSHA256"],"installationExecuted":False,"productionQualificationComplete":False}))
 
 if __name__=="__main__":main()

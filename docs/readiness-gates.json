@@ -235,6 +235,7 @@
             "scripts/sign-windows-installer-artifact.ps1",
             "scripts/test-windows-installer-contracts.ps1",
             "scripts/verify_macos_installer_publisher.py",
+            "scripts/build-macos-deployment.py",
             "scripts/test_macos_installer_publisher.py",
             "docs/RELEASE_PROVENANCE.md"
           ]

@@ -83,6 +83,14 @@ python3 scripts/verify_macos_installer_publisher.py PRIVATE_PACKAGE_DIRECTORY --
 
 The verifier checks the digest before invoking macOS signature tools on a private copy. It requires the matching Developer ID Installer leaf, a successful Gatekeeper installation assessment and a valid stapled ticket. It does not install the package. Check the signed application payload's Developer ID Application identity and validate installation on the supported native matrix. Native acceptance with the organization's signed package and final signed-byte provenance is pending. [Apple's packaging and notarization guidance](https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution).
 
+On an organization-controlled native Mac, provision the approved Developer ID Application and Developer ID Installer identities and the notarization credentials in the build user's keychain. Use a clean checkout and the native Go SDK. The build signs the application before sealing its detached manifest and compiled SBOM. It signs the package helper before copying it into both installer phases. After checking the package's signer and verifying Apple's accepted notarization and stapled ticket, it expands the signed package and compares its payload and script inventories against the sealed build.
+
+```sh
+python3 scripts/build-macos-deployment.py --architecture arm64 --version RELEASE_VERSION --application-identity APPROVED_APPLICATION_IDENTITY --installer-identity APPROVED_INSTALLER_IDENTITY --team-id APPROVED_TEAM_ID --publisher-certificate-sha256 APPROVED_INSTALLER_CERTIFICATE_SHA256 --notary-keychain-profile APPROVED_PROFILE
+```
+
+Repeat on Intel with amd64. Signed build output is under the build/macos-signed-deployment directory. The build records the final stapled package digest and generates its SBOM from the signed bytes. The package remains a versioned deployment candidate. Its launcher integration, final signed-byte provenance, and native installation and lifecycle evidence remain required. [Apple notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
+
 The current workflow is not claimed SLSA Build Level 3 or a proof that build code is benign. A compromised approved workflow/runner/dependency can falsify its build behavior. Review, branch/tag protection, separation of duties, trusted builder isolation, independent rebuilds and release revocation/recovery remain requirements. Attested alpha artifacts are still subject to every unfinished functional, security, desktop and enterprise readiness gate.
 
 

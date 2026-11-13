@@ -43,6 +43,16 @@ def tool(arguments):
     return data.decode("utf-8", errors="strict")
 
 
+def check_package_certificate(package, team, certificate_sha256):
+    check_leaf(tool(["/usr/sbin/pkgutil", "--check-signature", package]), team, certificate_sha256)
+
+
+def check_package_publisher(package, team, certificate_sha256):
+    check_package_certificate(package, team, certificate_sha256)
+    tool(["/usr/sbin/spctl", "--assess", "--type", "install", package])
+    tool(["/usr/bin/xcrun", "stapler", "validate", package])
+
+
 def verify(directory, artifact_sha256, team, certificate_sha256):
     require(sys.platform == "darwin", "macOS is required for Developer ID verification")
     require(FINGERPRINT.fullmatch(artifact_sha256) and FINGERPRINT.fullmatch(certificate_sha256)
@@ -55,9 +65,7 @@ def verify(directory, artifact_sha256, team, certificate_sha256):
         require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,199}\.pkg", name), "Expected a flat macOS package")
         package = root / name
         require(digest(package) == artifact_sha256, "Package digest differs from the approved release")
-        check_leaf(tool(["/usr/sbin/pkgutil", "--check-signature", package]), team, certificate_sha256)
-        tool(["/usr/sbin/spctl", "--assess", "--type", "install", package])
-        tool(["/usr/bin/xcrun", "stapler", "validate", package])
+        check_package_publisher(package,team,certificate_sha256)
     return {
         "schemaVersion": 1,
         "scope": "macos-package-publisher",

@@ -1,11 +1,17 @@
 import hashlib
+import importlib.util
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import verify_macos_installer_publisher as publisher
+
+
+SPEC = importlib.util.spec_from_file_location("deployment_builder", Path(__file__).with_name("build-macos-deployment.py"))
+builder = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(builder)
 
 
 TEAM = "A12345BCDE"
@@ -63,6 +69,52 @@ class PublisherTests(unittest.TestCase):
                     with self.assertRaises(subprocess.CalledProcessError):
                         publisher.verify(directory, digest, TEAM, PIN)
                     self.assertEqual(tool.call_count, stage + 1)
+
+    def test_signing_options_require_complete_approved_identity(self):
+        settings = ("Fixture application", "Fixture installer", TEAM, PIN.upper(), "Fixture profile")
+        self.assertIsNone(builder.publisher_options(None, None, None, None, None))
+        self.assertEqual(builder.publisher_options(*settings), (*settings[:3], PIN, settings[-1]))
+        for index in range(len(settings)):
+            rejected = list(settings)
+            rejected[index] = None
+            with self.assertRaises(ValueError):
+                builder.publisher_options(*rejected)
+        with self.assertRaises(ValueError):
+            builder.publisher_options(*settings[:-1], "--wait")
+
+    def test_notary_submission_follows_certificate_and_requires_acceptance(self):
+        context = ("Fixture application", "Fixture installer", TEAM, PIN, "Fixture profile")
+        unsigned, signed = Path("unsigned.pkg"), Path("signed.pkg")
+        for status in ("Accepted", "Invalid", "In Progress"):
+            calls = MagicMock()
+            calls.run.return_value.stdout = ('{"status":"' + status + '"}').encode()
+            with patch.multiple(builder, run=calls.run, check_package_certificate=calls.certificate,
+                                check_package_publisher=calls.publisher):
+                if status == "Accepted":
+                    builder.sign_package(unsigned, signed, context)
+                else:
+                    with self.assertRaises(ValueError):
+                        builder.sign_package(unsigned, signed, context)
+            names = [call[0] for call in calls.mock_calls]
+            self.assertEqual(names, ["run", "certificate", "run", "run", "publisher"]
+                             if status == "Accepted" else ["run", "certificate", "run"])
+            if status == "Accepted":
+                self.assertEqual(calls.run.call_args.args[0], ["/usr/bin/xcrun", "stapler", "staple", signed])
+        with patch.object(builder, "run") as run, patch.object(builder, "check_package_certificate", side_effect=ValueError):
+            with self.assertRaises(ValueError):
+                builder.sign_package(unsigned, signed, context)
+            run.assert_called_once()
+
+    def test_code_signature_verifies_team_and_bundle_identifier(self):
+        context = ("Fixture application", "Fixture installer", TEAM, PIN, "Fixture profile")
+        with patch.object(builder, "run") as run:
+            builder.sign_code(Path("AccessWeaver.app"), context, bundle=True)
+        sign, verify = [call.args[0] for call in run.call_args_list]
+        self.assertIn("--timestamp", sign)
+        self.assertIn("runtime", sign)
+        self.assertIn("--all-architectures", verify)
+        self.assertIn(f'certificate leaf[subject.OU] = "{TEAM}"', verify[-2])
+        self.assertIn(f'identifier "{builder.BUNDLE_ID}"', verify[-2])
 
     @unittest.skipUnless(publisher.sys.platform == "darwin", "requires macOS package verifier")
     def test_native_pkgutil_refuses_unsigned_artifact(self):
