@@ -1216,7 +1216,7 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
             }
             return $LiteralPath -ceq 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
         }
-        $record=@{PSPath=$registration;DisplayName='WireSock Secure Connect';UninstallString=('"'+$program+'" /uninstall')}
+        $fixtureBundleRecord=@{PSPath=$registration;DisplayName='WireSock Secure Connect';UninstallString=('"'+$program+'" /uninstall')}
         $hiddenRecord=$null
         $entries=@(@{PSPath=$registration})
         $replacement=@{PSPath=($registration+'-new');DisplayName='WireSock Secure Connect'}
@@ -1232,7 +1232,7 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
             if($ErrorAction -cne 'Stop'){throw 'Expected strict registry property inspection'}
             if($LiteralPath -ceq $replacement.PSPath){return $replacement}
             if($hiddenRecord -and $LiteralPath -ceq $hiddenRecord.PSPath){return $hiddenRecord}
-            return $record
+            return $fixtureBundleRecord
         }
         function Get-AuthenticodeSignature {param($LiteralPath);return $fixtureSignature}
         function Get-FileHash {param($LiteralPath,$Algorithm);return @{Hash=$fixtureDigest}}
@@ -1290,13 +1290,13 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
             UninstallString=('MsiExec.exe /I'+$productCode)
         }
         $entries=@(@{PSPath=$hiddenRecord.PSPath},@{PSPath=$registration})
-        $record.BundleProviderKey='fixture-provider'
-        $record.BundleCachePath=$program+'-other.exe'
+        $fixtureBundleRecord.BundleProviderKey='fixture-provider'
+        $fixtureBundleRecord.BundleCachePath=$program+'-other.exe'
         $fixtureSignature=$unknownSigner
         $refused=$false
         try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered vendor uninstaller is outside protected installation storage'}
         $cacheMismatchRefused=$refused
-        $record.BundleCachePath=$program
+        $fixtureBundleRecord.BundleCachePath=$program
         $hiddenRecord.UninstallString='MsiExec.exe /I'+$otherCode
         $refused=$false
         try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
@@ -1315,11 +1315,11 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         $calls.Clear()
         $entries=@(@{PSPath=$registration})
         $hiddenRecord=$null
-        $record.WindowsInstaller=1
-        $record.PSChildName=$productCode
+        $fixtureBundleRecord.WindowsInstaller=1
+        $fixtureBundleRecord.PSChildName=$productCode
         $expectedProgram=Join-Path $env:SystemRoot 'System32\msiexec.exe'
         $expectedArguments='/x,'+$productCode+',/qn,/norestart'
-        $record.UninstallString='MsiExec.exe /I'+$productCode
+        $fixtureBundleRecord.UninstallString='MsiExec.exe /I'+$productCode
         $result=Invoke-FixtureUninstall
         Assert ($result.product -ceq 'WireSock Secure Connect' -and ($calls -join ',') -ceq 'task,profile,uninstall') 'WireSock MSI uninstall targets its registered product code'
         $calls.Clear()
@@ -1329,13 +1329,13 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
             ('"C:\other.exe" msiexec /I'+$productCode),
             ('MsiExec.exe /I'+$productCode+' /I'+$otherCode)
         )){
-            $record.UninstallString=$command
+            $fixtureBundleRecord.UninstallString=$command
             $refused=$false
             try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
             if(-not $refused){throw 'Unexpected MSI uninstall preflight outcome'}
         }
         Assert ($calls.Count -eq 0) 'WireSock MSI uninstall refuses mismatched or compound commands before cleanup'
-        $record.UninstallString='MsiExec.exe /I'+$productCode
+        $fixtureBundleRecord.UninstallString='MsiExec.exe /I'+$productCode
         $verifyRemoval=$true
         $result=Invoke-FixtureUninstall
         Assert (-not $result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,check-registration,wait,check-registration,retire-ownership,Vendor uninstall completed: WireSock Secure Connect') 'WireSock uninstall waits for the registered package to disappear'
