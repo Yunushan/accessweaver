@@ -215,8 +215,13 @@ function New-ComponentDownloadBudget([long]$MaximumBytes=(2147483648L+32MB),[int
 }
 function Approved-DownloadHash([string]$url,[string]$hash){$script:downloadFixtureState.Approvals++;return $hash}
 function Allowed-Download([string]$url){$script:downloadFixtureState.Allowed++}
-function Copy-Checked([string]$source,[string]$destination){
+function Copy-Checked([string]$source,[string]$destination,[string]$expectedHash){
     $script:downloadFixtureState.Promotions++
+    Assert-DownloadFixture ($expectedHash -ceq (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()) 'Download promotion did not receive the verified source digest'
+    $writeDenied=$false
+    try {$writeStream=[IO.File]::Open($source,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite);$writeStream.Dispose()}
+    catch [IO.IOException] {$writeDenied=$true}
+    Assert-DownloadFixture $writeDenied 'Downloaded bytes were writable during promotion'
     if($script:downloadFixtureState.Mode -eq 'promotion-failure'){throw 'synthetic promotion failure'}
     [IO.File]::Copy($source,$destination,$false)
 }
@@ -274,6 +279,7 @@ try{
         @{mode='success';accept=$true;signed=$false;proxy=$false;calls='dotnet';promotions=1},
         @{mode='success';accept=$true;signed=$true;proxy=$false;calls='dotnet';promotions=1},
         @{mode='success';accept=$true;signed=$true;returnHash=$true;proxy=$false;calls='dotnet';promotions=1},
+        @{mode='success';accept=$true;signed=$true;unpinned=$true;proxy=$false;calls='dotnet';promotions=1},
         @{mode='fallback';accept=$true;signed=$false;proxy=$false;calls='dotnet,curl';promotions=1},
         @{mode='success';accept=$true;signed=$false;proxy=$true;calls='curl';promotions=1},
         @{mode='overflow';accept=$false;signed=$false;proxy=$false;calls='dotnet';promotions=0},
@@ -298,7 +304,7 @@ try{
                 $url='https://github.com/hufrea/byedpi/releases/download/fixture/component.zip'
                 if($downloadCase.signed){
                     $fixturePublisher=if($downloadCase.mode -eq 'publisher-other-category'){'discord'}else{'microsoft'}
-                    $pin=if($downloadCase.returnHash){''}else{$downloadExpectedHash}
+                    $pin=if($downloadCase.returnHash -or $downloadCase.unpinned){''}else{$downloadExpectedHash}
                     Download $url $pin $downloadDestination -Signed -Publisher $fixturePublisher -ReturnVerifiedHash:([bool]$downloadCase.returnHash)
                 }else{Download $url $downloadExpectedHash $downloadDestination}
             }

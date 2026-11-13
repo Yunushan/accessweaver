@@ -2090,6 +2090,38 @@ $backup=$script:undo[0].backup
         }
     } finally {$script:journalPath=$savedJournal;$script:undo.Clear()}
 }
+& {
+    $copySource=Join-Path $root 'copy-source.bin'
+    $copyDestination=Join-Path $root 'copy-destination.bin'
+    [IO.File]::WriteAllText($copySource,'verified payload')
+    [IO.File]::WriteAllText($copyDestination,'original payload')
+    Set-Content -LiteralPath $copySource -Stream Zone.Identifier -Value '[ZoneTransfer]','ZoneId=3'
+    $copyDigest=Get-WorkflowFileHash $copySource
+    Copy-Checked $copySource $copyDestination $copyDigest
+    Assert ((Get-WorkflowFileHash $copyDestination) -ceq $copyDigest -and
+        (Get-Content -LiteralPath $copyDestination -Stream Zone.Identifier) -contains 'ZoneId=3') 'Direct component copy publishes verified bytes and retains the source zone marker'
+    Assert (@(Rollback).Count -eq 0 -and [IO.File]::ReadAllText($copyDestination) -ceq 'original payload') 'Direct component replacement restores the original payload'
+    $script:undo.Clear()
+    $rejected=$false
+    try{Copy-Checked $copySource $copyDestination ('0'*64)}catch{
+        if($_.Exception.Message -cne 'Copied component does not match the expected digest'){throw}
+        $rejected=$true
+    }
+    Assert ($rejected -and $script:undo.Count -eq 0 -and [IO.File]::ReadAllText($copyDestination) -ceq 'original payload') 'Direct component copy refuses bytes that differ from the caller-verified digest'
+    function Save-Journal {
+        if($script:undo.Count -eq 1 -and $script:undo[0].pendingHash){
+            [IO.File]::WriteAllText($copyDestination,'independent destination edit')
+        }
+    }
+    $rejected=$false
+    try{Copy-Checked $copySource $copyDestination}catch{
+        if($_.Exception.Message -cne 'Workflow files changed before replacement'){throw}
+        $rejected=$true
+    }
+    Assert ($rejected -and [IO.File]::ReadAllText($copyDestination) -ceq 'independent destination edit' -and
+        @(Get-ChildItem -LiteralPath $root -Filter '.accessweaver-copy-*.tmp').Count -eq 0) 'Direct component copy preserves an independent destination edit and cleans its stage'
+    $script:undo.Clear()
+}
 $script:undo.Clear()
 $source=Join-Path $root 'source.conf';[IO.File]::WriteAllText($source,"[Interface]`nPrivateKey = fixture-only`n[Peer]`nPublicKey = fixture-only`nEndpoint = example.invalid:2408`nAllowedApps = old.exe`n")
 [void](New-Item -ItemType Directory -Force -Path (Join-Path $root 'profiles'))

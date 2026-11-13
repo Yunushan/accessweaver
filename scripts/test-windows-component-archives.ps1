@@ -8,7 +8,7 @@ $archiveProject=Split-Path -Parent $PSScriptRoot
 $archiveTokens=$null;$archiveParseErrors=$null
 $archiveAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $archiveProject 'internal\workflow\windows.ps1'),[ref]$archiveTokens,[ref]$archiveParseErrors)
 if($archiveParseErrors.Count){throw 'Component archive source did not parse'}
-foreach($archiveName in @('Under','No-Reparse','Save-Journal','Backup-File','Expected-Hash','Read-ComponentZip64Fields','Assert-ComponentZipLocalMember','Assert-ComponentZipBudget','Component-ArchivePlan','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Expand-Safe')){
+foreach($archiveName in @('Under','No-Reparse','Save-Journal','Backup-File','Read-ComponentZip64Fields','Assert-ComponentZipLocalMember','Assert-ComponentZipBudget','Component-ArchivePlan','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Expand-Safe')){
     $archiveNodes=@($archiveAst.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $archiveName})
     if($archiveNodes.Count -ne 1){throw 'Required component archive function is unavailable'}
     . ([scriptblock]::Create($archiveNodes[0].Extent.Text))

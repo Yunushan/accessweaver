@@ -330,7 +330,6 @@ function Backup-File([string]$path) {
     Save-Journal
     return $entry
 }
-function Expected-Hash([string]$path,[string]$hash){$entry=$script:undo|Where-Object {$_.kind -eq 'file' -and $_.path -eq $path}|Select-Object -First 1;$entry.expectedHash=$hash;Save-Journal}
 function Publish-WorkflowFile([string]$path,[byte[]]$bytes,[switch]$Recorded) {
     No-Reparse $path
     $parent=Split-Path -Parent $path
@@ -362,7 +361,33 @@ function Get-WorkflowBytesSHA256([byte[]]$bytes) {
     try {return [BitConverter]::ToString($sha256.ComputeHash($bytes)).Replace('-','')}
     finally {$sha256.Dispose()}
 }
-function Copy-Checked([string]$source,[string]$destination) {No-Reparse $source;[void](Backup-File $destination);Expected-Hash $destination (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash;[void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination));Copy-Item -LiteralPath $source -Destination $destination -Force}
+function Copy-Checked([string]$source,[string]$destination,[string]$expectedHash) {
+    No-Reparse $source
+    No-Reparse $destination
+    $parent=Split-Path -Parent $destination
+    [void](New-Item -ItemType Directory -Force -Path $parent)
+    $staged=Join-Path $parent ('.accessweaver-copy-'+[guid]::NewGuid().ToString('N')+'.tmp')
+    $inputStream=[IO.File]::Open($source,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    $ownsStage=$false
+    try {
+        if(-not $expectedHash){$expectedHash=(Get-FileHash -InputStream $inputStream -Algorithm SHA256).Hash}
+        $stageFile=[IO.File]::Open($staged,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        $ownsStage=$true
+        $stageFile.Dispose()
+        # Windows file copy retains source streams, including Zone.Identifier.
+        [IO.File]::Copy($source,$staged,$true)
+        if((Get-WorkflowFileHash $staged) -ine $expectedHash){throw 'Copied component does not match the expected digest'}
+        Publish-RecordedWorkflowFile $staged $destination $expectedHash
+    } finally {
+        try {$inputStream.Dispose()}
+        finally {
+            if($ownsStage -and (Test-Path -LiteralPath $staged -ErrorAction Stop)){
+                No-Reparse $staged
+                Remove-Item -LiteralPath $staged -Force -ErrorAction Stop
+            }
+        }
+    }
+}
 function Copy-Tree([string]$source,[string]$destination,[switch]$Disposable) {
     No-Reparse $source
     foreach($item in Get-ChildItem -LiteralPath $source -Recurse -Force){
@@ -837,21 +862,16 @@ function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signe
         }
         $owned=$true
         [void](Get-ComponentDownloadRemaining $budget)
-        $verifiedSHA256=''
-        if($ReturnVerifiedHash){
-            No-Reparse $temp
-            $lockedSource=[IO.File]::Open($temp,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-            $verifiedSHA256=(Get-FileHash -InputStream $lockedSource -Algorithm SHA256).Hash.ToLowerInvariant()
-        }elseif($hash){
-            $verifiedSHA256=(Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash.ToLowerInvariant()
-        }
+        No-Reparse $temp
+        $lockedSource=[IO.File]::Open($temp,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        $verifiedSHA256=(Get-FileHash -InputStream $lockedSource -Algorithm SHA256).Hash.ToLowerInvariant()
         if($hash -and $verifiedSHA256 -ne $hash){throw 'Downloaded component SHA-256 mismatch'}
         if($Signed){
             $signature=Get-AuthenticodeSignature -LiteralPath $temp
             if(-not (Test-InstallerPublisher $Publisher $signature $verifiedSHA256 $inputData.nativeArchitecture)){throw 'Installer publisher signature could not be verified'}
         }
         [void](Get-ComponentDownloadRemaining $budget)
-        Copy-Checked $temp $destination
+        Copy-Checked $temp $destination $verifiedSHA256
     }finally {
         if($lockedSource){$lockedSource.Dispose()}
         if($owned){try {[IO.File]::Delete($temp)}catch {Throw-ComponentDownloadFailure 'cleanup'}}
@@ -1509,7 +1529,7 @@ function Install-EngineService([string]$engine,[string]$binary,[string[]]$argume
     $controller=Join-Path $root ('services\host-'+$controllerHash+'.exe')
     if(Test-Path -LiteralPath $controller){
         Assert-TrustedItem $controller
-    }else{Copy-Checked $inputData.controller $controller}
+    }else{Copy-Checked $inputData.controller $controller $controllerHash}
     if((Get-FileHash -LiteralPath $controller -Algorithm SHA256).Hash -ne $controllerHash){throw 'Existing service-host content does not match its trusted controller digest; retain it for administrator review'}
     $file=Join-Path $root ('services\'+$engine+'.json')
     Write-Atomic $file (@{name=$serviceName;binary=$binary;args=@($arguments);directory=(Split-Path -Parent $binary);logPath=(Join-Path $root ('logs\'+$engine+'.log'))}|ConvertTo-Json -Depth 5)
