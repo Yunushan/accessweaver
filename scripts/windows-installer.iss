@@ -261,41 +261,56 @@ begin
   AWReleaseLifecycle;
 end;
 
+function AWUninstallPreflight: String;
+var PendingVersion, PendingDirectory: String;
+begin
+  if not AWLifecycleOwned then begin
+    Result := 'The AccessWeaver installation lock is not held. Retry uninstalling.'; Exit;
+  end;
+  Result := AWReadPendingVersion(PendingVersion, PendingDirectory);
+  if (Result = '') and (PendingVersion <> '') then
+    Result := 'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.';
+  if Result = '' then Result := AWUninstallDirectoryPreflight(ExpandConstant('{app}'));
+end;
+
 function InitializeUninstall: Boolean;
-var
-  ResultCode: LongWord;
-  Failure, PendingVersion, PendingDirectory: String;
+var Failure: String;
 begin
   { Respect an already active older setup, as well as corrected lifecycle owners. }
   if CheckForMutexes('Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092') then
     Failure := 'An AccessWeaver setup is active. Wait for it to finish before uninstalling.'
   else Failure := AWAcquireLifecycle;
-  if Failure = '' then begin
-    Failure := AWReadPendingVersion(PendingVersion, PendingDirectory);
-    if (Failure = '') and (PendingVersion <> '') then
-      Failure := 'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.';
-  end;
-  if Failure = '' then Failure := AWUninstallDirectoryPreflight(ExpandConstant('{app}'));
-  if Failure <> '' then begin
+  if Failure = '' then Failure := AWUninstallPreflight;
+  Result := Failure = '';
+  if not Result then begin
     AWReleaseLifecycle;
     Log(Failure);
     if not UninstallSilent then SuppressibleMsgBox(Failure, mbCriticalError, MB_OK, IDOK);
-    Result := False; Exit;
   end;
-  { Abort before deleting the controller when restoration fails. The user can
-    inspect the protected recovery journal and retry the uninstaller. }
-  Result := AWRunBoundedRestoration(ExpandConstant('{app}\accessweaver.exe'),
-    'system installer-restore --confirm',
-    ExpandConstant('{app}'), AWRestorationDeadlineMilliseconds, ResultCode, Failure);
-  if not Result then
-  begin
-    AWReleaseLifecycle;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var ResultCode: LongWord; Failure: String;
+begin
+  if CurUninstallStep <> usUninstall then Exit;
+  { Inno reaches this step after confirmation and app-mutex checks, before
+    processing its deletion log. Keep lifecycle ownership until deinitialization. }
+  Failure := AWUninstallPreflight;
+  if Failure <> '' then begin
     Log(Failure);
-    Log('AccessWeaver system restoration failed; process result/error code: ' + IntToStr(ResultCode));
-    { Unattended deployment must fail without waiting on an interactive dialog. }
-    if not UninstallSilent then
-      MsgBox('AccessWeaver could not restore its system changes. Review the recovery journal in ProgramData\AccessWeaver\logs, then retry uninstalling.', mbError, MB_OK);
+    if not UninstallSilent then SuppressibleMsgBox(Failure, mbCriticalError, MB_OK, IDOK);
+    Abort;
   end;
+  Log('AccessWeaver system restoration starts at the uninstall step.');
+  if AWRunBoundedRestoration(ExpandConstant('{app}\accessweaver.exe'),
+    'system installer-restore --confirm',
+    ExpandConstant('{app}'), AWRestorationDeadlineMilliseconds, ResultCode, Failure) then Exit;
+
+  Log(Failure);
+  Log('AccessWeaver system restoration failed; process result/error code: ' + IntToStr(ResultCode));
+  if not UninstallSilent then
+    MsgBox('AccessWeaver could not restore its system changes. Review the recovery journal in ProgramData\AccessWeaver\logs, then retry uninstalling.', mbError, MB_OK);
+  Abort;
 end;
 
 #ifdef EvidenceOutput

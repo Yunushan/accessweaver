@@ -909,7 +909,7 @@ try {
             Require (-not $logFile.PSIsContainer -and $logFile.Length -gt 0 -and $logFile.Length -le 1MB) 'Uninstall registration refusal log is unavailable or exceeds its bound'
             $log=[IO.File]::ReadAllText($registrationRefusalLog)
             Require ($log.Contains('This uninstaller does not match the active AccessWeaver installation directory.')) 'Uninstall did not log the registration refusal'
-            Require (-not (Test-Path -LiteralPath $managed -ErrorAction Stop) -and -not $log.Contains('AccessWeaver system restoration failed')) 'Uninstall reached machine restoration after the registration refusal'
+            Require (-not (Test-Path -LiteralPath $managed -ErrorAction Stop) -and -not $log.Contains('AccessWeaver system restoration starts at the uninstall step.')) 'Uninstall reached machine restoration after the registration refusal'
             Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint $key) -ceq $registrationBefore) 'Uninstall registration refusal changed installed files or registration'
             Assert-UserState
             Require ((State-Snapshot) -ceq $machineBeforeRemoval) 'Uninstall registration refusal changed observed machine state'
@@ -951,8 +951,11 @@ try {
         No-Reparse $refusalLog
         Require ((Get-Item -LiteralPath $refusalLog -ErrorAction Stop).Length -le 4MB) 'Fixed restoration refusal log exceeds bounds'
         $log=[IO.File]::ReadAllText($refusalLog)
-        Require ($log.Contains('AccessWeaver system restoration did not complete successfully.') -and
-            $log.Contains('AccessWeaver system restoration failed; process result/error code: 1')) 'Uninstaller did not record the fixed restoration process refusal'
+        Require ($log.Contains('AccessWeaver system restoration starts at the uninstall step.') -and
+            $log.Contains('AccessWeaver system restoration did not complete successfully.') -and
+            $log.Contains('AccessWeaver system restoration failed; process result/error code: 1') -and
+            $log.Contains('CurUninstallStepChanged raised an exception (fatal).') -and
+            -not $log.Contains('Removed all?')) 'Uninstaller did not abort at the confirmed uninstall step after restoration failed'
         Assert-Installed $builds[1]
         Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint) -ceq $registrationBefore -and
             (Digest $uninstaller) -ceq $uninstallerHash -and (Digest $marker) -ceq $markerHash) 'Refused uninstall changed owned or unrelated files'

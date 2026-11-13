@@ -52,6 +52,12 @@ foreach($case in @(
     Reject {Assert-WindowsPublisherSignature $untrusted $publisherPin} 'An incomplete or untrusted Windows signature was accepted'
 }
 $project=Split-Path -Parent $PSScriptRoot
+$installerSource=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-installer.iss'))
+$initialize=[regex]::Match($installerSource,'(?ms)^function InitializeUninstall: Boolean;.*?^end;').Value
+$uninstallStep=[regex]::Match($installerSource,'(?ms)^procedure CurUninstallStepChanged\(CurUninstallStep: TUninstallStep\);.*?^end;').Value
+Assert ($initialize.Contains('AWUninstallPreflight') -and -not $initialize.Contains('AWRunBoundedRestoration')) 'Uninstall initialization must validate without restoring machine state'
+Assert ($uninstallStep -cmatch '(?s)if CurUninstallStep <> usUninstall then Exit;.*Failure := AWUninstallPreflight;.*AWRunBoundedRestoration.*then Exit;.*\bAbort;\s*end;') 'Uninstall must restore only after confirmation and abort deletion on failure'
+Assert ([regex]::Matches($installerSource,'\bAWRunBoundedRestoration\(').Count -eq 1) 'Restoration has another installer entry point'
 $fixture=Join-Path $project ('build\installer-contracts-'+[guid]::NewGuid().ToString('N'))
 [void](New-Item -ItemType Directory -Path $fixture)
 function Header([int]$Machine){
