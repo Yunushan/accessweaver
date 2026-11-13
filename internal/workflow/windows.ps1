@@ -1201,7 +1201,9 @@ function Disconnect-OwnedWireSock($record) {
 function Disconnect-WireSock {
     $owned=Join-Path $root 'profiles\wiresock-owned.json'
     if(-not (Test-Path -LiteralPath $owned)){throw 'No AccessWeaver-owned WireSock profile recorded'}
-    Disconnect-OwnedWireSock (Read-OwnedWireSockProfile $owned)
+    $record=Read-OwnedWireSockProfile $owned
+    Remove-WireSockRefreshTask
+    Disconnect-OwnedWireSock $record
 }
 function Install-EngineService([string]$engine,[string]$binary,[string[]]$arguments) {
     $serviceName='AccessWeaver-'+$engine

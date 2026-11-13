@@ -101,7 +101,7 @@ func Catalog() []Operation {
 		{"install", "Install an access method", []string{"Check administrator rights and dependencies; stage components", "Generate application routing and optional wgcf configuration", "Install and verify requested services and firewall rules", "Apply optional DNS and periodic refresh settings"}},
 		{"config", "Generate WireSock application configuration", []string{"Register and generate with wgcf if no configuration was supplied", "Compile default, browser and custom application rules into a private .conf file"}},
 		{"connect", "Connect an installed WireSock profile", []string{"Verify installed vendor services", "Import the managed profile, connect and inspect vendor status"}},
-		{"disconnect", "Disconnect a managed WireSock profile", []string{"Disconnect the managed profile through the product CLI"}},
+		{"disconnect", "Disconnect a managed WireSock profile", []string{"Remove the scheduled reconnect task if present", "Disconnect the managed profile and retain its ownership record"}},
 		{"scan", "Find a Zapret strategy", []string{"Run upstream blockcheck at the requested scan level", "Save the complete output and detected strategies for review"}},
 		{"auto-install", "Find and install a Zapret strategy", []string{"Run blockcheck at the selected scan level", "Select a reported common strategy, preferring HTTPS", "Install it as a managed service and retain the complete scan evidence"}},
 		{"hostlist", "Save or toggle a live hostlist", []string{"Validate domain names", "Atomically replace the active and preserved lists for the selected managed engine"}},

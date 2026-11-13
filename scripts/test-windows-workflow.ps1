@@ -699,6 +699,16 @@ try {
         $effectsBeforeCleanup=$script:externalEffectsPending
         try {
             $refused=$false
+            try {Disconnect-WireSock}catch{$refused=$_.Exception.Message -ceq 'WireSock reconnect task removal could not be verified'}
+            Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq 'disable,stop,unregister' -and (Test-Path -LiteralPath $recordPath)) 'WireSock disconnect refuses while scheduled reconnect removal is unconfirmed'
+            $script:fixtureRefreshCalls.Clear()
+            $script:fixtureRefreshRetained=$false
+            Disconnect-WireSock
+            Assert (($script:fixtureRefreshCalls -join ',') -ceq 'disable,stop,unregister,disconnect' -and (Test-Path -LiteralPath $recordPath)) 'WireSock disconnect retires scheduled reconnect and retains its profile'
+            $script:fixtureRefreshCalls.Clear()
+            $script:fixtureRefreshPresent=$true
+            $script:fixtureRefreshRetained=$true
+            $refused=$false
             try {Remove-Method 'wiresock'}catch{$refused=$_.Exception.Message -ceq 'WireSock reconnect task removal could not be verified'}
             Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq 'disable,stop,unregister' -and (Test-Path -LiteralPath $recordPath)) 'WireSock retains the profile when reconnect task removal is unconfirmed'
             $script:fixtureRefreshCalls.Clear()
