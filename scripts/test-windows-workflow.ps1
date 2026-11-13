@@ -721,6 +721,72 @@ try {
         Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'disconnect,delete') 'WireSock recovery after a connection attempt retains both cleanup steps'
     } finally {$script:undo=$previousUndo}
 }
+# Drive the actual connection function and recover its generated undo entry.
+& {
+    $previousUndo=$script:undo
+    try {
+        $root=Join-Path $testRoot 'wiresock-phase-failures'
+        $fixtureCli='C:\fixture\wiresock-connect-cli.exe'
+        $calls=[Collections.Generic.List[string]]::new()
+        function Install-WireSock {return $fixtureCli}
+        function Start-WireSockServices {}
+        function Copy-Checked {}
+        function Save-Journal {
+            if($script:undo.Count -ne 1){throw 'Unexpected WireSock journal entry count'}
+            $phase=$script:undo[0].importOnly
+            if($phase -isnot [bool]){throw 'Unexpected WireSock journal phase'}
+            if($phase){$calls.Add('save-import')}
+            else{
+                $calls.Add('save-connect')
+                if($mode -ceq 'journal'){throw 'Fixture journal failure'}
+            }
+        }
+        function Native {
+            param($program,$arguments,[switch]$Secret)
+            if($program -cne $fixtureCli -or -not $Secret){throw 'Unexpected vendor command'}
+            $command=$arguments[0]
+            $entry=$script:undo[0]
+            switch($command){
+                'import' {
+                    if(-not $entry.importOnly -or [IO.Path]::GetFileNameWithoutExtension($arguments[1]) -cne $entry.profile){
+                        throw 'Import did not use the journaled profile'
+                    }
+                    $calls.Add($command)
+                    if($mode -ceq 'import'){throw 'Fixture import failure'}
+                }
+                'connect' {
+                    if($entry.importOnly -or $arguments[1] -cne $entry.profile){throw 'Connect did not use the journaled profile'}
+                    $calls.Add($command)
+                    throw 'Fixture connect failure'
+                }
+                'disconnect' {$calls.Add($command)}
+                'delete' {
+                    if($arguments[1] -cne $entry.profile -or $entry.profile -cnotmatch '^AccessWeaver-[a-f0-9]{32}$'){
+                        throw 'Rollback targeted a different profile'
+                    }
+                    $calls.Add($command)
+                }
+                default {throw 'Unexpected vendor command'}
+            }
+            return @{exitCode=0}
+        }
+        foreach($case in @(
+            @{mode='import';calls='save-import,import,delete';label='WireSock import failure rolls back only the generated profile'},
+            @{mode='journal';calls='save-import,import,save-connect,delete';label='WireSock journal failure before connect preserves the active tunnel'},
+            @{mode='connect';calls='save-import,import,save-connect,connect,disconnect,delete';label='WireSock connect failure uses the persisted connection recovery phase'}
+        )){
+            $mode=$case.mode
+            $calls.Clear()
+            $script:undo=[Collections.Generic.List[object]]::new()
+            $failed=$false
+            try {Connect-WireSock (Join-Path $root 'fixture.conf') | Out-Null}catch{
+                $failed=$_.Exception.Message -ceq ('Fixture '+$mode+' failure')
+            }
+            $errors=@(Rollback)
+            Assert ($failed -and $errors.Count -eq 0 -and ($calls -join ',') -ceq $case.calls) $case.label
+        }
+    } finally {$script:undo=$previousUndo}
+}
 # Publisher-category checks use synthetic signature records only.
 $signatureDiscord=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Discord fixture'}}
 $signatureMicrosoft=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Microsoft fixture'}}
