@@ -754,6 +754,12 @@ try {
         function Install-WireSock {return $fixtureCli}
         function Start-WireSockServices {}
         function Copy-Checked {}
+        function Write-Atomic {
+            param($Path,$Text)
+            if((Split-Path -Leaf $Path) -cne 'wiresock-owned.json' -or ($Text | ConvertFrom-Json).profile -cne $script:undo[0].profile){throw 'Unexpected ownership record'}
+            $calls.Add('record')
+        }
+        function Event {}
         function Save-Journal {
             if($script:undo.Count -ne 1){throw 'Unexpected WireSock journal entry count'}
             $phase=$script:undo[0].importOnly
@@ -780,7 +786,11 @@ try {
                 'connect' {
                     if($entry.importOnly -or $arguments[1] -cne $entry.profile){throw 'Connect did not use the journaled profile'}
                     $calls.Add($command)
-                    throw 'Fixture connect failure'
+                    if($mode -ceq 'connect'){throw 'Fixture connect failure'}
+                }
+                'status' {
+                    $calls.Add($command)
+                    return $fixtureStatus
                 }
                 'disconnect' {$calls.Add($command)}
                 'delete' {
@@ -808,6 +818,25 @@ try {
             $errors=@(Rollback)
             Assert ($failed -and $errors.Count -eq 0 -and ($calls -join ',') -ceq $case.calls) $case.label
         }
+        $mode='complete'
+        $checks=@(
+            @{stdout="Connection status: Connected`r`nExternal address: 198.51.100.7";complete=$true;want='Connected'},
+            @{stdout='NotConnected';complete=$true;want='NotConnected'},
+            @{stdout='Connection is Connected to an unverified profile';complete=$true;want='Unknown'},
+            @{stdout="Status: Connected`nStatus: Disconnected";complete=$true;want='Unknown'},
+            @{stdout='Connected';complete=$false;want='Unknown'},
+            @{stdout=('x'*8193);complete=$true;want='Unknown'}
+        )
+        foreach($check in $checks){
+            $calls.Clear()
+            $script:undo=[Collections.Generic.List[object]]::new()
+            $fixtureStatus=@{stdout=$check.stdout;outputComplete=$check.complete}
+            $state=Connect-WireSock (Join-Path $root 'fixture.conf')
+            if($state -cne $check.want -or ($calls -join ',') -cne 'save-import,import,save-connect,connect,status,record'){
+                throw 'Unexpected WireSock status projection'
+            }
+        }
+        Assert $true 'WireSock records only a fixed vendor status and discards private output'
     } finally {$script:undo=$previousUndo}
 }
 # Exercise the updates dispatch helper with fixed public-shape release metadata.

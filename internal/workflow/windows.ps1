@@ -1162,6 +1162,15 @@ function Start-WireSockServices {
         }
     }
 }
+function Get-WireSockReportedState($status) {
+    if($status.outputComplete -ne $true -or $status.stdout -isnot [string] -or $status.stdout.Length -gt 8192){return 'Unknown'}
+    # Accept one state from a standalone line or an explicit status field.
+    # Never persist the address, profile name, or other vendor output.
+    $pattern='(?m)^[ \t]*(?:(?:Connection[ \t]+)?Status[ \t]*:[ \t]*)?(NotConnected|Connecting|Connected|Disconnecting|Disconnected)[ \t]*\r?$'
+    $states=[regex]::Matches($status.stdout,$pattern)
+    if($states.Count -ne 1){return 'Unknown'}
+    return $states[0].Groups[1].Value
+}
 function Connect-WireSock([string]$config) {
     if(Test-Path -LiteralPath (Join-Path $root 'profiles\wiresock-owned.json')){throw 'Remove the current managed WireSock method before importing another profile'}
     $cli=Install-WireSock
@@ -1177,10 +1186,10 @@ function Connect-WireSock([string]$config) {
         $recovery.importOnly=$false
         try {Save-Journal}catch{$recovery.importOnly=$true;throw}
         [void](Native $cli @('connect',$profile,'-exit') -Secret)
-        $status=Native $cli @('status') -Secret
+        $status=Get-WireSockReportedState (Native $cli @('status') -Secret)
         Write-Atomic (Join-Path $root 'profiles\wiresock-owned.json') (@{profile=$profile;cli=$cli} | ConvertTo-Json)
         Event 'WireSock connect command completed; inspect status and traffic verification separately'
-        return $status.stdout
+        return $status
     }
     if(Get-Service 'wiresock-client-service' -ErrorAction SilentlyContinue){throw 'An existing SDK WireSock service is installed; remove it through its owner before using managed setup'}
     $script:undo.Add(@{kind='wiresock';cli=$cli;legacy=$true});Save-Journal

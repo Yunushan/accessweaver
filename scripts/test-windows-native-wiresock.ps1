@@ -117,7 +117,8 @@ function Invoke-TestWorkflow([hashtable]$request){
         $outcome=Get-WorkflowOutcome $run $job
         $workflowOutcomes[$action]=$outcome
         if($action -ceq 'install' -and $outcome -ceq 'succeeded'){
-            $script:connectionState=Get-FixedConnectionState ([string]$job.result.data.status)
+            $reported=[string]$job.result.data.status
+            $script:connectionState=if($reported -ceq 'Unknown'){'unrecognized'}else{Get-FixedConnectionState $reported}
         }
         return @{passed=($outcome -ceq 'succeeded');restart=($outcome -ceq 'restart-required')}
     } finally {[IO.File]::Delete($path)}
