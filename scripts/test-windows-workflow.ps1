@@ -1528,6 +1528,9 @@ try {
     $rejected=$false
     try {Wait-App 'splitcord' $false 0 $fixtureApp}catch{$rejected=$_.Exception.Message -like 'Application installation state*'}
     Assert ($rejected -and (Test-Path -LiteralPath $fixtureApp)) 'Application removal readback requires the previous executable to be absent'
+    $script:appRemovalInvoked=$false
+    Assert ((Wait-App 'splitcord' $true 0) -ceq $fixtureApp) 'Application install readback returns the observed executable for verification'
+    $script:appRemovalInvoked=$true
     $newProcess=[pscustomobject]@{Path=$fixtureApp;SessionId=($fixtureSession+1);HasExited=$false}
     $appRemovalProcesses=@($newProcess)
     $rejected=$false
@@ -1638,7 +1641,11 @@ try {
         if(($variant -ceq 'discord' -and -not $script:appStableAbsent) -or $script:appPreviouslyInstalled){return 'C:\fixture\Discord.exe'}
     }
     function Get-AppExecutableDigest([string]$path) {
-        if($path -cne 'C:\fixture\Discord.exe'){throw 'Expected digest for the observed stable client'}
+        if($path -ceq 'C:\fixture\DiscordPTB.exe'){
+            if($script:appPTBChangeDuringCleanup -ceq 'bytes' -and $script:appInstallTrace.Contains('remove-stable')){return 'd'*64}
+            return 'c'*64
+        }
+        if($path -cne 'C:\fixture\Discord.exe'){throw 'Expected digest for the observed Discord client'}
         if($script:appStableBytesChanged){return 'b'*64}
         return 'a'*64
     }
@@ -1692,6 +1699,13 @@ try {
         param($variant,$installed,$seconds)
         $script:appInstallTrace.Add('verify-ptb')
         if($script:appReadbackFailure){throw 'fixture executable readback failure'}
+        if($variant -ceq 'discord-ptb'){
+            if($script:appPTBChangeDuringCleanup -ceq 'path' -and $script:appInstallTrace.Contains('remove-stable')){
+                return 'C:\fixture\replacement\DiscordPTB.exe'
+            }
+            return 'C:\fixture\DiscordPTB.exe'
+        }
+        return 'C:\fixture\Discord.exe'
     }
     function Event {param($text);$script:appInstallTrace.Add('event')}
     $r=[pscustomobject]@{action='app-install';engine='discord-ptb';clean=$true;sha256=''}
@@ -1713,6 +1727,15 @@ try {
     $script:appInstallTrace.Clear()
     $installed=Install-App 'discord-ptb'
     Assert (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable,verify-ptb,event') 'PTB clean verifies the installed replacement before removal and rechecks it after cleanup'
+    foreach($change in @('path','bytes')){
+        $script:appPTBChangeDuringCleanup=$change
+        $script:appInstallTrace.Clear()
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Discord PTB changed during stable client cleanup; review the current installation'}
+        Assert ($rejected -and $script:externalEffectsPending -and
+            ($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable,verify-ptb') ('PTB clean refuses success when the replacement changes '+$change+' during cleanup')
+    }
+    $script:appPTBChangeDuringCleanup=$null
     $writer=[IO.File]::OpenWrite($script:appInstallerDestination)
     $writer.Dispose()
     Assert ($script:appInstallerLockedAtLaunch) 'PTB clean retains a read-only installer handle through installer launch'

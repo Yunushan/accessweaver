@@ -2826,7 +2826,7 @@ function Wait-App([string]$variant,[bool]$installed,[int]$seconds=120,[string]$p
         $app=Find-App $variant
         if($installed -and $app){
             No-Reparse $app
-            if(Test-Path -LiteralPath $app -PathType Leaf){return}
+            if(Test-Path -LiteralPath $app -PathType Leaf -ErrorAction Stop){return $app}
         }elseif(-not $installed -and -not $app -and
                  (-not $previousImage -or -not (Test-Path -LiteralPath $previousImage -ErrorAction Stop))){return}
         Start-Sleep -Milliseconds 500
@@ -2916,12 +2916,16 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         Save-ApplicationEffectBoundary
         [void](Native $file $installerArgs -Timeout 900)
     } finally {$lockedInstaller.Dispose()}
-    Wait-App $variant $true 180
+    $installedApp=Wait-App $variant $true 180
     if($cleanPTB){
         # Preserve stable Discord until PTB setup and executable readback succeed.
+        $installedDigest=Get-AppExecutableDigest $installedApp
         if($stableBeforeSetup){Remove-App 'discord' $stableBeforeSetup $stableBeforeSetupDigest}
         elseif(Find-App 'discord'){throw 'Stable Discord appeared during PTB setup; review the current installation'}
-        Wait-App $variant $true 30
+        $confirmedApp=Wait-App $variant $true 30
+        if($confirmedApp -ine $installedApp -or (Get-AppExecutableDigest $confirmedApp) -ine $installedDigest){
+            throw 'Discord PTB changed during stable client cleanup; review the current installation'
+        }
     }
     if($Reinstall){
         Event 'Stable Discord reinstalled in the desktop session'
