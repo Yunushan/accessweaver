@@ -796,6 +796,88 @@ function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signe
     Event ('Verified download: '+[IO.Path]::GetFileName($destination))
     if($ReturnVerifiedHash){return $verifiedSHA256}
 }
+function Read-ComponentZip64Fields([byte[]]$Extra,[long[]]$Values) {
+    $offset=0
+    while($Extra.Length-$offset -ge 4){
+        $tag=[BitConverter]::ToUInt16($Extra,$offset)
+        $length=[BitConverter]::ToUInt16($Extra,$offset+2)
+        $offset+=4
+        if($length -gt $Extra.Length-$offset){break}
+        if($tag -eq 1){
+            $end=$offset+$length
+            for($field=0;$field -lt $Values.Length;$field++){
+                if($Values[$field] -ne 4294967295L){continue}
+                if($end-$offset -lt 8){throw 'Component ZIP64 member metadata is incomplete'}
+                $value=[BitConverter]::ToUInt64($Extra,$offset)
+                if($value -gt [long]::MaxValue){throw 'Component ZIP64 member metadata exceeds its bounds'}
+                $Values[$field]=[long]$value
+                $offset+=8
+            }
+            return
+        }
+        $offset+=$length
+    }
+    throw 'Component ZIP64 member metadata is missing or invalid'
+}
+function Assert-ComponentZipLocalMember([IO.BinaryReader]$Reader,[long]$DirectoryOffset,[byte[]]$Header,[byte[]]$Name,[byte[]]$Extra) {
+    $stream=$Reader.BaseStream
+    $flags=[BitConverter]::ToUInt16($Header,8)
+    $method=[BitConverter]::ToUInt16($Header,10)
+    $crc=[BitConverter]::ToUInt32($Header,16)
+    $disk=[BitConverter]::ToUInt16($Header,34)
+    if($disk -ne 0){throw 'Multi-volume component archive members are unsupported'}
+    $values=[long[]]@([BitConverter]::ToUInt32($Header,24),[BitConverter]::ToUInt32($Header,20),[BitConverter]::ToUInt32($Header,42))
+    $zip64Sizes=$values[0] -eq 4294967295L -or $values[1] -eq 4294967295L
+    if($values -contains 4294967295L){Read-ComponentZip64Fields $Extra $values}
+    $expanded=$values[0];$compressed=$values[1];$localOffset=$values[2]
+    if($DirectoryOffset-$localOffset -lt 30){throw 'Component archive local member header exceeds its bounds'}
+    $stream.Position=$localOffset
+    $local=$Reader.ReadBytes(30)
+    if([BitConverter]::ToUInt32($local,0) -ne 0x04034b50 -or
+        [BitConverter]::ToUInt16($local,6) -ne $flags -or [BitConverter]::ToUInt16($local,8) -ne $method){
+        throw 'Component archive local and central headers disagree'
+    }
+    $nameLength=[BitConverter]::ToUInt16($local,26)
+    $extraLength=[BitConverter]::ToUInt16($local,28)
+    $dataOffset=$stream.Position+$nameLength+$extraLength
+    if($nameLength -ne $Name.Length -or $dataOffset -gt $DirectoryOffset -or $compressed -gt $DirectoryOffset-$dataOffset){
+        throw 'Component archive local member data exceeds its bounds'
+    }
+    $localName=$Reader.ReadBytes($nameLength)
+    if([Convert]::ToBase64String($localName) -cne [Convert]::ToBase64String($Name)){
+        throw 'Component archive local and central member names disagree'
+    }
+    $localSizes=[long[]]@([BitConverter]::ToUInt32($local,22),[BitConverter]::ToUInt32($local,18))
+    $localZip64=$localSizes -contains 4294967295L
+    if(($flags -band 8) -eq 0){
+        if($localZip64){Read-ComponentZip64Fields ($Reader.ReadBytes($extraLength)) $localSizes}
+        if($localSizes[0] -ne $expanded -or $localSizes[1] -ne $compressed -or [BitConverter]::ToUInt32($local,14) -ne $crc){
+            throw 'Component archive local and central member sizes or CRC disagree'
+        }
+        return
+    }
+
+    # A streaming writer can leave zero sizes in the local header. Its data
+    # descriptor supplies the independent sizes and CRC, with an optional signature.
+    $stream.Position=$dataOffset+$compressed
+    $descriptor=$Reader.ReadBytes([int][Math]::Min(24,$DirectoryOffset-$stream.Position))
+    $wide=$zip64Sizes -or $localZip64
+    $descriptorSize=if($wide){20}else{12}
+    foreach($start in @(0,4)){
+        if($descriptor.Length -lt $start+$descriptorSize){continue}
+        if($start -eq 4 -and [BitConverter]::ToUInt32($descriptor,0) -ne 0x08074b50){continue}
+        if([BitConverter]::ToUInt32($descriptor,$start) -ne $crc){continue}
+        if($wide){
+            $describedCompressed=[BitConverter]::ToUInt64($descriptor,$start+4)
+            $describedExpanded=[BitConverter]::ToUInt64($descriptor,$start+12)
+        }else{
+            $describedCompressed=[BitConverter]::ToUInt32($descriptor,$start+4)
+            $describedExpanded=[BitConverter]::ToUInt32($descriptor,$start+8)
+        }
+        if($describedCompressed -eq $compressed -and $describedExpanded -eq $expanded){return}
+    }
+    throw 'Component archive data descriptor disagrees with its central header'
+}
 function Assert-ComponentZipBudget([IO.Stream]$stream) {
     # Bound central-directory parsing before ZipArchive materializes its entries.
     if(-not $stream.CanSeek -or $stream.Length -lt 22 -or $stream.Length -gt (2147483648L+32MB)){throw 'Component archive has an unsupported compressed size'}
@@ -845,7 +927,11 @@ function Assert-ComponentZipBudget([IO.Stream]$stream) {
             $nameLength=[BitConverter]::ToUInt16($header,28);$extra=[BitConverter]::ToUInt16($header,30);$comment=[BitConverter]::ToUInt16($header,32)
             $skip=[long]$nameLength+$extra+$comment
             if($nameLength -eq 0 -or $skip -gt $end-$stream.Position){throw 'Component archive central directory entry exceeds its bounds'}
-            [void]$stream.Seek($skip,[IO.SeekOrigin]::Current)
+            $name=$reader.ReadBytes($nameLength)
+            $extraFields=$reader.ReadBytes($extra)
+            $nextHeader=$stream.Position+$comment
+            Assert-ComponentZipLocalMember $reader $offset $header $name $extraFields
+            $stream.Position=$nextHeader
         }
         if($stream.Position -ne $end){
             # Optional PKWARE central-directory digital signature; no extra entries.

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Create small inert ZIP fixtures for the native Windows extraction contracts."""
+import io
 import json
 from pathlib import Path
 import stat
@@ -50,6 +51,39 @@ def create(root):
     with zipfile.ZipFile(root / "valid-zip64-sentinel.zip") as check:
         assert check.read("root.txt") == b"replacement" and check.testzip() is None
 
+    # Force streaming headers and an independent descriptor, with both forms
+    # of the optional signature and both size widths.
+    class NonSeekable(io.BytesIO):
+        def seek(self, *args):
+            raise io.UnsupportedOperation("streaming archive")
+
+    for zip64 in (False, True):
+        stream = NonSeekable()
+        with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as target:
+            with target.open("root.txt", "w", force_zip64=zip64) as member:
+                member.write(b"replacement")
+        streamed = bytearray(stream.getvalue())
+        end = streamed.rfind(b"PK\x05\x06")
+        central = struct.unpack_from("<I", streamed, end + 16)[0]
+        descriptor = central - (24 if zip64 else 16)
+        assert streamed[descriptor:descriptor + 4] == b"PK\x07\x08"
+        for signed in (True, False):
+            data = bytearray(streamed)
+            if not signed:
+                del data[descriptor:descriptor + 4]
+                struct.pack_into("<I", data, end - 4 + 16, central - 4)
+            suffix = f"{'zip64' if zip64 else 'zip32'}-{'signed' if signed else 'unsigned'}"
+            name = f"valid-descriptor-{suffix}.zip"
+            (root / name).write_bytes(data)
+            records.append(dict(name=name, expected="valid"))
+            with zipfile.ZipFile(root / name) as check:
+                assert check.read("root.txt") == b"replacement" and check.testzip() is None
+            size_offset = descriptor + (4 if signed else 0) + (12 if zip64 else 8)
+            struct.pack_into("<Q" if zip64 else "<I", data, size_offset, 1)
+            name = f"invalid-descriptor-{suffix}.zip"
+            (root / name).write_bytes(data)
+            records.append(dict(name=name, expected="reject"))
+
     archive("empty", [])
     archive("too-many", [(f"item-{i:04d}.txt", b"") for i in range(4097)])
     bad_paths = {
@@ -80,6 +114,9 @@ def create(root):
     patch("declared-budget", [("root.txt", b"x")], lambda d, e, c: struct.pack_into("<I", d, c + 24, (2 << 30) + 1))
     patch("underreported-stream", [("root.txt", b"actual-stream-data")], lambda d, e, c: struct.pack_into("<I", d, c + 24, 1))
     patch("overreported-stream", [("root.txt", b"actual-stream-data")], lambda d, e, c: struct.pack_into("<I", d, c + 24, 100))
+    patch("different-local-name", [("root.txt", b"replacement")], lambda d, e, c: d.__setitem__(30, ord("x")))
+    patch("different-local-crc", [("root.txt", b"replacement")], lambda d, e, c: d.__setitem__(14, d[14] ^ 1))
+    patch("local-offset-in-directory", [("root.txt", b"replacement")], lambda d, e, c: struct.pack_into("<I", d, c + 42, c))
     patch("unsupported-compression", [("root.txt", b"actual-stream-data")], lambda d, e, c: struct.pack_into("<H", d, c + 10, 99))
     (root / "cases.json").write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
     print(f"Created {len(records)} inert archive cases")
