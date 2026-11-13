@@ -21,8 +21,8 @@ $sourceHash=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
 $tokens=$null;$parseErrors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($sourcePath,[ref]$tokens,[ref]$parseErrors)
 if($parseErrors.Count){throw 'DNS workflow source did not parse'}
-$selected=@('Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Assert-ConfiguredDNSServers','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Test-DNSIPv4Answer','Wait-DNSCryptListeners','Configure-DNS','Restore-DNS')
-$allowed=@('Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Save-DNSRecoveryReceipt','Publish-WorkflowFile','No-Reparse','Get-Item','Assert-ConfiguredDNSServers','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Test-DNSIPv4Answer','Wait-DNSCryptListeners','Restore-DNS','Get-ItemProperty','Get-Command','Join-Path','Get-NetAdapter','Where-Object','ForEach-Object','Select-Object','Test-Path','Get-DnsClientServerAddress','Get-DnsClientDohServerAddress','Write-Atomic','Get-FileHash','Add-Member','ConvertTo-Json','Save-Journal','Ensure-Asset','Split-Path','Copy-Checked','Get-Content','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Get-Service','Install-EngineService','Set-Service','Restart-Service','Stop-Service','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress','Set-DnsClientServerAddress','Clear-DnsClientCache','Resolve-DnsName','Start-Sleep','Event','ConvertFrom-Json','Remove-Item')
+$selected=@('Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Assert-ConfiguredDNSServers','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Test-DNSIPv4Answer','Wait-DNSCryptListeners','Configure-DNS','Restore-DNS')
+$allowed=@('Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Save-DNSRecoveryReceipt','Publish-WorkflowFile','No-Reparse','Get-Item','Assert-ConfiguredDNSServers','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Test-DNSIPv4Answer','Wait-DNSCryptListeners','Restore-DNS','Get-ItemProperty','Get-Command','Join-Path','Get-NetAdapter','Where-Object','ForEach-Object','Select-Object','Test-Path','Get-DnsClientServerAddress','Get-DnsClientDohServerAddress','Write-Atomic','Get-FileHash','Add-Member','ConvertTo-Json','Save-Journal','Ensure-Asset','Split-Path','Copy-Checked','Get-Content','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Get-Service','Install-EngineService','Set-Service','Restart-Service','Stop-Service','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress','Set-DnsClientServerAddress','Clear-DnsClientCache','Resolve-DnsName','Start-Sleep','Event','ConvertFrom-Json','Remove-Item')
 foreach($name in $selected){
     $nodes=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Required DNS function is unavailable'}
@@ -40,7 +40,7 @@ $ownerToken=[guid]::NewGuid().ToString('N')
 [IO.File]::WriteAllText($ownerMarker,$ownerToken,[Text.UTF8Encoding]::new($false))
 $script:checks=0;$script:caseNumber=0
 $script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('restore-doh-refuses-concurrent-policy','restore-doh-keeps-independent-policy','restore-doh-repairs-stable-malformed-policy','configure-dnscrypt-loopback-readback','doh-keeps-old-resolver-until-verified','dns-service-ownership-before-effects','dns-service-binding-before-mutation','dnscrypt-preserves-independent-doh','first-doh-captures-global-policy','dnscrypt-keeps-existing-doh-originals','invalid-doh-recovery-scope','dnscrypt-restarts-verified-service','dnscrypt-listeners-before-adapters','dnscrypt-listener-retries-only-unready-family','dnscrypt-listener-refusal-preserves-adapter-state','dnscrypt-listener-refuses-invalid-answers','ordinary-resolver-requires-address-answer','configure-adapter-readback-refuses','configure-adapter-readback-retains','configure-adapter-readback-retries','configure-adapter-readback-recovers','configure-post-policy-refuses','configure-post-policy-recovers','configure-policy-readback-before-adapters','configure-policy-refusal-retains-recovery','configure-policy-recovery-completes','configure-policy-query-before-verification','scope-capture-flat-ordered','scope-rebinds-current-adapter','scope-family-extension','scope-invalid-before-effects','scope-dhcp-reset-preserved','scope-global-and-ipv4-preserved','changed-adapter-retains-before-interface-read','capture-index-change-before-snapshot','non-dns-adapter-not-targeted','single-family-capture-and-restore','new-family-originals-extended','family-extension-before-effects','client-inventory-before-effects','family-flags-preflight','owned-family-missing-retained','invalid-recovery-identities-before-inspection','restore-uses-refreshed-guid-index','changed-adapter-retains-before-dns-read','case-insensitive-down-adapter-restoration','reconfiguration-rotates-recovery-identity','existing-originals-never-recaptured','new-adapter-originals-persisted','extended-snapshot-restores-both-adapters','extension-failure-before-effects','invalid-configuration-preflight','configuration-uses-current-guid-index','source-uncovered-dns-write','absent','absent-entry-idempotence-and-unrelated-preservation','accessweaver-dns-contracts-','add','all-providers-no-plaintext-fallback','ambiguous-adapter','bad-doh','bad-flags','capture-inspection-failure-not-empty','case','confirmed-absent-entry-not-removed-again','confirmed-absent-mode-is-dhcp','current-doh-query-before-effects','dns','doh','duplicate-doh','empty-adapters','empty-static','exact-original-doh-restored','expected-refusal','false','fixture-cleanup-incomplete','guid-recovery-uses-current-index','invalid-recovery-preflight','legacy-no-doh-recovery-supported','malformed-mode-not-empty','missing-adapter','no-false-restored-event','none','original-snapshot-retained','partial-removal-retains-needed-recovery','profiles','recovery-retry-completes-after-confirmed-inspection','registry-error-not-dhcp','remove','snapshot-publication-binds-prior-bytes','snapshot-frame-refused','snapshot-preflight-change-refused','snapshot-journal-digest-refused','configure-interface-reuse-before-setter','restore-interface-reuse-before-setter','restore-retirement-requires-absence','restore-retirement-refuses-replaced-snapshot','restore-delayed-observation','restore-adapter-row-fence','restore-inspection-before-effects','saved-doh-needs-capability','set','snapshot-before-native-effects','journal-before-snapshot','snapshot-must-match-journal','activation-before-native-effects','receipt-before-retirement','source-doh-inspection-failed','source-doh-mutation-failed','source-registry-inspection-failed','source-snapshot-removal-failed','source-snapshot-write-failed','true','unexpected-contract-error','unknown-test-code')
+$script:closedContractCodes=@('configure-doh-preserves-independent-policy','restore-doh-refuses-unowned-policy','restore-doh-resumes-partial-configuration','restore-doh-conditional-needs-capability','restore-doh-rejects-invalid-ownership','configure-doh-refuses-stale-reconfiguration','restore-doh-refuses-concurrent-policy','restore-doh-keeps-independent-policy','restore-doh-repairs-stable-malformed-policy','configure-dnscrypt-loopback-readback','doh-keeps-old-resolver-until-verified','dns-service-ownership-before-effects','dns-service-binding-before-mutation','dnscrypt-preserves-independent-doh','first-doh-captures-global-policy','dnscrypt-keeps-existing-doh-originals','invalid-doh-recovery-scope','dnscrypt-restarts-verified-service','dnscrypt-listeners-before-adapters','dnscrypt-listener-retries-only-unready-family','dnscrypt-listener-refusal-preserves-adapter-state','dnscrypt-listener-refuses-invalid-answers','ordinary-resolver-requires-address-answer','configure-adapter-readback-refuses','configure-adapter-readback-retains','configure-adapter-readback-retries','configure-adapter-readback-recovers','configure-post-policy-refuses','configure-post-policy-recovers','configure-policy-readback-before-adapters','configure-policy-refusal-retains-recovery','configure-policy-recovery-completes','configure-policy-query-before-verification','scope-capture-flat-ordered','scope-rebinds-current-adapter','scope-family-extension','scope-invalid-before-effects','scope-dhcp-reset-preserved','scope-global-and-ipv4-preserved','changed-adapter-retains-before-interface-read','capture-index-change-before-snapshot','non-dns-adapter-not-targeted','single-family-capture-and-restore','new-family-originals-extended','family-extension-before-effects','client-inventory-before-effects','family-flags-preflight','owned-family-missing-retained','invalid-recovery-identities-before-inspection','restore-uses-refreshed-guid-index','changed-adapter-retains-before-dns-read','case-insensitive-down-adapter-restoration','reconfiguration-rotates-recovery-identity','existing-originals-never-recaptured','new-adapter-originals-persisted','extended-snapshot-restores-both-adapters','extension-failure-before-effects','invalid-configuration-preflight','configuration-uses-current-guid-index','source-uncovered-dns-write','absent','absent-entry-idempotence-and-unrelated-preservation','accessweaver-dns-contracts-','add','all-providers-no-plaintext-fallback','ambiguous-adapter','bad-doh','bad-flags','capture-inspection-failure-not-empty','case','confirmed-absent-entry-not-removed-again','confirmed-absent-mode-is-dhcp','current-doh-query-before-effects','dns','doh','duplicate-doh','empty-adapters','empty-static','exact-original-doh-restored','expected-refusal','false','fixture-cleanup-incomplete','guid-recovery-uses-current-index','invalid-recovery-preflight','legacy-no-doh-recovery-supported','malformed-mode-not-empty','missing-adapter','no-false-restored-event','none','original-snapshot-retained','partial-removal-retains-needed-recovery','profiles','recovery-retry-completes-after-confirmed-inspection','registry-error-not-dhcp','remove','snapshot-publication-binds-prior-bytes','snapshot-frame-refused','snapshot-preflight-change-refused','snapshot-journal-digest-refused','configure-interface-reuse-before-setter','restore-interface-reuse-before-setter','restore-retirement-requires-absence','restore-retirement-refuses-replaced-snapshot','restore-delayed-observation','restore-adapter-row-fence','restore-inspection-before-effects','saved-doh-needs-capability','set','snapshot-before-native-effects','journal-before-snapshot','snapshot-must-match-journal','activation-before-native-effects','receipt-before-retirement','source-doh-inspection-failed','source-doh-mutation-failed','source-registry-inspection-failed','source-snapshot-removal-failed','source-snapshot-write-failed','true','unexpected-contract-error','unknown-test-code')
 function Assert-DNS([bool]$Condition,[string]$Code){if(-not $Condition){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('DNS contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-DNS([scriptblock]$Operation,[string]$ExpectedMessage){
     $failed=$false
@@ -68,6 +68,7 @@ function New-DNSCase {
     $script:dnsRowFault='';$script:unverifiedDNSWrites=0
     $script:recoveryLag=0;$script:renumberDuringRecoveryRead=$false;$script:reuseBeforeDNSSetter=$false;$script:silentSnapshotRemoval=$false
     $script:changeDohAfterAdapterWrite='';$script:changeDohAfterProviderWrite=$false
+    $script:changeDohOnActivation=''
     $script:currentDoh=@{};$script:calls=[Collections.Generic.List[object]]::new();$script:events=[Collections.Generic.List[string]]::new()
     $script:undo=[Collections.Generic.List[object]]::new();$script:dnsConfigured=$false;$script:journals=0;$script:journalDigest=$null;$script:journalActive=$false;$script:receiptDigest=$null
 }
@@ -193,10 +194,10 @@ function Get-DnsClientDohServerAddress {
     if($script:disappearDuringDoh){$script:adapters=@();$script:disappearDuringDoh=$false}
     $script:dohReads++;if($script:failDohRead -eq $script:dohReads){Write-Error 'source-doh-inspection-failed';return}
     if($ServerAddress){throw 'Per-address absent/error inference is not allowed'}
-    $rows=@($script:currentDoh.Values)
-    if(($script:dohReads -eq 3 -and $script:configureDohReadFault) -or ($script:dohReads -eq 4 -and $script:postConfigureDohReadFault)){
+    $rows=@($script:currentDoh.Values | Select-Object ServerAddress,DohTemplate,AllowFallbackToUdp,AutoUpgrade)
+    if(($script:dohReads -eq 6 -and $script:configureDohReadFault) -or ($script:dohReads -eq 7 -and $script:postConfigureDohReadFault)){
         $target=@($rows | Where-Object {$_.ServerAddress -ceq $script:configureDohFaultAddress})[0]
-        $fault=if($script:dohReads -eq 3){$script:configureDohReadFault}else{$script:postConfigureDohReadFault}
+        $fault=if($script:dohReads -eq 6){$script:configureDohReadFault}else{$script:postConfigureDohReadFault}
         switch -CaseSensitive ($fault){
             'missing' {$rows=@($rows | Where-Object {$_.ServerAddress -cne $script:configureDohFaultAddress})}
             'duplicate' {$rows+=@($target)}
@@ -267,6 +268,14 @@ function Save-Journal {
     if($script:undo[0].snapshotActive -and $script:failActivationWrite){throw 'Fixture activation write failed'}
     $script:journalDigest=$script:undo[0].snapshotSHA256
     $script:journalActive=($script:undo[0].snapshotActive -eq $true)
+    if($script:journalActive -and $script:changeDohOnActivation){
+        if($script:changeDohOnActivation -ceq 'remove'){
+            $script:currentDoh.Remove('8.8.8.8')
+        }else{
+            $script:currentDoh['8.8.8.8']=Old-DohFixture
+            $script:currentDoh['8.8.8.8'].DohTemplate='https://independent.invalid/dns-query'
+        }
+    }
     $script:journals++
 }
 function Event([string]$Text){$script:events.Add($Text)}
@@ -466,7 +475,7 @@ try {
     foreach($kind in @('add','set','read-error')){
         New-DNSCase
         if($kind -ceq 'set'){$script:currentDoh['8.8.8.8']=Old-DohFixture}
-        if($kind -ceq 'read-error'){$script:failDohRead=3}else{$script:silentDohFault=$kind}
+        if($kind -ceq 'read-error'){$script:failDohRead=6}else{$script:silentDohFault=$kind}
         Reject-DNS {Configure-DNS 'doh'}
         Assert-DNS (@($script:calls | Where-Object {$_.kind -ceq 'dns'}).Count -eq 0 -and $script:resolverQueries -eq 0 -and -not $script:dnsConfigured) 'configure-policy-readback-before-adapters'
         $hash=Snapshot-Hash;Assert-SnapshotRetained $hash
@@ -474,7 +483,51 @@ try {
         Assert-DNS (-not [IO.File]::Exists($snapshot)) 'configure-policy-recovery-completes'
     }
     New-DNSCase;Configure-DNS 'doh'
-    Assert-DNS ($script:dohReads -eq 4 -and $script:resolverQueries -eq 1 -and $script:dnsConfigured) 'configure-policy-query-before-verification'
+    Assert-DNS ($script:dohReads -eq 7 -and $script:resolverQueries -eq 1 -and $script:dnsConfigured) 'configure-policy-query-before-verification'
+    foreach($change in @('add','remove','template')){
+        New-DNSCase
+        if($change -cne 'add'){$script:currentDoh['8.8.8.8']=Old-DohFixture}
+        $script:changeDohOnActivation=$change
+        Reject-DNS {Configure-DNS 'doh'} 'DoH policy changed during configuration'
+        $hash=Snapshot-Hash;Assert-SnapshotRetained $hash
+        Assert-DNS ($script:journalActive -and (Mutation-Count) -eq 0 -and $script:resolverQueries -eq 0) 'configure-doh-preserves-independent-policy'
+        # Journal rollback uses the same digest-bound restoration path.
+        Reject-DNS {Restore-DNS $script:undo[0].snapshotSHA256} 'Managed DoH policy has changed independently'
+        Assert-SnapshotRetained $hash
+        Assert-DNS ((Mutation-Count) -eq 0 -and $null -eq $script:receiptDigest) 'restore-doh-refuses-unowned-policy'
+    }
+    New-DNSCase
+    $script:currentDoh['9.9.9.9']=Old-DohFixture
+    $script:currentDoh['9.9.9.9'].ServerAddress='9.9.9.9'
+    $script:changeDohAfterProviderWrite=$true
+    Reject-DNS {Configure-DNS 'doh'} 'DoH policy changed during configuration'
+    $hash=Snapshot-Hash
+    Assert-DNS ($script:currentDoh['8.8.8.8'].DohTemplate -ceq 'https://8.8.8.8/dns-query' -and
+        $script:currentDoh['9.9.9.9'].DohTemplate -ceq 'https://independent.invalid/dns-query' -and
+        (Mutation-Count) -eq 1) 'configure-doh-preserves-independent-policy'
+    Reject-DNS {Restore-DNS $hash} 'Managed DoH policy has changed independently';Assert-SnapshotRetained $hash
+    Assert-DNS ((Mutation-Count) -eq 1) 'restore-doh-refuses-unowned-policy'
+    Reject-DNS {Configure-DNS 'doh'} 'Managed DoH policy has changed independently';Assert-SnapshotRetained $hash
+    Assert-DNS ((Mutation-Count) -eq 1 -and $script:journals -eq 2) 'configure-doh-refuses-stale-reconfiguration'
+    $script:currentDoh['9.9.9.9'].DohTemplate='https://original.invalid/dns-query'
+    Restore-DNS $hash
+    Assert-DNS (-not $script:currentDoh.ContainsKey('8.8.8.8') -and
+        $script:currentDoh['9.9.9.9'].DohTemplate -ceq 'https://original.invalid/dns-query' -and
+        @($script:calls | Where-Object {$_.address -eq '9.9.9.9'}).Count -eq 0 -and
+        -not [IO.File]::Exists($snapshot)) 'restore-doh-resumes-partial-configuration'
+    New-DNSCase;Configure-DNS 'doh';$hash=Snapshot-Hash;$script:calls.Clear()
+    $script:present['Get-DnsClientDohServerAddress']=$false
+    Reject-DNS {Restore-DNS $hash} 'Original DoH metadata cannot be restored';Assert-SnapshotRetained $hash
+    Assert-DNS ((Mutation-Count) -eq 0) 'restore-doh-conditional-needs-capability'
+    foreach($marker in @('true',$false,$null,$true)){
+        New-DNSCase
+        $saved=Original-DNSFixture
+        $saved.dohManaged=$false
+        $saved.dohConditional=$marker
+        Write-DNSFixture $saved;$hash=Snapshot-Hash
+        Reject-DNS {Restore-DNS $hash} 'Original DNS snapshot has invalid DoH ownership metadata';Assert-SnapshotRetained $hash
+        Assert-DNS ((Mutation-Count) -eq 0 -and $script:dohReads -eq 0) 'restore-doh-rejects-invalid-ownership'
+    }
     # Successful setters are not proof that the selected families adopted the
     # intended addresses; retry only reads, then refuse without a resolver query.
     foreach($fault in @('noop','wrong-value','empty-static','wrong-order','read-error','adapter-missing')){

@@ -2138,6 +2138,32 @@ function Test-DNSRecoveryOwnsDoh($Record) {
     }
     return $scope.Value
 }
+function Get-DNSDohProviders {
+    # Literal authorities avoid plaintext resolution of the DoH bootstrap host.
+    return @(
+        @{ServerAddress='8.8.8.8';DohTemplate='https://8.8.8.8/dns-query';AllowFallbackToUdp=$false;AutoUpgrade=$true},
+        @{ServerAddress='9.9.9.9';DohTemplate='https://9.9.9.9/dns-query';AllowFallbackToUdp=$false;AutoUpgrade=$true},
+        @{ServerAddress='2001:4860:4860::8888';DohTemplate='https://[2001:4860:4860::8888]/dns-query';AllowFallbackToUdp=$false;AutoUpgrade=$true},
+        @{ServerAddress='2620:fe::fe';DohTemplate='https://[2620:fe::fe]/dns-query';AllowFallbackToUdp=$false;AutoUpgrade=$true}
+    )
+}
+function Test-DNSRecoveryUsesDohOwnership($Record,[bool]$OwnsDoh) {
+    $guard=$Record.PSObject.Properties['dohConditional']
+    if($null -eq $guard){return $false}
+    if($guard.Value -isnot [bool] -or -not $guard.Value -or -not $OwnsDoh){
+        throw 'Original DNS snapshot has invalid DoH ownership metadata'
+    }
+    return $true
+}
+function Get-DNSOriginalDohEntry($Record,[string]$Address) {
+    $entry=@($Record.doh | Where-Object {$_.ServerAddress -eq $Address})
+    if($entry.Count -gt 1){throw 'Original DoH metadata is ambiguous; retain the original DNS snapshot'}
+    if($entry.Count -eq 1 -and ($entry[0].DohTemplate -isnot [string] -or [string]::IsNullOrWhiteSpace($entry[0].DohTemplate) -or
+        $entry[0].AllowFallbackToUdp -isnot [bool] -or $entry[0].AutoUpgrade -isnot [bool])){
+        throw 'Original DoH metadata is incomplete; retain the DNS snapshot for manual recovery'
+    }
+    return $entry
+}
 function Configure-DNS([string]$method) {
     if($method -notin @('doh','dnscrypt')){throw 'Choose doh or dnscrypt'}
     if($method -eq 'doh'){foreach($command in @('Get-DnsClientDohServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'This Windows version does not expose native DoH management; choose DNSCrypt instead'}}}
@@ -2154,6 +2180,7 @@ function Configure-DNS([string]$method) {
     $hadSnapshot=$null -ne $originalSnapshot
     $original=if($hadSnapshot){$originalSnapshot.record}else{[pscustomobject]@{adapters=@();doh=@();dohManaged=$false}}
     $ownsDoh=Test-DNSRecoveryOwnsDoh $original
+    $guardDoh=Test-DNSRecoveryUsesDohOwnership $original $ownsDoh
     if($hadSnapshot -and ($null -eq $original.adapters -or @($original.adapters).Count -eq 0)){throw 'Original DNS snapshot has no adapter records; no new DNS configuration was applied'}
     $records=@($original.adapters);$known=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach($record in $records){
@@ -2185,9 +2212,25 @@ function Configure-DNS([string]$method) {
             }
         }
     }
-    if($method -eq 'doh' -and -not $ownsDoh){
-        $original.doh=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
-        $original.dohManaged=$true
+    if($method -eq 'doh'){
+        $providers=@(Get-DNSDohProviders)
+        $baseline=@(Get-DnsClientDohServerAddress -ErrorAction Stop |
+            Select-Object ServerAddress,DohTemplate,AllowFallbackToUdp,AutoUpgrade)
+        if(-not $ownsDoh){
+            $original.doh=@($baseline | Where-Object {$_.ServerAddress -in $providers.ServerAddress})
+            $original.dohManaged=$true
+            $original | Add-Member -NotePropertyName dohConditional -NotePropertyValue $true
+            $guardDoh=$true
+        }
+        foreach($provider in $providers){
+            $address=$provider.ServerAddress
+            $old=@(Get-DNSOriginalDohEntry $original $address)
+            $current=@($baseline | Where-Object {$_.ServerAddress -eq $address})
+            if($current.Count -gt 1){throw 'Current DoH configuration is ambiguous; retain the original DNS snapshot'}
+            if($guardDoh -and -not (Test-DNSDohEntriesEqual $current $old) -and -not (Test-DNSDohEntriesEqual $current @($provider))){
+                throw 'Managed DoH policy has changed independently; review it before configuration'
+            }
+        }
     }
     # A new configuration supersedes older journals, even if the originals
     # are identical. DNS alone owns retirement of the published snapshot.
@@ -2241,22 +2284,28 @@ function Configure-DNS([string]$method) {
         })
         Wait-DNSCryptListeners $listeners
     } elseif($method -eq 'doh') {
-        # Literal authorities avoid plaintext resolution of the DoH bootstrap host.
-        # Keep each provider/family paired with its own authenticated IP identity.
-        $providers=@(@{address='8.8.8.8';url='https://8.8.8.8/dns-query'},@{address='9.9.9.9';url='https://9.9.9.9/dns-query'},@{address='2001:4860:4860::8888';url='https://[2001:4860:4860::8888]/dns-query'},@{address='2620:fe::fe';url='https://[2620:fe::fe]/dns-query'})
-        $currentDoh=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
-        foreach($provider in $providers){if(@($currentDoh | Where-Object {$_.ServerAddress -eq $provider.address}).Count -gt 1){throw 'Current DoH configuration is ambiguous; retain the original DNS snapshot'}}
-        foreach($provider in $providers){if(@($currentDoh | Where-Object {$_.ServerAddress -eq $provider.address}).Count -eq 1){Set-DnsClientDohServerAddress -ServerAddress $provider.address -DohTemplate $provider.url -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop}else{Add-DnsClientDohServerAddress -ServerAddress $provider.address -DohTemplate $provider.url -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop}}
-        # Do not switch adapters to a resolver whose encryption policy did not
-        # survive the native setters. Keep first originals for rollback on refusal.
+        foreach($provider in $providers){
+            $address=$provider.ServerAddress
+            $expected=@($baseline | Where-Object {$_.ServerAddress -eq $address})
+            $current=@(Get-DnsClientDohServerAddress -ErrorAction Stop | Where-Object {$_.ServerAddress -eq $address})
+            if(-not (Test-DNSDohEntriesEqual $current $expected)){
+                throw 'DoH policy changed during configuration; review current policy and retain the recovery snapshot'
+            }
+            if(Test-DNSDohEntriesEqual $current @($provider)){continue}
+            $script:externalEffectsPending=$true
+            if($current.Count -eq 1){
+                Set-DnsClientDohServerAddress -ServerAddress $address -DohTemplate $provider.DohTemplate -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop
+            }else{
+                Add-DnsClientDohServerAddress -ServerAddress $address -DohTemplate $provider.DohTemplate -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop
+            }
+        }
+        # Require verified policy before switching adapter resolvers.
         $verifiedDoh=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
         foreach($provider in $providers){
-            $verified=@($verifiedDoh | Where-Object {$_.ServerAddress -is [string] -and $_.ServerAddress -eq $provider.address})
-            if($verified.Count -ne 1){throw 'Configured DoH entry could not be verified; retain the original DNS snapshot'}
-            $entry=$verified[0]
-            if($entry.DohTemplate -isnot [string] -or $entry.DohTemplate -cne $provider.url -or $entry.AllowFallbackToUdp -isnot [bool] -or $entry.AllowFallbackToUdp -ne $false -or $entry.AutoUpgrade -isnot [bool] -or $entry.AutoUpgrade -ne $true){throw 'Configured DoH policy could not be verified; retain the original DNS snapshot'}
+            $verified=@($verifiedDoh | Where-Object {$_.ServerAddress -eq $provider.ServerAddress})
+            if(-not (Test-DNSDohEntriesEqual $verified @($provider))){throw 'Configured DoH policy could not be verified; retain the original DNS snapshot'}
         }
-        $servers=@($providers | ForEach-Object {$_.address})
+        $servers=@($providers | ForEach-Object {$_.ServerAddress})
     } else {throw 'Choose doh or dnscrypt'}
     foreach($adapter in $adapters){
         $record=@($records | Where-Object {$_.guid -eq [string]$adapter.InterfaceGuid})[0];$bounds=Get-OriginalDNSBounds $record
@@ -2278,10 +2327,8 @@ function Configure-DNS([string]$method) {
     if($method -ceq 'doh'){
         $verifiedDoh=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
         foreach($provider in $providers){
-            $verified=@($verifiedDoh | Where-Object {$_.ServerAddress -is [string] -and $_.ServerAddress -eq $provider.address})
-            if($verified.Count -ne 1){throw 'Configured DoH entry changed after adapter configuration; retain the original DNS snapshot'}
-            $entry=$verified[0]
-            if($entry.DohTemplate -isnot [string] -or $entry.DohTemplate -cne $provider.url -or $entry.AllowFallbackToUdp -isnot [bool] -or $entry.AllowFallbackToUdp -ne $false -or $entry.AutoUpgrade -isnot [bool] -or $entry.AutoUpgrade -ne $true){throw 'Configured DoH policy changed after adapter configuration; retain the original DNS snapshot'}
+            $verified=@($verifiedDoh | Where-Object {$_.ServerAddress -eq $provider.ServerAddress})
+            if(-not (Test-DNSDohEntriesEqual $verified @($provider))){throw 'Configured DoH policy changed after adapter configuration; retain the original DNS snapshot'}
         }
     }
     $ready=$false;$timer=[Diagnostics.Stopwatch]::StartNew()
@@ -2381,19 +2428,24 @@ function Restore-DNS([string]$ExpectedSHA256) {
     $clients=@(Read-DNSClientInventory)
     foreach($plan in $plans){foreach($number in @('4','6')){if($plan.bounds['bound'+$number] -and @(Get-DNSClientRows $clients $plan.adapter.ifIndex ('IPv'+$number)).Count -ne 1){throw 'An owned DNS family cannot be inspected; retain the recovery snapshot'}}}
     $ownsDoh=Test-DNSRecoveryOwnsDoh $saved
+    $guardDoh=Test-DNSRecoveryUsesDohOwnership $saved $ownsDoh
     $dohAvailable=$ownsDoh -and [bool](Get-Command 'Get-DnsClientDohServerAddress' -ErrorAction SilentlyContinue)
     $currentDoh=@();$dohPlans=@()
     if($dohAvailable){
         foreach($command in @('Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'DoH recovery commands are unavailable; retain the original DNS snapshot'}}
         $currentDoh=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
-        foreach($address in @('8.8.8.8','9.9.9.9','2001:4860:4860::8888','2620:fe::fe')){
-            $old=@($saved.doh | Where-Object {$_.ServerAddress -eq $address});$current=@($currentDoh | Where-Object {$_.ServerAddress -eq $address})
-            if($old.Count -gt 1 -or $current.Count -gt 1){throw 'DoH recovery metadata is ambiguous; retain the original DNS snapshot'}
-            if($old.Count -eq 1 -and ($old[0].DohTemplate -isnot [string] -or [string]::IsNullOrWhiteSpace($old[0].DohTemplate) -or $old[0].AllowFallbackToUdp -isnot [bool] -or $old[0].AutoUpgrade -isnot [bool])){throw 'Original DoH metadata is incomplete; retain the DNS snapshot for manual recovery'}
+        foreach($provider in Get-DNSDohProviders){
+            $address=$provider.ServerAddress
+            $old=@(Get-DNSOriginalDohEntry $saved $address)
+            $current=@($currentDoh | Where-Object {$_.ServerAddress -eq $address})
+            if($current.Count -gt 1){throw 'Current DoH recovery metadata is ambiguous; retain the original DNS snapshot'}
+            if($guardDoh -and -not (Test-DNSDohEntriesEqual $current $old) -and -not (Test-DNSDohEntriesEqual $current @($provider))){
+                throw 'Managed DoH policy has changed independently; review it and retain the recovery snapshot'
+            }
             $observed=@($current | Select-Object DohTemplate,AllowFallbackToUdp,AutoUpgrade)
             $dohPlans+=@{address=$address;old=$old;current=$observed}
         }
-    } elseif(@($saved.doh | Where-Object {$null -ne $_}).Count -gt 0){throw 'Original DoH metadata cannot be restored on this host; retain the DNS snapshot'}
+    } elseif($guardDoh -or @($saved.doh | Where-Object {$null -ne $_}).Count -gt 0){throw 'Original DoH metadata cannot be restored on this host; retain the DNS snapshot'}
     Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
     foreach($plan in $plans){
         $record=$plan.record
