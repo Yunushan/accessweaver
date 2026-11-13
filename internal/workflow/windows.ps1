@@ -1645,9 +1645,27 @@ function Restore-DNS {
     Remove-Item -LiteralPath $snapshot -ErrorAction Stop;Event 'Original DNS and DoH settings restored'
 }
 
+function Remove-WireSockRefreshTask {
+    $inspection=Get-RefreshTaskInspection
+    if($inspection.present -eq $false){return}
+    if($inspection.present -ne $true){throw 'WireSock reconnect task state could not be verified'}
+    $task=@{TaskName='AccessWeaver-WireSock-Refresh';TaskPath='\';ErrorAction='Stop'}
+    try {
+        # Prevent new runs before stopping any active instance.
+        $script:externalEffectsPending=$true
+        Disable-ScheduledTask @task | Out-Null
+        Stop-ScheduledTask @task | Out-Null
+        Unregister-ScheduledTask @task -Confirm:$false
+    } catch {
+        throw 'WireSock reconnect task cleanup failed; retry before removing the profile'
+    }
+    if((Get-RefreshTaskInspection).present -ne $false){
+        throw 'WireSock reconnect task removal could not be verified'
+    }
+}
 function Refresh-Task {
     $name='AccessWeaver-WireSock-Refresh'
-    if(-not $r.enabled){Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue;Event 'Reconnect task removed';return}
+    if(-not $r.enabled){Remove-WireSockRefreshTask;Event 'Reconnect task removed';return}
     $recordPath=Join-Path $root 'profiles\wiresock-owned.json';if(-not (Test-Path -LiteralPath $recordPath)){throw 'Connect a managed WireSock profile first'}
     $record=Read-OwnedWireSockProfile $recordPath
     if($record.legacy){$command="Restart-Service -Name 'wiresock-client-service' -ErrorAction Stop";$encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command));$action=New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument ('-NoProfile -NonInteractive -EncodedCommand '+$encoded)}
@@ -1659,14 +1677,15 @@ function Refresh-Task {
 function Remove-Method([string]$engine,[switch]$OwnedOnly) {
     if($engine -eq 'wiresock'){
         $recordPath=Join-Path $root 'profiles\wiresock-owned.json'
-        if(Test-Path -LiteralPath $recordPath){
-            $owned=Read-OwnedWireSockProfile $recordPath
+        $owned=$null
+        if(Test-Path -LiteralPath $recordPath){$owned=Read-OwnedWireSockProfile $recordPath}
+        Remove-WireSockRefreshTask
+        if($owned){
             Disconnect-OwnedWireSock $owned
             if($owned.legacy){[void](Native $owned.cli @('uninstall') -Secret)}
             else{[void](Native $owned.cli @('delete',$owned.profile) -Secret)}
             Remove-Item -LiteralPath $recordPath
         }
-        Unregister-ScheduledTask -TaskName 'AccessWeaver-WireSock-Refresh' -Confirm:$false -ErrorAction SilentlyContinue
         return
     }
     if($engine -eq 'drover'){Restore-Drover;return}
@@ -1701,7 +1720,7 @@ function Uninstall-WireSockProduct {
         if(Test-Path -LiteralPath $base){$records+=@(Get-ChildItem -LiteralPath $base|ForEach-Object {Get-ItemProperty -LiteralPath $_.PSPath}|Where-Object {$_.DisplayName -in $names})}
     }
     $record=$records|Select-Object -First 1;if(-not $record){throw 'No supported registered WireSock product found; use Windows Apps settings for an unrecognized package'}
-    Unregister-ScheduledTask -TaskName 'AccessWeaver-WireSock-Refresh' -Confirm:$false -ErrorAction SilentlyContinue
+    Remove-WireSockRefreshTask
     try{Remove-Method 'wiresock'}catch{Event 'Managed profile cleanup could not complete; continuing with the explicitly requested vendor uninstall'}
     $command=[Environment]::ExpandEnvironmentVariables([string]$record.UninstallString)
     if($command -match '(?i)msiexec(?:\.exe)?' -and $command -match '(\{[0-9a-fA-F-]{36}\})'){
@@ -2074,7 +2093,10 @@ function Rollback {
         'service' {Stop-Service -Name $item.name -Force -ErrorAction SilentlyContinue;[void](Native (Join-Path $env:SystemRoot 'System32\sc.exe') @('delete',$item.name) @(0,1060))}
         'started-service' {Stop-Service -Name $item.name -ErrorAction Stop}
         'firewall' {Remove-NetFirewallRule -Name $item.name -ErrorAction SilentlyContinue}
-        'task' {Unregister-ScheduledTask -TaskName $item.name -Confirm:$false -ErrorAction SilentlyContinue}
+        'task' {
+            if($item.name -ne 'AccessWeaver-WireSock-Refresh'){throw 'Recovery journal contains an unmanaged task'}
+            Remove-WireSockRefreshTask
+        }
         'dns' {if(Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json')){Restore-DNS}}
         'wiresock' {if($item.legacy){Stop-Service 'wiresock-client-service' -ErrorAction SilentlyContinue;[void](Native $item.cli @('uninstall') -Secret)}else{[void](Native $item.cli @('disconnect') -Secret);[void](Native $item.cli @('delete',$item.profile) -Secret)}}
         'cache' {if(-not (Under $item.path $env:APPDATA) -or -not (Under $item.backup (Join-Path $root 'backups'))){throw 'Invalid cache recovery path'};No-Reparse $item.path;No-Reparse $item.backup;if(Test-Path -LiteralPath $item.backup){if(Test-Path -LiteralPath $item.path){throw 'Discord created new cache; original cache backup retained for manual review'};Move-Item -LiteralPath $item.backup -Destination $item.path}}

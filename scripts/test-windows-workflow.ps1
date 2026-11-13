@@ -669,6 +669,30 @@ try {
             }
         }
         Assert (Test-Path -LiteralPath $recordPath -PathType Leaf) 'WireSock rejects invalid records before commands or task changes'
+        @{cli=$paths[0];profile=$profile} | ConvertTo-Json -Compress | Set-Content -LiteralPath $recordPath -Encoding ASCII
+        $script:fixtureRefreshCalls=[Collections.Generic.List[string]]::new()
+        $script:fixtureRefreshPresent=$true
+        $script:fixtureRefreshRetained=$true
+        function Get-RefreshTaskInspection {return @{present=$script:fixtureRefreshPresent}}
+        function Disable-ScheduledTask {param($TaskName,$TaskPath,$ErrorAction);$script:fixtureRefreshCalls.Add('disable')}
+        function Stop-ScheduledTask {param($TaskName,$TaskPath,$ErrorAction);$script:fixtureRefreshCalls.Add('stop')}
+        function Unregister-ScheduledTask {
+            param($TaskName,$TaskPath,$ErrorAction,$Confirm)
+            if($TaskName -cne 'AccessWeaver-WireSock-Refresh' -or $TaskPath -cne '\' -or $ErrorAction -cne 'Stop'){throw 'Unexpected task removal target'}
+            $script:fixtureRefreshCalls.Add('unregister')
+            $script:fixtureRefreshPresent=$script:fixtureRefreshRetained
+        }
+        function Native {param($program,$arguments,[switch]$Secret);$script:fixtureRefreshCalls.Add($arguments[0]);return @{exitCode=0}}
+        $effectsBeforeCleanup=$script:externalEffectsPending
+        try {
+            $refused=$false
+            try {Remove-Method 'wiresock'}catch{$refused=$_.Exception.Message -ceq 'WireSock reconnect task removal could not be verified'}
+            Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq 'disable,stop,unregister' -and (Test-Path -LiteralPath $recordPath)) 'WireSock retains the profile when reconnect task removal is unconfirmed'
+            $script:fixtureRefreshCalls.Clear()
+            $script:fixtureRefreshRetained=$false
+            Remove-Method 'wiresock'
+            Assert (($script:fixtureRefreshCalls -join ',') -ceq 'disable,stop,unregister,disconnect,delete' -and -not (Test-Path -LiteralPath $recordPath)) 'WireSock retires the reconnect task before disconnecting or deleting the profile'
+        } finally {$script:externalEffectsPending=$effectsBeforeCleanup}
     }
 } finally {
     $root=$previousOwnedRoot;$r=$previousOwnedRequest;$env:ProgramFiles=$previousOwnedProgramFiles
