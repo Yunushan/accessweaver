@@ -664,12 +664,18 @@ function Save-ComponentDownloadAttempt([string]$Url,[string]$Path,$Budget,[switc
     if($cleanupFailed){Throw-ComponentDownloadFailure 'cleanup'}
     if($failure){throw $failure}
 }
-function Test-InstallerPublisher([string]$publisher,$signature) {
+function Test-InstallerPublisher([string]$publisher,$signature,[string]$verifiedSHA256,[string]$nativeArchitecture) {
     if($null -eq $signature -or $signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or $signature.SignerCertificate.Subject -isnot [string]){return $false}
     switch($publisher){
         'discord' {return $signature.SignerCertificate.Subject -match 'Discord'}
         'microsoft' {return $signature.SignerCertificate.Subject -match 'Microsoft'}
-        'wiresock' {return $signature.SignerCertificate.Subject -match 'NT Kernel|WireSock'}
+        'wiresock' {
+            # Only an exact vendor-published payload pin can identify the
+            # release when Windows trusts its signer but the name has changed.
+            if($verifiedSHA256 -and $nativeArchitecture -cin @('amd64','arm64') -and
+                $verifiedSHA256 -ceq (WireSock-InstallerPlan $nativeArchitecture).sha256){return $true}
+            return $signature.SignerCertificate.Subject -match 'NT Kernel|WireSock'
+        }
         default {return $false}
     }
 }
@@ -696,8 +702,15 @@ function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signe
         }
         $owned=$true
         [void](Get-ComponentDownloadRemaining $budget)
-        if ($hash -and (Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash -ne $hash) {throw 'Downloaded component SHA-256 mismatch'}
-        if ($Signed) {$signature=Get-AuthenticodeSignature -LiteralPath $temp;if(-not (Test-InstallerPublisher $Publisher $signature)){throw 'Installer publisher signature could not be verified'}}
+        $verifiedSHA256=''
+        if($hash){
+            $verifiedSHA256=(Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash.ToLowerInvariant()
+            if($verifiedSHA256 -ne $hash){throw 'Downloaded component SHA-256 mismatch'}
+        }
+        if($Signed){
+            $signature=Get-AuthenticodeSignature -LiteralPath $temp
+            if(-not (Test-InstallerPublisher $Publisher $signature $verifiedSHA256 $inputData.nativeArchitecture)){throw 'Installer publisher signature could not be verified'}
+        }
         [void](Get-ComponentDownloadRemaining $budget)
         Copy-Checked $temp $destination
     }finally {
@@ -1060,7 +1073,8 @@ function Install-WireSock {
         }
         No-Reparse $installerPath
         $sig=Get-AuthenticodeSignature -LiteralPath $installerPath
-        if(-not (Test-InstallerPublisher 'wiresock' $sig)){throw 'WireSock installer publisher signature could not be verified'}
+        $installerSHA256=(Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        if(-not (Test-InstallerPublisher 'wiresock' $sig $installerSHA256 $inputData.nativeArchitecture)){throw 'WireSock installer publisher signature could not be verified'}
         [void](Native $installerPath @('/install','/quiet','/norestart') @(0,3010,1641))
     } finally {
         if($staged){[IO.File]::Delete($staged)}

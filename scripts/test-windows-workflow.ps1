@@ -807,6 +807,12 @@ $signatureWireSock=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomo
 Assert ((Test-InstallerPublisher 'discord' $signatureDiscord) -and -not (Test-InstallerPublisher 'discord' $signatureMicrosoft) -and -not (Test-InstallerPublisher 'discord' $signatureWireSock)) 'Discord installer rejects other publisher categories'
 Assert ((Test-InstallerPublisher 'microsoft' $signatureMicrosoft) -and -not (Test-InstallerPublisher 'microsoft' $signatureDiscord) -and -not (Test-InstallerPublisher 'microsoft' $signatureWireSock)) 'Microsoft installer rejects other publisher categories'
 Assert ((Test-InstallerPublisher 'wiresock' $signatureWireSock) -and -not (Test-InstallerPublisher 'wiresock' $signatureDiscord) -and -not (Test-InstallerPublisher 'wiresock' $signatureMicrosoft) -and -not (Test-InstallerPublisher '' $signatureWireSock)) 'WireSock installer requires its own publisher category'
+$x64Pin=(WireSock-InstallerPlan 'amd64').sha256
+$armPin=(WireSock-InstallerPlan 'arm64').sha256
+$unknownSigner=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Unmatched fixture'}}
+$invalidSigner=[pscustomobject]@{Status='NotTrusted';SignerCertificate=$unknownSigner.SignerCertificate}
+Assert ((Test-InstallerPublisher 'wiresock' $unknownSigner $x64Pin 'amd64') -and (Test-InstallerPublisher 'wiresock' $unknownSigner $armPin 'arm64')) 'WireSock recognizes its exact native installer pin with a Windows-valid signature'
+Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64') -and -not (Test-InstallerPublisher 'wiresock' $unknownSigner ('a'*64) 'amd64') -and -not (Test-InstallerPublisher 'wiresock' $unknownSigner $armPin 'amd64') -and -not (Test-InstallerPublisher 'wiresock' $unknownSigner $x64Pin '') -and -not (Test-InstallerPublisher 'discord' $unknownSigner $x64Pin 'amd64')) 'WireSock pin recognition refuses invalid signatures and unrelated pins and categories'
 # Synthetic process records verify session-scoped launch observation without launching an app.
 $fixtureApp='C:\fixture\SplitCord.exe'
 $otherSession=[pscustomobject]@{Path=$fixtureApp;SessionId=9}

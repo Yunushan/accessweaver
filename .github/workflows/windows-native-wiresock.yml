@@ -5,6 +5,7 @@ on:
     branches: [main, codex/dns-adapter-coverage]
     paths:
       - scripts/test-windows-native-wiresock.ps1
+      - internal/workflow/windows.ps1
       - .github/workflows/windows-native-wiresock.yml
   workflow_dispatch:
 
