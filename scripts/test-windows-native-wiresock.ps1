@@ -17,8 +17,10 @@ foreach($path in $paths){$hashes[$path]=(Get-FileHash -LiteralPath (Join-Path $p
 $checks=[ordered]@{
     cleanVendorBaseline=$false;fixtureBuilt=$false;peerSelfTest=$false;peerReady=$false;installCompleted=$false;restartRequested=$false
     selectedTCP4=$false;selectedUDP4=$false;selectedTCP6=$false;selectedUDP6=$false
-    directBlocked=$false;peerStatsReadable=$false;peerHandshake=$false;peerReceivedBytes=$false;peerSentBytes=$false
-    disconnectCompleted=$false;disconnectedTrafficBlocked=$false
+    unselectedTCP4Unreachable=$false;unselectedUDP4Unreachable=$false;unselectedTCP6Unreachable=$false;unselectedUDP6Unreachable=$false
+    peerStatsReadable=$false;peerHandshake=$false;peerReceivedBytes=$false;peerSentBytes=$false
+    disconnectCompleted=$false
+    disconnectedTCP4Unreachable=$false;disconnectedUDP4Unreachable=$false;disconnectedTCP6Unreachable=$false;disconnectedUDP6Unreachable=$false
     managedRemovalCompleted=$false;vendorRemovalCompleted=$false;peerExited=$false;fixtureRemoved=$false
 }
 $workflowOutcomes=[ordered]@{install='not-run';disconnect='not-run';remove='not-run';'vendor-uninstall'='not-run'}
@@ -43,6 +45,14 @@ function Invoke-PrivateNative([string]$program,[string[]]$arguments){
         $lines=@(& $program @arguments 2>$null)
         return @{exitCode=$LASTEXITCODE;stdout=($lines -join [Environment]::NewLine)}
     } finally {$ErrorActionPreference=$old}
+}
+function Test-ProbeRoundTrip([string]$program,[string[]]$arguments){
+    $result=Invoke-PrivateNative $program $arguments
+    return $result.exitCode -eq 0 -and $result.stdout -ceq 'PASS'
+}
+function Test-ProbeUnreachable([string]$program,[string[]]$arguments){
+    $result=Invoke-PrivateNative $program $arguments
+    return $result.exitCode -eq 1 -and $result.stdout -ceq 'NO_RESPONSE'
 }
 function Get-WorkflowOutcome($run,$job) {
     if($job.result.rebootRequired -eq $true){return 'restart-required'}
@@ -240,17 +250,23 @@ try {
         }
     }
     $stage='traffic'
-    foreach($probe in @(
-        @{name='selectedTCP4';args=@('http','http://198.51.100.1:8080/')},
-        @{name='selectedUDP4';args=@('udp','198.51.100.1:7000')},
-        @{name='selectedTCP6';args=@('http','http://[fd42:6177::1]:8080/')},
-        @{name='selectedUDP6';args=@('udp','[fd42:6177::1]:7000')}
-    )){
+    $probes=@(
+        @{name='TCP4';args=@('http','http://198.51.100.1:8080/')},
+        @{name='UDP4';args=@('udp','198.51.100.1:7000')},
+        @{name='TCP6';args=@('http','http://[fd42:6177::1]:8080/')},
+        @{name='UDP6';args=@('udp','[fd42:6177::1]:7000')}
+    )
+    foreach($probe in $probes){
+        $selectedCheck='selected'+$probe.name
         for($i=0;$i -lt 3;$i++){
-            if((Invoke-PrivateNative $selected $probe.args).exitCode -eq 0){$checks[$probe.name]=$true;break}
+            if(Test-ProbeRoundTrip $selected $probe.args){$checks[$selectedCheck]=$true;break}
+        }
+        # Bracket the unselected probe with selected round trips so a stopped
+        # tunnel cannot make the isolation check pass.
+        if($checks[$selectedCheck] -and (Test-ProbeUnreachable $direct $probe.args)){
+            $checks['unselected'+$probe.name+'Unreachable']=(Test-ProbeRoundTrip $selected $probe.args) -and -not $peer.HasExited
         }
     }
-    $checks.directBlocked=(Invoke-PrivateNative $direct @('http','http://198.51.100.1:8080/')).exitCode -ne 0
     $clock.Restart()
     while($clock.Elapsed.TotalSeconds -lt 5){
         try {
@@ -276,7 +292,11 @@ try {
     $stage='disconnect'
     $checks.disconnectCompleted=(Invoke-TestWorkflow @{action='disconnect';engine='wiresock'}).passed
     if($checks.disconnectCompleted){
-        $checks.disconnectedTrafficBlocked=(Invoke-PrivateNative $selected @('http','http://198.51.100.1:8080/')).exitCode -ne 0
+        foreach($probe in $probes){
+            if($checks['selected'+$probe.name] -and -not $peer.HasExited){
+                $checks['disconnected'+$probe.name+'Unreachable']=(Test-ProbeUnreachable $selected $probe.args) -and -not $peer.HasExited
+            }
+        }
     }
     $stage='complete'
 } catch {
@@ -305,7 +325,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=7;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;productionQualificationComplete=$false}
+$report=@{schemaVersion=8;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
