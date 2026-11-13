@@ -2308,6 +2308,14 @@ function Configure-DNS([string]$method) {
     Event ('Encrypted DNS configured: '+$method)
     $script:dnsConfigured=$true
 }
+function Test-DNSDohEntriesEqual([object[]]$Actual,[object[]]$Expected) {
+    if($Actual.Count -ne $Expected.Count -or $Actual.Count -gt 1){return $false}
+    if($Actual.Count -eq 0){return $true}
+    $entry=$Actual[0];$reference=$Expected[0]
+    return ([object]::Equals($entry.DohTemplate,$reference.DohTemplate) -and
+        [object]::Equals($entry.AllowFallbackToUdp,$reference.AllowFallbackToUdp) -and
+        [object]::Equals($entry.AutoUpgrade,$reference.AutoUpgrade))
+}
 # A successful setter is not proof of restored state. Keep the first originals
 # until fresh GUID-bound DNS reads and managed DoH metadata match the snapshot.
 function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$DohAvailable) {
@@ -2343,11 +2351,7 @@ function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$Doh
         $observed=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
         foreach($plan in $DohPlans){
             $current=@($observed | Where-Object {$_.ServerAddress -eq $plan.address})
-            if($current.Count -ne $plan.old.Count){throw 'Restored DoH entry could not be verified; retain the recovery snapshot'}
-            if($plan.old.Count -eq 1){
-                $old=$plan.old[0];$actual=$current[0]
-                if($actual.DohTemplate -isnot [string] -or $actual.DohTemplate -cne $old.DohTemplate -or $actual.AllowFallbackToUdp -isnot [bool] -or $actual.AllowFallbackToUdp -ne $old.AllowFallbackToUdp -or $actual.AutoUpgrade -isnot [bool] -or $actual.AutoUpgrade -ne $old.AutoUpgrade){throw 'Restored DoH metadata could not be verified; retain the recovery snapshot'}
-            }
+            if(-not (Test-DNSDohEntriesEqual $current $plan.old)){throw 'Restored DoH policy could not be verified; retain the recovery snapshot'}
         }
     }
 }
@@ -2386,7 +2390,8 @@ function Restore-DNS([string]$ExpectedSHA256) {
             $old=@($saved.doh | Where-Object {$_.ServerAddress -eq $address});$current=@($currentDoh | Where-Object {$_.ServerAddress -eq $address})
             if($old.Count -gt 1 -or $current.Count -gt 1){throw 'DoH recovery metadata is ambiguous; retain the original DNS snapshot'}
             if($old.Count -eq 1 -and ($old[0].DohTemplate -isnot [string] -or [string]::IsNullOrWhiteSpace($old[0].DohTemplate) -or $old[0].AllowFallbackToUdp -isnot [bool] -or $old[0].AutoUpgrade -isnot [bool])){throw 'Original DoH metadata is incomplete; retain the DNS snapshot for manual recovery'}
-            $dohPlans+=@{address=$address;old=$old;current=$current}
+            $observed=@($current | Select-Object DohTemplate,AllowFallbackToUdp,AutoUpgrade)
+            $dohPlans+=@{address=$address;old=$old;current=$observed}
         }
     } elseif(@($saved.doh | Where-Object {$null -ne $_}).Count -gt 0){throw 'Original DoH metadata cannot be restored on this host; retain the DNS snapshot'}
     Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
@@ -2404,11 +2409,18 @@ function Restore-DNS([string]$ExpectedSHA256) {
         }
     }
     foreach($plan in $dohPlans){
+        # An independent policy change can occur during adapter recovery or
+        # during another provider's setter. Compare again before touching it.
+        $current=@(Get-DnsClientDohServerAddress -ErrorAction Stop | Where-Object {$_.ServerAddress -eq $plan.address})
+        if(-not (Test-DNSDohEntriesEqual $current $plan.current)){
+            throw 'DoH policy changed during restoration; review current policy and retain the recovery snapshot'
+        }
+        if(Test-DNSDohEntriesEqual $current $plan.old){continue}
         if($plan.old.Count -eq 1){
             $old=$plan.old[0]
-            if($plan.current.Count -eq 1){Set-DnsClientDohServerAddress -ServerAddress $plan.address -DohTemplate $old.DohTemplate -AllowFallbackToUdp $old.AllowFallbackToUdp -AutoUpgrade $old.AutoUpgrade -ErrorAction Stop}
+            if($current.Count -eq 1){Set-DnsClientDohServerAddress -ServerAddress $plan.address -DohTemplate $old.DohTemplate -AllowFallbackToUdp $old.AllowFallbackToUdp -AutoUpgrade $old.AutoUpgrade -ErrorAction Stop}
             else{Add-DnsClientDohServerAddress -ServerAddress $plan.address -DohTemplate $old.DohTemplate -AllowFallbackToUdp $old.AllowFallbackToUdp -AutoUpgrade $old.AutoUpgrade -ErrorAction Stop}
-        } elseif($plan.current.Count -eq 1){Remove-DnsClientDohServerAddress -ServerAddress $plan.address -ErrorAction Stop}
+        } else {Remove-DnsClientDohServerAddress -ServerAddress $plan.address -ErrorAction Stop}
     }
     # A DNS client row can lag behind the setter after service or adapter
     # startup. Retry observations while preserving the original snapshot.
