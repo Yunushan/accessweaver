@@ -2110,8 +2110,9 @@ function Configure-DNS([string]$method) {
     $clients=@(Read-DNSClientInventory)
     $adapters=@($inventory | Where-Object {$_.Status -eq 'Up' -and $_.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN' -and (@(Get-DNSClientRows $clients $_.ifIndex 'IPv4').Count -eq 1 -or @(Get-DNSClientRows $clients $_.ifIndex 'IPv6').Count -eq 1)})
     if(-not $adapters.Count){throw 'No active adapter exposes a DNS client family'}
-    $hadSnapshot=[bool](Test-Path -LiteralPath $snapshot)
-    $original=if($hadSnapshot){Get-Content -LiteralPath $snapshot -Raw -ErrorAction Stop | ConvertFrom-Json}else{[pscustomobject]@{adapters=@();doh=@()}}
+    $originalSnapshot=Read-DNSRecoverySnapshot
+    $hadSnapshot=$null -ne $originalSnapshot
+    $original=if($hadSnapshot){$originalSnapshot.record}else{[pscustomobject]@{adapters=@();doh=@()}}
     if($hadSnapshot -and ($null -eq $original.adapters -or @($original.adapters).Count -eq 0)){throw 'Original DNS snapshot has no adapter records; no new DNS configuration was applied'}
     $records=@($original.adapters);$known=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach($record in $records){
@@ -2164,6 +2165,7 @@ function Configure-DNS([string]$method) {
     $dnsUndo.snapshotActive=$false
     # The previous journal keeps its binding until the snapshot is replaced.
     Save-Journal
+    Assert-DNSRecoverySnapshotUnchanged $originalSnapshot.sha256
     Publish-WorkflowFile $snapshot $bytes
     if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot could not be published'}
     $dnsUndo.snapshotActive=$true
@@ -2255,7 +2257,7 @@ function Configure-DNS([string]$method) {
     } while($timer.Elapsed.TotalSeconds -lt 90)
     if(-not $ready){
         if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot disappeared during verification'}
-        Restore-DNS
+        Restore-DNS $snapshotSHA256
         throw 'Resolver verification failed; original DNS settings restored: the ordinary resolver did not return the expected DNS answer'
     }
     if($method -ceq 'doh' -and $existingResolver){
@@ -2310,11 +2312,15 @@ function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$Doh
         }
     }
 }
-function Restore-DNS {
+function Restore-DNS([string]$ExpectedSHA256) {
     $snapshot=Join-Path $root 'profiles\dns-original.json'
-    $snapshotSHA256=Get-DNSRecoverySnapshotDigest
-    if(-not $snapshotSHA256){throw 'No original DNS snapshot exists; no settings were changed'}
-    $saved=Get-Content -LiteralPath $snapshot -Raw -ErrorAction Stop | ConvertFrom-Json
+    $restoration=Read-DNSRecoverySnapshot
+    if(-not $restoration){throw 'No original DNS snapshot exists; no settings were changed'}
+    $snapshotSHA256=$restoration.sha256
+    if($ExpectedSHA256 -and $snapshotSHA256 -ine $ExpectedSHA256){
+        throw 'DNS recovery journal does not match the active snapshot; review dns-restore'
+    }
+    $saved=$restoration.record
     if($null -eq $saved.adapters -or @($saved.adapters).Count -eq 0){throw 'Original DNS snapshot has no adapter records; retain it for manual recovery'}
     # Inspect every original adapter and relevant DoH entry before changing any
     # settings. This is preflight, not a guarantee of an atomic OS transaction.
@@ -2343,6 +2349,7 @@ function Restore-DNS {
             $dohPlans+=@{address=$address;old=$old;current=$current}
         }
     } elseif(@($saved.doh | Where-Object {$null -ne $_}).Count -gt 0){throw 'Original DoH metadata cannot be restored on this host; retain the DNS snapshot'}
+    Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
     foreach($plan in $plans){
         $record=$plan.record
         foreach($number in @('4','6')){
@@ -3366,7 +3373,7 @@ function Rollback {
     if($dnsEntries.Count -gt 1){return 'DNS recovery journal contains duplicate DNS entries'}
     if($dnsEntries.Count -eq 1){
         try {
-            if(Confirm-DNSRecoveryEntry $dnsEntries[0]){Restore-DNS}
+            if(Confirm-DNSRecoveryEntry $dnsEntries[0]){Restore-DNS $dnsEntries[0].snapshotSHA256}
         } catch {return $_.Exception.Message}
     }
     $rollbackErrors=@()
@@ -3476,10 +3483,39 @@ function Confirm-DNSRecoverySnapshot($ExpectedSHA256) {
     }
     return $true
 }
+function Read-DNSRecoverySnapshot {
+    $path=Join-Path $root 'profiles\dns-original.json'
+    No-Reparse $path
+    try {$stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)}
+    catch [IO.FileNotFoundException] {return}
+    catch [IO.DirectoryNotFoundException] {return}
+    catch {throw 'Original DNS snapshot could not be read safely; retain it for review'}
+    try {
+        try {$bytes=Read-WorkflowRecoveryJournalBytes $stream}
+        finally {$stream.Dispose()}
+        $text=[Text.UTF8Encoding]::new($false,$true).GetString($bytes)
+        if($text.Length -gt 0 -and $text[0] -eq [char]0xfeff){$text=$text.Substring(1)}
+        if([string]::IsNullOrWhiteSpace($text) -or $text.IndexOf([char]0) -ge 0){throw 'Invalid DNS snapshot encoding'}
+        $record=ConvertFrom-Json -InputObject $text -ErrorAction Stop
+        if($record -isnot [pscustomobject]){throw 'Invalid DNS snapshot frame'}
+        return @{record=$record;sha256=(Get-WorkflowBytesSHA256 $bytes)}
+    } catch {throw 'Original DNS snapshot could not be read safely; retain it for review'}
+}
+function Assert-DNSRecoverySnapshotUnchanged([string]$ExpectedSHA256) {
+    $observed=Get-DNSRecoverySnapshotDigest
+    if(($ExpectedSHA256 -and $observed -ine $ExpectedSHA256) -or (-not $ExpectedSHA256 -and $observed)){
+        throw 'Original DNS snapshot changed during preflight; retain it for review'
+    }
+}
 function Get-DNSRecoverySnapshotDigest {
     $snapshot=Join-Path $root 'profiles\dns-original.json'
     No-Reparse $snapshot
-    if(-not (Test-Path -LiteralPath $snapshot -ErrorAction Stop)){return $null}
+    try {$attributes=[IO.File]::GetAttributes($snapshot)}
+    catch [IO.FileNotFoundException] {return}
+    catch [IO.DirectoryNotFoundException] {return}
+    if($attributes -band ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::ReparsePoint)){
+        throw 'DNS recovery snapshot is not a bounded ordinary file'
+    }
     $entry=Get-Item -LiteralPath $snapshot -Force -ErrorAction Stop
     if($entry.PSIsContainer -or $entry.Length -le 0 -or $entry.Length -gt 8MB){throw 'DNS recovery snapshot is not a bounded ordinary file'}
     return (Get-FileHash -LiteralPath $snapshot -Algorithm SHA256 -ErrorAction Stop).Hash
