@@ -401,7 +401,13 @@ $otherPath=[pscustomobject]@{Path='C:\fixture\Other.exe';SessionId=7}
 Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($otherSession))) 'App launch ignores matching processes in another session'
 Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($otherPath))) 'App launch ignores another executable in the current session'
 Assert (Test-AppProcessInSession $fixtureApp 7 @($otherSession,$sameSession)) 'App launch accepts the matching executable in the current session'
-# Inert process records and command mocks exercise failure before uninstallation.
+# Inert files, process records and command mocks exercise uninstall preflight.
+$fixtureAppDirectory=Join-Path $testRoot 'splitcord-uninstall'
+[void](New-Item -ItemType Directory -Path $fixtureAppDirectory)
+$fixtureApp=Join-Path $fixtureAppDirectory 'SplitCord.exe'
+$fixtureUninstaller=Join-Path $fixtureAppDirectory 'Uninstall.exe'
+$secondUninstaller=Join-Path $fixtureAppDirectory 'Uninstall-old.exe'
+[IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
 $previousFindApp=(Get-Command Find-App).ScriptBlock
 $previousDesktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
 try {
@@ -411,6 +417,13 @@ try {
     function Stop-Process {param($Id,$ErrorAction);$script:appStopCalls++;if($script:appStopFailure){throw 'private fixture detail'}}
     $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false
     $script:appStopRecord=[pscustomobject]@{Path=$fixtureApp;Id=123;HasExited=$false}
+    $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Expected exactly one SplitCord uninstaller'}
+    Assert ($rejected -and $script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) 'Application removal leaves processes running when the uninstaller is missing'
+    [IO.File]::WriteAllBytes($fixtureUninstaller,[byte[]]@(0))
+    [IO.File]::WriteAllBytes($secondUninstaller,[byte[]]@(0))
+    $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Expected exactly one SplitCord uninstaller'}
+    Assert ($rejected -and $script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) 'Application removal leaves processes running when uninstallers are ambiguous'
+    [IO.File]::Delete($secondUninstaller)
     $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process could not be stopped; the operation was not continued'}
     Assert ($rejected -and $script:appStopCalls -eq 1 -and $script:externalEffectsPending) 'Application removal stops on a matching process failure and records an external effect'
     $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false

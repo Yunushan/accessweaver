@@ -1573,10 +1573,27 @@ function Install-App([string]$variant) {
 }
 function Remove-App([string]$variant) {
     Require-DesktopUser
-    $app=Find-App $variant;if(-not $app){return}
+    $app=Find-App $variant
+    if(-not $app){return}
+    No-Reparse $app
+    if($variant -in @('discord','discord-ptb')){
+        $folder=if($variant -eq 'discord'){'Discord'}else{'DiscordPTB'}
+        $uninstaller=Join-Path $env:LOCALAPPDATA ($folder+'\Update.exe')
+        $arguments=@('--uninstall','-s')
+        $timeout=300
+    }else{
+        $directory=Split-Path -Parent $app
+        $candidates=@(Get-ChildItem -LiteralPath $directory -Filter 'Uninstall*.exe' -File)
+        if($candidates.Count -ne 1){throw 'Expected exactly one SplitCord uninstaller'}
+        $uninstaller=$candidates[0].FullName
+        $arguments=@('/S')
+        $timeout=600
+    }
+    No-Reparse $uninstaller
+    if(-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)){throw 'Application uninstaller not found'}
     Stop-AppProcesses $variant
-    if($variant -in @('discord','discord-ptb')){$folder=if($variant -eq 'discord'){'Discord'}else{'DiscordPTB'};$update=Join-Path $env:LOCALAPPDATA ($folder+'\Update.exe');No-Reparse $update;[void](Native $update @('--uninstall','-s') -Timeout 300)}
-    else{$directory=Split-Path -Parent $app;$uninstaller=Get-ChildItem -LiteralPath $directory -Filter 'Uninstall*.exe' -File|Select-Object -First 1;if(-not $uninstaller){throw 'SplitCord uninstaller not found'};[void](Native $uninstaller.FullName @('/S'))}
+    No-Reparse $uninstaller
+    [void](Native $uninstaller $arguments -Timeout $timeout)
     Wait-App $variant $false 60
     Event ('Application uninstalled: '+$variant)
 }
