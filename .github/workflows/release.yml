@@ -363,6 +363,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
           EVENT_NAME: ${{ github.event_name }}
+          GOTOOLCHAIN: local
         run: |
           label="$RELEASE_TAG"
           if [[ "$EVENT_NAME" == workflow_dispatch ]]; then label="preview-${GITHUB_SHA:0:12}"; fi
@@ -406,6 +407,57 @@ jobs:
           path: dist/*/*
           if-no-files-found: error
           compression-level: 0
+          retention-days: 14
+  hosted-rebuild:
+    name: Compare a fresh hosted rebuild
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Build from the same clean source with fresh caches
+        shell: bash
+        env:
+          GOTOOLCHAIN: local
+          PACKAGE_DIRECTORY: ${{ needs.package.outputs.directory }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
+          export GOCACHE="$(mktemp -d "$RUNNER_TEMP/accessweaver-build-cache.XXXXXXXX")"
+          export GOMODCACHE="$(mktemp -d "$RUNNER_TEMP/accessweaver-module-cache.XXXXXXXX")"
+          label="${PACKAGE_DIRECTORY#dist/}"
+          if [[ "$GITHUB_EVENT_NAME" != workflow_dispatch ]]; then export BUILD_VERSION="${GITHUB_REF_NAME#v}"; fi
+          bash scripts/package-release.sh "$label"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: accessweaver-unsigned
+          path: build/rebuild-reference
+      - name: Authenticate reference and compare all unsigned subjects
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_DIRECTORY: ${{ needs.package.outputs.directory }}
+        run: |
+          mkdir -p build/rebuild-evidence
+          reference="build/rebuild-reference/${PACKAGE_DIRECTORY#dist/}"
+          python3 scripts/verify_release_rebuild.py "$reference" "$PACKAGE_DIRECTORY" \
+            --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --report build/rebuild-evidence/comparison.json
+      - name: Retain the comparison report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-hosted-rebuild-comparison
+          path: build/rebuild-evidence/comparison.json
+          if-no-files-found: ignore
           retention-days: 14
   packaged-native:
     name: Packaged native (${{ matrix.goos }}/${{ matrix.goarch }})
@@ -634,7 +686,7 @@ jobs:
           retention-days: 14
   publish:
     name: Publish prerelease assets
-    needs: [package, packaged-native, packaged-freebsd, packaged-openbsd]
+    needs: [package, hosted-rebuild, packaged-native, packaged-freebsd, packaged-openbsd]
     if: github.event_name != 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 10
