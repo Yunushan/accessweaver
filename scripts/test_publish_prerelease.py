@@ -1,4 +1,5 @@
 import hashlib
+import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -33,15 +34,17 @@ class PrereleasePublicationTests(unittest.TestCase):
             "assets": [dict(item) for item in list(self.assets.values())[:count]],
         }
 
-    def run_publisher(self, releases, tags=None, verify_snapshot=None):
+    def run_publisher(self, releases, tags=None, verify_snapshot=None, upload_error=None):
         with (
             patch.object(publisher, "verify", side_effect=verify_snapshot) as verify,
             patch.object(publisher, "git_tag_commit", side_effect=tags or [self.commit] * 2),
             patch.object(publisher, "view", side_effect=releases),
             patch.object(publisher, "gh", return_value=subprocess.CompletedProcess([], 0, "", "")) as gh,
+            patch.object(publisher, "upload_asset", side_effect=upload_error) as upload,
             patch.object(publisher, "promote_draft") as promote,
         ):
             self.calls = gh
+            self.upload = upload
             self.promote = promote
             try:
                 publisher.publish(self.directory, self.commit, self.ref)
@@ -55,18 +58,20 @@ class PrereleasePublicationTests(unittest.TestCase):
     def test_new_draft_uploads_and_verifies_before_publication(self):
         self.run_publisher([None, self.release(True, 0), self.release(True), self.release(False)])
         args = [entry.args for entry in self.calls.call_args_list]
-        self.assertEqual([entry[0] for entry in args], ["create", "upload"])
+        self.assertEqual([entry[0] for entry in args], ["create"])
         self.assertIn("--draft", args[0])
         self.assertIn("--verify-tag", args[0])
-        self.assertEqual(len(args[1]), 15)
-        self.assertNotIn("--clobber", args[1])
+        self.assertEqual(
+            [entry.args for entry in self.upload.call_args_list],
+            [(456, self.snapshot / name, asset["digest"]) for name, asset in self.assets.items()],
+        )
         self.promote.assert_called_once_with(456)
 
     def test_retry_uploads_only_missing_draft_assets(self):
         self.run_publisher([self.release(True, 12), self.release(True), self.release(False)])
-        self.assertEqual(self.calls.call_args_list[0].args,
-                         ("upload", self.tag, str(self.snapshot / "fixture-12.zip")))
-        self.assertEqual(self.calls.call_count, 1)
+        self.calls.assert_not_called()
+        self.upload.assert_called_once_with(456, self.snapshot / "fixture-12.zip",
+                                           self.assets["fixture-12.zip"]["digest"])
         self.promote.assert_called_once_with(456)
 
     def test_publication_uses_the_verified_copy_when_source_changes(self):
@@ -78,8 +83,7 @@ class PrereleasePublicationTests(unittest.TestCase):
 
         self.run_publisher([self.release(True, 12), self.release(True), self.release(False)],
                            verify_snapshot=verify_snapshot)
-        self.assertEqual(self.calls.call_args_list[0].args,
-                         ("upload", self.tag, str(self.snapshot / changed.name)))
+        self.upload.assert_called_once_with(456, self.snapshot / changed.name, self.assets[changed.name]["digest"])
         self.assertEqual(changed.read_bytes(), b"changed original")
 
     def test_extra_input_cannot_reach_verifier_or_github(self):
@@ -93,6 +97,7 @@ class PrereleasePublicationTests(unittest.TestCase):
     def test_matching_published_release_is_untouched(self):
         self.run_publisher([self.release(False)])
         self.calls.assert_not_called()
+        self.upload.assert_not_called()
         self.promote.assert_not_called()
 
     def test_mismatch_duplicate_and_missing_published_asset_leave_release_untouched(self):
@@ -104,6 +109,7 @@ class PrereleasePublicationTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 self.run_publisher([invalid])
             self.calls.assert_not_called()
+            self.upload.assert_not_called()
             self.promote.assert_not_called()
 
     def test_incomplete_readback_or_moved_tag_cannot_publish(self):
@@ -113,9 +119,39 @@ class PrereleasePublicationTests(unittest.TestCase):
         ):
             with self.subTest(readback=readback, tags=tags), self.assertRaises(ValueError):
                 self.run_publisher([self.release(True, 12), readback], tags)
-            self.assertEqual(self.calls.call_count, 1)
-            self.assertEqual(self.calls.call_args.args[0], "upload")
+            self.calls.assert_not_called()
+            self.assertEqual(self.upload.call_count, 1)
             self.promote.assert_not_called()
+
+    def test_upload_uses_fixed_host_release_id_and_binary_file(self):
+        name = "fixture + space.zip"
+        path = self.directory / name
+        expected = "sha256:" + "a" * 64
+        body = json.dumps(dict(name=name, state="uploaded", digest=expected))
+        with patch.object(publisher.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, body, "")) as run:
+            publisher.upload_asset(456, path, expected)
+        run.assert_called_once_with(
+            ["gh", "api", "--hostname", "github.com", "--method", "POST",
+             f"https://uploads.github.com/repos/{publisher.REPOSITORY}/releases/456/assets?name=fixture+%2B+space.zip",
+             "--header", "Content-Type: application/octet-stream", "--input", str(path)],
+            capture_output=True, text=True, timeout=240,
+        )
+
+    def test_upload_response_must_confirm_the_expected_asset(self):
+        asset = self.assets["fixture-12.zip"]
+        for override in ({"name": "another.zip"}, {"state": "starter"}, {"digest": "sha256:" + "b" * 64}):
+            body = json.dumps({**asset, **override})
+            with self.subTest(override=override), patch.object(
+                publisher.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, body, "")
+            ), self.assertRaisesRegex(ValueError, "asset could not be verified"):
+                publisher.upload_asset(456, self.directory / asset["name"], asset["digest"])
+
+    def test_interrupted_upload_does_not_promote_or_continue(self):
+        with self.assertRaisesRegex(ValueError, "synthetic upload failure"):
+            self.run_publisher([self.release(True, 11)], upload_error=ValueError("synthetic upload failure"))
+        self.calls.assert_not_called()
+        self.assertEqual(self.upload.call_count, 1)
+        self.promote.assert_not_called()
 
     def test_replaced_draft_is_refused_before_publication(self):
         with self.assertRaisesRegex(ValueError, "draft identity"):

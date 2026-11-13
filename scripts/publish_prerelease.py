@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from urllib.parse import urlencode
 
 from verify_release_provenance import REPOSITORY, validate_identity, verify
 from verify_release_rebuild import digest, snapshot
@@ -48,6 +49,20 @@ def view(tag):
     if result.returncode == 1 and result.stderr.strip() == "release not found":
         return None
     return json.loads(require_success(result))
+
+
+def upload_asset(release_id, path, expected_digest):
+    query = urlencode({"name": path.name})
+    endpoint = f"https://uploads.github.com/repos/{REPOSITORY}/releases/{release_id}/assets?{query}"
+    result = subprocess.run(
+        ["gh", "api", "--hostname", "github.com", "--method", "POST", endpoint,
+         "--header", "Content-Type: application/octet-stream", "--input", str(path)],
+        capture_output=True, text=True, timeout=240,
+    )
+    asset = json.loads(require_success(result))
+    if (not isinstance(asset, dict) or asset.get("name") != path.name
+            or asset.get("state") != "uploaded" or asset.get("digest") != expected_digest):
+        raise ValueError("Uploaded release asset could not be verified")
 
 
 def promote_draft(release_id):
@@ -118,8 +133,8 @@ def publish_verified(directory, tag, commit, expected):
     release_id = release["databaseId"]
     if not release["isDraft"]:
         return
-    if missing:
-        require_success(gh("upload", tag, *(str(directory / name) for name in missing)))
+    for name in missing:
+        upload_asset(release_id, directory / name, expected[name])
     release = view(tag)
     if release is None or release.get("databaseId") != release_id or missing_assets(release, tag, expected):
         raise ValueError("Release draft identity or asset verification is incomplete")
