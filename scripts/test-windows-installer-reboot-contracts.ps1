@@ -4,7 +4,7 @@ $source=Join-Path $PSScriptRoot 'test-windows-installer-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Reboot fixture failed parsing'}
-foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootInstalledState','Assert-RebootPackageRemoved')){
+foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootDowngradeLog','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootInstalledState','Assert-RebootPackageRemoved')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -22,8 +22,8 @@ Assert-Refused {Assert-LaterGuestBoot '639303000000000001' '639303000000000000'}
 Assert-Refused {Assert-LaterGuestBoot 'missing' '639303000000000000'}
 $pin='a'*64
 $expected=@{
-    schemaVersion=4;runID=('b'*32);architecture='amd64';version='1.0.0';
-    installMode='clean';previousVersion='';previousPayloadSHA256='';userProfilePreservedThroughUpgrade=$false;
+    schemaVersion=5;runID=('b'*32);architecture='amd64';version='1.0.0';
+    installMode='clean';previousVersion='';previousPayloadSHA256='';previousSetupSHA256='';previousPublisherSHA256='';userProfilePreservedThroughUpgrade=$false;
     setupSHA256=$pin;payloadSHA256=$pin;publisherSHA256=$pin;userSID='synthetic-user';guestID='10000000-2000-3000-4000-000000000005';
     detectorSHA256=$pin;fixtureSHA256=$pin;commonSHA256=$pin;publisherVerifierSHA256=$pin
 }
@@ -46,6 +46,13 @@ Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '1.0.0' ''}
 Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '' $priorDigest}
 Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '2.0.0' $priorDigest}
 Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '1.0.0' $pin}
+$olderSetupDigest='f'*64
+if(Test-RebootDowngradeInputs 'upgrade' $pin '' ''){throw 'Unrequested downgrade was enabled'}
+if(-not (Test-RebootDowngradeInputs 'upgrade' $pin $olderSetupDigest $pin)){throw 'Approved downgrade fixture was refused'}
+Assert-Refused {Test-RebootDowngradeInputs 'clean' $pin $olderSetupDigest $pin}
+Assert-Refused {Test-RebootDowngradeInputs 'upgrade' $pin $pin $pin}
+Assert-Refused {Test-RebootDowngradeInputs 'upgrade' $pin $olderSetupDigest ''}
+Assert-Refused {Test-RebootDowngradeInputs 'upgrade' $pin '' $pin}
 $comparison=@{currentVersion='1.0.0';version='2.0.0';updateAvailable=$true}
 Assert-RebootUpgradeOrder $comparison '1.0.0' '2.0.0'
 foreach($value in @($false,'true',0)){
@@ -60,6 +67,12 @@ $upgradeExpected.installMode='upgrade';$upgradeExpected.previousVersion='0.9.0';
 $upgraded=$saved.Clone()
 $upgraded.installMode='upgrade';$upgraded.previousVersion='0.9.0';$upgraded.previousPayloadSHA256=$priorDigest
 $upgraded.userProfilePreservedThroughUpgrade=$true
+Assert-RebootIdentity $upgraded $upgradeExpected
+$upgraded.previousSetupSHA256=$olderSetupDigest
+$upgraded.previousPublisherSHA256=$pin
+Assert-Refused {Assert-RebootIdentity $upgraded $upgradeExpected}
+$upgradeExpected.previousSetupSHA256=$olderSetupDigest
+$upgradeExpected.previousPublisherSHA256=$pin
 Assert-RebootIdentity $upgraded $upgradeExpected
 Assert-Refused {Assert-RebootIdentity $upgraded $expected}
 $upgraded.userProfilePreservedThroughUpgrade=$false
@@ -117,7 +130,7 @@ Assert-Refused {Get-RebootRegistrationFingerprint $null}
 
 # Only the owned, inert fixture tree can reach these path and digest boundaries.
 function Assert-RebootPath([string]$Path){
-    if($Path -cne $tree){throw 'Unexpected fixture tree root'}
+    if($Path -cnotin @($tree,$log)){throw 'Unexpected fixture path'}
 }
 function Get-RebootDigest([string]$Path,[switch]$AllowEmpty){
     if($Path -cnotin @($payload,$notice)){throw 'Unexpected fixture file digest'}
@@ -125,11 +138,19 @@ function Get-RebootDigest([string]$Path,[switch]$AllowEmpty){
 }
 [void][IO.Directory]::CreateDirectory($root)
 $tree=Join-Path $root 'installed'
+$log=Join-Path $root 'downgrade.log'
 $sub=Join-Path $tree 'notices'
 $payload=Join-Path $tree 'accessweaver.exe'
 $notice=Join-Path $sub 'NOTICE.txt'
 try {
     Assert-RebootPackageRemoved $tree
+    $policy='A newer AccessWeaver version is installed. Use a current or newer installer. This installer will not downgrade it.'
+    [IO.File]::WriteAllText($log,"2026-11-13 12:34:56.789   $policy")
+    Assert-RebootDowngradeLog $log
+    foreach($invalid in @('', 'An unrelated installer initialization failed.', ('prefix '+$policy), ('x'*1MB+$policy))){
+        [IO.File]::WriteAllText($log,$invalid)
+        Assert-Refused {Assert-RebootDowngradeLog $log}
+    }
     [void][IO.Directory]::CreateDirectory($sub)
     [IO.File]::WriteAllText($payload,'synthetic payload')
     [IO.File]::WriteAllText($notice,'original notice')
@@ -151,6 +172,7 @@ try {
     [IO.Directory]::Delete($sub)
     Assert-RebootPackageRemoved $tree
 } finally {
+    [IO.File]::Delete($log)
     if([IO.File]::Exists($payload)){[IO.File]::Delete($payload)}
     if([IO.Directory]::Exists($sub)){[IO.File]::Delete($notice);[IO.Directory]::Delete($sub)}
     if([IO.Directory]::Exists($tree)){[IO.Directory]::Delete($tree)}
@@ -171,6 +193,9 @@ foreach($test in @(
     @{code=3010;allow=$false;timely=$true;accepted=$false},
     @{code=1641;allow=$true;timely=$true;accepted=$false},
     @{code=8;allow=$true;timely=$true;accepted=$false},
+    @{code=1;allow=$false;expected=1;timely=$true;accepted=$true},
+    @{code=0;allow=$false;expected=1;timely=$true;accepted=$false},
+    @{code=2;allow=$false;expected=1;timely=$true;accepted=$false},
     @{code=0;allow=$true;timely=$false;accepted=$false}
 )){
     $script:process=[pscustomobject]@{ExitCode=$test.code;Timely=$test.timely;Waits=@();Disposed=$false}
@@ -186,7 +211,7 @@ foreach($test in @(
     }
     $code=$null;$accepted=$false
     try {
-        $code=Invoke-ApprovedInstaller 'inert.exe' @('/NORESTART') -AllowRestartRequired:$test.allow
+        $code=Invoke-ApprovedInstaller 'inert.exe' @('/NORESTART') -AllowRestartRequired:$test.allow -ExpectedExitCode ([int]$test.expected)
         $accepted=$true
     }catch{}
     $waitOrder=if($test.timely){'bounded'}else{'bounded,actual'}
@@ -234,4 +259,4 @@ try {
     [IO.File]::Delete($profileInput)
     [IO.Directory]::Delete($root)
 }
-Write-Output 'Installer reboot identity, upgrade admission, package, registration, saved profile, process ownership and publication checks passed.'
+Write-Output 'Installer reboot identity, upgrade and downgrade admission, package, registration, saved profile, process ownership and publication checks passed.'
