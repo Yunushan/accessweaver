@@ -1016,6 +1016,38 @@ function Component-ArchivePlan($zip,[string]$destination) {
     }
     return $plan.ToArray()
 }
+function Replace-ComponentArchiveFile([string]$staged,[string]$target) {
+    [IO.File]::Replace($staged,$target,[NullString]::Value)
+}
+function Publish-ComponentArchiveFile([string]$staged,[string]$target,[string]$expectedHash) {
+    No-Reparse $staged
+    No-Reparse $target
+    if(-not (Test-Path -LiteralPath $target -ErrorAction Stop)){
+        [IO.File]::Move($staged,$target)
+        return
+    }
+    $originalHash=(Get-FileHash -LiteralPath $target -Algorithm SHA256 -ErrorAction Stop).Hash
+    foreach($delay in @(50,100,200,0)){
+        try {
+            Replace-ComponentArchiveFile $staged $target
+            return
+        }catch {
+            $cause=$_.Exception
+            while($cause.InnerException){$cause=$cause.InnerException}
+            # ERROR_SHARING_VIOLATION and ERROR_UNABLE_TO_REMOVE_REPLACED
+            # retain both names. Move failures can leave partially changed state.
+            if($delay -eq 0 -or $cause -isnot [IO.IOException] -or
+               $cause.HResult -notin @(-2147024864,-2147023721)){throw}
+        }
+        Start-Sleep -Milliseconds $delay
+        No-Reparse $staged
+        No-Reparse $target
+        if((Get-FileHash -LiteralPath $target -Algorithm SHA256 -ErrorAction Stop).Hash -ine $originalHash -or
+           (Get-FileHash -LiteralPath $staged -Algorithm SHA256 -ErrorAction Stop).Hash -ine $expectedHash){
+            throw 'Component archive files changed while waiting for replacement'
+        }
+    }
+}
 function Expand-Safe([string]$archive,[string]$destination) {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     No-Reparse $archive
@@ -1042,7 +1074,7 @@ function Expand-Safe([string]$archive,[string]$destination) {
                 [void]$hasher.TransformFinalBlock([byte[]]::new(0),0,0);$hash=[BitConverter]::ToString($hasher.Hash).Replace('-','')
                 $output.Flush($true);$output.Dispose();$output=$null
                 Backup-File $item.target;Expected-Hash $item.target $hash
-                if(Test-Path -LiteralPath $item.target){[IO.File]::Replace($temporary,$item.target,[System.Management.Automation.Language.NullString]::Value)}else{[IO.File]::Move($temporary,$item.target)}
+                Publish-ComponentArchiveFile $temporary $item.target $hash
             } finally {
                 if($hasher){$hasher.Dispose()};if($output){$output.Dispose()};if($source){$source.Dispose()}
                 if($ownsTemporary -and (Test-Path -LiteralPath $temporary)){No-Reparse $temporary;Remove-Item -LiteralPath $temporary -Force}

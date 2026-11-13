@@ -2077,6 +2077,47 @@ try {
     }
 } finally {$script:undo=$archiveUndo;$script:journalPath=$archiveJournal}
 
+# Inject fixed Windows results at the existing native replacement boundary.
+& {
+    $replacementRoot=Join-Path $archiveFixtures 'replacement-retry'
+    [void][IO.Directory]::CreateDirectory($replacementRoot)
+    $target=Join-Path $replacementRoot 'target.txt'
+    $staged=Join-Path $replacementRoot 'staged.txt'
+    $replace=(Get-Command Replace-ComponentArchiveFile).ScriptBlock
+    $attempts=[Collections.Generic.List[int]]::new()
+    $delays=[Collections.Generic.List[int]]::new()
+    function Replace-ComponentArchiveFile([string]$Staged,[string]$Target) {
+        $attempts.Add($attempts.Count+1)
+        if($attempts.Count -le $case.failures){throw [IO.IOException]::new('Inert replacement failure',[int]$case.hresult)}
+        & $replace $Staged $Target
+    }
+    function Start-Sleep([int]$Milliseconds) {
+        $delays.Add($Milliseconds)
+        if($case.change -eq 'target'){[IO.File]::WriteAllText($target,'changed')}
+        if($case.change -eq 'staged'){[IO.File]::WriteAllText($staged,'changed')}
+    }
+    foreach($case in @(
+        @{hresult=-2147024864;failures=1;attempts=2;delays='50';success=$true},
+        @{hresult=-2147023721;failures=3;attempts=4;delays='50,100,200';success=$true},
+        @{hresult=-2147023721;failures=4;attempts=4;delays='50,100,200';success=$false},
+        @{hresult=-2147023720;failures=1;attempts=1;delays='';success=$false},
+        @{hresult=-2147024864;failures=1;attempts=1;delays='50';success=$false;change='target'},
+        @{hresult=-2147024864;failures=1;attempts=1;delays='50';success=$false;change='staged'}
+    )){
+        [IO.File]::WriteAllText($target,'original')
+        [IO.File]::WriteAllText($staged,'replacement')
+        $expected=(Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash
+        $attempts.Clear();$delays.Clear();$passed=$false
+        try{Publish-ComponentArchiveFile $staged $target $expected;$passed=$true}catch{
+            if($case.change -and $_.Exception.Message -cne 'Component archive files changed while waiting for replacement'){throw}
+            if(-not $case.change -and $_.Exception.HResult -ne $case.hresult){throw}
+        }
+        $expectedTarget=if($case.success){'replacement'}elseif($case.change -eq 'target'){'changed'}else{'original'}
+        Assert ($passed -eq $case.success -and $attempts.Count -eq $case.attempts -and ($delays -join ',') -ceq $case.delays -and
+            [IO.File]::ReadAllText($target) -ceq $expectedTarget -and [IO.File]::Exists($staged) -eq (-not $case.success)) 'Archive replacement retries only known unchanged-file errors within its fixed budget'
+    }
+}
+
 $previousAppData=$env:APPDATA
 try{
     $env:APPDATA=Join-Path $testRoot 'fake-appdata';$cache=Join-Path $env:APPDATA 'discord';[void](New-Item -ItemType Directory -Force -Path $cache)
