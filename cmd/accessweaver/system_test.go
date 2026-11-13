@@ -41,6 +41,24 @@ func TestSystemRequestWindowsEncodingAndSize(t *testing.T) {
 	}
 }
 
+func TestInstallerRestoreRejectsRequestOverrides(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "not-created")
+	for _, args := range [][]string{
+		{"installer-restore"},
+		{"installer-restore", "request.json", "--confirm"},
+		{"installer-restore", "--confirm", "request.json"},
+		{"installer-restore", "remove-all"},
+	} {
+		err := systemCommand(args, root)
+		if err == nil || err.Error() != "usage: system installer-restore --confirm" {
+			t.Fatalf("%v: expected fixed installer restoration usage error, got %v", args, err)
+		}
+		if _, err := os.Stat(root); !os.IsNotExist(err) {
+			t.Fatalf("%v created workflow state: %v", args, err)
+		}
+	}
+}
+
 func TestParseScanCLIRequiresCommonWhenRequested(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "report.txt")

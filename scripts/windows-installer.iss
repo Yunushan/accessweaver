@@ -126,7 +126,7 @@ begin
   { Abort before deleting the controller when restoration fails. The user can
     inspect the protected recovery journal and retry the uninstaller. }
   Result := AWRunBoundedRestoration(ExpandConstant('{app}\accessweaver.exe'),
-    'system apply "' + ExpandConstant('{app}\uninstall-system.json') + '" --confirm',
+    'system installer-restore --confirm',
     ExpandConstant('{app}'), AWRestorationDeadlineMilliseconds, ResultCode, Failure);
   if not Result then
   begin

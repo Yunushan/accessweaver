@@ -723,20 +723,48 @@ try {
     $null=State-Checkpoint 'after-restoration-ownership-contracts'
     $stage='refused-uninstall'
     $uninstaller=Join-Path $install 'unins000.exe';No-Reparse $uninstaller;$uninstallerHash=Digest $uninstaller
-    $request=Join-Path $install 'uninstall-system.json';$original=[IO.File]::ReadAllBytes($request)
+    $request=Join-Path $install 'uninstall-system.json';No-Reparse $request
     $silent=@('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART')
+    # The child must refuse through the real workflow when its mutex is busy.
+    # A different valid JSON action must not select the elevated operation.
+    [IO.File]::WriteAllText($request,'{"action":"discover"}')
+    $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
+    $workflowMutexSecurity=[Security.AccessControl.MutexSecurity]::new()
+    foreach($sid in @('S-1-5-18','S-1-5-32-544')){
+        $principal=[Security.Principal.SecurityIdentifier]::new($sid)
+        $workflowMutexSecurity.AddAccessRule([Security.AccessControl.MutexAccessRule]::new($principal,'FullControl','Allow'))
+    }
+    $createdWorkflowMutex=$false
+    $workflowMutex=[Threading.Mutex]::new($false,'Global\AccessWeaver-SystemWorkflows',[ref]$createdWorkflowMutex,$workflowMutexSecurity)
+    $ownsWorkflowMutex=$false
     try {
-        [IO.File]::WriteAllText($request,'{"action":')
-        $refused=Native-Record $uninstaller $silent (0..255)
-        Require ($refused.result.exitCode -ne 0) 'Uninstaller reported success after restoration input was rejected'
+        $ownsWorkflowMutex=$workflowMutex.WaitOne(0)
+        Require ($createdWorkflowMutex -and $ownsWorkflowMutex) 'The fixture could not reserve a new system workflow mutex'
+        $blocked=Native-Record $core @('system','installer-restore','--confirm') @(1)
+        $job=ConvertFrom-Json -InputObject $blocked.result.stdout -ErrorAction Stop
+        Require ($job.action -ceq 'remove-all' -and $job.state -ceq 'failed' -and
+            $job.result.error -ceq 'Another AccessWeaver system workflow is already running') 'The fixed restoration command did not observe the real workflow lock'
+        $refusalLog=Join-Path $capsule 'fixed-restoration-refusal.log'
+        $refused=Native-Record $uninstaller ($silent+@('/LOG='+$refusalLog)) @(1)
+        No-Reparse $refusalLog
+        Require ((Get-Item -LiteralPath $refusalLog -ErrorAction Stop).Length -le 4MB) 'Fixed restoration refusal log exceeds bounds'
+        $log=[IO.File]::ReadAllText($refusalLog)
+        Require ($log.Contains('AccessWeaver system restoration did not complete successfully.') -and
+            $log.Contains('AccessWeaver system restoration failed; process result/error code: 1')) 'Uninstaller did not record the fixed restoration process refusal'
         Assert-Installed $builds[1]
-        Require ((Digest $uninstaller) -ceq $uninstallerHash -and (Digest $marker) -ceq $markerHash) 'Refused uninstall changed owned or unrelated files'
-        Require (-not (Test-Path -LiteralPath $managed)) 'Rejected restore input unexpectedly created machine recovery state'
-    } finally {if(Test-Path -LiteralPath $request){No-Reparse $request;[IO.File]::WriteAllBytes($request,$original)}}
-    $observations+=,@{operation='refused-uninstall';exitCode=$refused.result.exitCode;elapsedMilliseconds=$refused.milliseconds;deadlineMilliseconds=180000;controllerAndRegistrationRetained=$true;unrelatedStatePreserved=$true}
+        Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint) -ceq $registrationBefore -and
+            (Digest $uninstaller) -ceq $uninstallerHash -and (Digest $marker) -ceq $markerHash) 'Refused uninstall changed owned or unrelated files'
+        Require (-not (Test-Path -LiteralPath $managed)) 'Busy restoration unexpectedly created machine recovery state'
+    } finally {
+        if($ownsWorkflowMutex){$workflowMutex.ReleaseMutex()}
+        $workflowMutex.Dispose()
+    }
+    $observations+=,@{operation='refused-uninstall';exitCode=$refused.result.exitCode;elapsedMilliseconds=$refused.milliseconds;deadlineMilliseconds=180000;controllerAndRegistrationRetained=$true;unrelatedStatePreserved=$true;workflowLockRefusalVerified=$true}
     Assert-ManagedDetection 'after-refused-uninstall' $builds[1] $true
     $null=State-Checkpoint 'before-uninstall'
-    $stage='uninstall';$removed=Native-Record $uninstaller $silent
+    $stage='uninstall'
+    [IO.File]::Delete($request)
+    $removed=Native-Record $uninstaller $silent
     $deadline=[DateTime]::UtcNow.AddSeconds(20)
     do {
         $owned=@(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {$_.ExecutablePath -and ($_.ExecutablePath.StartsWith($install+'\',[StringComparison]::OrdinalIgnoreCase) -or $_.ExecutablePath.StartsWith($privateTemp+'\',[StringComparison]::OrdinalIgnoreCase))})
@@ -755,7 +783,7 @@ try {
     Assert-ManagedDetection 'after-uninstall' $builds[1] $false
     $after=State-Checkpoint 'after-uninstall'
     Require ($after -ceq $before) 'Installer lifecycle changed selected services, firewall rules or DNS configuration'
-    $observations+=,@{operation='uninstall';exitCode=$removed.result.exitCode;elapsedMilliseconds=$removed.milliseconds;deadlineMilliseconds=180000;ownedPayloadAndRegistrationRemoved=$true;unrelatedStatePreserved=$true;recoveryJournalRetained=$true}
+    $observations+=,@{operation='uninstall';exitCode=$removed.result.exitCode;elapsedMilliseconds=$removed.milliseconds;deadlineMilliseconds=180000;ownedPayloadAndRegistrationRemoved=$true;unrelatedStatePreserved=$true;recoveryJournalRetained=$true;legacyRequestAbsent=$true}
     $stage='cleanup'
     # Only the known successful journal may remain in the newly created store.
     $files=@(Get-ChildItem -LiteralPath $managed -File -Recurse -Force)
@@ -768,7 +796,7 @@ try {
 $eventDiagnostics=New-InstallerFirewallEventDiagnostic
 if(-not $complete){$eventDiagnostics=Read-FirewallEventDiagnostic}
 $originDiagnostics=[ordered]@{schemaVersion=1;source='captured-rule-properties';maxRecords=16;maxPropertyBytes=4096;records=@($script:firewallOriginObservations);truncated=$script:firewallOriginTruncated;unavailable=$script:firewallOriginUnavailable;extraNativeQueriesPerformed=$false;processOriginEstablished=$false}
-$record=[ordered]@{schemaVersion=13;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=14;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'

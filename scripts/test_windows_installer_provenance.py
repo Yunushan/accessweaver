@@ -1,5 +1,5 @@
 import copy
-from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt, validate_architecture_refusal
+from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt, validate_architecture_refusal, validate_fixed_restoration
 import os
 from pathlib import Path
 import subprocess
@@ -32,6 +32,23 @@ class ArchitectureRefusalTests(unittest.TestCase):
                     validate_architecture_refusal({"architectureRefusal": {**observation, **override}}, host)
             with self.assertRaises(ValueError):
                 validate_architecture_refusal({}, host)
+
+
+class FixedRestorationTests(unittest.TestCase):
+    def test_verified_lock_refusal_and_removal_without_request_are_required(self):
+        refused = {"workflowLockRefusalVerified": True, "controllerAndRegistrationRetained": True,
+                   "unrelatedStatePreserved": True}
+        removed = {"legacyRequestAbsent": True, "recoveryJournalRetained": True,
+                   "ownedPayloadAndRegistrationRemoved": True}
+        self.assertEqual(validate_fixed_restoration(refused, removed), {"fixedRestorationCommandVerified": True})
+        for evidence in (refused, removed):
+            for key in evidence:
+                with self.subTest(key=key), self.assertRaises(ValueError):
+                    incomplete = {**evidence, key: 1}
+                    if evidence is refused:
+                        validate_fixed_restoration(incomplete, removed)
+                    else:
+                        validate_fixed_restoration(refused, incomplete)
 
 
 class WindowsInstallerProvenanceTests(unittest.TestCase):

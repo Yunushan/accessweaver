@@ -73,6 +73,7 @@ try {
     $goRoot=& $Go env GOROOT
     if($LASTEXITCODE -ne 0){throw 'Could not locate Go runtime license'}
     Copy-Item -LiteralPath (Join-Path $goRoot 'LICENSE') -Destination (Join-Path $stage 'licenses\Go-runtime-LICENSE')
+    # An upgraded installation can retain an older Inno uninstaller.
     [IO.File]::WriteAllText((Join-Path $stage 'uninstall-system.json'),'{"action":"remove-all"}')
     $compilerLicense=Join-Path (Split-Path -Parent $Compiler) 'License.txt'
     if(-not (Test-Path -LiteralPath $compilerLicense -PathType Leaf)){throw 'Inno Setup license evidence is missing'}

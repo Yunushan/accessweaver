@@ -72,11 +72,17 @@ func systemCommand(args []string, root string) error {
 			return err
 		}
 		return printJSON(strategy)
-	case "discover", "preview", "apply":
+	case "discover", "preview", "apply", "installer-restore":
 		var request workflow.Request
-		if args[0] == "discover" {
+		switch args[0] {
+		case "discover":
 			request.Action = "discover"
-		} else {
+		case "installer-restore":
+			if len(args) != 2 || args[1] != "--confirm" {
+				return errors.New("usage: system installer-restore --confirm")
+			}
+			request.Action = "remove-all"
+		default:
 			if len(args) < 2 {
 				return errors.New("provide a JSON workflow request file")
 			}

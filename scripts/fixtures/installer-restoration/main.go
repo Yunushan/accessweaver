@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -70,7 +69,7 @@ func run() error {
 		time.Sleep(15 * time.Minute)
 		return fmt.Errorf("fixture safety lifetime exceeded")
 	}
-	if len(os.Args) != 5 || os.Args[1] != "system" || os.Args[2] != "apply" || os.Args[4] != "--confirm" || filepath.Base(os.Args[3]) != "uninstall-system.json" {
+	if len(os.Args) != 4 || os.Args[1] != "system" || os.Args[2] != "installer-restore" || os.Args[3] != "--confirm" {
 		return fmt.Errorf("unexpected fixture invocation")
 	}
 	config := os.Getenv("ACCESSWEAVER_INSTALLER_RESTORE_FIXTURE")
