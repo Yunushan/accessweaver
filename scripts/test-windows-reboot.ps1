@@ -63,6 +63,7 @@ function Assert-DNSRebootJournal($Journal,[string]$SnapshotSHA256) {
     $undo=@($Journal.undo)
     $dns=@($undo | Where-Object {$_.kind -ceq 'dns'})
     if($Journal.action -cne 'dns' -or $Journal.state -cne 'succeeded' -or $dns.Count -ne 1 -or
+        $dns[0].snapshotActive -isnot [bool] -or -not $dns[0].snapshotActive -or
         $dns[0].snapshotSHA256 -isnot [string] -or $dns[0].snapshotSHA256 -ine $SnapshotSHA256){
         throw 'Prepared DNS workflow journal does not bind the snapshot'
     }

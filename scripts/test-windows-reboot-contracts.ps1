@@ -47,7 +47,7 @@ if((Get-DNSRebootJournalID $journal $log) -cne $journalId){throw 'Exact protecte
 Refuse {Get-DNSRebootJournalID $journalId $log}
 Refuse {Get-DNSRebootJournalID ([IO.Path]::Combine($log,'different',$journalId)) $log}
 Refuse {Get-DNSRebootJournalID ([IO.Path]::Combine($log,'..','synthetic-dns-logs',$journalId)) $log}
-$dns=@{kind='dns';snapshotSHA256=$saved.snapshotSHA256}
+$dns=@{kind='dns';snapshotSHA256=$saved.snapshotSHA256;snapshotActive=$true}
 $file=@{kind='file';path='synthetic config'}
 Assert-DNSRebootJournal @{action='dns';state='succeeded';undo=@($dns,$file)} $saved.snapshotSHA256
 foreach($invalid in @(
@@ -55,7 +55,8 @@ foreach($invalid in @(
     @{action='dns';state='running';undo=@($dns)},
     @{action='dns';state='succeeded';undo=@($file)},
     @{action='dns';state='succeeded';undo=@($dns,$dns)},
-    @{action='dns';state='succeeded';undo=@(@{kind='dns';snapshotSHA256=('F'*64)})}
+    @{action='dns';state='succeeded';undo=@(@{kind='dns';snapshotSHA256=('F'*64);snapshotActive=$true})},
+    @{action='dns';state='succeeded';undo=@(@{kind='dns';snapshotSHA256=$saved.snapshotSHA256;snapshotActive=$false})}
 )){Refuse {Assert-DNSRebootJournal $invalid $saved.snapshotSHA256}}
 
 # Run only the actual post-verification cleanup block with synthetic state.

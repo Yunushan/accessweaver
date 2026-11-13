@@ -4,7 +4,7 @@ $path=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS journal source failed parsing'}
-foreach($name in @('No-Reparse','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Recover-Operation','Rollback','Save-Journal')){
+foreach($name in @('No-Reparse','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Rollback','Save-Journal')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -32,8 +32,8 @@ function Restore-DNS {
     $script:restores++
     $script:order.Add('restore')
     if($script:failRestore){throw 'Synthetic DNS restore failure'}
+    Save-DNSRecoveryReceipt (Get-DNSRecoverySnapshotDigest)
     [IO.File]::Delete($snapshot)
-    $script:dnsTouched=$false
 }
 $root=Join-Path ([IO.Path]::GetTempPath()) ('aw-dns-journal-'+[guid]::NewGuid().ToString('N'))
 $profiles=Join-Path $root 'profiles'
@@ -44,7 +44,6 @@ $script:undo=[Collections.Generic.List[object]]::new()
 $script:journalWrites=0
 $script:restores=0
 $script:failRestore=$false
-$script:dnsTouched=$false
 $script:order=[Collections.Generic.List[string]]::new()
 $originalSystemRoot=$env:SystemRoot
 if(-not $env:SystemRoot){$env:SystemRoot=[IO.Path]::GetTempPath()}
@@ -69,6 +68,9 @@ try {
     Recover-Operation
     Require ($script:restores -eq 1 -and $script:journalWrites -eq 1 -and -not [IO.File]::Exists($snapshot)) 'Bound journal did not retire the snapshot'
 
+    $completedReceipt=Get-DNSRecoveryReceiptPath $current
+    Require ([IO.File]::Exists($completedReceipt)) 'Verified recovery did not save a receipt'
+    [IO.File]::Delete($completedReceipt)
     $script:saved=@(@{kind='file';path=$snapshot;backup='outside fixture'},@{kind='dns'})
     Recover-Operation
     Require ($script:restores -eq 1 -and $script:journalWrites -eq 2 -and -not [IO.File]::Exists($snapshot)) 'Legacy file undo tried to recreate the retired snapshot'
@@ -105,7 +107,7 @@ try {
     $configHash=(Get-FileHash -LiteralPath $serviceConfig).Hash
     $fileUndo=@{kind='file';path=$serviceConfig;expectedHash=$configHash}
     $serviceUndo=@{kind='service';name='AccessWeaver-dnscrypt'}
-    $dnsUndo=@{kind='dns';snapshotSHA256=$next}
+    $dnsUndo=@{kind='dns';snapshotSHA256=$next;snapshotActive=$true}
     $script:undo.Clear()
     foreach($entry in @($dnsUndo,$fileUndo,$serviceUndo)){$script:undo.Add($entry)}
 
@@ -129,14 +131,33 @@ try {
     $script:undo.RemoveAt($script:undo.Count-1)
 
     [IO.File]::Delete($snapshot)
-    $script:dnsTouched=$true
     $rollback=@(Rollback)
     Require ($rollback.Count -eq 1 -and $script:order.Count -eq 0 -and [IO.File]::Exists($serviceConfig)) 'Missing active snapshot tore down the resolver'
 
+    $script:saved=@($dnsUndo,$serviceUndo)
+    $script:undo.Clear()
+    $refused=$false
+    try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'missing without a verified restoration receipt'}
+    Require ($refused -and $script:order.Count -eq 0 -and $script:undo.Count -eq 0) 'Fresh worker trusted an absent active snapshot'
+    $receipt=Get-DNSRecoveryReceiptPath $next
+    [IO.File]::WriteAllText($receipt,('X'*64))
+    $refused=$false
+    try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'missing without a verified restoration receipt'}
+    Require ($refused -and $script:order.Count -eq 0) 'Malformed restoration receipt allowed teardown'
+    [IO.File]::Delete($receipt)
+
+    $dnsUndo.snapshotActive=$false
+    Require (-not (Confirm-DNSRecoveryEntry $dnsUndo)) 'Unpublished snapshot was treated as active'
+    $dnsUndo.snapshotActive=$true
+    foreach($entry in @($dnsUndo,$fileUndo,$serviceUndo)){$script:undo.Add($entry)}
     Publish-WorkflowFile $snapshot $secondBytes
     $rollback=@(Rollback)
     Require ($rollback.Count -eq 0 -and ($script:order -join ',') -ceq 'restore,stop,delete' -and
         -not [IO.File]::Exists($snapshot) -and -not [IO.File]::Exists($serviceConfig)) 'Retry did not restore DNS before retiring the resolver'
+    $script:order.Clear()
+    Recover-Operation
+    Require (($script:order -join ',') -ceq 'stop,delete') 'Verified retirement did not permit a fresh recovery attempt'
+    [IO.File]::Delete($receipt)
 } finally {
     $env:SystemRoot=$originalSystemRoot
     [IO.File]::Delete($serviceConfig)
@@ -145,4 +166,4 @@ try {
     [IO.Directory]::Delete($profiles)
     [IO.Directory]::Delete($root)
 }
-Write-Output 'Seventeen DNS journal binding, rollback and publication checks passed.'
+Write-Output 'Twenty-two DNS journal binding, rollback and publication checks passed.'

@@ -21,7 +21,6 @@ $script:undo = [Collections.Generic.List[object]]::new()
 $script:events = [Collections.Generic.List[string]]::new()
 $script:journalPath = $null
 $script:rebootRequired = $false
-$script:dnsTouched = $false
 $script:dnsConfigured = $false
 $script:mutex = $null
 $script:ownsMutex = $false
@@ -1846,13 +1845,18 @@ function Configure-DNS([string]$method) {
     if($bytes.Length -gt 8MB){throw 'DNS recovery snapshot exceeds its size limit'}
     $snapshotSHA256=Get-WorkflowBytesSHA256 $bytes
     $dnsUndo=$script:undo | Where-Object {$_.kind -ceq 'dns'} | Select-Object -First 1
-    if($dnsUndo){$dnsUndo.snapshotSHA256=$snapshotSHA256}
-    else{$script:undo.Add(@{kind='dns';snapshotSHA256=$snapshotSHA256})}
+    if(-not $dnsUndo){
+        $dnsUndo=@{kind='dns'}
+        $script:undo.Add($dnsUndo)
+    }
+    $dnsUndo.snapshotSHA256=$snapshotSHA256
+    $dnsUndo.snapshotActive=$false
     # The previous journal keeps its binding until the snapshot is replaced.
     Save-Journal
     Publish-WorkflowFile $snapshot $bytes
     if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot could not be published'}
-    $script:dnsTouched=$true
+    $dnsUndo.snapshotActive=$true
+    Save-Journal
     if($method -eq 'dnscrypt') {
         $binary=Ensure-Asset 'dnscrypt';$config=Join-Path (Split-Path -Parent $binary) 'dnscrypt-proxy.toml'
         if(-not (Test-Path -LiteralPath $config)){$example=Join-Path (Split-Path -Parent $binary) 'example-dnscrypt-proxy.toml';if(Test-Path -LiteralPath $example){Copy-Checked $example $config}else{throw 'Official DNSCrypt resolver configuration is missing'}}
@@ -1967,7 +1971,9 @@ function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$Doh
     }
 }
 function Restore-DNS {
-    $snapshot=Join-Path $root 'profiles\dns-original.json';if(-not (Test-Path -LiteralPath $snapshot)){throw 'No original DNS snapshot exists; no settings were changed'}
+    $snapshot=Join-Path $root 'profiles\dns-original.json'
+    $snapshotSHA256=Get-DNSRecoverySnapshotDigest
+    if(-not $snapshotSHA256){throw 'No original DNS snapshot exists; no settings were changed'}
     $saved=Get-Content -LiteralPath $snapshot -Raw -ErrorAction Stop | ConvertFrom-Json
     if($null -eq $saved.adapters -or @($saved.adapters).Count -eq 0){throw 'Original DNS snapshot has no adapter records; retain it for manual recovery'}
     # Inspect every original adapter and relevant DoH entry before changing any
@@ -2034,9 +2040,10 @@ function Restore-DNS {
             Start-Sleep -Milliseconds 250
         }
     }
+    if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'Original DNS snapshot disappeared during restoration'}
+    Save-DNSRecoveryReceipt $snapshotSHA256
     Remove-Item -LiteralPath $snapshot -ErrorAction Stop
     if(Test-Path -LiteralPath $snapshot -ErrorAction Stop){throw 'Original DNS snapshot retirement could not be verified'}
-    $script:dnsTouched=$false
     Event 'Original DNS and DoH settings restored'
 }
 
@@ -2781,8 +2788,7 @@ function Rollback {
     if($dnsEntries.Count -gt 1){return 'DNS recovery journal contains duplicate DNS entries'}
     if($dnsEntries.Count -eq 1){
         try {
-            if(Confirm-DNSRecoverySnapshot $dnsEntries[0].snapshotSHA256){Restore-DNS}
-            elseif($script:dnsTouched){throw 'DNS recovery snapshot is missing after DNS configuration started'}
+            if(Confirm-DNSRecoveryEntry $dnsEntries[0]){Restore-DNS}
         } catch {return $_.Exception.Message}
     }
     $rollbackErrors=@()
@@ -2874,15 +2880,47 @@ function Confirm-DNSRecoverySnapshot($ExpectedSHA256) {
        ($ExpectedSHA256 -isnot [string] -or $ExpectedSHA256 -notmatch '\A[a-fA-F0-9]{64}\z')){
         throw 'DNS recovery journal contains an invalid snapshot digest'
     }
-    $snapshot=Join-Path $root 'profiles\dns-original.json'
-    No-Reparse $snapshot
-    if(-not (Test-Path -LiteralPath $snapshot -ErrorAction Stop)){return $false}
-    $entry=Get-Item -LiteralPath $snapshot -Force -ErrorAction Stop
-    if($entry.PSIsContainer -or $entry.Length -le 0 -or $entry.Length -gt 8MB){throw 'DNS recovery snapshot is not a bounded ordinary file'}
-    if(-not $ExpectedSHA256 -or (Get-FileHash -LiteralPath $snapshot -Algorithm SHA256 -ErrorAction Stop).Hash -ine $ExpectedSHA256){
+    $actual=Get-DNSRecoverySnapshotDigest
+    if(-not $actual){return $false}
+    if(-not $ExpectedSHA256 -or $actual -ine $ExpectedSHA256){
         throw 'DNS recovery journal does not match the active snapshot; review dns-restore'
     }
     return $true
+}
+function Get-DNSRecoverySnapshotDigest {
+    $snapshot=Join-Path $root 'profiles\dns-original.json'
+    No-Reparse $snapshot
+    if(-not (Test-Path -LiteralPath $snapshot -ErrorAction Stop)){return $null}
+    $entry=Get-Item -LiteralPath $snapshot -Force -ErrorAction Stop
+    if($entry.PSIsContainer -or $entry.Length -le 0 -or $entry.Length -gt 8MB){throw 'DNS recovery snapshot is not a bounded ordinary file'}
+    return (Get-FileHash -LiteralPath $snapshot -Algorithm SHA256 -ErrorAction Stop).Hash
+}
+function Get-DNSRecoveryReceiptPath([string]$SHA256) {
+    if($SHA256 -notmatch '\A[a-fA-F0-9]{64}\z'){throw 'Invalid DNS recovery receipt digest'}
+    return Join-Path $root ('profiles\dns-restored-'+$SHA256.ToLowerInvariant()+'.receipt')
+}
+function Save-DNSRecoveryReceipt([string]$SHA256) {
+    $path=Get-DNSRecoveryReceiptPath $SHA256
+    Publish-WorkflowFile $path ([Text.Encoding]::ASCII.GetBytes($SHA256.ToUpperInvariant()))
+}
+function Confirm-DNSRecoveryEntry($Entry) {
+    if($null -ne $Entry.snapshotActive -and $Entry.snapshotActive -isnot [bool]){
+        throw 'DNS recovery journal contains an invalid snapshot phase'
+    }
+    $digest=$Entry.snapshotSHA256
+    if(Confirm-DNSRecoverySnapshot $digest){return $true}
+    # Legacy entries lack a digest and continue to require explicit dns-restore
+    # whenever an active snapshot exists. Bound entries require their receipt.
+    if(-not $digest -or ($Entry.snapshotActive -is [bool] -and -not $Entry.snapshotActive)){return $false}
+    $path=Get-DNSRecoveryReceiptPath $digest
+    No-Reparse $path
+    if(Test-Path -LiteralPath $path -ErrorAction Stop){
+        $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+        if(-not $item.PSIsContainer -and $item.Length -eq 64 -and [IO.File]::ReadAllText($path) -ceq $digest.ToUpperInvariant()){
+            return $false
+        }
+    }
+    throw 'DNS recovery snapshot is missing without a verified restoration receipt'
 }
 function Recover-Operation {
     if($r.journalId -notmatch '^workflow-[a-fA-F0-9]{32}\.json$'){throw 'Invalid recovery journal name'}
@@ -2894,7 +2932,7 @@ function Recover-Operation {
             'started-service' {if($entry.name -ne 'AccessWeaver-byedpi'){throw 'Recovery journal contains an unmanaged restarted service'}}
             'firewall' {if($entry.name -notmatch '^AccessWeaver-[a-z]+-(Inbound|Outbound)$'){throw 'Recovery journal contains an unmanaged firewall rule'}}
             'task' {if($entry.name -ne 'AccessWeaver-WireSock-Refresh'){throw 'Recovery journal contains an unmanaged task'}}
-            'dns' {[void](Confirm-DNSRecoverySnapshot $entry.snapshotSHA256)}
+            'dns' {[void](Confirm-DNSRecoveryEntry $entry)}
             'wiresock' {
                 if($entry.cli -ne (WireSock-CLI) -or (-not $entry.legacy -and $entry.profile -notmatch '^AccessWeaver-[a-f0-9]{32}$')){
                     throw 'Recovery journal contains an unmanaged WireSock profile'

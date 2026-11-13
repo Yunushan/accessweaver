@@ -239,7 +239,8 @@ public static class AccessWeaverNativeDoHIdentity {
         $undo=@($journal.undo)
         $digest=(Get-FileHash -LiteralPath $snapshotPath -Algorithm SHA256 -ErrorAction Stop).Hash
         if($journal.action -cne 'dns' -or $journal.state -cne 'succeeded' -or $undo.Count -ne 1 -or
-            $undo[0].kind -cne 'dns' -or $undo[0].snapshotSHA256 -isnot [string] -or $undo[0].snapshotSHA256 -ine $digest){
+            $undo[0].kind -cne 'dns' -or $undo[0].snapshotActive -isnot [bool] -or -not $undo[0].snapshotActive -or
+            $undo[0].snapshotSHA256 -isnot [string] -or $undo[0].snapshotSHA256 -ine $digest){
             throw 'Native DNS journal does not bind the active snapshot'
         }
         return @{journalId=$CurrentJournal;digest=$digest}
