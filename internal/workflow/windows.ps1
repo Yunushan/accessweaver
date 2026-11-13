@@ -81,12 +81,15 @@ function Initialize-Operation {
         Require-DesktopUser
         if($r.dns -and $r.dns -ne 'unchanged'){throw 'Configure system DNS separately from user application operations'}
         Enter-ApplicationWorkflow
-        if($r.action -ne 'app-start'){
-            $script:root=Join-Path (Split-Path -Parent $inputData.resultPath) 'application'
-            No-Reparse $root
-            foreach($dir in @('downloads','backups','logs')){[void](New-Item -ItemType Directory -Force -Path (Join-Path $root $dir))}
-            $script:journalPath=Join-Path $root 'logs\application.json';Save-Journal
+        $script:root=Join-Path (Split-Path -Parent $inputData.resultPath) 'application'
+        $directories=if($r.action -eq 'app-start'){@('logs')}else{@('downloads','backups','logs')}
+        foreach($dir in $directories){
+            $path=Join-Path $root $dir
+            No-Reparse $path
+            [void](New-Item -ItemType Directory -Force -Path $path)
         }
+        $script:journalPath=Join-Path $root 'logs\application.json'
+        Save-Journal
     }elseif($r.action -notin @('discover','updates','choose-folder')){Initialize-Changes}
 }
 function Quote-Arg([string]$text) { return '"'+[regex]::Replace([regex]::Replace($text,'(\\*)"','$1$1\"'),'(\\+)$','$1$1')+'"' }
@@ -3107,7 +3110,7 @@ function Start-App([string]$variant) {
     if($sessionId -eq 0){throw 'Start user applications from the signed-in Windows desktop, not the SYSTEM session'}
     # Explorer brokers the launch in the signed-in desktop user's context.
     # Its external application lifetime is not owned or certified by this worker.
-    $script:externalEffectsPending=$true
+    Save-ApplicationEffectBoundary
     Start-Process -FilePath (Join-Path $env:SystemRoot 'explorer.exe') -ArgumentList @((Quote-Arg $app)) -WindowStyle Hidden
     $name=[IO.Path]::GetFileNameWithoutExtension($app)
     $wait=[Diagnostics.Stopwatch]::StartNew()

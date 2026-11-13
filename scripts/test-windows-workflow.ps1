@@ -1898,6 +1898,57 @@ try{
     Initialize-Operation
     Assert ($script:fixtureApplicationLocked -and $root -eq (Join-Path $testRoot 'user-job\application') -and
         $script:machineInitializationCount -eq 0 -and (Test-Path -LiteralPath $script:journalPath)) 'User application staging holds its account lock and avoids machine storage'
+    & {
+        $inputData=[pscustomobject]@{resultPath=(Join-Path $testRoot 'launch-job\result.json')}
+        $r=[pscustomobject]@{action='app-start';engine='discord';dns='unchanged'}
+        $previousEffects=$script:externalEffectsPending
+        $previousState=$script:journalState
+        $script:journalState='running'
+        $script:externalEffectsPending=$false
+        Initialize-Operation
+        $launchJournal=$script:journalPath
+        $launchRoot=Join-Path $testRoot 'launch-job\application'
+        $launchPath=Join-Path $testRoot 'launch fixture\Discord.exe'
+        $trace=[Collections.Generic.List[string]]::new()
+        function Find-App {return $launchPath}
+        function Start-Process($FilePath,$ArgumentList,$WindowStyle){
+            $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
+            if($FilePath -ine (Join-Path $env:SystemRoot 'explorer.exe') -or $ArgumentList.Count -ne 1 -or
+               $ArgumentList[0] -cne (Quote-Arg $launchPath) -or $WindowStyle -cne 'Hidden' -or
+               $saved.action -cne 'app-start' -or $saved.state -cne 'running' -or $saved.externalEffectsPending -ne $true){
+                throw 'Explorer launch did not use the selected client and durable journal'
+            }
+            $trace.Add('launch')
+            if($fixtureLaunchFails){throw 'Inert Explorer handoff failure'}
+        }
+        function Get-Process($Name,$ErrorAction){
+            if($Name -cne 'Discord'){throw 'Unexpected fixture process query'}
+            return [pscustomobject]@{Path=$launchPath;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false}
+        }
+        try {
+            $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
+            Assert ($saved.action -ceq 'app-start' -and $saved.externalEffectsPending -eq $false -and
+                $script:machineInitializationCount -eq 0 -and
+                -not [IO.Directory]::Exists((Join-Path $launchRoot 'downloads')) -and
+                -not [IO.Directory]::Exists((Join-Path $launchRoot 'backups'))) 'Application launch initializes only its local recovery journal'
+            $script:journalPath=Join-Path $launchRoot 'missing\application.json'
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$true}
+            Assert ($rejected -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application launch refuses Explorer handoff if it cannot save the journal'
+            $script:journalPath=$launchJournal
+            $fixtureLaunchFails=$true
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Inert Explorer handoff failure'}
+            $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
+            Assert ($rejected -and $trace.Count -eq 1 -and $saved.externalEffectsPending -eq $true) 'Application launch retains its pending journal after a failed handoff'
+            $fixtureLaunchFails=$false
+            Start-App 'discord'
+            Assert ($trace.Count -eq 2) 'Application launch observes a matching process after its journaled handoff'
+        } finally {
+            $script:externalEffectsPending=$previousEffects
+            $script:journalState=$previousState
+        }
+    }
 }finally{
     Set-Item Function:Require-DesktopUser $desktopGuard
     Set-Item Function:Initialize-Changes $machineInitializer
