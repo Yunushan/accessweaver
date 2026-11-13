@@ -803,7 +803,7 @@ try {
             }
         }
         function Native {
-            param($program,$arguments,[switch]$Secret)
+            param($program,$arguments,[switch]$Secret,[int]$Timeout)
             if($program -cne $fixtureCli -or -not $Secret){throw 'Unexpected vendor command'}
             $command=$arguments[0]
             $entry=$script:undo[0]
@@ -822,6 +822,7 @@ try {
                     if($mode -ceq 'connect'){throw 'Fixture connect failure'}
                 }
                 'status' {
+                    if($Timeout -ne 15){throw 'Expected bounded status query'}
                     $calls.Add($command)
                     return $fixtureStatus
                 }
@@ -863,15 +864,32 @@ try {
             @{stdout=('x'*8193);complete=$true;want='Unknown'}
         )
         foreach($check in $checks){
+            $fixtureStatus=@{stdout=$check.stdout;outputComplete=$check.complete}
+            if((Get-WireSockReportedState $fixtureStatus) -cne $check.want){throw 'Unexpected WireSock status projection'}
+        }
+        Assert $true 'WireSock records only a fixed vendor status and discards private output'
+        foreach($check in $checks){
             $calls.Clear()
             $script:undo=[Collections.Generic.List[object]]::new()
             $fixtureStatus=@{stdout=$check.stdout;outputComplete=$check.complete}
-            $state=Connect-WireSock (Join-Path $root 'fixture.conf')
-            if($state -cne $check.want -or ($calls -join ',') -cne 'save-import,import,save-connect,connect,status,record'){
-                throw 'Unexpected WireSock status projection'
+            if($check.want -ceq 'Connected'){
+                $status=Connect-WireSock $originalConfig
+                if($status -cne 'Connected' -or ($calls -join ',') -cne 'save-import,import,save-connect,connect,status,record'){
+                    throw 'Confirmed connection did not publish its ownership record'
+                }
+            }else {
+                $refused=$false
+                try {Connect-WireSock $originalConfig | Out-Null}catch{
+                    $refused=$_.Exception.Message -ceq 'WireSock connection was not confirmed by vendor status'
+                }
+                $errors=@(Rollback)
+                if(-not $refused -or $errors.Count -ne 0 -or
+                    ($calls -join ',') -cne 'save-import,import,save-connect,connect,status,disconnect,delete'){
+                    throw 'Unconfirmed connection did not use the persisted recovery phase'
+                }
             }
         }
-        Assert $true 'WireSock records only a fixed vendor status and discards private output'
+        Assert $true 'WireSock requires confirmed vendor status before publishing ownership'
         Assert (@(Get-ChildItem -LiteralPath $profiles -Filter '*.conf').Count -eq 0 -and [IO.File]::ReadAllText($originalConfig) -ceq 'inert profile') 'WireSock retires import copies after completion and preserves the generated profile'
     } finally {$script:undo=$previousUndo}
 }

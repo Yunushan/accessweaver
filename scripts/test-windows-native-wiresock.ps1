@@ -76,6 +76,7 @@ function Get-WorkflowOutcome($run,$job) {
         '^Timed out: (wiresock-connect-cli|wiresock-client)\.exe$' {return 'vendor-cli-timeout'}
         '^WireSock disconnect command failed; the managed profile was retained$' {return 'disconnect-command-failed'}
         '^WireSock profile deletion command failed; the ownership record was retained$' {return 'profile-deletion-command-failed'}
+        '^WireSock connection was not confirmed by vendor status$' {return 'connection-unconfirmed'}
         '^Invalid WireGuard configuration$' {return 'config-invalid'}
         '^Use a separately elevated system apply CLI for machine changes\.' {return 'worker-not-elevated'}
         '^No supported registered WireSock product found; use Windows Apps settings for an unrecognized package$' {return 'uninstall-registration-missing'}
@@ -328,7 +329,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=9;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;productionQualificationComplete=$false}
+$report=@{schemaVersion=10;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))

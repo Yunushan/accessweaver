@@ -1226,9 +1226,10 @@ function Connect-WireSock([string]$config) {
         $recovery.importOnly=$false
         try {Save-Journal}catch{$recovery.importOnly=$true;throw}
         [void](Native $cli @('connect',$profile,'-exit') -Secret)
-        $status=Get-WireSockReportedState (Native $cli @('status') -Secret)
+        $status=Get-WireSockReportedState (Native $cli @('status') -Secret -Timeout 15)
+        if($status -cne 'Connected'){throw 'WireSock connection was not confirmed by vendor status'}
         Write-Atomic (Join-Path $root 'profiles\wiresock-owned.json') (@{profile=$profile;cli=$cli} | ConvertTo-Json)
-        Event 'WireSock connect command completed; inspect status and traffic verification separately'
+        Event 'WireSock reports Connected; verify traffic independently'
         return $status
     }
     if(Get-Service 'wiresock-client-service' -ErrorAction SilentlyContinue){throw 'An existing SDK WireSock service is installed; remove it through its owner before using managed setup'}
