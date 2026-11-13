@@ -1943,7 +1943,15 @@ function Install-App([string]$variant) {
     Require-DesktopUser
     if($variant -notin @('discord','discord-ptb','splitcord')){throw 'Choose Discord, Discord PTB or SplitCord'}
     if($variant -eq 'splitcord'){$release=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/cagritaskn/SplitCord-Turkey/releases/latest';$asset=$release.assets | Where-Object {$_.name -match '(Setup|Install).*exe'}|Select-Object -First 1;if(-not $asset){throw 'Official SplitCord installer not found'};$url=$asset.browser_download_url;$hash=([string]$asset.digest)-replace '^sha256:','';if(-not $hash){$hash=$r.sha256};$file=Join-Path $root 'downloads\splitcord-setup.exe';Download $url $hash $file}
-    else{$url='https://discord.com/api/downloads/distributions/app/installers/latest?channel='+$(if($variant -eq 'discord-ptb'){'ptb'}else{'stable'})+'&platform=win&arch=x64';$file=Join-Path $root ('downloads\'+$variant+'-setup.exe');Download $url '' $file -Signed -Publisher discord}
+    else {
+        $architecture=[string]$inputData.nativeArchitecture
+        if($architecture -cnotin @('amd64','arm64')){throw 'Native Windows architecture is unavailable or unsupported for Discord installation'}
+        $channel=if($variant -eq 'discord-ptb'){'ptb'}else{'stable'}
+        $installerArch=if($channel -eq 'stable' -and $architecture -eq 'arm64'){'arm64'}else{'x64'}
+        $url='https://discord.com/api/downloads/distributions/app/installers/latest?channel='+$channel+'&platform=win&arch='+$installerArch
+        $file=Join-Path $root ('downloads\'+$variant+'-setup.exe')
+        Download $url '' $file -Signed -Publisher discord
+    }
     # Verify the replacement installer before removing the existing client.
     if($r.clean -and $variant -eq 'discord-ptb' -and (Find-App 'discord')){Remove-App 'discord'}
     $installerArgs=if($variant -eq 'splitcord'){@('/S')}else{@('-s')}

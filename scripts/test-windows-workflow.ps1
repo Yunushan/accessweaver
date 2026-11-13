@@ -1126,15 +1126,23 @@ try {
 # Mock installer acquisition and user operations; never execute a vendor process.
 $appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Remove-App','Download','Native','Wait-App','Event')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
 $previousAppRequest=$r
+$previousAppInput=$inputData
 try {
     function Require-DesktopUser {}
     function Find-App {param($variant);$script:appInstallTrace.Add('find-stable');return 'C:\fixture\Discord.exe'}
     function Remove-App {param($variant);$script:appInstallTrace.Add('remove-stable');if($script:appRemoveFailure){throw 'fixture remove failure'}}
-    function Download {param($Url,$Hash,$Destination,[switch]$Signed,[string]$Publisher);$script:appInstallTrace.Add('download:'+ $Publisher);if($script:appDownloadFailure){throw 'fixture download failure'}}
+    function Download {
+        param($Url,$Hash,$Destination,[switch]$Signed,[string]$Publisher)
+        $script:appInstallTrace.Add('download:'+ $Publisher)
+        $script:appDownloadURL=$Url
+        if(-not $Signed){throw 'Expected signed Discord download'}
+        if($script:appDownloadFailure){throw 'fixture download failure'}
+    }
     function Native {param($Program,$Arguments,$Timeout);$script:appInstallTrace.Add('installer');return @{exitCode=0;outputComplete=$true}}
     function Wait-App {param($variant,$installed,$seconds);$script:appInstallTrace.Add('verify-ptb')}
     function Event {param($text);$script:appInstallTrace.Add('event')}
     $r=[pscustomobject]@{clean=$true;sha256=''}
+    $inputData=[pscustomobject]@{nativeArchitecture='amd64'}
     $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$true;$script:appRemoveFailure=$false
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$true}
     Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download:discord')) 'PTB clean download failure preserves the existing client'
@@ -1144,9 +1152,32 @@ try {
     $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$false;$script:appRemoveFailure=$true
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$true}
     Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download:discord,find-stable,remove-stable')) 'PTB clean removal failure prevents installer execution'
+    $r.clean=$false
+    $script:appRemoveFailure=$false
+    foreach($case in @(
+        @{arch='amd64';variant='discord';query='channel=stable&platform=win&arch=x64'},
+        @{arch='arm64';variant='discord';query='channel=stable&platform=win&arch=arm64'},
+        @{arch='arm64';variant='discord-ptb';query='channel=ptb&platform=win&arch=x64'}
+    )){
+        $script:appInstallTrace.Clear()
+        $inputData.nativeArchitecture=$case.arch
+        Install-App $case.variant
+        $expectedURL='https://discord.com/api/downloads/distributions/app/installers/latest?'+$case.query
+        if($script:appDownloadURL -cne $expectedURL -or ($script:appInstallTrace -join ',') -cne 'download:discord,installer,verify-ptb,event'){
+            throw 'Unexpected Discord installer architecture selection'
+        }
+    }
+    Assert $true 'Discord selects a native stable installer and retains the PTB x64 distribution'
+    $inputData.nativeArchitecture=''
+    $r.clean=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try {Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Native Windows architecture is unavailable or unsupported for Discord installation'}
+    Assert ($rejected -and $script:appInstallTrace.Count -eq 0) 'Discord refuses unknown architecture before download or client removal'
 } finally {
     foreach($name in $appInstallSaved.Keys){Set-Item ('Function:'+ $name) $appInstallSaved[$name]}
     $r=$previousAppRequest
+    $inputData=$previousAppInput
 }
 # Exercise both direct helper calls and the dispatcher before any real OS work.
 $desktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
