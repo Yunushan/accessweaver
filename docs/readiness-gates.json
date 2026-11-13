@@ -73,6 +73,7 @@
             "docs/SPLITWIRE_IMPLEMENTATION.md",
             "scripts/test-windows-apps.ps1",
             "scripts/test-windows-app-evidence.ps1",
+            "scripts/test-windows-workflow.ps1",
             "docs/qualification/241f61b770d1-splitcord-registered-discovery-contracts.json",
             "docs/qualification/38e1743ef9fb-application-live-process-contracts.json"
           ]

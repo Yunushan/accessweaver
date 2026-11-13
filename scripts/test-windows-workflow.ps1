@@ -1489,6 +1489,67 @@ try {
     Set-Item Function:Find-App $previousFindApp;Set-Item Function:Require-DesktopUser $previousDesktopGuard
     $script:externalEffectsPending=$false
 }
+# Verify vendor completion against the previous executable and a fresh process snapshot.
+$appRemovalSaved=@{}
+foreach($name in @('Require-DesktopUser','Find-App','Native','Event')){
+    $appRemovalSaved[$name]=(Get-Command $name).ScriptBlock
+}
+try {
+    function Require-DesktopUser {}
+    function Find-App {param($variant);if(-not $script:appRemovalInvoked){return $fixtureApp}}
+    function Native {
+        param($program,$arguments,$Timeout)
+        $script:appRemovalInvoked=$true
+        if($script:appRemovalDelete){[IO.File]::Delete($fixtureApp)}
+        if($script:appRemovalFail){throw 'synthetic vendor failure'}
+    }
+    function Event {param($message);$script:appRemovalEvents.Add($message)}
+    function Get-Process {param($ErrorAction);return $appRemovalProcesses}
+    $script:appRemovalInvoked=$true
+    $rejected=$false
+    try {Wait-App 'splitcord' $false 0 $fixtureApp}catch{$rejected=$_.Exception.Message -like 'Application installation state*'}
+    Assert ($rejected -and (Test-Path -LiteralPath $fixtureApp)) 'Application removal readback requires the previous executable to be absent'
+    $newProcess=[pscustomobject]@{Path=$fixtureApp;SessionId=($fixtureSession+1);HasExited=$false}
+    $appRemovalProcesses=@($newProcess)
+    $rejected=$false
+    try {Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+    Assert $rejected 'Application removal refuses a surviving process in any session'
+    $unknownExit=[pscustomobject]@{Path=$fixtureApp;SessionId=$fixtureSession}
+    $unknownExit | Add-Member ScriptProperty HasExited {throw 'Synthetic unreadable exit state'}
+    $appRemovalProcesses=@($unknownExit)
+    $rejected=$false
+    try {Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+    Assert $rejected 'Application removal refuses an unreadable matching process exit state'
+    $discordBase=Join-Path $testRoot 'Discord'
+    $discordHelper=Join-Path $discordBase 'app-1.0.0\crashpad_handler.exe'
+    $otherDiscord=Join-Path ($discordBase+'PTB') 'app-1.0.0\crashpad_handler.exe'
+    Assert ((Test-AppImagePath $discordHelper $discordBase '') -and
+            -not (Test-AppImagePath $otherDiscord $discordBase '')) 'Application removal scopes shared helper names to the selected installation'
+
+    $newProcess.HasExited=$true
+    $unrelated=[pscustomobject]@{Path=(Join-Path $fixtureAppDirectory 'Other.exe');SessionId=$fixtureSession;HasExited=$false}
+    $appRemovalProcesses=@($newProcess,$unrelated)
+    Wait-AppProcessesExited 'splitcord' $fixtureApp 0
+    Assert $true 'Application removal accepts exited matches and ignores unrelated processes'
+    $appRemovalProcesses=@()
+    $script:appRemovalEvents=[Collections.Generic.List[string]]::new()
+    $script:appRemovalDelete=$false
+    $script:appRemovalFail=$true
+    $script:appRemovalInvoked=$false
+    $script:externalEffectsPending=$false
+    $rejected=$false
+    try {Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'synthetic vendor failure'}
+    Assert ($rejected -and $script:appRemovalInvoked -and $script:externalEffectsPending -and $script:appRemovalEvents.Count -eq 0) 'Application removal records vendor side effects even without a process stop'
+    $script:appRemovalInvoked=$false
+    $script:appRemovalFail=$false
+    $script:appRemovalDelete=$true
+    Remove-App 'splitcord'
+    Assert ($script:appRemovalEvents.Count -eq 1 -and -not (Test-Path -LiteralPath $fixtureApp)) 'Application removal confirms both executable and process readback before success'
+} finally {
+    Remove-Item Function:Get-Process
+    foreach($name in $appRemovalSaved.Keys){Set-Item ('Function:'+$name) $appRemovalSaved[$name]}
+    $script:externalEffectsPending=$false
+}
 # Mock installer acquisition and user operations; never execute a vendor process.
 $appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Remove-App','Download','Native','Wait-App','Event')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
 $previousAppRequest=$r

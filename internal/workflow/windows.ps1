@@ -2087,14 +2087,15 @@ function Find-App([string]$variant) {
     if($variant -eq 'splitcord'){return Find-SplitCordApp}
     throw 'Unknown application variant'
 }
-function Wait-App([string]$variant,[bool]$installed,[int]$seconds=120) {
+function Wait-App([string]$variant,[bool]$installed,[int]$seconds=120,[string]$previousImage) {
     $deadline=[DateTime]::UtcNow.AddSeconds($seconds)
     do {
         $app=Find-App $variant
         if($installed -and $app){
             No-Reparse $app
             if(Test-Path -LiteralPath $app -PathType Leaf){return}
-        }elseif(-not $installed -and -not $app){return}
+        }elseif(-not $installed -and -not $app -and
+                 (-not $previousImage -or -not (Test-Path -LiteralPath $previousImage -ErrorAction Stop))){return}
         Start-Sleep -Milliseconds 500
     }while([DateTime]::UtcNow -lt $deadline)
     throw 'Application installation state did not reach the expected result; inspect installer logs'
@@ -2178,15 +2179,58 @@ function Remove-App([string]$variant) {
     }
     No-Reparse $uninstaller
     if(-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)){throw 'Application uninstaller not found'}
-    Stop-AppProcesses $variant
+    Stop-AppProcesses $variant $app
     No-Reparse $uninstaller
+    # The vendor can change application files even if it returns an error.
+    $script:externalEffectsPending=$true
     [void](Native $uninstaller $arguments -Timeout $timeout)
-    Wait-App $variant $false 60
+    Wait-App $variant $false 60 $app
+    Wait-AppProcessesExited $variant $app
     Event ('Application uninstalled: '+$variant)
 }
-function Stop-AppProcesses([string]$variant) {
-    $base=$null;$app=$null
-    if($variant -in @('discord','discord-ptb')){$base=Join-Path $env:LOCALAPPDATA $(if($variant -eq 'discord'){'Discord'}else{'DiscordPTB'});No-Reparse $base}else{$app=Find-App $variant}
+function Get-AppProcessBase([string]$variant) {
+    if($variant -in @('discord','discord-ptb')){
+        $folder=if($variant -eq 'discord'){'Discord'}else{'DiscordPTB'}
+        $base=Join-Path $env:LOCALAPPDATA $folder
+        No-Reparse $base
+        return $base
+    }
+}
+function Test-AppImagePath([string]$path,[string]$base,[string]$app) {
+    if(-not $path){return $false}
+    if($base){
+        return (Under $path $base) -and ([IO.Path]::GetFileName($path) -in @('Discord.exe','DiscordPTB.exe','Update.exe','crashpad_handler.exe'))
+    }
+    return [bool]($app -and $path -ieq $app)
+}
+function Wait-AppProcessesExited([string]$variant,[string]$app,[int]$seconds=10) {
+    $base=Get-AppProcessBase $variant
+    $timer=[Diagnostics.Stopwatch]::StartNew()
+    do {
+        $running=$false
+        foreach($process in Get-Process -ErrorAction Stop){
+            try {
+                $path=$null
+                try {$path=$process.Path}catch{}
+                if(Test-AppImagePath $path $base $app){
+                    # A matching process with unreadable exit state is still unresolved.
+                    $exited=$false
+                    try {$exited=$process.HasExited -eq $true}catch{}
+                    if(-not $exited){$running=$true}
+                }
+            } finally {
+                if($process -is [IDisposable]){$process.Dispose()}
+            }
+        }
+        if(-not $running){return}
+        if($timer.Elapsed.TotalSeconds -ge $seconds){break}
+        Start-Sleep -Milliseconds 250
+    } while($true)
+    throw 'Application process exit could not be verified after uninstall'
+}
+function Stop-AppProcesses([string]$variant,[string]$app) {
+    $base=Get-AppProcessBase $variant
+    if(-not $base -and -not $app){$app=Find-App $variant}
     $sessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId
     $matching=[Collections.Generic.List[object]]::new()
     try {
@@ -2194,9 +2238,7 @@ function Stop-AppProcesses([string]$variant) {
         # may still be in use by a disconnected or concurrent desktop session.
         foreach($process in Get-Process -ErrorAction SilentlyContinue){
             try{$path=$process.Path}catch{continue}
-            if(-not $path){continue}
-            $match=if($base){(Under $path $base) -and ([IO.Path]::GetFileName($path) -in @('Discord.exe','DiscordPTB.exe','Update.exe','crashpad_handler.exe'))}else{$app -and $path -eq $app}
-            if(-not $match){continue}
+            if(-not (Test-AppImagePath $path $base $app)){continue}
             $matching.Add($process)
             $processSession=$null
             try {$processSession=$process.SessionId}catch{}
