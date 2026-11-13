@@ -2287,6 +2287,10 @@ function Remove-Method([string]$engine,[switch]$OwnedOnly) {
     Event ('Managed method removed: '+$engine)
 }
 function Remove-All {
+    # Keep every managed resource available until adapter DNS and DoH policy
+    # have been restored and independently read back by Restore-DNS.
+    $snapshot=Join-Path $root 'profiles\dns-original.json'
+    if(Test-Path -LiteralPath $snapshot -ErrorAction Stop){Restore-DNS}
     foreach($engine in @('proxifyre','byedpi','zapret','zapret2','goodbyedpi','wiresock')){Remove-Method $engine}
     Remove-Method 'windivert' -OwnedOnly
     Remove-Method 'dnscrypt';Restore-Drover

@@ -3,7 +3,7 @@
 function Invoke-NativeDoHScenario([scriptblock]$Apply,[scriptblock]$Capture,[scriptblock]$Resolve,[string]$Method='doh',[string]$ScenarioKind='roundtrip',[scriptblock]$InduceFailure,[scriptblock]$ResolveFailed,[scriptblock]$ResolveRestored) {
     $result=@{outcome='failed';code='baseline';operationCode='none';restorationCode='none';verificationCode='none';baselineCaptured=$false;configurationAttempted=$false;configurationAccepted=$false;configuredStateVerified=$false;resolverPassed=$false;restorationAttempted=$false;restorationAccepted=$false;restoredStateVerified=$false;failureInjected=$false;failedResolverVerified=$false;restoredResolverVerified=$false}
     try {
-        if($ScenarioKind -cnotin @('roundtrip','service-loss') -or ($ScenarioKind -ceq 'service-loss' -and ($Method -cne 'dnscrypt' -or $null -eq $InduceFailure -or $null -eq $ResolveFailed -or $null -eq $ResolveRestored)) -or $Method -cnotin @('doh','dnscrypt') -or $null -eq $Apply -or $null -eq $Capture -or $null -eq $Resolve){throw 'Missing native DoH boundary'}
+        if($ScenarioKind -cnotin @('roundtrip','service-loss','remove-all') -or ($ScenarioKind -ceq 'remove-all' -and ($Method -cne 'dnscrypt' -or $null -eq $ResolveRestored)) -or ($ScenarioKind -ceq 'service-loss' -and ($Method -cne 'dnscrypt' -or $null -eq $InduceFailure -or $null -eq $ResolveFailed -or $null -eq $ResolveRestored)) -or $Method -cnotin @('doh','dnscrypt') -or $null -eq $Apply -or $null -eq $Capture -or $null -eq $Resolve){throw 'Missing native DoH boundary'}
         $before=& $Capture;$index=Get-DNSAcceptanceIndex $before
         if(($Method -ceq 'doh' -and -not $before.dohAvailable) -or @($index.adapters.Values | Where-Object {$_.selected}).Count -eq 0){throw 'Native DoH baseline cannot support this scenario'}
         $result.baselineCaptured=$true
@@ -25,7 +25,8 @@ function Invoke-NativeDoHScenario([scriptblock]$Apply,[scriptblock]$Capture,[scr
     finally {
         $phase='restoration';$result.restorationAttempted=$true
         try {
-            [void](& $Apply @{action='dns-restore'})
+            $action=if($ScenarioKind -ceq 'remove-all'){'remove-all'}else{'dns-restore'}
+            [void](& $Apply @{action=$action})
             $result.restorationAccepted=$true
         } catch {$result.restorationCode='restoration'}
         # Inspect the final state even when the explicit restore command failed:
@@ -34,7 +35,7 @@ function Invoke-NativeDoHScenario([scriptblock]$Apply,[scriptblock]$Capture,[scr
             Assert-DNSAcceptanceRestored $before (& $Capture)
             $result.restoredStateVerified=$true
         } catch {$result.verificationCode='restored-state'}
-        if($ScenarioKind -ceq 'service-loss' -and $result.restoredStateVerified){
+        if($ScenarioKind -cin @('service-loss','remove-all') -and $result.restoredStateVerified){
             try{[void](& $ResolveRestored);$result.restoredResolverVerified=$true}catch{$result.verificationCode='restored-resolver'}
         }
     }

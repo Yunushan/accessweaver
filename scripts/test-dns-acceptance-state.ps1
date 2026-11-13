@@ -45,7 +45,7 @@ foreach($name in $selected){
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
 $script:checks=0;$script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('static-stage-source','static-resolver-source-callback','static-closed-failure-map','static-fixture-result','static-fixture-cleanup','static-fixture-order','static-fixture-flags','static-fixture-preflight','component-retry-contract','component-closed-error-map','forwarder-closed-error-map','rollback-native-result','rollback-native-flags','rollback-native-cleanup','rollback-native-order','rollback-native-preflight','fixed-dns-response','journal-scenario-order','journal-scenario-result','journal-scenario-private-output','journal-refusal-marker','missing-snapshot-scenario','missing-snapshot-retained','missing-snapshot-marker','verification-marker-boundary','failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
+$script:closedContractCodes=@('static-stage-source','static-resolver-source-callback','static-closed-failure-map','static-fixture-result','static-fixture-cleanup','static-fixture-order','static-fixture-flags','static-fixture-preflight','component-retry-contract','component-closed-error-map','forwarder-closed-error-map','rollback-native-result','rollback-native-flags','rollback-native-cleanup','rollback-native-order','rollback-native-preflight','fixed-dns-response','journal-scenario-order','journal-scenario-result','journal-scenario-private-output','journal-refusal-marker','missing-snapshot-scenario','missing-snapshot-retained','missing-snapshot-marker','verification-marker-boundary','failure-native-result','failure-native-flags','failure-native-cleanup','failure-native-order','failure-native-preflight','roundtrip-does-not-inject','native-method-forwarded','native-invalid-method-no-effects','capture-identity-change-refused','unexposed-state-preserved','unexposed-state-not-selected','unexposed-access-refused','unexposed-registry-change-refused','single-family-configured-state','client-inventory-failure-phase','capture-stage-complete','capture-stage-refusal','native-coordinator-result','native-coordinator-cleanup','remove-all-native-recovery','service-failure-restores','cleanup-failure-propagates','link-local-scope-follows-guid','none','unexpected-contract-error','unknown-test-code','expected-refusal','mixed-modes-captured','dhcp-lease-change-and-index-order-independent','guid-case-independent','read-inspection-refused','malformed-static-refused','invalid-saved-state-refused','legacy-state-refused','doh-capability-legacy-roundtrip','configured-method-positive','configured-method-negative','roundtrip-positive','resolver-failure-restores','operation-and-cleanup-errors-retained','capture-failure-no-operation','invalid-method-no-operation','native-harness-wiring')
 function Assert-A([bool]$Value,[string]$Code){if(-not $Value){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('Acceptance contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-A([scriptblock]$Operation){$failed=$false;try{& $Operation | Out-Null}catch{$failed=$true};Assert-A $failed 'expected-refusal'}
 $script:g1='abcdef00-0000-0000-0000-000000000001';$script:g2='abcdef00-0000-0000-0000-000000000002'
@@ -400,6 +400,28 @@ try {
             Assert-A (-not $script:held -and $result.snapshotReturned -and $result.emergencyStateVerified -and
                 $script:missingTrace[$script:missingTrace.Count-1] -ceq 'emergency') 'missing-snapshot-retained'
         }
+    }
+    foreach($failure in @('none','remove','resolver')){
+        New-ACase
+        $baseline=Read-DNSAcceptanceState
+        Set-AConfigured 'dnscrypt'
+        $configured=Read-DNSAcceptanceState
+        $trace=[Collections.Generic.List[string]]::new()
+        $result=Invoke-NativeDoHScenario -Method dnscrypt -ScenarioKind remove-all -Apply {
+            param($request)
+            $trace.Add($request.action)
+            if($request.action -ceq 'remove-all' -and $failure -ceq 'remove'){throw 'Synthetic remove-all failure'}
+        } -Capture {
+            if($trace.Count -eq 1){return $configured}
+            return $baseline
+        } -Resolve {} -ResolveRestored {
+            $trace.Add('original-resolver')
+            if($failure -ceq 'resolver'){throw 'Synthetic original resolver failure'}
+        }
+        Assert-A (($trace -join ',') -ceq 'dns,remove-all,original-resolver' -and
+            ($result.outcome -ceq 'passed') -eq ($failure -ceq 'none') -and
+            $result.restorationAccepted -eq ($failure -cne 'remove') -and
+            $result.restoredResolverVerified -eq ($failure -cne 'resolver')) 'remove-all-native-recovery'
     }
     foreach($invalid in @('DOH','DNSCRYPT','','auto','unknown')){
         $script:nativeActions.Clear();$script:nativeResolves=0;$script:invalidCaptures=0

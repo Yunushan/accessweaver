@@ -46,6 +46,8 @@ jobs:
           - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: doh, scenario: static-ipv6}
           - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: roundtrip}
           - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: roundtrip}
+          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: remove-all}
+          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: remove-all}
           - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: missing-snapshot}
           - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: missing-snapshot}
           - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: service-loss}

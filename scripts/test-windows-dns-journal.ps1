@@ -4,7 +4,7 @@ $path=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS journal source failed parsing'}
-foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Rollback','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Remove-RecordedService')){
+foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Rollback','Remove-All','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Remove-RecordedService')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -86,6 +86,44 @@ $script:journalPath=Join-Path $root $r.journalId
 $script:journalState='running'
 $script:events=[Collections.Generic.List[string]]::new()
 try {
+    & {
+        $calls=[Collections.Generic.List[string]]::new()
+        $fixture=@{present=$true;restoreFails=$true;inspectionFails=$false;methodFails=$false}
+        function Test-Path {
+            [CmdletBinding()]param($LiteralPath)
+            Require ($LiteralPath -ceq $snapshot -and $ErrorActionPreference -eq 'Stop') 'Unexpected remove-all snapshot inspection'
+            if($fixture.inspectionFails){throw 'Synthetic snapshot inspection failure'}
+            return $fixture.present
+        }
+        function Restore-DNS {
+            $calls.Add('restore')
+            if($fixture.restoreFails){throw 'Synthetic DNS restoration failure'}
+            $fixture.present=$false
+        }
+        function Remove-Method {
+            param($engine,[switch]$OwnedOnly)
+            Require (-not $fixture.present) 'Remove-all touched a managed method while DNS recovery remained active'
+            Require ([bool]$OwnedOnly -eq ($engine -ceq 'windivert')) 'Remove-all lost the WinDivert ownership restriction'
+            $calls.Add($engine)
+            if($fixture.methodFails -and $engine -ceq 'wiresock'){throw 'Synthetic later cleanup failure'}
+        }
+        function Restore-Drover {$calls.Add('drover')}
+        $refused=$false
+        try{Remove-All}catch{$refused=$_.Exception.Message -ceq 'Synthetic DNS restoration failure'}
+        Require ($refused -and ($calls -join ',') -ceq 'restore' -and $fixture.present) 'Failed DNS restoration allowed partial cleanup'
+        $calls.Clear();$fixture.inspectionFails=$true
+        $refused=$false
+        try{Remove-All}catch{$refused=$_.Exception.Message -ceq 'Synthetic snapshot inspection failure'}
+        Require ($refused -and $calls.Count -eq 0) 'Unreadable snapshot state allowed cleanup'
+        $fixture.inspectionFails=$false;$fixture.restoreFails=$false;$fixture.methodFails=$true
+        $refused=$false
+        try{Remove-All}catch{$refused=$_.Exception.Message -ceq 'Synthetic later cleanup failure'}
+        Require ($refused -and -not $fixture.present -and ($calls -join ',') -ceq 'restore,proxifyre,byedpi,zapret,zapret2,goodbyedpi,wiresock') 'Later cleanup failure did not preserve completed DNS restoration'
+        $calls.Clear();$fixture.methodFails=$false
+        Remove-All
+        Require (($calls -join ',') -ceq 'proxifyre,byedpi,zapret,zapret2,goodbyedpi,wiresock,windivert,dnscrypt,drover') 'Remove-all retry repeated DNS restoration or changed cleanup order'
+    }
+
     [IO.File]::WriteAllText($snapshot,'first synthetic snapshot')
     $first=(Get-FileHash -LiteralPath $snapshot).Hash
     [IO.File]::WriteAllText($snapshot,'second synthetic snapshot')
@@ -283,4 +321,4 @@ try {
     [IO.Directory]::Delete($profiles)
     [IO.Directory]::Delete($root)
 }
-Write-Output 'Forty DNS journal binding, service ownership, retirement, rollback and publication checks passed.'
+Write-Output 'DNS journal binding, DNS-first remove-all, service ownership, retirement, rollback and publication checks passed.'
