@@ -4,7 +4,7 @@ $source=Join-Path $PSScriptRoot 'test-windows-installer-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Reboot fixture failed parsing'}
-foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootDowngradeLog','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootInstalledState','Assert-RebootPackageRemoved')){
+foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootDowngradeLog','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-InstalledDetection','Assert-InstalledPublisher')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -22,9 +22,9 @@ Assert-Refused {Assert-LaterGuestBoot '639303000000000001' '639303000000000000'}
 Assert-Refused {Assert-LaterGuestBoot 'missing' '639303000000000000'}
 $pin='a'*64
 $expected=@{
-    schemaVersion=5;runID=('b'*32);architecture='amd64';version='1.0.0';
+    schemaVersion=6;runID=('b'*32);architecture='amd64';version='1.0.0';
     installMode='clean';previousVersion='';previousPayloadSHA256='';previousSetupSHA256='';previousPublisherSHA256='';userProfilePreservedThroughUpgrade=$false;
-    setupSHA256=$pin;payloadSHA256=$pin;publisherSHA256=$pin;userSID='synthetic-user';guestID='10000000-2000-3000-4000-000000000005';
+    setupSHA256=$pin;payloadSHA256=$pin;payloadSBOMSHA256=('f'*64);publisherSHA256=$pin;userSID='synthetic-user';guestID='10000000-2000-3000-4000-000000000005';
     detectorSHA256=$pin;fixtureSHA256=$pin;commonSHA256=$pin;publisherVerifierSHA256=$pin
 }
 $saved=$expected.Clone()
@@ -38,6 +38,43 @@ foreach($key in $saved.Keys){
     $changed=$saved.Clone()
     $changed[$key]='changed'
     Assert-Refused {Assert-RebootIdentity $changed $expected}
+}
+$oldSchema=$saved.Clone();$oldSchema.schemaVersion=5
+Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
+
+& {
+    $Version='2.0.0';$PayloadSHA256='a'*64;$PayloadSBOMSHA256='b'*64
+    $PublisherCertificateSHA256='c'*64;$Architecture='amd64';$controller='inert.exe'
+    $trace=[Collections.Generic.List[object]]::new()
+    $behavior=@{publisherCode=0;detectorCode=0;detected=$true}
+    $detector={
+        param($Version,$Architecture,$PayloadSHA256,$UninstallerSHA256,$PayloadSBOMSHA256)
+        $trace.Add(@{version=$Version;arch=$Architecture;payload=$PayloadSHA256;uninstaller=$UninstallerSHA256;sbom=$PayloadSBOMSHA256})
+        $global:LASTEXITCODE=$behavior.detectorCode
+        if($behavior.detected){Write-Output 'AccessWeaver detected'}
+    }
+    $publisher={
+        param($Artifact,$ArtifactSHA256,$PublisherCertificateSHA256)
+        $trace.Add(@{artifact=$Artifact;sha256=$ArtifactSHA256;publisher=$PublisherCertificateSHA256})
+        $global:LASTEXITCODE=$behavior.publisherCode
+    }
+    Assert-InstalledDetection $true -UninstallerDigest ('d'*64)
+    Assert-InstalledPublisher
+    if($trace[0].version -cne $Version -or $trace[0].arch -cne $Architecture -or
+       $trace[0].payload -cne $PayloadSHA256 -or $trace[0].sbom -cne $PayloadSBOMSHA256 -or $trace[0].uninstaller -cne ('d'*64) -or
+       $trace[1].artifact -cne $controller -or $trace[1].sha256 -cne $PayloadSHA256 -or $trace[1].publisher -cne $PublisherCertificateSHA256){
+        throw 'Installed candidate pins did not reach verification'
+    }
+    Assert-InstalledDetection $true '1.0.0' ('e'*64) -CandidateSBOMSHA256 ''
+    if($trace[2].version -cne '1.0.0' -or $trace[2].payload -cne ('e'*64) -or $trace[2].sbom){
+        throw 'The previous installation received the current SBOM pin'
+    }
+    $behavior.detected=$false
+    Assert-Refused {Assert-InstalledDetection $true}
+    $behavior.detectorCode=1
+    Assert-Refused {Assert-InstalledDetection $true}
+    $behavior.publisherCode=1
+    Assert-Refused {Assert-InstalledPublisher}
 }
 if((Get-RebootInstallMode '2.0.0' $pin '' '') -cne 'clean'){throw 'Clean baseline was refused'}
 $priorDigest='e'*64

@@ -100,6 +100,10 @@ def windows_subjects(subjects):
             if subject["target"].startswith("windows/") and subject["role"] in ("installer", "payload")}
 
 
+def windows_payload_sboms(subjects):
+    return {subject["target"]: subject["sha256"] for subject in subjects if subject["role"] == "payload-sbom"}
+
+
 def detection_key(entry):
     return entry["target"], entry["installMode"], entry["previousVersion"], entry["previousPayloadSHA256"]
 
@@ -133,12 +137,13 @@ def validate_detection(entries, subjects, version):
 def load_detection_evidence(directory, evidence, subjects, version):
     require(len(evidence) <= MAX_REBOOT_EVIDENCE, "Too many Windows reboot reports")
     targets = windows_subjects(subjects)
+    payload_sboms = windows_payload_sboms(subjects)
     entries = []
     for path, fingerprint in evidence:
         content = independently_pinned_file(directory, path, fingerprint, maximum=8192)
         report = decode_json(content)
         require(isinstance(report, dict) and type(report.get("schemaVersion")) is int
-                and report["schemaVersion"] == 5 and report.get("stage") == "complete"
+                and report["schemaVersion"] in (5, 6) and report.get("stage") == "complete"
                 and all(report.get(field) is True for field in REBOOT_CHECKS),
                 "Windows reboot qualification is incomplete")
         architecture = report.get("architecture")
@@ -149,6 +154,11 @@ def load_detection_evidence(directory, evidence, subjects, version):
         require(report.get("version") == version and report.get("setupSHA256") == targets[target, "installer"]
                 and report.get("payloadSHA256") == targets[target, "payload"],
                 "Windows reboot evidence differs from the signed release subjects")
+        if report["schemaVersion"] == 6:
+            require(report.get("payloadSBOMSHA256") == payload_sboms[target]
+                    and report.get("installedPayloadSBOMVerified") is True
+                    and report.get("installedPayloadPublisherVerified") is True,
+                    "Windows reboot evidence does not verify the signed payload publisher and release SBOM")
         require(mode != "upgrade" or report.get("userProfilePreservedThroughUpgrade") is True,
                 "Windows upgrade qualification is incomplete")
         downgrade = report.get("downgradeRequested")
@@ -308,8 +318,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
         }
         if entries:
             targets = windows_subjects(files)
-            payload_sboms = {subject["target"]: subject["sha256"] for subject in files
-                             if subject["role"] == "payload-sbom"}
+            payload_sboms = windows_payload_sboms(files)
             report["schemaVersion"] = 2
             report["windowsDetection"] = [
                 {**entry, "version": version, "setupSHA256": targets[entry["target"], "installer"],

@@ -90,6 +90,12 @@ class SignedReleaseManifestTests(unittest.TestCase):
             "userProfilePreservedAfterUninstall": True, "userProfilePreservedThroughUpgrade": False,
             "downgradeRequested": False, "downgradeRefused": False, "downgradeStatePreserved": False,
         }
+        if overrides.get("schemaVersion") == 6:
+            report.update(
+                payloadSBOMSHA256=release.digest(self.candidate / (stem + ".exe.cdx.json")),
+                installedPayloadSBOMVerified=True,
+                installedPayloadPublisherVerified=True,
+            )
         evidence = self.root / filename
         evidence.write_text(json.dumps({**report, **overrides}), encoding="utf-8")
         return evidence, release.digest(evidence)
@@ -163,6 +169,9 @@ class SignedReleaseManifestTests(unittest.TestCase):
             (self.write_reboot_report("wrong-version.json", version="1.2.3"),),
             (self.write_reboot_report("bad-baseline.json", previousVersion="1.2.2"),),
             (self.write_reboot_report("bad-digest.json", uninstallerSHA256="c" * 63),),
+            (self.write_reboot_report("wrong-sbom.json", schemaVersion=6, payloadSBOMSHA256="d" * 64),),
+            (self.write_reboot_report("sbom-unverified.json", schemaVersion=6, installedPayloadSBOMVerified=1),),
+            (self.write_reboot_report("publisher-unverified.json", schemaVersion=6, installedPayloadPublisherVerified=False),),
             (self.write_reboot_report("partial-upgrade.json", installMode="upgrade",
                                       previousVersion="1.2.2", previousPayloadSHA256="d" * 64),),
             (self.write_reboot_report("downgrade.json", downgradeRequested=True,
@@ -275,7 +284,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         upgrade = self.write_reboot_report("upgrade.json", installMode="upgrade",
                                            previousVersion="1.2.2", previousPayloadSHA256="d" * 64,
                                            userProfilePreservedThroughUpgrade=True, uninstallerSHA256="e" * 64)
-        arm = self.write_reboot_report("arm.json", architecture="arm64", uninstallerSHA256="f" * 64)
+        arm = self.write_reboot_report("arm.json", architecture="arm64", schemaVersion=6, uninstallerSHA256="f" * 64)
         release.prepare(self.candidate, prepared, COMMIT, REF, windows_reboot_evidence=[arm, upgrade, clean])
         shutil.copyfile(prepared, manifest)
         sign_manifest()
