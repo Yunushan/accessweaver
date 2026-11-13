@@ -1461,6 +1461,8 @@ function Install-Drover {
     }
     $deploymentID=[guid]::NewGuid().ToString('N')
     $records=@(foreach($dir in $dirs){
+        $appSHA256=Get-DroverFileHash (Join-Path $dir 'Discord.exe')
+        if(-not $appSHA256){throw 'Stable Discord executable disappeared before Drover deployment'}
         foreach($name in @('version.dll','drover.ini')){
             $target=Join-Path $dir $name
             $original=Get-DroverFileHash $target
@@ -1469,7 +1471,7 @@ function Install-Drover {
                 $backup=Join-Path $root ('backups\'+[guid]::NewGuid().ToString('N'))
                 [IO.File]::Copy($target,$backup,$false)
             }
-            [pscustomobject]@{deploymentID=$deploymentID;path=$target;backup=$backup;originalHash=$original;installedHash=$hashes[$name]}
+            [pscustomobject]@{deploymentID=$deploymentID;applicationSHA256=$appSHA256;path=$target;backup=$backup;originalHash=$original;installedHash=$hashes[$name]}
         }
     })
     foreach($item in @(Get-DroverRestorePlan $records)){
@@ -1493,23 +1495,30 @@ function Install-Drover {
     Stop-AppProcesses 'discord'
     foreach($item in $records){
         $name=Split-Path -Leaf $item.path
-        Set-DroverFile $sources[$name] $item.path $item.originalHash $item.installedHash
+        Set-DroverFile $sources[$name] $item.path $item.originalHash $item.installedHash $item.applicationSHA256
     }
-    foreach($item in $records){
-        if((Get-DroverFileHash $item.path) -ine $item.installedHash){throw 'Installed Drover file could not be verified'}
+    foreach($item in @(Get-DroverRestorePlan $records)){
+        if(-not $item.directoryExists -or $item.current -ine $item.installedHash){throw 'Installed Drover file could not be verified'}
     }
     Event 'Discord drover files installed with original-file backups'
 }
-function Set-DroverFile([string]$source,[string]$target,[string]$before,[string]$expected) {
+function Assert-DroverApplication([string]$directory,[string]$expected) {
+    if($expected -and (Get-DroverFileHash (Join-Path $directory 'Discord.exe')) -ine $expected){
+        throw 'The Discord executable changed; retain Drover recovery for administrator review'
+    }
+}
+function Set-DroverFile([string]$source,[string]$target,[string]$before,[string]$expected,[string]$applicationSHA256) {
     if((Get-DroverFileHash $source) -ine $expected){throw 'Drover source changed before publication'}
     $directory=Split-Path -Parent $target
     No-Reparse $target
+    Assert-DroverApplication $directory $applicationSHA256
     $staged=Join-Path $directory ('accessweaver-drover-'+[guid]::NewGuid().ToString('N')+'.tmp')
     [IO.File]::Copy($source,$staged,$false)
     try {
         if((Get-DroverFileHash $staged) -ine $expected){throw 'Staged Drover bytes changed before publication'}
         $current=Get-DroverFileHash $target
         if(($before -and $current -ine $before) -or (-not $before -and $current)){throw 'Drover file changed before publication'}
+        Assert-DroverApplication $directory $applicationSHA256
         $script:externalEffectsPending=$true
         if($before){[IO.File]::Replace($staged,$target,[NullString]::Value)}
         else{[IO.File]::Move($staged,$target)}
@@ -1542,6 +1551,18 @@ function Get-DroverRestorePlan($records) {
             throw 'Drover recovery target is outside the stable Discord installation'
         }
         No-Reparse $path
+        $directoryExists=Test-Path -LiteralPath $directory -PathType Container -ErrorAction Stop
+        if(-not $directoryExists -and (Test-Path -LiteralPath $directory -ErrorAction Stop)){
+            throw 'The previous Discord version path is no longer a directory'
+        }
+        $applicationSHA256=$item.applicationSHA256
+        if($null -ne $item.deploymentID -or $null -ne $applicationSHA256){
+            if($item.deploymentID -isnot [string] -or $item.deploymentID -cnotmatch '\A[a-f0-9]{32}\z' -or
+               $applicationSHA256 -isnot [string] -or $applicationSHA256 -notmatch '\A[a-fA-F0-9]{64}\z'){
+                throw 'Invalid Drover application identity'
+            }
+            if($directoryExists){Assert-DroverApplication $directory $applicationSHA256}
+        }
         $original=$null
         if($null -ne $item.backup){
             if($item.backup -isnot [string] -or (Split-Path -Parent $item.backup) -ine $backups -or
@@ -1555,14 +1576,10 @@ function Get-DroverRestorePlan($records) {
             }
         }elseif($null -ne $item.originalHash){throw 'Original Drover backup is missing'}
         $current=Get-DroverFileHash $path
-        $directoryExists=Test-Path -LiteralPath $directory -PathType Container -ErrorAction Stop
-        if(-not $directoryExists -and (Test-Path -LiteralPath $directory -ErrorAction Stop)){
-            throw 'The previous Discord version path is no longer a directory'
-        }
         if($current -ine $original -and $current -ine $item.installedHash -and $directoryExists){
             throw 'Drover file changed after installation; manual review required'
         }
-        [pscustomobject]@{path=$path;backup=$item.backup;current=$current;original=$original;directoryExists=$directoryExists}
+        [pscustomobject]@{path=$path;backup=$item.backup;current=$current;original=$original;installedHash=$item.installedHash;applicationSHA256=$applicationSHA256;directoryExists=$directoryExists}
     }
 }
 function Restore-Drover([string]$ExpectedManifestSHA256) {
@@ -1585,12 +1602,13 @@ function Restore-Drover([string]$ExpectedManifestSHA256) {
     }
     foreach($item in $plan){
         if(-not $item.directoryExists){continue}
+        Assert-DroverApplication (Split-Path -Parent $item.path) $item.applicationSHA256
         if((Get-DroverFileHash $item.path) -ine $item.current){throw 'Drover file changed during restoration'}
         if($item.current -ine $item.original){
             $script:externalEffectsPending=$true
             if($item.backup){
                 if((Get-DroverFileHash $item.backup) -ine $item.original){throw 'Original Drover backup changed during restoration'}
-                Set-DroverFile $item.backup $item.path $item.current $item.original
+                Set-DroverFile $item.backup $item.path $item.current $item.original $item.applicationSHA256
             }else{
                 Remove-Item -LiteralPath $item.path -ErrorAction Stop
             }

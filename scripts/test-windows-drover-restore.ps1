@@ -4,7 +4,7 @@ $source=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Windows workflow source failed parsing'}
-foreach($name in @('No-Reparse','Install-Drover','Recover-Operation','Rollback','Set-DroverFile','Get-DroverFileHash','Get-DroverRestorePlan','Restore-Drover')){
+foreach($name in @('No-Reparse','Install-Drover','Recover-Operation','Rollback','Assert-DroverApplication','Set-DroverFile','Get-DroverFileHash','Get-DroverRestorePlan','Restore-Drover')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -54,13 +54,14 @@ $version=Join-Path $env:LOCALAPPDATA 'Discord\app-1.0.0'
 $profiles=Join-Path $root 'profiles'
 $backups=Join-Path $root 'backups'
 $manifest=Join-Path $profiles 'drover-owned.json'
+$application=Join-Path $version 'Discord.exe'
 $first=Join-Path $version 'version.dll'
 $second=Join-Path $version 'drover.ini'
 $backup=Join-Path $backups ('a'*32)
 $assets=Join-Path $root 'components'
 $dll=Join-Path $assets 'fixture.dll'
 $ini=Join-Path $assets 'drover.ini'
-$files=@($first,$second,$backup,$manifest,$dll,$ini)
+$files=@($application,$first,$second,$backup,$manifest,$dll,$ini)
 try {
     foreach($path in @($version,$profiles,$backups)){[void][IO.Directory]::CreateDirectory($path)}
     [IO.File]::WriteAllText($backup,'original DLL')
@@ -117,6 +118,7 @@ try {
              -not [IO.File]::Exists($manifest) -and $script:stops -eq $before) 'Retired version was recreated or lost its backup'
 
     foreach($path in @($version,$assets)){[void][IO.Directory]::CreateDirectory($path)}
+    [IO.File]::WriteAllText($application,'original Discord executable')
     [IO.File]::WriteAllText($dll,'new DLL')
     [IO.File]::WriteAllText($ini,'new INI')
     $script:undo=[Collections.Generic.List[object]]::new()
@@ -158,11 +160,28 @@ try {
     try {Recover-Operation}catch{$refused=$_.Exception.Message -ceq 'Drover recovery journal differs from the current ownership record'}
     Require ($refused -and $script:undo.Count -eq 1 -and [IO.File]::Exists($first) -and
              [IO.File]::Exists($second)) 'Stale explicit recovery reached rollback'
+    [IO.File]::WriteAllText($application,'replacement Discord executable')
+    $before=$script:stops
+    Assert-Refused
+    Require ($script:stops -eq $before -and [IO.File]::Exists($manifest) -and
+             [IO.File]::Exists($first) -and [IO.File]::Exists($second)) 'Changed application allowed recovery mutation'
+    [IO.File]::Delete($application)
+    Assert-Refused
+    Require ($script:stops -eq $before -and [IO.File]::Exists($manifest) -and
+             [IO.File]::Exists($first) -and [IO.File]::Exists($second)) 'Incomplete version directory allowed recovery mutation'
+    [IO.File]::WriteAllText($application,'original Discord executable')
     Restore-Drover
     Require (-not [IO.File]::Exists($manifest) -and -not [IO.File]::Exists($first) -and
              -not [IO.File]::Exists($second)) 'Normal removal could not restore the latest installation'
 
-
+    $script:undo.Clear()
+    Install-Drover
+    foreach($path in @($application,$first,$second)){[IO.File]::Delete($path)}
+    [IO.Directory]::Delete($version)
+    $before=$script:stops
+    Restore-Drover
+    Require (-not [IO.Directory]::Exists($version) -and -not [IO.File]::Exists($manifest) -and
+             $script:stops -eq $before) 'Version removed after setup could not be retired safely'
 } finally {
     $env:LOCALAPPDATA=$previous
     foreach($path in $files){if([IO.File]::Exists($path)){[IO.File]::Delete($path)}}
@@ -170,4 +189,4 @@ try {
         if([IO.Directory]::Exists($directory)){[IO.Directory]::Delete($directory)}
     }
 }
-Write-Output 'Twelve bounded Drover install and restoration scenarios passed.'
+Write-Output 'Fifteen bounded Drover install and restoration scenarios passed.'
