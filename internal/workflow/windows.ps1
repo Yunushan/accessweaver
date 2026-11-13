@@ -367,10 +367,11 @@ function Get-ComponentDownloadRemaining($Budget) {
 }
 function Wait-ComponentDownloadTask([Threading.Tasks.Task]$Task,$Budget,[scriptblock]$Abort) {
     $expired=$false
-    while(-not $Task.IsCompleted){
+    if(-not $Task.IsCompleted){
         $remaining=[long]$Budget.TimeoutMilliseconds-$Budget.Clock.ElapsedMilliseconds
-        if($remaining -le 0){$expired=$true;break}
-        [Threading.Thread]::Sleep([int][Math]::Min(10,$remaining))
+        # WaitAny wakes when I/O completes without throwing a task fault.
+        # GetResult below preserves the original success or failure.
+        $expired=$remaining -le 0 -or [Threading.Tasks.Task]::WaitAny([Threading.Tasks.Task[]]@($Task),[int]$remaining) -eq -1
     }
     if($expired){
         # Abort cancels the underlying operation; it does not substitute for
@@ -553,7 +554,16 @@ function Invoke-ComponentDownloadCurlOnce([string]$Url,[IO.Stream]$Output,$Budge
                     $readErr=$stderr.ReadAsync($errBuffer,0,$errBuffer.Length)
                 }
             }
-            if(-not ($outDone -and $errDone -and $process.HasExited)){
+            $pending=@()
+            if($null -ne $readOut){$pending+=@($readOut)}
+            if($null -ne $readErr){$pending+=@($readErr)}
+            if($pending.Count){
+                $remaining=Get-ComponentDownloadRemaining $Budget
+                if([Threading.Tasks.Task]::WaitAny([Threading.Tasks.Task[]]$pending,$remaining) -eq -1){
+                    Throw-ComponentDownloadFailure 'deadline'
+                }
+            }elseif(-not $process.HasExited){
+                # Both pipes have reached EOF. Only the owned process remains.
                 [Threading.Thread]::Sleep([Math]::Min(10,(Get-ComponentDownloadRemaining $Budget)))
             }
         }
