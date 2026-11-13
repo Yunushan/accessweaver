@@ -2076,6 +2076,42 @@ function Refresh-Task {
     [void](Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger -User $env:USERNAME -RunLevel Highest -Force)
     $script:undo.Add(@{kind='task';name=$name});Save-Journal;Event 'Reconnect task installed (every five minutes)'
 }
+function Invoke-ManagedServiceControl([string]$Operation,[string]$Name,[int[]]$Codes) {
+    $program=Join-Path $env:SystemRoot 'System32\sc.exe'
+    $result=Native $program @($Operation,$Name) $Codes -Secret -Timeout 5
+    if($result.outputComplete -ne $true -or $result.exitCode -notin $Codes){
+        throw 'Managed service control result could not be verified'
+    }
+    return $result.exitCode
+}
+function Wait-RecordedServiceStopped([string]$Name) {
+    $service=[ServiceProcess.ServiceController]::new($Name)
+    try {$service.WaitForStatus('Stopped',[TimeSpan]::FromSeconds(20))}
+    finally {$service.Dispose()}
+}
+function Remove-RecordedService([string]$Name,[switch]$RequireOwnership) {
+    if($Name -notmatch '\AAccessWeaver-(byedpi|proxifyre|zapret|zapret2|goodbyedpi|dnscrypt)\z'){
+        throw 'Recovery journal contains an unmanaged service'
+    }
+    $state=Invoke-ManagedServiceControl 'query' $Name @(0,1060,1072)
+    if($state -eq 1060){return}
+    $engine=$Name.Substring('AccessWeaver-'.Length)
+    if($RequireOwnership -and $engine -ne 'proxifyre' -and
+        -not (Test-Path -LiteralPath (Join-Path $root ('services\'+$engine+'.json')) -ErrorAction Stop)){
+        throw 'Missing service ownership record; refusing deletion'
+    }
+    if($state -eq 0){
+        $stopped=Invoke-ManagedServiceControl 'stop' $Name @(0,1060,1062,1072)
+        if($stopped -eq 0){Wait-RecordedServiceStopped $Name}
+        if($stopped -in @(0,1062)){[void](Invoke-ManagedServiceControl 'delete' $Name @(0,1060,1072))}
+    }
+    $clock=[Diagnostics.Stopwatch]::StartNew()
+    do {
+        if((Invoke-ManagedServiceControl 'query' $Name @(0,1060,1072)) -eq 1060){return}
+        Start-Sleep -Milliseconds 250
+    }while($clock.Elapsed.TotalSeconds -lt 5)
+    throw 'Managed service removal is pending; release open service handles and retry'
+}
 function Remove-Method([string]$engine,[switch]$OwnedOnly) {
     if($engine -eq 'wiresock'){
         $recordPath=Join-Path $root 'profiles\wiresock-owned.json'
@@ -2107,8 +2143,7 @@ function Remove-Method([string]$engine,[switch]$OwnedOnly) {
     }
     if($engine -eq 'byedpi'){Remove-Method 'proxifyre';Restore-Drover}
     if($engine -eq 'dnscrypt' -and (Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json'))){Restore-DNS}
-    $name='AccessWeaver-'+$engine;$service=Get-Service -Name $name -ErrorAction SilentlyContinue
-    if($service){if(-not (Test-Path -LiteralPath (Join-Path $root ('services\'+$engine+'.json'))) -and $engine -ne 'proxifyre'){throw 'Missing service ownership record; refusing deletion'};if($service.Status -ne 'Stopped'){Stop-Service -Name $name;$service.WaitForStatus('Stopped',[TimeSpan]::FromSeconds(20))};[void](Native (Join-Path $env:SystemRoot 'System32\sc.exe') @('delete',$name));for($i=0;$i -lt 20;$i++){if(-not (Get-Service $name -ErrorAction SilentlyContinue)){break};Start-Sleep -Milliseconds 250};if(Get-Service $name -ErrorAction SilentlyContinue){throw 'Service is marked for deletion; close Services and retry after reboot'}}
+    Remove-RecordedService ('AccessWeaver-'+$engine) -RequireOwnership
     foreach($direction in @('Inbound','Outbound')){Remove-NetFirewallRule -Name ('AccessWeaver-'+$engine+'-'+$direction) -ErrorAction SilentlyContinue}
     Event ('Managed method removed: '+$engine)
 }
@@ -2793,7 +2828,7 @@ function Rollback {
     }
     $rollbackErrors=@()
     for($i=$script:undo.Count-1;$i -ge 0;$i--){$item=$script:undo[$i];try{switch($item.kind){
-        'service' {Stop-Service -Name $item.name -Force -ErrorAction SilentlyContinue;[void](Native (Join-Path $env:SystemRoot 'System32\sc.exe') @('delete',$item.name) @(0,1060))}
+        'service' {Remove-RecordedService $item.name}
         'started-service' {Stop-Service -Name $item.name -ErrorAction Stop}
         'firewall' {Remove-NetFirewallRule -Name $item.name -ErrorAction SilentlyContinue}
         'task' {
@@ -2815,7 +2850,11 @@ function Rollback {
         'drover' {Restore-Drover $item.manifestSHA256}
         'cache' {if(-not (Under $item.path $env:APPDATA) -or -not (Under $item.backup (Join-Path $root 'backups'))){throw 'Invalid cache recovery path'};No-Reparse $item.path;No-Reparse $item.backup;if(Test-Path -LiteralPath $item.backup){if(Test-Path -LiteralPath $item.path){throw 'Discord created new cache; original cache backup retained for manual review'};Move-Item -LiteralPath $item.backup -Destination $item.path}}
         'file' {if($item.path -ieq (Join-Path $root 'profiles\dns-original.json')){continue};No-Reparse $item.path;if(Test-Path -LiteralPath $item.path){$currentHash=(Get-FileHash -LiteralPath $item.path -Algorithm SHA256).Hash;if($currentHash -eq $item.originalHash){continue};if(-not $item.expectedHash -or $currentHash -ne $item.expectedHash){throw ('File changed outside this operation; review before restoring: '+$item.path)}};if($item.backup){if(-not (Under $item.backup (Join-Path $root 'backups'))){throw 'Recovery backup is outside protected storage'};No-Reparse $item.backup;if(-not $item.originalHash -or (Get-FileHash -LiteralPath $item.backup -Algorithm SHA256).Hash -ne $item.originalHash){throw 'Recovery backup content does not match the recorded original digest'};Copy-Item -LiteralPath $item.backup -Destination $item.path -Force}else{Remove-Item -LiteralPath $item.path -ErrorAction SilentlyContinue}}
-    }}catch{$rollbackErrors+=@($_.Exception.Message)}}
+    }}catch{
+        $rollbackErrors+=@($_.Exception.Message)
+        # A registered service can still need any earlier file in this journal.
+        if($item.kind -eq 'service'){break}
+    }}
     return $rollbackErrors
 }
 # A recovery read never writes the selected journal or adopts a partial frame.
@@ -2828,8 +2867,10 @@ function Read-WorkflowRecoveryJournalBytes([IO.Stream]$Source) {
     $memory=$null
     try {
         if($null -eq $Source -or -not $Source.CanRead -or -not $Source.CanSeek -or $Source.Position -ne 0){Throw-WorkflowRecoveryJournalReadFailure}
-        $initial=[long]$Source.Length
-        if($initial -lt 0 -or $initial -gt $maximum){Throw-WorkflowRecoveryJournalReadFailure}
+        # PowerShell can return null when a property getter throws. Check the
+        # raw value before a numeric cast can turn missing metadata into zero.
+        $initial=$Source.Length
+        if($initial -isnot [long] -or $initial -lt 0 -or $initial -gt $maximum){Throw-WorkflowRecoveryJournalReadFailure}
         $memory=[IO.MemoryStream]::new();$buffer=[byte[]]::new(65536);$actual=0L
         while($true){
             # At the boundary only one extra byte is admitted from the source;
