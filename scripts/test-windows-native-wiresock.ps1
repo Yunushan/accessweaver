@@ -15,9 +15,10 @@ $paths=@('internal/workflow/windows.ps1','go.mod','go.sum','scripts/fixtures/wgp
 $hashes=@{}
 foreach($path in $paths){$hashes[$path]=(Get-FileHash -LiteralPath (Join-Path $project $path) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $checks=[ordered]@{
-    cleanVendorBaseline=$false;fixtureBuilt=$false;peerReady=$false;installCompleted=$false;restartRequested=$false
+    cleanVendorBaseline=$false;fixtureBuilt=$false;peerSelfTest=$false;peerReady=$false;installCompleted=$false;restartRequested=$false
     selectedTCP4=$false;selectedUDP4=$false;selectedTCP6=$false;selectedUDP6=$false
-    directBlocked=$false;peerHandshake=$false;disconnectCompleted=$false;disconnectedTrafficBlocked=$false
+    directBlocked=$false;peerStatsReadable=$false;peerHandshake=$false;peerReceivedBytes=$false;peerSentBytes=$false
+    disconnectCompleted=$false;disconnectedTrafficBlocked=$false
     managedRemovalCompleted=$false;vendorRemovalCompleted=$false;peerExited=$false;fixtureRemoved=$false
 }
 $workflowOutcomes=[ordered]@{install='not-run';disconnect='not-run';remove='not-run';'vendor-uninstall'='not-run'}
@@ -124,6 +125,19 @@ try {
     $checks.fixtureBuilt=$true
     $stage='peer'
     $env:ACCESSWEAVER_TEST_VM='1'
+    $selfTest=Join-Path $bin 'peer-self-test'
+    $control=Invoke-PrivateNative $peerBinary @('self-test',$selfTest)
+    if($control.exitCode -eq 0){
+        $controlReport=Get-Item -LiteralPath (Join-Path $selfTest 'self-test.json')
+        if($controlReport.Length -gt 0 -and $controlReport.Length -le 4096){
+            $controlResult=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($controlReport.FullName))
+            $checks.peerSelfTest=$controlResult.passed -eq $true -and $controlResult.tcpIPv4 -eq $true -and
+                $controlResult.udpIPv4 -eq $true -and $controlResult.tcpIPv6 -eq $true -and $controlResult.udpIPv6 -eq $true -and
+                [long]$controlResult.peer.last_handshake_time_sec -gt 0 -and
+                [long]$controlResult.peer.rx_bytes -gt 0 -and [long]$controlResult.peer.tx_bytes -gt 0
+        }
+    }
+    if(-not $checks.peerSelfTest){throw 'Local peer positive control failed'}
     $peer=Start-Process -FilePath $peerBinary -ArgumentList @('serve',('"'+$state+'"')) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $bin 'peer.stdout') -RedirectStandardError (Join-Path $bin 'peer.stderr')
     [void]$peer.Handle
     $clock=[Diagnostics.Stopwatch]::StartNew()
@@ -169,8 +183,22 @@ try {
     $clock.Restart()
     while($clock.Elapsed.TotalSeconds -lt 5){
         try {
-            $counts=Get-Content -Raw -LiteralPath (Join-Path $state 'traffic.json') | ConvertFrom-Json
-            if([long]$counts.last_handshake_time_sec -gt 0 -and [long]$counts.rx_bytes -gt 0 -and [long]$counts.tx_bytes -gt 0){$checks.peerHandshake=$true;break}
+            $statsFile=Get-Item -LiteralPath (Join-Path $state 'traffic.json')
+            if($statsFile.Length -gt 0 -and $statsFile.Length -le 4096){
+                $counts=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($statsFile.FullName))
+                $validStats=$true
+                foreach($field in @('last_handshake_time_sec','rx_bytes','tx_bytes')){
+                    $parsed=0L
+                    if(-not [long]::TryParse([string]$counts.$field,[ref]$parsed) -or $parsed -lt 0){$validStats=$false;break}
+                }
+                if($validStats){
+                    $checks.peerStatsReadable=$true
+                    if([long]$counts.last_handshake_time_sec -gt 0){$checks.peerHandshake=$true}
+                    if([long]$counts.rx_bytes -gt 0){$checks.peerReceivedBytes=$true}
+                    if([long]$counts.tx_bytes -gt 0){$checks.peerSentBytes=$true}
+                    if($checks.peerHandshake -and $checks.peerReceivedBytes -and $checks.peerSentBytes){break}
+                }
+            }
         } catch {}
         Start-Sleep -Milliseconds 100
     }
@@ -205,7 +233,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=4;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;vendorCLI=$vendorCLI;productionQualificationComplete=$false}
+$report=@{schemaVersion=5;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;vendorCLI=$vendorCLI;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
