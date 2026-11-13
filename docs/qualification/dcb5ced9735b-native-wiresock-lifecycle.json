@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "scope": "native-windows-wiresock-lifecycle",
+  "sourceCommit": "dcb5ced9735b444c5bc81e26d5ba8ca0de782af4",
+  "runID": 43422285451,
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "8d516b5ce627a9af6d5f93ae0bccdf11c423c0c800d5d5851ac19f12490ee7e9",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+    "scripts/fixtures/wgpeer/go.mod": "fe90be45df5c186983b038382b4fdd0b91cd42172768f82f299361b2de17b646",
+    "scripts/fixtures/wgpeer/go.sum": "403b242c0a86f4174e9bf6af8dac1627e51e93f4e99cc5f2e1a4a05f1d86237f",
+    "scripts/fixtures/wgpeer/main.go": "96f28ff5581c04acfceef7dfc4def8bc479e1f8407d2b601140e70a2a9cf1687",
+    "scripts/fixtures/wgpeer/cmd/probe/main.go": "bcee9cc657b7acfb5edd93b34477642ddd140bc8ade6f569d44a3dc237681d37",
+    "scripts/test-windows-native-wiresock.ps1": "b8a29df0599cca26968f504cc6e1a60d84e36500d2d850d352527cdbbee80d90",
+    ".github/workflows/windows-native-wiresock.yml": "286a1982cd58b496803791b17907e0df83b0136664cbff1bfd52342f8fe34840"
+  },
+  "reports": [
+    {
+      "architecture": "amd64",
+      "artifactID": 14038456408,
+      "providerZIPDigest": "sha256:3828275104aea905b817901467b7342a60d4238c63f22e206541382fa046dc72",
+      "providerZIPDigestVerified": true,
+      "stage": "complete",
+      "checks": {
+        "cleanVendorBaseline": true,
+        "fixtureBuilt": true,
+        "peerSelfTest": true,
+        "peerReady": true,
+        "installCompleted": true,
+        "restartRequested": false,
+        "selectedTCP4": false,
+        "selectedUDP4": false,
+        "selectedTCP6": false,
+        "selectedUDP6": false,
+        "unselectedTCP4Unreachable": false,
+        "unselectedUDP4Unreachable": false,
+        "unselectedTCP6Unreachable": false,
+        "unselectedUDP6Unreachable": false,
+        "peerStatsReadable": true,
+        "peerHandshake": false,
+        "peerReceivedBytes": false,
+        "peerSentBytes": false,
+        "disconnectCompleted": false,
+        "disconnectedTCP4Unreachable": false,
+        "disconnectedUDP4Unreachable": false,
+        "disconnectedTCP6Unreachable": false,
+        "disconnectedUDP6Unreachable": false,
+        "managedRemovalCompleted": false,
+        "vendorRemovalCompleted": false,
+        "peerExited": true,
+        "fixtureRemoved": true
+      },
+      "workflowOutcomes": {
+        "install": "succeeded",
+        "disconnect": "vendor-cli-exit-failure",
+        "remove": "vendor-cli-exit-failure",
+        "vendor-uninstall": "uninstaller-msi-product-refused"
+      },
+      "connectionState": "unrecognized",
+      "vendorCLI": {
+        "profileList": "profile-observed",
+        "directStatus": "unrecognized",
+        "profileExport": "read",
+        "keyPairRetained": true,
+        "endpointRetained": true,
+        "prefixesRetained": true,
+        "selectedAppRetained": true
+      },
+      "uninstallRegistration": {
+        "observed": true,
+        "total": 2,
+        "visibleBundles": 1,
+        "hiddenMSIs": 1,
+        "other": 0
+      },
+      "binarySHA256": {
+        "wgpeer.exe": "59d6097905e875675484760682d9a34864113f3abcbc13812dea1a10004a8f71",
+        "probe-selected.exe": "7db292eab972062337af6f47814e2b52efce2d53b83c580e0d746861dc9b48b0",
+        "accessweaver.exe": "94c6beb17304ae02fd207fb6c4d334a55b88f783444d0ca05ead31337126d429"
+      }
+    },
+    {
+      "architecture": "arm64",
+      "artifactID": 14037806944,
+      "providerZIPDigest": "sha256:be85ba7ea0a6a01818106384d9965acfa1e2bf821361253fbe4bd4ec8ef30df4",
+      "providerZIPDigestVerified": true,
+      "stage": "complete",
+      "checks": {
+        "cleanVendorBaseline": true,
+        "fixtureBuilt": true,
+        "peerSelfTest": true,
+        "peerReady": true,
+        "installCompleted": true,
+        "restartRequested": false,
+        "selectedTCP4": false,
+        "selectedUDP4": false,
+        "selectedTCP6": false,
+        "selectedUDP6": false,
+        "unselectedTCP4Unreachable": false,
+        "unselectedUDP4Unreachable": false,
+        "unselectedTCP6Unreachable": false,
+        "unselectedUDP6Unreachable": false,
+        "peerStatsReadable": true,
+        "peerHandshake": false,
+        "peerReceivedBytes": false,
+        "peerSentBytes": false,
+        "disconnectCompleted": false,
+        "disconnectedTCP4Unreachable": false,
+        "disconnectedUDP4Unreachable": false,
+        "disconnectedTCP6Unreachable": false,
+        "disconnectedUDP6Unreachable": false,
+        "managedRemovalCompleted": false,
+        "vendorRemovalCompleted": false,
+        "peerExited": true,
+        "fixtureRemoved": true
+      },
+      "workflowOutcomes": {
+        "install": "succeeded",
+        "disconnect": "vendor-cli-exit-failure",
+        "remove": "vendor-cli-exit-failure",
+        "vendor-uninstall": "uninstaller-msi-product-refused"
+      },
+      "connectionState": "unrecognized",
+      "vendorCLI": {
+        "profileList": "profile-observed",
+        "directStatus": "unrecognized",
+        "profileExport": "read",
+        "keyPairRetained": true,
+        "endpointRetained": true,
+        "prefixesRetained": true,
+        "selectedAppRetained": true
+      },
+      "uninstallRegistration": {
+        "observed": true,
+        "total": 2,
+        "visibleBundles": 1,
+        "hiddenMSIs": 1,
+        "other": 0
+      },
+      "binarySHA256": {
+        "wgpeer.exe": "93d47f375ba036fa5e13cc605f41b2c548c504eaf482fc6bdcc503ca8d04ca2e",
+        "probe-selected.exe": "9ffa953204fe142ffedc7e444e702a41d08f6b94c5dc5d1a64b963c82cffd8dd",
+        "accessweaver.exe": "ea2222007140e1d0357e345b92d0f8e89f2142338744d44497aab09c381b2787"
+      }
+    }
+  ],
+  "productionQualificationComplete": false
+}

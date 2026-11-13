@@ -33,7 +33,7 @@ $connectionRecovery=[ordered]@{
     profileList='not-checked'
 }
 $vendorCLI=[ordered]@{profileList='not-checked';directStatus='not-checked';profileExport='not-checked';keyPairRetained=$false;endpointRetained=$false;prefixesRetained=$false;selectedAppRetained=$false}
-$uninstallRegistration=[ordered]@{observed=$false;total=0;visibleBundles=0;hiddenMSIs=0;other=0}
+$uninstallRegistration=[ordered]@{observed=$false;total=0;visibleBundles=0;hiddenMSIs=0;other=0;hiddenMSIIdentity='not-checked'}
 $stage='baseline'
 $bin=Join-Path $env:RUNNER_TEMP ('accessweaver-wiresock-'+[guid]::NewGuid().ToString('N'))
 $controller=Join-Path $bin 'accessweaver.exe'
@@ -148,10 +148,31 @@ function Observe-ImportedProfile([string]$cli,[string]$profile,[string]$config) 
         try {[IO.File]::Delete($export)}catch{}
     }
 }
+function Get-HiddenMSIIdentity($record){
+    $key=[guid]::Empty
+    if(-not [guid]::TryParseExact([string]$record.PSChildName,'B',[ref]$key) -or $key -eq [guid]::Empty){
+        return 'invalid-product-key'
+    }
+    $rawCommand=[string]$record.UninstallString
+    if([string]::IsNullOrWhiteSpace($rawCommand)){return 'command-missing'}
+    if($rawCommand.Length -gt 4096){return 'command-unrecognized'}
+    $command=[Environment]::ExpandEnvironmentVariables($rawCommand).Trim()
+    if($command.Length -gt 4096){return 'command-unrecognized'}
+    $program=[regex]::Escape((Join-Path $env:SystemRoot 'System32\msiexec.exe'))
+    $pattern='(?i)^(?:msiexec(?:\.exe)?|"'+$program+'"|'+$program+')[ \t]+/[ix][ \t]*(\{[0-9a-f-]{36}\})(?=$|[ \t])'
+    if($command -notmatch $pattern){return 'command-unrecognized'}
+    $product=[guid]::Empty
+    if(-not [guid]::TryParseExact($matches[1],'B',[ref]$product) -or $product -ne $key){
+        return 'product-mismatch'
+    }
+    if($matches[0].Length -ne $command.Length){return 'extra-command-arguments'}
+    return 'product-matched'
+}
 function Observe-VendorUninstallRegistration {
-    # Compare registry properties in memory. Publish only counts, without
+    # Compare registry properties in memory. Publish only counts and a fixed category, without
     # registration keys, paths, product codes, or command lines.
     $total=0;$visibleBundles=0;$hiddenMSIs=0;$other=0
+    $identity='not-checked'
     foreach($base in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')){
         if(-not (Test-Path -LiteralPath $base)){continue}
         foreach($entry in (Get-ChildItem -LiteralPath $base)){
@@ -159,7 +180,10 @@ function Observe-VendorUninstallRegistration {
             if($record.DisplayName -cne 'WireSock Secure Connect'){continue}
             $total++
             if($total -gt 32){return}
-            if($record.WindowsInstaller -eq 1 -and $record.SystemComponent -eq 1){$hiddenMSIs++}
+            if($record.WindowsInstaller -eq 1 -and $record.SystemComponent -eq 1){
+                $hiddenMSIs++
+                if($hiddenMSIs -eq 1){$identity=Get-HiddenMSIIdentity $record}
+            }
             elseif($record.WindowsInstaller -ne 1 -and $record.SystemComponent -ne 1 -and
                 -not [string]::IsNullOrWhiteSpace($record.BundleCachePath) -and -not [string]::IsNullOrWhiteSpace($record.BundleProviderKey)){$visibleBundles++}
             else {$other++}
@@ -170,6 +194,7 @@ function Observe-VendorUninstallRegistration {
     $uninstallRegistration.visibleBundles=$visibleBundles
     $uninstallRegistration.hiddenMSIs=$hiddenMSIs
     $uninstallRegistration.other=$other
+    if($hiddenMSIs -eq 1){$uninstallRegistration.hiddenMSIIdentity=$identity}
 }
 function Invoke-TestWorkflow([hashtable]$request){
     $action=$request.action
@@ -357,7 +382,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=11;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;productionQualificationComplete=$false}
+$report=@{schemaVersion=12;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
