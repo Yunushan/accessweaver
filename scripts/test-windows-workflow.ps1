@@ -1568,12 +1568,14 @@ try {
         param($variant,$app)
         switch ($script:appRemovalChange) {
             'client' {$script:appRemovalMoved=$true}
+            'client-bytes' {[IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(2))}
             'uninstaller' {[IO.File]::WriteAllBytes($fixtureUninstaller,[byte[]]@(1))}
             'ambiguous' {[IO.File]::WriteAllBytes($secondUninstaller,[byte[]]@(0))}
         }
     }
     foreach($case in @(
         @{kind='client';error='Application installation changed before uninstall launch'},
+        @{kind='client-bytes';error='Application installation changed before uninstall launch'},
         @{kind='uninstaller';error='Application uninstaller changed before launch'},
         @{kind='ambiguous';error='Expected exactly one SplitCord uninstaller'}
     )){
@@ -1584,9 +1586,15 @@ try {
         try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq $case.error}
         Assert ($rejected -and -not $script:appRemovalInvoked -and -not $script:externalEffectsPending) ('Application removal refuses '+$case.kind+' changes before vendor launch')
         $script:appRemovalMoved=$false
+        [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
         [IO.File]::WriteAllBytes($fixtureUninstaller,[byte[]]@(0))
         [IO.File]::Delete($secondUninstaller)
     }
+    $script:appRemovalChange='client-bytes'
+    $script:appRemovalInvoked=$false
+    $rejected=$false
+    try{Remove-App 'splitcord' $fixtureApp ('0'*64)}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before removal'}
+    Assert ($rejected -and -not $script:appRemovalInvoked -and [IO.File]::ReadAllBytes($fixtureApp)[0] -eq 0) 'Application removal refuses stale client bytes before stopping processes'
     $script:appRemovalChange=$null
     $script:appRemovalInvoked=$false
     $script:appRemovalFail=$false
@@ -1599,7 +1607,7 @@ try {
     $script:externalEffectsPending=$false
 }
 # Mock installer acquisition and user operations; never execute a vendor process.
-$appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Remove-App','Download','Native','Wait-App','Event')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
+$appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Get-AppExecutableDigest','Remove-App','Download','Native','Wait-App','Event')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
 $previousAppRequest=$r
 $previousAppInput=$inputData
 $previousAppRoot=$root
@@ -1613,6 +1621,8 @@ try {
     $script:journalPath=$journal
     $script:journalState='running'
     $script:appInstallerChanged=$false
+    $script:appStableBytesChanged=$false;$script:appChangeStableBytesDuringDownload=$false
+    $script:appChangeStableBytesDuringSetup=$false
     $script:appPreviouslyInstalled=$false
     function Require-DesktopUser {}
     function Find-App {
@@ -1622,11 +1632,20 @@ try {
         if($variant -ceq 'discord' -and $script:appStableAppeared -and $script:appInstallTrace.Contains('verify-ptb')){return 'C:\fixture\new\Discord.exe'}
         if(($variant -ceq 'discord' -and -not $script:appStableAbsent) -or $script:appPreviouslyInstalled){return 'C:\fixture\Discord.exe'}
     }
+    function Get-AppExecutableDigest([string]$path) {
+        if($path -cne 'C:\fixture\Discord.exe'){throw 'Expected digest for the observed stable client'}
+        if($script:appStableBytesChanged){return 'b'*64}
+        return 'a'*64
+    }
     function Remove-App {
-        param($variant,$expectedApp)
-        if($variant -cne 'discord' -or $expectedApp -cne 'C:\fixture\Discord.exe'){throw 'Expected removal bound to the observed stable client'}
+        param($variant,$expectedApp,$expectedAppDigest)
+        if($variant -cne 'discord' -or $expectedApp -cne 'C:\fixture\Discord.exe' -or $expectedAppDigest -cne ('a'*64)){
+            throw 'Expected removal bound to the observed stable client path and digest'
+        }
         $script:appInstallTrace.Add('remove-stable')
-        if($script:appStableReplacedDuringSetup){throw 'Application installation changed before removal'}
+        if($script:appStableReplacedDuringSetup -or (Get-AppExecutableDigest $expectedApp) -ine $expectedAppDigest){
+            throw 'Application installation changed before removal'
+        }
         $script:appInstallerLocked=$false
         try {
             $writer=[IO.File]::OpenWrite($script:appInstallerDestination)
@@ -1644,6 +1663,7 @@ try {
         [IO.File]::WriteAllText($Destination,'inert installer')
         $digest=(Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
         if($script:appInstallerChanged){[IO.File]::AppendAllText($Destination,' changed')}
+        if($script:appChangeStableBytesDuringDownload){$script:appStableBytesChanged=$true}
         return $digest
     }
     function Native {
@@ -1660,6 +1680,7 @@ try {
             $writer.Dispose()
         }catch [IO.IOException]{$script:appInstallerLockedAtLaunch=$true}
         if($script:appNativeFailure){throw 'fixture installer failure'}
+        if($script:appChangeStableBytesDuringSetup){$script:appStableBytesChanged=$true}
         return @{exitCode=0;outputComplete=$true}
     }
     function Wait-App {
@@ -1716,6 +1737,12 @@ try {
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before removal'}
     Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable')) 'PTB cleanup refuses a replacement stable client'
     $script:appStableReplacedDuringSetup=$false
+    $script:appChangeStableBytesDuringSetup=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before removal'}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable') 'PTB cleanup preserves a stable client updated at the same path during setup'
+    $script:appChangeStableBytesDuringSetup=$false;$script:appStableBytesChanged=$false
     $script:appInstallTrace.Clear()
     $script:appStableAbsent=$true
     $script:appStableAppeared=$true
@@ -1769,6 +1796,12 @@ try {
     try {Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -like 'Stable Discord changed before reinstall*'}
     Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord') 'Discord reinstall preserves a client updated during download'
     $script:appStableChanged=$false
+    $script:appChangeStableBytesDuringDownload=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try{Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before removal'}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord,remove-stable') 'Discord reinstall refuses a same-path client update during download'
+    $script:appChangeStableBytesDuringDownload=$false;$script:appStableBytesChanged=$false
     $script:appInstallerChanged=$true
     $script:appInstallTrace.Clear()
     $rejected=$false

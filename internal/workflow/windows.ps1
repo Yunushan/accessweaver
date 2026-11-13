@@ -2870,11 +2870,11 @@ function Install-App([string]$variant,[switch]$Reinstall) {
     if($Reinstall -and ($variant -cne 'discord' -or $r.clean -or $r.downloadUrl -or $r.sha256 -or $r.configPath -or $r.bundlePath)){
         throw 'Discord reinstall uses the official signed installer and fixed desktop-user inputs'
     }
-    $originalApp=$null
+    $originalApp=$null;$originalAppDigest=$null
     if($Reinstall){
         $originalApp=Find-App $variant
         if(-not $originalApp){throw 'Stable Discord is not installed; use Install Discord instead'}
-        No-Reparse $originalApp
+        $originalAppDigest=Get-AppExecutableDigest $originalApp
     }
     if($variant -notin @('discord','discord-ptb','splitcord')){throw 'Choose Discord, Discord PTB or SplitCord'}
     if($variant -eq 'splitcord'){
@@ -2891,7 +2891,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         $verifiedHash=Download $url '' $file -Signed -Publisher discord -ReturnVerifiedHash
     }
     $cleanPTB=$r.clean -and $variant -eq 'discord-ptb'
-    $stableBeforeSetup=$null
+    $stableBeforeSetup=$null;$stableBeforeSetupDigest=$null
     # Hold the staged file read-only through verification and installer execution.
     No-Reparse $file
     try {$lockedInstaller=[IO.File]::Open($file,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)}
@@ -2903,9 +2903,12 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         $previouslyInstalled=[bool]$existingApp
         if($Reinstall){
             if($existingApp -ine $originalApp){throw 'Stable Discord changed before reinstall; review the current installation'}
-            Remove-App $variant $originalApp
+            Remove-App $variant $originalApp $originalAppDigest
         }
-        if($cleanPTB){$stableBeforeSetup=Find-App 'discord'}
+        if($cleanPTB){
+            $stableBeforeSetup=Find-App 'discord'
+            if($stableBeforeSetup){$stableBeforeSetupDigest=Get-AppExecutableDigest $stableBeforeSetup}
+        }
         $installerArgs=if($variant -eq 'splitcord'){@('/S')}else{@('-s')}
         Save-ApplicationEffectBoundary
         [void](Native $file $installerArgs -Timeout 900)
@@ -2913,7 +2916,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
     Wait-App $variant $true 180
     if($cleanPTB){
         # Preserve stable Discord until PTB setup and executable readback succeed.
-        if($stableBeforeSetup){Remove-App 'discord' $stableBeforeSetup}
+        if($stableBeforeSetup){Remove-App 'discord' $stableBeforeSetup $stableBeforeSetupDigest}
         elseif(Find-App 'discord'){throw 'Stable Discord appeared during PTB setup; review the current installation'}
         Wait-App $variant $true 30
     }
@@ -2943,26 +2946,29 @@ function Get-AppUninstaller([string]$variant,[string]$app) {
     if(-not (Test-Path -LiteralPath $path -PathType Leaf -ErrorAction Stop)){throw 'Application uninstaller not found'}
     return @{path=$path;arguments=$arguments;timeout=$timeout}
 }
-function Get-AppUninstallerDigest([string]$path) {
+function Get-AppExecutableDigest([string]$path) {
+    No-Reparse $path
     $file=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
     try {
-        if($file.Length -le 0 -or $file.Length -gt 512MB){throw 'Application uninstaller exceeds inspection limits'}
+        if($file.Length -le 0 -or $file.Length -gt 512MB){throw 'Application executable exceeds inspection limits'}
         return (Get-FileHash -InputStream $file -Algorithm SHA256 -ErrorAction Stop).Hash
     } finally {$file.Dispose()}
 }
-function Remove-App([string]$variant,[string]$expectedApp) {
+function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDigest) {
     Require-DesktopUser
     $app=Find-App $variant
     if($expectedApp -and $app -ine $expectedApp){throw 'Application installation changed before removal'}
     if(-not $app){return}
-    No-Reparse $app
+    $appDigest=Get-AppExecutableDigest $app
+    if($expectedAppDigest -and $appDigest -ine $expectedAppDigest){throw 'Application installation changed before removal'}
     $uninstaller=Get-AppUninstaller $variant $app
-    $digest=Get-AppUninstallerDigest $uninstaller.path
+    $digest=Get-AppExecutableDigest $uninstaller.path
     Stop-AppProcesses $variant $app
-    if((Find-App $variant) -ine $app){throw 'Application installation changed before uninstall launch'}
-    No-Reparse $app
+    if((Find-App $variant) -ine $app -or (Get-AppExecutableDigest $app) -ine $appDigest){
+        throw 'Application installation changed before uninstall launch'
+    }
     $confirmed=Get-AppUninstaller $variant $app
-    if($confirmed.path -ine $uninstaller.path -or (Get-AppUninstallerDigest $confirmed.path) -cne $digest){
+    if($confirmed.path -ine $uninstaller.path -or (Get-AppExecutableDigest $confirmed.path) -cne $digest){
         throw 'Application uninstaller changed before launch'
     }
     Save-ApplicationEffectBoundary
