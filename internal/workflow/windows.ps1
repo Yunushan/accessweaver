@@ -1803,6 +1803,17 @@ function Remove-All {
     if(Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json')){Restore-DNS}
     Remove-Method 'dnscrypt';Restore-Drover
 }
+function Get-WireSockMsiProductCode($record,[string]$program) {
+    $command=[Environment]::ExpandEnvironmentVariables([string]$record.UninstallString).Trim()
+    $escapedProgram=[regex]::Escape($program)
+    $msiCommand='(?i)^(?:msiexec(?:\.exe)?|"'+$escapedProgram+'"|'+$escapedProgram+')[ \t]+/[ix][ \t]*(\{[0-9a-f-]{36}\})$'
+    $product=[guid]::Empty
+    if($command -notmatch $msiCommand -or -not [guid]::TryParseExact($matches[1],'B',[ref]$product) -or
+        $product -eq [guid]::Empty -or $record.PSChildName -ine $product.ToString('B')){
+        throw 'Registered WireSock MSI uninstall command does not match its product code'
+    }
+    return $product.ToString('B')
+}
 function Uninstall-WireSockProduct {
     $cli=WireSock-CLI
     $names=if($cli -and [IO.Path]::GetFileName($cli) -eq 'wiresock-client.exe'){@('WireSock VPN Client','WireSock VPN Client for Windows')}else{@('WireSock Secure Connect')}
@@ -1810,19 +1821,26 @@ function Uninstall-WireSockProduct {
         if(Test-Path -LiteralPath $base){$records+=@(Get-ChildItem -LiteralPath $base|ForEach-Object {Get-ItemProperty -LiteralPath $_.PSPath}|Where-Object {$_.DisplayName -in $names})}
     }
     if($records.Count -eq 0){throw 'No supported registered WireSock product found; use Windows Apps settings for an unrecognized package'}
-    if($records.Count -ne 1){throw 'Multiple registered WireSock products matched; select the intended product in Windows Apps settings'}
+    $msiexec=Join-Path $env:SystemRoot 'System32\msiexec.exe'
     $record=$records[0]
+    $paired=$records.Count -gt 1
+    if($paired){
+        # A modern vendor bundle can register a hidden MSI as well as its
+        # public uninstall entry. Only the bundle can manage its package chain.
+        $bundles=@($records | Where-Object {$_.WindowsInstaller -ne 1 -and $_.SystemComponent -ne 1 -and
+            -not [string]::IsNullOrWhiteSpace($_.BundleCachePath) -and -not [string]::IsNullOrWhiteSpace($_.BundleProviderKey)})
+        $hiddenMSIs=@($records | Where-Object {$_.WindowsInstaller -eq 1 -and $_.SystemComponent -eq 1})
+        if($names[0] -ne 'WireSock Secure Connect' -or $records.Count -ne 2 -or $bundles.Count -ne 1 -or $hiddenMSIs.Count -ne 1){
+            throw 'Multiple registered WireSock products matched; select the intended product in Windows Apps settings'
+        }
+        $record=$bundles[0]
+        [void](Get-WireSockMsiProductCode $hiddenMSIs[0] $msiexec)
+    }
     $command=[Environment]::ExpandEnvironmentVariables([string]$record.UninstallString).Trim()
     if($record.WindowsInstaller -eq 1){
-        $program=Join-Path $env:SystemRoot 'System32\msiexec.exe'
-        $escapedProgram=[regex]::Escape($program)
-        $msiCommand='(?i)^(?:msiexec(?:\.exe)?|"'+$escapedProgram+'"|'+$escapedProgram+')[ \t]+/[ix][ \t]*(\{[0-9a-f-]{36}\})$'
-        $product=[guid]::Empty
-        if($command -notmatch $msiCommand -or -not [guid]::TryParseExact($matches[1],'B',[ref]$product) -or
-            $product -eq [guid]::Empty -or $record.PSChildName -ine $product.ToString('B')){
-            throw 'Registered WireSock MSI uninstall command does not match its product code'
-        }
-        $arguments=@('/x',$product.ToString('B'),'/qn','/norestart')
+        $program=$msiexec
+        $product=Get-WireSockMsiProductCode $record $program
+        $arguments=@('/x',$product,'/qn','/norestart')
         $codes=@(0,1605,3010,1641)
     }else{
         $program=$null
@@ -1830,6 +1848,9 @@ function Uninstall-WireSockProduct {
         elseif($command -match '^([^"]+?\.exe)(?:[ \t]|$)'){$program=$matches[1]}
         if($program -notmatch '^[A-Za-z]:\\[^:*?"<>|]+\.exe$' -or
             (-not (Under $program $env:ProgramFiles) -and -not (Under $program (Join-Path $env:ProgramData 'Package Cache')))){
+            throw 'Registered vendor uninstaller is outside protected installation storage'
+        }
+        if($paired -and ($program -ine $record.BundleCachePath -or -not (Under $program (Join-Path $env:ProgramData 'Package Cache')))){
             throw 'Registered vendor uninstaller is outside protected installation storage'
         }
         No-Reparse $program
@@ -1849,7 +1870,10 @@ function Uninstall-WireSockProduct {
     $deadline=[Diagnostics.Stopwatch]::StartNew()
     do {
         $cliPresent=$cli -and (Test-Path -LiteralPath $cli)
-        $registrationPresent=Test-Path -LiteralPath $record.PSPath
+        $registrationPresent=$false
+        foreach($entry in $records){
+            if(Test-Path -LiteralPath $entry.PSPath){$registrationPresent=$true}
+        }
         if(-not ($cliPresent -or $registrationPresent) -or $deadline.Elapsed.TotalSeconds -ge 30){break}
         Start-Sleep -Milliseconds 500
     } while($true)

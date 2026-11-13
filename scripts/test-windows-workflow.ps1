@@ -930,14 +930,23 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
             param($LiteralPath)
             if($verifyRemoval -and $LiteralPath -ceq $registration){
                 $calls.Add('check-registration')
+                return -not $calls.Contains('wait') -and -not $hiddenRecord
+            }
+            if($verifyRemoval -and $hiddenRecord -and $LiteralPath -ceq $hiddenRecord.PSPath){
+                $calls.Add('check-hidden-registration')
                 return -not $calls.Contains('wait')
             }
             return $LiteralPath -ceq 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
         }
         $record=@{PSPath=$registration;DisplayName='WireSock Secure Connect';UninstallString=('"'+$program+'" /uninstall')}
+        $hiddenRecord=$null
         $entries=@(@{PSPath=$registration})
         function Get-ChildItem {param($LiteralPath);return $entries}
-        function Get-ItemProperty {param($LiteralPath);return $record}
+        function Get-ItemProperty {
+            param($LiteralPath)
+            if($hiddenRecord -and $LiteralPath -ceq $hiddenRecord.PSPath){return $hiddenRecord}
+            return $record
+        }
         function Get-AuthenticodeSignature {param($LiteralPath);return $fixtureSignature}
         function Get-FileHash {param($LiteralPath,$Algorithm);return @{Hash=$fixtureDigest}}
         function No-Reparse {param($Path);if($Path -cne $program){throw 'Unexpected cached executable'}}
@@ -977,6 +986,34 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         $entries=@(@{PSPath=$registration})
         $productCode='{b7678321-14b3-4439-a4ef-789452416058}'
         $otherCode='{c7678321-14b3-4439-a4ef-789452416058}'
+        $hiddenRecord=@{
+            PSPath=$registration+'-hidden'
+            DisplayName='WireSock Secure Connect'
+            WindowsInstaller=1
+            SystemComponent=1
+            PSChildName=$productCode
+            UninstallString=('MsiExec.exe /I'+$productCode)
+        }
+        $entries=@(@{PSPath=$hiddenRecord.PSPath},@{PSPath=$registration})
+        $record.BundleProviderKey='fixture-provider'
+        $record.BundleCachePath=$program+'-other.exe'
+        $fixtureSignature=$unknownSigner
+        $refused=$false
+        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered vendor uninstaller is outside protected installation storage'}
+        $cacheMismatchRefused=$refused
+        $record.BundleCachePath=$program
+        $hiddenRecord.UninstallString='MsiExec.exe /I'+$otherCode
+        $refused=$false
+        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
+        Assert ($cacheMismatchRefused -and $refused -and $calls.Count -eq 0) 'WireSock paired uninstall refuses mismatched cache or MSI identity before cleanup'
+        $hiddenRecord.UninstallString='MsiExec.exe /I'+$productCode
+        $verifyRemoval=$true
+        $result=Uninstall-WireSockProduct
+        Assert (-not $result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,check-hidden-registration,check-registration,wait,check-hidden-registration,check-registration,retire-ownership,Vendor uninstall completed: WireSock Secure Connect') 'WireSock paired uninstall runs the bundle and waits for the hidden MSI'
+        $verifyRemoval=$false
+        $calls.Clear()
+        $entries=@(@{PSPath=$registration})
+        $hiddenRecord=$null
         $record.WindowsInstaller=1
         $record.PSChildName=$productCode
         $expectedProgram=Join-Path $env:SystemRoot 'System32\msiexec.exe'
