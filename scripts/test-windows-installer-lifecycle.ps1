@@ -234,7 +234,7 @@ function Assert-ManagedDetection([string]$Phase,$Expected,[bool]$Detected,[strin
     if($DigestOverride){$hash=$DigestOverride}
     $uninstallerDigest=''
     if($Detected){$uninstallerDigest=Digest (Join-Path $install 'unins000.exe')}
-    $output=@(& $detector -Version $Expected.version -Architecture $Architecture -PayloadSHA256 $hash -InstallDirectory $install -UninstallerSHA256 $uninstallerDigest 2>&1)
+    $output=@(& $detector -Version $Expected.version -Architecture $Architecture -PayloadSHA256 $hash -PayloadSBOMSHA256 $Expected.payloadSBOMSHA256 -InstallDirectory $install -UninstallerSHA256 $uninstallerDigest 2>&1)
     Require ($LASTEXITCODE -eq 0) 'Managed detection reported an inspection error'
     if($Detected){
         Require ($output.Count -eq 1 -and $output[0] -ceq 'AccessWeaver detected') 'Managed detection missed the approved payload'
@@ -270,7 +270,7 @@ try {
         $evidence=Join-Path $project ('build\installer-checks\'+$Architecture)
         $b=Get-Content -LiteralPath (Join-Path $evidence 'compiler-artifact.json') -Raw | ConvertFrom-Json
         Require ($b.sourceCommit -ceq $source -and $b.payloadBuild.sourceState -ceq 'clean' -and $b.payloadBuild.version -ceq $version -and $b.compilerVersion -ceq '6.7.1' -and $b.unsigned) 'Compiler evidence differs from the requested candidate'
-        $builds+=,@{version=$version;installerName=$b.installerName;installerSHA256=$b.installerSha256;installerBytes=$b.installerBytes;payloadSha256=$b.payloadSha256;payloadBuild=$b.payloadBuild;compilerSHA256=$b.compilerSha256;preprocessedSetupSHA256=$b.preprocessedSetupSha256;identityFileSHA256=(Digest (Join-Path $evidence 'payload-BUILD-INFO.json'))}
+        $builds+=,@{version=$version;installerName=$b.installerName;installerSHA256=$b.installerSha256;installerBytes=$b.installerBytes;payloadSha256=$b.payloadSha256;payloadSBOMSHA256=(Digest (Join-Path $evidence 'payload-SBOM.cdx.json'));payloadBuild=$b.payloadBuild;compilerSHA256=$b.compilerSha256;preprocessedSetupSHA256=$b.preprocessedSetupSha256;identityFileSHA256=(Digest (Join-Path $evidence 'payload-BUILD-INFO.json'))}
     }
     $stage='version-contracts'
     $compiler=Join-Path ([Environment]::GetEnvironmentVariable('ProgramFiles(x86)')) 'Inno Setup 6\ISCC.exe'

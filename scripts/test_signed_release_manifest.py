@@ -290,12 +290,15 @@ class SignedReleaseManifestTests(unittest.TestCase):
             "version": "1.2.3-rc.1",
             "setupSHA256": release.digest(self.candidate / "accessweaver-1.2.3-rc.1-windows-amd64-setup.exe"),
             "payloadSHA256": release.digest(self.candidate / "accessweaver-1.2.3-rc.1-windows-amd64.exe"),
+            "payloadSBOMSHA256": release.digest(self.candidate / "accessweaver-1.2.3-rc.1-windows-amd64.exe.cdx.json"),
         })
         self.assertEqual(upgrade_entry, {
             **clean_entry, "installMode": "upgrade", "previousVersion": "1.2.2",
             "previousPayloadSHA256": "d" * 64, "uninstallerSHA256": "e" * 64, "rebootEvidenceSHA256": upgrade[1],
         })
         self.assertEqual(arm_entry["target"], "windows/arm64")
+        self.assertEqual(arm_entry["payloadSBOMSHA256"],
+                         release.digest(self.candidate / "accessweaver-1.2.3-rc.1-windows-arm64.exe.cdx.json"))
         self.assertEqual(arm_entry["uninstallerSHA256"], "f" * 64)
         for revoked in (clean[1], "b" * 64, "d" * 64, "e" * 64):
             current_pin = self.write_policy({**self.policy, "subjectSHA256": [revoked]})

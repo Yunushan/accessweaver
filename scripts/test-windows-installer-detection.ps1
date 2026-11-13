@@ -14,11 +14,15 @@ $fixtureDirectory=[IO.Directory]::CreateDirectory($testRoot)
 $payload=Join-Path $testRoot 'accessweaver.exe'
 $fixture=Join-Path $testRoot 'fixture.ps1'
 $uninstaller=Join-Path $testRoot 'unins001.exe'
+$sbom=Join-Path $testRoot 'SBOM.cdx.json'
 try {
     [IO.File]::WriteAllText($payload,'inert detection test data')
     $hash=(Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash
     [IO.File]::WriteAllText($uninstaller,'inert uninstaller fixture')
     $uninstallerHash=(Get-FileHash -LiteralPath $uninstaller -Algorithm SHA256).Hash
+    $sbomBytes=[Text.Encoding]::UTF8.GetBytes('{"fixture":true}')
+    [IO.File]::WriteAllBytes($sbom,$sbomBytes)
+    $sbomHash=(Get-FileHash -LiteralPath $sbom -Algorithm SHA256).Hash
     $mock=@'
 $script:mockReads=0
 function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
@@ -54,7 +58,7 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
     if(-not (Test-Path -LiteralPath $stock)){$stock=Join-Path $PSHOME 'pwsh.exe'}
     $saved=$env:AW_DETECTION_FIXTURE
     try {
-        foreach($case in @(
+        $cases=@(
             @{mode='approved';code=0;count=1;hash=$hash},
             @{mode='approved';code=0;count=0;hash=('0'*64)},
             @{mode='absent';code=0;count=0;hash=$hash},
@@ -72,20 +76,31 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
             @{mode='extra-arguments';code=1;count=0;hash=$hash;uninstaller=$uninstallerHash},
             @{mode='uninstaller-changed';code=1;count=0;hash=$hash;uninstaller=$uninstallerHash},
             @{mode='absent';code=0;count=0;hash=$hash;uninstaller=$uninstallerHash},
-            @{mode='other-version';code=0;count=0;hash=$hash;uninstaller=$uninstallerHash}
-        )){
+            @{mode='other-version';code=0;count=0;hash=$hash;uninstaller=$uninstallerHash},
+            @{mode='approved';code=0;count=1;hash=$hash;sbom=$sbomHash},
+            @{mode='approved';code=0;count=1;hash=$hash;sbom=$sbomHash;uninstaller=$uninstallerHash},
+            @{mode='approved';code=0;count=0;hash=$hash;sbom=('0'*64);uninstaller=$uninstallerHash},
+            @{mode='approved';code=1;count=0;hash=$hash;sbom='invalid'},
+            @{mode='approved';code=1;count=0;hash=$hash;sbom=$sbomHash;removeSBOM=$true},
+            @{mode='approved';code=0;count=1;hash=$hash;removeSBOM=$true},
+            @{mode='absent';code=0;count=0;hash=$hash;sbom=$sbomHash;removeSBOM=$true},
+            @{mode='registration-changed';code=1;count=0;hash=$hash;sbom=$sbomHash}
+        )
+        foreach($case in $cases){
+            if($case.removeSBOM){[IO.File]::Delete($sbom)}else{[IO.File]::WriteAllBytes($sbom,$sbomBytes)}
             $env:AW_DETECTION_FIXTURE=$case.mode
             $arguments=@('-NoProfile','-NonInteractive','-File',$fixture,'-Version','0.1.0-alpha','-Architecture',$arch,'-PayloadSHA256',$case.hash,'-InstallDirectory',$testRoot)
             if($case.uninstaller){$arguments+=@('-UninstallerSHA256',$case.uninstaller)}
+            if($case.sbom){$arguments+=@('-PayloadSBOMSHA256',$case.sbom)}
             $output=@(& $stock @arguments 2>&1)
             if($LASTEXITCODE -ne $case.code -or $output.Count -ne $case.count -or
                ($case.count -eq 1 -and $output[0] -cne 'AccessWeaver detected')){throw 'Unexpected managed detection fixture result'}
         }
     } finally {$env:AW_DETECTION_FIXTURE=$saved}
 } finally {
-    foreach($file in @($payload,$fixture,$uninstaller)){
+    foreach($file in @($payload,$fixture,$uninstaller,$sbom)){
         if(Test-Path -LiteralPath $file){Remove-Item -LiteralPath $file -Force}
     }
     $fixtureDirectory.Delete()
 }
-Write-Output 'Eighteen managed detection contracts passed.'
+Write-Output ('Managed detection contracts passed: '+$cases.Count)

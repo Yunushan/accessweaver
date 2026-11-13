@@ -308,10 +308,13 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
         }
         if entries:
             targets = windows_subjects(files)
+            payload_sboms = {subject["target"]: subject["sha256"] for subject in files
+                             if subject["role"] == "payload-sbom"}
             report["schemaVersion"] = 2
             report["windowsDetection"] = [
                 {**entry, "version": version, "setupSHA256": targets[entry["target"], "installer"],
-                 "payloadSHA256": targets[entry["target"], "payload"]}
+                 "payloadSHA256": targets[entry["target"], "payload"],
+                 "payloadSBOMSHA256": payload_sboms[entry["target"]]}
                 for entry in entries
             ]
         return report
