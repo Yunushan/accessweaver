@@ -1798,6 +1798,8 @@ function Assert-ConfiguredDNSServers([object[]]$Adapters,[object[]]$Records,[str
 function Configure-DNS([string]$method) {
     if($method -notin @('doh','dnscrypt')){throw 'Choose doh or dnscrypt'}
     if($method -eq 'doh'){foreach($command in @('Get-DnsClientDohServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'This Windows version does not expose native DoH management; choose DNSCrypt instead'}}}
+    $serviceName='AccessWeaver-dnscrypt'
+    $existingResolver=Assert-ManagedServiceOwnership $serviceName
     $snapshot=Join-Path $root 'profiles\dns-original.json'
     $inventory=@(Get-NetAdapter -ErrorAction Stop)
     # A complete successful DNS-client query distinguishes non-IP adapters from
@@ -1864,12 +1866,22 @@ function Configure-DNS([string]$method) {
     $dnsUndo.snapshotActive=$true
     Save-Journal
     if($method -eq 'dnscrypt') {
+        if($existingResolver -and (Assert-RecordedServiceBinding $existingResolver) -ne 0){
+            throw 'Existing DNSCrypt service disappeared before reconfiguration'
+        }
         $binary=Ensure-Asset 'dnscrypt';$config=Join-Path (Split-Path -Parent $binary) 'dnscrypt-proxy.toml'
         if(-not (Test-Path -LiteralPath $config)){$example=Join-Path (Split-Path -Parent $binary) 'example-dnscrypt-proxy.toml';if(Test-Path -LiteralPath $example){Copy-Checked $example $config}else{throw 'Official DNSCrypt resolver configuration is missing'}}
         $text=Get-Content -LiteralPath $config -Raw;if($text -notmatch '(?m)^listen_addresses\s*='){throw 'DNSCrypt configuration is missing its top-level listen_addresses setting'};$text=[regex]::Replace($text,'(?m)^listen_addresses\s*=.*$',"listen_addresses = ['127.0.0.1:53', '[::1]:53']")
         if($text -notmatch '(?m)^server_names\s*='){$text="server_names = ['google', 'cloudflare', 'quad9-dnscrypt-ip4-nofilter-pri']`r`n"+$text}
         Write-Atomic $config $text
-        if(-not (Get-Service 'AccessWeaver-dnscrypt' -ErrorAction SilentlyContinue)){Install-EngineService 'dnscrypt' $binary @('-config',$config)}else{Set-Service 'AccessWeaver-dnscrypt' -StartupType Automatic;Restart-Service 'AccessWeaver-dnscrypt';(Get-Service 'AccessWeaver-dnscrypt').WaitForStatus('Running',[TimeSpan]::FromSeconds(20))}
+        if($existingResolver){
+            if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before restart'}
+            Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
+            Restart-Service -Name $serviceName -ErrorAction Stop
+            $service=Get-Service -Name $serviceName -ErrorAction Stop
+            try {$service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))}
+            finally {if($service -is [IDisposable]){$service.Dispose()}}
+        }else{Install-EngineService 'dnscrypt' $binary @('-config',$config)}
         $servers=@('127.0.0.1','::1')
     } elseif($method -eq 'doh') {
         # Literal authorities avoid plaintext resolution of the DoH bootstrap host.
@@ -1925,10 +1937,11 @@ function Configure-DNS([string]$method) {
         Restore-DNS
         throw ('Resolver verification failed; original DNS settings restored: '+$lastResolverError)
     }
-    if($method -ceq 'doh' -and (Get-Service 'AccessWeaver-dnscrypt' -ErrorAction SilentlyContinue)){
+    if($method -ceq 'doh' -and $existingResolver){
         # Keep the old listener available until the new adapter DNS is usable.
-        Stop-Service 'AccessWeaver-dnscrypt'
-        Set-Service 'AccessWeaver-dnscrypt' -StartupType Manual
+        if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared during DoH configuration'}
+        Stop-Service -Name $serviceName -ErrorAction Stop
+        Set-Service -Name $serviceName -StartupType Manual -ErrorAction Stop
     }
     Event ('Encrypted DNS configured: '+$method)
     $script:dnsConfigured=$true
