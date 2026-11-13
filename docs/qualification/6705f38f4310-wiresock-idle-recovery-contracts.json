@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "scope": "wiresock-connection-confirmation-source-contracts",
+  "scope": "windows-wiresock-confirmed-idle-recovery-source-contracts",
   "sourceCommit": "6705f38f431034badd56b2763bfb9c8e3a87fb28",
   "runID": 43429552974,
   "sealedDoNotRepoll": true,

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "scope": "wiresock-connection-confirmation-source-contracts",
+  "scope": "windows-splitcord-registered-discovery-source-contracts",
   "sourceCommit": "241f61b770d1b1ac2883266df53f0e5785470499",
   "runID": 43428387405,
   "sealedDoNotRepoll": true,

@@ -34,7 +34,9 @@
             "docs/qualification/66b0bf6def2a-native-wiresock-lifecycle.json",
             "docs/qualification/a387bcba8661-native-wiresock-lifecycle.json",
             "docs/qualification/8228725c7a8c-native-wiresock-lifecycle.json",
-            "build/vm-tests/sandbox/results/wgpeer-self-test/self-test.json"
+            "docs/SPLITWIRE_IMPLEMENTATION.md",
+            "docs/qualification/4216e0e67f8f-native-wiresock-lifecycle.json",
+            "docs/qualification/0a0ace501720-native-wiresock-lifecycle.json"
           ]
         },
         {
@@ -42,7 +44,6 @@
           "acceptance": "DoH and DNSCrypt work through the ordinary OS resolver and restore DHCP/static state after failure and reboot.",
           "status": "failed",
           "evidence": [
-            "build/vm-tests/sandbox/results/reboot-results.json",
             "docs/SPLITWIRE_IMPLEMENTATION.md",
             "docs/qualification/22cf0abb5da8-dns-restore-readback.json",
             "docs/qualification/3ae6417cb9a8-dns-native-recovery.json"
@@ -62,7 +63,10 @@
           "acceptance": "Discord/PTB/SplitCord install, start, removal, clean mode and repair pass interactive tests, including text/voice and cleanup.",
           "status": "failed",
           "evidence": [
-            "build/vm-tests/sandbox/applications-v1-results.json"
+            "docs/SPLITWIRE_IMPLEMENTATION.md",
+            "scripts/test-windows-apps.ps1",
+            "docs/qualification/241f61b770d1-splitcord-registered-discovery-contracts.json",
+            "docs/qualification/38e1743ef9fb-application-live-process-contracts.json"
           ]
         }
       ]
@@ -130,8 +134,9 @@
           "acceptance": "Install, upgrade, reboot, downgrade and uninstall pass from clean and previously installed states on the supported matrix.",
           "status": "failed",
           "evidence": [
-            "build/vm-tests/sandbox/results/reboot-results.json",
-            "scripts/test-windows-integration.ps1"
+            "scripts/test-windows-integration.ps1",
+            "docs/SPLITWIRE_IMPLEMENTATION.md",
+            "docs/qualification/56924863f63e-installer-lifecycle.json"
           ]
         }
       ]
@@ -211,7 +216,7 @@
             "scripts/build-windows-installer.ps1",
             "internal/buildinfo/info_test.go",
             "scripts/verify-release.py",
-            "dist/readiness-preview/BUILD-MANIFEST.json"
+            "docs/qualification/3cf97b25366e-archives.json"
           ]
         },
         {
@@ -253,7 +258,8 @@
             "scripts/verify_release_rebuild.py",
             "scripts/test_release_rebuild.py",
             ".gitattributes",
-            "docs/TESTING.md"
+            "docs/TESTING.md",
+            "docs/qualification/3cf97b25366e-archives.json"
           ]
         },
         {
@@ -359,7 +365,9 @@
             "web/app.test.cjs",
             "scripts/browser-tests/desktop.spec.cjs",
             ".github/workflows/browser.yml",
-            "docs/TESTING.md"
+            "docs/TESTING.md",
+            "docs/qualification/beb4db7be0c7-browser-runtime-status-acceptance.json",
+            "docs/qualification/f9ca4d5c8001-browser-runtime-language-reset.json"
           ]
         },
         {
@@ -415,7 +423,8 @@
             "docs/TESTING.md",
             "docs/qualification/a7fb7a0eeefe-browser-keyboard-forced-colors.json",
             "docs/qualification/ce23df4eb329-browser-keyboard-forced-colors.json",
-            "docs/qualification/9f4615c228b7-browser-history-focus.json"
+            "docs/qualification/9f4615c228b7-browser-history-focus.json",
+            "docs/qualification/beb4db7be0c7-browser-runtime-status-acceptance.json"
           ]
         },
         {
@@ -424,7 +433,8 @@
           "status": "partial",
           "evidence": [
             "web/locales.js",
-            "web/app.test.cjs"
+            "web/app.test.cjs",
+            "docs/qualification/f9ca4d5c8001-browser-runtime-language-reset.json"
           ]
         },
         {
@@ -488,8 +498,6 @@
             "internal/managed/provenance_windows.go",
             "internal/managed/guard_test.go",
             "internal/profile/policy_test.go",
-            "internal/engine/policy_test.go",
-            "internal/workflow/policy_test.go",
             "internal/api/policy_test.go",
             "internal/nativepath/paths_windows_test.go",
             "docs/MANAGED_CONFIGURATION.md",

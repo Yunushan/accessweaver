@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "scope": "wiresock-connection-confirmation-source-contracts",
+  "scope": "windows-application-live-process-source-contracts",
   "sourceCommit": "38e1743ef9fb5d8dac257ced8e232299b6d34506",
   "runID": 43428899687,
   "sealedDoNotRepoll": true,
