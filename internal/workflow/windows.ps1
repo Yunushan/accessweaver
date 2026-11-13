@@ -2129,6 +2129,15 @@ function Get-DNSClientMutationRow([string]$Guid,[string]$Family,[switch]$Require
     }
     return $rows[0]
 }
+function Test-DNSRecoveryOwnsDoh($Record) {
+    $scope=$Record.PSObject.Properties['dohManaged']
+    # Older snapshots did not record scope and may have changed global DoH.
+    if($null -eq $scope){return $true}
+    if($scope.Value -isnot [bool] -or (-not $scope.Value -and @($Record.doh | Where-Object {$null -ne $_}).Count)){
+        throw 'Original DNS snapshot has invalid DoH recovery scope'
+    }
+    return $scope.Value
+}
 function Configure-DNS([string]$method) {
     if($method -notin @('doh','dnscrypt')){throw 'Choose doh or dnscrypt'}
     if($method -eq 'doh'){foreach($command in @('Get-DnsClientDohServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'This Windows version does not expose native DoH management; choose DNSCrypt instead'}}}
@@ -2143,7 +2152,8 @@ function Configure-DNS([string]$method) {
     if(-not $adapters.Count){throw 'No active adapter exposes a DNS client family'}
     $originalSnapshot=Read-DNSRecoverySnapshot
     $hadSnapshot=$null -ne $originalSnapshot
-    $original=if($hadSnapshot){$originalSnapshot.record}else{[pscustomobject]@{adapters=@();doh=@()}}
+    $original=if($hadSnapshot){$originalSnapshot.record}else{[pscustomobject]@{adapters=@();doh=@();dohManaged=$false}}
+    $ownsDoh=Test-DNSRecoveryOwnsDoh $original
     if($hadSnapshot -and ($null -eq $original.adapters -or @($original.adapters).Count -eq 0)){throw 'Original DNS snapshot has no adapter records; no new DNS configuration was applied'}
     $records=@($original.adapters);$known=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach($record in $records){
@@ -2175,9 +2185,9 @@ function Configure-DNS([string]$method) {
             }
         }
     }
-    if(-not $hadSnapshot){
-        $dohSettings=@();if(Get-Command 'Get-DnsClientDohServerAddress' -ErrorAction SilentlyContinue){$dohSettings=@(Get-DnsClientDohServerAddress -ErrorAction Stop)}
-        $original.doh=$dohSettings
+    if($method -eq 'doh' -and -not $ownsDoh){
+        $original.doh=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
+        $original.dohManaged=$true
     }
     # A new configuration supersedes older journals, even if the originals
     # are identical. DNS alone owns retirement of the published snapshot.
@@ -2366,7 +2376,8 @@ function Restore-DNS([string]$ExpectedSHA256) {
     }
     $clients=@(Read-DNSClientInventory)
     foreach($plan in $plans){foreach($number in @('4','6')){if($plan.bounds['bound'+$number] -and @(Get-DNSClientRows $clients $plan.adapter.ifIndex ('IPv'+$number)).Count -ne 1){throw 'An owned DNS family cannot be inspected; retain the recovery snapshot'}}}
-    $dohAvailable=[bool](Get-Command 'Get-DnsClientDohServerAddress' -ErrorAction SilentlyContinue)
+    $ownsDoh=Test-DNSRecoveryOwnsDoh $saved
+    $dohAvailable=$ownsDoh -and [bool](Get-Command 'Get-DnsClientDohServerAddress' -ErrorAction SilentlyContinue)
     $currentDoh=@();$dohPlans=@()
     if($dohAvailable){
         foreach($command in @('Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'DoH recovery commands are unavailable; retain the original DNS snapshot'}}
