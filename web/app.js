@@ -187,6 +187,7 @@ for (const [lang,message] of Object.entries(profileJSONCopy)) translations[lang]
 const diagnosticCopy = {"en": {"diagnosticsSubtitle": "Check an explicit direct or proxy path using TCP/TLS or UDP/STUN.", "probePath": "Network path", "probeTransport": "Protocol", "pathDirect": "Direct", "probeProxy": "Proxy host:port (no credentials)", "probeScope": "The selected path only. No direct fallback. This does not prove engine routing, voice or QUIC connectivity.", "probeSTUN": "Enter a STUN server you trust. One UDP binding exchange; the server and reported address are unauthenticated.", "reportPath": "Tested path"}, "tr": {"diagnosticsSubtitle": "TCP/TLS veya UDP/STUN ile do\u011frudan ya da vekil sunucu yolunu test edin.", "probePath": "A\u011f yolu", "probeTransport": "Protokol", "pathDirect": "Do\u011frudan", "probeProxy": "Vekil sunucu:port (kimlik bilgisi yok)", "probeScope": "Yaln\u0131zca se\u00e7ilen yol test edilir. Do\u011frudan ba\u011flant\u0131ya ge\u00e7ilmez. Motor y\u00f6nlendirmesi, ses veya QUIC ba\u011flant\u0131s\u0131n\u0131 kan\u0131tlamaz.", "probeSTUN": "G\u00fcvendi\u011finiz bir STUN sunucusu girin. Tek UDP iste\u011fi; sunucu ve bildirdi\u011fi adres do\u011frulanmaz.", "reportPath": "Test edilen yol"}, "es": {"diagnosticsSubtitle": "Comprueba una ruta directa o por proxy con TCP/TLS o UDP/STUN.", "probePath": "Ruta de red", "probeTransport": "Protocolo", "pathDirect": "Directa", "probeProxy": "Proxy host:puerto (sin credenciales)", "probeScope": "Solo la ruta elegida. Sin alternativa directa. No demuestra el enrutamiento del motor ni la conectividad de voz o QUIC.", "probeSTUN": "Introduce un servidor STUN de confianza. Un intercambio UDP; el servidor y la direcci\u00f3n indicada no se autentican.", "reportPath": "Ruta comprobada"}, "ru": {"diagnosticsSubtitle": "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u043f\u0440\u044f\u043c\u043e\u0433\u043e \u043f\u0443\u0442\u0438 \u0438\u043b\u0438 \u043f\u0440\u043e\u043a\u0441\u0438: TCP/TLS \u0438\u043b\u0438 UDP/STUN.", "probePath": "\u0421\u0435\u0442\u0435\u0432\u043e\u0439 \u043f\u0443\u0442\u044c", "probeTransport": "\u041f\u0440\u043e\u0442\u043e\u043a\u043e\u043b", "pathDirect": "\u041d\u0430\u043f\u0440\u044f\u043c\u0443\u044e", "probeProxy": "\u041f\u0440\u043e\u043a\u0441\u0438 host:port (\u0431\u0435\u0437 \u0443\u0447\u0451\u0442\u043d\u044b\u0445 \u0434\u0430\u043d\u043d\u044b\u0445)", "probeScope": "\u0422\u043e\u043b\u044c\u043a\u043e \u0432\u044b\u0431\u0440\u0430\u043d\u043d\u044b\u0439 \u043f\u0443\u0442\u044c, \u0431\u0435\u0437 \u043f\u0435\u0440\u0435\u0445\u043e\u0434\u0430 \u043d\u0430\u043f\u0440\u044f\u043c\u0443\u044e. \u041d\u0435 \u0434\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u0442 \u043c\u0430\u0440\u0448\u0440\u0443\u0442\u0438\u0437\u0430\u0446\u0438\u044e \u0434\u0432\u0438\u0436\u043a\u0430, \u0441\u0432\u044f\u0437\u044c \u0434\u043b\u044f \u0433\u043e\u043b\u043e\u0441\u0430 \u0438\u043b\u0438 QUIC.", "probeSTUN": "\u0423\u043a\u0430\u0436\u0438\u0442\u0435 \u0434\u043e\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 STUN-\u0441\u0435\u0440\u0432\u0435\u0440. \u041e\u0434\u0438\u043d UDP-\u043e\u0431\u043c\u0435\u043d; \u0441\u0435\u0440\u0432\u0435\u0440 \u0438 \u0441\u043e\u043e\u0431\u0449\u0451\u043d\u043d\u044b\u0439 \u0430\u0434\u0440\u0435\u0441 \u043d\u0435 \u0430\u0443\u0442\u0435\u043d\u0442\u0438\u0444\u0438\u0446\u0438\u0440\u0443\u044e\u0442\u0441\u044f.", "reportPath": "\u041f\u0440\u043e\u0432\u0435\u0440\u0435\u043d\u043d\u044b\u0439 \u043f\u0443\u0442\u044c"}};
 for (const [lang,words] of Object.entries(diagnosticCopy)) Object.assign(translations[lang],words);
 const diagnosticResultLabels = {
+  probeInvalidReport: ['The diagnostic report could not be verified. Start another test to try again.','Tanılama raporu doğrulanamadı. Tekrar denemek için yeni bir test başlatın.','Не удалось проверить отчёт диагностики. Запустите новую проверку.','No se pudo verificar el informe de diagnóstico. Inicia otra prueba para volver a intentarlo.'],
   probeResultProxy: ['Proxy','Vekil sunucu','Прокси','Proxy'],
   probeResultInput: ['Input','Girdi','Входные данные','Datos de entrada'],
   probeResultPolicy: ['Policy','İlke','Политика','Política'],
@@ -1095,6 +1096,25 @@ function cancelProbe(){
 function probeCurrent(operation){
  return probeUI.operation===operation&&probeUI.generation===operation.generation&&probeContext()===operation.context&&state.view==='diagnostics'&&probeAvailable()&&probeFingerprint()===operation.fingerprint;
 }
+function probeReportMatches(report,request){
+ const fields=['host','port','path','transport','proxy','checks','at'];
+ if(!report||typeof report!=='object'||Array.isArray(report)||Object.keys(report).some(key=>!fields.includes(key)))return false;
+ if(report.host!==request.host||report.port!==request.port||report.path!==request.path||report.transport!==request.transport)return false;
+ if(typeof report.at!=='string'||!Number.isFinite(Date.parse(report.at))||!Array.isArray(report.checks)||!report.checks.length)return false;
+ const checkFields=['name','status','durationMs','detail'];
+ if(!report.checks.every(check=>check&&typeof check==='object'&&!Array.isArray(check)&&
+  Object.keys(check).every(key=>checkFields.includes(key))&&typeof check.name==='string'&&check.name.length>0&&
+  (check.status==='ok'||check.status==='failed')&&Number.isSafeInteger(check.durationMs)&&check.durationMs>=0&&typeof check.detail==='string'))return false;
+ if(request.path==='direct')return report.proxy===undefined;
+ // Input validation can fail before the core normalizes or uses the proxy.
+ if(report.proxy===undefined&&report.checks.length===1&&report.checks[0].name==='input'&&report.checks[0].status==='failed')return true;
+ // Match the core's SplitHostPort/JoinHostPort normalization for accepted authorities.
+ const authority=/^(\[[^\[\]]+\]|[^:\[\]]+):(\+?[0-9]+)$/.exec(request.proxy);
+ if(!authority)return false;
+ const host=authority[1].replace(/^\[|\]$/g,''),port=Number(authority[2]);
+ if(!Number.isInteger(port)||port<1||port>65535)return false;
+ return report.proxy===(host.includes(':')?'['+host+']':host)+':'+port;
+}
 async function runProbe() {
  updateProbeAvailability();
  if(state.view!=='diagnostics'||!probeAvailable()){toast(t(state.profileEditingOnly?'profileAuditNotice':'coreRequired'),true);return;}
@@ -1106,7 +1126,11 @@ async function runProbe() {
  try{
   const report=await apiRequest('/api/v1/diagnose','POST',request,(request.timeoutSeconds+10)*1000,controller.signal);
   if(!probeCurrent(operation)){if(probeUI.operation===operation)invalidateProbe('probeContextCleared');return;}
-  probeUI.completed={context:operation.context,fingerprint:operation.fingerprint,report};state.lastProbe=report;probeUI.notice='';renderProbe(report);
+  if(!probeReportMatches(report,request)){
+   probeUI.notice='probeInvalidReport';renderProbeNotice();return;
+  }
+  renderProbe(report);
+  probeUI.completed={context:operation.context,fingerprint:operation.fingerprint,report};state.lastProbe=report;probeUI.notice='';
  }catch(error){
   if(!probeCurrent(operation)){if(probeUI.operation===operation)invalidateProbe('probeContextCleared');return;}
   probeUI.notice=error.status===503&&error.code==='diagnostic-busy'?'probeBusy':error.name==='AbortError'?'probeRequestEnded':'testFailed';
@@ -1122,9 +1146,8 @@ function exportProbeReport(){
  downloadFile(JSON.stringify(completed.report,null,2)+'\n','accessweaver-diagnostics-'+completed.report.host+'.json');
 }
 function renderProbe(report) {
-  const checks = report.checks || [], passed = checks.length > 0 && checks.every(c => c.status === 'ok');
-  const path = report.path || 'direct';
-  const transport = report.transport || 'tcp';
+  const {checks,path,transport} = report;
+  const passed = checks.every(c => c.status === 'ok');
   const pathLabel = path === 'direct' ? t('pathDirect') : path === 'socks5' ? 'SOCKS5' : path === 'http-connect' ? 'HTTP CONNECT' : path;
   const transportLabel = transport === 'tcp' ? 'TCP' : transport === 'stun' ? 'UDP / STUN' : transport;
   const number = new Intl.NumberFormat(state.lang);
@@ -1134,7 +1157,7 @@ function renderProbe(report) {
   $('diagnostic-results').innerHTML = checks.map(c => {
     const label = diagnosticCheckLabels.get(c.name);
     const status = c.status === 'ok' ? 'probeResultPassed' : 'probeResultFailed';
-    return `<div class="result-item"><span class="result-icon ${c.status === 'ok' ? '' : 'error'}">${icon(c.status === 'ok' ? 'check' : 'alert')}</span><div class="result-content"><h3>${escapeHTML(label ? t(label) : c.name)} · ${escapeHTML(t(status))}</h3><p>${escapeHTML(c.detail)}</p></div><span class="result-duration">${escapeHTML(number.format(Number(c.durationMs) || 0))} ms</span></div>`;
+    return `<div class="result-item"><span class="result-icon ${c.status === 'ok' ? '' : 'error'}">${icon(c.status === 'ok' ? 'check' : 'alert')}</span><div class="result-content"><h3>${escapeHTML(label ? t(label) : c.name)} · ${escapeHTML(t(status))}</h3><p>${escapeHTML(c.detail)}</p></div><span class="result-duration">${escapeHTML(number.format(c.durationMs))} ms</span></div>`;
   }).join('');
   $('export-report').hidden = false;
 }

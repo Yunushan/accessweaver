@@ -393,7 +393,7 @@ test('diagnostic modes require an explicit STUN target and isolate proxy fields'
  env.get('probe-transport').value='tcp';env.run('updateProbeMode(true)');assert.equal(env.get('probe-host').value,'discord.com');assert.equal(env.get('probe-tls').checked,true);
 });
 test('diagnostic report identifies and escapes the tested path and endpoint',()=>{
- const env=environment();env.put('report',{host:'example.com',port:443,path:'socks5',transport:'tcp',proxy:'<img src=x onerror=alert(1)>',checks:[{name:'Proxy',status:'failed',detail:'refused'}],at:new Date().toISOString()});env.run('renderProbe(report)');
+ const env=environment();env.put('report',{host:'example.com',port:443,path:'socks5',transport:'tcp',proxy:'<img src=x onerror=alert(1)>',checks:[{name:'Proxy',status:'failed',durationMs:0,detail:'refused'}],at:new Date().toISOString()});env.run('renderProbe(report)');
  assert.match(env.get('diagnostic-meta').innerHTML,/SOCKS5 · TCP/);assert.match(env.get('diagnostic-meta').innerHTML,/&lt;img/);assert.doesNotMatch(env.get('diagnostic-meta').innerHTML,/<img/);assert.match(env.get('diagnostic-meta').innerHTML,/One or more checks failed/);
 });
 
@@ -995,6 +995,48 @@ test('an earlier completion read cannot clear a later unresolved admission refus
 function onlineProbe(){const env=environment();env.run('state.view="diagnostics";state.loading=false;state.offline=false;state.disconnected=false;state.coreAuthenticated=true;state.token="diagnostic-session";updateProbeAvailability()');return env;}
 function probeFixtureReport(host='discord.com',overrides={}){return {host,port:443,path:'direct',transport:'tcp',at:'2026-11-01T00:00:00Z',checks:[{name:'TCP',status:'ok',durationMs:1,detail:'Source-only fixture'}],...overrides};}
 function diagnosticResponse(report,status=200){return {ok:status>=200&&status<300,status,json:async()=>report};}
+
+test('diagnostic responses must match the submitted target and report schema before display or export',async()=>{
+ const env=onlineProbe(),downloads=[];
+ env.context.downloadFile=data=>downloads.push(JSON.parse(data));
+ const report=probeFixtureReport();
+ for(const response of [
+  null,{...report,host:'UNRELATED_TARGET'},{...report,port:80},
+  {...report,path:undefined},{...report,transport:'stun'},{...report,proxy:'127.0.0.1:1080'},
+  {...report,at:'invalid'},{...report,checks:[]},{...report,checks:[null]},
+  {...report,checks:[{...report.checks[0],status:'pending'}]},
+  {...report,checks:[{...report.checks[0],durationMs:'1'}]},
+  {...report,checks:[{...report.checks[0],unexpected:'UNRELATED_TARGET'}]},
+  {...report,unexpected:'UNRELATED_TARGET'},
+ ]){
+  env.context.fetch=async()=>diagnosticResponse(response);
+  await env.run('runProbe()');env.run('exportProbeReport()');
+  assert.equal(env.run('state.lastProbe'),null);
+  assert.equal(env.get('diagnostic-meta').hidden,true);
+  assert.equal(env.get('export-report').hidden,true);
+  assert.equal(env.get('probe-submit').disabled,false);
+  assert.equal(env.get('diagnostic-results').textContent,env.run('t("probeInvalidReport")'));
+ }
+ assert.deepEqual(downloads,[]);
+ env.context.fetch=async()=>diagnosticResponse(report);
+ await env.run('runProbe()');env.run('exportProbeReport()');
+ assert.deepEqual(downloads,[report]);
+});
+
+test('proxied diagnostics accept the normalized authority and preserve core input validation',async()=>{
+ const env=onlineProbe();
+ env.get('probe-path').value='socks5';env.get('probe-proxy').value='[::1]:+01080';
+ const report=probeFixtureReport('discord.com',{path:'socks5',proxy:'[::1]:1080'});
+ env.context.fetch=async()=>diagnosticResponse({...report,proxy:'[::2]:1080'});
+ await env.run('runProbe()');assert.equal(env.run('state.lastProbe'),null);assert.equal(env.get('export-report').hidden,true);
+ env.context.fetch=async()=>diagnosticResponse(report);
+ await env.run('runProbe()');assert.deepEqual(plain(env.run('state.lastProbe')),report);
+ env.get('probe-proxy').value='invalid';
+ const rejected=probeFixtureReport('discord.com',{path:'socks5',checks:[{name:'input',status:'failed',durationMs:0,detail:'Proxy must be a host:port authority'}]});
+ env.context.fetch=async()=>diagnosticResponse(rejected);
+ await env.run('runProbe()');assert.deepEqual(plain(env.run('state.lastProbe')),rejected);
+ assert.match(env.get('diagnostic-results').innerHTML,/Proxy must be a host:port authority/);
+});
 
 test('external API abort signals are isolated and listeners plus timers close on every terminal path',async()=>{
  const {getEventListeners}=require('node:events'),env=environment(),first=new AbortController(),second=new AbortController(),pending=[],timers=new Set();let timer=0;

@@ -353,9 +353,9 @@ test('diagnostics selects an explicit proxy path and STUN target without sending
  await page.locator('#probe-path').selectOption('socks5');await expect(page.locator('#probe-proxy')).toBeVisible();
  await page.locator('#probe-proxy').fill('127.0.0.1:1080');await page.locator('#probe-transport').selectOption('stun');
  await expect(page.locator('#probe-host')).toHaveValue('');await expect(page.locator('#probe-port')).toHaveValue('3478');await expect(page.locator('#probe-tls')).toBeDisabled();
- await page.locator('#probe-host').fill('stun.example.com');let submitted;
+ await page.locator('#probe-host').fill('stun.example.com');let submitted,wrongTarget=false;
  await page.route('**/api/v1/diagnose',async route=>{
-  submitted=route.request().postDataJSON();await route.fulfill({json:{host:submitted.host,port:submitted.port,path:submitted.path,transport:submitted.transport,proxy:submitted.proxy,at:new Date().toISOString(),checks:[{name:'Proxy',status:'ok',durationMs:1,detail:'Controlled proxy result'},{name:'UDP/STUN',status:'failed',durationMs:1234,detail:'Controlled browser fixture: no probe traffic sent'}]}});
+  submitted=route.request().postDataJSON();await route.fulfill({json:{host:wrongTarget?'unrelated.example.com':submitted.host,port:submitted.port,path:submitted.path,transport:submitted.transport,proxy:submitted.proxy,at:new Date().toISOString(),checks:[{name:'Proxy',status:'ok',durationMs:1,detail:'Controlled proxy result'},{name:'UDP/STUN',status:'failed',durationMs:1234,detail:'Controlled browser fixture: no probe traffic sent'}]}});
  });
  await page.locator('#probe-submit').click();await expect(page.locator('#diagnostic-meta')).toContainText('One or more checks failed');
  expect(submitted).toEqual({host:'stun.example.com',port:3478,timeoutSeconds:5,tls:false,path:'socks5',transport:'stun',proxy:'127.0.0.1:1080'});
@@ -370,6 +370,13 @@ test('diagnostics selects an explicit proxy path and STUN target without sending
  expect(exported).toMatchObject({path:'socks5',transport:'stun',checks:[
   {name:'Proxy',status:'ok',durationMs:1},{name:'UDP/STUN',status:'failed',durationMs:1234},
  ]});
+ wrongTarget=true;
+ await page.locator('#probe-submit').click();
+ await expect(page.locator('#diagnostic-results')).toContainText('The diagnostic report could not be verified.');
+ await expect(page.locator('#diagnostic-meta')).toBeHidden();
+ await expect(page.locator('#export-report')).toBeHidden();
+ await expect(page.locator('#probe-submit')).toBeEnabled();
+ await expect(page.locator('#probe-host')).toHaveValue('stun.example.com');
  await page.locator('#probe-path').selectOption('direct');await expect(page.locator('#probe-proxy-field')).toBeHidden();
 });
 
