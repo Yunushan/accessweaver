@@ -1986,11 +1986,40 @@ function Wait-App([string]$variant,[bool]$installed,[int]$seconds=120) {
     do{if([bool](Find-App $variant) -eq $installed){return};Start-Sleep -Milliseconds 500}while([DateTime]::UtcNow -lt $deadline)
     throw 'Application installation state did not reach the expected result; inspect installer logs'
 }
+function Get-SplitCordInstaller {
+    $repository='https://github.com/cagritaskn/SplitCord-Turkey'
+    $release=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/cagritaskn/SplitCord-Turkey/releases/latest'
+    $tag=$release.tag_name
+    if($release.draft -ne $false -or $release.draft -isnot [bool] -or
+        $release.prerelease -ne $false -or $release.prerelease -isnot [bool] -or
+        $tag -isnot [string] -or $tag.Length -gt 64 -or $tag -cnotmatch '\Av?[0-9]+\.[0-9]+\.[0-9]+\z' -or
+        $release.assets -isnot [array] -or $release.assets.Count -gt 100){
+        throw 'SplitCord release metadata is invalid'
+    }
+    $name='SplitCord-Turkey-Setup-'+$tag.TrimStart('v')+'.exe'
+    $assets=@($release.assets | Where-Object {$_.name -is [string] -and $_.name -ceq $name})
+    if($assets.Count -ne 1 -or $assets[0].state -cne 'uploaded'){throw 'Expected one uploaded SplitCord installer for the selected release'}
+    $asset=$assets[0]
+    $url=$repository+'/releases/download/'+$tag+'/'+$name
+    if($asset.browser_download_url -isnot [string] -or $asset.browser_download_url -cne $url){throw 'SplitCord installer URL does not match the selected release'}
+    $hash=[string]$r.sha256
+    if($null -ne $asset.digest -and $asset.digest -cne ''){
+        if($asset.digest -isnot [string] -or $asset.digest -cnotmatch '\Asha256:[a-fA-F0-9]{64}\z'){throw 'SplitCord installer digest is invalid'}
+        $digest=$asset.digest.Substring(7)
+        if($hash -and $hash -ine $digest){throw 'SplitCord installer digest conflicts with the requested SHA-256'}
+        $hash=$digest
+    }
+    if($hash -notmatch '\A[a-fA-F0-9]{64}\z'){throw 'SplitCord installer requires a published or explicitly supplied SHA-256'}
+    return @{url=$url;hash=$hash}
+}
 function Install-App([string]$variant) {
     Require-DesktopUser
     if($variant -notin @('discord','discord-ptb','splitcord')){throw 'Choose Discord, Discord PTB or SplitCord'}
-    if($variant -eq 'splitcord'){$release=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/cagritaskn/SplitCord-Turkey/releases/latest';$asset=$release.assets | Where-Object {$_.name -match '(Setup|Install).*exe'}|Select-Object -First 1;if(-not $asset){throw 'Official SplitCord installer not found'};$url=$asset.browser_download_url;$hash=([string]$asset.digest)-replace '^sha256:','';if(-not $hash){$hash=$r.sha256};$file=Join-Path $root 'downloads\splitcord-setup.exe';Download $url $hash $file}
-    else {
+    if($variant -eq 'splitcord'){
+        $installer=Get-SplitCordInstaller
+        $file=Join-Path $root 'downloads\splitcord-setup.exe'
+        Download $installer.url $installer.hash $file
+    }else {
         $architecture=[string]$inputData.nativeArchitecture
         if($architecture -cnotin @('amd64','arm64')){throw 'Native Windows architecture is unavailable or unsupported for Discord installation'}
         $channel=if($variant -eq 'discord-ptb'){'ptb'}else{'stable'}

@@ -1264,6 +1264,46 @@ try {
     $r=$previousAppRequest
     $inputData=$previousAppInput
 }
+# Exercise official release selection with fixed metadata and no vendor execution.
+& {
+    $r=[pscustomobject]@{sha256=''}
+    $url='https://github.com/cagritaskn/SplitCord-Turkey/releases/download/1.0.4/SplitCord-Turkey-Setup-1.0.4.exe'
+    $asset=@{name='SplitCord-Turkey-Setup-1.0.4.exe';state='uploaded';browser_download_url=$url;digest=('sha256:'+('a'*64))}
+    $decoy=@{name='SplitCord-Setup-extra.exe';state='uploaded';browser_download_url='https://outside.invalid/setup.exe'}
+    $release=@{tag_name='1.0.4';draft=$false;prerelease=$false;assets=@($decoy,$asset)}
+    function Read-RemoteJSON {
+        param($Uri,$Headers)
+        if($Uri -cne 'https://api.github.com/repos/cagritaskn/SplitCord-Turkey/releases/latest'){throw 'Unexpected SplitCord metadata request'}
+        return $release
+    }
+    $selected=Get-SplitCordInstaller
+    Assert ($selected.url -ceq $url -and $selected.hash -ceq ('a'*64)) 'SplitCord selects the exact uploaded setup asset for the release tag'
+    foreach($case in @(
+        @{assets=@($asset,$asset);message='Expected one uploaded SplitCord installer for the selected release'},
+        @{assets=@(@{name=$asset.name;state='starter';browser_download_url=$url});message='Expected one uploaded SplitCord installer for the selected release'},
+        @{assets=@(@{name=$asset.name;state='uploaded';browser_download_url=($url -replace '/1\.0\.4/','/1.0.3/')});message='SplitCord installer URL does not match the selected release'}
+    )){
+        $release.assets=$case.assets
+        $refused=$false
+        try {Get-SplitCordInstaller | Out-Null}catch{$refused=$_.Exception.Message -ceq $case.message}
+        if(-not $refused){throw 'Unexpected SplitCord asset refusal'}
+    }
+    Assert $true 'SplitCord refuses duplicate pending and wrong-release setup assets'
+    $release.assets=@($asset)
+    $r.sha256='b'*64
+    $refused=$false
+    try {Get-SplitCordInstaller | Out-Null}catch{$refused=$_.Exception.Message -ceq 'SplitCord installer digest conflicts with the requested SHA-256'}
+    $asset.digest='sha256:bad'
+    $malformed=$false
+    try {Get-SplitCordInstaller | Out-Null}catch{$malformed=$_.Exception.Message -ceq 'SplitCord installer digest is invalid'}
+    $asset.digest=$null
+    $selected=Get-SplitCordInstaller
+    $fallbackMatched=$selected.hash -ceq $r.sha256
+    $r.sha256=''
+    $missing=$false
+    try {Get-SplitCordInstaller | Out-Null}catch{$missing=$_.Exception.Message -ceq 'SplitCord installer requires a published or explicitly supplied SHA-256'}
+    Assert ($refused -and $malformed -and $fallbackMatched -and $missing) 'SplitCord checks the release digest and retains explicit hash fallback'
+}
 # Exercise both direct helper calls and the dispatcher before any real OS work.
 $desktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
 $machineInitializer=(Get-Command Initialize-Changes).ScriptBlock
