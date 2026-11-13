@@ -282,13 +282,53 @@ function Initialize-Changes {
     $env:TEMP=Join-Path $root 'temp';$env:TMP=$env:TEMP
     $script:journalPath=Join-Path $root ('logs\workflow-'+[guid]::NewGuid().ToString('N')+'.json');Save-Journal
 }
-function Backup-File([string]$path) {
+function Get-WorkflowFileHash([string]$path) {
     No-Reparse $path
+    try {$attributes=[IO.File]::GetAttributes($path)}
+    catch [IO.FileNotFoundException] {return}
+    catch [IO.DirectoryNotFoundException] {return}
+    if($attributes -band ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::ReparsePoint)){
+        throw 'Workflow requires an ordinary file'
+    }
+    return (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash
+}
+function Copy-WorkflowFileToNewPath([string]$source,[string]$target,[string]$expectedHash) {
+    No-Reparse $source
+    No-Reparse $target
+    $ownsTarget=$false
+    try {
+        $inputStream=[IO.File]::Open($source,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        try {
+            $output=[IO.File]::Open($target,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+            $ownsTarget=$true
+            try {
+                $inputStream.CopyTo($output)
+                $output.Flush($true)
+            } finally {$output.Dispose()}
+        } finally {$inputStream.Dispose()}
+        if((Get-WorkflowFileHash $target) -ine $expectedHash){
+            throw 'Copied workflow file does not match the recorded digest'
+        }
+    } catch {
+        if($ownsTarget){
+            No-Reparse $target
+            [IO.File]::Delete($target)
+        }
+        throw
+    }
+}
+function Backup-File([string]$path) {
     $existing=$script:undo | Where-Object {$_.kind -eq 'file' -and $_.path -eq $path}
-    if ($existing) {return}
-    $backup=$null;$originalHash=$null
-    if (Test-Path -LiteralPath $path) {if ((Get-Item -LiteralPath $path).PSIsContainer){throw 'Expected a regular file'};$originalHash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash;$backup=Join-Path $root ('backups\'+[guid]::NewGuid().ToString('N'));Copy-Item -LiteralPath $path -Destination $backup}
-    $script:undo.Add(@{kind='file';path=$path;backup=$backup;originalHash=$originalHash});Save-Journal
+    if($existing){return $existing}
+    $backup=$null;$originalHash=Get-WorkflowFileHash $path
+    if($originalHash){
+        $backup=Join-Path $root ('backups\'+[guid]::NewGuid().ToString('N'))
+        Copy-WorkflowFileToNewPath $path $backup $originalHash
+    }
+    $entry=@{kind='file';path=$path;backup=$backup;originalHash=$originalHash}
+    $script:undo.Add($entry)
+    Save-Journal
+    return $entry
 }
 function Expected-Hash([string]$path,[string]$hash){$entry=$script:undo|Where-Object {$_.kind -eq 'file' -and $_.path -eq $path}|Select-Object -First 1;$entry.expectedHash=$hash;Save-Journal}
 function Publish-WorkflowFile([string]$path,[byte[]]$bytes) {
@@ -311,7 +351,7 @@ function Publish-WorkflowFile([string]$path,[byte[]]$bytes) {
     }
 }
 function Write-Atomic([string]$path,[string]$text) {
-    Backup-File $path
+    [void](Backup-File $path)
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes($text)
     $hash=Get-WorkflowBytesSHA256 $bytes
     Expected-Hash $path $hash
@@ -323,7 +363,7 @@ function Get-WorkflowBytesSHA256([byte[]]$bytes) {
     try {return [BitConverter]::ToString($sha256.ComputeHash($bytes)).Replace('-','')}
     finally {$sha256.Dispose()}
 }
-function Copy-Checked([string]$source,[string]$destination) {No-Reparse $source;Backup-File $destination;Expected-Hash $destination (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash;[void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination));Copy-Item -LiteralPath $source -Destination $destination -Force}
+function Copy-Checked([string]$source,[string]$destination) {No-Reparse $source;[void](Backup-File $destination);Expected-Hash $destination (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash;[void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination));Copy-Item -LiteralPath $source -Destination $destination -Force}
 function Copy-Tree([string]$source,[string]$destination,[switch]$Disposable) {
     No-Reparse $source
     foreach($item in Get-ChildItem -LiteralPath $source -Recurse -Force){
@@ -1019,15 +1059,18 @@ function Component-ArchivePlan($zip,[string]$destination) {
 function Replace-ComponentArchiveFile([string]$staged,[string]$target) {
     [IO.File]::Replace($staged,$target,[NullString]::Value)
 }
-function Publish-ComponentArchiveFile([string]$staged,[string]$target,[string]$expectedHash) {
-    No-Reparse $staged
-    No-Reparse $target
-    if(-not (Test-Path -LiteralPath $target -ErrorAction Stop)){
-        [IO.File]::Move($staged,$target)
-        return
-    }
-    $originalHash=(Get-FileHash -LiteralPath $target -Algorithm SHA256 -ErrorAction Stop).Hash
+function Publish-ComponentArchiveFile([string]$staged,[string]$target,[string]$expectedHash,[string]$beforeHash) {
     foreach($delay in @(50,100,200,0)){
+        $stagedHash=Get-WorkflowFileHash $staged
+        $targetHash=Get-WorkflowFileHash $target
+        if(-not $targetHash){$targetHash=''}
+        if($stagedHash -ine $expectedHash -or $targetHash -ine $beforeHash){
+            throw 'Component archive files changed before replacement'
+        }
+        if(-not $beforeHash){
+            [IO.File]::Move($staged,$target)
+            return
+        }
         try {
             Replace-ComponentArchiveFile $staged $target
             return
@@ -1040,12 +1083,6 @@ function Publish-ComponentArchiveFile([string]$staged,[string]$target,[string]$e
                $cause.HResult -notin @(-2147024864,-2147023721)){throw}
         }
         Start-Sleep -Milliseconds $delay
-        No-Reparse $staged
-        No-Reparse $target
-        if((Get-FileHash -LiteralPath $target -Algorithm SHA256 -ErrorAction Stop).Hash -ine $originalHash -or
-           (Get-FileHash -LiteralPath $staged -Algorithm SHA256 -ErrorAction Stop).Hash -ine $expectedHash){
-            throw 'Component archive files changed while waiting for replacement'
-        }
     }
 }
 function Expand-Safe([string]$archive,[string]$destination) {
@@ -1073,8 +1110,16 @@ function Expand-Safe([string]$archive,[string]$destination) {
                 if($written -ne $item.entry.Length){throw 'Component archive stream is incomplete'}
                 [void]$hasher.TransformFinalBlock([byte[]]::new(0),0,0);$hash=[BitConverter]::ToString($hasher.Hash).Replace('-','')
                 $output.Flush($true);$output.Dispose();$output=$null
-                Backup-File $item.target;Expected-Hash $item.target $hash
-                Publish-ComponentArchiveFile $temporary $item.target $hash
+                $record=Backup-File $item.target
+                $beforeHash=if($record.expectedHash){$record.expectedHash}else{$record.originalHash}
+                # Either journaled digest can be present after an interruption.
+                $record.pendingHash=$hash
+                Save-Journal
+                Publish-ComponentArchiveFile $temporary $item.target $hash $beforeHash
+                if((Get-WorkflowFileHash $item.target) -ine $hash){throw 'Component archive publication could not be verified'}
+                $record.expectedHash=$hash
+                $record.Remove('pendingHash')
+                Save-Journal
             } finally {
                 if($hasher){$hasher.Dispose()};if($output){$output.Dispose()};if($source){$source.Dispose()}
                 if($ownsTemporary -and (Test-Path -LiteralPath $temporary)){No-Reparse $temporary;Remove-Item -LiteralPath $temporary -Force}
@@ -3248,20 +3293,15 @@ function Discover {
     [Console]::WriteLine(('Discovery timing ms: complete {0}' -f $discoveryClock.ElapsedMilliseconds))
     return @{services=@($services);serviceInspectionError=$serviceError;components=$assets;applications=$apps;wiresockCLI=$cli;conflicts=@($conflicts);managedRoot=$root;refreshTask=$task.present;refreshTaskInspectionError=$task.error;dnsSnapshot=$dnsSnapshot;installerRecovery=$installerRecovery}
 }
-function Get-RecoveryFileHash([string]$path) {
-    No-Reparse $path
-    try {$attributes=[IO.File]::GetAttributes($path)}
-    catch [IO.FileNotFoundException] {return}
-    catch [IO.DirectoryNotFoundException] {return}
-    if($attributes -band ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::ReparsePoint)){
-        throw 'File recovery requires an ordinary file'
-    }
-    return (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash
-}
 function Restore-RecordedWorkflowFile($item) {
     $path=$item.path
-    $currentHash=Get-RecoveryFileHash $path
-    if($currentHash -and $currentHash -ine $item.originalHash -and $currentHash -ine $item.expectedHash){
+    $currentHash=Get-WorkflowFileHash $path
+    $pending=$item.pendingHash
+    if($null -ne $pending -and ($pending -isnot [string] -or $pending -notmatch '\A[a-fA-F0-9]{64}\z')){
+        throw 'Recovery journal contains an invalid pending file digest'
+    }
+    if($currentHash -and $currentHash -ine $item.originalHash -and
+       $currentHash -ine $item.expectedHash -and $currentHash -ine $pending){
         throw ('File changed outside this operation; review before restoring: '+$path)
     }
     if($currentHash -and $currentHash -ieq $item.originalHash){return}
@@ -3269,37 +3309,26 @@ function Restore-RecordedWorkflowFile($item) {
     if(-not $item.backup){
         if(-not $currentHash){return}
         Remove-Item -LiteralPath $path -ErrorAction Stop
-        if(Get-RecoveryFileHash $path){throw 'Recovery could not verify removal of a file created by the operation'}
+        if(Get-WorkflowFileHash $path){throw 'Recovery could not verify removal of a file created by the operation'}
         return
     }
     if(-not (Under $item.backup (Join-Path $root 'backups'))){throw 'Recovery backup is outside protected storage'}
-    if(-not $item.originalHash -or (Get-RecoveryFileHash $item.backup) -ine $item.originalHash){
+    if(-not $item.originalHash -or (Get-WorkflowFileHash $item.backup) -ine $item.originalHash){
         throw 'Recovery backup content does not match the recorded original digest'
     }
 
     $staged=Join-Path (Split-Path -Parent $path) ('.accessweaver-restore-'+[guid]::NewGuid().ToString('N')+'.tmp')
     $ownsStage=$false
     try {
-        $backup=[IO.File]::Open($item.backup,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-        try {
-            $output=[IO.File]::Open($staged,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
-            $ownsStage=$true
-            try {
-                $backup.CopyTo($output)
-                $output.Flush($true)
-            } finally {$output.Dispose()}
-        } finally {$backup.Dispose()}
-
-        if((Get-RecoveryFileHash $staged) -ine $item.originalHash){
-            throw 'Staged recovery file does not match the recorded original digest'
-        }
-        if((Get-RecoveryFileHash $path) -ine $currentHash){
+        Copy-WorkflowFileToNewPath $item.backup $staged $item.originalHash
+        $ownsStage=$true
+        if((Get-WorkflowFileHash $path) -ine $currentHash){
             throw ('File changed outside this operation; review before restoring: '+$path)
         }
         if($currentHash){[IO.File]::Replace($staged,$path,[NullString]::Value)}
         else{[IO.File]::Move($staged,$path)}
         $ownsStage=$false
-        if((Get-RecoveryFileHash $path) -ine $item.originalHash){throw 'Recovery could not verify the restored original file'}
+        if((Get-WorkflowFileHash $path) -ine $item.originalHash){throw 'Recovery could not verify the restored original file'}
     } finally {
         if($ownsStage){
             No-Reparse $staged

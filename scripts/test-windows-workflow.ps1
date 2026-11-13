@@ -2121,6 +2121,69 @@ try {
     }
 } finally {$script:undo=$archiveUndo;$script:journalPath=$archiveJournal}
 
+& {
+    $script:undo.Clear()
+    $publicationRoot=Join-Path $archiveFixtures 'publication'
+    [void][IO.Directory]::CreateDirectory($publicationRoot)
+    $publicationTarget=Join-Path $publicationRoot 'root.txt'
+    $publicationArchive=Join-Path $archiveFixtures 'valid-zip64-sentinel.zip'
+    $nextArchive=Join-Path $archiveFixtures 'second-publication.zip'
+    $zip=[IO.Compression.ZipFile]::Open($nextArchive,[IO.Compression.ZipArchiveMode]::Create)
+    try {
+        $member=$zip.CreateEntry('root.txt')
+        $member.ExternalAttributes=0
+        $writer=[IO.StreamWriter]::new($member.Open())
+        try {$writer.Write('second replacement')} finally {$writer.Dispose()}
+    } finally {$zip.Dispose()}
+    $publicationSave=(Get-Command Save-Journal).ScriptBlock
+    function Save-Journal {
+        & $publicationSave
+        if($injectExternalEdit -and $script:undo.Count -eq 1 -and $script:undo[0].pendingHash){
+            [IO.File]::WriteAllText($publicationTarget,'external edit')
+        }
+    }
+    $injectExternalEdit=$true
+    foreach($startsPresent in @($true,$false)){
+        if($startsPresent){[IO.File]::WriteAllText($publicationTarget,'original')}
+        else{[IO.File]::Delete($publicationTarget)}
+        $script:undo.Clear()
+        $rejected=$false
+        try{Expand-Safe $publicationArchive $publicationRoot}catch{
+            if($_.Exception.Message -cne 'Component archive files changed before replacement'){throw}
+            $rejected=$true
+        }
+        Assert ($rejected -and [IO.File]::ReadAllText($publicationTarget) -ceq 'external edit') ('Archive publication preserves an edit after journal save with original present '+$startsPresent)
+    }
+    $injectExternalEdit=$false
+    $replacePublication=(Get-Command Replace-ComponentArchiveFile).ScriptBlock
+    function Replace-ComponentArchiveFile([string]$Staged,[string]$Target){
+        if(-not $interruptPublication -or $replaceBeforeInterrupt){& $replacePublication $Staged $Target}
+        if($interruptPublication){throw 'Inert interruption at archive replacement'}
+    }
+    foreach($replaceBeforeInterrupt in @($false,$true)){
+        $script:undo.Clear()
+        [IO.File]::WriteAllText($publicationTarget,'original')
+        $interruptPublication=$false
+        Expand-Safe $publicationArchive $publicationRoot
+        $firstDigest=Get-WorkflowFileHash $publicationTarget
+        $interruptPublication=$true
+        $rejected=$false
+        try{Expand-Safe $nextArchive $publicationRoot}catch{
+            if($_.Exception.Message -cne 'Inert interruption at archive replacement'){throw}
+            $rejected=$true
+        }
+        $record=$script:undo | Where-Object {$_.path -eq $publicationTarget}
+        $observed=if($replaceBeforeInterrupt){'second replacement'}else{'replacement'}
+        Assert ($rejected -and $record.expectedHash -ceq $firstDigest -and $record.pendingHash -and
+            [IO.File]::ReadAllText($publicationTarget) -ceq $observed) ('Archive journal retains both digests across interrupted replacement with publish '+$replaceBeforeInterrupt)
+        $serialized=ConvertTo-Json -InputObject $record -Compress
+        $script:undo.Clear()
+        $script:undo.Add((ConvertFrom-Json -InputObject $serialized))
+        Assert (@(Rollback).Count -eq 0 -and [IO.File]::ReadAllText($publicationTarget) -ceq 'original') ('Archived recovery record restores the original after interrupted replacement with publish '+$replaceBeforeInterrupt)
+    }
+    $script:undo.Clear()
+}
+
 # Inject fixed Windows results at the existing native replacement boundary.
 & {
     $replacementRoot=Join-Path $archiveFixtures 'replacement-retry'
@@ -2152,8 +2215,9 @@ try {
         [IO.File]::WriteAllText($staged,'replacement')
         $expected=(Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash
         $attempts.Clear();$delays.Clear();$passed=$false
-        try{Publish-ComponentArchiveFile $staged $target $expected;$passed=$true}catch{
-            if($case.change -and $_.Exception.Message -cne 'Component archive files changed while waiting for replacement'){throw}
+        $original=Get-WorkflowFileHash $target
+        try{Publish-ComponentArchiveFile $staged $target $expected $original;$passed=$true}catch{
+            if($case.change -and $_.Exception.Message -cne 'Component archive files changed before replacement'){throw}
             if(-not $case.change -and $_.Exception.HResult -ne $case.hresult){throw}
         }
         $expectedTarget=if($case.success){'replacement'}elseif($case.change -eq 'target'){'changed'}else{'original'}
