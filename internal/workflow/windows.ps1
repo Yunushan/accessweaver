@@ -2098,6 +2098,29 @@ function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30) {
     } while($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
     throw 'DNSCrypt loopback readiness could not be verified before adapter configuration'
 }
+function Get-DNSClientMutationRow([string]$Guid,[string]$Family,[switch]$RequireUp) {
+    $adapters=@(Get-NetAdapter -ErrorAction Stop)
+    $target=@($adapters | Where-Object {[string]$_.InterfaceGuid -eq $Guid})
+    if($target.Count -ne 1 -or $target[0].ifIndex -le 0 -or ($RequireUp -and $target[0].Status -ne 'Up')){
+        throw 'A DNS adapter changed before the update; retain the recovery snapshot'
+    }
+    $index=$target[0].ifIndex
+    if(@($adapters | Where-Object {$_.ifIndex -eq $index}).Count -ne 1){
+        throw 'A DNS adapter index is ambiguous; retain the recovery snapshot'
+    }
+    $rows=@(Get-DnsClientServerAddress -InterfaceIndex $index -AddressFamily $Family -ErrorAction Stop)
+    if($rows.Count -ne 1 -or @(Get-DNSClientRows $rows $index $Family).Count -ne 1){
+        throw 'The DNS adapter family changed before the update; retain the recovery snapshot'
+    }
+    $fresh=@(Get-NetAdapter -ErrorAction Stop)
+    $current=@($fresh | Where-Object {$_.ifIndex -eq $index})
+    if($current.Count -ne 1 -or [string]$current[0].InterfaceGuid -ne $Guid -or
+       @($fresh | Where-Object {[string]$_.InterfaceGuid -eq $Guid}).Count -ne 1 -or
+       ($RequireUp -and $current[0].Status -ne 'Up')){
+        throw 'A DNS adapter changed before the update; retain the recovery snapshot'
+    }
+    return $rows[0]
+}
 function Configure-DNS([string]$method) {
     if($method -notin @('doh','dnscrypt')){throw 'Choose doh or dnscrypt'}
     if($method -eq 'doh'){foreach($command in @('Get-DnsClientDohServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'This Windows version does not expose native DoH management; choose DNSCrypt instead'}}}
@@ -2221,12 +2244,10 @@ function Configure-DNS([string]$method) {
         $record=@($records | Where-Object {$_.guid -eq [string]$adapter.InterfaceGuid})[0];$bounds=Get-OriginalDNSBounds $record
         foreach($number in @('4','6')){
             if(-not $bounds['bound'+$number]){continue}
-            $matches=@(Get-NetAdapter -ErrorAction Stop | Where-Object {[string]$_.InterfaceGuid -eq [string]$adapter.InterfaceGuid})
-            if($matches.Count -ne 1 -or $matches[0].Status -ne 'Up'){throw 'A selected DNS adapter changed before configuration; retain the recovery snapshot'}
-            $dns=@(Get-DnsClientServerAddress -InterfaceIndex $matches[0].ifIndex -AddressFamily ('IPv'+$number) -ErrorAction Stop)
-            if($dns.Count -ne 1 -or $null -eq $dns[0]){throw 'A captured DNS family changed before configuration; retain the recovery snapshot'}
             $familyServers=@($servers | Where-Object {($_.Contains(':')) -eq ($number -eq '6')})
-            $dns[0] | Set-DnsClientServerAddress -ServerAddresses $familyServers -ErrorAction Stop
+            $dns=Get-DNSClientMutationRow $record.guid ('IPv'+$number) -RequireUp
+            $script:externalEffectsPending=$true
+            $dns | Set-DnsClientServerAddress -ServerAddresses $familyServers -ErrorAction Stop
         }
     }
     # Observe eventual consistency without repeating a setter. Refuse success
@@ -2354,19 +2375,13 @@ function Restore-DNS([string]$ExpectedSHA256) {
         $record=$plan.record
         foreach($number in @('4','6')){
             if(-not $plan.bounds['bound'+$number]){continue}
-            $matches=@(Get-NetAdapter -ErrorAction Stop | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
-            if($matches.Count -ne 1){throw 'An original adapter changed before restoration; retain the recovery snapshot'}
-            $dns=@(Get-DnsClientServerAddress -InterfaceIndex $matches[0].ifIndex -AddressFamily ('IPv'+$number) -ErrorAction Stop)
-            if($dns.Count -ne 1 -or $null -eq $dns[0] -or
-               @(Get-DNSClientRows $dns $matches[0].ifIndex ('IPv'+$number)).Count -ne 1){
-                throw 'Original adapter DNS settings could not be inspected; retain the recovery snapshot'
-            }
-            $current=@(Get-NetAdapter -ErrorAction Stop | Where-Object {$_.ifIndex -eq $matches[0].ifIndex})
-            if($current.Count -ne 1 -or [string]$current[0].InterfaceGuid -ne $record.guid){
-                throw 'An original adapter changed before restoration; retain the recovery snapshot'
-            }
+            $dns=Get-DNSClientMutationRow $record.guid ('IPv'+$number)
             $script:externalEffectsPending=$true
-            if($record.('dhcp'+$number)){$dns[0] | Set-DnsClientServerAddress -ResetServerAddresses -ErrorAction Stop}else{$dns[0] | Set-DnsClientServerAddress -ServerAddresses @(Get-StaticDNSServers @($record.('ipv'+$number)) ('IPv'+$number) $record.index) -ErrorAction Stop}
+            if($record.('dhcp'+$number)){
+                $dns | Set-DnsClientServerAddress -ResetServerAddresses -ErrorAction Stop
+            }else{
+                $dns | Set-DnsClientServerAddress -ServerAddresses @(Get-StaticDNSServers @($record.('ipv'+$number)) ('IPv'+$number) $record.index) -ErrorAction Stop
+            }
         }
     }
     foreach($plan in $dohPlans){
