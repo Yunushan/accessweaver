@@ -858,6 +858,7 @@ try {
         [IO.File]::WriteAllText($originalConfig,'inert profile')
         $fixtureCli='C:\fixture\wiresock-connect-cli.exe'
         $calls=[Collections.Generic.List[string]]::new()
+        $fixtureInventory=@{stdout='';outputComplete=$true}
         function Install-WireSock {return $fixtureCli}
         function Start-WireSockServices {}
         function Copy-Checked {
@@ -885,6 +886,12 @@ try {
             param($program,$arguments,[switch]$Secret,[int]$Timeout)
             if($program -cne $fixtureCli -or -not $Secret){throw 'Unexpected vendor command'}
             $command=$arguments[0]
+            if($command -ceq 'list'){
+                if($Timeout -ne 15){throw 'Expected bounded profile inventory query'}
+                $calls.Add($command)
+                if($mode -ceq 'inventory-error'){throw 'Private inventory failure'}
+                return $fixtureInventory
+            }
             $entry=$script:undo[0]
             switch($command){
                 'import' {
@@ -917,10 +924,10 @@ try {
             return @{exitCode=0}
         }
         foreach($case in @(
-            @{mode='copy';calls='';label='WireSock retires failed import staging before any vendor command'},
-            @{mode='import';calls='save-import,import,delete';label='WireSock import failure rolls back only the generated profile'},
-            @{mode='journal';calls='save-import,import,save-connect,delete';label='WireSock journal failure before connect preserves the active tunnel'},
-            @{mode='connect';calls='save-import,import,save-connect,connect,disconnect,delete';label='WireSock connect failure uses the persisted connection recovery phase'}
+            @{mode='copy';calls='list';label='WireSock retires failed import staging before any vendor command'},
+            @{mode='import';calls='list,save-import,import,delete';label='WireSock import failure rolls back only the generated profile'},
+            @{mode='journal';calls='list,save-import,import,save-connect,delete';label='WireSock journal failure before connect preserves the active tunnel'},
+            @{mode='connect';calls='list,save-import,import,save-connect,connect,disconnect,delete';label='WireSock connect failure uses the persisted connection recovery phase'}
         )){
             $mode=$case.mode
             $calls.Clear()
@@ -933,6 +940,26 @@ try {
             $errors=@(Rollback)
             Assert ($failed -and $errors.Count -eq 0 -and ($calls -join ',') -ceq $case.calls) $case.label
         }
+        $inventoryFailure='WireSock profile inventory could not be verified; retry before importing a profile'
+        $leftoverFailure='A managed WireSock profile remains in the vendor inventory; recover the earlier workflow before retrying setup'
+        foreach($case in @(
+            @{mode='inventory-error';output='';complete=$true;message=$inventoryFailure},
+            @{mode='inventory';output='';complete=$false;message=$inventoryFailure},
+            @{mode='inventory';output=('x'*8193);complete=$true;message=$inventoryFailure},
+            @{mode='inventory';output=('1. AccessWeaver-'+('e'*32));complete=$true;message=$leftoverFailure}
+        )){
+            $mode=$case.mode
+            $fixtureInventory=@{stdout=$case.output;outputComplete=$case.complete}
+            $calls.Clear()
+            $script:undo=[Collections.Generic.List[object]]::new()
+            $refused=$false
+            try {Connect-WireSock $originalConfig | Out-Null}catch{$refused=$_.Exception.Message -ceq $case.message}
+            if(-not $refused -or ($calls -join ',') -cne 'list' -or $script:undo.Count -ne 0){
+                throw 'Unsafe WireSock inventory reached profile import'
+            }
+        }
+        Assert $true 'WireSock refuses a remaining managed profile or unverified inventory before import'
+        $fixtureInventory=@{stdout="1. Independent profile" ;outputComplete=$true}
         $mode='complete'
         $checks=@(
             @{stdout="Connection status: Connected`r`nExternal address: 198.51.100.7";complete=$true;want='Connected'},
@@ -953,7 +980,7 @@ try {
             $fixtureStatus=@{stdout=$check.stdout;outputComplete=$check.complete}
             if($check.want -ceq 'Connected'){
                 $status=Connect-WireSock $originalConfig
-                if($status -cne 'Connected' -or ($calls -join ',') -cne 'save-import,import,save-connect,connect,status,record'){
+                if($status -cne 'Connected' -or ($calls -join ',') -cne 'list,save-import,import,save-connect,connect,status,record'){
                     throw 'Confirmed connection did not publish its ownership record'
                 }
             }else {
@@ -963,7 +990,7 @@ try {
                 }
                 $errors=@(Rollback)
                 if(-not $refused -or $errors.Count -ne 0 -or
-                    ($calls -join ',') -cne 'save-import,import,save-connect,connect,status,disconnect,delete'){
+                    ($calls -join ',') -cne 'list,save-import,import,save-connect,connect,status,disconnect,delete'){
                     throw 'Unconfirmed connection did not use the persisted recovery phase'
                 }
             }

@@ -1207,6 +1207,14 @@ function Connect-WireSock([string]$config) {
     $cli=Install-WireSock
     if([IO.Path]::GetFileName($cli) -eq 'wiresock-connect-cli.exe') {
         Start-WireSockServices
+        $listFailure='WireSock profile inventory could not be verified; retry before importing a profile'
+        try {$inventory=Native $cli @('list') -Secret -Timeout 15}catch{throw $listFailure}
+        if($inventory.outputComplete -ne $true -or $inventory.stdout -isnot [string] -or $inventory.stdout.Length -gt 8192){
+            throw $listFailure
+        }
+        if($inventory.stdout -cmatch '(?<![a-zA-Z0-9-])AccessWeaver-[a-f0-9]{32}(?![a-zA-Z0-9-])'){
+            throw 'A managed WireSock profile remains in the vendor inventory; recover the earlier workflow before retrying setup'
+        }
         # A unique vendor profile prevents replacement of an independently
         # imported profile with the same user-selected configuration name.
         $profile='AccessWeaver-'+[guid]::NewGuid().ToString('N')

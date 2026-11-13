@@ -90,6 +90,8 @@ function Get-WorkflowOutcome($run,$job) {
         '^WireSock disconnect command failed; the managed profile was retained$' {return 'disconnect-command-failed'}
         '^WireSock profile deletion command failed; the ownership record was retained$' {return 'profile-deletion-command-failed'}
         '^WireSock connection was not confirmed by vendor status$' {return 'connection-unconfirmed'}
+        '^WireSock profile inventory could not be verified; retry before importing a profile$' {return 'profile-inventory-unverified'}
+        '^A managed WireSock profile remains in the vendor inventory; recover the earlier workflow before retrying setup$' {return 'managed-profile-remains'}
         '^Invalid WireGuard configuration$' {return 'config-invalid'}
         '^Use a separately elevated system apply CLI for machine changes\.' {return 'worker-not-elevated'}
         '^No supported registered WireSock product found; use Windows Apps settings for an unrecognized package$' {return 'uninstall-registration-missing'}
