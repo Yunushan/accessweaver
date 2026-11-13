@@ -7,6 +7,7 @@ on:
       - 'internal/workflow/windows.ps1'
       - 'scripts/test-dns-recovery-contracts.ps1'
       - 'scripts/test-windows-dns-journal.ps1'
+      - 'scripts/test-windows-firewall-native.ps1'
       - 'scripts/dns-acceptance-state.ps1'
       - 'scripts/test-dns-acceptance-state.ps1'
       - 'scripts/native-doh-scenario.ps1'
@@ -24,6 +25,7 @@ on:
       - 'internal/workflow/windows.ps1'
       - 'scripts/test-dns-recovery-contracts.ps1'
       - 'scripts/test-windows-dns-journal.ps1'
+      - 'scripts/test-windows-firewall-native.ps1'
       - 'scripts/dns-acceptance-state.ps1'
       - 'scripts/test-dns-acceptance-state.ps1'
       - 'scripts/native-doh-scenario.ps1'
@@ -151,3 +153,29 @@ jobs:
           path: ${{ env.ACCESSWEAVER_DNS_CONTRACT_EVIDENCE }}/**/dns-contracts.json
           if-no-files-found: error
           retention-days: 7
+
+  native-firewall:
+    name: Native firewall ownership (windows/${{ matrix.arch }})
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, os: windows-latest}
+          - {arch: arm64, os: windows-11-arm}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify native firewall ownership and journal recovery
+        shell: powershell
+        env:
+          ACCESSWEAVER_DISPOSABLE_FIREWALL_TEST: '1'
+          ACCESSWEAVER_EXPECT_FIREWALL_ARCH: ${{ matrix.arch }}
+        run: |
+          $actual = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          $expected = @{amd64='X64';arm64='Arm64'}[$env:ACCESSWEAVER_EXPECT_FIREWALL_ARCH]
+          if ($actual -cne $expected) { throw 'Native firewall runner architecture mismatch' }
+          ./scripts/test-windows-firewall-native.ps1
