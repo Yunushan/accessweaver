@@ -4,7 +4,7 @@ $path=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS journal source failed parsing'}
-foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Restore-RecordedWorkflowFile','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Remove-RecordedService')){
+foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Restore-RecordedWorkflowFile','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Remove-RecordedService')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -369,6 +369,38 @@ try {
     $refused=$false
     try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'missing without a verified restoration receipt'}
     Require ($refused -and $script:order.Count -eq 0) 'Malformed restoration receipt allowed teardown'
+    [IO.File]::Delete($receipt)
+
+    foreach($size in @(0,63,65,8192)){
+        [IO.File]::WriteAllText($receipt,('A'*$size))
+        $refused=$false
+        try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'missing without a verified restoration receipt'}
+        Require ($refused -and $script:order.Count -eq 0) 'Wrong-size restoration receipt allowed teardown'
+    }
+    [IO.File]::WriteAllText($receipt,$next.ToUpperInvariant())
+    $receiptLock=[IO.File]::Open($receipt,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    try{
+        $refused=$false
+        try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'missing without a verified restoration receipt'}
+        Require ($refused -and $script:order.Count -eq 0) 'Locked restoration receipt allowed teardown'
+    }finally{$receiptLock.Dispose()}
+    Require (-not (Confirm-DNSRecoveryEntry $dnsUndo)) 'An exact restoration receipt did not allow cleanup'
+    & {
+        $readRecoveryFile=(Get-Command Read-DNSRecoveryFileBytes).ScriptBlock
+        function Read-DNSRecoveryFileBytes([string]$Path,[int]$Maximum){
+            $frame=& $readRecoveryFile $Path $Maximum
+            if($Path -ceq $receipt){[IO.File]::WriteAllBytes($snapshot,$reappearingSnapshot)}
+            if($null -ne $frame){return ,$frame}
+        }
+        $reappearingSnapshot=$firstBytes
+        $refused=$false
+        try{Recover-Operation}catch{$refused=$_.Exception.Message -match 'does not match the active snapshot'}
+        Require ($refused -and $script:order.Count -eq 0 -and [IO.File]::Exists($snapshot)) 'Receipt bypassed a newly active different snapshot'
+        [IO.File]::Delete($snapshot)
+        $reappearingSnapshot=$secondBytes
+        Require (Confirm-DNSRecoveryEntry $dnsUndo) 'Receipt bypassed restoration of the newly active matching snapshot'
+        [IO.File]::Delete($snapshot)
+    }
     [IO.File]::Delete($receipt)
 
     $dnsUndo.snapshotActive=$false

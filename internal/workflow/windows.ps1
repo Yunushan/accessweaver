@@ -3461,8 +3461,7 @@ function Rollback {
 function Throw-WorkflowRecoveryJournalReadFailure {
     throw [IO.InvalidDataException]::new('Recovery journal could not be read safely; preserve the selected journal and recovery evidence')
 }
-function Read-WorkflowRecoveryJournalBytes([IO.Stream]$Source) {
-    $maximum=8MB
+function Read-WorkflowRecoveryJournalBytes([IO.Stream]$Source,[ValidateRange(1,8388608)][int]$Maximum=8MB) {
     $memory=$null
     try {
         if($null -eq $Source -or -not $Source.CanRead -or -not $Source.CanSeek -or $Source.Position -ne 0){Throw-WorkflowRecoveryJournalReadFailure}
@@ -3527,16 +3526,23 @@ function Confirm-DNSRecoverySnapshot($ExpectedSHA256) {
     }
     return $true
 }
-function Read-DNSRecoverySnapshot {
-    $path=Join-Path $root 'profiles\dns-original.json'
-    No-Reparse $path
-    try {$stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)}
+function Read-DNSRecoveryFileBytes([string]$Path,[int]$Maximum) {
+    No-Reparse $Path
+    try {$attributes=[IO.File]::GetAttributes($Path)}
     catch [IO.FileNotFoundException] {return}
     catch [IO.DirectoryNotFoundException] {return}
-    catch {throw 'Original DNS snapshot could not be read safely; retain it for review'}
+    if($attributes -band ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::ReparsePoint)){
+        throw 'DNS recovery requires a bounded ordinary file'
+    }
+    $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {return ,(Read-WorkflowRecoveryJournalBytes $stream $Maximum)}
+    finally {$stream.Dispose()}
+}
+function Read-DNSRecoverySnapshot {
+    $path=Join-Path $root 'profiles\dns-original.json'
     try {
-        try {$bytes=Read-WorkflowRecoveryJournalBytes $stream}
-        finally {$stream.Dispose()}
+        $bytes=Read-DNSRecoveryFileBytes $path 8MB
+        if($null -eq $bytes){return}
         $text=[Text.UTF8Encoding]::new($false,$true).GetString($bytes)
         if($text.Length -gt 0 -and $text[0] -eq [char]0xfeff){$text=$text.Substring(1)}
         if([string]::IsNullOrWhiteSpace($text) -or $text.IndexOf([char]0) -ge 0){throw 'Invalid DNS snapshot encoding'}
@@ -3552,17 +3558,11 @@ function Assert-DNSRecoverySnapshotUnchanged([string]$ExpectedSHA256) {
     }
 }
 function Get-DNSRecoverySnapshotDigest {
-    $snapshot=Join-Path $root 'profiles\dns-original.json'
-    No-Reparse $snapshot
-    try {$attributes=[IO.File]::GetAttributes($snapshot)}
-    catch [IO.FileNotFoundException] {return}
-    catch [IO.DirectoryNotFoundException] {return}
-    if($attributes -band ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::ReparsePoint)){
-        throw 'DNS recovery snapshot is not a bounded ordinary file'
-    }
-    $entry=Get-Item -LiteralPath $snapshot -Force -ErrorAction Stop
-    if($entry.PSIsContainer -or $entry.Length -le 0 -or $entry.Length -gt 8MB){throw 'DNS recovery snapshot is not a bounded ordinary file'}
-    return (Get-FileHash -LiteralPath $snapshot -Algorithm SHA256 -ErrorAction Stop).Hash
+    $path=Join-Path $root 'profiles\dns-original.json'
+    $bytes=Read-DNSRecoveryFileBytes $path 8MB
+    if($null -eq $bytes){return}
+    if($bytes.Length -eq 0){throw 'DNS recovery snapshot is not a bounded ordinary file'}
+    return Get-WorkflowBytesSHA256 $bytes
 }
 function Get-DNSRecoveryReceiptPath([string]$SHA256) {
     if($SHA256 -notmatch '\A[a-fA-F0-9]{64}\z'){throw 'Invalid DNS recovery receipt digest'}
@@ -3582,14 +3582,15 @@ function Confirm-DNSRecoveryEntry($Entry) {
     # whenever an active snapshot exists. Bound entries require their receipt.
     if(-not $digest -or ($Entry.snapshotActive -is [bool] -and -not $Entry.snapshotActive)){return $false}
     $path=Get-DNSRecoveryReceiptPath $digest
-    No-Reparse $path
-    if(Test-Path -LiteralPath $path -ErrorAction Stop){
-        $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
-        if(-not $item.PSIsContainer -and $item.Length -eq 64 -and [IO.File]::ReadAllText($path) -ceq $digest.ToUpperInvariant()){
-            return $false
-        }
+    $bytes=$null
+    try {$bytes=Read-DNSRecoveryFileBytes $path 64}catch{}
+    if($null -eq $bytes -or $bytes.Length -ne 64 -or
+       [Text.Encoding]::ASCII.GetString($bytes) -cne $digest.ToUpperInvariant()){
+        throw 'DNS recovery snapshot is missing without a verified restoration receipt'
     }
-    throw 'DNS recovery snapshot is missing without a verified restoration receipt'
+    # Receipt inspection may overlap a snapshot publication. If an active
+    # snapshot now exists it must pass the journal binding before cleanup.
+    return (Confirm-DNSRecoverySnapshot $digest)
 }
 function Recover-Operation {
     if($r.journalId -notmatch '^workflow-[a-fA-F0-9]{32}\.json$'){throw 'Invalid recovery journal name'}
