@@ -4,8 +4,6 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
-  release:
-    types: [published]
 
 permissions:
   contents: read
@@ -253,6 +251,7 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts -p test_release_archive.py -v
           python3 -m unittest discover -s scripts -p test_release_provenance.py -v
+          python3 -m unittest discover -s scripts -p test_publish_prerelease.py -v
           python3 -m unittest discover -s scripts -p test_release_rebuild.py -v
           python3 -m unittest discover -s scripts -p test_stage_packaged_native.py -v
           python3 -m unittest discover -s scripts -p test_windows_handle_census.py -v
@@ -649,25 +648,11 @@ jobs:
         with:
           name: accessweaver-unsigned
           path: release-assets
-      - name: Create prerelease or attach to the published release
+      - name: Verify and publish prerelease assets
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
           PACKAGE_DIRECTORY: ${{ needs.package.outputs.directory }}
         run: |
           verified_directory="release-assets/${PACKAGE_DIRECTORY#dist/}"
-          python3 scripts/verify_release_provenance.py "$verified_directory" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF"
-          mapfile -d '' assets < <(find release-assets -type f -print0)
-          if ((${#assets[@]} != 13)); then
-            echo "Expected ten archives, a manifest, checksums and a provenance bundle." >&2
-            exit 1
-          fi
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
-          else
-            gh release create "$RELEASE_TAG" "${assets[@]}" --verify-tag --prerelease \
-              --title "AccessWeaver $RELEASE_TAG (unsigned alpha)" \
-              --notes "Unsigned alpha core builds. External engines, drivers and native mobile VPN apps are not included. See README, THIRD_PARTY.md and docs/TESTING.md for setup and validation limits."
-          fi
+          python3 scripts/publish_prerelease.py "$verified_directory" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF"
