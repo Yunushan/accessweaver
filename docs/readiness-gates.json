@@ -27,6 +27,7 @@
           "status": "partial",
           "evidence": [
             "docs/qualification/402dca260f4b-native-wiresock-lifecycle.json",
+            "docs/qualification/3ba0b0e4b20a-native-wiresock-lifecycle.json",
             "docs/qualification/f283f4a449a9-wiresock-uninstall-registration-readback-contracts.json",
             "scripts/test-windows-wiresock.ps1",
             "scripts/test-windows-native-wiresock.ps1",
