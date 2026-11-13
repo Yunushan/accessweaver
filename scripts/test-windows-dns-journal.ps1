@@ -285,6 +285,22 @@ try {
         Require ($refused -and $attempts.Count -eq 1 -and [IO.File]::ReadAllText($snapshot) -ceq 'independent edit') 'Fresh snapshot publication replaced an occupied destination'
         [IO.File]::WriteAllBytes($snapshot,$secondBytes)
     }
+    & {
+        $receiptPath=Get-DNSRecoveryReceiptPath $next
+        function Replace-StagedWorkflowFile([string]$Staged,[string]$Target){
+            if($Target -cne $receiptPath){throw 'Unexpected receipt fixture destination'}
+            if($publishCorruptReceipt){[IO.File]::WriteAllText($Target,('F'*64));[IO.File]::Delete($Staged)}
+        }
+        foreach($publishCorruptReceipt in @($false,$true)){
+            [IO.File]::WriteAllText($receiptPath,('A'*64))
+            $refused=$false
+            try{Save-DNSRecoveryReceipt $next}catch{
+                $refused=$_.Exception.Message -ceq 'Workflow file publication could not be verified'
+            }
+            Require ($refused -and [IO.File]::Exists($snapshot)) 'Unverified receipt was accepted before snapshot retirement'
+            [IO.File]::Delete($receiptPath)
+        }
+    }
     $script:journalState='succeeded'
     & $saveJournal
     $finished=[IO.File]::ReadAllText($script:journalPath) | ConvertFrom-Json

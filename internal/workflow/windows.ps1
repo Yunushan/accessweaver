@@ -1094,11 +1094,11 @@ function Publish-StagedWorkflowFile([string]$staged,[string]$target,[string]$exp
         }
         if(-not $beforeHash){
             [IO.File]::Move($staged,$target)
-            return
+            break
         }
         try {
             Replace-StagedWorkflowFile $staged $target
-            return
+            break
         }catch {
             $cause=$_.Exception
             while($cause.InnerException){$cause=$cause.InnerException}
@@ -1109,6 +1109,9 @@ function Publish-StagedWorkflowFile([string]$staged,[string]$target,[string]$exp
         }
         Start-Sleep -Milliseconds $delay
     }
+    if((Get-WorkflowFileHash $target) -ine $expectedHash -or (Get-WorkflowFileHash $staged)){
+        throw 'Workflow file publication could not be verified'
+    }
 }
 function Publish-RecordedWorkflowFile([string]$staged,[string]$target,[string]$hash) {
     $record=Backup-File $target
@@ -1117,7 +1120,6 @@ function Publish-RecordedWorkflowFile([string]$staged,[string]$target,[string]$h
     $record.pendingHash=$hash
     Save-Journal
     Publish-StagedWorkflowFile $staged $target $hash $beforeHash
-    if((Get-WorkflowFileHash $target) -ine $hash){throw 'Workflow file publication could not be verified'}
     $record.expectedHash=$hash
     $record.Remove('pendingHash')
     Save-Journal
@@ -2410,8 +2412,9 @@ function Restore-DNS([string]$ExpectedSHA256) {
     }
     if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'Original DNS snapshot disappeared during restoration'}
     Save-DNSRecoveryReceipt $snapshotSHA256
+    Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
     Remove-Item -LiteralPath $snapshot -ErrorAction Stop
-    if(Test-Path -LiteralPath $snapshot -ErrorAction Stop){throw 'Original DNS snapshot retirement could not be verified'}
+    if(Get-DNSRecoverySnapshotDigest){throw 'Original DNS snapshot retirement could not be verified'}
     Event 'Original DNS and DoH settings restored'
 }
 
@@ -3395,7 +3398,6 @@ function Restore-RecordedWorkflowFile($item) {
         $ownsStage=$true
         Publish-StagedWorkflowFile $staged $path $item.originalHash $currentHash
         $ownsStage=$false
-        if((Get-WorkflowFileHash $path) -ine $item.originalHash){throw 'Recovery could not verify the restored original file'}
     } finally {
         if($ownsStage){
             No-Reparse $staged
