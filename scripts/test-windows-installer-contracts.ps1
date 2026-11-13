@@ -99,6 +99,37 @@ try {
         [IO.File]::WriteAllBytes($payload,$bytes)
         Reject {Read-InstallerPEMachine $payload} ('Invalid '+$kind+' header accepted')
     }
+    $original=Join-Path $fixture 'unsigned.exe'
+    $signed=Join-Path $fixture 'signed.exe'
+    # A minimal PE header plus arbitrary overlay bytes makes it possible to
+    # verify the signing-only comparison without a signing key or executable.
+    foreach($format in @(@{magic=0x10b;size=224;directories=96},@{magic=0x20b;size=240;directories=112})){
+        $sourceBytes=[byte[]]::new(4099)
+        $sourceBytes[0]=0x4d;$sourceBytes[1]=0x5a;$sourceBytes[60]=128
+        $sourceBytes[128]=0x50;$sourceBytes[129]=0x45
+        [Array]::Copy([BitConverter]::GetBytes([uint16]$format.size),0,$sourceBytes,148,2)
+        [Array]::Copy([BitConverter]::GetBytes([uint16]$format.magic),0,$sourceBytes,152,2)
+        $sourceBytes[152+$format.directories-4]=16
+        $sourceBytes[4098]=73
+        [IO.File]::WriteAllBytes($original,$sourceBytes)
+        $signedBytes=[byte[]]::new(4120)
+        [Array]::Copy($sourceBytes,$signedBytes,$sourceBytes.Length)
+        $signedBytes[216]=19
+        $cert=152+$format.directories+32
+        [Array]::Copy([BitConverter]::GetBytes([uint32]4104),0,$signedBytes,$cert,4)
+        $signedBytes[$cert+4]=16
+        $signedBytes[4104]=16;$signedBytes[4109]=2;$signedBytes[4110]=2
+        [IO.File]::WriteAllBytes($signed,$signedBytes)
+        Assert-InstallerSigningOnlyChange $original $signed
+        foreach($index in @(200,2048,4098,4099,$cert,$cert+4)){
+            $mutated=$signedBytes.Clone()
+            $mutated[$index]=$mutated[$index] -bxor 1
+            [IO.File]::WriteAllBytes($signed,$mutated)
+            Reject {Assert-InstallerSigningOnlyChange $original $signed} 'A signer changed a non-signature byte or supplied an invalid table'
+        }
+        [IO.File]::WriteAllBytes($signed,[byte[]]($signedBytes+@(1)))
+        Reject {Assert-InstallerSigningOnlyChange $original $signed} 'Trailing bytes outside the certificate table were accepted'
+    }
     $setupPath=Join-Path $fixture 'preprocessed.iss'
     foreach($arch in @('amd64','arm64')){
         $architecture=if($arch -ceq 'arm64'){'arm64'}else{'x64compatible'}

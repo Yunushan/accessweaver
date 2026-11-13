@@ -15,11 +15,19 @@ $absolute=[IO.Path]::GetFullPath($Artifact)
 # and return only verified bytes to the compiler.
 $directory=[IO.Path]::GetDirectoryName($absolute)
 $candidate=Join-Path $directory ('sign-'+[guid]::NewGuid().ToString('N')+'.exe')
-[IO.File]::Copy($absolute,$candidate,$false)
+$original=[IO.File]::Open($absolute,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
 try {
-    & $signer $candidate | Out-Null
-    if($LASTEXITCODE -ne 0){throw 'The organization signer failed for an installer artifact'}
-    $signature=Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $candidate
-    Assert-WindowsPublisherSignature $signature $publisher
-    [IO.File]::Replace($candidate,$absolute,[NullString]::Value)
-} finally {[IO.File]::Delete($candidate)}
+    [IO.File]::Copy($absolute,$candidate,$false)
+    try {
+        & $signer $candidate | Out-Null
+        if($LASTEXITCODE -ne 0){throw 'The organization signer failed for an installer artifact'}
+        $signed=[IO.File]::Open($candidate,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        try {
+            $signature=Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $candidate
+            Assert-WindowsPublisherSignature $signature $publisher
+            Assert-InstallerSigningOnlyChange $absolute $candidate
+        } finally {$signed.Dispose()}
+        $original.Dispose()
+        [IO.File]::Replace($candidate,$absolute,[NullString]::Value)
+    } finally {[IO.File]::Delete($candidate)}
+} finally {$original.Dispose()}

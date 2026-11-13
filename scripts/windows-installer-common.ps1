@@ -103,3 +103,88 @@ function Get-InstallerSigningArguments([string]$SigningTool, [string]$PublisherC
     '/DOrganizationSigning=1'
     ('/SaccessweaverOrganization=$q'+$Shell+'$q -NoProfile -NonInteractive -File $q'+$Callback+'$q -Artifact $f')
 }
+
+function Get-InstallerSigningLayout([IO.BinaryReader]$Reader) {
+    $stream=$Reader.BaseStream
+    if($stream.Length -lt 64 -or $stream.Length -gt 512MB -or $Reader.ReadUInt16() -ne 0x5a4d){
+        throw 'Invalid installer signing input'
+    }
+    $stream.Position=60
+    $pe=[long]$Reader.ReadUInt32()
+    if($pe -lt 64 -or $pe -gt $stream.Length-24){throw 'Invalid installer PE offset'}
+    $stream.Position=$pe
+    if($Reader.ReadUInt32() -ne 0x4550){throw 'Invalid installer PE signature'}
+    $stream.Position=$pe+20
+    $optionalSize=$Reader.ReadUInt16()
+    $optional=$pe+24
+    if($optionalSize -lt 136 -or $optional+$optionalSize -gt $stream.Length){throw 'Invalid installer optional header'}
+    $stream.Position=$optional
+    $directories=switch($Reader.ReadUInt16()){
+        0x10b {96}
+        0x20b {112}
+        default {throw 'Unknown installer PE format'}
+    }
+    if($optionalSize -lt $directories+40){throw 'Missing installer certificate directory'}
+    $stream.Position=$optional+$directories-4
+    if($Reader.ReadUInt32() -lt 5){throw 'Missing installer certificate directory'}
+    $certificateField=$optional+$directories+32
+    $stream.Position=$certificateField
+    return @{
+        checksum=$optional+64
+        certificateField=$certificateField
+        certificateOffset=[long]$Reader.ReadUInt32()
+        certificateSize=[long]$Reader.ReadUInt32()
+    }
+}
+
+function Assert-InstallerSigningOnlyChange([string]$Original,[string]$Signed) {
+    $before=[IO.BinaryReader]::new([IO.File]::Open($Original,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+    try {
+        $after=[IO.BinaryReader]::new([IO.File]::Open($Signed,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+        try {
+            $source=Get-InstallerSigningLayout $before
+            $target=Get-InstallerSigningLayout $after
+            $originalLength=$before.BaseStream.Length
+            $padding=(8-($originalLength%8))%8
+            if($source.certificateOffset -ne 0 -or $source.certificateSize -ne 0 -or
+                $source.checksum -ne $target.checksum -or $source.certificateField -ne $target.certificateField -or
+                $target.certificateOffset -ne $originalLength+$padding -or $target.certificateSize -le 8 -or
+                $target.certificateOffset+$target.certificateSize -ne $after.BaseStream.Length){
+                throw 'Signer did not append a certificate table to the original unsigned PE'
+            }
+
+            $before.BaseStream.Position=0
+            $after.BaseStream.Position=0
+            $beforeHash=[Security.Cryptography.IncrementalHash]::CreateHash([Security.Cryptography.HashAlgorithmName]::SHA256)
+            $afterHash=[Security.Cryptography.IncrementalHash]::CreateHash([Security.Cryptography.HashAlgorithmName]::SHA256)
+            try {
+                foreach($segment in @(
+                    @{start=0;end=$source.checksum},
+                    @{start=$source.checksum+4;end=$source.certificateField},
+                    @{start=$source.certificateField+8;end=$originalLength}
+                )){
+                    $before.BaseStream.Position=$segment.start
+                    $after.BaseStream.Position=$segment.start
+                    $remaining=$segment.end-$segment.start
+                    while($remaining -gt 0){
+                        $size=[int][Math]::Min($remaining,1MB)
+                        $sourceBytes=$before.ReadBytes($size)
+                        $targetBytes=$after.ReadBytes($size)
+                        if($sourceBytes.Length -ne $size -or $targetBytes.Length -ne $size){throw 'Incomplete installer signing comparison'}
+                        $beforeHash.AppendData($sourceBytes)
+                        $afterHash.AppendData($targetBytes)
+                        $remaining-=$size
+                    }
+                }
+                $sourceDigest=[BitConverter]::ToString($beforeHash.GetHashAndReset())
+                $targetDigest=[BitConverter]::ToString($afterHash.GetHashAndReset())
+                if($sourceDigest -cne $targetDigest){throw 'Signer modified non-signature installer bytes'}
+            } finally {$beforeHash.Dispose();$afterHash.Dispose()}
+
+            $after.BaseStream.Position=$originalLength
+            for($index=0;$index -lt $padding;$index++){
+                if($after.ReadByte() -ne 0){throw 'Unexpected nonzero certificate alignment bytes'}
+            }
+        } finally {$after.Dispose()}
+    } finally {$before.Dispose()}
+}
