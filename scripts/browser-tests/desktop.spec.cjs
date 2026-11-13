@@ -1130,3 +1130,32 @@ test('shared API keeps reviewed requests on local routes without redirects', asy
     try{await page.close()}finally{await new Promise((resolve,reject)=>{server.close(error=>error?reject(error):resolve());server.closeAllConnections()})}
   }
 });
+
+test('forced colors preserve current navigation, selected tabs and keyboard focus',async({page,core})=>{
+ await page.emulateMedia({forcedColors:'active'});
+ await open(page,core);
+ expect(await page.evaluate(()=>matchMedia('(forced-colors: active)').matches)).toBe(true);
+ await profiles(page);
+ const active=page.locator('.nav-item[data-view="profiles"]');
+ const inactive=page.locator('.nav-item[data-view="dashboard"]');
+ await expect(active).toHaveAttribute('aria-current','page');
+ await expect(active).toHaveCSS('border-inline-start-width','3px');
+ await expect(inactive).toHaveCSS('border-inline-start-width','0px');
+ const openEditor=page.locator('#new-profile');
+ await openEditor.focus();
+ await page.keyboard.press('Enter');
+ await expect(page.locator('#p-name')).toBeFocused();
+ await expect(page.locator('#p-name')).toHaveCSS('outline-style','solid');
+ await expect(page.locator('#p-name')).toHaveCSS('outline-width','2px');
+ const simple=page.locator('#tab-simple'),advanced=page.locator('#tab-advanced');
+ await expect(simple).toHaveCSS('border-inline-start-width','3px');
+ await expect(advanced).toHaveCSS('border-inline-start-width','1px');
+ await simple.focus();
+ await page.keyboard.press('ArrowRight');
+ await expect(advanced).toHaveAttribute('aria-selected','true');
+ await expect(advanced).toBeFocused();
+ await expect(advanced).toHaveCSS('border-inline-start-width','3px');
+ await expect(simple).toHaveCSS('border-inline-start-width','1px');
+ await page.keyboard.press('Escape');
+ await expect(openEditor).toBeFocused();
+});
