@@ -1029,11 +1029,38 @@ function Make-Config {
     Event ('Private tunnel configuration generated: '+$id)
     return $output
 }
+function Start-WireSockServices {
+    $services=[Collections.Generic.List[object]]::new()
+    try {
+        foreach($name in @('WireSockAppService','WireSockConnectService')){
+            $service=Get-Service -Name $name -ErrorAction SilentlyContinue
+            if(-not $service){throw ('Vendor service missing: '+$name+'; finish installation/reboot before connecting')}
+            $services.Add($service)
+            if($service.Status -notin @('Running','Stopped')){
+                throw ('Vendor service is not ready for setup: '+$name)
+            }
+        }
+        foreach($service in $services){
+            $service.Refresh()
+            if($service.Status -eq 'Running'){continue}
+            if($service.Status -ne 'Stopped'){throw 'Vendor service state changed during setup; retry when it is stable'}
+            # These services belong to the vendor and may be shared with
+            # other clients. Record the effect without claiming ownership.
+            $script:externalEffectsPending=$true
+            Start-Service -InputObject $service -ErrorAction Stop
+            $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
+        }
+    } finally {
+        foreach($service in $services){
+            if($service -is [IDisposable]){$service.Dispose()}
+        }
+    }
+}
 function Connect-WireSock([string]$config) {
     if(Test-Path -LiteralPath (Join-Path $root 'profiles\wiresock-owned.json')){throw 'Remove the current managed WireSock method before importing another profile'}
     $cli=Install-WireSock
     if([IO.Path]::GetFileName($cli) -eq 'wiresock-connect-cli.exe') {
-        $services=@('WireSockAppService','WireSockConnectService');foreach($name in $services){$service=Get-Service -Name $name -ErrorAction SilentlyContinue;if(-not $service){throw ('Vendor service missing: '+$name+'; finish installation/reboot before connecting')};Start-Service -Name $name;$service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))}
+        Start-WireSockServices
         # A unique vendor profile prevents replacement of an independently
         # imported profile with the same user-selected configuration name.
         $profile='AccessWeaver-'+[guid]::NewGuid().ToString('N')

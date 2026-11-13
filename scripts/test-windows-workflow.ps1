@@ -591,6 +591,45 @@ try {
     }
     $r=$previousWireSockRequest
 }
+# Check both service records before allowing a mocked vendor service start.
+$previousWireSockEffects=$script:externalEffectsPending
+try {
+    & {
+        function Get-Service {
+            param($Name,$ErrorAction)
+            return $script:wireSockServiceFixtures[$Name]
+        }
+        function Start-Service {
+            param($InputObject,$ErrorAction)
+            if(-not $script:externalEffectsPending){throw 'Fixture start did not record the vendor effect'}
+            $script:wireSockServiceStarts.Add($InputObject.ServiceName)
+            $InputObject.Status='Running'
+        }
+        $script:wireSockServiceStarts=[Collections.Generic.List[string]]::new()
+        $script:externalEffectsPending=$false
+        $app=[pscustomobject]@{ServiceName='WireSockAppService';Status='Stopped'}
+        $connect=[pscustomobject]@{ServiceName='WireSockConnectService';Status='StartPending'}
+        foreach($service in @($app,$connect)){
+            $service | Add-Member ScriptMethod Refresh {}
+            $service | Add-Member ScriptMethod WaitForStatus {
+                param($status,$timeout)
+                if($this.Status -ne $status -or $timeout.TotalSeconds -ne 20){throw 'Unexpected fixture service wait'}
+            }
+        }
+        $script:wireSockServiceFixtures=@{WireSockAppService=$app}
+        $refused=$false
+        try {Start-WireSockServices}catch{$refused=$_.Exception.Message -like 'Vendor service missing: WireSockConnectService*'}
+        Assert ($refused -and $script:wireSockServiceStarts.Count -eq 0 -and -not $script:externalEffectsPending) 'WireSock checks for both services before starting either'
+        $script:wireSockServiceFixtures['WireSockConnectService']=$connect
+        $refused=$false
+        try {Start-WireSockServices}catch{$refused=$_.Exception.Message -ceq 'Vendor service is not ready for setup: WireSockConnectService'}
+        Assert ($refused -and $script:wireSockServiceStarts.Count -eq 0 -and -not $script:externalEffectsPending) 'WireSock refuses transitional service state before starting either service'
+        $app.Status='Running'
+        $connect.Status='Stopped'
+        Start-WireSockServices
+        Assert (($script:wireSockServiceStarts -join ',') -ceq 'WireSockConnectService' -and $script:externalEffectsPending) 'WireSock starts only a stopped vendor service and records the external effect'
+    }
+} finally {$script:externalEffectsPending=$previousWireSockEffects}
 # Publisher-category checks use synthetic signature records only.
 $signatureDiscord=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Discord fixture'}}
 $signatureMicrosoft=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Microsoft fixture'}}
