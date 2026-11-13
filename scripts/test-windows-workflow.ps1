@@ -1809,7 +1809,9 @@ try {
 # Exercise both direct helper calls and the dispatcher before any real OS work.
 $desktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
 $machineInitializer=(Get-Command Initialize-Changes).ScriptBlock
+$applicationLock=(Get-Command Enter-ApplicationWorkflow).ScriptBlock
 try{
+    function Enter-ApplicationWorkflow {$script:fixtureApplicationLocked=$true}
     function Require-DesktopUser {throw 'blocked desktop token fixture'}
     foreach($helper in @('Install-App','Remove-App','Start-App')){
         $rejected=$false;try{& $helper 'discord'}catch{$rejected=$_.Exception.Message -eq 'blocked desktop token fixture'}
@@ -1832,11 +1834,38 @@ try{
     Assert ($rejected -and -not (Test-Path (Join-Path $testRoot 'user-job'))) 'User application dispatch rejects system DNS changes before staging'
     $r=[pscustomobject]@{action='app-install';dns='unchanged'}
     Initialize-Operation
-    Assert ($root -eq (Join-Path $testRoot 'user-job\application') -and $script:machineInitializationCount -eq 0 -and (Test-Path -LiteralPath $script:journalPath)) 'User application staging and journal avoid machine storage'
+    Assert ($script:fixtureApplicationLocked -and $root -eq (Join-Path $testRoot 'user-job\application') -and
+        $script:machineInitializationCount -eq 0 -and (Test-Path -LiteralPath $script:journalPath)) 'User application staging holds its account lock and avoids machine storage'
 }finally{
     Set-Item Function:Require-DesktopUser $desktopGuard
     Set-Item Function:Initialize-Changes $machineInitializer
+    Set-Item Function:Enter-ApplicationWorkflow $applicationLock
     $root=$testRoot;$script:journalPath=$null
+}
+# Exercise the native Windows object with a fixture-specific name and the real DACL.
+# The product lock is never acquired by these source contracts.
+$lockSource=$applicationLock.ToString()
+$prefix='Global\AccessWeaver-DesktopApplications-'
+Assert ($lockSource.Contains($prefix)) 'Desktop application coordination uses the cross-session namespace'
+$fixturePrefix=$prefix+'fixture-'+[guid]::NewGuid().ToString('N')+'-'
+$lock=[scriptblock]::Create($lockSource.Replace($prefix,$fixturePrefix))
+$script:mutex=$null
+$script:ownsMutex=$false
+& $lock
+try{
+    $owner=$script:mutex
+    Assert ($script:ownsMutex -and $null -ne $owner) 'Desktop application operation owns its Windows mutex'
+    $busy=$false
+    try {& $lock}catch{$busy=$_.Exception.Message -ceq 'An AccessWeaver application workflow is already active for this Windows user'}
+    Assert ($busy -and [object]::ReferenceEquals($script:mutex,$owner)) 'Second application operation is refused without replacing the original owner'
+}finally{
+    try {$script:mutex.ReleaseMutex()}finally{$script:mutex.Dispose();$script:mutex=$null;$script:ownsMutex=$false}
+}
+& $lock
+try {
+    Assert ($script:ownsMutex) 'Application workflow admission recovers after its owner releases the mutex'
+} finally {
+    try {$script:mutex.ReleaseMutex()}finally{$script:mutex.Dispose();$script:mutex=$null;$script:ownsMutex=$false}
 }
 $descriptor=Private-DirectorySecurity
 Assert (Trusted-SecurityDescriptor $descriptor) 'Administrator-owned private storage descriptor accepted'

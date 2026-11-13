@@ -50,6 +50,29 @@ function Require-DesktopUser {
     $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
     if($identity.IsSystem -or ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) -or [Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0){throw 'Application operations require the signed-in desktop user without administrator rights'}
 }
+function Enter-ApplicationWorkflow {
+    $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+    try {$user=$identity.User} finally {$identity.Dispose()}
+    $security=[Security.AccessControl.MutexSecurity]::new()
+    $security.AddAccessRule([Security.AccessControl.MutexAccessRule]::new($user,'FullControl','Allow'))
+    $name='Global\AccessWeaver-DesktopApplications-'+$user.Value
+    $created=$false
+    try {
+        if($PSVersionTable.PSEdition -ceq 'Desktop'){
+            $owner=[Threading.Mutex]::new($true,$name,[ref]$created,$security)
+        }else{
+            $owner=[Threading.MutexAcl]::Create($true,$name,[ref]$created,$security)
+        }
+    } catch {
+        throw 'AccessWeaver could not verify application workflow ownership for this Windows user'
+    }
+    if(-not $created){
+        $owner.Dispose()
+        throw 'An AccessWeaver application workflow is already active for this Windows user'
+    }
+    $script:mutex=$owner
+    $script:ownsMutex=$true
+}
 function Initialize-Operation {
     # Check before machine-storage initialization, DNS changes, discovery or
     # process execution. A combined repair cannot cross this boundary safely.
@@ -57,6 +80,7 @@ function Initialize-Operation {
     if($r.action -in @('app-install','app-remove','app-start','app-reinstall')){
         Require-DesktopUser
         if($r.dns -and $r.dns -ne 'unchanged'){throw 'Configure system DNS separately from user application operations'}
+        Enter-ApplicationWorkflow
         if($r.action -ne 'app-start'){
             $script:root=Join-Path (Split-Path -Parent $inputData.resultPath) 'application'
             No-Reparse $root
