@@ -1575,9 +1575,14 @@ $previousAppRequest=$r
 $previousAppInput=$inputData
 $previousAppRoot=$root
 $previousAppEffects=$script:externalEffectsPending
+$previousAppJournal=$script:journalPath
+$previousAppJournalState=$script:journalState
 try {
     $root=Join-Path $testRoot 'app-install-fixture'
     [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
+    $journal=Join-Path $root 'application.json'
+    $script:journalPath=$journal
+    $script:journalState='running'
     $script:appInstallerChanged=$false
     $script:appPreviouslyInstalled=$false
     function Require-DesktopUser {}
@@ -1614,7 +1619,11 @@ try {
     }
     function Native {
         param($Program,$Arguments,$Timeout)
-        if(-not $script:externalEffectsPending){throw 'Vendor setup began without recording its possible effects'}
+        $saved=Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
+        if(-not $script:externalEffectsPending -or $saved.state -cne 'running' -or
+            $saved.externalEffectsPending -isnot [bool] -or -not $saved.externalEffectsPending){
+            throw 'Vendor setup began without its durable uncertainty record'
+        }
         $script:appInstallTrace.Add('installer')
         $script:appInstallerLockedAtLaunch=$false
         try {
@@ -1630,14 +1639,23 @@ try {
         if($script:appReadbackFailure){throw 'fixture executable readback failure'}
     }
     function Event {param($text);$script:appInstallTrace.Add('event')}
-    $r=[pscustomobject]@{clean=$true;sha256=''}
+    $r=[pscustomobject]@{action='app-install';engine='discord-ptb';clean=$true;sha256=''}
     $inputData=[pscustomobject]@{nativeArchitecture='amd64'}
     $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$true;$script:appRemoveFailure=$false
     $script:externalEffectsPending=$false
+    Save-Journal
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$true}
     Assert ($rejected -and -not $script:externalEffectsPending -and
         (($script:appInstallTrace -join ',') -ceq 'download:discord')) 'PTB clean download failure leaves vendor effects clear and preserves the existing client'
     $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$false;$script:appRemoveFailure=$false
+    $beforeLaunch=Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
+    Assert ($beforeLaunch.externalEffectsPending -is [bool] -and -not $beforeLaunch.externalEffectsPending) 'Application journal starts with no vendor effect'
+    $script:journalPath=Join-Path $root 'missing-parent\application.json'
+    $refused=$false
+    try{Install-App 'discord-ptb'}catch{$refused=$true}
+    Assert ($refused -and -not $script:externalEffectsPending -and ($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord') 'Application setup refuses to launch when its journal cannot be written'
+    $script:journalPath=$journal
+    $script:appInstallTrace.Clear()
     $installed=Install-App 'discord-ptb'
     Assert (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable,verify-ptb,event') 'PTB clean verifies the installed replacement before removal and rechecks it after cleanup'
     $writer=[IO.File]::OpenWrite($script:appInstallerDestination)
@@ -1745,6 +1763,8 @@ try {
     $inputData=$previousAppInput
     $root=$previousAppRoot
     $script:externalEffectsPending=$previousAppEffects
+    $script:journalPath=$previousAppJournal
+    $script:journalState=$previousAppJournalState
 }
 # Exercise official release selection with fixed metadata and no vendor execution.
 & {

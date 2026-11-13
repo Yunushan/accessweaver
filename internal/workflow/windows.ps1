@@ -33,7 +33,7 @@ if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-state
 function Event([string]$text) { $script:events.Add(([DateTime]::UtcNow.ToString('o')+' '+$text)); [Console]::WriteLine($text); Save-Journal }
 function Save-Journal {
     if($script:journalPath){
-        $text=@{action=$r.action;engine=$r.engine;state=$script:journalState;undo=@($script:undo.ToArray());events=@($script:events.ToArray())} | ConvertTo-Json -Depth 12
+        $text=@{action=$r.action;engine=$r.engine;state=$script:journalState;externalEffectsPending=[bool]$script:externalEffectsPending;undo=@($script:undo.ToArray());events=@($script:events.ToArray())} | ConvertTo-Json -Depth 12
         Publish-WorkflowFile $script:journalPath ([Text.UTF8Encoding]::new($false).GetBytes($text))
     }
 }
@@ -2711,6 +2711,15 @@ function Get-SplitCordInstaller {
     if($hash -notmatch '\A[a-fA-F0-9]{64}\z'){throw 'SplitCord installer requires a published or explicitly supplied SHA-256'}
     return @{url=$url;hash=$hash}
 }
+function Save-ApplicationEffectBoundary {
+    # Persist the attempt before allowing an irreversible desktop action.
+    $previous=$script:externalEffectsPending
+    $script:externalEffectsPending=$true
+    try {Save-Journal}catch {
+        $script:externalEffectsPending=$previous
+        throw
+    }
+}
 function Install-App([string]$variant,[switch]$Reinstall) {
     Require-DesktopUser
     if($Reinstall -and ($variant -cne 'discord' -or $r.clean -or $r.downloadUrl -or $r.sha256 -or $r.configPath -or $r.bundlePath)){
@@ -2753,8 +2762,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         }
         if($cleanPTB){$stableBeforeSetup=Find-App 'discord'}
         $installerArgs=if($variant -eq 'splitcord'){@('/S')}else{@('-s')}
-        # A vendor installer can change user files before returning an error.
-        $script:externalEffectsPending=$true
+        Save-ApplicationEffectBoundary
         [void](Native $file $installerArgs -Timeout 900)
     } finally {$lockedInstaller.Dispose()}
     Wait-App $variant $true 180
@@ -2795,8 +2803,7 @@ function Remove-App([string]$variant,[string]$expectedApp) {
     if(-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)){throw 'Application uninstaller not found'}
     Stop-AppProcesses $variant $app
     No-Reparse $uninstaller
-    # The vendor can change application files even if it returns an error.
-    $script:externalEffectsPending=$true
+    Save-ApplicationEffectBoundary
     [void](Native $uninstaller $arguments -Timeout $timeout)
     Wait-App $variant $false 60 $app
     Wait-AppProcessesExited $variant $app
@@ -2887,6 +2894,9 @@ function Stop-AppProcesses([string]$variant,[string]$app) {
             try {$processSession=$process.SessionId}catch{}
             if($processSession -isnot [int] -or $processSession -lt 0){throw 'A matching application process session could not be verified'}
             if($processSession -ne $sessionId){throw 'A matching application is running in another Windows session'}
+        }
+        if($matching.Count -gt 0 -and $r.action -in @('app-install','app-remove','app-reinstall')){
+            Save-ApplicationEffectBoundary
         }
         foreach($process in $matching){
             # Terminating a user application is an external effect even if a
