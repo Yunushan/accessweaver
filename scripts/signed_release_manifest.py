@@ -12,7 +12,7 @@ import sys
 import tempfile
 
 from macos_installer import version_parts
-from sbom import validate_digest
+from sbom import prop_map, validate_digest
 from verify_release import require
 from verify_release_provenance import REPOSITORY, regular_file, validate_identity
 from verify_release_rebuild import digest, snapshot
@@ -67,8 +67,32 @@ def inventory(root, subjects):
     ]
 
 
+def macos_detector_digest(document, identity):
+    components = {entry["bom-ref"]: entry for entry in document["components"]}
+    helper = components["helper:application"]
+    require(helper.get("type") == "application" and helper.get("version") == identity["version"],
+            "macOS detector build identity differs")
+    values = prop_map(helper)
+    for key, field in (("source-commit", "commit"), ("source-state", "sourceState"),
+                       ("target-os", "platform"), ("target-arch", "arch")):
+        require(values.get("accessweaver:" + key) == identity[field], "macOS detector build identity differs")
+
+    hashes = helper.get("hashes")
+    require(isinstance(hashes, list) and len(hashes) == 1 and isinstance(hashes[0], dict),
+            "Invalid macOS detector digest")
+    pin = hashes[0].get("content")
+    require(isinstance(pin, str) and re.fullmatch(SHA256, pin)
+            and hashes == [{"alg": "SHA-256", "content": pin}], "Invalid macOS detector digest")
+    for phase in ("preinstall", "postinstall"):
+        entry = components["script-file:" + phase]
+        require(entry.get("type") == "file" and entry.get("name") == phase and entry.get("hashes") == hashes,
+                "macOS package script differs from its detector")
+    return pin
+
+
 def validate_release_sboms(root, files, commit, version):
     documents = {}
+    macos_detectors = []
     try:
         for subject in files:
             if subject["role"] not in ("installer", "payload"):
@@ -78,11 +102,15 @@ def validate_release_sboms(root, files, commit, version):
             regular_file(path, MAX_SBOM_BYTES)
             document = decode_json(path.read_bytes())
             platform, arch = subject["target"].split("/")
-            validate_digest(document, subject["sha256"], {
-                "version": version, "commit": commit, "sourceState": "clean",
-                "platform": platform, "arch": arch,
-            })
+            identity = {"version": version, "commit": commit, "sourceState": "clean",
+                        "platform": platform, "arch": arch}
+            validate_digest(document, subject["sha256"], identity)
             documents[subject["target"], subject["role"]] = document
+            if platform == "darwin":
+                macos_detectors.append({
+                    "target": subject["target"], "version": version, "packageSHA256": subject["sha256"],
+                    "detectorSHA256": macos_detector_digest(document, identity),
+                })
         for target in ("windows/amd64", "windows/arm64"):
             payload = documents[target, "payload"]["metadata"]["component"]
             installer = documents[target, "installer"]
@@ -92,7 +120,7 @@ def validate_release_sboms(root, files, commit, version):
                     "Windows installer SBOM payload differs from the signed payload SBOM")
     except (AttributeError, KeyError, TypeError, RecursionError) as error:
         raise ValueError("Malformed signed release SBOM") from error
-    return len(documents)
+    return len(documents), macos_detectors
 
 
 def windows_subjects(subjects):
@@ -307,10 +335,12 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                                                "previousPayloadSHA256", "publisherCertificateSHA256")
                 ) for entry in entries),
                 "Release subject or Windows detection evidence is revoked")
-        sboms_verified = validate_release_sboms(root, files, commit, version)
+        sboms_verified, macos_detectors = validate_release_sboms(root, files, commit, version)
+        require(all(entry["detectorSHA256"] not in revoked_subjects for entry in macos_detectors),
+                "macOS detector is revoked")
         report = {
             "schemaVersion": 1, "scope": "accessweaver-signed-desktop-release",
-            "sbomArtifactBindingsVerified": sboms_verified,
+            "sbomArtifactBindingsVerified": sboms_verified, "macosDetection": macos_detectors,
             "sourceCommit": commit, "sourceRef": ref, "subjectsVerified": len(subjects),
             "organizationApprovalSignatureVerified": True, "approvalCertificateSHA256": certificate_sha256,
             "revocationListSHA256": revocation_list_sha256.lower(), "revocationCheckPassed": True,

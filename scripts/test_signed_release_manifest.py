@@ -13,6 +13,7 @@ COMMIT = "a" * 40
 REF = "refs/tags/v1.2.3-rc.1"
 OPENSSL = shutil.which("openssl")
 VERSION = REF.removeprefix("refs/tags/v")
+DETECTOR_DIGESTS = {"darwin/amd64": "1" * 64, "darwin/arm64": "2" * 64}
 
 
 class SignedReleaseManifestTests(unittest.TestCase):
@@ -40,8 +41,17 @@ class SignedReleaseManifestTests(unittest.TestCase):
             payloads[target] = {**root, "bom-ref": "payload-application"}
             self.write_sbom(name, root)
         for name, (target, role) in self.subjects.items():
-            if role == "installer":
-                self.write_sbom(name, self.sbom_root(name, target), payloads.get(target))
+            if role != "installer":
+                continue
+            root = self.sbom_root(name, target)
+            if target.startswith("darwin/"):
+                hashes = [{"alg": "SHA-256", "content": DETECTOR_DIGESTS[target]}]
+                components = [{**root, "bom-ref": "helper:application", "hashes": hashes}]
+                components.extend({"bom-ref": "script-file:" + phase, "type": "file",
+                                   "name": phase, "hashes": hashes} for phase in ("preinstall", "postinstall"))
+            else:
+                components = [payloads[target]]
+            self.write_sbom(name, root, components)
 
     def sbom_root(self, name, target):
         platform, arch = target.split("/")
@@ -54,11 +64,11 @@ class SignedReleaseManifestTests(unittest.TestCase):
             }),
         }
 
-    def write_sbom(self, name, root, payload=None):
-        references = [payload["bom-ref"]] if payload else []
+    def write_sbom(self, name, root, components=()):
+        references = [entry["bom-ref"] for entry in components]
         document = {
             "bomFormat": "CycloneDX", "specVersion": "1.6",
-            "metadata": {"component": root}, "components": [payload] if payload else [],
+            "metadata": {"component": root}, "components": list(components),
             "dependencies": [{"ref": root["bom-ref"], "dependsOn": references}]
                             + [{"ref": ref, "dependsOn": []} for ref in references],
             "compositions": [{"aggregate": "incomplete"}],
@@ -155,6 +165,25 @@ class SignedReleaseManifestTests(unittest.TestCase):
             release.prepare(self.candidate, output, COMMIT, REF)
         self.assertFalse(output.exists())
 
+    def test_prepare_rejects_conflicting_macos_detector_metadata(self):
+        output = self.root / release.MANIFEST
+        path = self.candidate / f"accessweaver-{VERSION}-darwin-amd64-deployment-experimental.pkg.cdx.json"
+        original = path.read_bytes()
+        for reference, field, value, message in (
+            ("helper:application", "version", "1.2.3", "detector build identity"),
+            ("helper:application", "hashes", [{"alg": "SHA-256", "content": "x" * 64}], "detector digest"),
+            ("helper:application", "hashes", [{"alg": "SHA-1", "content": "1" * 64}], "detector digest"),
+            ("script-file:preinstall", "hashes", [{"alg": "SHA-256", "content": "0" * 64}], "script differs"),
+            ("script-file:postinstall", "name", "preinstall", "script differs"),
+        ):
+            document = json.loads(original)
+            entry = next(entry for entry in document["components"] if entry["bom-ref"] == reference)
+            entry[field] = value
+            path.write_text(json.dumps(document), encoding="utf-8")
+            with self.subTest(reference=reference, field=field), self.assertRaisesRegex(ValueError, message):
+                release.prepare(self.candidate, output, COMMIT, REF)
+            self.assertFalse(output.exists())
+
     def test_prepare_rejects_untrusted_or_incomplete_windows_detection_evidence(self):
         output = self.root / release.MANIFEST
         valid = self.write_reboot_report("valid.json")
@@ -218,6 +247,17 @@ class SignedReleaseManifestTests(unittest.TestCase):
         report = self.verify(approved, pin)
         self.assertEqual(report["subjectsVerified"], 12)
         self.assertEqual(report["sbomArtifactBindingsVerified"], 6)
+        self.assertEqual(report["macosDetection"], [
+            {"target": target, "version": VERSION, "detectorSHA256": pin,
+             "packageSHA256": release.digest(self.candidate /
+                 f"accessweaver-{VERSION}-darwin-{target.split('/')[1]}-deployment-experimental.pkg")}
+            for target, pin in DETECTOR_DIGESTS.items()
+        ])
+        for target, detector in DETECTOR_DIGESTS.items():
+            current_pin = self.write_policy({**self.policy, "subjectSHA256": [detector]})
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, "macOS detector is revoked"):
+                self.verify(approved, pin, policy_pin=current_pin)
+        self.write_policy(self.policy)
         self.assertTrue(report["organizationApprovalSignatureVerified"])
         self.assertFalse(report["nativePublisherChecksPerformed"])
         self.assertTrue(report["revocationCheckPassed"])

@@ -93,7 +93,7 @@ Actual replacement must bind the validated state to the publication operation an
 
 ### Detect the approved active macOS deployment
 
-Verify the signed package and current revocation list through the release-control procedure. Obtain the exact package digest from the approved inventory and the `script-file:postinstall` SHA-256 from that package's authenticated CycloneDX sidecar. On a trusted Mac, place the approved package alone in a private directory and stage its detector in a separate trusted output directory. [Signed release verification](RELEASE_PROVENANCE.md#approve-the-final-signed-desktop-artifacts).
+Verify the signed package and current revocation list through the release-control procedure. Select the entry matching the assignment architecture and version from the signed release verifier's `macosDetection` result. Use its `packageSHA256` and `detectorSHA256` values with the independently approved Apple Team ID and installer certificate fingerprint. On a trusted Mac, place the approved package alone in a private directory and stage its detector in a separate trusted output directory. [Signed release verification](RELEASE_PROVENANCE.md#approve-the-final-signed-desktop-artifacts).
 
 ```sh
 python3 scripts/verify_macos_installer_publisher.py PRIVATE_PACKAGE_DIRECTORY \
