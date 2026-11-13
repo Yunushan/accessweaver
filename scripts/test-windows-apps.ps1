@@ -10,21 +10,39 @@ param(
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 
-function Test-FixtureAppProcess([string]$Path,[int]$Session,$Processes){
+function Test-FixtureAppProcess([string]$Path,[int]$Session,$Processes,[string]$ProcessName){
     $seen=$false
+    $complete=$true
     foreach($process in $Processes){
         try {
-            if($process.Path -ieq $Path -and $process.SessionId -eq $Session -and
-               $process.HasExited -is [bool] -and -not $process.HasExited){
-                $seen=$true
+            if($ProcessName){
+                $name=$process.ProcessName
+                if([string]::IsNullOrWhiteSpace($name)){$complete=$false;continue}
+                if($name -ine $ProcessName){continue}
             }
+            $exited=$process.HasExited
+            if($exited -isnot [bool]){$complete=$false;continue}
+            if($exited){continue}
+            $observedSession=$process.SessionId
+            if($observedSession -isnot [int] -or $observedSession -lt 0){$complete=$false;continue}
+            if($observedSession -ne $Session){continue}
+            $image=$process.Path
+            if([string]::IsNullOrWhiteSpace($image)){$complete=$false;continue}
+            $exited=$process.HasExited
+            if($exited -isnot [bool]){$complete=$false;continue}
+            if(-not $exited -and $image -ieq $Path){$seen=$true}
         } catch {
-            # A process can exit during inspection.
+            # An inaccessible live process cannot establish absence.
+            $complete=$false
         } finally {
-            if($process -is [IDisposable]){$process.Dispose()}
+            if($process -is [IDisposable]){
+                try {$process.Dispose()}catch{$complete=$false}
+            }
         }
     }
-    return $seen
+    if($seen){return $true}
+    if($complete){return $false}
+    return $null
 }
 
 function Get-FixtureAppImage($Applications,[string]$Variant){
@@ -45,13 +63,15 @@ function Get-FixtureAppImage($Applications,[string]$Variant){
 
 function Find-FixtureLiveImage([string]$Path){
     $name=[IO.Path]::GetFileNameWithoutExtension($Path)
-    return (Test-FixtureAppProcess $Path $session @(Get-Process -Name $name -ErrorAction SilentlyContinue))
+    # Full enumeration distinguishes a genuinely empty match from a lookup error.
+    return (Test-FixtureAppProcess $Path $session @(Get-Process -ErrorAction Stop) $name)
 }
 
 function Assert-FixtureLiveImage([string]$Path,[bool]$Expected){
     $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
-        if((Find-FixtureLiveImage $Path) -eq $Expected){return}
+        $observed=Find-FixtureLiveImage $Path
+        if($observed -is [bool] -and $observed -eq $Expected){return}
         Start-Sleep -Milliseconds 250
     } while($timer.Elapsed.TotalSeconds -lt 10)
     throw 'Application process state was not confirmed in this desktop session'
@@ -94,7 +114,7 @@ try {
     $checks=[Collections.Generic.List[object]]::new()
     $script:appEvidenceStage='baseline'
     $report=[ordered]@{
-        schemaVersion=2;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
+        schemaVersion=3;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
         fixtureSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();
         architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant();
         checks=$null;baselineClear=$false;splitCordIncluded=(-not $SkipSplitCord);
@@ -126,7 +146,10 @@ try {
             }
             if($response.exitCode -ne 0){throw 'Application workflow failed'}
             $job=ConvertFrom-Json -InputObject $response.text
-            if($job.state -cne 'succeeded'){throw 'Application workflow did not reach success'}
+            if($job.action -cne $Request.action -or $job.state -cne 'succeeded' -or
+                $job.result.ok -isnot [bool] -or -not $job.result.ok){
+                throw 'Application workflow did not reach success'
+            }
             return $job.result.data
         } finally {[IO.File]::Delete($path)}
     }
@@ -135,14 +158,15 @@ try {
         $response=Invoke-FixtureCLI @('system','discover')
         if($response.exitCode -ne 0){throw 'Application discovery failed'}
         $job=ConvertFrom-Json -InputObject $response.text
-        if($job.state -cne 'succeeded' -or $null -eq $job.result.data.applications -or
+        if($job.action -cne 'discover' -or $job.state -cne 'succeeded' -or
+           $job.result.ok -isnot [bool] -or -not $job.result.ok -or $null -eq $job.result.data.applications -or
            @($job.result.data.conflicts) -ccontains 'SplitCord installation could not be identified safely'){
             throw 'Application discovery could not verify the inventory'
         }
         return $job.result.data.applications
     }
     function Install-FixtureApp([string]$Variant,[switch]$Clean){
-        $attempted.Add($Variant)
+        if(-not $attempted.Contains($Variant)){$attempted.Add($Variant)}
         $request=@{action='app-install';engine=$Variant}
         if($Clean){$request.clean=$true}
         $data=Invoke-AppWorkflow $request
@@ -157,7 +181,9 @@ try {
     function Start-FixtureApp([string]$Variant){
         if(-not $installedImages.ContainsKey($Variant)){throw 'Application install prerequisite failed'}
         $image=$installedImages[$Variant]
+        $script:appEvidenceStage='process-baseline'
         $alreadyRunning=Find-FixtureLiveImage $image
+        if($alreadyRunning -isnot [bool]){throw 'Application process baseline could not be verified'}
         [void](Invoke-AppWorkflow @{action='app-start';engine=$Variant})
         $script:appEvidenceStage='process-readback'
         Assert-FixtureLiveImage $image $true
@@ -199,13 +225,16 @@ try {
             $before=Get-FixtureAppImage (Inspect-Apps) 'discord'
             if(-not $before){throw 'Stable Discord is absent'}
             $beforeHash=(Get-FileHash -LiteralPath $before -Algorithm SHA256).Hash
+            $script:appEvidenceStage='process-baseline'
             $beforeRunning=Find-FixtureLiveImage $before
+            if($beforeRunning -isnot [bool]){throw 'Application process baseline could not be verified'}
             Invoke-AppWorkflow @{action='app-repair';engine='discord'} -ExpectRepairRefusal
             $currentImage=Get-FixtureAppImage (Inspect-Apps) 'discord'
             $script:appEvidenceStage='repair-readback'
+            $afterRunning=Find-FixtureLiveImage $before
             if($currentImage -ine $before -or
                (Get-FileHash -LiteralPath $before -Algorithm SHA256).Hash -cne $beforeHash -or
-               (Find-FixtureLiveImage $before) -ne $beforeRunning){
+               $afterRunning -isnot [bool] -or $afterRunning -ne $beforeRunning){
                 throw 'Combined repair refusal changed the observed Discord state'
             }
         }
@@ -218,6 +247,15 @@ try {
             $installedImages['discord']=$image
         }
         Check 'discord-start-after-reinstall' {Start-FixtureApp 'discord'}
+        Check 'discord-remove' {
+            if(-not $installedImages.ContainsKey('discord') -or
+                -not (Get-FixtureAppImage (Inspect-Apps) 'discord')){throw 'Stable Discord install prerequisite failed'}
+            Remove-FixtureApp 'discord'
+        }
+        Check 'discord-install-for-ptb-clean' {
+            if(Get-FixtureAppImage (Inspect-Apps) 'discord'){throw 'Stable Discord removal prerequisite failed'}
+            Install-FixtureApp 'discord'
+        }
         Check 'ptb-clean-install' {
             if(-not $installedImages.ContainsKey('discord') -or
                -not (Get-FixtureAppImage (Inspect-Apps) 'discord')){throw 'Clean mode requires an installed stable client'}
