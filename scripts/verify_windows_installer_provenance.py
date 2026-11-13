@@ -152,7 +152,7 @@ def validate_fixed_restoration(refused, removed):
 
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -174,6 +174,10 @@ def validate_contents(root,commit,ref,arch,versions):
     for operation in operations:
         require(operation.get("exitCode")== (1 if operation["operation"].startswith("refused-") else 0) and operation.get("deadlineMilliseconds")==180000 and type(operation.get("elapsedMilliseconds")) is int and 0<=operation["elapsedMilliseconds"]<180000,"Native lifecycle operation failed")
     restoration = validate_fixed_restoration(*operations[-2:]) if report["schemaVersion"] >= 14 else {}
+    if report["schemaVersion"] >= 15:
+        require(operations[-2].get("registeredUninstallerBindingVerified") is True,
+                "Registered workflow uninstaller binding was not verified")
+        restoration["registeredUninstallerBindingVerified"] = True
     builds=report.get("builds",[]);require([b.get("version") for b in builds]==list(versions),"Authenticated family differs from independently approved versions")
     candidates=[]
     for build,version in zip(builds,versions):

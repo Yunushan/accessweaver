@@ -3339,10 +3339,141 @@ function Publish-WorkflowResult([string]$Path,[Collections.IDictionary]$Result,[
     Write-WorkflowResultBytes $Path $bytes $MaximumBytes
     return $normal
 }
-function Invoke-WorkflowDeferredUninstaller([string]$Path) {
-    # Intentional handoff: completion of the registered product uninstaller is
-    # not observed by this worker. The report always retains that uncertainty.
-    Start-Process -FilePath $Path -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -WindowStyle Hidden
+function Read-WorkflowUninstallRegistration {
+    $path='SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{B13D4677-4660-4E63-B3DB-03077ACBB092}_is1'
+    $record=$null
+    foreach($view in @([Microsoft.Win32.RegistryView]::Registry64,[Microsoft.Win32.RegistryView]::Registry32)){
+        $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,$view)
+        $key=$null
+        try {
+            $key=$base.OpenSubKey($path,$false)
+            if($null -eq $key){continue}
+            if($view -ne [Microsoft.Win32.RegistryView]::Registry64){throw 'Unexpected alternate AccessWeaver machine registration'}
+            $writes=[int][Security.AccessControl.RegistryRights]'SetValue,CreateSubKey,CreateLink,Delete,ChangePermissions,TakeOwnership'
+            Assert-WorkflowUninstallACL ($key.GetAccessControl()) $writes
+            $record=@{}
+            foreach($name in @('DisplayVersion','InstallLocation','UninstallString','QuietUninstallString')){
+                $value=$key.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+                if($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value) -or $value.Length -gt 300 -or
+                    $key.GetValueKind($name) -ne [Microsoft.Win32.RegistryValueKind]::String){
+                    throw 'AccessWeaver uninstall registration is incomplete'
+                }
+                $record[$name]=$value
+            }
+        } finally {
+            if($null -ne $key){$key.Dispose()}
+            $base.Dispose()
+        }
+    }
+    return $record
+}
+function Get-WorkflowUninstallPath($Registration,[string]$ProgramFiles) {
+    $directory=$Registration.InstallLocation.TrimEnd('\')
+    if($directory -cnotmatch '\A[A-Za-z]:\\[^:*?"<>|\x00-\x1f]+\z' -or
+        $directory.Length -gt 259 -or [IO.Path]::GetFullPath($directory) -cne $directory -or
+        -not (Under $directory $ProgramFiles)){
+        throw 'Registered AccessWeaver installation must be a local Program Files directory'
+    }
+    foreach($part in $directory.Substring($ProgramFiles.Length+1).Split('\')){
+        if(-not $part -or $part.EndsWith('.') -or $part.EndsWith(' ')){
+            throw 'Registered AccessWeaver installation directory is ambiguous'
+        }
+    }
+    $command=[regex]::Match($Registration.UninstallString,'\A"(?<file>[^"\r\n]+\\unins[0-9]{3}\.exe)"(?<log> /LOG)?\z',
+        [Text.RegularExpressions.RegexOptions]'IgnoreCase,CultureInvariant')
+    if(-not $command.Success){throw 'Registered AccessWeaver uninstall command is invalid'}
+    $file=$command.Groups['file'].Value
+    $expected=Join-Path $directory ([IO.Path]::GetFileName($file))
+    $quiet='"'+$expected+'" /SILENT'+$command.Groups['log'].Value
+    if($file -ine $expected -or $Registration.QuietUninstallString -ine $quiet){
+        throw 'Registered AccessWeaver uninstall commands do not identify the installed uninstaller'
+    }
+    return $expected
+}
+function Assert-WorkflowUninstallACL($Acl,[int]$WriteRights) {
+    # TrustedInstaller, SYSTEM and Administrators may manage the package.
+    # Ordinary read/execute ACEs are expected in Program Files.
+    $trusted=@('S-1-5-18','S-1-5-32-544','S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
+    if($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin $trusted){
+        throw 'Registered AccessWeaver installation ownership could not be verified'
+    }
+    $writes=$WriteRights -bor 0x50000000
+    $rules=@($acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier]))
+    if(-not $rules.Count){throw 'Registered AccessWeaver installation access could not be verified'}
+    foreach($rule in $rules){
+        if($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -notin $trusted -and
+            -not ($rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) -and
+            (([int]$rule.FileSystemRights -bor [int]$rule.RegistryRights) -band $writes)){
+            throw 'Registered AccessWeaver installation is writable by an untrusted principal'
+        }
+    }
+}
+function Assert-WorkflowUninstallProtection([string]$Path) {
+    No-Reparse $Path
+    $writes=[int][Security.AccessControl.FileSystemRights]'Write,DeleteSubdirectoriesAndFiles,Delete,ChangePermissions,TakeOwnership'
+    Assert-WorkflowUninstallACL (Get-Acl -LiteralPath $Path -ErrorAction Stop) $writes
+}
+function Open-WorkflowUninstallBinding([string]$Architecture=$inputData.nativeArchitecture) {
+    $registration=Read-WorkflowUninstallRegistration
+    if($null -eq $registration){return $null}
+    $programFiles=[Environment]::GetFolderPath('ProgramFiles').TrimEnd('\')
+    $path=Get-WorkflowUninstallPath $registration $programFiles
+    $directory=[IO.Path]::GetDirectoryName($path)
+    $payload=Join-Path $directory 'accessweaver.exe'
+    for($parent=$directory;;$parent=[IO.Path]::GetDirectoryName($parent)){
+        Assert-WorkflowUninstallProtection $parent
+        if($parent -ieq $programFiles){break}
+    }
+    Assert-WorkflowUninstallProtection $payload
+    Assert-WorkflowUninstallProtection $path
+    $machine=switch($Architecture){'amd64' {0x8664} 'arm64' {0xaa64} default {throw 'Native Windows architecture is unavailable'}}
+    if((Get-PEMachine $payload) -ne $machine -or (Get-PEMachine $path) -ne 0x014c){
+        throw 'Registered AccessWeaver payload or uninstaller architecture could not be verified'
+    }
+    $stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($stream.Length -le 0 -or $stream.Length -gt 512MB){throw 'Registered AccessWeaver uninstaller exceeds the inspection limit'}
+        $digest=(Get-FileHash -InputStream $stream -Algorithm SHA256).Hash
+        $confirmed=Read-WorkflowUninstallRegistration
+        foreach($name in $registration.Keys){
+            if($null -eq $confirmed -or $confirmed[$name] -cne $registration[$name]){
+                throw 'AccessWeaver uninstall registration changed during inspection'
+            }
+        }
+        return @{path=$path;sha256=$digest;registration=$registration;stream=$stream}
+    } catch {
+        $stream.Dispose()
+        throw
+    }
+}
+function Invoke-WorkflowDeferredUninstaller($Binding) {
+    $current=Open-WorkflowUninstallBinding
+    if($null -eq $current){throw 'AccessWeaver uninstall registration disappeared before handoff'}
+    try {
+        if($current.path -cne $Binding.path -or $current.sha256 -cne $Binding.sha256){
+            throw 'Registered AccessWeaver uninstaller changed before handoff'
+        }
+        foreach($name in $Binding.registration.Keys){
+            if($current.registration[$name] -cne $Binding.registration[$name]){
+                throw 'AccessWeaver uninstall registration changed before handoff'
+            }
+        }
+        # Keep the confirmed executable open through detached process creation.
+        Start-Process -FilePath $current.path -WorkingDirectory ([IO.Path]::GetDirectoryName($current.path)) -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -WindowStyle Hidden
+    } finally {$current.stream.Dispose()}
+}
+function Invoke-WorkflowUninstall {
+    $binding=Open-WorkflowUninstallBinding
+    if($null -ne $binding){
+        $binding.stream.Dispose()
+        $binding.Remove('stream')
+    }
+    Remove-All
+    $script:pendingUninstaller=$binding
+    if($binding){
+        return @{message='Owned system changes restored; registered uninstaller will start after releasing the workflow lock. Close AccessWeaver if requested. Recovery logs and vendor products are retained.'}
+    }
+    return @{message='Owned system changes restored. Stop the portable core before deleting its folder. Recovery logs and vendor products are retained.'}
 }
 function Complete-WorkflowFinalization([Collections.IDictionary]$Result,[string]$Path,[string]$ResultToken) {
     $failures=[Collections.Generic.List[string]]::new()
@@ -3405,7 +3536,7 @@ try {
         'app-remove' {Remove-App $r.engine}
         'app-start' {Start-App $r.engine}
         'app-repair' {Stop-AppProcesses 'discord';Restore-Drover;Remove-App 'discord';Preserve-DiscordCache;Start-RepairProxy;Install-App 'discord';Install-Drover;@{repaired='discord';proxy='127.0.0.1:1080'}}
-        'uninstall' {Remove-All;$uninstaller=Join-Path $env:ProgramFiles 'AccessWeaver\unins000.exe';if(Test-Path -LiteralPath $uninstaller){No-Reparse $uninstaller;$script:pendingUninstaller=$uninstaller;@{message='Owned system changes restored; registered uninstaller will start after releasing the workflow lock. Close AccessWeaver if requested. Recovery logs and vendor products are retained.'}}else{@{message='Owned system changes restored. Stop the portable core before deleting its folder. Recovery logs and vendor products are retained.'}}}
+        'uninstall' {Invoke-WorkflowUninstall}
         'recover' {Recover-Operation}
         default {throw 'Unknown action'}
     }

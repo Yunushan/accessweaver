@@ -10,7 +10,7 @@ $finalizerSHA=(Get-FileHash -LiteralPath $finalizerSource -Algorithm SHA256).Has
 $finalizerTokens=$null;$finalizerErrors=$null
 $finalizerAst=[Management.Automation.Language.Parser]::ParseFile($finalizerSource,[ref]$finalizerTokens,[ref]$finalizerErrors)
 if($finalizerErrors.Count){throw 'Finalizer source did not parse'}
-$finalizerFunctions=@('Complete-WorkflowFinalization','Assert-WorkflowResultDepth','Assert-WorkflowResultToken','Get-WorkflowResultFailureCode','Throw-WorkflowResultFailure','ConvertTo-WorkflowResultBytes','New-WorkflowResultStream','Write-WorkflowResultStream','Move-WorkflowResultFile','Write-WorkflowResultBytes','New-WorkflowResultFailureReport','Publish-WorkflowResult')
+$finalizerFunctions=@('Under','Assert-WorkflowUninstallACL','Get-WorkflowUninstallPath','Invoke-WorkflowUninstall','Invoke-WorkflowDeferredUninstaller','Complete-WorkflowFinalization','Assert-WorkflowResultDepth','Assert-WorkflowResultToken','Get-WorkflowResultFailureCode','Throw-WorkflowResultFailure','ConvertTo-WorkflowResultBytes','New-WorkflowResultStream','Write-WorkflowResultStream','Move-WorkflowResultFile','Write-WorkflowResultBytes','New-WorkflowResultFailureReport','Publish-WorkflowResult')
 foreach($name in $finalizerFunctions){
     $nodes=@($finalizerAst.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Required finalizer source function unavailable'}
@@ -20,6 +20,94 @@ if((Get-FileHash -LiteralPath $finalizerSource -Algorithm SHA256).Hash.ToLowerIn
 $script:finalizerChecks=0
 $finalizerToken='0123456789abcdef0123456789abcdef0123456789abcdef'
 function Assert-Finalizer([bool]$Value,[string]$Message){if(-not $Value){throw $Message};$script:finalizerChecks++}
+& {
+    $admin=[Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+    $users=[Security.Principal.SecurityIdentifier]::new('S-1-5-32-545')
+    foreach($case in @(
+        @{acl=[Security.AccessControl.FileSecurity]::new();kind=[Security.AccessControl.FileSystemAccessRule];read=[Security.AccessControl.FileSystemRights]::ReadAndExecute;write=[Security.AccessControl.FileSystemRights]::Write},
+        @{acl=[Security.AccessControl.RegistrySecurity]::new();kind=[Security.AccessControl.RegistryAccessRule];read=[Security.AccessControl.RegistryRights]::ReadKey;write=[Security.AccessControl.RegistryRights]::SetValue}
+    )){
+        $case.acl.SetOwner($admin)
+        $case.acl.AddAccessRule($case.kind::new($admin,$case.write,'Allow'))
+        $case.acl.AddAccessRule($case.kind::new($users,$case.read,'Allow'))
+        Assert-WorkflowUninstallACL $case.acl ([int]$case.write)
+        $case.acl.AddAccessRule($case.kind::new($users,$case.write,'Allow'))
+        $refused=$false
+        try {Assert-WorkflowUninstallACL $case.acl ([int]$case.write)}catch{$refused=$true}
+        Assert-Finalizer $refused 'An ordinary writable file or registration passed inspection'
+    }
+}
+& {
+    $folder=[Environment]::GetFolderPath('ProgramFiles')
+    $installed=Join-Path $folder 'Fixture vendor\AccessWeaver'
+    $uninstaller=Join-Path $installed 'unins005.exe'
+    $approved=@{DisplayVersion='1.2.3';InstallLocation=$installed+'\';
+        UninstallString=('"'+$uninstaller+'" /LOG');QuietUninstallString=('"'+$uninstaller+'" /SILENT /LOG')}
+    Assert-Finalizer ((Get-WorkflowUninstallPath $approved $folder) -ceq $uninstaller) 'Registered nested Program Files path was not accepted'
+    foreach($invalid in @(
+        @{InstallLocation=$folder+'-else\AccessWeaver'},
+        @{InstallLocation=$installed+'\..\Other'},
+        @{InstallLocation=$installed+'.'},
+        @{UninstallString=('"'+$uninstaller+'" /SILENT')},
+        @{QuietUninstallString=('"'+$uninstaller+'" /SILENT /LOG /NORESTART')},
+        @{UninstallString=('"'+(Join-Path $folder 'unins005.exe')+'"')}
+    )){
+        $record=$approved.Clone()
+        foreach($key in $invalid.Keys){$record[$key]=$invalid[$key]}
+        $failed=$false
+        try {$null=Get-WorkflowUninstallPath $record $folder}catch{$failed=$true}
+        Assert-Finalizer $failed 'Untrusted registration path or command was accepted'
+    }
+
+    $state=@{launches=0;restores=0;stream=$null;binding=$null;failOpen=$false;failLaunch=$false}
+    function Open-WorkflowUninstallBinding {
+        if($state.failOpen){throw 'Inert inspection failure'}
+        if($null -eq $state.binding){return $null}
+        $result=$state.binding.Clone()
+        $state.stream=[IO.MemoryStream]::new()
+        $result.stream=$state.stream
+        return $result
+    }
+    function Start-Process {
+        param($FilePath,$WorkingDirectory,$ArgumentList,$WindowStyle)
+        Assert-Finalizer ($FilePath -ceq $uninstaller -and $WorkingDirectory -ceq $installed -and
+            $WindowStyle -ceq 'Hidden' -and ($ArgumentList -join ',') -ceq '/VERYSILENT,/SUPPRESSMSGBOXES,/NORESTART' -and
+            $state.stream.CanRead) 'Deferred launch lost its fixed command or executable guard'
+        $state.launches++
+        if($state.failLaunch){throw 'Inert launch failure'}
+    }
+    function Remove-All {
+        Assert-Finalizer ($null -eq $state.stream -or -not $state.stream.CanRead) 'Initial executable guard was not closed before restoration'
+        $state.restores++
+    }
+    try {
+        $null=Invoke-WorkflowUninstall
+        Assert-Finalizer ($state.restores -eq 1 -and $null -eq $script:pendingUninstaller) 'Portable restoration scheduled an uninstall'
+        $state.failOpen=$true
+        $failed=$false
+        try {$null=Invoke-WorkflowUninstall}catch{$failed=$true}
+        Assert-Finalizer ($failed -and $state.restores -eq 1) 'Failed initial registration inspection allowed restoration'
+        $state.failOpen=$false
+        $state.binding=@{path=$uninstaller;sha256=('a'*64);registration=$approved}
+        $null=Invoke-WorkflowUninstall
+        $binding=$script:pendingUninstaller
+        Assert-Finalizer ($null -ne $binding -and -not $binding.ContainsKey('stream')) 'Deferred state retained a live file handle'
+        Invoke-WorkflowDeferredUninstaller $binding
+        Assert-Finalizer ($state.launches -eq 1 -and -not $state.stream.CanRead) 'Successful launch did not release the executable guard'
+        foreach($change in @('digest','registration','launch-error')){
+            $state.binding=$binding.Clone()
+            switch($change){
+                'digest' {$state.binding.sha256=('b'*64)}
+                'registration' {$state.binding.registration=$approved.Clone();$state.binding.registration.DisplayVersion='1.2.4'}
+                'launch-error' {$state.failLaunch=$true}
+            }
+            $failed=$false
+            try {Invoke-WorkflowDeferredUninstaller $binding}catch{$failed=$true}
+            Assert-Finalizer ($failed -and -not $state.stream.CanRead) 'Changed identity or failed launch lost its failure or leaked a file guard'
+        }
+        Assert-Finalizer ($state.launches -eq 2) 'An identity mismatch reached the process launcher'
+    } finally {$script:pendingUninstaller=$null}
+}
 Add-Type -TypeDefinition @"
 using System;
 using System.IO;
