@@ -90,6 +90,25 @@ test('background engine changes announce localized states once without moving fo
   assert.deepEqual(writes,['failedState','shutdownPending',null,'stopped'].map(key=>key ? env.run('t('+JSON.stringify(key)+')') : ''));
   assert.equal(env.context.document.activeElement,env.get('theme-toggle'));
 });
+test('changing language clears the previous runtime announcement and localizes the next change', async () => {
+  const env=environment(), region=env.get('runtime-announcement'), language=env.get('settings-language');
+  env.run('state.offline=false; state.loading=false; state.runtime={state:"running"}; renderHero=()=>{}; renderProfiles=()=>{}; renderLogs=()=>{}; apiRequest=async()=>fixtureRuntime;');
+  language.focus();
+  env.put('fixtureRuntime',{state:'failed'});
+  await env.run('pollStatus()');
+  assert.equal(region.textContent,env.run('t("failedState")'));
+  env.run('changeLanguage("en")');
+  assert.equal(region.textContent,env.run('t("failedState")'));
+  env.run('changeLanguage("es")');
+  assert.equal(region.textContent,'');
+  env.put('fixtureRuntime',{state:'exited'});
+  await env.run('pollStatus()');
+  assert.equal(region.textContent,'');
+  env.put('fixtureRuntime',{state:'stopped'});
+  await env.run('pollStatus()');
+  assert.equal(region.textContent,'Motor detenido');
+  assert.equal(env.context.document.activeElement,language);
+});
 test('a superseded runtime poll cannot overwrite or announce a newer state', async () => {
   for (const reject of [false,true]) {
     const env=environment(), response=Promise.withResolvers();

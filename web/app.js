@@ -230,7 +230,9 @@ function updateTranslations() {
   updateBreadcrumb();
 }
 function changeLanguage(lang) {
-  state.lang = ['en','tr','ru','es'].includes(lang) ? lang : 'en';
+  const selected = ['en','tr','ru','es'].includes(lang) ? lang : 'en';
+  if (state.lang !== selected) setText('runtime-announcement','');
+  state.lang = selected;
   storage.preference('aw.lang',state.lang);
   updateTranslations();
   renderAll();
