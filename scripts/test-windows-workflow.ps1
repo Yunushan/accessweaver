@@ -828,8 +828,10 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
             param($LiteralPath)
             return $LiteralPath -ceq 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
         }
-        function Get-ChildItem {param($LiteralPath);return @{PSPath=$registration}}
-        function Get-ItemProperty {param($LiteralPath);return @{PSPath=$registration;DisplayName='WireSock Secure Connect';UninstallString=('"'+$program+'" /uninstall')}}
+        $record=@{PSPath=$registration;DisplayName='WireSock Secure Connect';UninstallString=('"'+$program+'" /uninstall')}
+        $entries=@(@{PSPath=$registration})
+        function Get-ChildItem {param($LiteralPath);return $entries}
+        function Get-ItemProperty {param($LiteralPath);return $record}
         function Get-AuthenticodeSignature {param($LiteralPath);return $fixtureSignature}
         function Get-FileHash {param($LiteralPath,$Algorithm);return @{Hash=$fixtureDigest}}
         function No-Reparse {param($Path);if($Path -cne $program){throw 'Unexpected cached executable'}}
@@ -839,10 +841,11 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         function Event {}
         function Native {
             param($Program,$Arguments,$Codes,$Timeout)
-            if($Program -cne $expectedProgram -or ($Arguments -join ',') -cne '/uninstall,/quiet,/norestart'){throw 'Unexpected uninstall invocation'}
+            if($Program -cne $expectedProgram -or ($Arguments -join ',') -cne $expectedArguments){throw 'Unexpected uninstall invocation'}
             $calls.Add('uninstall')
         }
         $expectedProgram=$program
+        $expectedArguments="/uninstall,/quiet,/norestart"
         $fixtureSignature=$unknownSigner
         $fixtureDigest=$x64Pin
         $result=Uninstall-WireSockProduct
@@ -855,6 +858,33 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         $refused=$false
         try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
         Assert ($wrongPinRefused -and $refused -and ($calls -join ',') -ceq 'task,profile,uninstall') 'WireSock uninstall refuses a different native pin or invalid signature before cleanup'
+        $calls.Clear()
+        $entries+=@(@{PSPath=$registration+'-second'})
+        $refused=$false
+        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -like 'Multiple registered WireSock products matched*'}
+        Assert ($refused -and $calls.Count -eq 0) 'WireSock uninstall refuses ambiguous registrations before cleanup'
+        $entries=@(@{PSPath=$registration})
+        $productCode='{b7678321-14b3-4439-a4ef-789452416058}'
+        $otherCode='{c7678321-14b3-4439-a4ef-789452416058}'
+        $record.WindowsInstaller=1
+        $record.PSChildName=$productCode
+        $expectedProgram=Join-Path $env:SystemRoot 'System32\msiexec.exe'
+        $expectedArguments='/x,'+$productCode+',/qn,/norestart'
+        $record.UninstallString='MsiExec.exe /I'+$productCode
+        $result=Uninstall-WireSockProduct
+        Assert ($result.product -ceq 'WireSock Secure Connect' -and ($calls -join ',') -ceq 'task,profile,uninstall') 'WireSock MSI uninstall targets its registered product code'
+        $calls.Clear()
+        foreach($command in @(
+            ('MsiExec.exe /I'+$otherCode),
+            ('"C:\other.exe" msiexec /I'+$productCode),
+            ('MsiExec.exe /I'+$productCode+' /I'+$otherCode)
+        )){
+            $record.UninstallString=$command
+            $refused=$false
+            try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
+            if(-not $refused){throw 'Unexpected MSI uninstall preflight outcome'}
+        }
+        Assert ($calls.Count -eq 0) 'WireSock MSI uninstall refuses mismatched or compound commands before cleanup'
     } finally {$env:ProgramData=$previousProgramData}
 }
 # Synthetic process records verify session-scoped launch observation without launching an app.

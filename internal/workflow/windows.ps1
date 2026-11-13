@@ -1770,16 +1770,29 @@ function Uninstall-WireSockProduct {
     $records=@();foreach($base in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')){
         if(Test-Path -LiteralPath $base){$records+=@(Get-ChildItem -LiteralPath $base|ForEach-Object {Get-ItemProperty -LiteralPath $_.PSPath}|Where-Object {$_.DisplayName -in $names})}
     }
-    $record=$records|Select-Object -First 1;if(-not $record){throw 'No supported registered WireSock product found; use Windows Apps settings for an unrecognized package'}
-    $command=[Environment]::ExpandEnvironmentVariables([string]$record.UninstallString)
-    if($command -match '(?i)msiexec(?:\.exe)?' -and $command -match '(\{[0-9a-fA-F-]{36}\})'){
-        $product=[guid]$matches[1]
+    if($records.Count -eq 0){throw 'No supported registered WireSock product found; use Windows Apps settings for an unrecognized package'}
+    if($records.Count -ne 1){throw 'Multiple registered WireSock products matched; select the intended product in Windows Apps settings'}
+    $record=$records[0]
+    $command=[Environment]::ExpandEnvironmentVariables([string]$record.UninstallString).Trim()
+    if($record.WindowsInstaller -eq 1){
         $program=Join-Path $env:SystemRoot 'System32\msiexec.exe'
+        $escapedProgram=[regex]::Escape($program)
+        $msiCommand='(?i)^(?:msiexec(?:\.exe)?|"'+$escapedProgram+'"|'+$escapedProgram+')[ \t]+/[ix][ \t]*(\{[0-9a-f-]{36}\})$'
+        $product=[guid]::Empty
+        if($command -notmatch $msiCommand -or -not [guid]::TryParseExact($matches[1],'B',[ref]$product) -or
+            $product -eq [guid]::Empty -or $record.PSChildName -ine $product.ToString('B')){
+            throw 'Registered WireSock MSI uninstall command does not match its product code'
+        }
         $arguments=@('/x',$product.ToString('B'),'/qn','/norestart')
         $codes=@(0,1605,3010,1641)
     }else{
-        $program=$null;if($command -match '^"([^"]+\.exe)"'){$program=$matches[1]}elseif($command -match '^(.+?\.exe)(?:\s|$)'){$program=$matches[1]}
-        if(-not $program -or (-not (Under $program $env:ProgramFiles) -and -not (Under $program (Join-Path $env:ProgramData 'Package Cache')))){throw 'Registered vendor uninstaller is outside protected installation storage'}
+        $program=$null
+        if($command -match '^"([^"]+\.exe)"(?:[ \t]|$)'){$program=$matches[1]}
+        elseif($command -match '^([^"]+?\.exe)(?:[ \t]|$)'){$program=$matches[1]}
+        if($program -notmatch '^[A-Za-z]:\\[^:*?"<>|]+\.exe$' -or
+            (-not (Under $program $env:ProgramFiles) -and -not (Under $program (Join-Path $env:ProgramData 'Package Cache')))){
+            throw 'Registered vendor uninstaller is outside protected installation storage'
+        }
         No-Reparse $program
         $signature=Get-AuthenticodeSignature -LiteralPath $program
         $digest=(Get-FileHash -LiteralPath $program -Algorithm SHA256).Hash.ToLowerInvariant()

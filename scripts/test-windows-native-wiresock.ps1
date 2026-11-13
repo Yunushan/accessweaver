@@ -66,6 +66,8 @@ function Get-WorkflowOutcome($run,$job) {
         '^Use a separately elevated system apply CLI for machine changes\.' {return 'worker-not-elevated'}
         '^No supported registered WireSock product found; use Windows Apps settings for an unrecognized package$' {return 'uninstall-registration-missing'}
         '^Registered vendor uninstaller is outside protected installation storage$' {return 'uninstaller-location-refused'}
+        '^Multiple registered WireSock products matched; select the intended product in Windows Apps settings$' {return 'uninstall-registration-ambiguous'}
+        '^Registered WireSock MSI uninstall command does not match its product code$' {return 'uninstaller-msi-product-refused'}
         '^Vendor uninstaller publisher signature could not be verified$' {return 'uninstaller-publisher-refused'}
         '^Vendor (CLI remains installed|uninstall registration remains); inspect vendor uninstall logs$' {return 'vendor-removal-unconfirmed'}
         default {return 'other-workflow-failure'}
