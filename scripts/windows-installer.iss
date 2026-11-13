@@ -92,11 +92,38 @@ begin
   end;
 end;
 
+function AWPayloadAttributes(const Path: String): LongWord;
+  external 'GetFileAttributesW@kernel32.dll stdcall';
+function AWOpenReplaceProbe(const Path: String; Access, Sharing, Security,
+  Disposition, Flags, Template: LongWord): LongWord;
+  external 'CreateFileW@kernel32.dll stdcall';
+
+function AWPayloadReplacementPreflight: String;
+var Path: String; Attributes, Handle, Code: LongWord;
+begin
+  Result := 'The AccessWeaver executable cannot be replaced. Close it and release any file locks before retrying setup.';
+  Path := ExpandConstant('{app}\accessweaver.exe');
+  Attributes := AWPayloadAttributes(Path);
+  if Attributes = $FFFFFFFF then begin
+    Code := DLLGetLastError;
+    if (Code = 2) or (Code = 3) then Result := '';
+    Exit;
+  end;
+  if (Attributes and ($00000400 or $00000010)) <> 0 then Exit;
+  { Probe DELETE access without writing, truncating or deleting. }
+  Handle := AWOpenReplaceProbe(Path, $00010000, $00000007, 0, 3, $00200000, 0);
+  if Handle = $FFFFFFFF then Exit;
+  if AWCloseNativeHandle(Handle) <> 0 then Result := '';
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   { Recheck after wizard interaction, while the product SetupMutex remains held. }
   if not AWLifecycleOwned then Result := 'The AccessWeaver installation lock is not held. Retry setup.'
-  else Result := AWVersionPreflight;
+  else begin
+    Result := AWVersionPreflight;
+    if Result = '' then Result := AWPayloadReplacementPreflight;
+  end;
 end;
 
 procedure DeinitializeSetup;

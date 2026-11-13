@@ -1,5 +1,5 @@
 import copy
-from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt, validate_architecture_refusal, validate_fixed_restoration
+from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt, validate_architecture_refusal, validate_fixed_restoration, validate_locked_upgrade
 import os
 from pathlib import Path
 import subprocess
@@ -32,6 +32,26 @@ class ArchitectureRefusalTests(unittest.TestCase):
                     validate_architecture_refusal({"architectureRefusal": {**observation, **override}}, host)
             with self.assertRaises(ValueError):
                 validate_architecture_refusal({}, host)
+
+
+class LockedUpgradeTests(unittest.TestCase):
+    def test_refusal_requires_exact_phase_and_preserved_state(self):
+        observation = {
+            "operation": "refused-locked-upgrade", "exitCode": 7, "elapsedMilliseconds": 41,
+            "deadlineMilliseconds": 180000, "preflightRefusalLogged": True, "installedFileTreePreserved": True,
+            "completeRegistrationPreserved": True, "profilePreserved": True, "machineStateUnchanged": True,
+        }
+        self.assertEqual(validate_locked_upgrade(observation), {"lockedUpgradePreservationVerified": True})
+        for field, bad in (
+            ("operation", "upgrade"), ("exitCode", 1), ("elapsedMilliseconds", True),
+            ("elapsedMilliseconds", 180000), ("deadlineMilliseconds", 180001),
+            ("preflightRefusalLogged", False), ("installedFileTreePreserved", False),
+            ("completeRegistrationPreserved", 1), ("profilePreserved", False), ("machineStateUnchanged", False),
+        ):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_locked_upgrade({**observation, field: bad})
+        with self.assertRaises(ValueError):
+            validate_locked_upgrade({**observation, "path": "private"})
 
 
 class FixedRestorationTests(unittest.TestCase):
