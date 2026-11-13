@@ -1021,8 +1021,15 @@ function Firewall([string]$engine,[string]$binary) {
     foreach($direction in @('Inbound','Outbound')){$name='AccessWeaver-'+$engine+'-'+$direction;if(-not (Get-NetFirewallRule -Name $name -ErrorAction SilentlyContinue)){[void](New-NetFirewallRule -Name $name -DisplayName $name -Program $binary -Direction $direction -Action Allow -Profile Any);$script:undo.Add(@{kind='firewall';name=$name});Save-Journal}}
 }
 function Setup-ProxiFyre([string]$proxy) {
-    if((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64' -Name Installed -ErrorAction SilentlyContinue).Installed -ne 1){Install-Prerequisite 'vcredist'}
-    if(-not (Get-Service -Name 'NDISRD' -ErrorAction SilentlyContinue)){Install-Prerequisite 'ndisapi'}
+    if($script:rebootRequired){throw 'Restart Windows before continuing ProxiFyre setup'}
+    if((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64' -Name Installed -ErrorAction SilentlyContinue).Installed -ne 1){
+        Install-Prerequisite 'vcredist'
+        if($script:rebootRequired){throw 'Restart Windows after Visual C++ runtime installation, then retry ProxiFyre setup'}
+    }
+    if(-not (Get-Service -Name 'NDISRD' -ErrorAction SilentlyContinue)){
+        Install-Prerequisite 'ndisapi'
+        if($script:rebootRequired){throw 'Restart Windows after Windows Packet Filter installation, then retry ProxiFyre setup'}
+    }
     $binary=Ensure-Asset 'proxifyre';$dir=Split-Path -Parent $binary
     Protect-Dir (Join-Path $dir 'logs')
     Write-Atomic (Join-Path $dir 'app-config.json') (@{proxies=@(@{appNames=@(Application-Names);socks5ProxyEndpoint=$proxy;supportedProtocols=@('TCP','UDP')})}|ConvertTo-Json -Depth 8)

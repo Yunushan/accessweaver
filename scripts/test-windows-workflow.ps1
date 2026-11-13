@@ -131,6 +131,31 @@ try {
     $inputData=$previousPrerequisiteInput;$r=$previousPrerequisiteRequest
 }
 
+# Model prerequisite outcomes with no registry access or service changes.
+$previousRebootRequired=$script:rebootRequired
+try {
+    & {
+        function Get-ItemProperty { return @{Installed=0} }
+        function Get-Service { return $null }
+        function Install-Prerequisite([string]$component) {
+            $script:prerequisiteRebootCalls.Add($component)
+            if($component -eq $script:prerequisiteNeedsReboot){$script:rebootRequired=$true}
+        }
+        function Ensure-Asset { throw 'Fixture must stop before resolving the ProxiFyre asset' }
+        foreach($case in @(
+            @{prerequisite='vcredist';calls='vcredist';message='Restart Windows after Visual C++ runtime installation, then retry ProxiFyre setup';label='Visual C runtime reboot defers packet filter and ProxiFyre setup'}
+            @{prerequisite='ndisapi';calls='vcredist,ndisapi';message='Restart Windows after Windows Packet Filter installation, then retry ProxiFyre setup';label='Packet filter reboot defers ProxiFyre setup'}
+        )){
+            $script:rebootRequired=$false
+            $script:prerequisiteNeedsReboot=$case.prerequisite
+            $script:prerequisiteRebootCalls=[Collections.Generic.List[string]]::new()
+            $refused=$false
+            try {Setup-ProxiFyre '127.0.0.1:1080'}catch{$refused=$_.Exception.Message -ceq $case.message}
+            Assert ($refused -and $script:rebootRequired -and ($script:prerequisiteRebootCalls -join ',') -ceq $case.calls) $case.label
+        }
+    }
+} finally {$script:rebootRequired=$previousRebootRequired}
+
 # Native component metadata fixtures are deliberately non-executable. No DLL
 # is loaded; download, expansion, staging and event hooks stay within this fixture.
 $previousComponentInput=$inputData;$previousComponentRequest=$r;$previousComponentRoot=$root;$previousAssetNames=$assetNames
