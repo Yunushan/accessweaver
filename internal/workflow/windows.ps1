@@ -3248,6 +3248,65 @@ function Discover {
     [Console]::WriteLine(('Discovery timing ms: complete {0}' -f $discoveryClock.ElapsedMilliseconds))
     return @{services=@($services);serviceInspectionError=$serviceError;components=$assets;applications=$apps;wiresockCLI=$cli;conflicts=@($conflicts);managedRoot=$root;refreshTask=$task.present;refreshTaskInspectionError=$task.error;dnsSnapshot=$dnsSnapshot;installerRecovery=$installerRecovery}
 }
+function Get-RecoveryFileHash([string]$path) {
+    No-Reparse $path
+    try {$attributes=[IO.File]::GetAttributes($path)}
+    catch [IO.FileNotFoundException] {return}
+    catch [IO.DirectoryNotFoundException] {return}
+    if($attributes -band ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::ReparsePoint)){
+        throw 'File recovery requires an ordinary file'
+    }
+    return (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash
+}
+function Restore-RecordedWorkflowFile($item) {
+    $path=$item.path
+    $currentHash=Get-RecoveryFileHash $path
+    if($currentHash -and $currentHash -ine $item.originalHash -and $currentHash -ine $item.expectedHash){
+        throw ('File changed outside this operation; review before restoring: '+$path)
+    }
+    if($currentHash -and $currentHash -ieq $item.originalHash){return}
+
+    if(-not $item.backup){
+        if(-not $currentHash){return}
+        Remove-Item -LiteralPath $path -ErrorAction Stop
+        if(Get-RecoveryFileHash $path){throw 'Recovery could not verify removal of a file created by the operation'}
+        return
+    }
+    if(-not (Under $item.backup (Join-Path $root 'backups'))){throw 'Recovery backup is outside protected storage'}
+    if(-not $item.originalHash -or (Get-RecoveryFileHash $item.backup) -ine $item.originalHash){
+        throw 'Recovery backup content does not match the recorded original digest'
+    }
+
+    $staged=Join-Path (Split-Path -Parent $path) ('.accessweaver-restore-'+[guid]::NewGuid().ToString('N')+'.tmp')
+    $ownsStage=$false
+    try {
+        $backup=[IO.File]::Open($item.backup,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        try {
+            $output=[IO.File]::Open($staged,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+            $ownsStage=$true
+            try {
+                $backup.CopyTo($output)
+                $output.Flush($true)
+            } finally {$output.Dispose()}
+        } finally {$backup.Dispose()}
+
+        if((Get-RecoveryFileHash $staged) -ine $item.originalHash){
+            throw 'Staged recovery file does not match the recorded original digest'
+        }
+        if((Get-RecoveryFileHash $path) -ine $currentHash){
+            throw ('File changed outside this operation; review before restoring: '+$path)
+        }
+        if($currentHash){[IO.File]::Replace($staged,$path,[NullString]::Value)}
+        else{[IO.File]::Move($staged,$path)}
+        $ownsStage=$false
+        if((Get-RecoveryFileHash $path) -ine $item.originalHash){throw 'Recovery could not verify the restored original file'}
+    } finally {
+        if($ownsStage){
+            No-Reparse $staged
+            [IO.File]::Delete($staged)
+        }
+    }
+}
 function Rollback {
     foreach($entry in $script:undo){
         if($entry.kind -in @('service','started-service')){
@@ -3288,7 +3347,10 @@ function Rollback {
         }
         'drover' {Restore-Drover $item.manifestSHA256}
         'cache' {if(-not (Under $item.path $env:APPDATA) -or -not (Under $item.backup (Join-Path $root 'backups'))){throw 'Invalid cache recovery path'};No-Reparse $item.path;No-Reparse $item.backup;if(Test-Path -LiteralPath $item.backup){if(Test-Path -LiteralPath $item.path){throw 'Discord created new cache; original cache backup retained for manual review'};Move-Item -LiteralPath $item.backup -Destination $item.path}}
-        'file' {if($item.path -ieq (Join-Path $root 'profiles\dns-original.json')){continue};No-Reparse $item.path;if(Test-Path -LiteralPath $item.path){$currentHash=(Get-FileHash -LiteralPath $item.path -Algorithm SHA256).Hash;if($currentHash -eq $item.originalHash){continue};if(-not $item.expectedHash -or $currentHash -ne $item.expectedHash){throw ('File changed outside this operation; review before restoring: '+$item.path)}};if($item.backup){if(-not (Under $item.backup (Join-Path $root 'backups'))){throw 'Recovery backup is outside protected storage'};No-Reparse $item.backup;if(-not $item.originalHash -or (Get-FileHash -LiteralPath $item.backup -Algorithm SHA256).Hash -ne $item.originalHash){throw 'Recovery backup content does not match the recorded original digest'};Copy-Item -LiteralPath $item.backup -Destination $item.path -Force}else{Remove-Item -LiteralPath $item.path -ErrorAction SilentlyContinue}}
+        'file' {
+            if($item.path -ieq (Join-Path $root 'profiles\dns-original.json')){continue}
+            Restore-RecordedWorkflowFile $item
+        }
     }}catch{
         $rollbackErrors+=@($_.Exception.Message)
         # Keep earlier files when a service or firewall rule still refers to them.

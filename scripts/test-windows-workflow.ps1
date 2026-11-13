@@ -2008,6 +2008,50 @@ $backup=$script:undo[0].backup;[IO.File]::WriteAllText($backup,'corrupted recove
 $conflicts=@(Rollback)
 Assert ($conflicts.Count -eq 1 -and (Get-Content -LiteralPath $file -Raw) -eq 'installed with backup') 'Recovery refuses a backup whose bytes differ from the recorded original digest'
 $script:undo.Clear()
+Write-Atomic $file 'installed before interruption'
+$backup=$script:undo[0].backup
+[IO.File]::Delete($file)
+$errors=@(Rollback)
+Assert ($errors.Count -eq 0 -and [IO.File]::ReadAllText($file) -ceq 'installed with backup' -and [IO.File]::Exists($backup)) 'Recovery recreates a missing original and retains its backup'
+Assert (@(Rollback).Count -eq 0) 'Recovery accepts an original already restored'
+$script:undo.Clear()
+Write-Atomic $newFile 'created by the workflow'
+$lock=[IO.File]::Open($newFile,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+try {
+    $errors=@(Rollback)
+    Assert ($errors.Count -eq 1 -and [IO.File]::Exists($newFile)) 'Recovery reports a locked created file and retains it for retry'
+} finally {$lock.Dispose()}
+& {
+    function Remove-Item {}
+    $errors=@(Rollback)
+    Assert ($errors.Count -eq 1 -and $errors[0] -ceq 'Recovery could not verify removal of a file created by the operation') 'Recovery verifies that a created file was actually removed'
+}
+Assert (@(Rollback).Count -eq 0 -and -not [IO.File]::Exists($newFile)) 'Recovery retries removal after the file is released'
+$script:undo.Clear()
+Write-Atomic $file 'installed before blocked restoration'
+$backup=$script:undo[0].backup
+$lock=[IO.File]::Open($file,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+try {
+    $errors=@(Rollback)
+    Assert ($errors.Count -eq 1 -and [IO.File]::ReadAllText($file) -ceq 'installed before blocked restoration' -and
+        [IO.File]::Exists($backup) -and @(Get-ChildItem -LiteralPath $root -Filter '.accessweaver-restore-*.tmp').Count -eq 0) 'Recovery retains the original backup when Windows blocks restoration'
+} finally {$lock.Dispose()}
+Assert (@(Rollback).Count -eq 0 -and [IO.File]::ReadAllText($file) -ceq 'installed with backup') 'Recovery retries restoration after the file is released'
+$script:undo.Clear()
+Write-Atomic $file 'installed before external edit'
+$backup=$script:undo[0].backup
+& {
+    function Get-FileHash($LiteralPath,$Algorithm,$ErrorAction) {
+        if([IO.Path]::GetFileName($LiteralPath) -like '.accessweaver-restore-*.tmp'){
+            [IO.File]::WriteAllText($file,'independently edited during staging')
+        }
+        Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm -ErrorAction $ErrorAction
+    }
+    $errors=@(Rollback)
+    Assert ($errors.Count -eq 1 -and [IO.File]::ReadAllText($file) -ceq 'independently edited during staging' -and
+        [IO.File]::Exists($backup) -and @(Get-ChildItem -LiteralPath $root -Filter '.accessweaver-restore-*.tmp').Count -eq 0) 'Recovery preserves an independent edit made while restoration is staged'
+}
+$script:undo.Clear()
 $source=Join-Path $root 'source.conf';[IO.File]::WriteAllText($source,"[Interface]`nPrivateKey = fixture-only`n[Peer]`nPublicKey = fixture-only`nEndpoint = example.invalid:2408`nAllowedApps = old.exe`n")
 [void](New-Item -ItemType Directory -Force -Path (Join-Path $root 'profiles'))
 $r=[pscustomobject]@{profileId='test-profile';configPath=$source;applications=@('custom.exe');browsers=$false}
