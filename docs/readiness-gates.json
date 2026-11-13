@@ -29,6 +29,7 @@
             "scripts/test-windows-wiresock.ps1",
             "scripts/test-windows-native-wiresock.ps1",
             "docs/qualification/1b66e9c3bafb-native-wiresock-lifecycle.json",
+            "docs/qualification/20ac1ac28b96-native-wiresock-lifecycle.json",
             "build/vm-tests/sandbox/results/wgpeer-self-test/self-test.json"
           ]
         },
@@ -275,7 +276,9 @@
             "scripts/test-windows-integration.ps1",
             "docs/qualification/cdb06ec00147-wiresock-native-installer-contracts.json",
             "docs/qualification/cdb06ec00147-native-download-transports.json",
-            "docs/qualification/1b66e9c3bafb-native-wiresock-lifecycle.json"
+            "docs/qualification/20ac1ac28b96-native-wiresock-trust.json",
+            "docs/qualification/1b66e9c3bafb-native-wiresock-lifecycle.json",
+            "docs/qualification/20ac1ac28b96-native-wiresock-lifecycle.json"
           ]
         },
         {
