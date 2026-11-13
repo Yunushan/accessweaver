@@ -1795,6 +1795,35 @@ function Assert-ConfiguredDNSServers([object[]]$Adapters,[object[]]$Records,[str
         }
     }
 }
+function Test-DNSIPv4Answer([object[]]$Answers,[string]$Name) {
+    foreach($answer in $Answers){
+        $address=$null
+        if($answer.Section -eq 'Answer' -and $answer.Type -eq 'A' -and
+            $answer.Name -is [string] -and $answer.Name.TrimEnd('.') -ieq $Name -and
+            $answer.IPAddress -is [string] -and [Net.IPAddress]::TryParse($answer.IPAddress,[ref]$address) -and
+            $address.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork){return $true}
+    }
+    return $false
+}
+function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30) {
+    $pending=@($Servers)
+    $timer=[Diagnostics.Stopwatch]::StartNew()
+    do {
+        $pending=@(foreach($server in $pending){
+            $ready=$false
+            try {
+                Clear-DnsClientCache -ErrorAction Stop
+                $answers=@(Resolve-DnsName -Name 'example.net.' -Server $server -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
+                $ready=Test-DNSIPv4Answer $answers 'example.net'
+            } catch {}
+            if(-not $ready){$server}
+        })
+        if(-not $pending.Count){return}
+        if($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds){break}
+        Start-Sleep -Milliseconds 500
+    } while($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
+    throw 'DNSCrypt loopback readiness could not be verified before adapter configuration'
+}
 function Configure-DNS([string]$method) {
     if($method -notin @('doh','dnscrypt')){throw 'Choose doh or dnscrypt'}
     if($method -eq 'doh'){foreach($command in @('Get-DnsClientDohServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'This Windows version does not expose native DoH management; choose DNSCrypt instead'}}}
@@ -1883,6 +1912,17 @@ function Configure-DNS([string]$method) {
             finally {if($service -is [IDisposable]){$service.Dispose()}}
         }else{Install-EngineService 'dnscrypt' $binary @('-config',$config)}
         $servers=@('127.0.0.1','::1')
+        $listeners=@(foreach($number in @('4','6')){
+            foreach($adapter in $adapters){
+                $record=@($records | Where-Object {$_.guid -eq [string]$adapter.InterfaceGuid})[0]
+                $bounds=Get-OriginalDNSBounds $record
+                if($bounds['bound'+$number]){
+                    if($number -eq '4'){$servers[0]}else{$servers[1]}
+                    break
+                }
+            }
+        })
+        Wait-DNSCryptListeners $listeners
     } elseif($method -eq 'doh') {
         # Literal authorities avoid plaintext resolution of the DoH bootstrap host.
         # Keep each provider/family paired with its own authenticated IP identity.
@@ -1929,13 +1969,20 @@ function Configure-DNS([string]$method) {
             if($entry.DohTemplate -isnot [string] -or $entry.DohTemplate -cne $provider.url -or $entry.AllowFallbackToUdp -isnot [bool] -or $entry.AllowFallbackToUdp -ne $false -or $entry.AutoUpgrade -isnot [bool] -or $entry.AutoUpgrade -ne $true){throw 'Configured DoH policy changed after adapter configuration; retain the original DNS snapshot'}
         }
     }
-    $ready=$false;$deadline=[DateTime]::UtcNow.AddSeconds(90)
-    $lastResolverError=''
-    do{try{Clear-DnsClientCache;[void](Resolve-DnsName 'example.com' -DnsOnly -QuickTimeout -ErrorAction Stop);$ready=$true;break}catch{$lastResolverError=$_.Exception.Message;Start-Sleep -Seconds 2}}while([DateTime]::UtcNow -lt $deadline)
+    $ready=$false;$timer=[Diagnostics.Stopwatch]::StartNew()
+    do {
+        try {
+            Clear-DnsClientCache -ErrorAction Stop
+            $answers=@(Resolve-DnsName -Name 'example.com.' -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
+            if(Test-DNSIPv4Answer $answers 'example.com'){$ready=$true;break}
+        }catch{}
+        if($timer.Elapsed.TotalSeconds -ge 90){break}
+        Start-Sleep -Seconds 2
+    } while($timer.Elapsed.TotalSeconds -lt 90)
     if(-not $ready){
         if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot disappeared during verification'}
         Restore-DNS
-        throw ('Resolver verification failed; original DNS settings restored: '+$lastResolverError)
+        throw 'Resolver verification failed; original DNS settings restored: the ordinary resolver did not return the expected DNS answer'
     }
     if($method -ceq 'doh' -and $existingResolver){
         # Keep the old listener available until the new adapter DNS is usable.
