@@ -6,6 +6,7 @@ on:
     paths:
       - 'internal/workflow/windows.ps1'
       - 'scripts/test-dns-recovery-contracts.ps1'
+      - 'scripts/test-windows-dns-journal.ps1'
       - 'scripts/dns-acceptance-state.ps1'
       - 'scripts/test-dns-acceptance-state.ps1'
       - 'scripts/native-doh-scenario.ps1'
@@ -22,6 +23,7 @@ on:
     paths:
       - 'internal/workflow/windows.ps1'
       - 'scripts/test-dns-recovery-contracts.ps1'
+      - 'scripts/test-windows-dns-journal.ps1'
       - 'scripts/dns-acceptance-state.ps1'
       - 'scripts/test-dns-acceptance-state.ps1'
       - 'scripts/native-doh-scenario.ps1'
@@ -107,6 +109,8 @@ jobs:
           $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
           & $stock -NoProfile -NonInteractive -File ./scripts/test-dns-recovery-contracts.ps1 -RequireWindowsPowerShell -ReportPath (Join-Path $desktop 'dns-contracts.json')
           if($LASTEXITCODE -ne 0){throw 'Windows PowerShell DNS contracts failed'}
+      - name: Verify DNS journal binding and rollback
+        run: ./scripts/test-windows-dns-journal.ps1
       - name: Verify DNS reboot admission and publication
         run: ./scripts/test-windows-reboot-contracts.ps1
       - name: PowerShell Core DNS acceptance oracle contracts

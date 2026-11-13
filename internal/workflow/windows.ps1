@@ -263,9 +263,11 @@ function Backup-File([string]$path) {
     $script:undo.Add(@{kind='file';path=$path;backup=$backup;originalHash=$originalHash});Save-Journal
 }
 function Expected-Hash([string]$path,[string]$hash){$entry=$script:undo|Where-Object {$_.kind -eq 'file' -and $_.path -eq $path}|Select-Object -First 1;$entry.expectedHash=$hash;Save-Journal}
-function Write-Atomic([string]$path,[string]$text) {
-    Backup-File $path
-    $hasher=[Security.Cryptography.SHA256]::Create();try{$hash=[BitConverter]::ToString($hasher.ComputeHash([Text.UTF8Encoding]::new($false).GetBytes($text))).Replace('-','')}finally{$hasher.Dispose()};Expected-Hash $path $hash
+function Write-Atomic([string]$path,[string]$text,[switch]$WithoutFileUndo) {
+    if(-not $WithoutFileUndo){
+        Backup-File $path
+        $hasher=[Security.Cryptography.SHA256]::Create();try{$hash=[BitConverter]::ToString($hasher.ComputeHash([Text.UTF8Encoding]::new($false).GetBytes($text))).Replace('-','')}finally{$hasher.Dispose()};Expected-Hash $path $hash
+    }
     $parent=Split-Path -Parent $path;[void](New-Item -ItemType Directory -Force -Path $parent)
     $tmp=Join-Path $parent ([guid]::NewGuid().ToString('N')+'.tmp')
     [IO.File]::WriteAllText($tmp,$text,[Text.UTF8Encoding]::new($false))
@@ -1789,18 +1791,17 @@ function Configure-DNS([string]$method) {
     }
     # Extend adapter/family coverage before effects. Preserve every first original
     # and the first global DoH metadata, including across family activation.
-    $needsSnapshotWrite=-not $hadSnapshot
     foreach($adapter in $adapters){
         $guid=[string]$adapter.InterfaceGuid;$matches=@($inventory | Where-Object {[string]$_.InterfaceGuid -eq $guid})
         if([string]::IsNullOrWhiteSpace($guid) -or $matches.Count -ne 1){throw 'Selected DNS adapter identities are unavailable or ambiguous; no new DNS configuration was applied'}
         if(-not $known.Contains($guid)){
-            $records+=@(Read-OriginalDNSAdapter $adapter $clients);[void]$known.Add($guid);$needsSnapshotWrite=$true
+            $records+=@(Read-OriginalDNSAdapter $adapter $clients);[void]$known.Add($guid)
         } else {
             $record=@($records | Where-Object {$_.guid -eq $guid})[0];$bounds=Get-OriginalDNSBounds $record
             foreach($number in @('4','6')){
                 if(-not $bounds['bound'+$number] -and @(Get-DNSClientRows $clients $adapter.ifIndex ('IPv'+$number)).Count -eq 1){
                     $captured=Read-OriginalDNSFamily $adapter ('IPv'+$number) $clients
-                    $record.('ipv'+$number)=@($captured.values);$record.('dhcp'+$number)=$captured.dhcp;$record.('bound'+$number)=$true;$needsSnapshotWrite=$true
+                    $record.('ipv'+$number)=@($captured.values);$record.('dhcp'+$number)=$captured.dhcp;$record.('bound'+$number)=$true
                 }
             }
         }
@@ -1809,9 +1810,19 @@ function Configure-DNS([string]$method) {
         $dohSettings=@();if(Get-Command 'Get-DnsClientDohServerAddress' -ErrorAction SilentlyContinue){$dohSettings=@(Get-DnsClientDohServerAddress -ErrorAction Stop)}
         $original.doh=$dohSettings
     }
-    if($needsSnapshotWrite){$original.adapters=@($records);Write-Atomic $snapshot ($original|ConvertTo-Json -Depth 10)}
+    # A new configuration supersedes older journals, even if the originals
+    # are identical. DNS alone owns retirement of the published snapshot.
+    $original | Add-Member -NotePropertyName recoveryID -NotePropertyValue ([guid]::NewGuid().ToString('N')) -Force
+    $original.adapters=@($records)
+    $encoded=$original|ConvertTo-Json -Depth 10
+    if([Text.Encoding]::UTF8.GetByteCount($encoded) -gt 8MB){throw 'DNS recovery snapshot exceeds its size limit'}
+    Write-Atomic $snapshot $encoded -WithoutFileUndo
+    $snapshotSHA256=(Get-FileHash -LiteralPath $snapshot -Algorithm SHA256 -ErrorAction Stop).Hash
+    $dnsUndo=$script:undo | Where-Object {$_.kind -ceq 'dns'} | Select-Object -First 1
+    if($dnsUndo){$dnsUndo.snapshotSHA256=$snapshotSHA256}
+    else{$script:undo.Add(@{kind='dns';snapshotSHA256=$snapshotSHA256})}
+    Save-Journal
     $script:dnsTouched=$true
-    $script:undo.Add(@{kind='dns'});Save-Journal
     if($method -eq 'dnscrypt') {
         $binary=Ensure-Asset 'dnscrypt';$config=Join-Path (Split-Path -Parent $binary) 'dnscrypt-proxy.toml'
         if(-not (Test-Path -LiteralPath $config)){$example=Join-Path (Split-Path -Parent $binary) 'example-dnscrypt-proxy.toml';if(Test-Path -LiteralPath $example){Copy-Checked $example $config}else{throw 'Official DNSCrypt resolver configuration is missing'}}
@@ -2734,7 +2745,9 @@ function Rollback {
             if($item.name -ne 'AccessWeaver-WireSock-Refresh'){throw 'Recovery journal contains an unmanaged task'}
             Remove-WireSockRefreshTask
         }
-        'dns' {if(Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json')){Restore-DNS}}
+        'dns' {
+            if(Confirm-DNSRecoverySnapshot $item.snapshotSHA256){Restore-DNS}
+        }
         'wiresock' {
             if($item.legacy){
                 Stop-Service 'wiresock-client-service' -ErrorAction SilentlyContinue
@@ -2748,7 +2761,7 @@ function Rollback {
         }
         'drover' {Restore-Drover $item.manifestSHA256}
         'cache' {if(-not (Under $item.path $env:APPDATA) -or -not (Under $item.backup (Join-Path $root 'backups'))){throw 'Invalid cache recovery path'};No-Reparse $item.path;No-Reparse $item.backup;if(Test-Path -LiteralPath $item.backup){if(Test-Path -LiteralPath $item.path){throw 'Discord created new cache; original cache backup retained for manual review'};Move-Item -LiteralPath $item.backup -Destination $item.path}}
-        'file' {No-Reparse $item.path;if(Test-Path -LiteralPath $item.path){$currentHash=(Get-FileHash -LiteralPath $item.path -Algorithm SHA256).Hash;if($currentHash -eq $item.originalHash){continue};if(-not $item.expectedHash -or $currentHash -ne $item.expectedHash){throw ('File changed outside this operation; review before restoring: '+$item.path)}};if($item.backup){if(-not (Under $item.backup (Join-Path $root 'backups'))){throw 'Recovery backup is outside protected storage'};No-Reparse $item.backup;if(-not $item.originalHash -or (Get-FileHash -LiteralPath $item.backup -Algorithm SHA256).Hash -ne $item.originalHash){throw 'Recovery backup content does not match the recorded original digest'};Copy-Item -LiteralPath $item.backup -Destination $item.path -Force}else{Remove-Item -LiteralPath $item.path -ErrorAction SilentlyContinue}}
+        'file' {if($item.path -ieq (Join-Path $root 'profiles\dns-original.json')){continue};No-Reparse $item.path;if(Test-Path -LiteralPath $item.path){$currentHash=(Get-FileHash -LiteralPath $item.path -Algorithm SHA256).Hash;if($currentHash -eq $item.originalHash){continue};if(-not $item.expectedHash -or $currentHash -ne $item.expectedHash){throw ('File changed outside this operation; review before restoring: '+$item.path)}};if($item.backup){if(-not (Under $item.backup (Join-Path $root 'backups'))){throw 'Recovery backup is outside protected storage'};No-Reparse $item.backup;if(-not $item.originalHash -or (Get-FileHash -LiteralPath $item.backup -Algorithm SHA256).Hash -ne $item.originalHash){throw 'Recovery backup content does not match the recorded original digest'};Copy-Item -LiteralPath $item.backup -Destination $item.path -Force}else{Remove-Item -LiteralPath $item.path -ErrorAction SilentlyContinue}}
     }}catch{$rollbackErrors+=@($_.Exception.Message)}}
     return $rollbackErrors
 }
@@ -2807,17 +2820,34 @@ function Read-WorkflowRecoveryJournal([string]$Path) {
     catch {Throw-WorkflowRecoveryJournalReadFailure}
     return ,(Read-WorkflowRecoveryJournalStream $source)
 }
+# A legacy journal has no binding. Administrators can still explicitly
+# restore the currently active snapshot through dns-restore.
+function Confirm-DNSRecoverySnapshot($ExpectedSHA256) {
+    if($null -ne $ExpectedSHA256 -and
+       ($ExpectedSHA256 -isnot [string] -or $ExpectedSHA256 -notmatch '\A[a-fA-F0-9]{64}\z')){
+        throw 'DNS recovery journal contains an invalid snapshot digest'
+    }
+    $snapshot=Join-Path $root 'profiles\dns-original.json'
+    No-Reparse $snapshot
+    if(-not (Test-Path -LiteralPath $snapshot -ErrorAction Stop)){return $false}
+    $entry=Get-Item -LiteralPath $snapshot -Force -ErrorAction Stop
+    if($entry.PSIsContainer -or $entry.Length -le 0 -or $entry.Length -gt 8MB){throw 'DNS recovery snapshot is not a bounded ordinary file'}
+    if(-not $ExpectedSHA256 -or (Get-FileHash -LiteralPath $snapshot -Algorithm SHA256 -ErrorAction Stop).Hash -ine $ExpectedSHA256){
+        throw 'DNS recovery journal does not match the active snapshot; review dns-restore'
+    }
+    return $true
+}
 function Recover-Operation {
     if($r.journalId -notmatch '^workflow-[a-fA-F0-9]{32}\.json$'){throw 'Invalid recovery journal name'}
     $journal=Join-Path $root ('logs\'+$r.journalId);No-Reparse $journal;$saved=Read-WorkflowRecoveryJournal $journal
     foreach($entry in @($saved.undo)){
         switch($entry.kind){
-            'file' {$allowed=(Under $entry.path $root);if(-not $allowed){$allowed=(Under $entry.path (Join-Path $env:LOCALAPPDATA 'Discord')) -and ([IO.Path]::GetFileName($entry.path) -in @('version.dll','drover.ini'))};if(-not $allowed){throw 'Recovery journal contains an unmanaged file path'};if($entry.backup -and -not (Under $entry.backup (Join-Path $root 'backups'))){throw 'Recovery backup is outside protected storage'}}
+            'file' {if($entry.path -ieq (Join-Path $root 'profiles\dns-original.json')){[void](Confirm-DNSRecoverySnapshot $null);continue};$allowed=(Under $entry.path $root);if(-not $allowed){$allowed=(Under $entry.path (Join-Path $env:LOCALAPPDATA 'Discord')) -and ([IO.Path]::GetFileName($entry.path) -in @('version.dll','drover.ini'))};if(-not $allowed){throw 'Recovery journal contains an unmanaged file path'};if($entry.backup -and -not (Under $entry.backup (Join-Path $root 'backups'))){throw 'Recovery backup is outside protected storage'}}
             'service' {if($entry.name -notmatch '^AccessWeaver-(byedpi|proxifyre|zapret|zapret2|goodbyedpi|dnscrypt)$'){throw 'Recovery journal contains an unmanaged service'}}
             'started-service' {if($entry.name -ne 'AccessWeaver-byedpi'){throw 'Recovery journal contains an unmanaged restarted service'}}
             'firewall' {if($entry.name -notmatch '^AccessWeaver-[a-z]+-(Inbound|Outbound)$'){throw 'Recovery journal contains an unmanaged firewall rule'}}
             'task' {if($entry.name -ne 'AccessWeaver-WireSock-Refresh'){throw 'Recovery journal contains an unmanaged task'}}
-            'dns' { }
+            'dns' {[void](Confirm-DNSRecoverySnapshot $entry.snapshotSHA256)}
             'wiresock' {
                 if($entry.cli -ne (WireSock-CLI) -or (-not $entry.legacy -and $entry.profile -notmatch '^AccessWeaver-[a-f0-9]{32}$')){
                     throw 'Recovery journal contains an unmanaged WireSock profile'

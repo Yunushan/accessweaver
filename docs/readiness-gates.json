@@ -55,6 +55,7 @@
             "docs/qualification/22cf0abb5da8-dns-restore-readback.json",
             "scripts/test-windows-reboot.ps1",
             "scripts/test-windows-reboot-contracts.ps1",
+            "scripts/test-windows-dns-journal.ps1",
             "docs/qualification/3ae6417cb9a8-dns-native-recovery.json"
           ]
         },
