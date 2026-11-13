@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Prepare or authenticate the final publisher-signed Windows and macOS release subjects."""
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -283,11 +284,35 @@ def decode_json(content):
         raise ValueError("Malformed JSON input") from error
 
 
-def revocations(content):
+def revocation_time(value):
+    require(isinstance(value, str) and re.fullmatch(
+        r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", value
+    ), "Expected a revocation policy timestamp in UTC")
+    return datetime.fromisoformat(value[:-1] + "+00:00")
+
+
+def revocations(content, *, minimum_sequence=None, now=None):
     policy = decode_json(content)
-    require(isinstance(policy, dict) and policy.keys() == REVOCATION_FIELDS.keys() | {"schemaVersion"}
-            and type(policy["schemaVersion"]) is int and policy["schemaVersion"] == 1,
-            "Unsupported revocation policy")
+    require(isinstance(policy, dict) and type(policy.get("schemaVersion")) is int
+            and policy["schemaVersion"] in (1, 2), "Unsupported revocation policy")
+    fields = REVOCATION_FIELDS.keys() | {"schemaVersion"}
+    if minimum_sequence is not None:
+        require(type(minimum_sequence) is int and minimum_sequence > 0,
+                "Expected a positive minimum revocation sequence")
+    if policy["schemaVersion"] == 2:
+        fields |= {"sequence", "issuedAt", "expiresAt"}
+    require(policy.keys() == fields, "Unsupported revocation policy")
+    if policy["schemaVersion"] == 2:
+        sequence = policy["sequence"]
+        require(type(sequence) is int and sequence > 0, "Invalid revocation policy sequence")
+        require(minimum_sequence is None or sequence >= minimum_sequence,
+                "Revocation policy sequence is below the approved minimum")
+        effective = datetime.now(timezone.utc) if now is None else now
+        issued = revocation_time(policy["issuedAt"])
+        expires = revocation_time(policy["expiresAt"])
+        require(issued <= effective < expires, "Revocation policy is outside its validity window")
+    else:
+        require(minimum_sequence is None, "A sequenced revocation policy is required")
     for field, pattern in REVOCATION_FIELDS.items():
         values = policy[field]
         require(isinstance(values, list) and len(values) <= 512
@@ -406,7 +431,7 @@ def stage_managed_update(root, directory, update):
 
 def verify(directory, certificate, certificate_sha256, commit, ref, openssl="openssl",
            *, revocation_list, revocation_list_sha256, current_version=None, target=None, stage_directory=None,
-           current_payload_sha256=None):
+           current_payload_sha256=None, minimum_revocation_sequence=None):
     require((current_version is None) == (target is None),
             "Managed update evaluation requires an installed version and target")
     if current_payload_sha256 is not None:
@@ -426,7 +451,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
     subjects = release_subjects(commit, ref)
     der = independently_pinned_file(directory, certificate, certificate_sha256)
     certificate_sha256 = certificate_sha256.lower()
-    policy = revocations(independently_pinned_file(directory, revocation_list, revocation_list_sha256))
+    policy_bytes = independently_pinned_file(directory, revocation_list, revocation_list_sha256)
+    policy = revocations(policy_bytes, minimum_sequence=minimum_revocation_sequence)
     require(commit not in policy["sourceCommits"] and ref not in policy["sourceRefs"]
             and certificate_sha256 not in policy["approvalCertificateSHA256"],
             "Release source or approval signer is revoked")
@@ -483,6 +509,11 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             update["windowsUpgradeDetection"] = select_windows_upgrade(
                 report.get("windowsDetection", ()), update, current_payload_sha256
             )
+        if policy["schemaVersion"] == 2:
+            # Candidate authentication and copying the input snapshot can take time.
+            revocations(policy_bytes, minimum_sequence=minimum_revocation_sequence)
+            report["revocationPolicySequence"] = policy["sequence"]
+            report["revocationPolicyExpiresAt"] = policy["expiresAt"]
         if stage_directory is not None:
             update = report["managedUpdate"]
             require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
@@ -503,6 +534,8 @@ def main():
     verify_args.add_argument("--approval-certificate-sha256", required=True)
     verify_args.add_argument("--revocation-list", type=Path, required=True)
     verify_args.add_argument("--revocation-list-sha256", required=True)
+    verify_args.add_argument("--minimum-revocation-sequence", type=int,
+                             help="require an active schema 2 policy at or above this independently approved sequence")
     verify_args.add_argument("--openssl", default="openssl", help="trusted OpenSSL executable")
     verify_args.add_argument("--current-version", help="installed version from trusted endpoint inventory")
     verify_args.add_argument("--target", choices=("windows/amd64", "windows/arm64", "darwin/amd64", "darwin/arm64"),
@@ -527,7 +560,8 @@ def main():
                                     revocation_list_sha256=args.revocation_list_sha256,
                                     current_version=args.current_version, target=args.target,
                                     stage_directory=args.stage_directory,
-                                    current_payload_sha256=args.current_payload_sha256)))
+                                    current_payload_sha256=args.current_payload_sha256,
+                                    minimum_revocation_sequence=args.minimum_revocation_sequence)))
     except (ValueError, OSError, subprocess.SubprocessError):
         print("Signed release inventory, approval or revocation verification failed.", file=sys.stderr)
         return 1

@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import json
 import shutil
 import subprocess
@@ -338,6 +339,36 @@ class SignedReleaseManifestTests(unittest.TestCase):
         with patch.object(release, "stage_managed_update", side_effect=replace_input_after_verification):
             staged = self.verify(approved, pin, **update)["managedUpdate"]
         self.assertTrue(staged["installerStaged"])
+        input_file.write_bytes(original_installer)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        timestamp = "%Y-%m-%dT%H:%M:%SZ"
+        active_policy = {
+            **self.policy, "schemaVersion": 2, "sequence": 3,
+            "issuedAt": (now - timedelta(minutes=1)).strftime(timestamp),
+            "expiresAt": (now + timedelta(minutes=5)).strftime(timestamp),
+        }
+        active_pin = self.write_policy(active_policy)
+        fresh = self.verify(approved, pin, policy_pin=active_pin, minimum_revocation_sequence=3, **update)
+        self.assertTrue(fresh["managedUpdate"]["installerStaged"])
+        self.assertEqual(fresh["revocationPolicySequence"], 3)
+        self.assertEqual(fresh["revocationPolicyExpiresAt"], active_policy["expiresAt"])
+        with self.assertRaisesRegex(ValueError, "below the approved minimum"):
+            self.verify(approved, pin, policy_pin=active_pin, minimum_revocation_sequence=4, **update)
+        readings = iter((now, now + timedelta(minutes=5)))
+
+        class ControlledClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return next(readings)
+
+        with patch.object(release, "datetime", ControlledClock), \
+                patch.object(release, "stage_managed_update") as stage, \
+                self.assertRaisesRegex(ValueError, "outside its validity window"):
+            self.verify(approved, pin, policy_pin=active_pin, minimum_revocation_sequence=3, **update)
+        stage.assert_not_called()
+        self.write_policy(self.policy)
+        with self.assertRaisesRegex(ValueError, "sequenced revocation policy"):
+            self.verify(approved, pin, minimum_revocation_sequence=3, **update)
         self.assertEqual(staged["installerSHA256"], release.digest(staged_file))
         self.assertEqual(staged_file.read_bytes(), original_installer)
         self.assertEqual(list(staging.iterdir()), [staged_file])
@@ -556,6 +587,29 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.revocation_list.unlink()
         with self.assertRaises(FileNotFoundError):
             self.verify(approved, pin)
+
+    def test_sequenced_revocation_policy_requires_current_utc_window(self):
+        now = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+        policy = {**self.policy, "schemaVersion": 2, "sequence": 9,
+                  "issuedAt": "2026-01-01T12:00:00Z", "expiresAt": "2026-01-01T13:00:00Z"}
+        content = json.dumps(policy).encode()
+        self.assertEqual(release.revocations(content, minimum_sequence=9, now=now), policy)
+        for override, floor in (
+            ({"issuedAt": "2026-01-01T12:00:01Z"}, 9),
+            ({"expiresAt": "2026-01-01T12:00:00Z"}, 9),
+            ({"issuedAt": "2026-02-29T12:00:00Z"}, 9),
+            ({"issuedAt": "2026-01-01T12:00:00+00:00"}, 9),
+            ({"sequence": True}, 9),
+            ({"sequence": 0}, 9),
+            ({}, 10),
+            ({}, 0),
+            ({}, True),
+        ):
+            with self.subTest(override=override, floor=floor), self.assertRaises(ValueError):
+                release.revocations(json.dumps({**policy, **override}).encode(), minimum_sequence=floor, now=now)
+        for omitted in ("sequence", "issuedAt", "expiresAt"):
+            with self.subTest(omitted=omitted), self.assertRaises(ValueError):
+                release.revocations(json.dumps({key: value for key, value in policy.items() if key != omitted}).encode())
 
     def test_revocation_policy_refuses_malformed_inputs(self):
         self.assertEqual(release.revocations(json.dumps(self.policy).encode()), self.policy)
