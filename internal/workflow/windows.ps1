@@ -3175,32 +3175,53 @@ function Stop-AppProcesses([string]$variant,[string]$app) {
     }
 }
 function Test-AppProcessInSession([string]$path,[int]$sessionId,$processes,[datetime]$StartedAfter=[datetime]::MinValue) {
+    $name=[IO.Path]::GetFileNameWithoutExtension($path)
     $running=$false
+    $complete=$true
     foreach($process in $processes){
         try {
-            if(-not $running -and $process.Path -eq $path -and $process.SessionId -eq $sessionId -and
-                $process.HasExited -eq $false){
-                if($StartedAfter -eq [datetime]::MinValue){$running=$true}
-                else{
-                    $started=$process.StartTime
-                    $running=$started -is [datetime] -and $started.ToUniversalTime() -ge $StartedAfter
-                }
+            if($running){continue}
+            $processName=$process.ProcessName
+            if($processName -isnot [string] -or [string]::IsNullOrWhiteSpace($processName)){$complete=$false;continue}
+            if($processName -ine $name){continue}
+            $exited=$process.HasExited
+            if($exited -isnot [bool]){$complete=$false;continue}
+            if($exited){continue}
+            $session=$process.SessionId
+            if($session -isnot [int] -or $session -lt 0){$complete=$false;continue}
+            if($session -ne $sessionId){continue}
+            $image=$process.Path
+            if($image -isnot [string] -or [string]::IsNullOrWhiteSpace($image)){$complete=$false;continue}
+            if($image -ine $path){continue}
+            if($StartedAfter -ne [datetime]::MinValue){
+                $started=$process.StartTime
+                if($started -isnot [datetime]){$complete=$false;continue}
+                if($started.ToUniversalTime() -lt $StartedAfter){continue}
             }
+            $exited=$process.HasExited
+            if($exited -isnot [bool]){$complete=$false;continue}
+            if(-not $exited){$running=$true}
         } catch {
-            # A process can exit or become inaccessible during inspection.
+            # Only a confirmed exit can clear an observation failure.
+            try {$exited=$process.HasExited}catch{$exited=$null}
+            if($exited -isnot [bool] -or -not $exited){$complete=$false}
         } finally {
             if($process -is [IDisposable]){$process.Dispose()}
         }
     }
-    return $running
+    if($running){return $true}
+    if($complete){return $false}
+    return $null
 }
 function Start-App([string]$variant) {
     Require-DesktopUser
     $app=Find-App $variant;if(-not $app){throw 'Application is not installed'};No-Reparse $app
-    $sessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId
+    $current=[Diagnostics.Process]::GetCurrentProcess()
+    try {$sessionId=$current.SessionId} finally {$current.Dispose()}
     if($sessionId -eq 0){throw 'Start user applications from the signed-in Windows desktop, not the SYSTEM session'}
-    $name=[IO.Path]::GetFileNameWithoutExtension($app)
-    if(Test-AppProcessInSession $app $sessionId @(Get-Process -Name $name -ErrorAction SilentlyContinue)){
+    $baseline=Test-AppProcessInSession $app $sessionId @(Get-Process -ErrorAction Stop)
+    if($baseline -isnot [bool]){throw 'Application process state could not be inspected before launch'}
+    if($baseline){
         Event 'Application was already running in the desktop session'
         return @{application=$variant;alreadyRunning=$true}
     }
@@ -3211,7 +3232,7 @@ function Start-App([string]$variant) {
     Start-Process -FilePath (Join-Path $env:SystemRoot 'explorer.exe') -ArgumentList @((Quote-Arg $app)) -WindowStyle Hidden
     $wait=[Diagnostics.Stopwatch]::StartNew()
     do {
-        $processes=@(Get-Process -Name $name -ErrorAction SilentlyContinue)
+        $processes=@(Get-Process -ErrorAction Stop)
         if(Test-AppProcessInSession $app $sessionId $processes $handoffTime){
             Event 'Application process is running in the desktop session'
             return @{application=$variant;alreadyRunning=$false}

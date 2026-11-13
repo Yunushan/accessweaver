@@ -1411,21 +1411,27 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
 }
 # Synthetic process records verify session-scoped launch observation without launching an app.
 $fixtureApp='C:\fixture\SplitCord.exe'
-$otherSession=[pscustomobject]@{Path=$fixtureApp;SessionId=9;HasExited=$false}
-$sameSession=[pscustomobject]@{Path=$fixtureApp;SessionId=7;HasExited=$false}
-$otherPath=[pscustomobject]@{Path='C:\fixture\Other.exe';SessionId=7;HasExited=$false}
-Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($otherSession))) 'App launch ignores matching processes in another session'
-Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($otherPath))) 'App launch ignores another executable in the current session'
-Assert (Test-AppProcessInSession $fixtureApp 7 @($otherSession,$sameSession)) 'App launch accepts the matching executable in the current session'
-$exitedApp=[pscustomobject]@{Path=$fixtureApp;SessionId=7;HasExited=$true}
-$unreadableApp=[pscustomobject]@{Path=$fixtureApp;SessionId=7}
-$unreadableApp | Add-Member ScriptProperty HasExited {throw 'Synthetic inaccessible process'}
-Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($exitedApp,$unreadableApp))) 'App launch requires a live matching process'
+$otherSession=[pscustomobject]@{ProcessName='SplitCord';Path=$null;SessionId=9;HasExited=$false}
+$sameSession=[pscustomobject]@{ProcessName='SplitCord';Path=$fixtureApp;SessionId=7;HasExited=$false}
+$otherPath=[pscustomobject]@{ProcessName='SplitCord';Path='C:\fixture\Other\SplitCord.exe';SessionId=7;HasExited=$false}
+$otherName=[pscustomobject]@{ProcessName='unrelated'}
+Assert ($false -ceq (Test-AppProcessInSession $fixtureApp 7 @($otherSession,$otherPath,$otherName))) 'App launch ignores unrelated names, paths and sessions'
+Assert ($true -ceq (Test-AppProcessInSession $fixtureApp 7 @($otherSession,$sameSession))) 'App launch accepts the matching executable in the current session'
+$exitedApp=[pscustomobject]@{ProcessName='SplitCord';HasExited=$true}
+Assert ($false -ceq (Test-AppProcessInSession $fixtureApp 7 @($exitedApp))) 'Confirmed exited process does not prevent app launch'
+$unreadableApp=[pscustomobject]@{ProcessName='SplitCord';HasExited=$false;SessionId=7;Path=$null}
+$unknownSession=[pscustomobject]@{ProcessName='SplitCord';HasExited=$false;SessionId=$null;Path=$fixtureApp}
+$unknownExit=[pscustomobject]@{ProcessName='SplitCord';HasExited='false';SessionId=7;Path=$fixtureApp}
+foreach($unknown in @($unreadableApp,$unknownSession,$unknownExit)){
+    Assert ($null -eq (Test-AppProcessInSession $fixtureApp 7 @($exitedApp,$unknown))) 'App launch distinguishes unreadable process state from confirmed absence'
+    Assert ($true -ceq (Test-AppProcessInSession $fixtureApp 7 @($unknown,$sameSession))) 'Confirmed live app takes precedence over an unreadable process'
+}
 $handoff=[DateTime]::UtcNow
-$oldApp=[pscustomobject]@{Path=$fixtureApp;SessionId=7;HasExited=$false;StartTime=$handoff.AddSeconds(-1)}
-$newApp=[pscustomobject]@{Path=$fixtureApp;SessionId=7;HasExited=$false;StartTime=$handoff.AddSeconds(1)}
-Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($oldApp,$sameSession) $handoff) -and
-    (Test-AppProcessInSession $fixtureApp 7 @($oldApp,$newApp) $handoff)) 'Fresh launch requires an observable process created after Explorer handoff'
+$oldApp=[pscustomobject]@{ProcessName='SplitCord';Path=$fixtureApp;SessionId=7;HasExited=$false;StartTime=$handoff.AddSeconds(-1)}
+$newApp=[pscustomobject]@{ProcessName='SplitCord';Path=$fixtureApp;SessionId=7;HasExited=$false;StartTime=$handoff.AddSeconds(1)}
+Assert ($false -ceq (Test-AppProcessInSession $fixtureApp 7 @($oldApp) $handoff) -and
+    $null -eq (Test-AppProcessInSession $fixtureApp 7 @($oldApp,$sameSession) $handoff) -and
+    $true -ceq (Test-AppProcessInSession $fixtureApp 7 @($sameSession,$newApp) $handoff)) 'Fresh launch requires an observable process created after Explorer handoff'
 # Inert files, process records and command mocks exercise uninstall preflight.
 $fixtureAppDirectory=Join-Path $testRoot 'splitcord-uninstall'
 [void](New-Item -ItemType Directory -Path $fixtureAppDirectory)
@@ -1939,6 +1945,8 @@ try{
         $launchPath=Join-Path $testRoot 'launch fixture\Discord.exe'
         $trace=[Collections.Generic.List[string]]::new()
         $fixtureProcessRunning=$false
+        $fixtureProcessUnreadable=$false
+        $fixtureInventoryFails=$false
         $fixtureProcessTimes=[Collections.Generic.List[datetime]]::new()
         function Find-App {return $launchPath}
         function Start-Process($FilePath,$ArgumentList,$WindowStyle){
@@ -1953,10 +1961,12 @@ try{
             if($fixtureLaunchFails){throw 'Inert Explorer handoff failure'}
         }
         function Get-Process($Name,$ErrorAction){
-            if($Name -cne 'Discord'){throw 'Unexpected fixture process query'}
+            if($Name -or $ErrorAction -cne 'Stop'){throw 'Expected a complete fixture process query'}
+            if($fixtureInventoryFails){throw 'Inert process inventory failure'}
+            if($fixtureProcessUnreadable){return [pscustomobject]@{ProcessName='Discord';Path=$null;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false}}
             if($fixtureProcessRunning -or $trace.Count -eq 2){
                 $created=if($trace.Count){$fixtureProcessTimes[$trace.Count-1]}else{[DateTime]::UtcNow.AddSeconds(-1)}
-                return [pscustomobject]@{Path=$launchPath;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false;StartTime=$created}
+                return [pscustomobject]@{ProcessName='Discord';Path=$launchPath;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false;StartTime=$created}
             }
         }
         try {
@@ -1969,6 +1979,16 @@ try{
             $alreadyStarted=Start-App 'discord'
             Assert ($alreadyStarted.alreadyRunning -eq $true -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application start reuses an existing client without asking Explorer to launch it'
             $fixtureProcessRunning=$false
+            $fixtureInventoryFails=$true
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Inert process inventory failure'}
+            Assert ($rejected -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application launch refuses when process inventory fails'
+            $fixtureInventoryFails=$false
+            $fixtureProcessUnreadable=$true
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Application process state could not be inspected before launch'}
+            Assert ($rejected -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application launch refuses an unresolved matching process before journaling or handoff'
+            $fixtureProcessUnreadable=$false
             $script:journalPath=Join-Path $launchRoot 'missing\application.json'
             $rejected=$false
             try{Start-App 'discord'}catch{$rejected=$true}
