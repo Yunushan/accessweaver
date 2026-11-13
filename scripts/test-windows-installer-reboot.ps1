@@ -35,7 +35,7 @@ function Write-NewRebootEvidence([string]$Path,$Data){
     } finally {[IO.File]::Delete($staged)}
 }
 function Assert-RebootIdentity($Record,$Expected){
-    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 1 -or
+    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 2 -or
        $Record.runID -cne $Expected.runID -or $Record.architecture -cne $Expected.architecture -or
        $Record.version -cne $Expected.version -or $Record.setupSHA256 -cne $Expected.setupSHA256 -or
        $Record.payloadSHA256 -cne $Expected.payloadSHA256 -or $Record.publisherSHA256 -cne $Expected.publisherSHA256 -or
@@ -43,7 +43,9 @@ function Assert-RebootIdentity($Record,$Expected){
        $Record.detectorSHA256 -cne $Expected.detectorSHA256 -or $Record.fixtureSHA256 -cne $Expected.fixtureSHA256 -or
        $Record.commonSHA256 -cne $Expected.commonSHA256 -or $Record.publisherVerifierSHA256 -cne $Expected.publisherVerifierSHA256 -or
        $Record.uninstallerSHA256 -isnot [string] -or $Record.uninstallerSHA256 -cnotmatch '\A[a-f0-9]{64}\z' -or
-       ($Record.setupExitCode -isnot [int] -and $Record.setupExitCode -isnot [long]) -or $Record.setupExitCode -notin @(0,3010)){
+       ($Record.setupExitCode -isnot [int] -and $Record.setupExitCode -isnot [long]) -or $Record.setupExitCode -notin @(0,3010) -or
+       $Record.installedTreeSHA256 -isnot [string] -or $Record.installedTreeSHA256 -cnotmatch '\A[a-f0-9]{64}\z' -or
+       $Record.registrationSHA256 -isnot [string] -or $Record.registrationSHA256 -cnotmatch '\A[a-f0-9]{64}\z'){
         throw 'The independently approved candidate differs from the prepared reboot run'
     }
 }
@@ -56,15 +58,85 @@ function Assert-RebootPath([string]$Path){
         if($entry.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Reboot fixture path includes an alias'}
     }
 }
-function Get-RebootDigest([string]$Path){
+function Get-RebootDigest([string]$Path,[switch]$AllowEmpty){
     Assert-RebootPath $Path
     $entry=Get-Item -LiteralPath $Path -Force
     if($entry.PSIsContainer){throw 'Expected an ordinary fixture file'}
     $file=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
     try {
-        if($file.Length -le 0 -or $file.Length -gt 512MB){throw 'Fixture file is outside the verification size limit'}
+        if(($file.Length -eq 0 -and -not $AllowEmpty) -or $file.Length -gt 512MB){throw 'Fixture file is outside the verification size limit'}
         return (Get-FileHash -InputStream $file -Algorithm SHA256).Hash.ToLowerInvariant()
     } finally {$file.Dispose()}
+}
+function Get-RebootMetadataDigest($Value){
+    $bytes=[Text.UTF8Encoding]::new($false,$true).GetBytes((ConvertTo-Json -InputObject $Value -Depth 6 -Compress))
+    $hash=[Security.Cryptography.SHA256]::Create()
+    try {return [BitConverter]::ToString($hash.ComputeHash($bytes)).Replace('-','').ToLowerInvariant()}
+    finally {$hash.Dispose()}
+}
+function Get-RebootInstalledTreeDigest([string]$Directory){
+    Assert-RebootPath $Directory
+    $pending=[Collections.Generic.Queue[string]]::new()
+    $pending.Enqueue($Directory)
+    $records=[Collections.Generic.SortedDictionary[string,object]]::new([StringComparer]::Ordinal)
+    $total=0L
+    while($pending.Count){
+        $parent=$pending.Dequeue()
+        foreach($path in [IO.Directory]::EnumerateFileSystemEntries($parent)){
+            if($records.Count -ge 4096){throw 'Installed package contains too many entries'}
+            $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+            if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Installed package contains an alias'}
+            $relative=$path.Substring($Directory.Length+1)
+            if($item.PSIsContainer){
+                $records.Add($relative,[ordered]@{path=$relative;kind='directory'})
+                $pending.Enqueue($path)
+            }else{
+                $total+=$item.Length
+                if($total -gt 512MB){throw 'Installed package exceeds the fingerprint budget'}
+                $records.Add($relative,[ordered]@{path=$relative;kind='file';size=$item.Length;sha256=(Get-RebootDigest $path -AllowEmpty)})
+            }
+        }
+    }
+    if(-not $records.Count){throw 'Installed package is empty'}
+    return Get-RebootMetadataDigest @($records.Values)
+}
+function Get-RebootRegistrationFingerprint($Key){
+    if($null -eq $Key -or $Key.SubKeyCount -ne 0 -or $Key.ValueCount -le 0 -or $Key.ValueCount -gt 256){
+        throw 'Installed machine registration is missing or outside the fixture bounds'
+    }
+    $names=$Key.GetValueNames()
+    if($names.Count -ne $Key.ValueCount){throw 'Machine registration changed during inspection'}
+    [Array]::Sort($names,[StringComparer]::Ordinal)
+    $records=foreach($name in $names){
+        $kind=$Key.GetValueKind($name)
+        $value=$Key.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        if($null -eq $value){throw 'Machine registration changed during inspection'}
+        [ordered]@{name=$name;kind=$kind.ToString();value=$value}
+    }
+    return Get-RebootMetadataDigest @($records)
+}
+function Get-RebootRegistrationDigest {
+    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+    $key=$null
+    try {
+        $key=$base.OpenSubKey($registrationKey,$false)
+        return Get-RebootRegistrationFingerprint $key
+    } finally {
+        if($null -ne $key){$key.Dispose()}
+        $base.Dispose()
+    }
+}
+function Assert-RebootInstalledState($Saved,[string]$TreeSHA256,[string]$RegistrationSHA256){
+    if($Saved.installedTreeSHA256 -cne $TreeSHA256){throw 'Installed package tree changed across reboot'}
+    if($Saved.registrationSHA256 -cne $RegistrationSHA256){throw 'Machine registration changed across reboot'}
+}
+function Assert-RebootPackageRemoved([string]$Directory){
+    if(-not (Test-Path -LiteralPath $Directory -ErrorAction Stop)){return}
+    Assert-RebootPath $Directory
+    $entries=[IO.Directory]::EnumerateFileSystemEntries($Directory).GetEnumerator()
+    try {
+        if($entries.MoveNext()){throw 'Installed package files remain after uninstall'}
+    } finally {$entries.Dispose()}
 }
 function Get-GuestBoot {
     $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
@@ -94,12 +166,11 @@ function Assert-InstalledDetection([bool]$Detected){
     } elseif($output.Count -ne 0){throw 'Unexpected approved installation already exists'}
 }
 function Assert-RegistrationAbsent {
-    $key='SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{B13D4677-4660-4E63-B3DB-03077ACBB092}_is1'
     foreach($view in @([Microsoft.Win32.RegistryView]::Registry64,[Microsoft.Win32.RegistryView]::Registry32)){
         $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,$view)
         $registration=$null
         try {
-            $registration=$base.OpenSubKey($key,$false)
+            $registration=$base.OpenSubKey($registrationKey,$false)
             if($null -ne $registration){throw 'An AccessWeaver machine registration already exists'}
         } finally {
             if($null -ne $registration){$registration.Dispose()}
@@ -142,10 +213,11 @@ $detector=Join-Path $PSScriptRoot 'detect-windows-installer.ps1'
 $publisher=Join-Path $PSScriptRoot 'verify-windows-installer-publisher.ps1'
 $install=Join-Path $programFiles 'AccessWeaver'
 $uninstaller=Join-Path $install 'unins000.exe'
+$registrationKey='SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{B13D4677-4660-4E63-B3DB-03077ACBB092}_is1'
 $capsule=Join-Path $programFiles ('AccessWeaver reboot fixture '+$RunID)
 $baseline=Join-Path $capsule 'prepared.json'
 $report=Join-Path $capsule 'result.json'
-$expected=[ordered]@{schemaVersion=1;runID=$RunID;architecture=$Architecture;version=$Version;
+$expected=[ordered]@{schemaVersion=2;runID=$RunID;architecture=$Architecture;version=$Version;
     setupSHA256=$SetupSHA256.ToLowerInvariant();payloadSHA256=$PayloadSHA256.ToLowerInvariant();guestID=$guestUUID.ToString('D');
     publisherSHA256=$PublisherCertificateSHA256.ToLowerInvariant();
     detectorSHA256=(Get-RebootDigest $detector);fixtureSHA256=(Get-RebootDigest $PSCommandPath);
@@ -180,9 +252,11 @@ if($Phase -ceq 'Prepare'){
         $expected.uninstallerSHA256=Get-RebootDigest $uninstaller
         $null=@(& $publisher -Artifact $uninstaller -ArtifactSHA256 $expected.uninstallerSHA256 -PublisherCertificateSHA256 $PublisherCertificateSHA256)
         if($LASTEXITCODE -ne 0){throw 'Installed uninstaller publisher verification failed'}
+        $expected.installedTreeSHA256=Get-RebootInstalledTreeDigest $install
+        $expected.registrationSHA256=Get-RebootRegistrationDigest
         Write-NewRebootEvidence $baseline $expected
     } catch {
-        Write-NewRebootEvidence $report @{schemaVersion=1;runID=$RunID;stage=$stage;passed=$false}
+        Write-NewRebootEvidence $report @{schemaVersion=2;runID=$RunID;stage=$stage;passed=$false}
         throw 'Windows installer reboot preparation failed. Retain the disposable guest for review.'
     }
     Write-Output 'Prepared the approved installation. Reboot the disposable guest before verification.'
@@ -194,17 +268,22 @@ if((Get-Item -LiteralPath $baseline).Length -gt 8192 -or (Test-Path -LiteralPath
 $saved=Get-Content -LiteralPath $baseline -Raw|ConvertFrom-Json
 Assert-RebootIdentity $saved $expected
 Assert-LaterGuestBoot $saved.boot $boot
-Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=1;runID=$RunID}
-$result=[ordered]@{schemaVersion=1;runID=$RunID;architecture=$Architecture;version=$Version;
+Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=2;runID=$RunID}
+$result=[ordered]@{schemaVersion=2;runID=$RunID;architecture=$Architecture;version=$Version;
     setupSHA256=$expected.setupSHA256;payloadSHA256=$expected.payloadSHA256;publisherSHA256=$expected.publisherSHA256;
     detectorSHA256=$expected.detectorSHA256;fixtureSHA256=$expected.fixtureSHA256;
     commonSHA256=$expected.commonSHA256;publisherVerifierSHA256=$expected.publisherVerifierSHA256;
-    uninstallerSHA256=$saved.uninstallerSHA256;setupExitCode=$saved.setupExitCode;setupRequestedRestart=($saved.setupExitCode -eq 3010);
+    uninstallerSHA256=$saved.uninstallerSHA256;installedTreeSHA256=$saved.installedTreeSHA256;registrationSHA256=$saved.registrationSHA256;
+    installedTreeVerified=$false;registrationPreserved=$false;packageFilesRemoved=$false;setupExitCode=$saved.setupExitCode;setupRequestedRestart=($saved.setupExitCode -eq 3010);
     guestRebootVerified=$true;installedPayloadVerifiedBeforeRestart=$true;installedPayloadVerified=$false;uninstallerIdentityVerified=$false;
     registrationRemoved=$false;passed=$false;stage='installed-after-reboot'}
 try {
     Assert-InstalledDetection $true
     $result.installedPayloadVerified=$true
+    $result.stage='installed-state'
+    Assert-RebootInstalledState $saved (Get-RebootInstalledTreeDigest $install) (Get-RebootRegistrationDigest)
+    $result.installedTreeVerified=$true
+    $result.registrationPreserved=$true
     $result.stage='uninstaller-identity'
     if((Get-RebootDigest $uninstaller) -cne $saved.uninstallerSHA256){throw 'Installed uninstaller changed after preparation'}
     $null=@(& $publisher -Artifact $uninstaller -ArtifactSHA256 $saved.uninstallerSHA256 -PublisherCertificateSHA256 $PublisherCertificateSHA256)
@@ -217,10 +296,9 @@ try {
     while((Test-Path -LiteralPath $uninstaller) -and $deadline.Elapsed.TotalSeconds -lt 20){Start-Sleep -Milliseconds 200}
     Assert-InstalledDetection $false
     Assert-RegistrationAbsent
-    if((Test-Path -LiteralPath (Join-Path $install 'accessweaver.exe')) -or (Test-Path -LiteralPath $uninstaller)){
-        throw 'Owned installed executable remains after uninstall'
-    }
     $result.registrationRemoved=$true
+    Assert-RebootPackageRemoved $install
+    $result.packageFilesRemoved=$true
     $result.passed=$true
     $result.stage='complete'
 } catch {
