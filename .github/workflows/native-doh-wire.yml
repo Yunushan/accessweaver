@@ -53,6 +53,7 @@ permissions:
 concurrency:
   group: native-doh-wire-${{ github.ref }}
   cancel-in-progress: false
+  queue: max
 
 env:
   GO_VERSION: '1.27.4'

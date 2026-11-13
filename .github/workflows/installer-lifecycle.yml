@@ -37,6 +37,7 @@ permissions:
 concurrency:
   group: installer-lifecycle-${{ github.ref }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   lifecycle:
