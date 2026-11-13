@@ -283,7 +283,8 @@
             "docs/qualification/1b66e9c3bafb-native-wiresock-lifecycle.json",
             "docs/qualification/20ac1ac28b96-native-wiresock-lifecycle.json",
             "docs/qualification/a95ff588e668-native-wiresock-lifecycle.json",
-            "docs/qualification/66b0bf6def2a-native-wiresock-lifecycle.json"
+            "docs/qualification/66b0bf6def2a-native-wiresock-lifecycle.json",
+            "docs/qualification/f6e55a959f07-native-wiresock-lifecycle.json"
           ]
         },
         {
@@ -401,7 +402,8 @@
             "web/app.js",
             "scripts/browser-tests/accessibility.cjs",
             "scripts/browser-tests/desktop.spec.cjs",
-            "docs/TESTING.md"
+            "docs/TESTING.md",
+            "docs/qualification/a7fb7a0eeefe-browser-keyboard-forced-colors.json"
           ]
         },
         {
