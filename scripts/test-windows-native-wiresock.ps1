@@ -25,6 +25,13 @@ $checks=[ordered]@{
 }
 $workflowOutcomes=[ordered]@{install='not-run';disconnect='not-run';remove='not-run';'vendor-uninstall'='not-run'}
 $connectionState='not-checked'
+$connectionRecovery=[ordered]@{
+    observed=$false
+    recordedRollback='not-observed'
+    externalEffects='not-observed'
+    ownership='not-checked'
+    profileList='not-checked'
+}
 $vendorCLI=[ordered]@{profileList='not-checked';directStatus='not-checked';profileExport='not-checked';keyPairRetained=$false;endpointRetained=$false;prefixesRetained=$false;selectedAppRetained=$false}
 $uninstallRegistration=[ordered]@{observed=$false;total=0;visibleBundles=0;hiddenMSIs=0;other=0}
 $stage='baseline'
@@ -179,6 +186,14 @@ function Invoke-TestWorkflow([hashtable]$request){
             $reported=[string]$job.result.data.status
             $script:connectionState=if($reported -ceq 'Unknown'){'unrecognized'}else{Get-FixedConnectionState $reported}
         }
+        if($action -ceq 'install' -and $outcome -ceq 'connection-unconfirmed'){
+            $connectionRecovery.observed=$true
+            if($job.result.rollbackScope -ceq 'recorded-resources' -and $job.result.recordedRollbackComplete -is [bool]){
+                $connectionRecovery.recordedRollback=if($job.result.recordedRollbackComplete){'complete'}else{'incomplete'}
+            }
+            # The finalizer emits this field only when it reports pending external effects.
+            $connectionRecovery.externalEffects=if($job.result.externalEffectsPending -is [bool] -and $job.result.externalEffectsPending){'pending'}else{'not-reported'}
+        }
         return @{passed=($outcome -ceq 'succeeded');restart=($outcome -ceq 'restart-required')}
     } finally {[IO.File]::Delete($path)}
 }
@@ -236,10 +251,23 @@ try {
     $installed=Invoke-TestWorkflow @{action='install';engine='wiresock';mode='alternative';dns='unchanged';configPath=$config;profileId='local-peer';applications=@('probe-selected.exe')}
     $checks.restartRequested=$installed.restart
     $checks.installCompleted=$installed.passed -and -not $installed.restart -and (Test-Path -LiteralPath $owned -PathType Leaf)
-    if(-not $checks.installCompleted){throw 'WireSock installation and connection not confirmed'}
+    $cli=Join-Path $env:ProgramFiles $cliPaths[0]
+    if(-not $checks.installCompleted){
+        if($connectionRecovery.observed){
+            # Observe recovery before the fixture's remove and vendor uninstall steps.
+            $connectionRecovery.ownership=if(Test-Path -LiteralPath $owned -ErrorAction Stop){'present'}else{'absent'}
+            if(Test-Path -LiteralPath $cli -PathType Leaf){
+                $list=Invoke-PrivateNative $cli @('list')
+                $connectionRecovery.profileList=if($list.exitCode -ne 0){'command-failed'}
+                    elseif([string]::IsNullOrWhiteSpace($list.stdout)){'empty'}
+                    elseif($list.stdout -cmatch '(?<![a-zA-Z0-9-])AccessWeaver-[a-f0-9]{32}(?![a-zA-Z0-9-])'){'managed-profile-observed'}
+                    else{'managed-profile-not-observed'}
+            }
+        }
+        throw 'WireSock installation and connection not confirmed'
+    }
     # Query only the vendor CLI selected by the normal product installation.
     # The generated profile is compared in memory and never leaves the runner.
-    $cli=Join-Path $env:ProgramFiles $cliPaths[0]
     if(Test-Path -LiteralPath $cli -PathType Leaf){
         $owner=Get-Item -LiteralPath $owned
         if($owner.Length -gt 0 -and $owner.Length -le 8192){
@@ -329,7 +357,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=10;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;productionQualificationComplete=$false}
+$report=@{schemaVersion=11;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
