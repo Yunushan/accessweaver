@@ -26,6 +26,8 @@
           "acceptance": "Selected and unselected applications have independently verified TCP, UDP, DNS and IPv4/IPv6 paths for each supported routing mode.",
           "status": "partial",
           "evidence": [
+            "docs/qualification/402dca260f4b-native-wiresock-lifecycle.json",
+            "docs/qualification/f283f4a449a9-wiresock-uninstall-registration-readback-contracts.json",
             "scripts/test-windows-wiresock.ps1",
             "scripts/test-windows-native-wiresock.ps1",
             "docs/qualification/1b66e9c3bafb-native-wiresock-lifecycle.json",
@@ -551,6 +553,7 @@
           "acceptance": "Local administrative/user action events are attributable, redacted, bounded, tamper-evident and exportable to existing log collectors; support exports enforce documented consent and secret-handling rules.",
           "status": "partial",
           "evidence": [
+            "docs/qualification/4914ada21b27-release-windows-audit-commands.json",
             "docs/AUDIT_EVENTS.md",
             "docs/RECORDED_AUDIT_EXPORT.md",
             "docs/WINDOWS_AUDIT_STORAGE.md",

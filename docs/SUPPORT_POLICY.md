@@ -10,7 +10,7 @@ A deploying organization owns its endpoint administration, incident response and
 
 ## Report a problem
 
-When repository issue reporting is enabled, use the [bug-report form](https://github.com/Yunushan/accessweaver/issues/new?template=bug_report.yml). If the form is unavailable, use an available repository issue channel with the same minimal information. On 2026-11-13, the public tracker loaded and GitHub directed new issue submissions to sign-in. Private vulnerability reporting availability remains unverified. Confirm both submission paths before relying on them for a deployment.
+When repository issue reporting is enabled, use the [bug-report form](https://github.com/Yunushan/accessweaver/issues/new?template=bug_report.yml). If the form is unavailable, use an available repository issue channel with the same minimal information. On 2026-11-13, GitHub reported public issues enabled and private vulnerability reporting disabled for this repository. GitHub directed signed-out issue submissions to sign-in. Use the maintainer-contact fallback in SECURITY.md until a repository administrator enables private reporting and verifies access. [GitHub documents the reporting status endpoint.](https://docs.github.com/en/rest/repos/repos#check-if-private-vulnerability-reporting-is-enabled-for-a-repository)
 
 For a suspected vulnerability, follow [SECURITY.md](../SECURITY.md), including its private-reporting availability and fallback rules. Keep exploit details and sensitive evidence out of public issues. A product malfunction with suspected release, dependency or signing-key compromise follows the [incident procedure](INCIDENT_RESPONSE.md).
 
