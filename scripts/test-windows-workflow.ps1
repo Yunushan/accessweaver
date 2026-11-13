@@ -833,8 +833,8 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         function Get-AuthenticodeSignature {param($LiteralPath);return $fixtureSignature}
         function Get-FileHash {param($LiteralPath,$Algorithm);return @{Hash=$fixtureDigest}}
         function No-Reparse {param($Path);if($Path -cne $program){throw 'Unexpected cached executable'}}
-        function Remove-WireSockRefreshTask {}
-        function Remove-Method {}
+        function Remove-WireSockRefreshTask {$calls.Add('task')}
+        function Remove-Method {$calls.Add('profile')}
         function Remove-Item {}
         function Event {}
         function Native {
@@ -846,7 +846,7 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         $fixtureSignature=$unknownSigner
         $fixtureDigest=$x64Pin
         $result=Uninstall-WireSockProduct
-        Assert ($result.product -ceq 'WireSock Secure Connect' -and $calls.Count -eq 1) 'WireSock uninstall accepts a signed cached copy of its exact native installer'
+        Assert ($result.product -ceq 'WireSock Secure Connect' -and ($calls -join ',') -ceq 'task,profile,uninstall') 'WireSock uninstall accepts a signed cached copy of its exact native installer'
         $fixtureDigest=$armPin
         $refused=$false
         try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
@@ -854,7 +854,7 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         $fixtureDigest=$x64Pin;$fixtureSignature=$invalidSigner
         $refused=$false
         try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
-        Assert ($wrongPinRefused -and $refused -and $calls.Count -eq 1) 'WireSock uninstall refuses a different native pin or invalid signature before execution'
+        Assert ($wrongPinRefused -and $refused -and ($calls -join ',') -ceq 'task,profile,uninstall') 'WireSock uninstall refuses a different native pin or invalid signature before cleanup'
     } finally {$env:ProgramData=$previousProgramData}
 }
 # Synthetic process records verify session-scoped launch observation without launching an app.

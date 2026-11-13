@@ -1771,12 +1771,12 @@ function Uninstall-WireSockProduct {
         if(Test-Path -LiteralPath $base){$records+=@(Get-ChildItem -LiteralPath $base|ForEach-Object {Get-ItemProperty -LiteralPath $_.PSPath}|Where-Object {$_.DisplayName -in $names})}
     }
     $record=$records|Select-Object -First 1;if(-not $record){throw 'No supported registered WireSock product found; use Windows Apps settings for an unrecognized package'}
-    Remove-WireSockRefreshTask
-    try{Remove-Method 'wiresock'}catch{Event 'Managed profile cleanup could not complete; continuing with the explicitly requested vendor uninstall'}
     $command=[Environment]::ExpandEnvironmentVariables([string]$record.UninstallString)
     if($command -match '(?i)msiexec(?:\.exe)?' -and $command -match '(\{[0-9a-fA-F-]{36}\})'){
         $product=[guid]$matches[1]
-        [void](Native (Join-Path $env:SystemRoot 'System32\msiexec.exe') @('/x',$product.ToString('B'),'/qn','/norestart') @(0,1605,3010,1641) -Timeout 900)
+        $program=Join-Path $env:SystemRoot 'System32\msiexec.exe'
+        $arguments=@('/x',$product.ToString('B'),'/qn','/norestart')
+        $codes=@(0,1605,3010,1641)
     }else{
         $program=$null;if($command -match '^"([^"]+\.exe)"'){$program=$matches[1]}elseif($command -match '^(.+?\.exe)(?:\s|$)'){$program=$matches[1]}
         if(-not $program -or (-not (Under $program $env:ProgramFiles) -and -not (Under $program (Join-Path $env:ProgramData 'Package Cache')))){throw 'Registered vendor uninstaller is outside protected installation storage'}
@@ -1784,8 +1784,12 @@ function Uninstall-WireSockProduct {
         $signature=Get-AuthenticodeSignature -LiteralPath $program
         $digest=(Get-FileHash -LiteralPath $program -Algorithm SHA256).Hash.ToLowerInvariant()
         if(-not (Test-InstallerPublisher 'wiresock' $signature $digest $inputData.nativeArchitecture)){throw 'Vendor uninstaller publisher signature could not be verified'}
-        [void](Native $program @('/uninstall','/quiet','/norestart') @(0,3010,1641) -Timeout 900)
+        $arguments=@('/uninstall','/quiet','/norestart')
+        $codes=@(0,3010,1641)
     }
+    Remove-WireSockRefreshTask
+    try{Remove-Method 'wiresock'}catch{Event 'Managed profile cleanup could not complete; continuing with the explicitly requested vendor uninstall'}
+    [void](Native $program $arguments $codes -Timeout 900)
     $deadline=[DateTime]::UtcNow.AddSeconds(30)
     while($cli -and (Test-Path -LiteralPath $cli) -and -not $script:rebootRequired -and [DateTime]::UtcNow -lt $deadline){Start-Sleep -Milliseconds 500}
     if($cli -and (Test-Path -LiteralPath $cli) -and -not $script:rebootRequired){throw 'Vendor CLI remains installed; inspect vendor uninstall logs'}
