@@ -292,7 +292,10 @@
           "evidence": [
             "internal/workflow/release_test.go",
             "internal/workflow/windows.ps1",
-            "docs/qualification/1ae29f62cc66-windows-release-discovery-contracts.json"
+            "docs/qualification/1ae29f62cc66-windows-release-discovery-contracts.json",
+            "scripts/signed_release_manifest.py",
+            "scripts/test_signed_release_manifest.py",
+            "docs/RELEASE_PROVENANCE.md"
           ]
         }
       ]

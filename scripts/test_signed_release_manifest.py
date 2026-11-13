@@ -79,10 +79,10 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.revocation_list.write_text(json.dumps(policy), encoding="utf-8")
         return release.digest(self.revocation_list)
 
-    def verify(self, certificate, certificate_pin, commit=COMMIT, ref=REF, *, policy_pin=None):
+    def verify(self, certificate, certificate_pin, commit=COMMIT, ref=REF, *, policy_pin=None, **update):
         return release.verify(self.candidate, certificate, certificate_pin, commit, ref, OPENSSL,
                               revocation_list=self.revocation_list,
-                              revocation_list_sha256=policy_pin or self.policy_pin)
+                              revocation_list_sha256=policy_pin or self.policy_pin, **update)
 
     def write_reboot_report(self, filename, architecture="amd64", **overrides):
         version = REF.removeprefix("refs/tags/v")
@@ -214,6 +214,26 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=evidence)
             self.assertFalse(output.exists())
 
+    def test_managed_update_orders_versions_and_requires_an_exact_target(self):
+        files = release.inventory(self.candidate, self.subjects)
+        for current, candidate, decision in (
+            ("1.0.0", "2.0.0-rc.1", "channel-mismatch"),
+            ("1.0.0-rc.2", "1.0.0-rc.10", "upgrade"),
+            ("1.0.0-rc.2", "1.0.0-rc.two", "upgrade"),
+            ("1.0.0-rc.2", "1.0.0-rc", "older"),
+            ("1.0.0-rc.2", "1.0.0", "upgrade"),
+            ("1.2.3+local", "1.2.3+release", "current"),
+            ("2.0.0", "1.99.0", "older"),
+        ):
+            with self.subTest(current=current, candidate=candidate):
+                result = release.managed_update(files, "windows/arm64", current, candidate)
+                self.assertEqual(result["decision"], decision)
+                self.assertIs(result["updateAvailable"], decision == "upgrade")
+        for target, version in (("linux/amd64", "1.0.0"), ("darwin/arm64", "01.0.0"),
+                                ("darwin/arm64", "1.0.0-01")):
+            with self.subTest(target=target, version=version), self.assertRaises(ValueError):
+                release.managed_update(files, target, version, VERSION)
+
     def test_real_cms_approval_and_refusals(self):
         self.assertIsNotNone(OPENSSL, "OpenSSL is required for CMS signing fixtures")
 
@@ -246,6 +266,19 @@ class SignedReleaseManifestTests(unittest.TestCase):
 
         report = self.verify(approved, pin)
         self.assertEqual(report["subjectsVerified"], 12)
+        self.assertNotIn("managedUpdate", report)
+        for arch, name in (
+            ("windows/arm64", f"accessweaver-{VERSION}-windows-arm64-setup.exe"),
+            ("darwin/amd64", f"accessweaver-{VERSION}-darwin-amd64-deployment-experimental.pkg"),
+        ):
+            selected = self.verify(approved, pin, current_version="1.2.2-alpha", target=arch)["managedUpdate"]
+            self.assertEqual(selected, {
+                "target": arch, "currentVersion": "1.2.2-alpha", "candidateVersion": VERSION,
+                "decision": "upgrade", "updateAvailable": True, "installer": name,
+                "installerSHA256": release.digest(self.candidate / name),
+            })
+        with self.assertRaisesRegex(ValueError, "installed version and target"):
+            self.verify(approved, pin, target="windows/arm64")
         self.assertEqual(report["sbomArtifactBindingsVerified"], 6)
         self.assertEqual(report["macosDetection"], [
             {"target": target, "version": VERSION, "detectorSHA256": pin,
@@ -272,7 +305,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         original = manifest.read_bytes()
         manifest.write_bytes(original + b" ")
         with self.assertRaises(subprocess.CalledProcessError):
-            self.verify(approved, pin)
+            self.verify(approved, pin, current_version="1.2.2-alpha", target="windows/arm64")
         manifest.write_bytes(original)
 
         subject = self.candidate / next(iter(self.subjects))
@@ -312,7 +345,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
             with self.subTest(field=field):
                 current_pin = self.write_policy({**self.policy, field: [revoked]})
                 with self.assertRaisesRegex(ValueError, "revoked"):
-                    self.verify(approved, pin, policy_pin=current_pin)
+                    self.verify(approved, pin, policy_pin=current_pin,
+                                current_version="1.2.2-alpha", target="windows/arm64")
                 with self.assertRaisesRegex(ValueError, "fingerprint"):
                     self.verify(approved, pin)
 

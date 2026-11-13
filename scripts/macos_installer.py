@@ -18,13 +18,18 @@ def require(ok,message):
 
 def digest(data): return hashlib.sha256(data).hexdigest()
 
-def version_parts(value):
+def parse_release_version(value):
     require(isinstance(value,str) and len(value)<=256,"Invalid package release version")
     match=re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?",value)
     require(match is not None,"Expected canonical SemVer")
     prerelease=match[4]
     require(not prerelease or all(not part.isdigit() or part=="0" or not part.startswith("0") for part in prerelease.split(".")),"Invalid numeric prerelease")
     numbers=tuple(int(match[i]) for i in (1,2,3))
+    return numbers, prerelease.split(".") if prerelease else []
+
+
+def version_parts(value):
+    numbers,_=parse_release_version(value)
     require(numbers[0]<=9999 and numbers[1]<=99 and numbers[2]<=99,"Version exceeds Apple's bundle version fields")
     return ".".join(str(v) for v in numbers)
 

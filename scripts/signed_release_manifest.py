@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 
-from macos_installer import version_parts
+from macos_installer import parse_release_version, version_parts
 from sbom import prop_map, validate_digest
 from verify_release import require
 from verify_release_provenance import REPOSITORY, regular_file, validate_identity
@@ -301,8 +301,33 @@ def authenticate(root, der, openssl):
             "Approval signature does not cover the exact manifest")
 
 
+def update_order(numbers, prerelease):
+    identifiers = tuple((0, int(value)) if value.isdigit() else (1, value) for value in prerelease)
+    return numbers, not prerelease, identifiers
+
+
+def managed_update(files, target, current_version, candidate_version):
+    current_numbers, current_prerelease = parse_release_version(current_version)
+    candidate_numbers, candidate_prerelease = parse_release_version(candidate_version)
+    installer = next((item for item in files if item["target"] == target and item["role"] == "installer"), None)
+    require(installer is not None, "Expected a supported managed update target")
+    if not current_prerelease and candidate_prerelease:
+        decision = "channel-mismatch"
+    else:
+        current = update_order(current_numbers, current_prerelease)
+        candidate = update_order(candidate_numbers, candidate_prerelease)
+        decision = "upgrade" if candidate > current else "current" if candidate == current else "older"
+    return {
+        "target": target, "currentVersion": current_version, "candidateVersion": candidate_version,
+        "decision": decision, "updateAvailable": decision == "upgrade",
+        "installer": installer["file"], "installerSHA256": installer["sha256"],
+    }
+
+
 def verify(directory, certificate, certificate_sha256, commit, ref, openssl="openssl",
-           *, revocation_list, revocation_list_sha256):
+           *, revocation_list, revocation_list_sha256, current_version=None, target=None):
+    require((current_version is None) == (target is None),
+            "Managed update evaluation requires an installed version and target")
     subjects = release_subjects(commit, ref)
     der = independently_pinned_file(directory, certificate, certificate_sha256)
     certificate_sha256 = certificate_sha256.lower()
@@ -346,6 +371,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             "revocationListSHA256": revocation_list_sha256.lower(), "revocationCheckPassed": True,
             "nativePublisherChecksPerformed": False, "productionQualificationComplete": False,
         }
+        if target is not None:
+            report["managedUpdate"] = managed_update(files, target, current_version, version)
         if entries:
             targets = windows_subjects(files)
             payload_sboms = windows_payload_sboms(files)
@@ -372,6 +399,9 @@ def main():
     verify_args.add_argument("--revocation-list", type=Path, required=True)
     verify_args.add_argument("--revocation-list-sha256", required=True)
     verify_args.add_argument("--openssl", default="openssl", help="trusted OpenSSL executable")
+    verify_args.add_argument("--current-version", help="installed version from trusted endpoint inventory")
+    verify_args.add_argument("--target", choices=("windows/amd64", "windows/arm64", "darwin/amd64", "darwin/arm64"),
+                             help="native managed endpoint target")
     for command in (prepare_args, verify_args):
         command.add_argument("directory", type=Path)
         command.add_argument("--source-commit", required=True)
@@ -385,7 +415,8 @@ def main():
             print(json.dumps(verify(args.directory, args.approval_certificate, args.approval_certificate_sha256,
                                     args.source_commit, args.source_ref, args.openssl,
                                     revocation_list=args.revocation_list,
-                                    revocation_list_sha256=args.revocation_list_sha256)))
+                                    revocation_list_sha256=args.revocation_list_sha256,
+                                    current_version=args.current_version, target=args.target)))
     except (ValueError, OSError, subprocess.SubprocessError):
         print("Signed release inventory, approval or revocation verification failed.", file=sys.stderr)
         return 1

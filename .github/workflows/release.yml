@@ -26,6 +26,7 @@ on:
       - scripts/verify_release_rebuild.py
       - scripts/publish_prerelease.py
       - scripts/signed_release_manifest.py
+      - scripts/macos_installer.py
       - scripts/sbom.py
       - scripts/test_signed_release_manifest.py
       - scripts/verify-windows-installer-publisher.ps1
