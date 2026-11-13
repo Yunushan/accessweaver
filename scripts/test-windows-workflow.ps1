@@ -749,11 +749,19 @@ try {
     $previousUndo=$script:undo
     try {
         $root=Join-Path $testRoot 'wiresock-phase-failures'
+        $profiles=Join-Path $root 'profiles'
+        [void][IO.Directory]::CreateDirectory($profiles)
+        $originalConfig=Join-Path $root 'fixture.conf'
+        [IO.File]::WriteAllText($originalConfig,'inert profile')
         $fixtureCli='C:\fixture\wiresock-connect-cli.exe'
         $calls=[Collections.Generic.List[string]]::new()
         function Install-WireSock {return $fixtureCli}
         function Start-WireSockServices {}
-        function Copy-Checked {}
+        function Copy-Checked {
+            param($Source,$Destination)
+            [IO.File]::Copy($Source,$Destination,$false)
+            if($mode -ceq 'copy'){throw 'Fixture copy failure'}
+        }
         function Write-Atomic {
             param($Path,$Text)
             if((Split-Path -Leaf $Path) -cne 'wiresock-owned.json' -or ($Text | ConvertFrom-Json).profile -cne $script:undo[0].profile){throw 'Unexpected ownership record'}
@@ -780,6 +788,7 @@ try {
                     if(-not $entry.importOnly -or [IO.Path]::GetFileNameWithoutExtension($arguments[1]) -cne $entry.profile){
                         throw 'Import did not use the journaled profile'
                     }
+                    if(-not [IO.File]::Exists($arguments[1])){throw 'Missing staged import configuration'}
                     $calls.Add($command)
                     if($mode -ceq 'import'){throw 'Fixture import failure'}
                 }
@@ -804,6 +813,7 @@ try {
             return @{exitCode=0}
         }
         foreach($case in @(
+            @{mode='copy';calls='';label='WireSock retires failed import staging before any vendor command'},
             @{mode='import';calls='save-import,import,delete';label='WireSock import failure rolls back only the generated profile'},
             @{mode='journal';calls='save-import,import,save-connect,delete';label='WireSock journal failure before connect preserves the active tunnel'},
             @{mode='connect';calls='save-import,import,save-connect,connect,disconnect,delete';label='WireSock connect failure uses the persisted connection recovery phase'}
@@ -815,6 +825,7 @@ try {
             try {Connect-WireSock (Join-Path $root 'fixture.conf') | Out-Null}catch{
                 $failed=$_.Exception.Message -ceq ('Fixture '+$mode+' failure')
             }
+            if(@(Get-ChildItem -LiteralPath $profiles -Filter '*.conf').Count){throw 'Import configuration remains after failure'}
             $errors=@(Rollback)
             Assert ($failed -and $errors.Count -eq 0 -and ($calls -join ',') -ceq $case.calls) $case.label
         }
@@ -837,6 +848,7 @@ try {
             }
         }
         Assert $true 'WireSock records only a fixed vendor status and discards private output'
+        Assert (@(Get-ChildItem -LiteralPath $profiles -Filter '*.conf').Count -eq 0 -and [IO.File]::ReadAllText($originalConfig) -ceq 'inert profile') 'WireSock retires import copies after completion and preserves the generated profile'
     } finally {$script:undo=$previousUndo}
 }
 # Exercise the updates dispatch helper with fixed public-shape release metadata.

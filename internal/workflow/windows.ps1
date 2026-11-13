@@ -1179,10 +1179,19 @@ function Connect-WireSock([string]$config) {
         # A unique vendor profile prevents replacement of an independently
         # imported profile with the same user-selected configuration name.
         $profile='AccessWeaver-'+[guid]::NewGuid().ToString('N')
-        $importConfig=Join-Path $root ('profiles\'+$profile+'.conf');Copy-Checked $config $importConfig
+        $importConfig=Join-Path $root ('profiles\'+$profile+'.conf')
+        if(Test-Path -LiteralPath $importConfig){throw 'WireSock import staging path already exists'}
         $recovery=@{kind='wiresock';cli=$cli;profile=$profile;importOnly=$true}
-        $script:undo.Add($recovery);Save-Journal
-        [void](Native $cli @('import',$importConfig) -Secret)
+        try {
+            Copy-Checked $config $importConfig
+            $script:undo.Add($recovery);Save-Journal
+            [void](Native $cli @('import',$importConfig) -Secret)
+        } finally {
+            # The vendor derives its profile name from this file during import.
+            # Keep the generated config for recovery, but retire this extra copy.
+            No-Reparse $importConfig
+            if([IO.File]::Exists($importConfig)){[IO.File]::Delete($importConfig)}
+        }
         $recovery.importOnly=$false
         try {Save-Journal}catch{$recovery.importOnly=$true;throw}
         [void](Native $cli @('connect',$profile,'-exit') -Secret)
