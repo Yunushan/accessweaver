@@ -29,7 +29,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  # A preview can only validate its own commit. Releases that can publish
+  # share a tag-scoped lock through package verification and promotion.
+  group: release-${{ github.ref_type == 'tag' && github.ref || format('{0}-{1}', github.ref, github.sha) }}
   cancel-in-progress: false
   queue: max
 

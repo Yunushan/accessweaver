@@ -7,7 +7,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: darwin-audit-commands-${{ github.workflow }}-${{ github.ref }}
+  # Match the source revision of each independent release preview.
+  group: darwin-audit-commands-${{ github.workflow }}-${{ github.workflow == 'Release artifacts' && github.sha || github.ref }}
   cancel-in-progress: false
 
 jobs:

@@ -44,7 +44,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: parser-fuzz-${{ github.workflow }}-${{ github.ref }}
+  # Release previews retain their own prerequisite results across commits.
+  group: parser-fuzz-${{ github.workflow }}-${{ github.workflow == 'Release artifacts' && github.sha || github.ref }}
   cancel-in-progress: true
 
 env:
