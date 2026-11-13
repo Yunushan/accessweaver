@@ -1,5 +1,5 @@
 import copy
-from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt, validate_architecture_refusal, validate_fixed_restoration, validate_locked_upgrade, validate_failed_copy_recovery, validate_pending_marker_access
+from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt, validate_architecture_refusal, validate_fixed_restoration, validate_locked_upgrade, validate_redirected_upgrade, validate_failed_copy_recovery, validate_pending_marker_access
 import os
 from pathlib import Path
 import subprocess
@@ -32,6 +32,25 @@ class ArchitectureRefusalTests(unittest.TestCase):
                     validate_architecture_refusal({"architectureRefusal": {**observation, **override}}, host)
             with self.assertRaises(ValueError):
                 validate_architecture_refusal({}, host)
+
+
+class RedirectedUpgradeTests(unittest.TestCase):
+    def test_refusal_checks_original_and_alternate_installations(self):
+        observation = {
+            "operation": "refused-redirected-upgrade", "exitCode": 7, "elapsedMilliseconds": 41,
+            "deadlineMilliseconds": 180000, "preflightRefusalLogged": True,
+            "alternateDestinationAbsent": True, "pendingMarkerAbsent": True,
+            "installedFileTreePreserved": True, "completeRegistrationPreserved": True,
+            "profilePreserved": True, "machineStateUnchanged": True,
+        }
+        self.assertEqual(validate_redirected_upgrade(observation), {"redirectedUpgradePreservationVerified": True})
+        for field in observation:
+            with self.subTest(missing=field), self.assertRaises(ValueError):
+                validate_redirected_upgrade({key: value for key, value in observation.items() if key != field})
+        for field, bad in (("exitCode", 1), ("elapsedMilliseconds", 180000),
+                           ("alternateDestinationAbsent", False), ("pendingMarkerAbsent", 1)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_redirected_upgrade({**observation, field: bad})
 
 
 class LockedUpgradeTests(unittest.TestCase):

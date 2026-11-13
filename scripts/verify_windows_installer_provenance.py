@@ -153,6 +153,22 @@ def validate_architecture_refusal(report, arch):
     return {"wrongArchitectureRefusalVerified": True}
 
 
+def validate_redirected_upgrade(value):
+    flags = {
+        "preflightRefusalLogged", "alternateDestinationAbsent", "pendingMarkerAbsent",
+        "installedFileTreePreserved", "completeRegistrationPreserved", "profilePreserved",
+        "machineStateUnchanged",
+    }
+    require(isinstance(value, dict)
+            and value.keys() == flags | {"operation", "exitCode", "elapsedMilliseconds", "deadlineMilliseconds"}
+            and value["operation"] == "refused-redirected-upgrade"
+            and type(value["exitCode"]) is int and value["exitCode"] == 7
+            and type(value["deadlineMilliseconds"]) is int and value["deadlineMilliseconds"] == 180000
+            and type(value["elapsedMilliseconds"]) is int and 0 <= value["elapsedMilliseconds"] < 180000
+            and all(value[key] is True for key in flags), "Redirected upgrade refusal was not verified")
+    return {"redirectedUpgradePreservationVerified": True}
+
+
 def validate_locked_upgrade(value):
     flags = {"preflightRefusalLogged", "installedFileTreePreserved", "completeRegistrationPreserved",
              "profilePreserved", "machineStateUnchanged"}
@@ -211,7 +227,7 @@ def validate_fixed_restoration(refused, removed):
 
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21,22) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -234,10 +250,16 @@ def validate_contents(root,commit,ref,arch,versions):
         expected.insert(1, "refused-locked-upgrade")
     if report["schemaVersion"] >= 19:
         expected.insert(expected.index("refused-downgrade"), "recover-failed-install-copy")
+    if report["schemaVersion"] >= 22:
+        expected.insert(1, "refused-redirected-upgrade")
     require([o.get("operation") for o in operations]==expected,"Native lifecycle operation coverage differs")
+    redirected_upgrade = {}
     locked_upgrade = {}
     failed_copy_recovery = {}
     for operation in operations:
+        if operation["operation"] == "refused-redirected-upgrade":
+            redirected_upgrade = validate_redirected_upgrade(operation)
+            continue
         if operation["operation"] == "refused-locked-upgrade":
             locked_upgrade = validate_locked_upgrade(operation)
             continue
@@ -266,7 +288,7 @@ def validate_contents(root,commit,ref,arch,versions):
         require(payload.get("version")==version and payload.get("hashes")==[{"alg":"SHA-256","content":build["payloadSha256"]}],"Installer SBOM payload subject differs")
         require(compiler.get("version")=="6.7.1" and prop_map(compiler).get("accessweaver:compiler-sha256")==build["compilerSHA256"],"Installer SBOM compiler subject differs")
         candidates.append({"file":name,"sha256":digest(binary),"bytes":len(binary),"payloadSHA256":build["payloadSha256"],"payloadTarget":"windows/"+arch,"bootstrapPEMachine":"0x014c","sbomSHA256":digest((root/(name+".cdx.json")).read_bytes())})
-    return {"candidates":candidates,**detection_counts,**architecture,**restoration,**locked_upgrade,**failed_copy_recovery,**marker_access,**state_counts,**origin_counts,**event_counts,**attempt_counts,"nativeLifecycleOperationsVerified":len(expected),"nativeRunID":str(report["runID"]),"nativeDependencyClosureComplete":False}
+    return {"candidates":candidates,**detection_counts,**architecture,**restoration,**redirected_upgrade,**locked_upgrade,**failed_copy_recovery,**marker_access,**state_counts,**origin_counts,**event_counts,**attempt_counts,"nativeLifecycleOperationsVerified":len(expected),"nativeRunID":str(report["runID"]),"nativeDependencyClosureComplete":False}
 
 def stage(build_root,destination,commit,ref,arch,versions):
     validate_identity(commit,ref);names=subject_names(arch,versions)

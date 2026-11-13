@@ -152,12 +152,15 @@ begin
   if AWPendingRetirementFailed then Result := 1603;
 end;
 
-function AWVersionPreflight: String;
-var Found64, Found32: Boolean; Version64, Version32, Installed: String; Ordering: Integer;
+function AWRegistrationPreflight(const Destination: String): String;
+var Found64, Found32, ReadLocation: Boolean;
+    Version64, Version32, Location64, Location32, Installed, Location, Target: String;
+    Ordering: Integer;
 begin
-  Result := AWReadRegisteredVersion($0100, Found64, Version64);
+  ReadLocation := Destination <> '';
+  Result := AWReadRegistration($0100, ReadLocation, Found64, Version64, Location64);
   if Result <> '' then Exit;
-  Result := AWReadRegisteredVersion($0200, Found32, Version32);
+  Result := AWReadRegistration($0200, ReadLocation, Found32, Version32, Location32);
   if Result <> '' then Exit;
   if Found64 and Found32 then begin
     Result := 'Multiple machine installations of AccessWeaver are registered. Review them before retrying.'; Exit;
@@ -166,12 +169,20 @@ begin
     Result := 'This installer has invalid release version metadata.'; Exit;
   end;
   if not Found64 and not Found32 then Exit;
-  if Found64 then Installed := Version64 else Installed := Version32;
+  if Found64 then begin Installed := Version64; Location := Location64; end
+  else begin Installed := Version32; Location := Location32; end;
   if not AWCompare('{#ReleaseVersion}', Installed, Ordering) then begin
     Result := 'The installed AccessWeaver version is invalid. Review the installation and recovery records before retrying.'; Exit;
   end;
-  if Ordering < 0 then
-    Result := 'A newer AccessWeaver version is installed. Use a current or newer installer. This installer will not downgrade it.';
+  if Ordering < 0 then begin
+    Result := 'A newer AccessWeaver version is installed. Use a current or newer installer. This installer will not downgrade it.'; Exit;
+  end;
+  if ReadLocation then begin
+    Location := RemoveBackslashUnlessRoot(Location);
+    Target := RemoveBackslashUnlessRoot(Destination);
+    if AWCompareDestination(Target, Length(Target), Location, Length(Location), 1) <> 2 then
+      Result := 'Upgrade or reinstall AccessWeaver in its registered installation directory.';
+  end;
 end;
 
 function InitializeSetup: Boolean;
@@ -179,7 +190,7 @@ var Failure: String;
 begin
   Failure := AWAcquireLifecycle;
   if Failure = '' then Failure := AWPendingSetupPreflight('');
-  if Failure = '' then Failure := AWVersionPreflight;
+  if Failure = '' then Failure := AWRegistrationPreflight('');
   Result := Failure = '';
   if not Result then begin
     AWReleaseLifecycle;
@@ -217,7 +228,7 @@ begin
   { Recheck after wizard interaction, while the product SetupMutex remains held. }
   if not AWLifecycleOwned then Result := 'The AccessWeaver installation lock is not held. Retry setup.'
   else begin
-    Result := AWVersionPreflight;
+    Result := AWRegistrationPreflight(ExpandConstant('{app}'));
     if Result = '' then Result := AWPendingSetupPreflight(ExpandConstant('{app}'));
     if Result = '' then Result := AWPayloadReplacementPreflight;
   end;
