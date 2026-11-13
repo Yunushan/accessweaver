@@ -51,7 +51,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: native-doh-wire-${{ github.ref }}
+  # Keep qualification evidence for each source revision.
+  group: native-doh-wire-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
   queue: max
 

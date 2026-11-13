@@ -35,7 +35,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: installer-lifecycle-${{ github.ref }}
+  # Keep qualification evidence for each source revision.
+  group: installer-lifecycle-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
   queue: max
 

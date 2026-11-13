@@ -40,7 +40,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: macos-deployment-${{ github.ref }}
+  # Keep qualification evidence for each source revision.
+  group: macos-deployment-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
   queue: max
 

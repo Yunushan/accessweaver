@@ -44,7 +44,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: dns-recovery-contracts-${{ github.ref }}
+  # Keep qualification evidence for each source revision.
+  group: dns-recovery-contracts-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
   queue: max
 
