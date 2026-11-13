@@ -3,6 +3,13 @@ name: Desktop browser acceptance
 on:
   workflow_call:
   workflow_dispatch:
+  push:
+    branches: [codex/dns-adapter-coverage]
+    paths:
+      - web/app.css
+      - scripts/browser-tests/desktop.spec.cjs
+      - scripts/browser-tests/suite-contracts.json
+      - .github/workflows/browser.yml
 
 permissions:
   contents: read
