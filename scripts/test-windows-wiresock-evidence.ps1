@@ -13,23 +13,25 @@ foreach($name in @('Read-PeerEvidence','Observe-PeerEvidence')){
 }
 $file=[IO.Path]::GetTempFileName()
 try {
-    [IO.File]::WriteAllText($file,'{"last_handshake_time_sec":"0","rx_bytes":"0","tx_bytes":"0"}')
+    [IO.File]::WriteAllText($file,'{"last_handshake_time_sec":"0","rx_bytes":"0","tx_bytes":"0","initiation_received":false}')
     $sample=Observe-PeerEvidence $file
-    if(-not $sample -or $sample.handshake -or $sample.receivedBytes -or $sample.sentBytes){
+    if(-not $sample -or $sample.initiationReceived -or $sample.handshake -or $sample.receivedBytes -or $sample.sentBytes){
         throw 'Readable zero counters must remain an explicit observation'
     }
-    [IO.File]::WriteAllText($file,'{"last_handshake_time_sec":"7","rx_bytes":"1","tx_bytes":"9","private":"synthetic"}')
+    [IO.File]::WriteAllText($file,'{"last_handshake_time_sec":"7","rx_bytes":"1","tx_bytes":"9","initiation_received":true,"private":"synthetic"}')
     $sample=Observe-PeerEvidence $file -WaitForTraffic
-    if($sample.Count -ne 3 -or -not $sample.handshake -or -not $sample.receivedBytes -or -not $sample.sentBytes){
-        throw 'Positive counters must project only the three fixed flags'
+    if($sample.Count -ne 4 -or -not $sample.initiationReceived -or -not $sample.handshake -or -not $sample.receivedBytes -or -not $sample.sentBytes){
+        throw 'Positive counters must project only the four fixed flags'
     }
     foreach($content in @(
         '',
         '{',
-        '{"last_handshake_time_sec":"0","rx_bytes":"0"}',
-        '{"last_handshake_time_sec":1,"rx_bytes":"0","tx_bytes":"0"}',
-        '{"last_handshake_time_sec":"-1","rx_bytes":"0","tx_bytes":"0"}',
-        '{"last_handshake_time_sec":"9223372036854775808","rx_bytes":"0","tx_bytes":"0"}',
+        '{"last_handshake_time_sec":"0","rx_bytes":"0","initiation_received":false}',
+        '{"last_handshake_time_sec":1,"rx_bytes":"0","tx_bytes":"0","initiation_received":false}',
+        '{"last_handshake_time_sec":"-1","rx_bytes":"0","tx_bytes":"0","initiation_received":false}',
+        '{"last_handshake_time_sec":"9223372036854775808","rx_bytes":"0","tx_bytes":"0","initiation_received":false}',
+        '{"last_handshake_time_sec":"0","rx_bytes":"0","tx_bytes":"0"}',
+        '{"last_handshake_time_sec":"0","rx_bytes":"0","tx_bytes":"0","initiation_received":"false"}',
         (' '*4097)
     )){
         [IO.File]::WriteAllText($file,$content)
@@ -44,4 +46,4 @@ try {
 } finally {
     [IO.File]::Delete($file)
 }
-Write-Output 'Ten bounded WireSock peer evidence checks passed.'
+Write-Output 'Twelve bounded WireSock peer evidence checks passed.'

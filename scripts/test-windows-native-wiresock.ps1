@@ -18,7 +18,7 @@ $checks=[ordered]@{
     cleanVendorBaseline=$false;fixtureBuilt=$false;peerSelfTest=$false;peerReady=$false;installCompleted=$false;restartRequested=$false
     selectedTCP4=$false;selectedUDP4=$false;selectedTCP6=$false;selectedUDP6=$false
     unselectedTCP4Unreachable=$false;unselectedUDP4Unreachable=$false;unselectedTCP6Unreachable=$false;unselectedUDP6Unreachable=$false
-    peerStatsReadable=$false;peerHandshake=$false;peerReceivedBytes=$false;peerSentBytes=$false
+    peerStatsReadable=$false;peerInitiationReceived=$false;peerHandshake=$false;peerReceivedBytes=$false;peerSentBytes=$false
     disconnectCompleted=$false
     disconnectedTCP4Unreachable=$false;disconnectedUDP4Unreachable=$false;disconnectedTCP6Unreachable=$false;disconnectedUDP6Unreachable=$false
     managedRemovalCompleted=$false;vendorRemovalCompleted=$false;peerExited=$false;fixtureRemoved=$false
@@ -38,7 +38,7 @@ $connectionRecovery=[ordered]@{
     profileListAfterRetry='not-checked'
 }
 $managedRemovalProfileList='not-checked'
-$failedConnectionPeer=[ordered]@{observed=$false;statsReadable=$false;handshake=$false;receivedBytes=$false;sentBytes=$false}
+$failedConnectionPeer=[ordered]@{observed=$false;statsReadable=$false;initiationReceived=$false;handshake=$false;receivedBytes=$false;sentBytes=$false}
 $vendorCLI=[ordered]@{profileList='not-checked';directStatus='not-checked';profileExport='not-checked';keyPairRetained=$false;endpointRetained=$false;prefixesRetained=$false;selectedAppRetained=$false}
 $uninstallRegistration=[ordered]@{observed=$false;total=0;visibleBundles=0;hiddenMSIs=0;other=0;hiddenMSIIdentity='not-checked'}
 $cachedBundleTrust=[ordered]@{path='not-checked';signature='not-checked';publisher='not-checked';installerBytes='not-checked';engineBytes='not-checked'}
@@ -301,7 +301,8 @@ function Read-PeerEvidence([string]$path){
            -not [long]::TryParse($value,[ref]$parsed)){throw 'Invalid peer statistic'}
         $observed[$field]=$parsed -gt 0
     }
-    return @{handshake=$observed.last_handshake_time_sec;receivedBytes=$observed.rx_bytes;sentBytes=$observed.tx_bytes}
+    if($counts.initiation_received -isnot [bool]){throw 'Invalid peer initiation observation'}
+    return @{initiationReceived=$counts.initiation_received;handshake=$observed.last_handshake_time_sec;receivedBytes=$observed.rx_bytes;sentBytes=$observed.tx_bytes}
 }
 function Observe-PeerEvidence([string]$path,[switch]$WaitForTraffic){
     $timer=[Diagnostics.Stopwatch]::StartNew()
@@ -312,11 +313,11 @@ function Observe-PeerEvidence([string]$path,[switch]$WaitForTraffic){
             if(-not $observed){
                 $observed=$sample
             } else {
-                foreach($field in @('handshake','receivedBytes','sentBytes')){
+                foreach($field in @('initiationReceived','handshake','receivedBytes','sentBytes')){
                     $observed[$field]=$observed[$field] -or $sample[$field]
                 }
             }
-            if(-not $WaitForTraffic -or ($observed.handshake -and $observed.receivedBytes -and $observed.sentBytes)){break}
+            if(-not $WaitForTraffic -or ($observed.initiationReceived -and $observed.handshake -and $observed.receivedBytes -and $observed.sentBytes)){break}
         }catch{}
         Start-Sleep -Milliseconds 100
     } while($timer.Elapsed.TotalSeconds -lt 5)
@@ -412,6 +413,7 @@ try {
             $controlResult=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($controlReport.FullName))
             $checks.peerSelfTest=$controlResult.passed -eq $true -and $controlResult.tcpIPv4 -eq $true -and
                 $controlResult.udpIPv4 -eq $true -and $controlResult.tcpIPv6 -eq $true -and $controlResult.udpIPv6 -eq $true -and
+                $controlResult.peer.initiation_received -is [bool] -and $controlResult.peer.initiation_received -and
                 [long]$controlResult.peer.last_handshake_time_sec -gt 0 -and
                 [long]$controlResult.peer.rx_bytes -gt 0 -and [long]$controlResult.peer.tx_bytes -gt 0
         }
@@ -437,9 +439,10 @@ try {
             # Snapshot the independent peer before the fixture retries recovery.
             $failedConnectionPeer.observed=$true
             if(-not $peer.HasExited){
-                $sample=Observe-PeerEvidence (Join-Path $state 'traffic.json')
+                $sample=Observe-PeerEvidence (Join-Path $state 'traffic.json') -WaitForTraffic
                 if($sample -and -not $peer.HasExited){
                     $failedConnectionPeer.statsReadable=$true
+                    $failedConnectionPeer.initiationReceived=$sample.initiationReceived
                     $failedConnectionPeer.handshake=$sample.handshake
                     $failedConnectionPeer.receivedBytes=$sample.receivedBytes
                     $failedConnectionPeer.sentBytes=$sample.sentBytes
@@ -503,6 +506,7 @@ try {
     $sample=Observe-PeerEvidence (Join-Path $state 'traffic.json') -WaitForTraffic
     if($sample -and -not $peer.HasExited){
         $checks.peerStatsReadable=$true
+        $checks.peerInitiationReceived=$sample.initiationReceived
         $checks.peerHandshake=$sample.handshake
         $checks.peerReceivedBytes=$sample.receivedBytes
         $checks.peerSentBytes=$sample.sentBytes
@@ -548,7 +552,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=18;failedConnectionPeer=$failedConnectionPeer;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;managedRemovalProfileList=$managedRemovalProfileList;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;cachedBundleTrust=$cachedBundleTrust;productionQualificationComplete=$false}
+$report=@{schemaVersion=19;failedConnectionPeer=$failedConnectionPeer;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;managedRemovalProfileList=$managedRemovalProfileList;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;cachedBundleTrust=$cachedBundleTrust;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
