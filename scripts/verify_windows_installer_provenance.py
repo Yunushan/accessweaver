@@ -163,12 +163,14 @@ def validate_locked_upgrade(value):
     return {"lockedUpgradePreservationVerified": True}
 
 
-def validate_failed_copy_recovery(value):
+def validate_failed_copy_recovery(value, *, controller_required=False):
     flags = {
         "copyFailureLogged", "pendingRecordCreatedBySetup", "lockedSBOMPreserved",
         "refusedOperationsPreservedInstallation", "profilePreserved",
         "approvedPackageDetectedAfterRetry", "pendingRecordClearedAfterRetry",
     }
+    if controller_required:
+        flags.add("controllerUninstallBindingRefused")
     require(isinstance(value, dict)
             and value.keys() == flags | {"operation", "exitCode", "elapsedMilliseconds", "deadlineMilliseconds"}
             and value["operation"] == "recover-failed-install-copy"
@@ -192,7 +194,7 @@ def validate_fixed_restoration(refused, removed):
 
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -222,7 +224,7 @@ def validate_contents(root,commit,ref,arch,versions):
             locked_upgrade = validate_locked_upgrade(operation)
             continue
         if operation["operation"] == "recover-failed-install-copy":
-            failed_copy_recovery = validate_failed_copy_recovery(operation)
+            failed_copy_recovery = validate_failed_copy_recovery(operation, controller_required=report["schemaVersion"] >= 20)
             continue
         require(operation.get("exitCode")== (1 if operation["operation"].startswith("refused-") else 0) and operation.get("deadlineMilliseconds")==180000 and type(operation.get("elapsedMilliseconds")) is int and 0<=operation["elapsedMilliseconds"]<180000,"Native lifecycle operation failed")
     restoration = validate_fixed_restoration(*operations[-2:]) if report["schemaVersion"] >= 14 else {}

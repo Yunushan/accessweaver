@@ -66,6 +66,11 @@ class FailedCopyRecoveryTests(unittest.TestCase):
         self.assertEqual(validate_failed_copy_recovery(observation), {"failedInstallCopyRecoveryVerified": True})
         self.assertEqual(validate_failed_copy_recovery({**observation, "exitCode": 4}),
                          {"failedInstallCopyRecoveryVerified": True})
+        with self.assertRaises(ValueError):
+            validate_failed_copy_recovery(observation, controller_required=True)
+        self.assertEqual(validate_failed_copy_recovery({**observation, "controllerUninstallBindingRefused": True},
+                                                       controller_required=True),
+                         {"failedInstallCopyRecoveryVerified": True})
         for field in observation:
             changed = dict(observation)
             del changed[field]

@@ -3569,7 +3569,31 @@ function Assert-WorkflowUninstallProtection([string]$Path) {
     $writes=[int][Security.AccessControl.FileSystemRights]'Write,DeleteSubdirectoriesAndFiles,Delete,ChangePermissions,TakeOwnership'
     Assert-WorkflowUninstallACL (Get-Acl -LiteralPath $Path -ErrorAction Stop) $writes
 }
+function Assert-NoPendingWorkflowInstallation {
+    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+    $key=$null
+    try {
+        $key=$base.OpenSubKey('SOFTWARE\AccessWeaver\Installer',$false)
+        if($null -ne $key -and $key.GetValueNames() -icontains 'PendingInstall'){
+            throw 'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.'
+        }
+    } finally {
+        if($null -ne $key){$key.Dispose()}
+        $base.Dispose()
+    }
+}
+function Enter-WorkflowUninstallLifecycle {
+    # Never wait on an existing object or consume its abandonment signal.
+    $created=$false
+    $mutex=[Threading.Mutex]::new($true,'Global\AccessWeaver-Lifecycle-B13D4677-4660-4E63-B3DB-03077ACBB092',[ref]$created)
+    if(-not $created){
+        $mutex.Dispose()
+        throw 'An AccessWeaver installation or removal is active. Retry after it finishes.'
+    }
+    return $mutex
+}
 function Open-WorkflowUninstallBinding([string]$Architecture=$inputData.nativeArchitecture) {
+    Assert-NoPendingWorkflowInstallation
     $registration=Read-WorkflowUninstallRegistration
     if($null -eq $registration){return $null}
     $programFiles=[Environment]::GetFolderPath('ProgramFiles').TrimEnd('\')
@@ -3619,12 +3643,18 @@ function Invoke-WorkflowDeferredUninstaller($Binding) {
     } finally {$current.stream.Dispose()}
 }
 function Invoke-WorkflowUninstall {
-    $binding=Open-WorkflowUninstallBinding
-    if($null -ne $binding){
-        $binding.stream.Dispose()
-        $binding.Remove('stream')
+    $lifecycle=Enter-WorkflowUninstallLifecycle
+    try {
+        $binding=Open-WorkflowUninstallBinding
+        if($null -ne $binding){
+            $binding.stream.Dispose()
+            $binding.Remove('stream')
+        }
+        Remove-All
+    } finally {
+        try {$lifecycle.ReleaseMutex()}
+        finally {$lifecycle.Dispose()}
     }
-    Remove-All
     $script:pendingUninstaller=$binding
     if($binding){
         return @{message='Owned system changes restored; registered uninstaller will start after releasing the workflow lock. Close AccessWeaver if requested. Recovery logs and vendor products are retained.'}
