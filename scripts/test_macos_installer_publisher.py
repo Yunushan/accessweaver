@@ -1,10 +1,13 @@
 import hashlib
+import os
 import importlib.util
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
+
+from test_macos_deployment import image
 
 import verify_macos_installer_publisher as publisher
 
@@ -69,6 +72,89 @@ class PublisherTests(unittest.TestCase):
                     with self.assertRaises(subprocess.CalledProcessError):
                         publisher.verify(directory, digest, TEAM, PIN)
                     self.assertEqual(tool.call_count, stage + 1)
+
+    def test_stage_detector_only_from_verified_package_with_exact_pin(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(publisher.sys, "platform", "darwin"):
+            root = Path(temporary)
+            directory = root / "input"
+            directory.mkdir()
+            package = directory / "candidate.pkg"
+            package.write_bytes(b"fixture package")
+            package_digest = publisher.digest(package)
+            helper_bytes = image("arm64")
+            helper_digest = hashlib.sha256(helper_bytes).hexdigest()
+            destination = root / "accessweaver-installer"
+            calls = []
+            mode = "approved"
+
+            def tool(arguments):
+                executable, action, *_ = arguments
+                calls.append((executable, action))
+                if action == "--check-signature":
+                    return PACKAGE_OUTPUT
+                if action == "--expand-full":
+                    self.assertEqual(publisher.digest(arguments[-2]), package_digest)
+                    expanded = arguments[-1]
+                    scripts = expanded / "Scripts"
+                    scripts.mkdir(parents=True)
+                    helper = scripts / "postinstall"
+                    helper.write_bytes(helper_bytes if mode != "wrong-architecture" else image("amd64"))
+                    if mode == "hardlink":
+                        os.link(helper, scripts / "alias")
+                if executable == "/usr/bin/codesign":
+                    self.assertEqual(arguments[1:4], ["--verify", "--strict", "--all-architectures"])
+                    self.assertIn(f'certificate leaf[subject.OU] = "{TEAM}"', arguments[-2])
+                    self.assertEqual(arguments[-1].read_bytes(), helper_bytes)
+                    self.assertFalse(destination.exists() and mode != "existing")
+                    if mode == "wrong-publisher":
+                        raise subprocess.CalledProcessError(1, arguments)
+                return ""
+
+            def verify(digest=helper_digest):
+                return publisher.verify(directory, package_digest, TEAM, PIN, detector_output=destination,
+                                        detector_sha256=digest, architecture="arm64")
+
+            with patch.object(publisher, "tool", side_effect=tool):
+                for mode, digest, error in (
+                    ("wrong-pin", "d" * 64, ValueError),
+                    ("wrong-architecture", helper_digest, ValueError),
+                    ("hardlink", helper_digest, ValueError),
+                    ("wrong-publisher", helper_digest, subprocess.CalledProcessError),
+                ):
+                    with self.subTest(mode=mode), self.assertRaises(error):
+                        verify(digest)
+                    self.assertFalse(destination.exists())
+                    self.assertEqual(sorted(p.name for p in root.iterdir()), ["input"])
+                mode = "approved"
+                calls.clear()
+                report = verify()
+                self.assertEqual(calls, [
+                    ("/usr/sbin/pkgutil", "--check-signature"), ("/usr/sbin/spctl", "--assess"),
+                    ("/usr/bin/xcrun", "stapler"), ("/usr/sbin/pkgutil", "--expand-full"),
+                    ("/usr/bin/codesign", "--verify"),
+                ])
+                self.assertEqual(report["managedDetector"], {
+                    "architecture": "arm64", "sha256": helper_digest, "developerIDApplicationVerified": True,
+                })
+                self.assertEqual(destination.read_bytes(), helper_bytes)
+                self.assertEqual(destination.stat().st_nlink, 1)
+                destination.write_bytes(b"existing assignment")
+                mode = "existing"
+                with self.assertRaises(FileExistsError):
+                    verify()
+                self.assertEqual(destination.read_bytes(), b"existing assignment")
+
+            with patch.object(publisher, "tool") as native:
+                for output, pin, arch in (
+                    (destination, None, "arm64"),
+                    (directory / "accessweaver-installer", helper_digest, "arm64"),
+                    (root / "other", helper_digest, "arm64"),
+                    (destination, helper_digest, "x64"),
+                ):
+                    with self.assertRaises(ValueError):
+                        publisher.verify(directory, package_digest, TEAM, PIN, detector_output=output,
+                                         detector_sha256=pin, architecture=arch)
+                native.assert_not_called()
 
     def test_signing_options_require_complete_approved_identity(self):
         settings = ("Fixture application", "Fixture installer", TEAM, PIN.upper(), "Fixture profile")

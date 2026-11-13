@@ -19,7 +19,7 @@ from macos_package_archive import flat_members,cpio,inflate,inspect as inspect_l
 from sbom import generate,validate
 from macos_launcher import archive_name,inspect_launcher,BINARY
 
-from verify_macos_installer_publisher import FINGERPRINT, check_package_certificate, check_package_publisher
+from verify_macos_installer_publisher import FINGERPRINT, check_package_certificate, check_package_publisher, developer_application_requirement
 
 REPO=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location("accessweaver_native_package_builder",Path(__file__).with_name("build-macos-installer.py"))
@@ -42,9 +42,7 @@ def publisher_options(application, installer, team, fingerprint, notary_profile)
 def sign_code(path, publisher, *, bundle=False):
     application,_,team,_,_=publisher
     run(["/usr/bin/codesign","--force","--sign",application,"--options","runtime","--timestamp",path])
-    requirement=('anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists '
-                 'and certificate leaf[field.1.2.840.113635.100.6.1.13] exists '
-                 f'and certificate leaf[subject.OU] = "{team}"')
+    requirement=developer_application_requirement(team)
     if bundle:
         requirement+=f' and identifier "{BUNDLE_ID}"'
     run(["/usr/bin/codesign","--verify","--strict","--all-architectures","-R="+requirement,path])

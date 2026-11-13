@@ -93,7 +93,17 @@ Actual replacement must bind the validated state to the publication operation an
 
 ### Detect the approved active macOS deployment
 
-Verify the signed package and current revocation list through the release-control procedure. On a trusted administration system, expand that exact package with `/usr/sbin/pkgutil --expand-full` into a new private directory. Distribute its `Scripts/postinstall` binary as `accessweaver-installer` through the endpoint-management system. Keep it in a protected directory and retain the package and helper digests with the assignment. Use the helper from the package for that exact version and architecture. [Signed release verification](RELEASE_PROVENANCE.md#approve-the-final-signed-desktop-artifacts).
+Verify the signed package and current revocation list through the release-control procedure. Obtain the exact package digest from the approved inventory and the `script-file:postinstall` SHA-256 from that package's authenticated CycloneDX sidecar. On a trusted Mac, place the approved package alone in a private directory and stage its detector in a separate trusted output directory. [Signed release verification](RELEASE_PROVENANCE.md#approve-the-final-signed-desktop-artifacts).
+
+```sh
+python3 scripts/verify_macos_installer_publisher.py PRIVATE_PACKAGE_DIRECTORY \
+  --artifact-sha256 APPROVED_PKG_SHA256 --team-id APPROVED_TEAM_ID \
+  --publisher-certificate-sha256 APPROVED_INSTALLER_CERTIFICATE_SHA256 \
+  --architecture arm64 --detector-sha256 APPROVED_HELPER_SHA256 \
+  --detector-output TRUSTED_OUTPUT_DIRECTORY/accessweaver-installer
+```
+
+Use `amd64` for the Intel assignment. The verifier checks the package digest, installer certificate, Gatekeeper assessment and stapled ticket before expansion. It checks the helper's native architecture, digest and Developer ID Application team before creating the output, and refuses to overwrite an existing file. Distribute that helper through endpoint management in a protected directory, retaining the package and helper digests with the assignment. The staging command runs neither the package nor the helper. [Apple Developer ID and notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
 
 Run `accessweaver-installer detect-deployment` under the management agent's context. Exit 0 with JSON confirms that the active protected copy matches the helper's compiled build identity, complete manifest and payload digest. A refused check exits 1 without a result on stdout. An absent or inactive deployment, a superseded helper, changed files or an in-progress installation can produce a refusal. Review the installed state and deployment history before applying remediation. Retire the older assignment when rolling forward.
 
