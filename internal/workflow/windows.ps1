@@ -1166,7 +1166,7 @@ function Get-WireSockReportedState($status) {
     if($status.outputComplete -ne $true -or $status.stdout -isnot [string] -or $status.stdout.Length -gt 8192){return 'Unknown'}
     # Accept one state from a standalone line or an explicit status field.
     # Never persist the address, profile name, or other vendor output.
-    $pattern='(?m)^[ \t]*(?:(?:Connection[ \t]+)?Status[ \t]*:[ \t]*)?(NotConnected|Connecting|Connected|Disconnecting|Disconnected)[ \t]*\r?$'
+    $pattern='(?m)^[ \t]*(?:(?i:(?:Connection[ \t]+)?Status)[ \t]*:[ \t]*)?(NotConnected|Connecting|Connected|Disconnecting|Disconnected)[ \t]*\r?$'
     $states=[regex]::Matches($status.stdout,$pattern)
     if($states.Count -ne 1){return 'Unknown'}
     return $states[0].Groups[1].Value
