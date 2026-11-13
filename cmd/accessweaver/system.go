@@ -24,10 +24,16 @@ func systemCommand(args []string, root string) error {
 	}
 	switch args[0] {
 	case "check-version":
-		if len(args) < 2 || len(args) > 65 {
-			return errors.New("usage: system check-version TAG [TAG...]")
+		tags := args[1:]
+		compare := workflow.CheckVersions
+		if len(tags) > 0 && tags[0] == "--follow-channel" {
+			tags = tags[1:]
+			compare = workflow.CheckReleaseVersions
 		}
-		check, err := workflow.CheckVersions(buildinfo.Version, args[1:])
+		if len(tags) == 0 || len(tags) > 64 {
+			return errors.New("usage: system check-version [--follow-channel] TAG [TAG...]")
+		}
+		check, err := compare(buildinfo.Version, tags)
 		if err != nil {
 			return err
 		}

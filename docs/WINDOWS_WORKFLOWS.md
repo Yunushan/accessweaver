@@ -93,7 +93,7 @@ Application launch observation now checks both the executable path and the worke
 
 `app-repair` is currently blocked in both preview and execution. Its combined user uninstallation/reinstallation and privileged proxy/DLL steps require a privilege-separated broker. To reinstall an application, review separate unelevated remove/install operations. Manage the proxy and DLL setup separately through elevated machine operations. The protected-journal `recover` command handles machine journals only; a user application journal records outcomes and does not guarantee reversal of vendor installer changes.
 
-`updates` checks AccessWeaver's official GitHub release metadata. It does not install an update.
+`updates` compares the installed version against AccessWeaver's published GitHub release tags. Stable builds consider stable tags. Prerelease builds can discover newer prerelease and stable tags. The result links to the selected tag on the official repository. The check provides release discovery only. Downloading and verifying a candidate are separate steps.
 
 ## Ownership, cancellation and recovery
 
