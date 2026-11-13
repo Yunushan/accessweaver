@@ -1,5 +1,5 @@
 import copy
-from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt, validate_architecture_refusal, validate_fixed_restoration, validate_locked_upgrade
+from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt, validate_architecture_refusal, validate_fixed_restoration, validate_locked_upgrade, validate_failed_copy_recovery
 import os
 from pathlib import Path
 import subprocess
@@ -52,6 +52,29 @@ class LockedUpgradeTests(unittest.TestCase):
                 validate_locked_upgrade({**observation, field: bad})
         with self.assertRaises(ValueError):
             validate_locked_upgrade({**observation, "path": "private"})
+
+
+class FailedCopyRecoveryTests(unittest.TestCase):
+    def test_requires_actual_copy_failure_and_successful_recovery(self):
+        observation = {
+            "operation": "recover-failed-install-copy", "exitCode": 5, "elapsedMilliseconds": 4110,
+            "deadlineMilliseconds": 180000, "copyFailureLogged": True, "pendingRecordCreatedBySetup": True,
+            "lockedSBOMPreserved": True, "refusedOperationsPreservedInstallation": True,
+            "profilePreserved": True, "approvedPackageDetectedAfterRetry": True,
+            "pendingRecordClearedAfterRetry": True,
+        }
+        self.assertEqual(validate_failed_copy_recovery(observation), {"failedInstallCopyRecoveryVerified": True})
+        self.assertEqual(validate_failed_copy_recovery({**observation, "exitCode": 4}),
+                         {"failedInstallCopyRecoveryVerified": True})
+        for field in observation:
+            changed = dict(observation)
+            del changed[field]
+            with self.subTest(missing=field), self.assertRaises(ValueError):
+                validate_failed_copy_recovery(changed)
+        for field, value in (("exitCode", 7), ("elapsedMilliseconds", True),
+                             ("pendingRecordCreatedBySetup", 1), ("approvedPackageDetectedAfterRetry", False)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_failed_copy_recovery({**observation, field: value})
 
 
 class FixedRestorationTests(unittest.TestCase):

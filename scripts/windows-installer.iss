@@ -61,7 +61,7 @@ const
   AWLifecycleRegistry = 'SOFTWARE\AccessWeaver\Installer';
   AWPendingInstall = 'PendingInstall';
 
-var AWInstallFinished: Boolean;
+var AWInstallFinished, AWPendingRetirementFailed: Boolean;
 
 function AWFlushRegistryKey(Key: LongWord): LongWord;
   external 'RegFlushKey@advapi32.dll stdcall';
@@ -139,9 +139,17 @@ begin
   end else if CurStep = ssPostInstall then begin
     AWInstallFinished := True;
   end else if (CurStep = ssDone) and AWInstallFinished then begin
-    if not RegDeleteValue(HKLM64, AWLifecycleRegistry, AWPendingInstall) or not AWFlushLifecycleRecord then
-      RaiseException('Cannot retire the AccessWeaver pending installation record.');
+    if not RegDeleteValue(HKLM64, AWLifecycleRegistry, AWPendingInstall) or not AWFlushLifecycleRecord then begin
+      AWPendingRetirementFailed := True;
+      Log('Cannot retire the AccessWeaver pending installation record.');
+    end;
   end;
+end;
+
+function GetCustomSetupExitCode: Integer;
+begin
+  Result := 0;
+  if AWPendingRetirementFailed then Result := 1603;
 end;
 
 function AWVersionPreflight: String;
