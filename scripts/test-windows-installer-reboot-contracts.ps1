@@ -4,7 +4,7 @@ $source=Join-Path $PSScriptRoot 'test-windows-installer-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Reboot fixture failed parsing'}
-foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Write-NewRebootEvidence','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootInstalledState','Assert-RebootPackageRemoved')){
+foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootInstalledState','Assert-RebootPackageRemoved')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -22,7 +22,8 @@ Assert-Refused {Assert-LaterGuestBoot '639303000000000001' '639303000000000000'}
 Assert-Refused {Assert-LaterGuestBoot 'missing' '639303000000000000'}
 $pin='a'*64
 $expected=@{
-    schemaVersion=3;runID=('b'*32);architecture='amd64';version='1.0.0';
+    schemaVersion=4;runID=('b'*32);architecture='amd64';version='1.0.0';
+    installMode='clean';previousVersion='';previousPayloadSHA256='';userProfilePreservedThroughUpgrade=$false;
     setupSHA256=$pin;payloadSHA256=$pin;publisherSHA256=$pin;userSID='synthetic-user';guestID='10000000-2000-3000-4000-000000000005';
     detectorSHA256=$pin;fixtureSHA256=$pin;commonSHA256=$pin;publisherVerifierSHA256=$pin
 }
@@ -38,6 +39,31 @@ foreach($key in $saved.Keys){
     $changed[$key]='changed'
     Assert-Refused {Assert-RebootIdentity $changed $expected}
 }
+if((Get-RebootInstallMode '2.0.0' $pin '' '') -cne 'clean'){throw 'Clean baseline was refused'}
+$priorDigest='e'*64
+if((Get-RebootInstallMode '2.0.0' $pin '1.0.0' $priorDigest) -cne 'upgrade'){throw 'Pinned upgrade baseline was refused'}
+Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '1.0.0' ''}
+Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '' $priorDigest}
+Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '2.0.0' $priorDigest}
+Assert-Refused {Get-RebootInstallMode '2.0.0' $pin '1.0.0' $pin}
+$comparison=@{currentVersion='1.0.0';version='2.0.0';updateAvailable=$true}
+Assert-RebootUpgradeOrder $comparison '1.0.0' '2.0.0'
+foreach($value in @($false,'true',0)){
+    $comparison.updateAvailable=$value
+    Assert-Refused {Assert-RebootUpgradeOrder $comparison '1.0.0' '2.0.0'}
+}
+$comparison.updateAvailable=$true
+Assert-Refused {Assert-RebootUpgradeOrder $comparison '1.0.1' '2.0.0'}
+Assert-Refused {Assert-RebootUpgradeOrder $comparison '1.0.0' '2.0.1'}
+$upgradeExpected=$expected.Clone()
+$upgradeExpected.installMode='upgrade';$upgradeExpected.previousVersion='0.9.0';$upgradeExpected.previousPayloadSHA256=$priorDigest
+$upgraded=$saved.Clone()
+$upgraded.installMode='upgrade';$upgraded.previousVersion='0.9.0';$upgraded.previousPayloadSHA256=$priorDigest
+$upgraded.userProfilePreservedThroughUpgrade=$true
+Assert-RebootIdentity $upgraded $upgradeExpected
+Assert-Refused {Assert-RebootIdentity $upgraded $expected}
+$upgraded.userProfilePreservedThroughUpgrade=$false
+Assert-Refused {Assert-RebootIdentity $upgraded $upgradeExpected}
 $pending=$saved.Clone();$pending.setupExitCode=3010
 Assert-RebootIdentity $pending $expected
 foreach($code in @(-1,1,1641,'3010')){
@@ -208,4 +234,4 @@ try {
     [IO.File]::Delete($profileInput)
     [IO.Directory]::Delete($root)
 }
-Write-Output 'Installer reboot identity, package, registration, saved profile, process ownership and publication checks passed.'
+Write-Output 'Installer reboot identity, upgrade admission, package, registration, saved profile, process ownership and publication checks passed.'
