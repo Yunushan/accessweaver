@@ -4,7 +4,7 @@ $path=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS journal source failed parsing'}
-foreach($name in @('No-Reparse','Under','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Rollback','Save-Journal','Invoke-ManagedServiceControl','Remove-RecordedService')){
+foreach($name in @('No-Reparse','Under','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Rollback','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Remove-RecordedService')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -21,14 +21,20 @@ function Wait-RecordedServiceStopped([string]$Name) {
     $script:order.Add('wait-stopped')
     if($script:serviceFault -ceq 'stop-timeout'){throw 'Synthetic service stop timeout'}
 }
+function Get-CimInstance {
+    param($ClassName,$Filter,$ErrorAction)
+    if($ClassName -cne 'Win32_Service' -or $Filter -cne "Name='AccessWeaver-dnscrypt'"){throw 'Unexpected service identity lookup'}
+    if($script:serviceFault -ceq 'identity'){throw 'Synthetic service identity unavailable'}
+    return [pscustomobject]@{Name='AccessWeaver-dnscrypt';PathName=$script:serviceCommand}
+}
 function Native {
     param($Program,$Arguments,$Allowed,[switch]$Secret,[int]$Timeout)
     if($Arguments.Count -ne 2 -or $Arguments[1] -cne 'AccessWeaver-dnscrypt' -or
         $Arguments[0] -cnotin @('query','stop','delete') -or -not $Secret -or $Timeout -ne 5){
         throw 'Unexpected native service request'
     }
-    if([IO.File]::Exists($snapshot)){throw 'Service control started before DNS restoration'}
-    $script:order.Add($Arguments[0])
+    if($Arguments[0] -cne 'query' -and [IO.File]::Exists($snapshot)){throw 'Service mutation started before DNS restoration'}
+    if($Arguments[0] -ne 'query' -or -not [IO.File]::Exists($snapshot)){$script:order.Add($Arguments[0])}
     switch($Arguments[0]){
         'query' {
             if($script:serviceFault -ceq 'inspect'){throw 'Synthetic SCM inspection failure'}
@@ -70,6 +76,7 @@ $script:journalWrites=0
 $script:restores=0
 $script:failRestore=$false
 $script:serviceFault='';$script:serviceState='running'
+$script:serviceCommand='inert service-host command --instance='+('1'*32)
 $script:order=[Collections.Generic.List[string]]::new()
 $originalSystemRoot=$env:SystemRoot
 if(-not $env:SystemRoot){$env:SystemRoot=[IO.Path]::GetTempPath()}
@@ -132,12 +139,22 @@ try {
     [IO.File]::WriteAllText($serviceConfig,'inert resolver configuration')
     $configHash=(Get-FileHash -LiteralPath $serviceConfig).Hash
     $fileUndo=@{kind='file';path=$serviceConfig;expectedHash=$configHash}
-    $serviceUndo=@{kind='service';name='AccessWeaver-dnscrypt'}
+    $serviceUndo=@{kind='service';name='AccessWeaver-dnscrypt';commandSHA256=(Get-ManagedServiceCommandDigest $script:serviceCommand)}
     $dnsUndo=@{kind='dns';snapshotSHA256=$next;snapshotActive=$true}
     $script:undo.Clear()
     foreach($entry in @($dnsUndo,$fileUndo,$serviceUndo)){$script:undo.Add($entry)}
 
     $script:order.Clear()
+    $originalCommand=$script:serviceCommand
+    $script:serviceCommand='inert service-host command --instance='+('2'*32)
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and $rollback[0] -ceq 'Recovery journal does not match the current managed service' -and
+        $script:order.Count -eq 0 -and [IO.File]::Exists($snapshot) -and [IO.File]::Exists($serviceConfig)) 'Stale service rollback changed DNS or files'
+    $script:serviceCommand=$originalCommand
+    $script:saved=@($dnsUndo,@{kind='service';name='AccessWeaver-dnscrypt'})
+    $refused=$false
+    try{Recover-Operation}catch{$refused=$_.Exception.Message -match '^Recovery journal has no service binding'}
+    Require ($refused -and $script:order.Count -eq 0 -and [IO.File]::Exists($snapshot)) 'Unbound service journal reached recovery'
     $script:failRestore=$true
     $rollback=@(Rollback)
     Require ($rollback.Count -eq 1 -and $rollback[0] -ceq 'Synthetic DNS restore failure' -and
@@ -158,7 +175,9 @@ try {
 
     [IO.File]::Delete($snapshot)
     $rollback=@(Rollback)
-    Require ($rollback.Count -eq 1 -and $script:order.Count -eq 0 -and [IO.File]::Exists($serviceConfig)) 'Missing active snapshot tore down the resolver'
+    Require ($rollback.Count -eq 1 -and ($script:order -join ',') -ceq 'query' -and
+        [IO.File]::Exists($serviceConfig)) 'Missing active snapshot tore down the resolver'
+    $script:order.Clear()
 
     $script:saved=@($dnsUndo,$serviceUndo)
     $script:undo.Clear()
@@ -184,13 +203,14 @@ try {
     $script:order.Clear()
     Recover-Operation
     $script:undo.Insert(1,$fileUndo)
-    Require (($script:order -join ',') -ceq 'query') 'Already retired service was mutated during retry'
+    Require (($script:order -join ',') -ceq 'query,query,query') 'Already retired service was mutated during retry'
 
     $failureModes=@(
         @{fault='inspect';trace='query'},
         @{fault='truncated';trace='query'},
-        @{fault='stop-command';trace='query,stop'},
-        @{fault='stop-timeout';trace='query,stop,wait-stopped'}
+        @{fault='identity';trace='query'},
+        @{fault='stop-command';trace='query,query,stop'},
+        @{fault='stop-timeout';trace='query,query,stop,wait-stopped'}
     )
     foreach($case in $failureModes){
         [IO.File]::WriteAllText($serviceConfig,'inert resolver configuration')
@@ -202,11 +222,11 @@ try {
     $script:serviceFault='pending';$script:serviceState='stopped';$script:order.Clear()
     $rollback=@(Rollback)
     Require ($rollback.Count -eq 1 -and $rollback[0] -match '^Managed service removal is pending' -and
-        $script:order[0] -ceq 'query' -and $script:order[1] -ceq 'stop' -and $script:order[2] -ceq 'delete' -and
+        $script:order[0] -ceq 'query' -and $script:order[2] -ceq 'stop' -and $script:order[3] -ceq 'delete' -and
         [IO.File]::Exists($serviceConfig)) 'Delete acceptance was mistaken for verified service removal'
     $script:serviceFault='';$script:order.Clear()
     $rollback=@(Rollback)
-    Require ($rollback.Count -eq 0 -and ($script:order -join ',') -ceq 'query' -and
+    Require ($rollback.Count -eq 0 -and ($script:order -join ',') -ceq 'query,query' -and
         -not [IO.File]::Exists($serviceConfig)) 'Retry did not complete deferred file recovery'
     [IO.File]::Delete($receipt)
 } finally {
@@ -220,4 +240,4 @@ try {
     [IO.Directory]::Delete($profiles)
     [IO.Directory]::Delete($root)
 }
-Write-Output 'Twenty-eight DNS journal binding, service retirement, rollback and publication checks passed.'
+Write-Output 'Thirty-one DNS journal binding, service retirement, rollback and publication checks passed.'

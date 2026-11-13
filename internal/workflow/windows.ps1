@@ -1324,11 +1324,16 @@ function Install-EngineService([string]$engine,[string]$binary,[string[]]$argume
     if((Get-FileHash -LiteralPath $controller -Algorithm SHA256).Hash -ne $controllerHash){throw 'Existing service-host content does not match its trusted controller digest; retain it for administrator review'}
     $file=Join-Path $root ('services\'+$engine+'.json')
     Write-Atomic $file (@{name=$serviceName;binary=$binary;args=@($arguments);directory=(Split-Path -Parent $binary);logPath=(Join-Path $root ('logs\'+$engine+'.log'))}|ConvertTo-Json -Depth 5)
-    $binPath=(Quote-Arg $controller)+' service-host '+(Quote-Arg $file)
+    $instance=[guid]::NewGuid().ToString('N')
+    $binPath=(Quote-Arg $controller)+' service-host '+(Quote-Arg $file)+' --instance='+$instance
     $serviceOptions=@{Name=$serviceName;BinaryPathName=$binPath;StartupType='Automatic';DisplayName=('AccessWeaver '+$engine)}
     if($engine -eq 'proxifyre'){$serviceOptions.DependsOn=@('NDISRD')}
-    [void](New-Service @serviceOptions)
-    $script:undo.Add(@{kind='service';name=$serviceName});Save-Journal
+    $entry=@{kind='service';name=$serviceName;commandSHA256=(Get-ManagedServiceCommandDigest $binPath)}
+    $script:undo.Add($entry)
+    Save-Journal
+    $created=New-Service @serviceOptions
+    if($created -is [IDisposable]){$created.Dispose()}
+    if((Assert-RecordedServiceBinding $entry) -ne 0){throw 'New managed service registration could not be verified'}
     Start-Service -Name $serviceName
     (Get-Service -Name $serviceName).WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
     Start-Sleep -Milliseconds 500
@@ -2084,16 +2089,56 @@ function Invoke-ManagedServiceControl([string]$Operation,[string]$Name,[int[]]$C
     }
     return $result.exitCode
 }
+function Get-ManagedServiceCommandDigest([string]$CommandLine) {
+    if([string]::IsNullOrWhiteSpace($CommandLine) -or $CommandLine.Length -gt 32767){throw 'Invalid managed service command'}
+    return Get-WorkflowBytesSHA256 ([Text.Encoding]::Unicode.GetBytes($CommandLine))
+}
+function Read-ManagedServiceCommand([string]$Name) {
+    $rows=@(Get-CimInstance -ClassName Win32_Service -Filter ("Name='"+$Name+"'") -ErrorAction Stop)
+    if($rows.Count -ne 1 -or $rows[0].Name -ine $Name -or $rows[0].PathName -isnot [string]){
+        throw 'Managed service registration could not be verified'
+    }
+    return $rows[0].PathName
+}
+function Assert-RecordedServiceBinding($Entry) {
+    $name=$Entry.name
+    if($name -isnot [string] -or $name -notmatch '\AAccessWeaver-(byedpi|proxifyre|zapret|zapret2|goodbyedpi|dnscrypt)\z'){
+        throw 'Recovery journal contains an unmanaged service'
+    }
+    $digest=$Entry.commandSHA256
+    if($null -ne $digest -and ($digest -isnot [string] -or $digest -cnotmatch '\A[A-F0-9]{64}\z')){
+        throw 'Recovery journal contains an invalid service command digest'
+    }
+    $state=Invoke-ManagedServiceControl 'query' $name @(0,1060,1072)
+    if($state -eq 1060){return $state}
+    if(-not $digest){throw 'Recovery journal has no service binding; use explicit managed removal'}
+    if($state -eq 1072){
+        Wait-RecordedServiceAbsent $name
+        return 1060
+    }
+    if((Get-ManagedServiceCommandDigest (Read-ManagedServiceCommand $name)) -cne $digest){
+        throw 'Recovery journal does not match the current managed service'
+    }
+    return $state
+}
 function Wait-RecordedServiceStopped([string]$Name) {
     $service=[ServiceProcess.ServiceController]::new($Name)
     try {$service.WaitForStatus('Stopped',[TimeSpan]::FromSeconds(20))}
     finally {$service.Dispose()}
 }
-function Remove-RecordedService([string]$Name,[switch]$RequireOwnership) {
+function Wait-RecordedServiceAbsent([string]$Name) {
+    $clock=[Diagnostics.Stopwatch]::StartNew()
+    do {
+        if((Invoke-ManagedServiceControl 'query' $Name @(0,1060,1072)) -eq 1060){return}
+        Start-Sleep -Milliseconds 250
+    }while($clock.Elapsed.TotalSeconds -lt 5)
+    throw 'Managed service removal is pending; release open service handles and retry'
+}
+function Remove-RecordedService([string]$Name,[switch]$RequireOwnership,$Entry) {
     if($Name -notmatch '\AAccessWeaver-(byedpi|proxifyre|zapret|zapret2|goodbyedpi|dnscrypt)\z'){
         throw 'Recovery journal contains an unmanaged service'
     }
-    $state=Invoke-ManagedServiceControl 'query' $Name @(0,1060,1072)
+    $state=if($Entry){Assert-RecordedServiceBinding $Entry}else{Invoke-ManagedServiceControl 'query' $Name @(0,1060,1072)}
     if($state -eq 1060){return}
     $engine=$Name.Substring('AccessWeaver-'.Length)
     if($RequireOwnership -and $engine -ne 'proxifyre' -and
@@ -2105,12 +2150,7 @@ function Remove-RecordedService([string]$Name,[switch]$RequireOwnership) {
         if($stopped -eq 0){Wait-RecordedServiceStopped $Name}
         if($stopped -in @(0,1062)){[void](Invoke-ManagedServiceControl 'delete' $Name @(0,1060,1072))}
     }
-    $clock=[Diagnostics.Stopwatch]::StartNew()
-    do {
-        if((Invoke-ManagedServiceControl 'query' $Name @(0,1060,1072)) -eq 1060){return}
-        Start-Sleep -Milliseconds 250
-    }while($clock.Elapsed.TotalSeconds -lt 5)
-    throw 'Managed service removal is pending; release open service handles and retry'
+    Wait-RecordedServiceAbsent $Name
 }
 function Remove-Method([string]$engine,[switch]$OwnedOnly) {
     if($engine -eq 'wiresock'){
@@ -2611,7 +2651,13 @@ function Start-RepairProxy {
         $recordPath=Join-Path $root 'services\byedpi.json';if(-not (Test-Path -LiteralPath $recordPath)){throw 'Existing ByeDPI service has no ownership record'}
         $record=Get-Content -LiteralPath $recordPath -Raw|ConvertFrom-Json
         if($record.name -ne $name -or $record.binary -ne $binary){throw 'Existing ByeDPI service configuration differs; remove it before repair'}
-        if($service.Status -ne 'Running'){$script:undo.Add(@{kind='started-service';name=$name});Save-Journal;Start-Service $name;$service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))}
+        if($service.Status -ne 'Running'){
+            $digest=Get-ManagedServiceCommandDigest (Read-ManagedServiceCommand $name)
+            $script:undo.Add(@{kind='started-service';name=$name;commandSHA256=$digest})
+            Save-Journal
+            Start-Service $name
+            $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
+        }
     }else{Install-EngineService 'byedpi' $binary @('--ip','127.0.0.1','--port','1080','--split','2')}
     Firewall 'byedpi' $binary;$script:repairProxyReady=$true
 }
@@ -2817,6 +2863,11 @@ function Discover {
     return @{services=@($services);serviceInspectionError=$serviceError;components=$assets;applications=$apps;wiresockCLI=$cli;conflicts=@($conflicts);managedRoot=$root;refreshTask=$task.present;refreshTaskInspectionError=$task.error;dnsSnapshot=$dnsSnapshot}
 }
 function Rollback {
+    foreach($entry in $script:undo){
+        if($entry.kind -in @('service','started-service')){
+            try {[void](Assert-RecordedServiceBinding $entry)}catch{return $_.Exception.Message}
+        }
+    }
     # Adapter DNS can still depend on the DNSCrypt service and on files shared
     # with other managed engines. Keep all recorded resources until DNS is safe.
     $dnsEntries=@($script:undo | Where-Object {$_.kind -ceq 'dns'})
@@ -2828,8 +2879,10 @@ function Rollback {
     }
     $rollbackErrors=@()
     for($i=$script:undo.Count-1;$i -ge 0;$i--){$item=$script:undo[$i];try{switch($item.kind){
-        'service' {Remove-RecordedService $item.name}
-        'started-service' {Stop-Service -Name $item.name -ErrorAction Stop}
+        'service' {Remove-RecordedService $item.name -Entry $item}
+        'started-service' {
+            if((Assert-RecordedServiceBinding $item) -eq 0){Stop-Service -Name $item.name -ErrorAction Stop}
+        }
         'firewall' {Remove-NetFirewallRule -Name $item.name -ErrorAction SilentlyContinue}
         'task' {
             if($item.name -ne 'AccessWeaver-WireSock-Refresh'){throw 'Recovery journal contains an unmanaged task'}
@@ -2969,8 +3022,11 @@ function Recover-Operation {
     foreach($entry in @($saved.undo)){
         switch($entry.kind){
             'file' {if($entry.path -ieq (Join-Path $root 'profiles\dns-original.json')){[void](Confirm-DNSRecoverySnapshot $null);continue};$allowed=(Under $entry.path $root);if(-not $allowed){$allowed=(Under $entry.path (Join-Path $env:LOCALAPPDATA 'Discord')) -and ([IO.Path]::GetFileName($entry.path) -in @('version.dll','drover.ini'))};if(-not $allowed){throw 'Recovery journal contains an unmanaged file path'};if($entry.backup -and -not (Under $entry.backup (Join-Path $root 'backups'))){throw 'Recovery backup is outside protected storage'}}
-            'service' {if($entry.name -notmatch '^AccessWeaver-(byedpi|proxifyre|zapret|zapret2|goodbyedpi|dnscrypt)$'){throw 'Recovery journal contains an unmanaged service'}}
-            'started-service' {if($entry.name -ne 'AccessWeaver-byedpi'){throw 'Recovery journal contains an unmanaged restarted service'}}
+            'service' {[void](Assert-RecordedServiceBinding $entry)}
+            'started-service' {
+                if($entry.name -ne 'AccessWeaver-byedpi'){throw 'Recovery journal contains an unmanaged restarted service'}
+                [void](Assert-RecordedServiceBinding $entry)
+            }
             'firewall' {if($entry.name -notmatch '^AccessWeaver-[a-z]+-(Inbound|Outbound)$'){throw 'Recovery journal contains an unmanaged firewall rule'}}
             'task' {if($entry.name -ne 'AccessWeaver-WireSock-Refresh'){throw 'Recovery journal contains an unmanaged task'}}
             'dns' {[void](Confirm-DNSRecoveryEntry $entry)}

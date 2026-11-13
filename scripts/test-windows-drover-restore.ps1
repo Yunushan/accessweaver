@@ -4,7 +4,7 @@ $source=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Windows workflow source failed parsing'}
-foreach($name in @('No-Reparse','Install-Drover','Recover-Operation','Rollback','Assert-DroverApplication','Set-DroverFile','Get-DroverFileHash','Get-DroverRestorePlan','Restore-Drover')){
+foreach($name in @('No-Reparse','Install-Drover','Assert-RecordedServiceBinding','Recover-Operation','Rollback','Assert-DroverApplication','Set-DroverFile','Get-DroverFileHash','Get-DroverRestorePlan','Restore-Drover')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })

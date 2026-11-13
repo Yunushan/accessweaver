@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,7 +34,16 @@ func main() {
 	}
 }
 func execute(args []string) (failure error) {
-	if len(args) == 2 && args[0] == "service-host" {
+	if len(args) != 0 && args[0] == "service-host" {
+		if len(args) == 3 {
+			instance, ok := strings.CutPrefix(args[2], "--instance=")
+			_, err := hex.DecodeString(instance)
+			if !ok || len(instance) != 32 || err != nil || instance != strings.ToLower(instance) {
+				return errors.New("invalid service-host installation identity")
+			}
+		} else if len(args) != 2 {
+			return errors.New("invalid service-host arguments")
+		}
 		return servicehost.Run(args[1])
 	}
 	if len(args) == 0 {
