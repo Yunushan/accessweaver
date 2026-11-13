@@ -27,7 +27,7 @@ jobs:
             goarch: amd64
             sdkarch: x64
     env:
-      GO_VERSION: '1.27.3'
+      GO_VERSION: '1.27.4'
       GOTOOLCHAIN: local
       ACCESSWEAVER_EXPECT_GOOS: darwin
       ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}

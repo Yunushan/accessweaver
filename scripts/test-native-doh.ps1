@@ -152,7 +152,7 @@ try {
     if($ScenarioKind -cnotin @('roundtrip','service-loss','verification-failure','static-ipv6') -or ($ScenarioKind -cin @('service-loss','verification-failure') -and $Method -cne 'dnscrypt') -or ($ScenarioKind -ceq 'static-ipv6' -and $Method -cne 'doh') -or $Method -cnotin @('doh','dnscrypt')){throw 'Native DNS method refused'}
     if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_OS -cne 'Windows' -or $env:ACCESSWEAVER_EXPECT_GOOS -cne 'windows' -or $env:ACCESSWEAVER_EXPECT_GOARCH -cnotin @('amd64','arm64')){throw 'Hosted native Windows guard refused'}
     if($PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1){throw 'Stock Windows PowerShell5.1 required'}
-    if($env:GITHUB_SHA -notmatch '^[a-f0-9]{40}$' -or $env:GO_VERSION -cne '1.27.3'){throw 'Native source or SDK identity missing'}
+    if($env:GITHUB_SHA -notmatch '^[a-f0-9]{40}$' -or $env:GO_VERSION -cne '1.27.4'){throw 'Native source or SDK identity missing'}
     foreach($name in @('ACCESSWEAVER_HISTORY_INTEROP','ACCESSWEAVER_RECONCILIATION_INTEROP','ACCESSWEAVER_CONTROLLER_STORAGE_INTEROP','ACCESSWEAVER_SUPPORT_INTEROP')){if($null -ne [Environment]::GetEnvironmentVariable($name,'Process')){throw 'Unexpected interop environment'}}
     $computer=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
     if($computer.Model -notmatch 'Virtual|VMware' -or $computer.PartOfDomain -ne $false){throw 'Fresh non-domain virtual machine required'}

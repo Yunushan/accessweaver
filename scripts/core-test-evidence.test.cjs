@@ -17,7 +17,7 @@ test('vet success does not pretend to execute root tests and catalog refuses run
 });
 test('core reports require consistent outcomes, snapshot closed data and preserve exclusive owned output',async t=>{
  const root=await temporary(t),sourceSHA256={};for(const name of C.sources){const f=path.join(root,name);await fs.mkdir(path.dirname(f),{recursive:true});await fs.writeFile(f,'synthetic fixed source');sourceSHA256[name]=createHash('sha256').update('synthetic fixed source').digest('hex')}
- const data={schemaVersion:1,sourceCommit:'a'.repeat(40),sourceTree:'b'.repeat(40),sourceSHA256,platform:'linux',architecture:'amd64',go:'go1.27.3',mode:'unit',stage:'complete',exitCode:0,streamValid:true,sourceStable:true,inputBytes:100,...completed().value('unit',0),productionQualificationComplete:false};data.raw='PRIVATE_SYNTHETIC';await assert.rejects(C.writeReport(root,data));delete data.raw;data.exitCode=1;await assert.rejects(C.writeReport(root,data));data.exitCode=0;
+ const data={schemaVersion:1,sourceCommit:'a'.repeat(40),sourceTree:'b'.repeat(40),sourceSHA256,platform:'linux',architecture:'amd64',go:'go1.27.4',mode:'unit',stage:'complete',exitCode:0,streamValid:true,sourceStable:true,inputBytes:100,...completed().value('unit',0),productionQualificationComplete:false};data.raw='PRIVATE_SYNTHETIC';await assert.rejects(C.writeReport(root,data));delete data.raw;data.exitCode=1;await assert.rejects(C.writeReport(root,data));data.exitCode=0;
  const writing=C.writeReport(root,data);data.packages[0].tests[0].private='PRIVATE_SYNTHETIC';await writing;delete data.packages[0].tests[0].private;const file=path.join(root,'build/native-core-evidence/status.json'),raw=await fs.readFile(file,'utf8');assert.equal(JSON.parse(raw).outcome,'passed');assert.ok(!raw.includes(root)&&!raw.includes('PRIVATE_SYNTHETIC'));await assert.rejects(C.writeReport(root,data),{code:'EEXIST'});assert.equal(await fs.readFile(file,'utf8'),raw);
 });
 
@@ -42,7 +42,7 @@ test('preview reporting keeps full root scope, default concurrency and existing 
 });
 test('Windows unit reports support distinct exclusive names and reject unsafe output names or unsupported modes',async t=>{
  const root=await temporary(t),sourceSHA256=Object.fromEntries(C.sources.map(name=>[name,'c'.repeat(64)]));
- const data={schemaVersion:1,sourceCommit:'a'.repeat(40),sourceTree:'b'.repeat(40),sourceSHA256,platform:'windows',architecture:'arm64',go:'go1.27.3',mode:'unit',stage:'complete',exitCode:0,streamValid:true,sourceStable:true,inputBytes:100,...completed().value('unit',0),productionQualificationComplete:false};
+ const data={schemaVersion:1,sourceCommit:'a'.repeat(40),sourceTree:'b'.repeat(40),sourceSHA256,platform:'windows',architecture:'arm64',go:'go1.27.4',mode:'unit',stage:'complete',exitCode:0,streamValid:true,sourceStable:true,inputBytes:100,...completed().value('unit',0),productionQualificationComplete:false};
  await assert.rejects(C.writeReport(root,data,'../PRIVATE_SYNTHETIC'));await C.writeReport(root,data,'status-unit.json');const written=JSON.parse(await fs.readFile(path.join(root,'build/native-core-evidence/status-unit.json'),'utf8'));assert.equal(written.platform,'windows');assert.equal(written.outcome,'passed');
  await assert.rejects(C.writeReport(root,data,'status-unit.json'),{code:'EEXIST'});await assert.rejects(C.writeReport(root,{...data,mode:'race'},'status-race.json'));
 });
@@ -82,7 +82,7 @@ test('worker annotation allowlist matches all fixed public fixture stage codes',
 test('macOS unit report binds the release workflow and excludes private data',async t=>{
  const root=await temporary(t);
  const sourceSHA256=Object.fromEntries(C.sources.map(name=>[name,'c'.repeat(64)]));
- const data={schemaVersion:1,sourceCommit:'a'.repeat(40),sourceTree:'b'.repeat(40),sourceSHA256,platform:'darwin',architecture:'arm64',go:'go1.27.3',mode:'unit',stage:'complete',exitCode:0,streamValid:true,sourceStable:true,inputBytes:100,...completed().value('unit',0),productionQualificationComplete:false};
+ const data={schemaVersion:1,sourceCommit:'a'.repeat(40),sourceTree:'b'.repeat(40),sourceSHA256,platform:'darwin',architecture:'arm64',go:'go1.27.4',mode:'unit',stage:'complete',exitCode:0,streamValid:true,sourceStable:true,inputBytes:100,...completed().value('unit',0),productionQualificationComplete:false};
  await assert.rejects(C.writeReport(root,data));
  sourceSHA256['.github/workflows/release.yml']='d'.repeat(64);
  await assert.rejects(C.writeReport(root,{...data,mode:'race'}));

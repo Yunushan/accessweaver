@@ -51,7 +51,7 @@ def validate_packages(root,commit,arch):
     for version in VERSIONS:
         package="accessweaver-"+version+"-darwin-"+arch+"-deployment-experimental.pkg"
         identity=read(version+"-BUILD-INFO.json");report=read(version+"-compiler-artifact.json")
-        require(set(identity)=={"version","commit","sourceState","builtAt","goVersion","platform","arch"} and all(identity.get(k)==v for k,v in {"version":version,"commit":commit,"sourceState":"clean","goVersion":"go1.27.3","platform":"darwin","arch":arch}.items()),"Deployment build identity differs")
+        require(set(identity)=={"version","commit","sourceState","builtAt","goVersion","platform","arch"} and all(identity.get(k)==v for k,v in {"version":version,"commit":commit,"sourceState":"clean","goVersion":"go1.27.4","platform":"darwin","arch":arch}.items()),"Deployment build identity differs")
         stamp=datetime.datetime.strptime(identity["builtAt"],"%Y-%m-%dT%H:%M:%SZ");require(stamp.strftime("%Y-%m-%dT%H:%M:%SZ")==identity["builtAt"],"Deployment build timestamp differs")
         encoded=(root/(version+"-INSTALL-MANIFEST.json")).read_bytes();manifest=json.loads(encoded);scripts=read(version+"-SCRIPT-MANIFEST.json");binary=(root/package).read_bytes()
         inspected=inspect_deployment(binary,encoded,identity,scripts)

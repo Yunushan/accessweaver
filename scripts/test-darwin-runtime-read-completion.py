@@ -102,7 +102,7 @@ def file_hash(path):
 def validate_native(value,source,arch=None,suite='runtime-read'):
  require(type(value) is dict and set(value)=={'schemaVersion','sourceCommit','goos','goarch','goVersion','outcome','cases','nativeRootFixture','nativeInstalledQualified'},'native-report-invalid')
  require(type(value['schemaVersion']) is int and value['schemaVersion']==1 and value['sourceCommit']==source,'native-report-invalid')
- require(value['goos']=='darwin' and value['goarch'] in ('amd64','arm64') and (arch is None or value['goarch']==arch) and value['goVersion']=='go1.27.3','native-report-invalid')
+ require(value['goos']=='darwin' and value['goarch'] in ('amd64','arm64') and (arch is None or value['goarch']==arch) and value['goVersion']=='go1.27.4','native-report-invalid')
  require(value['nativeRootFixture'] is True and value['nativeInstalledQualified'] is False and value['outcome'] in ('passed','failed'),'native-report-invalid')
  require(type(value['cases']) is list and len(value['cases'])==len(PROFILES[suite]['cases']) and all(type(case) is dict for case in value['cases']) and [case.get('name') for case in value['cases']]==list(PROFILES[suite]['cases']),'native-report-invalid')
  for case in value['cases']:
@@ -146,7 +146,7 @@ def ordinary(suite):
  source=os.environ.get('GITHUB_SHA','');require(re.fullmatch('[0-9a-f]{40}',source) is not None)
  code,head=capture_owned(['git','rev-parse','HEAD'],os.environ,REPO,30,4096);require(code==0 and head.decode().strip()==source)
  code,identity=capture_owned(['go','env','-json','GOHOSTOS','GOHOSTARCH','GOOS','GOARCH','GOVERSION','GOTOOLCHAIN'],os.environ,REPO,30,8192)
- native=load_json(identity);arch=native['GOARCH'];require(code==0 and native['GOOS']==native['GOHOSTOS']=='darwin' and arch==native['GOHOSTARCH'] and arch in ('amd64','arm64') and native['GOVERSION']=='go1.27.3' and native['GOTOOLCHAIN']=='local')
+ native=load_json(identity);arch=native['GOARCH'];require(code==0 and native['GOOS']==native['GOHOSTOS']=='darwin' and arch==native['GOHOSTARCH'] and arch in ('amd64','arm64') and native['GOVERSION']=='go1.27.4' and native['GOTOOLCHAIN']=='local')
  evidence=Path(os.environ.get(profile['evidence'],''));require(evidence.is_absolute() and evidence.resolve()==evidence and evidence.is_dir())
  runner_temp=Path(os.environ.get('RUNNER_TEMP',''));require(runner_temp.is_absolute());runner_temp=runner_temp.resolve();require(runner_temp.is_dir())
  capsule=Path(tempfile.mkdtemp(prefix='accessweaver-runtime-read-',dir=runner_temp)).resolve()

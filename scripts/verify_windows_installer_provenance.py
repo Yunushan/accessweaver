@@ -56,7 +56,7 @@ def load(root,name):
 
 def validate_build(identity,commit,arch,version):
     require(set(identity)=={"version","commit","sourceState","builtAt","goVersion","platform","arch"},"Incomplete native payload build fields")
-    require(all(identity.get(k)==v for k,v in {"version":version,"commit":commit,"sourceState":"clean","goVersion":"go1.27.3","platform":"windows","arch":arch}.items()),"Native payload build identity differs")
+    require(all(identity.get(k)==v for k,v in {"version":version,"commit":commit,"sourceState":"clean","goVersion":"go1.27.4","platform":"windows","arch":arch}.items()),"Native payload build identity differs")
     require(isinstance(identity["builtAt"],str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",identity["builtAt"]) is not None,"Invalid canonical build timestamp")
     datetime.datetime.strptime(identity["builtAt"],"%Y-%m-%dT%H:%M:%SZ")
 

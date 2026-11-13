@@ -22,7 +22,7 @@ jobs:
             goarch: arm64
             sdkarch: arm64
     env:
-      GO_VERSION: '1.27.3'
+      GO_VERSION: '1.27.4'
       GOTOOLCHAIN: local
       ACCESSWEAVER_EXPECT_GOOS: windows
       ACCESSWEAVER_EXPECT_GOARCH: ${{ matrix.goarch }}

@@ -4,7 +4,7 @@ AccessWeaver welcomes focused contributions in English or Turkish. Start with [t
 
 ## Local development
 
-Use a supported Go release meeting the source minimum in `go.mod` (currently Go 1.26); CI pins Go 1.27.3. The root module pins `golang.org/x/sys` and `github.com/ebitengine/purego` for native OS interfaces, with checksums in `go.sum`. Separate tooling and optional fixture modules have their own pinned dependencies. The embedded application has no npm build; Node.js and browser-test dependencies support development checks. See [third-party notices](THIRD_PARTY.md) and [SBOM scope](docs/SBOM.md).
+Use a supported Go release meeting the source minimum in `go.mod` (currently Go 1.26); CI pins Go 1.27.4. The root module pins `golang.org/x/sys` and `github.com/ebitengine/purego` for native OS interfaces, with checksums in `go.sum`. Separate tooling and optional fixture modules have their own pinned dependencies. The embedded application has no npm build; Node.js and browser-test dependencies support development checks. See [third-party notices](THIRD_PARTY.md) and [SBOM scope](docs/SBOM.md).
 
 ```bash
 go run ./cmd/accessweaver ui

@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import sys
 import unittest
 
@@ -39,7 +40,7 @@ class FixtureQualificationTests(unittest.TestCase):
 
     def test_build_identity_drops_paths_and_binds_mode_target_and_dependency(self):
         source = "a" * 40
-        raw = ("/PRIVATE_SYNTHETIC_PATH/wgpeer: go1.27.3\n\tpath\taccessweaver.test/wgpeer\n"
+        raw = ("/PRIVATE_SYNTHETIC_PATH/wgpeer: go1.27.4\n\tpath\taccessweaver.test/wgpeer\n"
                "\tmod\taccessweaver.test/wgpeer\t(devel)\n\tdep\tgolang.org/x/crypto\t" + q.CRYPTO + "\t" + q.CRYPTO_SUM +
                "\n\tbuild\tGOOS=linux\n\tbuild\tGOARCH=amd64\n\tbuild\tCGO_ENABLED=0\n"
                "\tbuild\tvcs.revision=" + source + "\n\tbuild\tvcs.modified=false\n").encode()
@@ -54,17 +55,17 @@ class FixtureQualificationTests(unittest.TestCase):
 
     def report(self):
         def binary(role, target, race):
-            return {"role": role, "target": target, "race": race, "go": "go1.27.3",
+            return {"role": role, "target": target, "race": race, "go": "go1.27.4",
                     "format": "elf" if target.startswith("linux/") else "pe", "binarySHA256": "c" * 64}
         return {"schemaVersion": 1, "sourceCommit": "a" * 40, "sourceTree": "b" * 40,
                 "sourceSHA256": {name: "c" * 64 for name in q.SOURCES}, "hostedGuestVerified": True,
-                "go": "go1.27.3", "cryptoVersion": q.CRYPTO, "cryptoSum": q.CRYPTO_SUM,
+                "go": "go1.27.4", "cryptoVersion": q.CRYPTO, "cryptoSum": q.CRYPTO_SUM,
                 "openpgpExcluded": True, "sourceStable": True, "stage": "complete", "exitCode": 0,
                 "failureKind": "none", "outcome": "passed", "productionQualificationComplete": False,
                 "modes": [{"mode": mode, "binary": binary("peer", "linux/amd64", mode == "race"),
                            "checks": q.peer_result(self.peer(), 1000)} for mode in ["normal", "race"]],
                 "windows": [binary(role, "windows/amd64", False) for role in ["peer", "probe"]],
-                "advisories": [{"target": target, "scanner": "v1.9.0", "go": "go1.27.3",
+                "advisories": [{"target": target, "scanner": "v1.9.0", "go": "go1.27.4",
                                 "databaseModifiedAt": "2026-11-07T00:00:00Z", "affected": 0,
                                 "moduleOnly": 0, "reportSHA256": "d" * 64} for target in ["linux/amd64", "windows/amd64"]]}
 
@@ -83,6 +84,7 @@ class FixtureQualificationTests(unittest.TestCase):
                 q.public_report(changed)
         self.assertNotIn("PRIVATE_SYNTHETIC", encoded)
 
+    @unittest.skipIf(os.name == 'nt', 'POSIX owned process groups only')
     def test_owned_command_limits_and_timeout_do_not_publish_raw_output(self):
         with self.assertRaises(q.Failure) as over:
             q.command([sys.executable, "-c", "import sys;sys.stdout.write('PRIVATE_SYNTHETIC'*1024)"], None, None, limit=128)

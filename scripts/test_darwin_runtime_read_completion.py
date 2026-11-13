@@ -14,7 +14,7 @@ DRIVER=importlib.util.module_from_spec(SPEC);SPEC.loader.exec_module(DRIVER)
 
 class NativeRuntimeReadCaptureTests(unittest.TestCase):
  def valid(self):
-  return {'schemaVersion':1,'sourceCommit':'a'*40,'goos':'darwin','goarch':'arm64','goVersion':'go1.27.3','outcome':'passed','cases':[{'name':name,'passed':True,'checks':1,'code':'none','sites':0} for name in DRIVER.CASES],'nativeRootFixture':True,'nativeInstalledQualified':False}
+  return {'schemaVersion':1,'sourceCommit':'a'*40,'goos':'darwin','goarch':'arm64','goVersion':'go1.27.4','outcome':'passed','cases':[{'name':name,'passed':True,'checks':1,'code':'none','sites':0} for name in DRIVER.CASES],'nativeRootFixture':True,'nativeInstalledQualified':False}
 
  def test_fixed_protocol_and_qualification_refusal(self):
   value=self.valid();self.assertEqual(DRIVER.validate_native(value,'a'*40,'arm64'),value)
@@ -68,6 +68,7 @@ class NativeRuntimeReadCaptureTests(unittest.TestCase):
  def test_duplicate_json_keys_refused(self):
   with self.assertRaises(DRIVER.Refused):DRIVER.load_json('{"schemaVersion":1,"schemaVersion":2}')
 
+ @unittest.skipIf(os.name=='nt','POSIX owned process groups only')
  def test_capture_success_and_exit_status(self):
   code,data=DRIVER.capture_owned([sys.executable,'-c','import os; os.write(1,b"fixed output"); raise SystemExit(7)'],os.environ,Path.cwd(),5,1024)
   self.assertEqual((code,data),(7,b'fixed output'))

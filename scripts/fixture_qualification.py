@@ -97,7 +97,7 @@ def hashes(root):
 
 def decode_build_info(raw, target, race, source, role):
     lines = raw.decode("utf-8").splitlines()
-    assert lines and lines[0].endswith(": go1.27.3")
+    assert lines and lines[0].endswith(": go1.27.4")
     settings, dependencies, main, package = {}, {}, None, None
     for line in lines[1:]:
         fields = line.strip().split("\t")
@@ -122,7 +122,7 @@ def decode_build_info(raw, target, race, source, role):
         assert dependencies.get("golang.org/x/crypto") == [CRYPTO, CRYPTO_SUM]
     else:
         assert "golang.org/x/crypto" not in dependencies
-    return {"target": target, "race": race, "go": "go1.27.3", "role": role}
+    return {"target": target, "race": race, "go": "go1.27.4", "role": role}
 
 def inspect_binary(root, file, environment, target, race, source, role):
     before = file.read_bytes()
@@ -172,7 +172,7 @@ def public_report(data):
     assert type(data["schemaVersion"]) is int and data["schemaVersion"] == 1 and data["hostedGuestVerified"] is True
     assert re.fullmatch("[0-9a-f]{40}", data["sourceCommit"]) and re.fullmatch("[0-9a-f]{40}", data["sourceTree"])
     assert set(data["sourceSHA256"]) == set(SOURCES) and all(re.fullmatch("[0-9a-f]{64}", h) for h in data["sourceSHA256"].values())
-    assert data["go"] == "go1.27.3" and data["cryptoVersion"] == CRYPTO and data["cryptoSum"] == CRYPTO_SUM
+    assert data["go"] == "go1.27.4" and data["cryptoVersion"] == CRYPTO and data["cryptoSum"] == CRYPTO_SUM
     assert type(data["openpgpExcluded"]) is bool and type(data["sourceStable"]) is bool
     assert data["stage"] in STAGES and data["failureKind"] in ["none", "contract", "tool", "timeout", "output-budget", "io", "other"]
     assert data["exitCode"] is None or type(data["exitCode"]) is int and 0 <= data["exitCode"] <= 255
@@ -181,17 +181,17 @@ def public_report(data):
         assert set(mode) == {"mode", "binary", "checks"} and mode["mode"] in ["normal", "race"]
         binary = mode["binary"]
         assert set(binary) == {"target", "race", "go", "role", "format", "binarySHA256"}
-        assert binary["target"] == "linux/amd64" and binary["race"] is (mode["mode"] == "race") and binary["go"] == "go1.27.3" and binary["role"] == "peer" and binary["format"] == "elf" and re.fullmatch("[0-9a-f]{64}", binary["binarySHA256"])
+        assert binary["target"] == "linux/amd64" and binary["race"] is (mode["mode"] == "race") and binary["go"] == "go1.27.4" and binary["role"] == "peer" and binary["format"] == "elf" and re.fullmatch("[0-9a-f]{64}", binary["binarySHA256"])
         checks = mode["checks"]
         assert set(checks) == {"tcpIPv4", "udpIPv4", "tcpIPv6", "udpIPv6", "freshHandshake", "rxBytes", "txBytes"}
         assert all(checks[k] is True for k in ["tcpIPv4", "udpIPv4", "tcpIPv6", "udpIPv6", "freshHandshake"])
         assert all(type(checks[k]) is int and 0 < checks[k] <= 1 << 40 for k in ["rxBytes", "txBytes"])
     for binary in data["windows"]:
         assert set(binary) == {"target", "race", "go", "role", "format", "binarySHA256"}
-        assert binary["target"] == "windows/amd64" and binary["race"] is False and binary["go"] == "go1.27.3" and binary["role"] in ["peer", "probe"] and binary["format"] == "pe" and re.fullmatch("[0-9a-f]{64}", binary["binarySHA256"])
+        assert binary["target"] == "windows/amd64" and binary["race"] is False and binary["go"] == "go1.27.4" and binary["role"] in ["peer", "probe"] and binary["format"] == "pe" and re.fullmatch("[0-9a-f]{64}", binary["binarySHA256"])
     for advisory in data["advisories"]:
         assert set(advisory) == {"target", "scanner", "go", "databaseModifiedAt", "affected", "moduleOnly", "reportSHA256"}
-        assert advisory["target"] in ["linux/amd64", "windows/amd64"] and advisory["scanner"] == "v1.9.0" and advisory["go"] == "go1.27.3"
+        assert advisory["target"] in ["linux/amd64", "windows/amd64"] and advisory["scanner"] == "v1.9.0" and advisory["go"] == "go1.27.4"
         assert advisory["affected"] == 0 and advisory["moduleOnly"] == 0 and type(advisory["affected"]) is int and type(advisory["moduleOnly"]) is int and re.fullmatch("[0-9a-f]{64}", advisory["reportSHA256"])
         assert re.fullmatch("[0-9TZ:.+-]{20,40}", advisory["databaseModifiedAt"])
     passed = (data["stage"] == "complete" and data["failureKind"] == "none" and data["exitCode"] == 0 and data["sourceStable"] and data["openpgpExcluded"] and [m["mode"] for m in data["modes"]] == ["normal", "race"] and len(data["windows"]) == 2 and {b["role"] for b in data["windows"]} == {"peer", "probe"} and len(data["advisories"]) == 2 and {a["target"] for a in data["advisories"]} == {"linux/amd64", "windows/amd64"})
@@ -208,14 +208,14 @@ def main():
     assert source == os.environ["GITHUB_SHA"]
     source_hashes = hashes(root)
     data = {"schemaVersion": 1, "sourceCommit": source, "sourceTree": tree, "sourceSHA256": source_hashes,
-            "hostedGuestVerified": True, "go": "go1.27.3", "cryptoVersion": CRYPTO, "cryptoSum": CRYPTO_SUM,
+            "hostedGuestVerified": True, "go": "go1.27.4", "cryptoVersion": CRYPTO, "cryptoSum": CRYPTO_SUM,
             "openpgpExcluded": False, "modes": [], "windows": [], "advisories": [], "sourceStable": False,
             "stage": "source", "exitCode": None, "failureKind": "none", "outcome": "failed", "productionQualificationComplete": False}
     output = root / "build/fixture-qualification"
     output.mkdir(mode=0o700, parents=True, exist_ok=True)
     module = root / "scripts/fixtures/wgpeer"
     try:
-        assert command(["go", "env", "GOHOSTOS", "GOHOSTARCH", "GOVERSION"], root, environment).decode().split() == ["linux", "amd64", "go1.27.3"]
+        assert command(["go", "env", "GOHOSTOS", "GOHOSTARCH", "GOVERSION"], root, environment).decode().split() == ["linux", "amd64", "go1.27.4"]
         data["stage"] = "modules"
         command(["go", "mod", "verify"], module, environment)
         info = json.loads(command(["go", "list", "-m", "-json", "golang.org/x/crypto"], module, environment))
@@ -255,9 +255,9 @@ def main():
         for target in ["linux/amd64", "windows/amd64"]:
             system, arch = target.split("/")
             raw = command([scanner, "-db", "https://vuln.go.dev", "-json", "./..."], module, dict(environment, GOOS=system, GOARCH=arch, CGO_ENABLED="0"), limit=32 << 20, seconds=300)
-            result = contract.analyze(raw.decode("utf-8"), "accessweaver.test/wgpeer", "v1.9.0", "go1.27.3")
+            result = contract.analyze(raw.decode("utf-8"), "accessweaver.test/wgpeer", "v1.9.0", "go1.27.4")
             assert result["passed"] and result["affectedCount"] == result["moduleOnlyCount"] == 0
-            data["advisories"].append({"target": target, "scanner": "v1.9.0", "go": "go1.27.3", "databaseModifiedAt": result["databaseModifiedAt"], "affected": 0, "moduleOnly": 0, "reportSHA256": hashlib.sha256(raw).hexdigest()})
+            data["advisories"].append({"target": target, "scanner": "v1.9.0", "go": "go1.27.4", "databaseModifiedAt": result["databaseModifiedAt"], "affected": 0, "moduleOnly": 0, "reportSHA256": hashlib.sha256(raw).hexdigest()})
         data["stage"] = "source"
         assert identity(root, environment) == (source, tree) and hashes(root) == source_hashes
         data.update(sourceStable=True, stage="complete", exitCode=0, outcome="passed")

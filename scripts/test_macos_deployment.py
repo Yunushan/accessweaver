@@ -42,7 +42,7 @@ def flat_package(members):
 
 class DeploymentPackageContracts(unittest.TestCase):
     def fixture(self,arch="amd64",signature_resources=False):
-        identity={"version":"0.1.0-alpha","commit":"a"*40,"sourceState":"clean","platform":"darwin","arch":arch,"goVersion":"go1.27.3","builtAt":"2026-11-03T00:00:00Z"}
+        identity={"version":"0.1.0-alpha","commit":"a"*40,"sourceState":"clean","platform":"darwin","arch":arch,"goVersion":"go1.27.4","builtAt":"2026-11-03T00:00:00Z"}
         values={"Contents/Info.plist":plistlib.dumps(bundle_plist(identity["version"],"13.0.0")),"Contents/MacOS/accessweaver":image(arch),"Contents/Resources/BUILD-INFO.json":json.dumps(identity).encode()}
         if signature_resources:values["Contents/_CodeSignature/CodeResources"]=b"opaque resource-seal fixture; not a validated signature"
         manifest={"schemaVersion":2,"payloadSBOM":{"path":PAYLOAD_SBOM,"bytes":2,"sha256":digest(b"{}"),"mode":"0644"},"bundleIdentifier":BUNDLE_ID,"directories":[{"path":n,"mode":"0755"} for n in (("Contents","Contents/MacOS","Contents/Resources","Contents/_CodeSignature") if signature_resources else ("Contents","Contents/MacOS","Contents/Resources"))],"files":[{"path":n,"bytes":len(v),"sha256":digest(v),"mode":"0755" if n.endswith("/accessweaver") else "0644"} for n,v in values.items()]}

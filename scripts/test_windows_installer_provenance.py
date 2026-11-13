@@ -23,7 +23,7 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
             with self.assertRaises(ValueError):subject_names('amd64',versions)
         self.assertEqual(len(subject_names('arm64',('999999999999999999999.0.0','1.2.3+build.001'))),5)
     def test_complete_build_identity_and_real_calendar_timestamp_are_required(self):
-        identity={"version":"0.1.0-alpha","commit":COMMIT,"sourceState":"clean","builtAt":"2026-11-03T00:00:00Z","goVersion":"go1.27.3","platform":"windows","arch":"amd64"}
+        identity={"version":"0.1.0-alpha","commit":COMMIT,"sourceState":"clean","builtAt":"2026-11-03T00:00:00Z","goVersion":"go1.27.4","platform":"windows","arch":"amd64"}
         validate_build(identity,COMMIT,"amd64","0.1.0-alpha")
         for key,value in (("builtAt","unknown"),("builtAt","2026-02-30T00:00:00Z"),("sourceState","modified"),("arch","arm64")):
             with self.subTest(key=key,value=value),self.assertRaises(ValueError):validate_build(dict(identity,**{key:value}),COMMIT,"amd64","0.1.0-alpha")

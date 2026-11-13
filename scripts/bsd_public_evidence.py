@@ -97,8 +97,8 @@ def project(report, source, tree, target, hashes, legacy_digest):
     release_ok = (isinstance(release, str) and re.fullmatch(r"15\.1-RELEASE(?:-p[0-9]+)?", release) is not None) if osname == "freebsd" else release == "8.0"
     uid = identity.get("uid")
     guest_ok = identity.get("OS") == {"freebsd": "FreeBSD", "openbsd": "OpenBSD"}[osname] and identity.get("machine") == arch and type(uid) is int and uid > 0 and identity.get("user") == "awtest" and release_ok
-    compiler_ok = sdk == {"GOOS": "linux", "GOARCH": arch, "GOHOSTOS": "linux", "GOHOSTARCH": arch, "GOVERSION": "go1.27.3", "GOTOOLCHAIN": "local"}
-    cli_ok = all(cli.get(k) == v for k, v in {"commit": source, "sourceState": "clean", "platform": osname, "arch": arch, "goVersion": "go1.27.3"}.items()) and exact_hash(report.get("cliSHA256"))
+    compiler_ok = sdk == {"GOOS": "linux", "GOARCH": arch, "GOHOSTOS": "linux", "GOHOSTARCH": arch, "GOVERSION": "go1.27.4", "GOTOOLCHAIN": "local"}
+    cli_ok = all(cli.get(k) == v for k, v in {"commit": source, "sourceState": "clean", "platform": osname, "arch": arch, "goVersion": "go1.27.4"}.items()) and exact_hash(report.get("cliSHA256"))
     image_ok = flag(report, "imageDigestVerified") if osname == "freebsd" else flag(report, "installerMediaDigestVerified") and flag(report, "installerMetadataSignatureVerified") and flag(report, "installerCompleted") and flag(report, "seedRemovedBeforeTargetExecution")
     checks = {"sourceMatches": report.get("sourceCommit") == source and report.get("target") == target,
               "hostCompilerMatches": compiler_ok, "ordinaryGuestIdentityMatches": bool(guest_ok), "executedCLIIdentityMatches": cli_ok,
@@ -111,7 +111,7 @@ def project(report, source, tree, target, hashes, legacy_digest):
     phase = report.get("failurePhase")
     stage = "complete" if passed else "report-unavailable" if legacy_digest is None else phase if isinstance(phase, str) and phase in PHASES else "producer-failure"
     result = {"schemaVersion": 3, "sourceCommit": source, "sourceTree": tree, "sourceSHA256": dict(hashes), "target": target,
-              "scope": "disposable-bsd-guest-core", "expectedGoVersion": "go1.27.3", "stage": stage, "outcome": "passed" if passed else "failed",
+              "scope": "disposable-bsd-guest-core", "expectedGoVersion": "go1.27.4", "stage": stage, "outcome": "passed" if passed else "failed",
               "checks": checks, "build": public_build(report.get("buildObservations", {})), "testDiagnostics": report.get("publicTestObservations", []), "counts": {"expectedPackages": expected, "completedPackages": len(package_rows),
               "passedTestInstances": sum(p["passedTestInstances"] for p in package_rows), "skippedTestInstances": sum(p["skippedTestInstances"] for p in package_rows)},
               "packages": package_rows, "packagePlanSHA256": hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
@@ -129,7 +129,7 @@ def validate_public(data):
     if not isinstance(data, dict) or set(data) != PUBLIC_KEYS or type(data["schemaVersion"]) is not int or data["schemaVersion"] != 3:
         raise ValueError("public schema differs")
     if (not re.fullmatch(r"[a-f0-9]{40}", data["sourceCommit"]) or not re.fullmatch(r"[a-f0-9]{40}", data["sourceTree"]) or
-            data["target"] not in TARGETS or data["scope"] != "disposable-bsd-guest-core" or data["expectedGoVersion"] != "go1.27.3"):
+            data["target"] not in TARGETS or data["scope"] != "disposable-bsd-guest-core" or data["expectedGoVersion"] != "go1.27.4"):
         raise ValueError("public source or target differs")
     if set(data["sourceSHA256"]) != set(SOURCES) or not all(exact_hash(v) for v in data["sourceSHA256"].values()):
         raise ValueError("public hash set differs")

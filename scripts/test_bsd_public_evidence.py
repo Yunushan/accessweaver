@@ -15,9 +15,9 @@ HASHES = {name: "c" * 64 for name in evidence.SOURCES}
 def fixture(osname="freebsd", arch="amd64"):
     name = evidence.MODULE + "internal/jsoninput"
     return {"schemaVersion": 1, "sourceCommit": SOURCE, "target": osname + "/" + arch,
-            "hostSDK": {"GOOS": "linux", "GOARCH": arch, "GOHOSTOS": "linux", "GOHOSTARCH": arch, "GOVERSION": "go1.27.3", "GOTOOLCHAIN": "local"},
+            "hostSDK": {"GOOS": "linux", "GOARCH": arch, "GOHOSTOS": "linux", "GOHOSTARCH": arch, "GOVERSION": "go1.27.4", "GOTOOLCHAIN": "local"},
             "guestIdentity": {"OS": {"freebsd": "FreeBSD", "openbsd": "OpenBSD"}[osname], "release": "15.1-RELEASE" if osname == "freebsd" else "8.0", "machine": arch, "uid": 1000, "user": "awtest"},
-            "executedCLI": {"commit": SOURCE, "sourceState": "clean", "platform": osname, "arch": arch, "goVersion": "go1.27.3", "version": "PRIVATE_SYNTHETIC_VALUE"},
+            "executedCLI": {"commit": SOURCE, "sourceState": "clean", "platform": osname, "arch": arch, "goVersion": "go1.27.4", "version": "PRIVATE_SYNTHETIC_VALUE"},
             "buildObservations": {"step": "complete", "plannedPackages": 1, "completedPackages": 1},
             "publicTestObservations": [{"packageID": 0, "catalogSHA256": "a" * 64, "rootCount": 1, "fileCount": 1, "failedRootIDs": [], "assertionLocations": [], "unknownFailureNames": 0, "truncated": False}],
             "cliSHA256": "d" * 64, "guestExecutionPassed": True, "allTransportedExecutableHashesVerified": True,
