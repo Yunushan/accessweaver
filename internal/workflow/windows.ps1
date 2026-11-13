@@ -333,7 +333,7 @@ function Backup-File([string]$path) {
     Save-Journal
     return $entry
 }
-function Publish-WorkflowFile([string]$path,[byte[]]$bytes,[switch]$Recorded) {
+function Publish-WorkflowFile([string]$path,[byte[]]$bytes,[switch]$Recorded,[string]$BeforeHash) {
     No-Reparse $path
     $parent=Split-Path -Parent $path
     $staged=Join-Path $parent ([guid]::NewGuid().ToString('N')+'.tmp')
@@ -343,15 +343,18 @@ function Publish-WorkflowFile([string]$path,[byte[]]$bytes,[switch]$Recorded) {
             $stream.Write($bytes,0,$bytes.Length)
             $stream.Flush($true)
         } finally {$stream.Dispose()}
+        $digest=Get-WorkflowBytesSHA256 $bytes
         if($Recorded){
-            Publish-RecordedWorkflowFile $staged $path (Get-WorkflowBytesSHA256 $bytes)
-        }elseif(Test-Path -LiteralPath $path -ErrorAction Stop){
-            [IO.File]::Replace($staged,$path,[NullString]::Value)
+            Publish-RecordedWorkflowFile $staged $path $digest
         }else{
-            [IO.File]::Move($staged,$path)
+            if(-not $PSBoundParameters.ContainsKey('BeforeHash')){$BeforeHash=Get-WorkflowFileHash $path}
+            Publish-StagedWorkflowFile $staged $path $digest $BeforeHash
         }
     } finally {
-        if([IO.File]::Exists($staged)){[IO.File]::Delete($staged)}
+        if([IO.File]::Exists($staged)){
+            No-Reparse $staged
+            [IO.File]::Delete($staged)
+        }
     }
 }
 function Write-Atomic([string]$path,[string]$text) {
@@ -2192,7 +2195,7 @@ function Configure-DNS([string]$method) {
     # The previous journal keeps its binding until the snapshot is replaced.
     Save-Journal
     Assert-DNSRecoverySnapshotUnchanged $originalSnapshot.sha256
-    Publish-WorkflowFile $snapshot $bytes
+    Publish-WorkflowFile $snapshot $bytes -BeforeHash $originalSnapshot.sha256
     if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot could not be published'}
     $dnsUndo.snapshotActive=$true
     Save-Journal

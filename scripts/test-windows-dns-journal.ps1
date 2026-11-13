@@ -253,6 +253,38 @@ try {
         (Confirm-DNSRecoverySnapshot (Get-WorkflowBytesSHA256 $firstBytes))) 'Journal preparation changed the active snapshot'
     Publish-WorkflowFile $snapshot $secondBytes
     Require (Confirm-DNSRecoverySnapshot (Get-WorkflowBytesSHA256 $secondBytes)) 'Snapshot replacement changed its bytes'
+    & {
+        $attempts=[Collections.Generic.List[int]]::new()
+        $delayLog=[Collections.Generic.List[int]]::new()
+        function Replace-StagedWorkflowFile([string]$Staged,[string]$Target){
+            if($Target -cne $snapshot){throw 'Unexpected retry fixture destination'}
+            $attempts.Add($attempts.Count+1)
+            if($attempts.Count -eq 1){throw [IO.IOException]::new('Inert transient replacement error',-2147023721)}
+            [IO.File]::WriteAllBytes($Target,[IO.File]::ReadAllBytes($Staged))
+            [IO.File]::Delete($Staged)
+        }
+        function Start-Sleep([int]$Milliseconds){
+            $delayLog.Add($Milliseconds)
+            if($fixtureChanged){[IO.File]::WriteAllText($snapshot,'independent edit')}
+        }
+        $fixtureChanged=$false
+        Publish-WorkflowFile $snapshot $firstBytes -BeforeHash $next
+        $firstHash=Get-WorkflowBytesSHA256 $firstBytes
+        Require ($attempts.Count -eq 2 -and ($delayLog -join ',') -ceq '50' -and
+            (Confirm-DNSRecoverySnapshot $firstHash)) 'Snapshot publication did not retry the transient replacement'
+        $attempts.Clear();$delayLog.Clear();$fixtureChanged=$true
+        $refused=$false
+        try{Publish-WorkflowFile $snapshot $secondBytes -BeforeHash $firstHash}catch{
+            $refused=$_.Exception.Message -ceq 'Workflow files changed before replacement'
+        }
+        Require ($refused -and $attempts.Count -eq 1 -and [IO.File]::ReadAllText($snapshot) -ceq 'independent edit') 'Snapshot retry overwrote an independent edit'
+        $refused=$false
+        try{Publish-WorkflowFile $snapshot $secondBytes -BeforeHash ''}catch{
+            $refused=$_.Exception.Message -ceq 'Workflow files changed before replacement'
+        }
+        Require ($refused -and $attempts.Count -eq 1 -and [IO.File]::ReadAllText($snapshot) -ceq 'independent edit') 'Fresh snapshot publication replaced an occupied destination'
+        [IO.File]::WriteAllBytes($snapshot,$secondBytes)
+    }
     $script:journalState='succeeded'
     & $saveJournal
     $finished=[IO.File]::ReadAllText($script:journalPath) | ConvertFrom-Json

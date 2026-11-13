@@ -2385,13 +2385,13 @@ try {
     [void][IO.Directory]::CreateDirectory($replacementRoot)
     $target=Join-Path $replacementRoot 'target.txt'
     $staged=Join-Path $replacementRoot 'staged.txt'
-    $replace=(Get-Command Replace-StagedWorkflowFile).ScriptBlock
     $attempts=[Collections.Generic.List[int]]::new()
     $delays=[Collections.Generic.List[int]]::new()
     function Replace-StagedWorkflowFile([string]$Staged,[string]$Target) {
         $attempts.Add($attempts.Count+1)
         if($attempts.Count -le $case.failures){throw [IO.IOException]::new('Inert replacement failure',[int]$case.hresult)}
-        & $replace $Staged $Target
+        [IO.File]::WriteAllBytes($Target,[IO.File]::ReadAllBytes($Staged))
+        [IO.File]::Delete($Staged)
     }
     function Start-Sleep([int]$Milliseconds) {
         $delays.Add($Milliseconds)
