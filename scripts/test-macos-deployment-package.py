@@ -171,6 +171,21 @@ def main():
         check_launcher("descriptor-hint-refused",hint=True)
         install("clean-install",VERSIONS[0],1)
         check_detection("initial-active",VERSIONS[0],True)
+        stage="detection-acquire-writer-lease"
+        lock_path=AUTHORITY/".runtime.lock"
+        no_alias(lock_path)
+        before_lock=lock_path.lstat()
+        require(stat.S_ISREG(before_lock.st_mode) and before_lock.st_uid==0 and before_lock.st_gid==0
+                and before_lock.st_nlink==1 and stat.S_IMODE(before_lock.st_mode)==0o644,
+                "Unexpected installed runtime lease file")
+        with os.fdopen(os.open(lock_path,os.O_RDONLY|os.O_NOFOLLOW),"rb") as writer:
+            require(os.path.samestat(before_lock,os.fstat(writer.fileno())),
+                    "Runtime lease file changed before opening")
+            fcntl.flock(writer,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            require(os.path.samestat(before_lock,lock_path.lstat()),"Runtime lease file changed before detection")
+            check_detection("writer-lease-held",VERSIONS[0],False)
+            require(os.path.samestat(before_lock,lock_path.lstat()),"Detection replaced the runtime lease file")
+        check_detection("writer-lease-released",VERSIONS[0],True)
         check_detection("descriptor-hint",VERSIONS[0],False,hint=True)
         check_launcher("initial-active",candidates[VERSIONS[0]]["identity"])
         app,_=active(VERSIONS[0],1)
@@ -282,7 +297,7 @@ def main():
         while trace:
             if trace.tb_frame.f_code.co_filename==__file__:failure_line=trace.tb_lineno
             trace=trace.tb_next
-    report={"schemaVersion":2,"managedDetectionCases":detection_cases,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packages":{v:{"file":c["report"]["packageFile"],"bytes":c["report"]["packageBytes"],"packageSHA256":c["report"]["packageSHA256"],"payloadSHA256":c["report"]["payloadSHA256"],"manifestSHA256":c["report"]["manifestSHA256"],"helperSHA256":c["report"]["helperSHA256"],"payloadSBOMSHA256":c["report"]["payloadSBOMSHA256"]} for v,c in candidates.items()},"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"runtimeLeaseCases":lease_cases,"launcherCases":launcher_cases,"launcherCandidate":launcher_info,"activeCopyLauncherVerified":complete,"installedControllerLeaseRefusalVerified":complete,"packageScriptsIntegrated":True,"detachedManifestSealingVerified":complete,"detachedPayloadSBOMSealingVerified":complete,"actualApplePackageUpgradeExecuted":complete,"actualUserProfilePreservationVerified":complete,"retainedPriorCopiesVerified":complete,"ownedFixturesRemoved":cleaned,"installedCodeExecutedAsRoot":False,"publicLauncherIntegrated":False,"runtimeLeaseQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"abruptTerminationQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
+    report={"schemaVersion":3,"managedDetectionCases":detection_cases,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packages":{v:{"file":c["report"]["packageFile"],"bytes":c["report"]["packageBytes"],"packageSHA256":c["report"]["packageSHA256"],"payloadSHA256":c["report"]["payloadSHA256"],"manifestSHA256":c["report"]["manifestSHA256"],"helperSHA256":c["report"]["helperSHA256"],"payloadSBOMSHA256":c["report"]["payloadSBOMSHA256"]} for v,c in candidates.items()},"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"runtimeLeaseCases":lease_cases,"launcherCases":launcher_cases,"launcherCandidate":launcher_info,"activeCopyLauncherVerified":complete,"installedControllerLeaseRefusalVerified":complete,"packageScriptsIntegrated":True,"detachedManifestSealingVerified":complete,"detachedPayloadSBOMSealingVerified":complete,"actualApplePackageUpgradeExecuted":complete,"actualUserProfilePreservationVerified":complete,"retainedPriorCopiesVerified":complete,"ownedFixturesRemoved":cleaned,"installedCodeExecutedAsRoot":False,"publicLauncherIntegrated":False,"runtimeLeaseQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"abruptTerminationQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
     (root/"lifecycle-artifact.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     require(complete,"Native deployment package acceptance failed at "+stage+"; owned disposable state retained")
     print(json.dumps({"target":report["target"],"actualApplePackageOperations":len(operations)+len(lease_cases),"passed":True,"productionQualificationComplete":False}))

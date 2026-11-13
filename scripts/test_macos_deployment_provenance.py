@@ -85,6 +85,18 @@ class ManagedDetectionProvenanceTests(unittest.TestCase):
             )
         ]
         self.assertEqual(verify_module.validate_managed_detection(cases, bindings), {"managedDetectionChecksVerified": 9})
+        busy = {**cases[1], "name": "writer-lease-held", "detected": False}
+        released = {**cases[1], "name": "writer-lease-released"}
+        with_writer = [*cases[:2], busy, released, *cases[2:]]
+        self.assertEqual(verify_module.validate_managed_detection(with_writer, bindings, writer_lease_required=True),
+                         {"managedDetectionChecksVerified": 11})
+        for invalid in (
+            cases, [*cases[:2], released, busy, *cases[2:]],
+            [*cases[:2], {**busy, "detected": True}, released, *cases[2:]],
+            [*cases[:2], busy, {**released, "detected": False}, *cases[2:]],
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                verify_module.validate_managed_detection(invalid, bindings, writer_lease_required=True)
         for invalid in (
             cases[:-1],
             cases[::-1],
