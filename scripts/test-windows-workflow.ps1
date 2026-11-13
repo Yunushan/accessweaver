@@ -37,7 +37,12 @@ foreach($platform in @('x64','Arm64','Intel')) {
 try {
     $script:prerequisiteCalls=[Collections.Generic.List[object]]::new()
     $script:prerequisiteSignature='Valid'
-    function Get-AuthenticodeSignature {param($LiteralPath);$script:prerequisiteCalls.Add(@{kind='signature';path=$LiteralPath});return @{Status=$script:prerequisiteSignature}}
+    $script:prerequisiteSignerSubject='CN=Other fixture publisher'
+    function Get-AuthenticodeSignature {
+        param($LiteralPath)
+        $script:prerequisiteCalls.Add(@{kind='signature';path=$LiteralPath})
+        return @{Status=$script:prerequisiteSignature;SignerCertificate=@{Subject=$script:prerequisiteSignerSubject}}
+    }
     function Read-RemoteJSON {param($Headers,$Uri);$script:prerequisiteCalls.Add(@{kind='release';url=$Uri});return @{assets=$script:prerequisiteAssets}}
     function Download {param($url,$hash,$destination,[switch]$Signed,[string]$Publisher);$script:prerequisiteCalls.Add(@{kind='download';url=$url;hash=$hash});Copy-Item -LiteralPath $script:prerequisiteDownloadFixture -Destination $destination -Force}
     function Native {param($Program,$Arguments,$SuccessCodes);$script:prerequisiteCalls.Add(@{kind='launch';program=$Program;arguments=$Arguments;codes=$SuccessCodes});return @{exitCode=0}}
@@ -99,6 +104,20 @@ try {
     }
     $inputData=[pscustomobject]@{}
     Assert ((Prerequisite-Plan 'vcredist').pattern -eq 'VC_redist.x64.exe') 'Visual C runtime selection remains separate from kernel driver architecture'
+    $runtimeBundle=Join-Path $prerequisiteRoot 'runtime'
+    [void](New-Item -ItemType Directory -Path $runtimeBundle)
+    $runtimeFixture=Join-Path $runtimeBundle 'VC_redist.x64.exe'
+    [IO.File]::WriteAllBytes($runtimeFixture,[byte[]]@(0))
+    $r=[pscustomobject]@{bundlePath=$runtimeBundle}
+    $script:prerequisiteCalls.Clear()
+    $rejected=$false
+    try {Install-Prerequisite 'vcredist'}catch{$rejected=$_.Exception.Message -ceq 'Visual C++ runtime publisher signature could not be verified'}
+    Assert ($rejected -and @($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'}).Count -eq 0) 'Bundled Visual C runtime rejects a valid signature from another publisher category'
+    $script:prerequisiteSignerSubject='CN=Microsoft fixture'
+    $script:prerequisiteCalls.Clear()
+    Install-Prerequisite 'vcredist'
+    $runtimeLaunches=@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'})
+    Assert ($runtimeLaunches.Count -eq 1 -and $runtimeLaunches[0].program -ceq $runtimeFixture) 'Bundled Visual C runtime accepts the expected publisher category before mocked launch'
     $rejected=$false;try{Prerequisite-Plan 'unknown'|Out-Null}catch{$rejected=$_.Exception.Message -eq 'Unknown prerequisite component'}
     Assert $rejected 'Unknown prerequisite names cannot fall back to Visual C runtime installation'
 } finally {

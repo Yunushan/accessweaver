@@ -1069,7 +1069,12 @@ function Install-Prerequisite([string]$component) {
             Download $asset.browser_download_url (([string]$asset.digest)-replace '^sha256:','') $destination;$installer=Get-Item -LiteralPath $destination
         }else{$destination=Join-Path $root 'downloads\VC_redist.x64.exe';Download 'https://aka.ms/vs/17/release/vc_redist.x64.exe' '' $destination -Signed -Publisher microsoft;$installer=Get-Item -LiteralPath $destination}
     }
-    if((Get-AuthenticodeSignature -LiteralPath $installer.FullName).Status -ne 'Valid'){throw 'Prerequisite signature is invalid'}
+    No-Reparse $installer.FullName
+    $signature=Get-AuthenticodeSignature -LiteralPath $installer.FullName
+    if($signature.Status -ne 'Valid'){throw 'Prerequisite signature is invalid'}
+    if($component -eq 'vcredist' -and -not (Test-InstallerPublisher 'microsoft' $signature)){
+        throw 'Visual C++ runtime publisher signature could not be verified'
+    }
     if($component -eq 'ndisapi' -and (Get-MSIPlatform $installer.FullName) -ine $plan.platform){throw 'Windows Packet Filter MSI platform does not match the native OS architecture'}
     if($installer.Extension -eq '.msi'){[void](Native 'msiexec.exe' @('/i',$installer.FullName,'/qn','/norestart') @(0,3010,1641))}else{[void](Native $installer.FullName @('/install','/quiet','/norestart') @(0,3010,1641))}
     Event ('Prerequisite installed: '+$component)
