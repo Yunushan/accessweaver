@@ -135,9 +135,41 @@ function Invoke-TestWorkflow([hashtable]$Request) {
 }
 function Assert-RebootResolver {
     Clear-DnsClientCache -ErrorAction Stop
-    if(-not @(Resolve-DnsName example.com -DnsOnly -Type A -ErrorAction Stop | Where-Object {$_.Type -eq 'A' -and $_.IPAddress}).Count){
-        throw 'Ordinary Windows DNS returned no IPv4 answer'
+    $answers=@(Resolve-DnsName -Name 'example.com.' -DnsOnly -Type A -NoHostsFile -QuickTimeout -ErrorAction Stop)
+    foreach($answer in $answers){
+        $address=$null
+        if($answer.Type -eq 'A' -and $answer.Section -eq 'Answer' -and
+           $answer.Name -is [string] -and $answer.Name.TrimEnd('.') -ieq 'example.com' -and
+           $answer.IPAddress -is [string] -and [Net.IPAddress]::TryParse($answer.IPAddress,[ref]$address) -and
+           $address.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork){return}
     }
+    throw 'Ordinary Windows DNS returned no IPv4 answer'
+}
+function Wait-DNSRebootObservation([scriptblock]$Observe,[int]$TimeoutSeconds=60) {
+    $timer=[Diagnostics.Stopwatch]::StartNew()
+    do {
+        try {[void](& $Observe);return}
+        catch {
+            if($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds){throw}
+            Start-Sleep -Seconds 1
+            if($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds){throw}
+        }
+    } while($true)
+}
+function Test-DNSRebootServicesRemoved {
+    $remaining=$false
+    $observed=0
+    Get-Service -ErrorAction Stop | ForEach-Object {
+        try {
+            if([string]::IsNullOrWhiteSpace($_.ServiceName)){throw 'Service inventory returned an unknown identity'}
+            $observed++
+            if($_.ServiceName -like 'AccessWeaver-*'){$remaining=$true}
+        } finally {
+            if($_ -is [IDisposable]){$_.Dispose()}
+        }
+    }
+    if(-not $observed){throw 'Service inventory returned no service identities'}
+    return -not $remaining
 }
 function Assert-RebootServices([string]$Method) {
     foreach($name in @('AccessWeaver-byedpi','AccessWeaver-dnscrypt')){
@@ -163,7 +195,7 @@ try {
     $env:ACCESSWEAVER_HOME=Join-Path $private 'controller-state'
     if($Phase -eq 'Prepare'){
         if((Test-Path -LiteralPath $private) -or (Test-Path -LiteralPath $report) -or
-           (Test-Path -LiteralPath $snapshot) -or @(Get-Service 'AccessWeaver-*' -ErrorAction SilentlyContinue).Count){
+           (Test-Path -LiteralPath $snapshot -ErrorAction Stop) -or -not (Test-DNSRebootServicesRemoved)){
             throw 'A fresh guest checkpoint and results directory are required'
         }
         $before=Read-DNSAcceptanceState
@@ -220,13 +252,13 @@ try {
         originalStateRestored=$false;originalResolverVerified=$false;snapshotRetired=$false;
         servicesRemoved=$false;passed=$false;stage='services';cleanupStage='not-started'}
     try {
-        Assert-RebootServices $saved.method
+        Wait-DNSRebootObservation {Assert-RebootServices $saved.method}
         $outcome.servicesVerified=$true
         $outcome.stage='configured-state'
         Assert-DNSAcceptanceConfigured $saved.dns (Read-DNSAcceptanceState) $saved.method
         $outcome.configuredStateVerified=$true
         $outcome.stage='resolver'
-        Assert-RebootResolver
+        Wait-DNSRebootObservation {Assert-RebootResolver}
         $outcome.resolverVerified=$true
         $outcome.stage='complete'
     } catch {
@@ -251,7 +283,7 @@ try {
         }
         try {
             [void](Invoke-TestWorkflow @{action='remove-all'})
-            $outcome.servicesRemoved=-not @(Get-Service 'AccessWeaver-*' -ErrorAction SilentlyContinue).Count
+            $outcome.servicesRemoved=Test-DNSRebootServicesRemoved
             Assert-DNSAcceptanceRestored $saved.dns (Read-DNSAcceptanceState)
             Assert-RebootResolver
             if($outcome.cleanupStage -ceq 'recovered' -and $outcome.servicesRemoved -and

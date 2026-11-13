@@ -4,11 +4,22 @@ $source=Join-Path $PSScriptRoot 'test-windows-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS reboot fixture failed parsing'}
-foreach($name in @('Assert-DNSRebootAdmission','Save-DNSRebootRecord','Get-DNSRebootJournalID','Assert-DNSRebootJournal')){
+foreach($name in @('Assert-DNSRebootAdmission','Save-DNSRebootRecord','Get-DNSRebootJournalID','Assert-DNSRebootJournal',
+        'Assert-RebootResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
     if($nodes.Count -ne 1){throw 'Expected one DNS reboot evidence function'}
+    if($name -cin @('Assert-RebootResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved')){
+        foreach($command in $nodes[0].FindAll({param($node)$node -is [Management.Automation.Language.CommandAst]},$true)){
+            $callback=$command.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and
+                $command.CommandElements[0] -is [Management.Automation.Language.VariableExpressionAst] -and
+                $command.CommandElements[0].VariablePath.UserPath -ceq 'Observe'
+            if(-not $callback -and $command.GetCommandName() -cnotin @('Clear-DnsClientCache','Resolve-DnsName','Start-Sleep','Get-Service','ForEach-Object')){
+                throw 'DNS reboot observation has an unexpected command boundary'
+            }
+        }
+    }
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
 function Refuse([scriptblock]$Action){
@@ -59,6 +70,69 @@ foreach($invalid in @(
     @{action='dns';state='succeeded';undo=@(@{kind='dns';snapshotSHA256=$saved.snapshotSHA256;snapshotActive=$false})}
 )){Refuse {Assert-DNSRebootJournal $invalid $saved.snapshotSHA256}}
 
+# Run the actual observation functions with no resolver or service access.
+& {
+    $state=@{flushes=0;queries=0;waits=0;attempts=0;cacheFails=$false;serviceFails=$false;services=@()}
+    function Clear-DnsClientCache {
+        [CmdletBinding()]param()
+        if($ErrorActionPreference -ne 'Stop'){throw 'DNS cache clear must fail closed'}
+        $state.flushes++
+        if($state.cacheFails){throw 'Synthetic cache flush failure'}
+    }
+    function Resolve-DnsName {
+        [CmdletBinding()]param($Name,$Type,[switch]$DnsOnly,[switch]$NoHostsFile,[switch]$QuickTimeout)
+        $state.queries++
+        if($Name -cne 'example.com.' -or $Type -cne 'A' -or -not $DnsOnly -or -not $NoHostsFile -or
+           -not $QuickTimeout -or $ErrorActionPreference -ne 'Stop'){throw 'Unexpected ordinary DNS request'}
+        $state.answers
+    }
+    function Get-Service {
+        [CmdletBinding()]param()
+        if($ErrorActionPreference -ne 'Stop' -or $state.serviceFails){throw 'Synthetic service inventory failure'}
+        $state.services
+    }
+    function Start-Sleep {
+        param($Seconds)
+        if($Seconds -ne 1){throw 'Unexpected retry interval'}
+        $state.waits++
+    }
+    $answer=@{Name='example.com.';Type='A';Section='Answer';IPAddress='192.0.2.15'}
+    $state.answers=@([pscustomobject]$answer)
+    Assert-RebootResolver
+    foreach($invalid in @(
+        @{Name='example.net.'},@{Type='AAAA'},@{Section='Additional'},@{IPAddress='2001:db8::1'},@{IPAddress='invalid'}
+    )){
+        $row=$answer.Clone()
+        foreach($key in $invalid.Keys){$row[$key]=$invalid[$key]}
+        $state.answers=@([pscustomobject]$row)
+        Refuse {Assert-RebootResolver}
+    }
+    $state.answers=@()
+    Refuse {Assert-RebootResolver}
+    $state.cacheFails=$true
+    Refuse {Assert-RebootResolver}
+    if($state.flushes -ne 8 -or $state.queries -ne 7){throw 'Failed cache flush allowed a DNS query'}
+
+    Wait-DNSRebootObservation {
+        $state.attempts++
+        if($state.attempts -eq 1){throw 'Synthetic automatic service startup delay'}
+    }
+    if($state.attempts -ne 2 -or $state.waits -ne 1){throw 'Automatic startup retry did not re-observe state'}
+    Refuse {Wait-DNSRebootObservation {throw 'Synthetic persistent startup failure'} 0}
+    if($state.waits -ne 1){throw 'Expired startup window accepted a further retry'}
+
+    $state.services=@([pscustomobject]@{ServiceName='UnrelatedFixtureService'})
+    if(-not (Test-DNSRebootServicesRemoved)){throw 'Unrelated service prevented verified cleanup'}
+    $state.services+=@([pscustomobject]@{ServiceName='AccessWeaver-dnscrypt'})
+    if(Test-DNSRebootServicesRemoved){throw 'Running or stopped AccessWeaver service was credited as absent'}
+    $state.services=@([pscustomobject]@{ServiceName=$null})
+    Refuse {Test-DNSRebootServicesRemoved}
+    $state.services=@()
+    Refuse {Test-DNSRebootServicesRemoved}
+    $state.serviceFails=$true
+    Refuse {Test-DNSRebootServicesRemoved}
+}
+
 # Run only the actual post-verification cleanup block with synthetic state.
 $nodes=@($ast.FindAll({param($node)
     $node -is [Management.Automation.Language.TryStatementAst] -and
@@ -67,7 +141,7 @@ $nodes=@($ast.FindAll({param($node)
 if($nodes.Count -ne 1){throw 'DNS reboot recovery cleanup was not found'}
 foreach($command in $nodes[0].Finally.FindAll({param($node)$node -is [Management.Automation.Language.CommandAst]},$true)){
     if($command.GetCommandName() -cnotin @('Invoke-TestWorkflow','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState',
-            'Assert-RebootResolver','Test-Path','Get-Service','Save-DNSRebootRecord')){
+            'Assert-RebootResolver','Test-Path','Test-DNSRebootServicesRemoved','Save-DNSRebootRecord')){
         throw 'DNS reboot cleanup source has an unexpected command boundary'
     }
 }
@@ -96,11 +170,14 @@ function Assert-RebootResolver {
     if($script:trace.Count -eq 1 -and $script:failure -eq 'resolver'){throw 'Synthetic resolver failure'}
 }
 function Test-Path {param($LiteralPath,$ErrorAction);if($LiteralPath -cne $snapshot){throw 'Unexpected snapshot path'};return $script:snapshotPresent}
-function Get-Service {param($Name,$ErrorAction);if($Name -cne 'AccessWeaver-*'){throw 'Unexpected service pattern'}}
+function Test-DNSRebootServicesRemoved {
+    if($script:failure -eq 'inventory'){throw 'Synthetic teardown inventory failure'}
+    return $script:failure -ne 'service'
+}
 $save=(Get-Command Save-DNSRebootRecord).ScriptBlock
 function Save-DNSRebootRecord {param($Path,$Record);if($Path -cne $report){throw 'Unexpected report path'};$script:published=$Record}
 $report='synthetic report';$snapshot='synthetic snapshot'
-foreach($failure in @('none','recover','state','resolver','snapshot','remove')){
+foreach($failure in @('none','recover','state','resolver','snapshot','remove','inventory','service')){
     $script:failure=$failure;$script:trace=[Collections.Generic.List[string]]::new()
     $script:snapshotPresent=$true;$script:published=$null
     $outcome=@{stage='complete';cleanupStage='not-started';journalRecoveryAccepted=$false;originalStateRestored=$false;originalResolverVerified=$false;snapshotRetired=$false;servicesRemoved=$false}
@@ -112,6 +189,8 @@ foreach($failure in @('none','recover','state','resolver','snapshot','remove')){
         'resolver' {'original-resolver'}
         'snapshot' {'snapshot-retirement'}
         'remove' {'recovered'}
+        'inventory' {'recovered'}
+        'service' {'recovered'}
     }
     if($script:published.cleanupStage -cne $stage -or $script:published.passed -ne ($failure -ceq 'none') -or
         ($script:trace -join ',') -cne 'recover,remove-all'){
