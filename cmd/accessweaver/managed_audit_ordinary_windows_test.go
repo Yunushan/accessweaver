@@ -86,7 +86,49 @@ type ordinaryPending struct {
 var ordinaryUnfinishedIO []*ordinaryPending
 var ordinaryCloseFailure bool
 
+// The worker may publish only these fixed labels for a failed desktop assertion.
+type windowsDesktopStage byte
+
+const (
+	windowsDesktopNoFailure windowsDesktopStage = iota
+	windowsDesktopStream
+	windowsDesktopStartup
+	windowsDesktopLaunchPath
+	windowsDesktopLaunchFileACL
+	windowsDesktopLaunchDirectoryACL
+	windowsDesktopLaunchContents
+	windowsDesktopHTTPAdmission
+	windowsDesktopHTTPMutation
+	windowsDesktopHTTPDenials
+	windowsDesktopShutdown
+	windowsDesktopCleanup
+	windowsDesktopJournal
+	windowsDesktopExport
+	windowsDesktopReopen
+)
+
+var windowsDesktopStageNames = [...]string{
+	windowsDesktopNoFailure:          "none",
+	windowsDesktopStream:             "stream",
+	windowsDesktopStartup:            "startup",
+	windowsDesktopLaunchPath:         "launch-path",
+	windowsDesktopLaunchFileACL:      "launch-file-acl",
+	windowsDesktopLaunchDirectoryACL: "launch-directory-acl",
+	windowsDesktopLaunchContents:     "launch-contents",
+	windowsDesktopHTTPAdmission:      "http-admission",
+	windowsDesktopHTTPMutation:       "http-mutation",
+	windowsDesktopHTTPDenials:        "http-denials",
+	windowsDesktopShutdown:           "shutdown",
+	windowsDesktopCleanup:            "cleanup",
+	windowsDesktopJournal:            "journal",
+	windowsDesktopExport:             "export",
+	windowsDesktopReopen:             "reopen",
+}
+
+const ordinaryReplySize = 56
+
 type ordinaryFixture struct {
+	desktopFailure                                                       windowsDesktopStage
 	commands, policyInstalled, policyRemoved, privateChildRemoved        bool
 	childSlot                                                            string
 	cleanupPolicy                                                        func() error
@@ -1044,11 +1086,12 @@ func (f *ordinaryFixture) exchange() error {
 		if ordinaryPipeIO(f.pipe, "write", request, 20*time.Second) != nil {
 			return errOrdinary
 		}
-		reply := make([]byte, 56)
-		budget := 20 * time.Second
+		replySize, budget := ordinaryReplySize, 20*time.Second
 		if f.commands {
+			replySize++
 			budget = 120 * time.Second
 		}
+		reply := make([]byte, replySize)
 		if ordinaryPipeIO(f.pipe, "read", reply, budget) != nil || !bytes.Equal(reply[:8], ordinaryMagic[:]) || !bytes.Equal(reply[8:40], request[8:40]) {
 			return errOrdinary
 		}
@@ -1063,6 +1106,16 @@ func (f *ordinaryFixture) exchange() error {
 		names := []string{"worker-primary-token", "worker-loaded-profile-hkcu", "worker-native-image", "worker-isolated-console-interrupt", "worker-public-recording-support-contract"}
 		if f.commands {
 			names = append(names, ordinaryCommandCaseNames...)
+			stage := windowsDesktopStage(reply[ordinaryReplySize])
+			const desktopCase = uint64(1) << (5 + 2)
+			const capacityCase = uint64(1) << (5 + 6)
+			failed := executed &^ passed
+			if int(stage) >= len(windowsDesktopStageNames) ||
+				(stage == windowsDesktopNoFailure && failed&desktopCase != 0) ||
+				(stage != windowsDesktopNoFailure && failed&(desktopCase|capacityCase) == 0) {
+				return errOrdinary
+			}
+			f.desktopFailure = stage
 		}
 		var failure error
 		for bit, id := range names {
@@ -1248,12 +1301,17 @@ func runOrdinaryWindowsWorker(arguments []string, commands bool) (exitCode int) 
 		flags |= 16
 	}
 	executed := uint64(31)
+	stage := windowsDesktopNoFailure
 	if commands && flags == 31 {
-		commandExecuted, commandPassed := runWindowsCommandCases(request[8:40])
+		commandExecuted, commandPassed, desktopFailure := runWindowsCommandCases(request[8:40])
 		executed |= commandExecuted << 5
 		flags |= commandPassed << 5
+		stage = desktopFailure
 	}
-	reply := make([]byte, 56)
+	reply := make([]byte, ordinaryReplySize)
+	if commands {
+		reply = append(reply, byte(stage))
+	}
 	copy(reply, request[:40])
 	binary.LittleEndian.PutUint64(reply[40:48], executed)
 	binary.LittleEndian.PutUint64(reply[48:56], flags)
@@ -1547,6 +1605,10 @@ func (f *ordinaryFixture) report(t *testing.T) {
 		"stagingRemoved": f.stagingRemoved, "privateDesktopObjectsClosed": f.guiClosed, "allHandlesClosed": f.handlesClosed,
 		"privateChildWorkspaceRemoved": f.privateChildRemoved, "requiredAuditPolicyEnrolled": f.policyInstalled, "requiredAuditPolicyRemoved": f.policyRemoved,
 		"cleanupComplete": f.cleanupOK, "passed": passed, "productionQualificationComplete": false,
+	}
+	if f.commands {
+		report["schemaVersion"] = 2
+		report["desktopFailureStage"] = windowsDesktopStageNames[f.desktopFailure]
 	}
 	data, err := json.MarshalIndent(report, "", "  ")
 	workspace := os.Getenv("GITHUB_WORKSPACE")

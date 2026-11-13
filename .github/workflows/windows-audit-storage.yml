@@ -46,6 +46,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test ./cmd/accessweaver -run '^TestWindowsAudit(AliasMetadata|InputSnapshot)$' -count=1 -v -timeout=4m
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test ./internal/uiaccess -run '^TestWindowsLauncherFileHasProtectedDACL$' -count=1 -v -timeout=1m
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Protected storage, journal, key and historical export acceptance
         env:
           ACCESSWEAVER_DISPOSABLE_WINDOWS_AUDIT_STORAGE_TEST: '1'

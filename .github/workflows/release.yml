@@ -8,6 +8,10 @@ on:
     paths:
       - .github/workflows/release.yml
       - .github/workflows/darwin-audit-commands.yml
+      - .github/workflows/windows-audit-storage.yml
+      - cmd/accessweaver/managed_audit_commands_windows_test.go
+      - cmd/accessweaver/managed_audit_ordinary_windows_test.go
+      - internal/uiaccess/access_windows.go
       - scripts/test-darwin-audit-commands.sh
       - scripts/test_darwin_audit_command_capture.py
       - scripts/core-test-evidence.cjs

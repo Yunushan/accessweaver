@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-var errHistoryExportPrivate = errors.New("private workflow history export file is unavailable")
+var errHistoryExportPrivate = errors.New("private file is unavailable")
 
 func historyExportProcessContext() error {
 	var token windows.Token

@@ -326,6 +326,7 @@ type windowsCommandWorker struct {
 	ctx                                              context.Context
 	cancel                                           context.CancelFunc
 	counter                                          uint32
+	desktopFailure                                   windowsDesktopStage
 }
 
 func (w *windowsCommandWorker) manifest() *windowsCommandWorker {
@@ -1127,7 +1128,13 @@ func windowsHTTP(client *http.Client, method, address, token string, input any) 
 	}
 	return response.StatusCode, data, nil
 }
-func (w *windowsCommandWorker) desktop(full bool) error {
+func (w *windowsCommandWorker) desktop(full bool) (failure error) {
+	stage := windowsDesktopStream
+	defer func() {
+		if failure != nil {
+			w.desktopFailure = stage
+		}
+	}()
 	label := "desktop"
 	if full {
 		label = "full-desktop"
@@ -1139,7 +1146,10 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 	if full && s.seedCapacity() != nil {
 		return errOrdinary
 	}
-	os.Setenv("ACCESSWEAVER_NO_BROWSER", "1")
+	stage = windowsDesktopStartup
+	if os.Setenv("ACCESSWEAVER_NO_BROWSER", "1") != nil {
+		return errOrdinary
+	}
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		return errOrdinary
@@ -1197,6 +1207,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 		_ = stop()
 		return errOrdinary
 	}
+	stage = windowsDesktopLaunchPath
 	parsed, err := url.Parse(launch)
 	if err != nil || parsed.Scheme != "file" || parsed.Host != "" {
 		_ = stop()
@@ -1208,6 +1219,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 		_ = stop()
 		return errOrdinary
 	}
+	stage = windowsDesktopLaunchFileACL
 	launchHandle, err := ordinaryOpen(path, windows.FILE_READ_ATTRIBUTES|windows.READ_CONTROL)
 	if err != nil {
 		_ = stop()
@@ -1220,6 +1232,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 		_ = stop()
 		return errOrdinary
 	}
+	stage = windowsDesktopLaunchDirectoryACL
 	directoryHandle, err := ordinaryOpen(filepath.Dir(path), windows.FILE_READ_ATTRIBUTES|windows.READ_CONTROL)
 	if err != nil {
 		_ = stop()
@@ -1232,6 +1245,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 		_ = stop()
 		return errOrdinary
 	}
+	stage = windowsDesktopLaunchContents
 	page, err := windowsCommandReadDefault(path)
 	if err != nil || len(page) > 8192 {
 		_ = stop()
@@ -1270,6 +1284,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 		}
 		return data, nil
 	}
+	stage = windowsDesktopHTTPAdmission
 	if _, err := call("GET", "/api/bootstrap", token, nil, 200); err != nil {
 		_ = stop()
 		return errOrdinary
@@ -1278,6 +1293,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 		_ = stop()
 		return errOrdinary
 	}
+	stage = windowsDesktopHTTPMutation
 	if full {
 		if _, err := call("PUT", "/api/v1/profiles/"+s.p.ID, token, s.p, 503); err != nil {
 			_ = stop()
@@ -1309,6 +1325,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 			return errOrdinary
 		}
 	}
+	stage = windowsDesktopHTTPDenials
 	for _, route := range []string{"/api/v1/start", "/api/v1/stop", "/api/v1/diagnose", "/api/v1/system/start", "/api/v1/support"} {
 		method := "POST"
 		if route == "/api/v1/support" {
@@ -1319,7 +1336,12 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 			return errOrdinary
 		}
 	}
-	if stop() != nil || s.recordProducts() != nil {
+	stage = windowsDesktopShutdown
+	if stop() != nil {
+		return errOrdinary
+	}
+	stage = windowsDesktopCleanup
+	if s.recordProducts() != nil {
 		return errOrdinary
 	}
 	if _, err := fileidentity.FromPath(path, false); !errors.Is(err, os.ErrNotExist) {
@@ -1328,6 +1350,7 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 	if _, err := fileidentity.FromPath(filepath.Dir(path), false); !errors.Is(err, os.ErrNotExist) {
 		return errOrdinary
 	}
+	stage = windowsDesktopJournal
 	events, _, head, err := s.readSegment()
 	expected := 8
 	if full {
@@ -1360,9 +1383,11 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 		}
 		s.head = observed[len(observed)-1]
 	}
+	stage = windowsDesktopExport
 	if !full && s.exportVerify(8) != nil {
 		return errOrdinary
 	}
+	stage = windowsDesktopReopen
 	reopened, err := audit.OpenLocalJournal(s.ctx, s.directory, s.start, s.head)
 	if err != nil {
 		return errOrdinary
@@ -1377,46 +1402,46 @@ func (w *windowsCommandWorker) desktop(full bool) error {
 	return nil
 }
 
-func runWindowsCommandCases(nonce []byte) (executed, passed uint64) {
+func runWindowsCommandCases(nonce []byte) (executed, passed uint64, desktopFailure windowsDesktopStage) {
 	executable, err := os.Executable()
 	if err != nil || len(nonce) != 32 {
-		return 0, 0
+		return 0, 0, windowsDesktopNoFailure
 	}
 	stage := filepath.Dir(executable)
 	input, err := os.Open(filepath.Join(stage, "reviewed-profile.json"))
 	if err != nil {
-		return 0, 0
+		return 0, 0, windowsDesktopNoFailure
 	}
 	data, readErr := io.ReadAll(io.LimitReader(input, (1<<20)+1))
 	closeErr := input.Close()
 	if readErr != nil || closeErr != nil || len(data) > 1<<20 {
 		clear(data)
-		return 0, 0
+		return 0, 0, windowsDesktopNoFailure
 	}
 	reviewed, err := profile.Decode(bytes.NewReader(data))
 	clear(data)
 	if err != nil || !strings.EqualFold(reviewed.Binary, filepath.Join(stage, "ciadpi.exe")) || len(reviewed.Args) != 0 {
-		return 0, 0
+		return 0, 0, windowsDesktopNoFailure
 	}
 	var token windows.Token
 	if windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY, &token) != nil {
-		return 0, 0
+		return 0, 0, windowsDesktopNoFailure
 	}
 	user, err := token.GetTokenUser()
 	if err != nil || user == nil || user.User.Sid == nil {
 		_ = token.Close()
-		return 0, 0
+		return 0, 0, windowsDesktopNoFailure
 	}
 	sid := user.User.Sid.String()
 	if token.Close() != nil {
 		ordinaryCloseFailure = true
-		return 0, 0
+		return 0, 0, windowsDesktopNoFailure
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 110*time.Second)
 	defer cancel()
 	root := &windowsCommandWorker{base: filepath.Join(stage, "child-slot", "work-"+hex.EncodeToString(nonce[:8])), sid: sid, engine: reviewed.Binary, p: reviewed, ctx: ctx}
 	if root.mkdirPrivate(root.base) != nil {
-		return 0, 0
+		return 0, 0, windowsDesktopNoFailure
 	}
 	operations := []func() error{
 		root.requiredAdmission, root.importRoundTrip, func() error { return root.desktop(false) },
@@ -1441,7 +1466,7 @@ func runWindowsCommandCases(nonce []byte) (executed, passed uint64) {
 	if root.close() == nil {
 		passed |= cleanupBit
 	}
-	return executed, passed
+	return executed, passed, root.desktopFailure
 }
 func windowsInertReadyName(parent, pid uint32) string {
 	return "Local\\AccessWeaverOrdinaryReady-" + strconv.FormatUint(uint64(parent), 10) + "-" + strconv.FormatUint(uint64(pid), 10)
