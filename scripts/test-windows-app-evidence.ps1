@@ -4,7 +4,7 @@ $fixture=Join-Path $PSScriptRoot 'test-windows-apps.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($fixture,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Interactive Windows app fixture failed parsing'}
-foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Test-FixtureCommunication','Start-FixtureApp')){
+foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Test-FixtureCommunication','Test-FixtureAppChecks','Start-FixtureApp')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -138,5 +138,21 @@ foreach($case in @(
     if($calls.Count -ne 1 -or $calls[0].Extent.StartOffset -le $start -or $calls[0].Extent.StartOffset -ge $remove){
         throw 'Communication checks must run with the intended client installed and started'
     }
+}
+$expected=@('discord-install','discord-start','cleanup-discord')
+$complete=@(
+    @{name='discord-start';passed=$true},@{name='discord-install';passed=$true},@{name='cleanup-discord';passed=$true}
+)
+if(-not (Test-FixtureAppChecks $complete $expected)){throw 'Complete application checks were rejected'}
+foreach($bad in @(
+    @{checks=@()},
+    @{checks=$complete[0..1]},
+    @{checks=@($complete[0],$complete[1],$complete[1])},
+    @{checks=@($complete[0],$complete[1],@{name='Cleanup-Discord';passed=$true})},
+    @{checks=@($complete[0],$complete[1],@{name='cleanup-discord';passed=$false})},
+    @{checks=@($complete[0],$complete[1],@{name='cleanup-discord';passed='true'})},
+    @{checks=@($complete[0],$complete[1],@{name='cleanup-discord'})}
+)){
+    if(Test-FixtureAppChecks $bad.checks $expected){throw 'Incomplete or invalid application evidence was credited'}
 }
 Write-Output 'Interactive Windows application evidence contracts passed.'

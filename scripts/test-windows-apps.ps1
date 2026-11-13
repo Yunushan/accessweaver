@@ -99,6 +99,16 @@ function Test-FixtureCommunication([string]$Variant,[string]$Image,[string]$Kind
     Assert-FixtureLiveImage $Image $true
 }
 
+function Test-FixtureAppChecks([object[]]$Checks,[string[]]$Expected) {
+    if($Checks.Count -ne $Expected.Count){return $false}
+    $remaining=[Collections.Generic.HashSet[string]]::new($Expected,[StringComparer]::Ordinal)
+    foreach($check in $Checks){
+        if($check.name -isnot [string] -or -not $remaining.Remove($check.name) -or
+           $check.passed -isnot [bool] -or -not $check.passed){return $false}
+    }
+    return $remaining.Count -eq 0
+}
+
 function Start-FixtureApp([string]$Variant){
     if(-not $installedImages.ContainsKey($Variant)){throw 'Application install prerequisite failed'}
     $image=$installedImages[$Variant]
@@ -153,12 +163,22 @@ try {
     $encoding=[Text.UTF8Encoding]::new($false)
     $variants=@('discord','discord-ptb')
     if(-not $SkipSplitCord){$variants+=@('splitcord')}
+    $expectedChecks=@(
+        'discord-install','discord-start','combined-repair-refused-with-state-preserved',
+        'discord-reinstall','discord-start-after-reinstall','discord-remove','discord-install-for-ptb-clean',
+        'ptb-clean-install','ptb-start','ptb-remove'
+    )
+    if(-not $SkipSplitCord){$expectedChecks+=@('splitcord-install','splitcord-start','splitcord-remove')}
+    foreach($variant in $variants){
+        $expectedChecks+=@('cleanup-'+$variant)
+        if($InteractiveCommunications){$expectedChecks+=@("communications-$variant-text","communications-$variant-voice")}
+    }
     $attempted=[Collections.Generic.List[string]]::new()
     $installedImages=@{}
     $checks=[Collections.Generic.List[object]]::new()
     $script:appEvidenceStage='baseline'
     $report=[ordered]@{
-        schemaVersion=5;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
+        schemaVersion=6;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
         fixtureSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();
         architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant();
         checks=$null;baselineClear=$false;splitCordIncluded=(-not $SkipSplitCord);
@@ -205,7 +225,7 @@ try {
         $job=ConvertFrom-Json -InputObject $response.text
         if($job.action -cne 'discover' -or $job.state -cne 'succeeded' -or
            $job.result.ok -isnot [bool] -or -not $job.result.ok -or $null -eq $job.result.data.applications -or
-           @($job.result.data.conflicts) -ccontains 'SplitCord installation could not be identified safely'){
+           (-not $SkipSplitCord -and @($job.result.data.conflicts) -ccontains 'SplitCord installation could not be identified safely')){
             throw 'Application discovery could not verify the inventory'
         }
         return $job.result.data.applications
@@ -218,7 +238,8 @@ try {
         $image=Get-FixtureAppImage (Inspect-Apps) $Variant
         if($image){$installedImages[$Variant]=$image}
         $script:appEvidenceStage='install-readback'
-        if($data.installed -ne $true -or $data.previouslyInstalled -ne $false -or -not $image -or
+        if($data.application -cne $Variant -or $data.installed -isnot [bool] -or -not $data.installed -or
+           $data.previouslyInstalled -isnot [bool] -or $data.previouslyInstalled -or -not $image -or
            -not (Test-Path -LiteralPath $image -PathType Leaf)){
             throw 'New application installation could not be verified'
         }
@@ -288,7 +309,7 @@ try {
             if(-not $installedImages.ContainsKey('discord')){throw 'Stable Discord install prerequisite failed'}
             $data=Invoke-AppWorkflow @{action='app-reinstall';engine='discord'}
             $image=Get-FixtureAppImage (Inspect-Apps) 'discord'
-            if($data.reinstalled -ne $true -or -not $image -or
+            if($data.application -cne 'discord' -or $data.reinstalled -isnot [bool] -or -not $data.reinstalled -or -not $image -or
                -not (Test-Path -LiteralPath $image -PathType Leaf)){throw 'Stable Discord replacement was not confirmed'}
             $installedImages['discord']=$image
         }
@@ -336,11 +357,12 @@ try {
         }
         $report.checks=@($checks.ToArray())
         if($InteractiveCommunications){
-            $report.textExercised=@($report.checks | Where-Object {$_.passed -and $_.name -clike 'communications-*-text'}).Count -eq $variants.Count
-            $report.voiceExercised=@($report.checks | Where-Object {$_.passed -and $_.name -clike 'communications-*-voice'}).Count -eq $variants.Count
+            $textChecks=@($report.checks | Where-Object {$_.name -clike 'communications-*-text'})
+            $voiceChecks=@($report.checks | Where-Object {$_.name -clike 'communications-*-voice'})
+            $report.textExercised=Test-FixtureAppChecks $textChecks @($variants | ForEach-Object {"communications-$_-text"})
+            $report.voiceExercised=Test-FixtureAppChecks $voiceChecks @($variants | ForEach-Object {"communications-$_-voice"})
         }
-        $report.passed=$report.baselineClear -and -not @($report.checks|Where-Object {-not $_.passed}).Count -and
-            (-not $InteractiveCommunications -or ($report.textExercised -and $report.voiceExercised))
+        $report.passed=$report.baselineClear -and (Test-FixtureAppChecks $report.checks $expectedChecks)
         [IO.File]::WriteAllText((Join-Path $run 'applications.json'),($report|ConvertTo-Json -Depth 5),$encoding)
     }
     if(-not $report.passed){throw 'Application acceptance failed. Review the per-run applications.json result.'}
