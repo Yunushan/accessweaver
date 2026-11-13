@@ -27,6 +27,8 @@
           "status": "partial",
           "evidence": [
             "scripts/test-windows-wiresock.ps1",
+            "scripts/test-windows-native-wiresock.ps1",
+            "docs/qualification/1b66e9c3bafb-native-wiresock-lifecycle.json",
             "build/vm-tests/sandbox/results/wgpeer-self-test/self-test.json"
           ]
         },
@@ -270,7 +272,10 @@
             "docs/PLATFORMS.md",
             "scripts/check-native-environment.cjs",
             "scripts/check-native-environment.test.cjs",
-            "scripts/test-windows-integration.ps1"
+            "scripts/test-windows-integration.ps1",
+            "docs/qualification/cdb06ec00147-wiresock-native-installer-contracts.json",
+            "docs/qualification/cdb06ec00147-native-download-transports.json",
+            "docs/qualification/1b66e9c3bafb-native-wiresock-lifecycle.json"
           ]
         },
         {
