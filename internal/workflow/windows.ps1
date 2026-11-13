@@ -2638,7 +2638,9 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         $file=Join-Path $root ('downloads\'+$variant+'-setup.exe')
         $verifiedHash=Download $url '' $file -Signed -Publisher discord -ReturnVerifiedHash
     }
-    # Hold the staged file read-only through clean mode and installer execution.
+    $cleanPTB=$r.clean -and $variant -eq 'discord-ptb'
+    $stableBeforeSetup=$null
+    # Hold the staged file read-only through verification and installer execution.
     No-Reparse $file
     try {$lockedInstaller=[IO.File]::Open($file,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)}
     catch {throw 'Staged application installer could not be opened for verification'}
@@ -2651,11 +2653,17 @@ function Install-App([string]$variant,[switch]$Reinstall) {
             if($existingApp -ine $originalApp){throw 'Stable Discord changed before reinstall; review the current installation'}
             Remove-App $variant $originalApp
         }
-        if($r.clean -and $variant -eq 'discord-ptb' -and (Find-App 'discord')){Remove-App 'discord'}
+        if($cleanPTB){$stableBeforeSetup=Find-App 'discord'}
         $installerArgs=if($variant -eq 'splitcord'){@('/S')}else{@('-s')}
         [void](Native $file $installerArgs -Timeout 900)
     } finally {$lockedInstaller.Dispose()}
     Wait-App $variant $true 180
+    if($cleanPTB){
+        # Preserve stable Discord until PTB setup and executable readback succeed.
+        if($stableBeforeSetup){Remove-App 'discord' $stableBeforeSetup}
+        elseif(Find-App 'discord'){throw 'Stable Discord appeared during PTB setup; review the current installation'}
+        Wait-App $variant $true 30
+    }
     if($Reinstall){
         Event 'Stable Discord reinstalled in the desktop session'
         return @{application=$variant;installed=$true;previouslyInstalled=$true;reinstalled=$true}
