@@ -62,7 +62,7 @@ function Assert-RebootUpgradeOrder($Comparison,[string]$PreviousVersion,[string]
     }
 }
 function Assert-RebootIdentity($Record,$Expected){
-    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 6 -or
+    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 7 -or
        $Record.runID -cne $Expected.runID -or $Record.architecture -cne $Expected.architecture -or
        $Record.installMode -cne $Expected.installMode -or $Record.previousVersion -cne $Expected.previousVersion -or
        $Record.previousPayloadSHA256 -cne $Expected.previousPayloadSHA256 -or
@@ -178,9 +178,14 @@ function Get-GuestBoot {
     if(@($os).Count -ne 1 -or $os.LastBootUpTime -isnot [datetime]){throw 'Cannot establish the current guest boot'}
     return $os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
 }
-function Invoke-ApprovedInstaller([string]$Path,[string[]]$Arguments,[switch]$AllowRestartRequired,[int]$ExpectedExitCode=0){
+function Invoke-ApprovedInstaller([string]$Path,[string[]]$Arguments,[switch]$AllowRestartRequired,[int]$ExpectedExitCode=0,[string]$OutputPath){
     if($AllowRestartRequired -and $ExpectedExitCode -ne 0){throw 'Conflicting installer exit expectations'}
-    $process=Start-Process -FilePath $Path -ArgumentList $Arguments -WindowStyle Hidden -PassThru
+    $capture=@{}
+    if($OutputPath){
+        if(Test-Path -LiteralPath $OutputPath -ErrorAction Stop){throw 'Fixture output path already exists'}
+        $capture.RedirectStandardOutput=$OutputPath
+    }
+    $process=Start-Process -FilePath $Path -ArgumentList $Arguments -WindowStyle Hidden -PassThru @capture
     try {
         if(-not $process.WaitForExit(180000)){
             # Retain the process and its installer guard through the actual exit.
@@ -222,6 +227,33 @@ function Save-RebootFixtureProfile([string]$Controller,[string]$UserStore,[strin
 }
 function Assert-RebootUserProfile([string]$Path,[string]$Digest){
     if((Get-RebootDigest $Path) -cne $Digest){throw 'Saved user profile changed during installer lifecycle'}
+}
+function Assert-RebootProfileReadable([string]$Controller,[string]$ControllerSHA256,[string]$UserStore,[string]$ProfileID,[string]$OutputPath){
+    Assert-RebootPath $Controller
+    $previousHome=$env:ACCESSWEAVER_HOME
+    $guard=[IO.File]::Open($Controller,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if((Get-FileHash -InputStream $guard -Algorithm SHA256).Hash -ine $ControllerSHA256){
+            throw 'Installed controller differs from the approved payload'
+        }
+        $env:ACCESSWEAVER_HOME=$UserStore
+        [void](Invoke-ApprovedInstaller $Controller @('show',$ProfileID) -OutputPath $OutputPath)
+        Assert-RebootPath $OutputPath
+        $stream=[IO.File]::Open($OutputPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        try {
+            if($stream.Length -le 0 -or $stream.Length -gt 8192){throw 'Saved profile readback is outside the fixture bounds'}
+            $reader=[IO.StreamReader]::new($stream,[Text.UTF8Encoding]::new($false,$true),$false,1024,$true)
+            try {$record=ConvertFrom-Json -InputObject $reader.ReadToEnd() -ErrorAction Stop}
+            finally {$reader.Dispose()}
+        } finally {$stream.Dispose()}
+        if($record -isnot [pscustomobject] -or $record.id -cne $ProfileID -or
+           $record.name -cne 'Installer reboot preservation fixture' -or $record.engine -cne 'byedpi' -or $record.version -ne 1){
+            throw 'Installed controller did not read the saved fixture profile'
+        }
+    } finally {
+        $env:ACCESSWEAVER_HOME=$previousHome
+        $guard.Dispose()
+    }
 }
 function Assert-InstalledDetection([bool]$Detected,[string]$CandidateVersion=$Version,[string]$CandidateSHA256=$PayloadSHA256,[string]$UninstallerDigest='',[string]$CandidateSBOMSHA256=$PayloadSBOMSHA256){
     $output=@(& $detector -Version $CandidateVersion -Architecture $Architecture -PayloadSHA256 $CandidateSHA256 -UninstallerSHA256 $UninstallerDigest -PayloadSBOMSHA256 $CandidateSBOMSHA256 2>&1)
@@ -297,7 +329,7 @@ $registrationKey='SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{B13D4677-
 $capsule=Join-Path $programFiles ('AccessWeaver reboot fixture '+$RunID)
 $baseline=Join-Path $capsule 'prepared.json'
 $report=Join-Path $capsule 'result.json'
-$expected=[ordered]@{schemaVersion=6;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+$expected=[ordered]@{schemaVersion=7;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
     previousVersion=$PreviousVersion;previousPayloadSHA256=$PreviousPayloadSHA256.ToLowerInvariant();
     previousSetupSHA256=$PreviousSetupSHA256.ToLowerInvariant();previousPublisherSHA256=$PreviousPublisherCertificateSHA256.ToLowerInvariant();
     userProfilePreservedThroughUpgrade=$false;
@@ -374,7 +406,7 @@ if($Phase -ceq 'Prepare'){
         }
         Write-NewRebootEvidence $baseline $expected
     } catch {
-        Write-NewRebootEvidence $report @{schemaVersion=6;runID=$RunID;stage=$stage;passed=$false}
+        Write-NewRebootEvidence $report @{schemaVersion=7;runID=$RunID;stage=$stage;passed=$false}
         throw 'Windows installer reboot preparation failed. Retain the disposable guest for review.'
     }
     Write-Output 'Prepared the approved installation. Reboot the disposable guest before verification.'
@@ -386,8 +418,8 @@ if((Get-Item -LiteralPath $baseline).Length -gt 8192 -or (Test-Path -LiteralPath
 $saved=Get-Content -LiteralPath $baseline -Raw|ConvertFrom-Json
 Assert-RebootIdentity $saved $expected
 Assert-LaterGuestBoot $saved.boot $boot
-Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=6;runID=$RunID}
-$result=[ordered]@{schemaVersion=6;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=7;runID=$RunID}
+$result=[ordered]@{schemaVersion=7;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
     previousVersion=$expected.previousVersion;previousPayloadSHA256=$expected.previousPayloadSHA256;
     previousSetupSHA256=$expected.previousSetupSHA256;previousPublisherSHA256=$expected.previousPublisherSHA256;
     downgradeRequested=$testDowngrade;downgradeRefused=$false;downgradeStatePreserved=$false;
@@ -398,7 +430,7 @@ $result=[ordered]@{schemaVersion=6;runID=$RunID;architecture=$Architecture;versi
     commonSHA256=$expected.commonSHA256;publisherVerifierSHA256=$expected.publisherVerifierSHA256;
     uninstallerSHA256=$saved.uninstallerSHA256;installedTreeSHA256=$saved.installedTreeSHA256;registrationSHA256=$saved.registrationSHA256;
     installedTreeVerified=$false;registrationPreserved=$false;packageFilesRemoved=$false;
-    userProfileVerifiedAfterReboot=$false;userProfilePreservedAfterUninstall=$false;setupExitCode=$saved.setupExitCode;setupRequestedRestart=($saved.setupExitCode -eq 3010);
+    userProfileVerifiedAfterReboot=$false;userProfileOpenedByInstalledController=$false;userProfilePreservedAfterUninstall=$false;setupExitCode=$saved.setupExitCode;setupRequestedRestart=($saved.setupExitCode -eq 3010);
     guestRebootVerified=$true;installedPayloadVerifiedBeforeRestart=$true;installedPayloadVerified=$false;uninstallerIdentityVerified=$false;
     registrationRemoved=$false;passed=$false;stage='installed-after-reboot'}
 try {
@@ -415,6 +447,10 @@ try {
     $result.stage='user-profile-after-reboot'
     Assert-RebootUserProfile $userProfile $saved.userProfileSHA256
     $result.userProfileVerifiedAfterReboot=$true
+    $result.stage='installed-controller-profile-read'
+    Assert-RebootProfileReadable $controller $PayloadSHA256 $userStore $profileID (Join-Path $capsule 'profile-readback.json')
+    Assert-RebootUserProfile $userProfile $saved.userProfileSHA256
+    $result.userProfileOpenedByInstalledController=$true
     if($testDowngrade){
         $result.stage='downgrade-publisher'
         $olderSetup=Join-Path $PSScriptRoot 'previous-setup.exe'

@@ -4,7 +4,7 @@ $source=Join-Path $PSScriptRoot 'test-windows-installer-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Reboot fixture failed parsing'}
-foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootDowngradeLog','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-InstalledDetection','Assert-InstalledPublisher')){
+foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootDowngradeLog','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-InstalledDetection','Assert-InstalledPublisher')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -22,7 +22,7 @@ Assert-Refused {Assert-LaterGuestBoot '639303000000000001' '639303000000000000'}
 Assert-Refused {Assert-LaterGuestBoot 'missing' '639303000000000000'}
 $pin='a'*64
 $expected=@{
-    schemaVersion=6;runID=('b'*32);architecture='amd64';version='1.0.0';
+    schemaVersion=7;runID=('b'*32);architecture='amd64';version='1.0.0';
     installMode='clean';previousVersion='';previousPayloadSHA256='';previousSetupSHA256='';previousPublisherSHA256='';userProfilePreservedThroughUpgrade=$false;
     setupSHA256=$pin;payloadSHA256=$pin;payloadSBOMSHA256=('f'*64);publisherSHA256=$pin;userSID='synthetic-user';guestID='10000000-2000-3000-4000-000000000005';
     detectorSHA256=$pin;fixtureSHA256=$pin;commonSHA256=$pin;publisherVerifierSHA256=$pin
@@ -39,7 +39,7 @@ foreach($key in $saved.Keys){
     $changed[$key]='changed'
     Assert-Refused {Assert-RebootIdentity $changed $expected}
 }
-$oldSchema=$saved.Clone();$oldSchema.schemaVersion=5
+$oldSchema=$saved.Clone();$oldSchema.schemaVersion=6
 Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
 
 & {
@@ -306,5 +306,55 @@ try {
     Set-Item Function:Invoke-ApprovedInstaller $installer
     [IO.File]::Delete($profileInput)
     [IO.Directory]::Delete($root)
+}
+& {
+    $controllerFixture=Join-Path $root 'controller.exe'
+    $readbackFixture=Join-Path $root 'readback.json'
+    [void][IO.Directory]::CreateDirectory($root)
+    [IO.File]::WriteAllText($controllerFixture,'inert payload')
+    $approved=(Get-FileHash -LiteralPath $controllerFixture -Algorithm SHA256).Hash
+    $id='installer-reboot-synthetic'
+    $launches=[Collections.Generic.List[string]]::new()
+    function Assert-RebootPath([string]$Path){
+        if($Path -cnotin @($controllerFixture,$readbackFixture)){throw 'Unexpected profile readback path'}
+    }
+    function Invoke-ApprovedInstaller($Path,$Arguments,$OutputPath){
+        if($Path -cne $controllerFixture -or ($Arguments -join '|') -cne ('show|'+$id) -or
+           $OutputPath -cne $readbackFixture -or $env:ACCESSWEAVER_HOME -cne $fixtureStore){
+            throw 'Profile readback escaped its approved controller, profile or user store'
+        }
+        $launches.Add($response)
+        $writeDenied=$false
+        try {$write=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite);$write.Dispose()}
+        catch [IO.IOException] {$writeDenied=$true}
+        if(-not $writeDenied){throw 'Controller was writable during profile readback'}
+        switch($response){
+            'failed' {throw 'Synthetic readback failure'}
+            'oversized' {[IO.File]::WriteAllText($OutputPath,('x'*8193))}
+            'empty' {[IO.File]::WriteAllText($OutputPath,'')}
+            'malformed' {[IO.File]::WriteAllText($OutputPath,'{')}
+            'wrong-id' {[IO.File]::WriteAllText($OutputPath,'{"version":1,"id":"other","engine":"byedpi","name":"Installer reboot preservation fixture"}')}
+            'valid' {[IO.File]::WriteAllText($OutputPath,'{"version":1,"id":"installer-reboot-synthetic","engine":"byedpi","name":"Installer reboot preservation fixture"}')}
+        }
+        return 0
+    }
+    try {
+        $response='valid'
+        Assert-Refused {Assert-RebootProfileReadable $controllerFixture ('0'*64) $fixtureStore $id $readbackFixture}
+        if($launches.Count -ne 0){throw 'Profile readback launched a different controller'}
+        Assert-RebootProfileReadable $controllerFixture $approved $fixtureStore $id $readbackFixture
+        foreach($response in @('failed','oversized','empty','malformed','wrong-id')){
+            [IO.File]::Delete($readbackFixture)
+            Assert-Refused {Assert-RebootProfileReadable $controllerFixture $approved $fixtureStore $id $readbackFixture}
+            if($env:ACCESSWEAVER_HOME -cne $oldHome){throw 'Failed profile readback retained its temporary environment'}
+        }
+        if(($launches -join ',') -cne 'valid,failed,oversized,empty,malformed,wrong-id'){
+            throw 'Profile readback omitted a fixture case'
+        }
+    } finally {
+        [IO.File]::Delete($readbackFixture)
+        [IO.File]::Delete($controllerFixture)
+        [IO.Directory]::Delete($root)
+    }
 }
 Write-Output 'Installer reboot identity, upgrade and downgrade admission, package, registration, saved profile, process ownership and publication checks passed.'

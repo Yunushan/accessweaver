@@ -173,7 +173,7 @@ def load_detection_evidence(directory, evidence, subjects, version):
         content = independently_pinned_file(directory, path, fingerprint, maximum=8192)
         report = decode_json(content)
         require(isinstance(report, dict) and type(report.get("schemaVersion")) is int
-                and report["schemaVersion"] in (5, 6) and report.get("stage") == "complete"
+                and report["schemaVersion"] in (5, 6, 7) and report.get("stage") == "complete"
                 and all(report.get(field) is True for field in REBOOT_CHECKS),
                 "Windows reboot qualification is incomplete")
         architecture = report.get("architecture")
@@ -184,11 +184,14 @@ def load_detection_evidence(directory, evidence, subjects, version):
         require(report.get("version") == version and report.get("setupSHA256") == targets[target, "installer"]
                 and report.get("payloadSHA256") == targets[target, "payload"],
                 "Windows reboot evidence differs from the signed release subjects")
-        if report["schemaVersion"] == 6:
+        if report["schemaVersion"] >= 6:
             require(report.get("payloadSBOMSHA256") == payload_sboms[target]
                     and report.get("installedPayloadSBOMVerified") is True
                     and report.get("installedPayloadPublisherVerified") is True,
                     "Windows reboot evidence does not verify the signed payload publisher and release SBOM")
+        if report["schemaVersion"] >= 7:
+            require(report.get("userProfileOpenedByInstalledController") is True,
+                    "Windows reboot evidence does not verify installed controller profile readback")
         require(mode != "upgrade" or report.get("userProfilePreservedThroughUpgrade") is True,
                 "Windows upgrade qualification is incomplete")
         downgrade = report.get("downgradeRequested")
