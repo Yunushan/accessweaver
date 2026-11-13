@@ -548,6 +548,7 @@ Write-Output 'STAGE-DOTNET-HOPS-PASS'
             Assert-DownloadFixture ($downloadStart.Arguments -cmatch '^--disable --globoff ' -and $downloadStart.Arguments -cmatch '--output -(?: |$)' -and $downloadStart.Arguments -cmatch '--proto =https' -and $downloadStart.Arguments -cmatch '--write-out' -and $downloadStart.Arguments -cnotmatch '--location') 'Curl must stream one HTTPS hop with fixed status metadata'
             Assert-DownloadFixture ($downloadStart.Arguments -cmatch '--max-time [0-9]+\.[0-9]{3}(?: |$)' -and $downloadStart.Arguments -cnotmatch '--max-time [^ ]*,') 'Curl deadline formatting depends on host culture'
             Assert-DownloadFixture ((($downloadStart.Arguments -cmatch '--socks5-hostname 127\.0\.0\.1:1080(?: |$)') -eq $downloadProxy)) 'Curl unexpectedly admitted or dropped the explicit repair proxy'
+            Assert-DownloadFixture ((($downloadStart.Arguments -cmatch '--noproxy ""(?: |$)') -eq $downloadProxy)) 'Only an explicit repair proxy should override the bypass list'
             Assert-DownloadFixture (-not $downloadStart.UseShellExecute -and $downloadStart.CreateNoWindow -and $downloadStart.RedirectStandardInput -and $downloadStart.RedirectStandardOutput -and $downloadStart.RedirectStandardError) 'Curl process redirection no longer supports bounded binary transfer'
         }
     }finally{[Threading.Thread]::CurrentThread.CurrentCulture=$downloadOldCulture}

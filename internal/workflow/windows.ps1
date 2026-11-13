@@ -488,7 +488,11 @@ function New-ComponentDownloadCurlStart([string]$Url,$Budget,[switch]$Proxy) {
     if(-not (Test-Path -LiteralPath $curl)){Throw-ComponentDownloadFailure 'transport'}
     $seconds=([double](Get-ComponentDownloadRemaining $Budget)/1000).ToString('0.000',[Globalization.CultureInfo]::InvariantCulture)
     $arguments=@('--disable','--globoff','--fail','--proto','=https','--connect-timeout','30','--max-time',$seconds,'--silent','--output','-','--write-out','%{stderr}AWC1 %{http_code}\n%{redirect_url}\n')
-    if($Proxy){$arguments+=@('--socks5-hostname','127.0.0.1:1080')}
+    if($Proxy){
+        # NO_PROXY can override an explicitly selected proxy unless the list
+        # is cleared on curl's command line.
+        $arguments+=@('--socks5-hostname','127.0.0.1:1080','--noproxy','')
+    }
     $arguments+=@($Url)
     $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$curl
     $start.Arguments=(@($arguments|ForEach-Object {Native-Argument $_}) -join ' ')

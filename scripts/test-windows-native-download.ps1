@@ -108,7 +108,41 @@ foreach($route in @(
     if(-not $same){$failed=$true}
     foreach($case in $routeCases){$case['independentDownloadsMatch']=$same;$cases+=@($case)}
 }
-$report=@{schemaVersion=2;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;cases=$cases;vendorDownloadsAttempted=$true;vendorCodeExecuted=$false;proxyPathQualified=$false;allVendorRoutesQualified=$false;productionQualificationComplete=$false}
+# Hold a local listener without forwarding. With a bypass list of "*", curl
+# must still reach this listener and fail without receiving any asset bytes.
+$proxyObserved=$false
+$proxyFailedClosed=$false
+$previousNoProxy=$env:NO_PROXY
+$listener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,1080)
+$accept=$null
+$output=[IO.MemoryStream]::new()
+try {
+    $listener.ExclusiveAddressUse=$true
+    $listener.Start()
+    $accept=$listener.AcceptTcpClientAsync()
+    $env:NO_PROXY='*'
+    $proxyBudget=New-ComponentDownloadBudget -MaximumBytes 8MB -TimeoutMilliseconds 5000
+    try {
+        Invoke-ComponentDownloadCurl $pins.targets.$Architecture.proxifyre.url $output $proxyBudget -Proxy
+    } catch {
+        $proxyObserved=$accept.Status -eq [Threading.Tasks.TaskStatus]::RanToCompletion
+        $proxyFailedClosed=$proxyObserved -and $output.Length -eq 0
+    }
+} catch {
+    $failed=$true
+} finally {
+    $env:NO_PROXY=$previousNoProxy
+    $listener.Stop()
+    if($accept){
+        try {
+            $client=$accept.GetAwaiter().GetResult()
+            $client.Dispose()
+        } catch {}
+    }
+    $output.Dispose()
+}
+if(-not $proxyFailedClosed){$failed=$true}
+$report=@{schemaVersion=3;proxyConnectionObserved=$proxyObserved;proxyBypassRejected=$proxyFailedClosed;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;cases=$cases;vendorDownloadsAttempted=$true;vendorCodeExecuted=$false;proxyPathQualified=$false;allVendorRoutesQualified=$false;productionQualificationComplete=$false}
 $directory=Join-Path $project 'build/native-download-checks';[void][IO.Directory]::CreateDirectory($directory)
 [IO.File]::WriteAllText((Join-Path $directory ('native-download-'+$Architecture+'.json')),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
 if($failed){throw 'One or more fixed native download checks failed'}
