@@ -530,9 +530,16 @@ try {
     $result=Install-WireSock
     Assert ($result -ceq 'C:\fixture\wiresock.exe' -and $script:wireSockDiscoveryCount -eq 1) 'Default WireSock request reaches mocked discovery'
 } finally {Set-Item Function:WireSock-CLI $previousWireSockCLI;$r=$previousWireSockRequest}
+$wireX64=WireSock-InstallerPlan 'amd64'
+$wireARM64=WireSock-InstallerPlan 'arm64'
+Assert ($wireX64.pattern -ceq 'wiresock-secure-connect-x64-*.exe' -and $wireARM64.pattern -ceq 'wiresock-secure-connect-arm64-*.exe' -and $wireX64.url -match 'platform=windows_x64' -and $wireARM64.url -match 'platform=windows_arm64' -and $wireX64.sha256 -cne $wireARM64.sha256) 'WireSock selects separate installer plans for native AMD64 and ARM64'
+$refused=$false
+try {WireSock-InstallerPlan 'unknown' | Out-Null}catch{$refused=$_.Exception.Message -like 'Native Windows architecture is unavailable*'}
+Assert $refused 'WireSock refuses an installer plan for an unknown architecture'
 # Exercise the bundled WireSock path using an inert file and mocked launch.
 $previousWireSockRequest=$r
 $previousWireSockRebootRequired=$script:rebootRequired
+$previousWireSockInput=$inputData
 $wireSockFixtureFunctions=@{}
 foreach($name in @('WireSock-CLI','Get-AuthenticodeSignature','Native')){
     $wireSockFixtureFunctions[$name]=(Get-Command $name).ScriptBlock
@@ -540,7 +547,10 @@ foreach($name in @('WireSock-CLI','Get-AuthenticodeSignature','Native')){
 try {
     $wireSockBundle=Join-Path $testRoot 'wiresock-bundle'
     [void](New-Item -ItemType Directory -Path $wireSockBundle)
-    $wireSockInstaller=Join-Path $wireSockBundle 'wiresock-secure-connect-x64-fixture.exe'
+    $inputData=[pscustomobject]@{nativeArchitecture='arm64'}
+    $wireSockInstaller=Join-Path $wireSockBundle 'wiresock-secure-connect-arm64-fixture.exe'
+    $otherArchitectureInstaller=Join-Path $wireSockBundle 'wiresock-secure-connect-x64-fixture.exe'
+    [IO.File]::WriteAllBytes($otherArchitectureInstaller,[byte[]]@(1))
     [IO.File]::WriteAllBytes($wireSockInstaller,[byte[]]@(0))
     $r=[pscustomobject]@{bundlePath=$wireSockBundle}
     $script:fixtureWireSockInstalled=$false
@@ -562,6 +572,8 @@ try {
     function Native {
         param($program,$arguments,$codes)
         if(-not (Test-Path -LiteralPath $program -PathType Leaf)){throw 'Missing staged installer at mocked launch'}
+        $bytes=[IO.File]::ReadAllBytes($program)
+        if($bytes.Length -ne 1 -or $bytes[0] -ne 0){throw 'WireSock selected an installer for the wrong architecture'}
         $script:fixtureWireSockLaunch=$program
         $script:fixtureWireSockInstalled=$true
         if($script:fixtureWireSockReboot){
@@ -585,6 +597,7 @@ try {
     Assert ($refused -and $script:rebootRequired -and $script:fixtureWireSockLookups -eq 1 -and $script:fixtureWireSockLaunch -and -not (Test-Path -LiteralPath $script:fixtureWireSockLaunch)) 'WireSock defers connection after an installer restart request'
 } finally {
     $script:rebootRequired=$previousWireSockRebootRequired
+    $inputData=$previousWireSockInput
     foreach($name in $wireSockFixtureFunctions.Keys){
         if($null -eq $wireSockFixtureFunctions[$name]){Remove-Item ('Function:'+$name)}
         else{Set-Item ('Function:'+$name) $wireSockFixtureFunctions[$name]}

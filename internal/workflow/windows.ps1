@@ -1008,22 +1008,49 @@ function Copy-BundledInstaller([IO.FileInfo]$installer,[ref]$OwnedPath) {
         try {$source.CopyTo($target)}finally{$target.Dispose()}
     } finally {$source.Dispose()}
 }
+function WireSock-InstallerPlan([string]$architecture) {
+    switch($architecture){
+        'amd64' {
+            return @{
+                pattern='wiresock-secure-connect-x64-*.exe'
+                url='https://wiresock.net/_api/download-release.php?product=wiresock-secure-connect&platform=windows_x64&version=3.8.1.1'
+                sha256='bd5a7eba32177b1022eda42d233b6b7848ea38604a63b0205666b4060b89a375'
+            }
+        }
+        'arm64' {
+            return @{
+                pattern='wiresock-secure-connect-arm64-*.exe'
+                url='https://wiresock.net/_api/download-release.php?platform=windows_arm64&product=wiresock-secure-connect&version=3.8.1.1'
+                sha256='74af4720a702eeff2d0586c0694f9527f604e2dd3f8ea568dca196dd69f6f06d'
+            }
+        }
+        default {throw 'Native Windows architecture is unavailable or unsupported for WireSock installation'}
+    }
+}
 function Install-WireSock {
     if($r.downloadUrl -and ($r.downloadUrl -cnotmatch '^https://' -or ([string]$r.sha256).Length -ne 64 -or $r.sha256 -notmatch '^[a-fA-F0-9]{64}$')){throw 'Custom WireSock installer requires an HTTPS URL and SHA-256'}
     if($script:rebootRequired){throw 'Restart Windows before continuing WireSock setup'}
     $cli=WireSock-CLI;if($cli){return $cli}
+    $plan=WireSock-InstallerPlan $inputData.nativeArchitecture
     $installer=$null
     $bundleRoots=@($r.bundlePath)
     if(-not $inputData.managedPolicy){$bundleRoots+=@(Join-Path $env:ProgramFiles 'SplitWire-Turkey\res')}
     foreach($base in $bundleRoots){
         if($base -and (Test-Path -LiteralPath $base -PathType Container)){
             No-Reparse $base
-            $installer=Get-ChildItem -LiteralPath $base -Recurse -Filter 'wiresock-secure-connect-x64-*.exe' -File | Sort-Object Name -Descending | Select-Object -First 1
+            $installer=Get-ChildItem -LiteralPath $base -Recurse -Filter $plan.pattern -File | Sort-Object Name -Descending | Select-Object -First 1
             if($installer){break}
         }
     }
     $bundleInstaller=$installer
-    if(-not $installer){$url=$r.downloadUrl;$hash=$r.sha256;if(-not $url){$url='https://wiresock.net/_api/download-release.php?product=wiresock-secure-connect&platform=windows_x64&version=3.8.1.1';$hash='bd5a7eba32177b1022eda42d233b6b7848ea38604a63b0205666b4060b89a375'};$target=Join-Path $root 'downloads\wiresock-setup.exe';Download $url $hash $target -Signed -Publisher wiresock;$installer=Get-Item -LiteralPath $target}
+    if(-not $installer){
+        $url=$plan.url
+        $hash=$plan.sha256
+        if($r.downloadUrl){$url=$r.downloadUrl;$hash=$r.sha256}
+        $target=Join-Path $root 'downloads\wiresock-setup.exe'
+        Download $url $hash $target -Signed -Publisher wiresock
+        $installer=Get-Item -LiteralPath $target
+    }
     $staged=$null
     try {
         $installerPath=$installer.FullName

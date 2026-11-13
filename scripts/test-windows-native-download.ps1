@@ -16,16 +16,13 @@ $pins=Get-Content -Raw -LiteralPath (Join-Path $project $paths[1]) | ConvertFrom
 if($pins.schemaVersion -ne 1){throw 'Unknown pin schema'}
 $tokens=$null;$issues=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $project $paths[0]),[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Product source parse failed'}
-$names=@('Quote-Arg','Native-Argument','Allowed-Download','Resolve-ComponentDownloadRedirect','Throw-ComponentDownloadFailure','Test-ComponentDownloadTerminal','New-ComponentDownloadBudget','Get-ComponentDownloadRemaining','Wait-ComponentDownloadTask','Write-ComponentDownloadChunk','Receive-ComponentDownloadStream','Assert-ComponentDownloadLength','Set-ComponentDownloadHeaders','New-ComponentDownloadRequest','Invoke-ComponentDownloadDotNet','New-ComponentDownloadCurlStart','New-ComponentDownloadCurlProcess','Wait-ComponentDownloadProcessExit','Invoke-ComponentDownloadCurlOnce','Invoke-ComponentDownloadCurl')
+$names=@('Quote-Arg','Native-Argument','Allowed-Download','Resolve-ComponentDownloadRedirect','Throw-ComponentDownloadFailure','Test-ComponentDownloadTerminal','New-ComponentDownloadBudget','Get-ComponentDownloadRemaining','Wait-ComponentDownloadTask','Write-ComponentDownloadChunk','Receive-ComponentDownloadStream','Assert-ComponentDownloadLength','Set-ComponentDownloadHeaders','New-ComponentDownloadRequest','Invoke-ComponentDownloadDotNet','New-ComponentDownloadCurlStart','New-ComponentDownloadCurlProcess','Wait-ComponentDownloadProcessExit','Invoke-ComponentDownloadCurlOnce', 'Invoke-ComponentDownloadCurl','WireSock-InstallerPlan')
 foreach($name in $names){$nodes=@($ast.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name});if($nodes.Count -ne 1){throw 'Product transport function unavailable'};. ([scriptblock]::Create($nodes[0].Extent.Text))}
 $cases=@();$failed=$false
-$wireUrl='https://wiresock.net/_api/download-release.php?product=wiresock-secure-connect&platform=windows_x64&version=3.8.1.1'
-$wireHash='bd5a7eba32177b1022eda42d233b6b7848ea38604a63b0205666b4060b89a375'
-# Fail closed if the duplicated qualification pin diverges from the product.
+$wirePlan=WireSock-InstallerPlan $Architecture
 $sourceText=[IO.File]::ReadAllText((Join-Path $project $paths[0]))
-if(-not $sourceText.Contains($wireUrl) -or -not $sourceText.Contains($wireHash)){throw 'Built-in WireSock source pin changed'}
 foreach($engine in @('proxifyre','dnscrypt','wiresock')){
-    if($engine -ceq 'wiresock'){$pin=@{url=$wireUrl;sha256=$wireHash;bytes=0};$maximum=64MB}
+    if($engine -ceq 'wiresock'){$pin=@{url=$wirePlan.url;sha256=$wirePlan.sha256;bytes=0};$maximum=64MB}
     else {
         $pin=$pins.targets.$Architecture.$engine
         if($pin.url -cnotmatch '^https://github[.]com/(wiresock/proxifyre|DNSCrypt/dnscrypt-proxy)/releases/download/[^/]+/[^/]+$' -or $pin.sha256 -cnotmatch '^[a-f0-9]{64}$' -or $pin.bytes -le 0 -or $pin.bytes -gt 8MB){throw 'Unexpected pinned asset'}
