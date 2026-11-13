@@ -1421,6 +1421,11 @@ $exitedApp=[pscustomobject]@{Path=$fixtureApp;SessionId=7;HasExited=$true}
 $unreadableApp=[pscustomobject]@{Path=$fixtureApp;SessionId=7}
 $unreadableApp | Add-Member ScriptProperty HasExited {throw 'Synthetic inaccessible process'}
 Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($exitedApp,$unreadableApp))) 'App launch requires a live matching process'
+$handoff=[DateTime]::UtcNow
+$oldApp=[pscustomobject]@{Path=$fixtureApp;SessionId=7;HasExited=$false;StartTime=$handoff.AddSeconds(-1)}
+$newApp=[pscustomobject]@{Path=$fixtureApp;SessionId=7;HasExited=$false;StartTime=$handoff.AddSeconds(1)}
+Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($oldApp,$sameSession) $handoff) -and
+    (Test-AppProcessInSession $fixtureApp 7 @($oldApp,$newApp) $handoff)) 'Fresh launch requires an observable process created after Explorer handoff'
 # Inert files, process records and command mocks exercise uninstall preflight.
 $fixtureAppDirectory=Join-Path $testRoot 'splitcord-uninstall'
 [void](New-Item -ItemType Directory -Path $fixtureAppDirectory)
@@ -1910,6 +1915,8 @@ try{
         $launchRoot=Join-Path $testRoot 'launch-job\application'
         $launchPath=Join-Path $testRoot 'launch fixture\Discord.exe'
         $trace=[Collections.Generic.List[string]]::new()
+        $fixtureProcessRunning=$false
+        $fixtureProcessTimes=[Collections.Generic.List[datetime]]::new()
         function Find-App {return $launchPath}
         function Start-Process($FilePath,$ArgumentList,$WindowStyle){
             $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
@@ -1919,11 +1926,15 @@ try{
                 throw 'Explorer launch did not use the selected client and durable journal'
             }
             $trace.Add('launch')
+            $fixtureProcessTimes.Add([DateTime]::UtcNow)
             if($fixtureLaunchFails){throw 'Inert Explorer handoff failure'}
         }
         function Get-Process($Name,$ErrorAction){
             if($Name -cne 'Discord'){throw 'Unexpected fixture process query'}
-            return [pscustomobject]@{Path=$launchPath;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false}
+            if($fixtureProcessRunning -or $trace.Count -eq 2){
+                $created=if($trace.Count){$fixtureProcessTimes[$trace.Count-1]}else{[DateTime]::UtcNow.AddSeconds(-1)}
+                return [pscustomobject]@{Path=$launchPath;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false;StartTime=$created}
+            }
         }
         try {
             $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
@@ -1931,6 +1942,10 @@ try{
                 $script:machineInitializationCount -eq 0 -and
                 -not [IO.Directory]::Exists((Join-Path $launchRoot 'downloads')) -and
                 -not [IO.Directory]::Exists((Join-Path $launchRoot 'backups'))) 'Application launch initializes only its local recovery journal'
+            $fixtureProcessRunning=$true
+            $alreadyStarted=Start-App 'discord'
+            Assert ($alreadyStarted.alreadyRunning -eq $true -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application start reuses an existing client without asking Explorer to launch it'
+            $fixtureProcessRunning=$false
             $script:journalPath=Join-Path $launchRoot 'missing\application.json'
             $rejected=$false
             try{Start-App 'discord'}catch{$rejected=$true}
@@ -1942,8 +1957,9 @@ try{
             $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
             Assert ($rejected -and $trace.Count -eq 1 -and $saved.externalEffectsPending -eq $true) 'Application launch retains its pending journal after a failed handoff'
             $fixtureLaunchFails=$false
-            Start-App 'discord'
-            Assert ($trace.Count -eq 2) 'Application launch observes a matching process after its journaled handoff'
+            $started=Start-App 'discord'
+            Assert ($started.application -ceq 'discord' -and $started.alreadyRunning -eq $false -and
+                $trace.Count -eq 2) 'Application launch observes a matching process after its journaled handoff'
         } finally {
             $script:externalEffectsPending=$previousEffects
             $script:journalState=$previousState

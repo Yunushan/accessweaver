@@ -99,6 +99,25 @@ function Test-FixtureCommunication([string]$Variant,[string]$Image,[string]$Kind
     Assert-FixtureLiveImage $Image $true
 }
 
+function Start-FixtureApp([string]$Variant){
+    if(-not $installedImages.ContainsKey($Variant)){throw 'Application install prerequisite failed'}
+    $image=$installedImages[$Variant]
+    $script:appEvidenceStage='process-baseline'
+    $alreadyRunning=Find-FixtureLiveImage $image
+    if($alreadyRunning -isnot [bool]){throw 'Application process baseline could not be verified'}
+    if($alreadyRunning){
+        if([Console]::IsInputRedirected){throw 'A fresh launch requires a stopped application'}
+        [void](Read-Host "Quit $Variant from its tray menu, then press Enter to verify it has stopped")
+        Assert-FixtureLiveImage $image $false
+    }
+    $data=Invoke-AppWorkflow @{action='app-start';engine=$Variant}
+    $script:appEvidenceStage='process-readback'
+    if($data.application -cne $Variant -or $data.alreadyRunning -isnot [bool] -or $data.alreadyRunning){
+        throw 'The application workflow did not confirm a fresh start'
+    }
+    Assert-FixtureLiveImage $image $true
+}
+
 if($InteractiveCommunications -and (-not $ExpectedSHA256 -or [Console]::IsInputRedirected)){
     throw 'Interactive communications checks require the approved controller digest and an interactive desktop console'
 }
@@ -139,7 +158,7 @@ try {
     $checks=[Collections.Generic.List[object]]::new()
     $script:appEvidenceStage='baseline'
     $report=[ordered]@{
-        schemaVersion=4;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
+        schemaVersion=5;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
         fixtureSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();
         architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant();
         checks=$null;baselineClear=$false;splitCordIncluded=(-not $SkipSplitCord);
@@ -204,17 +223,6 @@ try {
             throw 'New application installation could not be verified'
         }
     }
-    function Start-FixtureApp([string]$Variant){
-        if(-not $installedImages.ContainsKey($Variant)){throw 'Application install prerequisite failed'}
-        $image=$installedImages[$Variant]
-        $script:appEvidenceStage='process-baseline'
-        $alreadyRunning=Find-FixtureLiveImage $image
-        if($alreadyRunning -isnot [bool]){throw 'Application process baseline could not be verified'}
-        [void](Invoke-AppWorkflow @{action='app-start';engine=$Variant})
-        $script:appEvidenceStage='process-readback'
-        Assert-FixtureLiveImage $image $true
-        return $alreadyRunning
-    }
     function Remove-FixtureApp([string]$Variant){
         $current=Get-FixtureAppImage (Inspect-Apps) $Variant
         if($current){$installedImages[$Variant]=$current}
@@ -245,10 +253,8 @@ try {
     function Check([string]$Name,[scriptblock]$Body){
         $script:appEvidenceStage='prerequisite'
         try {
-            $observation=& $Body
-            $entry=@{name=$Name;passed=$true}
-            if($observation -is [bool]){$entry.alreadyRunning=$observation}
-            $checks.Add($entry)
+            $null=& $Body
+            $checks.Add(@{name=$Name;passed=$true})
         } catch {$checks.Add(@{name=$Name;passed=$false;stage=$script:appEvidenceStage})}
     }
 

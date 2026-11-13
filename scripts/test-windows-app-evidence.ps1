@@ -4,7 +4,7 @@ $fixture=Join-Path $PSScriptRoot 'test-windows-apps.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($fixture,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Interactive Windows app fixture failed parsing'}
-foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Test-FixtureCommunication')){
+foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Test-FixtureCommunication','Start-FixtureApp')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -105,6 +105,25 @@ try{Test-FixtureCommunication 'splitcord' $image 'voice'}catch{
     $refused=$_.Exception.Message -ceq 'Fixture observation limit reached'
 }
 if(-not $refused -or $script:promptCount -ne ($before+1)){throw 'Operator input replaced final live-image verification'}
+$installedImages=@{discord=$image}
+$launchTrace=[Collections.Generic.List[string]]::new()
+$launchResult=@{application='discord';alreadyRunning=$false}
+function Invoke-AppWorkflow([hashtable]$Request){
+    if($Request.action -cne 'app-start' -or $Request.engine -cne 'discord'){throw 'Unexpected fixture launch request'}
+    $launchTrace.Add('start')
+    return $launchResult
+}
+$script:observations.Enqueue($false)
+$script:observations.Enqueue($true)
+Start-FixtureApp 'discord'
+if($launchTrace.Count -ne 1 -or $script:observations.Count){throw 'Fresh start evidence omitted a baseline or readback'}
+foreach($alreadyRunning in @($true,'false',$null)){
+    $launchResult.alreadyRunning=$alreadyRunning
+    $script:observations.Enqueue($false)
+    $refused=$false
+    try{Start-FixtureApp 'discord'}catch{$refused=$_.Exception.Message -ceq 'The application workflow did not confirm a fresh start'}
+    if(-not $refused -or $script:observations.Count){throw 'Existing or untyped process evidence was credited as a new start'}
+}
 $communicationCalls=@($ast.FindAll({param($node)
     $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -ceq 'Check-FixtureCommunications'
 },$true))

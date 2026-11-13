@@ -3089,12 +3089,18 @@ function Stop-AppProcesses([string]$variant,[string]$app) {
         foreach($process in $processes){$process.Dispose()}
     }
 }
-function Test-AppProcessInSession([string]$path,[int]$sessionId,$processes) {
+function Test-AppProcessInSession([string]$path,[int]$sessionId,$processes,[datetime]$StartedAfter=[datetime]::MinValue) {
     $running=$false
     foreach($process in $processes){
         try {
             if(-not $running -and $process.Path -eq $path -and $process.SessionId -eq $sessionId -and
-                $process.HasExited -eq $false){$running=$true}
+                $process.HasExited -eq $false){
+                if($StartedAfter -eq [datetime]::MinValue){$running=$true}
+                else{
+                    $started=$process.StartTime
+                    $running=$started -is [datetime] -and $started.ToUniversalTime() -ge $StartedAfter
+                }
+            }
         } catch {
             # A process can exit or become inaccessible during inspection.
         } finally {
@@ -3108,17 +3114,22 @@ function Start-App([string]$variant) {
     $app=Find-App $variant;if(-not $app){throw 'Application is not installed'};No-Reparse $app
     $sessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId
     if($sessionId -eq 0){throw 'Start user applications from the signed-in Windows desktop, not the SYSTEM session'}
+    $name=[IO.Path]::GetFileNameWithoutExtension($app)
+    if(Test-AppProcessInSession $app $sessionId @(Get-Process -Name $name -ErrorAction SilentlyContinue)){
+        Event 'Application was already running in the desktop session'
+        return @{application=$variant;alreadyRunning=$true}
+    }
     # Explorer brokers the launch in the signed-in desktop user's context.
     # Its external application lifetime is not owned or certified by this worker.
     Save-ApplicationEffectBoundary
+    $handoffTime=[DateTime]::UtcNow
     Start-Process -FilePath (Join-Path $env:SystemRoot 'explorer.exe') -ArgumentList @((Quote-Arg $app)) -WindowStyle Hidden
-    $name=[IO.Path]::GetFileNameWithoutExtension($app)
     $wait=[Diagnostics.Stopwatch]::StartNew()
     do {
         $processes=@(Get-Process -Name $name -ErrorAction SilentlyContinue)
-        if(Test-AppProcessInSession $app $sessionId $processes){
+        if(Test-AppProcessInSession $app $sessionId $processes $handoffTime){
             Event 'Application process is running in the desktop session'
-            return
+            return @{application=$variant;alreadyRunning=$false}
         }
         Start-Sleep -Milliseconds 500
     } while($wait.Elapsed.TotalSeconds -lt 10)
