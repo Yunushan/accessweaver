@@ -8,7 +8,7 @@
   #error TargetArch must identify the verified staged payload
 #endif
 #if TargetArch == "amd64"
-  #define InstallArchitecture "x64compatible"
+  #define InstallArchitecture "x64os"
 #elif TargetArch == "arm64"
   #define InstallArchitecture "arm64"
 #else

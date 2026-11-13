@@ -48,7 +48,7 @@ function Assert-InstallerPEArchitecture([string]$Binary, [string]$Arch) {
 function Assert-InstallerSetupScript([string]$Path, [string]$TargetArch, [string]$Version, [switch]$OrganizationSigning) {
     if($TargetArch -cnotin @('amd64','arm64')){throw 'Invalid installer script target'}
     if((Get-Item -LiteralPath $Path).Length -gt 1MB){throw 'Preprocessed installer script exceeds evidence limit'}
-    $architecture=if($TargetArch -ceq 'arm64'){'arm64'}else{'x64compatible'}
+    $architecture=if($TargetArch -ceq 'arm64'){'arm64'}else{'x64os'}
     $expected=@{SetupMutex='Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092';AllowNoIcons='yes';ArchitecturesAllowed=$architecture;ArchitecturesInstallIn64BitMode=$architecture;OutputBaseFilename=('accessweaver-'+$Version+'-windows-'+$TargetArch+'-setup')}
     if($OrganizationSigning){
         $expected.SignTool='accessweaverOrganization'

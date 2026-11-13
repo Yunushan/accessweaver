@@ -132,7 +132,7 @@ try {
     }
     $setupPath=Join-Path $fixture 'preprocessed.iss'
     foreach($arch in @('amd64','arm64')){
-        $architecture=if($arch -ceq 'arm64'){'arm64'}else{'x64compatible'}
+        $architecture=if($arch -ceq 'arm64'){'arm64'}else{'x64os'}
         $script="[Setup]`nSetupMutex=Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092`nAllowNoIcons=yes`nArchitecturesAllowed=$architecture`nArchitecturesInstallIn64BitMode=$architecture`nOutputBaseFilename=accessweaver-0.1.0-alpha-windows-$arch-setup`n[Code]`n"
         [IO.File]::WriteAllText($setupPath,$script)
         $values=Assert-InstallerSetupScript $setupPath $arch '0.1.0-alpha'
@@ -150,7 +150,7 @@ try {
                 'missing-mutex' {$script.Replace(('SetupMutex=Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092'+"`n"),'')}
                 'icons' {$script.Replace('AllowNoIcons=yes','AllowNoIcons=no')}
                 'missing-icons' {$script.Replace(('AllowNoIcons=yes'+"`n"),'')}
-                'allowed' {$script.Replace(('ArchitecturesAllowed='+$architecture),'ArchitecturesAllowed=win64')}
+                'allowed' {$script.Replace(('ArchitecturesAllowed='+$architecture),'ArchitecturesAllowed=x64compatible')}
                 'install-mode' {$script.Replace(('ArchitecturesInstallIn64BitMode='+$architecture),'ArchitecturesInstallIn64BitMode=x86compatible')}
                 'filename' {$script.Replace(('windows-'+$arch),'windows-386')}
                 'duplicate' {$script.Replace('[Code]',('ArchitecturesAllowed='+$architecture+"`n[Code]"))}

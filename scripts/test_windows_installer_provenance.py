@@ -1,5 +1,5 @@
 import copy
-from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt
+from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt, validate_architecture_refusal
 import os
 from pathlib import Path
 import subprocess
@@ -10,6 +10,30 @@ from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WOR
 
 COMMIT='a'*40
 REF='refs/heads/main'
+class ArchitectureRefusalTests(unittest.TestCase):
+    def test_only_opposite_native_target_with_complete_refusal_evidence_passes(self):
+        for host, other in (("amd64", "arm64"), ("arm64", "amd64")):
+            observation = {
+                "target": "windows/" + other, "fixtureSHA256": "b" * 64, "exitCode": 1,
+                "elapsedMilliseconds": 1200, "deadlineMilliseconds": 180000,
+                "platformRefusalLogged": True, "installationAbsent": True,
+                "registrationsAbsent": True, "machineStateUnchanged": True,
+            }
+            self.assertEqual(validate_architecture_refusal({"architectureRefusal": observation}, host),
+                             {"wrongArchitectureRefusalVerified": True})
+            invalid = [
+                {"target": "windows/" + host}, {"fixtureSHA256": "B" * 64}, {"exitCode": True},
+                {"exitCode": 0}, {"elapsedMilliseconds": 180000}, {"deadlineMilliseconds": 180001},
+                {"platformRefusalLogged": False}, {"installationAbsent": False},
+                {"registrationsAbsent": False}, {"machineStateUnchanged": False}, {"privateLog": "inert"},
+            ]
+            for override in invalid:
+                with self.subTest(host=host, override=override), self.assertRaises(ValueError):
+                    validate_architecture_refusal({"architectureRefusal": {**observation, **override}}, host)
+            with self.assertRaises(ValueError):
+                validate_architecture_refusal({}, host)
+
+
 class WindowsInstallerProvenanceTests(unittest.TestCase):
     def fixture(self,root):
         names=subject_names('amd64',DEFAULT_VERSIONS)
