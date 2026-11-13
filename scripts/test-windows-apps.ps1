@@ -209,6 +209,15 @@ try {
                 throw 'Combined repair refusal changed the observed Discord state'
             }
         }
+        Check 'discord-reinstall' {
+            if(-not $installedImages.ContainsKey('discord')){throw 'Stable Discord install prerequisite failed'}
+            $data=Invoke-AppWorkflow @{action='app-reinstall';engine='discord'}
+            $image=Get-FixtureAppImage (Inspect-Apps) 'discord'
+            if($data.reinstalled -ne $true -or -not $image -or
+               -not (Test-Path -LiteralPath $image -PathType Leaf)){throw 'Stable Discord replacement was not confirmed'}
+            $installedImages['discord']=$image
+        }
+        Check 'discord-start-after-reinstall' {Start-FixtureApp 'discord'}
         Check 'ptb-clean-install' {
             if(-not $installedImages.ContainsKey('discord') -or
                -not (Get-FixtureAppImage (Inspect-Apps) 'discord')){throw 'Clean mode requires an installed stable client'}

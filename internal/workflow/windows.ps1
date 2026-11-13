@@ -50,7 +50,7 @@ function Initialize-Operation {
     # Check before machine-storage initialization, DNS changes, discovery or
     # process execution. A combined repair cannot cross this boundary safely.
     if($r.action -eq 'app-repair'){throw 'Combined Discord repair is unavailable until a privilege-separated broker is implemented'}
-    if($r.action -in @('app-install','app-remove','app-start')){
+    if($r.action -in @('app-install','app-remove','app-start','app-reinstall')){
         Require-DesktopUser
         if($r.dns -and $r.dns -ne 'unchanged'){throw 'Configure system DNS separately from user application operations'}
         if($r.action -ne 'app-start'){
@@ -2126,8 +2126,17 @@ function Get-SplitCordInstaller {
     if($hash -notmatch '\A[a-fA-F0-9]{64}\z'){throw 'SplitCord installer requires a published or explicitly supplied SHA-256'}
     return @{url=$url;hash=$hash}
 }
-function Install-App([string]$variant) {
+function Install-App([string]$variant,[switch]$Reinstall) {
     Require-DesktopUser
+    if($Reinstall -and ($variant -cne 'discord' -or $r.clean -or $r.downloadUrl -or $r.sha256 -or $r.configPath -or $r.bundlePath)){
+        throw 'Discord reinstall uses the official signed installer and fixed desktop-user inputs'
+    }
+    $originalApp=$null
+    if($Reinstall){
+        $originalApp=Find-App $variant
+        if(-not $originalApp){throw 'Stable Discord is not installed; use Install Discord instead'}
+        No-Reparse $originalApp
+    }
     if($variant -notin @('discord','discord-ptb','splitcord')){throw 'Choose Discord, Discord PTB or SplitCord'}
     if($variant -eq 'splitcord'){
         $installer=Get-SplitCordInstaller
@@ -2149,19 +2158,29 @@ function Install-App([string]$variant) {
     try {
         $stagedHash=(Get-FileHash -InputStream $lockedInstaller -Algorithm SHA256).Hash
         if($verifiedHash -isnot [string] -or $stagedHash -ine $verifiedHash){throw 'Staged application installer differs from the verified download'}
-        $previouslyInstalled=[bool](Find-App $variant)
+        $existingApp=Find-App $variant
+        $previouslyInstalled=[bool]$existingApp
+        if($Reinstall){
+            if($existingApp -ine $originalApp){throw 'Stable Discord changed before reinstall; review the current installation'}
+            Remove-App $variant $originalApp
+        }
         if($r.clean -and $variant -eq 'discord-ptb' -and (Find-App 'discord')){Remove-App 'discord'}
         $installerArgs=if($variant -eq 'splitcord'){@('/S')}else{@('-s')}
         [void](Native $file $installerArgs -Timeout 900)
     } finally {$lockedInstaller.Dispose()}
     Wait-App $variant $true 180
+    if($Reinstall){
+        Event 'Stable Discord reinstalled in the desktop session'
+        return @{application=$variant;installed=$true;previouslyInstalled=$true;reinstalled=$true}
+    }
     if($previouslyInstalled){Event ('Application was already present before setup: '+$variant)}
     else{Event ('Application installed: '+$variant)}
     return @{application=$variant;installed=$true;previouslyInstalled=$previouslyInstalled}
 }
-function Remove-App([string]$variant) {
+function Remove-App([string]$variant,[string]$expectedApp) {
     Require-DesktopUser
     $app=Find-App $variant
+    if($expectedApp -and $app -ine $expectedApp){throw 'Application installation changed before removal'}
     if(-not $app){return}
     No-Reparse $app
     if($variant -in @('discord','discord-ptb')){
@@ -2838,6 +2857,7 @@ try {
         'vendor-uninstall' {Uninstall-WireSockProduct}
         'remove-all' {Remove-All}
         'app-install' {Install-App $r.engine}
+        'app-reinstall' {Install-App $r.engine -Reinstall}
         'app-remove' {Remove-App $r.engine}
         'app-start' {Start-App $r.engine}
         'app-repair' {Stop-AppProcesses 'discord';Restore-Drover;Remove-App 'discord';Preserve-DiscordCache;Start-RepairProxy;Install-App 'discord';Install-Drover;@{repaired='discord';proxy='127.0.0.1:1080'}}
@@ -2851,7 +2871,7 @@ try {
     $result.error=$_.Exception.Message
     $script:journalState='failed'
     if($script:dnsTouched -and (Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json'))){try{Restore-DNS}catch{$result.dnsRecoveryError=$_.Exception.Message}}
-    if($r.action -in @('install','auto-install','connect','config','download','dns','refresh','scan','app-install','app-repair')){
+    if($r.action -in @('install','auto-install','connect','config','download','dns','refresh','scan','app-install','app-reinstall','app-repair')){
         $result.rollbackScope='recorded-resources';$result.recordedRollbackComplete=$false
         $result.rollbackErrors=@(Rollback)
         if(-not $result.rollbackErrors.Count){

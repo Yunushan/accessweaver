@@ -1564,7 +1564,8 @@ try {
     function Find-App {
         param($variant)
         $script:appInstallTrace.Add('find-'+$variant)
-        if($variant -ceq 'discord' -or $script:appPreviouslyInstalled){return 'C:\fixture\Discord.exe'}
+        if($variant -ceq 'discord' -and $script:appStableChanged -and $script:appInstallTrace.Contains('download:discord')){return 'C:\fixture\updated\Discord.exe'}
+        if(($variant -ceq 'discord' -and -not $script:appStableAbsent) -or $script:appPreviouslyInstalled){return 'C:\fixture\Discord.exe'}
     }
     function Remove-App {
         param($variant)
@@ -1647,6 +1648,38 @@ try {
     $rejected=$false
     try {Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Native Windows architecture is unavailable or unsupported for Discord installation'}
     Assert ($rejected -and $script:appInstallTrace.Count -eq 0) 'Discord refuses unknown architecture before download or client removal'
+    $inputData.nativeArchitecture='amd64'
+    $r.clean=$false
+    $script:appPreviouslyInstalled=$false
+    $script:appStableAbsent=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try {Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -like 'Stable Discord is not installed*'}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord') 'Discord reinstall requires an installed stable client before download'
+    $script:appStableAbsent=$false
+    $script:appStableChanged=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try {Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -like 'Stable Discord changed before reinstall*'}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord') 'Discord reinstall preserves a client updated during download'
+    $script:appStableChanged=$false
+    $script:appInstallerChanged=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try {Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -like 'Staged application installer differs*'}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord') 'Discord reinstall refuses changed installer bytes before removal'
+    $script:appInstallerChanged=$false
+    $script:appRemoveFailure=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try {Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -ceq 'fixture remove failure'}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord,remove-stable') 'Discord reinstall stops when removal fails'
+    $script:appRemoveFailure=$false
+    $script:appInstallTrace.Clear()
+    $reinstalled=Install-App 'discord' -Reinstall
+    Assert ($reinstalled.reinstalled -eq $true -and $script:appInstallerLocked -and $script:appInstallerLockedAtLaunch -and
+            ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord,remove-stable,installer,verify-ptb,event') 'Discord reinstall holds its verified installer through removal and launch'
+
 } finally {
     foreach($name in $appInstallSaved.Keys){Set-Item ('Function:'+ $name) $appInstallSaved[$name]}
     $r=$previousAppRequest
@@ -1708,7 +1741,7 @@ try{
     $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -match 'privilege-separated'}
     Assert ($rejected -and $script:machineInitializationCount -eq 0) 'Combined repair blocked before privileged initialization'
     $inputData=[pscustomobject]@{resultPath=(Join-Path $testRoot 'user-job\result.json')}
-    foreach($action in @('app-install','app-remove','app-start')){
+    foreach($action in @('app-install','app-remove','app-start','app-reinstall')){
         $r=[pscustomobject]@{action=$action;dns='unchanged'}
         $rejected=$false;try{Initialize-Operation}catch{$rejected=$_.Exception.Message -eq 'blocked desktop token fixture'}
         Assert ($rejected -and -not (Test-Path (Join-Path $testRoot 'user-job'))) ($action+' checks the token before staging files')

@@ -349,6 +349,7 @@ remove-all|Remove all managed methods|Yönetilen tüm yöntemleri kaldır|Уда
 app-install|Install Discord variant|Discord sürümü kur|Установить вариант Discord|Instalar variante de Discord
 app-start|Start Discord variant|Discord sürümünü başlat|Запустить вариант Discord|Iniciar variante de Discord
 app-remove|Uninstall Discord variant|Discord sürümünü kaldır|Удалить вариант Discord|Desinstalar variante de Discord
+app-reinstall|Reinstall stable Discord|Kararlı Discord sürümünü yeniden kur|Переустановить стабильную версию Discord|Reinstalar la versión estable de Discord
 app-repair|Repair Discord|Discord onar|Восстановить Discord|Reparar Discord
 updates|Check for updates|Güncellemeleri denetle|Проверить обновления|Buscar actualizaciones
 uninstall|Uninstall AccessWeaver|AccessWeaver kaldır|Удалить AccessWeaver|Desinstalar AccessWeaver

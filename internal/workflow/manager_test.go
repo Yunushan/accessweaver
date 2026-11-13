@@ -54,13 +54,28 @@ func TestApplicationPrivilegeReview(t *testing.T) {
 	if _, err = m.Start(p.ID); err == nil {
 		t.Fatal("combined repair started without a privilege-separated broker")
 	}
-	for _, action := range []string{"app-install", "app-remove", "app-start"} {
+	for _, action := range []string{"app-install", "app-remove", "app-start", "app-reinstall"} {
 		if _, err = m.Preview(Request{Action: action, Engine: "discord", DNS: "doh"}); err == nil {
 			t.Fatalf("%s accepted machine DNS mutation", action)
 		}
 		p, err = m.Preview(Request{Action: action, Engine: "discord", DNS: "unchanged"})
-		if err != nil || !p.Ready {
+		if err != nil || !p.Ready || p.RequiresAdministrator {
 			t.Fatalf("user application operation: %+v %v", p, err)
+		}
+	}
+}
+
+func TestDiscordReinstallRejectsReplacementInputs(t *testing.T) {
+	for _, request := range []Request{
+		{Action: "app-reinstall", Engine: "discord-ptb"},
+		{Action: "app-reinstall", Engine: "discord", Clean: true},
+		{Action: "app-reinstall", Engine: "discord", DownloadURL: "https://example.com/setup.exe"},
+		{Action: "app-reinstall", Engine: "discord", SHA256: strings.Repeat("a", 64)},
+		{Action: "app-reinstall", Engine: "discord", ConfigPath: "profile.conf"},
+		{Action: "app-reinstall", Engine: "discord", BundlePath: "bundle"},
+	} {
+		if err := request.Validate(); err == nil {
+			t.Fatalf("unsupported reinstall request accepted: %+v", request)
 		}
 	}
 }

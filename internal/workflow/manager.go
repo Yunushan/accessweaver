@@ -114,6 +114,7 @@ func Catalog() []Operation {
 		{"app-install", "Install Discord, PTB or SplitCord", []string{"Obtain an official installer", "Run it for the interactive user and verify installation"}},
 		{"app-start", "Start an installed Discord variant", []string{"Find and start the selected application in the interactive user session"}},
 		{"app-remove", "Uninstall a Discord variant", []string{"Close only the selected application's processes", "Run its registered or Squirrel uninstaller and verify removal"}},
+		{"app-reinstall", "Reinstall stable Discord", []string{"Verify and lock the official replacement installer", "Remove and reinstall the stable client in the current desktop session", "Verify the replacement executable"}},
 		{"app-repair", "Repair Discord", []string{"Unavailable until user application maintenance and administrative proxy/DLL changes use a privilege-separated broker"}},
 		{"updates", "Check for a newer AccessWeaver release", []string{"Read the official project's GitHub release metadata; do not install anything"}},
 		{"uninstall", "Undo AccessWeaver system changes", []string{"Remove AccessWeaver-owned services, tasks and firewall rules", "Restore DNS and application-file backups", "Remove the registered AccessWeaver installation when present"}},
@@ -194,7 +195,7 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 	if r.Action == "app-repair" {
 		p.Issues = append(p.Issues, "Combined Discord repair requires a privilege-separated broker and is unavailable. Run application install/remove as your normal desktop user and manage the proxy separately.")
 	}
-	if r.Action == "app-install" || r.Action == "app-remove" {
+	if r.Action == "app-install" || r.Action == "app-remove" || r.Action == "app-reinstall" {
 		p.Warnings = append(p.Warnings, "Run this application operation as the signed-in desktop user without administrator rights. Application installers and uninstallers must never inherit an elevated token.")
 	}
 	if (r.Action == "config" || (r.Action == "install" && r.Engine == "wiresock")) && r.ConfigPath == "" && !r.AcceptCloudflareTerms {
@@ -206,8 +207,8 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 	if r.Action == "config" || r.Action == "install" && r.Engine == "wiresock" {
 		p.Warnings = append(p.Warnings, "Generating WARP credentials uses wgcf and Cloudflare's service. Existing configPath avoids registration. Vendor terms apply.")
 	}
-	if r.Action == "app-remove" || r.Action == "app-repair" || r.Clean {
-		p.Warnings = append(p.Warnings, "Application removal or repair can sign you out. Repair preserves cache in the private recovery directory.")
+	if r.Action == "app-remove" || r.Action == "app-reinstall" || r.Action == "app-repair" || r.Clean {
+		p.Warnings = append(p.Warnings, "Application removal or reinstall can sign you out. If the replacement installer fails after removal, run a fresh reviewed installation.")
 	}
 	if r.Action == "vendor-uninstall" {
 		p.Warnings = append(p.Warnings, "Uninstalling the selected WireSock product can remove independently created profiles and vendor services. Back up profiles you need before applying this operation.")
@@ -243,8 +244,11 @@ func (m *Manager) Preview(r Request) (Plan, error) {
 }
 
 func (r Request) Validate() error {
-	if (r.Action == "app-install" || r.Action == "app-remove" || r.Action == "app-start") && r.DNS != "" && r.DNS != "unchanged" {
+	if (r.Action == "app-install" || r.Action == "app-remove" || r.Action == "app-start" || r.Action == "app-reinstall") && r.DNS != "" && r.DNS != "unchanged" {
 		return errors.New("configure system DNS separately from user application operations")
+	}
+	if r.Action == "app-reinstall" && (r.Clean || r.DownloadURL != "" || r.SHA256 != "" || r.ConfigPath != "" || r.BundlePath != "") {
+		return errors.New("Discord reinstall uses the official signed installer and fixed desktop-user inputs")
 	}
 	if len(r.Args) > 128 || len(r.Applications) > 100 || len(r.Domains) > 4096 || len(r.Targets) > 32 {
 		return errors.New("workflow list limit exceeded")
@@ -291,6 +295,7 @@ func (r Request) Validate() error {
 		"app-install":      {"discord", "discord-ptb", "splitcord"},
 		"app-start":        {"discord", "discord-ptb", "splitcord"},
 		"app-remove":       {"discord", "discord-ptb", "splitcord"},
+		"app-reinstall":    {"discord"},
 		"app-repair":       {"discord"},
 	}
 	if choices, ok := components[r.Action]; ok && !allowed(r.Engine, choices...) {
@@ -1082,7 +1087,7 @@ func executeWorkflow(ctx context.Context, dir string, r Request, commandFactory 
 // default to requiring an administrative process, independently of UI consent.
 func requiresAdministrator(action string) bool {
 	switch action {
-	case "discover", "updates", "choose-folder", "app-install", "app-start", "app-remove":
+	case "discover", "updates", "choose-folder", "app-install", "app-start", "app-remove", "app-reinstall":
 		return false
 	default:
 		return true

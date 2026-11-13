@@ -15,7 +15,7 @@ function systemRequest(){
     const node=$('system-'+id);
     request[key]=['browsers','refresh','enabled','clean','cloudflare-terms'].includes(id)?node.checked:['applications','targets','domains'].includes(id)?splitLines(node.value):id==='args'?(node.value?node.value.replace(/\r\n/g,'\n').split('\n'):[]):node.value.trim();
   }
-  if(action==='app-repair')request.engine='discord';
+  if(action==='app-repair'||action==='app-reinstall')request.engine='discord';
   return request;
 }
 function systemEnginesFor(action){
@@ -51,7 +51,7 @@ async function loadSystemTools(){
 }
 function systemFieldsFor(action,engine){
   const install=action==='install',scan=action==='scan'||action==='auto-install',packet=['zapret','zapret2','goodbyedpi'].includes(engine),tunnel=engine==='wiresock',apps=(install&&['wiresock','byedpi'].includes(engine))||action==='config';
-  return {'system-engine':!['discover','updates','remove-all','uninstall','dns','dns-restore','config','connect','disconnect','refresh','recover','app-repair'].includes(action),'system-mode':install&&['wiresock','byedpi','zapret','zapret2','goodbyedpi'].includes(engine),'system-preset':install&&packet,'system-args':install&&['byedpi','zapret','zapret2','goodbyedpi'].includes(engine),'system-applications':apps,'system-browsers':apps,'system-cloudflare-terms':action==='config'||install&&tunnel,'system-refresh':install&&tunnel,'system-dns':action==='dns'||install&&engine!=='dnscrypt'||scan,'system-scan':scan,'system-targets':scan,'system-domains':action==='hostlist'||(install||action==='auto-install')&&packet,'system-enabled':action==='hostlist'||action==='refresh'||(install||action==='auto-install')&&packet,'system-clean':action==='app-install'&&engine==='discord-ptb','system-bundle':install||scan||action==='config','system-config':action==='config'||action==='connect'||install&&tunnel,'system-profile':action==='config'||action==='connect'||install&&tunnel,'system-url':action==='download','system-sha':action==='download','system-journal':action==='recover'};
+  return {'system-engine':!['discover','updates','remove-all','uninstall','dns','dns-restore','config','connect','disconnect','refresh','recover','app-repair','app-reinstall'].includes(action),'system-mode':install&&['wiresock','byedpi','zapret','zapret2','goodbyedpi'].includes(engine),'system-preset':install&&packet,'system-args':install&&['byedpi','zapret','zapret2','goodbyedpi'].includes(engine),'system-applications':apps,'system-browsers':apps,'system-cloudflare-terms':action==='config'||install&&tunnel,'system-refresh':install&&tunnel,'system-dns':action==='dns'||install&&engine!=='dnscrypt'||scan,'system-scan':scan,'system-targets':scan,'system-domains':action==='hostlist'||(install||action==='auto-install')&&packet,'system-enabled':action==='hostlist'||action==='refresh'||(install||action==='auto-install')&&packet,'system-clean':action==='app-install'&&engine==='discord-ptb','system-bundle':install||scan||action==='config','system-config':action==='config'||action==='connect'||install&&tunnel,'system-profile':action==='config'||action==='connect'||install&&tunnel,'system-url':action==='download','system-sha':action==='download','system-journal':action==='recover'};
 }
 function refreshSystemFields(){
   const action=$('system-action').value,engines=systemEnginesFor(action);
