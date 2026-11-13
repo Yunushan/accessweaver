@@ -196,10 +196,14 @@ def generate(binary,module_root,main,identity,notices,go="go"):
 
 
 def validate(document,binary,identity=None):
+    return validate_digest(document,sha(binary),identity)
+
+
+def validate_digest(document,artifact_sha256,identity=None):
     require(document.get("bomFormat")=="CycloneDX" and document.get("specVersion")=="1.6","Expected CycloneDX 1.6")
     root=document["metadata"]["component"]
     require(root.get("type")=="application","Expected an application SBOM root")
-    require(root.get("hashes")==[{"alg":"SHA-256","content":sha(binary)}],"SBOM does not match artifact bytes")
+    require(root.get("hashes")==[{"alg":"SHA-256","content":artifact_sha256}],"SBOM does not match artifact bytes")
     values=prop_map(root)
     if identity:
         require(root["version"]==identity["version"],"SBOM version mismatch")

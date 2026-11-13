@@ -12,6 +12,7 @@ import sys
 import tempfile
 
 from macos_installer import version_parts
+from sbom import validate_digest
 from verify_release import require
 from verify_release_provenance import REPOSITORY, regular_file, validate_identity
 from verify_release_rebuild import digest, snapshot
@@ -19,6 +20,7 @@ from verify_release_rebuild import digest, snapshot
 MANIFEST = "SIGNED-RELEASE.json"
 SIGNATURE = "SIGNED-RELEASE.p7s"
 MAX_REBOOT_EVIDENCE = 16
+MAX_SBOM_BYTES = 4 << 20
 SHA256 = r"[a-f0-9]{64}"
 WINDOWS_DETECTION_FIELDS = (
     "target", "installMode", "previousVersion", "previousPayloadSHA256",
@@ -63,6 +65,34 @@ def inventory(root, subjects):
          "size": (root / name).stat().st_size, "sha256": digest(root / name)}
         for name, (target, role) in sorted(subjects.items())
     ]
+
+
+def validate_release_sboms(root, files, commit, version):
+    documents = {}
+    try:
+        for subject in files:
+            if subject["role"] not in ("installer", "payload"):
+                continue
+            name = subject["file"] + ".cdx.json"
+            path = root / name
+            regular_file(path, MAX_SBOM_BYTES)
+            document = decode_json(path.read_bytes())
+            platform, arch = subject["target"].split("/")
+            validate_digest(document, subject["sha256"], {
+                "version": version, "commit": commit, "sourceState": "clean",
+                "platform": platform, "arch": arch,
+            })
+            documents[subject["target"], subject["role"]] = document
+        for target in ("windows/amd64", "windows/arm64"):
+            payload = documents[target, "payload"]["metadata"]["component"]
+            installer = documents[target, "installer"]
+            packaged = next((entry for entry in installer["components"]
+                             if entry["bom-ref"] == "payload-application"), None)
+            require(packaged == {**payload, "bom-ref": "payload-application"},
+                    "Windows installer SBOM payload differs from the signed payload SBOM")
+    except (AttributeError, KeyError, TypeError, RecursionError) as error:
+        raise ValueError("Malformed signed release SBOM") from error
+    return len(documents)
 
 
 def windows_subjects(subjects):
@@ -163,9 +193,10 @@ def prepare(directory, output, commit, ref, *, windows_reboot_evidence=()):
         root = Path(temporary)
         require(snapshot(directory, root, len(subjects)) == subjects.keys(), "Unexpected signed release subjects")
         files = inventory(root, subjects)
+        version = ref.removeprefix("refs/tags/v")
+        validate_release_sboms(root, files, commit, version)
         entries = []
         if windows_reboot_evidence:
-            version = ref.removeprefix("refs/tags/v")
             entries = load_detection_evidence(directory, windows_reboot_evidence, files, version)
         manifest = encode_manifest(commit, ref, files, entries)
         with output.open("xb") as stream:
@@ -266,8 +297,10 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                                                "previousPayloadSHA256", "publisherCertificateSHA256")
                 ) for entry in entries),
                 "Release subject or Windows detection evidence is revoked")
+        sboms_verified = validate_release_sboms(root, files, commit, version)
         report = {
             "schemaVersion": 1, "scope": "accessweaver-signed-desktop-release",
+            "sbomArtifactBindingsVerified": sboms_verified,
             "sourceCommit": commit, "sourceRef": ref, "subjectsVerified": len(subjects),
             "organizationApprovalSignatureVerified": True, "approvalCertificateSHA256": certificate_sha256,
             "revocationListSHA256": revocation_list_sha256.lower(), "revocationCheckPassed": True,

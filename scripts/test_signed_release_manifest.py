@@ -6,11 +6,13 @@ import unittest
 from pathlib import Path
 
 import signed_release_manifest as release
+from sbom import properties
 
 
 COMMIT = "a" * 40
 REF = "refs/tags/v1.2.3-rc.1"
 OPENSSL = shutil.which("openssl")
+VERSION = REF.removeprefix("refs/tags/v")
 
 
 class SignedReleaseManifestTests(unittest.TestCase):
@@ -24,8 +26,44 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.policy = {"schemaVersion": 1, **{field: [] for field in release.REVOCATION_FIELDS}}
         self.policy_pin = self.write_policy(self.policy)
         self.subjects = release.release_subjects(COMMIT, REF)
-        for name in self.subjects:
-            (self.candidate / name).write_bytes(name.encode())
+        for name, (_, role) in self.subjects.items():
+            if role in ("installer", "payload"):
+                (self.candidate / name).write_bytes(name.encode())
+        self.write_sboms()
+
+    def write_sboms(self):
+        payloads = {}
+        for name, (target, role) in self.subjects.items():
+            if role != "payload":
+                continue
+            root = self.sbom_root(name, target)
+            payloads[target] = {**root, "bom-ref": "payload-application"}
+            self.write_sbom(name, root)
+        for name, (target, role) in self.subjects.items():
+            if role == "installer":
+                self.write_sbom(name, self.sbom_root(name, target), payloads.get(target))
+
+    def sbom_root(self, name, target):
+        platform, arch = target.split("/")
+        return {
+            "type": "application", "name": name, "version": VERSION, "bom-ref": "application",
+            "hashes": [{"alg": "SHA-256", "content": release.digest(self.candidate / name)}],
+            "properties": properties({
+                "source-commit": COMMIT, "source-state": "clean", "target-os": platform, "target-arch": arch,
+                "license-evidence": json.dumps([{"path": "licenses/LICENSE", "sha256": "a" * 64}]),
+            }),
+        }
+
+    def write_sbom(self, name, root, payload=None):
+        references = [payload["bom-ref"]] if payload else []
+        document = {
+            "bomFormat": "CycloneDX", "specVersion": "1.6",
+            "metadata": {"component": root}, "components": [payload] if payload else [],
+            "dependencies": [{"ref": root["bom-ref"], "dependsOn": references}]
+                            + [{"ref": ref, "dependsOn": []} for ref in references],
+            "compositions": [{"aggregate": "incomplete"}],
+        }
+        (self.candidate / (name + ".cdx.json")).write_text(json.dumps(document), encoding="utf-8")
 
     def write_policy(self, policy):
         self.revocation_list.write_text(json.dumps(policy), encoding="utf-8")
@@ -74,6 +112,42 @@ class SignedReleaseManifestTests(unittest.TestCase):
         (self.candidate / "extra.exe").write_bytes(b"unexpected")
         with self.assertRaises(ValueError):
             release.prepare(self.candidate, output, COMMIT, REF)
+
+    def test_prepare_rejects_mismatched_or_malformed_sboms(self):
+        output = self.root / release.MANIFEST
+        name = f"accessweaver-{VERSION}-windows-amd64-setup.exe.cdx.json"
+        sidecar = self.candidate / name
+        original = sidecar.read_text(encoding="utf-8")
+        for field, value in (("source-commit", "b" * 40), ("source-state", "modified"),
+                             ("target-os", "darwin"), ("target-arch", "arm64")):
+            document = json.loads(original)
+            root = document["metadata"]["component"]
+            prop = next(prop for prop in root["properties"] if prop["name"] == "accessweaver:" + field)
+            prop["value"] = value
+            sidecar.write_text(json.dumps(document), encoding="utf-8")
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "SBOM build identity"):
+                release.prepare(self.candidate, output, COMMIT, REF)
+            self.assertFalse(output.exists())
+
+        for edit, message in (
+            (lambda doc: doc["metadata"]["component"].update(version="1.2.3"), "SBOM version"),
+            (lambda doc: doc["metadata"]["component"]["hashes"][0].update(content="0" * 64), "artifact bytes"),
+            (lambda doc: doc["components"][0]["hashes"][0].update(content="0" * 64), "signed payload SBOM"),
+            (lambda doc: doc["dependencies"][0]["dependsOn"].append("missing"), "Dangling SBOM dependency"),
+            (lambda doc: doc.update(metadata=None), "Malformed signed release SBOM"),
+        ):
+            document = json.loads(original)
+            edit(document)
+            sidecar.write_text(json.dumps(document), encoding="utf-8")
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                release.prepare(self.candidate, output, COMMIT, REF)
+            self.assertFalse(output.exists())
+
+        sidecar.write_text(original.replace('"bomFormat":', '"bomFormat": "CycloneDX", "bomFormat":', 1),
+                           encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Duplicate JSON"):
+            release.prepare(self.candidate, output, COMMIT, REF)
+        self.assertFalse(output.exists())
 
     def test_prepare_rejects_untrusted_or_incomplete_windows_detection_evidence(self):
         output = self.root / release.MANIFEST
@@ -134,6 +208,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
 
         report = self.verify(approved, pin)
         self.assertEqual(report["subjectsVerified"], 12)
+        self.assertEqual(report["sbomArtifactBindingsVerified"], 6)
         self.assertTrue(report["organizationApprovalSignatureVerified"])
         self.assertFalse(report["nativePublisherChecksPerformed"])
         self.assertTrue(report["revocationCheckPassed"])
@@ -164,6 +239,20 @@ class SignedReleaseManifestTests(unittest.TestCase):
             self.verify(approved, pin)
         extra.unlink()
         self.assertEqual(self.verify(approved, pin), report)
+
+        # Even a correctly signed inventory cannot approve the wrong SBOM semantics.
+        sidecar = self.candidate / f"accessweaver-{VERSION}-darwin-arm64-deployment-experimental.pkg.cdx.json"
+        original_sidecar = sidecar.read_bytes()
+        document = json.loads(original_sidecar)
+        document["metadata"]["component"]["hashes"][0]["content"] = "0" * 64
+        sidecar.write_text(json.dumps(document), encoding="utf-8")
+        manifest.write_bytes(release.encode_manifest(COMMIT, REF, release.inventory(self.candidate, self.subjects)))
+        sign_manifest()
+        with self.assertRaisesRegex(ValueError, "SBOM does not match artifact bytes"):
+            self.verify(approved, pin)
+        sidecar.write_bytes(original_sidecar)
+        manifest.write_bytes(original)
+        sign_manifest()
 
         for field, revoked in {
             "sourceCommits": COMMIT,
