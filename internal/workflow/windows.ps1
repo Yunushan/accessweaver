@@ -3136,6 +3136,11 @@ function Discover {
     [Console]::WriteLine('Discovery phase: conflicts')
     [Console]::WriteLine(('Discovery timing ms: conflicts {0}' -f $discoveryClock.ElapsedMilliseconds))
     $conflicts=@();if($appInspectionError){$conflicts+=@($appInspectionError)};$kaspersky=Get-Process -Name 'avp','avpui' -ErrorAction SilentlyContinue;if($kaspersky){$conflicts+=@('Kaspersky is running; WinDivert compatibility must be checked')};if(($services|Where-Object {$_.name -eq 'CloudflareWARP' -and $_.status -eq 'Running'})){$conflicts+=@('Cloudflare WARP is running; check routing conflicts')}
+    $installerRecovery=Get-WorkflowInstallerRecoveryState
+    switch ($installerRecovery) {
+        'pending' {$conflicts+='AccessWeaver Setup is incomplete. After Setup exits, retry with the same or a newer approved installer in the original directory.'}
+        'unavailable' {$conflicts+='AccessWeaver Setup recovery state could not be read. Ask an administrator to verify it before uninstalling.'}
+    }
     [Console]::WriteLine('Discovery phase: refresh-task')
     [Console]::WriteLine(('Discovery timing ms: refresh-task {0}' -f $discoveryClock.ElapsedMilliseconds))
     $task=Get-RefreshTaskInspection
@@ -3144,7 +3149,7 @@ function Discover {
     $cli=WireSock-CLI;$dnsSnapshot=[bool](Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json'))
     [Console]::WriteLine('Discovery phase: complete')
     [Console]::WriteLine(('Discovery timing ms: complete {0}' -f $discoveryClock.ElapsedMilliseconds))
-    return @{services=@($services);serviceInspectionError=$serviceError;components=$assets;applications=$apps;wiresockCLI=$cli;conflicts=@($conflicts);managedRoot=$root;refreshTask=$task.present;refreshTaskInspectionError=$task.error;dnsSnapshot=$dnsSnapshot}
+    return @{services=@($services);serviceInspectionError=$serviceError;components=$assets;applications=$apps;wiresockCLI=$cli;conflicts=@($conflicts);managedRoot=$root;refreshTask=$task.present;refreshTaskInspectionError=$task.error;dnsSnapshot=$dnsSnapshot;installerRecovery=$installerRecovery}
 }
 function Rollback {
     foreach($entry in $script:undo){
@@ -3569,17 +3574,27 @@ function Assert-WorkflowUninstallProtection([string]$Path) {
     $writes=[int][Security.AccessControl.FileSystemRights]'Write,DeleteSubdirectoriesAndFiles,Delete,ChangePermissions,TakeOwnership'
     Assert-WorkflowUninstallACL (Get-Acl -LiteralPath $Path -ErrorAction Stop) $writes
 }
-function Assert-NoPendingWorkflowInstallation {
-    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
-    $key=$null
+function Get-WorkflowInstallerRecoveryState {
+    $base=$null;$key=$null
     try {
+        $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
         $key=$base.OpenSubKey('SOFTWARE\AccessWeaver\Installer',$false)
-        if($null -ne $key -and $key.GetValueNames() -icontains 'PendingInstall'){
-            throw 'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.'
-        }
+        if($null -ne $key -and $key.GetValueNames() -icontains 'PendingInstall'){return 'pending'}
+        return 'clear'
+    } catch {
+        return 'unavailable'
     } finally {
         if($null -ne $key){$key.Dispose()}
-        $base.Dispose()
+        if($null -ne $base){$base.Dispose()}
+    }
+}
+function Assert-NoPendingWorkflowInstallation {
+    $state=Get-WorkflowInstallerRecoveryState
+    if($state -ceq 'pending'){
+        throw 'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.'
+    }
+    if($state -cne 'clear'){
+        throw 'AccessWeaver Setup recovery state could not be read. Ask an administrator to verify it before uninstalling.'
     }
 }
 function Enter-WorkflowUninstallLifecycle {

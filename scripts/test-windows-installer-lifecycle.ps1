@@ -20,7 +20,7 @@ $workflow=Join-Path $project 'internal\workflow\windows.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($workflow,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Product workflow parse failed'}
 foreach($name in @('No-Reparse','Quote-Arg','Native-Argument','New-ToolCapture','Receive-ToolCapture','Wait-ToolCapture','Stop-ToolTreeWithHelper','Stop-ToolTree','Run-Tool','Native','Get-DriverServiceControllers','Get-ServiceInspection','Under','Get-PEMachine',
-        'Read-WorkflowUninstallRegistration','Get-WorkflowUninstallPath','Assert-WorkflowUninstallACL','Assert-WorkflowUninstallProtection','Assert-NoPendingWorkflowInstallation','Open-WorkflowUninstallBinding')){
+        'Read-WorkflowUninstallRegistration','Get-WorkflowUninstallPath','Assert-WorkflowUninstallACL','Assert-WorkflowUninstallProtection','Get-WorkflowInstallerRecoveryState','Assert-NoPendingWorkflowInstallation','Open-WorkflowUninstallBinding')){
     $nodes=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Expected one fixed product process/inspection helper'}
     . ([scriptblock]::Create($nodes[0].Extent.Text))
@@ -431,6 +431,7 @@ try {
     $stage='pending-installation'
     $pendingValue=$builds[1].version+'|'+$install
     Require ($null -eq (Get-PendingInstallFixtureValue)) 'Successful Setup did not clear its pending record'
+    Require ((Get-WorkflowInstallerRecoveryState) -ceq 'clear') 'Controller did not observe cleared Setup recovery state'
     $failedCopyLog=Join-Path $capsule 'failed-install-copy.log'
     $installedSBOM=Join-Path $install 'SBOM.cdx.json'
     $sbomBeforeFailure=Digest $installedSBOM
@@ -444,6 +445,7 @@ try {
         $copyLog.Contains($installedSBOM) -and
         $copyLog.Contains('An error occurred while trying to replace the existing file:')) 'Setup did not encounter the expected native SBOM replacement failure'
     Require ((Get-PendingInstallFixtureValue) -ceq $pendingValue) 'Failed Setup did not retain its own pending installation record'
+    Require ((Get-WorkflowInstallerRecoveryState) -ceq 'pending') 'Controller did not observe the native Setup recovery marker'
     Require ((Digest $installedSBOM) -ceq $sbomBeforeFailure) 'Failed Setup changed the locked SBOM'
     Assert-UserState
     $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
@@ -470,6 +472,7 @@ try {
     $null=Native-Record $second $arguments
     Assert-Installed $builds[1]
     Require ($null -eq (Get-PendingInstallFixtureValue)) 'Successful retry left the pending installation record'
+    Require ((Get-WorkflowInstallerRecoveryState) -ceq 'clear') 'Controller did not observe cleared recovery state after retry'
     Assert-ManagedDetection 'after-pending-install-retry' $builds[1] $true
     $observations+=,@{
         operation='recover-failed-install-copy';exitCode=$failedCopy.result.exitCode;
