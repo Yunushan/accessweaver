@@ -43,38 +43,48 @@ $oldSchema=$saved.Clone();$oldSchema.schemaVersion=5
 Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
 
 & {
-    $Version='2.0.0';$PayloadSHA256='a'*64;$PayloadSBOMSHA256='b'*64
-    $PublisherCertificateSHA256='c'*64;$Architecture='amd64';$controller='inert.exe'
-    $trace=[Collections.Generic.List[object]]::new()
-    $behavior=@{publisherCode=0;detectorCode=0;detected=$true}
-    $detector={
-        param($Version,$Architecture,$PayloadSHA256,$UninstallerSHA256,$PayloadSBOMSHA256)
-        $trace.Add(@{version=$Version;arch=$Architecture;payload=$PayloadSHA256;uninstaller=$UninstallerSHA256;sbom=$PayloadSBOMSHA256})
-        $global:LASTEXITCODE=$behavior.detectorCode
-        if($behavior.detected){Write-Output 'AccessWeaver detected'}
+    $previousExitCode=Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+    $hadExitCode=$null -ne $previousExitCode
+    if($hadExitCode){$savedExitCode=$previousExitCode.Value}
+    try {
+        $Version='2.0.0';$PayloadSHA256='a'*64;$PayloadSBOMSHA256='b'*64
+        $PublisherCertificateSHA256='c'*64;$Architecture='amd64';$controller='inert.exe'
+        $trace=[Collections.Generic.List[object]]::new()
+        $behavior=@{publisherCode=0;detectorCode=0;detected=$true}
+        $detector={
+            param($Version,$Architecture,$PayloadSHA256,$UninstallerSHA256,$PayloadSBOMSHA256)
+            $trace.Add(@{version=$Version;arch=$Architecture;payload=$PayloadSHA256;uninstaller=$UninstallerSHA256;sbom=$PayloadSBOMSHA256})
+            $global:LASTEXITCODE=$behavior.detectorCode
+            if($behavior.detected){Write-Output 'AccessWeaver detected'}
+        }
+        $publisher={
+            param($Artifact,$ArtifactSHA256,$PublisherCertificateSHA256)
+            $trace.Add(@{artifact=$Artifact;sha256=$ArtifactSHA256;publisher=$PublisherCertificateSHA256})
+            $global:LASTEXITCODE=$behavior.publisherCode
+        }
+        Assert-InstalledDetection $true -UninstallerDigest ('d'*64)
+        Assert-InstalledPublisher
+        if($trace[0].version -cne $Version -or $trace[0].arch -cne $Architecture -or
+           $trace[0].payload -cne $PayloadSHA256 -or $trace[0].sbom -cne $PayloadSBOMSHA256 -or $trace[0].uninstaller -cne ('d'*64) -or
+           $trace[1].artifact -cne $controller -or $trace[1].sha256 -cne $PayloadSHA256 -or $trace[1].publisher -cne $PublisherCertificateSHA256){
+            throw 'Installed candidate pins did not reach verification'
+        }
+        Assert-InstalledDetection $true '1.0.0' ('e'*64) -CandidateSBOMSHA256 ''
+        if($trace[2].version -cne '1.0.0' -or $trace[2].payload -cne ('e'*64) -or $trace[2].sbom){
+            throw 'The previous installation received the current SBOM pin'
+        }
+        $behavior.detected=$false
+        Assert-Refused {Assert-InstalledDetection $true}
+        $behavior.detectorCode=1
+        Assert-Refused {Assert-InstalledDetection $true}
+        $behavior.publisherCode=1
+        Assert-Refused {Assert-InstalledPublisher}
+    } finally {
+        # Actions uses LASTEXITCODE as the step status. Restore the caller's
+        # value so simulated detector/publisher failures cannot fail the step.
+        if($hadExitCode){$global:LASTEXITCODE=$savedExitCode}
+        else{Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue}
     }
-    $publisher={
-        param($Artifact,$ArtifactSHA256,$PublisherCertificateSHA256)
-        $trace.Add(@{artifact=$Artifact;sha256=$ArtifactSHA256;publisher=$PublisherCertificateSHA256})
-        $global:LASTEXITCODE=$behavior.publisherCode
-    }
-    Assert-InstalledDetection $true -UninstallerDigest ('d'*64)
-    Assert-InstalledPublisher
-    if($trace[0].version -cne $Version -or $trace[0].arch -cne $Architecture -or
-       $trace[0].payload -cne $PayloadSHA256 -or $trace[0].sbom -cne $PayloadSBOMSHA256 -or $trace[0].uninstaller -cne ('d'*64) -or
-       $trace[1].artifact -cne $controller -or $trace[1].sha256 -cne $PayloadSHA256 -or $trace[1].publisher -cne $PublisherCertificateSHA256){
-        throw 'Installed candidate pins did not reach verification'
-    }
-    Assert-InstalledDetection $true '1.0.0' ('e'*64) -CandidateSBOMSHA256 ''
-    if($trace[2].version -cne '1.0.0' -or $trace[2].payload -cne ('e'*64) -or $trace[2].sbom){
-        throw 'The previous installation received the current SBOM pin'
-    }
-    $behavior.detected=$false
-    Assert-Refused {Assert-InstalledDetection $true}
-    $behavior.detectorCode=1
-    Assert-Refused {Assert-InstalledDetection $true}
-    $behavior.publisherCode=1
-    Assert-Refused {Assert-InstalledPublisher}
 }
 if((Get-RebootInstallMode '2.0.0' $pin '' '') -cne 'clean'){throw 'Clean baseline was refused'}
 $priorDigest='e'*64
@@ -171,6 +181,7 @@ function Assert-RebootPath([string]$Path){
 }
 function Get-RebootDigest([string]$Path,[switch]$AllowEmpty){
     if($Path -cnotin @($payload,$notice)){throw 'Unexpected fixture file digest'}
+    if(-not [IO.File]::Exists($Path)){throw 'Expected an existing fixture file'}
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 [void][IO.Directory]::CreateDirectory($root)
