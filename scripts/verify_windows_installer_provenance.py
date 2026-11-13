@@ -112,14 +112,22 @@ def validate_managed_detection(report):
         ("after-upgrade", True), ("superseded-version", False), ("after-reinstall", True),
         ("after-refused-downgrade", True), ("after-refused-uninstall", True), ("after-uninstall", False),
     ]
+    refusals = {"active-lifecycle-refused", "abandoned-lifecycle-refused"}
+    if report.get("schemaVersion", 0) >= 17:
+        expected[6:6] = [("active-lifecycle-refused", False), ("abandoned-lifecycle-refused", False),
+                         ("after-lifecycle-locks", True)]
     source = Path(__file__).with_name("detect-windows-installer.ps1")
     require(report.get("managedDetectionSourceSHA256") == digest(source.read_bytes()),
             "Managed detection differs from the approved source")
     cases = report.get("managedDetectionCases")
     require(isinstance(cases, list) and len(cases) == len(expected), "Incomplete managed detection coverage")
     for case, (phase, detected) in zip(cases, expected):
-        require(isinstance(case, dict) and case.keys() == {"phase", "detected"}
-                and case["phase"] == phase and case["detected"] is detected,
+        expected_case = {"phase": phase, "detected": detected}
+        if phase in refusals:
+            expected_case["inspectionRefused"] = True
+        require(isinstance(case, dict) and case.keys() == expected_case.keys()
+                and case["phase"] == phase and case["detected"] is detected
+                and (phase not in refusals or case["inspectionRefused"] is True),
                 "Unexpected managed detection result")
     return {"managedDetectionChecksVerified": len(expected)}
 
@@ -165,7 +173,7 @@ def validate_fixed_restoration(refused, removed):
 
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")

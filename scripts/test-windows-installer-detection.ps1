@@ -52,7 +52,14 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
 }
 '@
     $original=[IO.File]::ReadAllText($source)
-    [IO.File]::WriteAllText($fixture,$original.Substring(0,$node.StartOffset)+$mock+$original.Substring($node.EndOffset))
+    $productionLock='Global\AccessWeaver-Lifecycle-B13D4677-4660-4E63-B3DB-03077ACBB092'
+    $lockSource=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-installer-lock.iss'))
+    if(-not $lockSource.Contains("'"+$productionLock+"'") -or -not $original.Contains("'"+$productionLock+"'")){
+        throw 'Detector and installer lifecycle names differ'
+    }
+    $fixtureLock='Global\AccessWeaver-DetectionTest-'+[guid]::NewGuid().ToString('N')
+    $mocked=$original.Substring(0,$node.StartOffset)+$mock+$original.Substring($node.EndOffset)
+    [IO.File]::WriteAllText($fixture,$mocked.Replace($productionLock,$fixtureLock))
     $arch=@{X64='amd64';Arm64='arm64'}[[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()]
     $stock=Join-Path $PSHOME 'powershell.exe'
     if(-not (Test-Path -LiteralPath $stock)){$stock=Join-Path $PSHOME 'pwsh.exe'}
@@ -96,6 +103,42 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
             if($LASTEXITCODE -ne $case.code -or $output.Count -ne $case.count -or
                ($case.count -eq 1 -and $output[0] -cne 'AccessWeaver detected')){throw 'Unexpected managed detection fixture result'}
         }
+        $env:AW_DETECTION_FIXTURE='approved'
+        $arguments=@('-NoProfile','-NonInteractive','-File',$fixture,'-Version','0.1.0-alpha','-Architecture',$arch,'-PayloadSHA256',$hash,'-InstallDirectory',$testRoot)
+        function Assert-DetectionRefusal {
+            $output=@(& $stock @arguments 2>&1)
+            if($LASTEXITCODE -ne 1 -or $output.Count){throw 'Managed detection did not silently refuse a retained lifecycle object'}
+        }
+
+        $active=[Threading.Mutex]::new($true,$fixtureLock)
+        try {Assert-DetectionRefusal}
+        finally {try {$active.ReleaseMutex()} finally {$active.Dispose()}}
+
+        $idle=[Threading.Mutex]::new($false,$fixtureLock)
+        try {Assert-DetectionRefusal}
+        finally {$idle.Dispose()}
+
+        $collision=[Threading.EventWaitHandle]::new($false,[Threading.EventResetMode]::ManualReset,$fixtureLock)
+        try {Assert-DetectionRefusal}
+        finally {$collision.Dispose()}
+
+        Add-Type -Path (Join-Path $PSScriptRoot 'fixtures\InstallerLifecycleLock.cs')
+        try {
+            [AccessWeaverLifecycleLockFixture]::Abandon($fixtureLock)
+            Assert-DetectionRefusal
+            $retained=[Threading.Mutex]::OpenExisting($fixtureLock)
+            try {
+                try {
+                    if($retained.WaitOne(0)){$retained.ReleaseMutex()}
+                    throw 'Detection consumed the abandoned lifecycle signal'
+                } catch [Threading.AbandonedMutexException] {$retained.ReleaseMutex()}
+            } finally {$retained.Dispose()}
+        } finally {[AccessWeaverLifecycleLockFixture]::Close()}
+
+        $output=@(& $stock @arguments 2>&1)
+        if($LASTEXITCODE -ne 0 -or $output.Count -ne 1 -or $output[0] -cne 'AccessWeaver detected'){
+            throw 'Managed detection did not resume after lifecycle objects were released'
+        }
     } finally {$env:AW_DETECTION_FIXTURE=$saved}
 } finally {
     foreach($file in @($payload,$fixture,$uninstaller,$sbom)){
@@ -103,4 +146,4 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
     }
     $fixtureDirectory.Delete()
 }
-Write-Output ('Managed detection contracts passed: '+$cases.Count)
+Write-Output ('Managed detection contracts passed: '+($cases.Count+5))

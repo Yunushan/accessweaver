@@ -92,35 +92,35 @@ function Open-AccessWeaverInstalledFile([string]$Path,[long]$Maximum) {
     } catch {$file.Dispose();throw}
 }
 
-try {
-    $targets=@{amd64='X64';arm64='Arm64'}
-    if($env:OS -cne 'Windows_NT' -or $Architecture -cnotin @('amd64','arm64') -or
-       $targets[$Architecture] -cne [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -or
-       -not [Environment]::Is64BitProcess -or $Version.Length -gt 256 -or
-       $Version -cnotmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?(?:\+[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?\z' -or
-       $PayloadSHA256 -notmatch '\A[a-fA-F0-9]{64}\z' -or
-       ($PayloadSBOMSHA256 -and $PayloadSBOMSHA256 -notmatch '\A[a-fA-F0-9]{64}\z') -or
-       ($UninstallerSHA256 -and $UninstallerSHA256 -notmatch '\A[a-fA-F0-9]{64}\z')){
-        throw 'Expected pinned Windows payload identity and a matching 64-bit host'
+function Enter-AccessWeaverDetection {
+    # Claim ownership only when creating a new mutex. Waiting on an existing
+    # one could consume the abandonment signal that Setup needs to inspect.
+    $created=$false
+    $mutex=[Threading.Mutex]::new($true,'Global\AccessWeaver-Lifecycle-B13D4677-4660-4E63-B3DB-03077ACBB092',[ref]$created)
+    if(-not $created){
+        $mutex.Dispose()
+        throw 'An AccessWeaver lifecycle object already exists'
     }
-    if(-not $InstallDirectory){$InstallDirectory=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'AccessWeaver'}
-    $directory=Get-AccessWeaverLocalDirectory $InstallDirectory
+    return $mutex
+}
+
+function Test-AccessWeaverInstallation([string]$directory) {
     $registration=Read-AccessWeaverRegistration Registry64
     if($null -ne (Read-AccessWeaverRegistration Registry32)){throw 'Unexpected alternate machine registration'}
-    if($null -eq $registration -or $registration.version -cne $Version){exit 0}
+    if($null -eq $registration -or $registration.version -cne $Version){return $false}
     if((Get-AccessWeaverLocalDirectory $registration.location) -ine $directory){throw 'Unexpected registered installation directory'}
     $payload=$null;$uninstaller=$null;$sbom=$null
     try {
         $payload=Open-AccessWeaverInstalledFile (Join-Path $directory 'accessweaver.exe') 128MB
-        if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $payload -Algorithm SHA256).Hash -ine $PayloadSHA256){exit 0}
+        if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $payload -Algorithm SHA256).Hash -ine $PayloadSHA256){return $false}
         if($PayloadSBOMSHA256){
             $sbom=Open-AccessWeaverInstalledFile (Join-Path $directory 'SBOM.cdx.json') 4MB
-            if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $sbom -Algorithm SHA256).Hash -ine $PayloadSBOMSHA256){exit 0}
+            if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $sbom -Algorithm SHA256).Hash -ine $PayloadSBOMSHA256){return $false}
         }
         if($UninstallerSHA256){
             $path=Get-AccessWeaverRegisteredUninstaller $registration $directory
             $uninstaller=Open-AccessWeaverInstalledFile $path 512MB
-            if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $uninstaller -Algorithm SHA256).Hash -ine $UninstallerSHA256){exit 0}
+            if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $uninstaller -Algorithm SHA256).Hash -ine $UninstallerSHA256){return $false}
         }
         $confirmed=Read-AccessWeaverRegistration Registry64
         if($null -eq $confirmed -or $confirmed.version -cne $registration.version -or
@@ -135,6 +135,29 @@ try {
             finally {if($null -ne $payload){$payload.Dispose()}}
         }
     }
+    return $true
+}
+
+try {
+    $targets=@{amd64='X64';arm64='Arm64'}
+    if($env:OS -cne 'Windows_NT' -or $Architecture -cnotin @('amd64','arm64') -or
+       $targets[$Architecture] -cne [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() -or
+       -not [Environment]::Is64BitProcess -or $Version.Length -gt 256 -or
+       $Version -cnotmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?(?:\+[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?\z' -or
+       $PayloadSHA256 -notmatch '\A[a-fA-F0-9]{64}\z' -or
+       ($PayloadSBOMSHA256 -and $PayloadSBOMSHA256 -notmatch '\A[a-fA-F0-9]{64}\z') -or
+       ($UninstallerSHA256 -and $UninstallerSHA256 -notmatch '\A[a-fA-F0-9]{64}\z')){
+        throw 'Expected pinned Windows payload identity and a matching 64-bit host'
+    }
+    if(-not $InstallDirectory){$InstallDirectory=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'AccessWeaver'}
+    $directory=Get-AccessWeaverLocalDirectory $InstallDirectory
+    $lifecycle=Enter-AccessWeaverDetection
+    try {$detected=Test-AccessWeaverInstallation $directory}
+    finally {
+        try {$lifecycle.ReleaseMutex()}
+        finally {$lifecycle.Dispose()}
+    }
+    if(-not $detected){exit 0}
     Microsoft.PowerShell.Utility\Write-Output 'AccessWeaver detected'
     exit 0
 } catch {

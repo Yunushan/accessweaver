@@ -234,6 +234,22 @@ class ManagedDetectionEvidenceTests(unittest.TestCase):
         report = {"managedDetectionSourceSHA256": sha256(source.read_bytes()).hexdigest(),
                   "managedDetectionCases": cases}
         self.assertEqual(validate_managed_detection(report), {"managedDetectionChecksVerified": 9})
+        with_lock = [
+            *cases[:6],
+            {"phase": "active-lifecycle-refused", "detected": False, "inspectionRefused": True},
+            {"phase": "abandoned-lifecycle-refused", "detected": False, "inspectionRefused": True},
+            {"phase": "after-lifecycle-locks", "detected": True},
+            *cases[6:],
+        ]
+        upgraded = {**report, "schemaVersion": 17, "managedDetectionCases": with_lock}
+        self.assertEqual(validate_managed_detection(upgraded), {"managedDetectionChecksVerified": 12})
+        with self.assertRaises(ValueError):
+            validate_managed_detection({**report, "schemaVersion": 17})
+        for index in (6, 7):
+            wrong = list(with_lock)
+            wrong[index] = {**wrong[index], "inspectionRefused": 1}
+            with self.assertRaises(ValueError):
+                validate_managed_detection({**upgraded, "managedDetectionCases": wrong})
         for change in (
             {"managedDetectionSourceSHA256": "0" * 64},
             {"managedDetectionCases": cases[1:]},
