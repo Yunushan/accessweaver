@@ -5,6 +5,7 @@ on:
     branches: [main, codex/dns-adapter-coverage]
     paths:
       - scripts/test-windows-native-wiresock.ps1
+      - scripts/test-windows-wiresock-evidence.ps1
       - 'scripts/fixtures/wgpeer/**'
       - internal/workflow/windows.ps1
       - .github/workflows/windows-native-wiresock.yml
@@ -33,6 +34,9 @@ jobs:
           go-version: '1.27.4'
           architecture: ${{ matrix.sdkarch }}
           cache: false
+      - name: Check bounded peer evidence parsing
+        shell: powershell
+        run: ./scripts/test-windows-wiresock-evidence.ps1
       - name: Exercise real WireSock lifecycle with a local peer
         shell: powershell
         env:

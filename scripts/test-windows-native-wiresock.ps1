@@ -11,7 +11,7 @@ $project=Split-Path -Parent $PSScriptRoot
 $source=$env:GITHUB_SHA
 if($source -cnotmatch '^[a-f0-9]{40}$' -or (git -C $project rev-parse HEAD).Trim() -cne $source -or $LASTEXITCODE -ne 0){throw 'Source identity mismatch'}
 if((git -C $project status --porcelain --untracked-files=no)){throw 'Tracked source must be clean'}
-$paths=@('internal/workflow/windows.ps1','go.mod','go.sum','scripts/fixtures/wgpeer/go.mod','scripts/fixtures/wgpeer/go.sum','scripts/fixtures/wgpeer/main.go','scripts/fixtures/wgpeer/cmd/probe/main.go','scripts/test-windows-native-wiresock.ps1','.github/workflows/windows-native-wiresock.yml')
+$paths=@('internal/workflow/windows.ps1','go.mod','go.sum','scripts/fixtures/wgpeer/go.mod','scripts/fixtures/wgpeer/go.sum','scripts/fixtures/wgpeer/main.go','scripts/fixtures/wgpeer/cmd/probe/main.go','scripts/test-windows-native-wiresock.ps1','scripts/test-windows-wiresock-evidence.ps1','.github/workflows/windows-native-wiresock.yml')
 $hashes=@{}
 foreach($path in $paths){$hashes[$path]=(Get-FileHash -LiteralPath (Join-Path $project $path) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $checks=[ordered]@{
@@ -38,6 +38,7 @@ $connectionRecovery=[ordered]@{
     profileListAfterRetry='not-checked'
 }
 $managedRemovalProfileList='not-checked'
+$failedConnectionPeer=[ordered]@{observed=$false;statsReadable=$false;handshake=$false;receivedBytes=$false;sentBytes=$false}
 $vendorCLI=[ordered]@{profileList='not-checked';directStatus='not-checked';profileExport='not-checked';keyPairRetained=$false;endpointRetained=$false;prefixesRetained=$false;selectedAppRetained=$false}
 $uninstallRegistration=[ordered]@{observed=$false;total=0;visibleBundles=0;hiddenMSIs=0;other=0;hiddenMSIIdentity='not-checked'}
 $cachedBundleTrust=[ordered]@{path='not-checked';signature='not-checked';publisher='not-checked';installerBytes='not-checked';engineBytes='not-checked'}
@@ -273,13 +274,66 @@ function Observe-VendorUninstallRegistration {
     if($hiddenMSIs -eq 1){$uninstallRegistration.hiddenMSIIdentity=$identity}
     if($visibleBundles -eq 1){Observe-CachedBundleTrust $bundle}
 }
-function Get-ManagedVendorProfileList([string]$cli){
-    if(-not (Test-Path -LiteralPath $cli -PathType Leaf -ErrorAction Stop)){return 'not-checked'}
+function Read-PeerEvidence([string]$path){
+    $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+    if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+       $item.Length -le 0 -or $item.Length -gt 4096){
+        throw 'Peer statistics are not a bounded ordinary file'
+    }
+    $stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+    try {
+        $buffer=[byte[]]::new(4097)
+        $length=0
+        while($length -lt $buffer.Length){
+            $read=$stream.Read($buffer,$length,$buffer.Length-$length)
+            if($read -eq 0){break}
+            $length+=$read
+        }
+        if($length -le 0 -or $length -gt 4096){throw 'Peer statistics size changed'}
+        $text=[Text.UTF8Encoding]::new($false,$true).GetString($buffer,0,$length)
+    } finally {$stream.Dispose()}
+    $counts=ConvertFrom-Json -InputObject $text -ErrorAction Stop
+    $observed=@{}
+    foreach($field in @('last_handshake_time_sec','rx_bytes','tx_bytes')){
+        $value=$counts.$field
+        $parsed=0L
+        if($value -isnot [string] -or $value -cnotmatch '\A[0-9]{1,19}\z' -or
+           -not [long]::TryParse($value,[ref]$parsed)){throw 'Invalid peer statistic'}
+        $observed[$field]=$parsed -gt 0
+    }
+    return @{handshake=$observed.last_handshake_time_sec;receivedBytes=$observed.rx_bytes;sentBytes=$observed.tx_bytes}
+}
+function Observe-PeerEvidence([string]$path,[switch]$WaitForTraffic){
+    $timer=[Diagnostics.Stopwatch]::StartNew()
+    $observed=$null
+    do {
+        try {
+            $sample=Read-PeerEvidence $path
+            if(-not $observed){
+                $observed=$sample
+            } else {
+                foreach($field in @('handshake','receivedBytes','sentBytes')){
+                    $observed[$field]=$observed[$field] -or $sample[$field]
+                }
+            }
+            if(-not $WaitForTraffic -or ($observed.handshake -and $observed.receivedBytes -and $observed.sentBytes)){break}
+        }catch{}
+        Start-Sleep -Milliseconds 100
+    } while($timer.Elapsed.TotalSeconds -lt 5)
+    return $observed
+}
+function Read-ManagedVendorProfileList([string]$cli){
+    if(-not (Test-Path -LiteralPath $cli -PathType Leaf -ErrorAction Stop)){return @{status='not-checked';profiles=@()}}
     $list=Invoke-PrivateNative $cli @('list')
-    if($list.exitCode -ne 0 -or $list.stdout.Length -gt 8192){return 'command-failed'}
-    if([string]::IsNullOrWhiteSpace($list.stdout)){return 'empty'}
-    if($list.stdout -cmatch '(?<![a-zA-Z0-9-])AccessWeaver-[a-f0-9]{32}(?![a-zA-Z0-9-])'){return 'managed-profile-observed'}
-    return 'managed-profile-not-observed'
+    if($list.exitCode -ne 0 -or $list.stdout.Length -gt 8192){return @{status='command-failed';profiles=@()}}
+    if([string]::IsNullOrWhiteSpace($list.stdout)){return @{status='empty';profiles=@()}}
+    $pattern='(?<![a-zA-Z0-9-])AccessWeaver-[a-f0-9]{32}(?![a-zA-Z0-9-])'
+    $profiles=@([regex]::Matches($list.stdout,$pattern) | ForEach-Object {$_.Value} | Sort-Object -Unique)
+    $status=if($profiles.Count){'managed-profile-observed'}else{'managed-profile-not-observed'}
+    return @{status=$status;profiles=$profiles}
+}
+function Get-ManagedVendorProfileList([string]$cli){
+    return (Read-ManagedVendorProfileList $cli).status
 }
 function Invoke-TestWorkflow([hashtable]$request){
     $action=$request.action
@@ -380,10 +434,28 @@ try {
     $cli=Join-Path $env:ProgramFiles $cliPaths[0]
     if(-not $checks.installCompleted){
         if($connectionRecovery.observed){
-            # Observe recovery before the fixture's remove and vendor uninstall steps.
+            # Snapshot the independent peer before the fixture retries recovery.
+            $failedConnectionPeer.observed=$true
+            if(-not $peer.HasExited){
+                $sample=Observe-PeerEvidence (Join-Path $state 'traffic.json')
+                if($sample -and -not $peer.HasExited){
+                    $failedConnectionPeer.statsReadable=$true
+                    $failedConnectionPeer.handshake=$sample.handshake
+                    $failedConnectionPeer.receivedBytes=$sample.receivedBytes
+                    $failedConnectionPeer.sentBytes=$sample.sentBytes
+                }
+            }
             $connectionRecovery.ownership=if(Test-Path -LiteralPath $owned -ErrorAction Stop){'present'}else{'absent'}
-            $connectionRecovery.profileList=Get-ManagedVendorProfileList $cli
+            $inventory=Read-ManagedVendorProfileList $cli
+            $connectionRecovery.profileList=$inventory.status
             $connectionRecovery.statusBeforeRetry=Get-FixtureVendorStatus $cli
+            $vendorCLI.directStatus=$connectionRecovery.statusBeforeRetry
+            # This run started from a clean disposable vendor baseline. Only a
+            # unique managed name and bound journal permit the diagnostic export.
+            if($connectionRecovery.journalReferenceValid -and $inventory.profiles.Count -eq 1){
+                $vendorCLI.profileList='profile-observed'
+                Observe-ImportedProfile $cli $inventory.profiles[0] $config
+            }
             if($installJournal -and $connectionRecovery.recordedRollback -ceq 'incomplete'){
                 try {[void](Invoke-TestWorkflow @{action='recover';journalId=$installJournal})}
                 catch {}
@@ -428,27 +500,12 @@ try {
             $checks['unselected'+$probe.name+'Unreachable']=(Test-ProbeRoundTrip $selected $probe.args) -and -not $peer.HasExited
         }
     }
-    $clock.Restart()
-    while($clock.Elapsed.TotalSeconds -lt 5){
-        try {
-            $statsFile=Get-Item -LiteralPath (Join-Path $state 'traffic.json')
-            if($statsFile.Length -gt 0 -and $statsFile.Length -le 4096){
-                $counts=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($statsFile.FullName))
-                $validStats=$true
-                foreach($field in @('last_handshake_time_sec','rx_bytes','tx_bytes')){
-                    $parsed=0L
-                    if(-not [long]::TryParse([string]$counts.$field,[ref]$parsed) -or $parsed -lt 0){$validStats=$false;break}
-                }
-                if($validStats){
-                    $checks.peerStatsReadable=$true
-                    if([long]$counts.last_handshake_time_sec -gt 0){$checks.peerHandshake=$true}
-                    if([long]$counts.rx_bytes -gt 0){$checks.peerReceivedBytes=$true}
-                    if([long]$counts.tx_bytes -gt 0){$checks.peerSentBytes=$true}
-                    if($checks.peerHandshake -and $checks.peerReceivedBytes -and $checks.peerSentBytes){break}
-                }
-            }
-        } catch {}
-        Start-Sleep -Milliseconds 100
+    $sample=Observe-PeerEvidence (Join-Path $state 'traffic.json') -WaitForTraffic
+    if($sample -and -not $peer.HasExited){
+        $checks.peerStatsReadable=$true
+        $checks.peerHandshake=$sample.handshake
+        $checks.peerReceivedBytes=$sample.receivedBytes
+        $checks.peerSentBytes=$sample.sentBytes
     }
     $stage='disconnect'
     $checks.disconnectCompleted=(Invoke-TestWorkflow @{action='disconnect';engine='wiresock'}).passed
@@ -491,7 +548,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=17;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;managedRemovalProfileList=$managedRemovalProfileList;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;cachedBundleTrust=$cachedBundleTrust;productionQualificationComplete=$false}
+$report=@{schemaVersion=18;failedConnectionPeer=$failedConnectionPeer;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;managedRemovalProfileList=$managedRemovalProfileList;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;cachedBundleTrust=$cachedBundleTrust;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
