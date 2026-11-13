@@ -21,6 +21,7 @@ $checks=[ordered]@{
     managedRemovalCompleted=$false;vendorRemovalCompleted=$false;peerExited=$false;fixtureRemoved=$false
 }
 $workflowOutcomes=[ordered]@{install='not-run';disconnect='not-run';remove='not-run';'vendor-uninstall'='not-run'}
+$connectionState='not-checked'
 $stage='baseline'
 $bin=Join-Path $env:RUNNER_TEMP ('accessweaver-wiresock-'+[guid]::NewGuid().ToString('N'))
 $controller=Join-Path $bin 'accessweaver.exe'
@@ -80,6 +81,11 @@ function Invoke-TestWorkflow([hashtable]$request){
         if($run.stdout.Length -le 1048576){try {$job=ConvertFrom-Json -InputObject $run.stdout -ErrorAction Stop}catch{}}
         $outcome=Get-WorkflowOutcome $run $job
         $workflowOutcomes[$action]=$outcome
+        if($action -ceq 'install' -and $outcome -ceq 'succeeded'){
+            $statusText=[string]$job.result.data.status
+            $states=@([regex]::Matches($statusText,'(?<![A-Za-z])(NotConnected|Connecting|Connected|Disconnecting|Disconnected)(?![A-Za-z])') | ForEach-Object {$_.Value} | Sort-Object -Unique)
+            $script:connectionState=if($states.Count -eq 1){$states[0]}elseif($states.Count -gt 1){'ambiguous'}else{'unrecognized'}
+        }
         return @{passed=($outcome -ceq 'succeeded');restart=($outcome -ceq 'restart-required')}
     } finally {[IO.File]::Delete($path)}
 }
@@ -176,7 +182,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=2;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;productionQualificationComplete=$false}
+$report=@{schemaVersion=3;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
