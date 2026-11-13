@@ -109,7 +109,7 @@ class PublisherTests(unittest.TestCase):
                 if executable == "/usr/bin/codesign":
                     self.assertEqual(arguments[1:4], ["--verify", "--strict", "--all-architectures"])
                     self.assertIn(f'certificate leaf[subject.OU] = "{TEAM}"', arguments[-2])
-                    self.assertFalse(destination.exists() and mode != "existing")
+                    self.assertFalse(destination.exists() and mode not in ("existing", "conflict", "output-hardlink", "wrong-mode"))
                     target = arguments[-1]
                     if target.name == publisher.BUNDLE_NAME:
                         self.assertIn(f'identifier "{publisher.BUNDLE_ID}"', arguments[-2])
@@ -120,6 +120,8 @@ class PublisherTests(unittest.TestCase):
                         self.assertEqual(target.read_bytes(), helper_bytes)
                         if mode == "wrong-publisher":
                             raise subprocess.CalledProcessError(1, arguments)
+                        if mode == "changed-after-signature":
+                            target.write_bytes(b"changed after signature")
                 return ""
 
             def verify(digest=helper_digest):
@@ -135,6 +137,7 @@ class PublisherTests(unittest.TestCase):
                     ("phase-mismatch", helper_digest, ValueError),
                     ("hardlink", helper_digest, ValueError),
                     ("wrong-publisher", helper_digest, subprocess.CalledProcessError),
+                    ("changed-after-signature", helper_digest, ValueError),
                 ):
                     with self.subTest(mode=mode), self.assertRaises(error):
                         verify(digest)
@@ -154,20 +157,41 @@ class PublisherTests(unittest.TestCase):
                 })
                 self.assertEqual(destination.read_bytes(), helper_bytes)
                 self.assertEqual(destination.stat().st_nlink, 1)
-                destination.write_bytes(b"existing assignment")
                 mode = "existing"
-                with self.assertRaises(FileExistsError):
+                before = destination.stat()
+                retry = verify()
+                self.assertEqual(retry, report)
+                self.assertEqual(destination.stat().st_ino, before.st_ino)
+                self.assertEqual(destination.stat().st_mtime_ns, before.st_mtime_ns)
+                mode = "conflict"
+                destination.write_bytes(b"existing assignment")
+                with self.assertRaisesRegex(ValueError, "differs from the approved digest"):
                     verify()
                 self.assertEqual(destination.read_bytes(), b"existing assignment")
+                destination.write_bytes(helper_bytes)
+                mode = "output-hardlink"
+                alias = root / "alias"
+                os.link(destination, alias)
+                with self.assertRaisesRegex(ValueError, "bounded regular package executable"):
+                    verify()
+                self.assertEqual(alias.read_bytes(), helper_bytes)
+                alias.unlink()
+                if os.name == "posix":
+                    mode = "wrong-mode"
+                    destination.chmod(0o644)
+                    with self.assertRaisesRegex(ValueError, "mode 0755"):
+                        verify()
+                    self.assertEqual(destination.read_bytes(), helper_bytes)
 
             with patch.object(publisher, "tool") as native:
                 for output, pin, arch in (
                     (destination, None, "arm64"),
                     (directory / "accessweaver-installer", helper_digest, "arm64"),
                     (root / "other", helper_digest, "arm64"),
+                    (root / "missing" / "accessweaver-installer", helper_digest, "arm64"),
                     (destination, helper_digest, "x64"),
                 ):
-                    with self.assertRaises(ValueError):
+                    with self.assertRaises((ValueError, FileNotFoundError)):
                         publisher.verify(directory, package_digest, TEAM, PIN, detector_output=output,
                                          detector_sha256=pin, architecture=arch)
                 native.assert_not_called()

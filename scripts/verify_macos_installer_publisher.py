@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify the publisher and stapled notarization of one approved macOS package."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -63,18 +64,29 @@ def developer_application_requirement(team):
             f'and certificate leaf[subject.OU] = "{team}"')
 
 
-def read_expanded_executable(path, maximum):
+def read_expanded_executable(path, maximum, *, mode=None):
     before = path.lstat()
     require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
             and 0 < before.st_size <= maximum, "Expected a bounded regular package executable")
+    if mode is not None:
+        require(stat.S_IMODE(before.st_mode) == mode, "Expected a detector with mode 0755")
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
     with os.fdopen(os.open(path, flags), "rb") as source:
         info = os.fstat(source.fileno())
-        require(os.path.samestat(before, info) and info.st_nlink == 1 and stat.S_ISREG(info.st_mode)
-                and info.st_size == before.st_size, "Package executable changed before verification")
+        def identity(entry):
+            return entry.st_dev, entry.st_ino, entry.st_mode, entry.st_nlink, entry.st_size, entry.st_mtime_ns
+
+        require(stat.S_ISREG(info.st_mode) and identity(info) == identity(before),
+                "Package executable changed before verification")
         data = source.read(info.st_size + 1)
-    require(len(data) == info.st_size, "Package executable size changed")
+        require(len(data) == info.st_size and identity(os.fstat(source.fileno())) == identity(before)
+                and identity(path.lstat()) == identity(before), "Package executable changed during verification")
     return data
+
+
+def verify_detector_bytes(path, approved_sha256):
+    data = read_expanded_executable(path, 16 << 20, mode=0o755 if os.name == "posix" else None)
+    require(hashlib.sha256(data).hexdigest() == approved_sha256, "Package helper differs from the approved digest")
 
 
 def stage_detector(package, team, architecture, approved_sha256, destination):
@@ -106,10 +118,16 @@ def stage_detector(package, team, architecture, approved_sha256, destination):
             stream.flush()
             staged.chmod(0o755)
             os.fsync(stream.fileno())
-        require(digest(staged) == approved_sha256, "Package helper differs from the approved digest")
+        verify_detector_bytes(staged, approved_sha256)
         tool(["/usr/bin/codesign", "--verify", "--strict", "--all-architectures",
               "-R=" + requirement, staged])
-        os.link(staged, destination)
+        verify_detector_bytes(staged, approved_sha256)
+        try:
+            os.link(staged, destination)
+        except FileExistsError:
+            # A retry or concurrent publication may already own the name.
+            pass
+    verify_detector_bytes(destination, approved_sha256)
 
 
 def verify(directory, artifact_sha256, team, certificate_sha256, *,
@@ -122,6 +140,9 @@ def verify(directory, artifact_sha256, team, certificate_sha256, *,
                 and not detector_output.parent.resolve().is_relative_to(directory.resolve())
                 and detector_sha256 is not None and FINGERPRINT.fullmatch(detector_sha256)
                 and architecture in ("amd64", "arm64"), "Invalid managed detector staging inputs")
+        parent = detector_output.parent
+        require(stat.S_ISDIR(parent.lstat().st_mode), "Expected a real detector output directory")
+        detector_output = parent.resolve(strict=True) / detector_output.name
         detector_sha256 = detector_sha256.lower()
     artifact_sha256 = artifact_sha256.lower()
     certificate_sha256 = certificate_sha256.lower()
