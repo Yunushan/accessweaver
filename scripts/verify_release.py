@@ -8,7 +8,7 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import platform
 import re
 import stat
@@ -20,6 +20,10 @@ import zipfile
 
 from sbom import validate as validate_sbom
 
+MAX_ARCHIVE_MEMBERS = 4096
+MAX_MEMBER_BYTES = 64 << 20
+MAX_UNCOMPRESSED_BYTES = 256 << 20
+WINDOWS_DEVICE = re.compile(r"(?:CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\..*)?", re.IGNORECASE)
 PROVENANCE_BUNDLE = "BUILD-PROVENANCE.sigstore.json"
 TARGETS = {(os_name, arch) for os_name in ("windows", "linux", "darwin", "freebsd", "openbsd") for arch in ("amd64", "arm64")}
 
@@ -29,28 +33,51 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def zip_members(archive):
+    for item in archive.infolist():
+        mode = item.external_attr >> 16
+        regular = (not item.is_dir() and not item.external_attr & 0x10
+                   and (item.create_system != 3 or stat.S_IFMT(mode) in (0, stat.S_IFREG)))
+        yield item.orig_filename, item.file_size, regular and not item.flag_bits & 1
+
+
 def inspect_archive(path, root, binary_name):
     if path.suffix == ".zip":
         archive = zipfile.ZipFile(path)
-        members = [(item.filename, item.file_size, not item.is_dir() and not stat.S_ISLNK(item.external_attr >> 16)) for item in archive.infolist()]
+        members = zip_members(archive)
         read = archive.read
     else:
         archive = tarfile.open(path, "r:gz")
-        members = [(item.name, item.size, item.isfile()) for item in archive.getmembers()]
+        members = ((item.name, item.size, item.type in (tarfile.REGTYPE, tarfile.AREGTYPE)
+                    and item.sparse is None) for item in archive)
         def read(name):
             with archive.extractfile(name) as source:
                 return source.read()
     with archive:
         names = set()
+        file_keys = set()
+        directories = {}
         total = 0
         for name, size, regular in members:
-            parts = PurePosixPath(name).parts
-            require(regular and "\\" not in name and parts and parts[0] == root and len(parts) > 1 and ".." not in parts, f"Unsafe archive entry: {name}")
-            require(name not in names, f"Duplicate archive entry: {name}")
-            require(0 <= size <= 64 << 20, f"Oversized archive entry: {name}")
-            names.add(name)
+            require(len(names) < MAX_ARCHIVE_MEMBERS, "Archive member count exceeds limit")
+            parts = name.split("/")
+            require(regular and len(parts) > 1 and parts[0] == root and all(
+                re.fullmatch(r"[A-Za-z0-9._-]+", part) and not part.endswith(".")
+                and not WINDOWS_DEVICE.fullmatch(part) for part in parts
+            ), "Unsafe archive entry")
+            key = name.lower()
+            require(key not in file_keys and key not in directories, "Conflicting archive entry")
+            prefix = parts[0]
+            for part in parts[1:-1]:
+                prefix += "/" + part
+                parent = prefix.lower()
+                require(parent not in file_keys and directories.setdefault(parent, prefix) == prefix,
+                        "Conflicting archive directory")
+            require(0 <= size <= MAX_MEMBER_BYTES, "Oversized archive entry")
             total += size
-        require(total <= 256 << 20, "Archive uncompressed size exceeds limit")
+            require(total <= MAX_UNCOMPRESSED_BYTES, "Archive uncompressed size exceeds limit")
+            names.add(name)
+            file_keys.add(key)
         for name in (binary_name, "BUILD-INFO.json", "SBOM.cdx.json", "LICENSE", "THIRD_PARTY.md", "SECURITY.md", "licenses/Go-runtime-LICENSE", "licenses/SplitWire-Turkey-MIT.txt"):
             require(f"{root}/{name}" in names, f"Missing release file: {name}")
         info = json.loads(read(f"{root}/BUILD-INFO.json"))

@@ -108,6 +108,58 @@ class ArchiveTests(unittest.TestCase):
             time.tzset()
 
 
+class ArchiveMemberValidationTests(unittest.TestCase):
+    def write_members(self, path, names):
+        if path.suffix == ".zip":
+            with zipfile.ZipFile(path, "w") as archive:
+                for name in names:
+                    archive.writestr(name, b"x")
+        else:
+            with tarfile.open(path, "w:gz") as archive:
+                for name in names:
+                    member = tarfile.TarInfo(name)
+                    member.size = 1
+                    archive.addfile(member, io.BytesIO(b"x"))
+
+    def test_archive_rejects_path_aliases_and_file_directory_conflicts(self):
+        cases = [
+            (["root//file"], "Unsafe archive entry"),
+            (["root/./file"], "Unsafe archive entry"),
+            (["root/docs/NUL.txt"], "Unsafe archive entry"),
+            (["root/docs/AUX"], "Unsafe archive entry"),
+            (["root/docs/stream:payload"], "Unsafe archive entry"),
+            (["root/docs/file."], "Unsafe archive entry"),
+            (["root/docs/readme", "root/docs/README"], "Conflicting archive entry"),
+            (["root/docs", "root/docs/file"], "Conflicting archive directory"),
+            (["root/docs/file", "root/docs"], "Conflicting archive entry"),
+            (["root/docs/one", "root/DOCS/two"], "Conflicting archive directory"),
+        ]
+        with tempfile.TemporaryDirectory() as folder:
+            for extension in (".zip", ".tar.gz"):
+                path = Path(folder) / ("candidate" + extension)
+                for names, error in cases:
+                    with self.subTest(extension=extension, names=names):
+                        self.write_members(path, names)
+                        with self.assertRaisesRegex(ValueError, error):
+                            release.inspect_archive(path, "root", "accessweaver")
+
+    def test_archive_rejects_nonregular_zip_member_and_member_overflow(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "candidate.zip"
+            with zipfile.ZipFile(path, "w") as archive:
+                member = zipfile.ZipInfo("root/device")
+                member.create_system = 3
+                member.external_attr = (stat.S_IFIFO | 0o600) << 16
+                archive.writestr(member, b"")
+            with self.assertRaisesRegex(ValueError, "Unsafe archive entry"):
+                release.inspect_archive(path, "root", "accessweaver")
+            for extension in (".zip", ".tar.gz"):
+                path = Path(folder) / ("candidate" + extension)
+                self.write_members(path, ["root/first", "root/second"])
+                with patch.object(release, "MAX_ARCHIVE_MEMBERS", 1), self.assertRaisesRegex(ValueError, "member count"):
+                    release.inspect_archive(path, "root", "accessweaver")
+
+
 class ReleaseVerificationTests(unittest.TestCase):
     def fixture(self, directory):
         manifest = dict(unsigned=True, sourceState="clean", sourceCommit="a" * 40,
