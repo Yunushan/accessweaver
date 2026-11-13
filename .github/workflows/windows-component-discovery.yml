@@ -6,6 +6,8 @@ on:
     paths:
       - 'internal/workflow/windows.ps1'
       - 'scripts/test-windows-workflow.ps1'
+      - 'scripts/test-windows-apps.ps1'
+      - 'scripts/test-windows-app-evidence.ps1'
       - '.github/workflows/windows-component-discovery.yml'
   workflow_dispatch:
 
@@ -32,6 +34,9 @@ jobs:
           node-version: '26.8.2'
           architecture: ${{ matrix.nodearch }}
           package-manager-cache: false
+      - name: Verify interactive application evidence predicates
+        shell: pwsh
+        run: ./scripts/test-windows-app-evidence.ps1
       - name: Run bounded inert component contracts
         shell: pwsh
         env:
