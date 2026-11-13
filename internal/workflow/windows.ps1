@@ -327,6 +327,25 @@ function Read-RemoteJSON([string]$Uri,[hashtable]$Headers) {
         return ,$envelope.value
     }finally {$memory.Dispose()}
 }
+function Check-AccessWeaverUpdates {
+    $allReleases=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/Yunushan/accessweaver/releases?per_page=30'
+    if($allReleases -isnot [array] -or $allReleases.Count -gt 30){throw 'AccessWeaver release metadata did not contain a valid release list'}
+    $releases=@($allReleases | Where-Object {
+        $_.draft -is [bool] -and -not $_.draft -and $_.prerelease -is [bool] -and $_.tag_name -is [string] -and $_.tag_name.Length -le 256 -and
+        $_.tag_name -cmatch '\Av?[0-9][0-9A-Za-z.+-]*\z' -and
+        (-not $_.prerelease -or $_.tag_name -cmatch '^[^+]+-[^+]+')
+    })
+    if(-not $releases.Count){throw 'No published AccessWeaver releases found'}
+    $comparison=Native $inputData.controller (@('system','check-version','--follow-channel')+@($releases|ForEach-Object {$_.tag_name})) -Secret
+    $check=$comparison.stdout|ConvertFrom-Json
+    if($check.version -ceq '' -and $check.updateAvailable -eq $false){
+        return @{version='';currentVersion=$check.currentVersion;updateAvailable=$false;url=$null;publishedAt=$null}
+    }
+    $release=$releases|Where-Object {$_.tag_name -ceq $check.version}|Select-Object -First 1
+    if(-not $release){throw 'Selected AccessWeaver release was not in the reviewed metadata'}
+    $url='https://github.com/Yunushan/accessweaver/releases/tag/'+[uri]::EscapeDataString($check.version)
+    @{version=$check.version;currentVersion=$check.currentVersion;updateAvailable=$check.updateAvailable;url=$url;publishedAt=$release.published_at}
+}
 function Allowed-Download([string]$url) {
     $uri=[uri]$url
     if ($uri.Scheme -ne 'https' -or -not $uri.IsDefaultPort -or $uri.UserInfo -or $uri.Fragment) {throw 'Downloads must use an official HTTPS URL'}
@@ -2441,24 +2460,7 @@ try {
     $data=switch($r.action) {
         'discover' {Discover}
         'choose-folder' {Add-Type -AssemblyName System.Windows.Forms;$dialog=[Windows.Forms.FolderBrowserDialog]::new();try{$dialog.Description='Select an application folder for AccessWeaver';$selection=$dialog.ShowDialog();@{folder=$(if($selection -eq 'OK'){$dialog.SelectedPath}else{''})}}finally{$dialog.Dispose()}}
-        'updates' {
-            $allReleases=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/Yunushan/accessweaver/releases?per_page=30'
-            $releases=@($allReleases | Where-Object {
-                $_.draft -is [bool] -and -not $_.draft -and $_.prerelease -is [bool] -and $_.tag_name -is [string] -and $_.tag_name.Length -le 256 -and
-                (-not $_.prerelease -or $_.tag_name -cmatch '^[^+]+-[^+]+')
-            })
-            if(-not $releases.Count){throw 'No published AccessWeaver releases found'}
-            $comparison=Native $inputData.controller (@('system','check-version','--follow-channel')+@($releases|ForEach-Object {$_.tag_name}))
-            $check=$comparison.stdout|ConvertFrom-Json
-            if($check.version -ceq '' -and $check.updateAvailable -eq $false){
-                @{version='';currentVersion=$check.currentVersion;updateAvailable=$false;url=$null;publishedAt=$null}
-                break
-            }
-            $release=$releases|Where-Object {$_.tag_name -ceq $check.version}|Select-Object -First 1
-            if(-not $release){throw 'Selected AccessWeaver release was not in the reviewed metadata'}
-            $url='https://github.com/Yunushan/accessweaver/releases/tag/'+[uri]::EscapeDataString($check.version)
-            @{version=$check.version;currentVersion=$check.currentVersion;updateAvailable=$check.updateAvailable;url=$url;publishedAt=$release.published_at}
-        }
+        'updates' {Check-AccessWeaverUpdates}
         'download' {if(-not $r.engine -or -not $r.downloadUrl){throw 'Choose a component, official URL and SHA-256'};$dir=Join-Path $root ('components\'+$r.engine);Protect-Dir $dir;$destination=Join-Path $dir ([IO.Path]::GetFileName(([uri]$r.downloadUrl).AbsolutePath));Download $r.downloadUrl $r.sha256 $destination;if($destination.EndsWith('.zip')){Expand-Safe $destination $dir};@{path=$destination}}
         'install' {Install-Method}
         'config' {@{configPath=(Make-Config)}}

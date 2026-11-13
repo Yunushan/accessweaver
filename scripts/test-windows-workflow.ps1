@@ -800,6 +800,53 @@ try {
         }
     } finally {$script:undo=$previousUndo}
 }
+# Exercise the updates dispatch helper with fixed public-shape release metadata.
+& {
+    $inputData=@{controller='C:\fixture\accessweaver.exe'}
+    $calls=[Collections.Generic.List[string]]::new()
+    $published='2026-01-02T00:00:00Z'
+    $metadata=@(
+        @{draft=$true;prerelease=$false;tag_name='v99.0.0'},
+        @{draft=$false;prerelease=$true;tag_name='v88.0.0'},
+        @{draft='false';prerelease=$false;tag_name='v77.0.0'},
+        @{draft=$false;prerelease=$false;tag_name=('1'*257)},
+        @{draft=$false;prerelease=$false;tag_name=('v8.0.0'+[char]0)},
+        @{draft=$false;prerelease=$true;tag_name='v2.0.0-rc.1'},
+        @{draft=$false;prerelease=$false;tag_name='v1.9.0+build.3';html_url='https://outside.invalid/ignored';published_at=$published}
+    )
+    function Read-RemoteJSON {
+        param($Uri,$Headers)
+        if($Uri -cne 'https://api.github.com/repos/Yunushan/accessweaver/releases?per_page=30' -or $Headers['User-Agent'] -cne 'AccessWeaver'){throw 'Unexpected update metadata request'}
+        return ,$metadata
+    }
+    function Native {
+        param($Program,$Arguments,[switch]$Secret)
+        if($Program -cne $inputData.controller -or -not $Secret){throw 'Unexpected update comparison process'}
+        $calls.Add(($Arguments -join ','))
+        return @{stdout=$comparison}
+    }
+    $comparison='{"version":"v1.9.0+build.3","currentVersion":"1.8.0","updateAvailable":true}'
+    $result=Check-AccessWeaverUpdates
+    Assert ($calls.Count -eq 1 -and $calls[0] -ceq 'system,check-version,--follow-channel,v2.0.0-rc.1,v1.9.0+build.3' -and
+        $result.url -ceq 'https://github.com/Yunushan/accessweaver/releases/tag/v1.9.0%2Bbuild.3' -and
+        $result.updateAvailable -eq $true -and $result.publishedAt -ceq $published) 'Update discovery filters release metadata and returns the official tag link'
+    $metadata=@($metadata | Where-Object {$_.tag_name -ceq 'v2.0.0-rc.1'})
+    $comparison='{"version":"","currentVersion":"1.8.0","updateAvailable":false}'
+    $result=Check-AccessWeaverUpdates
+    Assert ($calls.Count -eq 2 -and $result.currentVersion -ceq '1.8.0' -and $result.updateAvailable -eq $false -and
+        $null -eq $result.url -and $null -eq $result.publishedAt) 'Update discovery preserves a no-compatible-release result'
+    $comparison='{"version":"v3.0.0","currentVersion":"1.8.0","updateAvailable":true}'
+    $refused=$false
+    try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Selected AccessWeaver release was not in the reviewed metadata'}
+    Assert ($refused -and $calls.Count -eq 3) 'Update discovery refuses a selected tag absent from admitted metadata'
+    foreach($bad in @(@{value=$metadata[0]},@{value=@($metadata[0])*31})){
+        $metadata=$bad.value
+        $refused=$false
+        try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'AccessWeaver release metadata did not contain a valid release list'}
+        if(-not $refused){throw 'Unexpected release metadata shape outcome'}
+    }
+    Assert ($calls.Count -eq 3) 'Update discovery rejects invalid list shapes before comparison'
+}
 # Publisher-category checks use synthetic signature records only.
 $signatureDiscord=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Discord fixture'}}
 $signatureMicrosoft=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Microsoft fixture'}}
