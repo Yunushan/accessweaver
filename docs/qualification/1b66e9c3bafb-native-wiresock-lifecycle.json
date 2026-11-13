@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "scope": "native-windows-wiresock-lifecycle",
+  "sourceCommit": "1b66e9c3bafbe0727ceb96c0e1e9d0e11dbd6010",
+  "runID": 43403082646,
+  "sealedDoNotRepoll": true,
+  "sourceSHA256": {
+    "internal/workflow/windows.ps1": "15ce012768d61548b0f27a9cfe8c40a479cd57946ff65348efe10732e09cb37c",
+    "go.mod": "fbc2428e39270bcdd96a5cc50c62fe017f4b1c245e4c861fc456b8d78cef30b5",
+    "go.sum": "1ba4d1aaf0f6ae06537c2ffa54fa2b78a8d9ceb8413eed89945542fdf8fe9b00",
+    "scripts/fixtures/wgpeer/go.mod": "fe90be45df5c186983b038382b4fdd0b91cd42172768f82f299361b2de17b646",
+    "scripts/fixtures/wgpeer/go.sum": "403b242c0a86f4174e9bf6af8dac1627e51e93f4e99cc5f2e1a4a05f1d86237f",
+    "scripts/fixtures/wgpeer/main.go": "96f28ff5581c04acfceef7dfc4def8bc479e1f8407d2b601140e70a2a9cf1687",
+    "scripts/fixtures/wgpeer/cmd/probe/main.go": "542e919e79f77381f0a02b596fcd8d596658edbb365dc51c3569102356825c53",
+    "scripts/test-windows-native-wiresock.ps1": "542621187e5d534e580f79eaa670a41c95bd8b86ae300a45b879e0fc8066bd45",
+    ".github/workflows/windows-native-wiresock.yml": "e7facff8f67c129543d68b9010fadaf54236da8200ffbc40554ba062fd391261"
+  },
+  "reports": [
+    {
+      "architecture": "amd64",
+      "artifactID": 14025568437,
+      "providerZIPDigest": "sha256:b7980edd7b1eaaec9f7d2024dc128ac2b930f1385a52932819f6a23ecf0b6929",
+      "providerZIPDigestVerified": true,
+      "stage": "install",
+      "checks": {
+        "cleanVendorBaseline": true,
+        "fixtureBuilt": true,
+        "peerReady": true,
+        "installCompleted": false,
+        "restartRequested": false,
+        "selectedTCP4": false,
+        "selectedUDP4": false,
+        "selectedTCP6": false,
+        "selectedUDP6": false,
+        "directBlocked": false,
+        "peerHandshake": false,
+        "disconnectCompleted": false,
+        "disconnectedTrafficBlocked": false,
+        "managedRemovalCompleted": true,
+        "vendorRemovalCompleted": false,
+        "peerExited": true,
+        "fixtureRemoved": true
+      },
+      "workflowOutcomes": {
+        "install": "download-publisher-refused",
+        "disconnect": "not-run",
+        "remove": "succeeded",
+        "vendor-uninstall": "uninstall-registration-missing"
+      },
+      "binarySHA256": {
+        "wgpeer.exe": "d2806289bfc1bb03cbf5be22a0a28efd94def1c9f4e5e7f6146207a7d2bde5c4",
+        "probe-selected.exe": "4fe8c6e15712279d5bc3f91636443e446a55a759046453f349b27034bbea05ec",
+        "accessweaver.exe": "9f6698b23d5f93e6f714a1bf5e23b8adf0da09a9eee068f7ed1550788ad55d2a"
+      }
+    },
+    {
+      "architecture": "arm64",
+      "artifactID": 14026142276,
+      "providerZIPDigest": "sha256:d14e496f405c70fa8d50f578b70203f45dd45e45b8a05157293f815abda2b4d7",
+      "providerZIPDigestVerified": true,
+      "stage": "install",
+      "checks": {
+        "cleanVendorBaseline": true,
+        "fixtureBuilt": true,
+        "peerReady": true,
+        "installCompleted": false,
+        "restartRequested": false,
+        "selectedTCP4": false,
+        "selectedUDP4": false,
+        "selectedTCP6": false,
+        "selectedUDP6": false,
+        "directBlocked": false,
+        "peerHandshake": false,
+        "disconnectCompleted": false,
+        "disconnectedTrafficBlocked": false,
+        "managedRemovalCompleted": true,
+        "vendorRemovalCompleted": false,
+        "peerExited": true,
+        "fixtureRemoved": true
+      },
+      "workflowOutcomes": {
+        "install": "download-publisher-refused",
+        "disconnect": "not-run",
+        "remove": "succeeded",
+        "vendor-uninstall": "uninstall-registration-missing"
+      },
+      "binarySHA256": {
+        "wgpeer.exe": "d21778e14135997a2c33765ab9c4a9e6a758ed67f8830f37f0e0efdddd9bc4ca",
+        "probe-selected.exe": "4f307f86d53bbcc2c7d1421b4c8fdbda06b1348d1446d6f9dcbe3510fcd5f59c",
+        "accessweaver.exe": "c63d00c998941058607cead575d14694611ad33ffd4793dcd3d6d2a45e109a86"
+      }
+    }
+  ],
+  "productionQualificationComplete": false
+}
