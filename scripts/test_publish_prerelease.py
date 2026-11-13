@@ -33,9 +33,9 @@ class PrereleasePublicationTests(unittest.TestCase):
             "assets": [dict(item) for item in list(self.assets.values())[:count]],
         }
 
-    def run_publisher(self, releases, tags=None):
+    def run_publisher(self, releases, tags=None, verify_snapshot=None):
         with (
-            patch.object(publisher, "verify") as verify,
+            patch.object(publisher, "verify", side_effect=verify_snapshot) as verify,
             patch.object(publisher, "git_tag_commit", side_effect=tags or [self.commit] * 2),
             patch.object(publisher, "view", side_effect=releases),
             patch.object(publisher, "gh", return_value=subprocess.CompletedProcess([], 0, "", "")) as gh,
@@ -44,7 +44,11 @@ class PrereleasePublicationTests(unittest.TestCase):
             try:
                 publisher.publish(self.directory, self.commit, self.ref)
             finally:
-                verify.assert_called_once_with(self.directory, self.commit, self.ref)
+                verify.assert_called_once()
+                self.snapshot, commit, ref = verify.call_args.args
+                self.assertEqual((commit, ref), (self.commit, self.ref))
+                self.assertNotEqual(self.snapshot, self.directory)
+                self.assertFalse(self.snapshot.exists())
 
     def test_new_draft_uploads_and_verifies_before_publication(self):
         self.run_publisher([None, self.release(True, 0), self.release(True), self.release(False)])
@@ -59,8 +63,29 @@ class PrereleasePublicationTests(unittest.TestCase):
     def test_retry_uploads_only_missing_draft_assets(self):
         self.run_publisher([self.release(True, 12), self.release(True), self.release(False)])
         self.assertEqual(self.calls.call_args_list[0].args,
-                         ("upload", self.tag, str(self.directory / "fixture-12.zip")))
+                         ("upload", self.tag, str(self.snapshot / "fixture-12.zip")))
         self.assertEqual(self.calls.call_count, 2)
+
+    def test_publication_uses_the_verified_copy_when_source_changes(self):
+        changed = self.directory / "fixture-12.zip"
+
+        def verify_snapshot(frozen, _commit, _ref):
+            self.assertEqual((frozen / changed.name).read_bytes(), changed.name.encode())
+            changed.write_bytes(b"changed original")
+
+        self.run_publisher([self.release(True, 12), self.release(True), self.release(False)],
+                           verify_snapshot=verify_snapshot)
+        self.assertEqual(self.calls.call_args_list[0].args,
+                         ("upload", self.tag, str(self.snapshot / changed.name)))
+        self.assertEqual(changed.read_bytes(), b"changed original")
+
+    def test_extra_input_cannot_reach_verifier_or_github(self):
+        (self.directory / "extra.zip").write_bytes(b"unexpected")
+        with patch.object(publisher, "verify") as verify, patch.object(publisher, "gh") as gh:
+            with self.assertRaises(ValueError):
+                publisher.publish(self.directory, self.commit, self.ref)
+        verify.assert_not_called()
+        gh.assert_not_called()
 
     def test_matching_published_release_is_untouched(self):
         self.run_publisher([self.release(False)])

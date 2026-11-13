@@ -2,13 +2,14 @@
 """Publish a verified portable build through a draft without replacing assets."""
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 
 from verify_release_provenance import REPOSITORY, validate_identity, verify
+from verify_release_rebuild import digest, snapshot
 
 REMOTE = "https://github.com/" + REPOSITORY + ".git"
 
@@ -76,14 +77,15 @@ def publish(directory, commit, ref):
     if not ref.startswith(prefix) or "/" in ref[len(prefix):] or ref == prefix:
         raise ValueError("Prerelease publication requires a version tag")
     tag = ref.removeprefix("refs/tags/")
-    verify(directory, commit, ref)
-    expected = {}
-    for file in directory.iterdir():
-        with file.open("rb") as stream:
-            expected[file.name] = "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest()
-    if len(expected) != 13:
-        raise ValueError("Verified release asset count differs")
+    with tempfile.TemporaryDirectory(prefix="accessweaver-publish-") as temporary:
+        frozen = Path(temporary)
+        names = snapshot(directory, frozen, 13)
+        verify(frozen, commit, ref)
+        expected = {name: "sha256:" + digest(frozen / name) for name in names}
+        publish_verified(frozen, tag, commit, expected)
 
+
+def publish_verified(directory, tag, commit, expected):
     if git_tag_commit(tag) != commit:
         raise ValueError("Remote release tag does not resolve to the verified commit")
     release = view(tag)
@@ -120,7 +122,7 @@ def main():
     parser.add_argument("--source-ref", required=True)
     args = parser.parse_args()
     try:
-        publish(args.directory.resolve(), args.source_commit, args.source_ref)
+        publish(args.directory.absolute(), args.source_commit, args.source_ref)
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError):
         print("Prerelease verification or publication failed; inspect the draft and keep existing assets intact.",
               file=sys.stderr)
