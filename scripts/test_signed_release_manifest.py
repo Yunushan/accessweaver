@@ -332,9 +332,9 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.assertEqual(list(staging.iterdir()), [])
 
         real_stage = release.stage_managed_update
-        def replace_input_after_verification(snapshot, directory, decision):
+        def replace_input_after_verification(snapshot, directory, decision, policy):
             input_file.write_bytes(b"replacement after verification")
-            real_stage(snapshot, directory, decision)
+            real_stage(snapshot, directory, decision, policy)
 
         with patch.object(release, "stage_managed_update", side_effect=replace_input_after_verification):
             staged = self.verify(approved, pin, **update)["managedUpdate"]
@@ -587,6 +587,43 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.revocation_list.unlink()
         with self.assertRaises(FileNotFoundError):
             self.verify(approved, pin)
+
+    def test_managed_staging_rechecks_policy_after_copy_and_destination_readback(self):
+        now = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+        expires = now + timedelta(seconds=1)
+        policy = {**self.policy, "schemaVersion": 2, "sequence": 9,
+                  "issuedAt": "2026-01-01T12:00:00Z", "expiresAt": "2026-01-01T12:00:01Z"}
+        update = release.managed_update(release.inventory(self.candidate, self.subjects),
+                                        "windows/arm64", "1.2.2-rc.1", VERSION)
+        staging = self.root / "deadline-staging"
+        staging.mkdir()
+        destination = staging / update["installer"]
+        original = (self.candidate / update["installer"]).read_bytes()
+
+        for phase, times in (
+            ("before publication", (expires,)),
+            ("after publication", (now, expires)),
+            ("on existing file", (expires,)),
+        ):
+            with self.subTest(phase=phase):
+                readings = iter(times)
+
+                class ControlledClock(datetime):
+                    @classmethod
+                    def now(cls, tz=None):
+                        return next(readings)
+
+                if phase == "on existing file":
+                    destination.write_bytes(original)
+                with patch.object(release, "datetime", ControlledClock), \
+                        self.assertRaisesRegex(ValueError, "outside its validity window"):
+                    release.stage_managed_update(self.candidate, staging, update, policy)
+                if phase == "before publication":
+                    self.assertEqual(list(staging.iterdir()), [])
+                else:
+                    self.assertEqual(destination.read_bytes(), original)
+                    self.assertEqual(list(staging.iterdir()), [destination])
+                    destination.unlink()
 
     def test_sequenced_revocation_policy_requires_current_utc_window(self):
         now = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)

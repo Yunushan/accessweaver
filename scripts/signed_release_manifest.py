@@ -291,6 +291,14 @@ def revocation_time(value):
     return datetime.fromisoformat(value[:-1] + "+00:00")
 
 
+def require_current_revocation_policy(policy, *, now=None):
+    if policy["schemaVersion"] == 2:
+        effective = datetime.now(timezone.utc) if now is None else now
+        issued = revocation_time(policy["issuedAt"])
+        expires = revocation_time(policy["expiresAt"])
+        require(issued <= effective < expires, "Revocation policy is outside its validity window")
+
+
 def revocations(content, *, minimum_sequence=None, now=None):
     policy = decode_json(content)
     require(isinstance(policy, dict) and type(policy.get("schemaVersion")) is int
@@ -307,10 +315,6 @@ def revocations(content, *, minimum_sequence=None, now=None):
         require(type(sequence) is int and sequence > 0, "Invalid revocation policy sequence")
         require(minimum_sequence is None or sequence >= minimum_sequence,
                 "Revocation policy sequence is below the approved minimum")
-        effective = datetime.now(timezone.utc) if now is None else now
-        issued = revocation_time(policy["issuedAt"])
-        expires = revocation_time(policy["expiresAt"])
-        require(issued <= effective < expires, "Revocation policy is outside its validity window")
     else:
         require(minimum_sequence is None, "A sequenced revocation policy is required")
     for field, pattern in REVOCATION_FIELDS.items():
@@ -319,6 +323,7 @@ def revocations(content, *, minimum_sequence=None, now=None):
                 and all(isinstance(value, str) and re.fullmatch(pattern, value) for value in values),
                 "Malformed revocation entry")
         require(len(values) == len(set(values)), "Duplicate revocation entry")
+    require_current_revocation_policy(policy, now=now)
     return policy
 
 
@@ -401,7 +406,7 @@ def verify_staged_update(path, size, approved_digest):
         require(result.hexdigest() == approved_digest, "Staged installer differs from the approved digest")
 
 
-def stage_managed_update(root, directory, update):
+def stage_managed_update(root, directory, update, policy):
     name = update["installer"]
     source_path = root / name
     destination = directory / name
@@ -412,6 +417,7 @@ def stage_managed_update(root, directory, update):
     except FileNotFoundError:
         pass
     else:
+        require_current_revocation_policy(policy)
         return
 
     with tempfile.TemporaryDirectory(prefix=".accessweaver-update-", dir=directory) as temporary:
@@ -421,12 +427,15 @@ def stage_managed_update(root, directory, update):
             output.flush()
             os.fsync(output.fileno())
         verify_staged_update(staged, size, approved_digest)
+        # Copy and digest verification can each consume the remaining validity.
+        require_current_revocation_policy(policy)
         try:
             os.link(staged, destination)
         except FileExistsError:
             # Another publisher won the name. Verify its file after cleanup.
             pass
     verify_staged_update(destination, size, approved_digest)
+    require_current_revocation_policy(policy)
 
 
 def verify(directory, certificate, certificate_sha256, commit, ref, openssl="openssl",
@@ -451,8 +460,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
     subjects = release_subjects(commit, ref)
     der = independently_pinned_file(directory, certificate, certificate_sha256)
     certificate_sha256 = certificate_sha256.lower()
-    policy_bytes = independently_pinned_file(directory, revocation_list, revocation_list_sha256)
-    policy = revocations(policy_bytes, minimum_sequence=minimum_revocation_sequence)
+    policy = revocations(independently_pinned_file(directory, revocation_list, revocation_list_sha256),
+                         minimum_sequence=minimum_revocation_sequence)
     require(commit not in policy["sourceCommits"] and ref not in policy["sourceRefs"]
             and certificate_sha256 not in policy["approvalCertificateSHA256"],
             "Release source or approval signer is revoked")
@@ -511,13 +520,13 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             )
         if policy["schemaVersion"] == 2:
             # Candidate authentication and copying the input snapshot can take time.
-            revocations(policy_bytes, minimum_sequence=minimum_revocation_sequence)
+            require_current_revocation_policy(policy)
             report["revocationPolicySequence"] = policy["sequence"]
             report["revocationPolicyExpiresAt"] = policy["expiresAt"]
         if stage_directory is not None:
             update = report["managedUpdate"]
             require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
-            stage_managed_update(root, stage_directory, update)
+            stage_managed_update(root, stage_directory, update, policy)
             update["installerStaged"] = True
         return report
 
