@@ -178,6 +178,26 @@ function Get-HiddenMSIIdentity($record){
     if($matches[0].Length -ne $command.Length){return 'extra-command-arguments'}
     return 'product-matched'
 }
+function Get-NativeInstallerPin {
+    # Read the committed product pin as data. The installer staging file is
+    # removed by the worker before this fixture can observe the vendor cache.
+    $tokens=$null
+    $parseErrors=$null
+    $workflowPath=Join-Path $project 'internal/workflow/windows.ps1'
+    $ast=[System.Management.Automation.Language.Parser]::ParseFile($workflowPath,[ref]$tokens,[ref]$parseErrors)
+    if($parseErrors.Count){throw 'Installer plan source is invalid'}
+    $plans=@($ast.FindAll({param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'WireSock-InstallerPlan'},$true))
+    if($plans.Count -ne 1){throw 'Installer plan unavailable'}
+    $switches=@($plans[0].FindAll({param($node) $node -is [System.Management.Automation.Language.SwitchStatementAst]},$true))
+    if($switches.Count -ne 1){throw 'Installer architecture plan unavailable'}
+    $clauses=@($switches[0].Clauses | Where-Object {$_.Item1 -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $_.Item1.Value -ceq $Architecture})
+    if($clauses.Count -ne 1){throw 'Native installer architecture unavailable'}
+    $tables=@($clauses[0].Item2.FindAll({param($node) $node -is [System.Management.Automation.Language.HashtableAst]},$true))
+    if($tables.Count -ne 1){throw 'Native installer pin unavailable'}
+    $pin=$tables[0].SafeGetValue().sha256
+    if($pin -isnot [string] -or $pin -cnotmatch '\A[a-f0-9]{64}\z'){throw 'Native installer pin unavailable'}
+    return $pin
+}
 function Observe-CachedBundleTrust($record) {
     $cachedBundleTrust.path='refused'
     $cachePath=$record.BundleCachePath
@@ -206,15 +226,9 @@ function Observe-CachedBundleTrust($record) {
     if($subject -is [string]){
         $cachedBundleTrust.publisher=if($subject -match 'NT Kernel|WireSock'){'matches'}else{'differs'}
     }else{$cachedBundleTrust.publisher='missing'}
-    $installer=Join-Path $managedRoot 'downloads\wiresock-setup.exe'
-    if(Test-Path -LiteralPath $installer -PathType Leaf -ErrorAction Stop){
-        $original=Get-Item -LiteralPath $installer -Force -ErrorAction Stop
-        if(-not ($original.Attributes -band [IO.FileAttributes]::ReparsePoint) -and $original.Length -gt 0 -and $original.Length -le 256MB){
-            $cachedHash=(Get-FileHash -LiteralPath $program -Algorithm SHA256 -ErrorAction Stop).Hash
-            $installerHash=(Get-FileHash -LiteralPath $installer -Algorithm SHA256 -ErrorAction Stop).Hash
-            $cachedBundleTrust.installerBytes=if($cachedHash -ceq $installerHash){'match'}else{'differ'}
-        }
-    }
+    $installerHash=Get-NativeInstallerPin
+    $cachedHash=(Get-FileHash -LiteralPath $program -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+    $cachedBundleTrust.installerBytes=if($cachedHash -ceq $installerHash){'match'}else{'differ'}
 }
 function Observe-VendorUninstallRegistration {
     # Compare registry properties in memory. Publish only counts and a fixed category, without
@@ -455,7 +469,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=14;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;managedRemovalProfileList=$managedRemovalProfileList;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;cachedBundleTrust=$cachedBundleTrust;productionQualificationComplete=$false}
+$report=@{schemaVersion=15;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;managedRemovalProfileList=$managedRemovalProfileList;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;cachedBundleTrust=$cachedBundleTrust;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
