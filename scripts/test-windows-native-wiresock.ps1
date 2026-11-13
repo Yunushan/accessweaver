@@ -23,7 +23,7 @@ $checks=[ordered]@{
 }
 $workflowOutcomes=[ordered]@{install='not-run';disconnect='not-run';remove='not-run';'vendor-uninstall'='not-run'}
 $connectionState='not-checked'
-$vendorCLI=[ordered]@{profileList='not-checked';directStatus='not-checked'}
+$vendorCLI=[ordered]@{profileList='not-checked';directStatus='not-checked';profileExport='not-checked';keyPairRetained=$false;endpointRetained=$false;prefixesRetained=$false;selectedAppRetained=$false}
 $uninstallRegistration=[ordered]@{observed=$false;total=0;visibleBundles=0;hiddenMSIs=0;other=0}
 $stage='baseline'
 $bin=Join-Path $env:RUNNER_TEMP ('accessweaver-wiresock-'+[guid]::NewGuid().ToString('N'))
@@ -81,6 +81,51 @@ function Get-FixedConnectionState([string]$text){
     if($states.Count -eq 1){return $states[0]}
     if($states.Count -gt 1){return 'ambiguous'}
     return 'unrecognized'
+}
+function Read-FixtureProfileValue([string]$text,[string]$name) {
+    $directive=if($name -ceq 'AllowedApps'){'(?:#@ws:[ \t]*)?'}else{''}
+    $pattern='(?im)^[ \t]*'+$directive+[regex]::Escape($name)+'[ \t]*=[ \t]*([^\r\n]+)'
+    $fields=[regex]::Matches($text,$pattern)
+    if($fields.Count -eq 1){return $fields[0].Groups[1].Value.Trim()}
+}
+function Observe-ImportedProfile([string]$cli,[string]$profile,[string]$config) {
+    $export=Join-Path $bin 'wire-profile-export.conf'
+    try {
+        $result=Invoke-PrivateNative $cli @('export',$profile,$export)
+        if($result.exitCode -ne 0){$vendorCLI.profileExport='command-failed';return}
+        $item=Get-Item -LiteralPath $export -ErrorAction SilentlyContinue
+        if(-not $item -or $item.PSIsContainer -or $item.Length -le 0 -or $item.Length -gt 16384 -or
+            ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)){
+            $vendorCLI.profileExport='invalid-file';return
+        }
+        $expected=[IO.File]::ReadAllText($config)
+        $observed=[IO.File]::ReadAllText($export)
+        $vendorCLI.profileExport='read'
+        $retained=@{}
+        foreach($field in @('PrivateKey','PublicKey','Endpoint','Address','AllowedIPs')){
+            $want=Read-FixtureProfileValue $expected $field
+            $have=Read-FixtureProfileValue $observed $field
+            if(-not $want -or -not $have){$retained[$field]=$false;continue}
+            if($field -in @('Address','AllowedIPs')){
+                $want=($want -split '\s*,\s*' | Sort-Object) -join ','
+                $have=($have -split '\s*,\s*' | Sort-Object) -join ','
+            }
+            $retained[$field]=$want -ceq $have
+        }
+        $vendorCLI.keyPairRetained=$retained.PrivateKey -and $retained.PublicKey
+        $vendorCLI.endpointRetained=$retained.Endpoint
+        $vendorCLI.prefixesRetained=$retained.Address -and $retained.AllowedIPs
+        $apps=(Read-FixtureProfileValue $observed 'AllowedApps') -split '\s*,\s*'
+        $vendorCLI.selectedAppRetained=$apps -icontains 'probe-selected.exe' -and $apps -inotcontains 'probe-direct.exe'
+    } catch {
+        $vendorCLI.profileExport='read-failed'
+        $vendorCLI.keyPairRetained=$false
+        $vendorCLI.endpointRetained=$false
+        $vendorCLI.prefixesRetained=$false
+        $vendorCLI.selectedAppRetained=$false
+    } finally {
+        try {[IO.File]::Delete($export)}catch{}
+    }
 }
 function Observe-VendorUninstallRegistration {
     # Compare registry properties in memory. Publish only counts, without
@@ -190,6 +235,7 @@ try {
                 $vendorCLI.profileList=if($list.exitCode -ne 0){'command-failed'}elseif([string]::IsNullOrWhiteSpace($list.stdout)){'empty'}elseif($list.stdout -cmatch ('(?<![a-zA-Z0-9-])'+[regex]::Escape($record.profile)+'(?![a-zA-Z0-9-])')){'profile-observed'}else{'profile-absent'}
                 $status=Invoke-PrivateNative $cli @('status')
                 $vendorCLI.directStatus=if($status.exitCode -ne 0){'command-failed'}else{Get-FixedConnectionState $status.stdout}
+                if($vendorCLI.profileList -ceq 'profile-observed'){Observe-ImportedProfile $cli $record.profile $config}
             }
         }
     }
@@ -259,10 +305,14 @@ try {
         }
     }
 }
-$report=@{schemaVersion=6;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;productionQualificationComplete=$false}
+$report=@{schemaVersion=7;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
+if($vendorCLI.profileExport -cne 'read' -or -not $vendorCLI.keyPairRetained -or -not $vendorCLI.endpointRetained -or
+    -not $vendorCLI.prefixesRetained -or -not $vendorCLI.selectedAppRetained){
+    throw 'Native WireSock qualification did not verify imported profile fields'
+}
 foreach($key in $checks.Keys){
     if($key -eq 'restartRequested'){if($checks[$key]){throw 'Native WireSock qualification requires another boot'}}
     elseif(-not $checks[$key]){throw 'Native WireSock qualification did not pass all fixed checks'}
