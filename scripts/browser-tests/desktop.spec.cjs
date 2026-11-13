@@ -228,9 +228,21 @@ test('invalid JSON stays editable and an unavailable engine cannot be launched',
   await page.locator('#p-json').fill(duplicate);await page.locator('#save-profile').click();
   await expect(page.locator('#editor-feedback')).toContainText('Use each JSON field name only once.');
   await expect(page.locator('#p-json')).toHaveValue(duplicate);
-  await page.locator('#tab-simple').click();
-  await expect(page.locator('#tab-advanced')).toHaveAttribute('aria-selected','true');
+  const advancedTab=page.locator('#tab-advanced'),simpleTab=page.locator('#tab-simple');
+  await advancedTab.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.locator('#editor-feedback')).toBeFocused();
+  await expect(page.locator('#editor-feedback')).toContainText('Use each JSON field name only once.');
+  await expect(advancedTab).toHaveAttribute('aria-selected','true');
   await expect(page.locator('#p-json')).toBeVisible();
+  await expect(page.locator('#p-json')).toHaveValue(duplicate);
+  await page.locator('#p-json').fill(savedBytes.toString('utf8'));
+  await advancedTab.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(simpleTab).toHaveAttribute('aria-selected','true');
+  await expect(simpleTab).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(advancedTab).toBeFocused();
   expect(await fs.readFile(core.profilePath('browser-fixture'))).toEqual(savedBytes);
   for(const id of ['calendar-overflow','space-separator','extended-year']){
     const c=timestampTable.cases.find(c=>c.id===id),text=JSON.stringify({...JSON.parse(savedBytes),updatedAt:c.value});

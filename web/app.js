@@ -718,14 +718,14 @@ function currentEditorProfile() {
   return state.editorTab === 'advanced' ? parseProfileJSON($('p-json').value) : validateProfile(fromSimple());
 }
 function switchEditor(tab,transfer=true) {
-  if (!state.editing || state.editing.saving) return;
+  if (!state.editing || state.editing.saving) return false;
   if (transfer && tab !== state.editorTab) {
     try {
       const p = currentEditorProfile();
       state.editing.profile = clone(p);
       if (tab === 'advanced') $('p-json').value = JSON.stringify(p,null,2);
       else fillSimple(p);
-    } catch (err) { editorError(err); return; }
+    } catch (err) { editorError(err); return false; }
   }
   state.editorTab = tab;
   $$('.modal-tab').forEach(el => {
@@ -736,6 +736,7 @@ function switchEditor(tab,transfer=true) {
   $('editor-advanced').hidden = tab !== 'advanced';
   if (tab === 'advanced' && !transfer) $('p-json').value = JSON.stringify(state.editing.profile,null,2);
   setEditorFeedback(state.editing.dirty ? t('unsavedChanges') : '');
+  return true;
 }
 function editorError(err) {
   setEditorFeedback(err.message,true);
@@ -1183,7 +1184,12 @@ function bindEvents() {
   $('preview-profile').addEventListener('click',previewEditor);
   $$('.modal-tab').forEach(el => {
     el.addEventListener('click',() => switchEditor(el.dataset.editorTab));
-    el.addEventListener('keydown',event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const next = state.editorTab === 'simple' ? 'advanced' : 'simple'; switchEditor(next); $('tab-' + state.editorTab).focus(); } });
+    el.addEventListener('keydown',event => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      const next = state.editorTab === 'simple' ? 'advanced' : 'simple';
+      if (switchEditor(next)) $('tab-' + next).focus();
+    });
   });
   $('profile-form').addEventListener('submit',event => { event.preventDefault(); saveEditor(); });
   $('profile-form').addEventListener('input',markDirty);
