@@ -284,6 +284,7 @@
             "docs/qualification/0e0188639313-wiresock-uninstall-registration-contracts.json",
             "docs/qualification/2f5cb2334c95-wiresock-explicit-disconnect-contracts.json",
             "docs/qualification/2f5cb2334c95-native-wiresock-lifecycle.json",
+            "docs/qualification/b24bb3f7fae0-native-wiresock-lifecycle.json",
             "docs/qualification/7844abda8564-native-wiresock-lifecycle.json",
             "docs/qualification/cdb06ec00147-native-download-transports.json",
             "docs/qualification/20ac1ac28b96-native-wiresock-trust.json",
@@ -402,7 +403,7 @@
         {
           "id": "product.accessibility",
           "acceptance": "Verify keyboard-only use, focus management, screen readers, contrast, zoom and reduced motion across every screen and modal.",
-          "status": "unverified",
+          "status": "partial",
           "evidence": [
             "web/index.html",
             "web/app.css",
@@ -411,7 +412,8 @@
             "scripts/browser-tests/desktop.spec.cjs",
             "docs/TESTING.md",
             "docs/qualification/a7fb7a0eeefe-browser-keyboard-forced-colors.json",
-            "docs/qualification/ce23df4eb329-browser-keyboard-forced-colors.json"
+            "docs/qualification/ce23df4eb329-browser-keyboard-forced-colors.json",
+            "docs/qualification/9f4615c228b7-browser-history-focus.json"
           ]
         },
         {

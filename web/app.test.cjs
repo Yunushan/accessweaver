@@ -68,6 +68,43 @@ function environment() {
   return {context,get,data,setStorageFailure(v){failStorage=v},run(code){return vm.runInContext(code,context)},put(name,value){context[name]=plain(value)}};
 }
 const test = require('node:test');
+test('background engine changes announce localized states once without moving focus', async () => {
+  assert.match(html, /id="runtime-announcement"[^>]+role="status"[^>]+aria-atomic="true"/);
+  const env=environment(), region=env.get('runtime-announcement'), writes=[];
+  let message='';
+  Object.defineProperty(region,'textContent',{get:()=>message,set:value=>{message=value;writes.push(value)}});
+  env.run('state.offline=false; state.loading=false; state.lang="tr"; state.runtime={state:"running"}; renderHero=()=>{}; renderProfiles=()=>{}; renderLogs=()=>{};');
+  env.run('apiRequest=async()=>fixtureRuntime');
+  env.get('theme-toggle').focus();
+  for (const runtime of [
+    {state:'running',pid:42},
+    {state:'failed',pid:42,log:['PRIVATE_FIXTURE_LOG']},
+    {state:'exited',pid:0},
+    {state:'running',lifecyclePending:true},
+    {state:'stopping'},
+    {state:'stopped'},
+  ]) {
+    env.put('fixtureRuntime',runtime);
+    await env.run('pollStatus()');
+  }
+  assert.deepEqual(writes,['failedState','shutdownPending',null,'stopped'].map(key=>key ? env.run('t('+JSON.stringify(key)+')') : ''));
+  assert.equal(env.context.document.activeElement,env.get('theme-toggle'));
+});
+test('a superseded runtime poll cannot overwrite or announce a newer state', async () => {
+  for (const reject of [false,true]) {
+    const env=environment(), response=Promise.withResolvers();
+    env.context.runtimeResponse=response.promise;
+    env.run('state.offline=false; state.loading=false; apiRequest=()=>runtimeResponse;');
+    const poll=env.run('pollStatus()');
+    env.run('state.runtime={state:"running",pid:123}');
+    if (reject) response.reject(new Error('fixture request failed'));
+    else response.resolve({state:'failed'});
+    await poll;
+    assert.equal(env.run('state.runtime.pid'),123);
+    assert.equal(env.run('state.disconnected'),false);
+    assert.equal(env.get('runtime-announcement').textContent,'');
+  }
+});
 test('connected UI displays the core build version without interpreting HTML',async()=>{
   const env=environment();
   env.run('state.token="fixture"');

@@ -368,26 +368,44 @@ async function reconnect() {
     button.removeAttribute('aria-disabled');
   }
 }
+function runtimeStatusKey(runtime) {
+  if (runtime.lifecyclePending === true) return 'shutdownPending';
+  if (runtime.state === 'running') return 'running';
+  if (['failed','exited','error'].includes(runtime.state)) return 'failedState';
+  return runtime.state === 'stopped' ? 'stopped' : null;
+}
 async function pollStatus() {
   if (state.offline || state.loading || state.polling || state.disconnected || document.hidden) return;
   state.polling = true;
+  const previousRuntime = state.runtime;
   try {
-    const old = [state.runtime.state,state.runtime.profileId,state.runtime.pid,lifecyclePending()].join(':');
-    state.runtime = await apiRequest('/api/v1/runtime','GET',undefined,6000);
+    const old = [previousRuntime.state,previousRuntime.profileId,previousRuntime.pid,lifecyclePending()].join(':');
+    const runtime = await apiRequest('/api/v1/runtime','GET',undefined,6000);
+    if (state.runtime !== previousRuntime) return;
+    const previousStatus = runtimeStatusKey(previousRuntime);
+    state.runtime = runtime;
+    const currentStatus = runtimeStatusKey(runtime);
+    if (previousStatus !== currentStatus) setText('runtime-announcement',currentStatus ? t(currentStatus) : '');
     renderHero();
     if (old !== [state.runtime.state,state.runtime.profileId,state.runtime.pid,lifecyclePending()].join(':')) renderProfiles();
     if (!$('logs-modal').hidden) renderLogs();
-  } catch { state.disconnected = true; renderAll(); }
-  finally { state.polling = false; }
+  } catch {
+    if (state.runtime === previousRuntime) {
+      state.disconnected = true;
+      setText('runtime-announcement','');
+      renderAll();
+    }
+  } finally { state.polling = false; }
 }
 function renderHero() {
   setHidden('profile-audit-notice',!state.profileEditingOnly);
   setText('profile-audit-notice',t('profileAuditNotice'));
   $$('[data-action="diagnose"], [data-view="diagnostics"], [data-view="system"]').forEach(node=>{if(node.disabled!==state.profileEditingOnly)node.disabled=state.profileEditingOnly});
   if(state.profileEditingOnly&&['system','diagnostics'].includes(state.view))navigate('profiles');
-  const pending = lifecyclePending();
-  const running = !pending && state.runtime.state === 'running';
-  const failed = ['failed','exited','error'].includes(state.runtime.state);
+  const runtimeStatus = runtimeStatusKey(state.runtime);
+  const pending = runtimeStatus === 'shutdownPending';
+  const running = runtimeStatus === 'running';
+  const failed = runtimeStatus === 'failedState';
   const status = state.disconnected ? 'disconnected' : state.offline ? 'offline' : pending ? 'shutdownPending' : running ? 'running' : failed ? 'failedState' : 'ready';
   setText('hero-status',state.loading ? t('connecting') : t(status));
   setText('hero-description',t(state.disconnected ? 'disconnectedDesc' : state.offline ? 'offlineDesc' : pending ? 'shutdownPendingDesc' : running ? 'runningDesc' : failed ? 'failedDesc' : 'readyDesc'));
@@ -906,6 +924,7 @@ async function handleProfileAction(action,id) {
       if (!coreAvailable()) throw new Error(t('coreRequired'));
       acquiredBusy = true; state.busy = true; renderHero();
       state.runtime = await apiRequest('/api/v1/stop','POST',{});
+      setText('runtime-announcement','');
       toast(t('stopped'));
     }
   } catch (err) { toast(err.message,true); }
@@ -968,6 +987,7 @@ async function confirmLaunch() {
   try {
     state.runtime = await apiRequest('/api/v1/start','POST',{id,confirm:true,expectedUpdatedAt:launch.profile.updatedAt},20000);
     state.busy = false;
+    setText('runtime-announcement','');
     closeLaunch(); renderAll(); toast(t('startOk'));
   } catch (err) { toast(err.message,true); if (state.launch === launch) { launch.ready = false; $('launch-plan').insertAdjacentHTML('afterbegin',`<p class="plan-error">${escapeHTML(err.message)}</p>`); } }
   finally { state.busy = false; $('launch-edit').disabled = false; renderHero(); }
