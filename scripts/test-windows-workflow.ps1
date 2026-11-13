@@ -113,11 +113,17 @@ try {
     $rejected=$false
     try {Install-Prerequisite 'vcredist'}catch{$rejected=$_.Exception.Message -ceq 'Visual C++ runtime publisher signature could not be verified'}
     Assert ($rejected -and @($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'}).Count -eq 0) 'Bundled Visual C runtime rejects a valid signature from another publisher category'
+    $failedRuntimeSignatures=@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'signature'})
+    Assert ($failedRuntimeSignatures.Count -eq 1 -and (Under $failedRuntimeSignatures[0].path (Join-Path $root 'downloads')) -and -not (Test-Path -LiteralPath $failedRuntimeSignatures[0].path)) 'Bundled prerequisite retires its protected copy after signature refusal'
     $script:prerequisiteSignerSubject='CN=Microsoft fixture'
     $script:prerequisiteCalls.Clear()
     Install-Prerequisite 'vcredist'
     $runtimeLaunches=@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'})
-    Assert ($runtimeLaunches.Count -eq 1 -and $runtimeLaunches[0].program -ceq $runtimeFixture) 'Bundled Visual C runtime accepts the expected publisher category before mocked launch'
+    $runtimeSignatures=@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'signature'})
+    Assert ($runtimeLaunches.Count -eq 1 -and $runtimeSignatures.Count -eq 1 -and $runtimeLaunches[0].program -ceq $runtimeSignatures[0].path) 'Bundled Visual C runtime accepts the expected publisher category before mocked launch'
+    $runtimeStage=$runtimeLaunches[0].program
+    Assert ((Under $runtimeStage (Join-Path $root 'downloads')) -and -not (Test-Path -LiteralPath $runtimeStage) -and (Test-Path -LiteralPath $runtimeFixture)) 'Bundled prerequisite launches only its verified protected copy and retires it'
+
     $rejected=$false;try{Prerequisite-Plan 'unknown'|Out-Null}catch{$rejected=$_.Exception.Message -eq 'Unknown prerequisite component'}
     Assert $rejected 'Unknown prerequisite names cannot fall back to Visual C runtime installation'
 } finally {

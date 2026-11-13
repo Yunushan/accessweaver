@@ -1060,6 +1060,7 @@ function Install-Prerequisite([string]$component) {
             if($candidateInstallers.Count -eq 1){$installer=$candidateInstallers[0];break}
         }
     }
+    $bundleInstaller=$installer
     if(-not $installer){
         if($component -eq 'ndisapi'){
             $release=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/wiresock/ndisapi/releases/latest'
@@ -1069,14 +1070,55 @@ function Install-Prerequisite([string]$component) {
             Download $asset.browser_download_url (([string]$asset.digest)-replace '^sha256:','') $destination;$installer=Get-Item -LiteralPath $destination
         }else{$destination=Join-Path $root 'downloads\VC_redist.x64.exe';Download 'https://aka.ms/vs/17/release/vc_redist.x64.exe' '' $destination -Signed -Publisher microsoft;$installer=Get-Item -LiteralPath $destination}
     }
-    No-Reparse $installer.FullName
-    $signature=Get-AuthenticodeSignature -LiteralPath $installer.FullName
-    if($signature.Status -ne 'Valid'){throw 'Prerequisite signature is invalid'}
-    if($component -eq 'vcredist' -and -not (Test-InstallerPublisher 'microsoft' $signature)){
-        throw 'Visual C++ runtime publisher signature could not be verified'
+    $installerPath=$installer.FullName
+    $staged=$null
+    $source=$null
+    $target=$null
+    try {
+        No-Reparse $installerPath
+        if($bundleInstaller){
+            # Validate and run the same bytes from the machine-owned download
+            # directory. The original bundle can be writable by the caller.
+            $directory=Join-Path $root 'downloads'
+            No-Reparse $directory
+            $candidate=Join-Path $directory ([guid]::NewGuid().ToString('N')+'-'+$installer.Name)
+            $source=[IO.File]::Open($installerPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+            if($source.Length -le 0 -or $source.Length -gt (2147483648L+32MB)){
+                throw 'Bundled prerequisite exceeds the supported size or is empty'
+            }
+            $target=[IO.File]::Open($candidate,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+            $staged=$candidate
+            $source.CopyTo($target)
+            $target.Dispose()
+            $target=$null
+            $source.Dispose()
+            $source=$null
+            $installerPath=$staged
+        }
+        $signature=Get-AuthenticodeSignature -LiteralPath $installerPath
+        if($signature.Status -ne 'Valid'){throw 'Prerequisite signature is invalid'}
+        if($component -eq 'vcredist' -and -not (Test-InstallerPublisher 'microsoft' $signature)){
+            throw 'Visual C++ runtime publisher signature could not be verified'
+        }
+        if($component -eq 'ndisapi' -and (Get-MSIPlatform $installerPath) -ine $plan.platform){
+            throw 'Windows Packet Filter MSI platform does not match the native OS architecture'
+        }
+        if($component -eq 'ndisapi'){
+            [void](Native 'msiexec.exe' @('/i',$installerPath,'/qn','/norestart') @(0,3010,1641))
+        }else{
+            [void](Native $installerPath @('/install','/quiet','/norestart') @(0,3010,1641))
+        }
+    } finally {
+        try {
+            if($target){$target.Dispose()}
+        } finally {
+            try {
+                if($source){$source.Dispose()}
+            } finally {
+                if($staged){[IO.File]::Delete($staged)}
+            }
+        }
     }
-    if($component -eq 'ndisapi' -and (Get-MSIPlatform $installer.FullName) -ine $plan.platform){throw 'Windows Packet Filter MSI platform does not match the native OS architecture'}
-    if($installer.Extension -eq '.msi'){[void](Native 'msiexec.exe' @('/i',$installer.FullName,'/qn','/norestart') @(0,3010,1641))}else{[void](Native $installer.FullName @('/install','/quiet','/norestart') @(0,3010,1641))}
     Event ('Prerequisite installed: '+$component)
 }
 function Discord-Directories([string]$variant='discord') {
