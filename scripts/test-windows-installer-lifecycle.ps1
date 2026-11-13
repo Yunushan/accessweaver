@@ -225,6 +225,18 @@ function Create-UserProfile {
     $verified=Native-Record $binary @('show','installer-preserve')
     Require (($verified.result.stdout | ConvertFrom-Json).name -ceq $data.name) 'Installed core did not round-trip the actual user profile'
 }
+function Assert-ManagedDetection([string]$Phase,$Expected,[bool]$Detected,[string]$DigestOverride=''){
+    $hash=$Expected.payloadSha256
+    if($DigestOverride){$hash=$DigestOverride}
+    $output=@(& $detector -Version $Expected.version -Architecture $Architecture -PayloadSHA256 $hash -InstallDirectory $install 2>&1)
+    Require ($LASTEXITCODE -eq 0) 'Managed detection reported an inspection error'
+    if($Detected){
+        Require ($output.Count -eq 1 -and $output[0] -ceq 'AccessWeaver detected') 'Managed detection missed the approved payload'
+    } else {
+        Require ($output.Count -eq 0) 'Managed detection accepted an absent or unapproved payload'
+    }
+    $script:detectionCases+=,@{phase=$Phase;detected=$Detected}
+}
 function Assert-Installed($expected){
     $binary=Join-Path $install 'accessweaver.exe';No-Reparse $binary
     Require ((Digest $binary) -ceq $expected.payloadSha256) 'Installed payload differs from the compiled payload'
@@ -238,6 +250,8 @@ function Assert-Installed($expected){
     foreach($path in $groupPaths){Require (-not (Test-Path -LiteralPath $path)) 'Silent no-icons installation created a start-menu folder'}
     Assert-UserState
 }
+$detector=Join-Path $PSScriptRoot 'detect-windows-installer.ps1'
+$script:detectionCases=@()
 $reportDirectory=Join-Path $project 'build\installer-lifecycle-checks';[void][IO.Directory]::CreateDirectory($reportDirectory)
 $reportPath=Join-Path $reportDirectory ($Architecture+'.json')
 $script:firewallEventWindowStartUtc=[datetime]::MinValue;
@@ -267,22 +281,28 @@ try {
     Require (-not @(Get-Service -Name 'AccessWeaver-*' -ErrorAction SilentlyContinue).Count) 'Existing product services are outside this fixture'
     Require (-not @(Get-NetFirewallRule -Name 'AccessWeaver-*' -ErrorAction SilentlyContinue).Count) 'Existing product firewall rules are outside this fixture'
     $arguments=@('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/RESTARTEXITCODE=3010','/NOCLOSEAPPLICATIONS','/NORESTARTAPPLICATIONS','/NOICONS',('/DIR='+$install),('/GROUP='+$group))
+    Assert-ManagedDetection 'before-install' $builds[0] $false
     $stage='install';$first=Join-Path $project ('build\'+$builds[0].installerName)
     Require ((Digest $first) -ceq $builds[0].installerSHA256) 'Installer changed after compilation'
     $installed=Native-Record $first $arguments;Assert-Installed $builds[0];Create-UserProfile
     $marker=Join-Path $install 'unrelated-preserve.txt';[IO.File]::WriteAllText($marker,'unrelated-existing-file');$markerHash=Digest $marker
     $observations+=,@{operation='install';exitCode=$installed.result.exitCode;elapsedMilliseconds=$installed.milliseconds;deadlineMilliseconds=180000;payloadAndRegistrationVerified=$true}
+    Assert-ManagedDetection 'after-install' $builds[0] $true
+    Assert-ManagedDetection 'wrong-digest' $builds[0] $false ('0'*64)
     $null=State-Checkpoint 'after-install'
     $stage='upgrade';$second=Join-Path $project ('build\'+$builds[1].installerName)
     Require ((Digest $second) -ceq $builds[1].installerSHA256) 'Upgrade installer changed after compilation'
     $upgraded=Native-Record $second $arguments;Assert-Installed $builds[1]
     Require ((Digest $marker) -ceq $markerHash) 'Upgrade changed an unrelated installed-directory file'
     $observations+=,@{operation='upgrade';exitCode=$upgraded.result.exitCode;elapsedMilliseconds=$upgraded.milliseconds;deadlineMilliseconds=180000;payloadAndRegistrationVerified=$true;unrelatedStatePreserved=$true}
+    Assert-ManagedDetection 'after-upgrade' $builds[1] $true
+    Assert-ManagedDetection 'superseded-version' $builds[0] $false
     $null=State-Checkpoint 'after-upgrade'
     $stage='reinstall'
     $reinstalled=Native-Record $second $arguments;Assert-Installed $builds[1]
     Require ((Digest $marker) -ceq $markerHash) 'Reinstall changed an unrelated installed-directory file'
     $observations+=,@{operation='reinstall';exitCode=$reinstalled.result.exitCode;elapsedMilliseconds=$reinstalled.milliseconds;deadlineMilliseconds=180000;payloadAndRegistrationVerified=$true;unrelatedStatePreserved=$true}
+    Assert-ManagedDetection 'after-reinstall' $builds[1] $true
     $null=State-Checkpoint 'after-reinstall'
     Require ((Read-InstallerPEMachine (Join-Path $install 'unins000.exe')) -eq 0x014c) 'Pinned Inno uninstaller differs from the supported x86 native-handle ABI'
     $stage='active-setup-uninstall';$lifecycleLockCases=@()
@@ -348,6 +368,7 @@ try {
     Require ($treeAfter -ceq $treeBefore -and $registrationAfter -ceq $registrationBefore) 'Refused downgrade changed installed files or registration'
     Assert-Installed $builds[1]
     Require ((Digest $marker) -ceq $markerHash) 'Refused downgrade changed an unrelated file'
+    Assert-ManagedDetection 'after-refused-downgrade' $builds[1] $true
     $null=State-Checkpoint 'after-refused-downgrade'
     $stage='version-registration-policy';$versionPolicyCases=@()
     foreach($case in @(
@@ -679,6 +700,7 @@ try {
         Require (-not (Test-Path -LiteralPath $managed)) 'Rejected restore input unexpectedly created machine recovery state'
     } finally {if(Test-Path -LiteralPath $request){No-Reparse $request;[IO.File]::WriteAllBytes($request,$original)}}
     $observations+=,@{operation='refused-uninstall';exitCode=$refused.result.exitCode;elapsedMilliseconds=$refused.milliseconds;deadlineMilliseconds=180000;controllerAndRegistrationRetained=$true;unrelatedStatePreserved=$true}
+    Assert-ManagedDetection 'after-refused-uninstall' $builds[1] $true
     $null=State-Checkpoint 'before-uninstall'
     $stage='uninstall';$removed=Native-Record $uninstaller $silent
     $deadline=[DateTime]::UtcNow.AddSeconds(20)
@@ -696,6 +718,7 @@ try {
     Require ($journals.Count -eq 1) 'Expected exactly one recovery journal from clean removal'
     $journal=Get-Content -LiteralPath $journals[0].FullName -Raw | ConvertFrom-Json
     Require ($journal.action -ceq 'remove-all' -and $journal.state -ceq 'succeeded') 'Recovery-aware uninstall did not record successful machine restoration'
+    Assert-ManagedDetection 'after-uninstall' $builds[1] $false
     $after=State-Checkpoint 'after-uninstall'
     Require ($after -ceq $before) 'Installer lifecycle changed selected services, firewall rules or DNS configuration'
     $observations+=,@{operation='uninstall';exitCode=$removed.result.exitCode;elapsedMilliseconds=$removed.milliseconds;deadlineMilliseconds=180000;ownedPayloadAndRegistrationRemoved=$true;unrelatedStatePreserved=$true;recoveryJournalRetained=$true}
@@ -711,7 +734,7 @@ try {
 $eventDiagnostics=New-InstallerFirewallEventDiagnostic
 if(-not $complete){$eventDiagnostics=Read-FirewallEventDiagnostic}
 $originDiagnostics=[ordered]@{schemaVersion=1;source='captured-rule-properties';maxRecords=16;maxPropertyBytes=4096;records=@($script:firewallOriginObservations);truncated=$script:firewallOriginTruncated;unavailable=$script:firewallOriginUnavailable;extraNativeQueriesPerformed=$false;processOriginEstablished=$false}
-$record=[ordered]@{schemaVersion=11;eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=12;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'

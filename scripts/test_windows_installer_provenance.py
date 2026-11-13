@@ -1,5 +1,5 @@
 import copy
-from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_native_attempt
+from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt
 import os
 from pathlib import Path
 import subprocess
@@ -156,6 +156,32 @@ class FirewallEventDiagnosticContracts(unittest.TestCase):
             invalid.append(dict(self.fixture(),**{key:value}))
         for value in invalid:
             with self.subTest(value=value),self.assertRaises(ValueError):validate_firewall_event_diagnostics(value)
+
+
+class ManagedDetectionEvidenceTests(unittest.TestCase):
+    def test_exact_source_order_and_results_required(self):
+        from hashlib import sha256
+        source = Path(__file__).with_name("detect-windows-installer.ps1")
+        cases = [
+            {"phase": phase, "detected": detected}
+            for phase, detected in (
+                ("before-install", False), ("after-install", True), ("wrong-digest", False),
+                ("after-upgrade", True), ("superseded-version", False), ("after-reinstall", True),
+                ("after-refused-downgrade", True), ("after-refused-uninstall", True), ("after-uninstall", False),
+            )
+        ]
+        report = {"managedDetectionSourceSHA256": sha256(source.read_bytes()).hexdigest(),
+                  "managedDetectionCases": cases}
+        self.assertEqual(validate_managed_detection(report), {"managedDetectionChecksVerified": 9})
+        for change in (
+            {"managedDetectionSourceSHA256": "0" * 64},
+            {"managedDetectionCases": cases[1:]},
+            {"managedDetectionCases": cases[::-1]},
+            {"managedDetectionCases": [dict(cases[0], detected=0), *cases[1:]]},
+            {"managedDetectionCases": [dict(cases[0], privatePath="unexpected"), *cases[1:]]},
+        ):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_managed_detection({**report, **change})
 
 
 if __name__=='__main__':unittest.main()

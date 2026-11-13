@@ -106,9 +106,27 @@ def validate_native_attempt(value):
     require(value.get("invocationReturned") is True and value.get("operationAccepted") is True and type(value.get("exitCode")) is int and value["exitCode"]==0 and value.get("outputComplete") is True and value.get("failureCategory")=="none","Final native attempt did not complete successfully")
     return {"finalNativeAttemptVerified":True}
 
+def validate_managed_detection(report):
+    expected = [
+        ("before-install", False), ("after-install", True), ("wrong-digest", False),
+        ("after-upgrade", True), ("superseded-version", False), ("after-reinstall", True),
+        ("after-refused-downgrade", True), ("after-refused-uninstall", True), ("after-uninstall", False),
+    ]
+    source = Path(__file__).with_name("detect-windows-installer.ps1")
+    require(report.get("managedDetectionSourceSHA256") == digest(source.read_bytes()),
+            "Managed detection differs from the approved source")
+    cases = report.get("managedDetectionCases")
+    require(isinstance(cases, list) and len(cases) == len(expected), "Incomplete managed detection coverage")
+    for case, (phase, detected) in zip(cases, expected):
+        require(isinstance(case, dict) and case.keys() == {"phase", "detected"}
+                and case["phase"] == phase and case["detected"] is detected,
+                "Unexpected managed detection result")
+    return {"managedDetectionChecksVerified": len(expected)}
+
+
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion")==11 and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -118,6 +136,7 @@ def validate_contents(root,commit,ref,arch,versions):
     require(report.get("stateDiagnosticsSourceSHA256")==digest(Path(__file__).with_name("windows-installer-state.ps1").read_bytes()),"State diagnostics differ from approved verifier source")
     require(report.get("nativeDiagnosticsSourceSHA256")==digest(Path(__file__).with_name("windows-installer-native-state.ps1").read_bytes()),"Native-attempt diagnostics differ from approved verifier source")
     require(report.get("eventDiagnosticsSourceSHA256")==digest(Path(__file__).with_name("windows-installer-event-state.ps1").read_bytes()),"Event diagnostics differ from approved verifier source")
+    detection_counts = validate_managed_detection(report) if report["schemaVersion"] == 12 else {}
     event_counts=validate_firewall_event_diagnostics(report.get("firewallEventDiagnostics"))
     attempt_counts=validate_native_attempt(report.get("lastNativeAttempt"))
     state_counts=validate_state_observations(report.get("stateObservations"))
@@ -143,7 +162,7 @@ def validate_contents(root,commit,ref,arch,versions):
         require(payload.get("version")==version and payload.get("hashes")==[{"alg":"SHA-256","content":build["payloadSha256"]}],"Installer SBOM payload subject differs")
         require(compiler.get("version")=="6.7.1" and prop_map(compiler).get("accessweaver:compiler-sha256")==build["compilerSHA256"],"Installer SBOM compiler subject differs")
         candidates.append({"file":name,"sha256":digest(binary),"bytes":len(binary),"payloadSHA256":build["payloadSha256"],"payloadTarget":"windows/"+arch,"bootstrapPEMachine":"0x014c","sbomSHA256":digest((root/(name+".cdx.json")).read_bytes())})
-    return {"candidates":candidates,**state_counts,**origin_counts,**event_counts,**attempt_counts,"nativeLifecycleOperationsVerified":len(expected),"nativeRunID":str(report["runID"]),"nativeDependencyClosureComplete":False}
+    return {"candidates":candidates,**detection_counts,**state_counts,**origin_counts,**event_counts,**attempt_counts,"nativeLifecycleOperationsVerified":len(expected),"nativeRunID":str(report["runID"]),"nativeDependencyClosureComplete":False}
 
 def stage(build_root,destination,commit,ref,arch,versions):
     validate_identity(commit,ref);names=subject_names(arch,versions)
