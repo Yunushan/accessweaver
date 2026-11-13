@@ -1029,11 +1029,13 @@ $previousDesktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
 try {
     function Find-App {param($variant);return $fixtureApp}
     function Require-DesktopUser {}
-    function Get-Process {param($ErrorAction);return $script:appStopRecord}
+    function Get-Process {param($ErrorAction);return $appStopRecords}
+    $fixtureSession=[Diagnostics.Process]::GetCurrentProcess().SessionId
     $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false
     $script:appStopWaits=0
     $script:appStopDisposals=0
-    $script:appStopRecord=[pscustomobject]@{Path=$fixtureApp;Handle=[IntPtr]123;HasExited=$false;ExitObserved=$false}
+    $script:appStopRecord=[pscustomobject]@{Path=$fixtureApp;SessionId=$fixtureSession;Handle=[IntPtr]123;HasExited=$false;ExitObserved=$false}
+    $appStopRecords=@($script:appStopRecord)
     $script:appStopRecord | Add-Member ScriptMethod Kill {
         $script:appStopCalls++
         if($script:appStopFailure){throw 'private fixture detail'}
@@ -1052,6 +1054,18 @@ try {
     $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Expected exactly one SplitCord uninstaller'}
     Assert ($rejected -and $script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) 'Application removal leaves processes running when uninstallers are ambiguous'
     [IO.File]::Delete($secondUninstaller)
+    $conflictingProcess=[pscustomobject]@{Path=$fixtureApp;SessionId=($fixtureSession+1)}
+    $conflictingProcess | Add-Member ScriptMethod Dispose {}
+    $appStopRecords=@($script:appStopRecord,$conflictingProcess)
+    $rejected=$false
+    try {Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application is running in another Windows session'}
+    Assert ($rejected -and $script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) 'Application removal refuses a matching client in another session before stopping any process'
+    $conflictingProcess.SessionId=$null
+    $rejected=$false
+    try {Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process session could not be verified'}
+    Assert ($rejected -and $script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) 'Application removal refuses an unverified matching session before stopping any process'
+    $appStopRecords=@($script:appStopRecord)
+    $script:appStopDisposals=0
     $rejected=$false;try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process could not be stopped; the operation was not continued'}
     Assert ($rejected -and $script:appStopCalls -eq 1 -and $script:externalEffectsPending) 'Application removal stops on a matching process failure and records an external effect'
     $script:appStopCalls=0;$script:appStopFailure=$true;$script:externalEffectsPending=$false

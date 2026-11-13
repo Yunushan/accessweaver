@@ -1956,11 +1956,23 @@ function Remove-App([string]$variant) {
 function Stop-AppProcesses([string]$variant) {
     $base=$null;$app=$null
     if($variant -in @('discord','discord-ptb')){$base=Join-Path $env:LOCALAPPDATA $(if($variant -eq 'discord'){'Discord'}else{'DiscordPTB'});No-Reparse $base}else{$app=Find-App $variant}
-    foreach($process in Get-Process -ErrorAction SilentlyContinue){
-        try{$path=$process.Path}catch{continue}
-        if(-not $path){continue}
-        $match=if($base){(Under $path $base) -and ([IO.Path]::GetFileName($path) -in @('Discord.exe','DiscordPTB.exe','Update.exe','crashpad_handler.exe'))}else{$app -and $path -eq $app}
-        if($match){
+    $sessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId
+    $matching=[Collections.Generic.List[object]]::new()
+    try {
+        # Check all observed matches before stopping a client. A shared install
+        # may still be in use by a disconnected or concurrent desktop session.
+        foreach($process in Get-Process -ErrorAction SilentlyContinue){
+            try{$path=$process.Path}catch{continue}
+            if(-not $path){continue}
+            $match=if($base){(Under $path $base) -and ([IO.Path]::GetFileName($path) -in @('Discord.exe','DiscordPTB.exe','Update.exe','crashpad_handler.exe'))}else{$app -and $path -eq $app}
+            if(-not $match){continue}
+            $matching.Add($process)
+            $processSession=$null
+            try {$processSession=$process.SessionId}catch{}
+            if($null -eq $processSession){throw 'A matching application process session could not be verified'}
+            if($processSession -ne $sessionId){throw 'A matching application is running in another Windows session'}
+        }
+        foreach($process in $matching){
             # Terminating a user application is an external effect even if a
             # later stop or uninstall fails; it cannot be rolled back here.
             $script:externalEffectsPending=$true
@@ -1974,10 +1986,10 @@ function Stop-AppProcesses([string]$variant) {
                 $exited=$false
                 try {$exited=$process.HasExited -eq $true}catch{}
                 if(-not $exited){throw 'A matching application process could not be stopped; the operation was not continued'}
-            } finally {
-                $process.Dispose()
             }
         }
+    } finally {
+        foreach($process in $matching){$process.Dispose()}
     }
 }
 function Test-AppProcessInSession([string]$path,[int]$sessionId,$processes) {
