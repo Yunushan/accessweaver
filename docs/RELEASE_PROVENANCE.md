@@ -94,6 +94,25 @@ Repeat on Intel with amd64. Signed build output is under the build/macos-signed-
 The current workflow is not claimed SLSA Build Level 3 or a proof that build code is benign. A compromised approved workflow/runner/dependency can falsify its build behavior. Review, branch/tag protection, separation of duties, trusted builder isolation, independent rebuilds and release revocation/recovery remain requirements. Attested alpha artifacts are still subject to every unfinished functional, security, desktop and enterprise readiness gate.
 
 
+## Approve the final signed desktop artifacts
+
+Collect the final signed build outputs in a private candidate directory. The manifest requires the exact twelve subjects for the approved tag. For each Windows architecture include the setup executable and its CycloneDX SBOM, plus the shipped signed payload and its SBOM. Copy the builder's evidence/payload.exe and payload-SBOM.cdx.json as accessweaver-VERSION-windows-ARCH.exe and accessweaver-VERSION-windows-ARCH.exe.cdx.json. For each Mac architecture include the final stapled versioned package and its CycloneDX SBOM. The version in these filenames omits the tag's leading v.
+
+Verify native publisher signatures and the build-source evidence before approving the inventory. Write SIGNED-RELEASE.json outside the input directory. Sign its exact bytes through the organization's approved release-approval certificate and signer using detached DER CMS. Give verifiers the public certificate as a DER file and its SHA-256 fingerprint through the same independently controlled channel as the approved commit and tag. The certificate must stay outside the candidate directory.
+
+```text
+python scripts/signed_release_manifest.py prepare PRIVATE_CANDIDATE --output APPROVAL_DIRECTORY/SIGNED-RELEASE.json --source-commit FULL_APPROVED_COMMIT --source-ref refs/tags/APPROVED_TAG
+openssl cms -sign -binary -md sha256 -in APPROVAL_DIRECTORY/SIGNED-RELEASE.json -signer APPROVED_PUBLIC_CERTIFICATE_PEM -inkey APPROVED_SIGNING_KEY_REFERENCE -outform DER -out APPROVAL_DIRECTORY/SIGNED-RELEASE.p7s
+```
+
+Use the organization's signing service or configured OpenSSL provider to supply the key reference. The manifest tool takes no private-key input. Copy the manifest and signature beside the twelve subjects, then run:
+
+```text
+python scripts/signed_release_manifest.py verify PRIVATE_CANDIDATE --approval-certificate INDEPENDENT_APPROVAL_CERTIFICATE_DER --approval-certificate-sha256 APPROVED_CERTIFICATE_SHA256 --source-commit FULL_APPROVED_COMMIT --source-ref refs/tags/APPROVED_TAG
+```
+
+The verifier checks the approval signature with the supplied certificate and compares the exact inventory, sizes and SHA-256 digests against the received bytes. This records the organization's approval of the specified source and artifacts. Retain the separate build provenance, native publisher checks and installed-product results for that candidate. [OpenSSL CMS verification](https://docs.openssl.org/3.5/man1/openssl-cms/).
+
 ## Packaged FreeBSD guest acceptance
 
 The release workflow configures separate archived-candidate jobs for FreeBSD amd64 and arm64 on matching-architecture Linux hosts. `stage_packaged_native.py --freebsd-guest` uses an explicit guest-only target policy; the ordinary native entry point continues to reject cross-host/BSD selection. The credential-scoped step snapshots and authenticates all twelve distribution subjects before staging the selected archived binary and its build receipt. It never executes candidate code. The subsequent guest step receives no `GH_TOKEN` setting.
