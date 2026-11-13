@@ -318,8 +318,8 @@ try {
 
 # Isolated scan boundaries: inert files and closed mocks only. A plausible
 # partial summary must never be saved or reach installation as a success.
-$previousScanInput=$inputData;$previousScanRequest=$r;$previousScanRoot=$root
-$scanFunctions=@{};foreach($name in @('Ensure-Asset','Native','Write-Atomic','Install-Method')){$scanFunctions[$name]=(Get-Command $name).ScriptBlock}
+$previousScanInput=$inputData;$previousScanRequest=$r;$previousScanRoot=$root;$previousScanAssetNames=$assetNames
+$scanFunctions=@{};foreach($name in @('Ensure-Asset','Native','Write-Atomic','Install-Method','Protect-Dir','Assert-TrustedTree')){$scanFunctions[$name]=(Get-Command $name).ScriptBlock}
 try {
     $root=Join-Path $testRoot 'scan-completion';$scanBundle=Join-Path $root 'bundle'
     [void](New-Item -ItemType Directory -Force -Path $scanBundle)
@@ -359,9 +359,35 @@ try {
         }
         Assert ($env:PATH -ceq $oldPath) 'Scan restores the process PATH after success or refusal'
     }
+    $inputData=[pscustomobject]@{managedPolicy=$true;ispHook=$null}
+    $assetNames=@{zapret2='winws2.exe'}
+    $r=[pscustomobject]@{engine='zapret2';bundlePath=$null;scan='quick';targets=@('example.com')}
+    $script:scanWrites=0
+    $refused=$false
+    try {Scan-Strategies | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Managed strategy scans require an approved Windows blockcheck bundle'}
+    Assert ($refused -and $script:scanWrites -eq 0) 'Managed strategy scan refuses an absent approved bundle before saving'
+    $r.bundlePath=$scanBundle
+    function Protect-Dir([string]$path){
+        $script:stagedScanBundle=$path
+        [void](New-Item -ItemType Directory -Path $path -Force)
+    }
+    function Assert-TrustedTree([string]$path){if($path -cne $script:stagedScanBundle){throw 'Unexpected managed scan cleanup target'}}
+    function Native {
+        param($program,$arguments,[int]$Timeout)
+        if($program -cne (Join-Path $script:stagedScanBundle 'bash.exe') -or $arguments[-1] -notlike '*/blockcheck2.sh'){throw 'Unexpected staged scan executable or script'}
+        if($env:BASH_ENV){throw 'Managed scan inherited an external Bash startup file'}
+        return @{stdout='* SUMMARY fixture';outputComplete=$true}
+    }
+    $oldBashEnv=$env:BASH_ENV
+    try {
+        $env:BASH_ENV='fixture-startup'
+        $stagedScan=Scan-Strategies
+        if($env:BASH_ENV -cne 'fixture-startup'){throw 'Managed scan did not restore the Bash startup setting'}
+    } finally {$env:BASH_ENV=$oldBashEnv}
+    Assert ($stagedScan.scanLevel -ceq 'quick' -and $script:scanWrites -eq 1 -and (Under $script:stagedScanBundle (Join-Path $root 'temp')) -and -not (Test-Path -LiteralPath $script:stagedScanBundle)) 'Managed strategy scan runs from the staged approved bundle'
 } finally {
     foreach($name in $scanFunctions.Keys){Set-Item ('Function:'+$name) $scanFunctions[$name]}
-    $inputData=$previousScanInput;$r=$previousScanRequest;$root=$previousScanRoot
+    $inputData=$previousScanInput;$r=$previousScanRequest;$root=$previousScanRoot;$assetNames=$previousScanAssetNames
 }
 
 # Failed real-vendor probes may export only bounded, sanitized error details.

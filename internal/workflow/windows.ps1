@@ -265,9 +265,26 @@ function Write-Atomic([string]$path,[string]$text) {
     if (Test-Path -LiteralPath $path) {$replaceBackup=$tmp+'.old';[IO.File]::Replace($tmp,$path,$replaceBackup);Remove-Item -LiteralPath $replaceBackup}else{[IO.File]::Move($tmp,$path)}
 }
 function Copy-Checked([string]$source,[string]$destination) {No-Reparse $source;Backup-File $destination;Expected-Hash $destination (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash;[void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination));Copy-Item -LiteralPath $source -Destination $destination -Force}
-function Copy-Tree([string]$source,[string]$destination) {
+function Copy-Tree([string]$source,[string]$destination,[switch]$Disposable) {
     No-Reparse $source
-    foreach ($item in Get-ChildItem -LiteralPath $source -Recurse -Force) {if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Component contains a reparse point'};if (-not $item.PSIsContainer) {$relative=$item.FullName.Substring($source.TrimEnd('\').Length).TrimStart('\');$target=Join-Path $destination $relative;if (-not (Under $target $destination)){throw 'Invalid component path'};Copy-Checked $item.FullName $target}}
+    foreach($item in Get-ChildItem -LiteralPath $source -Recurse -Force){
+        if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Component contains a reparse point'}
+        if($item.PSIsContainer -and -not $Disposable){continue}
+        $relative=$item.FullName.Substring($source.TrimEnd('\').Length).TrimStart('\')
+        $target=Join-Path $destination $relative
+        if(-not (Under $target $destination)){throw 'Invalid component path'}
+        if($Disposable){
+            if($item.PSIsContainer){
+                [void][IO.Directory]::CreateDirectory($target)
+            }else{
+                No-Reparse $item.FullName
+                [void][IO.Directory]::CreateDirectory((Split-Path -Parent $target))
+                [IO.File]::Copy($item.FullName,$target,$false)
+            }
+        }else{
+            Copy-Checked $item.FullName $target
+        }
+    }
 }
 function Require-DownloadPermission {
     if ($inputData.managedPolicy -and $inputData.allowDownloads -ne $true) {throw 'Administrator policy disables remote component and release requests'}
@@ -858,15 +875,17 @@ function Get-PEMachine([string]$path) {
         return [BitConverter]::ToUInt16($coff,4)
     } finally {if($null -ne $reader){$reader.Dispose()}else{$stream.Dispose()}}
 }
-function Find-Source([string]$engine) {
+function Find-Source([string]$engine,[string[]]$SourceRoots) {
     $name=$assetNames[$engine];if (-not $name){throw 'Unknown component'}
     $native=$engine -in @('proxifyre','wgcf','dnscrypt')
     if($native -and $inputData.nativeArchitecture -notin @('amd64','arm64')){return $null}
     $plan=if($native){Component-ArchitecturePlan $engine}else{$null}
-    $roots=@((Join-Path $root ('components\'+$engine)))
-    if ($r.bundlePath) {$roots+=[IO.Path]::GetFullPath($r.bundlePath)}
-    $roots+=@((Join-Path $env:ProgramFiles 'SplitWire-Turkey\res'),(Join-Path $env:ProgramFiles 'SplitWire-Turkey\Prerequisites'))
-    foreach ($base in $roots) {
+    if(-not $PSBoundParameters.ContainsKey('SourceRoots')){
+        $SourceRoots=@((Join-Path $root ('components\'+$engine)))
+        if ($r.bundlePath) {$SourceRoots+=[IO.Path]::GetFullPath($r.bundlePath)}
+        $SourceRoots+=@((Join-Path $env:ProgramFiles 'SplitWire-Turkey\res'),(Join-Path $env:ProgramFiles 'SplitWire-Turkey\Prerequisites'))
+    }
+    foreach ($base in $SourceRoots) {
         if(-not (Test-Path -LiteralPath $base)){continue}
         No-Reparse $base
         if($native){
@@ -1757,18 +1776,70 @@ function Preserve-DiscordCache {
 }
 function Scan-Strategies {
     if($r.engine -notin @('zapret','zapret2')){throw 'Strategy scans require Zapret or Zapret2'}
-    $binary=Ensure-Asset $r.engine;$dir=Split-Path -Parent $binary
-    $search=@($r.bundlePath,(Split-Path -Parent $dir),(Join-Path $env:ProgramFiles 'SplitWire-Turkey\res\zapret')) | Where-Object {$_ -and (Test-Path -LiteralPath $_)}
-    $check=$null;$bash=$null
-    foreach($base in $search){$pattern=if($r.engine -eq 'zapret2'){'blockcheck2.sh'}else{'blockcheck.sh'};$check=Get-ChildItem -LiteralPath $base -Recurse -Filter $pattern -File|Select-Object -First 1;if($check){$bash=Get-ChildItem -LiteralPath $base -Recurse -Filter 'bash.exe' -File|Select-Object -First 1;if($bash){break}}}
-    if(-not $check -or -not $bash){throw 'Supply the official Windows blockcheck bundle, including its Cygwin bash runtime'}
-    if(-not (Under $check.FullName $root)){$scanDir=Join-Path $root ('components\scan-'+$r.engine);Protect-Dir $scanDir;Copy-Tree $check.Directory.FullName $scanDir;$check=Get-Item -LiteralPath (Join-Path $scanDir $check.Name)}
-    if(-not (Under $bash.FullName $root)){$runtimeDir=Join-Path $root 'components\cygwin';Protect-Dir $runtimeDir;$bashRoot=Split-Path -Parent $bash.Directory.FullName;Copy-Tree $bashRoot $runtimeDir;$bash=Get-Item -LiteralPath (Join-Path $runtimeDir 'bin\bash.exe')}
-    if($r.engine -eq 'zapret2' -and $inputData.ispHook){Write-Atomic (Join-Path $check.Directory.FullName 'blockcheck2.d\standard\00-accessweaver-isp.sh') $inputData.ispHook}
-    $level=if($r.scan){$r.scan}else{'standard'};$scope=@{quick='quick';standard='standard';full='force'}[$level]
-    $old=[Environment]::GetEnvironmentVariable('SCANLEVEL');$oldDomains=[Environment]::GetEnvironmentVariable('DOMAINS')
-    $oldBatch=[Environment]::GetEnvironmentVariable('BATCH');$oldPath=$env:PATH
-    try{$env:BATCH='1';$env:PATH=$bash.Directory.FullName+';'+$env:PATH;$env:SCANLEVEL=$scope;$env:DOMAINS=if($r.targets){@($r.targets)-join ' '}else{'discord.com discord.gg'};$unixPath=$check.FullName -replace '\\','/';if($unixPath -match '^([A-Za-z]):/(.*)$'){$unixPath='/cygdrive/'+$matches[1].ToLowerInvariant()+'/'+$matches[2]};$result=Native $bash.FullName @('--noprofile','--norc',$unixPath) -Timeout 4200;if($null -eq $result -or $result.outputComplete -ne $true){throw 'Scan output was incomplete; no strategy was selected'};$report=Join-Path $root ('logs\'+$r.engine+'-blockcheck.txt');Write-Atomic $report $result.stdout;return @{scanLevel=$level;output=$result.stdout;reportPath=$report;note='Review detected strategies before installing. A scan result is not a guarantee for UDP voice.'}}finally{[Environment]::SetEnvironmentVariable('SCANLEVEL',$old);[Environment]::SetEnvironmentVariable('DOMAINS',$oldDomains);[Environment]::SetEnvironmentVariable('BATCH',$oldBatch);$env:PATH=$oldPath}
+    $scanParent=[IO.Path]::GetFullPath((Join-Path $root 'temp'))
+    $ownedScanBundle=$null
+    try {
+        if($inputData.managedPolicy){
+            if(-not $r.bundlePath -or -not (Test-Path -LiteralPath $r.bundlePath -PathType Container)){
+                throw 'Managed strategy scans require an approved Windows blockcheck bundle'
+            }
+            $bundle=[IO.Path]::GetFullPath($r.bundlePath)
+            No-Reparse $bundle
+            # Keep the reviewed bundle's layout and prevent older scan assets
+            # from being mixed into this run.
+            $candidate=Join-Path $scanParent ('scan-'+$r.engine+'-'+[guid]::NewGuid().ToString('N'))
+            if(Under $candidate $bundle){throw 'Managed scan staging must be outside the approved bundle'}
+            if(Test-Path -LiteralPath $candidate){throw 'Managed scan staging path already exists'}
+            Protect-Dir $candidate
+            $ownedScanBundle=$candidate
+            Copy-Tree $bundle $ownedScanBundle -Disposable
+            if(-not (Find-Source $r.engine -SourceRoots @($ownedScanBundle))){
+                throw 'Approved Windows blockcheck bundle lacks the selected engine'
+            }
+            $search=@($ownedScanBundle)
+        }else{
+            $binary=Ensure-Asset $r.engine;$dir=Split-Path -Parent $binary
+            $search=@($r.bundlePath,(Split-Path -Parent $dir),(Join-Path $env:ProgramFiles 'SplitWire-Turkey\res\zapret')) | Where-Object {$_ -and (Test-Path -LiteralPath $_)}
+        }
+        $check=$null;$bash=$null
+        foreach($base in $search){$pattern=if($r.engine -eq 'zapret2'){'blockcheck2.sh'}else{'blockcheck.sh'};$check=Get-ChildItem -LiteralPath $base -Recurse -Filter $pattern -File|Select-Object -First 1;if($check){$bash=Get-ChildItem -LiteralPath $base -Recurse -Filter 'bash.exe' -File|Select-Object -First 1;if($bash){break}}}
+        if(-not $check -or -not $bash){throw 'Supply the official Windows blockcheck bundle, including its Cygwin bash runtime'}
+        if(-not (Under $check.FullName $root)){$scanDir=Join-Path $root ('components\scan-'+$r.engine);Protect-Dir $scanDir;Copy-Tree $check.Directory.FullName $scanDir;$check=Get-Item -LiteralPath (Join-Path $scanDir $check.Name)}
+        if(-not (Under $bash.FullName $root)){$runtimeDir=Join-Path $root 'components\cygwin';Protect-Dir $runtimeDir;$bashRoot=Split-Path -Parent $bash.Directory.FullName;Copy-Tree $bashRoot $runtimeDir;$bash=Get-Item -LiteralPath (Join-Path $runtimeDir 'bin\bash.exe')}
+        if($r.engine -eq 'zapret2' -and $inputData.ispHook){
+            $hook=Join-Path $check.Directory.FullName 'blockcheck2.d\standard\00-accessweaver-isp.sh'
+            if($ownedScanBundle){
+                No-Reparse $hook
+                [void][IO.Directory]::CreateDirectory((Split-Path -Parent $hook))
+                [IO.File]::WriteAllText($hook,$inputData.ispHook,[Text.UTF8Encoding]::new($false))
+            }else{
+                Write-Atomic $hook $inputData.ispHook
+            }
+        }
+        $level=if($r.scan){$r.scan}else{'standard'};$scope=@{quick='quick';standard='standard';full='force'}[$level]
+        $old=[Environment]::GetEnvironmentVariable('SCANLEVEL');$oldDomains=[Environment]::GetEnvironmentVariable('DOMAINS')
+        $oldBatch=[Environment]::GetEnvironmentVariable('BATCH');$oldPath=$env:PATH
+        $bashStartup=@{}
+        try{
+            if($ownedScanBundle){
+                foreach($name in @('BASH_ENV','ENV','SHELLOPTS','BASHOPTS','CDPATH')){
+                    $bashStartup[$name]=[Environment]::GetEnvironmentVariable($name)
+                    [Environment]::SetEnvironmentVariable($name,$null)
+                }
+            }
+            $env:BATCH='1';$env:PATH=$bash.Directory.FullName+';'+$env:PATH;$env:SCANLEVEL=$scope;$env:DOMAINS=if($r.targets){@($r.targets)-join ' '}else{'discord.com discord.gg'};$unixPath=$check.FullName -replace '\\','/';if($unixPath -match '^([A-Za-z]):/(.*)$'){$unixPath='/cygdrive/'+$matches[1].ToLowerInvariant()+'/'+$matches[2]};$result=Native $bash.FullName @('--noprofile','--norc',$unixPath) -Timeout 4200;if($null -eq $result -or $result.outputComplete -ne $true){throw 'Scan output was incomplete; no strategy was selected'};$report=Join-Path $root ('logs\'+$r.engine+'-blockcheck.txt');Write-Atomic $report $result.stdout;return @{scanLevel=$level;output=$result.stdout;reportPath=$report;note='Review detected strategies before installing. A scan result is not a guarantee for UDP voice.'}}finally{[Environment]::SetEnvironmentVariable('SCANLEVEL',$old);[Environment]::SetEnvironmentVariable('DOMAINS',$oldDomains);[Environment]::SetEnvironmentVariable('BATCH',$oldBatch);$env:PATH=$oldPath
+            foreach($name in $bashStartup.Keys){[Environment]::SetEnvironmentVariable($name,$bashStartup[$name])}
+        }
+    } finally {
+        if($ownedScanBundle){
+            $resolved=[IO.Path]::GetFullPath($ownedScanBundle)
+            if((Split-Path -Parent $resolved) -ine $scanParent -or (Split-Path -Leaf $resolved) -cnotmatch '^scan-zapret2?-[a-f0-9]{32}$'){
+                throw 'Refusing unexpected managed scan cleanup path'
+            }
+            Assert-TrustedTree $resolved
+            Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction Stop
+        }
+    }
 }
 function Auto-Install {
     if($r.dns -and $r.dns -ne 'unchanged' -and -not $script:dnsConfigured){Configure-DNS $r.dns}
