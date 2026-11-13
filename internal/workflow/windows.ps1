@@ -2994,6 +2994,9 @@ function Install-App([string]$variant,[switch]$Reinstall) {
             if($stableBeforeSetup){$stableBeforeSetupDigest=Get-AppExecutableDigest $stableBeforeSetup}
         }
         $installerArgs=if($variant -eq 'splitcord'){@('/S')}else{@('-s')}
+        if($Reinstall -and ((Find-App $variant) -or (Test-Path -LiteralPath $originalApp -ErrorAction Stop))){
+            throw 'Stable Discord reappeared before replacement setup; review the current installation'
+        }
         Save-ApplicationEffectBoundary
         [void](Native $file $installerArgs -Timeout 900)
     } finally {$lockedInstaller.Dispose()}
@@ -3009,6 +3012,10 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         }
     }
     if($Reinstall){
+        [void](Get-AppExecutableDigest $installedApp)
+        if((Find-App $variant) -ine $installedApp){
+            throw 'Stable Discord changed during replacement verification'
+        }
         Event 'Stable Discord reinstalled in the desktop session'
         return @{application=$variant;installed=$true;previouslyInstalled=$true;reinstalled=$true}
     }

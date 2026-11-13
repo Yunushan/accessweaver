@@ -1666,6 +1666,14 @@ try {
     function Find-App {
         param($variant)
         $script:appInstallTrace.Add('find-'+$variant)
+        if($script:appRemoveClearedStable -and $variant -ceq 'discord'){
+            if($script:appInstallTrace.Contains('verify-ptb')){
+                if($script:appReplacementChanges){return 'C:\fixture\replacement\Discord.exe'}
+                return 'C:\fixture\Discord.exe'
+            }
+            if($script:appStableReappears){return 'C:\fixture\replacement\Discord.exe'}
+            return
+        }
         if($variant -ceq 'discord' -and $script:appStableChanged -and $script:appInstallTrace.Contains('download:discord')){return 'C:\fixture\updated\Discord.exe'}
         if($variant -ceq 'discord' -and $script:appStableAppeared -and $script:appInstallTrace.Contains('verify-ptb')){return 'C:\fixture\new\Discord.exe'}
         if(($variant -ceq 'discord' -and -not $script:appStableAbsent) -or $script:appPreviouslyInstalled){return 'C:\fixture\Discord.exe'}
@@ -1676,6 +1684,9 @@ try {
             return 'c'*64
         }
         if($path -cne 'C:\fixture\Discord.exe'){throw 'Expected digest for the observed Discord client'}
+        if($script:appReplacementUnreadable -and $script:appInstallTrace.Contains('verify-ptb')){
+            throw 'fixture replacement executable unreadable'
+        }
         if($script:appStableBytesChanged){return 'b'*64}
         return 'a'*64
     }
@@ -1694,6 +1705,7 @@ try {
             $writer.Dispose()
         }catch [IO.IOException]{$script:appInstallerLocked=$true}
         if($script:appRemoveFailure){throw 'fixture remove failure'}
+        if($r.action -ceq 'app-reinstall'){$script:appRemoveClearedStable=$true}
     }
     function Download {
         param($Url,$Hash,$Destination,[switch]$Signed,[string]$Publisher,[switch]$ReturnVerifiedHash)
@@ -1872,10 +1884,26 @@ try {
     try {Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -ceq 'fixture remove failure'}
     Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord,remove-stable') 'Discord reinstall stops when removal fails'
     $script:appRemoveFailure=$false
+    $r.action='app-reinstall'
+    foreach($case in @(
+        @{name='reappearing stable client before setup';flag='appStableReappears';message='Stable Discord reappeared before replacement setup; review the current installation';started=$false},
+        @{name='unreadable replacement executable';flag='appReplacementUnreadable';message='fixture replacement executable unreadable';started=$true},
+        @{name='changed replacement executable path';flag='appReplacementChanges';message='Stable Discord changed during replacement verification';started=$true}
+    )){
+        $script:appInstallTrace.Clear()
+        $script:appRemoveClearedStable=$false
+        Set-Variable -Scope Script -Name $case.flag -Value $true
+        $rejected=$false
+        try{Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -ceq $case.message}
+        finally{Set-Variable -Scope Script -Name $case.flag -Value $false}
+        Assert ($rejected -and ($script:appInstallTrace.Contains('installer') -eq $case.started) -and
+            -not $script:appInstallTrace.Contains('event')) ('Discord reinstall refuses '+$case.name)
+    }
+    $script:appRemoveClearedStable=$false
     $script:appInstallTrace.Clear()
     $reinstalled=Install-App 'discord' -Reinstall
     Assert ($reinstalled.reinstalled -eq $true -and $script:appInstallerLocked -and $script:appInstallerLockedAtLaunch -and
-            ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord,remove-stable,installer,verify-ptb,event') 'Discord reinstall holds its verified installer through removal and launch'
+            ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord,remove-stable,find-discord,installer,verify-ptb,find-discord,event') 'Discord reinstall holds its verified installer through removal and launch'
 
 } finally {
     foreach($name in $appInstallSaved.Keys){Set-Item ('Function:'+ $name) $appInstallSaved[$name]}
