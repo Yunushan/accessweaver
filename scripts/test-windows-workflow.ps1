@@ -868,11 +868,19 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
     $inputData=[pscustomobject]@{nativeArchitecture='amd64'}
     $calls=[Collections.Generic.List[string]]::new()
     $previousProgramData=$env:ProgramData
+    $previousRebootRequired=$script:rebootRequired
+    $script:rebootRequired=$false
+    $verifyRemoval=$false
+    $requestRestart=$false
     try {
         $env:ProgramData=$cacheRoot
         function WireSock-CLI {}
         function Test-Path {
             param($LiteralPath)
+            if($verifyRemoval -and $LiteralPath -ceq $registration){
+                $calls.Add('check-registration')
+                return -not $calls.Contains('wait')
+            }
             return $LiteralPath -ceq 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
         }
         $record=@{PSPath=$registration;DisplayName='WireSock Secure Connect';UninstallString=('"'+$program+'" /uninstall')}
@@ -884,12 +892,17 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         function No-Reparse {param($Path);if($Path -cne $program){throw 'Unexpected cached executable'}}
         function Remove-WireSockRefreshTask {$calls.Add('task')}
         function Remove-Method {$calls.Add('profile')}
-        function Remove-Item {}
-        function Event {}
+        function Start-Sleep {param($Milliseconds);$calls.Add('wait')}
+        function Remove-Item {if($verifyRemoval){$calls.Add('retire-ownership')}}
+        function Event {
+            param($Text)
+            if($verifyRemoval -and $Text -like 'Vendor uninstall*'){$calls.Add($Text)}
+        }
         function Native {
             param($Program,$Arguments,$Codes,$Timeout)
             if($Program -cne $expectedProgram -or ($Arguments -join ',') -cne $expectedArguments){throw 'Unexpected uninstall invocation'}
             $calls.Add('uninstall')
+            $script:rebootRequired=$requestRestart
         }
         $expectedProgram=$program
         $expectedArguments="/uninstall,/quiet,/norestart"
@@ -932,7 +945,18 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
             if(-not $refused){throw 'Unexpected MSI uninstall preflight outcome'}
         }
         Assert ($calls.Count -eq 0) 'WireSock MSI uninstall refuses mismatched or compound commands before cleanup'
-    } finally {$env:ProgramData=$previousProgramData}
+        $record.UninstallString='MsiExec.exe /I'+$productCode
+        $verifyRemoval=$true
+        $result=Uninstall-WireSockProduct
+        Assert (-not $result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,check-registration,wait,check-registration,retire-ownership,Vendor uninstall completed: WireSock Secure Connect') 'WireSock uninstall waits for the registered package to disappear'
+        $calls.Clear()
+        $requestRestart=$true
+        $result=Uninstall-WireSockProduct
+        Assert ($result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,Vendor uninstall requires a Windows restart: WireSock Secure Connect') 'WireSock uninstall reports restart without claiming verified removal'
+    } finally {
+        $env:ProgramData=$previousProgramData
+        $script:rebootRequired=$previousRebootRequired
+    }
 }
 # Synthetic process records verify session-scoped launch observation without launching an app.
 $fixtureApp='C:\fixture\SplitCord.exe'

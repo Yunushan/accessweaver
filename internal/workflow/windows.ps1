@@ -1822,13 +1822,22 @@ function Uninstall-WireSockProduct {
     Remove-WireSockRefreshTask
     try{Remove-Method 'wiresock'}catch{Event 'Managed profile cleanup could not complete; continuing with the explicitly requested vendor uninstall'}
     [void](Native $program $arguments $codes -Timeout 900)
-    $deadline=[DateTime]::UtcNow.AddSeconds(30)
-    while($cli -and (Test-Path -LiteralPath $cli) -and -not $script:rebootRequired -and [DateTime]::UtcNow -lt $deadline){Start-Sleep -Milliseconds 500}
-    if($cli -and (Test-Path -LiteralPath $cli) -and -not $script:rebootRequired){throw 'Vendor CLI remains installed; inspect vendor uninstall logs'}
-    if((Test-Path -LiteralPath $record.PSPath) -and -not $script:rebootRequired){throw 'Vendor uninstall registration remains; inspect vendor uninstall logs'}
+    if($script:rebootRequired){
+        Event ('Vendor uninstall requires a Windows restart: '+$record.DisplayName)
+        return @{product=$record.DisplayName;rebootRequired=$true}
+    }
+    $deadline=[Diagnostics.Stopwatch]::StartNew()
+    do {
+        $cliPresent=$cli -and (Test-Path -LiteralPath $cli)
+        $registrationPresent=Test-Path -LiteralPath $record.PSPath
+        if(-not ($cliPresent -or $registrationPresent) -or $deadline.Elapsed.TotalSeconds -ge 30){break}
+        Start-Sleep -Milliseconds 500
+    } while($true)
+    if($cliPresent){throw 'Vendor CLI remains installed; inspect vendor uninstall logs'}
+    if($registrationPresent){throw 'Vendor uninstall registration remains; inspect vendor uninstall logs'}
     Remove-Item -LiteralPath (Join-Path $root 'profiles\wiresock-owned.json') -ErrorAction SilentlyContinue
     Event ('Vendor uninstall completed: '+$record.DisplayName)
-    return @{product=$record.DisplayName;rebootRequired=$script:rebootRequired}
+    return @{product=$record.DisplayName;rebootRequired=$false}
 }
 function Packet-Arguments([string]$engine,[string[]]$arguments) {
     if($engine -in @('zapret','zapret2') -and -not @($arguments|Where-Object {$_ -match '^--wf-(tcp|udp|raw)(-out|-in)?(=|$)'}).Count){
