@@ -1202,17 +1202,21 @@ function Get-WireSockReportedState($status) {
     if($states.Count -ne 1){return 'Unknown'}
     return $states[0].Groups[1].Value
 }
+function Get-ManagedWireSockProfiles([string]$cli) {
+    $failure='WireSock profile inventory could not be verified; retry before importing a profile'
+    try {$inventory=Native $cli @('list') -Secret -Timeout 15}catch{throw $failure}
+    if($inventory.outputComplete -ne $true -or $inventory.stdout -isnot [string] -or $inventory.stdout.Length -gt 8192){
+        throw $failure
+    }
+    $pattern='(?<![a-zA-Z0-9-])AccessWeaver-[a-f0-9]{32}(?![a-zA-Z0-9-])'
+    [regex]::Matches($inventory.stdout,$pattern) | ForEach-Object {$_.Value} | Sort-Object -Unique
+}
 function Connect-WireSock([string]$config) {
     if(Test-Path -LiteralPath (Join-Path $root 'profiles\wiresock-owned.json')){throw 'Remove the current managed WireSock method before importing another profile'}
     $cli=Install-WireSock
     if([IO.Path]::GetFileName($cli) -eq 'wiresock-connect-cli.exe') {
         Start-WireSockServices
-        $listFailure='WireSock profile inventory could not be verified; retry before importing a profile'
-        try {$inventory=Native $cli @('list') -Secret -Timeout 15}catch{throw $listFailure}
-        if($inventory.outputComplete -ne $true -or $inventory.stdout -isnot [string] -or $inventory.stdout.Length -gt 8192){
-            throw $listFailure
-        }
-        if($inventory.stdout -cmatch '(?<![a-zA-Z0-9-])AccessWeaver-[a-f0-9]{32}(?![a-zA-Z0-9-])'){
+        if(@(Get-ManagedWireSockProfiles $cli).Count){
             throw 'A managed WireSock profile remains in the vendor inventory; recover the earlier workflow before retrying setup'
         }
         # A unique vendor profile prevents replacement of an independently
@@ -1861,14 +1865,24 @@ function Remove-All {
     if(Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json')){Restore-DNS}
     Remove-Method 'dnscrypt';Restore-Drover
 }
-function Get-WireSockMsiProductCode($record,[string]$program) {
+function Get-WireSockMsiProductCode($record,[string]$program,[switch]$BundleOwnsUninstall) {
+    $failure='Registered WireSock MSI uninstall command does not match its product code'
+    $key=[guid]::Empty
+    if(-not [guid]::TryParseExact([string]$record.PSChildName,'B',[ref]$key) -or $key -eq [guid]::Empty){
+        throw $failure
+    }
+    # A hidden package can omit its command because the verified bundle
+    # owns removal. Its registry key still identifies the readback record.
+    if($BundleOwnsUninstall -and [string]::IsNullOrWhiteSpace([string]$record.UninstallString)){
+        return $key.ToString('B')
+    }
     $command=[Environment]::ExpandEnvironmentVariables([string]$record.UninstallString).Trim()
     $escapedProgram=[regex]::Escape($program)
     $msiCommand='(?i)^(?:msiexec(?:\.exe)?|"'+$escapedProgram+'"|'+$escapedProgram+')[ \t]+/[ix][ \t]*(\{[0-9a-f-]{36}\})$'
     $product=[guid]::Empty
     if($command -notmatch $msiCommand -or -not [guid]::TryParseExact($matches[1],'B',[ref]$product) -or
-        $product -eq [guid]::Empty -or $record.PSChildName -ine $product.ToString('B')){
-        throw 'Registered WireSock MSI uninstall command does not match its product code'
+        $product -ne $key){
+        throw $failure
     }
     return $product.ToString('B')
 }
@@ -1906,7 +1920,7 @@ function Uninstall-WireSockProduct {
             throw 'Multiple registered WireSock products matched; select the intended product in Windows Apps settings'
         }
         $record=$bundles[0]
-        [void](Get-WireSockMsiProductCode $hiddenMSIs[0] $msiexec)
+        [void](Get-WireSockMsiProductCode $hiddenMSIs[0] $msiexec -BundleOwnsUninstall)
     }
     $command=[Environment]::ExpandEnvironmentVariables([string]$record.UninstallString).Trim()
     if($record.WindowsInstaller -eq 1){
@@ -2526,6 +2540,33 @@ function Recover-Operation {
                 $phase=$entry.PSObject.Properties['importOnly']
                 if($phase -and ($phase.Value -isnot [bool] -or $entry.legacy)){
                     throw 'Recovery journal contains an invalid WireSock phase'
+                }
+                if(-not $entry.legacy -and (-not $phase -or -not $phase.Value)){
+                    # Disconnect is global. A stale journal must not use it
+                    # when another managed profile may now own the tunnel.
+                    $owned=Join-Path $root 'profiles\wiresock-owned.json'
+                    $hasOwner=Test-Path -LiteralPath $owned -ErrorAction Stop
+                    if($hasOwner){
+                        $current=Read-OwnedWireSockProfile $owned
+                        if($current.legacy -or $current.cli -ine $entry.cli -or $current.profile -cne $entry.profile){
+                            throw 'WireSock recovery journal differs from the current managed profile'
+                        }
+                    }
+                    $profiles=@(Get-ManagedWireSockProfiles $entry.cli)
+                    if($profiles.Count -ne 1 -or $profiles[0] -cne $entry.profile){
+                        throw 'WireSock recovery cannot confirm the journaled profile is the only managed vendor profile'
+                    }
+                    if(-not $hasOwner){
+                        # A vendor profile can exist while another profile is
+                        # connected. Without an owner, only retry named deletion
+                        # after a complete status query confirms the tunnel is idle.
+                        $status=Get-WireSockReportedState (Native $entry.cli @('status') -Secret -Timeout 15)
+                        if($status -cnotin @('NotConnected','Disconnected')){
+                            throw 'WireSock recovery cannot confirm the vendor is idle without an ownership record'
+                        }
+                        if($phase){$entry.importOnly=$true}
+                        else{$entry | Add-Member -NotePropertyName importOnly -NotePropertyValue $true}
+                    }
                 }
             }
             'cache' {if($entry.path -ne (Join-Path $env:APPDATA 'discord') -or -not (Under $entry.backup (Join-Path $root 'backups'))){throw 'Recovery journal contains an unmanaged cache path'}}

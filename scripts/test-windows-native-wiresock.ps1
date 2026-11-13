@@ -92,6 +92,7 @@ function Get-WorkflowOutcome($run,$job) {
         '^WireSock connection was not confirmed by vendor status$' {return 'connection-unconfirmed'}
         '^WireSock profile inventory could not be verified; retry before importing a profile$' {return 'profile-inventory-unverified'}
         '^A managed WireSock profile remains in the vendor inventory; recover the earlier workflow before retrying setup$' {return 'managed-profile-remains'}
+        '^WireSock recovery (journal differs from the current managed profile|cannot confirm the journaled profile is the only managed vendor profile|cannot confirm the vendor is idle without an ownership record)$' {return 'recovery-profile-unconfirmed'}
         '^Invalid WireGuard configuration$' {return 'config-invalid'}
         '^Use a separately elevated system apply CLI for machine changes\.' {return 'worker-not-elevated'}
         '^No supported registered WireSock product found; use Windows Apps settings for an unrecognized package$' {return 'uninstall-registration-missing'}

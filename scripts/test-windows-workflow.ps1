@@ -999,6 +999,79 @@ try {
         Assert (@(Get-ChildItem -LiteralPath $profiles -Filter '*.conf').Count -eq 0 -and [IO.File]::ReadAllText($originalConfig) -ceq 'inert profile') 'WireSock retires import copies after completion and preserves the generated profile'
     } finally {$script:undo=$previousUndo}
 }
+# A recovery replay can reach the vendor's global disconnect. Verify the
+# entire journal is refused before a save or rollback when its profile is stale.
+& {
+    $previousUndo=$script:undo
+    try {
+        $root=Join-Path $testRoot 'wiresock-recovery-preflight'
+        $profiles=Join-Path $root 'profiles'
+        [void][IO.Directory]::CreateDirectory($profiles)
+        $ownerPath=Join-Path $profiles 'wiresock-owned.json'
+        [IO.File]::WriteAllText($ownerPath,'synthetic marker')
+        $r=@{journalId=('workflow-'+('a'*32)+'.json')}
+        $oldProfile='AccessWeaver-'+('b'*32)
+        $newProfile='AccessWeaver-'+('c'*32)
+        $cli='C:\fixture\wiresock-connect-cli.exe'
+        $entry=[pscustomobject]@{kind='wiresock';cli=$cli;profile=$oldProfile;importOnly=$false}
+        $script:undo=[Collections.Generic.List[object]]::new()
+        $calls=[Collections.Generic.List[string]]::new()
+        function Read-WorkflowRecoveryJournal {return @{undo=@($entry)}}
+        function WireSock-CLI {return $cli}
+        function Read-OwnedWireSockProfile {return @{cli=$cli;profile=$currentProfile;legacy=$false}}
+        function Get-ManagedWireSockProfiles {$calls.Add('list');return $vendorProfiles}
+        function Native {
+            param($program,$arguments,[switch]$Secret,[int]$Timeout)
+            if($program -cne $cli -or ($arguments -join ',') -cne 'status' -or -not $Secret -or $Timeout -ne 15){
+                throw 'Unexpected WireSock recovery command'
+            }
+            $calls.Add('status')
+            return @{stdout=$vendorState;outputComplete=$true}
+        }
+        function Save-Journal {$calls.Add('save')}
+        function Rollback {$calls.Add('rollback')}
+        function Event {}
+        $currentProfile=$newProfile
+        $vendorProfiles=@($oldProfile)
+        $refused=$false
+        try {Recover-Operation}catch{$refused=$_.Exception.Message -ceq 'WireSock recovery journal differs from the current managed profile'}
+        Assert ($refused -and $calls.Count -eq 0 -and $script:undo.Count -eq 0) 'WireSock recovery refuses a journal for a different current owner'
+        [IO.File]::Delete($ownerPath)
+        foreach($inventory in @(@{profiles=@()},@{profiles=@($oldProfile,$newProfile)})){
+            $vendorProfiles=$inventory.profiles
+            $calls.Clear()
+            $refused=$false
+            try {Recover-Operation}catch{$refused=$_.Exception.Message -ceq 'WireSock recovery cannot confirm the journaled profile is the only managed vendor profile'}
+            if(-not $refused -or ($calls -join ',') -cne 'list' -or $script:undo.Count -ne 0){
+                throw 'Unsafe WireSock replay reached recovery'
+            }
+        }
+        Assert $true 'WireSock recovery refuses missing or competing vendor profiles before global disconnect'
+        $vendorProfiles=@($oldProfile)
+        $calls.Clear()
+        $vendorState='Connected'
+        $refused=$false
+        try {Recover-Operation}catch{$refused=$_.Exception.Message -ceq 'WireSock recovery cannot confirm the vendor is idle without an ownership record'}
+        Assert ($refused -and ($calls -join ',') -ceq 'list,status' -and $script:undo.Count -eq 0) 'WireSock recovery without an owner refuses a connected vendor'
+        $calls.Clear()
+        $vendorState='Disconnected'
+        Recover-Operation
+        Assert (($calls -join ',') -ceq 'list,status,save,rollback' -and $script:undo.Count -eq 1 -and
+            $script:undo[0].importOnly -eq $true) 'WireSock recovery without an owner selects named deletion after confirmed idle status'
+        $entry.importOnly=$false
+        [IO.File]::WriteAllText($ownerPath,'synthetic marker')
+        $currentProfile=$oldProfile
+        $calls.Clear()
+        Recover-Operation
+        Assert (($calls -join ',') -ceq 'list,save,rollback' -and $script:undo.Count -eq 1 -and
+            $script:undo[0].importOnly -eq $false) 'WireSock recovery accepts its unique journaled vendor profile'
+        $entry.importOnly=$true
+        $vendorProfiles=@($newProfile)
+        $calls.Clear()
+        Recover-Operation
+        Assert (($calls -join ',') -ceq 'save,rollback') 'WireSock import-only recovery does not inspect the active profile inventory'
+    } finally {$script:undo=$previousUndo}
+}
 # Exercise the updates dispatch helper with fixed public-shape release metadata.
 & {
     $inputData=@{controller='C:\fixture\accessweaver.exe';nativeArchitecture='amd64'}
@@ -1212,10 +1285,16 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         $refused=$false
         try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
         Assert ($cacheMismatchRefused -and $refused -and $calls.Count -eq 0) 'WireSock paired uninstall refuses mismatched cache or MSI identity before cleanup'
-        $hiddenRecord.UninstallString='MsiExec.exe /I'+$productCode
+        $hiddenRecord.UninstallString=$null
+        $hiddenRecord.PSChildName='not-a-product-code'
+        $refused=$false
+        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
+        Assert ($refused -and $calls.Count -eq 0) 'WireSock paired uninstall requires a valid hidden MSI product key without a command'
+        $hiddenRecord.PSChildName=$productCode
         $verifyRemoval=$true
         $result=Uninstall-WireSockProduct
         Assert (-not $result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,check-hidden-registration,check-registration,wait,check-hidden-registration,check-registration,retire-ownership,Vendor uninstall completed: WireSock Secure Connect') 'WireSock paired uninstall runs the bundle and waits for the hidden MSI'
+        Assert $true 'WireSock paired uninstall accepts a hidden MSI without an uninstall command'
         $verifyRemoval=$false
         $calls.Clear()
         $entries=@(@{PSPath=$registration})
@@ -1229,6 +1308,7 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         Assert ($result.product -ceq 'WireSock Secure Connect' -and ($calls -join ',') -ceq 'task,profile,uninstall') 'WireSock MSI uninstall targets its registered product code'
         $calls.Clear()
         foreach($command in @(
+            '',
             ('MsiExec.exe /I'+$otherCode),
             ('"C:\other.exe" msiexec /I'+$productCode),
             ('MsiExec.exe /I'+$productCode+' /I'+$otherCode)
