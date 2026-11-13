@@ -602,12 +602,12 @@ public static class AccessWeaverNativeDoHIdentity {
                 throw 'Managed DNSCrypt service is not running'
             }
             $digest=@()
-            foreach($file in @('services\dnscrypt.json','components\dnscrypt\dnscrypt-proxy.toml','components\dnscrypt\dnscrypt-proxy.exe')){
+            foreach($file in @('services\dnscrypt.json','services\dnscrypt.registration','components\dnscrypt\dnscrypt-proxy.toml','components\dnscrypt\dnscrypt-proxy.exe')){
                 $path=Join-Path $machineRoot $file
                 Assert-NativeOrdinaryPath $path
                 $digest+=@((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)
             }
-            if($digest[2].ToLowerInvariant() -cne $component.binarySHA256){throw 'Installed DNSCrypt identity differs'}
+            if($digest[3].ToLowerInvariant() -cne $component.binarySHA256){throw 'Installed DNSCrypt identity differs'}
             $script:installedComponentVerified=$true;$script:serviceRunning=$true;$script:serviceAutomatic=$true
             return ([string]$service.ProcessId+':'+($digest -join ':'))
         }
@@ -666,8 +666,10 @@ public static class AccessWeaverNativeDoHIdentity {
     $scenarioPassed=($scenario.outcome -ceq 'passed' -and $snapshotRemoved -and $script:cliCount -eq $(if($Method -ceq 'dnscrypt'){3}else{2}) -and $script:joined -eq $script:cliCount -and ($Method -ceq 'doh' -or ($serviceRunning -and $serviceAutomatic -and $serviceRemoved -and $script:cleanupExit -eq 0)) -and -not $script:overflow -and -not $script:captureFailed)
     if($ScenarioKind -ceq 'missing-snapshot'){
         $serviceConfig=Join-Path $machineRoot 'services\dnscrypt.json'
+        $registration=Join-Path $machineRoot 'services\dnscrypt.registration'
         $resolverConfig=Join-Path $machineRoot 'components\dnscrypt\dnscrypt-proxy.toml'
         $missingSnapshotScenario.serviceFilesRemoved=(-not (Test-Path -LiteralPath $serviceConfig -ErrorAction Stop) -and
+            -not (Test-Path -LiteralPath $registration -ErrorAction Stop) -and
             -not (Test-Path -LiteralPath $resolverConfig -ErrorAction Stop))
         $scenarioPassed=($missingSnapshotScenario.outcome -ceq 'passed' -and $snapshotRemoved -and $serviceRemoved -and
             $missingSnapshotScenario.serviceFilesRemoved -and

@@ -1329,6 +1329,7 @@ function Install-EngineService([string]$engine,[string]$binary,[string[]]$argume
     $serviceOptions=@{Name=$serviceName;BinaryPathName=$binPath;StartupType='Automatic';DisplayName=('AccessWeaver '+$engine)}
     if($engine -eq 'proxifyre'){$serviceOptions.DependsOn=@('NDISRD')}
     $entry=@{kind='service';name=$serviceName;commandSHA256=(Get-ManagedServiceCommandDigest $binPath)}
+    Write-Atomic (Join-Path $root ('services\'+$engine+'.registration')) $entry.commandSHA256
     $script:undo.Add($entry)
     Save-Journal
     $created=New-Service @serviceOptions
@@ -2100,6 +2101,46 @@ function Read-ManagedServiceCommand([string]$Name) {
     }
     return $rows[0].PathName
 }
+function Assert-ManagedServiceOwnership([string]$Name) {
+    if($Name -notmatch '\AAccessWeaver-(byedpi|proxifyre|zapret|zapret2|goodbyedpi|dnscrypt)\z'){
+        throw 'Recovery journal contains an unmanaged service'
+    }
+    $state=Invoke-ManagedServiceControl 'query' $Name @(0,1060,1072)
+    if($state -eq 1060){return}
+    if($state -eq 1072){Wait-RecordedServiceAbsent $Name;return}
+
+    $engine=$Name.Substring('AccessWeaver-'.Length)
+    $directory=Join-Path $root 'services'
+    $config=Join-Path $directory ($engine+'.json')
+    $registration=Join-Path $directory ($engine+'.registration')
+    $command=Read-ManagedServiceCommand $Name
+    $match=[regex]::Match($command,'\A"[^"\r\n]+[\\/]host-([a-f0-9]{64})\.exe" service-host "[^"\r\n]+"( --instance=[a-f0-9]{32})?\z')
+    if(-not $match.Success){throw 'Managed service command does not match the protected service host'}
+    $hostHash=$match.Groups[1].Value
+    $instance=$match.Groups[2].Value
+    $hostPath=Join-Path $directory ('host-'+$hostHash+'.exe')
+    $expected=(Quote-Arg $hostPath)+' service-host '+(Quote-Arg $config)+$instance
+    if($command -cne $expected){throw 'Managed service command does not match the protected service host'}
+
+    foreach($path in @($hostPath,$config)){
+        Assert-TrustedItem $path
+        $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+        if($item.PSIsContainer -or $item.Length -le 0){throw 'Managed service ownership file is invalid'}
+    }
+    if((Get-FileHash -LiteralPath $hostPath -Algorithm SHA256 -ErrorAction Stop).Hash -ine $hostHash){
+        throw 'Managed service host content differs from its registered digest'
+    }
+    $digest=Get-ManagedServiceCommandDigest $command
+    No-Reparse $registration
+    if($instance -or (Test-Path -LiteralPath $registration -ErrorAction Stop)){
+        Assert-TrustedItem $registration
+        $record=Get-Item -LiteralPath $registration -Force -ErrorAction Stop
+        if($record.PSIsContainer -or $record.Length -ne 64 -or [IO.File]::ReadAllText($registration) -cne $digest){
+            throw 'Managed service command differs from its ownership record'
+        }
+    }
+    return @{name=$Name;commandSHA256=$digest}
+}
 function Assert-RecordedServiceBinding($Entry) {
     $name=$Entry.name
     if($name -isnot [string] -or $name -notmatch '\AAccessWeaver-(byedpi|proxifyre|zapret|zapret2|goodbyedpi|dnscrypt)\z'){
@@ -2134,17 +2175,13 @@ function Wait-RecordedServiceAbsent([string]$Name) {
     }while($clock.Elapsed.TotalSeconds -lt 5)
     throw 'Managed service removal is pending; release open service handles and retry'
 }
-function Remove-RecordedService([string]$Name,[switch]$RequireOwnership,$Entry) {
+function Remove-RecordedService([string]$Name,$Entry) {
     if($Name -notmatch '\AAccessWeaver-(byedpi|proxifyre|zapret|zapret2|goodbyedpi|dnscrypt)\z'){
         throw 'Recovery journal contains an unmanaged service'
     }
-    $state=if($Entry){Assert-RecordedServiceBinding $Entry}else{Invoke-ManagedServiceControl 'query' $Name @(0,1060,1072)}
+    if($null -eq $Entry -or $Entry.name -cne $Name){throw 'Managed service removal has no verified binding'}
+    $state=Assert-RecordedServiceBinding $Entry
     if($state -eq 1060){return}
-    $engine=$Name.Substring('AccessWeaver-'.Length)
-    if($RequireOwnership -and $engine -ne 'proxifyre' -and
-        -not (Test-Path -LiteralPath (Join-Path $root ('services\'+$engine+'.json')) -ErrorAction Stop)){
-        throw 'Missing service ownership record; refusing deletion'
-    }
     if($state -eq 0){
         $stopped=Invoke-ManagedServiceControl 'stop' $Name @(0,1060,1062,1072)
         if($stopped -eq 0){Wait-RecordedServiceStopped $Name}
@@ -2181,16 +2218,17 @@ function Remove-Method([string]$engine,[switch]$OwnedOnly) {
             [void](Native (Join-Path $env:SystemRoot 'System32\sc.exe') @('stop',$driver.Name) @(0,1060,1062));[void](Native (Join-Path $env:SystemRoot 'System32\sc.exe') @('delete',$driver.Name) @(0,1060));Event ('Removed managed WinDivert driver: '+$driver.Name)
         };return
     }
+    $name='AccessWeaver-'+$engine
+    $entry=Assert-ManagedServiceOwnership $name
     if($engine -eq 'byedpi'){Remove-Method 'proxifyre';Restore-Drover}
     if($engine -eq 'dnscrypt' -and (Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json'))){Restore-DNS}
-    Remove-RecordedService ('AccessWeaver-'+$engine) -RequireOwnership
+    if($entry){Remove-RecordedService $name -Entry $entry}
     foreach($direction in @('Inbound','Outbound')){Remove-NetFirewallRule -Name ('AccessWeaver-'+$engine+'-'+$direction) -ErrorAction SilentlyContinue}
     Event ('Managed method removed: '+$engine)
 }
 function Remove-All {
     foreach($engine in @('proxifyre','byedpi','zapret','zapret2','goodbyedpi','wiresock')){Remove-Method $engine}
     Remove-Method 'windivert' -OwnedOnly
-    if(Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json')){Restore-DNS}
     Remove-Method 'dnscrypt';Restore-Drover
 }
 function Get-WireSockMsiProductCode($record,[string]$program,[switch]$BundleOwnsUninstall) {

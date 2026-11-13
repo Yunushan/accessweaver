@@ -4,7 +4,7 @@ $path=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS journal source failed parsing'}
-foreach($name in @('No-Reparse','Under','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Rollback','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Remove-RecordedService')){
+foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Rollback','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Remove-RecordedService')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -21,6 +21,7 @@ function Wait-RecordedServiceStopped([string]$Name) {
     $script:order.Add('wait-stopped')
     if($script:serviceFault -ceq 'stop-timeout'){throw 'Synthetic service stop timeout'}
 }
+function Assert-TrustedItem([string]$Path){No-Reparse $Path;[void](Get-Item -LiteralPath $Path -Force -ErrorAction Stop)}
 function Get-CimInstance {
     param($ClassName,$Filter,$ErrorAction)
     if($ClassName -cne 'Win32_Service' -or $Filter -cne "Name='AccessWeaver-dnscrypt'"){throw 'Unexpected service identity lookup'}
@@ -229,7 +230,49 @@ try {
     Require ($rollback.Count -eq 0 -and ($script:order -join ',') -ceq 'query,query' -and
         -not [IO.File]::Exists($serviceConfig)) 'Retry did not complete deferred file recovery'
     [IO.File]::Delete($receipt)
+
+    $services=Join-Path $root 'services'
+    [void][IO.Directory]::CreateDirectory($services)
+    $hostBytes=[Text.Encoding]::UTF8.GetBytes('synthetic service host')
+    $hostHash=(Get-WorkflowBytesSHA256 $hostBytes).ToLowerInvariant()
+    $hostPath=Join-Path $services ('host-'+$hostHash+'.exe')
+    $config=Join-Path $services 'dnscrypt.json'
+    $registration=Join-Path $services 'dnscrypt.registration'
+    [IO.File]::WriteAllBytes($hostPath,$hostBytes)
+    [IO.File]::WriteAllText($config,'synthetic protected service config')
+    $legacyCommand=(Quote-Arg $hostPath)+' service-host '+(Quote-Arg $config)
+    $modernCommand=$legacyCommand+' --instance='+('a'*32)
+    $script:serviceState='running';$script:order.Clear()
+    $script:serviceCommand=$legacyCommand
+    $entry=Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'
+    Require ($entry.commandSHA256 -ceq (Get-ManagedServiceCommandDigest $legacyCommand)) 'Protected legacy registration was refused'
+
+    $script:serviceCommand=$modernCommand
+    $refused=$false
+    try {Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'}catch{$refused=$true}
+    Require $refused 'Modern registration without its ownership record was accepted'
+    [IO.File]::WriteAllText($registration,(Get-ManagedServiceCommandDigest $modernCommand))
+    $entry=Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'
+    Require ($entry.commandSHA256 -ceq (Get-ManagedServiceCommandDigest $modernCommand)) 'Exact protected modern registration was refused'
+
+    foreach($command in @($legacyCommand,($legacyCommand+' --instance='+('b'*32)),($modernCommand.Replace($config,(Join-Path $root 'other.json'))),'foreign.exe')){
+        $script:serviceCommand=$command
+        $refused=$false
+        try {Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'}catch{$refused=$true}
+        Require $refused 'A substituted registration was accepted for explicit removal'
+    }
+    $script:serviceCommand=$modernCommand
+    [IO.File]::WriteAllText($hostPath,'replacement host')
+    $refused=$false
+    try {Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'}catch{$refused=$_.Exception.Message -match '^Managed service host content differs'}
+    Require ($refused -and @($script:order | Where-Object {$_ -cne 'query'}).Count -eq 0) 'Changed host reached service mutation'
+    [IO.File]::WriteAllBytes($hostPath,$hostBytes)
+    $entry=Assert-ManagedServiceOwnership 'AccessWeaver-dnscrypt'
+    Remove-RecordedService 'AccessWeaver-dnscrypt' -Entry $entry
+    Require ($script:serviceState -ceq 'absent') 'Verified explicit removal did not retire the service'
 } finally {
+    foreach($path in @($registration,$config,$hostPath)){if($path){[IO.File]::Delete($path)}}
+    if($services){[IO.Directory]::Delete($services)}
     $env:SystemRoot=$originalSystemRoot
     [IO.File]::Delete($serviceConfig)
     [IO.File]::Delete($snapshot)
@@ -240,4 +283,4 @@ try {
     [IO.Directory]::Delete($profiles)
     [IO.Directory]::Delete($root)
 }
-Write-Output 'Thirty-one DNS journal binding, service retirement, rollback and publication checks passed.'
+Write-Output 'Forty DNS journal binding, service ownership, retirement, rollback and publication checks passed.'
