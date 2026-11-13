@@ -20,6 +20,7 @@ import zipfile
 
 from sbom import validate as validate_sbom
 
+PROVENANCE_BUNDLE = "BUILD-PROVENANCE.sigstore.json"
 TARGETS = {(os_name, arch) for os_name in ("windows", "linux", "darwin", "freebsd", "openbsd") for arch in ("amd64", "arm64")}
 
 
@@ -68,58 +69,106 @@ def inspect_archive(path, root, binary_name):
         return info, binary
 
 
+def release_file(path, maximum):
+    info = path.lstat()
+    require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+            and not getattr(info, "st_file_attributes", 0) & 0x400
+            and 0 < info.st_size <= maximum, "Expected a bounded regular release file")
+    return info
+
+
+def execute_metadata(binary, binary_name, info):
+    with tempfile.TemporaryDirectory(prefix="accessweaver-release-check-") as temporary:
+        exe = Path(temporary) / binary_name
+        exe.write_bytes(binary)
+        exe.chmod(0o700)
+        state = Path(temporary) / "must-not-create-user-state"
+        environment = dict(os.environ, ACCESSWEAVER_HOME=str(state), ACCESSWEAVER_NO_BROWSER="1")
+        result = subprocess.run([str(exe), "version", "--json"], env=environment, check=True,
+                                capture_output=True, text=True, timeout=30)
+        require(json.loads(result.stdout) == info, "Runtime identity differs from packaged metadata")
+        subprocess.run([str(exe), "system", "check-version", "v" + info["version"]], env=environment,
+                       check=True, capture_output=True, timeout=30)
+        require(not state.exists(), "Metadata commands unexpectedly wrote user state")
+
+
 def verify(directory, execute_native=False):
     manifest_path = directory / "BUILD-MANIFEST.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    release_file(manifest_path, 1 << 20)
+    manifest_bytes = manifest_path.read_bytes()
+    manifest = json.loads(manifest_bytes.decode("utf-8"))
     require(manifest.get("unsigned") is True, "Unsigned packaging must be labeled accurately")
     require(manifest.get("sourceState") in ("clean", "modified", "unknown"), "Missing source modification state")
     require(manifest.get("sourceCommit") == "unknown" or re.fullmatch(r"[a-f0-9]{40,64}", manifest.get("sourceCommit", "")), "Invalid source commit")
     require(manifest.get("targetExecutionTested") is False, "Packaging must not imply target execution")
+
+    artifacts = manifest["artifacts"]
+    require(isinstance(artifacts, list) and len(artifacts) == len(TARGETS), "Release must contain exactly the ten documented targets")
+    targets = set()
+    archive_names = set()
+    for item in artifacts:
+        target = item["goos"], item["goarch"]
+        require(target in TARGETS and target not in targets, "Invalid or duplicate release target")
+        targets.add(target)
+        name = item["file"]
+        extension = ".zip" if target[0] == "windows" else ".tar.gz"
+        require(re.fullmatch(r"accessweaver-[A-Za-z0-9._-]+-" + target[0] + "-" + target[1] + re.escape(extension), name), "Unexpected archive name")
+        archive_names.add(name)
+
+    checksum_path = directory / "SHA256SUMS.txt"
+    release_file(checksum_path, 64 << 10)
     checksums = {}
-    for line in (directory / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines():
+    for line in checksum_path.read_text(encoding="utf-8").splitlines():
         match = re.fullmatch(r"([a-f0-9]{64})  ([A-Za-z0-9._-]+)", line)
         require(match is not None, "Invalid checksum entry")
         digest, name = match.groups()
         require(name not in checksums, "Duplicate checksum entry")
         checksums[name] = digest
-        require(hashlib.sha256((directory / name).read_bytes()).hexdigest() == digest, f"Checksum mismatch: {name}")
-    require(checksums.get(manifest_path.name) == hashlib.sha256(manifest_path.read_bytes()).hexdigest(), "Manifest checksum missing")
-    targets = set()
-    artifact_names = set()
+    require(set(checksums) == archive_names | {manifest_path.name}, "Unexpected or omitted checksum files")
+    require(checksums[manifest_path.name] == hashlib.sha256(manifest_bytes).hexdigest(), "Manifest checksum differs")
+
+    expected_files = set(checksums) | {checksum_path.name}
+    with os.scandir(directory) as entries:
+        names = set()
+        for entry in entries:
+            require(entry.name in expected_files or entry.name == PROVENANCE_BUNDLE, "Unexpected release input")
+            names.add(entry.name)
+    require(expected_files <= names, "Missing release input")
+    if PROVENANCE_BUNDLE in names:
+        release_file(directory / PROVENANCE_BUNDLE, 16 << 20)
+
     host_os = {"win32": "windows", "darwin": "darwin", "linux": "linux"}.get(sys.platform, sys.platform.split("-")[0])
     host_arch = {"amd64": "amd64", "x86_64": "amd64", "arm64": "arm64", "aarch64": "arm64"}.get(platform.machine().lower())
-    executed = False
-    for item in manifest["artifacts"]:
+    native = None
+    for item in artifacts:
         target = item["goos"], item["goarch"]
-        require(target in TARGETS and target not in targets, f"Invalid/duplicate target: {target}")
-        targets.add(target)
         name = item["file"]
-        extension = ".zip" if target[0] == "windows" else ".tar.gz"
-        require(re.fullmatch(r"accessweaver-[A-Za-z0-9._-]+-" + target[0] + "-" + target[1] + re.escape(extension), name), "Unexpected archive name")
-        artifact_names.add(name)
         path = directory / name
-        require(path.stat().st_size == item["bytes"] and checksums.get(name) == item["sha256"], f"Artifact identity mismatch: {name}")
-        root = name[:-len(extension)]
+        size = release_file(path, 128 << 20).st_size
+        require(size == item["bytes"] and checksums[name] == item["sha256"], f"Artifact identity mismatch: {name}")
+        extension = ".zip" if target[0] == "windows" else ".tar.gz"
         binary_name = "accessweaver.exe" if target[0] == "windows" else "accessweaver"
-        info, binary = inspect_archive(path, root, binary_name)
+        # Inspect the exact private copy whose bytes passed the digest check.
+        with tempfile.TemporaryDirectory(prefix="accessweaver-archive-check-") as temporary:
+            frozen = Path(temporary) / name
+            digest = hashlib.sha256()
+            copied = 0
+            with path.open("rb") as source, frozen.open("xb") as output:
+                for block in iter(lambda: source.read(1 << 20), b""):
+                    copied += len(block)
+                    require(copied <= size, "Release archive grew during verification")
+                    digest.update(block)
+                    output.write(block)
+            require(copied == size and digest.hexdigest() == checksums[name], f"Checksum mismatch: {name}")
+            info, binary = inspect_archive(frozen, name[:-len(extension)], binary_name)
         for key, expected in {"version": manifest["version"], "commit": manifest["sourceCommit"], "sourceState": manifest["sourceState"], "builtAt": manifest["builtAt"], "platform": target[0], "arch": target[1]}.items():
             require(info.get(key) == expected, f"Inconsistent {key}: {name}")
         if execute_native and target == (host_os, host_arch):
-            with tempfile.TemporaryDirectory(prefix="accessweaver-release-check-") as temporary:
-                exe = Path(temporary) / binary_name
-                exe.write_bytes(binary)
-                exe.chmod(0o700)
-                state = Path(temporary) / "must-not-create-user-state"
-                environment = dict(os.environ, ACCESSWEAVER_HOME=str(state), ACCESSWEAVER_NO_BROWSER="1")
-                result = subprocess.run([str(exe), "version", "--json"], env=environment, check=True, capture_output=True, text=True, timeout=30)
-                require(json.loads(result.stdout) == info, "Runtime identity differs from packaged metadata")
-                subprocess.run([str(exe), "system", "check-version", "v" + info["version"]], env=environment, check=True, capture_output=True, timeout=30)
-                require(not state.exists(), "Metadata commands unexpectedly wrote user state")
-                executed = True
-    require(targets == TARGETS, "Release must contain exactly the ten documented targets")
-    require(set(checksums) == artifact_names | {manifest_path.name}, "Unexpected or omitted checksum files")
-    require(not execute_native or executed, "No artifact matches the current host")
-    print(f"Verified {len(targets)} archives, checksums, required notices and source identity; native metadata execution={executed}")
+            native = binary, binary_name, info
+    if execute_native:
+        require(native is not None, "No artifact matches the current host")
+        execute_metadata(*native)
+    print(f"Verified {len(targets)} archives, checksums, required notices and source identity; native metadata execution={execute_native}")
 
 
 def main():

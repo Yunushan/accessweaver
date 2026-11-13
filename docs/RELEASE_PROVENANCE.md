@@ -24,7 +24,7 @@ A manual preview uses its independently recorded commit and `refs/heads/main`. T
 - SLSA provenance v1 predicate and GitHub-hosted runners;
 - each artifact's actual digest, through the signed bundle.
 
-The manifest is authenticated before it chooses which archive names to inspect. Exactly the ten documented targets must appear, and the source state must be clean. After authenticating every subject, the verifier runs the existing archive/checksum/content/embedded-identity checks with binary execution disabled. It never treats checksums alone, an action summary or an attestation-shaped JSON file as signature verification. The compatibility `verify-release.py` integrity command remains available, but does not authenticate provenance by itself.
+The manifest is authenticated before it chooses which archive names to inspect. The portable integrity verifier checks the complete file set and inspects private archive copies after digest validation. Its optional native metadata probe runs only after every target has passed the content checks. Exactly the ten documented targets must appear, and the source state must be clean. After authenticating every subject, the verifier runs the existing archive/checksum/content/embedded-identity checks with binary execution disabled. It never treats checksums alone, an action summary or an attestation-shaped JSON file as signature verification. The compatibility `verify-release.py` integrity command remains available, but does not authenticate provenance by itself.
 
 For one subject, the underlying [GitHub CLI verification command](https://cli.github.com/manual/gh_attestation_verify) is:
 

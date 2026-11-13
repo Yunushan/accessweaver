@@ -15,11 +15,10 @@ import sys
 import tarfile
 import zipfile
 
-from verify_release import TARGETS, require, verify as verify_contents
+from verify_release import PROVENANCE_BUNDLE as BUNDLE_NAME, TARGETS, require, verify as verify_contents
 
 REPOSITORY = "Yunushan/accessweaver"
 WORKFLOW = REPOSITORY + "/.github/workflows/release.yml"
-BUNDLE_NAME = "BUILD-PROVENANCE.sigstore.json"
 PREDICATE = "https://slsa.dev/provenance/v1"
 
 

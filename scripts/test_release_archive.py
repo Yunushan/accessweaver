@@ -1,4 +1,7 @@
+import contextlib
 import hashlib
+import io
+import json
 import os
 from pathlib import Path
 import stat
@@ -7,8 +10,10 @@ import tempfile
 import time
 import unittest
 import zipfile
+from unittest.mock import patch
 
 from release_archive import epoch_from_timestamp, timestamp, write_archive
+import verify_release as release
 
 
 class ArchiveTests(unittest.TestCase):
@@ -101,6 +106,75 @@ class ArchiveTests(unittest.TestCase):
             else:
                 os.environ["TZ"] = previous
             time.tzset()
+
+
+class ReleaseVerificationTests(unittest.TestCase):
+    def fixture(self, directory):
+        manifest = dict(unsigned=True, sourceState="clean", sourceCommit="a" * 40,
+                        targetExecutionTested=False, version="1.0.0-alpha", builtAt="fixture", artifacts=[])
+        # Put the host first to detect execution before later validation.
+        targets = [("windows", "amd64")] + sorted(release.TARGETS - {("windows", "amd64")})
+        checksums = {}
+        for system, arch in targets:
+            name = f"accessweaver-preview-{system}-{arch}" + (".zip" if system == "windows" else ".tar.gz")
+            data = name.encode()
+            (directory / name).write_bytes(data)
+            checksums[name] = hashlib.sha256(data).hexdigest()
+            manifest["artifacts"].append(dict(goos=system, goarch=arch, file=name, sha256=checksums[name], bytes=len(data)))
+        data = json.dumps(manifest).encode()
+        (directory / "BUILD-MANIFEST.json").write_bytes(data)
+        checksums["BUILD-MANIFEST.json"] = hashlib.sha256(data).hexdigest()
+        (directory / "SHA256SUMS.txt").write_text("".join(f"{h}  {n}\n" for n, h in checksums.items()), encoding="utf-8")
+        return manifest
+
+    def test_native_execution_occurs_only_after_every_archive_passes(self):
+        for damaged in (False, True):
+            with self.subTest(damaged=damaged), tempfile.TemporaryDirectory() as folder:
+                directory = Path(folder)
+                manifest = self.fixture(directory)
+                if damaged:
+                    path = directory / manifest["artifacts"][-1]["file"]
+                    path.write_bytes(b"x" * path.stat().st_size)
+
+                def inspect(path, _root, _binary_name):
+                    self.assertNotEqual(path.parent, directory)
+                    item = next(row for row in manifest["artifacts"] if row["file"] == path.name)
+                    info = dict(version=manifest["version"], commit=manifest["sourceCommit"],
+                                sourceState=manifest["sourceState"], builtAt=manifest["builtAt"],
+                                platform=item["goos"], arch=item["goarch"])
+                    return info, path.read_bytes()
+
+                with (
+                    patch.object(release.sys, "platform", "win32"),
+                    patch.object(release.platform, "machine", return_value="AMD64"),
+                    patch.object(release, "inspect_archive", side_effect=inspect) as inspect_archive,
+                    patch.object(release, "execute_metadata") as execute,
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    if damaged:
+                        with self.assertRaisesRegex(ValueError, "Checksum mismatch"):
+                            release.verify(directory, execute_native=True)
+                        execute.assert_not_called()
+                    else:
+                        release.verify(directory, execute_native=True)
+                        self.assertEqual(inspect_archive.call_count, 10)
+                        execute.assert_called_once()
+                        self.assertEqual(execute.call_args.args[:2],
+                                         (manifest["artifacts"][0]["file"].encode(), "accessweaver.exe"))
+
+    def test_unexpected_release_file_is_refused_before_archive_inspection(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            self.fixture(directory)
+            (directory / "unexpected.exe").write_bytes(b"not part of the release")
+            with (
+                patch.object(release, "inspect_archive") as inspect,
+                patch.object(release, "execute_metadata") as execute,
+                self.assertRaisesRegex(ValueError, "Unexpected release input"),
+            ):
+                release.verify(directory, execute_native=True)
+            inspect.assert_not_called()
+            execute.assert_not_called()
 
 
 if __name__ == "__main__":
