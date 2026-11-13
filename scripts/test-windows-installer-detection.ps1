@@ -9,6 +9,18 @@ $nodes=@($ast.EndBlock.Statements | Where-Object {
 })
 if($nodes.Count -ne 1){throw 'Expected one managed detector registry boundary'}
 $node=$nodes[0].Extent
+$probeName='Get-AccessWeaverInstallerRecoveryState'
+$controller=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps1'
+$controllerAst=[Management.Automation.Language.Parser]::ParseFile($controller,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'Controller recovery probe source failed parsing'}
+$probes=@(foreach($scriptAst in @($ast,$controllerAst)){
+    $scriptAst.EndBlock.Statements | Where-Object {
+        $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $probeName
+    }
+})
+if($probes.Count -ne 2 -or $probes[0].Extent.Text -cne $probes[1].Extent.Text){
+    throw 'Standalone detector and embedded controller recovery probes differ'
+}
 $testRoot=Join-Path ([IO.Path]::GetTempPath()) ('accessweaver-detection-'+[guid]::NewGuid().ToString('N'))
 $fixtureDirectory=[IO.Directory]::CreateDirectory($testRoot)
 $payload=Join-Path $testRoot 'accessweaver.exe'
@@ -59,12 +71,22 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
     }
     $fixtureLock='Global\AccessWeaver-DetectionTest-'+[guid]::NewGuid().ToString('N')
     $mocked=$original.Substring(0,$node.StartOffset)+$mock+$original.Substring($node.EndOffset)
-    $markerBoundary=@($ast.EndBlock.Statements | Where-Object {
-        $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'Assert-NoPendingAccessWeaverInstallation'
-    })
-    if($markerBoundary.Count -ne 1){throw 'Expected one pending installation marker boundary'}
-    $markerMock='function Assert-NoPendingAccessWeaverInstallation { if($env:AW_DETECTION_FIXTURE -ceq ''pending''){throw ''Pending installation fixture''} }'
-    $mocked=$mocked.Replace($markerBoundary[0].Extent.Text,$markerMock)
+    # Keep the production status mapping and detector assertion. Replace only
+    # the native call in the isolated child with fixed Win32 result codes.
+    $nativeCall='[AccessWeaver.InstallerRecoveryRegistry]::QueryStatus()'
+    $fixtureStatus=@'
+$(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
+    'pending' {0}
+    'marker-path-absent' {3}
+    'marker-access-denied' {5}
+    'marker-key-deleted' {1018}
+    'marker-query-failed' {throw 'Private fixture error'}
+    default {2}
+})
+'@
+    $probe=$probes[0].Extent.Text
+    if(-not $probe.Contains($nativeCall)){throw 'Missing fixed native recovery query'}
+    $mocked=$mocked.Replace($probe,$probe.Replace($nativeCall,$fixtureStatus))
     [IO.File]::WriteAllText($fixture,$mocked.Replace($productionLock,$fixtureLock))
     $arch=@{X64='amd64';Arm64='arm64'}[[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()]
     $stock=Join-Path $PSHOME 'powershell.exe'
@@ -73,6 +95,10 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
     try {
         $cases=@(
             @{mode='pending';code=1;count=0;hash=$hash},
+            @{mode='marker-path-absent';code=0;count=1;hash=$hash},
+            @{mode='marker-access-denied';code=1;count=0;hash=$hash},
+            @{mode='marker-key-deleted';code=1;count=0;hash=$hash},
+            @{mode='marker-query-failed';code=1;count=0;hash=$hash},
             @{mode='approved';code=0;count=1;hash=$hash},
             @{mode='approved';code=0;count=0;hash=('0'*64)},
             @{mode='absent';code=0;count=0;hash=$hash},

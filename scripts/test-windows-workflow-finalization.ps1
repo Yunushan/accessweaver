@@ -46,7 +46,7 @@ function Assert-Finalizer([bool]$Value,[string]$Message){if(-not $Value){throw $
     function Get-RefreshTaskInspection {return @{present=$false;error=$null}}
     function WireSock-CLI {return $null}
     function Test-Path {param($LiteralPath) return $false}
-    function Get-WorkflowInstallerRecoveryState {return $observed}
+    function Get-AccessWeaverInstallerRecoveryState {return $observed}
     foreach($observed in @('clear','pending','unavailable')){
         $report=Discover
         Assert-Finalizer ($report.installerRecovery -ceq $observed -and $report.dnsSnapshot -eq $false) 'Discovery lost Setup state or an independent observation'
@@ -93,7 +93,7 @@ function Assert-Finalizer([bool]$Value,[string]$Message){if(-not $Value){throw $
         $owner | Add-Member ScriptMethod Dispose {if($this.State.held){throw 'Lifecycle disposed while owned'}}
         return $owner
     }
-    function Get-WorkflowInstallerRecoveryState {return $state.installerRecovery}
+    function Get-AccessWeaverInstallerRecoveryState {return $state.installerRecovery}
     function Read-WorkflowUninstallRegistration {
         $state.registrationReads++
         return $null

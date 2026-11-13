@@ -104,18 +104,51 @@ function Enter-AccessWeaverDetection {
     return $mutex
 }
 
-function Assert-NoPendingAccessWeaverInstallation {
-    $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
-    $key=$null
+function Get-AccessWeaverInstallerRecoveryState {
+    # The detector ships standalone. Its source fixture checks both copies.
     try {
-        $key=$base.OpenSubKey('SOFTWARE\AccessWeaver\Installer',$false)
-        if($null -ne $key -and $key.GetValueNames() -icontains 'PendingInstall'){
-            throw 'An AccessWeaver installation is incomplete'
+        if(-not ('AccessWeaver.InstallerRecoveryRegistry' -as [type])){
+            Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace AccessWeaver
+{
+    public static class InstallerRecoveryRegistry
+    {
+        private static readonly IntPtr LocalMachine = new IntPtr(unchecked((int)0x80000002));
+        private const uint QueryFlags = 0x1001ffff; // RRF_NOEXPAND | RRF_SUBKEY_WOW6464KEY | RRF_RT_ANY
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RegGetValueW(IntPtr key, string subKey, string value,
+            uint flags, IntPtr type, IntPtr data, out uint size);
+
+        public static int QueryStatus()
+        {
+            uint size;
+            return RegGetValueW(LocalMachine, @"SOFTWARE\AccessWeaver\Installer", "PendingInstall",
+                QueryFlags, IntPtr.Zero, IntPtr.Zero, out size);
         }
-    } finally {
-        if($null -ne $key){$key.Dispose()}
-        $base.Dispose()
     }
+}
+'@
+        }
+        # Only explicit key/path or value absence permits uninstall or detection.
+        switch ([AccessWeaver.InstallerRecoveryRegistry]::QueryStatus()) {
+            0 {return 'pending'}
+            2 {return 'clear'} # ERROR_FILE_NOT_FOUND
+            3 {return 'clear'} # ERROR_PATH_NOT_FOUND
+            default {return 'unavailable'}
+        }
+    } catch {
+        return 'unavailable'
+    }
+}
+
+function Assert-NoPendingAccessWeaverInstallation {
+    $state=Get-AccessWeaverInstallerRecoveryState
+    if($state -ceq 'pending'){throw 'An AccessWeaver installation is incomplete'}
+    if($state -cne 'clear'){throw 'AccessWeaver Setup recovery state could not be read'}
 }
 
 function Test-AccessWeaverInstallation([string]$directory) {

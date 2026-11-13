@@ -3136,7 +3136,7 @@ function Discover {
     [Console]::WriteLine('Discovery phase: conflicts')
     [Console]::WriteLine(('Discovery timing ms: conflicts {0}' -f $discoveryClock.ElapsedMilliseconds))
     $conflicts=@();if($appInspectionError){$conflicts+=@($appInspectionError)};$kaspersky=Get-Process -Name 'avp','avpui' -ErrorAction SilentlyContinue;if($kaspersky){$conflicts+=@('Kaspersky is running; WinDivert compatibility must be checked')};if(($services|Where-Object {$_.name -eq 'CloudflareWARP' -and $_.status -eq 'Running'})){$conflicts+=@('Cloudflare WARP is running; check routing conflicts')}
-    $installerRecovery=Get-WorkflowInstallerRecoveryState
+    $installerRecovery=Get-AccessWeaverInstallerRecoveryState
     switch ($installerRecovery) {
         'pending' {$conflicts+='AccessWeaver Setup is incomplete. After Setup exits, retry with the same or a newer approved installer in the original directory.'}
         'unavailable' {$conflicts+='AccessWeaver Setup recovery state could not be read. Ask an administrator to verify it before uninstalling.'}
@@ -3574,22 +3574,49 @@ function Assert-WorkflowUninstallProtection([string]$Path) {
     $writes=[int][Security.AccessControl.FileSystemRights]'Write,DeleteSubdirectoriesAndFiles,Delete,ChangePermissions,TakeOwnership'
     Assert-WorkflowUninstallACL (Get-Acl -LiteralPath $Path -ErrorAction Stop) $writes
 }
-function Get-WorkflowInstallerRecoveryState {
-    $base=$null;$key=$null
+function Get-AccessWeaverInstallerRecoveryState {
+    # The detector ships standalone. Its source fixture checks both copies.
     try {
-        $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
-        $key=$base.OpenSubKey('SOFTWARE\AccessWeaver\Installer',$false)
-        if($null -ne $key -and $key.GetValueNames() -icontains 'PendingInstall'){return 'pending'}
-        return 'clear'
-    } catch {
-        return 'unavailable'
-    } finally {
-        if($null -ne $key){$key.Dispose()}
-        if($null -ne $base){$base.Dispose()}
+        if(-not ('AccessWeaver.InstallerRecoveryRegistry' -as [type])){
+            Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace AccessWeaver
+{
+    public static class InstallerRecoveryRegistry
+    {
+        private static readonly IntPtr LocalMachine = new IntPtr(unchecked((int)0x80000002));
+        private const uint QueryFlags = 0x1001ffff; // RRF_NOEXPAND | RRF_SUBKEY_WOW6464KEY | RRF_RT_ANY
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int RegGetValueW(IntPtr key, string subKey, string value,
+            uint flags, IntPtr type, IntPtr data, out uint size);
+
+        public static int QueryStatus()
+        {
+            uint size;
+            return RegGetValueW(LocalMachine, @"SOFTWARE\AccessWeaver\Installer", "PendingInstall",
+                QueryFlags, IntPtr.Zero, IntPtr.Zero, out size);
+        }
     }
 }
+'@
+        }
+        # Only explicit key/path or value absence permits uninstall or detection.
+        switch ([AccessWeaver.InstallerRecoveryRegistry]::QueryStatus()) {
+            0 {return 'pending'}
+            2 {return 'clear'} # ERROR_FILE_NOT_FOUND
+            3 {return 'clear'} # ERROR_PATH_NOT_FOUND
+            default {return 'unavailable'}
+        }
+    } catch {
+        return 'unavailable'
+    }
+}
+
 function Assert-NoPendingWorkflowInstallation {
-    $state=Get-WorkflowInstallerRecoveryState
+    $state=Get-AccessWeaverInstallerRecoveryState
     if($state -ceq 'pending'){
         throw 'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.'
     }
