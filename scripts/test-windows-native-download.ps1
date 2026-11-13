@@ -60,30 +60,55 @@ foreach($route in @(
     $routeCases=@();$routeDigests=@()
     foreach($transport in @('dotnet','curl')){
         $passed=$false;$cleaned=$false;$output=$null;$owned=$false
+        $budget=$null
+        $stage='admission'
+        $failureStage='none'
+        $terminalFailure=$false
+        $budgetExpired=$false
+        $admittedMiB=0
         $path=Join-Path $env:RUNNER_TEMP ('accessweaver-native-download-'+[guid]::NewGuid().ToString('N')+'.tmp')
         try {
             Allowed-Download $route.url
             $output=[IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None);$owned=$true
+            $stage='transfer'
             $budget=New-ComponentDownloadBudget -MaximumBytes 256MB -TimeoutMilliseconds 120000
             if($transport -ceq 'dotnet'){Invoke-ComponentDownloadDotNet $route.url $output $budget}
             else {Invoke-ComponentDownloadCurl $route.url $output $budget}
+            $stage='digest'
             if($output.Length -le 0){throw 'Empty installer'}
             $output.Position=0;$sha256=[Security.Cryptography.SHA256]::Create()
             try {$digest=([BitConverter]::ToString($sha256.ComputeHash($output))).Replace('-','').ToLowerInvariant()}finally{$sha256.Dispose()}
             $routeDigests+=@($digest);$passed=$true
-        } catch {$failed=$true} finally {
-            if($output){try {$output.Dispose()}catch {$passed=$false;$failed=$true}}
+        } catch {
+            $failed=$true
+            $failureStage=$stage
+            $terminalFailure=Test-ComponentDownloadTerminal $_
+        } finally {
+            if($budget){
+                $budgetExpired=$budget.Clock.ElapsedMilliseconds -ge $budget.TimeoutMilliseconds
+                $admittedMiB=[int][Math]::Floor($budget.Written / 1MB)
+            }
+            if($output){try {$output.Dispose()}catch {$passed=$false;$failed=$true;$failureStage='cleanup'}}
             if($owned){try {[IO.File]::Delete($path);$cleaned=-not [IO.File]::Exists($path)}catch {$cleaned=$false}}
             else {$cleaned=$true}
-            if(-not $cleaned){$passed=$false;$failed=$true}
+            if(-not $cleaned){$passed=$false;$failed=$true;$failureStage='cleanup'}
         }
-        $routeCases+=@{engine=$route.engine;transport=$transport;passed=$passed;temporaryFileRemoved=$cleaned}
+        $routeCases+=@{
+            engine=$route.engine
+            transport=$transport
+            passed=$passed
+            temporaryFileRemoved=$cleaned
+            failureStage=$failureStage
+            terminalFailure=$terminalFailure
+            budgetExpired=$budgetExpired
+            admittedMiB=$admittedMiB
+        }
     }
     $same=($routeDigests.Count -eq 2 -and $routeDigests[0] -ceq $routeDigests[1])
     if(-not $same){$failed=$true}
     foreach($case in $routeCases){$case['independentDownloadsMatch']=$same;$cases+=@($case)}
 }
-$report=@{schemaVersion=1;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;cases=$cases;vendorDownloadsAttempted=$true;vendorCodeExecuted=$false;proxyPathQualified=$false;allVendorRoutesQualified=$false;productionQualificationComplete=$false}
+$report=@{schemaVersion=2;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;cases=$cases;vendorDownloadsAttempted=$true;vendorCodeExecuted=$false;proxyPathQualified=$false;allVendorRoutesQualified=$false;productionQualificationComplete=$false}
 $directory=Join-Path $project 'build/native-download-checks';[void][IO.Directory]::CreateDirectory($directory)
 [IO.File]::WriteAllText((Join-Path $directory ('native-download-'+$Architecture+'.json')),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
 if($failed){throw 'One or more fixed native download checks failed'}
