@@ -1529,7 +1529,14 @@ try {
         if($script:appRemovalFail){throw 'synthetic vendor failure'}
     }
     function Event {param($message);$script:appRemovalEvents.Add($message)}
-    function Get-Process {param($ErrorAction);return $appRemovalProcesses}
+    function Get-Process {
+        param($ErrorAction)
+        if($ErrorAction -cne 'Stop'){throw 'Expected a complete fixture process query'}
+        if($script:appRemovalInvoked -and $script:appReappearance -ceq 'replacement'){$script:appRemovalMoved=$true}
+        if($script:appRemovalInvoked -and $script:appReappearance -ceq 'original'){[IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(3))}
+        return $script:appRemovalProcesses
+    }
+    $script:appReappearance=$null
     $script:appRemovalInvoked=$true
     $rejected=$false
     try {Wait-App 'splitcord' $false 0 $fixtureApp}catch{$rejected=$_.Exception.Message -like 'Application installation state*'}
@@ -1538,19 +1545,19 @@ try {
     Assert ((Wait-App 'splitcord' $true 0) -ceq $fixtureApp) 'Application install readback returns the observed executable for verification'
     $script:appRemovalInvoked=$true
     $newProcess=[pscustomobject]@{Path=$fixtureApp;SessionId=($fixtureSession+1);HasExited=$false}
-    $appRemovalProcesses=@($newProcess)
+    $script:appRemovalProcesses=@($newProcess)
     $rejected=$false
     try {Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
     Assert $rejected 'Application removal refuses a surviving process in any session'
     $unknownExit=[pscustomobject]@{Path=$fixtureApp;SessionId=$fixtureSession}
     $unknownExit | Add-Member ScriptProperty HasExited {throw 'Synthetic unreadable exit state'}
-    $appRemovalProcesses=@($unknownExit)
+    $script:appRemovalProcesses=@($unknownExit)
     $rejected=$false
     try {Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
     Assert $rejected 'Application removal refuses an unreadable matching process exit state'
     $hiddenImage=[pscustomobject]@{ProcessName='SplitCord';Path=$null;HasExited=$false}
     $unrelatedHiddenImage=[pscustomobject]@{ProcessName='Unrelated';Path=$null;HasExited=$false}
-    $appRemovalProcesses=@($unrelatedHiddenImage,$hiddenImage)
+    $script:appRemovalProcesses=@($unrelatedHiddenImage,$hiddenImage)
     $rejected=$false
     try {Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
     Assert $rejected 'Application removal refuses an inaccessible possibly matching live process after uninstall'
@@ -1565,10 +1572,10 @@ try {
 
     $newProcess.HasExited=$true
     $unrelated=[pscustomobject]@{Path=(Join-Path $fixtureAppDirectory 'Other.exe');SessionId=$fixtureSession;HasExited=$false}
-    $appRemovalProcesses=@($newProcess,$unrelated)
+    $script:appRemovalProcesses=@($newProcess,$unrelated)
     Wait-AppProcessesExited 'splitcord' $fixtureApp 0
     Assert $true 'Application removal accepts exited matches and ignores unrelated processes'
-    $appRemovalProcesses=@()
+    $script:appRemovalProcesses=@()
     $script:appRemovalEvents=[Collections.Generic.List[string]]::new()
     $script:appRemovalMoved=$false
     $script:appRemovalDelete=$false
@@ -1585,13 +1592,17 @@ try {
             'client-bytes' {[IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(2))}
             'uninstaller' {[IO.File]::WriteAllBytes($fixtureUninstaller,[byte[]]@(1))}
             'ambiguous' {[IO.File]::WriteAllBytes($secondUninstaller,[byte[]]@(0))}
+            'client-restarted' {$newProcess.HasExited=$false;$script:appRemovalProcesses=@($newProcess)}
+            'client-now-unreadable' {$hiddenImage.HasExited=$false;$script:appRemovalProcesses=@($hiddenImage)}
         }
     }
     foreach($case in @(
         @{kind='client';error='Application installation changed before uninstall launch'},
         @{kind='client-bytes';error='Application installation changed before uninstall launch'},
         @{kind='uninstaller';error='Application uninstaller changed before launch'},
-        @{kind='ambiguous';error='Expected exactly one SplitCord uninstaller'}
+        @{kind='ambiguous';error='Expected exactly one SplitCord uninstaller'},
+        @{kind='client-restarted';error='Application process exit could not be verified before uninstall; close the client and retry'},
+        @{kind='client-now-unreadable';error='Application process exit could not be verified before uninstall; close the client and retry'}
     )){
         $script:appRemovalInvoked=$false
         $script:appRemovalChange=$case.kind
@@ -1600,6 +1611,7 @@ try {
         try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq $case.error}
         Assert ($rejected -and -not $script:appRemovalInvoked -and -not $script:externalEffectsPending) ('Application removal refuses '+$case.kind+' changes before vendor launch')
         $script:appRemovalMoved=$false
+        $script:appRemovalProcesses=@()
         [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
         [IO.File]::WriteAllBytes($fixtureUninstaller,[byte[]]@(0))
         [IO.File]::Delete($secondUninstaller)
@@ -1613,6 +1625,18 @@ try {
     $script:appRemovalInvoked=$false
     $script:appRemovalFail=$false
     $script:appRemovalDelete=$true
+    foreach($script:appReappearance in @('replacement','original')){
+        $script:appRemovalInvoked=$false
+        $script:externalEffectsPending=$false
+        $rejected=$false
+        try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Application installation reappeared during uninstall verification'}
+        Assert ($rejected -and $script:appRemovalInvoked -and $script:externalEffectsPending -and
+            $script:appRemovalEvents.Count -eq 0) ('Application removal refuses '+$script:appReappearance+' installation observed after process readback')
+        $script:appRemovalMoved=$false
+        [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
+    }
+    $script:appReappearance=$null
+    $script:appRemovalInvoked=$false
     Remove-App 'splitcord'
     Assert ($script:appRemovalEvents.Count -eq 1 -and -not (Test-Path -LiteralPath $fixtureApp)) 'Application removal confirms both executable and process readback before success'
 } finally {

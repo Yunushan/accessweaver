@@ -3059,10 +3059,18 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
     if($confirmed.path -ine $uninstaller.path -or (Get-AppExecutableDigest $confirmed.path) -cne $digest){
         throw 'Application uninstaller changed before launch'
     }
+    $base=Get-AppProcessBase $variant
+    $names=@(Get-AppProcessNames $base $app)
+    if(-not (Test-AppProcessesExited $base $app $names)){
+        throw 'Application process exit could not be verified before uninstall; close the client and retry'
+    }
     Save-ApplicationEffectBoundary
     [void](Native $confirmed.path $confirmed.arguments -Timeout $confirmed.timeout)
     Wait-App $variant $false 60 $app
     Wait-AppProcessesExited $variant $app
+    if((Find-App $variant) -or (Test-Path -LiteralPath $app -ErrorAction Stop)){
+        throw 'Application installation reappeared during uninstall verification'
+    }
     Event ('Application uninstalled: '+$variant)
 }
 function Get-AppProcessBase([string]$variant) {
@@ -3102,28 +3110,30 @@ function Get-AppProcessNames([string]$base,[string]$app) {
     if($base){return @('Discord','DiscordPTB','Update','crashpad_handler')}
     if($app){return [IO.Path]::GetFileNameWithoutExtension($app)}
 }
+function Test-AppProcessesExited([string]$base,[string]$app,[string[]]$names) {
+    $processes=@(Get-Process -ErrorAction Stop)
+    try {
+        foreach($process in $processes){
+            $match=Get-AppProcessMatch $process $base $app $names
+            if($null -eq $match){return $false}
+            if(-not $match){continue}
+            $exited=$null
+            try {$exited=$process.HasExited}catch{}
+            if($exited -isnot [bool] -or -not $exited){return $false}
+        }
+        return $true
+    } finally {
+        foreach($process in $processes){
+            if($process -is [IDisposable]){$process.Dispose()}
+        }
+    }
+}
 function Wait-AppProcessesExited([string]$variant,[string]$app,[int]$seconds=10) {
     $base=Get-AppProcessBase $variant
     $names=@(Get-AppProcessNames $base $app)
     $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
-        $running=$false
-        $processes=@(Get-Process -ErrorAction Stop)
-        try {
-            foreach($process in $processes){
-                $match=Get-AppProcessMatch $process $base $app $names
-                if($null -eq $match){$running=$true;break}
-                if(-not $match){continue}
-                $exited=$null
-                try {$exited=$process.HasExited}catch{}
-                if($exited -isnot [bool] -or -not $exited){$running=$true;break}
-            }
-        } finally {
-            foreach($process in $processes){
-                if($process -is [IDisposable]){$process.Dispose()}
-            }
-        }
-        if(-not $running){return}
+        if(Test-AppProcessesExited $base $app $names){return}
         if($timer.Elapsed.TotalSeconds -ge $seconds){break}
         Start-Sleep -Milliseconds 250
     } while($true)
