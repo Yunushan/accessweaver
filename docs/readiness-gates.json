@@ -281,6 +281,7 @@
             "docs/qualification/cdb06ec00147-wiresock-native-installer-contracts.json",
             "docs/qualification/0e0188639313-wiresock-uninstall-registration-contracts.json",
             "docs/qualification/2f5cb2334c95-wiresock-explicit-disconnect-contracts.json",
+            "docs/qualification/2f5cb2334c95-native-wiresock-lifecycle.json",
             "docs/qualification/cdb06ec00147-native-download-transports.json",
             "docs/qualification/20ac1ac28b96-native-wiresock-trust.json",
             "docs/qualification/1b66e9c3bafb-native-wiresock-lifecycle.json",
