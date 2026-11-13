@@ -338,6 +338,18 @@ def managed_update(files, target, current_version, candidate_version):
     }
 
 
+def select_windows_upgrade(detection, update, installed_digest):
+    require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
+    matches = [
+        entry for entry in detection
+        if entry["target"] == update["target"] and entry["installMode"] == "upgrade"
+        and entry["previousVersion"] == update["currentVersion"]
+        and entry["previousPayloadSHA256"] == installed_digest.lower()
+    ]
+    require(len(matches) == 1, "No approved reboot evidence matches the installed Windows payload")
+    return matches[0]
+
+
 def verify_staged_update(path, size, approved_digest):
     def identity(info):
         return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_nlink
@@ -393,9 +405,15 @@ def stage_managed_update(root, directory, update):
 
 
 def verify(directory, certificate, certificate_sha256, commit, ref, openssl="openssl",
-           *, revocation_list, revocation_list_sha256, current_version=None, target=None, stage_directory=None):
+           *, revocation_list, revocation_list_sha256, current_version=None, target=None, stage_directory=None,
+           current_payload_sha256=None):
     require((current_version is None) == (target is None),
             "Managed update evaluation requires an installed version and target")
+    if current_payload_sha256 is not None:
+        require(target in ("windows/amd64", "windows/arm64")
+                and isinstance(current_payload_sha256, str)
+                and re.fullmatch(r"[a-fA-F0-9]{64}", current_payload_sha256),
+                "Qualified upgrade selection requires a Windows target and an installed payload SHA-256")
     if stage_directory is not None:
         require(target is not None, "Managed update staging requires an installed version and target")
         info = stage_directory.lstat()
@@ -460,6 +478,11 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                  "payloadSBOMSHA256": payload_sboms[entry["target"]]}
                 for entry in entries
             ]
+        if current_payload_sha256 is not None:
+            update = report["managedUpdate"]
+            update["windowsUpgradeDetection"] = select_windows_upgrade(
+                report.get("windowsDetection", ()), update, current_payload_sha256
+            )
         if stage_directory is not None:
             update = report["managedUpdate"]
             require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
@@ -484,6 +507,8 @@ def main():
     verify_args.add_argument("--current-version", help="installed version from trusted endpoint inventory")
     verify_args.add_argument("--target", choices=("windows/amd64", "windows/arm64", "darwin/amd64", "darwin/arm64"),
                              help="native managed endpoint target")
+    verify_args.add_argument("--current-payload-sha256",
+                             help="require signed Windows reboot evidence for this installed payload")
     verify_args.add_argument("--stage-directory", type=Path,
                              help="existing trusted directory for the authenticated eligible installer")
     for command in (prepare_args, verify_args):
@@ -501,7 +526,8 @@ def main():
                                     revocation_list=args.revocation_list,
                                     revocation_list_sha256=args.revocation_list_sha256,
                                     current_version=args.current_version, target=args.target,
-                                    stage_directory=args.stage_directory)))
+                                    stage_directory=args.stage_directory,
+                                    current_payload_sha256=args.current_payload_sha256)))
     except (ValueError, OSError, subprocess.SubprocessError):
         print("Signed release inventory, approval or revocation verification failed.", file=sys.stderr)
         return 1

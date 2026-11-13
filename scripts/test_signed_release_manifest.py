@@ -1,6 +1,7 @@
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -325,6 +326,9 @@ class SignedReleaseManifestTests(unittest.TestCase):
             self.verify(approved, pin, **{**update, "stage_directory": self.candidate})
         with self.assertRaisesRegex(ValueError, "staging requires"):
             self.verify(approved, pin, stage_directory=staging)
+        with self.assertRaisesRegex(ValueError, "No approved reboot evidence"):
+            self.verify(approved, pin, **update, current_payload_sha256="d" * 64)
+        self.assertEqual(list(staging.iterdir()), [])
 
         real_stage = release.stage_managed_update
         def replace_input_after_verification(snapshot, directory, decision):
@@ -475,7 +479,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         signature.unlink()
         clean = self.write_reboot_report("clean.json")
         upgrade = self.write_reboot_report("upgrade.json", schemaVersion=8, installMode="upgrade",
-                                           previousVersion="1.2.2", previousPayloadSHA256="d" * 64,
+                                           previousVersion="1.2.2-rc.1", previousPayloadSHA256="d" * 64,
                                            userProfilePreservedThroughUpgrade=True, uninstallerSHA256="e" * 64)
         arm = self.write_reboot_report("arm.json", architecture="arm64", schemaVersion=7, uninstallerSHA256="f" * 64)
         release.prepare(self.candidate, prepared, COMMIT, REF, windows_reboot_evidence=[arm, upgrade, clean])
@@ -495,13 +499,43 @@ class SignedReleaseManifestTests(unittest.TestCase):
             "payloadSBOMSHA256": release.digest(self.candidate / "accessweaver-1.2.3-rc.1-windows-amd64.exe.cdx.json"),
         })
         self.assertEqual(upgrade_entry, {
-            **clean_entry, "installMode": "upgrade", "previousVersion": "1.2.2",
+            **clean_entry, "installMode": "upgrade", "previousVersion": "1.2.2-rc.1",
             "previousPayloadSHA256": "d" * 64, "uninstallerSHA256": "e" * 64, "rebootEvidenceSHA256": upgrade[1],
         })
         self.assertEqual(arm_entry["target"], "windows/arm64")
         self.assertEqual(arm_entry["payloadSBOMSHA256"],
                          release.digest(self.candidate / "accessweaver-1.2.3-rc.1-windows-arm64.exe.cdx.json"))
         self.assertEqual(arm_entry["uninstallerSHA256"], "f" * 64)
+        qualified = {"current_version": "1.2.2-rc.1", "target": "windows/amd64",
+                     "current_payload_sha256": "D" * 64}
+        update_report = self.verify(approved, pin, **qualified)["managedUpdate"]
+        self.assertEqual(update_report["windowsUpgradeDetection"], upgrade_entry)
+        for override, error in (
+            ({"current_payload_sha256": "a" * 64}, "No approved reboot evidence"),
+            ({"current_version": "1.2.2-rc.1+other"}, "No approved reboot evidence"),
+            ({"target": "windows/arm64"}, "No approved reboot evidence"),
+            ({"current_version": "1.2.2"}, "not an eligible managed upgrade"),
+            ({"target": "darwin/arm64"}, "requires a Windows target"),
+            ({"current_payload_sha256": "unverified"}, "installed payload SHA-256"),
+        ):
+            with self.subTest(override=override), self.assertRaisesRegex(ValueError, error):
+                self.verify(approved, pin, stage_directory=staging, **{**qualified, **override})
+            self.assertEqual(list(staging.iterdir()), [])
+        qualified_report = self.verify(approved, pin, stage_directory=staging, **qualified)["managedUpdate"]
+        self.assertTrue(qualified_report["installerStaged"])
+        self.assertEqual(qualified_report["windowsUpgradeDetection"], upgrade_entry)
+        (staging / qualified_report["installer"]).unlink()
+        command = [
+            sys.executable, str(Path(release.__file__).resolve()), "verify", str(self.candidate),
+            "--approval-certificate", str(approved), "--approval-certificate-sha256", pin,
+            "--revocation-list", str(self.revocation_list), "--revocation-list-sha256", self.policy_pin,
+            "--openssl", OPENSSL, "--source-commit", COMMIT, "--source-ref", REF,
+            "--current-version", qualified["current_version"], "--target", qualified["target"],
+            "--current-payload-sha256", qualified["current_payload_sha256"], "--stage-directory", str(staging),
+        ]
+        completed = subprocess.run(command, check=True, capture_output=True, text=True, timeout=30)
+        self.assertEqual(json.loads(completed.stdout)["managedUpdate"], qualified_report)
+        (staging / qualified_report["installer"]).unlink()
         for revoked in (clean[1], "b" * 64, "d" * 64, "e" * 64):
             current_pin = self.write_policy({**self.policy, "subjectSHA256": [revoked]})
             with self.subTest(revoked=revoked), self.assertRaisesRegex(ValueError, "revoked"):
