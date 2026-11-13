@@ -1210,12 +1210,16 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
 }
 # Synthetic process records verify session-scoped launch observation without launching an app.
 $fixtureApp='C:\fixture\SplitCord.exe'
-$otherSession=[pscustomobject]@{Path=$fixtureApp;SessionId=9}
-$sameSession=[pscustomobject]@{Path=$fixtureApp;SessionId=7}
-$otherPath=[pscustomobject]@{Path='C:\fixture\Other.exe';SessionId=7}
+$otherSession=[pscustomobject]@{Path=$fixtureApp;SessionId=9;HasExited=$false}
+$sameSession=[pscustomobject]@{Path=$fixtureApp;SessionId=7;HasExited=$false}
+$otherPath=[pscustomobject]@{Path='C:\fixture\Other.exe';SessionId=7;HasExited=$false}
 Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($otherSession))) 'App launch ignores matching processes in another session'
 Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($otherPath))) 'App launch ignores another executable in the current session'
 Assert (Test-AppProcessInSession $fixtureApp 7 @($otherSession,$sameSession)) 'App launch accepts the matching executable in the current session'
+$exitedApp=[pscustomobject]@{Path=$fixtureApp;SessionId=7;HasExited=$true}
+$unreadableApp=[pscustomobject]@{Path=$fixtureApp;SessionId=7}
+$unreadableApp | Add-Member ScriptProperty HasExited {throw 'Synthetic inaccessible process'}
+Assert (-not (Test-AppProcessInSession $fixtureApp 7 @($exitedApp,$unreadableApp))) 'App launch requires a live matching process'
 # Inert files, process records and command mocks exercise uninstall preflight.
 $fixtureAppDirectory=Join-Path $testRoot 'splitcord-uninstall'
 [void](New-Item -ItemType Directory -Path $fixtureAppDirectory)

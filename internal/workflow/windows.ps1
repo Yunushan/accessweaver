@@ -2159,8 +2159,18 @@ function Stop-AppProcesses([string]$variant) {
     }
 }
 function Test-AppProcessInSession([string]$path,[int]$sessionId,$processes) {
-    foreach($process in @($processes)){try{if($process.Path -eq $path -and $process.SessionId -eq $sessionId){return $true}}catch{}}
-    return $false
+    $running=$false
+    foreach($process in $processes){
+        try {
+            if(-not $running -and $process.Path -eq $path -and $process.SessionId -eq $sessionId -and
+                $process.HasExited -eq $false){$running=$true}
+        } catch {
+            # A process can exit or become inaccessible during inspection.
+        } finally {
+            if($process -is [IDisposable]){$process.Dispose()}
+        }
+    }
+    return $running
 }
 function Start-App([string]$variant) {
     Require-DesktopUser
@@ -2171,8 +2181,16 @@ function Start-App([string]$variant) {
     # Its external application lifetime is not owned or certified by this worker.
     $script:externalEffectsPending=$true
     Start-Process -FilePath (Join-Path $env:SystemRoot 'explorer.exe') -ArgumentList @((Quote-Arg $app)) -WindowStyle Hidden
-    $deadline=[DateTime]::UtcNow.AddSeconds(10)
-    do{if(Test-AppProcessInSession $app $sessionId @(Get-Process -ErrorAction SilentlyContinue)){Event 'Application process is running in the desktop session';return};Start-Sleep -Milliseconds 500}while([DateTime]::UtcNow -lt $deadline)
+    $name=[IO.Path]::GetFileNameWithoutExtension($app)
+    $wait=[Diagnostics.Stopwatch]::StartNew()
+    do {
+        $processes=@(Get-Process -Name $name -ErrorAction SilentlyContinue)
+        if(Test-AppProcessInSession $app $sessionId $processes){
+            Event 'Application process is running in the desktop session'
+            return
+        }
+        Start-Sleep -Milliseconds 500
+    } while($wait.Elapsed.TotalSeconds -lt 10)
     throw 'Application launch could not be verified; inspect its desktop and logs'
 }
 function Start-RepairProxy {
