@@ -1574,6 +1574,7 @@ $appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Remove
 $previousAppRequest=$r
 $previousAppInput=$inputData
 $previousAppRoot=$root
+$previousAppEffects=$script:externalEffectsPending
 try {
     $root=Join-Path $testRoot 'app-install-fixture'
     [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
@@ -1613,6 +1614,7 @@ try {
     }
     function Native {
         param($Program,$Arguments,$Timeout)
+        if(-not $script:externalEffectsPending){throw 'Vendor setup began without recording its possible effects'}
         $script:appInstallTrace.Add('installer')
         $script:appInstallerLockedAtLaunch=$false
         try {
@@ -1631,8 +1633,10 @@ try {
     $r=[pscustomobject]@{clean=$true;sha256=''}
     $inputData=[pscustomobject]@{nativeArchitecture='amd64'}
     $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$true;$script:appRemoveFailure=$false
+    $script:externalEffectsPending=$false
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$true}
-    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download:discord')) 'PTB clean download failure preserves the existing client'
+    Assert ($rejected -and -not $script:externalEffectsPending -and
+        (($script:appInstallTrace -join ',') -ceq 'download:discord')) 'PTB clean download failure leaves vendor effects clear and preserves the existing client'
     $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$false;$script:appRemoveFailure=$false
     $installed=Install-App 'discord-ptb'
     Assert (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable,verify-ptb,event') 'PTB clean verifies the installed replacement before removal and rechecks it after cleanup'
@@ -1641,19 +1645,24 @@ try {
     Assert ($script:appInstallerLockedAtLaunch) 'PTB clean retains a read-only installer handle through installer launch'
     $script:appInstallTrace.Clear()
     $script:appInstallerChanged=$true
+    $script:externalEffectsPending=$false
     $rejected=$false
     try {Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Staged application installer differs from the verified download'}
-    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'download:discord') 'PTB clean refuses a changed staged installer before removing the existing client'
+    Assert ($rejected -and -not $script:externalEffectsPending -and
+        ($script:appInstallTrace -join ',') -ceq 'download:discord') 'PTB clean refuses a changed staged installer before any vendor effect'
     $script:appInstallerChanged=$false
     $script:appInstallTrace.Clear()
     $script:appNativeFailure=$true
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'fixture installer failure'}
-    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer')) 'PTB installer failure preserves stable Discord'
+    Assert ($rejected -and $script:externalEffectsPending -and
+        (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer')) 'PTB installer failure preserves stable Discord and retains setup uncertainty'
     $script:appNativeFailure=$false
     $script:appInstallTrace.Clear()
     $script:appReadbackFailure=$true
+    $script:externalEffectsPending=$false
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'fixture executable readback failure'}
-    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb')) 'PTB executable readback failure preserves stable Discord'
+    Assert ($rejected -and $script:externalEffectsPending -and
+        (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb')) 'PTB readback failure preserves stable Discord and retains setup uncertainty'
     $script:appReadbackFailure=$false
     $script:appInstallTrace.Clear()
     $script:appStableReplacedDuringSetup=$true
@@ -1735,6 +1744,7 @@ try {
     $r=$previousAppRequest
     $inputData=$previousAppInput
     $root=$previousAppRoot
+    $script:externalEffectsPending=$previousAppEffects
 }
 # Exercise official release selection with fixed metadata and no vendor execution.
 & {

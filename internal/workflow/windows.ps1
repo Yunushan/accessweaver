@@ -2753,6 +2753,8 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         }
         if($cleanPTB){$stableBeforeSetup=Find-App 'discord'}
         $installerArgs=if($variant -eq 'splitcord'){@('/S')}else{@('-s')}
+        # A vendor installer can change user files before returning an error.
+        $script:externalEffectsPending=$true
         [void](Native $file $installerArgs -Timeout 900)
     } finally {$lockedInstaller.Dispose()}
     Wait-App $variant $true 180
