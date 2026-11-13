@@ -27,9 +27,9 @@ class PrereleasePublicationTests(unittest.TestCase):
                 "digest": "sha256:" + hashlib.sha256(body).hexdigest(),
             }
 
-    def release(self, draft, count=13):
+    def release(self, draft, count=13, release_id=456):
         return {
-            "tagName": self.tag, "isDraft": draft, "isPrerelease": True,
+            "databaseId": release_id, "tagName": self.tag, "isDraft": draft, "isPrerelease": True,
             "assets": [dict(item) for item in list(self.assets.values())[:count]],
         }
 
@@ -39,8 +39,10 @@ class PrereleasePublicationTests(unittest.TestCase):
             patch.object(publisher, "git_tag_commit", side_effect=tags or [self.commit] * 2),
             patch.object(publisher, "view", side_effect=releases),
             patch.object(publisher, "gh", return_value=subprocess.CompletedProcess([], 0, "", "")) as gh,
+            patch.object(publisher, "promote_draft") as promote,
         ):
             self.calls = gh
+            self.promote = promote
             try:
                 publisher.publish(self.directory, self.commit, self.ref)
             finally:
@@ -53,18 +55,19 @@ class PrereleasePublicationTests(unittest.TestCase):
     def test_new_draft_uploads_and_verifies_before_publication(self):
         self.run_publisher([None, self.release(True, 0), self.release(True), self.release(False)])
         args = [entry.args for entry in self.calls.call_args_list]
-        self.assertEqual([entry[0] for entry in args], ["create", "upload", "edit"])
+        self.assertEqual([entry[0] for entry in args], ["create", "upload"])
         self.assertIn("--draft", args[0])
         self.assertIn("--verify-tag", args[0])
         self.assertEqual(len(args[1]), 15)
         self.assertNotIn("--clobber", args[1])
-        self.assertEqual(args[2], ("edit", self.tag, "--draft=false"))
+        self.promote.assert_called_once_with(456)
 
     def test_retry_uploads_only_missing_draft_assets(self):
         self.run_publisher([self.release(True, 12), self.release(True), self.release(False)])
         self.assertEqual(self.calls.call_args_list[0].args,
                          ("upload", self.tag, str(self.snapshot / "fixture-12.zip")))
-        self.assertEqual(self.calls.call_count, 2)
+        self.assertEqual(self.calls.call_count, 1)
+        self.promote.assert_called_once_with(456)
 
     def test_publication_uses_the_verified_copy_when_source_changes(self):
         changed = self.directory / "fixture-12.zip"
@@ -90,6 +93,7 @@ class PrereleasePublicationTests(unittest.TestCase):
     def test_matching_published_release_is_untouched(self):
         self.run_publisher([self.release(False)])
         self.calls.assert_not_called()
+        self.promote.assert_not_called()
 
     def test_mismatch_duplicate_and_missing_published_asset_leave_release_untouched(self):
         wrong = self.release(True, 1)
@@ -100,6 +104,7 @@ class PrereleasePublicationTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 self.run_publisher([invalid])
             self.calls.assert_not_called()
+            self.promote.assert_not_called()
 
     def test_incomplete_readback_or_moved_tag_cannot_publish(self):
         for readback, tags in (
@@ -110,6 +115,27 @@ class PrereleasePublicationTests(unittest.TestCase):
                 self.run_publisher([self.release(True, 12), readback], tags)
             self.assertEqual(self.calls.call_count, 1)
             self.assertEqual(self.calls.call_args.args[0], "upload")
+            self.promote.assert_not_called()
+
+    def test_replaced_draft_is_refused_before_publication(self):
+        with self.assertRaisesRegex(ValueError, "draft identity"):
+            self.run_publisher([self.release(True), self.release(True, release_id=789)])
+        self.calls.assert_not_called()
+        self.promote.assert_not_called()
+
+    def test_final_readback_must_be_the_promoted_release(self):
+        with self.assertRaisesRegex(ValueError, "could not be verified"):
+            self.run_publisher([self.release(True), self.release(True), self.release(False, release_id=789)])
+        self.promote.assert_called_once_with(456)
+
+    def test_promotion_patches_only_draft_state_by_release_id(self):
+        with patch.object(publisher.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run:
+            publisher.promote_draft(456)
+        run.assert_called_once_with(
+            ["gh", "api", "--hostname", "github.com", "--method", "PATCH",
+             f"repos/{publisher.REPOSITORY}/releases/456", "--field", "draft=false", "--silent"],
+            capture_output=True, text=True, timeout=240,
+        )
 
     def test_view_only_treats_the_cli_not_found_result_as_absent(self):
         with patch.object(publisher, "gh", return_value=subprocess.CompletedProcess([], 1, "", "release not found\n")):
@@ -117,6 +143,17 @@ class PrereleasePublicationTests(unittest.TestCase):
         with patch.object(publisher, "gh", return_value=subprocess.CompletedProcess([], 1, "", "HTTP 403")):
             with self.assertRaises(ValueError):
                 publisher.view(self.tag)
+
+    def test_tag_lookup_rejects_duplicate_and_unexpected_refs(self):
+        for contents in (
+            f"{self.commit}\t{self.ref}\n{self.commit}\t{self.ref}\n",
+            f"{self.commit}\trefs/tags/v-unexpected\n",
+            f"invalid\t{self.ref}\n",
+        ):
+            with self.subTest(contents=contents), patch.object(
+                publisher.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, contents, "")
+            ), self.assertRaisesRegex(ValueError, "Unexpected remote tag"):
+                publisher.git_tag_commit(self.tag)
 
     def test_tag_lookup_prefers_peeled_annotated_tag(self):
         ref = self.ref

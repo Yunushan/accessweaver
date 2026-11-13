@@ -4,6 +4,7 @@
 import argparse
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -22,9 +23,11 @@ def git_tag_commit(tag):
     )
     refs = {}
     for line in result.stdout.splitlines():
-        digest, name = line.split("\t", 1)
-        refs[name] = digest
-    return refs.get(ref + "^{}", refs.get(ref))
+        oid, name = line.split("\t", 1)
+        if name not in (ref, ref + "^{}") or name in refs or not re.fullmatch(r"[a-f0-9]{40}", oid):
+            raise ValueError("Unexpected remote tag lookup result")
+        refs[name] = oid
+    return refs.get(ref + "^{}", refs.get(ref)) if ref in refs else None
 
 
 def gh(*args):
@@ -41,15 +44,28 @@ def require_success(result):
 
 
 def view(tag):
-    result = gh("view", tag, "--json", "tagName,isDraft,isPrerelease,assets")
+    result = gh("view", tag, "--json", "databaseId,tagName,isDraft,isPrerelease,assets")
     if result.returncode == 1 and result.stderr.strip() == "release not found":
         return None
     return json.loads(require_success(result))
 
 
+def promote_draft(release_id):
+    # Use the record whose assets were verified. A fresh tag lookup could
+    # resolve to a different release if another actor replaced the draft.
+    result = subprocess.run(
+        ["gh", "api", "--hostname", "github.com", "--method", "PATCH",
+         f"repos/{REPOSITORY}/releases/{release_id}", "--field", "draft=false", "--silent"],
+        capture_output=True, text=True, timeout=240,
+    )
+    require_success(result)
+
+
 def missing_assets(release, tag, expected):
     if (
-        release.get("tagName") != tag
+        type(release.get("databaseId")) is not int
+        or release["databaseId"] <= 0
+        or release.get("tagName") != tag
         or release.get("isPrerelease") is not True
         or type(release.get("isDraft")) is not bool
         or not isinstance(release.get("assets"), list)
@@ -99,19 +115,21 @@ def publish_verified(directory, tag, commit, expected):
         if release is None or release.get("isDraft") is not True:
             raise ValueError("Created release draft could not be verified")
     missing = missing_assets(release, tag, expected)
+    release_id = release["databaseId"]
     if not release["isDraft"]:
         return
     if missing:
         require_success(gh("upload", tag, *(str(directory / name) for name in missing)))
     release = view(tag)
-    if release is None or missing_assets(release, tag, expected):
-        raise ValueError("Release draft asset verification is incomplete")
+    if release is None or release.get("databaseId") != release_id or missing_assets(release, tag, expected):
+        raise ValueError("Release draft identity or asset verification is incomplete")
     if git_tag_commit(tag) != commit:
         raise ValueError("Remote release tag changed before publication")
     if release["isDraft"]:
-        require_success(gh("edit", tag, "--draft=false"))
+        promote_draft(release_id)
     release = view(tag)
-    if release is None or release.get("isDraft") is not False or missing_assets(release, tag, expected):
+    if (release is None or release.get("databaseId") != release_id
+            or release.get("isDraft") is not False or missing_assets(release, tag, expected)):
         raise ValueError("Published prerelease could not be verified")
 
 
