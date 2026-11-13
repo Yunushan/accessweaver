@@ -23,11 +23,16 @@ function Assert-LaterGuestBoot([string]$Before,[string]$After){
 function Write-NewRebootEvidence([string]$Path,$Data){
     $encoding=[Text.UTF8Encoding]::new($false,$true)
     $bytes=$encoding.GetBytes(($Data|ConvertTo-Json -Depth 5 -Compress))
-    $file=[IO.File]::Open($Path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    if($bytes.Length -gt 8192){throw 'Installer reboot evidence exceeds the size limit'}
+    $staged=Join-Path (Split-Path -Parent $Path) ([guid]::NewGuid().ToString('N')+'.tmp')
+    $file=[IO.File]::Open($staged,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try {
-        $file.Write($bytes,0,$bytes.Length)
-        $file.Flush($true)
-    } finally {$file.Dispose()}
+        try {
+            $file.Write($bytes,0,$bytes.Length)
+            $file.Flush($true)
+        } finally {$file.Dispose()}
+        [IO.File]::Move($staged,$Path)
+    } finally {[IO.File]::Delete($staged)}
 }
 function Assert-RebootIdentity($Record,$Expected){
     if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 1 -or
@@ -37,7 +42,8 @@ function Assert-RebootIdentity($Record,$Expected){
        $Record.guestID -cne $Expected.guestID -or
        $Record.detectorSHA256 -cne $Expected.detectorSHA256 -or $Record.fixtureSHA256 -cne $Expected.fixtureSHA256 -or
        $Record.commonSHA256 -cne $Expected.commonSHA256 -or $Record.publisherVerifierSHA256 -cne $Expected.publisherVerifierSHA256 -or
-       $Record.uninstallerSHA256 -cnotmatch '\A[a-f0-9]{64}\z'){
+       $Record.uninstallerSHA256 -isnot [string] -or $Record.uninstallerSHA256 -cnotmatch '\A[a-f0-9]{64}\z' -or
+       ($Record.setupExitCode -isnot [int] -and $Record.setupExitCode -isnot [long]) -or $Record.setupExitCode -notin @(0,3010)){
         throw 'The independently approved candidate differs from the prepared reboot run'
     }
 }
@@ -65,12 +71,20 @@ function Get-GuestBoot {
     if(@($os).Count -ne 1 -or $os.LastBootUpTime -isnot [datetime]){throw 'Cannot establish the current guest boot'}
     return $os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
 }
-function Invoke-ApprovedInstaller([string]$Path,[string[]]$Arguments){
-    $result=Start-Process -FilePath $Path -ArgumentList $Arguments -WindowStyle Hidden -PassThru
+function Invoke-ApprovedInstaller([string]$Path,[string[]]$Arguments,[switch]$AllowRestartRequired){
+    $process=Start-Process -FilePath $Path -ArgumentList $Arguments -WindowStyle Hidden -PassThru
     try {
-        if(-not $result.WaitForExit(180000)){throw 'Installer exceeded the guest fixture deadline'}
-        if($result.ExitCode -ne 0){throw 'Installer did not complete successfully'}
-    } finally {$result.Dispose()}
+        if(-not $process.WaitForExit(180000)){
+            # Retain the process and its installer guard through the actual exit.
+            $process.WaitForExit()
+            throw 'Installer exceeded the guest fixture deadline'
+        }
+        $code=$process.ExitCode
+        if($code -ne 0 -and (-not $AllowRestartRequired -or $code -ne 3010)){
+            throw 'Installer did not complete successfully'
+        }
+        return $code
+    } finally {$process.Dispose()}
 }
 function Assert-InstalledDetection([bool]$Detected){
     $output=@(& $detector -Version $Version -Architecture $Architecture -PayloadSHA256 $PayloadSHA256 2>&1)
@@ -158,7 +172,7 @@ if($Phase -ceq 'Prepare'){
             $null=@(& $publisher -Artifact $setup -ArtifactSHA256 $SetupSHA256 -PublisherCertificateSHA256 $PublisherCertificateSHA256)
             if($LASTEXITCODE -ne 0){throw 'Setup publisher verification failed'}
             $stage='install'
-            Invoke-ApprovedInstaller $setup @('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/RESTARTEXITCODE=3010','/NOICONS')
+            $expected.setupExitCode=Invoke-ApprovedInstaller $setup @('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/RESTARTEXITCODE=3010','/NOICONS') -AllowRestartRequired
         } finally {$setupGuard.Dispose()}
         $stage='installed-before-reboot'
         Assert-InstalledDetection $true
@@ -185,7 +199,7 @@ $result=[ordered]@{schemaVersion=1;runID=$RunID;architecture=$Architecture;versi
     setupSHA256=$expected.setupSHA256;payloadSHA256=$expected.payloadSHA256;publisherSHA256=$expected.publisherSHA256;
     detectorSHA256=$expected.detectorSHA256;fixtureSHA256=$expected.fixtureSHA256;
     commonSHA256=$expected.commonSHA256;publisherVerifierSHA256=$expected.publisherVerifierSHA256;
-    uninstallerSHA256=$saved.uninstallerSHA256;
+    uninstallerSHA256=$saved.uninstallerSHA256;setupExitCode=$saved.setupExitCode;setupRequestedRestart=($saved.setupExitCode -eq 3010);
     guestRebootVerified=$true;installedPayloadVerifiedBeforeRestart=$true;installedPayloadVerified=$false;uninstallerIdentityVerified=$false;
     registrationRemoved=$false;passed=$false;stage='installed-after-reboot'}
 try {
@@ -197,7 +211,7 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Uninstaller publisher verification failed'}
     $result.uninstallerIdentityVerified=$true
     $result.stage='uninstall'
-    Invoke-ApprovedInstaller $uninstaller @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART')
+    [void](Invoke-ApprovedInstaller $uninstaller @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'))
     $result.stage='removal-readback'
     $deadline=[Diagnostics.Stopwatch]::StartNew()
     while((Test-Path -LiteralPath $uninstaller) -and $deadline.Elapsed.TotalSeconds -lt 20){Start-Sleep -Milliseconds 200}
