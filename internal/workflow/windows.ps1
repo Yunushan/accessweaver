@@ -1896,6 +1896,15 @@ function Test-WireSockServicesPresent([string[]]$names) {
     } catch {throw 'Vendor service removal could not be verified'}
     return $present
 }
+function Get-WireSockUninstallRegistrations([string[]]$names) {
+    foreach($base in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')){
+        if(-not (Test-Path -LiteralPath $base -ErrorAction Stop)){continue}
+        foreach($entry in Get-ChildItem -LiteralPath $base -ErrorAction Stop){
+            $record=Get-ItemProperty -LiteralPath $entry.PSPath -ErrorAction Stop
+            if($record.DisplayName -in $names){$record}
+        }
+    }
+}
 function Uninstall-WireSockProduct {
     $cli=WireSock-CLI
     $knownPaths=@(Get-WireSockCLIPaths)
@@ -1903,9 +1912,8 @@ function Uninstall-WireSockProduct {
     $names=if($legacy){@('WireSock VPN Client','WireSock VPN Client for Windows')}else{@('WireSock Secure Connect')}
     $paths=if($legacy){@($knownPaths[2])}else{@($knownPaths[0],$knownPaths[1])}
     $serviceNames=if($legacy){@('wiresock-client-service')}else{@('WireSockAppService','WireSockConnectService')}
-    $records=@();foreach($base in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')){
-        if(Test-Path -LiteralPath $base){$records+=@(Get-ChildItem -LiteralPath $base|ForEach-Object {Get-ItemProperty -LiteralPath $_.PSPath}|Where-Object {$_.DisplayName -in $names})}
-    }
+    $registrationFailure='Vendor uninstall registrations could not be verified'
+    try {$records=@(Get-WireSockUninstallRegistrations $names)}catch{throw $registrationFailure}
     if($records.Count -eq 0){throw 'No supported registered WireSock product found; use Windows Apps settings for an unrecognized package'}
     $msiexec=Join-Path $env:SystemRoot 'System32\msiexec.exe'
     $record=$records[0]
@@ -1956,14 +1964,23 @@ function Uninstall-WireSockProduct {
     $deadline=[Diagnostics.Stopwatch]::StartNew()
     do {
         $cliPresent=$false
-        foreach($path in $paths){
-            if(Test-Path -LiteralPath $path){$cliPresent=$true}
-        }
+        try {
+            foreach($path in $paths){
+                if(Test-Path -LiteralPath $path -ErrorAction Stop){$cliPresent=$true}
+            }
+        } catch {throw 'Vendor CLI removal could not be verified'}
         $servicesPresent=Test-WireSockServicesPresent $serviceNames
         $registrationPresent=$false
-        foreach($entry in $records){
-            if(Test-Path -LiteralPath $entry.PSPath){$registrationPresent=$true}
-        }
+        try {
+            foreach($entry in $records){
+                if(Test-Path -LiteralPath $entry.PSPath -ErrorAction Stop){$registrationPresent=$true}
+            }
+            # A replacement registration can use a different key. Check both
+            # views again after the originally selected registrations disappear.
+            if(-not $registrationPresent){
+                $registrationPresent=@(Get-WireSockUninstallRegistrations $names).Count -gt 0
+            }
+        } catch {throw $registrationFailure}
         if(-not ($cliPresent -or $registrationPresent -or $servicesPresent) -or $deadline.Elapsed.TotalSeconds -ge 30){break}
         Start-Sleep -Milliseconds 500
     } while($true)

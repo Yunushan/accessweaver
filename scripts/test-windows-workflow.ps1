@@ -1188,6 +1188,8 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
     $remainingCLI=$false
     $remainingService=$false
     $serviceQueryFails=$false
+    $registryReadbackMode=''
+    $uninstallState=@{started=$false}
     $ownershipRetirementFails=$false
     $ownedPath=Join-Path $root 'profiles\wiresock-owned.json'
     $fallbackCLI=Join-Path $env:ProgramFiles 'WireSock Secure Connect\bin\wiresock-client.exe'
@@ -1217,9 +1219,18 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         $record=@{PSPath=$registration;DisplayName='WireSock Secure Connect';UninstallString=('"'+$program+'" /uninstall')}
         $hiddenRecord=$null
         $entries=@(@{PSPath=$registration})
-        function Get-ChildItem {param($LiteralPath);return $entries}
+        $replacement=@{PSPath=($registration+'-new');DisplayName='WireSock Secure Connect'}
+        function Get-ChildItem {
+            param($LiteralPath,$ErrorAction)
+            if($ErrorAction -cne 'Stop'){throw 'Expected strict registry inspection'}
+            if(-not $uninstallState.started){return $entries}
+            if($registryReadbackMode -ceq 'unreadable'){throw 'Private fixture registry error'}
+            if($registryReadbackMode -ceq 'replacement' -and -not $calls.Contains('wait')){return $replacement}
+        }
         function Get-ItemProperty {
-            param($LiteralPath)
+            param($LiteralPath,$ErrorAction)
+            if($ErrorAction -cne 'Stop'){throw 'Expected strict registry property inspection'}
+            if($LiteralPath -ceq $replacement.PSPath){return $replacement}
             if($hiddenRecord -and $LiteralPath -ceq $hiddenRecord.PSPath){return $hiddenRecord}
             return $record
         }
@@ -1237,9 +1248,14 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
             param($Text)
             if($verifyRemoval -and $Text -like 'Vendor uninstall*'){$calls.Add($Text)}
         }
+        function Invoke-FixtureUninstall {
+            $uninstallState.started=$false
+            Uninstall-WireSockProduct
+        }
         function Native {
             param($Program,$Arguments,$Codes,$Timeout)
             if($Program -cne $expectedProgram -or ($Arguments -join ',') -cne $expectedArguments){throw 'Unexpected uninstall invocation'}
+            $uninstallState.started=$true
             $calls.Add('uninstall')
             $script:rebootRequired=$requestRestart
         }
@@ -1247,20 +1263,20 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         $expectedArguments="/uninstall,/quiet,/norestart"
         $fixtureSignature=$unknownSigner
         $fixtureDigest=$x64Pin
-        $result=Uninstall-WireSockProduct
+        $result=Invoke-FixtureUninstall
         Assert ($result.product -ceq 'WireSock Secure Connect' -and ($calls -join ',') -ceq 'task,profile,uninstall') 'WireSock uninstall accepts a signed cached copy of its exact native installer'
         $fixtureDigest=$armPin
         $refused=$false
-        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
         $wrongPinRefused=$refused
         $fixtureDigest=$x64Pin;$fixtureSignature=$invalidSigner
         $refused=$false
-        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
         Assert ($wrongPinRefused -and $refused -and ($calls -join ',') -ceq 'task,profile,uninstall') 'WireSock uninstall refuses a different native pin or invalid signature before cleanup'
         $calls.Clear()
         $entries+=@(@{PSPath=$registration+'-second'})
         $refused=$false
-        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -like 'Multiple registered WireSock products matched*'}
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -like 'Multiple registered WireSock products matched*'}
         Assert ($refused -and $calls.Count -eq 0) 'WireSock uninstall refuses ambiguous registrations before cleanup'
         $entries=@(@{PSPath=$registration})
         $productCode='{b7678321-14b3-4439-a4ef-789452416058}'
@@ -1278,21 +1294,21 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         $record.BundleCachePath=$program+'-other.exe'
         $fixtureSignature=$unknownSigner
         $refused=$false
-        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered vendor uninstaller is outside protected installation storage'}
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered vendor uninstaller is outside protected installation storage'}
         $cacheMismatchRefused=$refused
         $record.BundleCachePath=$program
         $hiddenRecord.UninstallString='MsiExec.exe /I'+$otherCode
         $refused=$false
-        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
         Assert ($cacheMismatchRefused -and $refused -and $calls.Count -eq 0) 'WireSock paired uninstall refuses mismatched cache or MSI identity before cleanup'
         $hiddenRecord.UninstallString=$null
         $hiddenRecord.PSChildName='not-a-product-code'
         $refused=$false
-        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
         Assert ($refused -and $calls.Count -eq 0) 'WireSock paired uninstall requires a valid hidden MSI product key without a command'
         $hiddenRecord.PSChildName=$productCode
         $verifyRemoval=$true
-        $result=Uninstall-WireSockProduct
+        $result=Invoke-FixtureUninstall
         Assert (-not $result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,check-hidden-registration,check-registration,wait,check-hidden-registration,check-registration,retire-ownership,Vendor uninstall completed: WireSock Secure Connect') 'WireSock paired uninstall runs the bundle and waits for the hidden MSI'
         Assert $true 'WireSock paired uninstall accepts a hidden MSI without an uninstall command'
         $verifyRemoval=$false
@@ -1304,7 +1320,7 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         $expectedProgram=Join-Path $env:SystemRoot 'System32\msiexec.exe'
         $expectedArguments='/x,'+$productCode+',/qn,/norestart'
         $record.UninstallString='MsiExec.exe /I'+$productCode
-        $result=Uninstall-WireSockProduct
+        $result=Invoke-FixtureUninstall
         Assert ($result.product -ceq 'WireSock Secure Connect' -and ($calls -join ',') -ceq 'task,profile,uninstall') 'WireSock MSI uninstall targets its registered product code'
         $calls.Clear()
         foreach($command in @(
@@ -1315,13 +1331,13 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         )){
             $record.UninstallString=$command
             $refused=$false
-            try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
+            try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
             if(-not $refused){throw 'Unexpected MSI uninstall preflight outcome'}
         }
         Assert ($calls.Count -eq 0) 'WireSock MSI uninstall refuses mismatched or compound commands before cleanup'
         $record.UninstallString='MsiExec.exe /I'+$productCode
         $verifyRemoval=$true
-        $result=Uninstall-WireSockProduct
+        $result=Invoke-FixtureUninstall
         Assert (-not $result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,check-registration,wait,check-registration,retire-ownership,Vendor uninstall completed: WireSock Secure Connect') 'WireSock uninstall waits for the registered package to disappear'
         $calls.Clear()
         $verifyRemoval=$false
@@ -1329,7 +1345,7 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
             $calls.Clear()
             $remainingCLI=$mode -ceq 'cli'
             $remainingService=$mode -ceq 'service'
-            $result=Uninstall-WireSockProduct
+            $result=Invoke-FixtureUninstall
             if($result.rebootRequired -or ($calls -join ',') -cne 'task,profile,uninstall,wait'){
                 throw 'Vendor uninstall did not wait for the remaining resource'
             }
@@ -1337,22 +1353,32 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         Assert $true 'WireSock uninstall waits for remaining vendor services and secondary CLI paths'
         $remainingCLI=$false
         $remainingService=$false
+        $registryReadbackMode='replacement'
+        $calls.Clear()
+        $result=Invoke-FixtureUninstall
+        Assert (-not $result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,wait') 'WireSock uninstall waits for a replacement vendor registration'
+        $registryReadbackMode='unreadable'
+        $calls.Clear()
+        $refused=$false
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstall registrations could not be verified'}
+        Assert ($refused -and -not $calls.Contains('retire-ownership')) 'WireSock uninstall refuses completion when registry readback fails'
+        $registryReadbackMode=''
         $serviceQueryFails=$true
         $calls.Clear()
         $refused=$false
-        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor service removal could not be verified'}
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor service removal could not be verified'}
         Assert ($refused -and -not $calls.Contains('retire-ownership')) 'WireSock uninstall refuses completion when service removal cannot be verified'
         $serviceQueryFails=$false
         $verifyRemoval=$true
         $ownershipRetirementFails=$true
         $calls.Clear()
         $refused=$false
-        try {Uninstall-WireSockProduct | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstall completed but the managed ownership record could not be retired'}
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstall completed but the managed ownership record could not be retired'}
         Assert ($refused -and -not $calls.Contains('Vendor uninstall completed: WireSock Secure Connect')) 'WireSock uninstall reports an ownership record that could not be retired'
         $ownershipRetirementFails=$false
         $calls.Clear()
         $requestRestart=$true
-        $result=Uninstall-WireSockProduct
+        $result=Invoke-FixtureUninstall
         Assert ($result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,Vendor uninstall requires a Windows restart: WireSock Secure Connect') 'WireSock uninstall reports restart without claiming verified removal'
     } finally {
         $env:ProgramData=$previousProgramData
