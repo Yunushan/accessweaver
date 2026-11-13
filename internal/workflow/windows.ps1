@@ -722,7 +722,7 @@ function Test-InstallerPublisher([string]$publisher,$signature,[string]$verified
         default {return $false}
     }
 }
-function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signed,[string]$Publisher='') {
+function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signed,[string]$Publisher='',[switch]$ReturnVerifiedHash) {
     if($Signed -and $Publisher -notin @('discord','microsoft','wiresock')){throw 'A signed installer requires an expected publisher category'}
     $hash=Approved-DownloadHash $url $hash
     Allowed-Download $url
@@ -731,6 +731,7 @@ function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signe
     $temp=Join-Path $root ('downloads\'+[guid]::NewGuid().ToString('N')+$extension)
     $budget=New-ComponentDownloadBudget
     $owned=$false
+    $lockedSource=$null
     try {
         if($script:repairProxyReady){
             Save-ComponentDownloadAttempt $url $temp $budget -Curl -Proxy
@@ -746,10 +747,14 @@ function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signe
         $owned=$true
         [void](Get-ComponentDownloadRemaining $budget)
         $verifiedSHA256=''
-        if($hash){
+        if($ReturnVerifiedHash){
+            No-Reparse $temp
+            $lockedSource=[IO.File]::Open($temp,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+            $verifiedSHA256=(Get-FileHash -InputStream $lockedSource -Algorithm SHA256).Hash.ToLowerInvariant()
+        }elseif($hash){
             $verifiedSHA256=(Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash.ToLowerInvariant()
-            if($verifiedSHA256 -ne $hash){throw 'Downloaded component SHA-256 mismatch'}
         }
+        if($hash -and $verifiedSHA256 -ne $hash){throw 'Downloaded component SHA-256 mismatch'}
         if($Signed){
             $signature=Get-AuthenticodeSignature -LiteralPath $temp
             if(-not (Test-InstallerPublisher $Publisher $signature $verifiedSHA256 $inputData.nativeArchitecture)){throw 'Installer publisher signature could not be verified'}
@@ -757,9 +762,11 @@ function Download([string]$url,[string]$hash,[string]$destination,[switch]$Signe
         [void](Get-ComponentDownloadRemaining $budget)
         Copy-Checked $temp $destination
     }finally {
+        if($lockedSource){$lockedSource.Dispose()}
         if($owned){try {[IO.File]::Delete($temp)}catch {Throw-ComponentDownloadFailure 'cleanup'}}
     }
     Event ('Verified download: '+[IO.Path]::GetFileName($destination))
+    if($ReturnVerifiedHash){return $verifiedSHA256}
 }
 function Assert-ComponentZipBudget([IO.Stream]$stream) {
     # Bound central-directory parsing before ZipArchive materializes its entries.
@@ -2018,7 +2025,7 @@ function Install-App([string]$variant) {
     if($variant -eq 'splitcord'){
         $installer=Get-SplitCordInstaller
         $file=Join-Path $root 'downloads\splitcord-setup.exe'
-        Download $installer.url $installer.hash $file
+        $verifiedHash=Download $installer.url $installer.hash $file -ReturnVerifiedHash
     }else {
         $architecture=[string]$inputData.nativeArchitecture
         if($architecture -cnotin @('amd64','arm64')){throw 'Native Windows architecture is unavailable or unsupported for Discord installation'}
@@ -2026,12 +2033,19 @@ function Install-App([string]$variant) {
         $installerArch=if($channel -eq 'stable' -and $architecture -eq 'arm64'){'arm64'}else{'x64'}
         $url='https://discord.com/api/downloads/distributions/app/installers/latest?channel='+$channel+'&platform=win&arch='+$installerArch
         $file=Join-Path $root ('downloads\'+$variant+'-setup.exe')
-        Download $url '' $file -Signed -Publisher discord
+        $verifiedHash=Download $url '' $file -Signed -Publisher discord -ReturnVerifiedHash
     }
-    # Verify the replacement installer before removing the existing client.
-    if($r.clean -and $variant -eq 'discord-ptb' -and (Find-App 'discord')){Remove-App 'discord'}
-    $installerArgs=if($variant -eq 'splitcord'){@('/S')}else{@('-s')}
-    [void](Native $file $installerArgs -Timeout 900)
+    # Hold the staged file read-only through clean mode and installer execution.
+    No-Reparse $file
+    try {$lockedInstaller=[IO.File]::Open($file,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)}
+    catch {throw 'Staged application installer could not be opened for verification'}
+    try {
+        $stagedHash=(Get-FileHash -InputStream $lockedInstaller -Algorithm SHA256).Hash
+        if($verifiedHash -isnot [string] -or $stagedHash -ine $verifiedHash){throw 'Staged application installer differs from the verified download'}
+        if($r.clean -and $variant -eq 'discord-ptb' -and (Find-App 'discord')){Remove-App 'discord'}
+        $installerArgs=if($variant -eq 'splitcord'){@('/S')}else{@('-s')}
+        [void](Native $file $installerArgs -Timeout 900)
+    } finally {$lockedInstaller.Dispose()}
     Wait-App $variant $true 180
     Event ('Application installed: '+$variant)
 }

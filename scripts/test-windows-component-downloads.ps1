@@ -11,7 +11,7 @@ $downloadTokens=$null;$downloadParseErrors=$null
 $downloadAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $downloadProject 'internal\workflow\windows.ps1'),[ref]$downloadTokens,[ref]$downloadParseErrors)
 if($downloadParseErrors.Count){throw 'Component download source did not parse'}
 Write-Output 'STAGE-SOURCE-PARSE-PASS'
-$downloadNames=@('Throw-ComponentDownloadFailure','New-ComponentDownloadBudget','Get-ComponentDownloadRemaining','Wait-ComponentDownloadTask','Write-ComponentDownloadChunk','Receive-ComponentDownloadStream','Assert-ComponentDownloadLength','Test-ComponentDownloadTerminal','Save-ComponentDownloadAttempt','Invoke-ComponentDownloadDotNet','Set-ComponentDownloadHeaders','Invoke-ComponentDownloadCurl','New-ComponentDownloadCurlStart','New-ComponentDownloadCurlProcess','Wait-ComponentDownloadProcessExit','Native-Argument','Quote-Arg','Require-DownloadPermission','Approved-DownloadHash','Allowed-Download','Read-RemoteJSON','Resolve-ComponentDownloadRedirect','New-ComponentDownloadRequest','Invoke-ComponentDownloadCurlOnce','Test-InstallerPublisher','Download')
+$downloadNames=@('Throw-ComponentDownloadFailure','New-ComponentDownloadBudget','Get-ComponentDownloadRemaining','Wait-ComponentDownloadTask','Write-ComponentDownloadChunk','Receive-ComponentDownloadStream','Assert-ComponentDownloadLength','Test-ComponentDownloadTerminal','Save-ComponentDownloadAttempt','Invoke-ComponentDownloadDotNet','Set-ComponentDownloadHeaders','Invoke-ComponentDownloadCurl','New-ComponentDownloadCurlStart','New-ComponentDownloadCurlProcess','Wait-ComponentDownloadProcessExit','Native-Argument','Quote-Arg','Require-DownloadPermission','Approved-DownloadHash','Allowed-Download','Read-RemoteJSON','Resolve-ComponentDownloadRedirect','New-ComponentDownloadRequest','Invoke-ComponentDownloadCurlOnce','Test-InstallerPublisher','Download','No-Reparse')
 $downloadDefinitionIndex=0
 foreach($downloadName in $downloadNames){
     $downloadNodes=@($downloadAst.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $downloadName})
@@ -273,6 +273,7 @@ try{
     foreach($downloadCase in @(
         @{mode='success';accept=$true;signed=$false;proxy=$false;calls='dotnet';promotions=1},
         @{mode='success';accept=$true;signed=$true;proxy=$false;calls='dotnet';promotions=1},
+        @{mode='success';accept=$true;signed=$true;returnHash=$true;proxy=$false;calls='dotnet';promotions=1},
         @{mode='fallback';accept=$true;signed=$false;proxy=$false;calls='dotnet,curl';promotions=1},
         @{mode='success';accept=$true;signed=$false;proxy=$true;calls='curl';promotions=1},
         @{mode='overflow';accept=$false;signed=$false;proxy=$false;calls='dotnet';promotions=0},
@@ -293,8 +294,20 @@ try{
         $downloadExpectedHash=Get-DownloadFixtureHash (New-DownloadFixtureBytes 32)
         if($downloadCase.mode -eq 'hash-mismatch'){$downloadExpectedHash='a'*64}
         try{
-            $downloadAction={if($downloadCase.signed){$fixturePublisher=if($downloadCase.mode -eq 'publisher-other-category'){'discord'}else{'microsoft'};Download 'https://github.com/hufrea/byedpi/releases/download/fixture/component.zip' $downloadExpectedHash $downloadDestination -Signed -Publisher $fixturePublisher}else{Download 'https://github.com/hufrea/byedpi/releases/download/fixture/component.zip' $downloadExpectedHash $downloadDestination}}
-            if($downloadCase.accept){& $downloadAction}else{$null=Reject-DownloadFixture $downloadAction}
+            $downloadAction={
+                $url='https://github.com/hufrea/byedpi/releases/download/fixture/component.zip'
+                if($downloadCase.signed){
+                    $fixturePublisher=if($downloadCase.mode -eq 'publisher-other-category'){'discord'}else{'microsoft'}
+                    $pin=if($downloadCase.returnHash){''}else{$downloadExpectedHash}
+                    Download $url $pin $downloadDestination -Signed -Publisher $fixturePublisher -ReturnVerifiedHash:([bool]$downloadCase.returnHash)
+                }else{Download $url $downloadExpectedHash $downloadDestination}
+            }
+            if($downloadCase.accept){
+                $observedHash=& $downloadAction
+                if($downloadCase.returnHash){
+                    Assert-DownloadFixture ($observedHash -ceq $downloadExpectedHash) 'Signed download did not return the verified source digest'
+                }else{Assert-DownloadFixture ($null -eq $observedHash) 'Ordinary download emitted an unexpected return value'}
+            }else{$null=Reject-DownloadFixture $downloadAction}
             Assert-DownloadFixture (($script:downloadFixtureState.Calls -join ',') -ceq $downloadCase.calls) 'Download attempted an unexpected transport or retry'
             Assert-DownloadFixture ($script:downloadFixtureState.Budgets -eq 1 -and $script:downloadFixtureState.Approvals -eq 1 -and $script:downloadFixtureState.Allowed -eq 1) 'Download repeated policy admission or reset its deadline'
             Assert-DownloadFixture ($script:downloadFixtureState.Promotions -eq $downloadCase.promotions) 'Unverified or incomplete download reached promotion'

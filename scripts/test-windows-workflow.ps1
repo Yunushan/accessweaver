@@ -1212,18 +1212,45 @@ try {
 $appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Remove-App','Download','Native','Wait-App','Event')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
 $previousAppRequest=$r
 $previousAppInput=$inputData
+$previousAppRoot=$root
 try {
+    $root=Join-Path $testRoot 'app-install-fixture'
+    [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
+    $script:appInstallerChanged=$false
     function Require-DesktopUser {}
     function Find-App {param($variant);$script:appInstallTrace.Add('find-stable');return 'C:\fixture\Discord.exe'}
-    function Remove-App {param($variant);$script:appInstallTrace.Add('remove-stable');if($script:appRemoveFailure){throw 'fixture remove failure'}}
+    function Remove-App {
+        param($variant)
+        $script:appInstallTrace.Add('remove-stable')
+        $script:appInstallerLocked=$false
+        try {
+            $writer=[IO.File]::OpenWrite($script:appInstallerDestination)
+            $writer.Dispose()
+        }catch [IO.IOException]{$script:appInstallerLocked=$true}
+        if($script:appRemoveFailure){throw 'fixture remove failure'}
+    }
     function Download {
-        param($Url,$Hash,$Destination,[switch]$Signed,[string]$Publisher)
+        param($Url,$Hash,$Destination,[switch]$Signed,[string]$Publisher,[switch]$ReturnVerifiedHash)
         $script:appInstallTrace.Add('download:'+ $Publisher)
         $script:appDownloadURL=$Url
-        if(-not $Signed){throw 'Expected signed Discord download'}
+        if(-not $Signed -or -not $ReturnVerifiedHash){throw 'Expected signed Discord download with verified hash'}
         if($script:appDownloadFailure){throw 'fixture download failure'}
+        $script:appInstallerDestination=$Destination
+        [IO.File]::WriteAllText($Destination,'inert installer')
+        $digest=(Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
+        if($script:appInstallerChanged){[IO.File]::AppendAllText($Destination,' changed')}
+        return $digest
     }
-    function Native {param($Program,$Arguments,$Timeout);$script:appInstallTrace.Add('installer');return @{exitCode=0;outputComplete=$true}}
+    function Native {
+        param($Program,$Arguments,$Timeout)
+        $script:appInstallTrace.Add('installer')
+        $script:appInstallerLockedAtLaunch=$false
+        try {
+            $writer=[IO.File]::OpenWrite($Program)
+            $writer.Dispose()
+        }catch [IO.IOException]{$script:appInstallerLockedAtLaunch=$true}
+        return @{exitCode=0;outputComplete=$true}
+    }
     function Wait-App {param($variant,$installed,$seconds);$script:appInstallTrace.Add('verify-ptb')}
     function Event {param($text);$script:appInstallTrace.Add('event')}
     $r=[pscustomobject]@{clean=$true;sha256=''}
@@ -1234,6 +1261,15 @@ try {
     $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$false;$script:appRemoveFailure=$false
     Install-App 'discord-ptb'
     Assert (($script:appInstallTrace -join ',') -ceq 'download:discord,find-stable,remove-stable,installer,verify-ptb,event') 'PTB clean stages the replacement before removing the existing client'
+    $writer=[IO.File]::OpenWrite($script:appInstallerDestination)
+    $writer.Dispose()
+    Assert ($script:appInstallerLocked -and $script:appInstallerLockedAtLaunch) 'PTB clean retains a read-only installer handle through removal and launch'
+    $script:appInstallTrace.Clear()
+    $script:appInstallerChanged=$true
+    $rejected=$false
+    try {Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Staged application installer differs from the verified download'}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'download:discord') 'PTB clean refuses a changed staged installer before removing the existing client'
+    $script:appInstallerChanged=$false
     $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$false;$script:appRemoveFailure=$true
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$true}
     Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download:discord,find-stable,remove-stable')) 'PTB clean removal failure prevents installer execution'
@@ -1263,6 +1299,7 @@ try {
     foreach($name in $appInstallSaved.Keys){Set-Item ('Function:'+ $name) $appInstallSaved[$name]}
     $r=$previousAppRequest
     $inputData=$previousAppInput
+    $root=$previousAppRoot
 }
 # Exercise official release selection with fixed metadata and no vendor execution.
 & {
