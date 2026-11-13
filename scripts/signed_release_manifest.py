@@ -338,16 +338,58 @@ def managed_update(files, target, current_version, candidate_version):
     }
 
 
+def verify_staged_update(path, size, approved_digest):
+    def identity(info):
+        return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_nlink
+
+    before = path.lstat()
+    require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_size == size
+            and not getattr(before, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT,
+            "Expected a bounded ordinary staged installer")
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    with os.fdopen(os.open(path, flags), "rb") as stream:
+        opened = os.fstat(stream.fileno())
+        require(stat.S_ISREG(opened.st_mode) and identity(opened) == identity(before),
+                "Staged installer changed before verification")
+        result = hashlib.sha256()
+        remaining = size
+        while remaining:
+            block = stream.read(min(remaining, 1 << 20))
+            require(block, "Staged installer changed during verification")
+            result.update(block)
+            remaining -= len(block)
+        require(not stream.read(1) and identity(os.fstat(stream.fileno())) == identity(before)
+                and identity(path.lstat()) == identity(before),
+                "Staged installer changed during verification")
+        require(result.hexdigest() == approved_digest, "Staged installer differs from the approved digest")
+
+
 def stage_managed_update(root, directory, update):
     name = update["installer"]
+    source_path = root / name
+    destination = directory / name
+    size = source_path.stat().st_size
+    approved_digest = update["installerSHA256"]
+    try:
+        verify_staged_update(destination, size, approved_digest)
+    except FileNotFoundError:
+        pass
+    else:
+        return
+
     with tempfile.TemporaryDirectory(prefix=".accessweaver-update-", dir=directory) as temporary:
         staged = Path(temporary) / name
-        with (root / name).open("rb") as source, staged.open("xb") as output:
+        with source_path.open("rb") as source, staged.open("xb") as output:
             shutil.copyfileobj(source, output, length=1 << 20)
             output.flush()
             os.fsync(output.fileno())
-        require(digest(staged) == update["installerSHA256"], "Staged installer differs from the approved digest")
-        os.link(staged, directory / name)
+        verify_staged_update(staged, size, approved_digest)
+        try:
+            os.link(staged, destination)
+        except FileExistsError:
+            # Another publisher won the name. Verify its file after cleanup.
+            pass
+    verify_staged_update(destination, size, approved_digest)
 
 
 def verify(directory, certificate, certificate_sha256, commit, ref, openssl="openssl",

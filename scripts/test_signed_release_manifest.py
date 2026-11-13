@@ -339,12 +339,49 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.assertEqual(list(staging.iterdir()), [staged_file])
         input_file.write_bytes(original_installer)
 
-        staged_file.write_bytes(b"existing assignment")
-        with self.assertRaises(FileExistsError):
+        before = staged_file.stat()
+        retry = self.verify(approved, pin, **update)["managedUpdate"]
+        self.assertTrue(retry["installerStaged"])
+        self.assertEqual(staged_file.stat().st_ino, before.st_ino)
+        self.assertEqual(staged_file.stat().st_mtime_ns, before.st_mtime_ns)
+        revoked_pin = self.write_policy({**self.policy, "subjectSHA256": [retry["installerSHA256"]]})
+        with self.assertRaisesRegex(ValueError, "is revoked"):
+            self.verify(approved, pin, policy_pin=revoked_pin, **update)
+        self.assertEqual(staged_file.read_bytes(), original_installer)
+        self.write_policy(self.policy)
+
+        conflicting = b"x" * len(original_installer)
+        staged_file.write_bytes(conflicting)
+        with self.assertRaisesRegex(ValueError, "differs from the approved digest"):
             self.verify(approved, pin, **update)
-        self.assertEqual(staged_file.read_bytes(), b"existing assignment")
+        self.assertEqual(staged_file.read_bytes(), conflicting)
         self.assertEqual(list(staging.iterdir()), [staged_file])
         staged_file.unlink()
+
+        os_link = release.os.link
+        alias = self.root / "existing-assignment"
+        alias.write_bytes(original_installer)
+        os_link(alias, staged_file)
+        with self.assertRaisesRegex(ValueError, "bounded ordinary staged installer"):
+            self.verify(approved, pin, **update)
+        self.assertEqual(alias.read_bytes(), original_installer)
+        staged_file.unlink()
+
+        for competing_bytes in (original_installer, conflicting):
+            def publish_concurrently(source, destination):
+                destination.write_bytes(competing_bytes)
+                os_link(source, destination)
+
+            with self.subTest(matching=competing_bytes == original_installer), \
+                    patch.object(release.os, "link", side_effect=publish_concurrently):
+                if competing_bytes == original_installer:
+                    self.assertTrue(self.verify(approved, pin, **update)["managedUpdate"]["installerStaged"])
+                else:
+                    with self.assertRaisesRegex(ValueError, "differs from the approved digest"):
+                        self.verify(approved, pin, **update)
+            self.assertEqual(staged_file.read_bytes(), competing_bytes)
+            self.assertEqual(list(staging.iterdir()), [staged_file])
+            staged_file.unlink()
 
         macos = self.verify(approved, pin, **{**update, "target": "darwin/amd64"})["managedUpdate"]
         macos_file = staging / macos["installer"]
@@ -357,7 +394,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
             output.write(b"corrupted copy")
 
         with patch.object(release.shutil, "copyfileobj", side_effect=corrupt_copy):
-            with self.assertRaisesRegex(ValueError, "Staged installer differs"):
+            with self.assertRaisesRegex(ValueError, "bounded ordinary staged installer"):
                 self.verify(approved, pin, **update)
         self.assertEqual(list(staging.iterdir()), [])
         self.assertEqual(report["sbomArtifactBindingsVerified"], 6)
