@@ -109,6 +109,15 @@ function AWCompareDestination(const Left: String; LeftLength: Integer;
   const Right: String; RightLength, IgnoreCase: Integer): Integer;
   external 'CompareStringOrdinal@kernel32.dll stdcall';
 
+function AWIsInstallationDirectory(const Destination, Registered: String): Boolean;
+var Target, Location: String;
+begin
+  Target := RemoveBackslashUnlessRoot(Destination);
+  Location := RemoveBackslashUnlessRoot(Registered);
+  Result := (Target <> '') and (Location <> '') and
+    (AWCompareDestination(Target, Length(Target), Location, Length(Location), 1) = 2);
+end;
+
 function AWPendingSetupPreflight(const Destination: String): String;
 var Version, Directory: String; Ordering: Integer;
 begin
@@ -118,7 +127,7 @@ begin
     Result := 'The AccessWeaver pending installation version is invalid.'
   else if Ordering < 0 then
     Result := 'An AccessWeaver installation is incomplete. Retry with the same or a newer approved installer.'
-  else if (Destination <> '') and (AWCompareDestination(Destination, Length(Destination), Directory, Length(Directory), 1) <> 2) then
+  else if (Destination <> '') and not AWIsInstallationDirectory(Destination, Directory) then
     Result := 'Retry the approved installer in the original AccessWeaver installation directory.';
 end;
 
@@ -154,7 +163,7 @@ end;
 
 function AWRegistrationPreflight(const Destination: String): String;
 var Found64, Found32, ReadLocation: Boolean;
-    Version64, Version32, Location64, Location32, Installed, Location, Target: String;
+    Version64, Version32, Location64, Location32, Installed, Location: String;
     Ordering: Integer;
 begin
   ReadLocation := Destination <> '';
@@ -177,12 +186,20 @@ begin
   if Ordering < 0 then begin
     Result := 'A newer AccessWeaver version is installed. Use a current or newer installer. This installer will not downgrade it.'; Exit;
   end;
-  if ReadLocation then begin
-    Location := RemoveBackslashUnlessRoot(Location);
-    Target := RemoveBackslashUnlessRoot(Destination);
-    if AWCompareDestination(Target, Length(Target), Location, Length(Location), 1) <> 2 then
-      Result := 'Upgrade or reinstall AccessWeaver in its registered installation directory.';
-  end;
+  if ReadLocation and not AWIsInstallationDirectory(Destination, Location) then
+    Result := 'Upgrade or reinstall AccessWeaver in its registered installation directory.';
+end;
+
+function AWUninstallDirectoryPreflight(const Destination: String): String;
+var Found64, Found32: Boolean;
+    Version, Location, OtherVersion, OtherLocation: String;
+begin
+  Result := AWReadRegistration($0100, True, Found64, Version, Location);
+  if Result <> '' then Exit;
+  Result := AWReadRegistration($0200, False, Found32, OtherVersion, OtherLocation);
+  if Result <> '' then Exit;
+  if not Found64 or Found32 or not AWIsInstallationDirectory(Destination, Location) then
+    Result := 'This uninstaller does not match the active AccessWeaver installation directory. Use the registered uninstaller.';
 end;
 
 function InitializeSetup: Boolean;
@@ -258,6 +275,7 @@ begin
     if (Failure = '') and (PendingVersion <> '') then
       Failure := 'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.';
   end;
+  if Failure = '' then Failure := AWUninstallDirectoryPreflight(ExpandConstant('{app}'));
   if Failure <> '' then begin
     AWReleaseLifecycle;
     Log(Failure);

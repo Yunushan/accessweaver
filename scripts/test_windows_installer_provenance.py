@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+from verify_windows_installer_provenance import validate_uninstall_registration_refusal
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
 COMMIT='a'*40
@@ -120,6 +121,24 @@ class PendingMarkerAccessTests(unittest.TestCase):
             validate_pending_marker_access({**observation, "nativeQueryStatus": 2})
         with self.assertRaises(ValueError):
             validate_pending_marker_access({**observation, "nativeUninstallExitCode": True})
+
+
+class UninstallRegistrationRefusalTests(unittest.TestCase):
+    def test_requires_verified_refusal_before_restoration(self):
+        observation = {
+            "operation": "refused-uninstall-registration", "exitCode": 1, "elapsedMilliseconds": 28,
+            "deadlineMilliseconds": 180000, "preflightRefusalLogged": True,
+            "restorationStateAbsent": True, "installedFileTreePreserved": True,
+            "completeRegistrationPreserved": True, "profilePreserved": True, "machineStateUnchanged": True,
+        }
+        self.assertEqual(validate_uninstall_registration_refusal(observation),
+                         {"uninstallRegistrationRefusalVerified": True})
+        for field in observation:
+            with self.subTest(missing=field), self.assertRaises(ValueError):
+                validate_uninstall_registration_refusal({key: value for key, value in observation.items() if key != field})
+        for field, value in (("exitCode", True), ("restorationStateAbsent", False), ("elapsedMilliseconds", 180000)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_uninstall_registration_refusal({**observation, field: value})
 
 
 class FixedRestorationTests(unittest.TestCase):
