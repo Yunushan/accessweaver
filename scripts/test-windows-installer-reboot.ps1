@@ -35,17 +35,18 @@ function Write-NewRebootEvidence([string]$Path,$Data){
     } finally {[IO.File]::Delete($staged)}
 }
 function Assert-RebootIdentity($Record,$Expected){
-    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 2 -or
+    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 3 -or
        $Record.runID -cne $Expected.runID -or $Record.architecture -cne $Expected.architecture -or
        $Record.version -cne $Expected.version -or $Record.setupSHA256 -cne $Expected.setupSHA256 -or
        $Record.payloadSHA256 -cne $Expected.payloadSHA256 -or $Record.publisherSHA256 -cne $Expected.publisherSHA256 -or
-       $Record.guestID -cne $Expected.guestID -or
+       $Record.guestID -cne $Expected.guestID -or $Record.userSID -cne $Expected.userSID -or
        $Record.detectorSHA256 -cne $Expected.detectorSHA256 -or $Record.fixtureSHA256 -cne $Expected.fixtureSHA256 -or
        $Record.commonSHA256 -cne $Expected.commonSHA256 -or $Record.publisherVerifierSHA256 -cne $Expected.publisherVerifierSHA256 -or
        $Record.uninstallerSHA256 -isnot [string] -or $Record.uninstallerSHA256 -cnotmatch '\A[a-f0-9]{64}\z' -or
        ($Record.setupExitCode -isnot [int] -and $Record.setupExitCode -isnot [long]) -or $Record.setupExitCode -notin @(0,3010) -or
        $Record.installedTreeSHA256 -isnot [string] -or $Record.installedTreeSHA256 -cnotmatch '\A[a-f0-9]{64}\z' -or
-       $Record.registrationSHA256 -isnot [string] -or $Record.registrationSHA256 -cnotmatch '\A[a-f0-9]{64}\z'){
+       $Record.registrationSHA256 -isnot [string] -or $Record.registrationSHA256 -cnotmatch '\A[a-f0-9]{64}\z' -or
+       $Record.userProfileSHA256 -isnot [string] -or $Record.userProfileSHA256 -cnotmatch '\A[a-f0-9]{64}\z'){
         throw 'The independently approved candidate differs from the prepared reboot run'
     }
 }
@@ -158,6 +159,20 @@ function Invoke-ApprovedInstaller([string]$Path,[string[]]$Arguments,[switch]$Al
         return $code
     } finally {$process.Dispose()}
 }
+function Save-RebootFixtureProfile([string]$Controller,[string]$UserStore,[string]$InputPath,[string]$ProfileID){
+    $profile=[ordered]@{version=1;id=$ProfileID;name='Installer reboot preservation fixture';engine='byedpi';args=@()
+        routing=@{includeDomains=@();excludeDomains=@();applications=@()}
+        probe=@{host='example.invalid';port=443;tls=$true;timeoutSeconds=5}}
+    Write-NewRebootEvidence $InputPath $profile
+    $previousHome=$env:ACCESSWEAVER_HOME
+    try {
+        $env:ACCESSWEAVER_HOME=$UserStore
+        [void](Invoke-ApprovedInstaller $Controller @('import',('"'+$InputPath+'"')))
+    } finally {$env:ACCESSWEAVER_HOME=$previousHome}
+}
+function Assert-RebootUserProfile([string]$Path,[string]$Digest){
+    if((Get-RebootDigest $Path) -cne $Digest){throw 'Saved user profile changed during installer lifecycle'}
+}
 function Assert-InstalledDetection([bool]$Detected){
     $output=@(& $detector -Version $Version -Architecture $Architecture -PayloadSHA256 $PayloadSHA256 2>&1)
     if($LASTEXITCODE -ne 0){throw 'Installed candidate detection could not complete'}
@@ -186,10 +201,17 @@ if($env:OS -cne 'Windows_NT' -or $Architecture -cnotin @('amd64','arm64') -or
 }
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
 try {
-    if(-not ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){
+    if($identity.IsSystem -or -not ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){
         throw 'An elevated disposable guest token is required'
     }
+    $userSID=$identity.User.Value
 } finally {$identity.Dispose()}
+$userAppData=[Environment]::GetFolderPath('ApplicationData')
+if(-not [IO.Path]::IsPathRooted($userAppData)){throw 'Expected a local disposable guest user profile'}
+Assert-RebootPath $userAppData
+$userStore=Join-Path $userAppData 'AccessWeaver'
+$profileID='installer-reboot-'+$RunID
+$userProfile=Join-Path $userStore ('profiles\'+$profileID+'.json')
 $programFiles=[Environment]::GetFolderPath('ProgramFiles')
 $tools=Join-Path $programFiles 'VMware\VMware Tools\vmtoolsd.exe'
 Assert-RebootPath $tools
@@ -217,9 +239,9 @@ $registrationKey='SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{B13D4677-
 $capsule=Join-Path $programFiles ('AccessWeaver reboot fixture '+$RunID)
 $baseline=Join-Path $capsule 'prepared.json'
 $report=Join-Path $capsule 'result.json'
-$expected=[ordered]@{schemaVersion=2;runID=$RunID;architecture=$Architecture;version=$Version;
+$expected=[ordered]@{schemaVersion=3;runID=$RunID;architecture=$Architecture;version=$Version;
     setupSHA256=$SetupSHA256.ToLowerInvariant();payloadSHA256=$PayloadSHA256.ToLowerInvariant();guestID=$guestUUID.ToString('D');
-    publisherSHA256=$PublisherCertificateSHA256.ToLowerInvariant();
+    publisherSHA256=$PublisherCertificateSHA256.ToLowerInvariant();userSID=$userSID;
     detectorSHA256=(Get-RebootDigest $detector);fixtureSHA256=(Get-RebootDigest $PSCommandPath);
     commonSHA256=(Get-RebootDigest $common);publisherVerifierSHA256=(Get-RebootDigest $publisher)}
 $boot=Get-GuestBoot
@@ -227,7 +249,7 @@ $boot=Get-GuestBoot
 if($Phase -ceq 'Prepare'){
     Assert-RegistrationAbsent
     $managed=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'AccessWeaver'
-    if((Test-Path -LiteralPath $capsule) -or (Test-Path -LiteralPath $install) -or
+    if((Test-Path -LiteralPath $capsule) -or (Test-Path -LiteralPath $install) -or (Test-Path -LiteralPath $userStore) -or
        (Test-Path -LiteralPath $managed) -or (Test-Path -LiteralPath 'HKLM:\SOFTWARE\Policies\AccessWeaver') -or
        @(Get-Service -Name 'AccessWeaver-*' -ErrorAction SilentlyContinue).Count){
         throw 'The reboot fixture requires an unused guest and run identifier'
@@ -254,9 +276,12 @@ if($Phase -ceq 'Prepare'){
         if($LASTEXITCODE -ne 0){throw 'Installed uninstaller publisher verification failed'}
         $expected.installedTreeSHA256=Get-RebootInstalledTreeDigest $install
         $expected.registrationSHA256=Get-RebootRegistrationDigest
+        $stage='user-profile-prepare'
+        Save-RebootFixtureProfile (Join-Path $install 'accessweaver.exe') $userStore (Join-Path $capsule 'profile-input.json') $profileID
+        $expected.userProfileSHA256=Get-RebootDigest $userProfile
         Write-NewRebootEvidence $baseline $expected
     } catch {
-        Write-NewRebootEvidence $report @{schemaVersion=2;runID=$RunID;stage=$stage;passed=$false}
+        Write-NewRebootEvidence $report @{schemaVersion=3;runID=$RunID;stage=$stage;passed=$false}
         throw 'Windows installer reboot preparation failed. Retain the disposable guest for review.'
     }
     Write-Output 'Prepared the approved installation. Reboot the disposable guest before verification.'
@@ -268,13 +293,14 @@ if((Get-Item -LiteralPath $baseline).Length -gt 8192 -or (Test-Path -LiteralPath
 $saved=Get-Content -LiteralPath $baseline -Raw|ConvertFrom-Json
 Assert-RebootIdentity $saved $expected
 Assert-LaterGuestBoot $saved.boot $boot
-Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=2;runID=$RunID}
-$result=[ordered]@{schemaVersion=2;runID=$RunID;architecture=$Architecture;version=$Version;
+Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=3;runID=$RunID}
+$result=[ordered]@{schemaVersion=3;runID=$RunID;architecture=$Architecture;version=$Version;
     setupSHA256=$expected.setupSHA256;payloadSHA256=$expected.payloadSHA256;publisherSHA256=$expected.publisherSHA256;
     detectorSHA256=$expected.detectorSHA256;fixtureSHA256=$expected.fixtureSHA256;
     commonSHA256=$expected.commonSHA256;publisherVerifierSHA256=$expected.publisherVerifierSHA256;
     uninstallerSHA256=$saved.uninstallerSHA256;installedTreeSHA256=$saved.installedTreeSHA256;registrationSHA256=$saved.registrationSHA256;
-    installedTreeVerified=$false;registrationPreserved=$false;packageFilesRemoved=$false;setupExitCode=$saved.setupExitCode;setupRequestedRestart=($saved.setupExitCode -eq 3010);
+    installedTreeVerified=$false;registrationPreserved=$false;packageFilesRemoved=$false;
+    userProfileVerifiedAfterReboot=$false;userProfilePreservedAfterUninstall=$false;setupExitCode=$saved.setupExitCode;setupRequestedRestart=($saved.setupExitCode -eq 3010);
     guestRebootVerified=$true;installedPayloadVerifiedBeforeRestart=$true;installedPayloadVerified=$false;uninstallerIdentityVerified=$false;
     registrationRemoved=$false;passed=$false;stage='installed-after-reboot'}
 try {
@@ -284,6 +310,9 @@ try {
     Assert-RebootInstalledState $saved (Get-RebootInstalledTreeDigest $install) (Get-RebootRegistrationDigest)
     $result.installedTreeVerified=$true
     $result.registrationPreserved=$true
+    $result.stage='user-profile-after-reboot'
+    Assert-RebootUserProfile $userProfile $saved.userProfileSHA256
+    $result.userProfileVerifiedAfterReboot=$true
     $result.stage='uninstaller-identity'
     if((Get-RebootDigest $uninstaller) -cne $saved.uninstallerSHA256){throw 'Installed uninstaller changed after preparation'}
     $null=@(& $publisher -Artifact $uninstaller -ArtifactSHA256 $saved.uninstallerSHA256 -PublisherCertificateSHA256 $PublisherCertificateSHA256)
@@ -299,6 +328,9 @@ try {
     $result.registrationRemoved=$true
     Assert-RebootPackageRemoved $install
     $result.packageFilesRemoved=$true
+    $result.stage='user-profile-after-uninstall'
+    Assert-RebootUserProfile $userProfile $saved.userProfileSHA256
+    $result.userProfilePreservedAfterUninstall=$true
     $result.passed=$true
     $result.stage='complete'
 } catch {

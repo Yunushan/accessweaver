@@ -4,7 +4,7 @@ $source=Join-Path $PSScriptRoot 'test-windows-installer-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Reboot fixture failed parsing'}
-foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Write-NewRebootEvidence','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Assert-RebootInstalledState','Assert-RebootPackageRemoved')){
+foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Write-NewRebootEvidence','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootInstalledState','Assert-RebootPackageRemoved')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -22,8 +22,8 @@ Assert-Refused {Assert-LaterGuestBoot '639303000000000001' '639303000000000000'}
 Assert-Refused {Assert-LaterGuestBoot 'missing' '639303000000000000'}
 $pin='a'*64
 $expected=@{
-    schemaVersion=2;runID=('b'*32);architecture='amd64';version='1.0.0';
-    setupSHA256=$pin;payloadSHA256=$pin;publisherSHA256=$pin;guestID='10000000-2000-3000-4000-000000000005';
+    schemaVersion=3;runID=('b'*32);architecture='amd64';version='1.0.0';
+    setupSHA256=$pin;payloadSHA256=$pin;publisherSHA256=$pin;userSID='synthetic-user';guestID='10000000-2000-3000-4000-000000000005';
     detectorSHA256=$pin;fixtureSHA256=$pin;commonSHA256=$pin;publisherVerifierSHA256=$pin
 }
 $saved=$expected.Clone()
@@ -31,6 +31,7 @@ $saved.uninstallerSHA256=$pin
 $saved.setupExitCode=0
 $saved.installedTreeSHA256=('b'*64)
 $saved.registrationSHA256=('c'*64)
+$saved.userProfileSHA256=('d'*64)
 Assert-RebootIdentity $saved $expected
 foreach($key in $saved.Keys){
     $changed=$saved.Clone()
@@ -168,4 +169,43 @@ foreach($test in @(
         throw 'Installer fixture accepted an invalid exit or abandoned the owned process'
     }
 }
-Write-Output 'Installer reboot identity, installed tree, registration, process ownership and atomic publication checks passed.'
+$installer=(Get-Command Invoke-ApprovedInstaller).ScriptBlock
+function Invoke-ApprovedInstaller {
+    param($Path,$Arguments)
+    if($Path -cne 'fixture-controller.exe' -or $Arguments.Count -ne 2 -or $Arguments[0] -cne 'import' -or
+        $Arguments[1] -cne ('"'+$profileInput+'"') -or $env:ACCESSWEAVER_HOME -cne $fixtureStore){
+        throw 'Profile import escaped its intended controller or user store'
+    }
+    $record=[IO.File]::ReadAllText($profileInput) | ConvertFrom-Json
+    if($record.id -cne 'installer-reboot-synthetic' -or $record.version -ne 1 -or $record.engine -cne 'byedpi'){
+        throw 'Expected fixed synthetic profile'
+    }
+    if($script:failImport){throw 'Synthetic import failed'}
+    return 0
+}
+[void][IO.Directory]::CreateDirectory($root)
+$fixtureStore=Join-Path $root 'user-store'
+$profileInput=Join-Path $root 'profile-input.json'
+$oldHome=$env:ACCESSWEAVER_HOME
+try {
+    $script:failImport=$false
+    Save-RebootFixtureProfile 'fixture-controller.exe' $fixtureStore $profileInput 'installer-reboot-synthetic'
+    if($env:ACCESSWEAVER_HOME -cne $oldHome){throw 'Profile import retained its temporary environment'}
+    [IO.File]::Delete($profileInput)
+    $script:failImport=$true
+    Assert-Refused {Save-RebootFixtureProfile 'fixture-controller.exe' $fixtureStore $profileInput 'installer-reboot-synthetic'}
+    if($env:ACCESSWEAVER_HOME -cne $oldHome){throw 'Failed profile import retained its temporary environment'}
+    $notice=$profileInput
+    $digest=Get-RebootDigest $profileInput
+    Assert-RebootUserProfile $profileInput $digest
+    [IO.File]::WriteAllText($profileInput,'changed profile')
+    Assert-Refused {Assert-RebootUserProfile $profileInput $digest}
+    [IO.File]::Delete($profileInput)
+    Assert-Refused {Assert-RebootUserProfile $profileInput $digest}
+} finally {
+    $env:ACCESSWEAVER_HOME=$oldHome
+    Set-Item Function:Invoke-ApprovedInstaller $installer
+    [IO.File]::Delete($profileInput)
+    [IO.Directory]::Delete($root)
+}
+Write-Output 'Installer reboot identity, package, registration, saved profile, process ownership and publication checks passed.'
