@@ -1088,9 +1088,16 @@ function Make-Config {
         $config=Get-Content -LiteralPath (Join-Path $wgdir 'wgcf-profile.conf') -Raw
     }
     if($config -match '(?im)^\s*(PreUp|PostUp|PreDown|PostDown)\s*='){throw 'Tunnel command hooks are not accepted'}
-    if($config -notmatch '(?im)^\s*\[Peer\]' -or $config -notmatch '(?im)^\s*PrivateKey\s*='){throw 'Invalid WireGuard configuration'}
-    $config=[regex]::Replace($config,'(?im)^\s*(AllowedApps|DisallowedApps)\s*=.*\r?\n?','')
-    $config=$config.TrimEnd()+"`r`nAllowedApps = "+((Application-Names) -join ', ')+"`r`n"
+    $peerHeader='(?i)^[ \t]*\[Peer\][ \t]*(?:[#;][^\r\n]*)?(?:\r?\n|$)'
+    $sections=[regex]::Split($config,'(?m)(?=^[ \t]*\[[^\]\r\n]+\])')
+    if(-not ($sections -match $peerHeader) -or $config -notmatch '(?im)^\s*PrivateKey\s*='){throw 'Invalid WireGuard configuration'}
+    $selection='AllowedApps = '+((Application-Names) -join ', ')
+    $config=($sections | ForEach-Object {
+        # WireSock parses application rules in each peer, including #@ws: directives.
+        $section=[regex]::Replace($_,'(?im)^[ \t]*(?:#@ws:[ \t]*)?(?:AllowedApps|DisallowedApps)[ \t]*=[^\r\n]*(?:\r?\n|$)','')
+        if($section -match $peerHeader){$section=$section.TrimEnd()+"`r`n"+$selection+"`r`n"}
+        $section
+    }) -join ''
     Write-Atomic $output $config
     Event ('Private tunnel configuration generated: '+$id)
     return $output

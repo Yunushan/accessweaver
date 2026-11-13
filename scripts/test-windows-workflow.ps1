@@ -1045,6 +1045,32 @@ $r=[pscustomobject]@{profileId='test-profile';configPath=$source;applications=@(
 $config=Make-Config;$text=Get-Content -LiteralPath $config -Raw
 Assert ($text -match 'custom.exe' -and $text -notmatch 'old.exe') 'WireSock application policy replaces original selection in a private generated copy'
 Assert ((Get-Content -LiteralPath $source -Raw) -match 'old.exe') 'Original WireGuard config remains unchanged'
+$multiPeer=@"
+[Interface]
+PrivateKey = fixture-only
+
+[Peer]
+PublicKey = fixture-first
+AllowedIPs = 192.0.2.0/24
+#@ws:AllowedApps = old-prefixed.exe
+#@ws: DisallowedApps = custom.exe
+#@ws:DisallowedIPs = 192.0.2.1/32
+
+[Peer]
+PublicKey = fixture-second
+AllowedIPs = 2001:db8::/32
+DisallowedApps = old-direct.exe
+# An ordinary comment about AllowedApps stays
+"@
+[IO.File]::WriteAllText($source,$multiPeer+"`n")
+$text=Get-Content -LiteralPath (Make-Config) -Raw
+$peerSections=@([regex]::Split($text,'(?m)(?=^\[Peer\])') | Where-Object {$_ -match '^\[Peer\]'})
+$badPeers=@($peerSections | Where-Object {
+    [regex]::Matches($_,'(?m)^AllowedApps[ \t]*=').Count -ne 1 -or $_ -notmatch '(?m)^AllowedApps = [^\r\n]*\bcustom\.exe\b'
+})
+$staleRule='(?im)^[ \t]*(?:DisallowedApps|#@ws:[ \t]*(?:AllowedApps|DisallowedApps))[ \t]*='
+Assert ($peerSections.Count -eq 2 -and $badPeers.Count -eq 0 -and $text -notmatch $staleRule -and $text -notmatch 'old-prefixed\.exe|old-direct\.exe') 'WireSock replaces plain and prefixed application rules in every peer'
+Assert ($text.Contains('#@ws:DisallowedIPs = 192.0.2.1/32') -and $text.Contains('# An ordinary comment about AllowedApps stays') -and [IO.File]::ReadAllText($source) -ceq ($multiPeer+"`n")) 'WireSock retains other peer rules and the original configuration'
 [IO.File]::AppendAllText($source,"PostUp = arbitrary-command`n")
 $rejected=$false;try{Make-Config|Out-Null}catch{$rejected=$true}
 Assert $rejected 'WireGuard command hooks rejected'
