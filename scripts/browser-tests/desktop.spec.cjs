@@ -584,7 +584,9 @@ test('optional workflow metadata cannot stop polling or replace reviewed inputs'
  await page.locator('#system-action').selectOption('recover');
  await page.locator('#system-form details > summary').click();await expect(page.locator('#system-journal')).toBeVisible();await page.locator('#system-journal').fill('reviewed.json');
  await page.locator('#system-action').selectOption('config');await page.locator('#system-applications').fill('C:\\existing');
- const errors=[];page.on('pageerror',error=>errors.push(error.message));let choices=0,reports=0,journal='chosen.json';
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));let choices=0,reports=0,applicationFailure=false;
+ const chosen='workflow-'+'a'.repeat(32)+'.json',replacement='workflow-'+'b'.repeat(32)+'.json';
+ let journal=chosen;
  await page.route('**/api/v1/system/folder',async route=>{
   expect(route.request().method()).toBe('POST');choices++;
   // Controlled UI response: never open the host's native folder dialog.
@@ -594,21 +596,31 @@ test('optional workflow metadata cannot stop polling or replace reviewed inputs'
   expect(route.request().method()).toBe('GET');const response=await route.fetch();const info=await response.json();reports++;
   const state=choices===1?(reports===1?'running':'failed'):'succeeded';
   const result=choices===1?{journal:{legacy:'RAW_OPTIONAL_METADATA'},data:{folder:'C:\\failed-choice'}}:{journal:'C:\\journals\\'+journal,data:{folder:'C:\\selected'}};
-  await route.fulfill({response,json:{...info,job:{id:'chooser-'+choices,action:'choose-folder',state,result}}});
+  const job=applicationFailure?{id:'application-fixture',action:'app-reinstall',state:'failed',
+   result:{journal:'application.json',externalEffectsPending:true}}:{id:'chooser-'+choices,action:'choose-folder',state,result};
+  await route.fulfill({response,json:{...info,job}});
  });
  await page.locator('#system-folder').click();await expect(page.locator('#system-cancel')).toBeEnabled();
  await expect(page.locator('#system-output')).toContainText('RAW_OPTIONAL_METADATA');
  await expect(page.locator('#system-cancel')).toBeDisabled();await expect(page.locator('#system-output')).toContainText('failed');
  expect(reports).toBe(2);expect(choices).toBe(1);await expect(page.locator('#system-applications')).toHaveValue('C:\\existing');await expect(page.locator('#system-journal')).toHaveValue('reviewed.json');
  await page.locator('#system-folder').click();await expect(page.locator('#system-applications')).toHaveValue('C:\\existing\nC:\\selected');
- await expect(page.locator('#system-journal')).toHaveValue('chosen.json');await expect(page.locator('#system-cancel')).toBeDisabled();
+ await expect(page.locator('#system-journal')).toHaveValue(chosen);await expect(page.locator('#system-cancel')).toBeDisabled();
  expect(choices).toBe(2);expect(reports).toBe(3);
  // Review a controlled recovery request without invoking any native worker.
  await page.route('**/api/v1/system/preview',async route=>{await route.fulfill({json:{id:'reviewed-recovery',ready:true,request:route.request().postDataJSON(),steps:[],issues:[],warnings:[]}})});
  await page.locator('#system-action').selectOption('recover');await page.locator('#system-form button[type="submit"]').click();
  await expect(page.locator('#system-consent')).toBeEnabled();await page.locator('#system-consent').check();await expect(page.locator('#system-apply')).toBeEnabled();
- journal='replacement.json';await page.locator('.nav-item[data-view="dashboard"]').click();await page.locator('.nav-item[data-view="system"]').click();
- await expect(page.locator('#system-journal')).toHaveValue('replacement.json');await expect(page.locator('#system-consent')).not.toBeChecked();await expect(page.locator('#system-apply')).toBeDisabled();expect(errors).toEqual([]);
+ applicationFailure=true;
+ await page.locator('.nav-item[data-view="dashboard"]').click();await page.locator('.nav-item[data-view="system"]').click();
+ await expect(page.locator('#system-application-recovery')).toBeVisible();
+ await expect(page.locator('#system-output')).toHaveAttribute('aria-describedby','system-application-recovery');
+ await expect(page.locator('#system-journal')).toHaveValue(chosen);
+ await expect(page.locator('#system-consent')).toBeChecked();
+ applicationFailure=false;journal=replacement;
+ await page.locator('.nav-item[data-view="dashboard"]').click();await page.locator('.nav-item[data-view="system"]').click();
+ await expect(page.locator('#system-application-recovery')).toBeHidden();
+ await expect(page.locator('#system-journal')).toHaveValue(replacement);await expect(page.locator('#system-consent')).not.toBeChecked();await expect(page.locator('#system-apply')).toBeDisabled();expect(errors).toEqual([]);
 });
 
 // Only static application assets and synthetic API replies are used here. The

@@ -90,6 +90,13 @@ async function applySystem(){
 function renderSystemJob(job){
  if(!job?.id)return;
  notifySystemUpdate(job);showSystemOutput(job);$('system-cancel').disabled=job.state!=='running';
+ const application=['app-install','app-reinstall','app-remove','app-start','app-repair'].includes(job.action);
+ if(application&&job.state==='failed'&&job.result?.externalEffectsPending===true){
+  const notice=$('system-application-recovery'),output=$('system-output');
+  notice.hidden=false;
+  const description=output.getAttribute('aria-describedby');
+  output.setAttribute('aria-describedby',description?notice.id+' '+description:notice.id);
+ }
  // Optional worker metadata may have any JSON shape. Keep the raw report, but
  // only use typed fields to change the request being reviewed.
  if(job.id===systemUI.folderJob&&job.state!=='running'){
@@ -101,9 +108,9 @@ function renderSystemJob(job){
   }
  }
  const journal=job.result?.journal;
- if(typeof journal==='string'&&journal){
+ if(!application&&typeof journal==='string'){
   const name=journal.split(/[\\/]/).pop();
-  if(name.trim()&&name!==$('system-journal').value){
+  if(/^workflow-[a-fA-F0-9]{32}\.json(?![\s\S])/.test(name)&&name!==$('system-journal').value){
    $('system-journal').value=name;
    if($('system-action').value==='recover')invalidateSystemPlan();
   }

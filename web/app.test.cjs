@@ -520,8 +520,39 @@ test('optional workflow metadata cannot interrupt job rendering',()=>{
   assert.equal(env.get('system-journal').value,'reviewed.json');assert.equal(env.get('system-cancel').disabled,true);
   assert.match(env.get('system-output').textContent,/RAW_RESULT_RETAINED/);assert.deepEqual(plain(env.run('jobFixture')),job);
  }
- const env=environment();env.run(systemSource);env.put('jobFixture',{id:'recovery',action:'install',state:'failed',result:{journal:'C:\\private\\journals\\change.json'}});
- env.run('renderSystemJob(jobFixture)');assert.equal(env.get('system-journal').value,'change.json');
+ const env=environment();env.run(systemSource);const protectedName='workflow-'+'a'.repeat(32)+'.json';
+ env.put('jobFixture',{id:'recovery',action:'install',state:'failed',result:{journal:'C:\\private\\journals\\'+protectedName}});
+ env.run('renderSystemJob(jobFixture)');assert.equal(env.get('system-journal').value,protectedName);
+});
+
+test('application failure exposes vendor uncertainty and preserves the protected recovery selection',()=>{
+ const env=environment();env.run(systemSource);
+ const journal=env.get('system-journal'),notice=env.get('system-application-recovery'),output=env.get('system-output');
+ const protectedName='workflow-'+'a'.repeat(32)+'.json';
+ journal.value=protectedName;
+ env.get('system-action').value='recover';env.get('system-consent').checked=true;
+ env.run('systemUI.plan={id:"reviewed",ready:true}');
+ const render=(action,state,result)=>{env.put('jobFixture',{id:'job',action,state,result});env.run('renderSystemJob(jobFixture)');};
+ render('app-reinstall','failed',{journal:'C:\\private\\application.json',externalEffectsPending:true,payload:'x'.repeat(10000)});
+ assert.equal(notice.hidden,false);
+ assert.equal(output.getAttribute('aria-describedby'),'system-application-recovery system-output-limited');
+ assert.equal(journal.value,protectedName);
+ assert.equal(env.run('systemUI.plan.id'),'reviewed');
+ assert.equal(env.get('system-consent').checked,true);
+ for(const [action,state,flag] of [['app-install','failed','true'],['app-remove','succeeded',true],['app-start','running',true],['install','failed',true]]){
+  render(action,state,{journal:'application.json',externalEffectsPending:flag});
+  assert.equal(notice.hidden,true);assert.equal(output.getAttribute('aria-describedby'),null);assert.equal(journal.value,protectedName);
+ }
+ render('app-remove','failed',{journal:'workflow-'+'b'.repeat(32)+'.json',externalEffectsPending:true});
+ assert.equal(notice.hidden,false);assert.equal(journal.value,protectedName);
+ render('install','failed',{journal:'workflow-'+'b'.repeat(32)+'.json\n'});
+ assert.equal(notice.hidden,true);assert.equal(journal.value,protectedName);
+ const messages=['en','tr','ru','es'].map(lang=>{
+  env.put('fixtureLanguage',lang);env.run('state.lang=fixtureLanguage');
+  return env.run('t("applicationRecoveryNotice")');
+ });
+ assert.equal(new Set(messages).size,4);
+ assert.ok(messages.every(message=>message!=='applicationRecoveryNotice'));
 });
 
 test('only a successful owned folder choice can change the application list',()=>{
@@ -569,11 +600,13 @@ test('workflow polling survives untyped optional metadata until the terminal rep
 
 
 test('journal hints invalidate a changed recovery review and preserve an unchanged one',()=>{
- const env=environment();env.run(systemSource);env.get('system-action').value='recover';env.get('system-journal').value='reviewed.json';env.get('system-consent').checked=true;env.get('system-apply').disabled=false;
- env.run('systemUI.plan={id:"reviewed",ready:true}');env.put('jobFixture',{id:'completed',action:'install',state:'failed',result:{journal:'C:\\journals\\reviewed.json'}});
+ const env=environment();env.run(systemSource);
+ const reviewed='workflow-'+'a'.repeat(32)+'.json',replacement='workflow-'+'b'.repeat(32)+'.json';
+ env.get('system-action').value='recover';env.get('system-journal').value=reviewed;env.get('system-consent').checked=true;env.get('system-apply').disabled=false;
+ env.run('systemUI.plan={id:"reviewed",ready:true}');env.put('jobFixture',{id:'completed',action:'install',state:'failed',result:{journal:'C:\\journals\\'+reviewed}});
  env.run('renderSystemJob(jobFixture)');assert.equal(env.run('systemUI.plan.id'),'reviewed');assert.equal(env.get('system-consent').checked,true);
- env.put('jobFixture',{id:'completed',action:'install',state:'failed',result:{journal:'C:\\journals\\replacement.json'}});env.run('renderSystemJob(jobFixture)');
- assert.equal(env.get('system-journal').value,'replacement.json');assert.equal(env.run('systemUI.plan'),null);assert.equal(env.get('system-consent').checked,false);assert.equal(env.get('system-apply').disabled,true);
+ env.put('jobFixture',{id:'completed',action:'install',state:'failed',result:{journal:'C:\\journals\\'+replacement}});env.run('renderSystemJob(jobFixture)');
+ assert.equal(env.get('system-journal').value,replacement);assert.equal(env.run('systemUI.plan'),null);assert.equal(env.get('system-consent').checked,false);assert.equal(env.get('system-apply').disabled,true);
 });
 
 
