@@ -2051,6 +2051,45 @@ $backup=$script:undo[0].backup
     Assert ($errors.Count -eq 1 -and [IO.File]::ReadAllText($file) -ceq 'independently edited during staging' -and
         [IO.File]::Exists($backup) -and @(Get-ChildItem -LiteralPath $root -Filter '.accessweaver-restore-*.tmp').Count -eq 0) 'Recovery preserves an independent edit made while restoration is staged'
 }
+& {
+    $configuration=Join-Path $root 'generated-configuration.txt'
+    $savedJournal=$script:journalPath
+    $script:journalPath=Join-Path $root 'configuration-journal.json'
+    $replaceConfiguration=(Get-Command Replace-StagedWorkflowFile).ScriptBlock
+    function Replace-StagedWorkflowFile([string]$Staged,[string]$Target){
+        if($Target -ine $configuration -or -not $interruptConfiguration -or $publishConfiguration){
+            & $replaceConfiguration $Staged $Target
+        }
+        if($Target -ieq $configuration -and $interruptConfiguration){throw 'Inert interruption at configuration replacement'}
+    }
+    try {
+        foreach($publishConfiguration in @($false,$true)){
+            $script:undo.Clear()
+            [IO.File]::WriteAllText($configuration,'original')
+            $interruptConfiguration=$false
+            Write-Atomic $configuration 'first revision'
+            $firstDigest=Get-WorkflowFileHash $configuration
+            $interruptConfiguration=$true
+            $rejected=$false
+            try{Write-Atomic $configuration 'second revision'}catch{
+                if($_.Exception.Message -cne 'Inert interruption at configuration replacement'){throw}
+                $rejected=$true
+            }
+            $saved=Read-WorkflowRecoveryJournal $script:journalPath
+            $record=$saved.undo[0]
+            $expectedText=if($publishConfiguration){'second revision'}else{'first revision'}
+            $expectedPending=Get-WorkflowBytesSHA256 ([Text.Encoding]::UTF8.GetBytes('second revision'))
+            Assert ($rejected -and $record.expectedHash -ceq $firstDigest -and $record.pendingHash -ceq $expectedPending -and
+                [IO.File]::ReadAllText($configuration) -ceq $expectedText) ('Configuration journal survives an interrupted rewrite with publish '+$publishConfiguration)
+            $script:undo.Clear()
+            $script:undo.Add($record)
+            $interruptConfiguration=$false
+            $errors=@(Rollback)
+            if($errors.Count){throw ('Configuration rollback failed: '+($errors -join ', '))}
+            Assert ([IO.File]::ReadAllText($configuration) -ceq 'original') ('Configuration rollback restores the original after an interrupted rewrite with publish '+$publishConfiguration)
+        }
+    } finally {$script:journalPath=$savedJournal;$script:undo.Clear()}
+}
 $script:undo.Clear()
 $source=Join-Path $root 'source.conf';[IO.File]::WriteAllText($source,"[Interface]`nPrivateKey = fixture-only`n[Peer]`nPublicKey = fixture-only`nEndpoint = example.invalid:2408`nAllowedApps = old.exe`n")
 [void](New-Item -ItemType Directory -Force -Path (Join-Path $root 'profiles'))
@@ -2149,14 +2188,14 @@ try {
         $script:undo.Clear()
         $rejected=$false
         try{Expand-Safe $publicationArchive $publicationRoot}catch{
-            if($_.Exception.Message -cne 'Component archive files changed before replacement'){throw}
+            if($_.Exception.Message -cne 'Workflow files changed before replacement'){throw}
             $rejected=$true
         }
         Assert ($rejected -and [IO.File]::ReadAllText($publicationTarget) -ceq 'external edit') ('Archive publication preserves an edit after journal save with original present '+$startsPresent)
     }
     $injectExternalEdit=$false
-    $replacePublication=(Get-Command Replace-ComponentArchiveFile).ScriptBlock
-    function Replace-ComponentArchiveFile([string]$Staged,[string]$Target){
+    $replacePublication=(Get-Command Replace-StagedWorkflowFile).ScriptBlock
+    function Replace-StagedWorkflowFile([string]$Staged,[string]$Target){
         if(-not $interruptPublication -or $replaceBeforeInterrupt){& $replacePublication $Staged $Target}
         if($interruptPublication){throw 'Inert interruption at archive replacement'}
     }
@@ -2179,6 +2218,7 @@ try {
         $serialized=ConvertTo-Json -InputObject $record -Compress
         $script:undo.Clear()
         $script:undo.Add((ConvertFrom-Json -InputObject $serialized))
+        $interruptPublication=$false
         Assert (@(Rollback).Count -eq 0 -and [IO.File]::ReadAllText($publicationTarget) -ceq 'original') ('Archived recovery record restores the original after interrupted replacement with publish '+$replaceBeforeInterrupt)
     }
     $script:undo.Clear()
@@ -2190,10 +2230,10 @@ try {
     [void][IO.Directory]::CreateDirectory($replacementRoot)
     $target=Join-Path $replacementRoot 'target.txt'
     $staged=Join-Path $replacementRoot 'staged.txt'
-    $replace=(Get-Command Replace-ComponentArchiveFile).ScriptBlock
+    $replace=(Get-Command Replace-StagedWorkflowFile).ScriptBlock
     $attempts=[Collections.Generic.List[int]]::new()
     $delays=[Collections.Generic.List[int]]::new()
-    function Replace-ComponentArchiveFile([string]$Staged,[string]$Target) {
+    function Replace-StagedWorkflowFile([string]$Staged,[string]$Target) {
         $attempts.Add($attempts.Count+1)
         if($attempts.Count -le $case.failures){throw [IO.IOException]::new('Inert replacement failure',[int]$case.hresult)}
         & $replace $Staged $Target
@@ -2216,8 +2256,8 @@ try {
         $expected=(Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash
         $attempts.Clear();$delays.Clear();$passed=$false
         $original=Get-WorkflowFileHash $target
-        try{Publish-ComponentArchiveFile $staged $target $expected $original;$passed=$true}catch{
-            if($case.change -and $_.Exception.Message -cne 'Component archive files changed before replacement'){throw}
+        try{Publish-StagedWorkflowFile $staged $target $expected $original;$passed=$true}catch{
+            if($case.change -and $_.Exception.Message -cne 'Workflow files changed before replacement'){throw}
             if(-not $case.change -and $_.Exception.HResult -ne $case.hresult){throw}
         }
         $expectedTarget=if($case.success){'replacement'}elseif($case.change -eq 'target'){'changed'}else{'original'}

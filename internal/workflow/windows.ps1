@@ -331,7 +331,7 @@ function Backup-File([string]$path) {
     return $entry
 }
 function Expected-Hash([string]$path,[string]$hash){$entry=$script:undo|Where-Object {$_.kind -eq 'file' -and $_.path -eq $path}|Select-Object -First 1;$entry.expectedHash=$hash;Save-Journal}
-function Publish-WorkflowFile([string]$path,[byte[]]$bytes) {
+function Publish-WorkflowFile([string]$path,[byte[]]$bytes,[switch]$Recorded) {
     No-Reparse $path
     $parent=Split-Path -Parent $path
     $staged=Join-Path $parent ([guid]::NewGuid().ToString('N')+'.tmp')
@@ -341,7 +341,9 @@ function Publish-WorkflowFile([string]$path,[byte[]]$bytes) {
             $stream.Write($bytes,0,$bytes.Length)
             $stream.Flush($true)
         } finally {$stream.Dispose()}
-        if(Test-Path -LiteralPath $path -ErrorAction Stop){
+        if($Recorded){
+            Publish-RecordedWorkflowFile $staged $path (Get-WorkflowBytesSHA256 $bytes)
+        }elseif(Test-Path -LiteralPath $path -ErrorAction Stop){
             [IO.File]::Replace($staged,$path,[NullString]::Value)
         }else{
             [IO.File]::Move($staged,$path)
@@ -351,12 +353,9 @@ function Publish-WorkflowFile([string]$path,[byte[]]$bytes) {
     }
 }
 function Write-Atomic([string]$path,[string]$text) {
-    [void](Backup-File $path)
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes($text)
-    $hash=Get-WorkflowBytesSHA256 $bytes
-    Expected-Hash $path $hash
     [void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path))
-    Publish-WorkflowFile $path $bytes
+    Publish-WorkflowFile $path $bytes -Recorded
 }
 function Get-WorkflowBytesSHA256([byte[]]$bytes) {
     $sha256=[Security.Cryptography.SHA256]::Create()
@@ -1056,23 +1055,23 @@ function Component-ArchivePlan($zip,[string]$destination) {
     }
     return $plan.ToArray()
 }
-function Replace-ComponentArchiveFile([string]$staged,[string]$target) {
+function Replace-StagedWorkflowFile([string]$staged,[string]$target) {
     [IO.File]::Replace($staged,$target,[NullString]::Value)
 }
-function Publish-ComponentArchiveFile([string]$staged,[string]$target,[string]$expectedHash,[string]$beforeHash) {
+function Publish-StagedWorkflowFile([string]$staged,[string]$target,[string]$expectedHash,[string]$beforeHash) {
     foreach($delay in @(50,100,200,0)){
         $stagedHash=Get-WorkflowFileHash $staged
         $targetHash=Get-WorkflowFileHash $target
         if(-not $targetHash){$targetHash=''}
         if($stagedHash -ine $expectedHash -or $targetHash -ine $beforeHash){
-            throw 'Component archive files changed before replacement'
+            throw 'Workflow files changed before replacement'
         }
         if(-not $beforeHash){
             [IO.File]::Move($staged,$target)
             return
         }
         try {
-            Replace-ComponentArchiveFile $staged $target
+            Replace-StagedWorkflowFile $staged $target
             return
         }catch {
             $cause=$_.Exception
@@ -1084,6 +1083,18 @@ function Publish-ComponentArchiveFile([string]$staged,[string]$target,[string]$e
         }
         Start-Sleep -Milliseconds $delay
     }
+}
+function Publish-RecordedWorkflowFile([string]$staged,[string]$target,[string]$hash) {
+    $record=Backup-File $target
+    $beforeHash=if($record.expectedHash){$record.expectedHash}else{$record.originalHash}
+    # Either journaled digest can be present after an interruption.
+    $record.pendingHash=$hash
+    Save-Journal
+    Publish-StagedWorkflowFile $staged $target $hash $beforeHash
+    if((Get-WorkflowFileHash $target) -ine $hash){throw 'Workflow file publication could not be verified'}
+    $record.expectedHash=$hash
+    $record.Remove('pendingHash')
+    Save-Journal
 }
 function Expand-Safe([string]$archive,[string]$destination) {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -1110,16 +1121,7 @@ function Expand-Safe([string]$archive,[string]$destination) {
                 if($written -ne $item.entry.Length){throw 'Component archive stream is incomplete'}
                 [void]$hasher.TransformFinalBlock([byte[]]::new(0),0,0);$hash=[BitConverter]::ToString($hasher.Hash).Replace('-','')
                 $output.Flush($true);$output.Dispose();$output=$null
-                $record=Backup-File $item.target
-                $beforeHash=if($record.expectedHash){$record.expectedHash}else{$record.originalHash}
-                # Either journaled digest can be present after an interruption.
-                $record.pendingHash=$hash
-                Save-Journal
-                Publish-ComponentArchiveFile $temporary $item.target $hash $beforeHash
-                if((Get-WorkflowFileHash $item.target) -ine $hash){throw 'Component archive publication could not be verified'}
-                $record.expectedHash=$hash
-                $record.Remove('pendingHash')
-                Save-Journal
+                Publish-RecordedWorkflowFile $temporary $item.target $hash
             } finally {
                 if($hasher){$hasher.Dispose()};if($output){$output.Dispose()};if($source){$source.Dispose()}
                 if($ownsTemporary -and (Test-Path -LiteralPath $temporary)){No-Reparse $temporary;Remove-Item -LiteralPath $temporary -Force}
@@ -3322,11 +3324,7 @@ function Restore-RecordedWorkflowFile($item) {
     try {
         Copy-WorkflowFileToNewPath $item.backup $staged $item.originalHash
         $ownsStage=$true
-        if((Get-WorkflowFileHash $path) -ine $currentHash){
-            throw ('File changed outside this operation; review before restoring: '+$path)
-        }
-        if($currentHash){[IO.File]::Replace($staged,$path,[NullString]::Value)}
-        else{[IO.File]::Move($staged,$path)}
+        Publish-StagedWorkflowFile $staged $path $item.originalHash $currentHash
         $ownsStage=$false
         if((Get-WorkflowFileHash $path) -ine $item.originalHash){throw 'Recovery could not verify the restored original file'}
     } finally {
