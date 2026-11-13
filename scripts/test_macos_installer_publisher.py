@@ -98,16 +98,28 @@ class PublisherTests(unittest.TestCase):
                     scripts = expanded / "Scripts"
                     scripts.mkdir(parents=True)
                     helper = scripts / "postinstall"
-                    helper.write_bytes(helper_bytes if mode != "wrong-architecture" else image("amd64"))
+                    detector = helper_bytes if mode != "wrong-architecture" else image("amd64")
+                    helper.write_bytes(detector)
+                    (scripts / "preinstall").write_bytes(detector if mode != "phase-mismatch" else b"unexpected")
+                    core = expanded / "Payload" / publisher.BUNDLE_NAME / "Contents" / "MacOS" / "accessweaver"
+                    core.parent.mkdir(parents=True)
+                    core.write_bytes(image("amd64" if mode == "wrong-app-architecture" else "arm64"))
                     if mode == "hardlink":
                         os.link(helper, scripts / "alias")
                 if executable == "/usr/bin/codesign":
                     self.assertEqual(arguments[1:4], ["--verify", "--strict", "--all-architectures"])
                     self.assertIn(f'certificate leaf[subject.OU] = "{TEAM}"', arguments[-2])
-                    self.assertEqual(arguments[-1].read_bytes(), helper_bytes)
                     self.assertFalse(destination.exists() and mode != "existing")
-                    if mode == "wrong-publisher":
-                        raise subprocess.CalledProcessError(1, arguments)
+                    target = arguments[-1]
+                    if target.name == publisher.BUNDLE_NAME:
+                        self.assertIn(f'identifier "{publisher.BUNDLE_ID}"', arguments[-2])
+                        if mode == "wrong-app-publisher":
+                            raise subprocess.CalledProcessError(1, arguments)
+                    else:
+                        self.assertNotIn(" and identifier ", arguments[-2])
+                        self.assertEqual(target.read_bytes(), helper_bytes)
+                        if mode == "wrong-publisher":
+                            raise subprocess.CalledProcessError(1, arguments)
                 return ""
 
             def verify(digest=helper_digest):
@@ -118,6 +130,9 @@ class PublisherTests(unittest.TestCase):
                 for mode, digest, error in (
                     ("wrong-pin", "d" * 64, ValueError),
                     ("wrong-architecture", helper_digest, ValueError),
+                    ("wrong-app-architecture", helper_digest, ValueError),
+                    ("wrong-app-publisher", helper_digest, subprocess.CalledProcessError),
+                    ("phase-mismatch", helper_digest, ValueError),
                     ("hardlink", helper_digest, ValueError),
                     ("wrong-publisher", helper_digest, subprocess.CalledProcessError),
                 ):
@@ -131,8 +146,9 @@ class PublisherTests(unittest.TestCase):
                 self.assertEqual(calls, [
                     ("/usr/sbin/pkgutil", "--check-signature"), ("/usr/sbin/spctl", "--assess"),
                     ("/usr/bin/xcrun", "stapler"), ("/usr/sbin/pkgutil", "--expand-full"),
-                    ("/usr/bin/codesign", "--verify"),
+                    ("/usr/bin/codesign", "--verify"), ("/usr/bin/codesign", "--verify"),
                 ])
+                self.assertTrue(report["packagedApplicationDeveloperIDVerified"])
                 self.assertEqual(report["managedDetector"], {
                     "architecture": "arm64", "sha256": helper_digest, "developerIDApplicationVerified": True,
                 })

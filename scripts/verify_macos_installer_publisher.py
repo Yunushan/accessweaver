@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 
-from macos_installer import macho_identity
+from macos_installer import BUNDLE_ID, BUNDLE_NAME, macho_identity
 from verify_release import require
 from verify_release_rebuild import digest, snapshot
 
@@ -63,22 +63,40 @@ def developer_application_requirement(team):
             f'and certificate leaf[subject.OU] = "{team}"')
 
 
+def read_expanded_executable(path, maximum):
+    before = path.lstat()
+    require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+            and 0 < before.st_size <= maximum, "Expected a bounded regular package executable")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    with os.fdopen(os.open(path, flags), "rb") as source:
+        info = os.fstat(source.fileno())
+        require(os.path.samestat(before, info) and info.st_nlink == 1 and stat.S_ISREG(info.st_mode)
+                and info.st_size == before.st_size, "Package executable changed before verification")
+        data = source.read(info.st_size + 1)
+    require(len(data) == info.st_size, "Package executable size changed")
+    return data
+
+
 def stage_detector(package, team, architecture, approved_sha256, destination):
     expanded = package.parent / "expanded"
     tool(["/usr/sbin/pkgutil", "--expand-full", package, expanded])
-    for path in (expanded, expanded / "Scripts"):
-        require(stat.S_ISDIR(path.lstat().st_mode), "Expected an ordinary expanded script directory")
-    helper = expanded / "Scripts" / "postinstall"
-    before = helper.lstat()
-    require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
-            and 0 < before.st_size <= 16 << 20, "Expected a bounded regular package helper")
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
-    with os.fdopen(os.open(helper, flags), "rb") as source:
-        info = os.fstat(source.fileno())
-        require(os.path.samestat(before, info) and info.st_nlink == 1 and stat.S_ISREG(info.st_mode)
-                and info.st_size == before.st_size, "Package helper changed before verification")
-        data = source.read(info.st_size + 1)
-    require(len(data) == info.st_size, "Package helper size changed")
+    payload = expanded / "Payload"
+    app = payload / BUNDLE_NAME
+    contents = app / "Contents"
+    executables = contents / "MacOS"
+    scripts = expanded / "Scripts"
+    for path in (expanded, payload, app, contents, executables, scripts):
+        require(stat.S_ISDIR(path.lstat().st_mode), "Expected an ordinary expanded package directory")
+
+    core = read_expanded_executable(executables / "accessweaver", 64 << 20)
+    macho_identity(core, architecture)
+    requirement = developer_application_requirement(team)
+    tool(["/usr/bin/codesign", "--verify", "--strict", "--all-architectures",
+          "-R=" + requirement + f' and identifier "{BUNDLE_ID}"', app])
+
+    data = read_expanded_executable(scripts / "postinstall", 16 << 20)
+    require(read_expanded_executable(scripts / "preinstall", 16 << 20) == data,
+            "Expanded package scripts do not use the same detector")
     macho_identity(data, architecture)
 
     with tempfile.TemporaryDirectory(prefix=".accessweaver-detector-", dir=destination.parent) as temporary:
@@ -90,7 +108,7 @@ def stage_detector(package, team, architecture, approved_sha256, destination):
             os.fsync(stream.fileno())
         require(digest(staged) == approved_sha256, "Package helper differs from the approved digest")
         tool(["/usr/bin/codesign", "--verify", "--strict", "--all-architectures",
-              "-R=" + developer_application_requirement(team), staged])
+              "-R=" + requirement, staged])
         os.link(staged, destination)
 
 
@@ -127,6 +145,7 @@ def verify(directory, artifact_sha256, team, certificate_sha256, *,
         "stapledTicketValidated": True,
     }
     if detector_output is not None:
+        report["packagedApplicationDeveloperIDVerified"] = True
         report["managedDetector"] = {
             "architecture": architecture, "sha256": detector_sha256,
             "developerIDApplicationVerified": True,
