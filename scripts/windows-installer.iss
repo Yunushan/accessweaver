@@ -15,6 +15,11 @@
   #error TargetArch must be amd64 or arm64
 #endif
 [Setup]
+#ifdef OrganizationSigning
+SignTool=accessweaverOrganization
+SignedUninstaller=yes
+SignedUninstallerDir={#BuildRoot}\..\signed-uninstallers
+#endif
 AppId={{B13D4677-4660-4E63-B3DB-03077ACBB092}
 AppName=AccessWeaver
 AppVersion={#ReleaseVersion}
@@ -27,7 +32,11 @@ ArchitecturesAllowed={#InstallArchitecture}
 ArchitecturesInstallIn64BitMode={#InstallArchitecture}
 PrivilegesRequired=admin
 LicenseFile={#BuildRoot}\LICENSE
+#ifdef OrganizationSigning
+OutputDir={#BuildRoot}\..\signed
+#else
 OutputDir={#BuildRoot}\..
+#endif
 OutputBaseFilename=accessweaver-{#ReleaseVersion}-windows-{#TargetArch}-setup
 Compression=lzma2
 SolidCompression=yes

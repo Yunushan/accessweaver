@@ -67,6 +67,14 @@ On Windows, verify each signed executable or MSI before deployment using an inde
 
 The verifier requires a Windows-valid embedded Authenticode signature, a timestamp certificate and the exact approved publisher fingerprint. It holds a read-only handle while checking the file and returns a fixed JSON receipt with the two digests. The check covers the supplied file. Verify the signed setup and shipped executable payload individually. Retain separately authenticated provenance covering the final signed bytes and the approved signing handoff. The existing unsigned-alpha attestation covers the unsigned candidate. An approved organization signer and signed candidate are still required for native acceptance. [Windows Authenticode verification](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.security/get-authenticodesignature).
 
+On an organization-controlled Windows build host, invoke the existing Inno build with the approved organization signer executable. The signer accepts one artifact path, signs it in place with a trusted timestamp, and exits nonzero on failure. Configure its provider and credentials on that host. The build signs the payload before packaging, and the Inno callback checks the approved publisher on setup and its generated uninstaller. Signed output and build evidence are kept in a new per-build directory under the build directory. A clean source checkout is required.
+
+```powershell
+.\scripts\build-windows-installer.ps1 -Compiler APPROVED_ISCC_EXE -Version RELEASE_VERSION -TargetArch amd64 -SigningTool APPROVED_SIGNER_EXE -PublisherCertificateSHA256 APPROVED_CERTIFICATE_SHA256
+```
+
+Repeat the build for ARM64. Authenticate the final signed output and its provenance, then exercise installation, upgrade, reboot and signed uninstall on both managed Windows architectures before promotion. [Inno Setup signing](https://jrsoftware.org/ishelp/topic_setup_signtool.htm).
+
 For a signed macOS flat package, place the final stapled package alone in a private directory. Supply its independently approved SHA-256, Developer ID Team ID and SHA-256 fingerprint of the approved Developer ID Installer leaf certificate.
 
 ```sh

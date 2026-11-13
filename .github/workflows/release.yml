@@ -26,6 +26,9 @@ on:
       - scripts/verify_release_rebuild.py
       - scripts/publish_prerelease.py
       - scripts/verify-windows-installer-publisher.ps1
+      - scripts/build-windows-installer.ps1
+      - scripts/sign-windows-installer-artifact.ps1
+      - scripts/windows-installer.iss
       - scripts/verify_macos_installer_publisher.py
       - scripts/test_macos_installer_publisher.py
       - scripts/windows-installer-common.ps1

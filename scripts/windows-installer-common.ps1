@@ -45,11 +45,15 @@ function Assert-InstallerPEArchitecture([string]$Binary, [string]$Arch) {
     if($machine -ne $expectedMachine){throw 'Installer payload PE machine does not match its requested architecture'}
 }
 
-function Assert-InstallerSetupScript([string]$Path, [string]$TargetArch, [string]$Version) {
+function Assert-InstallerSetupScript([string]$Path, [string]$TargetArch, [string]$Version, [switch]$OrganizationSigning) {
     if($TargetArch -cnotin @('amd64','arm64')){throw 'Invalid installer script target'}
     if((Get-Item -LiteralPath $Path).Length -gt 1MB){throw 'Preprocessed installer script exceeds evidence limit'}
     $architecture=if($TargetArch -ceq 'arm64'){'arm64'}else{'x64compatible'}
     $expected=@{SetupMutex='Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092';AllowNoIcons='yes';ArchitecturesAllowed=$architecture;ArchitecturesInstallIn64BitMode=$architecture;OutputBaseFilename=('accessweaver-'+$Version+'-windows-'+$TargetArch+'-setup')}
+    if($OrganizationSigning){
+        $expected.SignTool='accessweaverOrganization'
+        $expected.SignedUninstaller='yes'
+    }
     $actual=@{};$section=''
     foreach($line in [IO.File]::ReadAllLines($Path)){
         if($line -match '^\s*\[([^]]+)\]\s*$'){$section=$matches[1];continue}
@@ -83,4 +87,19 @@ function Assert-WindowsPublisherSignature($Signature,[string]$PublisherCertifica
         $actual=[BitConverter]::ToString($sha256.ComputeHash($certificateBytes)).Replace('-','')
     } finally {$sha256.Dispose()}
     if($actual -ine $PublisherCertificateSHA256){throw 'Artifact publisher certificate differs from the approved certificate'}
+}
+
+function Get-InstallerSigningArguments([string]$SigningTool, [string]$PublisherCertificateSHA256, [string]$Shell, [string]$Callback) {
+    if(-not $SigningTool -and -not $PublisherCertificateSHA256){return}
+    if($PublisherCertificateSHA256 -cnotmatch '\A[a-fA-F0-9]{64}\z' -or
+        $SigningTool -cnotmatch '\A[A-Za-z]:\\[^:*?"<>|$%\x00-\x1f]+\.exe\z'){
+        throw 'Signing requires an absolute local signer executable and an approved publisher SHA-256'
+    }
+    foreach($path in @($Shell,$Callback)){
+        if($path -cnotmatch '\A[A-Za-z]:\\[^:*?"<>|$%\x00-\x1f]+\.(exe|ps1)\z'){
+            throw 'Inno signing requires local PowerShell and callback paths'
+        }
+    }
+    '/DOrganizationSigning=1'
+    ('/SaccessweaverOrganization=$q'+$Shell+'$q -NoProfile -NonInteractive -File $q'+$Callback+'$q -Artifact $f')
 }

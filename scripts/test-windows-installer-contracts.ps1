@@ -18,6 +18,17 @@ foreach($arch in @('amd64','arm64')){
 foreach($case in @(@('linux','amd64','amd64'),@('windows','386','amd64'),@('windows','amd64','arm64'),@('windows','arm64','amd64'),@('windows','arm64','ARM64'),@('windows','amd64','386'))){
     Reject {Resolve-InstallerTarget $case[0] $case[1] $case[2]} 'Unsupported or cross-host target was accepted'
 }
+$signer='C:\Release Tools\Sign.exe'
+$shell='C:\Program Files\PowerShell\7\pwsh.exe'
+$callback='C:\AccessWeaver\scripts\sign-windows-installer-artifact.ps1'
+$arguments=@(Get-InstallerSigningArguments $signer ('a'*64) $shell $callback)
+Assert ($arguments.Count -eq 2 -and $arguments[0] -ceq '/DOrganizationSigning=1' -and
+    $arguments[1] -ceq '/SaccessweaverOrganization=$qC:\Program Files\PowerShell\7\pwsh.exe$q -NoProfile -NonInteractive -File $qC:\AccessWeaver\scripts\sign-windows-installer-artifact.ps1$q -Artifact $f') 'Signing callback arguments differ'
+Assert (@(Get-InstallerSigningArguments '' '' '' '').Count -eq 0) 'Unsigned compilation acquired a signing argument'
+Reject {Get-InstallerSigningArguments $signer '' $shell $callback} 'Signing without a publisher pin was accepted'
+Reject {Get-InstallerSigningArguments 'signer.exe' ('a'*64) $shell $callback} 'A relative signer path was accepted'
+Reject {Get-InstallerSigningArguments $signer ('a'*64) $shell 'C:\untrusted$q.ps1'} 'An Inno command escape was accepted'
+
 $publisherBytes=[byte[]]@(1,2,3)
 $publisherPin='039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81'
 $signature=@{
@@ -95,6 +106,13 @@ try {
         [IO.File]::WriteAllText($setupPath,$script)
         $values=Assert-InstallerSetupScript $setupPath $arch '0.1.0-alpha'
         Assert ($values.ArchitecturesAllowed -ceq $architecture) 'Valid preprocessed architecture rejected'
+        Reject {Assert-InstallerSetupScript $setupPath $arch '0.1.0-alpha' -OrganizationSigning} 'Signed compilation accepted missing directives'
+        $signedDirectives=@('SignTool=accessweaverOrganization','SignedUninstaller=yes','[Code]') -join [Environment]::NewLine
+        $signedScript=$script.Replace('[Code]',$signedDirectives)
+        [IO.File]::WriteAllText($setupPath,$signedScript)
+        $signedValues=Assert-InstallerSetupScript $setupPath $arch '0.1.0-alpha' -OrganizationSigning
+        Assert ($signedValues.SignedUninstaller -ceq 'yes') 'Signed installer did not require a signed uninstaller'
+
         foreach($kind in @('mutex','missing-mutex','icons','missing-icons','allowed','install-mode','filename','duplicate','wrong-section')){
             $changed=switch($kind){
                 'mutex' {$script.Replace('SetupMutex=Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092','SetupMutex=OtherProduct')}
