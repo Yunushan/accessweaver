@@ -949,9 +949,48 @@ function Ensure-Asset([string]$engine) {
     Event ('Component ready: '+$engine+'; SHA256 '+(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash)
     return $source
 }
+function Get-WireSockCLIPaths {
+    Join-Path $env:ProgramFiles 'WireSock Secure Connect\command-line\wiresock-connect-cli.exe'
+    Join-Path $env:ProgramFiles 'WireSock Secure Connect\bin\wiresock-client.exe'
+    Join-Path $env:ProgramFiles 'WireSock VPN Client\bin\wiresock-client.exe'
+}
 function WireSock-CLI {
-    foreach($path in @((Join-Path $env:ProgramFiles 'WireSock Secure Connect\command-line\wiresock-connect-cli.exe'),(Join-Path $env:ProgramFiles 'WireSock Secure Connect\bin\wiresock-client.exe'),(Join-Path $env:ProgramFiles 'WireSock VPN Client\bin\wiresock-client.exe'))) {if(Test-Path -LiteralPath $path){return $path}}
+    foreach($path in Get-WireSockCLIPaths){
+        if(Test-Path -LiteralPath $path -PathType Leaf){No-Reparse $path;return $path}
+    }
     return $null
+}
+function Read-OwnedWireSockProfile([string]$path) {
+    $refusal='WireSock ownership record is invalid or its vendor CLI is unavailable'
+    $stream=$null
+    try {
+        No-Reparse $path
+        $stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        if($stream.Length -le 0 -or $stream.Length -gt 8192){throw $refusal}
+        $reader=[IO.StreamReader]::new($stream,[Text.UTF8Encoding]::new($false,$true),$false)
+        try {
+            $text=$reader.ReadToEnd().Trim()
+            if(-not $text.StartsWith('{') -or -not $text.EndsWith('}')){throw $refusal}
+            $record=ConvertFrom-Json -InputObject $text -ErrorAction Stop
+        } finally {$reader.Dispose()}
+        if($record -isnot [pscustomobject] -or $record.cli -isnot [string] -or $record.profile -isnot [string] -or [string]::IsNullOrWhiteSpace($record.profile)){
+            throw $refusal
+        }
+        $legacyProperty=$record.PSObject.Properties['legacy']
+        if($legacyProperty -and $legacyProperty.Value -isnot [bool]){throw $refusal}
+        $legacy=$record.legacy -eq $true
+        $paths=@(Get-WireSockCLIPaths)
+        $allowed=if($legacy){@($paths[1],$paths[2])}else{@($paths[0])}
+        if($record.cli -notin $allowed){throw $refusal}
+        if(-not $legacy -and $record.profile -cnotmatch '^AccessWeaver-[a-f0-9]{32}$'){throw $refusal}
+        No-Reparse $record.cli
+        if(-not (Test-Path -LiteralPath $record.cli -PathType Leaf)){throw $refusal}
+        return @{cli=$record.cli;profile=$record.profile;legacy=$legacy}
+    } catch {
+        throw $refusal
+    } finally {
+        if($stream){$stream.Dispose()}
+    }
 }
 function Copy-BundledInstaller([IO.FileInfo]$installer,[ref]$OwnedPath) {
     # Use the same protected bytes for signature validation and execution.
@@ -1080,12 +1119,19 @@ function Connect-WireSock([string]$config) {
     Write-Atomic (Join-Path $root 'profiles\wiresock-owned.json') (@{profile=[IO.Path]::GetFileNameWithoutExtension($config);cli=$cli;legacy=$true}|ConvertTo-Json)
     return 'Vendor service running; tunnel traffic requires independent verification'
 }
+function Disconnect-OwnedWireSock($record) {
+    if($record.legacy){
+        $script:externalEffectsPending=$true
+        Stop-Service 'wiresock-client-service' -ErrorAction Stop
+    }else{
+        [void](Native $record.cli @('disconnect') -Secret)
+    }
+    Event 'Managed WireSock connection disconnected'
+}
 function Disconnect-WireSock {
     $owned=Join-Path $root 'profiles\wiresock-owned.json'
     if(-not (Test-Path -LiteralPath $owned)){throw 'No AccessWeaver-owned WireSock profile recorded'}
-    $record=Get-Content -LiteralPath $owned -Raw | ConvertFrom-Json
-    if($record.legacy){Stop-Service 'wiresock-client-service' -ErrorAction Stop}else{[void](Native $record.cli @('disconnect') -Secret)}
-    Event 'Managed WireSock connection disconnected'
+    Disconnect-OwnedWireSock (Read-OwnedWireSockProfile $owned)
 }
 function Install-EngineService([string]$engine,[string]$binary,[string[]]$arguments) {
     $serviceName='AccessWeaver-'+$engine
@@ -1603,7 +1649,7 @@ function Refresh-Task {
     $name='AccessWeaver-WireSock-Refresh'
     if(-not $r.enabled){Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue;Event 'Reconnect task removed';return}
     $recordPath=Join-Path $root 'profiles\wiresock-owned.json';if(-not (Test-Path -LiteralPath $recordPath)){throw 'Connect a managed WireSock profile first'}
-    $record=Get-Content -LiteralPath $recordPath -Raw | ConvertFrom-Json
+    $record=Read-OwnedWireSockProfile $recordPath
     if($record.legacy){$command="Restart-Service -Name 'wiresock-client-service' -ErrorAction Stop";$encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command));$action=New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument ('-NoProfile -NonInteractive -EncodedCommand '+$encoded)}
     else{$action=New-ScheduledTaskAction -Execute $record.cli -Argument ('connect '+(Quote-Arg $record.profile)+' -exit')}
     $trigger=New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(5)) -RepetitionInterval (New-TimeSpan -Minutes 5)
@@ -1611,7 +1657,18 @@ function Refresh-Task {
     $script:undo.Add(@{kind='task';name=$name});Save-Journal;Event 'Reconnect task installed (every five minutes)'
 }
 function Remove-Method([string]$engine,[switch]$OwnedOnly) {
-    if($engine -eq 'wiresock') {if(Test-Path -LiteralPath (Join-Path $root 'profiles\wiresock-owned.json')){Disconnect-WireSock;$owned=Get-Content -LiteralPath (Join-Path $root 'profiles\wiresock-owned.json') -Raw | ConvertFrom-Json;if($owned.legacy){[void](Native $owned.cli @('uninstall'))}else{[void](Native $owned.cli @('delete',$owned.profile) -Secret)};Remove-Item -LiteralPath (Join-Path $root 'profiles\wiresock-owned.json')};Unregister-ScheduledTask -TaskName 'AccessWeaver-WireSock-Refresh' -Confirm:$false -ErrorAction SilentlyContinue;return}
+    if($engine -eq 'wiresock'){
+        $recordPath=Join-Path $root 'profiles\wiresock-owned.json'
+        if(Test-Path -LiteralPath $recordPath){
+            $owned=Read-OwnedWireSockProfile $recordPath
+            Disconnect-OwnedWireSock $owned
+            if($owned.legacy){[void](Native $owned.cli @('uninstall') -Secret)}
+            else{[void](Native $owned.cli @('delete',$owned.profile) -Secret)}
+            Remove-Item -LiteralPath $recordPath
+        }
+        Unregister-ScheduledTask -TaskName 'AccessWeaver-WireSock-Refresh' -Confirm:$false -ErrorAction SilentlyContinue
+        return
+    }
     if($engine -eq 'drover'){Restore-Drover;return}
     if($engine -eq 'windivert'){
         foreach($dependent in @('AccessWeaver-zapret','AccessWeaver-zapret2','AccessWeaver-goodbyedpi')){if((Get-Service $dependent -ErrorAction SilentlyContinue).Status -eq 'Running'){throw 'Remove packet-engine services before WinDivert'}}

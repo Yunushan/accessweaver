@@ -630,6 +630,49 @@ try {
         Assert (($script:wireSockServiceStarts -join ',') -ceq 'WireSockConnectService' -and $script:externalEffectsPending) 'WireSock starts only a stopped vendor service and records the external effect'
     }
 } finally {$script:externalEffectsPending=$previousWireSockEffects}
+# Fixed inert files exercise ownership input validation without vendor execution.
+$previousOwnedRoot=$root;$previousOwnedRequest=$r;$previousOwnedProgramFiles=$env:ProgramFiles
+try {
+    & {
+        $root=Join-Path $testRoot 'wiresock-ownership'
+        $env:ProgramFiles=Join-Path $root 'programs'
+        $profileDirectory=Join-Path $root 'profiles'
+        [void][IO.Directory]::CreateDirectory($profileDirectory)
+        $recordPath=Join-Path $profileDirectory 'wiresock-owned.json'
+        $paths=@(Get-WireSockCLIPaths)
+        foreach($path in @($paths[0],$paths[2])){
+            [void][IO.Directory]::CreateDirectory((Split-Path -Parent $path))
+            [IO.File]::WriteAllBytes($path,[byte[]]@(0))
+        }
+        $profile='AccessWeaver-'+('a'*32)
+        @{cli=$paths[0];profile=$profile} | ConvertTo-Json -Compress | Set-Content -LiteralPath $recordPath -Encoding ASCII
+        $accepted=Read-OwnedWireSockProfile $recordPath
+        Assert (-not $accepted.legacy -and $accepted.cli -ceq $paths[0] -and $accepted.profile -ceq $profile) 'WireSock accepts the existing modern ownership record format'
+        @{cli=$paths[2];profile='default';legacy=$true} | ConvertTo-Json -Compress | Set-Content -LiteralPath $recordPath -Encoding ASCII
+        $accepted=Read-OwnedWireSockProfile $recordPath
+        Assert ($accepted.legacy -and $accepted.cli -ceq $paths[2]) 'WireSock accepts its recorded legacy CLI alongside a modern installation'
+        function Native {throw 'An invalid record reached a vendor command'}
+        function Stop-Service {throw 'An invalid record reached a service change'}
+        function New-ScheduledTaskAction {throw 'An invalid record reached task construction'}
+        function Unregister-ScheduledTask {throw 'An invalid record reached task removal'}
+        $r=[pscustomobject]@{enabled=$true}
+        foreach($record in @(
+            @{cli=(Join-Path $root 'outside.exe');profile=$profile},
+            @{cli=$paths[0];profile='other-profile'},
+            @{cli=$paths[2];profile=$profile;legacy='true'}
+        )){
+            $record | ConvertTo-Json -Compress | Set-Content -LiteralPath $recordPath -Encoding ASCII
+            foreach($operation in @({Disconnect-WireSock},{Remove-Method 'wiresock'},{Refresh-Task})){
+                $refused=$false
+                try {& $operation}catch{$refused=$_.Exception.Message -ceq 'WireSock ownership record is invalid or its vendor CLI is unavailable'}
+                if(-not $refused){throw 'WireSock operation did not reject the invalid ownership record'}
+            }
+        }
+        Assert (Test-Path -LiteralPath $recordPath -PathType Leaf) 'WireSock rejects invalid records before commands or task changes'
+    }
+} finally {
+    $root=$previousOwnedRoot;$r=$previousOwnedRequest;$env:ProgramFiles=$previousOwnedProgramFiles
+}
 # Publisher-category checks use synthetic signature records only.
 $signatureDiscord=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Discord fixture'}}
 $signatureMicrosoft=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Microsoft fixture'}}
