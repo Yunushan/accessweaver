@@ -269,6 +269,12 @@ function navigate(view, focus=false) {
   if(typeof historyNavigationChanged==='function')historyNavigationChanged(view);
   if(view==='system'&&coreAvailable()&&typeof loadSystemTools==='function')loadSystemTools().catch(error=>{setTextOutput('system-output',error.message)});
 }
+function navigateFromHistory() {
+  const view = location.hash.slice(1) || 'dashboard';
+  const outgoing = $('view-' + state.view);
+  const moveFocus = view !== state.view && outgoing?.contains(document.activeElement);
+  navigate(view,moveFocus);
+}
 async function apiRequest(path, method='GET', data, timeout=12000, externalSignal) {
   let target;
   try { if(typeof path==='string')target=new URL(path,location.origin); } catch {}
@@ -1106,7 +1112,7 @@ function trapModalKeys(event) {
 function bindEvents() {
   $$('.nav-item').forEach(el => el.addEventListener('click',() => navigate(el.dataset.view,true)));
   $$('[data-action]').forEach(el => el.addEventListener('click',() => navigate(el.dataset.action === 'diagnose' ? 'diagnostics' : el.dataset.action,true)));
-  window.addEventListener('hashchange',() => navigate(location.hash.slice(1) || 'dashboard'));
+  window.addEventListener('hashchange',navigateFromHistory);
   window.addEventListener('pagehide',()=>{invalidateSupportExport();updateSupportAvailability()});
   window.addEventListener('beforeunload',event => { if (state.editing?.dirty) { event.preventDefault(); event.returnValue = ''; } });
   $('menu-toggle').addEventListener('click',() => setSidebarOpen(!$('sidebar').classList.contains('open')));

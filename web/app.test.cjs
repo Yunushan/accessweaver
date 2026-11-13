@@ -198,6 +198,24 @@ test('unknown nested probe fields are rejected',()=>{const p=baseProfile();p.pro
 test('import collision opens renamed draft without replacing stored profile',async()=>{const env=environment();const original=baseProfile();env.put('fixture',original);env.run('state.profiles = [fixture]');const imported={...original,name:'Imported'};env.context.fileFixture=new Blob([JSON.stringify(imported)]);await env.run('importProfile(fileFixture)');assert.deepEqual(plain(env.run('state.profiles')),[original]);assert.notEqual(env.run('state.editing.profile.id'),original.id);assert.equal(env.run('state.editing.isNew'),true);assert.equal(env.data.has('aw.profiles'),false);});
 test('disconnected core blocks writes without changing cached profiles',async()=>{const env=environment();env.put('fixture',baseProfile());env.run('state.disconnected=true');await assert.rejects(env.run('persist(fixture)'));assert.equal(env.run('state.profiles.length'),0);});
 test('failed poll marks connection unknown without falsely stopping cached process',async()=>{const env=environment();env.run('state.loading=false;state.offline=false;state.runtime={state:"running",profileId:"test-profile",pid:123};apiRequest=async()=>{throw new Error("network down")};');await env.run('pollStatus()');assert.equal(env.run('state.disconnected'),true);assert.equal(env.run('state.runtime.state'),'running');assert.equal(env.run('coreAvailable()'),false);});
+test('history navigation moves focus only when leaving the focused view',()=>{
+  const env=environment(),search=env.get('profile-search'),sidebar=env.get('sidebar');
+  env.get('view-profiles').contains=node=>node===search;
+  env.run('state.view="profiles";state.profileGridRendered=true');
+  search.focus();
+  env.context.location.hash='#profiles';
+  env.run('navigateFromHistory()');
+  assert.equal(env.context.document.activeElement,search);
+  env.context.location.hash='#dashboard';
+  env.run('navigateFromHistory()');
+  assert.equal(env.run('state.view'),'dashboard');
+  assert.equal(env.context.document.activeElement,env.get('content'));
+  sidebar.focus();
+  env.context.location.hash='#profiles';
+  env.run('navigateFromHistory()');
+  assert.equal(env.context.document.activeElement,sidebar);
+  assert.equal(env.run('state.view'),'profiles');
+});
 test('process exit refreshes profile actions',async()=>{const env=environment();env.context.profileRenderCalls=0;env.run('state.loading=false;state.offline=false;state.runtime={state:"running",profileId:"test-profile",pid:123};renderProfiles=()=>{profileRenderCalls++};apiRequest=async()=>({state:"exited",profileId:"test-profile"});');await env.run('pollStatus()');assert.equal(env.context.profileRenderCalls,1);});
 test('all HTML translation keys exist in both languages',()=>{const env=environment();const keys=[...html.matchAll(/data-i18n(?:-aria)?="([^"]+)"/g)].map(m=>m[1]);env.context.translationKeys=keys;assert.deepEqual(plain(env.run('translationKeys.filter(key=>!en[key]||!tr[key])')),[]);});
 test('Russian and Spanish cover every UI translation key',()=>{const env=environment();assert.deepEqual(plain(env.run('Object.keys(en).filter(key=>!extraLocales.ru[key]||!extraLocales.es[key])')),[]);});

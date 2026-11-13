@@ -1191,3 +1191,19 @@ test('keyboard reconnect keeps focus through failure and restores main content o
  await expect(page.locator('#connection-notice')).toBeHidden();
  await expect(page.locator('#content')).toBeFocused();
 });
+
+test('browser history moves focus from the outgoing view and preserves sidebar focus',async({page,core})=>{
+ await open(page,core);
+ await profiles(page);
+ await expect(page).toHaveURL(/#profiles$/);
+ const search=page.locator('#profile-search');
+ await search.focus();
+ await page.goBack();
+ await expect(page.locator('#view-dashboard')).toBeVisible();
+ await expect(page.locator('#content')).toBeFocused();
+ const sidebar=page.locator('.nav-item[data-view="dashboard"]');
+ await sidebar.focus();
+ await page.goForward();
+ await expect(page.locator('#view-profiles')).toBeVisible();
+ await expect(sidebar).toBeFocused();
+});
