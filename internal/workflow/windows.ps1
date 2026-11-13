@@ -32,7 +32,12 @@ $script:repairProxyReady = $false
 if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-state-ready {0}' -f $script:workflowClock.ElapsedMilliseconds))}
 
 function Event([string]$text) { $script:events.Add(([DateTime]::UtcNow.ToString('o')+' '+$text)); [Console]::WriteLine($text); Save-Journal }
-function Save-Journal { if ($script:journalPath) { $text=@{action=$r.action;engine=$r.engine;state=$script:journalState;undo=@($script:undo.ToArray());events=@($script:events.ToArray())} | ConvertTo-Json -Depth 12;$temp=$script:journalPath+'.tmp';[IO.File]::WriteAllText($temp,$text,[Text.UTF8Encoding]::new($false));if(Test-Path -LiteralPath $script:journalPath){$old=$temp+'.old';[IO.File]::Replace($temp,$script:journalPath,$old);Remove-Item -LiteralPath $old}else{[IO.File]::Move($temp,$script:journalPath)} } }
+function Save-Journal {
+    if($script:journalPath){
+        $text=@{action=$r.action;engine=$r.engine;state=$script:journalState;undo=@($script:undo.ToArray());events=@($script:events.ToArray())} | ConvertTo-Json -Depth 12
+        Publish-WorkflowFile $script:journalPath ([Text.UTF8Encoding]::new($false).GetBytes($text))
+    }
+}
 function Under([string]$path,[string]$parent) { $p=[IO.Path]::GetFullPath($path);$b=[IO.Path]::GetFullPath($parent).TrimEnd('\')+'\';return $p.StartsWith($b,[StringComparison]::OrdinalIgnoreCase) }
 function No-Reparse([string]$path) {
     $current=[IO.Path]::GetFullPath($path)
@@ -263,15 +268,37 @@ function Backup-File([string]$path) {
     $script:undo.Add(@{kind='file';path=$path;backup=$backup;originalHash=$originalHash});Save-Journal
 }
 function Expected-Hash([string]$path,[string]$hash){$entry=$script:undo|Where-Object {$_.kind -eq 'file' -and $_.path -eq $path}|Select-Object -First 1;$entry.expectedHash=$hash;Save-Journal}
-function Write-Atomic([string]$path,[string]$text,[switch]$WithoutFileUndo) {
-    if(-not $WithoutFileUndo){
-        Backup-File $path
-        $hasher=[Security.Cryptography.SHA256]::Create();try{$hash=[BitConverter]::ToString($hasher.ComputeHash([Text.UTF8Encoding]::new($false).GetBytes($text))).Replace('-','')}finally{$hasher.Dispose()};Expected-Hash $path $hash
+function Publish-WorkflowFile([string]$path,[byte[]]$bytes) {
+    No-Reparse $path
+    $parent=Split-Path -Parent $path
+    $staged=Join-Path $parent ([guid]::NewGuid().ToString('N')+'.tmp')
+    $stream=[IO.File]::Open($staged,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+        try {
+            $stream.Write($bytes,0,$bytes.Length)
+            $stream.Flush($true)
+        } finally {$stream.Dispose()}
+        if(Test-Path -LiteralPath $path -ErrorAction Stop){
+            [IO.File]::Replace($staged,$path,[NullString]::Value)
+        }else{
+            [IO.File]::Move($staged,$path)
+        }
+    } finally {
+        if([IO.File]::Exists($staged)){[IO.File]::Delete($staged)}
     }
-    $parent=Split-Path -Parent $path;[void](New-Item -ItemType Directory -Force -Path $parent)
-    $tmp=Join-Path $parent ([guid]::NewGuid().ToString('N')+'.tmp')
-    [IO.File]::WriteAllText($tmp,$text,[Text.UTF8Encoding]::new($false))
-    if (Test-Path -LiteralPath $path) {$replaceBackup=$tmp+'.old';[IO.File]::Replace($tmp,$path,$replaceBackup);Remove-Item -LiteralPath $replaceBackup}else{[IO.File]::Move($tmp,$path)}
+}
+function Write-Atomic([string]$path,[string]$text) {
+    Backup-File $path
+    $bytes=[Text.UTF8Encoding]::new($false).GetBytes($text)
+    $hash=Get-WorkflowBytesSHA256 $bytes
+    Expected-Hash $path $hash
+    [void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path))
+    Publish-WorkflowFile $path $bytes
+}
+function Get-WorkflowBytesSHA256([byte[]]$bytes) {
+    $sha256=[Security.Cryptography.SHA256]::Create()
+    try {return [BitConverter]::ToString($sha256.ComputeHash($bytes)).Replace('-','')}
+    finally {$sha256.Dispose()}
 }
 function Copy-Checked([string]$source,[string]$destination) {No-Reparse $source;Backup-File $destination;Expected-Hash $destination (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash;[void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination));Copy-Item -LiteralPath $source -Destination $destination -Force}
 function Copy-Tree([string]$source,[string]$destination,[switch]$Disposable) {
@@ -1815,13 +1842,16 @@ function Configure-DNS([string]$method) {
     $original | Add-Member -NotePropertyName recoveryID -NotePropertyValue ([guid]::NewGuid().ToString('N')) -Force
     $original.adapters=@($records)
     $encoded=$original|ConvertTo-Json -Depth 10
-    if([Text.Encoding]::UTF8.GetByteCount($encoded) -gt 8MB){throw 'DNS recovery snapshot exceeds its size limit'}
-    Write-Atomic $snapshot $encoded -WithoutFileUndo
-    $snapshotSHA256=(Get-FileHash -LiteralPath $snapshot -Algorithm SHA256 -ErrorAction Stop).Hash
+    $bytes=[Text.UTF8Encoding]::new($false).GetBytes($encoded)
+    if($bytes.Length -gt 8MB){throw 'DNS recovery snapshot exceeds its size limit'}
+    $snapshotSHA256=Get-WorkflowBytesSHA256 $bytes
     $dnsUndo=$script:undo | Where-Object {$_.kind -ceq 'dns'} | Select-Object -First 1
     if($dnsUndo){$dnsUndo.snapshotSHA256=$snapshotSHA256}
     else{$script:undo.Add(@{kind='dns';snapshotSHA256=$snapshotSHA256})}
+    # The previous journal keeps its binding until the snapshot is replaced.
     Save-Journal
+    Publish-WorkflowFile $snapshot $bytes
+    if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot could not be published'}
     $script:dnsTouched=$true
     if($method -eq 'dnscrypt') {
         $binary=Ensure-Asset 'dnscrypt';$config=Join-Path (Split-Path -Parent $binary) 'dnscrypt-proxy.toml'

@@ -109,6 +109,8 @@ jobs:
           $stock=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
           & $stock -NoProfile -NonInteractive -File ./scripts/test-dns-recovery-contracts.ps1 -RequireWindowsPowerShell -ReportPath (Join-Path $desktop 'dns-contracts.json')
           if($LASTEXITCODE -ne 0){throw 'Windows PowerShell DNS contracts failed'}
+          & $stock -NoProfile -NonInteractive -File ./scripts/test-windows-dns-journal.ps1
+          if($LASTEXITCODE -ne 0){throw 'Windows PowerShell DNS journal contracts failed'}
       - name: Verify DNS journal binding and rollback
         run: ./scripts/test-windows-dns-journal.ps1
       - name: Verify DNS reboot admission and publication
