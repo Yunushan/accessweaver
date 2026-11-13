@@ -135,23 +135,48 @@ try {
 $previousRebootRequired=$script:rebootRequired
 try {
     & {
-        function Get-ItemProperty { return @{Installed=0} }
-        function Get-Service { return $null }
+        function Get-ItemProperty { return @{Installed=[int]$script:fixtureRuntimeRegistered} }
+        function Get-DriverServiceControllers {
+            [CmdletBinding()]param()
+            [pscustomobject]@{ServiceName='UnrelatedFixtureDriver';Status='Running'}
+            if($script:fixtureFilterRegistered){[pscustomobject]@{ServiceName='NDISRD';Status='Stopped'}}
+        }
         function Install-Prerequisite([string]$component) {
             $script:prerequisiteRebootCalls.Add($component)
-            if($component -eq $script:prerequisiteNeedsReboot){$script:rebootRequired=$true}
+            if($component -eq $script:prerequisiteNeedsReboot){$script:rebootRequired=$true;return}
+            if($component -eq $script:fixtureMissingRegistration){return}
+            if($component -eq 'vcredist'){$script:fixtureRuntimeRegistered=$true}
+            if($component -eq 'ndisapi'){$script:fixtureFilterRegistered=$true}
         }
-        function Ensure-Asset { throw 'Fixture must stop before resolving the ProxiFyre asset' }
+        function Ensure-Asset { throw 'Fixture reached ProxiFyre asset resolution' }
         foreach($case in @(
             @{prerequisite='vcredist';calls='vcredist';message='Restart Windows after Visual C++ runtime installation, then retry ProxiFyre setup';label='Visual C runtime reboot defers packet filter and ProxiFyre setup'}
             @{prerequisite='ndisapi';calls='vcredist,ndisapi';message='Restart Windows after Windows Packet Filter installation, then retry ProxiFyre setup';label='Packet filter reboot defers ProxiFyre setup'}
         )){
             $script:rebootRequired=$false
             $script:prerequisiteNeedsReboot=$case.prerequisite
+            $script:fixtureMissingRegistration=''
+            $script:fixtureRuntimeRegistered=$false
+            $script:fixtureFilterRegistered=$false
             $script:prerequisiteRebootCalls=[Collections.Generic.List[string]]::new()
             $refused=$false
             try {Setup-ProxiFyre '127.0.0.1:1080'}catch{$refused=$_.Exception.Message -ceq $case.message}
             Assert ($refused -and $script:rebootRequired -and ($script:prerequisiteRebootCalls -join ',') -ceq $case.calls) $case.label
+        }
+        foreach($case in @(
+            @{missing='vcredist';calls='vcredist';message='Visual C++ runtime installation did not register the required runtime';label='ProxiFyre refuses a successful runtime install without registration'}
+            @{missing='ndisapi';calls='vcredist,ndisapi';message='Windows Packet Filter installation did not register the required driver';label='ProxiFyre refuses a successful packet filter install without registration'}
+            @{missing='';calls='vcredist,ndisapi';message='Fixture reached ProxiFyre asset resolution';label='ProxiFyre continues when both prerequisite registrations are visible'}
+        )){
+            $script:rebootRequired=$false
+            $script:prerequisiteNeedsReboot=''
+            $script:fixtureMissingRegistration=$case.missing
+            $script:fixtureRuntimeRegistered=$false
+            $script:fixtureFilterRegistered=$false
+            $script:prerequisiteRebootCalls=[Collections.Generic.List[string]]::new()
+            $expected=$false
+            try {Setup-ProxiFyre '127.0.0.1:1080'}catch{$expected=$_.Exception.Message -ceq $case.message}
+            Assert ($expected -and -not $script:rebootRequired -and ($script:prerequisiteRebootCalls -join ',') -ceq $case.calls) $case.label
         }
     }
 } finally {$script:rebootRequired=$previousRebootRequired}

@@ -1020,15 +1020,33 @@ function Install-EngineService([string]$engine,[string]$binary,[string[]]$argume
 function Firewall([string]$engine,[string]$binary) {
     foreach($direction in @('Inbound','Outbound')){$name='AccessWeaver-'+$engine+'-'+$direction;if(-not (Get-NetFirewallRule -Name $name -ErrorAction SilentlyContinue)){[void](New-NetFirewallRule -Name $name -DisplayName $name -Program $binary -Direction $direction -Action Allow -Profile Any);$script:undo.Add(@{kind='firewall';name=$name});Save-Journal}}
 }
+function Test-ProxiFyreRuntimeRegistered {
+    $runtime=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64' -Name Installed -ErrorAction SilentlyContinue
+    return $runtime.Installed -eq 1
+}
+function Test-ProxiFyrePacketFilterRegistered {
+    $found=$false
+    Get-DriverServiceControllers -ErrorAction Stop | ForEach-Object {
+        $driver=$_
+        try {
+            if($driver.ServiceName -ieq 'NDISRD'){$found=$true}
+        } finally {
+            if($driver -is [IDisposable]){$driver.Dispose()}
+        }
+    }
+    return $found
+}
 function Setup-ProxiFyre([string]$proxy) {
     if($script:rebootRequired){throw 'Restart Windows before continuing ProxiFyre setup'}
-    if((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64' -Name Installed -ErrorAction SilentlyContinue).Installed -ne 1){
+    if(-not (Test-ProxiFyreRuntimeRegistered)){
         Install-Prerequisite 'vcredist'
         if($script:rebootRequired){throw 'Restart Windows after Visual C++ runtime installation, then retry ProxiFyre setup'}
+        if(-not (Test-ProxiFyreRuntimeRegistered)){throw 'Visual C++ runtime installation did not register the required runtime'}
     }
-    if(-not (Get-Service -Name 'NDISRD' -ErrorAction SilentlyContinue)){
+    if(-not (Test-ProxiFyrePacketFilterRegistered)){
         Install-Prerequisite 'ndisapi'
         if($script:rebootRequired){throw 'Restart Windows after Windows Packet Filter installation, then retry ProxiFyre setup'}
+        if(-not (Test-ProxiFyrePacketFilterRegistered)){throw 'Windows Packet Filter installation did not register the required driver'}
     }
     $binary=Ensure-Asset 'proxifyre';$dir=Split-Path -Parent $binary
     Protect-Dir (Join-Path $dir 'logs')
