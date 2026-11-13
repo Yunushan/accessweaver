@@ -10,6 +10,8 @@ Treat suspected publisher/build/policy-key compromise or unauthorized execution 
 
 Stop rollout and promotion of the suspect version. Preserve immutable build/attestation subjects and release metadata in a restricted incident record before changing their distribution. Do not delete signatures or mutable release tags to make a verification error disappear. Record the source/version/hash denylist in the organization's deployment controls. Removing a download alone does not revoke installed copies, cached archives or a valid old signature. Do not rerun or execute a suspected binary merely to collect its version.
 
+Publish the revocation list and its SHA-256 fingerprint through the independent release-control channel. Use the [signed-release verifier](RELEASE_PROVENANCE.md#approve-the-final-signed-desktop-artifacts) to confirm that it refuses the suspect candidate with the current list, including a cached copy that still has a valid approval signature. Verify that the approved replacement passes with the same list before reopening deployment. Use the organization's endpoint controls to account for already installed copies.
+
 Use a separately trusted, approved CLI to inspect an endpoint. Save only the evidence needed for the incident and protect exports outside the application data store. The Settings support summary is explicit, local and metadata-only; it is not a complete incident bundle or an authenticated native inventory. Raw profiles, histories, logs and policy-source snapshots can contain private information and need separate handling and approval before transfer.
 
 ## Contain managed operations

@@ -607,6 +607,7 @@
           "status": "partial",
           "evidence": [
             "docs/INCIDENT_RESPONSE.md",
+            "scripts/test_signed_release_manifest.py",
             "docs/qualification/fa28695b38da-policy-incident-drill.json"
           ]
         },

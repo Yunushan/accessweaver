@@ -105,13 +105,25 @@ python scripts/signed_release_manifest.py prepare PRIVATE_CANDIDATE --output APP
 openssl cms -sign -binary -md sha256 -in APPROVAL_DIRECTORY/SIGNED-RELEASE.json -signer APPROVED_PUBLIC_CERTIFICATE_PEM -inkey APPROVED_SIGNING_KEY_REFERENCE -outform DER -out APPROVAL_DIRECTORY/SIGNED-RELEASE.p7s
 ```
 
-Use the organization's signing service or configured OpenSSL provider to supply the key reference. The manifest tool takes no private-key input. Copy the manifest and signature beside the twelve subjects, then run:
+Use the organization's signing service or configured OpenSSL provider to supply the key reference. The manifest tool takes no private-key input. Copy the manifest and signature beside the twelve subjects. Obtain the current revocation list and its SHA-256 fingerprint from the organization's release-control channel for each deployment. Keep the list outside the candidate directory. It uses this versioned format, with exact lowercase source commits or SHA-256 digests and complete release tag refs:
 
-```text
-python scripts/signed_release_manifest.py verify PRIVATE_CANDIDATE --approval-certificate INDEPENDENT_APPROVAL_CERTIFICATE_DER --approval-certificate-sha256 APPROVED_CERTIFICATE_SHA256 --source-commit FULL_APPROVED_COMMIT --source-ref refs/tags/APPROVED_TAG
+```json
+{
+  "schemaVersion": 1,
+  "sourceCommits": [],
+  "sourceRefs": [],
+  "subjectSHA256": [],
+  "approvalCertificateSHA256": []
+}
 ```
 
-The verifier checks the approval signature with the supplied certificate and compares the exact inventory, sizes and SHA-256 digests against the received bytes. This records the organization's approval of the specified source and artifacts. Retain the separate build provenance, native publisher checks and installed-product results for that candidate. [OpenSSL CMS verification](https://docs.openssl.org/3.5/man1/openssl-cms/).
+Empty lists express an explicit decision by that channel that there are no active revocations. An approving or deployment operator should never construct an empty list as a fallback. After authenticating the current list and fingerprint through release control, run the deployment check.
+
+```text
+python scripts/signed_release_manifest.py verify PRIVATE_CANDIDATE --approval-certificate INDEPENDENT_APPROVAL_CERTIFICATE_DER --approval-certificate-sha256 APPROVED_CERTIFICATE_SHA256 --revocation-list CURRENT_REVOCATION_LIST --revocation-list-sha256 CURRENT_REVOCATION_LIST_SHA256 --source-commit FULL_APPROVED_COMMIT --source-ref refs/tags/APPROVED_TAG
+```
+
+The verifier checks the approval signature with the supplied certificate and compares the exact inventory, sizes and SHA-256 digests against the received bytes. It also refuses a revoked commit, tag, subject digest or approval certificate and records the revocation-list fingerprint in its result. Release control must distribute the latest list and fingerprint, and deployment operators must fetch them again before retrying or approving a cached candidate. An old list and its matching old fingerprint can still authenticate that older policy. Retain the separate build provenance, native publisher checks and installed-product results for that candidate. [OpenSSL CMS verification](https://docs.openssl.org/3.5/man1/openssl-cms/).
 
 ## Packaged FreeBSD guest acceptance
 
