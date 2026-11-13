@@ -355,11 +355,21 @@ test('diagnostics selects an explicit proxy path and STUN target without sending
  await expect(page.locator('#probe-host')).toHaveValue('');await expect(page.locator('#probe-port')).toHaveValue('3478');await expect(page.locator('#probe-tls')).toBeDisabled();
  await page.locator('#probe-host').fill('stun.example.com');let submitted;
  await page.route('**/api/v1/diagnose',async route=>{
-  submitted=route.request().postDataJSON();await route.fulfill({json:{host:submitted.host,port:submitted.port,path:submitted.path,transport:submitted.transport,proxy:submitted.proxy,at:new Date().toISOString(),checks:[{name:'UDP/STUN',status:'failed',durationMs:1,detail:'Controlled browser fixture: no probe traffic sent'}]}});
+  submitted=route.request().postDataJSON();await route.fulfill({json:{host:submitted.host,port:submitted.port,path:submitted.path,transport:submitted.transport,proxy:submitted.proxy,at:new Date().toISOString(),checks:[{name:'Proxy',status:'ok',durationMs:1,detail:'Controlled proxy result'},{name:'UDP/STUN',status:'failed',durationMs:1234,detail:'Controlled browser fixture: no probe traffic sent'}]}});
  });
  await page.locator('#probe-submit').click();await expect(page.locator('#diagnostic-meta')).toContainText('One or more checks failed');
  expect(submitted).toEqual({host:'stun.example.com',port:3478,timeoutSeconds:5,tls:false,path:'socks5',transport:'stun',proxy:'127.0.0.1:1080'});
- await expect(page.locator('#diagnostic-meta')).toContainText('socks5 / stun / 127.0.0.1:1080');
+ await expect(page.locator('#diagnostic-meta')).toContainText('SOCKS5 · UDP / STUN / 127.0.0.1:1080');
+ for(const [lang,status] of [['tr','Başarısız'],['ru','Ошибка'],['es','Fallido'],['en','Failed']]){
+  await page.locator('#lang-toggle').click();
+  await expect(page.locator('html')).toHaveAttribute('lang',lang);
+  await expect(page.locator('#diagnostic-results')).toContainText('UDP/STUN · '+status);
+ }
+ const exportReady=page.waitForEvent('download');await page.locator('#export-report').click();
+ const exported=JSON.parse(await fs.readFile(await (await exportReady).path(),'utf8'));
+ expect(exported).toMatchObject({path:'socks5',transport:'stun',checks:[
+  {name:'Proxy',status:'ok',durationMs:1},{name:'UDP/STUN',status:'failed',durationMs:1234},
+ ]});
  await page.locator('#probe-path').selectOption('direct');await expect(page.locator('#probe-proxy-field')).toBeHidden();
 });
 

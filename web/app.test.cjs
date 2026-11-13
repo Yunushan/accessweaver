@@ -394,9 +394,28 @@ test('diagnostic modes require an explicit STUN target and isolate proxy fields'
 });
 test('diagnostic report identifies and escapes the tested path and endpoint',()=>{
  const env=environment();env.put('report',{host:'example.com',port:443,path:'socks5',transport:'tcp',proxy:'<img src=x onerror=alert(1)>',checks:[{name:'Proxy',status:'failed',detail:'refused'}],at:new Date().toISOString()});env.run('renderProbe(report)');
- assert.match(env.get('diagnostic-meta').innerHTML,/socks5 \/ tcp/);assert.match(env.get('diagnostic-meta').innerHTML,/&lt;img/);assert.doesNotMatch(env.get('diagnostic-meta').innerHTML,/<img/);assert.match(env.get('diagnostic-meta').innerHTML,/One or more checks failed/);
+ assert.match(env.get('diagnostic-meta').innerHTML,/SOCKS5 · TCP/);assert.match(env.get('diagnostic-meta').innerHTML,/&lt;img/);assert.doesNotMatch(env.get('diagnostic-meta').innerHTML,/<img/);assert.match(env.get('diagnostic-meta').innerHTML,/One or more checks failed/);
 });
 
+test('diagnostic reports localize known results without rewriting diagnostic data',()=>{
+ const env=environment();
+ const report={host:'example.com',port:443,path:'direct',transport:'tcp',at:'2026-11-01T00:00:00Z',
+  checks:[{name:'Cleanup',status:'failed',durationMs:1234,detail:'Original <detail>'},
+   {name:'constructor',status:'ok',durationMs:1,detail:'Original custom detail'}]};
+ env.put('report',report);
+ for(const [lang,path,check,status] of [
+  ['en','Direct','Cleanup','Failed'],['tr','Doğrudan','Temizleme','Başarısız'],
+  ['ru','Напрямую','Очистка','Ошибка'],['es','Directa','Limpieza','Fallido'],
+ ]){
+  env.put('testLanguage',lang);env.run('state.lang=testLanguage;renderProbe(report)');
+  assert.ok(env.get('diagnostic-meta').innerHTML.includes(path+' · TCP'));
+  assert.ok(env.get('diagnostic-results').innerHTML.includes(check+' · '+status));
+  assert.ok(env.get('diagnostic-results').innerHTML.includes(new Intl.NumberFormat(lang).format(1234)+' ms'));
+  assert.match(env.get('diagnostic-results').innerHTML,/Original &lt;detail&gt;/);
+  assert.match(env.get('diagnostic-results').innerHTML,/constructor/);
+ }
+ assert.deepEqual(plain(env.run('report')),report);
+});
 test('a rejected diagnostic clears the previous report and export instead of showing stale success',async()=>{
  const env=environment();env.run('state.view="diagnostics";state.offline=false;state.loading=false;state.token="fixture";state.lastProbe={checks:[{status:"ok"}]}');
  env.get('probe-path').value='direct';env.get('probe-transport').value='tcp';env.context.fetch=async()=>({ok:false,status:403,json:async()=>({error:'policy denied'})});
