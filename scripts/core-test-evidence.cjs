@@ -4,6 +4,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),{createHash}=require('node:crypto'),{spawn,execFileSync}=require('node:child_process');
 const MODULE='github.com/Yunushan/accessweaver',modes=['unit','race','vet'],stages=['identity','catalog','execute','source','complete'];
 const sources=['.github/workflows/native-core.yml','scripts/core-test-evidence.cjs','scripts/core-test-catalog/main.go','scripts/core-test-catalog/main_test.go','go.mod','go.sum'];
+function reportSources(platform){return platform==='darwin'?[...sources,'.github/workflows/release.yml']:sources}
 // Only these public, fixed CLI cases/phases may appear in supplemental
 // annotations. Dynamic test labels and Output payloads are never retained.
 const closedPipePackage=MODULE+'/cmd/accessweaver',closedPipeRoot='TestRecordedEngineClosedStdoutAndStderrReapBeforeScopeRestoration',closedPipeRepeat='TestRecordedEngineClosedStandardPipeRepeated';
@@ -36,11 +37,16 @@ class Tracker{
 function elapsed(value){return value===undefined?0:Number.isFinite(value)&&value>=0&&value<=86400?Math.round(value*1000):0}
 function command(repo,args){return execFileSync(args[0],args.slice(1),{cwd:repo,encoding:'utf8',maxBuffer:8<<20,stdio:['pipe','pipe','ignore'],timeout:180000})}
 function identity(repo){const source=command(repo,['git','rev-parse','HEAD']).trim(),tree=command(repo,['git','rev-parse','HEAD^{tree}']).trim();assert.ok(/^[0-9a-f]{40}$/.test(source)&&/^[0-9a-f]{40}$/.test(tree));assert.equal(command(repo,['git','status','--porcelain=v1']),'','Core source must be clean');return {source,tree}}
-function testArguments(mode,previewRoot=false){assert.ok(modes.includes(mode));return mode==='vet'?['vet','./...']:['test','-json','-count=1',...(previewRoot?['-timeout=6m']:['-p=2']),...(mode==='race'?['-race']:[]),'./...']}
+function testArguments(mode,previewRoot=false,releaseDarwin=false){
+ assert.ok(modes.includes(mode)&&(!releaseDarwin||(mode==='unit'&&!previewRoot)));
+ if(mode==='vet')return ['vet','./...'];
+ const scheduling=releaseDarwin?[]:previewRoot?['-timeout=6m']:['-p=2'];
+ return ['test','-json','-count=1',...scheduling,...(mode==='race'?['-race']:[]),'./...'];
+}
 // Windows ChildProcess.kill uses libuv's retained process handle, not uv_kill's
 // numeric-PID reopen. This owns only the root, not an arbitrary descendant tree.
 // https://raw.githubusercontent.com/nodejs/node/v26.8.2/deps/uv/src/win/process.c
-function signalOwnedChild(child,platform,signal,groupKill=process.kill){assert.ok(['linux','win32'].includes(platform));try{if(platform==='win32')child.kill(signal);else groupKill(-child.pid,signal)}catch{}}
+function signalOwnedChild(child,platform,signal,groupKill=process.kill){assert.ok(['linux','win32','darwin'].includes(platform));try{if(platform==='win32')child.kill(signal);else groupKill(-child.pid,signal)}catch{}}
 function failureAnnotations(plan,projected){
  planValue(plan);const labels=[];
  for(const p of plan.packages){const actual=projected.packages.find(value=>value.path===p.path);if(!actual)continue;let failed=false;
@@ -51,7 +57,7 @@ function failureAnnotations(plan,projected){
 }
 function closedPipeFailureAnnotations(tracker){return [...tracker.closedPipeFailures].filter(label=>closedPipeLabels.has(label)).map(label=>closedPipePackage+'#'+label)}
 async function run(repo,mode,tracker){
- const args=testArguments(mode,process.env.CORE_PREVIEW_ROOT_LAYOUT==='1'),windows=process.platform==='win32';
+ const args=testArguments(mode,process.env.CORE_PREVIEW_ROOT_LAYOUT==='1',process.platform==='darwin'),windows=process.platform==='win32';
  return new Promise(resolve=>{const child=spawn('go',args,{cwd:repo,env:{...process.env,GOTOOLCHAIN:'local'},stdio:['ignore',mode==='vet'?'ignore':'pipe','ignore'],detached:!windows,windowsHide:true});let pending=Buffer.alloc(0),bytes=0,failed=false,forced=false,closed=false,killTimer;
  const stop=()=>{if(forced||closed)return;forced=true;signalOwnedChild(child,process.platform,'SIGTERM');killTimer=setTimeout(()=>{signalOwnedChild(child,process.platform,'SIGKILL')},5000)};
  const timer=setTimeout(()=>{failed=true;stop()},12*60000);
@@ -63,17 +69,30 @@ async function run(repo,mode,tracker){
 async function boundedHash(file){const fd=await fs.open(file,'r');try{const a=await fd.stat();assert.ok(a.isFile()&&a.size>0&&a.size<=2<<20);const hash=createHash('sha256'),buffer=Buffer.alloc(65536);let total=0;for(;;){const {bytesRead}=await fd.read(buffer,0,Math.min(buffer.length,(2<<20)-total+1),null);if(!bytesRead)break;total+=bytesRead;assert.ok(total<=2<<20);hash.update(buffer.subarray(0,bytesRead))}const b=await fd.stat();assert.ok(total===a.size&&a.size===b.size&&a.dev===b.dev&&a.ino===b.ino&&a.mtimeMs===b.mtimeMs);return hash.digest('hex')}finally{await fd.close()}}
 async function writeReport(repo,data,filename='status.json'){
  assert.ok(['status.json',...modes.map(mode=>'status-'+mode+'.json')].includes(filename),'Unsupported core report name');
- exact(data,['schemaVersion','sourceCommit','sourceTree','sourceSHA256','platform','architecture','go','mode','stage','exitCode','streamValid','sourceStable','inputBytes','unknownEvents','overflow','discardedOutputEvents','buildFailures','packages','outcome','productionQualificationComplete']);assert.ok(data.schemaVersion===1&&/^[0-9a-f]{40}$/.test(data.sourceCommit)&&/^[0-9a-f]{40}$/.test(data.sourceTree)&&['linux','windows'].includes(data.platform)&&(data.platform!=='windows'||data.mode==='unit')&&['amd64','arm64'].includes(data.architecture)&&data.go==='go1.27.3'&&modes.includes(data.mode)&&stages.includes(data.stage)&&[null,...Array.from({length:256},(_,i)=>i)].includes(data.exitCode)&&typeof data.streamValid==='boolean'&&typeof data.sourceStable==='boolean'&&typeof data.overflow==='boolean'&&data.productionQualificationComplete===false&&['passed','failed'].includes(data.outcome));
- for(const k of ['inputBytes','unknownEvents','discardedOutputEvents','buildFailures'])assert.ok(Number.isSafeInteger(data[k])&&data[k]>=0&&data[k]<=134217728);exact(data.sourceSHA256,sources);assert.ok(Object.values(data.sourceSHA256).every(v=>/^[0-9a-f]{64}$/.test(v)));assert.ok(Array.isArray(data.packages)&&data.packages.length<=128);
+ exact(data,['schemaVersion','sourceCommit','sourceTree','sourceSHA256','platform','architecture','go','mode','stage','exitCode','streamValid','sourceStable','inputBytes','unknownEvents','overflow','discardedOutputEvents','buildFailures','packages','outcome','productionQualificationComplete']);assert.ok(data.schemaVersion===1&&/^[0-9a-f]{40}$/.test(data.sourceCommit)&&/^[0-9a-f]{40}$/.test(data.sourceTree)&&['linux','windows','darwin'].includes(data.platform)&&(data.platform==='linux'||data.mode==='unit')&&['amd64','arm64'].includes(data.architecture)&&data.go==='go1.27.3'&&modes.includes(data.mode)&&stages.includes(data.stage)&&[null,...Array.from({length:256},(_,i)=>i)].includes(data.exitCode)&&typeof data.streamValid==='boolean'&&typeof data.sourceStable==='boolean'&&typeof data.overflow==='boolean'&&data.productionQualificationComplete===false&&['passed','failed'].includes(data.outcome));
+ for(const k of ['inputBytes','unknownEvents','discardedOutputEvents','buildFailures'])assert.ok(Number.isSafeInteger(data[k])&&data[k]>=0&&data[k]<=134217728);exact(data.sourceSHA256,reportSources(data.platform));assert.ok(Object.values(data.sourceSHA256).every(v=>/^[0-9a-f]{64}$/.test(v)));assert.ok(Array.isArray(data.packages)&&data.packages.length<=128);
  for(const p of data.packages){exact(p,['path','status','elapsedMilliseconds','tests']);assert.ok(p.path===MODULE||p.path.startsWith(MODULE+'/'));assert.ok(['not-run','running','passed','failed','skipped','vet-passed'].includes(p.status));assert.ok(Number.isSafeInteger(p.elapsedMilliseconds)&&p.elapsedMilliseconds>=0&&p.elapsedMilliseconds<=86400000);for(const t of p.tests){exact(t,['name','status','attempts','elapsedMilliseconds','childPassed','childFailed','childSkipped']);assert.ok(/^(Test|Fuzz|Example)[\p{L}\p{N}_]*$/u.test(t.name)&&t.name.length<=256&&['not-run','running','passed','failed','skipped'].includes(t.status));for(const k of ['attempts','elapsedMilliseconds','childPassed','childFailed','childSkipped'])assert.ok(Number.isSafeInteger(t[k])&&t[k]>=0&&t[k]<=86400000)}}
  const roots=data.packages.flatMap(p=>p.tests);const passed=data.stage==='complete'&&data.exitCode===0&&data.streamValid&&data.sourceStable&&!data.unknownEvents&&!data.overflow&&!data.buildFailures&&data.packages.length>0&&data.packages.every(p=>data.mode==='vet'?p.status==='vet-passed':['passed','skipped'].includes(p.status))&&(data.mode==='vet'||roots.every(t=>['passed','skipped'].includes(t.status)&&t.attempts===1&&t.childFailed===0));assert.equal(data.outcome==='passed',passed,'Core evidence outcome differs');
  const encoded=JSON.stringify(data)+'\n';assert.ok(Buffer.byteLength(encoded)<=8<<20);const folder=path.join(repo,'build/native-core-evidence');await fs.mkdir(folder,{recursive:true,mode:0o700});const info=await fs.lstat(folder),resolved=await fs.realpath(folder),build=await fs.realpath(path.join(repo,'build'));assert.ok(info.isDirectory()&&!info.isSymbolicLink()&&path.dirname(resolved)===build);const fd=await fs.open(path.join(resolved,filename),'wx',0o600);try{await fd.writeFile(encoded,'utf8')}finally{await fd.close()}
 }
 async function main(){
- const mode=process.argv[2],repo=path.resolve(__dirname,'..'),platform={linux:'linux',win32:'windows'}[process.platform];assert.ok(platform&&process.env.GITHUB_ACTIONS==='true'&&modes.includes(mode)&&(platform!=='windows'||mode==='unit'));if(platform==='windows')assert.ok(process.env.RUNNER_ENVIRONMENT==='github-hosted'&&process.env.RUNNER_OS==='Windows');for(const key of ['CORE_PREVIEW_ROOT_LAYOUT','CORE_MODE_REPORTS','CORE_FAILURE_ANNOTATIONS'])assert.ok(process.env[key]===undefined||['0','1'].includes(process.env[key]));const arch={x64:'amd64',arm64:'arm64'}[process.arch];assert.equal(platform,process.env.ACCESSWEAVER_EXPECT_GOOS);assert.equal(arch,process.env.ACCESSWEAVER_EXPECT_GOARCH);const before=identity(repo);assert.equal(before.source,process.env.GITHUB_SHA);assert.equal(command(repo,['go','version']).trim(),'go version go1.27.3 '+platform+'/'+arch);
+ const mode=process.argv[2],repo=path.resolve(__dirname,'..');
+ const platform={linux:'linux',win32:'windows',darwin:'darwin'}[process.platform];
+ assert.ok(platform&&process.env.GITHUB_ACTIONS==='true'&&modes.includes(mode)&&(platform==='linux'||mode==='unit'));
+ if(platform!=='linux'){
+  const runnerOS={windows:'Windows',darwin:'macOS'}[platform];
+  assert.ok(process.env.RUNNER_ENVIRONMENT==='github-hosted'&&process.env.RUNNER_OS===runnerOS);
+ }
+ for(const key of ['CORE_PREVIEW_ROOT_LAYOUT','CORE_MODE_REPORTS','CORE_FAILURE_ANNOTATIONS'])assert.ok(process.env[key]===undefined||['0','1'].includes(process.env[key]));
+ const arch={x64:'amd64',arm64:'arm64'}[process.arch];
+ assert.equal(platform,process.env.ACCESSWEAVER_EXPECT_GOOS);
+ assert.equal(arch,process.env.ACCESSWEAVER_EXPECT_GOARCH);
+ const before=identity(repo);
+ assert.equal(before.source,process.env.GITHUB_SHA);
+ assert.equal(command(repo,['go','version']).trim(),'go version go1.27.3 '+platform+'/'+arch);
  let stage='catalog',tracker=null,plan=null,execution={exitCode:null,streamValid:false,bytes:0},stable=false;
  try{const listed=command(repo,['go','list',...(mode==='race'?['-race']:[]),'-json','./...']);plan=JSON.parse(execFileSync('go',['run','./scripts/core-test-catalog','-root',repo],{cwd:repo,input:listed,encoding:'utf8',maxBuffer:8<<20,stdio:['pipe','pipe','ignore'],timeout:180000}));tracker=new Tracker(plan);stage='execute';execution=await run(repo,mode,tracker);stage='source';const after=identity(repo);stable=before.source===after.source&&before.tree===after.tree;assert.ok(stable);stage='complete'}catch{}
- const projected=tracker?tracker.value(mode,execution.exitCode):{unknownEvents:0,overflow:false,discardedOutputEvents:0,buildFailures:0,packages:[],outcome:'failed'},sourceSHA256={};for(const name of sources)sourceSHA256[name]=await boundedHash(path.join(repo,name));const outcome=stage==='complete'&&stable&&execution.streamValid&&projected.outcome==='passed'?'passed':'failed';
+ const projected=tracker?tracker.value(mode,execution.exitCode):{unknownEvents:0,overflow:false,discardedOutputEvents:0,buildFailures:0,packages:[],outcome:'failed'},sourceSHA256={};for(const name of reportSources(platform))sourceSHA256[name]=await boundedHash(path.join(repo,name));const outcome=stage==='complete'&&stable&&execution.streamValid&&projected.outcome==='passed'?'passed':'failed';
  const data={schemaVersion:1,sourceCommit:before.source,sourceTree:before.tree,sourceSHA256,platform,architecture:arch,go:'go1.27.3',mode,stage,exitCode:execution.exitCode,streamValid:execution.streamValid,sourceStable:stable,inputBytes:execution.bytes,...projected,outcome,productionQualificationComplete:false};await writeReport(repo,data,process.env.CORE_MODE_REPORTS==='1'?'status-'+mode+'.json':'status.json');console.log(JSON.stringify({mode,stage,outcome,packages:data.packages.length,unknownEvents:data.unknownEvents}));if(outcome!=='passed'){if(process.env.CORE_FAILURE_ANNOTATIONS==='1'&&plan&&stable){for(const label of failureAnnotations(plan,projected))console.log('::error title=Source-known root failure::'+label);for(const label of closedPipeFailureAnnotations(tracker))console.log('::error title=Source-known closed-pipe failure::'+label)}process.exitCode=1;}
 }
 module.exports={Tracker,planValue,writeReport,sources,modes,stages,testArguments,signalOwnedChild,failureAnnotations,closedPipeFailureAnnotations};if(require.main===module)main().catch(()=>{console.error('Core qualification evidence failed');process.exitCode=1});

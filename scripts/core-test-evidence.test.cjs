@@ -36,6 +36,9 @@ test('preview reporting keeps full root scope, default concurrency and existing 
  assert.deepEqual(C.testArguments('unit',true),['test','-json','-count=1','-timeout=6m','./...']);
  assert.deepEqual(C.testArguments('race',true),['test','-json','-count=1','-timeout=6m','-race','./...']);
  assert.deepEqual(C.testArguments('unit'),['test','-json','-count=1','-p=2','./...']);assert.deepEqual(C.testArguments('vet',true),['vet','./...']);
+ assert.deepEqual(C.testArguments('unit',false,true),['test','-json','-count=1','./...']);
+ assert.throws(()=>C.testArguments('race',false,true));
+ assert.throws(()=>C.testArguments('unit',true,true));
 });
 test('Windows unit reports support distinct exclusive names and reject unsafe output names or unsupported modes',async t=>{
  const root=await temporary(t),sourceSHA256=Object.fromEntries(C.sources.map(name=>[name,'c'.repeat(64)]));
@@ -74,4 +77,18 @@ test('fixed worker stage projection retains no file contents or arbitrary suffix
 test('worker annotation allowlist matches all fixed public fixture stage codes',async()=>{
  const source=await fs.readFile(path.join(__dirname,'../cmd/accessweaver/audit_run_pipe_linux_test.go'),'utf8'),block=source.match(/var recordedEnginePipeStages = map\[string\]string\{([^}]+)\}/)[1],labels=[...block.matchAll(/"([0-9]{2})":\s*"(worker-[a-z-]+)"/g)];assert.equal(labels.length,15);assert.equal(new Set(labels.map(m=>m[1])).size,15);
  const pkg=MODULE+'/cmd/accessweaver',root='TestRecordedEngineClosedStandardPipeRepeated',p={schemaVersion:1,module:MODULE,packages:[{path:pkg,tests:[root]}]};for(const stage of [...labels.map(m=>m[2]),'worker-unavailable']){const t=new C.Tracker(p),label=root+'/attempt-20/accepted/scope-cleanup/'+stage;t.event({Action:'fail',Package:pkg,Test:label});assert.deepEqual(C.closedPipeFailureAnnotations(t),[pkg+'#'+label])}
+});
+
+test('macOS unit report binds the release workflow and excludes private data',async t=>{
+ const root=await temporary(t);
+ const sourceSHA256=Object.fromEntries(C.sources.map(name=>[name,'c'.repeat(64)]));
+ const data={schemaVersion:1,sourceCommit:'a'.repeat(40),sourceTree:'b'.repeat(40),sourceSHA256,platform:'darwin',architecture:'arm64',go:'go1.27.3',mode:'unit',stage:'complete',exitCode:0,streamValid:true,sourceStable:true,inputBytes:100,...completed().value('unit',0),productionQualificationComplete:false};
+ await assert.rejects(C.writeReport(root,data));
+ sourceSHA256['.github/workflows/release.yml']='d'.repeat(64);
+ await assert.rejects(C.writeReport(root,{...data,mode:'race'}));
+ await C.writeReport(root,data);
+ const report=JSON.parse(await fs.readFile(path.join(root,'build/native-core-evidence/status.json'),'utf8'));
+ assert.equal(report.platform,'darwin');
+ assert.equal(report.sourceSHA256['.github/workflows/release.yml'],'d'.repeat(64));
+ assert.equal(report.outcome,'passed');
 });
