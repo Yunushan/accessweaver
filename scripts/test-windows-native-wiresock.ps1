@@ -20,6 +20,7 @@ $checks=[ordered]@{
     directBlocked=$false;peerHandshake=$false;disconnectCompleted=$false;disconnectedTrafficBlocked=$false
     managedRemovalCompleted=$false;vendorRemovalCompleted=$false;peerExited=$false;fixtureRemoved=$false
 }
+$workflowOutcomes=[ordered]@{install='not-run';disconnect='not-run';remove='not-run';'vendor-uninstall'='not-run'}
 $stage='baseline'
 $bin=Join-Path $env:RUNNER_TEMP ('accessweaver-wiresock-'+[guid]::NewGuid().ToString('N'))
 $controller=Join-Path $bin 'accessweaver.exe'
@@ -39,14 +40,47 @@ function Invoke-PrivateNative([string]$program,[string[]]$arguments){
         return @{exitCode=$LASTEXITCODE;stdout=($lines -join [Environment]::NewLine)}
     } finally {$ErrorActionPreference=$old}
 }
+function Get-WorkflowOutcome($run,$job) {
+    if($job.result.rebootRequired -eq $true){return 'restart-required'}
+    if($run.exitCode -eq 0 -and $job.state -ceq 'succeeded'){return 'succeeded'}
+    if($null -eq $job){return 'no-job-json'}
+    if($null -eq $job.result){return 'no-worker-result'}
+    if($job.result.reportingFailure){return 'worker-reporting-failed'}
+    # Map source-known messages in memory. Never retain the worker's text,
+    # paths, exit codes, vendor output or result payload in the public report.
+    $workerError=[string]$job.result.error
+    switch -CaseSensitive -Regex ($workerError) {
+        '^Downloaded component SHA-256 mismatch$' {return 'download-hash-mismatch'}
+        '^Installer publisher signature could not be verified$' {return 'download-publisher-refused'}
+        '^WireSock installer publisher signature could not be verified$' {return 'installer-publisher-refused'}
+        '^WireSock installation did not produce a CLI$' {return 'installed-cli-missing'}
+        '^Tool failed: wiresock-setup\.exe \(exit -?[0-9]{1,10}\)$' {return 'installer-exit-failure'}
+        '^Timed out: wiresock-setup\.exe$' {return 'installer-timeout'}
+        '^Vendor service missing: (WireSockAppService|WireSockConnectService); finish installation/reboot before connecting$' {return 'vendor-service-missing'}
+        '^Vendor service (is not ready for setup: (WireSockAppService|WireSockConnectService)|state changed during setup; retry when it is stable)$' {return 'vendor-service-not-ready'}
+        '^Tool failed: (wiresock-connect-cli|wiresock-client)\.exe \(exit -?[0-9]{1,10}\)$' {return 'vendor-cli-exit-failure'}
+        '^Timed out: (wiresock-connect-cli|wiresock-client)\.exe$' {return 'vendor-cli-timeout'}
+        '^Invalid WireGuard configuration$' {return 'config-invalid'}
+        '^Use a separately elevated system apply CLI for machine changes\.' {return 'worker-not-elevated'}
+        '^No supported registered WireSock product found; use Windows Apps settings for an unrecognized package$' {return 'uninstall-registration-missing'}
+        '^Registered vendor uninstaller is outside protected installation storage$' {return 'uninstaller-location-refused'}
+        '^Vendor uninstaller publisher signature could not be verified$' {return 'uninstaller-publisher-refused'}
+        '^Vendor (CLI remains installed|uninstall registration remains); inspect vendor uninstall logs$' {return 'vendor-removal-unconfirmed'}
+        default {return 'other-workflow-failure'}
+    }
+}
 function Invoke-TestWorkflow([hashtable]$request){
+    $action=$request.action
+    $workflowOutcomes[$action]='fixture-error'
     $path=Join-Path $bin ('request-'+[guid]::NewGuid().ToString('N')+'.json')
-    [IO.File]::WriteAllText($path,($request|ConvertTo-Json -Depth 4 -Compress),[Text.UTF8Encoding]::new($false))
     try {
+        [IO.File]::WriteAllText($path,($request|ConvertTo-Json -Depth 4 -Compress),[Text.UTF8Encoding]::new($false))
         $run=Invoke-PrivateNative $controller @('system','apply',$path,'--confirm')
         $job=$null
         if($run.stdout.Length -le 1048576){try {$job=ConvertFrom-Json -InputObject $run.stdout -ErrorAction Stop}catch{}}
-        return @{passed=($run.exitCode -eq 0 -and $job.state -eq 'succeeded');restart=($job.result.rebootRequired -eq $true)}
+        $outcome=Get-WorkflowOutcome $run $job
+        $workflowOutcomes[$action]=$outcome
+        return @{passed=($outcome -ceq 'succeeded');restart=($outcome -ceq 'restart-required')}
     } finally {[IO.File]::Delete($path)}
 }
 try {
@@ -142,7 +176,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=1;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;productionQualificationComplete=$false}
+$report=@{schemaVersion=2;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
