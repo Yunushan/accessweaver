@@ -7,6 +7,9 @@ on:
     branches: [codex/dns-adapter-coverage]
     paths:
       - .github/workflows/release.yml
+      - .github/workflows/darwin-audit-commands.yml
+      - scripts/test-darwin-audit-commands.sh
+      - scripts/test_darwin_audit_command_capture.py
       - scripts/build-all.sh
       - scripts/package-release.sh
       - scripts/release_archive.py

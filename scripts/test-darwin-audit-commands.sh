@@ -18,10 +18,11 @@ reserved=(/Library/Preferences/.accessweaver-policy-stage-*)
 mkdir -p build >/dev/null 2>&1 || fail
 CGO_ENABLED=0 go test -trimpath -c -ldflags "-X github.com/Yunushan/accessweaver/internal/buildinfo.Commit=$source_commit -X github.com/Yunushan/accessweaver/internal/buildinfo.SourceState=clean" -o build/darwin-audit-commands.test ./cmd/accessweaver >/dev/null 2>&1 || fail
 [[ "$(git rev-parse HEAD 2>/dev/null)" == "$source_commit" && -z "$(git status --porcelain --untracked-files=normal 2>/dev/null)" ]] || fail
-# Discard raw subprocess output in memory. Only source-fixed labels are emitted;
-# there is no private report/log file, artifact upload or payload collection.
-python3 - "$source_commit" "$expected_arch" <<'PY'
-import os, subprocess, sys
+# Discard raw subprocess output in memory and retain only fixed observations.
+capture_status=0
+python3 - "$source_commit" "$expected_arch" <<'PY' || capture_status=$?
+import hashlib, json, os, re, subprocess, sys
+from pathlib import Path
 source_commit, expected_arch = sys.argv[1:]
 labels = {
     'ordinary Darwin audit hosted source context unavailable',
@@ -82,7 +83,8 @@ command = ['/usr/bin/sudo','-n','/usr/bin/env','-i','PATH=/usr/bin:/bin:/usr/sbi
     os.path.abspath('build/darwin-audit-commands.test'),
     '-test.run=^TestDisposableDarwinAuditCommands$', '-test.timeout=180s', '-test.v']
 process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-seen, line, overflow, total = set(), bytearray(), False, 0
+seen, line, overflow, total, root_passes = set(), bytearray(), False, 0, 0
+root_pass = re.compile(r'--- PASS: TestDisposableDarwinAuditCommands \([0-9]+\.[0-9]+s\)')
 while True:
     block=process.stdout.read(4096)
     if not block: break
@@ -90,8 +92,9 @@ while True:
     if total > 1 << 20: overflow=True
     for value in block:
         if value == 10:
-            text=line.decode('utf-8',errors='replace')
+            text=line.decode('utf-8',errors='replace').removesuffix('\r')
             if not overflow:
+                if root_pass.fullmatch(text): root_passes += 1
                 for label in labels:
                     if text.endswith(label): seen.add(label)
             line.clear()
@@ -99,11 +102,33 @@ while True:
         else: overflow=True
 process.stdout.close()
 status=process.wait()
+passed = status == 0 and root_passes == 1 and not overflow and not seen
+sources = (
+    '.github/workflows/darwin-audit-commands.yml',
+    'cmd/accessweaver/managed_audit_ordinary_darwin_test.go',
+    'scripts/test-darwin-audit-commands.sh',
+    'scripts/test_darwin_audit_command_capture.py',
+)
+report = {
+    'schemaVersion': 1,
+    'sourceCommit': source_commit,
+    'sourceSHA256': {name: hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in sources},
+    'architecture': expected_arch,
+    'rootTestPassedOnce': root_passes == 1,
+    'commandExitSucceeded': status == 0,
+    'overflow': overflow,
+    'failureLabels': sorted(seen),
+    'commandPassed': passed,
+    'productionQualificationComplete': False,
+}
+with Path('build/darwin-audit-command-status.json').open('x', encoding='utf-8') as output:
+    json.dump(report, output, indent=2)
+    output.write('\n')
 for label in sorted(seen): print(label)
-passed=status==0 and not overflow and not seen
 print('Ordinary Darwin audit source commands '+('PASS' if passed else 'FAIL'))
 sys.exit(0 if passed else 1)
 PY
 if sudo -n test -e "$policy" 2>/dev/null || sudo -n test -L "$policy" 2>/dev/null || sudo -n test -e "$coordination" 2>/dev/null || sudo -n test -L "$coordination" 2>/dev/null; then fail; fi
 reserved=(/Library/Preferences/.accessweaver-policy-stage-*)
 ((${#reserved[@]} == 0)) || fail
+exit "$capture_status"
