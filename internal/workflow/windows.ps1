@@ -1078,6 +1078,7 @@ function WireSock-InstallerPlan([string]$architecture) {
                 pattern='wiresock-secure-connect-x64-*.exe'
                 url='https://wiresock.net/_api/download-release.php?product=wiresock-secure-connect&platform=windows_x64&version=3.8.1.1'
                 sha256='bd5a7eba32177b1022eda42d233b6b7848ea38604a63b0205666b4060b89a375'
+                cachedEngineSHA256='f7c8e620f44efab8c85eac96eee781875df816b483e9ff584dfbc5eb48349902'
             }
         }
         'arm64' {
@@ -1085,6 +1086,7 @@ function WireSock-InstallerPlan([string]$architecture) {
                 pattern='wiresock-secure-connect-arm64-*.exe'
                 url='https://wiresock.net/_api/download-release.php?platform=windows_arm64&product=wiresock-secure-connect&version=3.8.1.1'
                 sha256='74af4720a702eeff2d0586c0694f9527f604e2dd3f8ea568dca196dd69f6f06d'
+                cachedEngineSHA256='b6afed7d78c9aad39747027d3d2e37c0429dd25861b17b926904614adda8a869'
             }
         }
         default {throw 'Native Windows architecture is unavailable or unsupported for WireSock installation'}
@@ -1930,6 +1932,7 @@ function Uninstall-WireSockProduct {
         $record=$bundles[0]
         [void](Get-WireSockMsiProductCode $hiddenMSIs[0] $msiexec -BundleOwnsUninstall)
     }
+    $packageCache=Join-Path $env:ProgramData 'Package Cache'
     $command=[Environment]::ExpandEnvironmentVariables([string]$record.UninstallString).Trim()
     if($record.WindowsInstaller -eq 1){
         $program=$msiexec
@@ -1941,16 +1944,25 @@ function Uninstall-WireSockProduct {
         if($command -match '^"([^"]+\.exe)"(?:[ \t]|$)'){$program=$matches[1]}
         elseif($command -match '^([^"]+?\.exe)(?:[ \t]|$)'){$program=$matches[1]}
         if($program -notmatch '^[A-Za-z]:\\[^:*?"<>|]+\.exe$' -or
-            (-not (Under $program $env:ProgramFiles) -and -not (Under $program (Join-Path $env:ProgramData 'Package Cache')))){
+            (-not (Under $program $env:ProgramFiles) -and -not (Under $program $packageCache))){
             throw 'Registered vendor uninstaller is outside protected installation storage'
         }
-        if($paired -and ($program -ine $record.BundleCachePath -or -not (Under $program (Join-Path $env:ProgramData 'Package Cache')))){
+        if($paired -and ($program -ine $record.BundleCachePath -or -not (Under $program $packageCache))){
             throw 'Registered vendor uninstaller is outside protected installation storage'
         }
         No-Reparse $program
         $signature=Get-AuthenticodeSignature -LiteralPath $program
         $digest=(Get-FileHash -LiteralPath $program -Algorithm SHA256).Hash.ToLowerInvariant()
-        if(-not (Test-InstallerPublisher 'wiresock' $signature $digest $inputData.nativeArchitecture)){throw 'Vendor uninstaller publisher signature could not be verified'}
+        if(-not (Test-InstallerPublisher 'wiresock' $signature $digest $inputData.nativeArchitecture)){
+            # Burn restores the inner signature when it caches the engine.
+            # Use its exact release-derived hash only for the validated pair.
+            $architecture=$inputData.nativeArchitecture
+            if(-not $paired -or $architecture -cnotin @('amd64','arm64') -or
+                $signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate -or
+                $digest -cne (WireSock-InstallerPlan $architecture).cachedEngineSHA256){
+                throw 'Vendor uninstaller publisher signature could not be verified'
+            }
+        }
         $arguments=@('/uninstall','/quiet','/norestart')
         $codes=@(0,3010,1641)
     }

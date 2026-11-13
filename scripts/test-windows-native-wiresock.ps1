@@ -40,7 +40,7 @@ $connectionRecovery=[ordered]@{
 $managedRemovalProfileList='not-checked'
 $vendorCLI=[ordered]@{profileList='not-checked';directStatus='not-checked';profileExport='not-checked';keyPairRetained=$false;endpointRetained=$false;prefixesRetained=$false;selectedAppRetained=$false}
 $uninstallRegistration=[ordered]@{observed=$false;total=0;visibleBundles=0;hiddenMSIs=0;other=0;hiddenMSIIdentity='not-checked'}
-$cachedBundleTrust=[ordered]@{path='not-checked';signature='not-checked';publisher='not-checked';installerBytes='not-checked'}
+$cachedBundleTrust=[ordered]@{path='not-checked';signature='not-checked';publisher='not-checked';installerBytes='not-checked';engineBytes='not-checked'}
 $stage='baseline'
 $bin=Join-Path $env:RUNNER_TEMP ('accessweaver-wiresock-'+[guid]::NewGuid().ToString('N'))
 $controller=Join-Path $bin 'accessweaver.exe'
@@ -189,7 +189,7 @@ function Get-HiddenMSIIdentity($record){
     if($matches[0].Length -ne $command.Length){return 'extra-command-arguments'}
     return 'product-matched'
 }
-function Get-NativeInstallerPin {
+function Get-NativeInstallerPins {
     # Read the committed product pin as data. The installer staging file is
     # removed by the worker before this fixture can observe the vendor cache.
     $tokens=$null
@@ -205,9 +205,11 @@ function Get-NativeInstallerPin {
     if($clauses.Count -ne 1){throw 'Native installer architecture unavailable'}
     $tables=@($clauses[0].Item2.FindAll({param($node) $node -is [System.Management.Automation.Language.HashtableAst]},$true))
     if($tables.Count -ne 1){throw 'Native installer pin unavailable'}
-    $pin=$tables[0].SafeGetValue().sha256
-    if($pin -isnot [string] -or $pin -cnotmatch '\A[a-f0-9]{64}\z'){throw 'Native installer pin unavailable'}
-    return $pin
+    $plan=$tables[0].SafeGetValue()
+    foreach($pin in @($plan.sha256,$plan.cachedEngineSHA256)){
+        if($pin -isnot [string] -or $pin -cnotmatch '\A[a-f0-9]{64}\z'){throw 'Native installer pin unavailable'}
+    }
+    return $plan
 }
 function Observe-CachedBundleTrust($record) {
     $cachedBundleTrust.path='refused'
@@ -237,9 +239,10 @@ function Observe-CachedBundleTrust($record) {
     if($subject -is [string]){
         $cachedBundleTrust.publisher=if($subject -match 'NT Kernel|WireSock'){'matches'}else{'differs'}
     }else{$cachedBundleTrust.publisher='missing'}
-    $installerHash=Get-NativeInstallerPin
+    $pins=Get-NativeInstallerPins
     $cachedHash=(Get-FileHash -LiteralPath $program -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
-    $cachedBundleTrust.installerBytes=if($cachedHash -ceq $installerHash){'match'}else{'differ'}
+    $cachedBundleTrust.installerBytes=if($cachedHash -ceq $pins.sha256){'match'}else{'differ'}
+    $cachedBundleTrust.engineBytes=if($cachedHash -ceq $pins.cachedEngineSHA256){'match'}else{'differ'}
 }
 function Observe-VendorUninstallRegistration {
     # Compare registry properties in memory. Publish only counts and a fixed category, without
@@ -488,7 +491,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=16;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;managedRemovalProfileList=$managedRemovalProfileList;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;cachedBundleTrust=$cachedBundleTrust;productionQualificationComplete=$false}
+$report=@{schemaVersion=17;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;managedRemovalProfileList=$managedRemovalProfileList;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;cachedBundleTrust=$cachedBundleTrust;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))

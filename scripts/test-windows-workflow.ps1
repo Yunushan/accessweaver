@@ -1307,10 +1307,33 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Registered WireSock MSI uninstall command does not match its product code'}
         Assert ($refused -and $calls.Count -eq 0) 'WireSock paired uninstall requires a valid hidden MSI product key without a command'
         $hiddenRecord.PSChildName=$productCode
+        $amd64EnginePin=(WireSock-InstallerPlan 'amd64').cachedEngineSHA256
+        $arm64EnginePin=(WireSock-InstallerPlan 'arm64').cachedEngineSHA256
+        foreach($case in @(
+            @{digest=$arm64EnginePin;signature=$unknownSigner},
+            @{digest=$amd64EnginePin;signature=$invalidSigner},
+            @{digest=('a'*64);signature=$unknownSigner}
+        )){
+            $fixtureDigest=$case.digest
+            $fixtureSignature=$case.signature
+            $refused=$false
+            try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
+            if(-not $refused -or $calls.Count){throw 'Unverified cached engine reached uninstall cleanup'}
+        }
+        $fixtureDigest=$amd64EnginePin
+        $fixtureSignature=$unknownSigner
+        $pairedEntries=$entries
+        $entries=@(@{PSPath=$registration})
+        $refused=$false
+        try {Invoke-FixtureUninstall | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Vendor uninstaller publisher signature could not be verified'}
+        Assert ($refused -and $calls.Count -eq 0) 'WireSock cached engine requires a validated pair and a valid native signature and pin'
+        $entries=$pairedEntries
         $verifyRemoval=$true
         $result=Invoke-FixtureUninstall
         Assert (-not $result.rebootRequired -and ($calls -join ',') -ceq 'task,profile,uninstall,check-hidden-registration,check-registration,wait,check-hidden-registration,check-registration,retire-ownership,Vendor uninstall completed: WireSock Secure Connect') 'WireSock paired uninstall runs the bundle and waits for the hidden MSI'
         Assert $true 'WireSock paired uninstall accepts a hidden MSI without an uninstall command'
+        Assert $true 'WireSock paired uninstall accepts its exact release-derived cached engine'
+        $fixtureDigest=$x64Pin
         $verifyRemoval=$false
         $calls.Clear()
         $entries=@(@{PSPath=$registration})
