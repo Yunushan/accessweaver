@@ -128,12 +128,19 @@ function Stop-ToolTree([Diagnostics.Process]$process) {
     $helper=[Diagnostics.Process]::new();$helper.StartInfo=$start
     try {Stop-ToolTreeWithHelper $process $helper} finally {$helper.Dispose()}
 }
-function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600) {
+function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600,[string]$WorkingDirectory,[hashtable]$ChildEnvironment) {
     if($Timeout -lt 1 -or $Timeout -gt 86400){throw 'Tool timeout must be between 1 and 86400 seconds'}
     $start=[Diagnostics.ProcessStartInfo]::new();$start.FileName=$program;$start.Arguments=(@($arguments | ForEach-Object {Native-Argument $_}) -join ' ')
     $start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true;$start.RedirectStandardInput=$true
     $start.WorkingDirectory=Split-Path -Parent $program
     if (-not [IO.Path]::IsPathRooted($program)) {$start.WorkingDirectory=$root}
+    if($WorkingDirectory){$start.WorkingDirectory=$WorkingDirectory}
+    if($null -ne $ChildEnvironment){
+        $start.EnvironmentVariables.Clear()
+        foreach($name in $ChildEnvironment.Keys){
+            $start.EnvironmentVariables[[string]$name]=[string]$ChildEnvironment[$name]
+        }
+    }
     $p=[Diagnostics.Process]::new();$p.StartInfo=$start;$started=$false
     # Fixed diagnostics only: never include the task output, arguments or path.
     $traceTask=([IO.Path]::GetFileName($program) -ieq 'schtasks.exe')
@@ -182,9 +189,9 @@ function Run-Tool([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[
         } finally {$p.Dispose();Trace-TaskQueryStage 'disposed'}
     }
 }
-function Native([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600) {
+function Native([string]$program,[string[]]$arguments=@(),[int[]]$codes=@(0),[switch]$Secret,[int]$Timeout=600,[string]$WorkingDirectory,[hashtable]$ChildEnvironment) {
     # Keep native output separate from the returned record, even for multi-line tools.
-    $all=@(Run-Tool $program $arguments $codes -Secret:$Secret -Timeout $Timeout)
+    $all=@(Run-Tool $program $arguments $codes -Secret:$Secret -Timeout $Timeout -WorkingDirectory $WorkingDirectory -ChildEnvironment $ChildEnvironment)
     return $all[-1]
 }
 function Private-DirectorySecurity {
@@ -1817,19 +1824,52 @@ function Scan-Strategies {
             }
         }
         $level=if($r.scan){$r.scan}else{'standard'};$scope=@{quick='quick';standard='standard';full='force'}[$level]
-        $old=[Environment]::GetEnvironmentVariable('SCANLEVEL');$oldDomains=[Environment]::GetEnvironmentVariable('DOMAINS')
-        $oldBatch=[Environment]::GetEnvironmentVariable('BATCH');$oldPath=$env:PATH
-        $bashStartup=@{}
-        try{
-            if($ownedScanBundle){
-                foreach($name in @('BASH_ENV','ENV','SHELLOPTS','BASHOPTS','CDPATH')){
-                    $bashStartup[$name]=[Environment]::GetEnvironmentVariable($name)
-                    [Environment]::SetEnvironmentVariable($name,$null)
-                }
-            }
-            $env:BATCH='1';$env:PATH=$bash.Directory.FullName+';'+$env:PATH;$env:SCANLEVEL=$scope;$env:DOMAINS=if($r.targets){@($r.targets)-join ' '}else{'discord.com discord.gg'};$unixPath=$check.FullName -replace '\\','/';if($unixPath -match '^([A-Za-z]):/(.*)$'){$unixPath='/cygdrive/'+$matches[1].ToLowerInvariant()+'/'+$matches[2]};$result=Native $bash.FullName @('--noprofile','--norc',$unixPath) -Timeout 4200;if($null -eq $result -or $result.outputComplete -ne $true){throw 'Scan output was incomplete; no strategy was selected'};$report=Join-Path $root ('logs\'+$r.engine+'-blockcheck.txt');Write-Atomic $report $result.stdout;return @{scanLevel=$level;output=$result.stdout;reportPath=$report;note='Review detected strategies before installing. A scan result is not a guarantee for UDP voice.'}}finally{[Environment]::SetEnvironmentVariable('SCANLEVEL',$old);[Environment]::SetEnvironmentVariable('DOMAINS',$oldDomains);[Environment]::SetEnvironmentVariable('BATCH',$oldBatch);$env:PATH=$oldPath
-            foreach($name in $bashStartup.Keys){[Environment]::SetEnvironmentVariable($name,$bashStartup[$name])}
+        $domains=if($r.targets){$r.targets -join ' '}else{'discord.com discord.gg'}
+        $unixPath=$check.FullName -replace '\\','/'
+        if($unixPath -match '^([A-Za-z]):/(.*)$'){
+            $unixPath='/cygdrive/'+$matches[1].ToLowerInvariant()+'/'+$matches[2]
         }
+        $arguments=@('--noprofile','--norc',$unixPath)
+        if($ownedScanBundle){
+            $privateState=Join-Path $ownedScanBundle ('state-'+[guid]::NewGuid().ToString('N'))
+            [void][IO.Directory]::CreateDirectory($privateState)
+            $system=Join-Path $env:SystemRoot 'System32'
+            $childEnvironment=@{
+                SystemRoot=$env:SystemRoot
+                WINDIR=$env:SystemRoot
+                SystemDrive=[IO.Path]::GetPathRoot($env:SystemRoot).TrimEnd('\')
+                ComSpec=(Join-Path $system 'cmd.exe')
+                PATH=($bash.Directory.FullName+';'+$system)
+                HOME=$privateState
+                TEMP=$privateState
+                TMP=$privateState
+                BATCH='1'
+                SCANLEVEL=$scope
+                DOMAINS=$domains
+            }
+            $result=Native $bash.FullName $arguments -Timeout 4200 -WorkingDirectory $check.Directory.FullName -ChildEnvironment $childEnvironment
+        }else{
+            $oldScanLevel=$env:SCANLEVEL
+            $oldDomains=$env:DOMAINS
+            $oldBatch=$env:BATCH
+            $oldPath=$env:PATH
+            try {
+                $env:BATCH='1'
+                $env:PATH=$bash.Directory.FullName+';'+$oldPath
+                $env:SCANLEVEL=$scope
+                $env:DOMAINS=$domains
+                $result=Native $bash.FullName $arguments -Timeout 4200
+            } finally {
+                $env:SCANLEVEL=$oldScanLevel
+                $env:DOMAINS=$oldDomains
+                $env:BATCH=$oldBatch
+                $env:PATH=$oldPath
+            }
+        }
+        if($null -eq $result -or $result.outputComplete -ne $true){throw 'Scan output was incomplete; no strategy was selected'}
+        $report=Join-Path $root ('logs\'+$r.engine+'-blockcheck.txt')
+        Write-Atomic $report $result.stdout
+        return @{scanLevel=$level;output=$result.stdout;reportPath=$report;note='Review detected strategies before installing. A scan result is not a guarantee for UDP voice.'}
     } finally {
         if($ownedScanBundle){
             $resolved=[IO.Path]::GetFullPath($ownedScanBundle)

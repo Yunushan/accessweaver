@@ -373,9 +373,13 @@ try {
     }
     function Assert-TrustedTree([string]$path){if($path -cne $script:stagedScanBundle){throw 'Unexpected managed scan cleanup target'}}
     function Native {
-        param($program,$arguments,[int]$Timeout)
+        param($program,$arguments,[int]$Timeout,$WorkingDirectory,$ChildEnvironment)
         if($program -cne (Join-Path $script:stagedScanBundle 'bash.exe') -or $arguments[-1] -notlike '*/blockcheck2.sh'){throw 'Unexpected staged scan executable or script'}
-        if($env:BASH_ENV){throw 'Managed scan inherited an external Bash startup file'}
+        if($env:BASH_ENV -cne 'fixture-startup' -or $ChildEnvironment.ContainsKey('BASH_ENV')){throw 'Managed scan did not isolate the child startup environment'}
+        $system=Join-Path $env:SystemRoot 'System32'
+        if($WorkingDirectory -cne $script:stagedScanBundle -or $ChildEnvironment.PATH -cne ($script:stagedScanBundle+';'+$system)){throw 'Managed scan used an unexpected working directory or search path'}
+        if(-not (Under $ChildEnvironment.HOME $script:stagedScanBundle) -or $ChildEnvironment.TEMP -cne $ChildEnvironment.HOME){throw 'Managed scan did not keep state in the staged bundle'}
+        if($ChildEnvironment.Count -ne 11 -or $ChildEnvironment.SCANLEVEL -cne 'quick' -or $ChildEnvironment.DOMAINS -cne 'example.com'){throw 'Managed scan child inputs changed'}
         return @{stdout='* SUMMARY fixture';outputComplete=$true}
     }
     $oldBashEnv=$env:BASH_ENV
