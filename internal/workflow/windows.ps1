@@ -1089,7 +1089,11 @@ function Install-Prerequisite([string]$component) {
     # Resolve the kernel's architecture before any bundle lookup or download.
     $plan=Prerequisite-Plan $component
     $installer=$null
-    foreach($base in @($r.bundlePath,(Join-Path $env:ProgramFiles 'SplitWire-Turkey\Prerequisites'))) {
+    $bundleRoots=@($r.bundlePath)
+    if(-not $inputData.managedPolicy){
+        $bundleRoots+=@(Join-Path $env:ProgramFiles 'SplitWire-Turkey\Prerequisites')
+    }
+    foreach($base in $bundleRoots) {
         if($base -and (Test-Path -LiteralPath $base)){
             $candidateInstallers=@(Get-ChildItem -LiteralPath $base -Recurse -Filter $plan.pattern -File | Where-Object {$_.Name -match $plan.assetPattern})
             if($candidateInstallers.Count -gt 1){throw 'Multiple compatible prerequisite installers found; supply one reviewed installer'}

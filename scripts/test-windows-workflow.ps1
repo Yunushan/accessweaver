@@ -124,6 +124,26 @@ try {
     $runtimeStage=$runtimeLaunches[0].program
     Assert ((Under $runtimeStage (Join-Path $root 'downloads')) -and -not (Test-Path -LiteralPath $runtimeStage) -and (Test-Path -LiteralPath $runtimeFixture)) 'Bundled prerequisite launches only its verified protected copy and retires it'
 
+    $previousPrerequisiteProgramFiles=$env:ProgramFiles
+    try {
+        $env:ProgramFiles=Join-Path $prerequisiteRoot 'program-files'
+        $implicitRoot=Join-Path $env:ProgramFiles 'SplitWire-Turkey\Prerequisites'
+        [void](New-Item -ItemType Directory -Path $implicitRoot -Force)
+        Copy-Item -LiteralPath $runtimeFixture -Destination $implicitRoot
+        $r=[pscustomobject]@{bundlePath=$null}
+        $inputData=[pscustomobject]@{managedPolicy=$true;allowDownloads=$false}
+        $script:prerequisiteCalls.Clear()
+        $previousDownload=(Get-Command Download).ScriptBlock
+        try {
+            function Download { Require-DownloadPermission;throw 'Fixture reached an unauthorized download' }
+            $rejected=$false
+            try {Install-Prerequisite 'vcredist'}catch{$rejected=$_.Exception.Message -ceq 'Administrator policy disables remote component and release requests'}
+            Assert ($rejected -and $script:prerequisiteCalls.Count -eq 0) 'Managed prerequisite ignores implicit unapproved local bundles'
+        } finally {Set-Item Function:Download $previousDownload}
+        $inputData=[pscustomobject]@{managedPolicy=$false}
+        Install-Prerequisite 'vcredist'
+        Assert (@($script:prerequisiteCalls | Where-Object {$_.kind -eq 'launch'}).Count -eq 1) 'Unmanaged prerequisite can still use the implicit local bundle'
+    } finally {$env:ProgramFiles=$previousPrerequisiteProgramFiles}
     $rejected=$false;try{Prerequisite-Plan 'unknown'|Out-Null}catch{$rejected=$_.Exception.Message -eq 'Unknown prerequisite component'}
     Assert $rejected 'Unknown prerequisite names cannot fall back to Visual C runtime installation'
 } finally {
