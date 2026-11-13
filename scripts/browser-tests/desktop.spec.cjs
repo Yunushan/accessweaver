@@ -1207,3 +1207,43 @@ test('browser history moves focus from the outgoing view and preserves sidebar f
  await expect(page.locator('#view-profiles')).toBeVisible();
  await expect(sidebar).toBeFocused();
 });
+
+test('background runtime changes announce localized status once and preserve keyboard focus', async ({page,core}) => {
+  await open(page,core);
+  await page.locator('.nav-item[data-view="settings"]').click();
+  const language=page.locator('#settings-language');
+  await language.selectOption('es');
+  await expect(page.locator('html')).toHaveAttribute('lang','es');
+  await language.focus();
+
+  const announcement=page.getByRole('status').and(page.locator('#runtime-announcement'));
+  await expect(announcement).toHaveAttribute('aria-atomic','true');
+  await expect(announcement).toHaveText('');
+  await announcement.evaluate(node => {
+    const updates=[];
+    const observer=new MutationObserver(() => updates.push(node.textContent));
+    observer.observe(node,{childList:true,characterData:true,subtree:true});
+    node.runtimeTestUpdates=updates;
+  });
+
+  let runtime={state:'failed',pid:0,log:['PRIVATE_SYNTHETIC_RUNTIME_LOG']};
+  await page.route('**/api/v1/runtime',route => route.fulfill({json:runtime}));
+  await expect(announcement).toHaveText('El motor terminó');
+  await expect(language).toBeFocused();
+
+  // A different raw state with the same user-facing status must stay quiet.
+  runtime={state:'exited',pid:0,log:[]};
+  await page.waitForFunction(() => state.runtime.state==='exited');
+  await expect(announcement).toHaveText('El motor terminó');
+
+  runtime={state:'running',lifecyclePending:true,pid:42,log:[]};
+  await expect(announcement).toHaveText('Cierre sin confirmar');
+  await expect(language).toBeFocused();
+
+  runtime={state:'stopped',pid:0,log:[]};
+  await expect(announcement).toHaveText('Motor detenido');
+  expect(await announcement.evaluate(node => node.runtimeTestUpdates)).toEqual([
+    'El motor terminó','Cierre sin confirmar','Motor detenido',
+  ]);
+  await expect(language).toBeFocused();
+});

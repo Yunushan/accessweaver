@@ -224,6 +224,10 @@
     {
       "id": 56,
       "name": "browser history moves focus from the outgoing view and preserves sidebar focus"
+    },
+    {
+      "id": 57,
+      "name": "background runtime changes announce localized status once and preserve keyboard focus"
     }
   ]
 }
