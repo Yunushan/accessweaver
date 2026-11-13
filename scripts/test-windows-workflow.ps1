@@ -516,6 +516,41 @@ try {
     Assert ($found[2] -ceq (Join-Path $appBase 'app-unknown')) 'Discord discovery retains nonstandard directory fallback after valid versions'
     Assert ((Find-App 'discord') -ceq (Join-Path $appBase 'app-1.0.10\Discord.exe')) 'Discord application lookup uses the highest discovered version'
 } finally {$env:LOCALAPPDATA=$previousLocalAppData}
+# Exercise registered custom paths with inert files and an in-memory registry view.
+& {
+    $registrationKey='30120f3b-3e88-5c75-afec-3de1a3155a97'
+    $machineKey='HKLM:\SOFTWARE\'+$registrationKey
+    $alternateKey='HKLM:\SOFTWARE\WOW6432Node\'+$registrationKey
+    $splitCordLocations=@{}
+    $splitCordFirst=Join-Path $testRoot 'SplitCord fixture one'
+    $splitCordSecond=Join-Path $testRoot 'SplitCord fixture two'
+    foreach($directory in @($splitCordFirst,$splitCordSecond)){
+        [void](New-Item -ItemType Directory -Path $directory)
+        [IO.File]::WriteAllText((Join-Path $directory 'SplitCord-Turkey.exe'),'inert fixture')
+    }
+    function Test-Path {
+        param([string]$LiteralPath,[string]$PathType,[string]$ErrorAction)
+        if($LiteralPath -in @($machineKey,$alternateKey)){return $splitCordLocations.ContainsKey($LiteralPath)}
+        $arguments=@{LiteralPath=$LiteralPath}
+        if($PathType){$arguments.PathType=$PathType}
+        if($ErrorAction){$arguments.ErrorAction=$ErrorAction}
+        Microsoft.PowerShell.Management\Test-Path @arguments
+    }
+    function Get-ItemProperty {
+        param([string]$LiteralPath,[string]$ErrorAction)
+        if($LiteralPath -in @($machineKey,$alternateKey)){return @{InstallLocation=$splitCordLocations[$LiteralPath]}}
+        Microsoft.PowerShell.Management\Get-ItemProperty -LiteralPath $LiteralPath -ErrorAction $ErrorAction
+    }
+    $splitCordLocations[$machineKey]='\\server\share'
+    $splitCordLocations[$alternateKey]=$splitCordFirst
+    Assert ((Find-App 'splitcord') -ieq (Join-Path $splitCordFirst 'SplitCord-Turkey.exe')) 'SplitCord discovery uses the registered custom path from the alternate machine view'
+    $splitCordLocations[$machineKey]=$splitCordFirst
+    Assert ((Find-App 'splitcord') -ieq (Join-Path $splitCordFirst 'SplitCord-Turkey.exe')) 'SplitCord discovery deduplicates matching machine registrations'
+    $splitCordLocations[$machineKey]=$splitCordSecond
+    $ambiguous=$false
+    try {Find-App 'splitcord' | Out-Null}catch{$ambiguous=$_.Exception.Message -ceq 'Multiple registered SplitCord installations matched'}
+    Assert $ambiguous 'SplitCord discovery refuses two different registered installations'
+}
 # Custom installer admission is exercised without discovery or network access.
 $previousWireSockCLI=(Get-Command WireSock-CLI).ScriptBlock;$previousWireSockRequest=$r
 try {

@@ -1988,9 +1988,38 @@ function Install-Method {
     }
     return @{installed=$r.engine}
 }
+function Find-SplitCordApp {
+    # electron-builder derives this NSIS key from the vendor app ID com.splitcord.turkey.
+    $installKey='30120f3b-3e88-5c75-afec-3de1a3155a97'
+    $registered=@(foreach($registry in @('HKLM:\SOFTWARE','HKLM:\SOFTWARE\WOW6432Node')){
+        $key=Join-Path $registry $installKey
+        if(-not (Test-Path -LiteralPath $key -ErrorAction Stop)){continue}
+        $location=(Get-ItemProperty -LiteralPath $key -ErrorAction Stop).InstallLocation
+        if($location -isnot [string] -or $location.Length -gt 4096 -or
+            $location -cnotmatch '\A[A-Za-z]:\\[^:*?"<>|\x00-\x1f]+\z'){continue}
+        $app=Join-Path ([IO.Path]::GetFullPath($location)) 'SplitCord-Turkey.exe'
+        No-Reparse $app
+        if(Test-Path -LiteralPath $app -PathType Leaf -ErrorAction Stop){$app}
+    })
+    $registered=@($registered | Sort-Object -Unique)
+    if($registered.Count -gt 1){throw 'Multiple registered SplitCord installations matched'}
+    if($registered.Count -eq 1){return $registered[0]}
+
+    $bases=@((Join-Path $env:LOCALAPPDATA 'Programs'),$env:ProgramFiles,${env:ProgramFiles(x86)})
+    foreach($base in @($bases | Where-Object {$_} | Select-Object -Unique)){
+        $directory=Join-Path $base 'SplitCord-Turkey'
+        No-Reparse $directory
+        if(Test-Path -LiteralPath $directory -PathType Container -ErrorAction Stop){
+            $files=@(Get-ChildItem -LiteralPath $directory -Recurse -Filter 'SplitCord-Turkey.exe' -File -ErrorAction Stop)
+            if($files.Count -gt 1){throw 'Multiple SplitCord executables matched in the installation directory'}
+            if($files.Count -eq 1){No-Reparse $files[0].FullName;return $files[0].FullName}
+        }
+    }
+    return $null
+}
 function Find-App([string]$variant) {
     if($variant -in @('discord','discord-ptb')){$dirs=@(Discord-Directories $variant);if($dirs.Count){return (Join-Path $dirs[0] $(if($variant -eq 'discord'){'Discord.exe'}else{'DiscordPTB.exe'}))};return $null}
-    if($variant -eq 'splitcord'){foreach($base in @((Join-Path $env:LOCALAPPDATA 'Programs\SplitCord-Turkey'),(Join-Path $env:ProgramFiles 'SplitCord-Turkey'))){if(Test-Path -LiteralPath $base){$file=Get-ChildItem -LiteralPath $base -Recurse -Filter 'SplitCord-Turkey.exe' -File|Select-Object -First 1;if($file){return $file.FullName}}};return $null}
+    if($variant -eq 'splitcord'){return Find-SplitCordApp}
     throw 'Unknown application variant'
 }
 function Wait-App([string]$variant,[bool]$installed,[int]$seconds=120) {
@@ -2340,10 +2369,13 @@ function Discover {
     $assets=@{};foreach($engine in $assetNames.Keys){$assets[$engine]=Find-Source $engine}
     [Console]::WriteLine('Discovery phase: applications')
     [Console]::WriteLine(('Discovery timing ms: applications {0}' -f $discoveryClock.ElapsedMilliseconds))
-    $apps=@{};foreach($variant in @('discord','discord-ptb','splitcord')){$apps[$variant]=Find-App $variant}
+    $apps=@{};foreach($variant in @('discord','discord-ptb')){$apps[$variant]=Find-App $variant}
+    $appInspectionError=$null
+    try {$apps.splitcord=Find-App 'splitcord'}
+    catch {$apps.splitcord=$null;$appInspectionError='SplitCord installation could not be identified safely'}
     [Console]::WriteLine('Discovery phase: conflicts')
     [Console]::WriteLine(('Discovery timing ms: conflicts {0}' -f $discoveryClock.ElapsedMilliseconds))
-    $conflicts=@();$kaspersky=Get-Process -Name 'avp','avpui' -ErrorAction SilentlyContinue;if($kaspersky){$conflicts+=@('Kaspersky is running; WinDivert compatibility must be checked')};if(($services|Where-Object {$_.name -eq 'CloudflareWARP' -and $_.status -eq 'Running'})){$conflicts+=@('Cloudflare WARP is running; check routing conflicts')}
+    $conflicts=@();if($appInspectionError){$conflicts+=@($appInspectionError)};$kaspersky=Get-Process -Name 'avp','avpui' -ErrorAction SilentlyContinue;if($kaspersky){$conflicts+=@('Kaspersky is running; WinDivert compatibility must be checked')};if(($services|Where-Object {$_.name -eq 'CloudflareWARP' -and $_.status -eq 'Running'})){$conflicts+=@('Cloudflare WARP is running; check routing conflicts')}
     [Console]::WriteLine('Discovery phase: refresh-task')
     [Console]::WriteLine(('Discovery timing ms: refresh-task {0}' -f $discoveryClock.ElapsedMilliseconds))
     $task=Get-RefreshTaskInspection
