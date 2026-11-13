@@ -31,7 +31,11 @@ $connectionRecovery=[ordered]@{
     externalEffects='not-observed'
     ownership='not-checked'
     profileList='not-checked'
+    journalReferenceValid=$false
+    retryOutcome='not-run'
+    profileListAfterRetry='not-checked'
 }
+$managedRemovalProfileList='not-checked'
 $vendorCLI=[ordered]@{profileList='not-checked';directStatus='not-checked';profileExport='not-checked';keyPairRetained=$false;endpointRetained=$false;prefixesRetained=$false;selectedAppRetained=$false}
 $uninstallRegistration=[ordered]@{observed=$false;total=0;visibleBundles=0;hiddenMSIs=0;other=0;hiddenMSIIdentity='not-checked'}
 $stage='baseline'
@@ -41,7 +45,9 @@ $peerBinary=Join-Path $bin 'wgpeer.exe'
 $selected=Join-Path $bin 'probe-selected.exe'
 $direct=Join-Path $bin 'probe-direct.exe'
 $state=Join-Path $bin 'peer'
-$owned=Join-Path $env:ProgramData 'AccessWeaver\profiles\wiresock-owned.json'
+$managedRoot=Join-Path $env:ProgramData 'AccessWeaver'
+$owned=Join-Path $managedRoot 'profiles\wiresock-owned.json'
+$installJournal=$null
 $peer=$null
 $attempted=$false
 $binarySHA256=@{}
@@ -196,6 +202,14 @@ function Observe-VendorUninstallRegistration {
     $uninstallRegistration.other=$other
     if($hiddenMSIs -eq 1){$uninstallRegistration.hiddenMSIIdentity=$identity}
 }
+function Get-ManagedVendorProfileList([string]$cli){
+    if(-not (Test-Path -LiteralPath $cli -PathType Leaf -ErrorAction Stop)){return 'not-checked'}
+    $list=Invoke-PrivateNative $cli @('list')
+    if($list.exitCode -ne 0 -or $list.stdout.Length -gt 8192){return 'command-failed'}
+    if([string]::IsNullOrWhiteSpace($list.stdout)){return 'empty'}
+    if($list.stdout -cmatch '(?<![a-zA-Z0-9-])AccessWeaver-[a-f0-9]{32}(?![a-zA-Z0-9-])'){return 'managed-profile-observed'}
+    return 'managed-profile-not-observed'
+}
 function Invoke-TestWorkflow([hashtable]$request){
     $action=$request.action
     $workflowOutcomes[$action]='fixture-error'
@@ -216,8 +230,16 @@ function Invoke-TestWorkflow([hashtable]$request){
             if($job.result.rollbackScope -ceq 'recorded-resources' -and $job.result.recordedRollbackComplete -is [bool]){
                 $connectionRecovery.recordedRollback=if($job.result.recordedRollbackComplete){'complete'}else{'incomplete'}
             }
-            # The finalizer emits this field only when it reports pending external effects.
             $connectionRecovery.externalEffects=if($job.result.externalEffectsPending -is [bool] -and $job.result.externalEffectsPending){'pending'}else{'not-reported'}
+            $journal=$job.result.journal
+            if($journal -is [string] -and $journal.Length -le 4096){
+                $name=[IO.Path]::GetFileName($journal)
+                if($name -cmatch '\Aworkflow-[a-f0-9]{32}\.json\z' -and
+                    $journal -ieq (Join-Path (Join-Path $managedRoot 'logs') $name)){
+                    $script:installJournal=$name
+                    $connectionRecovery.journalReferenceValid=$true
+                }
+            }
         }
         return @{passed=($outcome -ceq 'succeeded');restart=($outcome -ceq 'restart-required')}
     } finally {[IO.File]::Delete($path)}
@@ -281,12 +303,15 @@ try {
         if($connectionRecovery.observed){
             # Observe recovery before the fixture's remove and vendor uninstall steps.
             $connectionRecovery.ownership=if(Test-Path -LiteralPath $owned -ErrorAction Stop){'present'}else{'absent'}
-            if(Test-Path -LiteralPath $cli -PathType Leaf){
-                $list=Invoke-PrivateNative $cli @('list')
-                $connectionRecovery.profileList=if($list.exitCode -ne 0){'command-failed'}
-                    elseif([string]::IsNullOrWhiteSpace($list.stdout)){'empty'}
-                    elseif($list.stdout -cmatch '(?<![a-zA-Z0-9-])AccessWeaver-[a-f0-9]{32}(?![a-zA-Z0-9-])'){'managed-profile-observed'}
-                    else{'managed-profile-not-observed'}
+            $connectionRecovery.profileList=Get-ManagedVendorProfileList $cli
+            if($installJournal -and $connectionRecovery.recordedRollback -ceq 'incomplete'){
+                try {[void](Invoke-TestWorkflow @{action='recover';journalId=$installJournal})}
+                catch {}
+                finally {
+                    $connectionRecovery.retryOutcome=$workflowOutcomes['recover']
+                    $workflowOutcomes.Remove('recover')
+                }
+                $connectionRecovery.profileListAfterRetry=Get-ManagedVendorProfileList $cli
             }
         }
         throw 'WireSock installation and connection not confirmed'
@@ -360,7 +385,12 @@ try {
     # Report only the fixed stage and checks, including when a vendor tool fails.
 } finally {
     if($attempted){
-        try {$checks.managedRemovalCompleted=(Invoke-TestWorkflow @{action='remove';engine='wiresock'}).passed -and -not (Test-Path -LiteralPath $owned)}catch{}
+        try {
+            $removed=Invoke-TestWorkflow @{action='remove';engine='wiresock'}
+            $managedRemovalProfileList=Get-ManagedVendorProfileList $cli
+            $checks.managedRemovalCompleted=$removed.passed -and -not (Test-Path -LiteralPath $owned -ErrorAction Stop) -and
+                $managedRemovalProfileList -cin @('empty','managed-profile-not-observed')
+        } catch {}
         try {
             try {Observe-VendorUninstallRegistration}catch{}
             $removed=Invoke-TestWorkflow @{action='vendor-uninstall';engine='wiresock'}
@@ -382,7 +412,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=12;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;productionQualificationComplete=$false}
+$report=@{schemaVersion=13;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;managedRemovalProfileList=$managedRemovalProfileList;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
