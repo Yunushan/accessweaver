@@ -1449,15 +1449,97 @@ function Install-Drover {
     Stop-AppProcesses 'discord'
     $manifest=Join-Path $root 'profiles\drover-owned.json';$records=@()
     if(Test-Path -LiteralPath $manifest){throw 'Restore the existing managed drover installation before replacing it'}
-    foreach($dir in $dirs){foreach($name in @('version.dll','drover.ini')){$target=Join-Path $dir $name;Copy-Checked $(if($name -eq 'version.dll'){$dll}else{$ini}) $target;$entry=$script:undo | Where-Object {$_.kind -eq 'file' -and $_.path -eq $target} | Select-Object -Last 1;$records+=@{path=$target;backup=$entry.backup;installedHash=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash}}}
+    foreach($dir in $dirs){foreach($name in @('version.dll','drover.ini')){$target=Join-Path $dir $name;Copy-Checked $(if($name -eq 'version.dll'){$dll}else{$ini}) $target;$entry=$script:undo | Where-Object {$_.kind -eq 'file' -and $_.path -eq $target} | Select-Object -Last 1;$records+=@{path=$target;backup=$entry.backup;originalHash=$entry.originalHash;installedHash=(Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash}}}
     Write-Atomic $manifest (ConvertTo-Json -InputObject @($records) -Depth 5);Event 'Discord drover files installed with original-file backups'
 }
+function Get-DroverFileHash([string]$path) {
+    No-Reparse $path
+    if(-not (Test-Path -LiteralPath $path -ErrorAction Stop)){return}
+    $file=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+    if($file.PSIsContainer -or $file.Length -gt 128MB){throw 'Drover recovery requires a bounded ordinary file'}
+    return (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash
+}
+function Get-DroverRestorePlan($records) {
+    $discord=Join-Path $env:LOCALAPPDATA 'Discord'
+    $backups=Join-Path $root 'backups'
+    $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach($item in $records){
+        $path=$item.path
+        if($path -isnot [string] -or $path.Length -gt 4096 -or
+           $path -cnotmatch '\A[A-Za-z]:\\[^:*?"<>|\x00-\x1f]+\z' -or
+           [IO.Path]::GetFullPath($path) -ine $path -or -not $seen.Add($path) -or
+           $item.installedHash -isnot [string] -or $item.installedHash -notmatch '\A[a-fA-F0-9]{64}\z'){
+            throw 'Invalid or duplicate Drover recovery entry'
+        }
+        $directory=Split-Path -Parent $path
+        if((Split-Path -Parent $directory) -ine $discord -or (Split-Path -Leaf $directory) -notlike 'app-*' -or
+           (Split-Path -Leaf $path) -notin @('version.dll','drover.ini')){
+            throw 'Drover recovery target is outside the stable Discord installation'
+        }
+        No-Reparse $path
+        $original=$null
+        if($null -ne $item.backup){
+            if($item.backup -isnot [string] -or (Split-Path -Parent $item.backup) -ine $backups -or
+               (Split-Path -Leaf $item.backup) -cnotmatch '\A[a-f0-9]{32}\z'){
+                throw 'Invalid Drover recovery backup path'
+            }
+            Assert-TrustedItem $item.backup
+            $original=Get-DroverFileHash $item.backup
+            if(-not $original -or ($null -ne $item.originalHash -and $item.originalHash -ine $original)){
+                throw 'Original Drover backup is missing or changed'
+            }
+        }elseif($null -ne $item.originalHash){throw 'Original Drover backup is missing'}
+        $current=Get-DroverFileHash $path
+        $directoryExists=Test-Path -LiteralPath $directory -PathType Container -ErrorAction Stop
+        if(-not $directoryExists -and (Test-Path -LiteralPath $directory -ErrorAction Stop)){
+            throw 'The previous Discord version path is no longer a directory'
+        }
+        if($current -ine $original -and $current -ine $item.installedHash -and $directoryExists){
+            throw 'Drover file changed after installation; manual review required'
+        }
+        [pscustomobject]@{path=$path;backup=$item.backup;current=$current;original=$original;directoryExists=$directoryExists}
+    }
+}
 function Restore-Drover {
-    $manifest=Join-Path $root 'profiles\drover-owned.json';if(-not (Test-Path -LiteralPath $manifest)){return}
-    Stop-AppProcesses 'discord'
-    $records=Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
-    foreach($item in $records){if(-not (Under $item.path $env:LOCALAPPDATA)){throw 'Invalid drover recovery path'};No-Reparse $item.path;if(-not (Test-Path -LiteralPath (Split-Path -Parent $item.path))){Event 'An old Discord version folder is gone; its original backup is retained';continue};if(Test-Path -LiteralPath $item.path){if((Get-FileHash -LiteralPath $item.path -Algorithm SHA256).Hash -ne $item.installedHash){throw 'Drover file changed after installation; manual review required'}};if($item.backup){Copy-Item -LiteralPath $item.backup -Destination $item.path -Force}else{Remove-Item -LiteralPath $item.path -ErrorAction SilentlyContinue}}
-    Remove-Item -LiteralPath $manifest;Event 'Original Discord files restored'
+    $manifest=Join-Path $root 'profiles\drover-owned.json'
+    No-Reparse $manifest
+    if(-not (Test-Path -LiteralPath $manifest -ErrorAction Stop)){return}
+    Assert-TrustedItem $manifest
+    $entry=Get-Item -LiteralPath $manifest -Force -ErrorAction Stop
+    if($entry.PSIsContainer -or $entry.Length -le 0 -or $entry.Length -gt 1MB){throw 'Invalid Drover ownership record'}
+    $manifestHash=Get-DroverFileHash $manifest
+    $records=@(Get-Content -LiteralPath $manifest -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop)
+    if((Get-DroverFileHash $manifest) -cne $manifestHash){throw 'Drover ownership record changed during inspection'}
+    if($records.Count -eq 0 -or $records.Count -gt 512){throw 'Invalid Drover ownership record'}
+    # Refuse known conflicts before stopping Discord or changing any file.
+    $plan=@(Get-DroverRestorePlan $records)
+    if(@($plan | Where-Object {$_.directoryExists -and $_.current -ine $_.original}).Count){
+        Stop-AppProcesses 'discord'
+        $plan=@(Get-DroverRestorePlan $records)
+    }
+    foreach($item in $plan){
+        if(-not $item.directoryExists){continue}
+        if((Get-DroverFileHash $item.path) -ine $item.current){throw 'Drover file changed during restoration'}
+        if($item.current -ine $item.original){
+            $script:externalEffectsPending=$true
+            if($item.backup){
+                if((Get-DroverFileHash $item.backup) -ine $item.original){throw 'Original Drover backup changed during restoration'}
+                Copy-Item -LiteralPath $item.backup -Destination $item.path -Force -ErrorAction Stop
+            }else{
+                Remove-Item -LiteralPath $item.path -ErrorAction Stop
+            }
+        }
+    }
+    foreach($item in @(Get-DroverRestorePlan $records)){
+        if($item.directoryExists -and $item.current -ine $item.original){throw 'Drover restoration could not be verified'}
+    }
+    # Completed restorations may be retried after a partial failure, using
+    # the original backup hash to recognize files that are already restored.
+    if((Get-DroverFileHash $manifest) -cne $manifestHash){throw 'Drover ownership record changed during restoration'}
+    $script:externalEffectsPending=$true
+    Remove-Item -LiteralPath $manifest -ErrorAction Stop
+    if(Test-Path -LiteralPath $manifest -ErrorAction Stop){throw 'Drover ownership record could not be retired'}
+    Event 'Original Discord files restored; backups for retired versions were retained'
 }
 function Save-Hostlist {
     if($r.engine -notin @('zapret','zapret2','goodbyedpi')){throw 'Live hostlists support Zapret, Zapret2 and GoodbyeDPI'}
