@@ -1,0 +1,46 @@
+name: Windows native WireSock lifecycle
+
+on:
+  push:
+    branches: [main, codex/dns-adapter-coverage]
+    paths:
+      - scripts/test-windows-native-wiresock.ps1
+      - .github/workflows/windows-native-wiresock.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle:
+    name: WireSock lifecycle (windows/${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, os: windows-latest, sdkarch: x64}
+          - {arch: arm64, os: windows-11-arm, sdkarch: arm64}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          architecture: ${{ matrix.sdkarch }}
+          cache: false
+      - name: Exercise real WireSock lifecycle with a local peer
+        shell: powershell
+        env:
+          ACCESSWEAVER_NATIVE_WIRESOCK_CHECK: '1'
+        run: ./scripts/test-windows-native-wiresock.ps1 -Architecture '${{ matrix.arch }}'
+      - name: Retain fixed WireSock lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-wiresock-windows-${{ matrix.arch }}
+          path: build/native-wiresock/status.json
+          if-no-files-found: error
+          retention-days: 7
