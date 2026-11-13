@@ -38,6 +38,7 @@ $connectionRecovery=[ordered]@{
 $managedRemovalProfileList='not-checked'
 $vendorCLI=[ordered]@{profileList='not-checked';directStatus='not-checked';profileExport='not-checked';keyPairRetained=$false;endpointRetained=$false;prefixesRetained=$false;selectedAppRetained=$false}
 $uninstallRegistration=[ordered]@{observed=$false;total=0;visibleBundles=0;hiddenMSIs=0;other=0;hiddenMSIIdentity='not-checked'}
+$cachedBundleTrust=[ordered]@{path='not-checked';signature='not-checked';publisher='not-checked';installerBytes='not-checked'}
 $stage='baseline'
 $bin=Join-Path $env:RUNNER_TEMP ('accessweaver-wiresock-'+[guid]::NewGuid().ToString('N'))
 $controller=Join-Path $bin 'accessweaver.exe'
@@ -177,11 +178,49 @@ function Get-HiddenMSIIdentity($record){
     if($matches[0].Length -ne $command.Length){return 'extra-command-arguments'}
     return 'product-matched'
 }
+function Observe-CachedBundleTrust($record) {
+    $cachedBundleTrust.path='refused'
+    $cachePath=$record.BundleCachePath
+    if($cachePath -isnot [string] -or $cachePath.Length -gt 4096 -or $cachePath -notmatch '\A[A-Za-z]:\\[^:*?"<>|\x00-\x1f]+\.exe\z'){return}
+    $cacheRoot=[IO.Path]::GetFullPath((Join-Path $env:ProgramData 'Package Cache')).TrimEnd('\')+'\'
+    $program=[IO.Path]::GetFullPath($cachePath)
+    if(-not $program.StartsWith($cacheRoot,[StringComparison]::OrdinalIgnoreCase)){return}
+    $current=$program
+    while($current){
+        $item=Get-Item -LiteralPath $current -Force -ErrorAction Stop
+        if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){return}
+        if($current -ieq $program -and ($item.PSIsContainer -or $item.Length -le 0 -or $item.Length -gt 256MB)){return}
+        $current=Split-Path -Parent $current
+    }
+    $cachedBundleTrust.path='verified'
+    $cachedBundleTrust.signature='inspection-failed'
+    $signature=Get-AuthenticodeSignature -LiteralPath $program -ErrorAction Stop
+    $cachedBundleTrust.signature=switch([string]$signature.Status){
+        'Valid' {'valid'}
+        'NotSigned' {'unsigned'}
+        'HashMismatch' {'hash-mismatch'}
+        'NotTrusted' {'untrusted'}
+        default {'other'}
+    }
+    $subject=$signature.SignerCertificate.Subject
+    if($subject -is [string]){
+        $cachedBundleTrust.publisher=if($subject -match 'NT Kernel|WireSock'){'matches'}else{'differs'}
+    }else{$cachedBundleTrust.publisher='missing'}
+    $installer=Join-Path $managedRoot 'downloads\wiresock-setup.exe'
+    if(Test-Path -LiteralPath $installer -PathType Leaf -ErrorAction Stop){
+        $original=Get-Item -LiteralPath $installer -Force -ErrorAction Stop
+        if(-not ($original.Attributes -band [IO.FileAttributes]::ReparsePoint) -and $original.Length -gt 0 -and $original.Length -le 256MB){
+            $cachedHash=(Get-FileHash -LiteralPath $program -Algorithm SHA256 -ErrorAction Stop).Hash
+            $installerHash=(Get-FileHash -LiteralPath $installer -Algorithm SHA256 -ErrorAction Stop).Hash
+            $cachedBundleTrust.installerBytes=if($cachedHash -ceq $installerHash){'match'}else{'differ'}
+        }
+    }
+}
 function Observe-VendorUninstallRegistration {
     # Compare registry properties in memory. Publish only counts and a fixed category, without
     # registration keys, paths, product codes, or command lines.
     $total=0;$visibleBundles=0;$hiddenMSIs=0;$other=0
-    $identity='not-checked'
+    $identity='not-checked';$bundle=$null
     foreach($base in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')){
         if(-not (Test-Path -LiteralPath $base)){continue}
         foreach($entry in (Get-ChildItem -LiteralPath $base)){
@@ -194,7 +233,7 @@ function Observe-VendorUninstallRegistration {
                 if($hiddenMSIs -eq 1){$identity=Get-HiddenMSIIdentity $record}
             }
             elseif($record.WindowsInstaller -ne 1 -and $record.SystemComponent -ne 1 -and
-                -not [string]::IsNullOrWhiteSpace($record.BundleCachePath) -and -not [string]::IsNullOrWhiteSpace($record.BundleProviderKey)){$visibleBundles++}
+                -not [string]::IsNullOrWhiteSpace($record.BundleCachePath) -and -not [string]::IsNullOrWhiteSpace($record.BundleProviderKey)){$visibleBundles++;$bundle=$record}
             else {$other++}
         }
     }
@@ -204,6 +243,7 @@ function Observe-VendorUninstallRegistration {
     $uninstallRegistration.hiddenMSIs=$hiddenMSIs
     $uninstallRegistration.other=$other
     if($hiddenMSIs -eq 1){$uninstallRegistration.hiddenMSIIdentity=$identity}
+    if($visibleBundles -eq 1){Observe-CachedBundleTrust $bundle}
 }
 function Get-ManagedVendorProfileList([string]$cli){
     if(-not (Test-Path -LiteralPath $cli -PathType Leaf -ErrorAction Stop)){return 'not-checked'}
@@ -415,7 +455,7 @@ try {
         }
     }
 }
-$report=@{schemaVersion=13;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;managedRemovalProfileList=$managedRemovalProfileList;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;productionQualificationComplete=$false}
+$report=@{schemaVersion=14;sourceCommit=$source;target=('windows/'+$Architecture);sourceSHA256=$hashes;binarySHA256=$binarySHA256;stage=$stage;checks=$checks;workflowOutcomes=$workflowOutcomes;connectionState=$connectionState;connectionRecovery=$connectionRecovery;managedRemovalProfileList=$managedRemovalProfileList;vendorCLI=$vendorCLI;uninstallRegistration=$uninstallRegistration;cachedBundleTrust=$cachedBundleTrust;productionQualificationComplete=$false}
 $evidence=Join-Path $project 'build/native-wiresock'
 [void][IO.Directory]::CreateDirectory($evidence)
 [IO.File]::WriteAllText((Join-Path $evidence 'status.json'),($report|ConvertTo-Json -Depth 5 -Compress),[Text.UTF8Encoding]::new($false))
