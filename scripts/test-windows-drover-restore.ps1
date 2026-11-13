@@ -133,6 +133,8 @@ try {
     Require ($failed -and $script:journaled -and [IO.File]::Exists($first) -and
              -not [IO.File]::Exists($second) -and [IO.File]::Exists($manifest)) 'Partial install could not be identified'
     $oldDigest=$script:undo[0].manifestSHA256
+    $manifestJSON=[IO.File]::ReadAllText($manifest)
+    Require ($manifestJSON -notmatch '"originalHash"\s*:\s*\{') 'Absent original hash did not serialize as JSON null'
     $script:verifyPrepared=$false
     $rollback=@(Rollback)
     Require ($rollback.Count -eq 0 -and -not [IO.File]::Exists($first) -and
@@ -174,6 +176,22 @@ try {
     Require (-not [IO.File]::Exists($manifest) -and -not [IO.File]::Exists($first) -and
              -not [IO.File]::Exists($second)) 'Normal removal could not restore the latest installation'
 
+    [IO.File]::WriteAllText($second,'installed INI')
+    Write-Manifest @($records[1])
+    Restore-Drover
+    Require (-not [IO.File]::Exists($second) -and -not [IO.File]::Exists($manifest)) 'Single-entry ownership array did not restore'
+
+    $legacy=@{path=$second;backup=$null;installedHash=$installedINI;originalHash=[pscustomobject]@{unexpected=$true};
+        applicationSHA256=(Get-DroverFileHash $application);deploymentID=('a'*32)}
+    [IO.File]::WriteAllText($second,'installed INI')
+    Write-Manifest @($legacy)
+    Assert-Refused
+    Require ([IO.File]::Exists($second) -and [IO.File]::Exists($manifest)) 'Malformed original hash changed recovery state'
+    $legacy.originalHash=[pscustomobject]@{}
+    Write-Manifest @($legacy)
+    Restore-Drover
+    Require (-not [IO.File]::Exists($second) -and -not [IO.File]::Exists($manifest)) 'Stock-shell legacy ownership record could not restore'
+
     $script:undo.Clear()
     Install-Drover
     foreach($path in @($application,$first,$second)){[IO.File]::Delete($path)}
@@ -189,4 +207,4 @@ try {
         if([IO.Directory]::Exists($directory)){[IO.Directory]::Delete($directory)}
     }
 }
-Write-Output 'Fifteen bounded Drover install and restoration scenarios passed.'
+Write-Output 'Eighteen bounded Drover install and restoration scenarios passed.'

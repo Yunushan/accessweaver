@@ -4,7 +4,7 @@ $fixture=Join-Path $PSScriptRoot 'test-windows-apps.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($fixture,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Interactive Windows app fixture failed parsing'}
-foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage')){
+foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Test-FixtureCommunication')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -68,4 +68,56 @@ foreach($inventory in @(
     try {$null=Get-FixtureAppImage $inventory 'discord'}catch{$refused=$true}
     if(-not $refused){throw 'Unverified discovery identity was accepted'}
 }
-Write-Output 'Twenty-one interactive Windows application evidence checks passed.'
+# Drive the same prompt function with an inert process inventory and terminal.
+$script:promptCount=0
+$script:promptAnswer='PASS'
+function Read-Host([string]$Prompt){
+    if($Prompt -notmatch 'two-way|both directions'){throw 'Prompt omitted the two-way condition'}
+    $script:promptCount++
+    return $script:promptAnswer
+}
+foreach($kind in @('text','voice')){
+    $script:observations.Enqueue($true)
+    $script:observations.Enqueue($true)
+    Test-FixtureCommunication 'discord' $image $kind
+    if($script:observations.Count){throw 'Communication check omitted the post-prompt process check'}
+}
+if($script:promptCount -ne 2){throw 'Expected distinct text and voice confirmations'}
+foreach($answer in @('','pass','PASS ')){
+    $script:promptAnswer=$answer
+    $script:observations.Enqueue($true)
+    $refused=$false
+    try{Test-FixtureCommunication 'discord-ptb' $image 'text'}catch{
+        $refused=$_.Exception.Message -ceq 'Operator did not confirm two-way communication'
+    }
+    if(-not $refused -or $script:observations.Count){throw 'Unconfirmed communication was accepted'}
+}
+$before=$script:promptCount
+$refused=$false
+try{Test-FixtureCommunication 'splitcord' $image 'voice'}catch{
+    $refused=$_.Exception.Message -ceq 'Fixture observation limit reached'
+}
+if(-not $refused -or $script:promptCount -ne $before){throw 'Communication was prompted without a live image'}
+$script:promptAnswer='PASS'
+$script:observations.Enqueue($true)
+$refused=$false
+try{Test-FixtureCommunication 'splitcord' $image 'voice'}catch{
+    $refused=$_.Exception.Message -ceq 'Fixture observation limit reached'
+}
+if(-not $refused -or $script:promptCount -ne ($before+1)){throw 'Operator input replaced final live-image verification'}
+$communicationCalls=@($ast.FindAll({param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -ceq 'Check-FixtureCommunications'
+},$true))
+foreach($case in @(
+    @{variant='discord';start='discord-start-after-reinstall';remove='discord-remove'},
+    @{variant='discord-ptb';start='ptb-start';remove='ptb-remove'},
+    @{variant='splitcord';start='splitcord-start';remove='splitcord-remove'}
+)){
+    $calls=@($communicationCalls | Where-Object {$_.CommandElements[1].Value -ceq $case.variant})
+    $start=$commands[[array]::IndexOf($stages,$case.start)].Extent.StartOffset
+    $remove=$commands[[array]::IndexOf($stages,$case.remove)].Extent.StartOffset
+    if($calls.Count -ne 1 -or $calls[0].Extent.StartOffset -le $start -or $calls[0].Extent.StartOffset -ge $remove){
+        throw 'Communication checks must run with the intended client installed and started'
+    }
+}
+Write-Output 'Interactive Windows application evidence contracts passed.'

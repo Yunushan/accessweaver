@@ -1643,6 +1643,9 @@ function Install-Drover {
             if($original){
                 $backup=Join-Path $root ('backups\'+[guid]::NewGuid().ToString('N'))
                 [IO.File]::Copy($target,$backup,$false)
+            }else{
+                # Force JSON null in Windows PowerShell for a missing original.
+                $original=$null
             }
             [pscustomobject]@{deploymentID=$deploymentID;applicationSHA256=$appSHA256;path=$target;backup=$backup;originalHash=$original;installedHash=$hashes[$name]}
         }
@@ -1747,7 +1750,13 @@ function Get-DroverRestorePlan($records) {
             if(-not $original -or ($null -ne $item.originalHash -and $item.originalHash -ine $original)){
                 throw 'Original Drover backup is missing or changed'
             }
-        }elseif($null -ne $item.originalHash){throw 'Original Drover backup is missing'}
+        }elseif($null -ne $item.originalHash){
+            # Windows PowerShell 5.1 serialized an absent original file hash
+            # from earlier installers as an empty object in identity-bound records.
+            $legacyAbsentHash=$applicationSHA256 -and $item.originalHash -is [pscustomobject] -and
+                @($item.originalHash.PSObject.Properties).Count -eq 0
+            if(-not $legacyAbsentHash){throw 'Original Drover backup is missing'}
+        }
         $current=Get-DroverFileHash $path
         if($current -ine $original -and $current -ine $item.installedHash -and $directoryExists){
             throw 'Drover file changed after installation; manual review required'
@@ -1764,7 +1773,10 @@ function Restore-Drover([string]$ExpectedManifestSHA256) {
     if($entry.PSIsContainer -or $entry.Length -le 0 -or $entry.Length -gt 1MB){throw 'Invalid Drover ownership record'}
     $manifestHash=Get-DroverFileHash $manifest
     if($ExpectedManifestSHA256 -and $manifestHash -ine $ExpectedManifestSHA256){throw 'Drover recovery journal differs from the current ownership record'}
-    $records=@(Get-Content -LiteralPath $manifest -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop)
+    $manifestJSON=Get-Content -LiteralPath $manifest -Raw -ErrorAction Stop
+    # Windows PowerShell emits the whole decoded array as one pipeline object.
+    # Evaluate the JSON command before normalizing its records to an array.
+    $records=@((ConvertFrom-Json -InputObject $manifestJSON -ErrorAction Stop))
     if((Get-DroverFileHash $manifest) -cne $manifestHash){throw 'Drover ownership record changed during inspection'}
     if($records.Count -eq 0 -or $records.Count -gt 512){throw 'Invalid Drover ownership record'}
     # Refuse known conflicts before stopping Discord or changing any file.

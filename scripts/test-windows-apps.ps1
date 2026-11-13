@@ -1,9 +1,16 @@
 # Run only in a clean disposable Windows guest, as its ordinary desktop user.
+# Add -InteractiveCommunications with the approved controller digest to record
+# two-way text and voice checks with an authorized peer and disposable accounts.
+# Example: .\test-windows-apps.ps1 -DisposableVM -Executable APPROVED_CONTROLLER
+#          -ExpectedSHA256 APPROVED_CONTROLLER_DIGEST -InteractiveCommunications
+# A failed exchange can be recorded by pressing Enter, allowing cleanup to run.
+# Keep account names, message contents, recordings and screenshots out of the results.
 [CmdletBinding()]
 param(
     [string]$Executable='C:\AccessWeaver-Test\accessweaver.exe',
     [switch]$SkipSplitCord,
     [switch]$DisposableVM,
+    [switch]$InteractiveCommunications,
     [string]$ResultsDirectory='',
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$ExpectedSHA256=''
 )
@@ -77,6 +84,24 @@ function Assert-FixtureLiveImage([string]$Path,[bool]$Expected){
     throw 'Application process state was not confirmed in this desktop session'
 }
 
+function Test-FixtureCommunication([string]$Variant,[string]$Image,[string]$Kind) {
+    if($Variant -cnotin @('discord','discord-ptb','splitcord') -or $Kind -cnotin @('text','voice')){
+        throw 'Unknown application communication check'
+    }
+    Assert-FixtureLiveImage $Image $true
+    if($Kind -ceq 'text'){
+        $prompt="In $Variant, use an authorized disposable account and peer in a private test channel. Send a synthetic message and verify a reply. Type PASS only after both directions work"
+    }else{
+        $prompt="In $Variant, use the authorized test voice channel. Confirm that both participants hear and understand a spoken test phrase. Type PASS only after both directions work"
+    }
+    $answer=Read-Host $prompt
+    if($answer -cne 'PASS'){throw 'Operator did not confirm two-way communication'}
+    Assert-FixtureLiveImage $Image $true
+}
+
+if($InteractiveCommunications -and (-not $ExpectedSHA256 -or [Console]::IsInputRedirected)){
+    throw 'Interactive communications checks require the approved controller digest and an interactive desktop console'
+}
 if($env:OS -cne 'Windows_NT' -or ($env:USERNAME -ne 'WDAGUtilityAccount' -and
    (-not $DisposableVM -or (Get-CimInstance Win32_ComputerSystem).Model -notmatch 'Virtual|VMware'))){
     throw 'Explicitly disposable Windows guest required'
@@ -114,10 +139,11 @@ try {
     $checks=[Collections.Generic.List[object]]::new()
     $script:appEvidenceStage='baseline'
     $report=[ordered]@{
-        schemaVersion=3;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
+        schemaVersion=4;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
         fixtureSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();
         architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant();
         checks=$null;baselineClear=$false;splitCordIncluded=(-not $SkipSplitCord);
+        communicationMethod=$(if($InteractiveCommunications){'operator-observed-two-way'}else{'not-requested'});
         textExercised=$false;voiceExercised=$false;combinedRepairExecuted=$false;passed=$false
     }
 
@@ -202,6 +228,20 @@ try {
             if(Test-Path -LiteralPath $image){throw 'Previously discovered executable remains after removal'}
         }
     }
+    function Check-FixtureCommunications([string]$Variant){
+        if(-not $InteractiveCommunications){return}
+        foreach($kind in @('text','voice')){
+            Check ('communications-'+$Variant+'-'+$kind) {
+                if(-not $installedImages.ContainsKey($Variant)){throw 'Application install prerequisite failed'}
+                $image=$installedImages[$Variant]
+                if((Get-FixtureAppImage (Inspect-Apps) $Variant) -ine $image){
+                    throw 'Application identity changed before communication check'
+                }
+                $script:appEvidenceStage='interactive-communication'
+                Test-FixtureCommunication $Variant $image $kind
+            }
+        }
+    }
     function Check([string]$Name,[scriptblock]$Body){
         $script:appEvidenceStage='prerequisite'
         try {
@@ -247,6 +287,7 @@ try {
             $installedImages['discord']=$image
         }
         Check 'discord-start-after-reinstall' {Start-FixtureApp 'discord'}
+        Check-FixtureCommunications 'discord'
         Check 'discord-remove' {
             if(-not $installedImages.ContainsKey('discord') -or
                 -not (Get-FixtureAppImage (Inspect-Apps) 'discord')){throw 'Stable Discord install prerequisite failed'}
@@ -269,6 +310,7 @@ try {
             Assert-FixtureLiveImage $prior $false
         }
         Check 'ptb-start' {Start-FixtureApp 'discord-ptb'}
+        Check-FixtureCommunications 'discord-ptb'
         Check 'ptb-remove' {
             if(-not $installedImages.ContainsKey('discord-ptb')){throw 'PTB install prerequisite failed'}
             Remove-FixtureApp 'discord-ptb'
@@ -276,6 +318,7 @@ try {
         if(-not $SkipSplitCord){
             Check 'splitcord-install' {Install-FixtureApp 'splitcord'}
             Check 'splitcord-start' {Start-FixtureApp 'splitcord'}
+            Check-FixtureCommunications 'splitcord'
             Check 'splitcord-remove' {
                 if(-not $installedImages.ContainsKey('splitcord')){throw 'SplitCord install prerequisite failed'}
                 Remove-FixtureApp 'splitcord'
@@ -286,7 +329,12 @@ try {
             Check ('cleanup-'+$variant) {Remove-FixtureApp $variant}
         }
         $report.checks=@($checks.ToArray())
-        $report.passed=$report.baselineClear -and -not @($report.checks|Where-Object {-not $_.passed}).Count
+        if($InteractiveCommunications){
+            $report.textExercised=@($report.checks | Where-Object {$_.passed -and $_.name -clike 'communications-*-text'}).Count -eq $variants.Count
+            $report.voiceExercised=@($report.checks | Where-Object {$_.passed -and $_.name -clike 'communications-*-voice'}).Count -eq $variants.Count
+        }
+        $report.passed=$report.baselineClear -and -not @($report.checks|Where-Object {-not $_.passed}).Count -and
+            (-not $InteractiveCommunications -or ($report.textExercised -and $report.voiceExercised))
         [IO.File]::WriteAllText((Join-Path $run 'applications.json'),($report|ConvertTo-Json -Depth 5),$encoding)
     }
     if(-not $report.passed){throw 'Application acceptance failed. Review the per-run applications.json result.'}

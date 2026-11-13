@@ -41,6 +41,11 @@ jobs:
       - name: Verify Drover restoration and retry
         shell: pwsh
         run: ./scripts/test-windows-drover-restore.ps1
+      - name: Verify application evidence and Drover recovery in stock Windows PowerShell
+        shell: powershell
+        run: |
+          ./scripts/test-windows-app-evidence.ps1
+          ./scripts/test-windows-drover-restore.ps1
       - name: Run bounded inert component contracts
         shell: pwsh
         env:
