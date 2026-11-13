@@ -1036,17 +1036,28 @@ function Test-ProxiFyrePacketFilterRegistered {
     }
     return $found
 }
+function Assert-PrerequisiteRegistered([string]$component) {
+    switch($component){
+        'vcredist' {
+            if(-not (Test-ProxiFyreRuntimeRegistered)){throw 'Visual C++ runtime installation did not register the required runtime'}
+        }
+        'ndisapi' {
+            if(-not (Test-ProxiFyrePacketFilterRegistered)){throw 'Windows Packet Filter installation did not register the required driver'}
+        }
+        default {throw 'Unknown prerequisite component'}
+    }
+}
 function Setup-ProxiFyre([string]$proxy) {
     if($script:rebootRequired){throw 'Restart Windows before continuing ProxiFyre setup'}
     if(-not (Test-ProxiFyreRuntimeRegistered)){
         Install-Prerequisite 'vcredist'
         if($script:rebootRequired){throw 'Restart Windows after Visual C++ runtime installation, then retry ProxiFyre setup'}
-        if(-not (Test-ProxiFyreRuntimeRegistered)){throw 'Visual C++ runtime installation did not register the required runtime'}
+        Assert-PrerequisiteRegistered 'vcredist'
     }
     if(-not (Test-ProxiFyrePacketFilterRegistered)){
         Install-Prerequisite 'ndisapi'
         if($script:rebootRequired){throw 'Restart Windows after Windows Packet Filter installation, then retry ProxiFyre setup'}
-        if(-not (Test-ProxiFyrePacketFilterRegistered)){throw 'Windows Packet Filter installation did not register the required driver'}
+        Assert-PrerequisiteRegistered 'ndisapi'
     }
     $binary=Ensure-Asset 'proxifyre';$dir=Split-Path -Parent $binary
     Protect-Dir (Join-Path $dir 'logs')
@@ -1144,7 +1155,11 @@ function Install-Prerequisite([string]$component) {
             }
         }
     }
-    Event ('Prerequisite installed: '+$component)
+    if($script:rebootRequired){
+        Event ('Prerequisite installer requires a Windows restart: '+$component)
+    }else{
+        Event ('Prerequisite installer exited successfully: '+$component)
+    }
 }
 function Discord-Directories([string]$variant='discord') {
     $folder=if($variant -eq 'discord-ptb'){'DiscordPTB'}else{'Discord'}
@@ -1615,8 +1630,11 @@ function Install-Method {
             if($r.mode -eq 'once'){Event 'One-shot engine started; cancel the running workflow to stop it';[void](Native $binary $arguments -Timeout 86400)}else{Install-EngineService $r.engine $binary $arguments}
         }
         'dnscrypt' {Configure-DNS 'dnscrypt'}
-        'ndisapi' {Install-Prerequisite 'ndisapi'}
-        'vcredist' {Install-Prerequisite 'vcredist'}
+        {$_ -in @('ndisapi','vcredist')} {
+            Install-Prerequisite $r.engine
+            if($script:rebootRequired){return @{prerequisite=$r.engine;rebootRequired=$true}}
+            Assert-PrerequisiteRegistered $r.engine
+        }
         default {throw 'Unsupported install component'}
     }
     return @{installed=$r.engine}

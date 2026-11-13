@@ -133,6 +133,7 @@ try {
 
 # Model prerequisite outcomes with no registry access or service changes.
 $previousRebootRequired=$script:rebootRequired
+$previousStandalonePrerequisiteRequest=$r
 try {
     & {
         function Get-ItemProperty { return @{Installed=[int]$script:fixtureRuntimeRegistered} }
@@ -178,8 +179,26 @@ try {
             try {Setup-ProxiFyre '127.0.0.1:1080'}catch{$expected=$_.Exception.Message -ceq $case.message}
             Assert ($expected -and -not $script:rebootRequired -and ($script:prerequisiteRebootCalls -join ',') -ceq $case.calls) $case.label
         }
+        $r=[pscustomobject]@{engine='ndisapi';dns='unchanged'}
+        $script:rebootRequired=$false
+        $script:prerequisiteNeedsReboot='ndisapi'
+        $script:fixtureFilterRegistered=$false
+        $pending=Install-Method
+        Assert ($pending.rebootRequired -and $pending.prerequisite -ceq 'ndisapi' -and -not $pending.ContainsKey('installed')) 'Standalone prerequisite reports pending reboot without claiming installation'
+        $script:rebootRequired=$false
+        $script:prerequisiteNeedsReboot=''
+        $script:fixtureMissingRegistration='ndisapi'
+        $refused=$false
+        try {Install-Method | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Windows Packet Filter installation did not register the required driver'}
+        Assert $refused 'Standalone prerequisite refuses installer success without registration'
+        $script:fixtureMissingRegistration=''
+        $completed=Install-Method
+        Assert ($completed.installed -ceq 'ndisapi' -and $script:fixtureFilterRegistered) 'Standalone prerequisite reports installation after registration'
     }
-} finally {$script:rebootRequired=$previousRebootRequired}
+} finally {
+    $script:rebootRequired=$previousRebootRequired
+    $r=$previousStandalonePrerequisiteRequest
+}
 
 # Native component metadata fixtures are deliberately non-executable. No DLL
 # is loaded; download, expansion, staging and event hooks stay within this fixture.
