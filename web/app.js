@@ -343,18 +343,24 @@ async function initialize() {
 }
 async function reconnect() {
   if (state.reconnecting || state.editing) { if (state.editing) toast(t('discardChanges')); return; }
+  const button = $('reconnect-button');
   state.reconnecting = true;
-  $('reconnect-button').disabled = true;
+  button.setAttribute('aria-disabled','true');
   try {
     const core = await readCore();
     if (state.offline && state.profiles.length && !confirm(t('switchStore'))) return;
+    const focusWasOnReconnect = document.activeElement === button;
     Object.assign(state,core,{offline:false,disconnected:false});
     $('p-engine').innerHTML = engineOptions();
     updateTranslations();
     renderAll();
+    if (focusWasOnReconnect) $('content').focus({preventScroll:true});
     toast(t('connectedAgain'));
   } catch (err) { toast(t('missingServer'),true); }
-  finally { state.reconnecting = false; $('reconnect-button').disabled = false; }
+  finally {
+    state.reconnecting = false;
+    button.removeAttribute('aria-disabled');
+  }
 }
 async function pollStatus() {
   if (state.offline || state.loading || state.polling || state.disconnected || document.hidden) return;

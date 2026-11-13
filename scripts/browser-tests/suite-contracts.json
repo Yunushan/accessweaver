@@ -216,6 +216,10 @@
     {
       "id": 54,
       "name": "forced colors preserve current navigation, selected tabs and keyboard focus"
+    },
+    {
+      "id": 55,
+      "name": "keyboard reconnect keeps focus through failure and restores main content on success"
     }
   ]
 }

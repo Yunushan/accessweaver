@@ -6,6 +6,7 @@ on:
   push:
     branches: [codex/dns-adapter-coverage]
     paths:
+      - web/app.js
       - web/app.css
       - scripts/browser-tests/desktop.spec.cjs
       - scripts/browser-tests/suite-contracts.json

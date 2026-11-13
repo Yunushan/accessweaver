@@ -117,6 +117,38 @@ test('browser cannot obtain a session credential from public bootstrap',async()=
   const env=environment();let called=false;env.context.fetch=async()=>{called=true;throw new Error('unexpected')};
   await assert.rejects(env.run('readCore()'));assert.equal(called,false);
 });
+test('reconnect keeps the trigger focused while pending and moves focus when it disappears',async()=>{
+  const env=environment(),button=env.get('reconnect-button');
+  let complete,calls=0;
+  env.context.readCore=()=>{calls++;return new Promise(resolve=>{complete=resolve})};
+  button.focus();
+  const pending=env.run('reconnect()');
+  assert.equal(button.getAttribute('aria-disabled'),'true');
+  assert.equal(env.context.document.activeElement,button);
+  await env.run('reconnect()');
+  assert.equal(calls,1);
+  complete({profiles:[],engines:[]});
+  await pending;
+  assert.equal(button.getAttribute('aria-disabled'),null);
+  assert.equal(env.context.document.activeElement,env.get('content'));
+});
+test('reconnect preserves moved focus and leaves a failed request retryable',async()=>{
+  const env=environment(),button=env.get('reconnect-button'),other=env.get('profile-search');
+  let complete;
+  env.context.readCore=()=>new Promise(resolve=>{complete=resolve});
+  button.focus();
+  const pending=env.run('reconnect()');
+  other.focus();
+  complete({profiles:[],engines:[]});
+  await pending;
+  assert.equal(env.context.document.activeElement,other);
+  button.focus();
+  env.context.readCore=async()=>{throw new Error('Synthetic connection failure')};
+  await env.run('reconnect()');
+  assert.equal(env.context.document.activeElement,button);
+  assert.equal(button.getAttribute('aria-disabled'),null);
+  assert.equal(env.run('state.reconnecting'),false);
+});
 function rejectsProfile(profile) {const env=environment();assert.throws(()=>valid(env,profile));}
 test('valid version-1 profile is accepted',()=>{valid(environment());});
 const timestampTable = require('../internal/profile/testdata/timestamps.json');

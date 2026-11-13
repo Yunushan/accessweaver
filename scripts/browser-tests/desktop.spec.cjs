@@ -1159,3 +1159,35 @@ test('forced colors preserve current navigation, selected tabs and keyboard focu
  await page.keyboard.press('Escape');
  await expect(openEditor).toBeFocused();
 });
+
+test('keyboard reconnect keeps focus through failure and restores main content on success',async({page,core})=>{
+ await open(page,core);
+ let blockRuntime=true;
+ await page.route('**/api/v1/runtime',route=>blockRuntime
+  ? route.fulfill({status:503,json:{error:'Synthetic runtime unavailable'}})
+  : route.continue());
+ await page.evaluate(()=>pollStatus());
+ await expect(page.locator('#connection-notice')).toBeVisible();
+ const button=page.locator('#reconnect-button');
+ let begin,release;
+ const started=new Promise(resolve=>begin=resolve);
+ const pending=new Promise(resolve=>release=resolve);
+ await page.route('**/api/bootstrap',async route=>{
+  begin();
+  await pending;
+  await route.continue();
+ });
+ try {
+  await button.focus();
+  await page.keyboard.press('Enter');
+  await started;
+  await expect(button).toBeFocused();
+  await expect(button).toHaveAttribute('aria-disabled','true');
+ } finally {release();}
+ await expect(button).not.toHaveAttribute('aria-disabled','true');
+ await expect(button).toBeFocused();
+ blockRuntime=false;
+ await page.keyboard.press('Enter');
+ await expect(page.locator('#connection-notice')).toBeHidden();
+ await expect(page.locator('#content')).toBeFocused();
+});

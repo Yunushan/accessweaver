@@ -1,10 +1,10 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),vm=require('node:vm');
 const Reporter=require('./suite-status-reporter.cjs'),manifest=require('./suite-contracts.json');
 
-test('browser case registry exactly matches all 54 source-registered contracts',async()=>{
+test('browser case registry exactly matches all source-registered contracts',async()=>{
  const names=[],register=title=>names.push(title),base={test:{extend:()=>register},expect:()=>{}};
  vm.runInNewContext(await fs.readFile(path.join(__dirname,'desktop.spec.cjs'),'utf8'),{__dirname,process:{env:{},platform:'linux',arch:'x64',version:process.version},setTimeout,clearTimeout,require(name){if(name==='@playwright/test')return base;if(name==='./accessibility.cjs')return {};return require(name)}},{timeout:2000});
- assert.equal(names.length,54);assert.deepEqual(manifest.cases,names.map((name,i)=>({id:i+1,name})));
+ assert.deepEqual(manifest.cases,names.map((name,i)=>({id:i+1,name})));
 });
 test('browser status projection drops errors, attachments, private titles and unknown status strings',()=>{
  const reporter=new Reporter();reporter.onBegin({}, {allTests:()=>Array(manifest.cases.length)});
