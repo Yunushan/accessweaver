@@ -16,10 +16,24 @@ function Read-WorkflowRecoveryJournal {return @{undo=$script:saved}}
 $saveJournal=(Get-Command Save-Journal).ScriptBlock
 function Save-Journal {$script:journalWrites++}
 function Event {}
-function Stop-Service {throw 'Stale journal reached service mutation'}
+function Stop-Service {
+    param($Name,[switch]$Force,$ErrorAction)
+    if($Name -cne 'AccessWeaver-dnscrypt' -or [IO.File]::Exists($snapshot)){throw 'Service stopped before DNS restoration'}
+    $script:order.Add('stop')
+}
+function Native {
+    param($Program,$Arguments,$Allowed)
+    if($Arguments.Count -ne 2 -or ($Arguments -join ',') -cne 'delete,AccessWeaver-dnscrypt'){
+        throw 'Unexpected native mutation'
+    }
+    $script:order.Add('delete')
+}
 function Restore-DNS {
     $script:restores++
+    $script:order.Add('restore')
+    if($script:failRestore){throw 'Synthetic DNS restore failure'}
     [IO.File]::Delete($snapshot)
+    $script:dnsTouched=$false
 }
 $root=Join-Path ([IO.Path]::GetTempPath()) ('aw-dns-journal-'+[guid]::NewGuid().ToString('N'))
 $profiles=Join-Path $root 'profiles'
@@ -29,6 +43,12 @@ $r=@{journalId=('workflow-'+('a'*32)+'.json')}
 $script:undo=[Collections.Generic.List[object]]::new()
 $script:journalWrites=0
 $script:restores=0
+$script:failRestore=$false
+$script:dnsTouched=$false
+$script:order=[Collections.Generic.List[string]]::new()
+$originalSystemRoot=$env:SystemRoot
+if(-not $env:SystemRoot){$env:SystemRoot=[IO.Path]::GetTempPath()}
+$serviceConfig=Join-Path $root 'dnscrypt.toml'
 $script:journalPath=Join-Path $root $r.journalId
 $script:journalState='running'
 $script:events=[Collections.Generic.List[string]]::new()
@@ -80,10 +100,49 @@ try {
         Require ($refused -and [IO.Directory]::Exists($directoryTarget) -and
             [IO.Directory]::GetFileSystemEntries($profiles).Length -eq 2) 'Failed publication changed its target or left a sidecar'
     } finally {[IO.Directory]::Delete($directoryTarget)}
+
+    [IO.File]::WriteAllText($serviceConfig,'inert resolver configuration')
+    $configHash=(Get-FileHash -LiteralPath $serviceConfig).Hash
+    $fileUndo=@{kind='file';path=$serviceConfig;expectedHash=$configHash}
+    $serviceUndo=@{kind='service';name='AccessWeaver-dnscrypt'}
+    $dnsUndo=@{kind='dns';snapshotSHA256=$next}
+    $script:undo.Clear()
+    foreach($entry in @($dnsUndo,$fileUndo,$serviceUndo)){$script:undo.Add($entry)}
+
+    $script:order.Clear()
+    $script:failRestore=$true
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and $rollback[0] -ceq 'Synthetic DNS restore failure' -and
+        ($script:order -join ',') -ceq 'restore' -and [IO.File]::Exists($snapshot) -and
+        (Get-FileHash -LiteralPath $serviceConfig).Hash -ceq $configHash) 'Failed DNS restoration tore down the resolver'
+
+    $script:order.Clear()
+    $script:failRestore=$false
+    $dnsUndo.snapshotSHA256=$first
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and $script:order.Count -eq 0 -and [IO.File]::Exists($serviceConfig)) 'Mismatched DNS rollback tore down the resolver'
+
+    $dnsUndo.snapshotSHA256=$next
+    $script:undo.Add($dnsUndo)
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and $script:order.Count -eq 0 -and [IO.File]::Exists($serviceConfig)) 'Duplicate DNS rollback entries reached mutation'
+    $script:undo.RemoveAt($script:undo.Count-1)
+
+    [IO.File]::Delete($snapshot)
+    $script:dnsTouched=$true
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 1 -and $script:order.Count -eq 0 -and [IO.File]::Exists($serviceConfig)) 'Missing active snapshot tore down the resolver'
+
+    Publish-WorkflowFile $snapshot $secondBytes
+    $rollback=@(Rollback)
+    Require ($rollback.Count -eq 0 -and ($script:order -join ',') -ceq 'restore,stop,delete' -and
+        -not [IO.File]::Exists($snapshot) -and -not [IO.File]::Exists($serviceConfig)) 'Retry did not restore DNS before retiring the resolver'
 } finally {
+    $env:SystemRoot=$originalSystemRoot
+    [IO.File]::Delete($serviceConfig)
     [IO.File]::Delete($snapshot)
     [IO.File]::Delete($script:journalPath)
     [IO.Directory]::Delete($profiles)
     [IO.Directory]::Delete($root)
 }
-Write-Output 'Twelve DNS journal binding, rollback and publication checks passed.'
+Write-Output 'Seventeen DNS journal binding, rollback and publication checks passed.'

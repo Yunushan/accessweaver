@@ -40,7 +40,7 @@ $ownerToken=[guid]::NewGuid().ToString('N')
 [IO.File]::WriteAllText($ownerMarker,$ownerToken,[Text.UTF8Encoding]::new($false))
 $script:checks=0;$script:caseNumber=0
 $script:contractOutcome='failed';$script:contractCode='unexpected-contract-error'
-$script:closedContractCodes=@('configure-dnscrypt-loopback-readback','configure-adapter-readback-refuses','configure-adapter-readback-retains','configure-adapter-readback-retries','configure-adapter-readback-recovers','configure-post-policy-refuses','configure-post-policy-recovers','configure-policy-readback-before-adapters','configure-policy-refusal-retains-recovery','configure-policy-recovery-completes','configure-policy-query-before-verification','scope-capture-flat-ordered','scope-rebinds-current-adapter','scope-family-extension','scope-invalid-before-effects','scope-dhcp-reset-preserved','scope-global-and-ipv4-preserved','changed-adapter-retains-before-interface-read','capture-index-change-before-snapshot','non-dns-adapter-not-targeted','single-family-capture-and-restore','new-family-originals-extended','family-extension-before-effects','client-inventory-before-effects','family-flags-preflight','owned-family-missing-retained','invalid-recovery-identities-before-inspection','restore-uses-refreshed-guid-index','changed-adapter-retains-before-dns-read','case-insensitive-down-adapter-restoration','reconfiguration-rotates-recovery-identity','existing-originals-never-recaptured','new-adapter-originals-persisted','extended-snapshot-restores-both-adapters','extension-failure-before-effects','invalid-configuration-preflight','configuration-uses-current-guid-index','source-uncovered-dns-write','absent','absent-entry-idempotence-and-unrelated-preservation','accessweaver-dns-contracts-','add','all-providers-no-plaintext-fallback','ambiguous-adapter','bad-doh','bad-flags','capture-inspection-failure-not-empty','case','confirmed-absent-entry-not-removed-again','confirmed-absent-mode-is-dhcp','current-doh-query-before-effects','dns','doh','duplicate-doh','empty-adapters','empty-static','exact-original-doh-restored','expected-refusal','false','fixture-cleanup-incomplete','guid-recovery-uses-current-index','invalid-recovery-preflight','legacy-no-doh-recovery-supported','malformed-mode-not-empty','missing-adapter','no-false-restored-event','none','original-snapshot-retained','partial-removal-retains-needed-recovery','profiles','recovery-retry-completes-after-confirmed-inspection','registry-error-not-dhcp','remove','restore-interface-reuse-before-setter','restore-retirement-requires-absence','restore-delayed-observation','restore-adapter-row-fence','restore-inspection-before-effects','saved-doh-needs-capability','set','snapshot-before-native-effects','journal-before-snapshot','snapshot-must-match-journal','source-doh-inspection-failed','source-doh-mutation-failed','source-registry-inspection-failed','source-snapshot-removal-failed','source-snapshot-write-failed','true','unexpected-contract-error','unknown-test-code')
+$script:closedContractCodes=@('configure-dnscrypt-loopback-readback','doh-keeps-old-resolver-until-verified','configure-adapter-readback-refuses','configure-adapter-readback-retains','configure-adapter-readback-retries','configure-adapter-readback-recovers','configure-post-policy-refuses','configure-post-policy-recovers','configure-policy-readback-before-adapters','configure-policy-refusal-retains-recovery','configure-policy-recovery-completes','configure-policy-query-before-verification','scope-capture-flat-ordered','scope-rebinds-current-adapter','scope-family-extension','scope-invalid-before-effects','scope-dhcp-reset-preserved','scope-global-and-ipv4-preserved','changed-adapter-retains-before-interface-read','capture-index-change-before-snapshot','non-dns-adapter-not-targeted','single-family-capture-and-restore','new-family-originals-extended','family-extension-before-effects','client-inventory-before-effects','family-flags-preflight','owned-family-missing-retained','invalid-recovery-identities-before-inspection','restore-uses-refreshed-guid-index','changed-adapter-retains-before-dns-read','case-insensitive-down-adapter-restoration','reconfiguration-rotates-recovery-identity','existing-originals-never-recaptured','new-adapter-originals-persisted','extended-snapshot-restores-both-adapters','extension-failure-before-effects','invalid-configuration-preflight','configuration-uses-current-guid-index','source-uncovered-dns-write','absent','absent-entry-idempotence-and-unrelated-preservation','accessweaver-dns-contracts-','add','all-providers-no-plaintext-fallback','ambiguous-adapter','bad-doh','bad-flags','capture-inspection-failure-not-empty','case','confirmed-absent-entry-not-removed-again','confirmed-absent-mode-is-dhcp','current-doh-query-before-effects','dns','doh','duplicate-doh','empty-adapters','empty-static','exact-original-doh-restored','expected-refusal','false','fixture-cleanup-incomplete','guid-recovery-uses-current-index','invalid-recovery-preflight','legacy-no-doh-recovery-supported','malformed-mode-not-empty','missing-adapter','no-false-restored-event','none','original-snapshot-retained','partial-removal-retains-needed-recovery','profiles','recovery-retry-completes-after-confirmed-inspection','registry-error-not-dhcp','remove','restore-interface-reuse-before-setter','restore-retirement-requires-absence','restore-delayed-observation','restore-adapter-row-fence','restore-inspection-before-effects','saved-doh-needs-capability','set','snapshot-before-native-effects','journal-before-snapshot','snapshot-must-match-journal','source-doh-inspection-failed','source-doh-mutation-failed','source-registry-inspection-failed','source-snapshot-removal-failed','source-snapshot-write-failed','true','unexpected-contract-error','unknown-test-code')
 function Assert-DNS([bool]$Condition,[string]$Code){if(-not $Condition){$script:contractCode=if($Code -in $script:closedContractCodes){$Code}else{'unknown-test-code'};throw ('DNS contract failed: '+$script:contractCode)};$script:checks++}
 function Reject-DNS([scriptblock]$Operation){$failed=$false;try{& $Operation | Out-Null}catch{$failed=$true};Assert-DNS $failed 'expected-refusal'}
 function New-DNSCase {
@@ -55,6 +55,7 @@ function New-DNSCase {
     $script:appliedDNS=@{};$script:readbackFault='';$script:readbackFaultArmed=$false;$script:silentDohFault='';$script:registryReads=[Collections.Generic.List[string]]::new();$script:dnsValues=@{};$script:renumberDuringDoh=$false;$script:reuseIndexDuringDoh=$false;$script:disappearDuringDoh=$false;$script:dnsReadCount=0;$script:dnsInterfaceReads=0
     $script:failAction='';$script:failAddress='';$script:failDelete=$false;$script:failSnapshotWrite=$false;$script:failJournalWrite=$false;$script:corruptSnapshotWrite=$false
     $script:configureDohReadFault='';$script:postConfigureDohReadFault='';$script:configureDohFaultAddress='';$script:resolverQueries=0;$script:configurationLag=0;$script:readbackWaits=0
+    $script:resolverServicePresent=$false;$script:serviceStops=0;$script:serviceStartupChanges=0
     $script:recoveryLag=0;$script:renumberDuringRecoveryRead=$false;$script:reuseBeforeRestoreSetter=$false;$script:silentSnapshotRemoval=$false
     $script:currentDoh=@{};$script:calls=[Collections.Generic.List[object]]::new();$script:events=[Collections.Generic.List[string]]::new()
     $script:undo=[Collections.Generic.List[object]]::new();$script:dnsTouched=$false;$script:dnsConfigured=$false;$script:journals=0;$script:journalDigest=$null
@@ -206,16 +207,32 @@ function Save-Journal {
     $script:journals++
 }
 function Event([string]$Text){$script:events.Add($Text)}
-function Get-Service {[CmdletBinding()]param($Name);return $null}
+function Get-Service {
+    [CmdletBinding()]param($Name)
+    if($Name -cne 'AccessWeaver-dnscrypt'){throw 'Unexpected service name'}
+    if($script:resolverServicePresent){return [pscustomobject]@{Status='Running'}}
+}
 function Clear-DnsClientCache {}
 function Resolve-DnsName {[CmdletBinding()]param($Name,[switch]$DnsOnly,[switch]$QuickTimeout);$script:resolverQueries++;return [pscustomobject]@{Name='example.com'}}
 function Start-Sleep {param($Milliseconds,$Seconds);if($Milliseconds -eq 250 -and -not $Seconds){$script:readbackWaits++;return};throw 'Unexpected resolver wait'}
 function Ensure-Asset {throw 'Native component access is forbidden in DNS contracts'}
 function Copy-Checked {throw 'Native component copy is forbidden in DNS contracts'}
 function Install-EngineService {throw 'Service installation is forbidden in DNS contracts'}
-function Set-Service {throw 'Service changes are forbidden in DNS contracts'}
+function Set-Service {
+    param($Name,$StartupType)
+    if($Name -cne 'AccessWeaver-dnscrypt' -or $StartupType -cne 'Manual' -or $script:serviceStops -ne 1){
+        throw 'Unexpected service startup change'
+    }
+    $script:serviceStartupChanges++
+}
 function Restart-Service {throw 'Service changes are forbidden in DNS contracts'}
-function Stop-Service {throw 'Service changes are forbidden in DNS contracts'}
+function Stop-Service {
+    param($Name)
+    if($Name -cne 'AccessWeaver-dnscrypt' -or -not $script:resolverServicePresent -or $script:resolverQueries -lt 1){
+        throw 'Old resolver stopped before DoH verification'
+    }
+    $script:serviceStops++
+}
 try {
     # Legacy zones validate saved ownership; zone-free setter values are bound
     # to the freshly GUID-resolved family row, including after renumbering.
@@ -337,6 +354,12 @@ try {
         $script:readbackFault='';$script:readbackFaultArmed=$false;$script:adapters=$originalAdapters;Restore-DNS
         Assert-DNS (-not [IO.File]::Exists($snapshot)) 'configure-adapter-readback-recovers'
     }
+    New-DNSCase;$script:resolverServicePresent=$true;$script:readbackFault='read-error'
+    Reject-DNS {Configure-DNS 'doh'}
+    Assert-DNS ($script:serviceStops -eq 0 -and $script:serviceStartupChanges -eq 0 -and $script:resolverQueries -eq 0) 'doh-keeps-old-resolver-until-verified'
+    New-DNSCase;$script:resolverServicePresent=$true
+    Configure-DNS 'doh'
+    Assert-DNS ($script:serviceStops -eq 1 -and $script:serviceStartupChanges -eq 1 -and $script:dnsConfigured) 'doh-keeps-old-resolver-until-verified'
     # DNSCrypt uses loopback in each family; validate the same readback helper
     # against synthetic state without invoking its service or component path.
     New-DNSCase;$fixture=Original-DNSFixture;$guid=[string]$script:adapters[0].InterfaceGuid

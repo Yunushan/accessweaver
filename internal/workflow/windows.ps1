@@ -1862,7 +1862,6 @@ function Configure-DNS([string]$method) {
         if(-not (Get-Service 'AccessWeaver-dnscrypt' -ErrorAction SilentlyContinue)){Install-EngineService 'dnscrypt' $binary @('-config',$config)}else{Set-Service 'AccessWeaver-dnscrypt' -StartupType Automatic;Restart-Service 'AccessWeaver-dnscrypt';(Get-Service 'AccessWeaver-dnscrypt').WaitForStatus('Running',[TimeSpan]::FromSeconds(20))}
         $servers=@('127.0.0.1','::1')
     } elseif($method -eq 'doh') {
-        if(Get-Service 'AccessWeaver-dnscrypt' -ErrorAction SilentlyContinue){Stop-Service 'AccessWeaver-dnscrypt';Set-Service 'AccessWeaver-dnscrypt' -StartupType Manual}
         # Literal authorities avoid plaintext resolution of the DoH bootstrap host.
         # Keep each provider/family paired with its own authenticated IP identity.
         $providers=@(@{address='8.8.8.8';url='https://8.8.8.8/dns-query'},@{address='9.9.9.9';url='https://9.9.9.9/dns-query'},@{address='2001:4860:4860::8888';url='https://[2001:4860:4860::8888]/dns-query'},@{address='2620:fe::fe';url='https://[2620:fe::fe]/dns-query'})
@@ -1911,7 +1910,16 @@ function Configure-DNS([string]$method) {
     $ready=$false;$deadline=[DateTime]::UtcNow.AddSeconds(90)
     $lastResolverError=''
     do{try{Clear-DnsClientCache;[void](Resolve-DnsName 'example.com' -DnsOnly -QuickTimeout -ErrorAction Stop);$ready=$true;break}catch{$lastResolverError=$_.Exception.Message;Start-Sleep -Seconds 2}}while([DateTime]::UtcNow -lt $deadline)
-    if(-not $ready){Restore-DNS;throw ('Resolver verification failed; original DNS settings restored: '+$lastResolverError)}
+    if(-not $ready){
+        if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot disappeared during verification'}
+        Restore-DNS
+        throw ('Resolver verification failed; original DNS settings restored: '+$lastResolverError)
+    }
+    if($method -ceq 'doh' -and (Get-Service 'AccessWeaver-dnscrypt' -ErrorAction SilentlyContinue)){
+        # Keep the old listener available until the new adapter DNS is usable.
+        Stop-Service 'AccessWeaver-dnscrypt'
+        Set-Service 'AccessWeaver-dnscrypt' -StartupType Manual
+    }
     Event ('Encrypted DNS configured: '+$method)
     $script:dnsConfigured=$true
 }
@@ -2028,6 +2036,7 @@ function Restore-DNS {
     }
     Remove-Item -LiteralPath $snapshot -ErrorAction Stop
     if(Test-Path -LiteralPath $snapshot -ErrorAction Stop){throw 'Original DNS snapshot retirement could not be verified'}
+    $script:dnsTouched=$false
     Event 'Original DNS and DoH settings restored'
 }
 
@@ -2766,6 +2775,16 @@ function Discover {
     return @{services=@($services);serviceInspectionError=$serviceError;components=$assets;applications=$apps;wiresockCLI=$cli;conflicts=@($conflicts);managedRoot=$root;refreshTask=$task.present;refreshTaskInspectionError=$task.error;dnsSnapshot=$dnsSnapshot}
 }
 function Rollback {
+    # Adapter DNS can still depend on the DNSCrypt service and on files shared
+    # with other managed engines. Keep all recorded resources until DNS is safe.
+    $dnsEntries=@($script:undo | Where-Object {$_.kind -ceq 'dns'})
+    if($dnsEntries.Count -gt 1){return 'DNS recovery journal contains duplicate DNS entries'}
+    if($dnsEntries.Count -eq 1){
+        try {
+            if(Confirm-DNSRecoverySnapshot $dnsEntries[0].snapshotSHA256){Restore-DNS}
+            elseif($script:dnsTouched){throw 'DNS recovery snapshot is missing after DNS configuration started'}
+        } catch {return $_.Exception.Message}
+    }
     $rollbackErrors=@()
     for($i=$script:undo.Count-1;$i -ge 0;$i--){$item=$script:undo[$i];try{switch($item.kind){
         'service' {Stop-Service -Name $item.name -Force -ErrorAction SilentlyContinue;[void](Native (Join-Path $env:SystemRoot 'System32\sc.exe') @('delete',$item.name) @(0,1060))}
@@ -2775,9 +2794,7 @@ function Rollback {
             if($item.name -ne 'AccessWeaver-WireSock-Refresh'){throw 'Recovery journal contains an unmanaged task'}
             Remove-WireSockRefreshTask
         }
-        'dns' {
-            if(Confirm-DNSRecoverySnapshot $item.snapshotSHA256){Restore-DNS}
-        }
+        'dns' {continue}
         'wiresock' {
             if($item.legacy){
                 Stop-Service 'wiresock-client-service' -ErrorAction SilentlyContinue
@@ -3134,7 +3151,6 @@ try {
 } catch {
     $result.error=$_.Exception.Message
     $script:journalState='failed'
-    if($script:dnsTouched -and (Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json'))){try{Restore-DNS}catch{$result.dnsRecoveryError=$_.Exception.Message}}
     if($r.action -in @('install','auto-install','connect','config','download','dns','refresh','scan','app-install','app-reinstall','app-repair')){
         $result.rollbackScope='recorded-resources';$result.recordedRollbackComplete=$false
         $result.rollbackErrors=@(Rollback)
