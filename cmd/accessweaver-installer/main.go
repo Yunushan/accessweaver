@@ -25,8 +25,15 @@ func execute(args []string) error {
 		}
 		return err
 	}
+	if len(args) == 1 && args[0] == "detect-deployment" {
+		result, err := packageupgrade.DetectDeployment()
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
+	}
 	if len(args) != 1 || args[0] != "preflight-upgrade" {
-		return errors.New("usage: accessweaver-installer version --json | preflight-upgrade | prepare-deployment | activate-deployment | deactivate-deployment | abandon-deployment")
+		return errors.New("usage: accessweaver-installer version --json | preflight-upgrade | detect-deployment | prepare-deployment | activate-deployment | deactivate-deployment | abandon-deployment")
 	}
 	result, err := packageupgrade.Preflight(buildinfo.Current().Version)
 	if err != nil {

@@ -3,7 +3,7 @@ name: Native versioned macOS deployment acceptance
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'codex/dns-adapter-coverage']
     paths:
       - scripts/test-macos-installer-lifecycle.py
       - scripts/*macos*deployment*

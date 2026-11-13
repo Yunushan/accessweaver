@@ -1,3 +1,4 @@
+import verify_macos_deployment_provenance as verify_module
 import subprocess
 from pathlib import Path
 import tempfile
@@ -67,5 +68,32 @@ class DeploymentProvenanceContracts(unittest.TestCase):
                 return subprocess.CompletedProcess(command,0 if len(calls) in (1,7) else 1)
             with patch("verify_macos_deployment_provenance.subprocess.run",side_effect=invoke):result=check_rejections(path,root/PROVENANCE_BUNDLE,COMMIT,REF,"trusted-gh")
             self.assertEqual(calls[0],calls[-1]);self.assertEqual(len(result["rejected"]),5)
+
+class ManagedDetectionProvenanceTests(unittest.TestCase):
+    def test_requires_fixed_cases_and_matching_package_helper(self):
+        old, new = verify_module.VERSIONS
+        bindings = {old: {"helperSHA256": "a" * 64}, new: {"helperSHA256": "b" * 64}}
+        cases = [
+            dict(name=name, version=version, detected=detected, elevated=elevated,
+                 statePreserved=True, helperSHA256=bindings[version]["helperSHA256"])
+            for name, version, detected, elevated in (
+                ("absent", old, False, False), ("initial-active", old, True, False),
+                ("descriptor-hint", old, False, False), ("superseded", old, False, False),
+                ("upgraded-active", new, True, True), ("reinstalled-active", new, True, False),
+                ("changed-active", new, False, False), ("restored-active", new, True, False),
+                ("inactive", new, False, False),
+            )
+        ]
+        self.assertEqual(verify_module.validate_managed_detection(cases, bindings), {"managedDetectionChecksVerified": 9})
+        for invalid in (
+            cases[:-1],
+            cases[::-1],
+            [dict(cases[0], helperSHA256=bindings[new]["helperSHA256"]), *cases[1:]],
+            [dict(cases[0], detected=0), *cases[1:]],
+            [dict(cases[0], statePreserved=False), *cases[1:]],
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                verify_module.validate_managed_detection(invalid, bindings)
+
 
 if __name__=="__main__":unittest.main()

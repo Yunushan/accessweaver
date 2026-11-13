@@ -80,15 +80,38 @@ def validate_packages(root,commit,arch):
     return outputs,package_bindings,identity
 
 
+def validate_managed_detection(cases, bindings):
+    expected = (
+        ("absent", VERSIONS[0], False, False),
+        ("initial-active", VERSIONS[0], True, False),
+        ("descriptor-hint", VERSIONS[0], False, False),
+        ("superseded", VERSIONS[0], False, False),
+        ("upgraded-active", VERSIONS[1], True, True),
+        ("reinstalled-active", VERSIONS[1], True, False),
+        ("changed-active", VERSIONS[1], False, False),
+        ("restored-active", VERSIONS[1], True, False),
+        ("inactive", VERSIONS[1], False, False),
+    )
+    require(isinstance(cases, list) and len(cases) == len(expected), "Incomplete deployment detection coverage")
+    for case, (name, version, detected, elevated) in zip(cases, expected):
+        require(isinstance(case, dict) and case.keys() == {"name", "version", "detected", "elevated", "helperSHA256", "statePreserved"}
+                and case["name"] == name and case["version"] == version
+                and case["detected"] is detected and case["elevated"] is elevated
+                and case["helperSHA256"] == bindings[version]["helperSHA256"]
+                and case["statePreserved"] is True, "Deployment detection case differs")
+    return {"managedDetectionChecksVerified": len(expected)}
+
+
 def validate_contents(root,commit,arch):
     read=lambda name:json.loads((root/name).read_text(encoding="utf-8"))
     outputs,package_bindings,identity=validate_packages(root,commit,arch)
     launcher=inspect_launcher((root/archive_name(arch)).read_bytes(),identity)
     life=read("lifecycle-artifact.json")
-    require(life.get("schemaVersion")==1 and life.get("sourceCommit")==commit and life.get("target")=="darwin/"+arch and life.get("stage")=="deactivation-and-owned-cleanup" and life.get("failureType") is None and life.get("failureSourceLine") is None,"Deployment lifecycle identity/completion differs")
+    require(type(life.get("schemaVersion")) is int and life["schemaVersion"] in (1,2) and life.get("sourceCommit")==commit and life.get("target")=="darwin/"+arch and life.get("stage")=="deactivation-and-owned-cleanup" and life.get("failureType") is None and life.get("failureSourceLine") is None,"Deployment lifecycle identity/completion differs")
     require(life.get("packages")==package_bindings and re.fullmatch("[1-9][0-9]{0,19}",str(life.get("runID",""))) is not None,"Native lifecycle is not bound to the actual package subjects/run")
     for key in ("passed","packageScriptsIntegrated","actualApplePackageUpgradeExecuted","actualUserProfilePreservationVerified","retainedPriorCopiesVerified","ownedFixturesRemoved","detachedManifestSealingVerified","detachedPayloadSBOMSealingVerified"):require(life.get(key) is True,"Actual deployment lifecycle did not pass")
     for key in ("installedCodeExecutedAsRoot","publicLauncherIntegrated","runtimeLeaseQualified","publisherSignatureVerified","notarized","productUninstallQualified","managedEndpointQualified","abruptTerminationQualified","rebootOrPowerLossQualified","productionQualificationComplete"):require(life.get(key) is False,"Unqualified deployment lifecycle scope changed")
+    detection = validate_managed_detection(life.get("managedDetectionCases"), package_bindings) if life["schemaVersion"] == 2 else {}
     lease_cases=life.get("runtimeLeaseCases",[])
     require(life.get("installedControllerLeaseRefusalVerified") is True and len(lease_cases)==4 and [c.get("kind") for c in lease_cases]==["direct","inherited","alias","launcher"],"Installed controller lease coverage differs")
     for case in lease_cases:
@@ -112,7 +135,7 @@ def validate_contents(root,commit,arch):
             if generation<5:
                 require(op.get("activeIdentity")=={"version":version,"manifestSHA256":package_bindings[version]["manifestSHA256"],"payloadSHA256":package_bindings[version]["payloadSHA256"]},"Activated compiled seal differs from actual package")
                 require(op.get("actualUnelevatedRuntimeVerified") is True and op.get("retainedPriorCopiesVerified") is True and re.fullmatch("[a-f0-9]{32}",op.get("slotID","")) is not None and op["slotID"] not in slots,"Activated package copy identity differs");slots.add(op["slotID"])
-    return {"packages":outputs,"lifecycleRunID":str(life["runID"]),"actualApplePackageOperations":13,"launcher":launcher,"retainedIndependentCopies":4,"publisherSignatureVerified":False,"productionQualificationComplete":False}
+    return {"packages":outputs,**detection,"lifecycleRunID":str(life["runID"]),"actualApplePackageOperations":13,"launcher":launcher,"retainedIndependentCopies":4,"publisherSignatureVerified":False,"productionQualificationComplete":False}
 
 
 def copy_subject(source,destination,limit):

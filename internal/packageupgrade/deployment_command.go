@@ -12,6 +12,15 @@ var sealedVersion string
 var sealedManifestSHA256 string
 var sealedPayloadSHA256 string
 
+// DeploymentDetection identifies the complete sealed bundle that was active
+// while the shared runtime lease was held.
+type DeploymentDetection struct {
+	SchemaVersion  int            `json:"schemaVersion"`
+	Build          buildinfo.Info `json:"build"`
+	ManifestSHA256 string         `json:"manifestSHA256"`
+	PayloadSHA256  string         `json:"payloadSHA256"`
+}
+
 type DeploymentResult struct {
 	SchemaVersion                   int    `json:"schemaVersion"`
 	Operation                       string `json:"operation"`

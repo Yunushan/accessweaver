@@ -582,7 +582,10 @@
             "scripts/test-windows-integration.ps1",
             "scripts/detect-windows-installer.ps1",
             "scripts/test-windows-installer-lifecycle.ps1",
-            "docs/WINDOWS_WORKFLOWS.md"
+            "docs/WINDOWS_WORKFLOWS.md",
+            "cmd/accessweaver-installer/main.go",
+            "scripts/test-macos-deployment-package.py",
+            "docs/MACOS_MANAGED_POLICY.md"
           ]
         }
       ]
