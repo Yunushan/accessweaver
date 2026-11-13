@@ -3,7 +3,7 @@ function Get-NativeFreshDNSQueryReport([string]$Text,[string]$SourceCommit,[stri
     if($Text.Length -gt 2048 -or $SourceCommit -cnotmatch '^[a-f0-9]{40}$' -or $Architecture -cnotin @('amd64','arm64')){throw 'Fresh DNS report boundary'}
     try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{throw 'Fresh DNS report JSON'}
     $keys=@('schemaVersion','sourceCommit','architecture','queryOptions','outcome','code','failureKind','answerCount','recordCount','queryInvoked','recordsReleased','productionQualificationComplete')
-    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 12 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or $v.schemaVersion -isnot [int] -or $v.schemaVersion -ne 2 -or $v.sourceCommit -cne $SourceCommit -or $v.architecture -cne $Architecture -or $v.queryOptions -isnot [int] -or $v.queryOptions -ne 6600 -or $v.outcome -cnotin @('ready','answered','refused') -or $v.code -cnotin @('none','environment','arguments','query-failed','record-bound','record-shape','answer-bound')){throw 'Fresh DNS report shape'}
+    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 12 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or ($v.schemaVersion -isnot [int] -and $v.schemaVersion -isnot [long]) -or $v.schemaVersion -ne 2 -or $v.sourceCommit -cne $SourceCommit -or $v.architecture -cne $Architecture -or ($v.queryOptions -isnot [int] -and $v.queryOptions -isnot [long]) -or $v.queryOptions -ne 6600 -or $v.outcome -cnotin @('ready','answered','refused') -or $v.code -cnotin @('none','environment','arguments','query-failed','record-bound','record-shape','answer-bound')){throw 'Fresh DNS report shape'}
     if($v.failureKind -isnot [string] -or $v.failureKind -cnotin @('none','timeout','name-error','server-failure','refused','no-records','no-network','other') -or (($v.code -ceq 'query-failed') -ne ($v.failureKind -cne 'none'))){throw 'Fresh DNS error category'}
     foreach($key in @('queryInvoked','recordsReleased','productionQualificationComplete')){if($v.$key -isnot [bool]){throw 'Fresh DNS report type'}}
     foreach($key in @('answerCount','recordCount')){if(($v.$key -isnot [int] -and $v.$key -isnot [long]) -or $v.$key -lt 0){throw 'Fresh DNS report count'}}
@@ -69,7 +69,7 @@ function Get-NativeDNSDiagnosticReport([string]$Text,[string]$Source,[string]$Ar
     if($Text.Length -gt 4096 -or $Source -cnotmatch '^[a-f0-9]{40}$' -or $Architecture -cnotin @('amd64','arm64') -or $Mode -cnotin @('direct','compare')){throw 'Diagnostic DNS boundary'}
     try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{throw 'Diagnostic DNS JSON'}
     $keys=if($Mode -ceq 'direct'){@('schemaVersion','sourceCommit','architecture','result','productionQualificationComplete')}else{@('schemaVersion','sourceCommit','architecture','outcome','code','pair','productionQualificationComplete')}
-    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne $keys.Count -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or $v.schemaVersion -isnot [int] -or $v.schemaVersion -ne 1 -or $v.sourceCommit -cne $Source -or $v.architecture -cne $Architecture -or $v.productionQualificationComplete -isnot [bool] -or $v.productionQualificationComplete){throw 'Diagnostic DNS envelope'}
+    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne $keys.Count -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or ($v.schemaVersion -isnot [int] -and $v.schemaVersion -isnot [long]) -or $v.schemaVersion -ne 1 -or $v.sourceCommit -cne $Source -or $v.architecture -cne $Architecture -or $v.productionQualificationComplete -isnot [bool] -or $v.productionQualificationComplete){throw 'Diagnostic DNS envelope'}
     if($Mode -ceq 'direct'){[void](Get-NativeDNSDirectValue $v.result);return $v}
     if($v.outcome -cnotin @('observed','refused') -or $v.code -cnotin @('none','server','no-overlap')){throw 'Diagnostic DNS comparison'}
     if($null -eq $v.pair){if($v.outcome -cne 'refused' -or $v.code -cne 'server'){throw 'Diagnostic DNS missing pair'};return $v}
@@ -136,7 +136,7 @@ function Get-NativeDNSSetReport([string]$Text,[string]$Source,[string]$Architect
     if($Text.Length -gt 4096 -or $Source -cnotmatch '^[a-f0-9]{40}$' -or $Architecture -cnotin @('amd64','arm64') -or $Mode -cnotin @('direct-set','compare-set')){throw 'DNS set boundary'}
     try{$v=$Text | ConvertFrom-Json -ErrorAction Stop}catch{throw 'DNS set JSON'}
     $keys=@('schemaVersion','sourceCommit','architecture','mode','outcome','code','result','pair','productionQualificationComplete')
-    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 9 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or $v.schemaVersion -isnot [int] -or $v.schemaVersion -ne 1 -or $v.sourceCommit -cne $Source -or $v.architecture -cne $Architecture -or $v.mode -cne $Mode -or $v.productionQualificationComplete -isnot [bool] -or $v.productionQualificationComplete){throw 'DNS set envelope'}
+    if($v -isnot [pscustomobject] -or @($v.PSObject.Properties).Count -ne 9 -or @($v.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or ($v.schemaVersion -isnot [int] -and $v.schemaVersion -isnot [long]) -or $v.schemaVersion -ne 1 -or $v.sourceCommit -cne $Source -or $v.architecture -cne $Architecture -or $v.mode -cne $Mode -or $v.productionQualificationComplete -isnot [bool] -or $v.productionQualificationComplete){throw 'DNS set envelope'}
     if($v.outcome -ceq 'refused' -and $v.code -ceq 'server-set' -and $null -eq $v.result -and $null -eq $v.pair){return $v}
     if($Mode -ceq 'direct-set'){
         if($v.outcome -cne 'observed' -or $v.code -cne 'none' -or $null -ne $v.pair){throw 'DNS set direct envelope'}
@@ -151,11 +151,32 @@ function Get-NativeDNSSetReport([string]$Text,[string]$Source,[string]$Architect
         foreach($key in @('startMicroseconds','endMicroseconds')){if(($part.$key -isnot [int] -and $part.$key -isnot [long]) -or $part.$key -lt 0 -or $part.$key -gt 15000000){throw 'DNS set timing bound'}}
         if($part.endMicroseconds -lt $part.startMicroseconds){throw 'DNS set timing order'}
     }
-    [void](Get-NativeFreshDNSQueryReport ($pair.first.value | ConvertTo-Json -Compress -Depth 4) $Source $Architecture);[void](Get-NativeDNSSetValue $pair.second.value)
+    $native=Get-NativeFreshDNSQueryReport ($pair.first.value | ConvertTo-Json -Compress -Depth 4) $Source $Architecture
+    if(-not $native.queryInvoked){throw 'DNS set comparison did not invoke the native query'}
+    [void](Get-NativeDNSSetValue $pair.second.value)
     $overlap=($pair.first.startMicroseconds -lt $pair.second.endMicroseconds -and $pair.second.startMicroseconds -lt $pair.first.endMicroseconds)
     if($pair.overlapped -ne $overlap -or ($overlap -and ($v.outcome -cne 'observed' -or $v.code -cne 'none')) -or (-not $overlap -and ($v.outcome -cne 'refused' -or $v.code -cne 'no-overlap'))){throw 'DNS set overlap'}
     return $v
 }
+# The verdict belongs to the original resume query. This updates diagnostic fields only.
+function Complete-NativeDNSSetComparison([object]$State,[object]$Diagnostic,[string[]]$ExpectedServers,[object]$Selection) {
+    if($Diagnostic.code -cne 'comparison-pending'){return}
+    $current=@($Selection.servers)
+    if($Selection.code -cne 'selected' -or $current.Count -ne $ExpectedServers.Count -or
+       ($current -join '|') -cne ($ExpectedServers -join '|')){
+        $Diagnostic.code='server-changed'
+        return
+    }
+    $Diagnostic.comparison=Invoke-NativeDNSSetDiagnostic $State $ExpectedServers 'compare-set'
+    if($Diagnostic.comparison.outcome -ceq 'observed' -and
+       $Diagnostic.comparison.pair.second.value.total -eq $ExpectedServers.Count){
+        $Diagnostic.outcome='observed'
+        $Diagnostic.code='none'
+    }else{
+        $Diagnostic.code='comparison-refused'
+    }
+}
+
 function Invoke-NativeDNSSetDiagnostic([object]$State,[string[]]$Servers,[string]$Mode) {
     if($Mode -cnotin @('direct-set','compare-set') -or $Servers.Count -lt 1 -or $Servers.Count -gt 8){throw 'DNS set request'}
     $inputText=ConvertTo-Json -InputObject @($Servers) -Compress

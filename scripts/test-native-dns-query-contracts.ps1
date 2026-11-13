@@ -7,8 +7,8 @@ $project=Split-Path -Parent $PSScriptRoot;$sources=@('scripts/native-dns-query.p
 foreach($file in $sources){$hashes[$file]=(Get-FileHash -LiteralPath (Join-Path $project $file) -Algorithm SHA256).Hash.ToLowerInvariant()}
 $t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-dns-query.ps1'),[ref]$t,[ref]$e);if($e.Count){throw 'Query source syntax'}
 foreach($def in $ast.EndBlock.Statements){
-    if($def -isnot [Management.Automation.Language.FunctionDefinitionAst] -or $def.Name -cnotin @('Get-NativeFreshDNSQueryReport','Invoke-NativeFreshDNSQuery','Select-NativeDNSDiagnosticServer','Get-NativeDNSDirectValue','Get-NativeDNSDiagnosticReport','Invoke-NativeDNSDiagnostic','Select-NativeDNSDiagnosticServers','Get-NativeDNSSetValue','Get-NativeDNSSetReport','Invoke-NativeDNSSetDiagnostic')){continue}
-    foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin @('ConvertFrom-Json','Where-Object','Assert-NativeFreshDNSSources','Get-FileHash','Invoke-NativeDNSWireProcess','Get-NativeFreshDNSQueryReport','Get-NativeDNSDirectValue','Get-NativeDNSDiagnosticReport','ConvertTo-Json','ForEach-Object','Sort-Object','Get-NativeDNSSetValue','Get-NativeDNSSetReport')){throw 'Query source command boundary'}}
+    if($def -isnot [Management.Automation.Language.FunctionDefinitionAst] -or $def.Name -cnotin @('Get-NativeFreshDNSQueryReport','Invoke-NativeFreshDNSQuery','Select-NativeDNSDiagnosticServer','Get-NativeDNSDirectValue','Get-NativeDNSDiagnosticReport','Invoke-NativeDNSDiagnostic','Select-NativeDNSDiagnosticServers','Get-NativeDNSSetValue','Get-NativeDNSSetReport','Invoke-NativeDNSSetDiagnostic','Complete-NativeDNSSetComparison')){continue}
+    foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin @('ConvertFrom-Json','Where-Object','Assert-NativeFreshDNSSources','Get-FileHash','Invoke-NativeDNSWireProcess','Get-NativeFreshDNSQueryReport','Get-NativeDNSDirectValue','Get-NativeDNSDiagnosticReport','ConvertTo-Json','ForEach-Object','Sort-Object','Get-NativeDNSSetValue','Get-NativeDNSSetReport','Invoke-NativeDNSSetDiagnostic')){throw 'Query source command boundary'}}
     . ([scriptblock]::Create($def.Extent.Text))
 }
 $t=$null;$e=$null;$recoveryAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-dns-recovery-observation.ps1'),[ref]$t,[ref]$e);if($e.Count){throw 'Recovery source syntax'}
@@ -30,6 +30,22 @@ function Read-NativeDNSRecoveryMilliseconds([object]$Clock){if($script:recoveryC
 function Wait-NativeDNSRecoveryOffset([object]$Clock,[long]$TargetMilliseconds){if($script:recoveryClockFault -ceq 'start-regression'){return ($TargetMilliseconds-1L)};if($script:recoveryClockFault -ceq 'bound'){return 120001L};$script:recoveryNow=[long][Math]::Max($script:recoveryNow,$TargetMilliseconds);return $script:recoveryNow}
 function New-QTimeout {$r=New-Q;$r.outcome='refused';$r.code='query-failed';$r.failureKind='timeout';$r.answerCount=0;$r.recordCount=0;return $r}
 function Set-QRecovery([object[]]$Replies){$script:recoveryNow=10L;$script:recoveryReplies=[Collections.Generic.Queue[object]]::new();foreach($r in $Replies){$script:recoveryReplies.Enqueue($r)}}
+Case-Q 'query-projection-requires-integral-version-and-options' {
+    foreach($invalid in @('2',$true)){
+        $r=New-Q;$r.schemaVersion=$invalid
+        Reject-Q {Get-NativeFreshDNSQueryReport ($r|ConvertTo-Json -Compress) $source $arch}
+    }
+    foreach($invalid in @('6600',$true)){
+        $r=New-Q;$r.queryOptions=$invalid
+        Reject-Q {Get-NativeFreshDNSQueryReport ($r|ConvertTo-Json -Compress) $source $arch}
+    }
+    $json=New-Q | ConvertTo-Json -Compress
+    $versionFloat=$json.Replace('"schemaVersion":2','"schemaVersion":2.0')
+    $optionsFloat=$json.Replace('"queryOptions":6600','"queryOptions":6600.0')
+    Assert-Q ($versionFloat -cne $json -and $optionsFloat -cne $json)
+    Reject-Q {Get-NativeFreshDNSQueryReport $versionFloat $source $arch}
+    Reject-Q {Get-NativeFreshDNSQueryReport $optionsFloat $source $arch}
+}
 Case-Q 'query-projection-accepts-exact-success' {$r=New-Q;$v=Get-NativeFreshDNSQueryReport ($r|ConvertTo-Json -Compress) $source $arch;Assert-Q ($v.answerCount -eq 1 -and $v.recordsReleased)}
 Case-Q 'query-projection-pins-source-architecture-and-options' {foreach($key in @('sourceCommit','architecture','queryOptions')){$r=New-Q;$r[$key]=switch($key){'sourceCommit'{'b'*40}'architecture'{'arm64'}'queryOptions'{0}};Reject-Q {Get-NativeFreshDNSQueryReport ($r|ConvertTo-Json -Compress) $source $arch}}}
 Case-Q 'query-projection-refuses-private-and-missing-fields' {$r=New-Q;$r.privateRecord='synthetic';Reject-Q {Get-NativeFreshDNSQueryReport ($r|ConvertTo-Json -Compress) $source $arch};$r=New-Q;$r.Remove('recordCount');Reject-Q {Get-NativeFreshDNSQueryReport ($r|ConvertTo-Json -Compress) $source $arch}}
@@ -143,7 +159,33 @@ Case-Q 'diagnostic-server-set-report-closes-counts-and-overlap' {
     $r.result.otherFailures=0;$r.result.ipv6.answered=0;Reject-Q {Get-NativeDNSSetReport ($r|ConvertTo-Json -Depth 8 -Compress) $source $arch 'direct-set'}
     $r.result=$null;$r.mode='compare-set';$r.pair=@{first=@{startMicroseconds=1;endMicroseconds=10;value=(New-Q)};second=@{startMicroseconds=2;endMicroseconds=9;value=@{total=2;answered=2;rejected=0;otherFailures=0;ipv4=@{total=1;answered=1;rejected=0;otherFailures=0};ipv6=@{total=1;answered=1;rejected=0;otherFailures=0}}};overlapped=$true}
     $v=Get-NativeDNSSetReport ($r|ConvertTo-Json -Depth 8 -Compress) $source $arch 'compare-set';Assert-Q $v.pair.overlapped
+    $r.pair.first.value.outcome='ready';$r.pair.first.value.queryInvoked=$false
+    $r.pair.first.value.answerCount=0;$r.pair.first.value.recordCount=0
+    Reject-Q {Get-NativeDNSSetReport ($r|ConvertTo-Json -Depth 8 -Compress) $source $arch 'compare-set'}
+    $r.pair.first.value=New-Q
     $r.pair.first.value.privateAddress='192.0.2.53';Reject-Q {Get-NativeDNSSetReport ($r|ConvertTo-Json -Depth 8 -Compress) $source $arch 'compare-set'}
+}
+Case-Q 'resume comparison requires the same server set and an overlapping query' {
+    $servers=@('192.0.2.53','fe80::1%4')
+    $selection=@{code='selected';servers=$servers}
+    $counts=@{total=2;answered=2;rejected=0;otherFailures=0;
+        ipv4=@{total=1;answered=1;rejected=0;otherFailures=0};ipv6=@{total=1;answered=1;rejected=0;otherFailures=0}}
+    foreach($case in @(
+        @{code='baseline-refused';selection=$selection;outcome='refused';expected='baseline-refused';launches=0},
+        @{code='comparison-pending';selection=@{code='selected';servers=@('192.0.2.53','fe80::1%5')};outcome='refused';expected='server-changed';launches=0},
+        @{code='comparison-pending';selection=$selection;outcome='observed';expected='none';launches=1},
+        @{code='comparison-pending';selection=$selection;outcome='refused';expected='comparison-refused';launches=1}
+    )){
+        Reset-Q
+        $diagnostic=@{outcome='refused';code=$case.code;comparison=$null}
+        $observed=$case.outcome -ceq 'observed'
+        $script:reply=@{schemaVersion=1;sourceCommit=$source;architecture=$arch;mode='compare-set';outcome=$case.outcome;
+            code=$(if($observed){'none'}else{'no-overlap'});result=$null;productionQualificationComplete=$false;
+            pair=@{first=@{startMicroseconds=1;endMicroseconds=10;value=(New-Q)};
+                second=@{startMicroseconds=$(if($observed){2}else{10});endMicroseconds=12;value=$counts};overlapped=$observed}}
+        Complete-NativeDNSSetComparison $state $diagnostic $servers $case.selection
+        Assert-Q ($diagnostic.code -ceq $case.expected -and $diagnostic.outcome -ceq $case.outcome -and $script:events.Count -eq $case.launches)
+    }
 }
 Case-Q 'diagnostic-server-set-process-uses-private-input' {
     Reset-Q;$script:reply=@{schemaVersion=1;sourceCommit=$source;architecture=$arch;mode='direct-set';outcome='observed';code='none';result=@{total=2;answered=2;rejected=0;otherFailures=0;ipv4=@{total=1;answered=1;rejected=0;otherFailures=0};ipv6=@{total=1;answered=1;rejected=0;otherFailures=0}};pair=$null;productionQualificationComplete=$false}

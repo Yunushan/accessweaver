@@ -41,7 +41,7 @@ try {
     $code='positive';$evidence.positive=Invoke-NativeFreshDNSQuery $state 'example.net'
     try {
         $selection=Select-NativeDNSDiagnosticServers @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop);$candidate=@($selection.servers);$diagnostic.selectionCode=$selection.code
-        if($candidate.Count -gt 0){$diagnostic.outcome='refused';$diagnostic.baseline=Invoke-NativeDNSSetDiagnostic $state $candidate 'direct-set';$diagnostic.code=if($diagnostic.baseline.outcome -ceq 'observed' -and $diagnostic.baseline.result.answered -eq $candidate.Count){'blocked-pending'}else{'baseline-refused'}}
+        if($candidate.Count -gt 0){$diagnostic.outcome='refused';$diagnostic.baseline=Invoke-NativeDNSSetDiagnostic $state $candidate 'direct-set';$diagnostic.code=if($diagnostic.baseline.outcome -ceq 'observed' -and $diagnostic.baseline.result.total -eq $candidate.Count -and $diagnostic.baseline.result.answered -eq $candidate.Count){'blocked-pending'}else{'baseline-refused'}}
     }catch{if($diagnostic.selectionCode -ceq 'not-inspected'){$diagnostic.selectionCode='inventory-error'};$diagnostic.outcome='refused';$diagnostic.code='baseline-refused'}
     $code='block';foreach($kind in @('dns','tls')){foreach($protocol in @('TCP','UDP')){Add-NativeDNSWireRule $state $kind $protocol}}
     $code='blocked';$evidence.blocked=Invoke-NativeFreshDNSQuery $state 'example.net' -ExpectFailure
@@ -59,7 +59,12 @@ try {
     $code='resumed';$state.queryLastEvidence=$null;$resumptionTiming.attempted=$true;$resumptionTiming.startMilliseconds=Read-NativeDNSRecoveryMilliseconds $unblockClock
     $evidence.resumed=Invoke-NativeFreshDNSQuery $state 'example.net'
     $resumptionTiming.endMilliseconds=Read-NativeDNSRecoveryMilliseconds $unblockClock
-    if($diagnostic.code -ceq 'comparison-pending'){$diagnostic.outcome='not-run';$diagnostic.code='not-needed'}
+    if($diagnostic.code -ceq 'comparison-pending'){
+        try{
+            $current=Select-NativeDNSDiagnosticServers @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop)
+            Complete-NativeDNSSetComparison $state $diagnostic $candidate $current
+        }catch{$diagnostic.code='comparison-refused'}
+    }
     $code='readback';Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState);$stateVerified=$true
     Assert-NativeFreshDNSSources $state
     $outcome='passed';$code='none'
@@ -73,10 +78,7 @@ try {
                 if($diagnostic.code -ceq 'comparison-pending'){
                     try{
                         $current=Select-NativeDNSDiagnosticServers @(Get-NetAdapter -ErrorAction Stop) @(Get-DnsClientServerAddress -ErrorAction Stop)
-                        if($current.code -cne 'selected' -or (@($current.servers) -join '|') -cne ($candidate -join '|')){$diagnostic.code='server-changed'}else{
-                            $diagnostic.comparison=Invoke-NativeDNSSetDiagnostic $state $candidate 'compare-set'
-                            if($diagnostic.comparison.outcome -ceq 'observed' -and $diagnostic.comparison.pair.second.value.total -eq $candidate.Count){$diagnostic.outcome='observed';$diagnostic.code='none'}else{$diagnostic.code='comparison-refused'}
-                        }
+                        Complete-NativeDNSSetComparison $state $diagnostic $candidate $current
                     }catch{$diagnostic.code='comparison-refused'}
                 }
                 $recoveryObservation=Observe-NativeDNSRecovery $state $unblockClock $evidence.resumed $resumptionTiming $outcome $code
