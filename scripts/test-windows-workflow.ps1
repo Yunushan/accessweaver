@@ -697,6 +697,30 @@ try {
 } finally {
     $root=$previousOwnedRoot;$r=$previousOwnedRequest;$env:ProgramFiles=$previousOwnedProgramFiles
 }
+# The vendor disconnect command is global, so import-only rollback must
+# never send it. Model failures at both sides of the journal phase change.
+& {
+    $profileName='AccessWeaver-'+('b'*32)
+    $script:fixtureWireSockRollbackCalls=[Collections.Generic.List[string]]::new()
+    $previousUndo=$script:undo
+    try {
+        $script:undo=[Collections.Generic.List[object]]::new()
+        function Native {
+            param($program,$arguments,[switch]$Secret)
+            if(-not $Secret -or ($arguments[0] -eq 'delete' -and $arguments[1] -cne $profileName)){
+                throw 'Unexpected vendor cleanup command'
+            }
+            $script:fixtureWireSockRollbackCalls.Add($arguments[0])
+            return @{exitCode=0}
+        }
+        $entry=@{kind='wiresock';cli='C:\fixture\wiresock-connect-cli.exe';profile=$profileName;importOnly=$true}
+        $script:undo.Add($entry)
+        Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'delete') 'WireSock import-only recovery leaves the active connection alone'
+        $entry.importOnly=$false
+        $script:fixtureWireSockRollbackCalls.Clear()
+        Assert (@(Rollback).Count -eq 0 -and ($script:fixtureWireSockRollbackCalls -join ',') -ceq 'disconnect,delete') 'WireSock recovery after a connection attempt retains both cleanup steps'
+    } finally {$script:undo=$previousUndo}
+}
 # Publisher-category checks use synthetic signature records only.
 $signatureDiscord=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Discord fixture'}}
 $signatureMicrosoft=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Microsoft fixture'}}

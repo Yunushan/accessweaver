@@ -1104,8 +1104,11 @@ function Connect-WireSock([string]$config) {
         # imported profile with the same user-selected configuration name.
         $profile='AccessWeaver-'+[guid]::NewGuid().ToString('N')
         $importConfig=Join-Path $root ('profiles\'+$profile+'.conf');Copy-Checked $config $importConfig
-        $script:undo.Add(@{kind='wiresock';cli=$cli;profile=$profile});Save-Journal
+        $recovery=@{kind='wiresock';cli=$cli;profile=$profile;importOnly=$true}
+        $script:undo.Add($recovery);Save-Journal
         [void](Native $cli @('import',$importConfig) -Secret)
+        $recovery.importOnly=$false
+        try {Save-Journal}catch{$recovery.importOnly=$true;throw}
         [void](Native $cli @('connect',$profile,'-exit') -Secret)
         $status=Native $cli @('status') -Secret
         Write-Atomic (Join-Path $root 'profiles\wiresock-owned.json') (@{profile=$profile;cli=$cli} | ConvertTo-Json)
@@ -2098,7 +2101,17 @@ function Rollback {
             Remove-WireSockRefreshTask
         }
         'dns' {if(Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json')){Restore-DNS}}
-        'wiresock' {if($item.legacy){Stop-Service 'wiresock-client-service' -ErrorAction SilentlyContinue;[void](Native $item.cli @('uninstall') -Secret)}else{[void](Native $item.cli @('disconnect') -Secret);[void](Native $item.cli @('delete',$item.profile) -Secret)}}
+        'wiresock' {
+            if($item.legacy){
+                Stop-Service 'wiresock-client-service' -ErrorAction SilentlyContinue
+                [void](Native $item.cli @('uninstall') -Secret)
+            }else{
+                if($item.importOnly -isnot [bool] -or -not $item.importOnly){
+                    [void](Native $item.cli @('disconnect') -Secret)
+                }
+                [void](Native $item.cli @('delete',$item.profile) -Secret)
+            }
+        }
         'cache' {if(-not (Under $item.path $env:APPDATA) -or -not (Under $item.backup (Join-Path $root 'backups'))){throw 'Invalid cache recovery path'};No-Reparse $item.path;No-Reparse $item.backup;if(Test-Path -LiteralPath $item.backup){if(Test-Path -LiteralPath $item.path){throw 'Discord created new cache; original cache backup retained for manual review'};Move-Item -LiteralPath $item.backup -Destination $item.path}}
         'file' {No-Reparse $item.path;if(Test-Path -LiteralPath $item.path){$currentHash=(Get-FileHash -LiteralPath $item.path -Algorithm SHA256).Hash;if($currentHash -eq $item.originalHash){continue};if(-not $item.expectedHash -or $currentHash -ne $item.expectedHash){throw ('File changed outside this operation; review before restoring: '+$item.path)}};if($item.backup){if(-not (Under $item.backup (Join-Path $root 'backups'))){throw 'Recovery backup is outside protected storage'};No-Reparse $item.backup;if(-not $item.originalHash -or (Get-FileHash -LiteralPath $item.backup -Algorithm SHA256).Hash -ne $item.originalHash){throw 'Recovery backup content does not match the recorded original digest'};Copy-Item -LiteralPath $item.backup -Destination $item.path -Force}else{Remove-Item -LiteralPath $item.path -ErrorAction SilentlyContinue}}
     }}catch{$rollbackErrors+=@($_.Exception.Message)}}
@@ -2170,7 +2183,15 @@ function Recover-Operation {
             'firewall' {if($entry.name -notmatch '^AccessWeaver-[a-z]+-(Inbound|Outbound)$'){throw 'Recovery journal contains an unmanaged firewall rule'}}
             'task' {if($entry.name -ne 'AccessWeaver-WireSock-Refresh'){throw 'Recovery journal contains an unmanaged task'}}
             'dns' { }
-            'wiresock' {if($entry.cli -ne (WireSock-CLI) -or (-not $entry.legacy -and $entry.profile -notmatch '^AccessWeaver-[a-f0-9]{32}$')){throw 'Recovery journal contains an unmanaged WireSock profile'}}
+            'wiresock' {
+                if($entry.cli -ne (WireSock-CLI) -or (-not $entry.legacy -and $entry.profile -notmatch '^AccessWeaver-[a-f0-9]{32}$')){
+                    throw 'Recovery journal contains an unmanaged WireSock profile'
+                }
+                $phase=$entry.PSObject.Properties['importOnly']
+                if($phase -and ($phase.Value -isnot [bool] -or $entry.legacy)){
+                    throw 'Recovery journal contains an invalid WireSock phase'
+                }
+            }
             'cache' {if($entry.path -ne (Join-Path $env:APPDATA 'discord') -or -not (Under $entry.backup (Join-Path $root 'backups'))){throw 'Recovery journal contains an unmanaged cache path'}}
             default {throw 'Unknown recovery journal operation'}
         }
