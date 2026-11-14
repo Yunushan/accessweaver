@@ -1905,6 +1905,7 @@ try {
         param([string]$App,[int]$Seconds=20)
         if($App){throw 'Unexpected SplitCord install service probe'}
         if($script:appServiceRemains){throw 'SplitCord service removal could not be verified'}
+        if($script:appReappearance -ceq 'absent-service-check'){$script:appRemovalMoved=$true}
     }
     function Get-Process {
         param($ErrorAction)
@@ -2083,6 +2084,24 @@ try {
     $removed=Remove-App 'splitcord'
     Assert ($removed -ceq $true -and $script:appRemovalEvents.Count -eq 1 -and -not (Test-Path -LiteralPath $fixtureApp)) 'Application removal confirms both executable and process readback before success'
     Assert ((Remove-App 'splitcord') -ceq $false -and $script:appRemovalEvents.Count -eq 1) 'Application removal identifies an already absent client without a vendor launch'
+    $script:appReappearance='absent-service-check'
+    $script:externalEffectsPending=$false
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Application installation reappeared during uninstall verification'}
+    Assert ($rejected -and -not $script:externalEffectsPending -and $script:appRemovalEvents.Count -eq 1) 'SplitCord absent-client cleanup refuses an installation found after service readback'
+    $script:appReappearance=$null
+    $script:appRemovalMoved=$false
+    $orphan=[pscustomobject]@{Path=(Join-Path $testRoot 'SplitCord-Turkey.exe');ProcessName='SplitCord-Turkey';HasExited=$false}
+    $sharedHelper=[pscustomobject]@{Path=$null;ProcessName='crashpad_handler';HasExited=$false}
+    foreach($path in @($orphan.Path,$null)){
+        $orphan.Path=$path
+        $script:appRemovalProcesses=@($orphan,$sharedHelper)
+        $rejected=$false
+        try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+        Assert ($rejected -and -not $script:externalEffectsPending -and $script:appRemovalEvents.Count -eq 1) ('SplitCord absent-client cleanup refuses a live client with image readable='+[bool]$path)
+    }
+    $orphan.HasExited=$true
+    Assert ((Remove-App 'splitcord') -ceq $false -and -not $script:externalEffectsPending) 'SplitCord absent-client cleanup disregards an exited client and an unrelated shared helper'
     foreach($variant in @('discord','discord-ptb')){
         $base=Get-AppProcessBase $variant
         $updater=[pscustomobject]@{Path=(Join-Path $base 'Update.exe');HasExited=$false}

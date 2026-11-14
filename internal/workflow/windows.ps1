@@ -3572,11 +3572,9 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
     $app=Find-App $variant
     if($expectedApp -and $app -ine $expectedApp){throw 'Application installation changed before removal'}
     if(-not $app){
+        Wait-AppProcessesExited $variant '' 0
         if($variant -eq 'splitcord'){Wait-SplitCordService '' 0}
-        else{
-            Wait-AppProcessesExited $variant '' 0
-            if(Find-App $variant){throw 'Application installation reappeared during uninstall verification'}
-        }
+        if(Find-App $variant){throw 'Application installation reappeared during uninstall verification'}
         return $false
     }
     $appDigest=Get-AppExecutableDigest $app
@@ -3651,6 +3649,11 @@ function Get-AppProcessMatch($process,[string]$base,[string]$app,[string[]]$name
     $image=$null
     try {$image=$process.Path}catch{}
     if($image -is [string] -and -not [string]::IsNullOrWhiteSpace($image)){
+        if(-not $base -and -not $app){
+            # With no discovered SplitCord installation, only its own image
+            # name identifies a survivor. Crash reporters are shared.
+            return [IO.Path]::GetFileName($image) -ieq 'SplitCord-Turkey.exe'
+        }
         return (Test-AppImagePath $image $base $app)
     }
     $name=$null
@@ -3668,6 +3671,7 @@ function Get-AppProcessMatch($process,[string]$base,[string]$app,[string[]]$name
 function Get-AppProcessNames([string]$base,[string]$app) {
     if($base){return @('Discord','DiscordPTB','Update','crashpad_handler')}
     if($app){return @([IO.Path]::GetFileNameWithoutExtension($app),'crashpad_handler')}
+    return 'SplitCord-Turkey'
 }
 function Test-AppProcessesExited([string]$base,[string]$app,[string[]]$names) {
     $processes=@(Get-Process -ErrorAction Stop)
@@ -3700,9 +3704,11 @@ function Wait-AppProcessesExited([string]$variant,[string]$app,[int]$seconds=10)
 }
 function Stop-AppProcesses([string]$variant,[string]$app) {
     $base=Get-AppProcessBase $variant
-    if(-not $base -and -not $app){$app=Find-App $variant}
+    if(-not $base -and -not $app){
+        $app=Find-App $variant
+        if(-not $app){return}
+    }
     $names=@(Get-AppProcessNames $base $app)
-    if(-not $names.Count){return}
     $current=[Diagnostics.Process]::GetCurrentProcess()
     try {$sessionId=$current.SessionId} finally {$current.Dispose()}
     $matching=[Collections.Generic.List[object]]::new()
