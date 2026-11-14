@@ -124,8 +124,22 @@ function Get-FixtureSplitCordServiceState {
     } finally {$service.Dispose()}
 }
 
-function Assert-FixtureSplitCordServiceState([string]$Expected) {
+function Assert-FixtureSplitCordServiceState([ValidateSet('Absent','Running')][string]$Expected,[string]$Image) {
     if((Get-FixtureSplitCordServiceState) -cne $Expected){throw 'SplitCord service did not match the expected state'}
+    if($Expected -ceq 'Absent'){return}
+    if(-not $Image -or -not [IO.Path]::IsPathRooted($Image)){
+        throw 'SplitCord service verification requires the installed client path'
+    }
+    $binary=Join-Path (Split-Path -Parent $Image) 'resources\service-installer\SplitCordService.exe'
+    if(-not (Test-Path -LiteralPath $binary -PathType Leaf -ErrorAction Stop)){
+        throw 'SplitCord service executable could not be verified'
+    }
+    $services=@(Get-CimInstance -ClassName Win32_Service -Filter "Name='SplitCordDpiService'" -ErrorAction Stop)
+    if($services.Count -ne 1 -or $services[0].Name -ine 'SplitCordDpiService' -or
+       $services[0].State -cne 'Running' -or $services[0].PathName -isnot [string] -or
+       ($services[0].PathName -ine $binary -and $services[0].PathName -ine ('"'+$binary+'"'))){
+        throw 'Running SplitCord service could not be bound to the installed client'
+    }
 }
 
 function Remove-FixtureApp([string]$Variant,[switch]$Cleanup){
@@ -292,7 +306,7 @@ try {
         }
         if($Variant -ceq 'splitcord'){
             $script:appEvidenceStage='service-readback'
-            Assert-FixtureSplitCordServiceState 'Running'
+            Assert-FixtureSplitCordServiceState 'Running' $image
         }
     }
     function Check-FixtureCommunications([string]$Variant){

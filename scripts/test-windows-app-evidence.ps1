@@ -4,7 +4,7 @@ $fixture=Join-Path $PSScriptRoot 'test-windows-apps.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($fixture,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Interactive Windows app fixture failed parsing'}
-foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Test-FixtureCommunication','Test-FixtureAppChecks','Start-FixtureApp','Remove-FixtureApp')){
+foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Test-FixtureCommunication','Test-FixtureAppChecks','Start-FixtureApp','Remove-FixtureApp','Assert-FixtureSplitCordServiceState')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -181,6 +181,53 @@ foreach($alreadyRunning in @($true,'false',$null)){
         }
     }
 }
+# Run the real service evidence predicate against a closed installation fixture.
+& {
+    $client='C:\Fixture\SplitCord-Turkey.exe'
+    $binary='C:\Fixture\resources\service-installer\SplitCordService.exe'
+    $service=[pscustomobject]@{Name='SplitCordDpiService';State='Running';PathName='"'+$binary+'"'}
+    $requests=[Collections.Generic.List[string]]::new()
+    function Get-FixtureSplitCordServiceState {return $scmState}
+    function Test-Path {
+        [CmdletBinding()]param($LiteralPath,$PathType)
+        if($LiteralPath -ine $binary -or $PathType -cne 'Leaf'){throw 'Unexpected SplitCord executable inspection'}
+        return $binaryPresent
+    }
+    function Get-CimInstance {
+        [CmdletBinding()]param($ClassName,$Filter)
+        if($ClassName -cne 'Win32_Service' -or $Filter -cne "Name='SplitCordDpiService'"){
+            throw 'Unexpected SplitCord service query'
+        }
+        $requests.Add('query')
+        return $rows
+    }
+    $scmState='Absent';$binaryPresent=$true;$rows=@($service)
+    Assert-FixtureSplitCordServiceState 'Absent'
+    if($requests.Count -ne 0){throw 'Absent SplitCord verification queried a running registration'}
+    $scmState='Running'
+    Assert-FixtureSplitCordServiceState 'Running' $client
+    $service.PathName=$binary
+    Assert-FixtureSplitCordServiceState 'Running' $client
+    foreach($fault in @('missing-image','missing-binary','missing-service','duplicate','wrong-name','stopped','wrong-path','arguments')){
+        $image=$client;$binaryPresent=$true;$rows=@($service);$service.Name='SplitCordDpiService'
+        $service.State='Running';$service.PathName=$binary
+        $expected='Running SplitCord service could not be bound to the installed client'
+        switch -CaseSensitive ($fault){
+            'missing-image' {$image='';$expected='SplitCord service verification requires the installed client path'}
+            'missing-binary' {$binaryPresent=$false;$expected='SplitCord service executable could not be verified'}
+            'missing-service' {$rows=@()}
+            'duplicate' {$rows=@($service,$service)}
+            'wrong-name' {$service.Name='OtherService'}
+            'stopped' {$service.State='Stopped'}
+            'wrong-path' {$service.PathName='C:\Other\SplitCordService.exe'}
+            'arguments' {$service.PathName='"'+$binary+'" --other'}
+        }
+        $refused=$false
+        try{Assert-FixtureSplitCordServiceState 'Running' $image}catch{$refused=$_.Exception.Message -ceq $expected}
+        if(-not $refused){throw ('SplitCord service evidence accepted '+$fault)}
+    }
+}
+
 # A missing client executable alone cannot clear SplitCord's cleanup case.
 & {
     $installedImages=@{}
