@@ -5,7 +5,8 @@ $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS reboot fixture failed parsing'}
 foreach($name in @('Assert-DNSRebootAdmission','Save-DNSRebootRecord','Get-DNSRebootJournalID','Assert-DNSRebootJournal',
-        'Get-DNSRebootCoverage','Assert-DNSRebootConfigured','Assert-RebootResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved')){
+        'Get-DNSRebootCoverage','Assert-DNSRebootConfigured','Assert-RebootResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved',
+        'Invoke-DNSRebootPreparation')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -20,12 +21,71 @@ foreach($name in @('Assert-DNSRebootAdmission','Save-DNSRebootRecord','Get-DNSRe
             }
         }
     }
+    if($name -ceq 'Invoke-DNSRebootPreparation'){
+        $commands=@($nodes[0].FindAll({param($node)$node -is [Management.Automation.Language.CommandAst]},$true))
+        if($commands.Count -ne 2 -or $commands[0].Extent.Text -cne '& $Prepare' -or
+            $commands[1].Extent.Text -cne '& $Recover'){throw 'DNS preparation contract permits only closed callbacks'}
+    }
     . ([scriptblock]::Create($nodes[0].Extent.Text))
 }
 function Refuse([scriptblock]$Action){
     $rejected=$false
     try {& $Action}catch{$rejected=$true}
     if(-not $rejected){throw 'Invalid DNS reboot evidence was accepted'}
+}
+# Exercise the actual preparation boundary with a success, each failed stage
+# and a second failure while attempting to restore.
+$steps=@('install','configure','verify','save')
+foreach($failAt in @('none')+$steps){
+    $calls=[Collections.Generic.List[string]]::new()
+    $failure=$null
+    try {
+        Invoke-DNSRebootPreparation {
+            foreach($step in $steps){
+                $calls.Add($step)
+                if($step -ceq $failAt){throw ('Preparation failed during '+$step)}
+            }
+        } {$calls.Add('restore')}
+    } catch {$failure=$_.Exception}
+    $expected=@($steps)
+    if($failAt -cne 'none'){
+        $expected=@($steps[0..([Array]::IndexOf($steps,$failAt))])+@('restore')
+        if($null -eq $failure -or $failure.Message -cne ('Preparation failed during '+$failAt)){
+            throw 'Preparation failure was lost after cleanup'
+        }
+    } elseif($null -ne $failure){throw 'Successful DNS preparation reported a failure'}
+    if(($calls -join ',') -cne ($expected -join ',')){throw 'Unexpected DNS preparation or recovery order'}
+}
+$combined=$null
+try {
+    Invoke-DNSRebootPreparation {throw 'Preparation failed'} {throw 'Recovery failed'}
+} catch {$combined=$_.Exception}
+if($combined -isnot [AggregateException] -or $combined.InnerExceptions.Count -ne 2 -or
+    $combined.InnerExceptions[0].Message -cne 'Preparation failed' -or
+    $combined.InnerExceptions[1].Message -cne 'Recovery failed'){
+    throw 'Preparation and recovery failures must both be retained'
+}
+
+$bootstrap=Join-Path $PSScriptRoot 'vmware-test-bootstrap.ps1'
+$bootstrapAst=[Management.Automation.Language.Parser]::ParseFile($bootstrap,[ref]$tokens,[ref]$errors)
+if($errors.Count){throw 'VMware bootstrap failed parsing'}
+$rebootBlock=@($bootstrapAst.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.SwitchStatementAst] -and
+        @($node.Clauses | Where-Object {$_.Item1.Value -ceq 'reboot-prepare'}).Count -eq 1
+},$true))
+if($rebootBlock.Count -ne 1){throw 'Expected one VMware DNS preparation stage'}
+$body=($rebootBlock[0].Clauses | Where-Object {$_.Item1.Value -ceq 'reboot-prepare'}).Item2
+$stages=@($body.FindAll({
+    param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and (
+        $node.GetCommandName() -cin @('Register-ScheduledTask','Unregister-ScheduledTask') -or
+        ($node.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and
+         $node.Extent.Text -match 'test-windows-reboot\.ps1.*-Phase Prepare'))
+},$true))
+if($stages.Count -ne 3 -or $stages[0].GetCommandName() -cne 'Register-ScheduledTask' -or
+    $stages[1].Extent.Text -notmatch '-Phase Prepare' -or $stages[2].GetCommandName() -cne 'Unregister-ScheduledTask'){
+    throw 'VMware DNS preparation must follow task registration and retire the task on failure'
 }
 $journalId='workflow-'+('a'*32)+'.json'
 $saved=@{schemaVersion=6;qualificationID=('a'*32);method='doh';guestID='synthetic';

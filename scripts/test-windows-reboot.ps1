@@ -134,6 +134,21 @@ function Invoke-TestWorkflow([hashtable]$Request) {
         return $job.result
     } finally {[IO.File]::Delete($path)}
 }
+function Invoke-DNSRebootPreparation([scriptblock]$Prepare,[scriptblock]$Recover) {
+    try {
+        & $Prepare
+    } catch {
+        $preparationFailure=$_
+        try {
+            & $Recover
+        } catch {
+            throw [AggregateException]::new('DNS reboot preparation failed and guest restoration could not be verified',
+                [Exception[]]@($preparationFailure.Exception,$_.Exception))
+        }
+        throw $preparationFailure
+    }
+}
+
 function Get-DNSRebootCoverage([object]$Before,[string]$RequiredMode) {
     $original=Get-DNSAcceptanceIndex $Before
     $coverage=[ordered]@{'dhcp-ipv4'=0;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=0}
@@ -222,8 +237,8 @@ $previousHome=$env:ACCESSWEAVER_HOME
 try {
     $env:ACCESSWEAVER_HOME=Join-Path $private 'controller-state'
     if($Phase -eq 'Prepare'){
-        if((Test-Path -LiteralPath $private) -or (Test-Path -LiteralPath $report) -or
-           (Test-Path -LiteralPath $snapshot -ErrorAction Stop) -or -not (Test-DNSRebootServicesRemoved)){
+        if((Test-Path -LiteralPath $private -ErrorAction Stop) -or
+           (Test-Path -LiteralPath $machineRoot -ErrorAction Stop) -or -not (Test-DNSRebootServicesRemoved)){
             throw 'A fresh guest checkpoint and results directory are required'
         }
         $before=Read-DNSAcceptanceState
@@ -241,22 +256,32 @@ try {
         }
         Set-Acl -LiteralPath $private -AclObject $security -ErrorAction Stop
         Save-DNSRebootRecord (Join-Path $private 'original.json') @{schemaVersion=6;dns=$before}
-        [void](Invoke-TestWorkflow @{action='install';engine='byedpi';mode='service';bundlePath='C:\AccessWeaver-Test\components'})
-        $applied=Invoke-TestWorkflow @{action='dns';dns=$DNS;bundlePath='C:\AccessWeaver-Test\components'}
-        Assert-RebootServices $DNS
-        Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
-        Assert-RebootResolver
-        Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
-        $current.qualificationID=[guid]::NewGuid().ToString('N')
-        $current.method=$DNS
-        $current.requiredOriginalMode=$RequiredOriginalMode
-        $current.dns=$before
-        $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 8MB
-        $current.journalId=Get-DNSRebootJournalID $applied.journal $logDirectory
-        $journalPath=Join-Path $logDirectory $current.journalId
-        $current.journalSHA256=Get-DNSRebootDigest $journalPath 8MB
-        Assert-DNSRebootJournal (Get-Content -LiteralPath $journalPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop) $current.snapshotSHA256
-        Save-DNSRebootRecord $baseline $current
+        Invoke-DNSRebootPreparation {
+            [void](Invoke-TestWorkflow @{action='install';engine='byedpi';mode='service';bundlePath='C:\AccessWeaver-Test\components'})
+            $applied=Invoke-TestWorkflow @{action='dns';dns=$DNS;bundlePath='C:\AccessWeaver-Test\components'}
+            Assert-RebootServices $DNS
+            Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
+            Assert-RebootResolver
+            Assert-DNSRebootConfigured $before (Read-DNSAcceptanceState) $DNS
+            $current.qualificationID=[guid]::NewGuid().ToString('N')
+            $current.method=$DNS
+            $current.requiredOriginalMode=$RequiredOriginalMode
+            $current.dns=$before
+            $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 8MB
+            $current.journalId=Get-DNSRebootJournalID $applied.journal $logDirectory
+            $journalPath=Join-Path $logDirectory $current.journalId
+            $current.journalSHA256=Get-DNSRebootDigest $journalPath 8MB
+            Assert-DNSRebootJournal (Get-Content -LiteralPath $journalPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop) $current.snapshotSHA256
+            Save-DNSRebootRecord $baseline $current
+        } {
+            # Product removal restores and reads back DNS before removing services.
+            [void](Invoke-TestWorkflow @{action='remove-all'})
+            Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState)
+            Assert-RebootResolver
+            if((Test-Path -LiteralPath $snapshot -ErrorAction Stop) -or -not (Test-DNSRebootServicesRemoved)){
+                throw 'DNS reboot preparation cleanup retained a snapshot or managed service'
+            }
+        }
         return
     }
 
