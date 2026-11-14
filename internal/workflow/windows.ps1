@@ -2534,13 +2534,13 @@ function Configure-DNS([string]$method) {
         })
         Wait-DNSCryptListeners $listeners
         Assert-DNSCryptConfiguration $config $publishedConfigSHA256
-        if($newResolver){
-            # Persist startup before any adapter depends on the new service.
-            if((Assert-RecordedServiceBinding $newResolver) -ne 0){throw 'New DNSCrypt service disappeared before enabling automatic startup'}
-            Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-            Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
-            Assert-DNSCryptServiceState $newResolver
-        }
+        # An existing service can be manual after a switch to DoH. Verify
+        # automatic startup before making any new loopback DNS dependency.
+        $resolver=if($existingResolver){$existingResolver}else{$newResolver}
+        if((Assert-RecordedServiceBinding $resolver) -ne 0){throw 'DNSCrypt service disappeared before enabling automatic startup'}
+        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+        Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
+        Assert-DNSCryptServiceState $resolver
     } elseif($method -eq 'doh') {
         foreach($provider in $providers){
             $address=$provider.ServerAddress
@@ -2629,15 +2629,7 @@ function Configure-DNS([string]$method) {
         Set-Service -Name $serviceName -StartupType Manual -ErrorAction Stop
         Assert-DNSCryptServiceState $existingResolver -ManualStopped
     }
-    if($method -ceq 'dnscrypt' -and $existingResolver){
-        Assert-DNSCryptConfiguration $config $publishedConfigSHA256
-        if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before enabling automatic startup'}
-        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-        Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
-        Assert-DNSCryptServiceState $existingResolver
-    }elseif($newResolver){
-        Assert-DNSCryptServiceState $newResolver
-    }
+    if($method -ceq 'dnscrypt'){Assert-DNSCryptServiceState $resolver}
     Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
     if($method -ceq 'dnscrypt'){Assert-DNSCryptConfiguration $config $publishedConfigSHA256}
     Event ('Encrypted DNS configured: '+$method)

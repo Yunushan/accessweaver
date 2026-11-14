@@ -442,11 +442,12 @@ function Set-Service {
         ($StartupType -ceq 'Manual' -and $script:serviceStops -ne 1) -or
         $StartupType -cnotin @('Manual','Automatic')){throw 'Unexpected service startup change'}
     if($StartupType -ceq 'Automatic'){
-        if($script:newResolverRegistered){
-            if($script:resolverBindingReads -ne 1 -or ($script:listenerQueries -join ',') -cne '127.0.0.1,::1' -or
-               $script:resolverQueries -ne 0 -or (Mutation-Count) -ne 0){throw 'New resolver startup changed out of order'}
-        }elseif(-not $script:stageDNSCrypt -or $script:resolverBindingReads -ne 3 -or
-            $script:resolverStopped -or $script:resolverQueries -lt 1){throw 'Existing resolver startup changed out of order'}
+        $bindings=if($script:newResolverRegistered){1}else{3}
+        if(-not $script:stageDNSCrypt -or $script:resolverBindingReads -ne $bindings -or
+            $script:listenerQueries.Count -eq 0 -or -not $script:listenerChecksBeforeAdapters -or
+            $script:resolverStopped -or $script:resolverQueries -ne 0 -or (Mutation-Count) -ne 0){
+            throw 'Resolver startup changed out of order'
+        }
     }
     $script:expectedResolverStartup=$StartupType
     $script:serviceStartupChanges++
@@ -743,7 +744,7 @@ try {
                 $script:serviceStartupChanges -eq 0 -and (Mutation-Count) -eq 0) 'dns-service-binding-before-mutation'
         }else{
             Configure-DNS 'dnscrypt'
-            Assert-DNS ($script:resolverBindingReads -eq 3 -and $script:dnscryptConfigReads -eq 7 -and
+            Assert-DNS ($script:resolverBindingReads -eq 3 -and $script:dnscryptConfigReads -eq 6 -and
                 $script:dnscryptConfigWrites -eq 1 -and $script:serviceRestarts -eq 1 -and
                 $script:serviceStartupChanges -eq 1 -and $script:dnsConfigured) 'dnscrypt-restarts-verified-service'
         }
@@ -763,6 +764,17 @@ try {
             $script:serviceRestarts -eq 0 -and $script:serviceStarts -eq [int]$initiallyStopped -and
             ($script:listenerQueries -join ',') -ceq '127.0.0.1,::1' -and $script:resolverQueries -eq 1 -and
             [IO.File]::ReadAllText($path) -ceq $configText) 'dnscrypt-reuses-unchanged-configuration'
+    }
+    foreach($fault in @('mode','state','late-mode')){
+        New-DNSCase;$script:stageDNSCrypt=$true;$script:resolverServicePresent=$true
+        $script:resolverReadbackFault=$fault
+        [IO.File]::WriteAllText((Join-Path $root 'dnscrypt-proxy.toml'),"listen_addresses = ['192.0.2.53:53']")
+        Reject-DNS {Configure-DNS 'dnscrypt'} 'DNSCrypt service automatic startup or running state could not be verified'
+        $late=[int]($fault -ceq 'late-mode')
+        Assert-DNS ($script:serviceStartupChanges -eq 1 -and $script:resolverReadbacks -eq (1+$late) -and
+            (Mutation-Count) -eq (2*$late) -and $script:resolverQueries -eq $late -and
+            $script:journalActive -and (Snapshot-Hash) -ceq $script:journalDigest -and
+            -not $script:dnsConfigured) 'dnscrypt-listeners-before-adapters'
     }
     New-DNSCase;$script:stageDNSCrypt=$true;$script:resolverServicePresent=$true;$script:failDNSCryptRestart=$true
     [IO.File]::WriteAllText((Join-Path $root 'dnscrypt-proxy.toml'),"listen_addresses = ['192.0.2.53:53']")
@@ -792,7 +804,7 @@ try {
             [IO.File]::ReadAllText($target) -ceq 'independent configuration'
         }
         Assert-DNS ($preserved -and $script:serviceRestarts -eq [int]($stage -cne 'publish') -and
-            $script:serviceStartupChanges -eq 0 -and (Mutation-Count) -eq $writes -and
+            $script:serviceStartupChanges -eq [int]($stage -ceq 'ordinary-probe') -and (Mutation-Count) -eq $writes -and
             $script:journalDigest -ceq (Snapshot-Hash) -and -not $script:dnsConfigured) 'dns-service-binding-before-mutation'
     }
     foreach($transition in @('dnscrypt-only','dnscrypt-to-doh','doh-to-dnscrypt')){
@@ -806,6 +818,9 @@ try {
             Configure-DNS 'doh'
             $script:resolverBindingReads=0
             $script:serviceStartupChanges=0
+            $script:resolverQueries=0
+            $script:calls.Clear()
+            $script:resolverStopped=$true
         }
         $readsBeforeCrypt=$script:dohReads
         Configure-DNS 'dnscrypt'
