@@ -512,7 +512,7 @@ function AWUninstallDirectoryPreflight(const Destination: String): String;
 var Found64, Found32: Boolean;
     Version, Location, OtherVersion, OtherLocation: String;
 begin
-  Result := AWReadRegistration($0100, True, '', Found64, Version, Location);
+  Result := AWReadRegistration($0100, True, ExpandConstant('{uninstallexe}'), Found64, Version, Location);
   if Result <> '' then Exit;
   Result := AWReadRegistration($0200, False, '', Found32, OtherVersion, OtherLocation);
   if Result <> '' then Exit;

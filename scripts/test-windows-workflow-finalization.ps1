@@ -116,7 +116,7 @@ function Assert-Finalizer([bool]$Value,[string]$Message){if(-not $Value){throw $
         param($FilePath,$WorkingDirectory,$ArgumentList,$WindowStyle)
         Assert-Finalizer ($FilePath -ceq $uninstaller -and $WorkingDirectory -ceq $installed -and
             $WindowStyle -ceq 'Hidden' -and ($ArgumentList -join ',') -ceq '/VERYSILENT,/SUPPRESSMSGBOXES,/NORESTART' -and
-            $state.stream.CanRead -and $state.dataStream.CanRead) 'Deferred launch lost its fixed command or uninstall file guards'
+            $state.stream.CanRead -and -not $state.dataStream.CanRead) 'Deferred launch must hold the executable and release the uninstall data for Inno'
         $state.launches++
         if($state.failLaunch){throw 'Inert launch failure'}
     }

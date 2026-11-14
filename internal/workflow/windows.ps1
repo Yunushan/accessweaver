@@ -4980,7 +4980,7 @@ function Open-WorkflowUninstallBinding([string]$Architecture=$inputData.nativeAr
     }
 }
 function Close-WorkflowUninstallBinding($Binding) {
-    try {$Binding.dataStream.Dispose()}
+    try {if($null -ne $Binding.dataStream){$Binding.dataStream.Dispose()}}
     finally {$Binding.stream.Dispose()}
 }
 function Invoke-WorkflowDeferredUninstaller($Binding) {
@@ -4998,7 +4998,11 @@ function Invoke-WorkflowDeferredUninstaller($Binding) {
         # The file inspection can overlap a new Setup or recovery marker.
         Assert-NoPendingWorkflowInstallation
         Assert-NoAccessWeaverSetup
-        # Keep the verified uninstaller and data open through detached process creation.
+        # Inno starts by opening its .dat with exclusive sharing. Release our
+        # data handle before creating the process so its first open can succeed.
+        $current.dataStream.Dispose()
+        $current.Remove('dataStream')
+        # Keep the verified executable open through process creation.
         Start-Process -FilePath $current.path -WorkingDirectory ([IO.Path]::GetDirectoryName($current.path)) -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -WindowStyle Hidden
     } finally {Close-WorkflowUninstallBinding $current}
 }

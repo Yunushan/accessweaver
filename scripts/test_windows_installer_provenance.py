@@ -268,6 +268,13 @@ class UninstallRegistrationRefusalTests(unittest.TestCase):
                          {"uninstallRegistrationVersionRefusalVerified": True})
         with self.assertRaises(ValueError):
             validate_uninstall_registration_refusal(observation, operation=version_case)
+        command_case = "refused-uninstall-registration-command"
+        command_observation = {**observation, "operation": command_case}
+        self.assertEqual(validate_uninstall_registration_refusal(command_observation, operation=command_case),
+                         {"uninstallRegistrationCommandRefusalVerified": True})
+        with self.assertRaises(ValueError):
+            validate_uninstall_registration_refusal({**command_observation, "restorationStateAbsent": False},
+                                                    operation=command_case)
         for field in observation:
             with self.subTest(missing=field), self.assertRaises(ValueError):
                 validate_uninstall_registration_refusal({key: value for key, value in observation.items() if key != field})

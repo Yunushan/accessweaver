@@ -99,6 +99,7 @@ foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
 Assert ($uninstallPreflight -cmatch "AWInstallationPathPreflight\(ExpandConstant\('\{app\}'\), False\)") 'Uninstall must require an existing ordinary directory before restoration'
 $uninstallRegistration=[regex]::Match($installerSource,'(?ms)^function AWUninstallDirectoryPreflight\(.*?^end;').Value
 Assert ($uninstallRegistration -cmatch "AWOrdinal\(Version, '\{#ReleaseVersion\}'\) <> 0") 'Uninstall must match the exact release version in the machine registration'
+Assert ($uninstallRegistration.Contains("AWReadRegistration(`$0100, True, ExpandConstant('{uninstallexe}'),")) 'Native uninstall must verify that both machine registration commands bind its original executable'
 $completion=[regex]::Match($installerSource,'(?ms)^function AWVerifyCompletedInstall\(.*?^end;').Value
 $verifiedFile=[regex]::Match($installerSource,'(?ms)^function AWVerifyInstalledFile\(.*?^end;').Value
 $retirement=[regex]::Match($installerSource,'(?ms)^procedure AWCompleteInstallation\(.*?^end;').Value
