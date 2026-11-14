@@ -124,6 +124,12 @@ class SignedReleaseManifestTests(unittest.TestCase):
         if overrides.get("schemaVersion", 5) >= 10:
             report.update(buildInfoSHA256="6" * 64, installedBuildInfoVerified=True)
         if overrides.get("schemaVersion", 5) >= 11:
+            report.update(
+                runID="a" * 32, detectorSHA256="1" * 64, fixtureSHA256="2" * 64,
+                commonSHA256="3" * 64, publisherVerifierSHA256="4" * 64,
+                installedTreeSHA256="5" * 64, registrationSHA256="6" * 64,
+                setupExitCode=0, setupRequestedRestart=False, previousSetupSHA256="", previousPublisherSHA256="",
+            )
             report["previousBuildInfoSHA256"] = "5" * 64 if overrides.get("installMode") == "upgrade" else ""
         evidence = self.root / filename
         evidence.write_text(json.dumps({**report, **overrides}), encoding="utf-8")
@@ -301,6 +307,31 @@ class SignedReleaseManifestTests(unittest.TestCase):
             with self.subTest(evidence=evidence), self.assertRaises(ValueError):
                 release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=evidence)
             self.assertFalse(output.exists())
+
+    def test_current_windows_reboot_report_requires_complete_consistent_evidence(self):
+        path, _ = self.write_reboot_report("current.json", schemaVersion=11)
+        report = json.loads(path.read_bytes())
+        files = release.inventory(self.candidate, self.subjects)
+
+        def load(record):
+            path.write_text(json.dumps(record), encoding="utf-8")
+            return release.load_detection_evidence(self.candidate, [(path, release.digest(path))], files, VERSION)
+
+        for code, restart in ((0, False), (3010, True)):
+            with self.subTest(code=code):
+                entry, = load({**report, "setupExitCode": code, "setupRequestedRestart": restart})
+                self.assertEqual(entry["buildInfoSHA256"], report["buildInfoSHA256"])
+        for field in (*release.REBOOT_REPORT_DIGESTS, "runID", "setupExitCode", "setupRequestedRestart"):
+            with self.subTest(missing=field), self.assertRaisesRegex(ValueError, "current report schema"):
+                load({name: value for name, value in report.items() if name != field})
+        for overrides in (
+            {"runID": "invalid"}, {"fixtureSHA256": 123}, {"registrationSHA256": "a" * 63},
+            {"setupExitCode": 1641}, {"setupExitCode": False}, {"setupExitCode": 3010},
+            {"setupRequestedRestart": 0}, {"userProfilePreservedThroughUpgrade": True},
+            {"unexpected": "private baseline field"},
+        ):
+            with self.subTest(overrides=overrides), self.assertRaises(ValueError):
+                load({**report, **overrides})
 
     def test_downgrade_refusal_evidence_requires_both_distinct_prior_setup_pins(self):
         files = release.inventory(self.candidate, self.subjects)

@@ -41,6 +41,10 @@ REBOOT_CHECKS = (
     "registrationPreserved", "registrationRemoved", "packageFilesRemoved",
     "userProfileVerifiedAfterReboot", "userProfilePreservedAfterUninstall",
 )
+REBOOT_REPORT_DIGESTS = (
+    "detectorSHA256", "fixtureSHA256", "commonSHA256", "publisherVerifierSHA256",
+    "installedTreeSHA256", "registrationSHA256",
+)
 REVOCATION_FIELDS = {
     "sourceCommits": r"[a-f0-9]{40}|[a-f0-9]{64}",
     "sourceRefs": r"refs/tags/v[A-Za-z0-9._+-]+",
@@ -192,6 +196,31 @@ def validate_detection(entries, subjects, version):
     require(len(keys) == len(set(keys)), "Duplicate Windows detection path")
 
 
+def validate_schema_11_reboot_report(report, mode):
+    fields = {
+        "schemaVersion", "runID", "stage", "architecture", "version", "installMode", "previousVersion",
+        "previousPayloadSHA256", "previousPayloadTrustVerified", "downgradeRequested", "downgradeRefused",
+        "downgradeStatePreserved", "userProfilePreservedThroughUpgrade", "setupSHA256", "payloadSHA256",
+        "publisherSHA256", "payloadPublisherSHA256", "payloadSBOMSHA256", "installedPayloadSBOMVerified",
+        "installedPayloadPublisherVerified", "installedBuildInfoVerified", "uninstallerSHA256",
+        "userProfileOpenedByInstalledController", "setupExitCode", "setupRequestedRestart",
+        WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO, *WINDOWS_PREVIOUS_TRUST_FIELDS, *WINDOWS_DOWNGRADE_FIELDS,
+        *REBOOT_CHECKS, *REBOOT_REPORT_DIGESTS,
+    }
+    require(report.keys() == fields, "Windows reboot evidence differs from the current report schema")
+    run_id = report["runID"]
+    require(isinstance(run_id, str) and re.fullmatch(r"[a-f0-9]{32}", run_id)
+            and all(isinstance(report[field], str) and re.fullmatch(SHA256, report[field])
+                    for field in REBOOT_REPORT_DIGESTS),
+            "Windows reboot evidence has invalid run or fixture identity")
+    exit_code = report["setupExitCode"]
+    require(type(exit_code) is int and exit_code in (0, 3010)
+            and report["setupRequestedRestart"] is (exit_code == 3010),
+            "Windows reboot evidence has inconsistent Setup restart status")
+    require(report["userProfilePreservedThroughUpgrade"] is (mode == "upgrade"),
+            "Windows reboot evidence has inconsistent profile preservation")
+
+
 def load_detection_evidence(directory, evidence, subjects, version):
     require(len(evidence) <= MAX_REBOOT_EVIDENCE, "Too many Windows reboot reports")
     targets = windows_subjects(subjects)
@@ -251,7 +280,8 @@ def load_detection_evidence(directory, evidence, subjects, version):
             require(report.get("installedBuildInfoVerified") is True,
                     "Windows reboot evidence does not verify installed build metadata")
             entry[WINDOWS_BUILD_INFO] = report.get(WINDOWS_BUILD_INFO)
-        if report["schemaVersion"] >= 11:
+        if report["schemaVersion"] == 11:
+            validate_schema_11_reboot_report(report, mode)
             prior_build_info = report.get(WINDOWS_PREVIOUS_BUILD_INFO)
             if mode == "upgrade":
                 entry[WINDOWS_PREVIOUS_BUILD_INFO] = prior_build_info
