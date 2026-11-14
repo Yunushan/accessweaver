@@ -2988,7 +2988,10 @@ function Remove-Method([string]$engine,[switch]$OwnedOnly) {
         $firewallNames=@($name+'-Inbound';$name+'-Outbound')
         foreach($ruleName in $firewallNames){[void](Get-ManagedFirewallRule $ruleName)}
     }
-    if($engine -eq 'byedpi'){Remove-Method 'proxifyre';Restore-Drover}
+    if($engine -eq 'byedpi'){
+        Restore-Drover
+        Remove-Method 'proxifyre'
+    }
     if($engine -eq 'dnscrypt' -and (Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json'))){Restore-DNS}
     if($entry){Remove-RecordedService $name -Entry $entry}
     foreach($ruleName in $firewallNames){Remove-ManagedFirewallRule $ruleName}
@@ -2999,9 +3002,10 @@ function Remove-All {
     # have been restored and independently read back by Restore-DNS.
     $snapshot=Join-Path $root 'profiles\dns-original.json'
     if(Test-Path -LiteralPath $snapshot -ErrorAction Stop){Restore-DNS}
-    foreach($engine in @('proxifyre','byedpi','zapret','zapret2','goodbyedpi','wiresock')){Remove-Method $engine}
+    # ByeDPI cleanup restores Drover before removing either proxy service.
+    foreach($engine in @('byedpi','zapret','zapret2','goodbyedpi','wiresock')){Remove-Method $engine}
     Remove-Method 'windivert' -OwnedOnly
-    Remove-Method 'dnscrypt';Restore-Drover
+    Remove-Method 'dnscrypt'
 }
 function Get-WireSockMsiProductCode($record,[string]$program,[switch]$BundleOwnsUninstall) {
     $failure='Registered WireSock MSI uninstall command does not match its product code'

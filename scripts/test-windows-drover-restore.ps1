@@ -4,7 +4,7 @@ $source=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Windows workflow source failed parsing'}
-foreach($name in @('No-Reparse','Install-Drover','Assert-RecordedServiceBinding','Recover-Operation','Rollback','Assert-DroverApplication','Set-DroverFile','Get-DroverFileHash','Get-DroverRestorePlan','Read-DroverManifest','Assert-DroverManifestUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Restore-Drover')){
+foreach($name in @('No-Reparse','Install-Drover','Assert-RecordedServiceBinding','Recover-Operation','Rollback','Assert-DroverApplication','Set-DroverFile','Get-DroverFileHash','Get-DroverRestorePlan','Read-DroverManifest','Assert-DroverManifestUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Restore-Drover','Remove-Method','Remove-All')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -243,10 +243,37 @@ try {
         $script:undo.Clear()
     }
 
-    [IO.File]::WriteAllText($second,'installed INI')
-    Write-Manifest @($records[1])
-    Restore-Drover
-    Require (-not [IO.File]::Exists($second) -and -not [IO.File]::Exists($manifest)) 'Single-entry ownership array did not restore'
+    & {
+        $removed=[Collections.Generic.List[string]]::new()
+        function Assert-ManagedServiceOwnership([string]$Name){
+            if($Name -cin @('AccessWeaver-byedpi','AccessWeaver-proxifyre')){return @{name=$Name}}
+        }
+        function Get-ManagedFirewallRule([string]$Name){}
+        function Remove-ManagedFirewallRule([string]$Name){$removed.Add($Name)}
+        function Remove-RecordedService([string]$Name,$Entry){
+            Require ($Entry.name -ceq $Name -and
+                -not ([IO.File]::Exists($manifest) -or [IO.File]::Exists($second))) 'Proxy removal preceded Drover restoration'
+            $removed.Add($Name)
+        }
+        function Remove-WireSockRefreshTask {}
+        function Get-Service {param($Name,$ErrorAction)}
+        function Get-CimInstance {param($ClassName)}
+        $expected='AccessWeaver-proxifyre,AccessWeaver-proxifyre-Inbound,AccessWeaver-proxifyre-Outbound,AccessWeaver-byedpi,AccessWeaver-byedpi-Inbound,AccessWeaver-byedpi-Outbound'
+        foreach($operation in @({Remove-Method 'byedpi'},{Remove-All})){
+            [IO.File]::WriteAllText($second,'installed INI')
+            Write-Manifest @($records[1])
+            $removed.Clear()
+            $script:denySecond=$true
+            $refused=$false
+            try {& $operation}catch{$refused=$_.Exception.Message -ceq 'Synthetic failed removal'}
+            Require ($refused -and $removed.Count -eq 0 -and
+                [IO.File]::Exists($manifest) -and [IO.File]::Exists($second)) 'Failed Drover restoration allowed explicit proxy teardown'
+            $script:denySecond=$false
+            & $operation
+            Require (($removed -join ',') -ceq $expected -and
+                -not ([IO.File]::Exists($second) -or [IO.File]::Exists($manifest))) 'Explicit proxy teardown did not resume in dependency order'
+        }
+    }
 
     $legacy=@{path=$second;backup=$null;installedHash=$installedINI;originalHash=[pscustomobject]@{unexpected=$true};
         applicationSHA256=(Get-DroverFileHash $application);deploymentID=('a'*32)}

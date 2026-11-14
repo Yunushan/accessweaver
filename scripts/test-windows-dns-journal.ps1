@@ -107,7 +107,6 @@ try {
             $calls.Add($engine)
             if($fixture.methodFails -and $engine -ceq 'wiresock'){throw 'Synthetic later cleanup failure'}
         }
-        function Restore-Drover {$calls.Add('drover')}
         $refused=$false
         try{Remove-All}catch{$refused=$_.Exception.Message -ceq 'Synthetic DNS restoration failure'}
         Require ($refused -and ($calls -join ',') -ceq 'restore' -and $fixture.present) 'Failed DNS restoration allowed partial cleanup'
@@ -118,10 +117,10 @@ try {
         $fixture.inspectionFails=$false;$fixture.restoreFails=$false;$fixture.methodFails=$true
         $refused=$false
         try{Remove-All}catch{$refused=$_.Exception.Message -ceq 'Synthetic later cleanup failure'}
-        Require ($refused -and -not $fixture.present -and ($calls -join ',') -ceq 'restore,proxifyre,byedpi,zapret,zapret2,goodbyedpi,wiresock') 'Later cleanup failure did not preserve completed DNS restoration'
+        Require ($refused -and -not $fixture.present -and ($calls -join ',') -ceq 'restore,byedpi,zapret,zapret2,goodbyedpi,wiresock') 'Later cleanup failure did not preserve completed DNS restoration'
         $calls.Clear();$fixture.methodFails=$false
         Remove-All
-        Require (($calls -join ',') -ceq 'proxifyre,byedpi,zapret,zapret2,goodbyedpi,wiresock,windivert,dnscrypt,drover') 'Remove-all retry repeated DNS restoration or changed cleanup order'
+        Require (($calls -join ',') -ceq 'byedpi,zapret,zapret2,goodbyedpi,wiresock,windivert,dnscrypt') 'Remove-all retry repeated DNS restoration or changed cleanup order'
     }
 
     & {
