@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,7 +29,8 @@ func requireHostedReceiptFixture(t *testing.T) {
 }
 
 // Use real, uniquely named receipts for unsigned inert packages on the hosted
-// VM. The package installs a text file under the fixture root and has no scripts.
+// VM. Both packages install only inert text under the fixture root. A second
+// subject package adds one bounded postinstall script for the contention probe.
 func TestDarwinRemovalReceiptToolReinstall(t *testing.T) {
 	requireHostedReceiptFixture(t)
 	base, e := filepath.EvalSymlinks(t.TempDir())
@@ -43,15 +46,18 @@ func TestDarwinRemovalReceiptToolReinstall(t *testing.T) {
 			t.Error(e)
 		}
 	})
-	run := func(path string, args ...string) {
-		t.Helper()
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
+	command := func(ctx context.Context, path string, args ...string) *exec.Cmd {
 		cmd := exec.CommandContext(ctx, path, args...)
 		cmd.Dir = "/"
 		cmd.Env = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "LANG=C", "LC_ALL=C", "TZ=UTC"}
 		cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
-		if e := cmd.Run(); e != nil {
+		return cmd
+	}
+	run := func(path string, args ...string) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if e := command(ctx, path, args...).Run(); e != nil {
 			t.Fatal("native receipt fixture command failed", e)
 		}
 	}
@@ -163,6 +169,129 @@ func TestDarwinRemovalReceiptToolReinstall(t *testing.T) {
 	assertPayload(controlDest)
 	if pairHash(controlID) != controlHash {
 		t.Fatal("reinstalling the subject changed the control receipt")
+	}
+
+	// Reinstall the same package ID and hold Apple's postinstall phase open.
+	// A standalone forget that succeeds in this window disproves relying on
+	// Installer or pkgutil to serialize this removal interleaving.
+	enter := filepath.Join(base, "postinstall-entered")
+	release := filepath.Join(base, "postinstall-release")
+	scripts := filepath.Join(base, "scripts")
+	if e = os.Mkdir(scripts, 0700); e != nil {
+		t.Fatal(e)
+	}
+	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
+	script := "#!/bin/sh\nset -eu\n: > " + quote(enter) + "\n" +
+		"i=0\nwhile [ \"$i\" -lt 25 ]; do\n" +
+		"  [ ! -f " + quote(release) + " ] || exit 0\n" +
+		"  /bin/sleep 1\n  i=$((i+1))\ndone\nexit 1\n"
+	if e = os.WriteFile(filepath.Join(scripts, "postinstall"), []byte(script), 0755); e != nil {
+		t.Fatal(e)
+	}
+	paused := filepath.Join(base, "paused-subject.pkg")
+	run("/usr/bin/pkgbuild", "--root", filepath.Join(base, "subject-source"), "--scripts", scripts,
+		"--identifier", id, "--version", version, "--install-location", dest, paused)
+	exerciseNativeReceiptForgetWindow(t, command, paused, enter, release, id, root)
+	assertPayload(dest)
+	if pairHash(controlID) != controlHash {
+		t.Fatal("contended reinstall changed the control receipt")
+	}
+	// Restore and verify the subject independently of when Installer chose
+	// to write its receipt relative to postinstall.
+	run("/usr/sbin/installer", "-pkg", subject, "-target", "/")
+	checkReceipt(id, dest)
+	assertPayload(dest)
+	assertPayload(controlDest)
+}
+
+func exerciseNativeReceiptForgetWindow(t *testing.T, command func(context.Context, string, ...string) *exec.Cmd, pkg, enter, release, id string, receipts *os.File) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	cmd := command(ctx, "/usr/sbin/installer", "-pkg", pkg, "-target", "/")
+	if e := cmd.Start(); e != nil {
+		t.Fatal("could not launch Installer contention fixture", e)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	reaped := false
+	defer func() {
+		if e := os.WriteFile(release, nil, 0600); e != nil {
+			t.Error("could not release Installer fixture", e)
+		}
+		if !reaped {
+			if e := <-done; e != nil {
+				t.Error("could not finish Installer fixture", e)
+			}
+		}
+	}()
+	checkEntered := func() bool {
+		info, e := os.Lstat(enter)
+		if errors.Is(e, os.ErrNotExist) {
+			return false
+		}
+		if e != nil || !info.Mode().IsRegular() || info.Size() != 0 {
+			t.Fatal("unexpected Installer postinstall marker", e)
+		}
+		return true
+	}
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	deadline := time.NewTimer(15 * time.Second)
+	defer deadline.Stop()
+	for !checkEntered() {
+		select {
+		case e := <-done:
+			reaped = true
+			t.Fatal("Installer exited before entering postinstall", e)
+		case <-deadline.C:
+			t.Fatal("Installer did not reach postinstall by the deadline")
+		case <-tick.C:
+		}
+	}
+	// Verify the subject preimage while the Installer script is still held.
+	readPair := func() [2]bool {
+		t.Helper()
+		var present [2]bool
+		for i, ext := range []string{".bom", ".plist"} {
+			raw, _, e := readAt(receipts, id+ext, 4<<20)
+			if darwintrust.IsReadAbsent(e) {
+				continue
+			}
+			if e != nil || len(raw) == 0 {
+				t.Fatal("could not inspect the subject receipt pair", e)
+			}
+			present[i] = true
+		}
+		return present
+	}
+	requireRunning := func() {
+		select {
+		case e := <-done:
+			reaped = true
+			t.Fatal("Installer exited before contention was observed", e)
+		default:
+		}
+	}
+	requireRunning()
+	// Installer can temporarily remove its prior receipt itself. This is
+	// an inconclusive probe, since there is no complete pair to contend for.
+	before := readPair()
+	requireRunning()
+	if before != ([2]bool{true, true}) {
+		fmt.Println("::notice title=macOS receipt contention::subject-pair-unavailable-during-postinstall")
+		return
+	}
+	forgetErr := forgetRemovalReceipt(ctx, id)
+	present := readPair()
+	requireRunning()
+	switch {
+	case forgetErr == nil && present == ([2]bool{}):
+		fmt.Println("::notice title=macOS receipt contention::receipt-forgotten-during-postinstall")
+	case forgetErr != nil && present == ([2]bool{true, true}):
+		fmt.Println("::notice title=macOS receipt contention::receipt-unchanged-after-forget-error")
+	default:
+		t.Fatal("pkgutil result and subject receipt state disagree during postinstall")
 	}
 }
 

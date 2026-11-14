@@ -86,14 +86,14 @@ jobs:
           python3 -m unittest discover -s scripts -p test_macos_launcher.py -v
           go test ./internal/packageupgrade ./cmd/accessweaver-launcher ./cmd/accessweaver-installer -count=1
           go test ./internal/packageupgrade -run '^TestDarwinLauncher' -count=20 -v
-      - name: Verify registration recovery, receipt reinstall and removal handoff
+      - name: Verify removal recovery and probe native Installer receipt contention
         env:
           CGO_ENABLED: '0'
         run: |
           if [[ "$GITHUB_ACTIONS" != true || "$RUNNER_ENVIRONMENT" != github-hosted || "$RUNNER_OS" != macOS ]]; then exit 1; fi
           fixture=$(mktemp -d "$RUNNER_TEMP/accessweaver-registration-removal.XXXXXXXX")
           go test -c -mod=readonly -trimpath -buildvcs=false -o "$fixture/removal.test" ./internal/packageupgrade
-          /usr/bin/sudo -n /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted RUNNER_OS=macOS ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST=1 "$fixture/removal.test" -test.run '^TestDarwinRemoval(RegistrationRecovery|ReceiptRecovery|ReceiptToolReinstall)$' -test.timeout=150s -test.v
+          /usr/bin/sudo -n /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted RUNNER_OS=macOS ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST=1 "$fixture/removal.test" -test.run '^TestDarwinRemoval(RegistrationRecovery|ReceiptRecovery|ReceiptToolReinstall)$' -test.timeout=240s -test.v
       - name: Build and inspect two actual native deployment packages
         env:
           GOTOOLCHAIN: local
