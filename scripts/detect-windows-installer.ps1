@@ -107,6 +107,42 @@ function Enter-AccessWeaverDetection {
     return $mutex
 }
 
+function Assert-NoAccessWeaverSetup {
+    if(-not ('AccessWeaver.InstallerSetupMutex' -as [type])){
+        Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace AccessWeaver
+{
+    public static class InstallerSetupMutex
+    {
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        private static extern IntPtr OpenMutexW(uint access, bool inherit, string name);
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        private static extern bool CloseHandle(IntPtr handle);
+
+        public static bool IsAbsent(string name)
+        {
+            // Inspect existence without waiting or creating another mutex.
+            IntPtr handle = OpenMutexW(0x00100000, false, name); // SYNCHRONIZE
+            if (handle == IntPtr.Zero)
+                return Marshal.GetLastWin32Error() == 2; // ERROR_FILE_NOT_FOUND
+
+            if (!CloseHandle(handle))
+                throw new InvalidOperationException("Could not close the AccessWeaver Setup mutex handle");
+            return false;
+        }
+    }
+}
+'@
+    }
+    if(-not [AccessWeaver.InstallerSetupMutex]::IsAbsent('Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092')){
+        throw 'AccessWeaver Setup is active or its mutex could not be inspected'
+    }
+}
+
 function Get-AccessWeaverInstallerRecoveryState {
     # The detector ships standalone. Its source fixture checks both copies.
     try {
@@ -168,6 +204,7 @@ function Test-AccessWeaverInstalledPublisher([string]$Path,[string]$Expected) {
 }
 
 function Test-AccessWeaverInstallation([string]$directory) {
+    Assert-NoAccessWeaverSetup
     Assert-NoPendingAccessWeaverInstallation
     $registration=Read-AccessWeaverRegistration Registry64
     if($null -ne (Read-AccessWeaverRegistration Registry32)){throw 'Unexpected alternate machine registration'}
@@ -199,6 +236,8 @@ function Test-AccessWeaverInstallation([string]$directory) {
             $confirmed.QuietUninstallString -cne $registration.QuietUninstallString -or $null -ne (Read-AccessWeaverRegistration Registry32)){
             throw 'Installation registration changed during detection'
         }
+        Assert-NoPendingAccessWeaverInstallation
+        Assert-NoAccessWeaverSetup
     } finally {
         try {if($null -ne $uninstaller){$uninstaller.Dispose()}}
         finally {

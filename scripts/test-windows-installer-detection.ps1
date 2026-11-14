@@ -48,6 +48,10 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
     if($View -eq [Microsoft.Win32.RegistryView]::Registry32 -and $env:AW_DETECTION_FIXTURE -cne 'alternate'){return $null}
     if($env:AW_DETECTION_FIXTURE -ceq 'absent'){return $null}
     $script:mockReads++
+    if($env:AW_DETECTION_FIXTURE -ceq 'setup-starts-during-inspection' -and $script:mockReads -eq 1){
+        # Retain the fixture-only object until the isolated child process exits.
+        $script:startedSetup=[Threading.Mutex]::new($false,'Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092')
+    }
     $changed=$env:AW_DETECTION_FIXTURE -ceq 'registration-changed' -and $script:mockReads -gt 1
     $version=if($env:AW_DETECTION_FIXTURE -ceq 'other-version' -or $changed){'0.1.1-alpha'}else{'0.1.0-alpha'}
     $location=if($env:AW_DETECTION_FIXTURE -ceq 'other-path'){$PSScriptRoot+'-other'}else{$PSScriptRoot}
@@ -76,6 +80,12 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
     if(-not $lockSource.Contains("'"+$productionLock+"'") -or -not $original.Contains("'"+$productionLock+"'")){
         throw 'Detector and installer lifecycle names differ'
     }
+    $productionSetup='Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092'
+    $setupSource=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-installer.iss'))
+    if(-not $setupSource.Contains("SetupMutex="+$productionSetup) -or -not $original.Contains("'"+$productionSetup+"'")){
+        throw 'Detector and legacy Inno Setup mutex names differ'
+    }
+    $fixtureSetup='Global\AccessWeaver-SetupDetectionTest-'+[guid]::NewGuid().ToString('N')
     $fixtureLock='Global\AccessWeaver-DetectionTest-'+[guid]::NewGuid().ToString('N')
     $mocked=$original.Substring(0,$node.StartOffset)+$mock+$original.Substring($node.EndOffset)
     # Keep the production status mapping and detector assertion. Replace only
@@ -84,6 +94,7 @@ function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
     $fixtureStatus=@'
 $(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
     'pending' {0}
+    'marker-becomes-pending' {if($script:mockReads -eq 0){2}else{0}}
     'marker-path-absent' {3}
     'marker-access-denied' {5}
     'marker-key-deleted' {1018}
@@ -108,7 +119,7 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
 [pscustomobject]@{Status=$status;SignatureType=$type;SignerCertificate=$certificate;TimeStamperCertificate=$timestamp})
 '@
     $mocked=$mocked.Replace($signatureCall,$fixtureSignature)
-    [IO.File]::WriteAllText($fixture,$mocked.Replace($productionLock,$fixtureLock))
+    [IO.File]::WriteAllText($fixture,$mocked.Replace($productionLock,$fixtureLock).Replace($productionSetup,$fixtureSetup))
     $arch=@{X64='amd64';Arm64='arm64'}[[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()]
     $stock=Join-Path $PSHOME 'powershell.exe'
     if(-not (Test-Path -LiteralPath $stock)){$stock=Join-Path $PSHOME 'pwsh.exe'}
@@ -117,6 +128,9 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
         $cases=@(
             @{mode='pending';code=1;count=0;hash=$hash},
             @{mode='marker-path-absent';code=0;count=1;hash=$hash},
+            @{mode='setup-starts-during-inspection';code=1;count=0;hash=$hash},
+            @{mode='marker-becomes-pending';code=1;count=0;hash=$hash},
+            @{mode='marker-becomes-pending';code=1;count=0;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true},
             @{mode='marker-access-denied';code=1;count=0;hash=$hash},
             @{mode='marker-key-deleted';code=1;count=0;hash=$hash},
             @{mode='marker-query-failed';code=1;count=0;hash=$hash},
@@ -218,6 +232,15 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
         try {Assert-DetectionRefusal}
         finally {$collision.Dispose()}
 
+        # A legacy Setup can hold only its Inno mutex, including an unowned
+        # mutex. Also reject another object type occupying its fixed name.
+        $legacySetup=[Threading.Mutex]::new($false,$fixtureSetup)
+        try {Assert-DetectionRefusal}
+        finally {$legacySetup.Dispose()}
+        $legacyCollision=[Threading.EventWaitHandle]::new($false,[Threading.EventResetMode]::ManualReset,$fixtureSetup)
+        try {Assert-DetectionRefusal}
+        finally {$legacyCollision.Dispose()}
+
         Add-Type -Path (Join-Path $PSScriptRoot 'fixtures\InstallerLifecycleLock.cs')
         try {
             [AccessWeaverLifecycleLockFixture]::Abandon($fixtureLock)
@@ -242,4 +265,4 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
     }
     $fixtureDirectory.Delete()
 }
-Write-Output ('Managed detection contracts passed: '+($cases.Count+5))
+Write-Output ('Managed detection contracts passed: '+($cases.Count+7))
