@@ -48,12 +48,12 @@ function Write-NewRebootEvidence([string]$Path,$Data){
         [IO.File]::Move($staged,$Path)
     } finally {[IO.File]::Delete($staged)}
 }
-function Read-RebootEvidence([string]$Path){
+function Read-RebootEvidence([string]$Path,[ValidateRange(1,65536)][int]$MaximumBytes=8192){
     Assert-RebootPath $Path
     $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
     try {
         $length=$stream.Length
-        if($length -le 0 -or $length -gt 8192){throw 'Installer reboot evidence is outside the size limit'}
+        if($length -le 0 -or $length -gt $MaximumBytes){throw 'Installer reboot evidence is outside the size limit'}
         $bytes=[byte[]]::new([int]$length)
         $offset=0
         while($offset -lt $bytes.Length){
@@ -255,6 +255,21 @@ function Assert-RebootPackageRemoved([string]$Directory){
     try {
         if($entries.MoveNext()){throw 'Installed package files remain after uninstall'}
     } finally {$entries.Dispose()}
+}
+function Assert-RebootRestorationJournal([string]$ManagedRoot){
+    $logs=Join-Path $ManagedRoot 'logs'
+    Assert-RebootPath $logs
+    $journals=@(Get-ChildItem -LiteralPath $logs -Filter 'workflow-*.json' -Force -ErrorAction Stop |
+        Select-Object -First 2)
+    if($journals.Count -ne 1 -or $journals[0].PSIsContainer -or
+        $journals[0].Name -cnotmatch '\Aworkflow-[a-f0-9]{32}\.json\z'){
+        throw 'Expected one restoration journal from uninstall'
+    }
+    $journal=Read-RebootEvidence $journals[0].FullName -MaximumBytes 64KB
+    if($journal.action -isnot [string] -or $journal.action -cne 'remove-all' -or
+        $journal.state -isnot [string] -or $journal.state -cne 'succeeded'){
+        throw 'Uninstall restoration journal did not confirm success'
+    }
 }
 function Get-GuestBoot {
     $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
@@ -489,13 +504,13 @@ try {
         detectorSHA256=$DetectorSHA256.ToLowerInvariant();fixtureSHA256=$FixtureSHA256.ToLowerInvariant();
         commonSHA256=$CommonSHA256.ToLowerInvariant();publisherVerifierSHA256=$PublisherVerifierSHA256.ToLowerInvariant()}
     $boot=Get-GuestBoot
+    $managed=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'AccessWeaver'
 
     if($Phase -ceq 'Prepare'){
         if($installMode -ceq 'clean'){
             Assert-RegistrationAbsent
             if(Test-Path -LiteralPath $install){throw 'Clean qualification requires an unused installation directory'}
         }
-        $managed=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'AccessWeaver'
         if((Test-Path -LiteralPath $capsule) -or (Test-Path -LiteralPath $userStore) -or
            (Test-Path -LiteralPath $managed) -or (Test-Path -LiteralPath 'HKLM:\SOFTWARE\Policies\AccessWeaver') -or
            @(Get-Service -Name 'AccessWeaver-*' -ErrorAction SilentlyContinue).Count){
@@ -652,6 +667,7 @@ try {
             $result.downgradeStatePreserved=$true
         }
         $result.stage='uninstall'
+        if(Test-Path -LiteralPath $managed -ErrorAction Stop){throw 'Uninstall requires a fresh restoration journal'}
         [void](Invoke-ApprovedInstaller $uninstaller @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -ApprovedSHA256 $saved.uninstallerSHA256 -ApprovedPublisherSHA256 $PublisherCertificateSHA256)
         $result.uninstallerIdentityVerified=$true
         $result.stage='removal-readback'
@@ -662,6 +678,8 @@ try {
         $result.registrationRemoved=$true
         Assert-RebootPackageRemoved $install
         $result.packageFilesRemoved=$true
+        $result.stage='restoration-journal'
+        Assert-RebootRestorationJournal $managed
         $result.stage='user-profile-after-uninstall'
         Assert-RebootUserProfile $userProfile $saved.userProfileSHA256
         $result.userProfilePreservedAfterUninstall=$true

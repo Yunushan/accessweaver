@@ -4,7 +4,7 @@ $source=Join-Path $PSScriptRoot 'test-windows-installer-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Reboot fixture failed parsing'}
-foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootSetupLog','Get-RebootUpgradeArguments','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Open-ApprovedRebootScript','Assert-RebootPublisher','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootAccessDescriptor','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-InstalledDetection','Assert-InstalledPublisher')){
+foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootSetupLog','Get-RebootUpgradeArguments','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Open-ApprovedRebootScript','Assert-RebootPublisher','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootAccessDescriptor','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-RebootRestorationJournal','Assert-InstalledDetection','Assert-InstalledPublisher')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -243,6 +243,35 @@ if((Get-RebootRegistrationFingerprint $key) -ceq $fingerprint){throw 'Registrati
 $key.Values.Remove('Install')
 Assert-Refused {Get-RebootRegistrationFingerprint $key}
 Assert-Refused {Get-RebootRegistrationFingerprint $null}
+
+& {
+    $managedRoot=Join-Path $root 'restoration'
+    $logs=Join-Path $managedRoot 'logs'
+    $journal=Join-Path $logs ('workflow-'+('a'*32)+'.json')
+    $other=Join-Path $logs ('workflow-'+('b'*32)+'.json')
+    try {
+        [void][IO.Directory]::CreateDirectory($logs)
+        Assert-Refused {Assert-RebootRestorationJournal $managedRoot}
+        foreach($invalid in @('{"action":"remove-all","state":"failed"}',
+            '{"action":"dns-restore","state":"succeeded"}','{"action":"remove-all","state":["succeeded"]}',
+            ('{"action":"remove-all","state":"succeeded"}'+(' '*65536)))){
+            [IO.File]::WriteAllText($journal,$invalid)
+            Assert-Refused {Assert-RebootRestorationJournal $managedRoot}
+        }
+        [IO.File]::WriteAllText($journal,'{"action":"remove-all","state":"succeeded","events":[],"undo":[]}')
+        Assert-RebootRestorationJournal $managedRoot
+        [IO.File]::Copy($journal,$other)
+        Assert-Refused {Assert-RebootRestorationJournal $managedRoot}
+    } finally {
+        if([IO.Directory]::Exists($logs)){
+            [IO.File]::Delete($other)
+            [IO.File]::Delete($journal)
+            [IO.Directory]::Delete($logs)
+        }
+        if([IO.Directory]::Exists($managedRoot)){[IO.Directory]::Delete($managedRoot)}
+        if([IO.Directory]::Exists($root)){[IO.Directory]::Delete($root)}
+    }
+}
 
 # Only the owned, inert fixture tree can reach these path and digest boundaries.
 function Assert-RebootPath([string]$Path){
