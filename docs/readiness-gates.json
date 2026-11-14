@@ -283,7 +283,8 @@
             ".gitattributes",
             "docs/TESTING.md",
             "docs/qualification/3cf97b25366e-archives.json",
-            "docs/qualification/6ac8f17181e0-local-portable-rebuild.json"
+            "docs/qualification/6ac8f17181e0-local-portable-rebuild.json",
+            "docs/qualification/77a884e7c213-local-portable-rebuild.json"
           ]
         },
         {
