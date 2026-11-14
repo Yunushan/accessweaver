@@ -109,6 +109,25 @@ function Test-FixtureAppChecks([object[]]$Checks,[string[]]$Expected) {
     return $remaining.Count -eq 0
 }
 
+function Get-FixtureSplitCordServiceState {
+    $service=[ServiceProcess.ServiceController]::new('SplitCordDpiService')
+    try {
+        # Invoke the getter explicitly so PowerShell preserves its exception
+        # instead of substituting a null value during property access.
+        try {return [ServiceProcess.ServiceController].GetProperty('Status').GetValue($service).ToString()}
+        catch {
+            # Only SCM's explicit "service does not exist" proves absence.
+            $errorSource=$_.Exception.GetBaseException()
+            if($errorSource -is [ComponentModel.Win32Exception] -and $errorSource.NativeErrorCode -eq 1060){return 'Absent'}
+            throw 'SplitCord service state could not be inspected'
+        }
+    } finally {$service.Dispose()}
+}
+
+function Assert-FixtureSplitCordServiceState([string]$Expected) {
+    if((Get-FixtureSplitCordServiceState) -cne $Expected){throw 'SplitCord service did not match the expected state'}
+}
+
 function Remove-FixtureApp([string]$Variant,[switch]$Cleanup){
     $current=Get-FixtureAppImage (Inspect-Apps) $Variant
     $previous=$installedImages[$Variant]
@@ -119,7 +138,7 @@ function Remove-FixtureApp([string]$Variant,[switch]$Cleanup){
             throw 'Recorded application installation could not be verified before removal'
         }
     }
-    if($current){
+    if($current -or ($Cleanup -and $Variant -ceq 'splitcord')){
         $data=Invoke-AppWorkflow @{action='app-remove';engine=$Variant}
         if($data.application -cne $Variant -or $data.removed -isnot [bool] -or (-not $Cleanup -and -not $data.removed)){
             throw 'Application workflow did not verify the requested removal'
@@ -131,6 +150,10 @@ function Remove-FixtureApp([string]$Variant,[switch]$Cleanup){
     foreach($image in @($previous,$current) | Where-Object {$_} | Select-Object -Unique){
         Assert-FixtureLiveImage $image $false
         if(Test-Path -LiteralPath $image -ErrorAction Stop){throw 'Previously discovered executable remains after removal'}
+    }
+    if($Variant -ceq 'splitcord'){
+        $script:appEvidenceStage='service-readback'
+        Assert-FixtureSplitCordServiceState 'Absent'
     }
 }
 function Start-FixtureApp([string]$Variant){
@@ -202,7 +225,7 @@ try {
     $checks=[Collections.Generic.List[object]]::new()
     $script:appEvidenceStage='baseline'
     $report=[ordered]@{
-        schemaVersion=7;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
+        schemaVersion=8;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
         fixtureSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();
         architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant();
         checks=$null;baselineClear=$false;splitCordIncluded=(-not $SkipSplitCord);
@@ -267,6 +290,10 @@ try {
            -not (Test-Path -LiteralPath $image -PathType Leaf)){
             throw 'New application installation could not be verified'
         }
+        if($Variant -ceq 'splitcord'){
+            $script:appEvidenceStage='service-readback'
+            Assert-FixtureSplitCordServiceState 'Running'
+        }
     }
     function Check-FixtureCommunications([string]$Variant){
         if(-not $InteractiveCommunications){return}
@@ -294,6 +321,10 @@ try {
         $apps=Inspect-Apps
         foreach($variant in $variants){
             if(Get-FixtureAppImage $apps $variant){throw 'The disposable desktop baseline already contains a tested application'}
+        }
+        if(-not $SkipSplitCord){
+            $script:appEvidenceStage='service-baseline'
+            Assert-FixtureSplitCordServiceState 'Absent'
         }
         $report.baselineClear=$true
         Check 'discord-install' {Install-FixtureApp 'discord'}

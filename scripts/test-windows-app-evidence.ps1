@@ -181,6 +181,35 @@ foreach($alreadyRunning in @($true,'false',$null)){
         }
     }
 }
+# A missing client executable alone cannot clear SplitCord's cleanup case.
+& {
+    $installedImages=@{}
+    function Inspect-Apps {return [pscustomobject]@{splitcord=$null}}
+    function Invoke-AppWorkflow([hashtable]$Request){
+        if($Request.action -cne 'app-remove' -or $Request.engine -cne 'splitcord'){throw 'Unexpected SplitCord cleanup request'}
+        $trace.Add('remove')
+        if($workerRefuses){throw 'Fixture worker could not confirm service removal'}
+        return @{application='splitcord';removed=$false}
+    }
+    function Assert-FixtureSplitCordServiceState([string]$Expected){
+        if($Expected -cne 'Absent'){throw 'Unexpected SplitCord service expectation'}
+        $trace.Add('service')
+        if($serviceRemains){throw 'Fixture service remains registered'}
+    }
+    foreach($case in @(
+        @{workerRefuses=$false;serviceRemains=$false;passed=$true;trace='remove,service'},
+        @{workerRefuses=$true;serviceRemains=$true;passed=$false;trace='remove'},
+        @{workerRefuses=$false;serviceRemains=$true;passed=$false;trace='remove,service'}
+    )){
+        $workerRefuses=$case.workerRefuses;$serviceRemains=$case.serviceRemains
+        $trace=[Collections.Generic.List[string]]::new()
+        $passed=$false
+        try {Remove-FixtureApp 'splitcord' -Cleanup;$passed=$true}catch{}
+        if($passed -ne $case.passed -or ($trace -join ',') -cne $case.trace){
+            throw 'SplitCord cleanup omitted the product or independent service check'
+        }
+    }
+}
 $communicationCalls=@($ast.FindAll({param($node)
     $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -ceq 'Check-FixtureCommunications'
 },$true))
