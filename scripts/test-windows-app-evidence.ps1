@@ -4,7 +4,7 @@ $fixture=Join-Path $PSScriptRoot 'test-windows-apps.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($fixture,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Interactive Windows app fixture failed parsing'}
-foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Assert-FixtureCommunicationImage','Test-FixtureCommunication','Check-FixtureCommunications','Test-FixtureAppChecks','Start-FixtureApp','Remove-FixtureApp','Assert-FixtureSplitCordServiceState','New-SplitCordHandoff','Read-SplitCordHandoff')){
+foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Assert-FixtureCommunicationImage','Test-FixtureCommunication','Check-FixtureCommunications','Test-FixtureAppChecks','Start-FixtureApp','Remove-FixtureApp','Assert-FixtureDiscordUpdaterAbsent','Assert-FixtureSplitCordServiceState','New-SplitCordHandoff','Read-SplitCordHandoff')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -327,6 +327,7 @@ foreach($alreadyRunning in @($true,'false',$null)){
 }
 & {
     $replacement='C:\Fixture\Updated\Discord.exe'
+    $stableUpdater=Join-Path (Join-Path $env:LOCALAPPDATA 'Discord') 'Update.exe'
     function Inspect-Apps {
         $trace.Add('discovery')
         if(-not $observed.Count){throw 'Unexpected removal inventory read'}
@@ -345,7 +346,7 @@ foreach($alreadyRunning in @($true,'false',$null)){
     }
     function Test-Path {
         [CmdletBinding()]param($LiteralPath,$PathType)
-        if($ErrorActionPreference -ne 'Stop' -or $LiteralPath -cnotin @($image,$replacement)){throw 'Unexpected removal file check'}
+        if($ErrorActionPreference -ne 'Stop' -or $LiteralPath -cnotin @($image,$replacement,$stableUpdater)){throw 'Unexpected removal file check'}
         if($PathType -eq 'Leaf'){return $baselineHasFile}
         return $LiteralPath -ceq $remainingFile
     }
@@ -359,6 +360,7 @@ foreach($alreadyRunning in @($true,'false',$null)){
         @{name='workflow-invalid-result';before=$image;previous=$image;file=$true;result='true';launch=$true;success=$false},
         @{name='remains-discoverable';before=$image;previous=$image;file=$true;after=$image;launch=$true;success=$false},
         @{name='remains-on-disk';before=$image;previous=$image;file=$true;remaining=$image;launch=$true;success=$false},
+        @{name='updater-remains-on-disk';before=$image;previous=$image;file=$true;remaining=$stableUpdater;launch=$true;success=$false},
         @{name='clean-guest';before=$null;previous=$image;cleanup=$true;result=$false;launch=$true;success=$true},
         @{name='clean-guest-unverified';before=$null;previous=$image;cleanup=$true;result='false';launch=$true;success=$false},
         @{name='cleanup-newly-discovered';before=$replacement;previous=$image;cleanup=$true;launch=$true;success=$true},

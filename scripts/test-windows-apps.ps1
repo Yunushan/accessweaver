@@ -225,7 +225,14 @@ function Remove-FixtureApp([string]$Variant,[switch]$Cleanup){
     if($Variant -ceq 'splitcord'){
         $script:appEvidenceStage='service-readback'
         Assert-FixtureSplitCordServiceState 'Absent'
+    }else{
+        Assert-FixtureDiscordUpdaterAbsent $Variant
     }
+}
+function Assert-FixtureDiscordUpdaterAbsent([string]$Variant){
+    $folder=if($Variant -ceq 'discord'){'Discord'}else{'DiscordPTB'}
+    $path=Join-Path (Join-Path $env:LOCALAPPDATA $folder) 'Update.exe'
+    if(Test-Path -LiteralPath $path -ErrorAction Stop){throw 'Discord updater remains after removal'}
 }
 function Start-FixtureApp([string]$Variant){
     if(-not $installedImages.ContainsKey($Variant)){throw 'Application install prerequisite failed'}
@@ -548,6 +555,7 @@ try {
                 throw 'Clean PTB installation left the stable executable'
             }
             Assert-FixtureLiveImage $prior $false -AllSessions -CleanupVariant 'discord'
+            Assert-FixtureDiscordUpdaterAbsent 'discord'
         }
         Check 'ptb-start' {Start-FixtureApp 'discord-ptb'}
         Check-FixtureCommunications 'discord-ptb' 'ptb-start'

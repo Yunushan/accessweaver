@@ -3597,6 +3597,8 @@ function Install-App([string]$variant,[switch]$Reinstall) {
                 $stableBeforeDownloadDigest=Get-AppExecutableDigest $stableBeforeDownload
                 $stableUpdater=Get-AppUninstaller 'discord' $stableBeforeDownload
                 $stableUpdaterDigest=Get-AppExecutableDigest $stableUpdater.path
+            }else{
+                Assert-DiscordUpdaterAbsent 'discord'
             }
         }
         $verifiedHash=Download $url '' $file -Signed -Publisher discord -ReturnVerifiedHash
@@ -3636,6 +3638,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
             if((Find-App $variant) -or (Test-Path -LiteralPath $originalApp -ErrorAction Stop)){
                 throw 'Stable Discord reappeared before replacement setup; review the current installation'
             }
+            Assert-DiscordUpdaterAbsent $variant
         }
         if($cleanPTB){
             if((Find-App 'discord') -ine $stableBeforeDownload -or
@@ -3649,6 +3652,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
                ($existingApp -and (Get-AppExecutableDigest $existingApp) -ine $ptbBeforeSetupDigest))){
                 throw 'Discord PTB changed before setup; stable Discord was preserved'
             }
+            if(-not $stableBeforeDownload){Assert-DiscordUpdaterAbsent 'discord'}
         }
         if($variant -eq 'splitcord'){
             if((Find-App $variant) -ine $existingApp){throw 'SplitCord installation changed before setup'}
@@ -3685,6 +3689,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         if((Find-App 'discord') -or ($stableBeforeDownload -and (Test-Path -LiteralPath $stableBeforeDownload -ErrorAction Stop))){
             throw 'Stable Discord reappeared during PTB cleanup; review the current installation'
         }
+        Assert-DiscordUpdaterAbsent 'discord'
     }
     if($variant -ne 'splitcord'){
         $confirmedApp=Find-App $variant
@@ -3704,8 +3709,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
 }
 function Get-AppUninstaller([string]$variant,[string]$app) {
     if($variant -in @('discord','discord-ptb')){
-        $folder=if($variant -eq 'discord'){'Discord'}else{'DiscordPTB'}
-        $path=Join-Path $env:LOCALAPPDATA ($folder+'\Update.exe')
+        $path=Join-Path (Get-AppProcessBase $variant) 'Update.exe'
         $arguments=@('--uninstall','-s')
         $timeout=300
     }else{
@@ -3829,6 +3833,15 @@ function Resume-SplitCordRemoval([string]$Command) {
     } finally {$guard.Dispose()}
     Confirm-AppRemoval 'splitcord' $app
 }
+function Assert-DiscordUpdaterAbsent([string]$variant) {
+    $path=Join-Path (Get-AppProcessBase $variant) 'Update.exe'
+    try {
+        [void][IO.File]::GetAttributes($path)
+    } catch [IO.FileNotFoundException], [IO.DirectoryNotFoundException] {
+        return
+    }
+    throw 'Discord updater remains on disk; review the installation before retrying'
+}
 function Confirm-AppRemoval([string]$variant,[string]$app) {
     Wait-App $variant $false 60 $app
     if($variant -eq 'splitcord'){Wait-SplitCordService ''}
@@ -3839,6 +3852,8 @@ function Confirm-AppRemoval([string]$variant,[string]$app) {
     if($variant -eq 'splitcord'){
         Wait-SplitCordService '' 0
         if(Read-SplitCordMachineUninstallCommand){throw 'SplitCord machine uninstall registration remains'}
+    }else{
+        Assert-DiscordUpdaterAbsent $variant
     }
     Event ('Application uninstalled: '+$variant)
     return $true
@@ -3854,6 +3869,8 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
             if($command){return (Resume-SplitCordRemoval $command)}
             Wait-SplitCordService '' 0
             if(Read-SplitCordMachineUninstallCommand){throw 'SplitCord machine uninstall registration reappeared'}
+        }else{
+            Assert-DiscordUpdaterAbsent $variant
         }
         if(Find-App $variant){throw 'Application installation reappeared during uninstall verification'}
         return $false

@@ -2304,17 +2304,32 @@ try {
         Assert ($result -ceq $true -and $script:appRemovalResumed -and $script:appRemovalEvents.Count -eq 2) 'SplitCord removal retries the protected registered uninstaller when the client is absent'
         Assert ((Remove-App 'splitcord') -ceq $false) 'SplitCord removal retry reaches a verified no-op on a subsequent call'
     } finally {$script:appRemovalOrphanedCommand=$false;$script:appRemovalResumed=$false}
-    foreach($variant in @('discord','discord-ptb')){
-        $base=Get-AppProcessBase $variant
-        $updater=[pscustomobject]@{Path=(Join-Path $base 'Update.exe');HasExited=$false}
-        $script:appRemovalProcesses=@($updater)
-        $script:externalEffectsPending=$false
-        $rejected=$false
-        try{Remove-App $variant}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
-        Assert ($rejected -and -not $script:externalEffectsPending -and $script:appRemovalEvents.Count -eq 2) ('Application removal refuses absent '+$variant+' while an updater remains')
-        $updater.HasExited=$true
-        Assert ((Remove-App $variant) -ceq $false -and -not $script:externalEffectsPending) ('Application removal confirms '+$variant+' absence after updater exit')
-    }
+    $originalLocalAppData=$env:LOCALAPPDATA
+    $env:LOCALAPPDATA=Join-Path $testRoot 'discord-removal'
+    try {
+        foreach($variant in @('discord','discord-ptb')){
+            $base=Get-AppProcessBase $variant
+            [void][IO.Directory]::CreateDirectory($base)
+            $updater=[pscustomobject]@{Path=(Join-Path $base 'Update.exe');HasExited=$false}
+            $script:appRemovalProcesses=@($updater)
+            $script:externalEffectsPending=$false
+            $rejected=$false
+            try{Remove-App $variant}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+            Assert ($rejected -and -not $script:externalEffectsPending -and $script:appRemovalEvents.Count -eq 2) ('Application removal refuses absent '+$variant+' while an updater runs')
+            $updater.HasExited=$true
+            [IO.File]::WriteAllText($updater.Path,'inert updater')
+            try {
+                $rejected=$false
+                try{Remove-App $variant}catch{$rejected=$_.Exception.Message -ceq 'Discord updater remains on disk; review the installation before retrying'}
+                Assert ($rejected -and -not $script:externalEffectsPending -and [IO.File]::Exists($updater.Path)) ('Application removal preserves a residual '+$variant+' updater for review')
+
+                $rejected=$false
+                try{Confirm-AppRemoval $variant $fixtureApp}catch{$rejected=$_.Exception.Message -ceq 'Discord updater remains on disk; review the installation before retrying'}
+                Assert ($rejected -and $script:appRemovalEvents.Count -eq 2) ('Application removal with vendor exit refuses success when the '+$variant+' updater remains')
+            } finally {[IO.File]::Delete($updater.Path)}
+            Assert ((Remove-App $variant) -ceq $false -and -not $script:externalEffectsPending) ('Application removal confirms '+$variant+' absence after updater exit and removal')
+        }
+    } finally {$env:LOCALAPPDATA=$originalLocalAppData}
 } finally {
     Remove-Item Function:Get-Process
     foreach($name in $appRemovalSaved.Keys){Set-Item ('Function:'+$name) $appRemovalSaved[$name]}
@@ -2326,10 +2341,15 @@ $previousAppRequest=$r
 $previousAppInput=$inputData
 $previousAppRoot=$root
 $previousAppEffects=$script:externalEffectsPending
+$previousAppLocalAppData=$env:LOCALAPPDATA
 $previousAppJournal=$script:journalPath
 $previousAppJournalState=$script:journalState
 try {
     $root=Join-Path $testRoot 'app-install-fixture'
+    $env:LOCALAPPDATA=Join-Path $root 'local-app-data'
+    $stableFixtureDirectory=Join-Path $env:LOCALAPPDATA 'Discord'
+    [void][IO.Directory]::CreateDirectory($stableFixtureDirectory)
+    $residualUpdater=Join-Path $stableFixtureDirectory 'Update.exe'
     [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
     $journal=Join-Path $root 'application.json'
     $script:journalPath=$journal
@@ -2353,6 +2373,7 @@ try {
             'ptb-bytes' {$script:appPTBSetupChanged=$true}
             'reinstall-path' {$script:appStableReappears=$true}
             'reinstall-process' {$script:appStableProcessReturns=$true}
+            'stable-updater-reappears' {[IO.File]::WriteAllText($residualUpdater,'inert updater')}
         }
     }
     function Require-DesktopUser {}
@@ -2493,6 +2514,17 @@ try {
     function Event {param($text);$script:appInstallTrace.Add('event')}
     $r=[pscustomobject]@{action='app-install';engine='discord-ptb';clean=$true;sha256=''}
     $inputData=[pscustomobject]@{nativeArchitecture='amd64'}
+    $script:appInstallTrace=[Collections.Generic.List[string]]::new()
+    $script:appStableAbsent=$true
+    [IO.File]::WriteAllText($residualUpdater,'inert updater')
+    try {
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Discord updater remains on disk; review the installation before retrying'}
+        Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord') 'PTB clean setup refuses a residual stable updater before acquisition'
+    } finally {
+        [IO.File]::Delete($residualUpdater)
+        $script:appStableAbsent=$false
+    }
     $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$true;$script:appRemoveFailure=$false
     $script:externalEffectsPending=$false
     Save-Journal
@@ -2742,14 +2774,18 @@ try {
     $script:appRemoveFailure=$false
     foreach($case in @(
         @{drift='reinstall-path';message='Stable Discord reappeared before replacement setup; review the current installation';assertion='Discord reinstall refuses a client that reappears during journal publication'},
-        @{drift='reinstall-process';message='fixture stable process remains';assertion='Discord reinstall refuses a process that reappears during journal publication'}
+        @{drift='reinstall-process';message='fixture stable process remains';assertion='Discord reinstall refuses a process that reappears during journal publication'},
+        @{drift='stable-updater-reappears';message='Discord updater remains on disk; review the installation before retrying';assertion='Discord reinstall refuses an updater that reappears during journal publication'}
     )){
         $script:appInstallTrace.Clear()
         $script:appRemoveClearedStable=$false
         $script:appJournalDrift=$case.drift
         $rejected=$false
         try{Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -ceq $case.message}
-        finally{$script:appJournalDrift='';$script:appStableReappears=$false;$script:appStableProcessReturns=$false}
+        finally{
+            $script:appJournalDrift='';$script:appStableReappears=$false;$script:appStableProcessReturns=$false
+            [IO.File]::Delete($residualUpdater)
+        }
         Assert ($rejected -and $script:appInstallTrace.Contains('remove-stable') -and
             -not $script:appInstallTrace.Contains('installer')) $case.assertion
     }
@@ -2779,6 +2815,7 @@ try {
     $r=$previousAppRequest
     $inputData=$previousAppInput
     $root=$previousAppRoot
+    $env:LOCALAPPDATA=$previousAppLocalAppData
     $script:externalEffectsPending=$previousAppEffects
     $script:journalPath=$previousAppJournal
     $script:journalState=$previousAppJournalState
