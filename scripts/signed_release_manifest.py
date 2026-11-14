@@ -164,6 +164,7 @@ def validate_detection(entries, subjects, version):
     require(isinstance(entries, list) and 0 < len(entries) <= MAX_REBOOT_EVIDENCE,
             "Invalid Windows detection inventory size")
     targets = windows_subjects(subjects)
+    build_info_by_target = {}
     for entry in entries:
         require(isinstance(entry, dict) and all(isinstance(value, str) for value in entry.values()),
                 "Malformed Windows detection entry")
@@ -188,6 +189,10 @@ def validate_detection(entries, subjects, version):
         target = entry["target"]
         require((target, "installer") in targets and entry["installMode"] in ("clean", "upgrade"),
                 "Unsupported Windows detection path")
+        if WINDOWS_BUILD_INFO in entry:
+            pin = entry[WINDOWS_BUILD_INFO]
+            require(build_info_by_target.setdefault(target, pin) == pin,
+                    "Windows reboot reports disagree on candidate build metadata")
         for field in ("uninstallerSHA256", "publisherCertificateSHA256", "rebootEvidenceSHA256"):
             require(re.fullmatch(SHA256, entry[field]), "Malformed Windows detection digest")
         previous_version = entry["previousVersion"]
@@ -750,16 +755,24 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
         }
         if target is not None:
             report["managedUpdate"] = managed_update(files, target, current_version, version)
-        if entries:
+        if windows_build_info or entries:
             targets = windows_subjects(files)
             payload_sboms = windows_payload_sboms(files)
-            report["schemaVersion"] = manifest["schemaVersion"]
-            report["windowsDetection"] = [
-                {**entry, "version": version, "setupSHA256": targets[entry["target"], "installer"],
-                 "payloadSHA256": targets[entry["target"], "payload"],
-                 "payloadSBOMSHA256": payload_sboms[entry["target"]]}
-                for entry in entries
-            ]
+            identities = {
+                target: {
+                    "target": target, "version": version, "setupSHA256": targets[target, "installer"],
+                    "payloadSHA256": targets[target, "payload"], "payloadSBOMSHA256": payload_sboms[target],
+                }
+                for target in payload_sboms
+            }
+            if windows_build_info:
+                report["windowsBuildMetadata"] = [
+                    {**identities[target], WINDOWS_BUILD_INFO: pin}
+                    for target, pin in sorted(windows_build_info.items())
+                ]
+            if entries:
+                report["schemaVersion"] = manifest["schemaVersion"]
+                report["windowsDetection"] = [{**entry, **identities[entry["target"]]} for entry in entries]
         if current_payload_sha256 is not None:
             update = report["managedUpdate"]
             update["windowsUpgradeDetection"] = select_windows_upgrade(

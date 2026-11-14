@@ -258,6 +258,24 @@ class SignedReleaseManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Malformed Windows installer SBOM build metadata"):
             release.prepare(self.candidate, self.root / "unused" / release.MANIFEST, COMMIT, REF)
 
+    def test_prepare_rejects_conflicting_windows_build_metadata_across_install_paths(self):
+        output = self.root / release.MANIFEST
+        clean = self.write_reboot_report("clean.json", schemaVersion=11, buildInfoSHA256="6" * 64)
+        upgrade_args = {
+            "schemaVersion": 11, "installMode": "upgrade",
+            "previousVersion": "1.2.2-rc.1", "previousPayloadSHA256": "d" * 64,
+            "userProfilePreservedThroughUpgrade": True,
+        }
+        upgrade = self.write_reboot_report("upgrade.json", **upgrade_args, buildInfoSHA256="7" * 64)
+        with self.assertRaisesRegex(ValueError, "reboot reports disagree on candidate build metadata"):
+            release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=[clean, upgrade])
+        self.assertFalse(output.exists())
+
+        upgrade = self.write_reboot_report("upgrade.json", **upgrade_args, buildInfoSHA256="6" * 64)
+        release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=[clean, upgrade])
+        entries = json.loads(output.read_bytes())["windowsDetection"]
+        self.assertEqual([entry["buildInfoSHA256"] for entry in entries], ["6" * 64, "6" * 64])
+
     def test_prepare_rejects_conflicting_macos_detector_metadata(self):
         output = self.root / release.MANIFEST
         path = self.candidate / f"accessweaver-{VERSION}-darwin-amd64-deployment-experimental.pkg.cdx.json"
@@ -442,6 +460,14 @@ class SignedReleaseManifestTests(unittest.TestCase):
         report = self.verify(approved, pin)
         self.assertEqual(report["subjectsVerified"], 12)
         self.assertNotIn("managedUpdate", report)
+        self.assertNotIn("windowsDetection", report)
+        stem = f"accessweaver-{VERSION}-windows-arm64"
+        self.assertEqual(report["windowsBuildMetadata"], [{
+            "target": "windows/arm64", "version": VERSION, "buildInfoSHA256": "6" * 64,
+            "setupSHA256": release.digest(self.candidate / (stem + "-setup.exe")),
+            "payloadSHA256": release.digest(self.candidate / (stem + ".exe")),
+            "payloadSBOMSHA256": release.digest(self.candidate / (stem + ".exe.cdx.json")),
+        }])
         revoked = self.write_policy({**self.policy, "subjectSHA256": ["6" * 64]})
         with self.assertRaisesRegex(ValueError, "Windows installer SBOM build metadata is revoked"):
             self.verify(approved, pin, policy_pin=revoked)
