@@ -230,9 +230,9 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
         }
         $env:AW_DETECTION_FIXTURE='approved'
         $arguments=@('-NoProfile','-NonInteractive','-File',$fixture,'-Version','0.1.0-alpha','-Architecture',$arch,'-PayloadSHA256',$hash,'-InstallDirectory',$testRoot)
-        function Assert-DetectionRefusal {
+        function Assert-DetectionRefusal([string]$Reason='a retained lifecycle object') {
             $output=@(& $stock @arguments 2>&1)
-            if($LASTEXITCODE -ne 1 -or $output.Count){throw 'Managed detection did not silently refuse a retained lifecycle object'}
+            if($LASTEXITCODE -ne 1 -or $output.Count){throw ('Managed detection did not silently refuse '+$Reason)}
         }
 
         $active=[Threading.Mutex]::new($true,$fixtureLock)
@@ -283,6 +283,21 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
         if($nativeAccess.Count -ne 1){throw 'Expected one managed detector file access boundary'}
         . ([ScriptBlock]::Create($nativeAccess[0].Extent.Text))
         Initialize-AccessWeaverInstalledFileAccess
+        [IO.File]::WriteAllText($uninstallData,'inert uninstall data fixture')
+        $arguments+=@('-UninstallerSHA256',$uninstallerHash)
+        $aliasPath=Join-Path $testRoot 'uninstall-hardlink'
+        foreach($file in @($uninstaller,$uninstallData)){
+            try {
+                [void](New-Item -ItemType HardLink -Path $aliasPath -Target $file -ErrorAction Stop)
+                Assert-DetectionRefusal 'a hard-linked uninstall file'
+            } finally {
+                if(Test-Path -LiteralPath $aliasPath){Remove-Item -LiteralPath $aliasPath}
+            }
+        }
+        $output=@(& $stock @arguments 2>&1)
+        if($LASTEXITCODE -ne 0 -or $output.Count -ne 1 -or $output[0] -cne 'AccessWeaver detected'){
+            throw 'Managed detection did not resume after uninstall file hardlinks were removed'
+        }
         $leaf=Join-Path $testRoot 'native-leaf'
         $moved=Join-Path $testRoot 'native-moved'
         $junction=Join-Path $testRoot 'native-junction'
@@ -319,4 +334,4 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
     }
     $fixtureDirectory.Delete()
 }
-Write-Output ('Managed detection contracts passed: '+($cases.Count+11))
+Write-Output ('Managed detection contracts passed: '+($cases.Count+14))

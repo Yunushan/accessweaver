@@ -97,6 +97,7 @@ namespace AccessWeaver
         private const uint OpenExisting = 3;
         private const uint OpenReparsePoint = 0x00200000;
         private const uint BackupSemantics = 0x02000000;
+        private const int FileStandardInfo = 1;
         private const int FileAttributeTagInfo = 9;
 
         [StructLayout(LayoutKind.Sequential)]
@@ -106,6 +107,16 @@ namespace AccessWeaver
             public uint ReparseTag;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct StandardInfo
+        {
+            public long AllocationSize;
+            public long EndOfFile;
+            public uint NumberOfLinks;
+            public byte DeletePending;
+            public byte Directory;
+        }
+
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
         private static extern SafeFileHandle CreateFileW(string path, uint access, FileShare sharing,
             IntPtr security, uint disposition, uint flags, IntPtr template);
@@ -113,6 +124,10 @@ namespace AccessWeaver
         [DllImport("kernel32.dll", ExactSpelling = true)]
         private static extern bool GetFileInformationByHandleEx(SafeFileHandle file, int informationClass,
             out AttributeTagInfo information, uint size);
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        private static extern bool GetFileInformationByHandleEx(SafeFileHandle file, int informationClass,
+            out StandardInfo information, uint size);
 
         private static SafeFileHandle Open(string path, bool directory)
         {
@@ -144,11 +159,18 @@ namespace AccessWeaver
             return Open(path, true);
         }
 
-        public static FileStream OpenFile(string path, long maximum)
+        public static FileStream OpenFile(string path, long maximum, bool requireSingleLink = false)
         {
             SafeFileHandle handle = Open(path, false);
             try
             {
+                if (requireSingleLink)
+                {
+                    StandardInfo info;
+                    if (!GetFileInformationByHandleEx(handle, FileStandardInfo,
+                        out info, (uint)Marshal.SizeOf(typeof(StandardInfo))) || info.NumberOfLinks != 1)
+                        throw new IOException("Installed uninstall file is not a verified single-link file");
+                }
                 var stream = new FileStream(handle, FileAccess.Read);
                 try
                 {
@@ -315,10 +337,10 @@ function Test-AccessWeaverInstallation([string]$directory) {
         }
         if($UninstallerSHA256){
             $path=Get-AccessWeaverRegisteredUninstaller $registration $directory
-            $uninstaller=[AccessWeaver.InstallerFileAccess]::OpenFile($path,512MB)
+            $uninstaller=[AccessWeaver.InstallerFileAccess]::OpenFile($path,512MB,$true)
             if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $uninstaller -Algorithm SHA256).Hash -ine $UninstallerSHA256){return $false}
             $dataPath=[IO.Path]::ChangeExtension($path,'.dat')
-            $uninstallData=[AccessWeaver.InstallerFileAccess]::OpenFile($dataPath,512MB)
+            $uninstallData=[AccessWeaver.InstallerFileAccess]::OpenFile($dataPath,512MB,$true)
         }
         $confirmed=Read-AccessWeaverRegistration Registry64
         if($null -eq $confirmed -or $confirmed.version -cne $registration.version -or
