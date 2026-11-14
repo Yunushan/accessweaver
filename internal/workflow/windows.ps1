@@ -2499,6 +2499,7 @@ function Configure-DNS([string]$method) {
             if((Assert-RecordedServiceBinding $newResolver) -ne 0){throw 'New DNSCrypt service disappeared before enabling automatic startup'}
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
+            Assert-DNSCryptAutomaticStartup $newResolver
         }
     } elseif($method -eq 'doh') {
         foreach($provider in $providers){
@@ -2588,6 +2589,9 @@ function Configure-DNS([string]$method) {
         if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before enabling automatic startup'}
         Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
         Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
+        Assert-DNSCryptAutomaticStartup $existingResolver
+    }elseif($newResolver){
+        Assert-DNSCryptAutomaticStartup $newResolver
     }
     Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
     Event ('Encrypted DNS configured: '+$method)
@@ -2802,10 +2806,19 @@ function Get-ManagedServiceCommandDigest([string]$CommandLine) {
     if([string]::IsNullOrWhiteSpace($CommandLine) -or $CommandLine.Length -gt 32767){throw 'Invalid managed service command'}
     return Get-WorkflowBytesSHA256 ([Text.Encoding]::Unicode.GetBytes($CommandLine))
 }
-function Read-ManagedServiceCommand([string]$Name) {
+function Assert-DNSCryptAutomaticStartup($Entry) {
+    $command=Read-ManagedServiceCommand 'AccessWeaver-dnscrypt' -RequireAutomaticRunning
+    if((Get-ManagedServiceCommandDigest $command) -cne $Entry.commandSHA256){
+        throw 'DNSCrypt service identity changed during startup verification'
+    }
+}
+function Read-ManagedServiceCommand([string]$Name,[switch]$RequireAutomaticRunning) {
     $rows=@(Get-CimInstance -ClassName Win32_Service -Filter ("Name='"+$Name+"'") -ErrorAction Stop)
     if($rows.Count -ne 1 -or $rows[0].Name -ine $Name -or $rows[0].PathName -isnot [string]){
         throw 'Managed service registration could not be verified'
+    }
+    if($RequireAutomaticRunning -and ($rows[0].StartMode -cne 'Auto' -or $rows[0].State -cne 'Running')){
+        throw 'DNSCrypt service automatic startup or running state could not be verified'
     }
     return $rows[0].PathName
 }
