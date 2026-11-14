@@ -2043,6 +2043,12 @@ try {
         if($script:appRemovalInvoked -and $script:appReappearance -ceq 'service'){$script:appServiceRemains=$true}
         return $script:appRemovalProcesses
     }
+    $expectedClientDigest=Get-AppExecutableDigest $fixtureApp
+    $rejected=$false
+    try{Remove-App 'splitcord' $fixtureApp $expectedClientDigest ('a'*64)}catch{
+        $rejected=$_.Exception.Message -ceq 'Application uninstaller changed before removal'
+    }
+    Assert ($rejected -and -not $script:appRemovalInvoked) 'Application removal refuses a different approved uninstaller digest'
     $script:appRemovalForeignCommand=$true
     try {
         $refused=$false
@@ -2296,7 +2302,7 @@ try {
     $script:externalEffectsPending=$false
 }
 # Mock installer acquisition and user operations; never execute a vendor process.
-$appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Get-AppExecutableDigest','Remove-App','Download','Native','Wait-App','Wait-AppProcessesExited','Event','Save-Journal')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
+$appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Get-AppExecutableDigest','Get-AppUninstaller','Remove-App','Download','Native','Wait-App','Wait-AppProcessesExited','Event','Save-Journal')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
 $previousAppRequest=$r
 $previousAppInput=$inputData
 $previousAppRoot=$root
@@ -2312,6 +2318,7 @@ try {
     $script:appInstallerChanged=$false
     $script:appStableBytesChanged=$false;$script:appChangeStableBytesDuringDownload=$false
     $script:appChangeStableBytesDuringSetup=$false
+    $script:appUpdaterMissing=$false;$script:appUpdaterChanged=$false;$script:appUpdaterChangesDuringSetup=$false
     $script:appPreviouslyInstalled=$false
     $script:appPTBSetupChanges=$false;$script:appPTBSetupChanged=$false;$script:appPTBUnreadable=$false
     $script:appReplacementBytesChange=$false;$script:appReplacementBytesChanged=$false
@@ -2321,6 +2328,7 @@ try {
         switch($script:appJournalDrift){
             'stable-path' {$script:appStableChanged=$true}
             'stable-bytes' {$script:appStableBytesChanged=$true}
+            'stable-updater' {$script:appUpdaterChanged=$true}
             'ptb-appearance' {$script:appPreviouslyInstalled=$true}
             'ptb-bytes' {$script:appPTBSetupChanged=$true}
             'reinstall-path' {$script:appStableReappears=$true}
@@ -2361,7 +2369,16 @@ try {
         }
         if($variant -ceq 'discord' -and -not $script:appStableAbsent){return 'C:\fixture\Discord.exe'}
     }
+    function Get-AppUninstaller([string]$variant,[string]$app) {
+        if($variant -cne 'discord' -or $app -cne 'C:\fixture\Discord.exe'){throw 'Unexpected preflight uninstaller request'}
+        if($script:appUpdaterMissing){throw 'Application uninstaller not found'}
+        return @{path='C:\fixture\Update.exe'}
+    }
     function Get-AppExecutableDigest([string]$path) {
+        if($path -ceq 'C:\fixture\Update.exe'){
+            if($script:appUpdaterChanged){return 'f'*64}
+            return 'd'*64
+        }
         if($path -ceq 'C:\fixture\DiscordPTB.exe'){
             if($script:appPTBUnreadable -and $script:appInstallTrace.Contains('verify-ptb')){throw 'fixture PTB executable unreadable'}
             if($script:appPTBChangeDuringCleanup -ceq 'bytes' -and $script:appInstallTrace.Contains('remove-stable')){return 'd'*64}
@@ -2376,7 +2393,13 @@ try {
         return 'a'*64
     }
     function Remove-App {
-        param($variant,$expectedApp,$expectedAppDigest)
+        param($variant,$expectedApp,$expectedAppDigest,$expectedUninstallerDigest)
+        if($r.clean -and $expectedUninstallerDigest -cne ('d'*64)){
+            throw 'PTB cleanup must retain the approved stable updater digest'
+        }
+        if($expectedUninstallerDigest -and (Get-AppExecutableDigest 'C:\fixture\Update.exe') -ine $expectedUninstallerDigest){
+            throw 'Application uninstaller changed before removal'
+        }
         if($variant -cne 'discord' -or $expectedApp -cne 'C:\fixture\Discord.exe' -or $expectedAppDigest -cne ('a'*64)){
             throw 'Expected removal bound to the observed stable client path and digest'
         }
@@ -2424,6 +2447,7 @@ try {
         $writer.Dispose()
         if($script:appNativeFailure){throw 'fixture installer failure'}
         if($script:appChangeStableBytesDuringSetup){$script:appStableBytesChanged=$true}
+        if($script:appUpdaterChangesDuringSetup){$script:appUpdaterChanged=$true}
         if($script:appPTBSetupChanges){$script:appPTBSetupChanged=$true}
         return @{exitCode=0;outputComplete=$true}
     }
@@ -2465,6 +2489,7 @@ try {
     foreach($case in @(
         @{drift='stable-path';message='Stable Discord changed before PTB setup; review the current installation'},
         @{drift='stable-bytes';message='Stable Discord changed before PTB setup; review the current installation'},
+        @{drift='stable-updater';message='Stable Discord uninstaller changed before PTB setup; review the current installation'},
         @{drift='ptb-appearance';message='Discord PTB changed before setup; stable Discord was preserved'},
         @{drift='ptb-bytes';message='Discord PTB changed before setup; stable Discord was preserved'}
     )){
@@ -2475,11 +2500,24 @@ try {
         try {Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq $case.message}
         finally {
             $script:appJournalDrift='';$script:appPreviouslyInstalled=$false;$script:appPTBSetupChanged=$false
-            $script:appStableChanged=$false;$script:appStableBytesChanged=$false
+            $script:appStableChanged=$false;$script:appStableBytesChanged=$false;$script:appUpdaterChanged=$false
         }
         Assert ($rejected -and -not $script:appInstallTrace.Contains('installer') -and
             -not $script:appInstallTrace.Contains('remove-stable')) ('PTB clean refuses '+$case.drift+' changes during journal publication')
     }
+    $script:appInstallTrace.Clear()
+    $script:appUpdaterMissing=$true
+    $rejected=$false
+    try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Application uninstaller not found'}
+    finally{$script:appUpdaterMissing=$false}
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord') 'PTB clean refuses a missing stable updater before acquisition'
+    $script:appInstallTrace.Clear()
+    $script:appUpdaterChangesDuringSetup=$true
+    $rejected=$false
+    try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Application uninstaller changed before removal'}
+    finally{$script:appUpdaterChangesDuringSetup=$false;$script:appUpdaterChanged=$false}
+    Assert ($rejected -and $script:appInstallTrace.Contains('installer') -and
+        -not $script:appInstallTrace.Contains('remove-stable')) 'PTB clean refuses a stable updater replaced during setup'
     $script:appInstallTrace.Clear()
     $installed=Install-App 'discord-ptb'
     Assert (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,find-discord,find-discord-ptb,installer,verify-ptb,remove-stable,verify-ptb,verify-stable-processes,find-discord,find-discord-ptb,event') 'PTB clean verifies the installed replacement before removal and rechecks it after cleanup'

@@ -3524,7 +3524,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
     }
     if($variant -notin @('discord','discord-ptb','splitcord')){throw 'Choose Discord, Discord PTB or SplitCord'}
     $cleanPTB=$r.clean -and $variant -eq 'discord-ptb'
-    $stableBeforeDownload=$null;$stableBeforeDownloadDigest=$null;$ptbBeforeSetupDigest=$null
+    $stableBeforeDownload=$null;$stableBeforeDownloadDigest=$null;$stableUpdaterDigest=$null;$ptbBeforeSetupDigest=$null
     if($variant -eq 'splitcord'){
         $installer=Get-SplitCordInstaller
         $file=Join-Path $root 'downloads\splitcord-setup.exe'
@@ -3538,7 +3538,11 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         $file=Join-Path $root ('downloads\'+$variant+'-setup.exe')
         if($cleanPTB){
             $stableBeforeDownload=Find-App 'discord'
-            if($stableBeforeDownload){$stableBeforeDownloadDigest=Get-AppExecutableDigest $stableBeforeDownload}
+            if($stableBeforeDownload){
+                $stableBeforeDownloadDigest=Get-AppExecutableDigest $stableBeforeDownload
+                $stableUpdater=Get-AppUninstaller 'discord' $stableBeforeDownload
+                $stableUpdaterDigest=Get-AppExecutableDigest $stableUpdater.path
+            }
         }
         $verifiedHash=Download $url '' $file -Signed -Publisher discord -ReturnVerifiedHash
     }
@@ -3583,6 +3587,9 @@ function Install-App([string]$variant,[switch]$Reinstall) {
                ($stableBeforeDownload -and (Get-AppExecutableDigest $stableBeforeDownload) -ine $stableBeforeDownloadDigest)){
                 throw 'Stable Discord changed before PTB setup; review the current installation'
             }
+            if($stableBeforeDownload -and (Get-AppExecutableDigest $stableUpdater.path) -ine $stableUpdaterDigest){
+                throw 'Stable Discord uninstaller changed before PTB setup; review the current installation'
+            }
             if($stableBeforeDownload -and ((Find-App $variant) -ine $existingApp -or
                ($existingApp -and (Get-AppExecutableDigest $existingApp) -ine $ptbBeforeSetupDigest))){
                 throw 'Discord PTB changed before setup; stable Discord was preserved'
@@ -3611,7 +3618,9 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         if($ptbBeforeSetupDigest -and $existingApp -ieq $installedApp -and $ptbBeforeSetupDigest -ieq $installedDigest){
             throw 'Discord PTB setup did not replace the existing executable; stable Discord was preserved'
         }
-        if($stableBeforeDownload){[void](Remove-App 'discord' $stableBeforeDownload $stableBeforeDownloadDigest)}
+        if($stableBeforeDownload){
+            [void](Remove-App 'discord' $stableBeforeDownload $stableBeforeDownloadDigest $stableUpdaterDigest)
+        }
         elseif(Find-App 'discord'){throw 'Stable Discord appeared during PTB setup; review the current installation'}
         $confirmedApp=Wait-App $variant $true 30
         if($confirmedApp -ine $installedApp -or (Get-AppExecutableDigest $confirmedApp) -ine $installedDigest){
@@ -3779,7 +3788,7 @@ function Confirm-AppRemoval([string]$variant,[string]$app) {
     Event ('Application uninstalled: '+$variant)
     return $true
 }
-function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDigest) {
+function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDigest,[string]$expectedUninstallerDigest) {
     if($variant -eq 'splitcord'){Require-Admin}else{Require-DesktopUser}
     $app=Find-App $variant
     if($expectedApp -and $app -ine $expectedApp){throw 'Application installation changed before removal'}
@@ -3798,6 +3807,9 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
     if($expectedAppDigest -and $appDigest -ine $expectedAppDigest){throw 'Application installation changed before removal'}
     $uninstaller=Get-AppUninstaller $variant $app
     $digest=Get-AppExecutableDigest $uninstaller.path
+    if($expectedUninstallerDigest -and $digest -ine $expectedUninstallerDigest){
+        throw 'Application uninstaller changed before removal'
+    }
     if($variant -eq 'splitcord'){Wait-SplitCordService $app 0 -AllowAbsentOrStopped}
     Stop-AppProcesses $variant $app
     if((Find-App $variant) -ine $app -or (Get-AppExecutableDigest $app) -ine $appDigest){
