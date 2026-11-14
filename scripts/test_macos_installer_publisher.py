@@ -3,6 +3,7 @@ import os
 import importlib.util
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -113,6 +114,60 @@ class PublisherTests(unittest.TestCase):
                                 publisher.verify(directory, package_digest, TEAM, PIN, architecture=architecture)
                             self.assertEqual(native.call_count, 4 if outcome == "wrong-architecture" else 5)
                     self.assertEqual(list(directory.iterdir()), [package])
+
+    @unittest.skipUnless(sys.platform in ("darwin", "win32", "linux"), "requires native exclusive rename")
+    def test_detector_publication_recovers_after_process_exit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            expanded = root / "expanded"
+            scripts = expanded / "Scripts"
+            scripts.mkdir(parents=True)
+            content = image("arm64")
+            for phase in ("preinstall", "postinstall"):
+                (scripts / phase).write_bytes(content)
+            digest = hashlib.sha256(content).hexdigest()
+            parent = root / "output"
+            parent.mkdir()
+            destination = parent / "accessweaver-installer"
+            child = """
+import os
+from pathlib import Path
+import sys
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+import verify_macos_installer_publisher as publisher
+
+expanded, destination = map(Path, sys.argv[2:4])
+publish = publisher.publish_staged_file
+
+def interrupt(staged, final):
+    publish(staged, final)
+    os._exit(73)
+
+with patch.object(publisher, "tool"), patch.object(publisher, "publish_staged_file", side_effect=interrupt):
+    publisher.stage_detector(expanded, sys.argv[4], "arm64", sys.argv[5], destination, destination.parent.lstat())
+"""
+            process = subprocess.run([sys.executable, "-c", child, str(Path(publisher.__file__).parent),
+                                      str(expanded), str(destination), TEAM, digest],
+                                     timeout=20, capture_output=True)
+            self.assertEqual(process.returncode, 73, process.stderr.decode(errors="replace"))
+            original = destination.stat()
+            self.assertEqual(original.st_nlink, 1)
+            with patch.object(publisher, "tool"):
+                publisher.stage_detector(expanded, TEAM, "arm64", digest, destination, parent.lstat())
+            self.assertTrue(os.path.samestat(original, destination.stat()))
+            self.assertEqual(destination.read_bytes(), content)
+            displaced = root / "original-output"
+            parent_info = parent.lstat()
+            parent.rename(displaced)
+            parent.mkdir()
+            with patch.object(publisher, "tool") as native, self.assertRaisesRegex(
+                ValueError, "Detector output directory changed"
+            ):
+                publisher.stage_detector(expanded, TEAM, "arm64", digest, destination, parent_info)
+            native.assert_not_called()
+            self.assertEqual(list(parent.iterdir()), [])
+            self.assertEqual((displaced / destination.name).read_bytes(), content)
 
     def test_stage_detector_only_from_verified_package_with_exact_pin(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(publisher.sys, "platform", "darwin"):

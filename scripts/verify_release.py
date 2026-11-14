@@ -5,6 +5,8 @@ This does not verify publisher signatures or certify target networking behavior.
 Only --execute-native runs a binary, and only for the current OS/architecture.
 """
 import argparse
+import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -20,6 +22,7 @@ import zipfile
 
 from sbom import validate as validate_sbom
 
+HOST_PLATFORM = sys.platform
 MAX_FILE = 128 << 20
 MAX_SET = 256 << 20
 MAX_ARCHIVE_MEMBERS = 4096
@@ -143,6 +146,36 @@ def snapshot(source, destination, count):
             names.add(entry.name)
     require(len(names) == count, 'Missing release inputs')
     return names
+
+
+def publish_staged_file(staged, destination):
+    """Publish without replacement or an extra link on supported rename hosts."""
+    if HOST_PLATFORM == "win32":
+        # Python's Windows rename refuses an existing destination.
+        os.rename(staged, destination)
+        return
+    if HOST_PLATFORM == "darwin":
+        rename_exclusive = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True).renamex_np
+        rename_exclusive.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
+        rename_exclusive.restype = ctypes.c_int
+        result = rename_exclusive(os.fsencode(staged), os.fsencode(destination), 4)  # RENAME_EXCL
+    elif HOST_PLATFORM.startswith("linux"):
+        try:
+            rename_exclusive = ctypes.CDLL(None, use_errno=True).renameat2
+        except AttributeError as error:
+            raise OSError(errno.ENOTSUP, "Exclusive file rename is unavailable") from error
+        rename_exclusive.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)
+        rename_exclusive.restype = ctypes.c_int
+        at_fdcwd = -100
+        result = rename_exclusive(at_fdcwd, os.fsencode(staged),
+                                  at_fdcwd, os.fsencode(destination), 1)  # RENAME_NOREPLACE
+    else:
+        # Keep the existing staging behavior on other verification hosts.
+        os.link(staged, destination)
+        return
+    if result != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), str(destination))
 
 
 def native_metadata_json(executable, arguments, environment):

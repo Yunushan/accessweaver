@@ -12,7 +12,7 @@ import sys
 import tempfile
 
 from macos_installer import BUNDLE_ID, BUNDLE_NAME, macho_identity
-from verify_release import require
+from verify_release import publish_staged_file, require
 from verify_release_rebuild import digest, snapshot
 
 
@@ -119,7 +119,15 @@ def verify_packaged_application(package, team, architecture, application_pin=Non
     return expanded
 
 
-def stage_detector(expanded, team, architecture, approved_sha256, destination, application_pin=None):
+def stage_detector(expanded, team, architecture, approved_sha256, destination, parent_info, application_pin=None):
+    parent = destination.parent
+
+    def check_parent():
+        current = parent.lstat()
+        require(stat.S_ISDIR(current.st_mode) and os.path.samestat(current, parent_info),
+                "Detector output directory changed during verification")
+
+    check_parent()
     scripts = expanded / "Scripts"
     require(stat.S_ISDIR(scripts.lstat().st_mode), "Expected an ordinary expanded package scripts directory")
     data = read_expanded_executable(scripts / "postinstall", 16 << 20)
@@ -127,7 +135,7 @@ def stage_detector(expanded, team, architecture, approved_sha256, destination, a
             "Expanded package scripts do not use the same detector")
     macho_identity(data, architecture)
 
-    with tempfile.TemporaryDirectory(prefix=".accessweaver-detector-", dir=destination.parent) as temporary:
+    with tempfile.TemporaryDirectory(prefix=".accessweaver-detector-", dir=parent) as temporary:
         staged = Path(temporary) / destination.name
         with staged.open("xb") as stream:
             stream.write(data)
@@ -140,12 +148,15 @@ def stage_detector(expanded, team, architecture, approved_sha256, destination, a
         if application_pin is not None:
             check_application_certificate(staged, application_pin)
         verify_detector_bytes(staged, approved_sha256)
+        check_parent()
         try:
-            os.link(staged, destination)
+            publish_staged_file(staged, destination)
         except FileExistsError:
             # A retry or concurrent publication may already own the name.
             pass
+    check_parent()
     verify_detector_bytes(destination, approved_sha256)
+    check_parent()
 
 
 def verify(directory, artifact_sha256, team, certificate_sha256, *,
@@ -166,7 +177,8 @@ def verify(directory, artifact_sha256, team, certificate_sha256, *,
                 and detector_sha256 is not None and FINGERPRINT.fullmatch(detector_sha256)
                 and architecture is not None, "Invalid managed detector staging inputs")
         parent = detector_output.parent
-        require(stat.S_ISDIR(parent.lstat().st_mode), "Expected a real detector output directory")
+        parent_info = parent.lstat()
+        require(stat.S_ISDIR(parent_info.st_mode), "Expected a real detector output directory")
         detector_output = parent.resolve(strict=True) / detector_output.name
         detector_sha256 = detector_sha256.lower()
     artifact_sha256 = artifact_sha256.lower()
@@ -181,7 +193,7 @@ def verify(directory, artifact_sha256, team, certificate_sha256, *,
         if architecture is not None:
             expanded = verify_packaged_application(package, team, architecture, application_certificate_sha256)
             if detector_output is not None:
-                stage_detector(expanded, team, architecture, detector_sha256, detector_output,
+                stage_detector(expanded, team, architecture, detector_sha256, detector_output, parent_info,
                                application_certificate_sha256)
     report = {
         "schemaVersion": 1,

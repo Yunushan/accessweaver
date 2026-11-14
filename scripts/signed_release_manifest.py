@@ -3,7 +3,6 @@
 import argparse
 import ctypes
 from datetime import datetime, timezone
-import errno
 import hashlib
 import json
 import os
@@ -18,11 +17,10 @@ import tempfile
 from macos_installer import parse_release_version, version_parts
 from sbom import prop_map, validate_digest
 from verify_macos_installer_publisher import check_package_publisher, verify_packaged_application
-from verify_release import require
+from verify_release import publish_staged_file as publish_staged_installer, require
 from verify_release_provenance import REPOSITORY, regular_file, validate_identity
 from verify_release_rebuild import MAX_FILE, digest, snapshot
 
-HOST_PLATFORM = sys.platform
 MANIFEST = "SIGNED-RELEASE.json"
 SIGNATURE = "SIGNED-RELEASE.p7s"
 MAX_REBOOT_EVIDENCE = 16
@@ -551,36 +549,6 @@ def copy_approved_installer(source_path, staged, size):
             require(not source.read(1), "Signed installer snapshot grew during staging")
             output.flush()
             os.fsync(output.fileno())
-
-
-def publish_staged_installer(staged, destination):
-    """Publish without replacement or an extra link on supported rename hosts."""
-    if HOST_PLATFORM == "win32":
-        # Python's Windows rename refuses an existing destination.
-        os.rename(staged, destination)
-        return
-    if HOST_PLATFORM == "darwin":
-        rename_exclusive = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True).renamex_np
-        rename_exclusive.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
-        rename_exclusive.restype = ctypes.c_int
-        result = rename_exclusive(os.fsencode(staged), os.fsencode(destination), 4)  # RENAME_EXCL
-    elif HOST_PLATFORM.startswith("linux"):
-        try:
-            rename_exclusive = ctypes.CDLL(None, use_errno=True).renameat2
-        except AttributeError as error:
-            raise OSError(errno.ENOTSUP, "Exclusive installer rename is unavailable") from error
-        rename_exclusive.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)
-        rename_exclusive.restype = ctypes.c_int
-        at_fdcwd = -100
-        result = rename_exclusive(at_fdcwd, os.fsencode(staged),
-                                  at_fdcwd, os.fsencode(destination), 1)  # RENAME_NOREPLACE
-    else:
-        # Keep the existing staging behavior on other verification hosts.
-        os.link(staged, destination)
-        return
-    if result != 0:
-        code = ctypes.get_errno()
-        raise OSError(code, os.strerror(code), str(destination))
 
 
 def stage_managed_update(root, directory, update, policy, *, size, directory_identity):
