@@ -120,6 +120,19 @@ func queryRemovalReceipt(ctx context.Context, operation, id string) ([]byte, err
 	if !validRemovalReceiptID(id) || (operation != "--pkg-info" && operation != "--files") {
 		return nil, errors.New("invalid fixed receipt query")
 	}
+	return runRemovalReceiptTool(ctx, operation, id)
+}
+
+func forgetRemovalReceipt(ctx context.Context, id string) error {
+	if !validRemovalReceiptID(id) {
+		return errors.New("invalid fixed receipt identity")
+	}
+	_, e := runRemovalReceiptTool(ctx, "--forget", id)
+	return e
+}
+
+// Call only through the fixed query and forget boundaries above.
+func runRemovalReceiptTool(ctx context.Context, operation, id string) ([]byte, error) {
 	child, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(child, "/usr/sbin/pkgutil", operation, id)
@@ -135,7 +148,7 @@ func queryRemovalReceipt(ctx context.Context, operation, id string) ([]byte, err
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
 	if e := cmd.Run(); e != nil {
-		return nil, errors.New("native removal receipt query failed")
+		return nil, errors.New("native removal receipt tool failed")
 	}
 	return out.data, nil
 }

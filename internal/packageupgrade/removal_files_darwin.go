@@ -26,6 +26,7 @@ const (
 	removalProtectedScope
 	removalPayloadScope
 	removalRegistrationScope
+	removalReceiptScope
 )
 
 // Private, one-file transaction. There is no CLI/package entry point.
@@ -62,9 +63,9 @@ func (r *removalIntentStore) removeNextProtectedObjectUsing(ctx context.Context,
 	if filesOnly {
 		scope = removalFileScope
 	}
-	return r.removeNextRemovalObjectUsing(ctx, resolve, scope)
+	return r.removeNextRemovalObjectUsing(ctx, resolve, scope, nil)
 }
-func (r *removalIntentStore) removeNextRemovalObjectUsing(ctx context.Context, resolve removalParentResolver, scope removalObjectScope) (result removalProgress, failure error) {
+func (r *removalIntentStore) removeNextRemovalObjectUsing(ctx context.Context, resolve removalParentResolver, scope removalObjectScope, forget func(context.Context, string) error) (result removalProgress, failure error) {
 	zero := removalProgress{}
 	if r == nil || r.store == nil || r.store.owner != 0 || r.store.current == nil || r.store.runtimeLock == nil || resolve == nil {
 		return zero, errors.New("protected object removal requires an open leased root intent")
@@ -89,6 +90,8 @@ func (r *removalIntentStore) removeNextRemovalObjectUsing(ctx context.Context, r
 		prefix, e = removalProtectedActions(r.plan)
 	case removalPayloadScope, removalRegistrationScope:
 		prefix, e = removalPayloadActions(r.plan)
+	case removalReceiptScope:
+		prefix, e = removalRegistrationActions(r.plan)
 	default:
 		return zero, errors.New("invalid removal action scope")
 	}
@@ -103,6 +106,16 @@ func (r *removalIntentStore) removeNextRemovalObjectUsing(ctx context.Context, r
 	if scope == removalRegistrationScope {
 		if journal.completed < limit {
 			return zero, errors.New("registration removal requires completed payload removal")
+		}
+		registrations, e := removalRegistrationActions(r.plan)
+		if e != nil {
+			return zero, e
+		}
+		limit = len(registrations)
+	}
+	if scope == removalReceiptScope {
+		if journal.completed < limit || forget == nil {
+			return zero, errors.New("receipt retirement requires completed registration removal and a fixed tool")
 		}
 		limit = len(actions)
 	}
@@ -126,6 +139,9 @@ func (r *removalIntentStore) removeNextRemovalObjectUsing(ctx context.Context, r
 		return zero, errors.New("protected object removal deadline exceeded")
 	}
 	action := actions[journal.completed]
+	if scope == removalReceiptScope {
+		return r.retireReceipt(bounded, resolve, action, actions, raw, journal, forget)
+	}
 	object := r.plan.Roots[action.root].Objects[action.object]
 	phase := "removal-file"
 	if object.Kind == "directory" {
@@ -274,9 +290,9 @@ func (r *removalIntentStore) openRemovalObjectParent(action removalFileAction, r
 		if object.Kind != "file" && object.Kind != "directory" {
 			return nil, errors.New("ineligible protected removal object")
 		}
-	case "registrations":
+	case "registrations", "receipts":
 		if object.Kind != "file" || path.Base(object.Path) != object.Path {
-			return nil, errors.New("ineligible registration removal object")
+			return nil, errors.New("ineligible removal metadata object")
 		}
 	default:
 		return nil, errors.New("ineligible protected removal object")
@@ -391,10 +407,28 @@ func (r *removalIntentStore) openRemovalObjectParent(action removalFileAction, r
 func (r *removalIntentStore) removalAbsences(resolve removalParentResolver, actions []removalFileAction, journal removalJournal) (map[removalFileAction]bool, error) {
 	absent := map[removalFileAction]bool{}
 	for i := 0; i < journal.completed; i++ {
-		absent[actions[i]] = true
+		action := actions[i]
+		absent[action] = true
+		if r.plan.Roots[action.root].Kind == "receipts" {
+			_, plist, e := receiptActionPair(r.plan, action)
+			if e != nil {
+				return nil, e
+			}
+			absent[plist] = true
+		}
 	}
 	if journal.pending {
 		action := actions[journal.completed]
+		if r.plan.Roots[action.root].Kind == "receipts" {
+			_, plist, e := receiptActionPair(r.plan, action)
+			if e != nil {
+				return nil, e
+			}
+			if e = r.observePendingReceiptAbsence(resolve, action, plist, absent); e != nil {
+				return nil, e
+			}
+			return absent, nil
+		}
 		dir, e := r.openRemovalObjectParent(action, resolve)
 		if e != nil {
 			return nil, e

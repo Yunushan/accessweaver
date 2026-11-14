@@ -83,7 +83,7 @@ func TestRemovalRegistrationActionsPreservePayloadJournalPrefix(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	actions, e := removalAllActions(plan)
+	actions, e := removalRegistrationActions(plan)
 	if e != nil || len(actions) <= len(payload) || !reflect.DeepEqual(actions[:len(payload)], payload) {
 		t.Fatal("registration actions changed the payload prefix", actions, e)
 	}
@@ -102,6 +102,29 @@ func TestRemovalRegistrationActionsPreservePayloadJournalPrefix(t *testing.T) {
 	}
 	if len(actions) != len(payload)+count {
 		t.Fatal("unexpected action after registrations", actions)
+	}
+}
+
+func TestRemovalReceiptActionsPreserveRegistrationPrefix(t *testing.T) {
+	plan := removalPlanFixture()
+	registrations, e := removalRegistrationActions(plan)
+	if e != nil {
+		t.Fatal(e)
+	}
+	actions, e := removalAllActions(plan)
+	if e != nil || len(actions) != len(registrations)+3 || !reflect.DeepEqual(actions[:len(registrations)], registrations) {
+		t.Fatal("receipt actions changed the journal prefix", actions, e)
+	}
+	seen := map[string]bool{}
+	for _, action := range actions[len(registrations):] {
+		id, plist, e := receiptActionPair(plan, action)
+		if e != nil || seen[id] || plan.Roots[plist.root].Objects[plist.object].Path != id+".plist" {
+			t.Fatal("receipt action did not bind exactly one pair", id, plist, e)
+		}
+		seen[id] = true
+		if _, _, e = receiptActionPair(plan, plist); e == nil {
+			t.Fatal("plist grants a second receipt action")
+		}
 	}
 }
 

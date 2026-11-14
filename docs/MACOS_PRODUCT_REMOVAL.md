@@ -32,6 +32,8 @@ The JSON is an observation, not a saved deletion capability. Files can change af
 
 The private removal journal retires desktop registration files after the protected payloads and quarantined app are gone. It retains the registration directory, Installer receipts, authority history and user data. A retry accepts a missing registration only when the durable journal identifies that exact file as pending or complete. The hosted test exercises interrupted intent, unlink and synchronization phases in an owned fixture.
 
+The private receipt transaction follows registration retirement. It journals one verified BOM and plist pair at a time and invokes the fixed Apple tool with the corresponding product package ID. It checks that both files are absent and synchronizes the receipt directory before recording completion. An exact pending action can recognize one or both files already removed. Unknown, replaced or unrelated receipts never become eligible. Native fixture tests substitute an owned receipt directory and a controlled forget operation. Full uninstall still requires coordination with Apple Installer and finalization that supports reinstall. [Apple’s receipt removal guidance](https://developer.apple.com/documentation/xcode/installing-the-command-line-tools#Uninstall-the-Command-Line-Tools-for-Xcode-package)
+
 ## Qualification
 
 The earlier [source-bound record at 7fa9afc17892](qualification/7fa9afc17892-macos-removal-inspection.json) qualifies only schema-one core/history/public-app/registration inspection. It does not qualify these added incoming/receipt checks.

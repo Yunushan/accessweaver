@@ -25,6 +25,26 @@ func validRemovalReceiptID(id string) bool {
 	prefix := desktopBundleID + ".registration."
 	return strings.HasPrefix(id, prefix) && hash.MatchString(strings.TrimPrefix(id, prefix))
 }
+func receiptActionPair(plan removalPlan, bom removalFileAction) (string, removalFileAction, error) {
+	if bom.root < 0 || bom.root >= len(plan.Roots) {
+		return "", removalFileAction{}, errors.New("invalid receipt action root")
+	}
+	root := plan.Roots[bom.root]
+	if root.Kind != "receipts" || bom.object <= 0 || bom.object >= len(root.Objects) {
+		return "", removalFileAction{}, errors.New("invalid receipt action")
+	}
+	id, suffix := strings.CutSuffix(root.Objects[bom.object].Path, ".bom")
+	if !suffix || !validRemovalReceiptID(id) {
+		return "", removalFileAction{}, errors.New("invalid receipt action identity")
+	}
+	for j, object := range root.Objects {
+		if object.Path == id+".plist" {
+			return id, removalFileAction{bom.root, j}, nil
+		}
+	}
+	return "", removalFileAction{}, errors.New("receipt action plist is missing")
+}
+
 func checkRemovalReceiptMetadata(data []byte, expected removalReceiptExpectation) error {
 	if !validRemovalReceiptID(expected.ID) || expected.Location == "" || !strings.HasPrefix(expected.Location, "/") {
 		return errors.New("invalid fixed removal receipt expectation")

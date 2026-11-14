@@ -40,7 +40,7 @@ func (r *removalIntentStore) removeNextQuarantinedAppObjectUsing(ctx context.Con
 	if progress.completed < len(protected) {
 		return zero, errors.New("quarantined app removal requires completed protected objects")
 	}
-	return r.removeNextRemovalObjectUsing(bounded, resolve, removalPayloadScope)
+	return r.removeNextRemovalObjectUsing(bounded, resolve, removalPayloadScope, nil)
 }
 
 // Uses the same recorded vnode checks and durable intent as payload deletion.
@@ -53,7 +53,7 @@ func (r *removalIntentStore) removeNextRegistrationUsing(ctx context.Context, re
 	if e := r.requirePublicQuarantine(bounded, resolve); e != nil {
 		return removalProgress{}, e
 	}
-	return r.removeNextRemovalObjectUsing(bounded, resolve, removalRegistrationScope)
+	return r.removeNextRemovalObjectUsing(bounded, resolve, removalRegistrationScope, nil)
 }
 
 func (r *removalIntentStore) verifyRemainingQuarantinedApp(ctx context.Context, resolve removalParentResolver) error {

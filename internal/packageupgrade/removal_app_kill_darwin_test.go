@@ -94,7 +94,7 @@ func exerciseOwnedQuarantinedAppKilledProcesses(t *testing.T, privateBase string
 				}
 				f.store = f.intent.store
 				actions, e := removalAllActions(f.intent.plan)
-				if e != nil || len(actions) != 10 {
+				if e != nil || len(actions) != 13 {
 					t.Fatal(actions, e)
 				}
 				raw, _, journal, e := readRemovalJournalAt(f.store.current, 0, removalJournalSeed(f.intent.fence), len(actions))
