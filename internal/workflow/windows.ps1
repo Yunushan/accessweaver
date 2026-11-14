@@ -2490,13 +2490,14 @@ function Assert-DNSCryptConfiguration([string]$Path,[string]$ExpectedSHA256) {
         throw 'DNSCrypt configuration changed after publication; retain the recovery snapshot'
     }
 }
-function Restore-DNSCryptAfterActivationFailure($Resolver,[string]$Config,[string]$OriginalSHA256,[string]$SnapshotSHA256) {
+function Restore-DNSCryptAfterActivationFailure($Resolver,[string]$Config,[string]$OriginalSHA256,[string]$SnapshotSHA256,[switch]$DNSRestored) {
     try {
         $records=@($script:undo | Where-Object {$_.kind -ceq 'file' -and $_.path -ieq $Config})
         if($records.Count -ne 1 -or $records[0].originalHash -ine $OriginalSHA256){
             throw 'Original DNSCrypt file recovery is unverified'
         }
-        Assert-DNSRecoverySnapshotUnchanged $SnapshotSHA256
+        if($DNSRestored){Assert-DNSRecoverySnapshotUnchanged ''}
+        else{Assert-DNSRecoverySnapshotUnchanged $SnapshotSHA256}
         if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
         Restore-RecordedWorkflowFile $records[0]
         Assert-DNSCryptConfiguration $Config $OriginalSHA256
@@ -2632,44 +2633,46 @@ function Configure-DNS([string]$method) {
     $dnsUndo.snapshotActive=$true
     Save-Journal
     Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-    if($method -eq 'dnscrypt') {
-        if($existingResolver -and (Assert-RecordedServiceBinding $existingResolver) -ne 0){
-            throw 'Existing DNSCrypt service disappeared before reconfiguration'
-        }
-        $binary=Ensure-Asset 'dnscrypt';$config=Join-Path (Split-Path -Parent $binary) 'dnscrypt-proxy.toml'
-        $configBytes=Read-DNSRecoveryFileBytes $config 1MB
-        $configBefore=''
-        if($null -eq $configBytes){
-            $example=Join-Path (Split-Path -Parent $binary) 'example-dnscrypt-proxy.toml'
-            $configBytes=Read-DNSRecoveryFileBytes $example 1MB
-            if($null -eq $configBytes){throw 'Official DNSCrypt resolver configuration is missing'}
-        }else{
-            $configBefore=Get-WorkflowBytesSHA256 $configBytes
-        }
-        $text=[Text.UTF8Encoding]::new($false,$true).GetString($configBytes)
-        if($text.Length -gt 0 -and $text[0] -eq [char]0xfeff){$text=$text.Substring(1)}
-        if($text -notmatch '(?m)^listen_addresses[ \t]*='){throw 'DNSCrypt configuration is missing its top-level listen_addresses setting'}
-        $text=[regex]::Replace($text,'(?m)^listen_addresses[ \t]*=[^\r\n]*',"listen_addresses = ['127.0.0.1:53', '[::1]:53']")
-        if($text -notmatch '(?m)^server_names\s*='){$text="server_names = ['google', 'cloudflare', 'quad9-dnscrypt-ip4-nofilter-pri']`r`n"+$text}
-        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-        $updatedConfig=[Text.UTF8Encoding]::new($false).GetBytes($text)
-        if($updatedConfig.Length -gt 1MB){throw 'DNSCrypt configuration exceeds its size limit'}
-        $publishedConfigSHA256=Get-WorkflowBytesSHA256 $updatedConfig
-        $configChanged=$configBefore -cne $publishedConfigSHA256
-        if($configChanged){Publish-WorkflowFile $config $updatedConfig -Recorded -BeforeHash $configBefore}
-        $servers=@('127.0.0.1','::1')
-        $listeners=@(foreach($number in @('4','6')){
-            foreach($adapter in $adapters){
-                $record=@($records | Where-Object {$_.guid -eq [string]$adapter.InterfaceGuid})[0]
-                $bounds=Get-OriginalDNSBounds $record
-                if($bounds['bound'+$number]){
-                    if($number -eq '4'){$servers[0]}else{$servers[1]}
-                    break
-                }
+    $changedConfigurationActivationAttempted=$false
+    $adapterMutationAttempted=$false
+    $restoredAfterResolverFailure=$false
+    try {
+        if($method -eq 'dnscrypt') {
+            if($existingResolver -and (Assert-RecordedServiceBinding $existingResolver) -ne 0){
+                throw 'Existing DNSCrypt service disappeared before reconfiguration'
             }
-        })
-        $changedConfigurationActivationAttempted=$false
-        try {
+            $binary=Ensure-Asset 'dnscrypt';$config=Join-Path (Split-Path -Parent $binary) 'dnscrypt-proxy.toml'
+            $configBytes=Read-DNSRecoveryFileBytes $config 1MB
+            $configBefore=''
+            if($null -eq $configBytes){
+                $example=Join-Path (Split-Path -Parent $binary) 'example-dnscrypt-proxy.toml'
+                $configBytes=Read-DNSRecoveryFileBytes $example 1MB
+                if($null -eq $configBytes){throw 'Official DNSCrypt resolver configuration is missing'}
+            }else{
+                $configBefore=Get-WorkflowBytesSHA256 $configBytes
+            }
+            $text=[Text.UTF8Encoding]::new($false,$true).GetString($configBytes)
+            if($text.Length -gt 0 -and $text[0] -eq [char]0xfeff){$text=$text.Substring(1)}
+            if($text -notmatch '(?m)^listen_addresses[ \t]*='){throw 'DNSCrypt configuration is missing its top-level listen_addresses setting'}
+            $text=[regex]::Replace($text,'(?m)^listen_addresses[ \t]*=[^\r\n]*',"listen_addresses = ['127.0.0.1:53', '[::1]:53']")
+            if($text -notmatch '(?m)^server_names\s*='){$text="server_names = ['google', 'cloudflare', 'quad9-dnscrypt-ip4-nofilter-pri']`r`n"+$text}
+            Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+            $updatedConfig=[Text.UTF8Encoding]::new($false).GetBytes($text)
+            if($updatedConfig.Length -gt 1MB){throw 'DNSCrypt configuration exceeds its size limit'}
+            $publishedConfigSHA256=Get-WorkflowBytesSHA256 $updatedConfig
+            $configChanged=$configBefore -cne $publishedConfigSHA256
+            if($configChanged){Publish-WorkflowFile $config $updatedConfig -Recorded -BeforeHash $configBefore}
+            $servers=@('127.0.0.1','::1')
+            $listeners=@(foreach($number in @('4','6')){
+                foreach($adapter in $adapters){
+                    $record=@($records | Where-Object {$_.guid -eq [string]$adapter.InterfaceGuid})[0]
+                    $bounds=Get-OriginalDNSBounds $record
+                    if($bounds['bound'+$number]){
+                        if($number -eq '4'){$servers[0]}else{$servers[1]}
+                        break
+                    }
+                }
+            })
             if($existingResolver){
                 if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before startup'}
                 Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
@@ -2698,113 +2701,120 @@ function Configure-DNS([string]$method) {
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
             Assert-DNSCryptServiceState $resolver
-        } catch {
-            if($changedConfigurationActivationAttempted -and $configBefore){
-                Restore-DNSCryptAfterActivationFailure $existingResolver $config $configBefore $snapshotSHA256
-            }
-            throw
-        }
-    } elseif($method -eq 'doh') {
-        foreach($provider in $providers){
-            $address=$provider.ServerAddress
-            $expected=@($baseline | Where-Object {$_.ServerAddress -eq $address})
-            $current=@(Get-DnsClientDohServerAddress -ErrorAction Stop | Where-Object {$_.ServerAddress -eq $address})
-            if(-not (Test-DNSDohEntriesEqual $current $expected)){
-                throw 'DoH policy changed during configuration; review current policy and retain the recovery snapshot'
-            }
-            if(Test-DNSDohEntriesEqual $current @($provider)){continue}
-            Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-            $script:externalEffectsPending=$true
-            if($current.Count -eq 1){
-                Set-DnsClientDohServerAddress -ServerAddress $address -DohTemplate $provider.DohTemplate -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop
-            }else{
-                Add-DnsClientDohServerAddress -ServerAddress $address -DohTemplate $provider.DohTemplate -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop
-            }
-        }
-        # Require verified policy before switching adapter resolvers.
-        Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy could not be verified; retain the original DNS snapshot'
-        $servers=@($providers | ForEach-Object {$_.ServerAddress})
-    } else {throw 'Choose doh or dnscrypt'}
-    foreach($adapter in $adapters){
-        $record=@($records | Where-Object {$_.guid -eq [string]$adapter.InterfaceGuid})[0];$bounds=Get-OriginalDNSBounds $record
-        foreach($number in @('4','6')){
-            if(-not $bounds['bound'+$number]){continue}
-            $familyServers=@($servers | Where-Object {($_.Contains(':')) -eq ($number -eq '6')})
-            $family='IPv'+$number
-            $dns=Get-DNSClientMutationRow $record.guid $family -RequireUp
-            $newFamily=$newOriginals.ContainsKey($record.guid) -and $newOriginals[$record.guid].bounds['bound'+$number]
-            if($newFamily -or $guardAdapters){
-                $currentAdapter=@{InterfaceGuid=$record.guid;ifIndex=$dns.InterfaceIndex}
-                $observed=Read-ObservedDNSFamily $currentAdapter $family $dns
-                if($newFamily){
-                    if(-not (Test-DNSFamilyMatchesOriginal $record $number $observed)){
-                        throw 'Original DNS settings changed before the adapter update; review current settings and retain the recovery snapshot'
-                    }
+        } elseif($method -eq 'doh') {
+            foreach($provider in $providers){
+                $address=$provider.ServerAddress
+                $expected=@($baseline | Where-Object {$_.ServerAddress -eq $address})
+                $current=@(Get-DnsClientDohServerAddress -ErrorAction Stop | Where-Object {$_.ServerAddress -eq $address})
+                if(-not (Test-DNSDohEntriesEqual $current $expected)){
+                    throw 'DoH policy changed during configuration; review current policy and retain the recovery snapshot'
+                }
+                if(Test-DNSDohEntriesEqual $current @($provider)){continue}
+                Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+                $script:externalEffectsPending=$true
+                if($current.Count -eq 1){
+                    Set-DnsClientDohServerAddress -ServerAddress $address -DohTemplate $provider.DohTemplate -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop
                 }else{
-                    [void](Test-DNSFamilyNeedsRollback $record $number $observed)
-                }
-                if($method -ceq 'doh' -and -not $observed.dhcp -and
-                   ($observed.values -join ',') -ceq ($familyServers -join ',')){
-                    # A redundant setter can make the DNS Client reinitialize DoH.
-                    # Final readback still verifies this family and its adapter.
-                    continue
+                    Add-DnsClientDohServerAddress -ServerAddress $address -DohTemplate $provider.DohTemplate -AllowFallbackToUdp $false -AutoUpgrade $true -ErrorAction Stop
                 }
             }
-            Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-            if($method -ceq 'dnscrypt'){Assert-DNSCryptConfiguration $config $publishedConfigSHA256}
-            Assert-DNSMutationAdapter $record.guid $dns.InterfaceIndex -RequireUp
-            $script:externalEffectsPending=$true
-            $dns | Set-DnsClientServerAddress -ServerAddresses $familyServers -ErrorAction Stop
+            # Require verified policy before switching adapter resolvers.
+            Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy could not be verified; retain the original DNS snapshot'
+            $servers=@($providers | ForEach-Object {$_.ServerAddress})
+        } else {throw 'Choose doh or dnscrypt'}
+        foreach($adapter in $adapters){
+            $record=@($records | Where-Object {$_.guid -eq [string]$adapter.InterfaceGuid})[0];$bounds=Get-OriginalDNSBounds $record
+            foreach($number in @('4','6')){
+                if(-not $bounds['bound'+$number]){continue}
+                $familyServers=@($servers | Where-Object {($_.Contains(':')) -eq ($number -eq '6')})
+                $family='IPv'+$number
+                $dns=Get-DNSClientMutationRow $record.guid $family -RequireUp
+                $newFamily=$newOriginals.ContainsKey($record.guid) -and $newOriginals[$record.guid].bounds['bound'+$number]
+                if($newFamily -or $guardAdapters){
+                    $currentAdapter=@{InterfaceGuid=$record.guid;ifIndex=$dns.InterfaceIndex}
+                    $observed=Read-ObservedDNSFamily $currentAdapter $family $dns
+                    if($newFamily){
+                        if(-not (Test-DNSFamilyMatchesOriginal $record $number $observed)){
+                            throw 'Original DNS settings changed before the adapter update; review current settings and retain the recovery snapshot'
+                        }
+                    }else{
+                        [void](Test-DNSFamilyNeedsRollback $record $number $observed)
+                    }
+                    if($method -ceq 'doh' -and -not $observed.dhcp -and
+                       ($observed.values -join ',') -ceq ($familyServers -join ',')){
+                        # A redundant setter can make the DNS Client reinitialize DoH.
+                        # Final readback still verifies this family and its adapter.
+                        continue
+                    }
+                }
+                Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+                if($method -ceq 'dnscrypt'){Assert-DNSCryptConfiguration $config $publishedConfigSHA256}
+                Assert-DNSMutationAdapter $record.guid $dns.InterfaceIndex -RequireUp
+                $script:externalEffectsPending=$true
+                $adapterMutationAttempted=$true
+                $dns | Set-DnsClientServerAddress -ServerAddresses $familyServers -ErrorAction Stop
+            }
         }
-    }
-    # Observe eventual consistency without repeating a setter. Refuse success
-    # and leave the original snapshot available if readback never converges.
-    $adapterReadbackVerified=$false
-    for($attempt=0;$attempt -lt 40;$attempt++){
-        try{Assert-ConfiguredDNSServers $adapters $records $servers;$adapterReadbackVerified=$true;break}catch{if($attempt -lt 39){Start-Sleep -Milliseconds 250}}
-    }
-    if(-not $adapterReadbackVerified){throw 'Configured DNS servers could not be verified; retain the original DNS snapshot'}
-    if($method -ceq 'doh'){
-        Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed after adapter configuration; retain the original DNS snapshot'
-    }
-    if(-not (Wait-OrdinaryDNSResolver 90)){
-        if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot disappeared during verification'}
-        Restore-DNS $snapshotSHA256
-        throw 'Resolver verification failed; original DNS settings restored: the ordinary resolver did not return the expected DNS answer'
-    }
-    if($method -ceq 'dnscrypt'){
-        # The ordinary resolver can succeed through one family even when a
-        # different family now points at a failed listener.
-        Wait-DNSCryptListeners $listeners -TimeoutSeconds 5 -FailureMessage 'DNSCrypt loopback readiness could not be verified after adapter configuration'
-    }
-    # A DNS answer could have come through settings that changed during the probe.
-    Assert-ConfiguredDNSServers $adapters $records $servers
-    if($method -ceq 'doh'){
-        Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed during resolver verification; retain the original DNS snapshot'
-    }
-    if($method -ceq 'doh' -and $existingResolver -and -not (Test-DNSCryptListenerNeeded $records)){
-        # Keep the old listener available until the new adapter DNS is usable
-        # and there is no remaining observed dependency on the loopback listener.
-        if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared during DoH configuration'}
-        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-        Stop-Service -Name $serviceName -ErrorAction Stop
-        if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before disabling automatic startup'}
-        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-        Set-Service -Name $serviceName -StartupType Manual -ErrorAction Stop
-        Assert-DNSCryptServiceState $existingResolver -ManualStopped
-        # The earlier query may have succeeded through the old listener.
-        if(-not (Wait-OrdinaryDNSResolver 10)){
-            throw 'DoH resolver verification failed after stopping DNSCrypt; retain the original DNS snapshot'
+        # Observe eventual consistency without repeating a setter. Refuse success
+        # and leave the original snapshot available if readback never converges.
+        $adapterReadbackVerified=$false
+        for($attempt=0;$attempt -lt 40;$attempt++){
+            try{Assert-ConfiguredDNSServers $adapters $records $servers;$adapterReadbackVerified=$true;break}catch{if($attempt -lt 39){Start-Sleep -Milliseconds 250}}
         }
+        if(-not $adapterReadbackVerified){throw 'Configured DNS servers could not be verified; retain the original DNS snapshot'}
+        if($method -ceq 'doh'){
+            Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed after adapter configuration; retain the original DNS snapshot'
+        }
+        if(-not (Wait-OrdinaryDNSResolver 90)){
+            if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot disappeared during verification'}
+            Restore-DNS $snapshotSHA256
+            $restoredAfterResolverFailure=$true
+            throw 'Resolver verification failed; original DNS settings restored: the ordinary resolver did not return the expected DNS answer'
+        }
+        if($method -ceq 'dnscrypt'){
+            # The ordinary resolver can succeed through one family even when a
+            # different family now points at a failed listener.
+            Wait-DNSCryptListeners $listeners -TimeoutSeconds 5 -FailureMessage 'DNSCrypt loopback readiness could not be verified after adapter configuration'
+        }
+        # A DNS answer could have come through settings that changed during the probe.
         Assert-ConfiguredDNSServers $adapters $records $servers
-        Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed after stopping DNSCrypt; retain the original DNS snapshot'
-        Assert-DNSCryptServiceState $existingResolver -ManualStopped
+        if($method -ceq 'doh'){
+            Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed during resolver verification; retain the original DNS snapshot'
+        }
+        if($method -ceq 'doh' -and $existingResolver -and -not (Test-DNSCryptListenerNeeded $records)){
+            # Keep the old listener available until the new adapter DNS is usable
+            # and there is no remaining observed dependency on the loopback listener.
+            if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared during DoH configuration'}
+            Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+            Stop-Service -Name $serviceName -ErrorAction Stop
+            if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before disabling automatic startup'}
+            Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+            Set-Service -Name $serviceName -StartupType Manual -ErrorAction Stop
+            Assert-DNSCryptServiceState $existingResolver -ManualStopped
+            # The earlier query may have succeeded through the old listener.
+            if(-not (Wait-OrdinaryDNSResolver 10)){
+                throw 'DoH resolver verification failed after stopping DNSCrypt; retain the original DNS snapshot'
+            }
+            Assert-ConfiguredDNSServers $adapters $records $servers
+            Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed after stopping DNSCrypt; retain the original DNS snapshot'
+            Assert-DNSCryptServiceState $existingResolver -ManualStopped
+        }
+        if($method -ceq 'dnscrypt'){Assert-DNSCryptServiceState $resolver}
+        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+        if($method -ceq 'dnscrypt'){Assert-DNSCryptConfiguration $config $publishedConfigSHA256}
+        Event ('Encrypted DNS configured: '+$method)
+        $script:dnsConfigured=$true
+    } catch {
+        if($changedConfigurationActivationAttempted -and $configBefore){
+            if($adapterMutationAttempted -and -not $restoredAfterResolverFailure){
+                # Keep the replacement resolver available until the original adapter settings are back.
+                Restore-DNS $snapshotSHA256
+                $restoredAfterResolverFailure=$true
+            }
+            Restore-DNSCryptAfterActivationFailure $existingResolver $config $configBefore $snapshotSHA256 -DNSRestored:$restoredAfterResolverFailure
+        }
+        throw
     }
-    if($method -ceq 'dnscrypt'){Assert-DNSCryptServiceState $resolver}
-    Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-    if($method -ceq 'dnscrypt'){Assert-DNSCryptConfiguration $config $publishedConfigSHA256}
-    Event ('Encrypted DNS configured: '+$method)
-    $script:dnsConfigured=$true
 }
 function Test-DNSDohEntriesEqual([object[]]$Actual,[object[]]$Expected) {
     if($Actual.Count -ne $Expected.Count -or $Actual.Count -gt 1){return $false}

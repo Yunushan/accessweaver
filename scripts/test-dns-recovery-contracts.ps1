@@ -60,7 +60,7 @@ function New-DNSCase {
     $script:appliedDNS=@{};$script:readbackFault='';$script:readbackFaultArmed=$false;$script:silentDohFault='';$script:registryReads=[Collections.Generic.List[string]]::new();$script:dnsValues=@{};$script:renumberDuringDoh=$false;$script:reuseIndexDuringDoh=$false;$script:disappearDuringDoh=$false;$script:dnsReadCount=0;$script:dnsInterfaceReads=0
     $script:replaceSnapshotOnAdapterRead=$false;$script:replaceSnapshotOnJournalSave=$false
     $script:hiddenInventoryReads=0;$script:hiddenInventoryDrift='';$script:lateLoopbackDNS='';$script:finalDependencyDrift='';$script:unexposedKeyStates=@{}
-    $script:replaceSnapshotOnReceiptSave=$false;$script:dnsDriftOnReceiptSave=''
+    $script:replaceSnapshotOnReceiptSave=$false;$script:dnsDriftOnReceiptSave='';$script:failRestoreAdapterAfterResolverQuery=$false
     $script:replaceSnapshotOnActivation=$false;$script:replaceSnapshotOnInterfaceRead=0
     $script:failAction='';$script:failAddress='';$script:failDelete=$false;$script:failSnapshotWrite=$false;$script:failJournalWrite=$false;$script:corruptSnapshotWrite=$false;$script:failActivationWrite=$false;$script:failReceiptWrite=$false
     $script:configureDohReadFault='';$script:postConfigureDohReadFault='';$script:configureDohFaultAddress='';$script:resolverQueries=0;$script:configurationLag=0;$script:readbackWaits=0
@@ -246,7 +246,8 @@ function Set-DnsClientServerAddress {
         if($matches.Count -ne 1 -or $records.Count -ne 1){throw 'source-uncovered-dns-write'}
         $family=Get-DNSClientFamily $InputObject.AddressFamily;$number=if($family -eq 'IPv4'){'4'}else{'6'};$bounds=Get-OriginalDNSBounds $records[0]
         if(-not $bounds['bound'+$number]){throw 'source-uncovered-family-write'}
-        if($family -ceq $script:failDNSSetterFamily){throw 'source-dns-setter-failed'}
+        if($family -ceq $script:failDNSSetterFamily -or
+            ($script:failRestoreAdapterAfterResolverQuery -and $script:resolverQueries -gt 0)){throw 'source-dns-setter-failed'}
         $script:calls.Add(@{kind='dns';index=$index;family=$family;servers=@($ServerAddresses);reset=[bool]$ResetServerAddresses})
         if($script:changeDohAfterAdapterWrite){
             switch ($script:changeDohAfterAdapterWrite){
@@ -567,6 +568,10 @@ function Restore-RecordedWorkflowFile($Record) {
        $Record.originalHash -cne (Get-WorkflowBytesSHA256 $script:restartRecoveryOriginal) -or
        $Record.expectedHash -cne (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash){
         throw 'DNSCrypt recovery file differs from journal'
+    }
+    if($script:resolverQueries -gt 0 -and
+        ($script:receiptDigest -cne $script:journalDigest -or [IO.File]::Exists($snapshot))){
+        throw 'Resolver file restored before adapter recovery completed'
     }
     [IO.File]::WriteAllBytes($path,$script:restartRecoveryOriginal)
     $script:restartRecoveryWrites++
@@ -1024,10 +1029,11 @@ try {
         Reject-DNS {Configure-DNS 'dnscrypt'} $expected
         $late=[int]($fault -ceq 'late-mode')
         Assert-DNS ($script:serviceStartupChanges -eq 1 -and $script:resolverReadbacks -eq ([int]($fault -cne 'write')+$late) -and
-            (Mutation-Count) -eq (2*$late) -and $script:resolverQueries -eq $late -and
-            $script:serviceRestarts -eq (2-$late) -and $script:restartRecoveryWrites -eq (1-$late) -and
-            ([IO.File]::ReadAllText($path) -ceq $original) -eq (-not $late) -and
-            $script:journalActive -and (Snapshot-Hash) -ceq $script:journalDigest -and
+            (Mutation-Count) -eq (4*$late) -and $script:resolverQueries -eq $late -and
+            $script:serviceRestarts -eq 2 -and $script:restartRecoveryWrites -eq 1 -and
+            [IO.File]::ReadAllText($path) -ceq $original -and
+            $script:journalActive -and
+            $(if($late){$script:receiptDigest -ceq $script:journalDigest -and -not [IO.File]::Exists($snapshot)}else{(Snapshot-Hash) -ceq $script:journalDigest}) -and
             -not $script:dnsConfigured) 'dnscrypt-listeners-before-adapters'
     }
     foreach($fault in @('','file','start','binding')){
@@ -1067,15 +1073,16 @@ try {
         New-DNSCase;$script:stageDNSCrypt=$true;$script:resolverServicePresent=$true;$script:changeDNSCryptAfter=$stage
         $target=Join-Path $root 'dnscrypt-proxy.toml'
         [IO.File]::WriteAllText($target,"listen_addresses = ['192.0.2.53:53']")
-        $expected=if($stage -ceq 'listener'){'DNSCrypt activation failed and the original service could not be recovered'}else{'DNSCrypt configuration changed after publication'}
+        $expected=if($stage -ceq 'publish'){'DNSCrypt configuration changed after publication'}else{'DNSCrypt activation failed and the original service could not be recovered'}
         Reject-DNS {Configure-DNS 'dnscrypt'} $expected
-        $writes=if($stage -ceq 'ordinary-probe'){2}else{0}
+        $writes=if($stage -ceq 'ordinary-probe'){4}else{0}
         $preserved=if($stage -ceq 'publish'){-not [IO.File]::Exists($target)}else{
             [IO.File]::ReadAllText($target) -ceq 'independent configuration'
         }
         Assert-DNS ($preserved -and $script:serviceRestarts -eq [int]($stage -cne 'publish') -and
             $script:serviceStartupChanges -eq [int]($stage -ceq 'ordinary-probe') -and (Mutation-Count) -eq $writes -and
-            $script:journalDigest -ceq (Snapshot-Hash) -and -not $script:dnsConfigured) 'dns-service-binding-before-mutation'
+            $(if($stage -ceq 'ordinary-probe'){$script:receiptDigest -ceq $script:journalDigest -and -not [IO.File]::Exists($snapshot)}else{$script:journalDigest -ceq (Snapshot-Hash)}) -and
+            -not $script:dnsConfigured) 'dns-service-binding-before-mutation'
     }
     foreach($transition in @('dnscrypt-only','dnscrypt-to-doh','doh-to-dnscrypt')){
         New-DNSCase
@@ -1149,8 +1156,9 @@ try {
     }
     New-DNSCase;$script:resolverDrift='server';$script:resolverServicePresent=$true;$script:stageDNSCrypt=$true
     [IO.File]::WriteAllText((Join-Path $root 'dnscrypt-proxy.toml'),"listen_addresses = ['192.0.2.53:53']")
-    Reject-DNS {Configure-DNS 'dnscrypt'} 'Configured DNS servers differ'
+    Reject-DNS {Configure-DNS 'dnscrypt'} 'Adapter DNS settings changed independently'
     Assert-DNS ($script:resolverQueries -eq 1 -and -not $script:dnsConfigured -and $script:events.Count -eq 0 -and
+        $script:serviceRestarts -eq 1 -and $script:restartRecoveryWrites -eq 0 -and
         $script:journalActive -and (Snapshot-Hash) -ceq $script:journalDigest) 'configure-refuses-drift-during-resolver-query'
     New-DNSCase;$script:resolverDrift='unselected-adapter-added'
     Configure-DNS 'doh'
@@ -1241,6 +1249,27 @@ try {
             -not $script:dnsConfigured) 'dnscrypt-verifies-all-listeners-after-adapter-switch'
         Restore-DNS $hash
         Assert-DNS ($script:receiptDigest -ceq $hash -and -not [IO.File]::Exists($snapshot)) 'dnscrypt-recovers-after-late-listener-failure'
+    }
+    # Exercise late failure with a changed configuration and an existing service.
+    foreach($restoreFails in @($false,$true)){
+        New-DNSCase;$script:stageDNSCrypt=$true;$script:resolverServicePresent=$true
+        $path=Join-Path $root 'dnscrypt-proxy.toml'
+        $original="server_names = ['google']`r`nlisten_addresses = ['127.0.0.1:53']`r`n"
+        $script:restartRecoveryOriginal=[Text.UTF8Encoding]::new($false).GetBytes($original)
+        [IO.File]::WriteAllBytes($path,$script:restartRecoveryOriginal)
+        $script:finalListenerFailure='::1';$script:refuseListenerWait=$true
+        $script:failRestoreAdapterAfterResolverQuery=$restoreFails
+        $expected=if($restoreFails){'source-dns-setter-failed'}else{'Synthetic loopback wait boundary'}
+        Reject-DNS {Configure-DNS 'dnscrypt'} $expected
+        if($restoreFails){
+            Assert-SnapshotRetained $script:journalDigest
+            Assert-DNS ($script:serviceRestarts -eq 1 -and $script:restartRecoveryWrites -eq 0 -and
+                [IO.File]::ReadAllText($path) -cne $original) 'dnscrypt-recovers-after-late-listener-failure'
+        }else{
+            Assert-DNS ($script:receiptDigest -ceq $script:journalDigest -and -not [IO.File]::Exists($snapshot) -and
+                $script:serviceRestarts -eq 2 -and $script:restartRecoveryWrites -eq 1 -and
+                [IO.File]::ReadAllText($path) -ceq $original) 'dnscrypt-recovers-after-late-listener-failure'
+        }
     }
     # DNSCrypt uses loopback in each family; validate the same readback helper
     # against synthetic state without invoking its service or component path.
@@ -1436,7 +1465,8 @@ try {
             New-DNSCase;$script:changeDNSOnActivation=$drift
             if($method -ceq 'dnscrypt'){
                 $script:stageDNSCrypt=$true;$script:resolverServicePresent=$true
-                [IO.File]::WriteAllText((Join-Path $root 'dnscrypt-proxy.toml'),"listen_addresses = ['192.0.2.53:53']")
+                $script:restartRecoveryOriginal=[Text.UTF8Encoding]::new($false).GetBytes("listen_addresses = ['192.0.2.53:53']")
+                [IO.File]::WriteAllBytes((Join-Path $root 'dnscrypt-proxy.toml'),$script:restartRecoveryOriginal)
             }
             Reject-DNS {Configure-DNS $method} 'Original DNS settings changed before the adapter update'
             $guid=[string]$script:adapters[0].InterfaceGuid
