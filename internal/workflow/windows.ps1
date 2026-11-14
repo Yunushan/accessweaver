@@ -1957,7 +1957,7 @@ function Get-DroverFileHash([string]$path) {
     if($file.PSIsContainer -or $file.Length -gt 128MB){throw 'Drover recovery requires a bounded ordinary file'}
     return (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash
 }
-function Get-DroverRestorePlan($records) {
+function Get-DroverRestorePlan($records,[switch]$AllowMissingManagedFile) {
     $discord=Join-Path $env:LOCALAPPDATA 'Discord'
     $backups=Join-Path $root 'backups'
     $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -2006,7 +2006,8 @@ function Get-DroverRestorePlan($records) {
             if(-not $legacyAbsentHash){throw 'Original Drover backup is missing'}
         }
         $current=Get-DroverFileHash $path
-        if($current -ine $original -and $current -ine $item.installedHash -and $directoryExists){
+        if($current -ine $original -and $current -ine $item.installedHash -and $directoryExists -and
+            -not ($AllowMissingManagedFile -and -not $current -and $applicationSHA256 -and $original)){
             throw 'Drover file changed after installation; manual review required'
         }
         [pscustomobject]@{path=$path;backup=$item.backup;current=$current;original=$original;installedHash=$item.installedHash;applicationSHA256=$applicationSHA256;directoryExists=$directoryExists}
@@ -2040,12 +2041,13 @@ function Restore-Drover([string]$ExpectedManifestSHA256) {
         $records=@((ConvertFrom-Json -InputObject $manifestJSON -ErrorAction Stop))
     }catch {throw 'Invalid Drover ownership record'}
     if($records.Count -eq 0 -or $records.Count -gt 512){throw 'Invalid Drover ownership record'}
-    # Refuse known conflicts before stopping Discord or changing any file.
-    $plan=@(Get-DroverRestorePlan $records)
+    # A missing managed file can be restored from a verified backup when the
+    # same Discord executable still owns the directory.
+    $plan=@(Get-DroverRestorePlan $records -AllowMissingManagedFile)
     if(@($plan | Where-Object {$_.directoryExists -and $_.current -ine $_.original}).Count){
         Assert-DroverManifestUnchanged $manifest $manifestHash
         Stop-AppProcesses 'discord'
-        $plan=@(Get-DroverRestorePlan $records)
+        $plan=@(Get-DroverRestorePlan $records -AllowMissingManagedFile)
     }
     foreach($item in $plan){
         if(-not $item.directoryExists){continue}

@@ -290,6 +290,43 @@ try {
     Restore-Drover
     Require (-not [IO.File]::Exists($second) -and -not [IO.File]::Exists($manifest)) 'Stock-shell legacy ownership record could not restore'
 
+
+    # A missing target after deletion or interrupted replacement is repairable
+    # only with a modern executable pin and the exact original backup.
+    $missing=@{path=$first;backup=$backup;installedHash=$installed;originalHash=$original;
+        applicationSHA256=(Get-DroverFileHash $application);deploymentID=('b'*32)}
+    Write-Manifest @($missing)
+    Require (-not [IO.File]::Exists($first)) 'Missing-target fixture retained a managed file'
+    $before=$script:stops
+    [IO.File]::WriteAllText($backup,'tampered original')
+    Assert-Refused
+    Require ($script:stops -eq $before -and -not [IO.File]::Exists($first) -and
+             [IO.File]::Exists($manifest)) 'A missing file was restored from a changed backup'
+    [IO.File]::WriteAllText($backup,'original DLL')
+    $identity=$missing.applicationSHA256
+    $missing.applicationSHA256=('F'*64)
+    Write-Manifest @($missing)
+    Assert-Refused
+    Require ($script:stops -eq $before -and -not [IO.File]::Exists($first) -and
+             [IO.File]::Exists($manifest)) 'A missing file was restored into a different Discord installation'
+    $missing.applicationSHA256=$identity
+    Write-Manifest @($missing)
+    $strictRefused=$false
+    try {Get-DroverRestorePlan @($missing) | Out-Null}catch{
+        $strictRefused=$_.Exception.Message -ceq 'Drover file changed after installation; manual review required'
+    }
+    Require $strictRefused 'DLL deployment or final verification accepted a missing recorded file'
+    Restore-Drover
+    Require ($script:stops -eq ($before+1) -and (Get-DroverFileHash $first) -ceq $original -and
+             -not [IO.File]::Exists($manifest)) 'Verified recovery could not restore a missing Drover file'
+    [IO.File]::Delete($first)
+    Write-Manifest @($records[0])
+    $before=$script:stops
+    Assert-Refused
+    Require ($script:stops -eq $before -and -not [IO.File]::Exists($first) -and
+             [IO.File]::Exists($manifest)) 'A legacy record restored a missing file without the Discord executable pin'
+    [IO.File]::Delete($manifest)
+
     $script:undo.Clear()
     Install-Drover
     foreach($path in @($application,$first,$second)){[IO.File]::Delete($path)}
