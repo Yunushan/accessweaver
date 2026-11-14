@@ -1328,6 +1328,24 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 launch.assert_not_called()
                 self.assertEqual(list(staging.iterdir()), [start_file])
                 self.assertEqual(release.digest(start_file), start_digest)
+                detect.reset_mock()
+
+                def expire_during_recovery(policy, **kwargs):
+                    if detect.called:
+                        raise ValueError("Revocation policy is outside its validity window")
+                    return real_check(policy, **kwargs)
+
+                with patch.object(release, "require_current_revocation_policy", side_effect=expire_during_recovery):
+                    expired = self.verify(approved, pin, policy_pin=newer_pin, **receipt_options,
+                                          windows_upgrade_start_receipt=receipt)["managedUpdate"]
+                self.assertEqual(expired["attemptID"], attempt_id)
+                self.assertEqual(expired["installedDetection"], "unverified")
+                self.assertEqual(expired["installedDetectionReason"], "revocation-policy-expired")
+                self.assertNotIn("setupExitCode", expired)
+                detect.assert_called_once()
+                launch.assert_not_called()
+                self.assertEqual(list(staging.iterdir()), [start_file])
+                self.assertEqual(release.digest(start_file), start_digest)
                 start_file.unlink()
             self.write_policy(self.policy)
         strict_args = [*retry_cli, "--require-windows-setup-wrong-baseline-refusal"]

@@ -779,6 +779,23 @@ def detect_windows_upgrade(qualification, publisher_pin):
     return "detected" if result.returncode == 0 and content in (b"AccessWeaver detected\r\n", b"AccessWeaver detected\n") else "unverified"
 
 
+def record_windows_installed_detection(update, publisher_pin, policy):
+    def policy_is_current():
+        try:
+            require_current_revocation_policy(policy)
+        except ValueError:
+            update["installedDetection"] = "unverified"
+            update["installedDetectionReason"] = "revocation-policy-expired"
+            return False
+        return True
+
+    if not policy_is_current():
+        return
+    detection = detect_windows_upgrade(update["windowsUpgradeDetection"], publisher_pin)
+    if policy_is_current():
+        update["installedDetection"] = detection
+
+
 def copy_approved_installer(source_path, staged, size):
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     before = source_path.lstat()
@@ -1130,8 +1147,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     or start_receipt["revocationListSHA256"] == report["revocationListSHA256"]
                 ), "Windows detection requires the original revocation policy or a newer sequence")
                 update["attemptID"] = start_receipt["attemptID"]
-            update["installedDetection"] = detect_windows_upgrade(update["windowsUpgradeDetection"], payload_publisher)
-            require_current_revocation_policy(policy)
+            record_windows_installed_detection(update, payload_publisher, policy)
         if stage_directory is not None:
             update = report["managedUpdate"]
             require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
@@ -1167,19 +1183,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     return report
                 update["setupExitCode"] = code
                 if code == 0:
-                    try:
-                        require_current_revocation_policy(policy)
-                    except ValueError:
-                        update["installedDetection"] = "unverified"
-                        update["installedDetectionReason"] = "revocation-policy-expired"
-                    else:
-                        update["installedDetection"] = detect_windows_upgrade(
-                            update["windowsUpgradeDetection"], payload_publisher)
-                        try:
-                            require_current_revocation_policy(policy)
-                        except ValueError:
-                            update["installedDetection"] = "unverified"
-                            update["installedDetectionReason"] = "revocation-policy-expired"
+                    record_windows_installed_detection(update, payload_publisher, policy)
                 elif code == 3010:
                     update["installedDetection"] = "restart-required"
                 else:
