@@ -1427,7 +1427,9 @@ try {
     }
     $metadata=@(
         @{draft=$true;prerelease=$false;tag_name='v99.0.0'},
-        @{draft=$false;prerelease=$true;tag_name='v88.0.0'},
+        @{draft=$false;prerelease=$true;tag_name='v88.0.0';assets=@(New-ReleaseAssets 'v88.0.0' 'amd64')},
+        @{draft=$false;prerelease=$false;tag_name='v89.0.0-rc.1';assets=@(New-ReleaseAssets 'v89.0.0-rc.1' 'amd64')},
+        @{draft=$false;prerelease=$true;tag_name='v87.0.0+build-1';assets=@(New-ReleaseAssets 'v87.0.0+build-1' 'amd64')},
         @{draft='false';prerelease=$false;tag_name='v77.0.0'},
         @{draft=$false;prerelease=$false;tag_name=('1'*257)},
         @{draft=$false;prerelease=$false;tag_name=('v8.0.0'+[char]0)},
@@ -1470,6 +1472,15 @@ try {
         if(-not $refused){throw 'Unexpected release metadata shape outcome'}
     }
     Assert ($calls.Count -eq 3) 'Update discovery rejects invalid list shapes before comparison'
+    $eligible=@{draft=$false;prerelease=$false;tag_name='v1.9.0+build-3';assets=@(New-ReleaseAssets 'v1.9.0+build-3' 'amd64')}
+    $metadata=@($eligible,$eligible.Clone())
+    $refused=$false
+    try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'AccessWeaver release metadata contains a duplicate eligible tag'}
+    Assert ($refused -and $calls.Count -eq 3) 'Update discovery refuses duplicate eligible tags before comparing versions'
+    $metadata=@($eligible)
+    $comparison='{"version":"v1.9.0+build-3","currentVersion":"1.8.0","updateAvailable":true}'
+    $result=Check-AccessWeaverUpdates
+    Assert ($result.updateAvailable -and $result.version -ceq 'v1.9.0+build-3') 'Update discovery accepts hyphens in stable build metadata'
     $calls.Clear()
     $inputData.nativeArchitecture='arm64'
     $wrongArch=@(New-ReleaseAssets 'v9.0.0' 'amd64')

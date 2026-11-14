@@ -494,10 +494,14 @@ function Check-AccessWeaverUpdates {
     $releases=@($allReleases | Where-Object {
         $_.draft -is [bool] -and -not $_.draft -and $_.prerelease -is [bool] -and $_.tag_name -is [string] -and $_.tag_name.Length -le 256 -and
         $_.tag_name -cmatch '\Av?[0-9][0-9A-Za-z.+-]*\z' -and
-        (-not $_.prerelease -or $_.tag_name -cmatch '^[^+]+-[^+]+') -and
+        ($_.prerelease -eq ($_.tag_name -cmatch '^[^+]+-[^+]+')) -and
         (Test-AccessWeaverReleaseAssets $_ $architecture)
     })
     if(-not $releases.Count){throw 'No published AccessWeaver releases include a Windows archive and verification files for this architecture'}
+    $tags=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach($release in $releases){
+        if(-not $tags.Add($release.tag_name)){throw 'AccessWeaver release metadata contains a duplicate eligible tag'}
+    }
     $comparison=Native $inputData.controller (@('system','check-version','--build-identity','--follow-channel')+@($releases|ForEach-Object {$_.tag_name})) -Secret
     $invalidComparison='AccessWeaver release comparison returned an invalid result'
     if($comparison.outputComplete -ne $true -or $comparison.stdout -isnot [string] -or $comparison.stdout.Length -gt 4096){throw $invalidComparison}
