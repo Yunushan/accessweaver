@@ -2873,29 +2873,54 @@ try {
     $script:journalPath=$previousAppJournal
     $script:journalState=$previousAppJournalState
 }
-# Exercise the setup dispatch with inert bytes and a service that changes after journaling.
+# Exercise setup with inert bytes and changes at the journal and service boundaries.
 & {
     $r=[pscustomobject]@{action='app-install';engine='splitcord'}
     $root=Join-Path $testRoot 'splitcord-install-fixture'
     [void][IO.Directory]::CreateDirectory((Join-Path $root 'downloads'))
     function Require-Admin {}
     function Assert-SplitCordSetupPreflight {param($App);if($App){throw 'Unexpected setup preimage'}}
-    function Find-App {param($Variant); if($Variant -cne 'splitcord'){throw 'Unexpected setup variant'}}
+    $fixtureClient=Join-Path $root 'SplitCord-Turkey.exe'
+    $fixtureUninstaller=Join-Path $root 'Uninstall-SplitCord.exe'
+    $otherUninstaller=Join-Path $root 'Uninstall-Replacement.exe'
+    [IO.File]::WriteAllText($fixtureClient,'inert client')
+    [IO.File]::WriteAllText($otherUninstaller,'inert uninstaller')
+    function Find-App {
+        param($Variant)
+        if($Variant -cne 'splitcord'){throw 'Unexpected setup variant'}
+        if($observed.launched){return $fixtureClient}
+    }
+    function Get-AppUninstaller {
+        param($Variant,$App)
+        if($Variant -cne 'splitcord' -or $App -ine $fixtureClient -or -not $observed.launched){throw 'Unexpected uninstall registry read'}
+        $path=$fixtureUninstaller
+        if($observed.running -and $drift -ceq 'path'){$path=$otherUninstaller}
+        if($observed.running -and $drift -ceq 'registration'){throw 'Application uninstaller not found'}
+        return @{path=$path}
+    }
     function Get-SplitCordInstaller {return @{url='unused';hash=''}}
     function Download {
         param($Url,$Hash,$Destination,[switch]$ReturnVerifiedHash)
         [IO.File]::WriteAllText($Destination,'inert installer')
         return (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
     }
-    $observed=@{probes=0;journalWrites=0;launched=$false}
+    $observed=@{probes=0;journalWrites=0;launched=$false;running=$false;reported=$false}
     function Wait-SplitCordService {
         param($App,$Seconds,[switch]$AllowAbsentOrStopped)
+        if($observed.launched){
+            if($App -ine $fixtureClient -or $AllowAbsentOrStopped){throw 'Unexpected installed service probe'}
+            if($drift -ceq 'bytes'){[IO.File]::WriteAllText($fixtureUninstaller,'changed inert uninstaller')}
+            $observed.running=$true
+            return
+        }
         if($App -or $Seconds -ne 0 -or -not $AllowAbsentOrStopped){throw 'Unexpected setup service probe'}
         $observed.probes++
         if($observed.probes -eq $foreignAt){throw 'Synthetic foreign service'}
     }
     function Save-ApplicationEffectBoundary {$observed.journalWrites++}
-    function Native {$observed.launched=$true;throw 'Unexpected vendor setup'}
+    function Wait-AppProcessesExited {param($Variant,$App,$Seconds);if($Variant -cne 'splitcord' -or $App -or $Seconds -ne 0){throw 'Unexpected setup process probe'}}
+    function Native {$observed.launched=$true}
+    function Event {$observed.reported=$true}
     foreach($foreignAt in @(1,2)){
         $observed.probes=0
         $observed.journalWrites=0
@@ -2906,6 +2931,28 @@ try {
             throw 'SplitCord setup did not refuse a foreign service at its execution boundary'
         }
     }
+    $foreignAt=0
+    foreach($case in @(
+        @{drift='none';failure=$null},
+        @{drift='path';failure='SplitCord uninstaller changed during service verification'},
+        @{drift='bytes';failure='SplitCord uninstaller changed during service verification'},
+        @{drift='registration';failure='Application uninstaller not found'}
+    )){
+        $drift=$case.drift
+        [IO.File]::WriteAllText($fixtureUninstaller,'inert uninstaller')
+        $observed.launched=$false
+        $observed.running=$false
+        $observed.reported=$false
+        $result=$null
+        $failure=$null
+        try{$result=Install-App 'splitcord'}catch{$failure=$_.Exception.Message}
+        $success=$null -eq $case.failure
+        if(-not $observed.running -or $failure -cne $case.failure -or
+           $observed.reported -ne $success -or [bool]$result.installed -ne $success){
+            throw ('Unexpected SplitCord setup outcome after service verification: '+$case.drift)
+        }
+    }
+    Assert $true 'SplitCord setup verifies the registered uninstaller after the service reaches Running'
 }
 # Exercise official release selection with fixed metadata and no vendor execution.
 & {

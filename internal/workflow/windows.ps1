@@ -3857,10 +3857,16 @@ function Install-App([string]$variant,[switch]$Reinstall) {
     $installedApp=Wait-App $variant $true 180
     $installedDigest=Get-AppExecutableDigest $installedApp
     if($variant -eq 'splitcord'){
-        [void](Get-AppUninstaller $variant $installedApp)
+        $uninstaller=Get-AppUninstaller $variant $installedApp
+        $uninstallerDigest=Get-AppExecutableDigest $uninstaller.path
         Wait-SplitCordService $installedApp
         if((Find-App $variant) -ine $installedApp -or (Get-AppExecutableDigest $installedApp) -ine $installedDigest){
             throw 'SplitCord changed during service verification'
+        }
+        $confirmedUninstaller=Get-AppUninstaller $variant $installedApp
+        if($confirmedUninstaller.path -ine $uninstaller.path -or
+           (Get-AppExecutableDigest $confirmedUninstaller.path) -ine $uninstallerDigest){
+            throw 'SplitCord uninstaller changed during service verification'
         }
     }else{
         $installedUpdater=Get-AppUninstaller $variant $installedApp
