@@ -2319,6 +2319,29 @@ function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30,
     } while($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
     throw $FailureMessage
 }
+function Assert-EffectiveDNSCryptListeners {
+    $clients=@(Read-DNSClientInventory)
+    if(-not $clients.Count){throw 'Effective DNS settings could not be inspected after resolver recovery'}
+    $listeners=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach($client in $clients){
+        foreach($server in $client.ServerAddresses){
+            $address=$null
+            if(-not [Net.IPAddress]::TryParse([string]$server,[ref]$address)){
+                throw 'Effective DNS settings could not be inspected after resolver recovery'
+            }
+            if(Test-DNSCryptLoopbackAddress $address){
+                if($address.IsIPv4MappedToIPv6){$address=$address.MapToIPv4()}
+                [void]$listeners.Add($address.ToString())
+            }
+        }
+    }
+    if($listeners.Count -gt 16){throw 'Too many loopback resolver addresses to verify'}
+    if($listeners.Count){
+        $addresses=[string[]]::new($listeners.Count)
+        $listeners.CopyTo($addresses)
+        Wait-DNSCryptListeners $addresses -TimeoutSeconds 5 -FailureMessage 'Restored DNSCrypt listener could not be verified'
+    }
+}
 function Get-DNSClientMutationRow([string]$Guid,[string]$Family,[switch]$RequireUp) {
     $adapters=@(Get-NetAdapter -ErrorAction Stop)
     $target=@($adapters | Where-Object {[string]$_.InterfaceGuid -eq $Guid})
@@ -2528,27 +2551,7 @@ function Restore-DNSCryptAfterActivationFailure($Resolver,[string]$SnapshotSHA25
             }
             $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
         }finally {if($service -is [IDisposable]){$service.Dispose()}}
-        $clients=@(Read-DNSClientInventory)
-        if(-not $clients.Count){throw 'Effective DNS settings could not be inspected after resolver recovery'}
-        $listeners=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-        foreach($client in $clients){
-            foreach($server in $client.ServerAddresses){
-                $address=$null
-                if(-not [Net.IPAddress]::TryParse([string]$server,[ref]$address)){
-                    throw 'Effective DNS settings could not be inspected after resolver recovery'
-                }
-                if(Test-DNSCryptLoopbackAddress $address){
-                    if($address.IsIPv4MappedToIPv6){$address=$address.MapToIPv4()}
-                    [void]$listeners.Add($address.ToString())
-                }
-            }
-        }
-        if($listeners.Count -gt 16){throw 'Too many loopback resolver addresses to verify'}
-        if($listeners.Count){
-            $addresses=[string[]]::new($listeners.Count)
-            $listeners.CopyTo($addresses)
-            Wait-DNSCryptListeners $addresses -TimeoutSeconds 5 -FailureMessage 'Restored DNSCrypt listener could not be verified'
-        }
+        Assert-EffectiveDNSCryptListeners
         Assert-DNSCryptConfiguration $record.path $record.originalHash
         if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
         if($Resolver.originalStartup){
@@ -3250,6 +3253,7 @@ function Remove-RecordedService([string]$Name,$Entry) {
                             }
                             $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
                         } finally {if($service -is [IDisposable]){$service.Dispose()}}
+                        Assert-EffectiveDNSCryptListeners
                         if((Assert-RecordedServiceBinding $Entry) -ne 0){
                             throw 'DNSCrypt disappeared while restoring the listener after removal was refused'
                         }

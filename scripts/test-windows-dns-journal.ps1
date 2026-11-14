@@ -4,7 +4,7 @@ $path=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS journal source failed parsing'}
-foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Backup-File','Restore-RecordedWorkflowFile','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Test-DNSCryptLoopbackAddress','Wait-DNSCryptListeners','Test-DNSIPv4Answer','Assert-DNSCryptConfiguration','Assert-DNSRecoverySnapshotUnchanged','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Assert-DNSCryptCanBeRemoved','Remove-RecordedService')){
+foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Backup-File','Restore-RecordedWorkflowFile','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Test-DNSCryptLoopbackAddress','Wait-DNSCryptListeners','Assert-EffectiveDNSCryptListeners','Test-DNSIPv4Answer','Assert-DNSCryptConfiguration','Assert-DNSRecoverySnapshotUnchanged','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Assert-DNSCryptCanBeRemoved','Remove-RecordedService')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -24,7 +24,7 @@ function Wait-RecordedServiceStopped([string]$Name) {
     if($Name -cne 'AccessWeaver-dnscrypt'){throw 'Unexpected service stop wait'}
     $script:order.Add('wait-stopped')
     if($script:serviceFault -ceq 'stop-timeout'){throw 'Synthetic service stop timeout'}
-    if($script:serviceFault -cin @('dependency-during-stop','dependency-with-replacement')){$script:resolverInUse=$true}
+    if($script:serviceFault -cin @('dependency-during-stop','dependency-with-replacement','dependency-with-broken-listener')){$script:resolverInUse=$true}
     if($script:serviceFault -cin @('replace-during-stop','dependency-with-replacement')){
         $script:serviceCommand='replacement service command'
         $script:serviceState='running'
@@ -514,8 +514,19 @@ try {
             $script:serviceState='running'
             $script:order.Add('start')
         }
+        function Read-DNSClientInventory {
+            Require ($script:serviceState -ceq 'running') 'Listener verification started before the service restarted'
+            return @{ServerAddresses=@('127.0.0.1','::ffff:127.0.0.1','2001:db8::53','::1')}
+        }
+        function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds,[string]$FailureMessage){
+            Require ($TimeoutSeconds -eq 5 -and $Servers.Count -eq 2 -and
+                '127.0.0.1' -cin $Servers -and '::1' -cin $Servers) 'Shutdown recovery did not verify each distinct loopback listener'
+            $script:order.Add('probe')
+            if($script:serviceFault -ceq 'dependency-with-broken-listener'){throw $FailureMessage}
+        }
         foreach($case in @(
-            @{fault='dependency-during-stop';state='running';trace='query,query,query,stop,wait-stopped,query,start,wait-running,query';reason='^DNSCrypt service retained';final='running'},
+            @{fault='dependency-during-stop';state='running';trace='query,query,query,stop,wait-stopped,query,start,wait-running,probe,query';reason='^DNSCrypt service retained';final='running'},
+            @{fault='dependency-with-broken-listener';state='running';trace='query,query,query,stop,wait-stopped,query,start,wait-running,probe';reason='^Restored DNSCrypt listener could not be verified';final='running'},
             @{fault='dependency-already-stopped';state='stopped';trace='query,query,query,stop';reason='^DNSCrypt service retained';final='stopped'},
             @{fault='dependency-with-replacement';state='running';trace='query,query,query,stop,wait-stopped,query';reason='^Recovery journal does not match';final='running'}
         )){
