@@ -1,4 +1,5 @@
 import copy
+import json
 from verify_windows_installer_provenance import PHASES,validate_state_observations,validate_firewall_origin_diagnostics,validate_firewall_event_diagnostics, validate_managed_detection, validate_native_attempt, validate_architecture_refusal, validate_fixed_restoration, validate_locked_upgrade, validate_redirected_upgrade, validate_failed_copy_recovery, validate_pending_marker_access
 import os
 from pathlib import Path
@@ -398,10 +399,11 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
             def authenticate(path,bundle,commit,ref,gh,run_id):
                 self.assertNotEqual(path.parent,root);self.assertEqual(bundle.parent,path.parent)
                 self.assertEqual((commit,ref,gh),(COMMIT,REF,'trusted-gh'));seen.append(path.name)
-            def contents(private,*args):
+            def contents(private,*args,report_schema):
+                self.assertEqual(report_schema,41)
                 self.assertEqual(set(seen),names);(root/'amd64.json').write_bytes(b'changed original input')
                 self.assertNotEqual((private/'amd64.json').read_bytes(),(root/'amd64.json').read_bytes());return {'mocked':True,'nativeRunID':'7'}
-            with patch('verify_windows_installer_provenance.authenticate',side_effect=authenticate),patch('verify_windows_installer_provenance.validate_contents',side_effect=contents):result=verify(root,COMMIT,REF,'amd64',gh='trusted-gh',run_id='7')
+            with patch('verify_windows_installer_provenance.authenticate',side_effect=authenticate),patch('verify_windows_installer_provenance.validate_contents',side_effect=contents):result=verify(root,COMMIT,REF,'amd64',gh='trusted-gh',run_id='7',report_schema=41)
             self.assertEqual(result['subjectsVerified'],5);self.assertFalse(result['publisherSignatureVerified']);self.assertFalse(result['targetExecutionPerformedByVerifier'])
     def test_any_signature_failure_blocks_parsing_without_fallback(self):
         for at in (1,5):
@@ -447,6 +449,35 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
             ), self.assertRaisesRegex(ValueError, 'native run'):
                 verify(root, COMMIT, REF, 'amd64', run_id='7')
             self.assertEqual(auth.call_count, 5)
+
+    def test_approved_report_schema_is_required_before_lifecycle_checks(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            (root / 'amd64.json').write_text(json.dumps({
+                'schemaVersion': 40, 'sourceCommit': COMMIT, 'sourceRef': REF, 'target': 'windows/amd64',
+            }), encoding='utf-8')
+            build_root = root / 'build'
+            reports = build_root / 'installer-lifecycle-checks'
+            reports.mkdir(parents=True)
+            for name in subject_names('amd64', DEFAULT_VERSIONS):
+                destination = reports if name == 'amd64.json' else build_root
+                (destination / name).write_bytes((root / name).read_bytes())
+            staged = build_root / 'staged'
+            with self.assertRaisesRegex(ValueError, 'approved schema'):
+                stage(build_root, staged, COMMIT, REF, 'amd64', DEFAULT_VERSIONS, '7', report_schema=41)
+
+            # Verify a separate directory with exactly the authenticated subject set.
+            candidate = root / 'candidate'
+            candidate.mkdir()
+            for name in subject_names('amd64', DEFAULT_VERSIONS) | {BUNDLE_NAME}:
+                (candidate / name).write_bytes((root / name).read_bytes())
+            with patch('verify_windows_installer_provenance.authenticate') as authenticate:
+                with self.assertRaisesRegex(ValueError, 'approved schema'):
+                    verify(candidate, COMMIT, REF, 'amd64', run_id='7', report_schema=41)
+                self.assertEqual(authenticate.call_count, 5)
+                with self.assertRaisesRegex(ValueError, 'did not finish cleanly'):
+                    verify(candidate, COMMIT, REF, 'amd64', run_id='7')
 
     def test_producer_does_not_replace_existing_staging_directory(self):
         with tempfile.TemporaryDirectory() as folder:
