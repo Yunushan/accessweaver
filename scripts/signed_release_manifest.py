@@ -15,7 +15,7 @@ import sys
 import tempfile
 
 from macos_installer import parse_release_version, version_parts
-from sbom import prop_map, validate_digest
+from sbom import WINDOWS_BUILD_INFO_PROPERTY, prop_map, validate_digest
 from verify_macos_installer_publisher import check_package_publisher, verify_packaged_application
 from verify_release import publish_staged_file as publish_staged_installer, release_file, require
 from verify_release_provenance import REPOSITORY, regular_file, validate_identity
@@ -103,9 +103,10 @@ def macos_detector_digest(document, identity):
     return pin
 
 
-def validate_release_sboms(root, files, commit, version):
+def validate_release_sboms(root, files, commit, version, entries):
     documents = {}
     macos_detectors = []
+    windows_build_info = {}
     try:
         for subject in files:
             if subject["role"] not in ("installer", "payload"):
@@ -131,9 +132,19 @@ def validate_release_sboms(root, files, commit, version):
                              if entry["bom-ref"] == "payload-application"), None)
             require(packaged == {**payload, "bom-ref": "payload-application"},
                     "Windows installer SBOM payload differs from the signed payload SBOM")
+            properties = prop_map(installer["metadata"]["component"])
+            if WINDOWS_BUILD_INFO_PROPERTY in properties:
+                pin = properties[WINDOWS_BUILD_INFO_PROPERTY]
+                require(isinstance(pin, str) and re.fullmatch(SHA256, pin),
+                        "Malformed Windows installer SBOM build metadata digest")
+                windows_build_info[target] = pin
+        for entry in entries:
+            if WINDOWS_BUILD_INFO in entry and entry["target"] in windows_build_info:
+                require(entry[WINDOWS_BUILD_INFO] == windows_build_info[entry["target"]],
+                        "Windows reboot build metadata differs from the signed installer SBOM")
     except (AttributeError, KeyError, TypeError, RecursionError) as error:
         raise ValueError("Malformed signed release SBOM") from error
-    return len(documents), macos_detectors
+    return len(documents), macos_detectors, windows_build_info
 
 
 def windows_subjects(subjects):
@@ -337,10 +348,10 @@ def prepare(directory, output, commit, ref, *, windows_reboot_evidence=()):
         require(snapshot(directory, root, len(subjects)) == subjects.keys(), "Unexpected signed release subjects")
         files = inventory(root, subjects)
         version = ref.removeprefix("refs/tags/v")
-        validate_release_sboms(root, files, commit, version)
         entries = []
         if windows_reboot_evidence:
             entries = load_detection_evidence(directory, windows_reboot_evidence, files, version)
+        validate_release_sboms(root, files, commit, version, entries)
         manifest = encode_manifest(commit, ref, files, entries)
         with output.open("xb") as stream:
             stream.write(manifest)
@@ -724,7 +735,9 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     + WINDOWS_DOWNGRADE_FIELDS + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO) if field in entry
                 ) for entry in entries),
                 "Release subject or Windows detection evidence is revoked")
-        sboms_verified, macos_detectors = validate_release_sboms(root, files, commit, version)
+        sboms_verified, macos_detectors, windows_build_info = validate_release_sboms(root, files, commit, version, entries)
+        require(not revoked_subjects.intersection(windows_build_info.values()),
+                "Windows installer SBOM build metadata is revoked")
         require(all(entry["detectorSHA256"] not in revoked_subjects for entry in macos_detectors),
                 "macOS detector is revoked")
         report = {

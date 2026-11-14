@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from sbom import generate, installer, json_stream, sha, validate
+from sbom import WINDOWS_BUILD_INFO_PROPERTY, generate, installer, json_stream, prop_map, sha, validate
 from verify_release import inspect_archive
 
 
@@ -42,11 +42,18 @@ class SBOMTests(unittest.TestCase):
             binary=root/"setup.exe";binary.write_bytes(b"installer")
             compiler=root/"ISCC.exe";compiler.write_bytes(b"compiler")
             license=root/"License.txt";license.write_bytes(b"Inno Setup notice")
-            result=installer(binary,document,compiler,"6.7.1",license,root/"licenses")
+            build_info_pin=sha(b"build metadata")
+            result=installer(binary,document,compiler,"6.7.1",license,root/"licenses",
+                             build_info_sha256=build_info_pin)
             self.assertTrue(validate(result,b"installer"))
             self.assertEqual(result["metadata"]["component"]["hashes"][0]["content"],sha(b"installer"))
             payload=next(c for c in result["components"] if c["bom-ref"]=="payload-application")
             self.assertEqual(payload["hashes"][0]["content"],sha(b"binary"))
+            self.assertEqual(prop_map(result["metadata"]["component"])[WINDOWS_BUILD_INFO_PROPERTY],build_info_pin)
+            self.assertNotIn(WINDOWS_BUILD_INFO_PROPERTY,prop_map(payload))
+            with self.assertRaisesRegex(ValueError,"Invalid Windows build metadata SHA-256"):
+                installer(binary,document,compiler,"6.7.1",license,root/"licenses",
+                          build_info_sha256="invalid")
             self.assertEqual(result["compositions"][0]["aggregate"],"incomplete")
             self.assertEqual(document["metadata"]["component"]["bom-ref"],"application")
 

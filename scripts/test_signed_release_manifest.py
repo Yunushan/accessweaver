@@ -57,6 +57,14 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 components = [payloads[target]]
             self.write_sbom(name, root, components)
 
+    def set_windows_build_info_pin(self, architecture, pin):
+        sidecar = self.candidate / f"accessweaver-{VERSION}-windows-{architecture}-setup.exe.cdx.json"
+        document = json.loads(sidecar.read_bytes())
+        document["metadata"]["component"]["properties"].append(
+            {"name": release.WINDOWS_BUILD_INFO_PROPERTY, "value": pin}
+        )
+        sidecar.write_text(json.dumps(document), encoding="utf-8")
+
     def sbom_root(self, name, target):
         platform, arch = target.split("/")
         return {
@@ -232,6 +240,24 @@ class SignedReleaseManifestTests(unittest.TestCase):
             release.prepare(self.candidate, output, COMMIT, REF)
         self.assertFalse(output.exists())
 
+    def test_prepare_binds_windows_reboot_build_metadata_to_the_installer_sbom(self):
+        output = self.root / release.MANIFEST
+        self.set_windows_build_info_pin("amd64", "6" * 64)
+        for pin in ("a" * 64, "6" * 64):
+            evidence = self.write_reboot_report("bound.json", schemaVersion=11, buildInfoSHA256=pin)
+            if pin != "6" * 64:
+                with self.assertRaisesRegex(ValueError, "differs from the signed installer SBOM"):
+                    release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=[evidence])
+                self.assertFalse(output.exists())
+            else:
+                release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=[evidence])
+                entry, = json.loads(output.read_bytes())["windowsDetection"]
+                self.assertEqual(entry["buildInfoSHA256"], pin)
+
+        self.set_windows_build_info_pin("arm64", 1)
+        with self.assertRaisesRegex(ValueError, "Malformed Windows installer SBOM build metadata"):
+            release.prepare(self.candidate, self.root / "unused" / release.MANIFEST, COMMIT, REF)
+
     def test_prepare_rejects_conflicting_macos_detector_metadata(self):
         output = self.root / release.MANIFEST
         path = self.candidate / f"accessweaver-{VERSION}-darwin-amd64-deployment-experimental.pkg.cdx.json"
@@ -401,6 +427,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         key, pem, approved = certificate("Disposable approval fixture")
         pin = release.digest(approved)
         _, _, stranger = certificate("Unapproved fixture")
+        self.set_windows_build_info_pin("arm64", "6" * 64)
         prepared = self.root / release.MANIFEST
         release.prepare(self.candidate, prepared, COMMIT, REF)
         manifest = self.candidate / release.MANIFEST
@@ -415,6 +442,10 @@ class SignedReleaseManifestTests(unittest.TestCase):
         report = self.verify(approved, pin)
         self.assertEqual(report["subjectsVerified"], 12)
         self.assertNotIn("managedUpdate", report)
+        revoked = self.write_policy({**self.policy, "subjectSHA256": ["6" * 64]})
+        with self.assertRaisesRegex(ValueError, "Windows installer SBOM build metadata is revoked"):
+            self.verify(approved, pin, policy_pin=revoked)
+        self.write_policy(self.policy)
         for arch, name in (
             ("windows/arm64", f"accessweaver-{VERSION}-windows-arm64-setup.exe"),
             ("darwin/amd64", f"accessweaver-{VERSION}-darwin-amd64-deployment-experimental.pkg"),

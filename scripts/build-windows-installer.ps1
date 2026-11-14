@@ -111,7 +111,8 @@ try {
         $artifact=Join-Path (Join-Path $signingRoot 'signed') ([IO.Path]::GetFileName($artifact))
         Assert-WindowsPublisherSignature (Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $artifact) $PublisherCertificateSHA256
     }
-    & python (Join-Path $project 'scripts\sbom.py') --binary $artifact --payload-sbom $payloadSBOM --compiler $Compiler --compiler-version $actualVersion.Groups[1].Value --compiler-license $compilerLicense --notices (Join-Path $stage 'licenses') --out ($artifact+'.cdx.json')
+    if((Get-FileHash -LiteralPath $buildInfoPath -Algorithm SHA256).Hash -ine $buildInfoDigest){throw 'Installer build metadata changed during compilation'}
+    & python (Join-Path $project 'scripts\sbom.py') --binary $artifact --payload-sbom $payloadSBOM --windows-build-info-sha256 $buildInfoDigest --compiler $Compiler --compiler-version $actualVersion.Groups[1].Value --compiler-license $compilerLicense --notices (Join-Path $stage 'licenses') --out ($artifact+'.cdx.json')
     if($LASTEXITCODE -ne 0){throw 'Installer SBOM generation failed'}
     & $validator --schemas (Join-Path $project 'scripts\sbom\schema') ($artifact+'.cdx.json')
     if($LASTEXITCODE -ne 0){throw 'Installer SBOM validation failed'}

@@ -13,7 +13,7 @@ import subprocess
 import sys
 import tempfile
 
-from sbom import validate,prop_map
+from sbom import WINDOWS_BUILD_INFO_PROPERTY, validate,prop_map
 from verify_release_provenance import BUNDLE_NAME,REPOSITORY,validate_identity,verification_command as portable_command
 from verify_release_rebuild import snapshot
 
@@ -362,6 +362,11 @@ def validate_contents(root,commit,ref,arch,versions):
         require(SHA.fullmatch(build["payloadSha256"]) is not None and SHA.fullmatch(build["compilerSHA256"]) is not None,"Native payload/compiler subject is missing")
         bom=load(root,name+".cdx.json");validate(bom,binary,identity)
         require(bom["metadata"].get("timestamp")==identity["builtAt"],"Installer SBOM build timestamp differs")
+        installer_properties=prop_map(bom["metadata"]["component"])
+        if WINDOWS_BUILD_INFO_PROPERTY in installer_properties:
+            pin=installer_properties[WINDOWS_BUILD_INFO_PROPERTY]
+            require(isinstance(pin,str) and SHA.fullmatch(pin) and pin==build.get("identityFileSHA256"),
+                    "Installer SBOM build metadata differs from native readback")
         components={c["bom-ref"]:c for c in bom["components"]};payload=components.get("payload-application",{});compiler=components.get("inno-setup",{})
         require(payload.get("version")==version and payload.get("hashes")==[{"alg":"SHA-256","content":build["payloadSha256"]}],"Installer SBOM payload subject differs")
         require(compiler.get("version")=="6.7.1" and prop_map(compiler).get("accessweaver:compiler-sha256")==build["compilerSHA256"],"Installer SBOM compiler subject differs")
