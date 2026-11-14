@@ -313,6 +313,7 @@ try {
 # Isolated scan boundaries: inert files and closed mocks only. A plausible
 # partial summary must never be saved or reach installation as a success.
 $previousScanInput=$inputData;$previousScanRequest=$r;$previousScanRoot=$root;$previousScanAssetNames=$assetNames
+$oldOrdinaryBashEnv=$env:BASH_ENV
 $scanFunctions=@{};foreach($name in @('Ensure-Asset','Native','Write-Atomic','Install-Method','Protect-Dir','Assert-TrustedTree')){$scanFunctions[$name]=(Get-Command $name).ScriptBlock}
 try {
     $root=Join-Path $testRoot 'scan-completion';$scanBundle=Join-Path $root 'bundle'
@@ -322,19 +323,34 @@ try {
     $script:scanBinary=Join-Path $scanBundle 'winws2.exe';[IO.File]::WriteAllText($script:scanBinary,'inert')
     $inputData=[pscustomobject]@{ispHook=$null;controller='fixture-controller'}
     function Ensure-Asset {param($engine);if($engine -cne 'zapret2'){throw 'Unexpected fixture engine'};return $script:scanBinary}
+    function Protect-Dir([string]$path){
+        if((Split-Path -Parent $path) -ine (Join-Path $root 'temp')){throw 'Unexpected strategy scan workspace'}
+        $script:stagedScanBundle=$path
+        [void](New-Item -ItemType Directory -Path $path -Force)
+    }
+    function Assert-TrustedTree([string]$path){if($path -cne $script:stagedScanBundle){throw 'Unexpected scan cleanup target'}}
     function Write-Atomic {param($path,$text);$script:scanWrites++}
     function Install-Method {$script:scanInstalls++;return @{fixture=$true}}
     function Native {
-        param($program,$arguments,$codes,[switch]$Secret,[int]$Timeout)
+        param($program,$arguments,$codes,[switch]$Secret,[int]$Timeout,$WorkingDirectory,$ChildEnvironment)
         if($program -ceq 'fixture-controller'){
             $script:scanSelectionArgs=@($arguments)
             if($script:scanMode -ceq 'parser-missing'){return @{stdout='{"protocol":"https","args":["--lua-desync=fixture"]}'}}
             return @{stdout='{"protocol":"https","args":["--lua-desync=fixture"]}';outputComplete=($script:scanMode -cne 'parser-incomplete')}
         }
-        if([IO.Path]::GetFileName($program) -cne 'bash.exe'){throw 'Unexpected fixture process'}
+        $system=Join-Path $env:SystemRoot 'System32'
+        if($program -cne (Join-Path $scanBundle 'bash.exe') -or $WorkingDirectory -cne $scanBundle -or $Timeout -ne 4200 -or
+           $ChildEnvironment.Count -ne 11 -or $ChildEnvironment.PATH -cne ($scanBundle+';'+$system) -or
+           $env:BASH_ENV -cne 'ordinary-fixture-startup' -or $ChildEnvironment.ContainsKey('BASH_ENV') -or $ChildEnvironment.SCANLEVEL -cne 'quick' -or
+           $ChildEnvironment.BATCH -cne '1' -or $ChildEnvironment.DOMAINS -cne $(if($r.targets){$r.targets -join ' '}else{'discord.com discord.gg'}) -or
+           -not (Under $ChildEnvironment.HOME $script:stagedScanBundle) -or $ChildEnvironment.TEMP -cne $ChildEnvironment.HOME -or
+           $ChildEnvironment.TMP -cne $ChildEnvironment.HOME){
+            throw 'Unexpected ordinary scan execution environment'
+        }
         if($script:scanMode -ceq 'scan-missing'){return @{stdout='* SUMMARY fixture'}}
         return @{stdout='* SUMMARY fixture';outputComplete=($script:scanMode -cne 'scan-incomplete')}
     }
+    $env:BASH_ENV='ordinary-fixture-startup'
     foreach($mode in @('scan-incomplete','scan-missing','parser-incomplete','parser-missing','complete','complete-default','complete-multi')){
         $script:scanMode=$mode;$script:scanWrites=0;$script:scanInstalls=0;$script:scanSelectionArgs=@()
         $targets=@();if($mode -eq 'complete-multi'){$targets=@('example.com','example.net')}elseif($mode -ne 'complete-default'){$targets=@('example.com')}
@@ -351,7 +367,8 @@ try {
         }else{
             Assert ($rejected -and $script:scanWrites -eq 1 -and $script:scanInstalls -eq 0) ('Scan rejects '+$mode+' before installation')
         }
-        Assert ($env:PATH -ceq $oldPath) 'Scan restores the process PATH after success or refusal'
+        Assert ($env:PATH -ceq $oldPath) 'Scan preserves the process PATH after success or refusal'
+        Assert ($script:stagedScanBundle -and -not (Test-Path -LiteralPath $script:stagedScanBundle)) 'Ordinary scan removes its private workspace after success or refusal'
     }
     $inputData=[pscustomobject]@{managedPolicy=$true;ispHook=$null}
     $assetNames=@{zapret2='winws2.exe'}
@@ -361,11 +378,6 @@ try {
     try {Scan-Strategies | Out-Null}catch{$refused=$_.Exception.Message -ceq 'Managed strategy scans require an approved Windows blockcheck bundle'}
     Assert ($refused -and $script:scanWrites -eq 0) 'Managed strategy scan refuses an absent approved bundle before saving'
     $r.bundlePath=$scanBundle
-    function Protect-Dir([string]$path){
-        $script:stagedScanBundle=$path
-        [void](New-Item -ItemType Directory -Path $path -Force)
-    }
-    function Assert-TrustedTree([string]$path){if($path -cne $script:stagedScanBundle){throw 'Unexpected managed scan cleanup target'}}
     function Native {
         param($program,$arguments,[int]$Timeout,$WorkingDirectory,$ChildEnvironment)
         if($program -cne (Join-Path $script:stagedScanBundle 'bash.exe') -or $arguments[-1] -notlike '*/blockcheck2.sh'){throw 'Unexpected staged scan executable or script'}
@@ -384,6 +396,7 @@ try {
     } finally {$env:BASH_ENV=$oldBashEnv}
     Assert ($stagedScan.scanLevel -ceq 'quick' -and $script:scanWrites -eq 1 -and (Under $script:stagedScanBundle (Join-Path $root 'temp')) -and -not (Test-Path -LiteralPath $script:stagedScanBundle)) 'Managed strategy scan runs from the staged approved bundle'
 } finally {
+    $env:BASH_ENV=$oldOrdinaryBashEnv
     foreach($name in $scanFunctions.Keys){Set-Item ('Function:'+$name) $scanFunctions[$name]}
     $inputData=$previousScanInput;$r=$previousScanRequest;$root=$previousScanRoot;$assetNames=$previousScanAssetNames
 }

@@ -3309,26 +3309,27 @@ function Preserve-DiscordCache {
 function Scan-Strategies {
     if($r.engine -notin @('zapret','zapret2')){throw 'Strategy scans require Zapret or Zapret2'}
     $scanParent=[IO.Path]::GetFullPath((Join-Path $root 'temp'))
-    $ownedScanBundle=$null
+    $managed=[bool]$inputData.managedPolicy
+    $candidate=Join-Path $scanParent ('scan-'+$r.engine+'-'+[guid]::NewGuid().ToString('N'))
+    if($managed){
+        if(-not $r.bundlePath -or -not (Test-Path -LiteralPath $r.bundlePath -PathType Container)){
+            throw 'Managed strategy scans require an approved Windows blockcheck bundle'
+        }
+        $bundle=[IO.Path]::GetFullPath($r.bundlePath)
+        No-Reparse $bundle
+        if(Under $candidate $bundle){throw 'Managed scan staging must be outside the approved bundle'}
+    }
+    if(Test-Path -LiteralPath $candidate -ErrorAction Stop){throw 'Strategy scan staging path already exists'}
+    Protect-Dir $candidate
     try {
-        if($inputData.managedPolicy){
-            if(-not $r.bundlePath -or -not (Test-Path -LiteralPath $r.bundlePath -PathType Container)){
-                throw 'Managed strategy scans require an approved Windows blockcheck bundle'
-            }
-            $bundle=[IO.Path]::GetFullPath($r.bundlePath)
-            No-Reparse $bundle
+        if($managed){
             # Keep the reviewed bundle's layout and prevent older scan assets
             # from being mixed into this run.
-            $candidate=Join-Path $scanParent ('scan-'+$r.engine+'-'+[guid]::NewGuid().ToString('N'))
-            if(Under $candidate $bundle){throw 'Managed scan staging must be outside the approved bundle'}
-            if(Test-Path -LiteralPath $candidate){throw 'Managed scan staging path already exists'}
-            Protect-Dir $candidate
-            $ownedScanBundle=$candidate
-            Copy-Tree $bundle $ownedScanBundle -Disposable
-            if(-not (Find-Source $r.engine -SourceRoots @($ownedScanBundle))){
+            Copy-Tree $bundle $candidate -Disposable
+            if(-not (Find-Source $r.engine -SourceRoots @($candidate))){
                 throw 'Approved Windows blockcheck bundle lacks the selected engine'
             }
-            $search=@($ownedScanBundle)
+            $search=@($candidate)
         }else{
             $binary=Ensure-Asset $r.engine;$dir=Split-Path -Parent $binary
             $search=@($r.bundlePath,(Split-Path -Parent $dir),(Join-Path $env:ProgramFiles 'SplitWire-Turkey\res\zapret')) | Where-Object {$_ -and (Test-Path -LiteralPath $_)}
@@ -3340,7 +3341,7 @@ function Scan-Strategies {
         if(-not (Under $bash.FullName $root)){$runtimeDir=Join-Path $root 'components\cygwin';Protect-Dir $runtimeDir;$bashRoot=Split-Path -Parent $bash.Directory.FullName;Copy-Tree $bashRoot $runtimeDir;$bash=Get-Item -LiteralPath (Join-Path $runtimeDir 'bin\bash.exe')}
         if($r.engine -eq 'zapret2' -and $inputData.ispHook){
             $hook=Join-Path $check.Directory.FullName 'blockcheck2.d\standard\00-accessweaver-isp.sh'
-            if($ownedScanBundle){
+            if($managed){
                 No-Reparse $hook
                 [void][IO.Directory]::CreateDirectory((Split-Path -Parent $hook))
                 [IO.File]::WriteAllText($hook,$inputData.ispHook,[Text.UTF8Encoding]::new($false))
@@ -3355,55 +3356,34 @@ function Scan-Strategies {
             $unixPath='/cygdrive/'+$matches[1].ToLowerInvariant()+'/'+$matches[2]
         }
         $arguments=@('--noprofile','--norc',$unixPath)
-        if($ownedScanBundle){
-            $privateState=Join-Path $ownedScanBundle ('state-'+[guid]::NewGuid().ToString('N'))
-            [void][IO.Directory]::CreateDirectory($privateState)
-            $system=Join-Path $env:SystemRoot 'System32'
-            $childEnvironment=@{
-                SystemRoot=$env:SystemRoot
-                WINDIR=$env:SystemRoot
-                SystemDrive=[IO.Path]::GetPathRoot($env:SystemRoot).TrimEnd('\')
-                ComSpec=(Join-Path $system 'cmd.exe')
-                PATH=($bash.Directory.FullName+';'+$system)
-                HOME=$privateState
-                TEMP=$privateState
-                TMP=$privateState
-                BATCH='1'
-                SCANLEVEL=$scope
-                DOMAINS=$domains
-            }
-            $result=Native $bash.FullName $arguments -Timeout 4200 -WorkingDirectory $check.Directory.FullName -ChildEnvironment $childEnvironment
-        }else{
-            $oldScanLevel=$env:SCANLEVEL
-            $oldDomains=$env:DOMAINS
-            $oldBatch=$env:BATCH
-            $oldPath=$env:PATH
-            try {
-                $env:BATCH='1'
-                $env:PATH=$bash.Directory.FullName+';'+$oldPath
-                $env:SCANLEVEL=$scope
-                $env:DOMAINS=$domains
-                $result=Native $bash.FullName $arguments -Timeout 4200
-            } finally {
-                $env:SCANLEVEL=$oldScanLevel
-                $env:DOMAINS=$oldDomains
-                $env:BATCH=$oldBatch
-                $env:PATH=$oldPath
-            }
+        $privateState=Join-Path $candidate ('state-'+[guid]::NewGuid().ToString('N'))
+        [void][IO.Directory]::CreateDirectory($privateState)
+        $system=Join-Path $env:SystemRoot 'System32'
+        $childEnvironment=@{
+            SystemRoot=$env:SystemRoot
+            WINDIR=$env:SystemRoot
+            SystemDrive=[IO.Path]::GetPathRoot($env:SystemRoot).TrimEnd('\')
+            ComSpec=(Join-Path $system 'cmd.exe')
+            PATH=($bash.Directory.FullName+';'+$system)
+            HOME=$privateState
+            TEMP=$privateState
+            TMP=$privateState
+            BATCH='1'
+            SCANLEVEL=$scope
+            DOMAINS=$domains
         }
+        $result=Native $bash.FullName $arguments -Timeout 4200 -WorkingDirectory $check.Directory.FullName -ChildEnvironment $childEnvironment
         if($null -eq $result -or $result.outputComplete -ne $true){throw 'Scan output was incomplete; no strategy was selected'}
         $report=Join-Path $root ('logs\'+$r.engine+'-blockcheck.txt')
         Write-Atomic $report $result.stdout
         return @{scanLevel=$level;output=$result.stdout;reportPath=$report;note='Review detected strategies before installing. A scan result is not a guarantee for UDP voice.'}
     } finally {
-        if($ownedScanBundle){
-            $resolved=[IO.Path]::GetFullPath($ownedScanBundle)
-            if((Split-Path -Parent $resolved) -ine $scanParent -or (Split-Path -Leaf $resolved) -cnotmatch '^scan-zapret2?-[a-f0-9]{32}$'){
-                throw 'Refusing unexpected managed scan cleanup path'
-            }
-            Assert-TrustedTree $resolved
-            Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction Stop
+        $resolved=[IO.Path]::GetFullPath($candidate)
+        if((Split-Path -Parent $resolved) -ine $scanParent -or (Split-Path -Leaf $resolved) -cnotmatch '^scan-zapret2?-[a-f0-9]{32}$'){
+            throw 'Refusing unexpected strategy scan cleanup path'
         }
+        Assert-TrustedTree $resolved
+        Remove-Item -LiteralPath $resolved -Recurse -Force -ErrorAction Stop
     }
 }
 function Auto-Install {
