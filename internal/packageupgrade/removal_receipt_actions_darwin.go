@@ -3,6 +3,7 @@
 package packageupgrade
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -99,10 +100,47 @@ func (r *removalIntentStore) retireReceipt(ctx context.Context, resolve removalP
 	if e = r.store.phase("removal-receipt-done-durable"); e != nil {
 		return zero, e
 	}
-	if e = r.verifyRemainingObjects(ctx, resolve, actions, journal); e != nil {
+	if journal.completed == len(actions) {
+		_, e = r.verifyCompletedRemoval(ctx, resolve)
+	} else {
+		e = r.verifyRemainingObjects(ctx, resolve, actions, journal)
+	}
+	if e != nil {
 		return zero, e
 	}
 	return removalProgress{journal.completed, len(actions)}, nil
+}
+
+// The caller must hold both leases and have synchronized the removal barrier
+// and completed public quarantine. Verify the terminal journal and removed
+// inventory before returning the exact inactive record for a future handoff.
+func (r *removalIntentStore) verifyCompletedRemoval(ctx context.Context, resolve removalParentResolver) ([]byte, error) {
+	actions, e := removalAllActions(r.plan)
+	if e != nil {
+		return nil, e
+	}
+	seed := removalJournalSeed(r.fence)
+	raw, st, journal, e := readRemovalJournalAt(r.store.current, 0, seed, len(actions))
+	if e != nil {
+		return nil, e
+	}
+	if journal.completed != len(actions) {
+		return nil, errors.New("removal journal is incomplete")
+	}
+	if e = r.syncObservedRemovalJournal(raw); e != nil {
+		return nil, e
+	}
+	if e = r.verifyRemainingObjects(ctx, resolve, actions, journal); e != nil {
+		return nil, e
+	}
+	again, current, _, e := readRemovalJournalAt(r.store.current, 0, seed, len(actions))
+	if e != nil || !bytes.Equal(raw, again) || !sameState(st, current) {
+		return nil, errors.Join(e, errors.New("completed removal journal changed during verification"))
+	}
+	if ctx.Err() != nil {
+		return nil, errors.New("removal completion deadline exceeded")
+	}
+	return bytes.Clone(r.store.encoded), nil
 }
 
 func (r *removalIntentStore) verifiedReceiptFiles(dir *os.File, bom, plist removalFileAction, allowAbsent bool) (int, error) {

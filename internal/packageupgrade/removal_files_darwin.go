@@ -119,6 +119,12 @@ func (r *removalIntentStore) removeNextRemovalObjectUsing(ctx context.Context, r
 		}
 		limit = len(actions)
 	}
+	if scope == removalReceiptScope && journal.completed == len(actions) {
+		if _, e = r.verifyCompletedRemoval(bounded, resolve); e != nil {
+			return zero, e
+		}
+		return removalProgress{len(actions), len(actions)}, nil
+	}
 	if e = r.verifyRemainingObjects(bounded, resolve, actions, journal); e != nil {
 		return zero, e
 	}

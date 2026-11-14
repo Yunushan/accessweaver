@@ -195,6 +195,9 @@ func TestDarwinRemovalReceiptRecovery(t *testing.T) {
 			if e != nil || len(actions) != 13 {
 				t.Fatal("unexpected fixture action sequence", e)
 			}
+			if record, e := f.intent.verifyCompletedRemoval(ctx, f.resolve); e == nil || record != nil {
+				t.Fatal("incomplete removal returned a handoff record", e)
+			}
 			id, _, e := receiptActionPair(f.intent.plan, actions[10])
 			if e != nil {
 				t.Fatal(e)
@@ -279,12 +282,58 @@ func TestDarwinRemovalReceiptRecovery(t *testing.T) {
 				}
 			}
 			reopenOwnedRemovalFileIntent(t, f)
-			got, e = f.intent.retireNextReceiptUsing(ctx, f.resolve, func(context.Context, string) error {
-				t.Fatal("completed receipt sequence called the tool again")
+			verifyRetry := func() (removalProgress, error) {
+				return f.intent.retireNextReceiptUsing(ctx, f.resolve, func(context.Context, string) error {
+					t.Fatal("completed receipt sequence called the tool again")
+					return nil
+				})
+			}
+			syncFailure := errors.New("interrupted while syncing completed removal progress")
+			f.store.observe = func(phase string) error {
+				if phase == "removal-journal-before-file-sync" {
+					return syncFailure
+				}
 				return nil
-			})
+			}
+			if got, e = verifyRetry(); !errors.Is(e, syncFailure) || got != (removalProgress{}) {
+				t.Fatal("acknowledged removal after a failed journal sync", got, e)
+			}
+			reopenOwnedRemovalFileIntent(t, f)
+			// Recreate an owned receipt during synchronization. Terminal
+			// verification must reject it without running the tool again.
+			f.store.observe = func(phase string) error {
+				if phase == "removal-journal-before-directory-sync" {
+					return os.WriteFile(bom, []byte("another receipt"), 0644)
+				}
+				return nil
+			}
+			if got, e = verifyRetry(); e == nil || got != (removalProgress{}) {
+				t.Fatal("acknowledged removal with a reappeared receipt", got, e)
+			}
+			if e = os.Remove(bom); e != nil {
+				t.Fatal(e)
+			}
+			reopenOwnedRemovalFileIntent(t, f)
+			got, e = verifyRetry()
 			if e != nil || got != (removalProgress{len(actions), len(actions)}) {
 				t.Fatal("receipt completion is not idempotent", got, e)
+			}
+			record, e := f.intent.verifyCompletedRemoval(ctx, f.resolve)
+			if e != nil || !bytes.Equal(record, f.store.encoded) {
+				t.Fatal("completion did not return the exact deployment record", e)
+			}
+			state, e := decodeDeployment(record)
+			identity := f.intent.fence.Target.Identity
+			if e != nil || state.Generation != f.intent.fence.BaseGeneration+1 || state.HighWaterVersion != identity.Version ||
+				state.Active != (deploymentSlot{}) || len(state.Pending) != 0 {
+				t.Fatal("completion lost the inactive generation or downgrade guard", e)
+			}
+			if e = state.canPrepare(identity); e != nil {
+				t.Fatal("preserved record refused the same release", e)
+			}
+			identity.Version = "0.1.0"
+			if e = state.canPrepare(identity); e == nil {
+				t.Fatal("preserved record admitted an older release")
 			}
 			entries, e := os.ReadDir(f.receiptRoot)
 			if e != nil || len(entries) != 1 || entries[0].Name() != "unrelated-private.plist" {
