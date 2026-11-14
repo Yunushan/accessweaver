@@ -13,7 +13,7 @@ from macos_installer import digest,require
 from macos_desktop import inspect_component
 from macos_deployment import inspect_deployment
 from macos_product import component_inputs,distribution,product_name,product_members,inspect_product,product_sbom,verify_expanded_product
-from sbom import validate
+from sbom import validate,go_module_environment
 
 REPO=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location("accessweaver_product_dependency_builder",Path(__file__).with_name("build-macos-desktop.py"))
@@ -31,7 +31,7 @@ def build(version,arch,go="go"):
     identity=json.loads((core/"BUILD-INFO.json").read_bytes())
     require(identity["version"]==version and identity["arch"]==arch and identity["platform"]=="darwin" and identity["sourceState"]=="clean" and identity["commit"]==run(["git","rev-parse","HEAD"]).stdout.decode().strip() and not run(["git","status","--porcelain","--untracked-files=normal"]).stdout.strip(),"Product requires exact clean component source")
     require(json.loads((public/"BUILD-INFO.json").read_bytes())==identity,"Product public/core build differs")
-    sdk=json.loads(run([go,"env","-json","GOHOSTOS","GOHOSTARCH","GOVERSION"],env=dict(os.environ,GOTOOLCHAIN="local")).stdout)
+    sdk=json.loads(run([go,"env","-json","GOHOSTOS","GOHOSTARCH","GOVERSION"],env=go_module_environment(GOTOOLCHAIN="local")).stdout)
     require(sdk=={"GOHOSTOS":"darwin","GOHOSTARCH":arch,"GOVERSION":identity["goVersion"]},"Product native SDK differs")
     record=(public/"DESKTOP-RECORD.json").read_bytes();desktop.validate_record(record,identity)
     coordinated_report=desktop.build(version,arch,go,product_application=True)
@@ -71,7 +71,7 @@ def build(version,arch,go="go"):
         require(signature.returncode!=0 and b"no signature" in (signature.stdout+signature.stderr).lower(),"Experimental product unexpectedly publisher-signed")
         tool={"sha256":digest(Path("/usr/bin/productbuild").read_bytes()),"osVersion":run(["/usr/bin/sw_vers","-productVersion"],env=env).stdout.decode().strip(),"osBuild":run(["/usr/bin/sw_vers","-buildVersion"],env=env).stdout.decode().strip()}
         graph=product_sbom(raw,identity,inputs,packages,graphs,tool);encode(output/(target.name+".cdx.json"),graph)
-        validator=stage/"sbom-schema";run([go,"-C",REPO/"scripts/sbom-tools","build","-mod=readonly","-trimpath","-o",validator,"."],env=dict(os.environ,GOTOOLCHAIN="local"));run([validator,"--schemas",REPO/"scripts/sbom/schema",output/(target.name+".cdx.json")],env=env)
+        validator=stage/"sbom-schema";run([go,"-C",REPO/"scripts/sbom-tools","build","-mod=readonly","-trimpath","-o",validator,"."],env=go_module_environment(GOTOOLCHAIN="local"));run([validator,"--schemas",REPO/"scripts/sbom/schema",output/(target.name+".cdx.json")],env=env)
         report={"schemaVersion":1,"sourceCommit":identity["commit"],"build":identity,"productFile":target.name,"productBytes":len(raw),"productSHA256":digest(raw),"productbuild":tool,"archiveInspection":inspection,"componentInspections":reports,"actualExpandedPayloadAndScriptsVerified":True,"expandedInspection":expanded_check,"productGraphSchemaValidated":True,"unsigned":True,"installationExecuted":False,"singleProductLifecycleQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"productionQualificationComplete":False}
         encode(output/"compiler-artifact.json",report);return report
     finally:

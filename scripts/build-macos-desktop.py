@@ -14,7 +14,7 @@ import zipfile
 from macos_desktop import DESKTOP_ID,ROOT,NOTICE_ROOT,ROLE,MAX_RECORD,inventory,plist,record_name,package_id,component_name,validate_record,verify_bundle,inspect_component,package_sbom
 from macos_launcher import BINARY,archive_name,inspect_launcher
 from macos_installer import BUNDLE_NAME,digest,require,version_parts
-from sbom import generate,validate
+from sbom import generate,validate,go_module_environment
 from macos_package_archive import flat_members,cpio,inflate
 
 REPO=Path(__file__).resolve().parent.parent
@@ -32,7 +32,7 @@ def build(version,arch,go="go",*,product_application=False):
     archive=base/archive_name(arch,None if version=="0.1.1-alpha" else version)
     if not archive.exists():deployment.build_launcher(arch,go,version)
     inspected=inspect_launcher(archive.read_bytes(),identity)
-    sdk=json.loads(run([go,"env","-json","GOHOSTOS","GOHOSTARCH","GOVERSION"],env=dict(os.environ,GOTOOLCHAIN="local")).stdout)
+    sdk=json.loads(run([go,"env","-json","GOHOSTOS","GOHOSTARCH","GOVERSION"],env=go_module_environment(GOTOOLCHAIN="local")).stdout)
     require(sdk=={"GOHOSTOS":"darwin","GOHOSTARCH":arch,"GOVERSION":identity["goVersion"]},"Desktop native SDK differs")
     require(run(["/usr/sbin/sysctl","-n","sysctl.proc_translated"],codes=(0,1)).stdout.strip()!=b"1","Translated desktop build refused")
     cpu=run(["/usr/sbin/sysctl","-n","hw.optional.arm64"],codes=(0,1)).stdout.strip()
@@ -41,7 +41,7 @@ def build(version,arch,go="go",*,product_application=False):
     core_report=json.loads((base/version/"compiler-artifact.json").read_bytes())
     output=base/("product-components" if product_application else "desktop")/version;require(not output.exists(),"Desktop output exists; preserve it");output.mkdir(parents=True)
     stage=Path(tempfile.mkdtemp(prefix="macos-desktop-stage-",dir=REPO/"build"))
-    environment=dict(os.environ,GOTOOLCHAIN="local",GOFLAGS="",GOOS="darwin",GOARCH=arch,CGO_ENABLED="0")
+    environment=go_module_environment(GOTOOLCHAIN="local",GOOS="darwin",GOARCH=arch,CGO_ENABLED="0")
     try:
         payload=stage/"application-payload";app=payload/BUNDLE_NAME
         for path in (app,app/"Contents",app/"Contents/MacOS",app/"Contents/Resources",app/"Contents/Resources/licenses"):

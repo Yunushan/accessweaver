@@ -1,6 +1,7 @@
 import copy
 import json
 import io
+import os
 import tarfile
 from pathlib import Path
 import tempfile
@@ -82,6 +83,37 @@ class SBOMTests(unittest.TestCase):
     def test_stream_parser_requires_valid_bounded_metadata(self):
         self.assertEqual(json_stream(' {"a":1} \n {"b":2} '),[{"a":1},{"b":2}])
         with self.assertRaises((ValueError,json.JSONDecodeError)):json_stream('{"a":')
+
+    def test_go_source_analysis_ignores_local_workspaces_and_flags(self):
+        class StopAtPackageList(Exception):
+            pass
+
+        _, identity = self.fixture()
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            binary = root / "binary"
+            binary.write_bytes(b"not executed")
+            observed = []
+
+            def command(args, cwd=None, env=None):
+                observed.append(args[1])
+                self.assertEqual({key: env[key] for key in ("GOENV", "GOWORK", "GOFLAGS")},
+                                 {"GOENV": "off", "GOWORK": "off", "GOFLAGS": ""})
+                if args[1] == "version":
+                    values = {"GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0"}
+                    return json.dumps({"GoVersion": identity["goVersion"],
+                                       "Settings": [{"Key": key, "Value": value} for key, value in values.items()]})
+                if args[1] == "env":
+                    return identity["goVersion"]
+                self.assertEqual(args[1:3], ["list", "-mod=readonly"])
+                self.assertEqual(cwd, root.resolve())
+                self.assertEqual((env["GOOS"], env["GOARCH"], env["CGO_ENABLED"]), ("linux", "amd64", "0"))
+                raise StopAtPackageList
+
+            with patch.dict(os.environ, {"GOENV": "other.env", "GOWORK": "other.work", "GOFLAGS": "-mod=vendor"}), \
+                 patch("sbom.command", side_effect=command), self.assertRaises(StopAtPackageList):
+                generate(binary, root, ".", identity, root / "licenses")
+            self.assertEqual(observed, ["version", "env", "list"])
 
     def test_source_analysis_rejects_binary_with_cgo_before_running_sources(self):
         with tempfile.TemporaryDirectory() as folder:

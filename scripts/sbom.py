@@ -98,16 +98,22 @@ def component(ref,name,kind="library",version=None):
     return result
 
 
+def go_module_environment(**settings):
+    """Resolve release inputs using the repository module and explicit flags."""
+    return dict(os.environ, GOENV="off", GOWORK="off", GOFLAGS="", **settings)
+
+
 def generate(binary,module_root,main,identity,notices,go="go"):
     binary=binary.resolve();module_root=module_root.resolve();notices=notices.resolve()
     data=read_file(binary)
-    info=json.loads(command([go,"version","-m","-json",str(binary)]))
+    env=go_module_environment()
+    info=json.loads(command([go,"version","-m","-json",str(binary)],env=env))
     settings={v["Key"]:v["Value"] for v in info["Settings"]}
     require(settings.get("CGO_ENABLED")=="0","SBOM requires the qualified CGO_ENABLED=0 build")
     for key,value in [("GOOS",identity["platform"]),("GOARCH",identity["arch"])]:require(settings.get(key)==value,"Binary target differs from build identity")
     require(info["GoVersion"]==identity["goVersion"],"Binary compiler differs from build identity")
-    require(command([go,"env","GOVERSION"]).strip()==info["GoVersion"],"SBOM source analysis must use the binary's compiler version")
-    env=dict(os.environ,GOOS=settings["GOOS"],GOARCH=settings["GOARCH"],CGO_ENABLED="0",GOFLAGS="")
+    require(command([go,"env","GOVERSION"],env=env).strip()==info["GoVersion"],"SBOM source analysis must use the binary's compiler version")
+    env.update(GOOS=settings["GOOS"],GOARCH=settings["GOARCH"],CGO_ENABLED="0")
     for key in ("GOEXPERIMENT","GOAMD64","GOARM64"):
         if key in settings:env[key]=settings[key]
     args=[go,"list","-mod=readonly","-deps","-json"]
@@ -135,7 +141,7 @@ def generate(binary,module_root,main,identity,notices,go="go"):
     refs={path:(root_ref if path==root_path else "module:"+path) for path in modules}
     refs["std"]=stdlib_ref
     edges={ref:set() for ref in refs.values()}
-    go_root=Path(command([go,"env","GOROOT"]).strip())
+    go_root=Path(command([go,"env","GOROOT"],env=env).strip())
     stdlib_version=info["GoVersion"].removeprefix("go")
     stdlib=component(stdlib_ref,"stdlib","library",stdlib_version)
     stdlib["description"]="Go standard library and runtime"

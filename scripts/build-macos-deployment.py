@@ -17,7 +17,7 @@ from typing import NamedTuple
 from macos_deployment import BUNDLE_NAME,PACKAGE_ID,MANIFEST,DETACHED_MANIFEST,PAYLOAD_SBOM,EMBEDDED_SBOM,detached_payload_manifest,verify_deployment_bundle,install_location,inspect_deployment,deployment_sbom,manifest_contract
 from macos_installer import BUNDLE_ID,bundle_manifest,digest,macho_identity,require,version_parts,MAX_BYTES
 from macos_package_archive import flat_members,cpio,inflate,inspect as inspect_legacy
-from sbom import generate,validate
+from sbom import generate,validate,go_module_environment
 from macos_launcher import archive_name,inspect_launcher,BINARY
 
 from verify_macos_installer_publisher import (
@@ -89,7 +89,7 @@ def build(version,arch,go="go",publisher=None):
     require(inspect_legacy(old_package,manifest,identity)==original["archiveInspection"],"Core build input differs from its inspected package")
     entries=cpio(inflate(flat_members(old_package)["Payload"],MAX_BYTES,31));prefix="Applications/"+BUNDLE_NAME+"/"
     require(entries[prefix+MANIFEST]["data"]==encoded,"Core manifest sidecar differs from actual package")
-    environment=dict(os.environ,GOTOOLCHAIN="local",GOFLAGS="",GOOS="darwin",GOARCH=arch,CGO_ENABLED="0")
+    environment=go_module_environment(GOTOOLCHAIN="local",GOOS="darwin",GOARCH=arch,CGO_ENABLED="0")
     output=REPO/"build"/("macos-signed-deployment" if publisher else "macos-deployment-checks")/arch/version
     require(not output.exists(),"Deployment output exists; preserve it and use a new workspace")
     output.mkdir(parents=True)
@@ -209,7 +209,7 @@ def build_launcher(arch,go="go",version="0.1.1-alpha"):
     root=REPO/"build/macos-deployment-checks"/arch
     identity=json.loads((root/version/"BUILD-INFO.json").read_bytes())
     require(identity["sourceState"]=="clean" and identity["arch"]==arch and identity["platform"]=="darwin" and identity["commit"]==run(["git","rev-parse","HEAD"]).stdout.decode().strip() and not run(["git","status","--porcelain","--untracked-files=normal"]).stdout.strip(),"Launcher requires the exact clean native package source")
-    environment=dict(os.environ,GOTOOLCHAIN="local",GOFLAGS="",GOOS="darwin",GOARCH=arch,CGO_ENABLED="0")
+    environment=go_module_environment(GOTOOLCHAIN="local",GOOS="darwin",GOARCH=arch,CGO_ENABLED="0")
     sdk=json.loads(run([go,"env","-json","GOHOSTOS","GOHOSTARCH","GOVERSION"],env=environment).stdout)
     require(sdk=={"GOHOSTOS":"darwin","GOHOSTARCH":arch,"GOVERSION":identity["goVersion"]},"Launcher native SDK differs")
     require(run(["/usr/sbin/sysctl","-n","sysctl.proc_translated"],codes=(0,1)).stdout.strip()!=b"1","Translated launcher builds are not qualified")

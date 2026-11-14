@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 
 from macos_installer import BUNDLE_ID,BUNDLE_NAME,bundle_manifest,bundle_plist,digest,macho_identity,require,verify_bundle,version_parts
-from sbom import generate,macos_package
+from sbom import generate,macos_package,go_module_environment
 from macos_package_archive import inspect as inspect_flat_package
 
 REPO=Path(__file__).resolve().parent.parent
@@ -46,7 +46,7 @@ def encode(path,value):path.write_text(json.dumps(value,indent=2,ensure_ascii=Tr
 def build(version,arch,go="go"):
     require(platform.system()=="Darwin" and arch in ("amd64","arm64"),"Native macOS builder required")
     numeric=version_parts(version)
-    environment=dict(os.environ,GOTOOLCHAIN="local",GOFLAGS="",GOOS="darwin",GOARCH=arch,CGO_ENABLED="0")
+    environment=go_module_environment(GOTOOLCHAIN="local",GOOS="darwin",GOARCH=arch,CGO_ENABLED="0")
     sdk=json.loads(run([go,"env","-json","GOHOSTOS","GOHOSTARCH","GOVERSION"],env=environment).stdout)
     require(sdk["GOHOSTOS"]=="darwin" and sdk["GOHOSTARCH"]==arch,"Installer target must match the native SDK host")
     translated=run(["/usr/sbin/sysctl","-n","sysctl.proc_translated"],codes=(0,1)).stdout.strip()
