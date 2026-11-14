@@ -1,4 +1,4 @@
-# Selected production readers, inert streams and test-owned files only. No
+# Selected production journal functions, inert streams and test-owned files only. No
 # worker top-level, native tool, service, policy or machine configuration runs.
 [CmdletBinding()]
 param([switch]$RequireWindowsPowerShell,[switch]$RequirePowerShell7)
@@ -15,7 +15,7 @@ $recoverySHA=(Get-FileHash -LiteralPath $recoverySource -Algorithm SHA256).Hash.
 $recoveryTokens=$null;$recoveryErrors=$null
 $recoveryAst=[Management.Automation.Language.Parser]::ParseFile($recoverySource,[ref]$recoveryTokens,[ref]$recoveryErrors)
 if($recoveryErrors.Count){throw 'Recovery source did not parse'}
-$recoveryNames=@('Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-WorkflowRecoveryJournalStream','Read-WorkflowRecoveryJournal','Confirm-DNSRecoverySnapshot','Get-WorkflowBytesSHA256','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Confirm-DNSRecoveryEntry','Assert-RecordedServiceBinding','Recover-Operation','Under','No-Reparse')
+$recoveryNames=@('Get-WorkflowRecoveryJournalLimit','Save-Journal','Publish-WorkflowFile','Get-WorkflowFileHash','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-WorkflowRecoveryJournalStream','Read-WorkflowRecoveryJournal','Confirm-DNSRecoverySnapshot','Get-WorkflowBytesSHA256','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Confirm-DNSRecoveryEntry','Assert-RecordedServiceBinding','Recover-Operation','Under','No-Reparse')
 foreach($name in $recoveryNames){
     $nodes=@($recoveryAst.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Required recovery source function unavailable'}
@@ -188,6 +188,41 @@ function Assert-RecoveryFixtureUnchanged {
     }
 }
 try {
+    $produced=Join-Path $fixture 'produced.json'
+    $script:journalPath=$produced
+    $script:journalState='running'
+    $script:r=@{action='recover';engine='unchanged'}
+    $script:externalEffectsPending=$true
+    $script:undo=[Collections.Generic.List[object]]::new()
+    $script:events=[Collections.Generic.List[string]]::new()
+    $entry=@{kind='fixture';detail=''}
+    $script:undo.Add($entry)
+    $script:events.Add('retained diagnostic')
+    Save-Journal
+    $parsed=Read-WorkflowRecoveryJournal $produced
+    Assert-Recovery ($parsed.events[0] -ceq 'retained diagnostic' -and $null -eq $parsed.eventsOmitted) 'A journal within capacity lost its diagnostic event'
+    $script:events.Add(([string][char]0x03bb)*(4MB))
+    Save-Journal
+    $parsed=Read-WorkflowRecoveryJournal $produced
+    Assert-Recovery ($parsed.eventsOmitted -is [bool] -and $parsed.eventsOmitted -and @($parsed.events).Count -eq 0 -and
+        $parsed.externalEffectsPending -and $parsed.undo[0].kind -ceq $entry.kind -and $script:events.Count -eq 2) 'Oversized diagnostics damaged journal recovery or lost the original event list'
+
+    $script:events.Clear()
+    Save-Journal
+    $baseLength=(Get-Item -LiteralPath $produced).Length
+    $entry.detail='x'*(8MB-$baseLength)
+    Save-Journal
+    $exactDigest=(Get-FileHash -LiteralPath $produced -Algorithm SHA256).Hash
+    $parsed=Read-WorkflowRecoveryJournal $produced
+    Assert-Recovery ((Get-Item -LiteralPath $produced).Length -eq 8MB -and $parsed.undo[0].detail -ceq $entry.detail) 'A maximum-sized journal could not round-trip its recovery data'
+
+    $entry.detail=$entry.detail.Substring(1)+[char]0x03bb
+    Assert-RecoveryFailure {Save-Journal} 'Workflow recovery journal exceeds 8 MiB; the last published journal and backups were retained'
+    Assert-Recovery ((Get-FileHash -LiteralPath $produced -Algorithm SHA256).Hash -ceq $exactDigest -and
+        @(Get-ChildItem -LiteralPath $fixture -Force).Count -eq 1) 'A one-byte overflow replaced recovery data or persisted a stage'
+    [IO.File]::Delete($produced)
+    $script:journalPath=$null
+
     $physical=Join-Path $fixture 'selected.json'
     New-RecoveryFixtureFile $physical $unicode
     New-RecoveryFixtureFile ($physical+'.tmp') ([byte[]]@(1,2,3))

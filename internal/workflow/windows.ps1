@@ -31,11 +31,29 @@ $script:repairProxyReady = $false
 if($script:workflowClock){[Console]::WriteLine(('Workflow timing ms: shell-state-ready {0}' -f $script:workflowClock.ElapsedMilliseconds))}
 
 function Event([string]$text) { $script:events.Add(([DateTime]::UtcNow.ToString('o')+' '+$text)); [Console]::WriteLine($text); Save-Journal }
+function Get-WorkflowRecoveryJournalLimit {return 8MB}
 function Save-Journal {
-    if($script:journalPath){
-        $text=@{action=$r.action;engine=$r.engine;state=$script:journalState;externalEffectsPending=[bool]$script:externalEffectsPending;undo=@($script:undo.ToArray());events=@($script:events.ToArray())} | ConvertTo-Json -Depth 12
-        Publish-WorkflowFile $script:journalPath ([Text.UTF8Encoding]::new($false).GetBytes($text))
+    if(-not $script:journalPath){return}
+    $journal=@{
+        action=$r.action;engine=$r.engine;state=$script:journalState
+        externalEffectsPending=[bool]$script:externalEffectsPending
+        undo=@($script:undo.ToArray());events=@($script:events.ToArray())
     }
+    $encoding=[Text.UTF8Encoding]::new($false,$true)
+    $maximum=Get-WorkflowRecoveryJournalLimit
+    $text=$journal | ConvertTo-Json -Depth 12 -Compress
+    if($encoding.GetByteCount($text) -gt $maximum){
+        # Events are retained by the process log and result. Recovery uses undo.
+        if($journal.events.Count){
+            $journal.events=@()
+            $journal.eventsOmitted=$true
+            $text=$journal | ConvertTo-Json -Depth 12 -Compress
+        }
+        if($encoding.GetByteCount($text) -gt $maximum){
+            throw [IO.InvalidDataException]::new('Workflow recovery journal exceeds 8 MiB; the last published journal and backups were retained')
+        }
+    }
+    Publish-WorkflowFile $script:journalPath ($encoding.GetBytes($text))
 }
 function Under([string]$path,[string]$parent) { $p=[IO.Path]::GetFullPath($path);$b=[IO.Path]::GetFullPath($parent).TrimEnd('\')+'\';return $p.StartsWith($b,[StringComparison]::OrdinalIgnoreCase) }
 function No-Reparse([string]$path) {
@@ -4766,11 +4784,11 @@ function Rollback([string]$OwnerlessWireSockProfile) {
     return $rollbackErrors
 }
 # A recovery read never writes the selected journal or adopts a partial frame.
-# This input cap is separate from producer bounds and whole-store accounting.
+# This shared frame limit is separate from whole-store accounting.
 function Throw-WorkflowRecoveryJournalReadFailure {
     throw [IO.InvalidDataException]::new('Recovery journal could not be read safely; preserve the selected journal and recovery evidence')
 }
-function Read-WorkflowRecoveryJournalBytes([IO.Stream]$Source,[ValidateRange(1,8388608)][int]$Maximum=8MB) {
+function Read-WorkflowRecoveryJournalBytes([IO.Stream]$Source,[ValidateRange(1,8388608)][int]$Maximum=(Get-WorkflowRecoveryJournalLimit)) {
     $memory=$null
     try {
         if($null -eq $Source -or -not $Source.CanRead -or -not $Source.CanSeek -or $Source.Position -ne 0){Throw-WorkflowRecoveryJournalReadFailure}
