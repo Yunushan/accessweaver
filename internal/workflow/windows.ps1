@@ -1599,7 +1599,7 @@ function Disconnect-WireSock {
     Remove-WireSockRefreshTask
     Disconnect-OwnedWireSock $record
 }
-function Install-EngineService([string]$engine,[string]$binary,[string[]]$arguments) {
+function Install-EngineService([string]$engine,[string]$binary,[string[]]$arguments,[switch]$DeferAutomaticStartup) {
     $serviceName='AccessWeaver-'+$engine
     $existing=Get-Service -Name $serviceName -ErrorAction SilentlyContinue
     if($existing){throw ('Service already exists; remove this managed method before reinstalling: '+$serviceName)}
@@ -1613,7 +1613,8 @@ function Install-EngineService([string]$engine,[string]$binary,[string[]]$argume
     Write-Atomic $file (@{name=$serviceName;binary=$binary;args=@($arguments);directory=(Split-Path -Parent $binary);logPath=(Join-Path $root ('logs\'+$engine+'.log'))}|ConvertTo-Json -Depth 5)
     $instance=[guid]::NewGuid().ToString('N')
     $binPath=(Quote-Arg $controller)+' service-host '+(Quote-Arg $file)+' --instance='+$instance
-    $serviceOptions=@{Name=$serviceName;BinaryPathName=$binPath;StartupType='Automatic';DisplayName=('AccessWeaver '+$engine)}
+    $startupType=if($DeferAutomaticStartup){'Manual'}else{'Automatic'}
+    $serviceOptions=@{Name=$serviceName;BinaryPathName=$binPath;StartupType=$startupType;DisplayName=('AccessWeaver '+$engine)}
     if($engine -eq 'proxifyre'){$serviceOptions.DependsOn=@('NDISRD')}
     $entry=@{kind='service';name=$serviceName;commandSHA256=(Get-ManagedServiceCommandDigest $binPath)}
     Write-Atomic (Join-Path $root ('services\'+$engine+'.registration')) $entry.commandSHA256
@@ -1627,6 +1628,7 @@ function Install-EngineService([string]$engine,[string]$binary,[string[]]$argume
     Start-Sleep -Milliseconds 500
     if((Get-Service $serviceName).Status -ne 'Running'){throw ('Engine exited during startup: '+$engine)}
     Event ('Installed and started '+$serviceName)
+    if($DeferAutomaticStartup){return $entry}
 }
 function Get-ManagedFirewallRule([string]$Name,[string]$Instance,[switch]$Journal) {
     $match=[regex]::Match($Name,'\AAccessWeaver-(byedpi|proxifyre)-(Inbound|Outbound)\z')
@@ -2477,7 +2479,9 @@ function Configure-DNS([string]$method) {
             $service=Get-Service -Name $serviceName -ErrorAction Stop
             try {$service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))}
             finally {if($service -is [IDisposable]){$service.Dispose()}}
-        }else{Install-EngineService 'dnscrypt' $binary @('-config',$config)}
+        }else{
+            $newResolver=Install-EngineService 'dnscrypt' $binary @('-config',$config) -DeferAutomaticStartup
+        }
         $servers=@('127.0.0.1','::1')
         $listeners=@(foreach($number in @('4','6')){
             foreach($adapter in $adapters){
@@ -2490,6 +2494,12 @@ function Configure-DNS([string]$method) {
             }
         })
         Wait-DNSCryptListeners $listeners
+        if($newResolver){
+            # Persist startup before any adapter depends on the new service.
+            if((Assert-RecordedServiceBinding $newResolver) -ne 0){throw 'New DNSCrypt service disappeared before enabling automatic startup'}
+            Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+            Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
+        }
     } elseif($method -eq 'doh') {
         foreach($provider in $providers){
             $address=$provider.ServerAddress

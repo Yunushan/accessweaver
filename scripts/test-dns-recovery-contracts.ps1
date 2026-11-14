@@ -63,7 +63,7 @@ function New-DNSCase {
     $script:replaceSnapshotOnActivation=$false;$script:replaceSnapshotOnInterfaceRead=0
     $script:failAction='';$script:failAddress='';$script:failDelete=$false;$script:failSnapshotWrite=$false;$script:failJournalWrite=$false;$script:corruptSnapshotWrite=$false;$script:failActivationWrite=$false;$script:failReceiptWrite=$false
     $script:configureDohReadFault='';$script:postConfigureDohReadFault='';$script:configureDohFaultAddress='';$script:resolverQueries=0;$script:configurationLag=0;$script:readbackWaits=0
-    $script:resolverServicePresent=$false;$script:resolverOwnershipFault=$false;$script:resolverBindingFailureRead=0;$script:resolverBindingReads=0;$script:serviceRestarts=0;$script:dnscryptConfigReads=0;$script:dnscryptConfigWrites=0;$script:stageDNSCrypt=$false;$script:changeDNSCryptBeforePublish=$false;$script:failDNSCryptRestart=$false;$script:serviceStops=0;$script:serviceStartupChanges=0
+    $script:resolverServicePresent=$false;$script:resolverOwnershipFault=$false;$script:resolverBindingFailureRead=0;$script:resolverBindingReads=0;$script:serviceRestarts=0;$script:dnscryptConfigReads=0;$script:dnscryptConfigWrites=0;$script:stageDNSCrypt=$false;$script:changeDNSCryptBeforePublish=$false;$script:failDNSCryptRestart=$false;$script:allowNewResolver=$false;$script:newResolverRegistered=$false;$script:serviceStops=0;$script:serviceStartupChanges=0
     $script:listenerQueries=[Collections.Generic.List[string]]::new()
     $script:ordinaryResolverWaits=0;$script:emptyOrdinaryAnswers=0;$script:resolverDrift=''
     $script:listenerReplies=@{};$script:listenerChecksBeforeAdapters=$true;$script:listenerWaits=0;$script:refuseListenerWait=$false
@@ -394,14 +394,29 @@ function Ensure-Asset([string]$Engine){
     if(-not $script:stageDNSCrypt -or $Engine -cne 'dnscrypt'){throw 'Native component access is forbidden in DNS contracts'}
     return Join-Path $root 'dnscrypt-proxy.exe'
 }
-function Install-EngineService {throw 'Service installation is forbidden in DNS contracts'}
+function Install-EngineService([string]$Engine,[string]$Binary,[string[]]$Arguments,[switch]$DeferAutomaticStartup){
+    $config=Join-Path $root 'dnscrypt-proxy.toml'
+    if(-not $script:allowNewResolver -or $Engine -cne 'dnscrypt' -or $script:resolverServicePresent -or
+        $Binary -cne (Join-Path $root 'dnscrypt-proxy.exe') -or $Arguments.Count -ne 2 -or
+        $Arguments[0] -cne '-config' -or $Arguments[1] -cne $config -or -not $DeferAutomaticStartup){
+        throw 'Service installation is forbidden in DNS contracts'
+    }
+    $script:newResolverRegistered=$true
+    $script:resolverServicePresent=$true
+    return @{kind='service';name='AccessWeaver-dnscrypt';commandSHA256=('A'*64)}
+}
 function Set-Service {
     param($Name,$StartupType,$ErrorAction)
     if($Name -cne 'AccessWeaver-dnscrypt' -or $ErrorAction -cne 'Stop' -or
         ($StartupType -ceq 'Manual' -and $script:serviceStops -ne 1) -or
-        ($StartupType -ceq 'Automatic' -and (-not $script:stageDNSCrypt -or $script:resolverBindingReads -ne 3 -or
-            $script:serviceRestarts -ne 1 -or $script:resolverQueries -lt 1)) -or
         $StartupType -cnotin @('Manual','Automatic')){throw 'Unexpected service startup change'}
+    if($StartupType -ceq 'Automatic'){
+        if($script:newResolverRegistered){
+            if($script:resolverBindingReads -ne 1 -or ($script:listenerQueries -join ',') -cne '127.0.0.1,::1' -or
+               $script:resolverQueries -ne 0 -or (Mutation-Count) -ne 0){throw 'New resolver startup changed out of order'}
+        }elseif(-not $script:stageDNSCrypt -or $script:resolverBindingReads -ne 3 -or
+            $script:serviceRestarts -ne 1 -or $script:resolverQueries -lt 1){throw 'Existing resolver startup changed out of order'}
+    }
     $script:serviceStartupChanges++
 }
 function Restart-Service {
@@ -769,6 +784,26 @@ try {
         $script:listenerReplies['::1'].Enqueue($invalidReply)
         Reject-DNS {Wait-DNSCryptListeners @('::1') 0}
         Assert-DNS ($script:listenerQueries.Count -eq 1) 'dnscrypt-listener-refuses-invalid-answers'
+    }
+    foreach($fault in @('none','listener','binding')){
+        New-DNSCase
+        $script:stageDNSCrypt=$true;$script:allowNewResolver=$true
+        [IO.File]::WriteAllText((Join-Path $root 'example-dnscrypt-proxy.toml'),"listen_addresses = ['192.0.2.53:53']")
+        if($fault -ceq 'listener'){
+            $script:refuseListenerWait=$true
+            $script:listenerReplies['::1']=[Collections.Generic.Queue[string]]::new()
+            $script:listenerReplies['::1'].Enqueue('timeout')
+            Reject-DNS {Configure-DNS 'dnscrypt'} 'Synthetic loopback wait boundary'
+        }elseif($fault -ceq 'binding'){
+            $script:resolverBindingFailureRead=1
+            Reject-DNS {Configure-DNS 'dnscrypt'} 'Fixture DNS service identity changed'
+        }else{
+            Configure-DNS 'dnscrypt'
+        }
+        Assert-DNS ($script:newResolverRegistered -and $script:serviceRestarts -eq 0 -and
+            $script:dnsConfigured -eq ($fault -ceq 'none') -and
+            $script:serviceStartupChanges -eq [int]($fault -ceq 'none') -and
+            (Mutation-Count) -eq (2*[int]($fault -ceq 'none'))) 'dnscrypt-listeners-before-adapters'
     }
     foreach($family in @('IPv4','IPv6','both','failure')){
         New-DNSCase
