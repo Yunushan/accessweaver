@@ -222,7 +222,7 @@ def build_launcher(arch,go="go",version="0.1.1-alpha"):
         require(json.loads(run([binary,"launcher-version","--json"],env=child_env,timeout=30).stdout)==identity,"Executed launcher identity differs")
         bom=generate(binary,REPO,"./cmd/accessweaver-launcher",identity,output/"licenses",go)
         encode(output/"BUILD-INFO.json",identity);encode(output/"SBOM.cdx.json",bom)
-        report={"schemaVersion":1,"build":identity,"binarySHA256":digest(binary.read_bytes()),"binaryBytes":binary.stat().st_size,"macho":macho_identity(binary.read_bytes(),arch),"goBuildMetadata":metadata,"linkerFlags":flags,"unsigned":True,"publisherSignatureVerified":False,"publicApplicationIntegrated":False,"productionQualificationComplete":False}
+        report={"schemaVersion":2,"build":identity,"binarySHA256":digest(binary.read_bytes()),"binaryBytes":binary.stat().st_size,"macho":macho_identity(binary.read_bytes(),arch),"goBuildMetadata":metadata,"linkerFlags":flags,"unsigned":True,"publisherSignatureVerified":False,"publicApplicationIntegrated":False,"productionQualificationComplete":False}
         encode(output/"compiler-artifact.json",report)
         stamp = zip_member_timestamp(epoch_from_timestamp(identity["builtAt"]))
         target=root/archive_name(arch,None if version=="0.1.1-alpha" else version);require(not target.exists(),"Launcher archive exists")

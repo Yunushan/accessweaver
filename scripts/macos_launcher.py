@@ -6,6 +6,7 @@ import stat
 import zipfile
 
 from macos_installer import digest,macho_identity,require,version_parts
+from release_archive import epoch_from_timestamp, zip_member_timestamp
 from sbom import validate,prop_map
 
 BINARY="accessweaver-launcher"
@@ -30,7 +31,11 @@ def inspect_launcher(encoded,identity):
     require({BINARY,"BUILD-INFO.json","SBOM.cdx.json","compiler-artifact.json"}<=names,"Launcher archive is incomplete")
     require(json.loads(data["BUILD-INFO.json"])==identity,"Launcher build identity differs")
     binary=data[BINARY];native=macho_identity(binary,identity["arch"]);report=json.loads(data["compiler-artifact.json"])
-    require(report.get("schemaVersion")==1 and report.get("build")==identity and report.get("binarySHA256")==digest(binary) and report.get("binaryBytes")==len(binary) and report.get("macho")==native,"Launcher compiler report differs")
+    schema = report.get("schemaVersion")
+    require(type(schema) is int and schema in (1, 2) and report.get("build")==identity and report.get("binarySHA256")==digest(binary) and report.get("binaryBytes")==len(binary) and report.get("macho")==native,"Launcher compiler report differs")
+    if schema == 2:
+        stamp = zip_member_timestamp(epoch_from_timestamp(identity["builtAt"]))
+        require(all(item.date_time == stamp for item in infos), "Launcher archive member timestamp differs from its build time")
     metadata=report["goBuildMetadata"];settings={v["Key"]:v["Value"] for v in metadata["Settings"]}
     require(metadata.get("GoVersion")==identity["goVersion"] and metadata.get("Path")==MAIN and settings.get("GOOS")=="darwin" and settings.get("GOARCH")==identity["arch"] and settings.get("CGO_ENABLED")=="0" and settings.get("-trimpath")=="true" and "-ldflags" not in settings,"Launcher Go metadata differs")
     flags=" ".join("-X github.com/Yunushan/accessweaver/internal/buildinfo."+key+"="+value for key,value in {"Version":identity["version"],"Commit":identity["commit"],"SourceState":"clean","BuiltAt":identity["builtAt"]}.items())
