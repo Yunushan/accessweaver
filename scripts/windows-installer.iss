@@ -14,6 +14,19 @@
 #else
   #error TargetArch must be amd64 or arm64
 #endif
+#define PayloadPath BuildRoot + "\accessweaver.exe"
+#define BuildInfoPath BuildRoot + "\BUILD-INFO.json"
+#define PayloadSBOMPath BuildRoot + "\SBOM.cdx.json"
+#define PayloadBytes FileSize(PayloadPath)
+#define BuildInfoBytes FileSize(BuildInfoPath)
+#define PayloadSBOMBytes FileSize(PayloadSBOMPath)
+#if PayloadBytes <= 0 || BuildInfoBytes <= 0 || PayloadSBOMBytes <= 0
+  #error The installer requires the staged executable, build identity and SBOM
+#endif
+#define PayloadDigest GetSHA256OfFile(PayloadPath)
+#define BuildInfoDigest GetSHA256OfFile(BuildInfoPath)
+#define PayloadSBOMDigest GetSHA256OfFile(PayloadSBOMPath)
+
 [Setup]
 #ifdef OrganizationSigning
 SignTool=accessweaverOrganization
@@ -60,6 +73,7 @@ Name: "{group}\AccessWeaver"; Filename: "{app}\accessweaver.exe"; Parameters: "u
 const
   AWLifecycleRegistry = 'SOFTWARE\AccessWeaver\Installer';
   AWPendingInstall = 'PendingInstall';
+  AWOpenReadDenyWrite = $0020; { fmOpenRead or fmShareDenyWrite }
 
 var AWInstallFinished, AWPendingRetirementFailed: Boolean;
 
@@ -169,6 +183,40 @@ begin
   Result := '';
 end;
 
+function AWInstalledFileMatches(const Directory, Name, Digest: String; Size: Int64): Boolean;
+var Path: String; Attributes: LongWord; Payload: TFileStream;
+begin
+  Result := False;
+  Path := Directory + '\' + Name;
+  Attributes := AWPathAttributes(Path);
+  if (Attributes = $FFFFFFFF) or ((Attributes and ($00000400 or $00000010)) <> 0) then Exit;
+  Payload := TFileStream.Create(Path, AWOpenReadDenyWrite);
+  try
+    if Payload.Size <> Size then Exit;
+    Result := CompareText(GetSHA256OfStream(Payload), Digest) = 0;
+  finally
+    Payload.Free;
+  end;
+end;
+
+function AWVerifyCompletedInstall(const Destination: String): Boolean;
+var Found64, Found32: Boolean; Version, Location, Version32, Location32: String;
+begin
+  Result := False;
+  try
+    if AWInstallationPathPreflight(Destination, False) <> '' then Exit;
+    if AWReadRegistration($0100, True, Found64, Version, Location) <> '' then Exit;
+    if AWReadRegistration($0200, False, Found32, Version32, Location32) <> '' then Exit;
+    if not Found64 or Found32 or (Version <> '{#ReleaseVersion}') or
+      not AWIsInstallationDirectory(Destination, Location) then Exit;
+    if not AWInstalledFileMatches(Destination, 'accessweaver.exe', '{#PayloadDigest}', {#PayloadBytes}) then Exit;
+    if not AWInstalledFileMatches(Destination, 'BUILD-INFO.json', '{#BuildInfoDigest}', {#BuildInfoBytes}) then Exit;
+    Result := AWInstalledFileMatches(Destination, 'SBOM.cdx.json', '{#PayloadSBOMDigest}', {#PayloadSBOMBytes});
+  except
+    Result := False;
+  end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var Failure, Destination: String;
 begin
@@ -187,10 +235,14 @@ begin
   end else if CurStep = ssPostInstall then begin
     AWInstallFinished := True;
   end else if (CurStep = ssDone) and AWInstallFinished then begin
-    if not RegDeleteValue(HKLM64, AWLifecycleRegistry, AWPendingInstall) or not AWFlushLifecycleRecord then begin
+    if not AWVerifyCompletedInstall(ExpandConstant('{app}')) then begin
+      AWPendingRetirementFailed := True;
+      Log('AccessWeaver installed payload or registration verification failed. Pending installation record retained.');
+    end else if not RegDeleteValue(HKLM64, AWLifecycleRegistry, AWPendingInstall) or not AWFlushLifecycleRecord then begin
       AWPendingRetirementFailed := True;
       Log('Cannot retire the AccessWeaver pending installation record.');
-    end;
+    end else
+      Log('AccessWeaver installed payload and registration verified. Pending installation record retired.');
   end;
 end;
 

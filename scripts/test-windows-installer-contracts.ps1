@@ -93,6 +93,12 @@ $uninstallPreflight=[regex]::Match($installerSource,'(?ms)^function AWUninstallP
 Assert ($prepare -cmatch "(?s)AWInstallationPathPreflight\(ExpandConstant\('\{app\}'\), True\).*AWPayloadReplacementPreflight") 'Setup must check the destination before probing the payload'
 Assert ($copy -cmatch '(?s)AWInstallationPathPreflight\(Destination, True\).*RaiseException\(Failure\).*RegWriteStringValue') 'Setup must recheck the destination before recording pending installation'
 Assert ($uninstallPreflight -cmatch "AWInstallationPathPreflight\(ExpandConstant\('\{app\}'\), False\)") 'Uninstall must require an existing ordinary directory before restoration'
+$completion=[regex]::Match($installerSource,'(?ms)^function AWVerifyCompletedInstall\(.*?^end;').Value
+Assert ($copy -cmatch "(?s)ssDone.*if not AWVerifyCompletedInstall.*Pending installation record retained\..*end else if not RegDeleteValue") 'Setup must verify completion before clearing the pending install record'
+foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
+    Assert ($completion.Contains("Destination, '$name',")) 'Setup completion must verify each staged release subject'
+}
+Assert ($completion -cmatch '(?s)AWReadRegistration\(\$0100, True.*AWReadRegistration\(\$0200, False.*not Found64 or Found32') 'Setup completion must verify its unique machine registration'
 $uninstallStep=[regex]::Match($installerSource,'(?ms)^procedure CurUninstallStepChanged\(CurUninstallStep: TUninstallStep\);.*?^end;').Value
 Assert ($initialize.Contains('AWUninstallPreflight') -and -not $initialize.Contains('AWRunBoundedRestoration')) 'Uninstall initialization must validate without restoring machine state'
 Assert ($uninstallStep -cmatch '(?s)if CurUninstallStep <> usUninstall then Exit;.*Failure := AWUninstallPreflight;.*AWRunBoundedRestoration.*then Exit;.*\bAbort;\s*end;') 'Uninstall must restore only after confirmation and abort deletion on failure'
