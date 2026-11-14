@@ -20,6 +20,7 @@ import tarfile
 import tempfile
 import zipfile
 
+from release_archive import MAX_EPOCH, timestamp, zip_member_timestamp
 from sbom import command as go_metadata_command, validate as validate_sbom
 
 HOST_PLATFORM = sys.platform
@@ -38,23 +39,52 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def artifact_names(manifest):
+    label = manifest.get("releaseLabel")
+    require(isinstance(label, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", label),
+            "Invalid manifest release label")
+    artifacts = manifest.get("artifacts")
+    require(isinstance(artifacts, list) and len(artifacts) == len(TARGETS),
+            "Release must contain exactly the ten documented targets")
+    targets = set()
+    names = set()
+    for item in artifacts:
+        target = item["goos"], item["goarch"]
+        require(target in TARGETS and target not in targets, "Invalid or duplicate release target")
+        system, arch = target
+        extension = ".zip" if system == "windows" else ".tar.gz"
+        expected = f"accessweaver-{label}-{system}-{arch}{extension}"
+        require(item["file"] == expected, "Archive name does not match the manifest release label and target")
+        targets.add(target)
+        names.add(expected)
+    return names
+
+
 def zip_members(archive):
     for item in archive.infolist():
         mode = item.external_attr >> 16
         regular = (not item.is_dir() and not item.external_attr & 0x10
                    and (item.create_system != 3 or stat.S_IFMT(mode) in (0, stat.S_IFREG)))
-        yield item.orig_filename, item.file_size, regular and not item.flag_bits & 1
+        yield item.orig_filename, item.file_size, regular and not item.flag_bits & 1, item.date_time
 
 
-def inspect_archive(path, root, binary_name):
+def inspect_archive(path, root, binary_name, *, epoch=None):
     if path.suffix == ".zip":
+        expected_timestamp = zip_member_timestamp(epoch) if epoch is not None else None
         archive = zipfile.ZipFile(path)
         members = zip_members(archive)
         read = archive.read
     else:
+        expected_timestamp = epoch
+        if epoch is not None:
+            with path.open("rb") as raw:
+                header = raw.read(10)
+            require(len(header) == 10 and header[:3] == b"\x1f\x8b\x08"
+                    and int.from_bytes(header[4:8], "little") == epoch,
+                    "Gzip timestamp does not match the manifest archive epoch")
         archive = tarfile.open(path, "r:gz")
         members = ((item.name, item.size, item.type in (tarfile.REGTYPE, tarfile.AREGTYPE)
-                    and item.sparse is None) for item in archive)
+                    and item.sparse is None, item.mtime) for item in archive)
         def read(name):
             with archive.extractfile(name) as source:
                 return source.read()
@@ -63,8 +93,10 @@ def inspect_archive(path, root, binary_name):
         file_keys = set()
         directories = {}
         total = 0
-        for name, size, regular in members:
+        for name, size, regular, member_timestamp in members:
             require(len(names) < MAX_ARCHIVE_MEMBERS, "Archive member count exceeds limit")
+            require(expected_timestamp is None or member_timestamp == expected_timestamp,
+                    "Archive member timestamp does not match the manifest archive epoch")
             parts = name.split("/")
             require(regular and len(parts) > 1 and parts[0] == root and all(
                 re.fullmatch(r"[A-Za-z0-9._-]+", part) and not part.endswith(".")
@@ -258,18 +290,11 @@ def verify(directory, execute_native=False, *, check_go_metadata=False):
     go_version = match.group(1)
     require(manifest.get("targetExecutionTested") is False, "Packaging must not imply target execution")
 
-    artifacts = manifest["artifacts"]
-    require(isinstance(artifacts, list) and len(artifacts) == len(TARGETS), "Release must contain exactly the ten documented targets")
-    targets = set()
-    archive_names = set()
-    for item in artifacts:
-        target = item["goos"], item["goarch"]
-        require(target in TARGETS and target not in targets, "Invalid or duplicate release target")
-        targets.add(target)
-        name = item["file"]
-        extension = ".zip" if target[0] == "windows" else ".tar.gz"
-        require(re.fullmatch(r"accessweaver-[A-Za-z0-9._-]+-" + target[0] + "-" + target[1] + re.escape(extension), name), "Unexpected archive name")
-        archive_names.add(name)
+    archive_names = artifact_names(manifest)
+    packaging = manifest.get("packaging")
+    epoch = packaging.get("archiveEpoch") if isinstance(packaging, dict) else None
+    require(type(epoch) is int and 0 <= epoch <= MAX_EPOCH and manifest.get("builtAt") == timestamp(str(epoch)),
+            "Manifest build timestamp does not match the archive epoch")
 
     checksum_path = directory / "SHA256SUMS.txt"
     release_file(checksum_path, 64 << 10)
@@ -296,7 +321,7 @@ def verify(directory, execute_native=False, *, check_go_metadata=False):
     host_os = {"win32": "windows", "darwin": "darwin", "linux": "linux"}.get(sys.platform, sys.platform.split("-")[0])
     host_arch = {"amd64": "amd64", "x86_64": "amd64", "arm64": "arm64", "aarch64": "arm64"}.get(platform.machine().lower())
     native = None
-    for item in artifacts:
+    for item in manifest["artifacts"]:
         target = item["goos"], item["goarch"]
         name = item["file"]
         path = directory / name
@@ -316,7 +341,7 @@ def verify(directory, execute_native=False, *, check_go_metadata=False):
                     digest.update(block)
                     output.write(block)
             require(copied == size and digest.hexdigest() == checksums[name], f"Checksum mismatch: {name}")
-            info, binary = inspect_archive(frozen, name[:-len(extension)], binary_name)
+            info, binary = inspect_archive(frozen, name[:-len(extension)], binary_name, epoch=epoch)
         for key, expected in {"version": manifest["version"], "commit": manifest["sourceCommit"], "sourceState": manifest["sourceState"], "builtAt": manifest["builtAt"], "platform": target[0], "arch": target[1], "goVersion": go_version}.items():
             require(info.get(key) == expected, f"Inconsistent {key}: {name}")
         if check_go_metadata:
@@ -326,7 +351,7 @@ def verify(directory, execute_native=False, *, check_go_metadata=False):
     if execute_native:
         require(native is not None, "No artifact matches the current host")
         execute_metadata(*native)
-    print(f"Verified {len(targets)} archives, checksums, required notices and source identity. "
+    print(f"Verified {len(archive_names)} archives, checksums, required notices and source identity. "
           f"Static Go metadata={check_go_metadata}, native metadata execution={execute_native}.")
 
 

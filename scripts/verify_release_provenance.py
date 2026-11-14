@@ -16,7 +16,7 @@ import tarfile
 import tempfile
 import zipfile
 
-from verify_release import PROVENANCE_BUNDLE as BUNDLE_NAME, TARGETS, require, snapshot, verify as verify_contents
+from verify_release import PROVENANCE_BUNDLE as BUNDLE_NAME, artifact_names, require, snapshot, verify as verify_contents
 
 REPOSITORY = "Yunushan/accessweaver"
 WORKFLOW = REPOSITORY + "/.github/workflows/release.yml"
@@ -87,18 +87,7 @@ def _verify_snapshot(directory, names, commit, ref, gh):
         require(manifest.get("releaseLabel") == tag and manifest.get("version") == tag.removeprefix("v"),
                 "Authenticated manifest release label and version must match the expected tag")
     require(manifest.get("unsigned") is True, "Current core binaries must retain their unsigned label")
-    targets, archives = set(), set()
-    require(isinstance(manifest.get("artifacts"), list) and len(manifest["artifacts"]) == 10,
-            "Expected ten authenticated artifact descriptions")
-    for item in manifest["artifacts"]:
-        target = item["goos"], item["goarch"]
-        require(target in TARGETS and target not in targets, "Unexpected or duplicated target")
-        name = item["file"]
-        extension = ".zip" if target[0] == "windows" else ".tar.gz"
-        require(isinstance(name, str) and re.fullmatch(r"accessweaver-[A-Za-z0-9._-]+-" + target[0] + "-" + target[1] + re.escape(extension), name),
-                "Unexpected authenticated archive name")
-        targets.add(target)
-        archives.add(name)
+    archives = artifact_names(manifest)
     require(names == archives | {BUNDLE_NAME, "BUILD-MANIFEST.json", "SHA256SUMS.txt"},
             "Unattested or omitted release input")
     subjects = [directory / "SHA256SUMS.txt"] + [directory / name for name in sorted(archives)]

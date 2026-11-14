@@ -27,6 +27,12 @@ def epoch_from_timestamp(value):
     return int(datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp())
 
 
+def zip_member_timestamp(epoch):
+    """Represent the UTC build time using ZIP's date range and precision."""
+    epoch = max(epoch, 315532800)
+    return datetime.fromtimestamp(epoch - epoch % 2, timezone.utc).timetuple()[:6]
+
+
 def tracked_release_documents(root):
     """Use the repository's tracked documentation as the archive inventory."""
     listed = subprocess.check_output(
@@ -58,10 +64,10 @@ def write_archive(archive, pairs, epoch, executable):
     timestamp(str(epoch))  # reject invalid/out-of-range epochs before writing
     pairs = sorted(pairs, key=lambda pair: pair[1])
     if archive.suffix == ".zip":
-        date = datetime.fromtimestamp(max(epoch, 315532800), timezone.utc)
+        date = zip_member_timestamp(epoch)
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as output:
             for source, name in pairs:
-                info = zipfile.ZipInfo(name, date.timetuple()[:6])
+                info = zipfile.ZipInfo(name, date)
                 info.create_system = 3
                 mode = 0o755 if name == executable else 0o644
                 info.external_attr = (0o100000 | mode) << 16

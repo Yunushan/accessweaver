@@ -274,11 +274,48 @@ class ArchiveMemberValidationTests(unittest.TestCase):
                     release.inspect_archive(path, "root", "accessweaver")
 
 
+    def test_archive_timestamps_are_checked_against_the_epoch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source = root / "source"
+            source.write_bytes(b"content")
+            members = [(source, "root/" + name) for name in (
+                "accessweaver", "LICENSE", "THIRD_PARTY.md", "SECURITY.md",
+                "licenses/Go-runtime-LICENSE", "licenses/SplitWire-Turkey-MIT.txt")]
+            info = root / "build.json"
+            info.write_text("{}", encoding="utf-8")
+            bom = root / "sbom.json"
+            bom.write_text('{"metadata":{"component":{}}}', encoding="utf-8")
+            members += [(info, "root/BUILD-INFO.json"), (bom, "root/SBOM.cdx.json")]
+            for epoch in (0, 1760000001, 4294967295):
+                for extension in (".zip", ".tar.gz"):
+                    with self.subTest(epoch=epoch, extension=extension):
+                        path = root / ("candidate" + extension)
+                        write_archive(path, members, epoch, executable="root/accessweaver")
+                        with patch.object(release, "validate_sbom"):
+                            self.assertEqual(release.inspect_archive(path, "root", "accessweaver", epoch=epoch),
+                                             ({}, b"content"))
+                        if extension == ".zip":
+                            # ZIP clamps builds before 1980 and rounds down to even seconds.
+                            with self.assertRaisesRegex(ValueError, "Archive member timestamp"):
+                                release.inspect_archive(path, "root", "accessweaver", epoch=315532804)
+                        else:
+                            data = bytearray(path.read_bytes())
+                            changed = epoch ^ 4
+                            data[4:8] = changed.to_bytes(4, "little")
+                            path.write_bytes(data)
+                            with self.assertRaisesRegex(ValueError, "Gzip timestamp"):
+                                release.inspect_archive(path, "root", "accessweaver", epoch=epoch)
+                            with self.assertRaisesRegex(ValueError, "Archive member timestamp"):
+                                release.inspect_archive(path, "root", "accessweaver", epoch=changed)
+
+
 class ReleaseVerificationTests(unittest.TestCase):
     def fixture(self, directory):
         manifest = dict(unsigned=True, sourceState="clean", sourceCommit="a" * 40,
-                        targetExecutionTested=False, version="1.0.0-alpha", builtAt="fixture",
-                        goVersion="go version go1.27.4 linux/amd64", artifacts=[])
+                        targetExecutionTested=False, version="1.0.0-alpha", builtAt=timestamp("1760000001"),
+                        goVersion="go version go1.27.4 linux/amd64", releaseLabel="preview",
+                        packaging={"archiveEpoch": 1760000001}, artifacts=[])
         # Put the host first to detect execution before later validation.
         targets = [("windows", "amd64")] + sorted(release.TARGETS - {("windows", "amd64")})
         checksums = {}
@@ -294,6 +331,24 @@ class ReleaseVerificationTests(unittest.TestCase):
         (directory / "SHA256SUMS.txt").write_text("".join(f"{h}  {n}\n" for n, h in checksums.items()), encoding="utf-8")
         return manifest
 
+    def test_manifest_rejects_mismatched_archive_names_and_build_times(self):
+        for field, value, message in (
+            ("releaseLabel", "candidate", "Archive name"),
+            ("releaseLabel", "../preview", "Invalid manifest release label"),
+            ("builtAt", "2025-10-09T08:53:20Z", "Manifest build timestamp"),
+            ("packaging", {}, "Manifest build timestamp"),
+            ("packaging", {"archiveEpoch": True}, "Manifest build timestamp"),
+            ("packaging", {"archiveEpoch": -1}, "Manifest build timestamp"),
+            ("packaging", {"archiveEpoch": 4294967296}, "Manifest build timestamp"),
+        ):
+            with self.subTest(field=field, value=value), tempfile.TemporaryDirectory() as folder:
+                directory = Path(folder)
+                manifest = self.fixture(directory)
+                manifest[field] = value
+                (directory / "BUILD-MANIFEST.json").write_text(json.dumps(manifest), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, message):
+                    release.verify(directory)
+
     def test_native_execution_occurs_only_after_every_archive_passes(self):
         for fault in ("none", "checksum", "sdk"):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as folder:
@@ -303,7 +358,8 @@ class ReleaseVerificationTests(unittest.TestCase):
                     path = directory / manifest["artifacts"][-1]["file"]
                     path.write_bytes(b"x" * path.stat().st_size)
 
-                def inspect(path, _root, _binary_name):
+                def inspect(path, _root, _binary_name, *, epoch):
+                    self.assertEqual(epoch, manifest["packaging"]["archiveEpoch"])
                     self.assertNotEqual(path.parent, directory)
                     item = next(row for row in manifest["artifacts"] if row["file"] == path.name)
                     info = dict(version=manifest["version"], commit=manifest["sourceCommit"],
@@ -338,7 +394,7 @@ class ReleaseVerificationTests(unittest.TestCase):
             manifest = self.fixture(directory)
             artifacts = {item["file"]: item for item in manifest["artifacts"]}
 
-            def inspect(path, _root, _name):
+            def inspect(path, _root, _name, *, epoch):
                 item = artifacts[path.name]
                 return dict(version=manifest["version"], commit=manifest["sourceCommit"],
                             sourceState=manifest["sourceState"], builtAt=manifest["builtAt"],

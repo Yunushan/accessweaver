@@ -25,15 +25,17 @@ class ProvenanceTests(unittest.TestCase):
         self.assertIn("--deny-self-hosted-runners", command)
         self.assertNotIn("--execute-native", command)
 
-    def fixture(self, root):
+    def fixture(self, root, label="preview"):
         artifacts = []
         for os_name in ("windows", "linux", "darwin", "freebsd", "openbsd"):
             for arch in ("amd64", "arm64"):
                 extension = ".zip" if os_name == "windows" else ".tar.gz"
-                name = f"accessweaver-preview-{os_name}-{arch}{extension}"
+                name = f"accessweaver-{label}-{os_name}-{arch}{extension}"
                 (root / name).write_bytes(b"fixture archive")
                 artifacts.append({"goos": os_name, "goarch": arch, "file": name})
-        (root / "BUILD-MANIFEST.json").write_text(json.dumps({"sourceCommit": COMMIT, "sourceState": "clean", "unsigned": True, "artifacts": artifacts}), encoding="utf-8")
+        manifest = {"sourceCommit": COMMIT, "sourceState": "clean", "unsigned": True,
+                    "releaseLabel": label, "artifacts": artifacts}
+        (root / "BUILD-MANIFEST.json").write_text(json.dumps(manifest), encoding="utf-8")
         (root / "SHA256SUMS.txt").write_bytes(b"fixture checksums")
         (root / BUNDLE_NAME).write_bytes(b"fixture bundle (NOT a signature)")
 
@@ -94,10 +96,12 @@ class ProvenanceTests(unittest.TestCase):
         ):
             with self.subTest(label=label, version=version), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder)
-                self.fixture(root)
+                self.fixture(root, "v1.2.3-alpha")
                 path = root / "BUILD-MANIFEST.json"
                 manifest = json.loads(path.read_text(encoding="utf-8"))
-                if label is not None:
+                if label is None:
+                    del manifest["releaseLabel"]
+                else:
                     manifest.update(releaseLabel=label, version=version)
                 path.write_text(json.dumps(manifest), encoding="utf-8")
                 with patch("verify_release_provenance.authenticate") as authenticate, patch("verify_release_provenance.verify_contents") as contents:
@@ -110,6 +114,22 @@ class ProvenanceTests(unittest.TestCase):
                             verify(root, COMMIT, "refs/tags/v1.2.3-alpha")
                         authenticate.assert_called_once()
                         contents.assert_not_called()
+
+    def test_archive_label_mismatch_fails_before_artifact_authentication(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            path = root / "BUILD-MANIFEST.json"
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            manifest["releaseLabel"] = "v1.2.3-alpha"
+            manifest["version"] = "1.2.3-alpha"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with patch("verify_release_provenance.authenticate") as authenticate, patch(
+                "verify_release_provenance.verify_contents"
+            ) as contents, self.assertRaisesRegex(ValueError, "Archive name"):
+                verify(root, COMMIT, "refs/tags/v1.2.3-alpha")
+            authenticate.assert_called_once()
+            contents.assert_not_called()
 
     def test_missing_bundle_extra_files_and_wrong_manifest_fail_closed(self):
         for mode in ("missing", "extra", "wrong-source", "modified"):
