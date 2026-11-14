@@ -223,6 +223,11 @@ class RestorationControllerRefusalTests(unittest.TestCase):
                           nativeErrorLogVerified=True, independentProbeStarted=False, nativeError=5))
         self.assertEqual(validate_restoration_controller_refusals(cases),
                          {"restorationControllerVerificationRefusalsVerified": True})
+        hardlink = {**cases[3], "name": "hard-linked-controller-refused"}
+        self.assertEqual(validate_restoration_controller_refusals(cases[:-1] + [hardlink, cases[-1]], require_hardlink=True),
+                         {"restorationControllerVerificationRefusalsVerified": True})
+        with self.assertRaises(ValueError):
+            validate_restoration_controller_refusals(cases, require_hardlink=True)
         for bad in (None, cases[:3] + cases[4:],
                     cases[:3] + [{**cases[3], "failurePhase": "launch-controller"}] + cases[4:],
                     cases[:4] + [{**cases[4], "nativeError": 193}]):

@@ -229,6 +229,38 @@ function AWOpenReplaceProbe(const Path: String; Access, Sharing, Security,
   Disposition, Flags, Template: LongWord): LongWord;
   external 'CreateFileW@kernel32.dll stdcall';
 
+type
+  AWFileInfo = record
+    Attributes, CreationLow, CreationHigh, AccessLow, AccessHigh, WriteLow, WriteHigh,
+    VolumeSerial, SizeHigh, SizeLow, Links, IndexHigh, IndexLow: LongWord;
+  end;
+  AWDirectoryHandles = array of LongWord;
+
+function AWGetFileInfo(Handle: LongWord; var Info: AWFileInfo): Integer;
+  external 'GetFileInformationByHandle@kernel32.dll stdcall';
+
+function AWLockRestorationDirectory(const Directory: String; var Held: AWDirectoryHandles): Boolean;
+var Target: String; I, Count: Integer; Handle: LongWord; Info: AWFileInfo;
+begin
+  Result := False;
+  if AWInstallationPathPreflight(Directory, False) <> '' then Exit;
+  Target := RemoveBackslashUnlessRoot(Directory) + '\';
+  for I := 4 to Length(Target) do begin
+    if Target[I] = '\' then begin
+      { Open each component in order, with OPEN_REPARSE_POINT and
+        BACKUP_SEMANTICS. Share reads and writes but deny directory rename. }
+      Handle := AWOpenReplaceProbe(Copy(Target, 1, I - 1), $00000080, 3, 0, 3, $02200000, 0);
+      if Handle = $FFFFFFFF then Exit;
+      Count := GetArrayLength(Held);
+      SetArrayLength(Held, Count + 1);
+      Held[Count] := Handle;
+      if AWGetFileInfo(Handle, Info) = 0 then Exit;
+      if (Info.Attributes and ($00000400 or $00000010)) <> $00000010 then Exit;
+    end;
+  end;
+  Result := True;
+end;
+
 function AWCanReplaceInstalledFile(const Path: String): Boolean;
 var Attributes, Handle, Code: LongWord;
 begin
@@ -402,8 +434,8 @@ begin
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-var ResultCode: LongWord; Failure, Executable, Destination: String;
-    Payload: TFileStream;
+var ResultCode, Controller: LongWord; Failure, Executable, Destination: String;
+    Payload: TFileStream; Held: AWDirectoryHandles; Info: AWFileInfo; I: Integer;
 begin
   if CurUninstallStep <> usUninstall then Exit;
   { Inno reaches this step after confirmation and app-mutex checks, before
@@ -416,26 +448,37 @@ begin
   end;
   Destination := ExpandConstant('{app}');
   Executable := Destination + '\accessweaver.exe';
-  Payload := nil;
+  Payload := nil; Controller := $FFFFFFFF;
+  Failure := 'Cannot verify the installed AccessWeaver restoration controller. Repair the installation with its approved installer.';
   try
-    Payload := AWOpenVerifiedInstalledFile(Executable, '{#PayloadDigest}', {#PayloadBytes});
-  except
-    Payload := nil;
-  end;
-  if Payload = nil then
-    Failure := 'Cannot verify the installed AccessWeaver restoration controller. Repair the installation with its approved installer.'
-  else begin
-    try
-      Failure := AWInstallationPathPreflight(Destination, False);
+    if AWLockRestorationDirectory(Destination, Held) then begin
+      { GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING, OPEN_REPARSE_POINT. }
+      Controller := AWOpenReplaceProbe(Executable, $80000000, 1, 0, 3, $00200000, 0);
+      if Controller <> $FFFFFFFF then begin
+        if AWGetFileInfo(Controller, Info) <> 0 then begin
+          if ((Info.Attributes and ($00000400 or $00000010)) = 0) and (Info.Links = 1) then begin
+            try
+              Payload := AWOpenVerifiedInstalledFile(Executable, '{#PayloadDigest}', {#PayloadBytes});
+            except
+              Payload := nil;
+            end;
+          end;
+        end;
+      end;
+    end;
+    if Payload <> nil then begin
+      Failure := AWUninstallPreflight;
       if Failure = '' then begin
         Log('AccessWeaver system restoration starts at the uninstall step.');
         if AWRunBoundedRestoration(Executable, 'system installer-restore --confirm',
           Destination, AWRestorationDeadlineMilliseconds, ResultCode, Failure) then Exit;
         Log('AccessWeaver system restoration failed; process result/error code: ' + IntToStr(ResultCode));
       end;
-    finally
-      Payload.Free;
     end;
+  finally
+    if Payload <> nil then Payload.Free;
+    if Controller <> $FFFFFFFF then AWCloseNativeHandle(Controller);
+    for I := GetArrayLength(Held) - 1 downto 0 do AWCloseNativeHandle(Held[I]);
   end;
   Log(Failure);
   if not UninstallSilent then
