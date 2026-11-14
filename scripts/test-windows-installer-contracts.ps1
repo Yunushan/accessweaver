@@ -29,6 +29,11 @@ Reject {Get-InstallerSigningArguments $signer '' $shell $callback} 'Signing with
 Reject {Get-InstallerSigningArguments 'signer.exe' ('a'*64) $shell $callback} 'A relative signer path was accepted'
 Reject {Get-InstallerSigningArguments $signer ('a'*64) $shell 'C:\untrusted$q.ps1'} 'An Inno command escape was accepted'
 
+Assert ((Get-InstallerBuildTimestamp '0') -ceq '1970-01-01T00:00:00Z') 'Installer build epoch zero did not round-trip'
+Assert ((Get-InstallerBuildTimestamp '4294967295') -ceq '2106-02-07T06:28:15Z') 'Installer maximum build epoch did not round-trip'
+foreach($epoch in @('','-1','4294967296','00000000000','1 ',('1'+[char]10))){
+    Reject {Get-InstallerBuildTimestamp $epoch} 'Installer accepted an invalid release build epoch'
+}
 $payloadSigner='C:\Release Tools\Sign Payload.exe'
 $setupPin='a'*64;$payloadPin='b'*64
 $defaultPayload=Get-InstallerPayloadSigning $signer $setupPin '' ''

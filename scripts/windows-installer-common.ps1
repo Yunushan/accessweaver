@@ -8,6 +8,16 @@ function Assert-InstallerReleaseVersion([string]$Version) {
     }
 }
 
+function Get-InstallerBuildTimestamp([string]$Epoch) {
+    # Use the same bounds and UTC representation as the portable release build.
+    $seconds=[uint32]0
+    if($Epoch -cnotmatch '\A[0-9]{1,10}\z' -or -not [uint32]::TryParse($Epoch,[ref]$seconds)){
+        throw 'SOURCE_DATE_EPOCH must be an integer between 0 and 4294967295'
+    }
+    return [DateTimeOffset]::FromUnixTimeSeconds($seconds).UtcDateTime.ToString(
+        "yyyy-MM-dd'T'HH:mm:ss'Z'",[Globalization.CultureInfo]::InvariantCulture)
+}
+
 function Resolve-InstallerTarget([string]$HostOS, [string]$HostArch, [string]$TargetArch) {
     if($HostOS -cne 'windows' -or $HostArch -cnotin @('amd64','arm64')){throw 'Installer verification requires a Windows amd64 or arm64 Go SDK'}
     if(-not $TargetArch){$TargetArch=$HostArch}

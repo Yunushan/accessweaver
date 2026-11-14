@@ -75,7 +75,7 @@ On an organization-controlled Windows build host, invoke the existing Inno build
 
 If the payload uses a separate signing identity, add both `-PayloadSigningTool APPROVED_PAYLOAD_SIGNER_EXE` and `-PayloadPublisherCertificateSHA256 APPROVED_PAYLOAD_CERTIFICATE_SHA256`. The setup and generated uninstaller still use the setup signer. The build receipt records both fingerprints.
 
-Repeat the build for ARM64. Authenticate the final signed output and its provenance, then exercise installation, upgrade, reboot and signed uninstall on both managed Windows architectures before promotion. [Inno Setup signing](https://jrsoftware.org/ishelp/topic_setup_signtool.htm).
+The Windows installer’s payload build timestamp defaults to its source commit time. Set `SOURCE_DATE_EPOCH` to the independently approved Unix timestamp when rebuilding a deployment candidate that used an explicit epoch. This makes the timestamp input reproducible. The compiler and signing service supply additional inputs to the final Setup bytes. Repeat the build for ARM64. Authenticate the final signed output and its provenance, then exercise installation, upgrade, reboot and signed uninstall on both managed Windows architectures before promotion. [Inno Setup signing](https://jrsoftware.org/ishelp/topic_setup_signtool.htm).
 
 For a signed macOS flat package, place the final stapled package alone in a private directory. Supply its independently approved SHA-256, Developer ID Team ID and SHA-256 fingerprint of the approved Developer ID Installer leaf certificate.
 

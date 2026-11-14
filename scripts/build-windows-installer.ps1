@@ -55,7 +55,16 @@ try {
         }
     }
     if($organizationSigning -and $sourceState -cne 'clean'){throw 'Organization signing requires a clean source checkout'}
-    $builtAt=[DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    $epoch=$env:SOURCE_DATE_EPOCH
+    if($null -eq $epoch){
+        if($commit -ceq 'unknown'){
+            $epoch=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds().ToString([Globalization.CultureInfo]::InvariantCulture)
+        }else{
+            $epoch=& git show -s --format=%ct $commit
+            if($LASTEXITCODE -ne 0){throw 'Cannot read the installer source commit timestamp'}
+        }
+    }
+    $builtAt=Get-InstallerBuildTimestamp $epoch
     $flags='-X github.com/Yunushan/accessweaver/internal/buildinfo.Version='+$Version+' -X github.com/Yunushan/accessweaver/internal/buildinfo.Commit='+$commit+' -X github.com/Yunushan/accessweaver/internal/buildinfo.SourceState='+$sourceState+' -X github.com/Yunushan/accessweaver/internal/buildinfo.BuiltAt='+$builtAt
     & $Go build -mod=readonly -trimpath -buildvcs=false -ldflags $flags -o (Join-Path $stage 'accessweaver.exe') ./cmd/accessweaver
     if($LASTEXITCODE -ne 0){throw 'Go build failed'}
@@ -68,7 +77,9 @@ try {
     }
     $identity=& $payload version --json
     if($LASTEXITCODE -ne 0){throw 'Cannot read staged runtime build identity'}
-    $buildIdentity=($identity -join "`n") | ConvertFrom-Json
+    $identityOptions=@{}
+    if((Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')){$identityOptions.DateKind='String'}
+    $buildIdentity=($identity -join "`n") | ConvertFrom-Json @identityOptions
     Assert-InstallerPayloadIdentity (Join-Path $stage 'accessweaver.exe') $buildIdentity @{version=$Version;commit=$commit;sourceState=$sourceState;builtAt=$builtAt;goVersion=$sdk.GOVERSION;platform='windows';arch=$TargetArch}
     $buildInfoPath=Join-Path $stage 'BUILD-INFO.json'
     [IO.File]::WriteAllText($buildInfoPath,($identity -join "`n"))
