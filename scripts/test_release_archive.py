@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import subprocess
 import tarfile
 import tempfile
 import time
@@ -12,11 +13,27 @@ import unittest
 import zipfile
 from unittest.mock import patch
 
-from release_archive import epoch_from_timestamp, timestamp, write_archive
+from release_archive import epoch_from_timestamp, timestamp, tracked_release_documents, write_archive
 import verify_release as release
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_document_inventory_excludes_ignored_and_untracked_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            subprocess.run(["git", "init", "-q", root], check=True)
+            (root / "docs").mkdir()
+            (root / "docs/.gitignore").write_text("*.local.json\n", encoding="utf-8")
+            manual = root / "docs/guide.md"
+            manual.write_text("Tracked manual", encoding="utf-8")
+            (root / "docs/notes.local.json").write_text("private fixture", encoding="utf-8")
+            (root / "docs/draft.md").write_text("untracked fixture", encoding="utf-8")
+            subprocess.run(["git", "add", "docs/.gitignore", "docs/guide.md"], cwd=root, check=True)
+            self.assertEqual(tracked_release_documents(root), [Path("docs/.gitignore"), Path("docs/guide.md")])
+            manual.unlink()
+            with self.assertRaisesRegex(ValueError, "Tracked release documentation"):
+                tracked_release_documents(root)
+
     def test_epoch_validation_and_roundtrip(self):
         for epoch in ("0", "1", "1760000001", "4294967295"):
             self.assertEqual(epoch_from_timestamp(timestamp(epoch)), int(epoch))

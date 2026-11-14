@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import gzip
 from pathlib import Path
 import re
+import subprocess
 import sys
 import tarfile
 import zipfile
@@ -22,6 +23,19 @@ def timestamp(epoch):
 
 def epoch_from_timestamp(value):
     return int(datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp())
+
+
+def tracked_release_documents(root):
+    """Use the repository's tracked documentation as the archive inventory."""
+    listed = subprocess.check_output(
+        ["git", "ls-files", "--cached", "-z", "--", "docs/"], cwd=root, timeout=30,
+    )
+    paths = sorted({Path(name.decode("utf-8")) for name in listed.split(b"\0") if name})
+    for path in paths:
+        source = root / path
+        if any((root / parent).is_symlink() for parent in (path, *path.parents)) or not source.is_file():
+            raise ValueError("Tracked release documentation must be a regular file: " + path.as_posix())
+    return paths
 
 
 def write_archive(archive, pairs, epoch, executable):

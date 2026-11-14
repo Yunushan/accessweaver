@@ -30,7 +30,7 @@ import subprocess
 import sys
 import zlib
 sys.path.insert(0, "scripts")
-from release_archive import epoch_from_timestamp, write_archive
+from release_archive import epoch_from_timestamp, tracked_release_documents, write_archive
 from sbom import generate
 
 label, binaries = sys.argv[1], Path(sys.argv[2])
@@ -55,7 +55,7 @@ manifest = {
 }
 notices = [Path("LICENSE"), Path("README.md"), Path("README.tr.md"), Path("THIRD_PARTY.md"), Path("SECURITY.md")]
 go_license = Path(subprocess.check_output(["go", "env", "GOROOT"], text=True).strip()) / "LICENSE"
-documents = sorted(path for path in Path("docs").rglob("*") if path.is_file())
+documents = tracked_release_documents(Path.cwd())
 artifacts = []
 for binary in sorted(binaries.iterdir()):
     if binary.name == "BUILD-INFO.json":
