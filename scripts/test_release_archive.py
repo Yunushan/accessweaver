@@ -235,6 +235,41 @@ class ReleaseVerificationTests(unittest.TestCase):
                         self.assertEqual(execute.call_args.args[:2],
                                          (manifest["artifacts"][0]["file"].encode(), "accessweaver.exe"))
 
+    def test_static_metadata_inspects_all_targets_before_native_execution(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            manifest = self.fixture(directory)
+            artifacts = {item["file"]: item for item in manifest["artifacts"]}
+
+            def inspect(path, _root, _name):
+                item = artifacts[path.name]
+                return dict(version=manifest["version"], commit=manifest["sourceCommit"],
+                            sourceState=manifest["sourceState"], builtAt=manifest["builtAt"],
+                            platform=item["goos"], arch=item["goarch"], goVersion="go1.27.4"), path.read_bytes()
+
+            def read_metadata(args):
+                self.assertEqual(args[:4], ["go", "version", "-m", "-json"])
+                item = artifacts[Path(args[-1]).read_text()]
+                arch = item["goarch"]
+                if item is manifest["artifacts"][-1]:
+                    arch = "386"
+                project = "github.com/Yunushan/accessweaver"
+                settings = {"GOOS": item["goos"], "GOARCH": arch, "CGO_ENABLED": "0",
+                            "-compiler": "gc", "-trimpath": "true"}
+                return json.dumps({"GoVersion": "go1.27.4", "Path": project + "/cmd/accessweaver",
+                                   "Main": {"Path": project},
+                                   "Settings": [{"Key": key, "Value": value} for key, value in settings.items()]})
+
+            with (
+                patch.object(release, "inspect_archive", side_effect=inspect),
+                patch.object(release, "go_metadata_command", side_effect=read_metadata) as metadata,
+                patch.object(release, "execute_metadata") as execute,
+                self.assertRaisesRegex(ValueError, "Packaged binary target"),
+            ):
+                release.verify(directory, execute_native=True, check_go_metadata=True)
+            self.assertEqual(metadata.call_count, 10)
+            execute.assert_not_called()
+
     def test_native_version_comparison_must_match_packaged_version(self):
         info = {"version": "1.2.3-alpha", "commit": "a" * 40, "goVersion": "go1.27.4"}
         expected = {"version": "v1.2.3-alpha", "currentVersion": "1.2.3-alpha", "updateAvailable": False}

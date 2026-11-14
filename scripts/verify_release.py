@@ -20,7 +20,7 @@ import tarfile
 import tempfile
 import zipfile
 
-from sbom import validate as validate_sbom
+from sbom import command as go_metadata_command, validate as validate_sbom
 
 HOST_PLATFORM = sys.platform
 MAX_FILE = 128 << 20
@@ -213,7 +213,25 @@ def execute_metadata(binary, binary_name, info):
         require(not state.exists(), "Metadata commands unexpectedly wrote user state")
 
 
-def verify(directory, execute_native=False):
+def verify_go_metadata(binary, binary_name, info):
+    """Read compiler metadata from the exact checked bytes without executing them."""
+    with tempfile.TemporaryDirectory(prefix="accessweaver-go-metadata-") as temporary:
+        path = Path(temporary) / binary_name
+        path.write_bytes(binary)
+        metadata = json.loads(go_metadata_command(["go", "version", "-m", "-json", str(path)]))
+    project = "github.com/Yunushan/accessweaver"
+    require(metadata["Path"] == project + "/cmd/accessweaver" and metadata["Main"]["Path"] == project
+            and not metadata["Main"].get("Replace"), "Packaged binary main package differs")
+    require(metadata["GoVersion"] == info["goVersion"], "Packaged binary compiler differs")
+    settings = {item["Key"]: item["Value"] for item in metadata["Settings"]}
+    require(len(settings) == len(metadata["Settings"]), "Duplicate packaged binary build setting")
+    expected = {"GOOS": info["platform"], "GOARCH": info["arch"], "CGO_ENABLED": "0",
+                "-compiler": "gc", "-trimpath": "true"}
+    require(all(settings.get(key) == value for key, value in expected.items()),
+            "Packaged binary target or build settings differ")
+
+
+def verify(directory, execute_native=False, *, check_go_metadata=False):
     manifest_path = directory / "BUILD-MANIFEST.json"
     release_file(manifest_path, 1 << 20)
     manifest_bytes = manifest_path.read_bytes()
@@ -290,21 +308,26 @@ def verify(directory, execute_native=False):
             info, binary = inspect_archive(frozen, name[:-len(extension)], binary_name)
         for key, expected in {"version": manifest["version"], "commit": manifest["sourceCommit"], "sourceState": manifest["sourceState"], "builtAt": manifest["builtAt"], "platform": target[0], "arch": target[1], "goVersion": go_version}.items():
             require(info.get(key) == expected, f"Inconsistent {key}: {name}")
+        if check_go_metadata:
+            verify_go_metadata(binary, binary_name, info)
         if execute_native and target == (host_os, host_arch):
             native = binary, binary_name, info
     if execute_native:
         require(native is not None, "No artifact matches the current host")
         execute_metadata(*native)
-    print(f"Verified {len(targets)} archives, checksums, required notices and source identity; native metadata execution={execute_native}")
+    print(f"Verified {len(targets)} archives, checksums, required notices and source identity. "
+          f"Static Go metadata={check_go_metadata}, native metadata execution={execute_native}.")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--execute-native", action="store_true")
+    parser.add_argument("--check-go-metadata", action="store_true",
+                        help="inspect each executable using the installed Go toolchain without running it")
     arguments = parser.parse_args()
     try:
-        verify(arguments.directory, arguments.execute_native)
+        verify(arguments.directory, arguments.execute_native, check_go_metadata=arguments.check_go_metadata)
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError, zipfile.BadZipFile, tarfile.TarError) as error:
         print(f"Release verification failed: {error}", file=sys.stderr)
         return 1
