@@ -4,7 +4,7 @@ $fixture=Join-Path $PSScriptRoot 'test-windows-apps.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($fixture,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Interactive Windows app fixture failed parsing'}
-foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Assert-FixtureCommunicationImage','Test-FixtureCommunication','Test-FixtureAppChecks','Start-FixtureApp','Remove-FixtureApp','Assert-FixtureSplitCordServiceState')){
+foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Assert-FixtureCommunicationImage','Test-FixtureCommunication','Check-FixtureCommunications','Test-FixtureAppChecks','Start-FixtureApp','Remove-FixtureApp','Assert-FixtureSplitCordServiceState')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -211,6 +211,47 @@ foreach($inventory in @(
         $script:communicationDigest=$expectedDigest
     }
 }
+# Earlier install or launch failures must keep both communication claims false.
+& {
+    $InteractiveCommunications=$true
+    $installedImages=@{discord=$image}
+    $installedDigests=@{discord=('a'*64)}
+    $script:reviewedCommunicationKinds=[Collections.Generic.List[string]]::new()
+    function Test-FixtureCommunication([string]$Variant,[string]$Image,[string]$Kind,[string]$ExpectedDigest){
+        if($Variant -cne 'discord' -or $Image -cne $image -or $ExpectedDigest -cne ('a'*64)){
+            throw 'Communication check lost the approved client identity'
+        }
+        $script:reviewedCommunicationKinds.Add($Kind)
+    }
+    function Check([string]$Name,[scriptblock]$Body){
+        try {& $Body;$checks.Add(@{name=$Name;passed=$true})}
+        catch {$checks.Add(@{name=$Name;passed=$false})}
+    }
+    $expectedCommunications=@('communications-discord-text','communications-discord-voice')
+    foreach($case in @(
+        @{launch=@();image=$true;digest=$true;accepted=$false},
+        @{launch=@(@{name='discord-start';passed=$true});image=$true;digest=$true;accepted=$false},
+        @{launch=@(@{name='discord-start-after-reinstall';passed=$false});image=$true;digest=$true;accepted=$false},
+        @{launch=@(@{name='discord-start-after-reinstall';passed=$true});image=$false;digest=$true;accepted=$false},
+        @{launch=@(@{name='discord-start-after-reinstall';passed=$true});image=$true;digest=$false;accepted=$false},
+        @{launch=@(@{name='discord-start-after-reinstall';passed=$true});image=$true;digest=$true;accepted=$true}
+    )){
+        $checks=[Collections.Generic.List[object]]::new()
+        foreach($check in $case.launch){$checks.Add($check)}
+        $installedImages=if($case.image){@{discord=$image}}else{@{}}
+        $installedDigests=if($case.digest){@{discord=('a'*64)}}else{@{}}
+        $script:reviewedCommunicationKinds.Clear()
+        Check-FixtureCommunications 'discord' 'discord-start-after-reinstall'
+        $reported=@($checks.ToArray() | Where-Object {$_.name -clike 'communications-*'})
+        if($reported.Count -ne 2 -or (Test-FixtureAppChecks $reported $expectedCommunications) -ne $case.accepted){
+            throw 'Communication result did not reflect the fresh start and install prerequisites'
+        }
+        $expectedKinds=if($case.accepted){'text,voice'}else{''}
+        if(($script:reviewedCommunicationKinds -join ',') -cne $expectedKinds){
+            throw 'Communication prompt ran despite a missing prerequisite'
+        }
+    }
+}
 $installedImages=@{discord=$image}
 $launchTrace=[Collections.Generic.List[string]]::new()
 $launchResult=@{application='discord';alreadyRunning=$false}
@@ -377,7 +418,8 @@ foreach($case in @(
     $calls=@($communicationCalls | Where-Object {$_.CommandElements[1].Value -ceq $case.variant})
     $start=$commands[[array]::IndexOf($stages,$case.start)].Extent.StartOffset
     $remove=$commands[[array]::IndexOf($stages,$case.remove)].Extent.StartOffset
-    if($calls.Count -ne 1 -or $calls[0].Extent.StartOffset -le $start -or $calls[0].Extent.StartOffset -ge $remove){
+    if($calls.Count -ne 1 -or $calls[0].CommandElements[2].Value -cne $case.start -or
+       $calls[0].Extent.StartOffset -le $start -or $calls[0].Extent.StartOffset -ge $remove){
         throw 'Communication checks must run with the intended client installed and started'
     }
 }

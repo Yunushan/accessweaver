@@ -130,6 +130,21 @@ function Test-FixtureCommunication([string]$Variant,[string]$Image,[string]$Kind
     Assert-FixtureCommunicationImage $Variant $Image $ExpectedDigest
 }
 
+function Check-FixtureCommunications([string]$Variant,[string]$StartCheck){
+    if(-not $InteractiveCommunications){return}
+    $launch=@($checks | Where-Object {$_.name -ceq $StartCheck})
+    foreach($kind in @('text','voice')){
+        Check ('communications-'+$Variant+'-'+$kind) {
+            if(-not (Test-FixtureAppChecks $launch @($StartCheck)) -or
+               -not $installedImages.ContainsKey($Variant) -or -not $installedDigests.ContainsKey($Variant)){
+                throw 'Application install and fresh start must pass before communication verification'
+            }
+            $script:appEvidenceStage='interactive-communication'
+            Test-FixtureCommunication $Variant $installedImages[$Variant] $kind $installedDigests[$Variant]
+        }
+    }
+}
+
 function Test-FixtureAppChecks([object[]]$Checks,[string[]]$Expected) {
     if($Checks.Count -ne $Expected.Count){return $false}
     $remaining=[Collections.Generic.HashSet[string]]::new($Expected,[StringComparer]::Ordinal)
@@ -354,16 +369,6 @@ try {
             throw 'Standard PTB lifecycle did not preserve the stable Discord executable'
         }
     }
-    function Check-FixtureCommunications([string]$Variant){
-        if(-not $InteractiveCommunications){return}
-        foreach($kind in @('text','voice')){
-            Check ('communications-'+$Variant+'-'+$kind) {
-                if(-not $installedDigests.ContainsKey($Variant)){throw 'Application install prerequisite failed'}
-                $script:appEvidenceStage='interactive-communication'
-                Test-FixtureCommunication $Variant $installedImages[$Variant] $kind $installedDigests[$Variant]
-            }
-        }
-    }
     function Check([string]$Name,[scriptblock]$Body){
         $script:appEvidenceStage='prerequisite'
         try {
@@ -415,7 +420,7 @@ try {
             }
         }
         Check 'discord-start-after-reinstall' {Start-FixtureApp 'discord'}
-        Check-FixtureCommunications 'discord'
+        Check-FixtureCommunications 'discord' 'discord-start-after-reinstall'
         Check 'discord-remove' {Remove-FixtureApp 'discord'}
         Check 'discord-install-for-ptb-clean' {
             if(Get-FixtureAppImage (Inspect-Apps) 'discord'){throw 'Stable Discord removal prerequisite failed'}
@@ -463,12 +468,12 @@ try {
             Assert-FixtureLiveImage $prior $false -AllSessions -CleanupVariant 'discord'
         }
         Check 'ptb-start' {Start-FixtureApp 'discord-ptb'}
-        Check-FixtureCommunications 'discord-ptb'
+        Check-FixtureCommunications 'discord-ptb' 'ptb-start'
         Check 'ptb-remove' {Remove-FixtureApp 'discord-ptb'}
         if(-not $SkipSplitCord){
             Check 'splitcord-install' {Install-FixtureApp 'splitcord'}
             Check 'splitcord-start' {Start-FixtureApp 'splitcord'}
-            Check-FixtureCommunications 'splitcord'
+            Check-FixtureCommunications 'splitcord' 'splitcord-start'
             Check 'splitcord-remove' {Remove-FixtureApp 'splitcord'}
         }
     } finally {
