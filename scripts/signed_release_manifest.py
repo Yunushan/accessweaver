@@ -130,7 +130,24 @@ def macos_deployment_digests(document, identity):
     manifest_pin = hashes[0].get("content")
     require(isinstance(manifest_pin, str) and re.fullmatch(SHA256, manifest_pin)
             and hashes == [{"alg": "SHA-256", "content": manifest_pin}], "Invalid macOS deployment manifest digest")
-    return pin, manifest_pin
+    payload = components["payload:application"]
+    require(payload.get("type") == "application" and payload.get("version") == identity["version"]
+            and all(prop_map(payload).get("accessweaver:" + key) == identity[field]
+                    for key, field in (("source-commit", "commit"), ("source-state", "sourceState"),
+                                       ("target-os", "platform"), ("target-arch", "arch"))),
+            "macOS controller build identity differs")
+    controller_path = "Contents/MacOS/accessweaver"
+    controller = components["bundle-file:" + controller_path]
+    payload_hashes = payload.get("hashes")
+    require(isinstance(payload_hashes, list) and len(payload_hashes) == 1
+            and isinstance(payload_hashes[0], dict), "Invalid macOS controller digest")
+    payload_pin = payload_hashes[0].get("content")
+    require(isinstance(payload_pin, str) and re.fullmatch(SHA256, payload_pin)
+            and payload_hashes == [{"alg": "SHA-256", "content": payload_pin}]
+            and controller.get("type") == "file" and controller.get("name") == controller_path
+            and controller.get("hashes") == payload_hashes,
+            "macOS controller differs from the sealed package executable")
+    return pin, manifest_pin, payload_pin
 
 
 def validate_release_sboms(root, files, commit, version, entries):
@@ -151,10 +168,10 @@ def validate_release_sboms(root, files, commit, version, entries):
             validate_digest(document, subject["sha256"], identity)
             documents[subject["target"], subject["role"]] = document
             if platform == "darwin":
-                detector_pin, manifest_pin = macos_deployment_digests(document, identity)
+                detector_pin, manifest_pin, payload_pin = macos_deployment_digests(document, identity)
                 macos_detectors.append({
                     "target": subject["target"], "version": version, "packageSHA256": subject["sha256"],
-                    "detectorSHA256": detector_pin, "manifestSHA256": manifest_pin,
+                    "detectorSHA256": detector_pin, "manifestSHA256": manifest_pin, "payloadSHA256": payload_pin,
                 })
         for target in ("windows/amd64", "windows/arm64"):
             payload = documents[target, "payload"]["metadata"]["component"]
@@ -1256,6 +1273,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 "macOS detector is revoked")
         require(all(entry["manifestSHA256"] not in revoked_subjects for entry in macos_detectors),
                 "macOS deployment manifest is revoked")
+        require(all(entry["payloadSHA256"] not in revoked_subjects for entry in macos_detectors),
+                "macOS controller is revoked")
         report = {
             "schemaVersion": 1, "scope": "accessweaver-signed-desktop-release",
             "sbomArtifactBindingsVerified": sboms_verified, "macosDetection": macos_detectors,
@@ -1358,7 +1377,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             verify_packaged_deployment(package, team, architecture, application_pin,
                                        commit=commit, version=approved_package["version"],
                                        helper_sha256=approved_package["detectorSHA256"],
-                                       manifest_sha256=approved_package["manifestSHA256"])
+                                       manifest_sha256=approved_package["manifestSHA256"],
+                                       payload_sha256=approved_package["payloadSHA256"])
             require(digest(package) == update["installerSHA256"], "macOS package changed during publisher verification")
             update["nativePublisherVerification"] = {
                 "developerTeamID": team, "installerCertificateSHA256": installer_pin,

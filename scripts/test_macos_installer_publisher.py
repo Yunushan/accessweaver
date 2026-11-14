@@ -137,7 +137,8 @@ class PublisherTests(unittest.TestCase):
             ("wrong-authorization", "package metadata differs"),
             ("wrong-bundle", "strict bundle identity differs"),
             ("wrong-source", "build identity differs from the approved release"),
-            ("changed-payload", "App bundle differs from its sealed manifest"),
+            ("changed-payload", "controller differs from the approved SBOM digest"),
+            ("wrong-payload-digest", "controller differs from the approved SBOM digest"),
             ("duplicate-scripts", "phase entry points differ"),
             ("different-helpers", "do not use the same helper"),
             ("wrong-architecture", "matching thin native 64-bit executable"),
@@ -219,15 +220,15 @@ class PublisherTests(unittest.TestCase):
 
                 helper_pin = "0" * 64 if scenario == "wrong-helper-digest" else hashlib.sha256(helper).hexdigest()
                 manifest_pin = "0" * 64 if scenario == "wrong-manifest-digest" else hashlib.sha256(manifest).hexdigest()
+                core = payload_files[publisher.BUNDLE_NAME + "/Contents/MacOS/accessweaver"]["data"]
+                payload_pin = "0" * 64 if scenario == "wrong-payload-digest" else hashlib.sha256(core).hexdigest()
                 options = {"commit": identity["commit"], "version": version,
-                           "helper_sha256": helper_pin, "manifest_sha256": manifest_pin}
+                           "helper_sha256": helper_pin, "manifest_sha256": manifest_pin, "payload_sha256": payload_pin}
 
                 def verify_bundle(path, parsed, build, encoded):
                     self.assertEqual((path, parsed, build, encoded), (app, json.loads(manifest), identity, manifest))
                     if os.name == "posix":
                         return real_verify_bundle(path, parsed, build, encoded)
-                    if scenario == "changed-payload":
-                        raise ValueError("App bundle differs from its sealed manifest")
 
                 with patch.object(publisher, "tool", side_effect=tool), \
                         patch.object(publisher, "verify_deployment_bundle", side_effect=verify_bundle) as bundle_check:
@@ -236,7 +237,7 @@ class PublisherTests(unittest.TestCase):
                     else:
                         with self.assertRaisesRegex(ValueError, error):
                             publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin, **options)
-                if scenario in ("approved", "changed-payload", "different-helpers", "wrong-architecture",
+                if scenario in ("approved", "different-helpers", "wrong-architecture",
                                 "wrong-helper-digest", "different-certificate", "helper-changed"):
                     bundle_check.assert_called_once()
                 else:

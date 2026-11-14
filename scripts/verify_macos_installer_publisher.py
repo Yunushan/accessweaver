@@ -141,7 +141,8 @@ def check_helper_publisher(helper, team, application_pin):
         check_application_certificate(helper, application_pin)
 
 
-def verify_packaged_deployment(package, team, architecture, application_pin, *, commit, version, helper_sha256, manifest_sha256):
+def verify_packaged_deployment(package, team, architecture, application_pin, *,
+                               commit, version, helper_sha256, manifest_sha256, payload_sha256):
     expanded = verify_packaged_application(package, team, architecture, application_pin)
     try:
         metadata = xml(read_expanded_file(expanded / "PackageInfo", 256 << 10))
@@ -156,8 +157,13 @@ def verify_packaged_deployment(package, team, architecture, application_pin, *, 
     manifest_contract(manifest)
     require(manifest["schemaVersion"] == 2, "Managed package requires a detached payload SBOM")
     app = payload / BUNDLE_NAME
+    executables = app / "Contents" / "MacOS"
     resources = app / "Contents" / "Resources"
-    require(stat.S_ISDIR(resources.lstat().st_mode), "Expected an ordinary expanded package resources directory")
+    require(stat.S_ISDIR(executables.lstat().st_mode) and stat.S_ISDIR(resources.lstat().st_mode),
+            "Expected ordinary expanded package executable and resource directories")
+    core = read_expanded_file(executables / "accessweaver", 64 << 20)
+    require(hashlib.sha256(core).hexdigest() == payload_sha256,
+            "Packaged controller differs from the approved SBOM digest")
     identity = json.loads(read_expanded_file(resources / "BUILD-INFO.json", 64 << 10))
     expected = {"commit": commit, "version": version, "sourceState": "clean",
                 "platform": "darwin", "arch": architecture}

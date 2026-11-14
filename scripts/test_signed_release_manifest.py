@@ -22,6 +22,10 @@ OPENSSL = shutil.which("openssl")
 VERSION = REF.removeprefix("refs/tags/v")
 DETECTOR_DIGESTS = {"darwin/amd64": "1" * 64, "darwin/arm64": "2" * 64}
 DEPLOYMENT_MANIFEST_DIGESTS = {"darwin/amd64": "7" * 64, "darwin/arm64": "8" * 64}
+MACOS_PAYLOAD_DIGESTS = {
+    target: hashlib.sha256(("fixture controller " + target).encode()).hexdigest()
+    for target in DETECTOR_DIGESTS
+}
 
 
 class SignedReleaseManifestTests(unittest.TestCase):
@@ -54,7 +58,13 @@ class SignedReleaseManifestTests(unittest.TestCase):
             root = self.sbom_root(name, target)
             if target.startswith("darwin/"):
                 hashes = [{"alg": "SHA-256", "content": DETECTOR_DIGESTS[target]}]
-                components = [{**root, "bom-ref": "helper:application", "hashes": hashes}]
+                core_path = "Contents/MacOS/accessweaver"
+                core_hashes = [{"alg": "SHA-256", "content": MACOS_PAYLOAD_DIGESTS[target]}]
+                components = [
+                    {**root, "bom-ref": "helper:application", "hashes": hashes},
+                    {**root, "bom-ref": "payload:application", "hashes": core_hashes},
+                    {"bom-ref": "bundle-file:" + core_path, "type": "file", "name": core_path, "hashes": core_hashes},
+                ]
                 components.extend({"bom-ref": "script-file:" + phase, "type": "file",
                                    "name": phase, "hashes": hashes} for phase in ("preinstall", "postinstall"))
                 components.append({"bom-ref": "detached-file:" + release.DETACHED_MANIFEST, "type": "file",
@@ -368,6 +378,18 @@ class SignedReleaseManifestTests(unittest.TestCase):
         sidecar.write_text(original.replace('"bomFormat":', '"bomFormat": "CycloneDX", "bomFormat":', 1),
                            encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "Duplicate JSON"):
+            release.prepare(self.candidate, output, COMMIT, REF)
+        self.assertFalse(output.exists())
+
+    def test_prepare_rejects_mismatched_macos_controller_digest(self):
+        output = self.root / release.MANIFEST
+        sidecar = self.candidate / f"accessweaver-{VERSION}-darwin-arm64-deployment-experimental.pkg.cdx.json"
+        document = json.loads(sidecar.read_bytes())
+        controller = next(entry for entry in document["components"]
+                          if entry["bom-ref"] == "bundle-file:Contents/MacOS/accessweaver")
+        controller["hashes"][0]["content"] = "0" * 64
+        sidecar.write_text(json.dumps(document), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "controller differs from the sealed package executable"):
             release.prepare(self.candidate, output, COMMIT, REF)
         self.assertFalse(output.exists())
 
@@ -778,6 +800,12 @@ class SignedReleaseManifestTests(unittest.TestCase):
                     package_check.assert_not_called()
                     deployment_check.assert_not_called()
                     self.assertEqual(list(macos_staging.iterdir()), [])
+                revoked_pin = self.write_policy({**self.policy, "subjectSHA256": [MACOS_PAYLOAD_DIGESTS[macos_target]]})
+                with self.assertRaisesRegex(ValueError, "macOS controller is revoked"):
+                    self.verify(approved, pin, policy_pin=revoked_pin, **macos_options)
+                package_check.assert_not_called()
+                deployment_check.assert_not_called()
+                self.assertEqual(list(macos_staging.iterdir()), [])
                 self.write_policy(self.policy)
 
                 package_check.side_effect = subprocess.CalledProcessError(1, "spctl")
@@ -817,6 +845,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertEqual(deployment_check.call_args.kwargs, {
                     "commit": COMMIT, "version": VERSION, "helper_sha256": helper_pin,
                     "manifest_sha256": DEPLOYMENT_MANIFEST_DIGESTS[macos_target],
+                    "payload_sha256": MACOS_PAYLOAD_DIGESTS[macos_target],
                 })
                 self.assertEqual((macos_staging / pkg_name).read_bytes(), (self.candidate / pkg_name).read_bytes())
 
@@ -925,7 +954,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.assertEqual(report["sbomArtifactBindingsVerified"], 6)
         self.assertEqual(report["macosDetection"], [
             {"target": target, "version": VERSION, "detectorSHA256": pin,
-             "manifestSHA256": DEPLOYMENT_MANIFEST_DIGESTS[target],
+             "manifestSHA256": DEPLOYMENT_MANIFEST_DIGESTS[target], "payloadSHA256": MACOS_PAYLOAD_DIGESTS[target],
              "packageSHA256": release.digest(self.candidate /
                  f"accessweaver-{VERSION}-darwin-{target.split('/')[1]}-deployment-experimental.pkg")}
             for target, pin in DETECTOR_DIGESTS.items()
@@ -937,6 +966,10 @@ class SignedReleaseManifestTests(unittest.TestCase):
         for target, manifest_pin in DEPLOYMENT_MANIFEST_DIGESTS.items():
             current_pin = self.write_policy({**self.policy, "subjectSHA256": [manifest_pin]})
             with self.subTest(target=target), self.assertRaisesRegex(ValueError, "macOS deployment manifest is revoked"):
+                self.verify(approved, pin, policy_pin=current_pin)
+        for target, macos_payload_pin in MACOS_PAYLOAD_DIGESTS.items():
+            current_pin = self.write_policy({**self.policy, "subjectSHA256": [macos_payload_pin]})
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, "macOS controller is revoked"):
                 self.verify(approved, pin, policy_pin=current_pin)
         self.write_policy(self.policy)
         self.assertTrue(report["organizationApprovalSignatureVerified"])
