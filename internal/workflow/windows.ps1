@@ -3554,11 +3554,15 @@ function Install-App([string]$variant,[switch]$Reinstall) {
             throw 'Stable Discord reappeared during PTB cleanup; review the current installation'
         }
     }
-    if($Reinstall){
+    if($variant -ne 'splitcord'){
         $confirmedApp=Find-App $variant
         if($confirmedApp -ine $installedApp -or (Get-AppExecutableDigest $confirmedApp) -ine $installedDigest){
-            throw 'Stable Discord changed during replacement verification'
+            if($Reinstall){throw 'Stable Discord changed during replacement verification'}
+            if($cleanPTB){throw 'Discord PTB changed during stable client cleanup; review the current installation'}
+            throw 'Application changed during installation verification'
         }
+    }
+    if($Reinstall){
         Event 'Stable Discord reinstalled in the desktop session'
         return @{application=$variant;installed=$true;previouslyInstalled=$true;reinstalled=$true}
     }

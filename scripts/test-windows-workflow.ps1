@@ -2170,7 +2170,7 @@ try {
     $script:appPreviouslyInstalled=$false
     $script:appPTBSetupChanges=$false;$script:appPTBSetupChanged=$false;$script:appPTBUnreadable=$false
     $script:appReplacementBytesChange=$false;$script:appReplacementBytesChanged=$false
-    $script:appJournalDrift=''
+    $script:appJournalDrift='';$script:appFinalReadbackDrift=''
     function Save-Journal {
         & $appInstallSaved['Save-Journal']
         switch($script:appJournalDrift){
@@ -2201,7 +2201,15 @@ try {
             if($script:appStableAppearedDuringDownload){return 'C:\fixture\new\Discord.exe'}
         }
         if($variant -ceq 'discord' -and $script:appStableAppeared -and $script:appInstallTrace.Contains('verify-ptb')){return 'C:\fixture\new\Discord.exe'}
-        if($variant -ceq 'discord-ptb' -and $script:appPreviouslyInstalled){return 'C:\fixture\DiscordPTB.exe'}
+        if($variant -ceq 'discord-ptb'){
+            if($script:appInstallTrace.Contains('verify-ptb')){
+                if($script:appFinalReadbackDrift -ceq 'absent'){return}
+                if($script:appFinalReadbackDrift -ceq 'path'){return 'C:\fixture\updated\DiscordPTB.exe'}
+                if($script:appFinalReadbackDrift -ceq 'bytes'){$script:appPTBSetupChanged=$true}
+                return 'C:\fixture\DiscordPTB.exe'
+            }
+            if($script:appPreviouslyInstalled){return 'C:\fixture\DiscordPTB.exe'}
+        }
         if($variant -ceq 'discord' -and $script:appInstallTrace.Contains('remove-stable')){
             if($script:appStableReturnsDuringCleanup){return 'C:\fixture\new\Discord.exe'}
             return
@@ -2329,7 +2337,7 @@ try {
     }
     $script:appInstallTrace.Clear()
     $installed=Install-App 'discord-ptb'
-    Assert (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,find-discord,find-discord-ptb,installer,verify-ptb,remove-stable,verify-ptb,verify-stable-processes,find-discord,event') 'PTB clean verifies the installed replacement before removal and rechecks it after cleanup'
+    Assert (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,find-discord,find-discord-ptb,installer,verify-ptb,remove-stable,verify-ptb,verify-stable-processes,find-discord,find-discord-ptb,event') 'PTB clean verifies the installed replacement before removal and rechecks it after cleanup'
     $script:appPreviouslyInstalled=$true
     $script:appInstallTrace.Clear()
     $rejected=$false
@@ -2447,12 +2455,30 @@ try {
         $inputData.nativeArchitecture=$case.arch
         [void](Install-App $case.variant)
         $expectedURL='https://discord.com/api/downloads/distributions/app/installers/latest?'+$case.query
-        $expectedTrace='download:discord,find-'+$case.variant+',installer,verify-ptb,event'
+        $expectedTrace='download:discord,find-'+$case.variant+',installer,verify-ptb,find-'+$case.variant+',event'
         if($script:appDownloadURL -cne $expectedURL -or ($script:appInstallTrace -join ',') -cne $expectedTrace){
             throw 'Unexpected Discord installer architecture selection'
         }
     }
     Assert $true 'Discord selects a native stable installer and retains the PTB x64 distribution'
+    foreach($change in @('absent','path','bytes')){
+        $script:appInstallTrace.Clear()
+        $script:appFinalReadbackDrift=$change
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Application changed during installation verification'}
+        finally{$script:appFinalReadbackDrift='';$script:appPTBSetupChanged=$false}
+        Assert ($rejected -and $script:appInstallTrace.Contains('installer') -and
+            -not $script:appInstallTrace.Contains('event')) ('Standard PTB setup refuses success after final executable drift: '+$change)
+    }
+    $r.clean=$true
+    $script:appInstallTrace.Clear()
+    $script:appFinalReadbackDrift='absent'
+    $rejected=$false
+    try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -like 'Discord PTB changed during stable client cleanup*'}
+    finally{$script:appFinalReadbackDrift='';$r.clean=$false}
+    Assert ($rejected -and $script:appInstallTrace.Contains('verify-stable-processes') -and
+        -not $script:appInstallTrace.Contains('event')) 'Clean PTB setup verifies the replacement after the final stable client check'
+    $script:appInstallTrace.Clear()
     $script:appPreviouslyInstalled=$true
     $existing=Install-App 'discord-ptb'
     Assert ($installed.installed -eq $true -and $installed.previouslyInstalled -eq $false -and
