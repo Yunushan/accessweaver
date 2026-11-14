@@ -153,6 +153,15 @@ foreach($inventory in @(
     $script:promptCount=0
     $script:changeDuringPrompt=''
     $script:communicationDigest=$expectedDigest
+    $serviceChecks=[Collections.Generic.List[string]]::new()
+    $serviceFailure=''
+    function Assert-FixtureSplitCordServiceState([string]$Expected,[string]$Image){
+        if($Expected -cne 'Running' -or $Image -cne $splitCord){throw 'Unexpected communication service query'}
+        $serviceChecks.Add($Image)
+        if($serviceFailure -ceq 'before' -or ($serviceFailure -ceq 'after' -and $serviceChecks.Count -eq 2)){
+            throw 'Fixture SplitCord service stopped'
+        }
+    }
     function Inspect-Apps {return [pscustomobject]$clientImages}
     function Get-FileHash {
         [CmdletBinding()]param($LiteralPath,$Algorithm)
@@ -196,6 +205,24 @@ foreach($inventory in @(
         $refused=$_.Exception.Message -ceq 'Fixture observation limit reached'
     }
     if(-not $refused -or $script:promptCount -ne ($before+1)){throw 'Operator input replaced final live-image verification'}
+    foreach($failure in @('before','after','')){
+        $serviceFailure=$failure
+        $serviceChecks.Clear()
+        $before=$script:promptCount
+        $script:observations.Enqueue($true)
+        if($failure -cne 'before'){$script:observations.Enqueue($true)}
+        $refused=$false
+        try{Test-FixtureCommunication 'splitcord' $splitCord 'voice' $expectedDigest}catch{
+            if($_.Exception.Message -cne 'Fixture SplitCord service stopped'){throw}
+            $refused=$true
+        }
+        $expectedChecks=if($failure -ceq 'before'){1}else{2}
+        $expectedPrompts=if($failure -ceq 'before'){0}else{1}
+        if($refused -ne [bool]$failure -or $serviceChecks.Count -ne $expectedChecks -or
+            $script:promptCount -ne ($before+$expectedPrompts) -or $script:observations.Count){
+            throw 'SplitCord communication did not require a running service before and after the prompt'
+        }
+    }
     foreach($change in @('bytes','path')){
         $before=$script:promptCount
         $script:changeDuringPrompt=$change
@@ -272,6 +299,33 @@ foreach($alreadyRunning in @($true,'false',$null)){
     if(-not $refused -or $script:observations.Count){throw 'Existing or untyped process evidence was credited as a new start'}
 }
 & {
+    $installedImages=@{splitcord=$splitCord}
+    $trace=[Collections.Generic.List[string]]::new()
+    function Invoke-AppWorkflow([hashtable]$Request){
+        if($Request.action -cne 'app-start' -or $Request.engine -cne 'splitcord'){throw 'Unexpected SplitCord launch request'}
+        $trace.Add('launch')
+        return @{application='splitcord';alreadyRunning=$false}
+    }
+    function Assert-FixtureSplitCordServiceState([string]$Expected,[string]$Image){
+        if($Expected -cne 'Running' -or $Image -cne $splitCord){throw 'Unexpected launch service query'}
+        $trace.Add('service')
+        if($serviceStopped){throw 'Fixture SplitCord service stopped'}
+    }
+    foreach($serviceStopped in @($false,$true)){
+        $trace.Clear()
+        $script:observations.Enqueue($false)
+        $script:observations.Enqueue($true)
+        $refused=$false
+        try{Start-FixtureApp 'splitcord'}catch{
+            if($_.Exception.Message -cne 'Fixture SplitCord service stopped'){throw}
+            $refused=$true
+        }
+        if($refused -ne $serviceStopped -or ($trace -join ',') -cne 'launch,service' -or $script:observations.Count){
+            throw 'SplitCord fresh launch did not require a running service'
+        }
+    }
+}
+& {
     $replacement='C:\Fixture\Updated\Discord.exe'
     function Inspect-Apps {
         $trace.Add('discovery')
@@ -338,10 +392,11 @@ foreach($alreadyRunning in @($true,'false',$null)){
     $service=[pscustomobject]@{Name='SplitCordDpiService';State='Running';PathName='"'+$binary+'"'}
     $requests=[Collections.Generic.List[string]]::new()
     function Get-FixtureSplitCordServiceState {return $scmState}
-    function Test-Path {
-        [CmdletBinding()]param($LiteralPath,$PathType)
-        if($LiteralPath -ine $binary -or $PathType -cne 'Leaf'){throw 'Unexpected SplitCord executable inspection'}
-        return $binaryPresent
+    function Get-Item {
+        [CmdletBinding()]param($LiteralPath,[switch]$Force)
+        if($LiteralPath -ine $binary -or -not $Force){throw 'Unexpected SplitCord executable inspection'}
+        $requests.Add('image')
+        if($binaryPresent){return [pscustomobject]@{PSIsContainer=$binaryDirectory;Attributes=$binaryAttributes}}
     }
     function Get-CimInstance {
         [CmdletBinding()]param($ClassName,$Filter)
@@ -351,20 +406,25 @@ foreach($alreadyRunning in @($true,'false',$null)){
         $requests.Add('query')
         return $rows
     }
-    $scmState='Absent';$binaryPresent=$true;$rows=@($service)
+    $scmState='Absent';$binaryPresent=$true;$binaryDirectory=$false
+    $binaryAttributes=[IO.FileAttributes]::Normal;$rows=@($service)
     Assert-FixtureSplitCordServiceState 'Absent'
     if($requests.Count -ne 0){throw 'Absent SplitCord verification queried a running registration'}
     $scmState='Running'
     Assert-FixtureSplitCordServiceState 'Running' $client
     $service.PathName=$binary
     Assert-FixtureSplitCordServiceState 'Running' $client
-    foreach($fault in @('missing-image','missing-binary','missing-service','duplicate','wrong-name','stopped','wrong-path','arguments')){
-        $image=$client;$binaryPresent=$true;$rows=@($service);$service.Name='SplitCordDpiService'
+    if(($requests -join ',') -cne 'query,image,query,image'){throw 'Service image was inspected before registration readback'}
+    foreach($fault in @('missing-image','missing-binary','directory-binary','linked-binary','missing-service','duplicate','wrong-name','stopped','wrong-path','arguments')){
+        $image=$client;$binaryPresent=$true;$binaryDirectory=$false;$binaryAttributes=[IO.FileAttributes]::Normal
+        $rows=@($service);$service.Name='SplitCordDpiService'
         $service.State='Running';$service.PathName=$binary
         $expected='Running SplitCord service could not be bound to the installed client'
         switch -CaseSensitive ($fault){
             'missing-image' {$image='';$expected='SplitCord service verification requires the installed client path'}
             'missing-binary' {$binaryPresent=$false;$expected='SplitCord service executable could not be verified'}
+            'directory-binary' {$binaryDirectory=$true;$expected='SplitCord service executable could not be verified'}
+            'linked-binary' {$binaryAttributes=[IO.FileAttributes]::ReparsePoint;$expected='SplitCord service executable could not be verified'}
             'missing-service' {$rows=@()}
             'duplicate' {$rows=@($service,$service)}
             'wrong-name' {$service.Name='OtherService'}

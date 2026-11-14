@@ -114,6 +114,11 @@ function Assert-FixtureCommunicationImage([string]$Variant,[string]$Image,[strin
         throw 'Application identity changed during communication verification'
     }
     Assert-FixtureLiveImage $Image $true
+    if($Variant -ceq 'splitcord'){
+        $script:appEvidenceStage='service-readback'
+        Assert-FixtureSplitCordServiceState 'Running' $Image
+        $script:appEvidenceStage='interactive-communication'
+    }
 }
 
 function Test-FixtureCommunication([string]$Variant,[string]$Image,[string]$Kind,[string]$ExpectedDigest) {
@@ -179,14 +184,16 @@ function Assert-FixtureSplitCordServiceState([ValidateSet('Absent','Running')][s
         throw 'SplitCord service verification requires the installed client path'
     }
     $binary=Join-Path (Split-Path -Parent $Image) 'resources\service-installer\SplitCordService.exe'
-    if(-not (Test-Path -LiteralPath $binary -PathType Leaf -ErrorAction Stop)){
-        throw 'SplitCord service executable could not be verified'
-    }
     $services=@(Get-CimInstance -ClassName Win32_Service -Filter "Name='SplitCordDpiService'" -ErrorAction Stop)
     if($services.Count -ne 1 -or $services[0].Name -ine 'SplitCordDpiService' -or
        $services[0].State -cne 'Running' -or $services[0].PathName -isnot [string] -or
        ($services[0].PathName -ine $binary -and $services[0].PathName -ine ('"'+$binary+'"'))){
         throw 'Running SplitCord service could not be bound to the installed client'
+    }
+    $serviceImage=Get-Item -LiteralPath $binary -Force -ErrorAction SilentlyContinue
+    if($null -eq $serviceImage -or $serviceImage.PSIsContainer -or
+       ($serviceImage.Attributes -band [IO.FileAttributes]::ReparsePoint)){
+        throw 'SplitCord service executable could not be verified'
     }
 }
 
@@ -235,6 +242,10 @@ function Start-FixtureApp([string]$Variant){
         throw 'The application workflow did not confirm a fresh start'
     }
     Assert-FixtureLiveImage $image $true
+    if($Variant -ceq 'splitcord'){
+        $script:appEvidenceStage='service-readback'
+        Assert-FixtureSplitCordServiceState 'Running' $image
+    }
 }
 
 if(($InteractiveCommunications -or -not $SkipSplitCord) -and (-not $ExpectedSHA256 -or [Console]::IsInputRedirected)){
