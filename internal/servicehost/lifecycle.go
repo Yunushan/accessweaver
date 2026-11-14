@@ -23,6 +23,7 @@ const (
 // These operations are private composition, not an alternate native authority.
 type serviceChildOperations struct {
 	start, bind, wait, cancel, close func() error
+	outputFailed                     <-chan error
 }
 
 type serviceChildResult struct {
@@ -35,6 +36,7 @@ type serviceChildResult struct {
 // writer failures separately so accepted manual termination cannot erase them.
 type serviceCommandOutput struct {
 	writer io.Writer
+	failed chan error
 	mu     sync.Mutex
 	err    error
 }
@@ -48,6 +50,9 @@ func (w *serviceCommandOutput) Write(data []byte) (int, error) {
 		w.mu.Lock()
 		if w.err == nil {
 			w.err = err
+			if w.failed != nil {
+				w.failed <- err
+			}
 		}
 		w.mu.Unlock()
 	}
@@ -106,6 +111,7 @@ func runServiceChild(stop <-chan struct{}, child serviceChildOperations, status 
 	go func() { waitDone <- child.wait() }()
 
 	var cancelDone <-chan error
+	outputFailed := child.outputFailed
 	waited, canceled := false, true
 	var interval *time.Ticker
 	var tick <-chan time.Time
@@ -113,6 +119,7 @@ func runServiceChild(stop <-chan struct{}, child serviceChildOperations, status 
 	beginPending := func(manual, cancel bool) {
 		result.stopRequested = manual
 		stop = nil
+		outputFailed = nil
 		checkpoint = 1
 		_ = publish(serviceStateStopPending, checkpoint, 0)
 		interval = time.NewTicker(3 * time.Second)
@@ -164,6 +171,14 @@ func runServiceChild(stop <-chan struct{}, child serviceChildOperations, status 
 				observeWait(err)
 			default:
 				beginPending(true, true)
+			}
+		case err := <-outputFailed:
+			result.err = errors.Join(result.err, err)
+			select {
+			case waitErr := <-waitDone:
+				observeWait(waitErr)
+			default:
+				beginPending(false, true)
 			}
 		case err := <-cancelDone:
 			result.err = errors.Join(result.err, err)

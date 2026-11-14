@@ -187,6 +187,72 @@ func TestServicePendingBudgetRetainsWaitOwnerAndLog(t *testing.T) {
 	}
 }
 
+func TestServiceOutputFailureStartsOwnedShutdown(t *testing.T) {
+	logFailure := errors.New("fixture log write failure")
+	log := &serviceProtocolLog{writeErr: logFailure}
+	output := &serviceCommandOutput{writer: log, failed: make(chan error, 1)}
+	running, cancelEntered, joined := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	releaseWait, releaseCancel := make(chan struct{}), make(chan struct{})
+	var waitOnce, cancelOnce sync.Once
+	t.Cleanup(func() {
+		waitOnce.Do(func() { close(releaseWait) })
+		cancelOnce.Do(func() { close(releaseCancel) })
+		awaitServiceProtocol(t, joined, "service log failure fixture did not join")
+	})
+	var calls atomic.Int32
+	var ownerClosed atomic.Bool
+	var stoppedExit uint32
+	child := serviceChildOperations{
+		start: func() error { return nil },
+		bind:  func() error { return nil },
+		wait: func() error {
+			return waitServiceCommandOutput(func() error {
+				<-releaseWait
+				return &exec.ExitError{}
+			}, output)
+		},
+		cancel: func() error {
+			calls.Add(1)
+			close(cancelEntered)
+			<-releaseCancel
+			return nil
+		},
+		close: func() error {
+			ownerClosed.Store(true)
+			return nil
+		},
+		outputFailed: output.failed,
+	}
+	var result serviceChildResult
+	go func() {
+		defer close(joined)
+		result = runServiceChild(nil, child, func(state, _, exit uint32) error {
+			switch state {
+			case serviceStateRunning:
+				close(running)
+			case serviceStateStopped:
+				stoppedExit = exit
+			}
+			return nil
+		}, log)
+	}()
+	awaitServiceProtocol(t, running, "service did not start")
+	if _, err := output.Write([]byte("engine output")); !errors.Is(err, logFailure) {
+		t.Fatal("log failure was lost")
+	}
+	awaitServiceProtocol(t, cancelEntered, "log failure did not interrupt a live service")
+	if ownerClosed.Load() || log.isClosed() {
+		t.Fatal("log failure released the live child")
+	}
+	waitOnce.Do(func() { close(releaseWait) })
+	cancelOnce.Do(func() { close(releaseCancel) })
+	awaitServiceProtocol(t, joined, "service did not join failed child and helper")
+	if !ownerClosed.Load() || !log.isClosed() || calls.Load() != 1 || stoppedExit != 1 ||
+		result.stopRequested || !errors.Is(result.err, logFailure) {
+		t.Fatalf("log failure was not reported as an owned service failure: %+v", result)
+	}
+}
+
 func TestServiceAcceptedLaunchAndResourceFaultsRemainObservable(t *testing.T) {
 	startErr := errors.New("fixture start error")
 	bindErr := errors.New("fixture accepted bind uncertainty")

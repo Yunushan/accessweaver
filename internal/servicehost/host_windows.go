@@ -101,7 +101,7 @@ func Run(file string) error {
 		}
 		cmd := exec.Command(cfg.Binary, cfg.Args...)
 		cmd.Dir = cfg.Directory
-		output := &serviceCommandOutput{writer: log}
+		output := &serviceCommandOutput{writer: log, failed: make(chan error, 1)}
 		cmd.Stdout = output
 		cmd.Stderr = output
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
@@ -110,11 +110,12 @@ func Run(file string) error {
 		// This is a plain Command: no context watcher can bypass this owner.
 		// Bind duplicates the actual process handle before the sole Wait starts.
 		result := runServiceChild(stop, serviceChildOperations{
-			start:  cmd.Start,
-			bind:   func() error { return owner.Bind(cmd.Process) },
-			wait:   func() error { return waitServiceCommandOutput(cmd.Wait, output) },
-			cancel: owner.Cancel,
-			close:  owner.Close,
+			start:        cmd.Start,
+			bind:         func() error { return owner.Bind(cmd.Process) },
+			wait:         func() error { return waitServiceCommandOutput(cmd.Wait, output) },
+			cancel:       owner.Cancel,
+			close:        owner.Close,
+			outputFailed: output.failed,
 		}, status, log)
 		serviceErr = result.err
 		return 0
