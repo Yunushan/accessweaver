@@ -88,6 +88,31 @@ Assert-Finalizer (-not $fallback.ContainsKey('externalEffectsPending')) 'Fallbac
     }
 
     $realOpenBinding=(Get-Command Open-WorkflowUninstallBinding).ScriptBlock
+    & {
+        $licenses=Join-Path $installed 'licenses'
+        function Assert-NoAccessWeaverSetup {}
+        function Assert-NoPendingWorkflowInstallation {}
+        function Read-WorkflowUninstallRegistration {return $approved}
+        function Get-Item {
+            [CmdletBinding()]param([string]$LiteralPath,[switch]$Force)
+            Assert-Finalizer ($LiteralPath -ceq $licenses -and $Force) 'Uninstall inspected the wrong package directory'
+            return [pscustomobject]@{PSIsContainer=$case.directory;Attributes=$case.attributes}
+        }
+        function Assert-WorkflowUninstallProtection([string]$Path){
+            if($Path -ieq (Join-Path $installed 'accessweaver.exe')){throw 'Synthetic payload inspection reached'}
+            Assert-Finalizer ($Path -in @($installed,(Split-Path -Parent $installed),$folder,$licenses)) 'Uninstall crossed the fixture directory boundary'
+        }
+        foreach($case in @(
+            @{directory=$true;attributes='Directory,ReparsePoint';error='Registered AccessWeaver license directory is redirected or is not a directory'},
+            @{directory=$false;attributes='Normal';error='Registered AccessWeaver license directory is redirected or is not a directory'},
+            @{directory=$true;attributes='Directory';error='Synthetic payload inspection reached'}
+        )){
+            $case.attributes=[IO.FileAttributes]$case.attributes
+            $message=''
+            try {$null=& $realOpenBinding 'amd64'}catch{$message=$_.Exception.Message}
+            Assert-Finalizer ($message -ceq $case.error) 'Uninstall did not enforce the packaged directory boundary'
+        }
+    }
     $state=@{launches=0;restores=0;stream=$null;dataStream=$null;binding=$null;failOpen=$false;failLaunch=$false;
         busy=$false;held=$false;failRestore=$false;installerRecovery='clear';registrationReads=0;setupActive=$false;setupLate=$false}
     function Enter-WorkflowUninstallLifecycle {

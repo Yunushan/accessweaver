@@ -372,6 +372,12 @@ class UninstallLicenseRefusalTests(unittest.TestCase):
             "profilePreserved": True, "machineStateUnchanged": True,
         }
         self.assertEqual(validate_uninstall_license_refusal(observation), {"uninstallLicenseDirectoryRefusalVerified": True})
+        self.assertEqual(validate_uninstall_license_refusal({**observation, "controllerBindingRefused": True},
+                                                          check_controller_binding=True),
+                         {"uninstallLicenseDirectoryRefusalVerified": True})
+        for invalid in (observation, {**observation, "controllerBindingRefused": False}):
+            with self.assertRaises(ValueError):
+                validate_uninstall_license_refusal(invalid, check_controller_binding=True)
         for change in ({"exitCode": True}, {"elapsedMilliseconds": 180000}, {"refusedBeforeRestoration": False},
                        {"targetPreserved": False}, {"installedFileTreePreserved": 1}, {"privatePath": "fixture"}):
             with self.subTest(change=change), self.assertRaises(ValueError):

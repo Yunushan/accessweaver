@@ -5242,6 +5242,16 @@ function Open-WorkflowUninstallBinding([string]$Architecture=$inputData.nativeAr
         Assert-WorkflowUninstallProtection $parent
         if($parent -ieq $programFiles){break}
     }
+    $licenses=Join-Path $directory 'licenses'
+    $licenseDirectory=$null
+    try {$licenseDirectory=Get-Item -LiteralPath $licenses -Force -ErrorAction Stop}
+    catch [Management.Automation.ItemNotFoundException] {} # An absent directory has no files to remove.
+    if($null -ne $licenseDirectory){
+        if(-not $licenseDirectory.PSIsContainer -or ($licenseDirectory.Attributes -band [IO.FileAttributes]::ReparsePoint)){
+            throw 'Registered AccessWeaver license directory is redirected or is not a directory'
+        }
+        Assert-WorkflowUninstallProtection $licenses
+    }
     $dataPath=[IO.Path]::ChangeExtension($path,'.dat')
     Assert-WorkflowUninstallProtection $payload
     Assert-WorkflowUninstallProtection $path
