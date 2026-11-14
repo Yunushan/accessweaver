@@ -3,7 +3,7 @@ name: Native public macOS desktop acceptance
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, 'codex/dns-adapter-coverage']
     paths:
       - scripts/*macos*desktop*
       - scripts/*macos*deployment*
@@ -38,8 +38,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: macos-desktop-${{ github.ref }}
+  # Preserve native qualification evidence for each reviewed source revision.
+  group: macos-desktop-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   native:
