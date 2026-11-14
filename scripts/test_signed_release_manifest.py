@@ -1562,8 +1562,20 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 newer_policy = {**launch_policy, "sequence": 5}
                 newer_pin = self.write_policy(newer_policy)
                 receipt = (start_file, start_digest)
+                boot.side_effect = [
+                    initial_boot,
+                    {**initial_boot, "bootTicks": "638900000000000001"},
+                ]
+                pending = self.verify(approved, pin, policy_pin=newer_pin, **receipt_options,
+                                      windows_upgrade_start_receipt=receipt)["managedUpdate"]
+                self.assertEqual(pending["attemptID"], attempt_id)
+                self.assertEqual(pending["installedDetection"], "unverified")
+                self.assertEqual(pending["installedDetectionReason"], "restart-status-unverified")
+                self.assertNotIn("recordedSetupResult", pending)
+                detect.assert_not_called()
                 recovered = self.verify(approved, pin, policy_pin=newer_pin, **receipt_options,
                                         windows_upgrade_start_receipt=receipt)["managedUpdate"]
+                boot.side_effect = None
                 self.assertEqual(recovered["attemptID"], attempt_id)
                 self.assertEqual(recovered["installedDetection"], "detected")
                 detect.assert_called_once()
@@ -1620,6 +1632,26 @@ class SignedReleaseManifestTests(unittest.TestCase):
                         self.assertEqual(completed_receipt.read_bytes(), result_bytes)
                         self.assertEqual(release.digest(start_file), start_digest)
                 completed_receipt.unlink()
+                legacy_start = staging / "legacy.started.json"
+                legacy = {field: value for field, value in attempt.items() if field != "boot"}
+                legacy["schemaVersion"] = 1
+                legacy_digest = release.write_windows_upgrade_receipt(legacy_start, legacy)
+                detect.reset_mock()
+                legacy_recovery = self.verify(approved, pin, policy_pin=newer_pin, **receipt_options,
+                                              windows_upgrade_start_receipt=(legacy_start, legacy_digest))["managedUpdate"]
+                self.assertEqual(legacy_recovery["installedDetectionReason"], "boot-evidence-unavailable")
+                detect.assert_not_called()
+                legacy_start.unlink()
+
+                completed = {"setupExitCode": 0, "installedDetection": "detected"}
+                result_pin = release.write_windows_upgrade_receipt(completed_receipt, {**attempt, **completed})
+                confirmed = self.verify(approved, pin, policy_pin=newer_pin, **receipt_options,
+                                        windows_upgrade_start_receipt=receipt,
+                                        windows_upgrade_result_receipt=(completed_receipt, result_pin))["managedUpdate"]
+                self.assertEqual(confirmed["recordedSetupResult"], completed)
+                self.assertEqual(confirmed["installedDetection"], "detected")
+                detect.assert_called_once()
+                completed_receipt.unlink()
                 detect.reset_mock()
 
                 def expire_during_recovery(policy, **kwargs):
@@ -1628,8 +1660,10 @@ class SignedReleaseManifestTests(unittest.TestCase):
                     return real_check(policy, **kwargs)
 
                 with patch.object(release, "require_current_revocation_policy", side_effect=expire_during_recovery):
+                    boot.side_effect = [{**initial_boot, "bootTicks": "638900000000000001"}]
                     expired = self.verify(approved, pin, policy_pin=newer_pin, **receipt_options,
                                           windows_upgrade_start_receipt=receipt)["managedUpdate"]
+                    boot.side_effect = None
                 self.assertEqual(expired["attemptID"], attempt_id)
                 self.assertEqual(expired["installedDetection"], "unverified")
                 self.assertEqual(expired["installedDetectionReason"], "revocation-policy-expired")

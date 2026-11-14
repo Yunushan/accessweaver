@@ -1391,6 +1391,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 if recorded_result is not None:
                     update["recordedSetupResult"] = recorded_result
                 restart_required = recorded_result is not None and recorded_result["setupExitCode"] == 3010
+                restart_unconfirmed = recorded_result is None
                 if start_receipt["schemaVersion"] == 2:
                     try:
                         current_boot = read_windows_boot(start_receipt["attemptID"])
@@ -1403,11 +1404,13 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                         update["installedDetection"] = "unverified"
                         update["installedDetectionReason"] = "endpoint-mismatch"
                         return report
-                    if restart_required and current_boot["bootTicks"] <= old_boot["bootTicks"]:
+                    if current_boot["bootTicks"] <= old_boot["bootTicks"] and (restart_required or restart_unconfirmed):
                         update["installedDetection"] = "unverified"
-                        update["installedDetectionReason"] = "restart-required"
+                        update["installedDetectionReason"] = (
+                            "restart-required" if restart_required else "restart-status-unverified"
+                        )
                         return report
-                elif restart_required:
+                elif restart_required or restart_unconfirmed:
                     update["installedDetection"] = "unverified"
                     update["installedDetectionReason"] = "boot-evidence-unavailable"
                     return report
