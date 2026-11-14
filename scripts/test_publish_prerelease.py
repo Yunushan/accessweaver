@@ -218,6 +218,31 @@ class PrereleasePublicationTests(unittest.TestCase):
                         finally:
                             result.write_bytes(original_result)
 
+            windows_receipt = receipts / "release-qualified-windows-arm64" / "candidate.json"
+            bsd_execution = receipts / "release-qualified-openbsd-arm64" / "execution.json"
+            for path, corrupt, message in (
+                (windows_receipt, lambda data: b'{"schemaVersion":2,' + data[1:], "Duplicate native metadata"),
+                (bsd_execution, lambda data: data.replace(b'"encryptedBackupCreated": true',
+                                                          b'"encryptedBackupCreated": 1'),
+                 "execution evidence does not match"),
+                (bsd_execution, lambda data: data.replace(b'"encryptedBackupCreated": true',
+                                                          b'"encryptedBackupCreated": false, "encryptedBackupCreated": true'),
+                 "Duplicate native metadata"),
+            ):
+                original_data = path.read_bytes()
+                changed = corrupt(original_data)
+                self.assertNotEqual(changed, original_data)
+                try:
+                    path.write_bytes(changed)
+                    with (patch.object(publisher, "verify"),
+                          patch.object(publisher, "inspect_archive", side_effect=inspect_archive),
+                          patch.object(publisher, "publish_verified") as publish_verified,
+                          self.assertRaisesRegex(ValueError, message)):
+                        publisher.publish(self.directory, self.commit, self.ref, native_qualification=receipts)
+                    publish_verified.assert_not_called()
+                finally:
+                    path.write_bytes(original_data)
+
             preview_ref = "refs/heads/codex/dns-adapter-coverage"
             for receipt_path in receipts.glob("*/candidate.json"):
                 receipt = json.loads(receipt_path.read_bytes())

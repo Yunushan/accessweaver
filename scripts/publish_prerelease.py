@@ -15,7 +15,7 @@ import zipfile
 from threading import Timer
 from urllib.parse import urlencode
 
-from verify_release import TARGETS, inspect_archive, snapshot
+from verify_release import TARGETS, inspect_archive, snapshot, unique_metadata_keys
 from verify_release_provenance import (BUNDLE_NAME, REPOSITORY, WORKFLOW, authenticate_run, validate_identity,
                                        verification_command, verify)
 from verify_release_rebuild import digest
@@ -188,8 +188,10 @@ def verify_target_execution(report, receipt, system):
             "loopbackDiagnosticsVerified": True, "unixControllerVerified": system != "windows",
             "windowsDiscoveryVerified": system == "windows", "publisherSignatureVerified": False,
         })
+    # JSON comparison keeps booleans distinct from numbers at every depth.
     if (not isinstance(report, dict) or {"failurePhase", "failureType", "cleanupFailed"} & report.keys()
-            or any(type(report.get(key)) is not type(value) or report[key] != value for key, value in identity.items())):
+            or not identity.keys() <= report.keys()
+            or json.dumps({key: report[key] for key in identity}, sort_keys=True) != json.dumps(identity, sort_keys=True)):
         raise ValueError("Packaged execution evidence does not match " + target)
 
 
@@ -226,8 +228,8 @@ def verify_native_qualification(directory, package, manifest, commit, ref, expec
                 bundle_digest = digest(bundle)
             candidate_bytes = candidate.read_bytes()
             execution_bytes = execution_path.read_bytes()
-            receipt = json.loads(candidate_bytes)
-            execution = json.loads(execution_bytes)
+            receipt = json.loads(candidate_bytes, object_pairs_hook=unique_metadata_keys)
+            execution = json.loads(execution_bytes, object_pairs_hook=unique_metadata_keys)
         if not isinstance(receipt, dict):
             raise ValueError("Packaged qualification does not match " + target)
 
@@ -247,9 +249,7 @@ def verify_native_qualification(directory, package, manifest, commit, ref, expec
         }
         if system in {"freebsd", "openbsd"}:
             identity["executionEnvironment"] = f"disposable-{system}-guest"
-        if receipt.keys() != identity.keys() or any(
-            type(receipt[key]) is not type(value) or receipt[key] != value for key, value in identity.items()
-        ):
+        if json.dumps(receipt, sort_keys=True) != json.dumps(identity, sort_keys=True):
             raise ValueError("Packaged qualification does not match " + target)
         verify_target_execution(execution, receipt, system)
         verified_reports[target] = {
@@ -414,7 +414,8 @@ def main():
                     rebuild_checksums_sha256=args.rebuild_checksums_sha256, native_qualification=args.native_qualification,
                     expected_qualification_sha256=args.expected_qualification_sha256, run_id=args.workflow_run_id)
             print("Verified prerelease assets are published.")
-    except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile):
+    except (ValueError, OSError, KeyError, TypeError, RecursionError, subprocess.SubprocessError,
+            tarfile.TarError, zipfile.BadZipFile):
         message = ("Prerelease candidate verification failed." if args.verify_only else
                    "Prerelease verification or publication failed; inspect the draft and keep existing assets intact.")
         print(message, file=sys.stderr)
