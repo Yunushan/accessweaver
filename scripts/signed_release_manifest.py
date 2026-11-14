@@ -476,6 +476,29 @@ def load_windows_upgrade_start_receipt(directory, path, fingerprint):
     return receipt
 
 
+def load_windows_upgrade_result_receipt(directory, path, fingerprint, start_receipt):
+    receipt = decode_json(independently_pinned_file(directory, path, fingerprint, maximum=4096))
+    require(isinstance(receipt, dict), "Malformed Windows upgrade result receipt")
+    fields = {"setupExitCode", "installedDetection"}
+    if "installedDetectionReason" in receipt:
+        fields.add("installedDetectionReason")
+    require(receipt.keys() == start_receipt.keys() | fields
+            and all(type(receipt[key]) is type(value) and receipt[key] == value
+                    for key, value in start_receipt.items()),
+            "Windows upgrade result receipt differs from the saved start receipt")
+    code = receipt["setupExitCode"]
+    detection = receipt["installedDetection"]
+    reason = receipt.get("installedDetectionReason")
+    require(type(code) is int and 0 <= code <= 0xFFFFFFFF
+            and ((code == 0 and detection in ("detected", "unverified"))
+                 or (code == 3010 and detection == "restart-required")
+                 or (code not in (0, 3010) and detection == "setup-failed"))
+            and ("installedDetectionReason" not in receipt
+                 or (code == 0 and detection == "unverified" and reason == "revocation-policy-expired")),
+            "Malformed Windows upgrade result receipt")
+    return {field: receipt[field] for field in sorted(fields)}
+
+
 def revocation_time(value):
     require(isinstance(value, str) and re.fullmatch(
         r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", value
@@ -906,7 +929,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
            resume_windows_upgrade_setup_sha256=None, require_windows_setup_wrong_baseline_refusal=False,
            resume_windows_upgrade_baseline_argument=None, launch_staged_windows_setup=False,
            detect_installed_windows_upgrade=False, windows_upgrade_attempt_id=None, windows_upgrade_start_receipt=None,
-           windows_setup_wait_seconds=None):
+           windows_setup_wait_seconds=None, windows_upgrade_result_receipt=None):
     if windows_setup_wait_seconds is not None:
         require(launch_staged_windows_setup and type(windows_setup_wait_seconds) is int
                 and 1 <= windows_setup_wait_seconds <= 4_294_966,
@@ -920,6 +943,11 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
         start_receipt = load_windows_upgrade_start_receipt(directory, path, fingerprint)
         resume_windows_upgrade_setup_sha256 = start_receipt["installerSHA256"]
         resume_windows_upgrade_baseline_argument = start_receipt["windowsSetupBaselineArgument"]
+    recorded_result = None
+    if windows_upgrade_result_receipt is not None:
+        require(start_receipt is not None, "A Windows result receipt requires the saved start receipt")
+        path, fingerprint = windows_upgrade_result_receipt
+        recorded_result = load_windows_upgrade_result_receipt(directory, path, fingerprint, start_receipt)
     if windows_upgrade_attempt_id is not None:
         require(launch_staged_windows_setup and isinstance(windows_upgrade_attempt_id, str)
                 and re.fullmatch(r"[a-f0-9]{32}", windows_upgrade_attempt_id),
@@ -1186,6 +1214,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     or start_receipt["revocationListSHA256"] == report["revocationListSHA256"]
                 ), "Windows detection requires the original revocation policy or a newer sequence")
                 update["attemptID"] = start_receipt["attemptID"]
+                if recorded_result is not None:
+                    update["recordedSetupResult"] = recorded_result
             record_windows_installed_detection(update, payload_publisher, policy)
         if stage_directory is not None:
             update = report["managedUpdate"]
@@ -1241,7 +1271,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                         with hold_windows_staging_directory(stage_directory):
                             require(staging_directory_identity(stage_directory) == stage_directory_id,
                                     "Managed update staging directory changed before receipt publication")
-                            write_windows_upgrade_receipt(
+                            update["resultReceiptSHA256"] = write_windows_upgrade_receipt(
                                 stage_directory / (windows_upgrade_attempt_id + ".result.json"), result_receipt,
                             )
                     except (OSError, ValueError):
@@ -1298,6 +1328,8 @@ def main():
                              help="existing trusted directory for the authenticated eligible installer")
     verify_args.add_argument("--windows-upgrade-start-receipt", nargs=2, metavar=("PATH", "SHA256"),
                              help="bind read-only detection to an independently pinned start receipt")
+    verify_args.add_argument("--windows-upgrade-result-receipt", nargs=2, metavar=("PATH", "SHA256"),
+                             help="verify an independently pinned result receipt against the saved start receipt")
     verify_args.add_argument("--windows-upgrade-attempt-id",
                              help="record an exclusive start and result for this 32-character lowercase hexadecimal ID")
     verify_args.add_argument("--windows-setup-wait-seconds", type=int,
@@ -1323,6 +1355,9 @@ def main():
             receipt = args.windows_upgrade_start_receipt
             if receipt is not None:
                 receipt = (Path(receipt[0]), receipt[1])
+            result_receipt = args.windows_upgrade_result_receipt
+            if result_receipt is not None:
+                result_receipt = (Path(result_receipt[0]), result_receipt[1])
             report = verify(args.directory, args.approval_certificate, args.approval_certificate_sha256,
                                     args.source_commit, args.source_ref, args.openssl,
                                     revocation_list=args.revocation_list,
@@ -1345,7 +1380,8 @@ def main():
                                     detect_installed_windows_upgrade=args.detect_installed_windows_upgrade,
                                     windows_upgrade_attempt_id=args.windows_upgrade_attempt_id,
                                     windows_upgrade_start_receipt=receipt,
-                                    windows_setup_wait_seconds=args.windows_setup_wait_seconds)
+                                    windows_setup_wait_seconds=args.windows_setup_wait_seconds,
+                                    windows_upgrade_result_receipt=result_receipt)
             print(json.dumps(report))
             if args.launch_staged_windows_setup:
                 update = report["managedUpdate"]

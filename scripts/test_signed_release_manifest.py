@@ -1290,9 +1290,11 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertEqual(attempt["revocationListSHA256"], launch_pin)
                 self.assertEqual(attempt["installerSHA256"], original_setup_pin)
                 self.assertEqual(attempt["windowsSetupBaselineArgument"], original_baseline)
-                self.assertEqual(json.loads((staging / (attempt_id + ".result.json")).read_bytes()),
+                completed_receipt = staging / (attempt_id + ".result.json")
+                self.assertEqual(json.loads(completed_receipt.read_bytes()),
                                  {**attempt, "setupExitCode": 0, "installedDetection": "detected"})
-                (staging / (attempt_id + ".result.json")).unlink()
+                self.assertEqual(result["resultReceiptSHA256"], release.digest(completed_receipt))
+                completed_receipt.unlink()
                 self.assertEqual(result["setupExitCode"], 0)
                 self.assertEqual(result["installedDetection"], "detected")
                 self.assertEqual(result["resultReceiptStatus"], "published")
@@ -1331,6 +1333,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                         self.assertEqual(result["setupExitCode"], setup_code)
                         self.assertEqual(result["installedDetection"], expected_detection)
                         self.assertEqual(result["resultReceiptStatus"], "unverified")
+                        self.assertNotIn("resultReceiptSHA256", result)
                         self.assertEqual(write.call_args.args[0], receipt_path)
                         self.assertFalse(receipt_path.exists())
 
@@ -1400,6 +1403,39 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 launch.assert_not_called()
                 self.assertEqual(list(staging.iterdir()), [start_file])
                 self.assertEqual(release.digest(start_file), start_digest)
+
+                historical = {"setupExitCode": 3010, "installedDetection": "restart-required"}
+                for overrides, message in (
+                    ({"attemptID": "b" * 32}, "differs from the saved start receipt"),
+                    ({"revocationPolicySequence": True}, "differs from the saved start receipt"),
+                    ({"manifestSHA256": "0" * 64}, "differs from the saved start receipt"),
+                    ({"setupExitCode": True}, "Malformed Windows upgrade result receipt"),
+                    ({"setupExitCode": 0}, "Malformed Windows upgrade result receipt"),
+                    ({"installedDetectionReason": "private exception"}, "Malformed Windows upgrade result receipt"),
+                    ({}, "independently approved fingerprint"),
+                    ({}, None),
+                ):
+                    with self.subTest(result_receipt=overrides, message=message):
+                        result_bytes = json.dumps({**attempt, **historical, **overrides}).encode("ascii")
+                        completed_receipt.write_bytes(result_bytes)
+                        result_pin = release.digest(completed_receipt) if message != "independently approved fingerprint" else "0" * 64
+                        detect.reset_mock()
+                        options = {**receipt_options, "windows_upgrade_start_receipt": receipt,
+                                   "windows_upgrade_result_receipt": (completed_receipt, result_pin)}
+                        if message is not None:
+                            with self.assertRaisesRegex(ValueError, message):
+                                self.verify(approved, pin, policy_pin=newer_pin, **options)
+                            detect.assert_not_called()
+                        else:
+                            readback = self.verify(approved, pin, policy_pin=newer_pin, **options)["managedUpdate"]
+                            self.assertEqual(readback["recordedSetupResult"], historical)
+                            self.assertEqual(readback["installedDetection"], "detected")
+                            self.assertNotIn("setupExitCode", readback)
+                            detect.assert_called_once()
+                        launch.assert_not_called()
+                        self.assertEqual(completed_receipt.read_bytes(), result_bytes)
+                        self.assertEqual(release.digest(start_file), start_digest)
+                completed_receipt.unlink()
                 detect.reset_mock()
 
                 def expire_during_recovery(policy, **kwargs):
@@ -1689,7 +1725,8 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
                 "--source-commit", COMMIT, "--source-ref", REF, "--approval-certificate", "approval.cer",
                 "--approval-certificate-sha256", "b" * 64, "--revocation-list", "revocation.json",
                 "--revocation-list-sha256", self.policy_pin, "--detect-installed-windows-upgrade",
-                "--windows-upgrade-start-receipt", "start.json", "c" * 64]
+                "--windows-upgrade-start-receipt", "start.json", "c" * 64,
+                "--windows-upgrade-result-receipt", "result.json", "d" * 64]
         for detection, code in (("detected", 0), ("unverified", 1)):
             report = {"managedUpdate": {"installedDetection": detection}}
             with self.subTest(code=code), patch.object(sys, "argv", argv), \
@@ -1698,6 +1735,7 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
                 self.assertEqual(json.loads(output.getvalue()), report)
                 self.assertIs(verify.call_args.kwargs["detect_installed_windows_upgrade"], True)
                 self.assertEqual(verify.call_args.kwargs["windows_upgrade_start_receipt"], (Path("start.json"), "c" * 64))
+                self.assertEqual(verify.call_args.kwargs["windows_upgrade_result_receipt"], (Path("result.json"), "d" * 64))
                 self.assertIs(verify.call_args.kwargs["launch_staged_windows_setup"], False)
 
     def test_windows_staging_detector_requires_exact_success_and_uses_signed_pins(self):
