@@ -3372,6 +3372,8 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         $originalAppDigest=Get-AppExecutableDigest $originalApp
     }
     if($variant -notin @('discord','discord-ptb','splitcord')){throw 'Choose Discord, Discord PTB or SplitCord'}
+    $cleanPTB=$r.clean -and $variant -eq 'discord-ptb'
+    $stableBeforeDownload=$null;$stableBeforeDownloadDigest=$null;$ptbBeforeSetupDigest=$null
     if($variant -eq 'splitcord'){
         $installer=Get-SplitCordInstaller
         $file=Join-Path $root 'downloads\splitcord-setup.exe'
@@ -3383,10 +3385,12 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         $installerArch=if($channel -eq 'stable' -and $architecture -eq 'arm64'){'arm64'}else{'x64'}
         $url='https://discord.com/api/downloads/distributions/app/installers/latest?channel='+$channel+'&platform=win&arch='+$installerArch
         $file=Join-Path $root ('downloads\'+$variant+'-setup.exe')
+        if($cleanPTB){
+            $stableBeforeDownload=Find-App 'discord'
+            if($stableBeforeDownload){$stableBeforeDownloadDigest=Get-AppExecutableDigest $stableBeforeDownload}
+        }
         $verifiedHash=Download $url '' $file -Signed -Publisher discord -ReturnVerifiedHash
     }
-    $cleanPTB=$r.clean -and $variant -eq 'discord-ptb'
-    $stableBeforeSetup=$null;$stableBeforeSetupDigest=$null;$ptbBeforeSetupDigest=$null
     # Hold the verified download through any preparatory removal and process creation.
     No-Reparse $file
     try {$lockedInstaller=[IO.File]::Open($file,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)}
@@ -3402,10 +3406,11 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         }
         if($cleanPTB){
             $stableBeforeSetup=Find-App 'discord'
-            if($stableBeforeSetup){
-                $stableBeforeSetupDigest=Get-AppExecutableDigest $stableBeforeSetup
-                if($existingApp){$ptbBeforeSetupDigest=Get-AppExecutableDigest $existingApp}
+            if($stableBeforeSetup -ine $stableBeforeDownload -or
+               ($stableBeforeDownload -and (Get-AppExecutableDigest $stableBeforeDownload) -ine $stableBeforeDownloadDigest)){
+                throw 'Stable Discord changed during PTB installer acquisition; review the current installation'
             }
+            if($stableBeforeDownload -and $existingApp){$ptbBeforeSetupDigest=Get-AppExecutableDigest $existingApp}
         }
         $installerArgs=if($variant -eq 'splitcord'){@('/S')}else{@('-s')}
         if($Reinstall -and ((Find-App $variant) -or (Test-Path -LiteralPath $originalApp -ErrorAction Stop))){
@@ -3427,7 +3432,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         if($ptbBeforeSetupDigest -and $existingApp -ieq $installedApp -and $ptbBeforeSetupDigest -ieq $installedDigest){
             throw 'Discord PTB setup did not replace the existing executable; stable Discord was preserved'
         }
-        if($stableBeforeSetup){[void](Remove-App 'discord' $stableBeforeSetup $stableBeforeSetupDigest)}
+        if($stableBeforeDownload){[void](Remove-App 'discord' $stableBeforeDownload $stableBeforeDownloadDigest)}
         elseif(Find-App 'discord'){throw 'Stable Discord appeared during PTB setup; review the current installation'}
         $confirmedApp=Wait-App $variant $true 30
         if($confirmedApp -ine $installedApp -or (Get-AppExecutableDigest $confirmedApp) -ine $installedDigest){

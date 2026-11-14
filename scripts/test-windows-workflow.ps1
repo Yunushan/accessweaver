@@ -2053,7 +2053,11 @@ try {
             if($script:appStableReappears){return 'C:\fixture\replacement\Discord.exe'}
             return
         }
-        if($variant -ceq 'discord' -and $script:appStableChanged -and $script:appInstallTrace.Contains('download:discord')){return 'C:\fixture\updated\Discord.exe'}
+        if($variant -ceq 'discord' -and $script:appInstallTrace.Contains('download:discord')){
+            if($script:appStableChanged){return 'C:\fixture\updated\Discord.exe'}
+            if($script:appStableDisappearedDuringDownload){return}
+            if($script:appStableAppearedDuringDownload){return 'C:\fixture\new\Discord.exe'}
+        }
         if($variant -ceq 'discord' -and $script:appStableAppeared -and $script:appInstallTrace.Contains('verify-ptb')){return 'C:\fixture\new\Discord.exe'}
         if($variant -ceq 'discord-ptb' -and $script:appPreviouslyInstalled){return 'C:\fixture\DiscordPTB.exe'}
         if($variant -ceq 'discord' -and -not $script:appStableAbsent){return 'C:\fixture\Discord.exe'}
@@ -2144,18 +2148,18 @@ try {
     Save-Journal
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$true}
     Assert ($rejected -and -not $script:externalEffectsPending -and
-        (($script:appInstallTrace -join ',') -ceq 'download:discord')) 'PTB clean download failure leaves vendor effects clear and preserves the existing client'
+        (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord')) 'PTB clean download failure leaves vendor effects clear and preserves the existing client'
     $script:appInstallTrace=[Collections.Generic.List[string]]::new();$script:appDownloadFailure=$false;$script:appRemoveFailure=$false
     $beforeLaunch=Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
     Assert ($beforeLaunch.externalEffectsPending -is [bool] -and -not $beforeLaunch.externalEffectsPending) 'Application journal starts with no vendor effect'
     $script:journalPath=Join-Path $root 'missing-parent\application.json'
     $refused=$false
     try{Install-App 'discord-ptb'}catch{$refused=$true}
-    Assert ($refused -and -not $script:externalEffectsPending -and ($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord') 'Application setup refuses to launch when its journal cannot be written'
+    Assert ($refused -and -not $script:externalEffectsPending -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord') 'Application setup refuses to launch when its journal cannot be written'
     $script:journalPath=$journal
     $script:appInstallTrace.Clear()
     $installed=Install-App 'discord-ptb'
-    Assert (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable,verify-ptb,event') 'PTB clean verifies the installed replacement before removal and rechecks it after cleanup'
+    Assert (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable,verify-ptb,event') 'PTB clean verifies the installed replacement before removal and rechecks it after cleanup'
     $script:appPreviouslyInstalled=$true
     $script:appInstallTrace.Clear()
     $rejected=$false
@@ -2173,7 +2177,7 @@ try {
         $rejected=$false
         try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Discord PTB changed during stable client cleanup; review the current installation'}
         Assert ($rejected -and $script:externalEffectsPending -and
-            ($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable,verify-ptb') ('PTB clean refuses success when the replacement changes '+$change+' during cleanup')
+            ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable,verify-ptb') ('PTB clean refuses success when the replacement changes '+$change+' during cleanup')
     }
     $script:appPTBChangeDuringCleanup=$null
     $writer=[IO.File]::OpenWrite($script:appInstallerDestination)
@@ -2185,20 +2189,38 @@ try {
     $rejected=$false
     try {Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Staged application installer differs from the verified download'}
     Assert ($rejected -and -not $script:externalEffectsPending -and
-        ($script:appInstallTrace -join ',') -ceq 'download:discord') 'PTB clean refuses a changed staged installer before any vendor effect'
+        ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord') 'PTB clean refuses a changed staged installer before any vendor effect'
     $script:appInstallerChanged=$false
+    foreach($case in @(
+        @{name='path';flag='appStableChanged'},
+        @{name='bytes';flag='appChangeStableBytesDuringDownload'},
+        @{name='disappearance';flag='appStableDisappearedDuringDownload'},
+        @{name='appearance';flag='appStableAppearedDuringDownload'}
+    )){
+        $script:appInstallTrace.Clear()
+        $script:appStableAbsent=$case.name -ceq 'appearance'
+        $script:externalEffectsPending=$false
+        Set-Variable -Scope Script -Name $case.flag -Value $true
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -like 'Stable Discord changed during PTB installer acquisition*'}
+        Set-Variable -Scope Script -Name $case.flag -Value $false
+        $script:appStableBytesChanged=$false
+        Assert ($rejected -and -not $script:externalEffectsPending -and
+            ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord') ('PTB clean refuses stable client '+$case.name+' changes during download before setup')
+    }
+    $script:appStableAbsent=$false
     $script:appInstallTrace.Clear()
     $script:appNativeFailure=$true
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'fixture installer failure'}
     Assert ($rejected -and $script:externalEffectsPending -and
-        (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer')) 'PTB installer failure preserves stable Discord and retains setup uncertainty'
+        (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,installer')) 'PTB installer failure preserves stable Discord and retains setup uncertainty'
     $script:appNativeFailure=$false
     $script:appInstallTrace.Clear()
     $script:appReadbackFailure=$true
     $script:externalEffectsPending=$false
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'fixture executable readback failure'}
     Assert ($rejected -and $script:externalEffectsPending -and
-        (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb')) 'PTB readback failure preserves stable Discord and retains setup uncertainty'
+        (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,installer,verify-ptb')) 'PTB readback failure preserves stable Discord and retains setup uncertainty'
     $script:appReadbackFailure=$false
     foreach($clean in @($false,$true)){
         $r.clean=$clean;$script:appPTBUnreadable=$true
@@ -2212,25 +2234,25 @@ try {
     $script:appInstallTrace.Clear()
     $script:appStableReplacedDuringSetup=$true
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before removal'}
-    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable')) 'PTB cleanup refuses a replacement stable client'
+    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable')) 'PTB cleanup refuses a replacement stable client'
     $script:appStableReplacedDuringSetup=$false
     $script:appChangeStableBytesDuringSetup=$true
     $script:appInstallTrace.Clear()
     $rejected=$false
     try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before removal'}
-    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable') 'PTB cleanup preserves a stable client updated at the same path during setup'
+    Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable') 'PTB cleanup preserves a stable client updated at the same path during setup'
     $script:appChangeStableBytesDuringSetup=$false;$script:appStableBytesChanged=$false
     $script:appInstallTrace.Clear()
     $script:appStableAbsent=$true
     $script:appStableAppeared=$true
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -like 'Stable Discord appeared during PTB setup*'}
-    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb,find-discord')) 'PTB cleanup preserves a newly observed stable client'
+    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,installer,verify-ptb,find-discord')) 'PTB cleanup preserves a newly observed stable client'
     $script:appStableAppeared=$false
     $script:appStableAbsent=$false
     $script:appInstallTrace.Clear()
     $script:appRemoveFailure=$true
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'fixture remove failure'}
-    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable')) 'PTB clean reports removal failure after verifying the replacement'
+    Assert ($rejected -and (($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable')) 'PTB clean reports removal failure after verifying the replacement'
     $r.clean=$false
     $script:appRemoveFailure=$false
     foreach($case in @(
