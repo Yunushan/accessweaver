@@ -3246,30 +3246,38 @@ function Test-AppProcessInSession([string]$path,[int]$sessionId,$processes,[date
 function Start-App([string]$variant) {
     Require-DesktopUser
     $app=Find-App $variant;if(-not $app){throw 'Application is not installed'};No-Reparse $app
-    $current=[Diagnostics.Process]::GetCurrentProcess()
-    try {$sessionId=$current.SessionId} finally {$current.Dispose()}
-    if($sessionId -eq 0){throw 'Start user applications from the signed-in Windows desktop, not the SYSTEM session'}
-    $baseline=Test-AppProcessInSession $app $sessionId @(Get-Process -ErrorAction Stop)
-    if($baseline -isnot [bool]){throw 'Application process state could not be inspected before launch'}
-    if($baseline){
-        Event 'Application was already running in the desktop session'
-        return @{application=$variant;alreadyRunning=$true}
-    }
-    # Explorer brokers the launch in the signed-in desktop user's context.
-    # Its external application lifetime is not owned or certified by this worker.
-    Save-ApplicationEffectBoundary
-    $handoffTime=[DateTime]::UtcNow
-    Start-Process -FilePath (Join-Path $env:SystemRoot 'explorer.exe') -ArgumentList @((Quote-Arg $app)) -WindowStyle Hidden
-    $wait=[Diagnostics.Stopwatch]::StartNew()
-    do {
-        $processes=@(Get-Process -ErrorAction Stop)
-        if(Test-AppProcessInSession $app $sessionId $processes $handoffTime){
-            Event 'Application process is running in the desktop session'
-            return @{application=$variant;alreadyRunning=$false}
+    $guard=[IO.File]::Open($app,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($guard.Length -le 0 -or $guard.Length -gt 512MB){throw 'Application executable exceeds inspection limits'}
+        $current=[Diagnostics.Process]::GetCurrentProcess()
+        try {$sessionId=$current.SessionId} finally {$current.Dispose()}
+        if($sessionId -eq 0){throw 'Start user applications from the signed-in Windows desktop, not the SYSTEM session'}
+        $baseline=Test-AppProcessInSession $app $sessionId @(Get-Process -ErrorAction Stop)
+        if($baseline -isnot [bool]){throw 'Application process state could not be inspected before launch'}
+        if((Find-App $variant) -ine $app){throw 'Application installation changed before launch'}
+        No-Reparse $app
+        if($baseline){
+            Event 'Application was already running in the desktop session'
+            return @{application=$variant;alreadyRunning=$true}
         }
-        Start-Sleep -Milliseconds 500
-    } while($wait.Elapsed.TotalSeconds -lt 10)
-    throw 'Application launch could not be verified; inspect its desktop and logs'
+        # Explorer brokers the launch asynchronously in the desktop session.
+        # Keep the selected executable open until process observation finishes.
+        Save-ApplicationEffectBoundary
+        $handoffTime=[DateTime]::UtcNow
+        Start-Process -FilePath (Join-Path $env:SystemRoot 'explorer.exe') -ArgumentList @((Quote-Arg $app)) -WindowStyle Hidden
+        $wait=[Diagnostics.Stopwatch]::StartNew()
+        do {
+            $processes=@(Get-Process -ErrorAction Stop)
+            if(Test-AppProcessInSession $app $sessionId $processes $handoffTime){
+                if((Find-App $variant) -ine $app){throw 'Application installation changed during launch verification'}
+                No-Reparse $app
+                Event 'Application process is running in the desktop session'
+                return @{application=$variant;alreadyRunning=$false}
+            }
+            Start-Sleep -Milliseconds 500
+        } while($wait.Elapsed.TotalSeconds -lt 10)
+        throw 'Application launch could not be verified; inspect its desktop and logs'
+    } finally {$guard.Dispose()}
 }
 function Start-RepairProxy {
     $binary=Ensure-Asset 'byedpi';$name='AccessWeaver-byedpi';$service=Get-Service $name -ErrorAction SilentlyContinue

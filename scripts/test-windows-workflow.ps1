@@ -2010,8 +2010,25 @@ try{
         $fixtureProcessUnreadable=$false
         $fixtureInventoryFails=$false
         $fixtureProcessTimes=[Collections.Generic.List[datetime]]::new()
-        function Find-App {return $launchPath}
+        [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($launchPath))
+        [IO.File]::WriteAllText($launchPath,'Inert application image')
+        $fixturePathChanged=$false
+        $fixturePathChangesAfterLaunch=$false
+        $fixtureObservedLaunchCount=2
+        $findCalls=[Collections.Generic.List[bool]]::new()
+        function Find-App {
+            $findCalls.Add($true)
+            if(($fixturePathChanged -and $findCalls.Count -gt 1) -or
+                ($fixturePathChangesAfterLaunch -and $trace.Count -ge 2)){return $launchPath+'.replacement'}
+            return $launchPath
+        }
+        function Assert-LaunchFileHeld {
+            $denied=$false
+            try {$writer=[IO.File]::OpenWrite($launchPath);$writer.Dispose()}catch [IO.IOException] {$denied=$true}
+            if(-not $denied){throw 'Selected client was writable during its desktop handoff'}
+        }
         function Start-Process($FilePath,$ArgumentList,$WindowStyle){
+            Assert-LaunchFileHeld
             $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
             if($FilePath -ine (Join-Path $env:SystemRoot 'explorer.exe') -or $ArgumentList.Count -ne 1 -or
                $ArgumentList[0] -cne (Quote-Arg $launchPath) -or $WindowStyle -cne 'Hidden' -or
@@ -2026,7 +2043,8 @@ try{
             if($Name -or $ErrorAction -cne 'Stop'){throw 'Expected a complete fixture process query'}
             if($fixtureInventoryFails){throw 'Inert process inventory failure'}
             if($fixtureProcessUnreadable){return [pscustomobject]@{ProcessName='Discord';Path=$null;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false}}
-            if($fixtureProcessRunning -or $trace.Count -eq 2){
+            Assert-LaunchFileHeld
+            if($fixtureProcessRunning -or $trace.Count -ge $fixtureObservedLaunchCount){
                 $created=if($trace.Count){$fixtureProcessTimes[$trace.Count-1]}else{[DateTime]::UtcNow.AddSeconds(-1)}
                 return [pscustomobject]@{ProcessName='Discord';Path=$launchPath;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false;StartTime=$created}
             }
@@ -2051,6 +2069,13 @@ try{
             try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Application process state could not be inspected before launch'}
             Assert ($rejected -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application launch refuses an unresolved matching process before journaling or handoff'
             $fixtureProcessUnreadable=$false
+            $fixturePathChanged=$true
+            # Drift occurs after the first discovery, during process inventory.
+            $findCalls.Clear()
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before launch'}
+            Assert ($rejected -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application launch refuses changed discovery before handoff'
+            $fixturePathChanged=$false
             $script:journalPath=Join-Path $launchRoot 'missing\application.json'
             $rejected=$false
             try{Start-App 'discord'}catch{$rejected=$true}
@@ -2061,10 +2086,20 @@ try{
             try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Inert Explorer handoff failure'}
             $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
             Assert ($rejected -and $trace.Count -eq 1 -and $saved.externalEffectsPending -eq $true) 'Application launch retains its pending journal after a failed handoff'
+            $writer=[IO.File]::OpenWrite($launchPath);$writer.Dispose()
+            Assert $true 'Application launch releases its executable after failed handoff'
             $fixtureLaunchFails=$false
+            $fixturePathChangesAfterLaunch=$true
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed during launch verification'}
+            Assert ($rejected -and $trace.Count -eq 2) 'Application launch refuses changed discovery after handoff'
+            $fixturePathChangesAfterLaunch=$false
+            $fixtureObservedLaunchCount=3
             $started=Start-App 'discord'
             Assert ($started.application -ceq 'discord' -and $started.alreadyRunning -eq $false -and
-                $trace.Count -eq 2) 'Application launch observes a matching process after its journaled handoff'
+                $trace.Count -eq 3) 'Application launch observes a matching process after its journaled handoff'
+            $writer=[IO.File]::OpenWrite($launchPath);$writer.Dispose()
+            Assert $true 'Application launch releases its executable after process verification'
         } finally {
             $script:externalEffectsPending=$previousEffects
             $script:journalState=$previousState
