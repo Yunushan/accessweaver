@@ -135,6 +135,10 @@ def validate_managed_detection(report):
         documentation = ("redirected-docs-refused", "redirected-docs-assets-refused", "redirected-docs-qualification-refused")
         refusals.update(documentation)
         expected[7:7] = [(phase, False) for phase in documentation] + [("after-documentation-directory-restoration", True)]
+    if report.get("schemaVersion", 0) >= 51:
+        refusals.add("missing-notice-refused")
+        expected[3:3] = [("changed-notice", False), ("missing-notice-refused", False),
+                         ("after-notice-restoration", True)]
     source = Path(__file__).with_name("detect-windows-installer.ps1")
     require(report.get("managedDetectionSourceSHA256") == digest(source.read_bytes()),
             "Managed detection differs from the approved source")
@@ -442,7 +446,7 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
     if report_schema is not None:
         require(type(report.get("schemaVersion")) is int and report["schemaVersion"] == report_schema,
                 "Native lifecycle report schema differs from the approved schema")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in range(11, 51) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in range(11, 52) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -638,7 +642,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("directory",type=Path)
     parser.add_argument("--source-commit",required=True);parser.add_argument("--source-ref",required=True);parser.add_argument("--architecture",required=True)
     parser.add_argument("--versions",nargs=2,default=DEFAULT_VERSIONS);parser.add_argument("--gh",default="gh");parser.add_argument("--check-rejections",action="store_true");parser.add_argument("--stage-build-root",type=Path);parser.add_argument("--run-id",required=True)
-    parser.add_argument("--report-schema", type=int, choices=range(11, 51),
+    parser.add_argument("--report-schema", type=int, choices=range(11, 52),
                         help="require the report schema approved for this invocation")
     parser.add_argument("--run-attempt", help="require the approved GitHub Actions attempt on every subject")
     args=parser.parse_args()

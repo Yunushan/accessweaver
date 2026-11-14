@@ -303,6 +303,46 @@ function Test-AccessWeaverInstalledPublisher([string]$Path,[string]$Expected) {
     finally {$sha256.Dispose()}
 }
 
+function Read-AccessWeaverPayloadNotices([IO.Stream]$SBOM) {
+    $SBOM.Position=0
+    $reader=[IO.StreamReader]::new($SBOM,[Text.UTF8Encoding]::new($false,$true),$false,4096,$true)
+    try {
+        $document=Microsoft.PowerShell.Utility\ConvertFrom-Json -InputObject ($reader.ReadToEnd()) -ErrorAction Stop
+    } finally {$reader.Dispose()}
+    $root=$document.metadata.component
+    if($document.bomFormat -cne 'CycloneDX' -or $document.specVersion -cne '1.6' -or
+       $root.type -cne 'application' -or @($document.components).Count -gt 4096){
+        throw 'Installed SBOM notice metadata is invalid'
+    }
+    $notices=[Collections.Generic.Dictionary[string,string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $safePath=[regex]::new('\Alicenses/(?!(?i:CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\.|\z))[A-Za-z0-9._-]{1,240}(?<!\.)\z',
+        [Text.RegularExpressions.RegexOptions]::CultureInvariant)
+    foreach($component in (@($root)+@($document.components))){
+        $properties=@($component.properties | Where-Object {$_.name -ceq 'accessweaver:license-evidence'})
+        if($properties.Count -eq 0 -and $component.type -ceq 'file' -and -not $component.licenses){continue}
+        if($properties.Count -ne 1 -or $properties[0].value -isnot [string] -or
+           -not $properties[0].value.TrimStart().StartsWith('[')){
+            throw 'Installed SBOM notice metadata is invalid'
+        }
+        $records=Microsoft.PowerShell.Utility\ConvertFrom-Json -InputObject $properties[0].value -ErrorAction Stop
+        if(-not $records){throw 'Installed SBOM notice metadata is invalid'}
+        foreach($record in $records){
+            if($record.path -isnot [string] -or -not $safePath.IsMatch($record.path) -or
+               $record.sha256 -isnot [string] -or $record.sha256 -cnotmatch '\A[a-f0-9]{64}\z'){
+                throw 'Installed SBOM notice metadata is invalid'
+            }
+            $name=$record.path.Substring('licenses/'.Length)
+            if($notices.ContainsKey($name)){
+                if($notices[$name] -cne $record.sha256){throw 'Installed SBOM notice digests conflict'}
+            }else{
+                if($notices.Count -ge 256){throw 'Installed SBOM notice inventory exceeds its limit'}
+                $notices.Add($name,$record.sha256)
+            }
+        }
+    }
+    return ,$notices
+}
+
 function Test-AccessWeaverInstallation([string]$directory) {
     Assert-NoAccessWeaverSetup
     Assert-NoPendingAccessWeaverInstallation
@@ -314,6 +354,7 @@ function Test-AccessWeaverInstallation([string]$directory) {
     elseif($registeredDirectory -ine $directory){throw 'Unexpected registered installation directory'}
     Initialize-AccessWeaverInstalledFileAccess
     $parents=[Collections.Generic.List[Microsoft.Win32.SafeHandles.SafeFileHandle]]::new()
+    $noticeFiles=[Collections.Generic.List[IO.FileStream]]::new()
     $payload=$null;$uninstaller=$null;$uninstallData=$null;$sbom=$null;$buildInfo=$null
     try {
         $root=[IO.Path]::GetPathRoot($directory)
@@ -330,6 +371,16 @@ function Test-AccessWeaverInstallation([string]$directory) {
         if($PayloadSBOMSHA256){
             $sbom=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $directory 'SBOM.cdx.json'),4MB,$true)
             if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $sbom -Algorithm SHA256).Hash -ine $PayloadSBOMSHA256){return $false}
+            $notices=Read-AccessWeaverPayloadNotices $sbom
+            $licenseDirectory=Join-Path $directory 'licenses'
+            $total=0L
+            foreach($notice in $notices.GetEnumerator()){
+                $file=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $licenseDirectory $notice.Key),1MB,$true)
+                $noticeFiles.Add($file)
+                $total+=$file.Length
+                if($total -gt 16MB){throw 'Installed SBOM notices exceed the aggregate inspection limit'}
+                if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $file -Algorithm SHA256).Hash -ine $notice.Value){return $false}
+            }
         }
         if($BuildInfoSHA256){
             $buildInfo=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $directory 'BUILD-INFO.json'),64KB,$true)
@@ -367,7 +418,11 @@ function Test-AccessWeaverInstallation([string]$directory) {
                 }
             }
         } finally {
-            for($i=$parents.Count-1;$i -ge 0;$i--){$parents[$i].Dispose()}
+            try {
+                for($i=$noticeFiles.Count-1;$i -ge 0;$i--){$noticeFiles[$i].Dispose()}
+            } finally {
+                for($i=$parents.Count-1;$i -ge 0;$i--){$parents[$i].Dispose()}
+            }
         }
     }
     return $true

@@ -734,6 +734,21 @@ class ManagedDetectionEvidenceTests(unittest.TestCase):
         self.assertEqual(validate_managed_detection(current), {"managedDetectionChecksVerified": 24})
         with self.assertRaisesRegex(ValueError, "Incomplete managed detection coverage"):
             validate_managed_detection({**current, "managedDetectionCases": with_license_refusal})
+        with_notice_readback = [
+            *with_documentation[:3],
+            {"phase": "changed-notice", "detected": False},
+            {"phase": "missing-notice-refused", "detected": False, "inspectionRefused": True},
+            {"phase": "after-notice-restoration", "detected": True},
+            *with_documentation[3:],
+        ]
+        current = {**current, "schemaVersion": 51, "managedDetectionCases": with_notice_readback}
+        self.assertEqual(validate_managed_detection(current), {"managedDetectionChecksVerified": 27})
+        with self.assertRaisesRegex(ValueError, "Incomplete managed detection coverage"):
+            validate_managed_detection({**current, "managedDetectionCases": with_documentation})
+        incorrect = with_notice_readback.copy()
+        incorrect[4] = {**incorrect[4], "inspectionRefused": 1}
+        with self.assertRaisesRegex(ValueError, "Unexpected managed detection result"):
+            validate_managed_detection({**current, "managedDetectionCases": incorrect})
         self.assertEqual(validate_managed_detection({**upgraded, "schemaVersion": 21, "managedDetectionCases": with_denial}),
                          {"managedDetectionChecksVerified": 15})
         with self.assertRaises(ValueError):

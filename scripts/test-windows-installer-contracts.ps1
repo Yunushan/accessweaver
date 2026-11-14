@@ -137,6 +137,48 @@ foreach($subject in @(@{name='accessweaver.exe';limit='128MB';handle='Executable
     Assert ($detectorSource.Contains("::OpenFile((Join-Path `$directory '$name'),$limit,`$true)")) ('Managed detection must require a single-link '+$name)
     Assert ($completion -cmatch ("AWVerifyInstalledFile\(Destination \+ '\\"+[regex]::Escape($name)+"', [^,]+, [^,]+, True, $handle\)")) ('Setup must hold a single-link '+$name)
 }
+Assert ($detectorSource -cmatch '(?s)Get-FileHash -InputStream \$sbom.*Read-AccessWeaverPayloadNotices \$sbom.*OpenFile\(\(Join-Path \$licenseDirectory \$notice\.Key\),1MB,\$true\).*\$noticeFiles\.Add\(\$file\).*Get-FileHash -InputStream \$file.*\$noticeFiles\[\$i\]\.Dispose\(\)') 'Managed detection must hold and hash the notice files named by its authenticated SBOM'
+& {
+    $issues=$null
+    $ast=[Management.Automation.Language.Parser]::ParseInput($detectorSource,[ref]$null,[ref]$issues)
+    $nodes=@($ast.EndBlock.Statements | Where-Object {$_.Name -ceq 'Read-AccessWeaverPayloadNotices'})
+    Assert ($issues.Count -eq 0 -and $nodes.Count -eq 1) 'Managed detection notice parser is available'
+    . ([scriptblock]::Create($nodes[0].Extent.Text))
+    function Read-NoticeFixture([string]$RootEvidence,[string]$ComponentEvidence) {
+        $name='accessweaver:license-evidence'
+        $document=@{
+            bomFormat='CycloneDX';specVersion='1.6'
+            metadata=@{component=@{type='application';properties=@(@{name=$name;value=$RootEvidence})}}
+            components=@(@{type='library';properties=@(@{name=$name;value=$ComponentEvidence})},@{type='file'})
+        }
+        $json=ConvertTo-Json -InputObject $document -Depth 10 -Compress
+        $stream=[IO.MemoryStream]::new([Text.Encoding]::UTF8.GetBytes($json))
+        try {return ,(Read-AccessWeaverPayloadNotices $stream)}
+        finally {$stream.Dispose()}
+    }
+    function NoticeRecord([string]$Path,[string]$Digest) {
+        ConvertTo-Json -InputObject @(@{path=$Path;sha256=$Digest}) -Compress
+    }
+    $pin='a'*64
+    $valid=NoticeRecord 'licenses/Go-runtime-LICENSE' $pin
+    $compatible=NoticeRecord 'licenses/go-runtime-license' $pin
+    $notices=Read-NoticeFixture $valid $compatible
+    Assert ($notices.Count -eq 1 -and $notices['Go-runtime-LICENSE'] -ceq $pin) 'Matching notice references are hashed once under Windows filename rules'
+    foreach($invalid in @(
+        '[]',
+        '{"path":"licenses/notice.txt","sha256":"invalid"}',
+        (NoticeRecord 'licenses/../notice.txt' $pin),
+        (NoticeRecord 'licenses/notice.' $pin),
+        (NoticeRecord 'licenses/nUl.txt' $pin),
+        (NoticeRecord ('licenses/notice'+[char]0x212a+'.txt') $pin),
+        (NoticeRecord 'licenses/notice.txt:alternate' $pin),
+        (NoticeRecord 'licenses/go-runtime-license' ('b'*64))
+    )){
+        $refused=$false
+        try {$null=Read-NoticeFixture $valid $invalid}catch{$refused=$_.Exception.Message -like 'Installed SBOM notice*'}
+        Assert $refused 'Managed detection refuses malformed, unsafe or contradictory notice references'
+    }
+}
 $registrySource=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-installer-registry.iss'))
 $uninstallSubject=[regex]::Match($installerSource,'(?ms)^function AWOpenUninstallSubject\(.*?^end;').Value
 Assert ($completion.Contains("ExpandConstant('{uninstallexe}')") -and
