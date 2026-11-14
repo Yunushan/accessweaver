@@ -4,7 +4,7 @@ $source=Join-Path $PSScriptRoot 'test-windows-installer-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Reboot fixture failed parsing'}
-foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootDowngradeLog','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-InstalledDetection','Assert-InstalledPublisher')){
+foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootDowngradeLog','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-InstalledDetection','Assert-InstalledPublisher')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -158,10 +158,20 @@ try {
     if([IO.Directory]::GetFileSystemEntries($root).Length -ne 0){throw 'Oversized publication left evidence'}
     Write-NewRebootEvidence $path $saved
     $bytes=[IO.File]::ReadAllText($path)
-    Assert-RebootIdentity ($bytes|ConvertFrom-Json) $expected
+    Assert-RebootIdentity (Read-RebootEvidence $path) $expected
     Assert-Refused {Write-NewRebootEvidence $path @{changed=$true}}
     if([IO.File]::ReadAllText($path) -cne $bytes){throw 'Existing reboot evidence was overwritten'}
     if([IO.Directory]::GetFileSystemEntries($root).Length -ne 1){throw 'Publication left a staging file'}
+    foreach($invalid in @('', '[]', '[{}]', '{', (' '*8193))){
+        [IO.File]::WriteAllText($path,$invalid)
+        Assert-Refused {Read-RebootEvidence $path}
+    }
+    [IO.File]::WriteAllBytes($path,[byte[]]@(239,187,191,123,125))
+    Assert-Refused {Read-RebootEvidence $path}
+    [IO.File]::WriteAllBytes($path,[byte[]]@(123,34,110,34,58,34,255,34,125))
+    Assert-Refused {Read-RebootEvidence $path}
+    [IO.File]::WriteAllText($path,('{}'+(' '*8190)))
+    if((Read-RebootEvidence $path) -isnot [pscustomobject]){throw 'The maximum evidence extent should be accepted'}
 } finally {
     [IO.File]::Delete($path)
     [IO.Directory]::Delete($root)

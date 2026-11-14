@@ -44,6 +44,25 @@ function Write-NewRebootEvidence([string]$Path,$Data){
         [IO.File]::Move($staged,$Path)
     } finally {[IO.File]::Delete($staged)}
 }
+function Read-RebootEvidence([string]$Path){
+    Assert-RebootPath $Path
+    $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        $length=$stream.Length
+        if($length -le 0 -or $length -gt 8192){throw 'Installer reboot evidence is outside the size limit'}
+        $bytes=[byte[]]::new([int]$length)
+        $offset=0
+        while($offset -lt $bytes.Length){
+            $count=$stream.Read($bytes,$offset,$bytes.Length-$offset)
+            if($count -eq 0){throw 'Installer reboot evidence was truncated'}
+            $offset+=$count
+        }
+        if($stream.ReadByte() -ne -1){throw 'Installer reboot evidence grew'}
+    } finally {$stream.Dispose()}
+    $text=[Text.UTF8Encoding]::new($false,$true).GetString($bytes)
+    if($text -cnotmatch '\A[\x20\t\r\n]*\{'){throw 'Expected a reboot evidence JSON object'}
+    return ConvertFrom-Json -InputObject $text -ErrorAction Stop
+}
 function Get-RebootInstallMode([string]$Version,[string]$PayloadSHA256,[string]$PreviousVersion,[string]$PreviousPayloadSHA256,
         [string]$PreviousPayloadSBOMSHA256,[string]$PreviousPayloadPublisherSHA256){
     if(-not ($PreviousVersion -or $PreviousPayloadSHA256 -or $PreviousPayloadSBOMSHA256 -or $PreviousPayloadPublisherSHA256)){
@@ -274,14 +293,7 @@ function Assert-RebootProfileReadable([string]$Controller,[string]$ControllerSHA
         }
         $env:ACCESSWEAVER_HOME=$UserStore
         [void](Invoke-ApprovedInstaller $Controller @('show',$ProfileID) -OutputPath $OutputPath)
-        Assert-RebootPath $OutputPath
-        $stream=[IO.File]::Open($OutputPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-        try {
-            if($stream.Length -le 0 -or $stream.Length -gt 8192){throw 'Saved profile readback is outside the fixture bounds'}
-            $reader=[IO.StreamReader]::new($stream,[Text.UTF8Encoding]::new($false,$true),$false,1024,$true)
-            try {$record=ConvertFrom-Json -InputObject $reader.ReadToEnd() -ErrorAction Stop}
-            finally {$reader.Dispose()}
-        } finally {$stream.Dispose()}
+        $record=Read-RebootEvidence $OutputPath
         if($record -isnot [pscustomobject] -or $record.id -cne $ProfileID -or
            $record.name -cne 'Installer reboot preservation fixture' -or $record.engine -cne 'byedpi' -or $record.version -ne 1){
             throw 'Installed controller did not read the saved fixture profile'
@@ -456,9 +468,8 @@ if($Phase -ceq 'Prepare'){
     return
 }
 
-Assert-RebootPath $baseline
-if((Get-Item -LiteralPath $baseline).Length -gt 8192 -or (Test-Path -LiteralPath $report)){throw 'The prepared run is invalid or already consumed'}
-$saved=Get-Content -LiteralPath $baseline -Raw|ConvertFrom-Json
+if(Test-Path -LiteralPath $report -ErrorAction Stop){throw 'The prepared run is already consumed'}
+$saved=Read-RebootEvidence $baseline
 Assert-RebootIdentity $saved $expected
 Assert-LaterGuestBoot $saved.boot $boot
 Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=11;runID=$RunID}
