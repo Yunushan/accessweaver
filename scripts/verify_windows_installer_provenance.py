@@ -125,6 +125,9 @@ def validate_managed_detection(report):
     if report.get("schemaVersion", 0) >= 36:
         refusals.add("managed-upgrade-pending")
         expected.insert(3, ("managed-upgrade-pending", False))
+    if report.get("schemaVersion", 0) >= 41:
+        refusals.add("hard-linked-controller-refused")
+        expected[3:3] = [("hard-linked-controller-refused", False), ("after-hard-link-removal", True)]
     source = Path(__file__).with_name("detect-windows-installer.ps1")
     require(report.get("managedDetectionSourceSHA256") == digest(source.read_bytes()),
             "Managed detection differs from the approved source")
@@ -394,7 +397,7 @@ def validate_fixed_restoration(refused, removed):
 
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in range(11, 42) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")

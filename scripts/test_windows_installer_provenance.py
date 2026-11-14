@@ -590,6 +590,23 @@ class ManagedDetectionEvidenceTests(unittest.TestCase):
         self.assertEqual(validate_managed_detection(latest), {"managedDetectionChecksVerified": 16})
         with self.assertRaises(ValueError):
             validate_managed_detection({**latest, "managedDetectionCases": with_denial})
+        latest = {**latest, "schemaVersion": 41}
+        with_hard_link = [
+            *managed_pending[:3],
+            {"phase": "hard-linked-controller-refused", "detected": False, "inspectionRefused": True},
+            {"phase": "after-hard-link-removal", "detected": True},
+            *managed_pending[3:],
+        ]
+        self.assertEqual(validate_managed_detection({**latest, "managedDetectionCases": with_hard_link}),
+                         {"managedDetectionChecksVerified": 18})
+        for invalid in (
+            managed_pending,
+            [*with_hard_link[:3], *reversed(with_hard_link[3:5]), *with_hard_link[5:]],
+            [*with_hard_link[:3], dict(with_hard_link[3], inspectionRefused=1), *with_hard_link[4:]],
+            [*with_hard_link[:4], dict(with_hard_link[4], detected=False), *with_hard_link[5:]],
+        ):
+            with self.subTest(cases=invalid[3:5]), self.assertRaises(ValueError):
+                validate_managed_detection({**latest, "managedDetectionCases": invalid})
         self.assertEqual(validate_managed_detection({**upgraded, "schemaVersion": 21, "managedDetectionCases": with_denial}),
                          {"managedDetectionChecksVerified": 15})
         with self.assertRaises(ValueError):
