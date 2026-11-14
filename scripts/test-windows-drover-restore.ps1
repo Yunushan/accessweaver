@@ -255,6 +255,7 @@ try {
                 -not ([IO.File]::Exists($manifest) -or [IO.File]::Exists($second))) 'Proxy removal preceded Drover restoration'
             $removed.Add($Name)
         }
+        function Get-DNSRecoverySnapshotDigest {}
         function Remove-WireSockRefreshTask {}
         function Get-Service {param($Name,$ErrorAction)}
         function Get-CimInstance {param($ClassName)}

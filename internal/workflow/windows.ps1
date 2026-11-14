@@ -3031,7 +3031,10 @@ function Remove-Method([string]$engine,[switch]$OwnedOnly) {
         Restore-Drover
         Remove-Method 'proxifyre'
     }
-    if($engine -eq 'dnscrypt' -and (Test-Path -LiteralPath (Join-Path $root 'profiles\dns-original.json'))){Restore-DNS}
+    if($engine -eq 'dnscrypt'){
+        $digest=Get-DNSRecoverySnapshotDigest
+        if($digest){Restore-DNS $digest}
+    }
     if($entry){Remove-RecordedService $name -Entry $entry}
     foreach($ruleName in $firewallNames){Remove-ManagedFirewallRule $ruleName}
     Event ('Managed method removed: '+$engine)
@@ -3039,8 +3042,8 @@ function Remove-Method([string]$engine,[switch]$OwnedOnly) {
 function Remove-All {
     # Keep every managed resource available until adapter DNS and DoH policy
     # have been restored and independently read back by Restore-DNS.
-    $snapshot=Join-Path $root 'profiles\dns-original.json'
-    if(Test-Path -LiteralPath $snapshot -ErrorAction Stop){Restore-DNS}
+    $digest=Get-DNSRecoverySnapshotDigest
+    if($digest){Restore-DNS $digest}
     # ByeDPI cleanup restores Drover before removing either proxy service.
     foreach($engine in @('byedpi','zapret','zapret2','goodbyedpi','wiresock')){Remove-Method $engine}
     Remove-Method 'windivert' -OwnedOnly

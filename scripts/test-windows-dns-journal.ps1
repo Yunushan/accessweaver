@@ -90,13 +90,13 @@ try {
     & {
         $calls=[Collections.Generic.List[string]]::new()
         $fixture=@{present=$true;restoreFails=$true;inspectionFails=$false;methodFails=$false}
-        function Test-Path {
-            [CmdletBinding()]param($LiteralPath)
-            Require ($LiteralPath -ceq $snapshot -and $ErrorActionPreference -eq 'Stop') 'Unexpected remove-all snapshot inspection'
+        $digest='A'*64
+        function Get-DNSRecoverySnapshotDigest {
             if($fixture.inspectionFails){throw 'Synthetic snapshot inspection failure'}
-            return $fixture.present
+            if($fixture.present){return $digest}
         }
-        function Restore-DNS {
+        function Restore-DNS([string]$ExpectedSHA256) {
+            Require ($ExpectedSHA256 -ceq $digest) 'Remove-all bypassed the active snapshot binding'
             $calls.Add('restore')
             if($fixture.restoreFails){throw 'Synthetic DNS restoration failure'}
             $fixture.present=$false
