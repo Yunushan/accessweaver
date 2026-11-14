@@ -97,6 +97,8 @@ foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
     Assert ($replacement.Contains("AWCanReplaceInstalledFile(Destination + '\$name')")) 'Setup must check each release subject before replacement'
 }
 Assert ($uninstallPreflight -cmatch "AWInstallationPathPreflight\(ExpandConstant\('\{app\}'\), False\)") 'Uninstall must require an existing ordinary directory before restoration'
+$uninstallRegistration=[regex]::Match($installerSource,'(?ms)^function AWUninstallDirectoryPreflight\(.*?^end;').Value
+Assert ($uninstallRegistration -cmatch "AWOrdinal\(Version, '\{#ReleaseVersion\}'\) <> 0") 'Uninstall must match the exact release version in the machine registration'
 $completion=[regex]::Match($installerSource,'(?ms)^function AWVerifyCompletedInstall\(.*?^end;').Value
 Assert ($copy -cmatch "(?s)ssDone.*if not AWVerifyCompletedInstall.*Pending installation record retained\..*end else if not RegDeleteValue") 'Setup must verify completion before clearing the pending install record'
 foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){

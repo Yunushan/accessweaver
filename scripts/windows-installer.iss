@@ -323,7 +323,9 @@ begin
   Result := AWReadRegistration($0200, False, Found32, OtherVersion, OtherLocation);
   if Result <> '' then Exit;
   if not Found64 or Found32 or not AWIsInstallationDirectory(Destination, Location) then
-    Result := 'This uninstaller does not match the active AccessWeaver installation directory. Use the registered uninstaller.';
+    Result := 'This uninstaller does not match the active AccessWeaver installation directory. Use the registered uninstaller.'
+  else if AWOrdinal(Version, '{#ReleaseVersion}') <> 0 then
+    Result := 'This uninstaller version does not match the active AccessWeaver registration. Use the registered uninstaller.';
 end;
 
 function InitializeSetup: Boolean;

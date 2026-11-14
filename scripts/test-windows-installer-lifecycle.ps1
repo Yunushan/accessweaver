@@ -1007,30 +1007,36 @@ try {
     try {
         $key=$base.OpenSubKey($uninstallKey,$true)
         Require ($null -ne $key) 'Owned installation registration is unavailable'
-        $originalLocation=$key.GetValue('InstallLocation')
-        $locationKind=$key.GetValueKind('InstallLocation')
-        try {
-            $wrongLocation=Join-Path $capsule 'mismatched-uninstall-registration'
-            $key.SetValue('InstallLocation',($wrongLocation+[char]92),[Microsoft.Win32.RegistryValueKind]::String)
-            $registrationBefore=Registration-Fingerprint $key
-            $registrationRefusalLog=Join-Path $capsule 'uninstall-registration-refusal.log'
-            $registrationRefusal=Native-Record $uninstaller ($silent+@('/LOG='+$registrationRefusalLog)) @(1)
-            No-Reparse $registrationRefusalLog
-            $logFile=Get-Item -LiteralPath $registrationRefusalLog -ErrorAction Stop
-            Require (-not $logFile.PSIsContainer -and $logFile.Length -gt 0 -and $logFile.Length -le 1MB) 'Uninstall registration refusal log is unavailable or exceeds its bound'
-            $log=[IO.File]::ReadAllText($registrationRefusalLog)
-            Require ($log.Contains('This uninstaller does not match the active AccessWeaver installation directory.')) 'Uninstall did not log the registration refusal'
-            Require (-not (Test-Path -LiteralPath $managed -ErrorAction Stop) -and -not $log.Contains('AccessWeaver system restoration starts at the uninstall step.')) 'Uninstall reached machine restoration after the registration refusal'
-            Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint $key) -ceq $registrationBefore) 'Uninstall registration refusal changed installed files or registration'
-            Assert-UserState
-            Require ((State-Snapshot) -ceq $machineBeforeRemoval) 'Uninstall registration refusal changed observed machine state'
-        } finally {$key.SetValue('InstallLocation',$originalLocation,$locationKind)}
+        $wrongLocation=Join-Path $capsule 'mismatched-uninstall-registration'
+        foreach($case in @(
+            @{key='InstallLocation';value=($wrongLocation+[char]92);name='refused-uninstall-registration';log='This uninstaller does not match the active AccessWeaver installation directory.'},
+            @{key='DisplayVersion';value=$builds[0].version;name='refused-uninstall-registration-version';log='This uninstaller version does not match the active AccessWeaver registration.'}
+        )){
+            $stage=$case.name
+            $originalValue=$key.GetValue($case.key)
+            $originalKind=$key.GetValueKind($case.key)
+            try {
+                $key.SetValue($case.key,$case.value,[Microsoft.Win32.RegistryValueKind]::String)
+                $registrationBefore=Registration-Fingerprint $key
+                $registrationRefusalLog=Join-Path $capsule ($case.name+'.log')
+                $registrationRefusal=Native-Record $uninstaller ($silent+@('/LOG='+$registrationRefusalLog)) @(1)
+                No-Reparse $registrationRefusalLog
+                $logFile=Get-Item -LiteralPath $registrationRefusalLog -ErrorAction Stop
+                Require (-not $logFile.PSIsContainer -and $logFile.Length -gt 0 -and $logFile.Length -le 1MB) 'Uninstall registration refusal log is unavailable or exceeds its bound'
+                $log=[IO.File]::ReadAllText($registrationRefusalLog)
+                Require ($log.Contains($case.log)) 'Uninstall did not log the expected registration refusal'
+                Require (-not (Test-Path -LiteralPath $managed -ErrorAction Stop) -and -not $log.Contains('AccessWeaver system restoration starts at the uninstall step.')) 'Uninstall reached machine restoration after the registration refusal'
+                Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint $key) -ceq $registrationBefore) 'Uninstall registration refusal changed installed files or registration'
+                Assert-UserState
+                Require ((State-Snapshot) -ceq $machineBeforeRemoval) 'Uninstall registration refusal changed observed machine state'
+            } finally {$key.SetValue($case.key,$originalValue,$originalKind)}
+            $observations+=,@{operation=$case.name;exitCode=$registrationRefusal.result.exitCode;
+                elapsedMilliseconds=$registrationRefusal.milliseconds;deadlineMilliseconds=180000;preflightRefusalLogged=$true;
+                restorationStateAbsent=$true;installedFileTreePreserved=$true;completeRegistrationPreserved=$true;
+                profilePreserved=$true;machineStateUnchanged=$true}
+        }
     } finally {if($key){$key.Dispose()};$base.Dispose()}
     Assert-Installed $builds[1]
-    $observations+=,@{operation='refused-uninstall-registration';exitCode=$registrationRefusal.result.exitCode;
-        elapsedMilliseconds=$registrationRefusal.milliseconds;deadlineMilliseconds=180000;preflightRefusalLogged=$true;
-        restorationStateAbsent=$true;installedFileTreePreserved=$true;completeRegistrationPreserved=$true;
-        profilePreserved=$true;machineStateUnchanged=$true}
     $stage='refused-uninstall'
     $binding=Open-WorkflowUninstallBinding $Architecture
     Require ($null -ne $binding) 'Installed product registration could not be resolved for workflow uninstall'
@@ -1112,7 +1118,7 @@ try {
 $eventDiagnostics=New-InstallerFirewallEventDiagnostic
 if(-not $complete){$eventDiagnostics=Read-FirewallEventDiagnostic}
 $originDiagnostics=[ordered]@{schemaVersion=1;source='captured-rule-properties';maxRecords=16;maxPropertyBytes=4096;records=@($script:firewallOriginObservations);truncated=$script:firewallOriginTruncated;unavailable=$script:firewallOriginUnavailable;extraNativeQueriesPerformed=$false;processOriginEstablished=$false}
-$record=[ordered]@{schemaVersion=27;setupCompletionRefusal=$completionRefusal;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=28;setupCompletionRefusal=$completionRefusal;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'

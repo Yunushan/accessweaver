@@ -252,19 +252,21 @@ def validate_pending_marker_access(value):
     return {"pendingMarkerAccessDenialVerified": True}
 
 
-def validate_uninstall_registration_refusal(value):
+def validate_uninstall_registration_refusal(value, *, operation="refused-uninstall-registration"):
     flags = {
         "preflightRefusalLogged", "restorationStateAbsent", "installedFileTreePreserved",
         "completeRegistrationPreserved", "profilePreserved", "machineStateUnchanged",
     }
     require(isinstance(value, dict)
             and value.keys() == flags | {"operation", "exitCode", "elapsedMilliseconds", "deadlineMilliseconds"}
-            and value["operation"] == "refused-uninstall-registration"
+            and value["operation"] == operation
             and type(value["exitCode"]) is int and value["exitCode"] == 1
             and type(value["deadlineMilliseconds"]) is int and value["deadlineMilliseconds"] == 180000
             and type(value["elapsedMilliseconds"]) is int and 0 <= value["elapsedMilliseconds"] < 180000
             and all(value[key] is True for key in flags), "Uninstall registration refusal was not verified")
-    return {"uninstallRegistrationRefusalVerified": True}
+    key = ("uninstallRegistrationVersionRefusalVerified"
+           if operation == "refused-uninstall-registration-version" else "uninstallRegistrationRefusalVerified")
+    return {key: True}
 
 
 def validate_fixed_restoration(refused, removed):
@@ -280,7 +282,7 @@ def validate_fixed_restoration(refused, removed):
 
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -315,6 +317,8 @@ def validate_contents(root,commit,ref,arch,versions):
         expected.insert(1, "refused-redirected-upgrade")
     if report["schemaVersion"] >= 23:
         expected.insert(expected.index("refused-uninstall"), "refused-uninstall-registration")
+    if report["schemaVersion"] >= 28:
+        expected.insert(expected.index("refused-uninstall"), "refused-uninstall-registration-version")
     locked_operations = {"refused-locked-upgrade"}
     if report["schemaVersion"] >= 27:
         metadata_refusals = ["refused-locked-build-info-upgrade", "refused-locked-sbom-upgrade"]
@@ -327,8 +331,8 @@ def validate_contents(root,commit,ref,arch,versions):
     failed_copy_recovery = {}
     uninstall_registration = {}
     for operation in operations:
-        if operation["operation"] == "refused-uninstall-registration":
-            uninstall_registration = validate_uninstall_registration_refusal(operation)
+        if operation["operation"] in {"refused-uninstall-registration", "refused-uninstall-registration-version"}:
+            uninstall_registration.update(validate_uninstall_registration_refusal(operation, operation=operation["operation"]))
             continue
         if operation["operation"] == "refused-redirected-upgrade":
             redirected_upgrade = validate_redirected_upgrade(operation)
