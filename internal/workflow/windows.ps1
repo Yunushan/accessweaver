@@ -2164,10 +2164,12 @@ function Get-StaticDNSServers([object[]]$Values,[string]$Family,[object]$Origina
     }
     return @($addresses)
 }
-function Read-DNSStaticOverride([object]$Adapter,[string]$Family,[switch]$AllowMissingKey) {
+function Get-DNSOverridePath([string]$Guid,[string]$Family) {
     $service=if($Family -eq 'IPv4'){'Tcpip'}else{'Tcpip6'}
-    $path='HKLM:\SYSTEM\CurrentControlSet\Services\'+$service+'\Parameters\Interfaces\'+([guid]$Adapter.InterfaceGuid).ToString('B')
-    try {$names=Read-OriginalDNSNameServer $path}
+    return 'HKLM:\SYSTEM\CurrentControlSet\Services\'+$service+'\Parameters\Interfaces\'+([guid]$Guid).ToString('B')
+}
+function Read-DNSStaticOverride([object]$Adapter,[string]$Family,[switch]$AllowMissingKey) {
+    try {$names=Read-OriginalDNSNameServer (Get-DNSOverridePath $Adapter.InterfaceGuid $Family)}
     catch [Management.Automation.ItemNotFoundException] {if($AllowMissingKey){return};throw}
     if([string]::IsNullOrWhiteSpace($names)){return}
     if($names.Length -gt 16384){throw 'Stored DNS server list exceeds its size limit'}
@@ -2995,6 +2997,7 @@ function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
     $saved=$restoration.record
     $usesAdapterOwnership=Test-DNSRecoveryUsesAdapterOwnership $saved
     $guardAdapters=[bool]($ExpectedSHA256 -and $usesAdapterOwnership)
+    $trackExplicitRestore=$usesAdapterOwnership -and -not $ExpectedSHA256
     if($null -eq $saved.adapters -or @($saved.adapters).Count -eq 0){throw 'Original DNS snapshot has no adapter records; retain it for manual recovery'}
     # Inspect every original adapter and relevant DoH entry before changing any
     # settings. This is preflight, not a guarantee of an atomic OS transaction.
@@ -3007,7 +3010,7 @@ function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
         foreach($number in @('4','6')){
             if($bounds['bound'+$number] -and -not $record.('dhcp'+$number)){[void](Get-StaticDNSServers @($record.('ipv'+$number)) ('IPv'+$number) $record.index)}
         }
-        $plans+=@{record=$record;adapter=$matches[0];bounds=$bounds}
+        $plans+=@{record=$record;adapter=$matches[0];bounds=$bounds;observed=@{}}
     }
     $clients=@(Read-DNSClientInventory)
     foreach($plan in $plans){
@@ -3018,6 +3021,8 @@ function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
             if($guardAdapters){
                 $observed=Read-ObservedDNSFamily $plan.adapter ('IPv'+$number) $rows[0]
                 [void](Test-DNSFamilyNeedsRollback $plan.record $number $observed)
+            }elseif($trackExplicitRestore){
+                $plan.observed[$number]=Read-OriginalDNSNameServer (Get-DNSOverridePath $plan.record.guid ('IPv'+$number))
             }
         }
     }
@@ -3050,6 +3055,13 @@ function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
                 $adapter=@{InterfaceGuid=$record.guid;ifIndex=$dns.InterfaceIndex}
                 $observed=Read-ObservedDNSFamily $adapter ('IPv'+$number) $dns
                 if(-not (Test-DNSFamilyNeedsRollback $record $number $observed)){continue}
+            }elseif($trackExplicitRestore){
+                # Compare the persisted override without interpreting a malformed
+                # existing address list that the administrator intends to repair.
+                $current=Read-OriginalDNSNameServer (Get-DNSOverridePath $record.guid ('IPv'+$number))
+                if($current -cne $plan.observed[$number]){
+                    throw 'Adapter DNS settings changed during restoration; review current settings and retain the recovery snapshot'
+                }
             }
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             Assert-DNSMutationAdapter $record.guid $dns.InterfaceIndex
