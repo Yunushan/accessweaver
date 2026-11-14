@@ -3837,7 +3837,13 @@ function Install-App([string]$variant,[switch]$Reinstall) {
             throw 'Discord PTB setup did not replace the existing executable; stable Discord was preserved'
         }
         if($stableBeforeDownload){
-            [void](Remove-App 'discord' $stableBeforeDownload $stableBeforeDownloadDigest $stableUpdaterDigest)
+            $clientGuard=Open-VerifiedAppExecutable $installedApp $installedDigest
+            try {
+                $updaterGuard=Open-VerifiedAppExecutable $installedUpdater.path $installedUpdaterDigest
+                try {
+                    [void](Remove-App 'discord' $stableBeforeDownload $stableBeforeDownloadDigest $stableUpdaterDigest)
+                } finally {$updaterGuard.Dispose()}
+            } finally {$clientGuard.Dispose()}
         }
         elseif(Find-App 'discord'){throw 'Stable Discord appeared during PTB setup; review the current installation'}
         $confirmedApp=Wait-App $variant $true 30
@@ -3960,6 +3966,20 @@ function Assert-SplitCordMaintenancePaths([string]$App,[string]$Uninstaller) {
         Assert-WorkflowUninstallProtection $Uninstaller
     }catch{
         throw 'SplitCord installation and uninstaller must be in protected machine storage'
+    }
+}
+function Open-VerifiedAppExecutable([string]$Path,[string]$ExpectedDigest) {
+    No-Reparse $Path
+    $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($stream.Length -le 0 -or $stream.Length -gt 512MB -or
+            (Get-FileHash -InputStream $stream -Algorithm SHA256 -ErrorAction Stop).Hash -ine $ExpectedDigest){
+            throw 'Discord PTB changed before stable client cleanup; stable Discord was preserved'
+        }
+        return $stream
+    } catch {
+        $stream.Dispose()
+        throw
     }
 }
 function Get-AppExecutableDigest([string]$path) {

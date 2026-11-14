@@ -2336,7 +2336,7 @@ try {
     $script:externalEffectsPending=$false
 }
 # Mock installer acquisition and user operations; never execute a vendor process.
-$appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Get-AppExecutableDigest','Get-AppUninstaller','Remove-App','Download','Native','Wait-App','Wait-AppProcessesExited','Event','Save-Journal')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
+$appInstallSaved=@{};foreach($name in @('Require-DesktopUser','Find-App','Get-AppExecutableDigest','Get-AppUninstaller','Open-VerifiedAppExecutable','Remove-App','Download','Native','Wait-App','Wait-AppProcessesExited','Event','Save-Journal')){$appInstallSaved[$name]=(Get-Command $name).ScriptBlock}
 $previousAppRequest=$r
 $previousAppInput=$inputData
 $previousAppRoot=$root
@@ -2442,8 +2442,28 @@ try {
         if($script:appStableBytesChanged -or $script:appReplacementBytesChanged){return 'b'*64}
         return 'a'*64
     }
+    $replacementFixtures=@{
+        'C:\fixture\DiscordPTB.exe'=(Join-Path $root 'ptb-client-guard')
+        'C:\fixture\ptb\Update.exe'=(Join-Path $root 'ptb-updater-guard')
+    }
+    foreach($fixture in $replacementFixtures.Values){[IO.File]::WriteAllText($fixture,'inert verified replacement')}
+    function Open-VerifiedAppExecutable([string]$Path,[string]$ExpectedDigest){
+        if($Path -cnotin @('C:\fixture\DiscordPTB.exe','C:\fixture\ptb\Update.exe') -or $ExpectedDigest -cnotmatch '\A[a-f0-9]{64}\z'){
+            throw 'Unexpected verified replacement file'
+        }
+        $fixture=$replacementFixtures[$Path]
+        $digest=if($script:appReplacementGuardFault -ceq $Path){'0'*64}else{(Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash}
+        return & $appInstallSaved['Open-VerifiedAppExecutable'] $fixture $digest
+    }
     function Remove-App {
         param($variant,$expectedApp,$expectedAppDigest,$expectedUninstallerDigest)
+        if($r.clean){
+            foreach($fixture in $replacementFixtures.Values){
+                $locked=$false
+                try {$writer=[IO.File]::OpenWrite($fixture);$writer.Dispose()}catch [IO.IOException]{$locked=$true}
+                if(-not $locked){throw 'PTB replacement was writable during stable removal'}
+            }
+        }
         if(($r.clean -or $r.action -ceq 'app-reinstall') -and $expectedUninstallerDigest -cne ('d'*64)){
             throw 'Application replacement must retain the approved stable updater digest'
         }
@@ -2667,6 +2687,15 @@ try {
             -not $script:appInstallTrace.Contains('event')) ('PTB setup refuses an unreadable installed executable with clean mode '+$clean)
     }
     $script:appPTBUnreadable=$false
+    foreach($faultPath in @('C:\fixture\DiscordPTB.exe','C:\fixture\ptb\Update.exe')){
+        $script:appInstallTrace.Clear()
+        $script:appReplacementGuardFault=$faultPath
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -like 'Discord PTB changed before stable client cleanup*'}
+        finally{$script:appReplacementGuardFault=''}
+        Assert ($rejected -and -not $script:appInstallTrace.Contains('remove-stable')) 'PTB clean preserves stable Discord when verified replacement bytes change'
+        foreach($fixture in $replacementFixtures.Values){$writer=[IO.File]::OpenWrite($fixture);$writer.Dispose()}
+    }
     foreach($case in @(
         @{fault='missing';message='Application uninstaller not found';cleaned=$false},
         @{fault='unreadable';message='Fixture installed updater unreadable';cleaned=$false},
