@@ -888,6 +888,10 @@ try {
         $vendorFailure=''
         $disconnectStatus=@{outputComplete=$true;stdout='Connected'}
         $disconnectFailure='Tool failed: wiresock-connect-cli.exe (exit 1)'
+        $script:fixtureVendorProfiles=@($profile)
+        $script:fixtureDeleteLeavesProfile=$false
+        $script:fixtureListIncomplete=$false
+        $script:fixtureListIncompleteAfterDelete=$false
         function Native {
             param($program,$arguments,[switch]$Secret,[int]$Timeout)
             if(-not $Secret){throw 'Expected private WireSock command'}
@@ -899,6 +903,15 @@ try {
             if($arguments[0] -ceq 'status'){
                 if($Timeout -ne 15){throw 'Expected bounded WireSock status query'}
                 return $disconnectStatus
+            }
+            if($arguments[0] -ceq 'list'){
+                if($Timeout -ne 15){throw 'Expected bounded WireSock inventory query'}
+                return @{exitCode=0;outputComplete=(-not $script:fixtureListIncomplete);stdout=($script:fixtureVendorProfiles -join "`n")}
+            }
+            if($arguments[0] -ceq 'delete'){
+                if($arguments.Count -ne 2 -or $arguments[1] -cne $profile){throw 'Unexpected profile deletion target'}
+                if(-not $script:fixtureDeleteLeavesProfile){$script:fixtureVendorProfiles=@()}
+                if($script:fixtureListIncompleteAfterDelete){$script:fixtureListIncomplete=$true}
             }
             return @{exitCode=0}
         }
@@ -920,8 +933,8 @@ try {
             $script:fixtureRefreshRetained=$false
             $recordHash=(Get-FileHash -LiteralPath $recordPath -Algorithm SHA256).Hash
             foreach($case in @(
-                @{verb='disconnect';calls='disconnect,status';message='WireSock disconnect command failed; the managed profile was retained'},
-                @{verb='delete';calls='disconnect,delete';message='WireSock profile deletion command failed; the ownership record was retained'}
+                @{verb='disconnect';calls='list,disconnect,status';message='WireSock disconnect command failed; the managed profile was retained'},
+                @{verb='delete';calls='list,disconnect,delete';message='WireSock profile deletion command failed; the ownership record was retained'}
             )){
                 $script:fixtureRefreshPresent=$true
                 $script:fixtureRefreshCalls.Clear()
@@ -940,26 +953,51 @@ try {
             $script:fixtureRefreshCalls.Clear()
             $refused=$false
             try {Remove-Method 'wiresock'}catch{$refused=$_.Exception.Message -ceq 'WireSock disconnect command failed; the managed profile was retained'}
-            Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq 'disconnect,status' -and
+            Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq 'list,disconnect,status' -and
                 (Test-Path -LiteralPath $recordPath)) 'WireSock retains ownership when idle status output is incomplete'
             $disconnectStatus=@{outputComplete=$true;stdout='Status: NotConnected'}
             $disconnectFailure='Timed out: wiresock-connect-cli.exe'
             $script:fixtureRefreshCalls.Clear()
             $refused=$false
             try {Remove-Method 'wiresock'}catch{$refused=$_.Exception.Message -ceq 'WireSock disconnect command failed; the managed profile was retained'}
-            Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq 'disconnect' -and
+            Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq 'list,disconnect' -and
                 (Test-Path -LiteralPath $recordPath)) 'WireSock retains ownership after an unconfirmed disconnect process exit'
             $disconnectFailure='Tool failed: wiresock-connect-cli.exe (exit 1)'
             $script:fixtureRefreshCalls.Clear()
             Remove-Method 'wiresock'
-            Assert (($script:fixtureRefreshCalls -join ',') -ceq 'disconnect,status,delete' -and
+            Assert (($script:fixtureRefreshCalls -join ',') -ceq 'list,disconnect,status,delete,list' -and
                 -not (Test-Path -LiteralPath $recordPath)) 'WireSock can remove its profile after a failed disconnect and confirmed idle status'
             @{cli=$paths[0];profile=$profile} | ConvertTo-Json -Compress | Set-Content -LiteralPath $recordPath -Encoding ASCII
             $script:fixtureRefreshPresent=$true
+            $script:fixtureVendorProfiles=@($profile)
             $vendorFailure=''
             $script:fixtureRefreshCalls.Clear()
             Remove-Method 'wiresock'
-            Assert (($script:fixtureRefreshCalls -join ',') -ceq 'disable,stop,unregister,disconnect,delete' -and -not (Test-Path -LiteralPath $recordPath)) 'WireSock retires the reconnect task before disconnecting or deleting the profile'
+            Assert (($script:fixtureRefreshCalls -join ',') -ceq 'disable,stop,unregister,list,disconnect,delete,list' -and -not (Test-Path -LiteralPath $recordPath)) 'WireSock retires the reconnect task before disconnecting or deleting the profile'
+            foreach($mode in @('competing','remaining','partial-before','partial-after')){
+                @{cli=$paths[0];profile=$profile} | ConvertTo-Json -Compress | Set-Content -LiteralPath $recordPath -Encoding ASCII
+                $savedHash=(Get-FileHash -LiteralPath $recordPath -Algorithm SHA256).Hash
+                $script:fixtureVendorProfiles=@($profile)
+                $script:fixtureDeleteLeavesProfile=$mode -ceq 'remaining'
+                $script:fixtureListIncomplete=$mode -ceq 'partial-before'
+                $script:fixtureListIncompleteAfterDelete=$mode -ceq 'partial-after'
+                if($mode -ceq 'competing'){$script:fixtureVendorProfiles+=@('AccessWeaver-'+('b'*32))}
+                $script:fixtureRefreshCalls.Clear()
+                $expectedMessage=switch($mode){
+                    'competing' {'WireSock removal could not confirm the only managed vendor profile; the ownership record was retained'}
+                    'partial-before' {'WireSock profile inventory could not be verified before removal; the ownership record was retained'}
+                    default {'WireSock profile deletion could not be verified; the ownership record was retained'}
+                }
+                $expectedCalls=if($mode -cin @('competing','partial-before')){'list'}else{'list,disconnect,delete,list'}
+                $refused=$false
+                try{Remove-Method 'wiresock'}catch{$refused=$_.Exception.Message -ceq $expectedMessage}
+                Assert ($refused -and ($script:fixtureRefreshCalls -join ',') -ceq $expectedCalls -and
+                    (Get-FileHash -LiteralPath $recordPath -Algorithm SHA256).Hash -ceq $savedHash) ('WireSock preserves ownership for '+$mode+' vendor inventory')
+            }
+            $script:fixtureListIncomplete=$false;$script:fixtureListIncompleteAfterDelete=$false
+            $script:fixtureRefreshCalls.Clear()
+            Remove-Method 'wiresock'
+            Assert (($script:fixtureRefreshCalls -join ',') -ceq 'list' -and -not (Test-Path -LiteralPath $recordPath)) 'WireSock retry retires ownership for an already deleted vendor profile without disconnecting'
         } finally {$script:externalEffectsPending=$effectsBeforeCleanup}
     }
 } finally {

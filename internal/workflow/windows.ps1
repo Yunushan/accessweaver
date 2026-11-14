@@ -2684,16 +2684,30 @@ function Remove-Method([string]$engine,[switch]$OwnedOnly) {
     if($engine -eq 'wiresock'){
         $recordPath=Join-Path $root 'profiles\wiresock-owned.json'
         $owned=$null
-        if(Test-Path -LiteralPath $recordPath){$owned=Read-OwnedWireSockProfile $recordPath}
+        if(Test-Path -LiteralPath $recordPath -ErrorAction Stop){$owned=Read-OwnedWireSockProfile $recordPath}
         Remove-WireSockRefreshTask
         if($owned){
-            Disconnect-OwnedWireSock $owned
-            if($owned.legacy){[void](Native $owned.cli @('uninstall') -Secret)}
-            else {
-                try {[void](Native $owned.cli @('delete',$owned.profile) -Secret)}
-                catch {throw 'WireSock profile deletion command failed; the ownership record was retained'}
+            if($owned.legacy){
+                Disconnect-OwnedWireSock $owned
+                [void](Native $owned.cli @('uninstall') -Secret)
+            }else{
+                try {$profiles=@(Get-ManagedWireSockProfiles $owned.cli)}
+                catch {throw 'WireSock profile inventory could not be verified before removal; the ownership record was retained'}
+                if($profiles.Count -gt 0){
+                    # Disconnect affects the active vendor connection globally.
+                    if($profiles.Count -ne 1 -or $profiles[0] -cne $owned.profile){
+                        throw 'WireSock removal could not confirm the only managed vendor profile; the ownership record was retained'
+                    }
+                    Disconnect-OwnedWireSock $owned
+                    try {[void](Native $owned.cli @('delete',$owned.profile) -Secret)}
+                    catch {throw 'WireSock profile deletion command failed; the ownership record was retained'}
+                    try {$remaining=@(Get-ManagedWireSockProfiles $owned.cli)}
+                    catch {throw 'WireSock profile deletion could not be verified; the ownership record was retained'}
+                    if($remaining.Count){throw 'WireSock profile deletion could not be verified; the ownership record was retained'}
+                }
             }
-            Remove-Item -LiteralPath $recordPath
+            Remove-Item -LiteralPath $recordPath -ErrorAction Stop
+            if(Test-Path -LiteralPath $recordPath -ErrorAction Stop){throw 'WireSock ownership record removal could not be verified'}
         }
         return
     }
