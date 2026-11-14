@@ -2318,7 +2318,8 @@ try {
     $script:appInstallerChanged=$false
     $script:appStableBytesChanged=$false;$script:appChangeStableBytesDuringDownload=$false
     $script:appChangeStableBytesDuringSetup=$false
-    $script:appUpdaterMissing=$false;$script:appUpdaterChanged=$false;$script:appUpdaterChangesDuringSetup=$false
+    $script:appUpdaterMissing=$false;$script:appUpdaterChanged=$false
+    $script:appUpdaterChangesDuringDownload=$false;$script:appUpdaterChangesDuringSetup=$false
     $script:appPreviouslyInstalled=$false
     $script:appPTBSetupChanges=$false;$script:appPTBSetupChanged=$false;$script:appPTBUnreadable=$false
     $script:appReplacementBytesChange=$false;$script:appReplacementBytesChanged=$false
@@ -2394,8 +2395,8 @@ try {
     }
     function Remove-App {
         param($variant,$expectedApp,$expectedAppDigest,$expectedUninstallerDigest)
-        if($r.clean -and $expectedUninstallerDigest -cne ('d'*64)){
-            throw 'PTB cleanup must retain the approved stable updater digest'
+        if(($r.clean -or $r.action -ceq 'app-reinstall') -and $expectedUninstallerDigest -cne ('d'*64)){
+            throw 'Application replacement must retain the approved stable updater digest'
         }
         if($expectedUninstallerDigest -and (Get-AppExecutableDigest 'C:\fixture\Update.exe') -ine $expectedUninstallerDigest){
             throw 'Application uninstaller changed before removal'
@@ -2426,6 +2427,7 @@ try {
         $digest=(Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
         if($script:appInstallerChanged){[IO.File]::AppendAllText($Destination,' changed')}
         if($script:appChangeStableBytesDuringDownload){$script:appStableBytesChanged=$true}
+        if($script:appUpdaterChangesDuringDownload){$script:appUpdaterChanged=$true}
         return $digest
     }
     function Native {
@@ -2674,6 +2676,7 @@ try {
     Assert ($rejected -and $script:appInstallTrace.Count -eq 0) 'Discord refuses unknown architecture before download or client removal'
     $inputData.nativeArchitecture='amd64'
     $r.clean=$false
+    $r.action='app-reinstall'
     $script:appPreviouslyInstalled=$false
     $script:appStableAbsent=$true
     $script:appInstallTrace.Clear()
@@ -2681,6 +2684,19 @@ try {
     try {Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -like 'Stable Discord is not installed*'}
     Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord') 'Discord reinstall requires an installed stable client before download'
     $script:appStableAbsent=$false
+    $script:externalEffectsPending=$false
+    foreach($fault in @('missing','changed')){
+        $script:appInstallTrace.Clear()
+        $script:appUpdaterMissing=$fault -ceq 'missing'
+        $script:appUpdaterChangesDuringDownload=$fault -ceq 'changed'
+        $expectedMessage=if($script:appUpdaterMissing){'Application uninstaller not found'}else{'Application uninstaller changed before removal'}
+        $expectedTrace=if($script:appUpdaterMissing){'find-discord'}else{'find-discord,download:discord,find-discord'}
+        $rejected=$false
+        try{Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -ceq $expectedMessage}
+        finally{$script:appUpdaterMissing=$false;$script:appUpdaterChangesDuringDownload=$false;$script:appUpdaterChanged=$false}
+        Assert ($rejected -and -not $script:externalEffectsPending -and
+            ($script:appInstallTrace -join ',') -ceq $expectedTrace) ('Discord reinstall refuses a '+$fault+' stable updater before removal')
+    }
     $script:appStableChanged=$true
     $script:appInstallTrace.Clear()
     $rejected=$false
@@ -2705,7 +2721,6 @@ try {
     try {Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -ceq 'fixture remove failure'}
     Assert ($rejected -and ($script:appInstallTrace -join ',') -ceq 'find-discord,download:discord,find-discord,remove-stable') 'Discord reinstall stops when removal fails'
     $script:appRemoveFailure=$false
-    $r.action='app-reinstall'
     foreach($case in @(
         @{drift='reinstall-path';message='Stable Discord reappeared before replacement setup; review the current installation';assertion='Discord reinstall refuses a client that reappears during journal publication'},
         @{drift='reinstall-process';message='fixture stable process remains';assertion='Discord reinstall refuses a process that reappears during journal publication'}

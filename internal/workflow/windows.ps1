@@ -3516,11 +3516,13 @@ function Install-App([string]$variant,[switch]$Reinstall) {
     if($Reinstall -and ($variant -cne 'discord' -or $r.clean -or $r.downloadUrl -or $r.sha256 -or $r.configPath -or $r.bundlePath)){
         throw 'Discord reinstall uses the official signed installer and fixed desktop-user inputs'
     }
-    $originalApp=$null;$originalAppDigest=$null
+    $originalApp=$null;$originalAppDigest=$null;$originalUpdaterDigest=$null
     if($Reinstall){
         $originalApp=Find-App $variant
         if(-not $originalApp){throw 'Stable Discord is not installed; use Install Discord instead'}
         $originalAppDigest=Get-AppExecutableDigest $originalApp
+        $originalUpdater=Get-AppUninstaller $variant $originalApp
+        $originalUpdaterDigest=Get-AppExecutableDigest $originalUpdater.path
     }
     if($variant -notin @('discord','discord-ptb','splitcord')){throw 'Choose Discord, Discord PTB or SplitCord'}
     $cleanPTB=$r.clean -and $variant -eq 'discord-ptb'
@@ -3557,7 +3559,7 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         $previouslyInstalled=[bool]$existingApp
         if($Reinstall){
             if($existingApp -ine $originalApp){throw 'Stable Discord changed before reinstall; review the current installation'}
-            [void](Remove-App $variant $originalApp $originalAppDigest)
+            [void](Remove-App $variant $originalApp $originalAppDigest $originalUpdaterDigest)
         }
         if($cleanPTB){
             $stableBeforeSetup=Find-App 'discord'
