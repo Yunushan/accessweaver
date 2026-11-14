@@ -448,7 +448,8 @@ function Get-Service {
     [CmdletBinding()]param($Name)
     if($Name -cne 'AccessWeaver-dnscrypt'){throw 'Unexpected service name'}
     if($script:resolverServicePresent){
-        $service=[pscustomobject]@{Status=$(if($script:resolverStopped){'Stopped'}else{'Running'})}
+        $startup=if($script:expectedResolverStartup){$script:expectedResolverStartup}else{'Automatic'}
+        $service=[pscustomobject]@{Status=$(if($script:resolverStopped){'Stopped'}else{'Running'});StartType=$startup}
         $service | Add-Member ScriptMethod WaitForStatus {
             param($State,$Timeout)
             if($State -cne 'Running' -or $Timeout.TotalSeconds -ne 20 -or $this.Status -cne 'Running'){throw 'Unexpected fixture service wait'}
@@ -553,7 +554,7 @@ function Install-EngineService([string]$Engine,[string]$Binary,[string[]]$Argume
 function Set-Service {
     param($Name,$StartupType,$ErrorAction)
     if($Name -cne 'AccessWeaver-dnscrypt' -or $ErrorAction -cne 'Stop' -or
-        ($StartupType -ceq 'Manual' -and $script:serviceStops -ne 1) -or
+        ($StartupType -ceq 'Manual' -and $script:serviceStops -ne 1 -and -not $script:restartRecoveryWrites) -or
         $StartupType -cnotin @('Manual','Automatic')){throw 'Unexpected service startup change'}
     if($StartupType -ceq 'Automatic'){
         $bindings=if($script:newResolverRegistered){1}elseif(@($script:undo | Where-Object {$_.kind -ceq 'dnscrypt-reload'}).Count){4}else{3}
@@ -1265,6 +1266,7 @@ try {
     # Exercise late failure with a changed configuration and an existing service.
     foreach($restoreFails in @($false,$true)){
         New-DNSCase;$script:stageDNSCrypt=$true;$script:resolverServicePresent=$true
+        $script:expectedResolverStartup='Manual'
         $path=Join-Path $root 'components\dnscrypt\dnscrypt-proxy.toml'
         $original="server_names = ['google']`r`nlisten_addresses = ['127.0.0.1:53']`r`n"
         $script:restartRecoveryOriginal=[Text.UTF8Encoding]::new($false).GetBytes($original)
@@ -1276,10 +1278,12 @@ try {
         if($restoreFails){
             Assert-SnapshotRetained $script:journalDigest
             Assert-DNS ($script:serviceRestarts -eq 1 -and $script:restartRecoveryWrites -eq 0 -and
+                $script:expectedResolverStartup -ceq 'Automatic' -and
                 [IO.File]::ReadAllText($path) -cne $original) 'dnscrypt-recovers-after-late-listener-failure'
         }else{
             Assert-DNS ($script:receiptDigest -ceq $script:journalDigest -and -not [IO.File]::Exists($snapshot) -and
                 $script:serviceRestarts -eq 2 -and $script:restartRecoveryWrites -eq 1 -and
+                $script:expectedResolverStartup -ceq 'Manual' -and $script:serviceStartupChanges -eq 2 -and
                 [IO.File]::ReadAllText($path) -ceq $original) 'dnscrypt-recovers-after-late-listener-failure'
         }
     }

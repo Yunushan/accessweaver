@@ -556,14 +556,20 @@ try {
     $originalHash=Get-WorkflowBytesSHA256 $originalBytes
     $reloadFile=@{kind='file';path=$reloadPath;backup=$reloadBackup;originalHash=$originalHash;expectedHash=(Get-WorkflowBytesSHA256 $replacementBytes)}
     $reloadEntry=@{kind='dnscrypt-reload';name='AccessWeaver-dnscrypt';commandSHA256=(Get-ManagedServiceCommandDigest $script:serviceCommand);
-        path=$reloadPath;originalHash=$originalHash}
+        path=$reloadPath;originalHash=$originalHash;originalStartup='Manual'}
     $dnsUndo.snapshotSHA256=$next
     $script:serviceState='running';$script:serviceFault=''
-    $script:reloadCount=0;$script:failReload=$true
+    $script:reloadCount=0;$script:failReload=$true;$script:reloadStartup='Automatic'
+    function Set-Service {
+        [CmdletBinding()]param($Name,$StartupType)
+        Require ($Name -ceq 'AccessWeaver-dnscrypt' -and $StartupType -ceq 'Manual' -and
+            $script:reloadCount -eq 2) 'Startup policy changed before the original resolver was reloaded'
+        $script:reloadStartup=$StartupType
+    }
     function Get-Service {
         [CmdletBinding()]param($Name)
         Require ($Name -ceq 'AccessWeaver-dnscrypt') 'Unexpected resolver service name'
-        $service=[pscustomobject]@{Status='Running'}
+        $service=[pscustomobject]@{Status='Running';StartType=$script:reloadStartup}
         $service | Add-Member ScriptMethod WaitForStatus {param($State,$Timeout);if($State -cne 'Running'){throw 'Unexpected wait'}}
         return $service
     }
@@ -597,7 +603,7 @@ try {
     $script:failReload=$false
     $script:order.Clear()
     Recover-Operation
-    Require ($script:reloadCount -eq 2 -and -not $script:order.Contains('restore') -and
+    Require ($script:reloadCount -eq 2 -and $script:reloadStartup -ceq 'Manual' -and -not $script:order.Contains('restore') -and
         (Get-WorkflowFileHash $reloadPath) -ceq $originalHash) 'Retry after file restoration did not reload the original resolver'
     $invalid=@{kind='dnscrypt-reload';name='AccessWeaver-dnscrypt';commandSHA256=$reloadEntry.commandSHA256;
         path=$serviceConfig;originalHash=$originalHash}

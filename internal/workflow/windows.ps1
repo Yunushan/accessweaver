@@ -2494,6 +2494,8 @@ function Get-DNSCryptReloadFile($Resolver,$Journal) {
     $records=@($Journal | Where-Object {$_.kind -ceq 'file' -and $_.path -ieq $Resolver.path})
     if($Resolver.name -cne 'AccessWeaver-dnscrypt' -or $Resolver.path -isnot [string] -or
         $Resolver.path -ine (Join-Path $root 'components\dnscrypt\dnscrypt-proxy.toml') -or
+        ($null -ne $Resolver.originalStartup -and ($Resolver.originalStartup -isnot [string] -or
+            $Resolver.originalStartup -cnotin @('Manual','Automatic'))) -or
         $records.Count -ne 1 -or $Resolver.originalHash -isnot [string] -or
         $Resolver.originalHash -notmatch '\A[a-fA-F0-9]{64}\z' -or $records[0].originalHash -ine $Resolver.originalHash){
         throw 'Original DNSCrypt file recovery is unverified'
@@ -2516,6 +2518,9 @@ function Restore-DNSCryptAfterActivationFailure($Resolver,[string]$SnapshotSHA25
         if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
         $service=Get-Service -Name $Resolver.name -ErrorAction Stop
         try {
+            if($Resolver.originalStartup -and [string]$service.StartType -cnotin @($Resolver.originalStartup,'Automatic')){
+                throw 'DNSCrypt startup policy changed independently during recovery'
+            }
             if($service.Status -eq 'Stopped'){
                 Start-Service -InputObject $service -ErrorAction Stop
             }else{
@@ -2525,6 +2530,22 @@ function Restore-DNSCryptAfterActivationFailure($Resolver,[string]$SnapshotSHA25
         }finally {if($service -is [IDisposable]){$service.Dispose()}}
         Assert-DNSCryptConfiguration $record.path $record.originalHash
         if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
+        if($Resolver.originalStartup){
+            $service=Get-Service -Name $Resolver.name -ErrorAction Stop
+            try {$startup=[string]$service.StartType}
+            finally {if($service -is [IDisposable]){$service.Dispose()}}
+            if($startup -cne $Resolver.originalStartup){
+                if($startup -cne 'Automatic' -or $Resolver.originalStartup -cne 'Manual'){
+                    throw 'DNSCrypt startup policy changed independently during recovery'
+                }
+                Set-Service -Name $Resolver.name -StartupType Manual -ErrorAction Stop
+                $service=Get-Service -Name $Resolver.name -ErrorAction Stop
+                try {
+                    if([string]$service.StartType -cne 'Manual'){throw 'Original DNSCrypt startup policy could not be verified'}
+                } finally {if($service -is [IDisposable]){$service.Dispose()}}
+                if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
+            }
+        }
     }catch{
         throw 'DNSCrypt activation failed and the original service could not be recovered; inspect the retained recovery journal'
     }
@@ -2693,8 +2714,12 @@ function Configure-DNS([string]$method) {
                 $service=Get-Service -Name $serviceName -ErrorAction Stop
                 try {
                     if($configChanged -and $configBefore){
+                        $originalStartup=[string]$service.StartType
+                        if($originalStartup -cnotin @('Manual','Automatic')){
+                            throw 'Existing DNSCrypt startup policy is unsupported for staged reconfiguration'
+                        }
                         $reload=@{kind='dnscrypt-reload';name=$existingResolver.name;commandSHA256=$existingResolver.commandSHA256;
-                            path=$config;originalHash=$configBefore}
+                            path=$config;originalHash=$configBefore;originalStartup=$originalStartup}
                         [void](Get-DNSCryptReloadFile $reload $script:undo)
                         $script:undo.Add($reload)
                         try {Save-Journal}catch{
