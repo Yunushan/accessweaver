@@ -27,6 +27,10 @@ function validateBuild(build,expected){
  assert.equal(build.goVersion,'go'+expected.goVersion,'executed CLI compiler differs from pinned SDK');
  if(expected.commit){assert.equal(build.commit,expected.commit,'executed CLI source commit differs from expectation');assert.equal(build.sourceState,'clean','executed CLI was built from modified source');}
 }
+function validateUpdateBuild(comparison,build){
+ const tag='v'+build.version;
+ assert.deepEqual(comparison,{version:tag,currentVersion:build.version,updateAvailable:false,build},'native update comparison differs from the executed build');
+}
 function execute(command,args){
  const result=spawnSync(command,args,{encoding:'utf8',timeout:30000,windowsHide:true,maxBuffer:1<<20});
  if(result.error)throw result.error;
@@ -35,7 +39,8 @@ function execute(command,args){
 }
 function main(){
  const args=process.argv.slice(2);
- assert(args.length===0 || args.length===2 && args[0]==='--binary','usage: check-native-environment.cjs [--binary PATH]');
+ const checkUpdate=args.length===3&&args[2]==='--check-update-build';
+ assert(args.length===0 || (args.length===2 || checkUpdate) && args[0]==='--binary','usage: check-native-environment.cjs [--binary PATH [--check-update-build]]');
  const expected={goos:process.env.ACCESSWEAVER_EXPECT_GOOS,goarch:process.env.ACCESSWEAVER_EXPECT_GOARCH,goVersion:process.env.GO_VERSION,commit:process.env.GITHUB_SHA||'',hosted:process.env.GITHUB_ACTIONS==='true'};
  const actual={platform:process.platform,machine:os.machine(),nodeProcessArch:process.arch,runnerArch:process.env.RUNNER_ARCH||'',runnerEnvironment:process.env.RUNNER_ENVIRONMENT||'',go:execute('go',['env','-json','GOOS','GOARCH','GOHOSTOS','GOHOSTARCH','GOVERSION','GOTOOLCHAIN','CGO_ENABLED'])};
  validateEnvironment(actual,expected);
@@ -45,6 +50,10 @@ function main(){
   const binary=path.resolve(args[1]),info=fs.lstatSync(binary);assert(info.isFile()&&!info.isSymbolicLink()&&info.size>0&&info.size<=128<<20,'native CLI must be a bounded regular file');
   const before=fs.readFileSync(binary),build=execute(binary,['version','--json']);
   validateBuild(build,expected);
+  if(checkUpdate){
+   validateUpdateBuild(execute(binary,['system','check-version','--build-identity','--follow-channel','v'+build.version]),build);
+   report.updateBuildVerified=true;
+  }
   const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
   const hash=digest(before);assert.equal(digest(fs.readFileSync(binary)),hash,'native CLI changed during identity check');
   Object.assign(report,{build,binarySha256:hash,executedTargetVerified:true});phase='binary';
@@ -53,5 +62,5 @@ function main(){
  fs.writeFileSync(path.join(folder,phase+'-'+expected.goos+'-'+expected.goarch+'.json'),JSON.stringify(report,null,2)+'\n');
  console.log(JSON.stringify(report));
 }
-module.exports={architecture,validateEnvironment,validateBuild};
+module.exports={architecture,validateEnvironment,validateBuild,validateUpdateBuild};
 if(require.main===module){try{main()}catch(error){console.error(error.message);process.exitCode=1;}}

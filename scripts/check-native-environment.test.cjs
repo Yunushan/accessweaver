@@ -2,7 +2,7 @@
 'use strict';
 const assert=require('node:assert/strict');
 const test=require('node:test');
-const {architecture,validateEnvironment,validateBuild}=require('./check-native-environment.cjs');
+const {architecture,validateEnvironment,validateBuild,validateUpdateBuild}=require('./check-native-environment.cjs');
 const commit='a'.repeat(40);
 function fixture(goos,goarch){
  const expected={goos,goarch,goVersion:'1.27.3',commit,hosted:true};
@@ -22,6 +22,20 @@ test('unrecognized native target and absent hosted source expectations fail clos
  for(const alias of ['ARM64','aarch64','arm64'])assert.equal(architecture(alias),'arm64');
  for(const alias of ['x64','x86_64','amd64','X64'])assert.equal(architecture(alias),'amd64');
  assert.throws(()=>architecture('unknown'));
+});
+test('native update comparison reports the same build and declines an equal release',()=>{
+ const build={...fixture('windows','arm64').build,version:'0.1.0-alpha',builtAt:'2026-11-02T00:00:00Z'};
+ const response={version:'v0.1.0-alpha',currentVersion:build.version,updateAvailable:false,build:{...build}};
+ validateUpdateBuild(response,build);
+ for(const key of Object.keys(build)){
+  const different={...build,[key]:'different'};
+  assert.throws(()=>validateUpdateBuild({...response,build:different},build),key);
+  delete different[key];
+  assert.throws(()=>validateUpdateBuild({...response,build:different},build),key);
+ }
+ for(const changed of [{version:'v0.2.0'},{currentVersion:'0.2.0'},{updateAvailable:true},{updateAvailable:0},{build:null},{extra:true}]){
+  assert.throws(()=>validateUpdateBuild({...response,...changed},build));
+ }
 });
 test('stale, dirty, differently compiled or emulated-target CLIs do not pass the intended native identity',()=>{
  for(const mutate of [b=>{b.commit='b'.repeat(40)},b=>{b.sourceState='modified'},b=>{b.arch='amd64'},b=>{b.platform='windows'},b=>{b.goVersion='go1.26.0'}]){const {expected,build}=fixture('linux','arm64');mutate(build);assert.throws(()=>validateBuild(build,expected));}

@@ -135,8 +135,10 @@ class PrereleasePublicationTests(unittest.TestCase):
                     execution["ownedEmulatorStopped" if system == "freebsd" else "ownedEmulatorsStopped"] = True
                 else:
                     execution.update(
-                        sourceRef=self.ref, archiveSha256=receipt["archiveSha256"], binarySha256=receipt["binarySha256"],
-                        build=receipt["build"], authenticatedCandidateExecuted=True, backupAndRecoveryVerified=True,
+                        schemaVersion=2, sourceRef=self.ref, archiveSha256=receipt["archiveSha256"],
+                        binarySha256=receipt["binarySha256"],
+                        build=receipt["build"], authenticatedCandidateExecuted=True, updateBuildVerified=True,
+                        backupAndRecoveryVerified=True,
                         loopbackDiagnosticsVerified=True, unixControllerVerified=system != "windows",
                         windowsDiscoveryVerified=system == "windows", publisherSignatureVerified=False,
                     )
@@ -194,7 +196,8 @@ class PrereleasePublicationTests(unittest.TestCase):
 
             for system, faults in (
                 ("windows", {"authenticatedCandidateExecuted": False, "binarySha256": "b" * 64,
-                             "sourceRef": "refs/heads/other", "windowsDiscoveryVerified": False}),
+                             "sourceRef": "refs/heads/other", "windowsDiscoveryVerified": False,
+                             "updateBuildVerified": False, "schemaVersion": 1}),
                 ("openbsd", {"packagedCandidateExecuted": False, "guestExecutionPassed": False,
                              "ownedEmulatorsStopped": False, "ownedCapsuleRemoved": False,
                              "cliSHA256": "b" * 64, "packagedBackupChecks": {}, "failurePhase": "guest-cli"}),

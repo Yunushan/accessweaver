@@ -21,6 +21,9 @@ on:
       - scripts/package-release.sh
       - scripts/release_archive.py
       - scripts/verify_release.py
+      - scripts/check-native-environment.cjs
+      - scripts/check-native-environment.test.cjs
+      - scripts/check-packaged-evidence.cjs
       - scripts/verify-release.py
       - scripts/verify_release_provenance.py
       - scripts/verify_release_rebuild.py
@@ -604,7 +607,7 @@ jobs:
         run: python3 scripts/stage_packaged_native.py --download-root build/release-candidate --into build/packaged-native
       - name: Execute candidate and compare authenticated build identity
         run: |
-          node scripts/check-native-environment.cjs --binary ./build/packaged-native/accessweaver${{ runner.os == 'Windows' && '.exe' || '' }}
+          node scripts/check-native-environment.cjs --binary ./build/packaged-native/accessweaver${{ runner.os == 'Windows' && '.exe' || '' }} --check-update-build
           node scripts/check-packaged-evidence.cjs identity build/packaged-native
       - name: Packaged backup and recovery interoperability
         run: |

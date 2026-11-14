@@ -129,7 +129,7 @@ The verifier checks the approval signature with the supplied certificate and com
 
 ### Evaluate an authenticated managed update
 
-The desktop's Windows update check compares release tags using the launching controller's version and includes its full build identity in the workflow result. The release workflow uses `--execute-native --require-update-build` to verify that the packaged CLI's version comparison and build metadata agree.
+The desktop's Windows update check compares release tags using the launching controller's version and includes its full build identity in the workflow result. The release workflow uses `--execute-native --require-update-build` during packaging. The native Windows, Linux and macOS jobs repeat the comparison with the authenticated archive executable on both architectures. Publication requires their attested results.
 
 Add `--current-version INSTALLED_VERSION --target windows/arm64` to the `verify` command above. Use the version and native target from trusted endpoint inventory. Supported targets are `windows/amd64`, `windows/arm64`, `darwin/amd64` and `darwin/arm64`. The `managedUpdate` result identifies the authenticated installer filename and digest for that target. An `upgrade` decision means the candidate is newer and follows the installed release channel. Stable installations decline prereleases. Prerelease installations can advance to a newer prerelease or stable version. Equivalent versions and older candidates return `current` or `older`. A stable installation presented with a prerelease returns `channel-mismatch`. The verifier makes no installation changes.
 

@@ -85,7 +85,7 @@ function main(){
  assert.equal(receipt.binary,expected.goos==='windows'?'accessweaver.exe':'accessweaver');
  const executable=path.join(folder,receipt.binary),st=fs.lstatSync(executable);assert(st.isFile()&&!st.isSymbolicLink()&&st.size>0&&st.size<=64<<20);
  assert.equal(createHash('sha256').update(fs.readFileSync(executable)).digest('hex'),receipt.binarySha256);
- const identity=read('build/native-checks/binary-'+expected.goos+'-'+expected.goarch+'.json');matchReceipt(receipt,identity,expected);assert.equal(identity.executedTargetVerified,true);
+ const identity=read('build/native-checks/binary-'+expected.goos+'-'+expected.goarch+'.json');matchReceipt(receipt,identity,expected);assert.equal(identity.executedTargetVerified,true);assert.equal(identity.updateBuildVerified,true,'packaged update identity was not verified');
  if(phase==='identity')return;
  const nodePlatform={windows:'win32',linux:'linux',darwin:'darwin'}[expected.goos];
  const backup=read('build/backup-checks/interop-'+nodePlatform+'.json');matchReceipt(receipt,backup,expected);
@@ -102,7 +102,7 @@ function main(){
  if(expected.goos!=='windows'){
   const controller=read('build/packaged-native-checks/controller.json');validateUnixControllerEvidence(controller,expected.goos,receipt.binarySha256);
  }
- const result={schemaVersion:1,sourceCommit:expected.commit,sourceRef:expected.ref,target:receipt.target,binarySha256:receipt.binarySha256,archiveSha256:receipt.archiveSha256,build:receipt.build,authenticatedCandidateExecuted:true,backupAndRecoveryVerified:true,loopbackDiagnosticsVerified:true,unixControllerVerified:expected.goos!=='windows',windowsDiscoveryVerified:expected.goos==='windows',publisherSignatureVerified:false,productionQualificationComplete:false};
+ const result={schemaVersion:2,sourceCommit:expected.commit,sourceRef:expected.ref,target:receipt.target,binarySha256:receipt.binarySha256,archiveSha256:receipt.archiveSha256,build:receipt.build,authenticatedCandidateExecuted:true,updateBuildVerified:true,backupAndRecoveryVerified:true,loopbackDiagnosticsVerified:true,unixControllerVerified:expected.goos!=='windows',windowsDiscoveryVerified:expected.goos==='windows',publisherSignatureVerified:false,productionQualificationComplete:false};
  fs.writeFileSync('build/packaged-native-checks/acceptance.json',JSON.stringify(result,null,2)+'\n');console.log(JSON.stringify(result));
 }
 module.exports={matchReceipt,validateRecoveryEvidence,validateDiagnosticsEvidence,validateUnixControllerEvidence,validateWindowsDiscoveryEvidence};

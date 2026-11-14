@@ -163,7 +163,8 @@ def reuse_existing_bundle(directory, release, commit, tag, expected):
 def verify_target_execution(report, receipt, system):
     target = receipt["target"]
     identity = {
-        "schemaVersion": 1, "sourceCommit": receipt["sourceCommit"], "target": target,
+        "schemaVersion": 1 if system in {"freebsd", "openbsd"} else 2,
+        "sourceCommit": receipt["sourceCommit"], "target": target,
         "productionQualificationComplete": False,
     }
     if system in {"freebsd", "openbsd"}:
@@ -183,7 +184,7 @@ def verify_target_execution(report, receipt, system):
         identity.update({
             "sourceRef": receipt["sourceRef"], "archiveSha256": receipt["archiveSha256"],
             "binarySha256": receipt["binarySha256"], "build": receipt["build"],
-            "authenticatedCandidateExecuted": True, "backupAndRecoveryVerified": True,
+            "authenticatedCandidateExecuted": True, "updateBuildVerified": True, "backupAndRecoveryVerified": True,
             "loopbackDiagnosticsVerified": True, "unixControllerVerified": system != "windows",
             "windowsDiscoveryVerified": system == "windows", "publisherSignatureVerified": False,
         })
