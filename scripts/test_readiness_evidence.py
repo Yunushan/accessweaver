@@ -2,6 +2,7 @@ from contextlib import redirect_stderr, redirect_stdout
 import hashlib
 import io
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -108,6 +109,10 @@ class ReadinessRegisterTests(unittest.TestCase):
         docs = self.root / "docs"
         docs.mkdir()
         register = docs / "readiness-gates.json"
+        def git(*arguments):
+            return subprocess.check_output(["git", *arguments], cwd=self.root, timeout=30).decode("ascii").strip()
+
+        git("init", "-q")
         argv = ["check_readiness_evidence.py", "--candidate-commit", self.commit, "--require-complete", "--json"]
         for complete in (False, True):
             if complete:
@@ -115,15 +120,30 @@ class ReadinessRegisterTests(unittest.TestCase):
                 for gate in self.gates:
                     gate.update(status="passed", qualification=self.qualification)
             register.write_text(json.dumps(self.register), encoding="utf-8")
+            git("add", self.evidence, "docs/readiness-gates.json")
+            git("-c", "user.name=Readiness Test", "-c", "user.email=test@example.invalid",
+                "-c", "commit.gpgsign=false", "commit", "-qm", "Assess candidate")
+            assessment = git("rev-parse", "HEAD")
+            if not complete:
+                earlier_assessment = assessment
+            register.write_text("uncommitted change", encoding="utf-8")
+            (self.root / self.evidence).unlink()
             with self.subTest(complete=complete), patch.object(sys, "argv", argv), \
                     patch.object(readiness, "__file__", str(self.root / "scripts" / "check_readiness_evidence.py")), \
-                    patch.object(readiness.subprocess, "check_output", return_value=self.evidence + "\0"), \
                     redirect_stdout(io.StringIO()) as output, redirect_stderr(io.StringIO()) as messages:
                 self.assertEqual(readiness.main(), 0 if complete else 1)
                 report = json.loads(output.getvalue())
                 self.assertEqual(report["candidateCommit"], self.commit)
+                self.assertEqual(report["assessmentCommit"], assessment)
                 self.assertEqual(report["score"], 100 if complete else 25)
                 self.assertEqual(bool(messages.getvalue()), not complete)
+            (self.root / self.evidence).write_bytes(self.receipt)
+
+        with patch.object(sys, "argv", [*argv, "--assessment-commit", earlier_assessment]), \
+                patch.object(readiness, "__file__", str(self.root / "scripts" / "check_readiness_evidence.py")), \
+                redirect_stdout(io.StringIO()) as output, redirect_stderr(io.StringIO()):
+            self.assertEqual(readiness.main(), 1)
+            self.assertEqual(json.loads(output.getvalue())["assessmentCommit"], earlier_assessment)
 
     def test_invalid_status_cannot_be_counted(self):
         for status in ("pass", "Passed", "", False, None):
