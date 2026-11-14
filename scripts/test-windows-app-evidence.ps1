@@ -339,10 +339,11 @@ foreach($alreadyRunning in @($true,'false',$null)){
         return @{application='discord';removed=$removalOutcome}
     }
     function Assert-FixtureLiveImage([string]$Path,[bool]$Expected,[switch]$AllSessions,[string]$CleanupVariant){
-        if($Expected -or -not $AllSessions -or $CleanupVariant -cne 'discord' -or $Path -cnotin @($image,$replacement)){
+        if($Expected -or -not $AllSessions -or $CleanupVariant -cne 'discord' -or $Path -cnotin @($image,$replacement,$stableUpdater)){
             throw 'Unexpected removal process check'
         }
         $trace.Add('process:'+ $Path)
+        if($case.orphanProcess){throw 'Fixture orphan process remains'}
     }
     function Test-Path {
         [CmdletBinding()]param($LiteralPath,$PathType)
@@ -362,6 +363,9 @@ foreach($alreadyRunning in @($true,'false',$null)){
         @{name='remains-on-disk';before=$image;previous=$image;file=$true;remaining=$image;launch=$true;success=$false},
         @{name='updater-remains-on-disk';before=$image;previous=$image;file=$true;remaining=$stableUpdater;launch=$true;success=$false},
         @{name='clean-guest';before=$null;previous=$image;cleanup=$true;result=$false;launch=$true;success=$true},
+        @{name='clean-guest-no-image';cleanup=$true;result=$false;launch=$true;success=$true;processProbe=$true},
+        @{name='orphan-updater-no-image';cleanup=$true;result=$false;launch=$true;success=$false;remaining=$stableUpdater},
+        @{name='orphan-process-no-image';cleanup=$true;result=$false;launch=$true;success=$false;orphanProcess=$true;processProbe=$true},
         @{name='clean-guest-unverified';before=$null;previous=$image;cleanup=$true;result='false';launch=$true;success=$false},
         @{name='cleanup-newly-discovered';before=$replacement;previous=$image;cleanup=$true;launch=$true;success=$true},
         @{name='cleanup-must-check-previous';before=$replacement;previous=$image;cleanup=$true;remaining=$image;launch=$true;success=$false}
@@ -378,6 +382,9 @@ foreach($alreadyRunning in @($true,'false',$null)){
         try{Remove-FixtureApp 'discord' -Cleanup:([bool]$case.cleanup);$passed=$true}catch{}
         if($passed -ne $case.success -or $trace.Contains('remove') -ne $case.launch){
             throw ('Unexpected removal result: '+$case.name)
+        }
+        if($trace.Contains('process:'+$stableUpdater) -ne [bool]$case.processProbe){
+            throw ('Removal did not verify expected orphan process scope: '+$case.name)
         }
         if($passed -and $case.previous -and -not $trace.Contains('process:'+$case.previous)){
             throw ('Removal omitted the previous image: '+$case.name)

@@ -218,7 +218,8 @@ function Remove-FixtureApp([string]$Variant,[switch]$Cleanup){
     $remaining=Get-FixtureAppImage (Inspect-Apps) $Variant
     $script:appEvidenceStage='removal-readback'
     if($remaining){throw 'Application remains discoverable after removal'}
-    foreach($image in @($previous,$current) | Where-Object {$_} | Select-Object -Unique){
+    $images=@(@($previous,$current) | Where-Object {$_} | Select-Object -Unique)
+    foreach($image in $images){
         Assert-FixtureLiveImage $image $false -AllSessions -CleanupVariant $Variant
         if(Test-Path -LiteralPath $image -ErrorAction Stop){throw 'Previously discovered executable remains after removal'}
     }
@@ -226,13 +227,14 @@ function Remove-FixtureApp([string]$Variant,[switch]$Cleanup){
         $script:appEvidenceStage='service-readback'
         Assert-FixtureSplitCordServiceState 'Absent'
     }else{
-        Assert-FixtureDiscordUpdaterAbsent $Variant
+        Assert-FixtureDiscordUpdaterAbsent $Variant -CheckProcesses:($images.Count -eq 0)
     }
 }
-function Assert-FixtureDiscordUpdaterAbsent([string]$Variant){
+function Assert-FixtureDiscordUpdaterAbsent([string]$Variant,[switch]$CheckProcesses){
     $folder=if($Variant -ceq 'discord'){'Discord'}else{'DiscordPTB'}
     $path=Join-Path (Join-Path $env:LOCALAPPDATA $folder) 'Update.exe'
-    if(Test-Path -LiteralPath $path -ErrorAction Stop){throw 'Discord updater remains after removal'}
+    if(Test-Path -LiteralPath $path -ErrorAction Stop){throw 'Discord updater remains on disk'}
+    if($CheckProcesses){Assert-FixtureLiveImage $path $false -AllSessions -CleanupVariant $Variant}
 }
 function Start-FixtureApp([string]$Variant){
     if(-not $installedImages.ContainsKey($Variant)){throw 'Application install prerequisite failed'}
@@ -470,6 +472,7 @@ try {
         $apps=Inspect-Apps
         foreach($variant in $variants){
             if(Get-FixtureAppImage $apps $variant){throw 'The disposable desktop baseline already contains a tested application'}
+            if($variant -cin @('discord','discord-ptb')){Assert-FixtureDiscordUpdaterAbsent $variant -CheckProcesses}
         }
         if(-not $SkipSplitCord){
             $script:appEvidenceStage='service-baseline'
