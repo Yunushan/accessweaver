@@ -104,7 +104,7 @@ $verifiedFile=[regex]::Match($installerSource,'(?ms)^function AWVerifyInstalledF
 $retirement=[regex]::Match($installerSource,'(?ms)^procedure AWCompleteInstallation\(.*?^end;').Value
 $directoryLock=[regex]::Match($installerSource,'(?ms)^function AWLockInstallationDirectory\(.*?^end;').Value
 Assert ($copy -cmatch "(?s)ssInstall.*AWRegistrationPreflight\(Destination\).*RegWriteStringValue.*AWFlushLifecycleRecord.*AWPendingInstallMatches\(Destination\).*ssPostInstall.*ssDone.*AWCompleteInstallation") 'Setup must recheck registration and bind the pending record before copy'
-Assert ($retirement -cmatch "(?s)AWVerifyCompletedInstall.*Pending installation record retained\..*else if not AWPendingInstallMatches\(Destination\).*else if not RegDeleteValue.*AWFlushLifecycleRecord.*finally.*AWCloseNativeHandle\(Uninstaller\).*AWCloseNativeHandle\(SBOM\).*AWCloseNativeHandle\(BuildInfo\).*AWCloseNativeHandle\(Executable\).*AWCloseNativeHandle\(Held\[I\]\)") 'Setup must hold the verified subjects and directories through pending record retirement'
+Assert ($retirement -cmatch "(?s)AWVerifyCompletedInstall.*Pending installation record retained\..*else if not AWPendingInstallMatches\(Destination\).*else if not RegDeleteValue.*AWFlushLifecycleRecord.*finally.*AWCloseNativeHandle\(UninstallData\).*AWCloseNativeHandle\(Uninstaller\).*AWCloseNativeHandle\(SBOM\).*AWCloseNativeHandle\(BuildInfo\).*AWCloseNativeHandle\(Executable\).*AWCloseNativeHandle\(Held\[I\]\)") 'Setup must hold the verified subjects and directories through pending record retirement'
 Assert ($directoryLock.Contains('AWOpenReplaceProbe(Copy(Target, 1, I - 1), 1, 3, 0, 3, $02200000, 0)') -and $directoryLock.Contains('AWGetFileInfo(Handle, Info)')) 'Directory guards must enforce sharing and inspect each native handle'
 Assert ($verifiedFile.Contains('AWOpenReplaceProbe(Path, $80000000, 1, 0, 3, $00200000, 0)') -and $verifiedFile -cmatch '(?s)AWGetFileInfo\(Held, Info\).*SingleLink and \(Info\.Links <> 1\).*THandleStream\.Create\(Held\).*Payload\.Size <> Size.*GetSHA256OfStream\(Payload\)') 'Installed files must be inspected and hashed through the held no-follow handles'
 foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
@@ -112,8 +112,13 @@ foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
 }
 Assert ($completion -cmatch '(?s)AWReadRegistration\(\$0100, True.*AWReadRegistration\(\$0200, False.*Found64 and not Found32') 'Setup completion must verify its unique machine registration'
 $registrySource=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-installer-registry.iss'))
-Assert ($completion.Contains("ExpandConstant('{uninstallexe}')") -and $completion.Contains('AWOpenReplaceProbe(UninstallerPath, $80000000, 1, 0, 3, $00200000, 0)') -and
-    $completion.Contains('AWGetFileInfo(Uninstaller, Info)') -and $completion.Contains('AWReadRegistration($0100, True, UninstallerPath,')) 'Setup must hold the compiler-selected uninstaller while checking registration'
+$uninstallSubject=[regex]::Match($installerSource,'(?ms)^function AWOpenUninstallSubject\(.*?^end;').Value
+Assert ($completion.Contains("ExpandConstant('{uninstallexe}')") -and
+    $completion.Contains('AWOpenUninstallSubject(UninstallerPath, Uninstaller)') -and
+    $completion.Contains("AWOpenUninstallSubject(ChangeFileExt(UninstallerPath, '.dat'), UninstallData)") -and
+    $completion.Contains('AWReadRegistration($0100, True, UninstallerPath,')) 'Setup must hold the compiler-selected uninstaller and its data while checking registration'
+Assert ($uninstallSubject.Contains('AWOpenReplaceProbe(Path, $80000000, 1, 0, 3, $00200000, 0)') -and
+    $uninstallSubject -cmatch '(?s)AWGetFileInfo.*Info.Attributes.*Info.Links = 1.*Info.SizeLow > 0') 'Uninstall files must be ordinary bounded single-link files held without write or delete sharing'
 Assert ($installerSource -cmatch '(?m)^UninstallLogging=no\r?$' -and
     $registrySource -cmatch "(?s)'UninstallString', \x2430000002, 300, Command.*'QuietUninstallString', \x2430000002, 300, QuietCommand.*AWOrdinal\(Command, Expected\).*AWOrdinal\(QuietCommand, Expected \+ ' /SILENT'\)") 'Setup must bind both uninstall commands to the installed uninstaller'
 $approvedUpgrade=[regex]::Match($installerSource,'(?ms)^function AWApprovedUpgradePreflight\(.*?^end;').Value

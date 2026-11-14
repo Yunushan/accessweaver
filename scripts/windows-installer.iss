@@ -273,11 +273,21 @@ begin
   end;
 end;
 
+function AWOpenUninstallSubject(const Path: String; var Held: LongWord): Boolean;
+var Info: AWFileInfo;
+begin
+  Result := False;
+  Held := AWOpenReplaceProbe(Path, $80000000, 1, 0, 3, $00200000, 0);
+  if Held = $FFFFFFFF then Exit;
+  if AWGetFileInfo(Held, Info) = 0 then Exit;
+  Result := ((Info.Attributes and ($00000400 or $00000010)) = 0) and (Info.Links = 1) and
+    (Info.SizeHigh = 0) and (Info.SizeLow > 0) and (Info.SizeLow <= 536870912);
+end;
+
 function AWVerifyCompletedInstall(const Destination: String; var Held: AWDirectoryHandles;
-  var Executable, BuildInfo, SBOM, Uninstaller: LongWord): Boolean;
+  var Executable, BuildInfo, SBOM, Uninstaller, UninstallData: LongWord): Boolean;
 var Found64, Found32: Boolean;
     Version, Location, Version32, Location32, UninstallerPath: String;
-    Info: AWFileInfo;
 begin
   Result := False;
   if not AWLockInstallationDirectory(Destination, Held) then Exit;
@@ -286,11 +296,8 @@ begin
   if not AWVerifyInstalledFile(Destination + '\SBOM.cdx.json', '{#PayloadSBOMDigest}', {#PayloadSBOMBytes}, False, SBOM) then Exit;
   UninstallerPath := ExpandConstant('{uninstallexe}');
   if not AWIsInstallationDirectory(Destination, ExtractFileDir(UninstallerPath)) then Exit;
-  Uninstaller := AWOpenReplaceProbe(UninstallerPath, $80000000, 1, 0, 3, $00200000, 0);
-  if Uninstaller = $FFFFFFFF then Exit;
-  if AWGetFileInfo(Uninstaller, Info) = 0 then Exit;
-  if ((Info.Attributes and ($00000400 or $00000010)) <> 0) or (Info.Links <> 1) or
-     (Info.SizeHigh <> 0) or (Info.SizeLow = 0) or (Info.SizeLow > 536870912) then Exit;
+  if not AWOpenUninstallSubject(UninstallerPath, Uninstaller) then Exit;
+  if not AWOpenUninstallSubject(ChangeFileExt(UninstallerPath, '.dat'), UninstallData) then Exit;
   if AWReadRegistration($0100, True, UninstallerPath, Found64, Version, Location) <> '' then Exit;
   if AWReadRegistration($0200, False, '', Found32, Version32, Location32) <> '' then Exit;
   Result := Found64 and not Found32 and (Version = '{#ReleaseVersion}') and
@@ -434,13 +441,14 @@ begin
 end;
 
 procedure AWCompleteInstallation(const Destination: String);
-var Held: AWDirectoryHandles; Executable, BuildInfo, SBOM, Uninstaller: LongWord; I: Integer;
+var Held: AWDirectoryHandles; Executable, BuildInfo, SBOM, Uninstaller, UninstallData: LongWord; I: Integer;
     Verified: Boolean;
 begin
-  Executable := $FFFFFFFF; BuildInfo := $FFFFFFFF; SBOM := $FFFFFFFF; Uninstaller := $FFFFFFFF;
+  Executable := $FFFFFFFF; BuildInfo := $FFFFFFFF; SBOM := $FFFFFFFF;
+  Uninstaller := $FFFFFFFF; UninstallData := $FFFFFFFF;
   try
     try
-      Verified := AWVerifyCompletedInstall(Destination, Held, Executable, BuildInfo, SBOM, Uninstaller);
+      Verified := AWVerifyCompletedInstall(Destination, Held, Executable, BuildInfo, SBOM, Uninstaller, UninstallData);
     except
       Verified := False;
     end;
@@ -456,6 +464,7 @@ begin
       Log('AccessWeaver installed payload and registration verified. Pending installation record retired.');
     end;
   finally
+    if UninstallData <> $FFFFFFFF then AWCloseNativeHandle(UninstallData);
     if Uninstaller <> $FFFFFFFF then AWCloseNativeHandle(Uninstaller);
     if SBOM <> $FFFFFFFF then AWCloseNativeHandle(SBOM);
     if BuildInfo <> $FFFFFFFF then AWCloseNativeHandle(BuildInfo);
