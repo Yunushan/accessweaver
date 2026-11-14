@@ -4,7 +4,7 @@ $path=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.ps
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS journal source failed parsing'}
-foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Backup-File','Restore-RecordedWorkflowFile','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Test-DNSCryptLoopbackAddress','Wait-DNSCryptListeners','Assert-EffectiveDNSCryptListeners','Test-DNSIPv4Answer','Assert-DNSCryptConfiguration','Assert-DNSRecoverySnapshotUnchanged','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Assert-DNSCryptCanBeRemoved','Remove-RecordedService')){
+foreach($name in @('No-Reparse','Under','Quote-Arg','Publish-WorkflowFile','Get-WorkflowBytesSHA256','Throw-WorkflowRecoveryJournalReadFailure','Read-WorkflowRecoveryJournalBytes','Read-DNSRecoveryFileBytes','Get-DNSRecoverySnapshotDigest','Get-DNSRecoveryReceiptPath','Save-DNSRecoveryReceipt','Confirm-DNSRecoveryEntry','Confirm-DNSRecoverySnapshot','Recover-Operation','Get-WorkflowFileHash','Copy-WorkflowFileToNewPath','Replace-StagedWorkflowFile','Publish-StagedWorkflowFile','Publish-RecordedWorkflowFile','Backup-File','Restore-RecordedWorkflowFile','Get-DNSCryptReloadFile','Restore-DNSCryptAfterActivationFailure','Test-DNSCryptLoopbackAddress','Wait-DNSCryptListeners','Get-EffectiveDNSCryptListeners','Assert-EffectiveDNSCryptListeners','Test-DNSIPv4Answer','Assert-DNSCryptConfiguration','Assert-DNSRecoverySnapshotUnchanged','Rollback','Remove-All','Get-ManagedFirewallRule','Remove-ManagedFirewallRule','Firewall','Save-Journal','Invoke-ManagedServiceControl','Get-ManagedServiceCommandDigest','Read-ManagedServiceCommand','Read-ManagedServiceRegistration','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Wait-RecordedServiceAbsent','Assert-DNSCryptCanBeRemoved','Remove-RecordedService')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -628,7 +628,11 @@ try {
     $script:reloadCount=0;$script:failReload=$true;$script:reloadStartup='Automatic'
     $script:recoveryQueries=[Collections.Generic.List[string]]::new()
     $script:failRecoveryProbe=$false
+    $script:driftAfterRecoveryProbe=$false
     function Read-DNSClientInventory {
+        if($script:driftAfterRecoveryProbe -and $script:recoveryQueries.Count -gt 0){
+            return @{ServerAddresses=@('127.0.0.1','127.0.0.2','::1')}
+        }
         return @{ServerAddresses=@('127.0.0.1','::ffff:127.0.0.1','2001:db8::53','::1')}
     }
     function Clear-DnsClientCache {[CmdletBinding()]param()}
@@ -643,7 +647,7 @@ try {
     function Set-Service {
         [CmdletBinding()]param($Name,$StartupType)
         Require ($Name -ceq 'AccessWeaver-dnscrypt' -and $StartupType -ceq 'Manual' -and
-            $script:reloadCount -eq 3) 'Startup policy changed before the original resolver was reloaded and verified'
+            $script:reloadCount -eq 4) 'Startup policy changed before the original resolver was reloaded and verified'
         $script:reloadStartup=$StartupType
     }
     function Get-Service {
@@ -693,17 +697,26 @@ try {
     $script:failRecoveryProbe=$false
     $script:recoveryQueries.Clear()
     $script:order.Clear()
+    $script:driftAfterRecoveryProbe=$true
+    $refused=$false
+    try{Recover-Operation}catch{$refused=$_.Exception.Message -match '^DNSCrypt activation failed'}
+    Require ($refused -and $script:reloadCount -eq 3 -and $script:reloadStartup -ceq 'Automatic' -and
+        $script:recoveryQueries.Count -eq 2 -and -not $script:order.Contains('restore')) 'A newly dependent listener escaped DNSCrypt recovery verification'
+    $script:driftAfterRecoveryProbe=$false
+    $script:recoveryQueries.Clear()
+    $script:order.Clear()
     Recover-Operation
-    Require ($script:reloadCount -eq 3 -and $script:reloadStartup -ceq 'Manual' -and -not $script:order.Contains('restore') -and
+    Require ($script:reloadCount -eq 4 -and $script:reloadStartup -ceq 'Manual' -and -not $script:order.Contains('restore') -and
         $script:recoveryQueries.Count -eq 2 -and $script:recoveryQueries.Contains('127.0.0.1') -and
         $script:recoveryQueries.Contains('::1') -and
         (Get-WorkflowFileHash $reloadPath) -ceq $originalHash) 'Retry after file restoration did not verify both restored listeners'
     $invalid=@{kind='dnscrypt-reload';name='AccessWeaver-dnscrypt';commandSHA256=$reloadEntry.commandSHA256;
         path=$serviceConfig;originalHash=$originalHash}
     $script:saved=@($dnsUndo,$reloadFile,$invalid)
+    $reloadsBeforeForeignFile=$script:reloadCount
     $refused=$false
     try{Recover-Operation}catch{$refused=$_.Exception.Message -ceq 'Original DNSCrypt file recovery is unverified'}
-    Require ($refused -and $script:reloadCount -eq 3) 'A foreign file reached resolver reload'
+    Require ($refused -and $script:reloadCount -eq $reloadsBeforeForeignFile) 'A foreign file reached resolver reload'
 } finally {
     if($reloadPath){[IO.File]::Delete($reloadPath)}
     if($reloadBackup){[IO.File]::Delete($reloadBackup)}

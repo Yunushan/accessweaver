@@ -2319,7 +2319,7 @@ function Wait-DNSCryptListeners([string[]]$Servers,[int]$TimeoutSeconds=30,
     } while($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
     throw $FailureMessage
 }
-function Assert-EffectiveDNSCryptListeners {
+function Get-EffectiveDNSCryptListeners {
     $clients=@(Read-DNSClientInventory)
     if(-not $clients.Count){throw 'Effective DNS settings could not be inspected after resolver recovery'}
     $listeners=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -2336,10 +2336,17 @@ function Assert-EffectiveDNSCryptListeners {
         }
     }
     if($listeners.Count -gt 16){throw 'Too many loopback resolver addresses to verify'}
+    return ,$listeners
+}
+function Assert-EffectiveDNSCryptListeners {
+    $listeners=Get-EffectiveDNSCryptListeners
     if($listeners.Count){
         $addresses=[string[]]::new($listeners.Count)
         $listeners.CopyTo($addresses)
         Wait-DNSCryptListeners $addresses -TimeoutSeconds 5 -FailureMessage 'Restored DNSCrypt listener could not be verified'
+    }
+    if(-not $listeners.SetEquals((Get-EffectiveDNSCryptListeners))){
+        throw 'Effective loopback DNS changed during resolver verification; retry recovery'
     }
 }
 function Get-DNSClientMutationRow([string]$Guid,[string]$Family,[switch]$RequireUp) {
