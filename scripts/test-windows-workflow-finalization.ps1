@@ -83,7 +83,7 @@ function Assert-Finalizer([bool]$Value,[string]$Message){if(-not $Value){throw $
 
     $realOpenBinding=(Get-Command Open-WorkflowUninstallBinding).ScriptBlock
     $state=@{launches=0;restores=0;stream=$null;binding=$null;failOpen=$false;failLaunch=$false;
-        busy=$false;held=$false;failRestore=$false;installerRecovery='clear';registrationReads=0}
+        busy=$false;held=$false;failRestore=$false;installerRecovery='clear';registrationReads=0;setupActive=$false;setupLate=$false}
     function Enter-WorkflowUninstallLifecycle {
         if($state.busy){throw 'Inert lifecycle contention'}
         Assert-Finalizer (-not $state.held) 'Lifecycle acquired twice'
@@ -93,6 +93,9 @@ function Assert-Finalizer([bool]$Value,[string]$Message){if(-not $Value){throw $
         $owner | Add-Member ScriptMethod Dispose {if($this.State.held){throw 'Lifecycle disposed while owned'}}
         return $owner
     }
+    function Assert-NoAccessWeaverSetup {
+        if($state.setupActive -or $state.setupLate){throw 'AccessWeaver Setup is active or its mutex could not be inspected'}
+    }
     function Get-AccessWeaverInstallerRecoveryState {return $state.installerRecovery}
     function Read-WorkflowUninstallRegistration {
         $state.registrationReads++
@@ -100,7 +103,7 @@ function Assert-Finalizer([bool]$Value,[string]$Message){if(-not $Value){throw $
     }
     function Open-WorkflowUninstallBinding {
         if($state.failOpen){throw 'Inert inspection failure'}
-        if($state.installerRecovery -cne 'clear'){return (& $realOpenBinding)}
+        if($state.installerRecovery -cne 'clear' -or $state.setupActive){return (& $realOpenBinding)}
         if($null -eq $state.binding){return $null}
         $result=$state.binding.Clone()
         $state.stream=[IO.MemoryStream]::new()
@@ -155,6 +158,16 @@ function Assert-Finalizer([bool]$Value,[string]$Message){if(-not $Value){throw $
             Assert-Finalizer ($failed -and $state.launches -eq 1 -and $state.registrationReads -eq 0) 'Deferred launch crossed a failed Setup recovery boundary'
         }
         $state.installerRecovery='clear'
+        $state.setupActive=$true
+        $failed=$false
+        try {$null=Invoke-WorkflowUninstall}catch{$failed=$_.Exception.Message -clike 'AccessWeaver Setup is active*'}
+        Assert-Finalizer ($failed -and $state.restores -eq 2 -and -not $state.held -and $state.registrationReads -eq 0) 'Legacy Setup did not prevent machine restoration'
+        $state.setupActive=$false
+        $state.setupLate=$true
+        $failed=$false
+        try {Invoke-WorkflowDeferredUninstaller $binding}catch{$failed=$_.Exception.Message -clike 'AccessWeaver Setup is active*'}
+        Assert-Finalizer ($failed -and $state.launches -eq 1 -and -not $state.stream.CanRead) 'Setup started during inspection without preventing launch and closing the guard'
+        $state.setupLate=$false
         foreach($change in @('digest','registration','launch-error')){
             $state.binding=$binding.Clone()
             switch($change){
@@ -184,7 +197,7 @@ namespace AccessWeaverFinalizerFixture {
 function Reset-Finalizer([string[]]$Faults=@()){
     $script:finalizerFaults=$Faults
     $script:finalizerCalls=[Collections.Generic.List[string]]::new()
-    $script:finalizerPublication=$null
+    $script:finalizerPublication=$null;$script:journalEffectsPending=$null
     $script:events=[Collections.Generic.List[string]]::new();$script:events.Add('source fixture event')
     $script:journalPath='source-fixture-journal';$script:journalState='succeeded';$script:rebootRequired=$true
     $script:externalEffectsPending=$false;$script:pendingUninstaller='source-fixture-uninstaller'
@@ -192,7 +205,7 @@ function Reset-Finalizer([string[]]$Faults=@()){
     $script:mutex.FailRelease=$Faults -contains 'mutex-release';$script:mutex.FailDispose=$Faults -contains 'mutex-dispose'
 }
 function Save-Journal {
-    $script:finalizerCalls.Add('journal')
+    $script:finalizerCalls.Add('journal');$script:journalEffectsPending=$script:externalEffectsPending
     if($script:finalizerFaults -contains 'journal-save'){throw 'PRIVATE_FINAL_JOURNAL'}
 }
 function Invoke-WorkflowDeferredUninstaller([string]$Path){
@@ -220,14 +233,14 @@ foreach($faults in @(@(),@('journal-save'),@('mutex-release'),@('mutex-dispose')
     $cleanupFault=@($faults|Where-Object {$_ -cne 'uninstaller-start'}).Count -gt 0
     Assert-Finalizer (($script:finalizerCalls -contains 'handoff') -eq (-not $cleanupFault)) 'Uninstaller ran after unconfirmed cleanup or was not attempted when eligible'
     Assert-Finalizer ($result.ok -eq ($faults.Count -eq 0)) 'Finalization turned an uncertain outcome into success'
-    Assert-Finalizer ($result.externalEffectsPending -eq (-not $cleanupFault)) 'Deferred launch uncertainty was not preserved'
+    Assert-Finalizer ($result.externalEffectsPending -and $script:journalEffectsPending) 'Deferred launch uncertainty was not saved before release'
     if($faults.Count){Assert-Finalizer ($result.error -notmatch 'PRIVATE_') 'Finalizer exposed a private cleanup cause in its public summary'}
 }
 Reset-Finalizer @('journal-save','mutex-release','mutex-dispose')
 $failed=@{ok=$false;error='original operation failure';data=$null}
 Complete-WorkflowFinalization $failed 'source-path' $finalizerToken
 Assert-Finalizer ($failed.error -ceq 'original operation failure') 'Finalizer replaced the original failure'
-Assert-Finalizer (-not ($script:finalizerCalls -contains 'handoff')) 'Failed operation launched deferred work'
+Assert-Finalizer (-not ($script:finalizerCalls -contains 'handoff') -and -not $script:journalEffectsPending) 'Failed operation recorded or launched deferred work'
 Reset-Finalizer @('publish')
 $publication=@{ok=$true;data=$null};$owner=$script:mutex;$publicationError=$false
 try{Complete-WorkflowFinalization $publication 'source-path' $finalizerToken}catch{$publicationError=$true}

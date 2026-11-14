@@ -20,7 +20,7 @@ $workflow=Join-Path $project 'internal\workflow\windows.ps1'
 $ast=[Management.Automation.Language.Parser]::ParseFile($workflow,[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Product workflow parse failed'}
 foreach($name in @('No-Reparse','Quote-Arg','Native-Argument','New-ToolCapture','Receive-ToolCapture','Wait-ToolCapture','Stop-ToolTreeWithHelper','Stop-ToolTree','Run-Tool','Native','Get-DriverServiceControllers','Get-ServiceInspection','Under','Get-PEMachine',
-        'Read-WorkflowUninstallRegistration','Get-WorkflowUninstallPath','Assert-WorkflowUninstallACL','Assert-WorkflowUninstallProtection','Get-AccessWeaverInstallerRecoveryState','Assert-NoPendingWorkflowInstallation','Open-WorkflowUninstallBinding')){
+        'Read-WorkflowUninstallRegistration','Get-WorkflowUninstallPath','Assert-WorkflowUninstallACL','Assert-WorkflowUninstallProtection','Get-AccessWeaverInstallerRecoveryState','Assert-NoPendingWorkflowInstallation','Assert-NoAccessWeaverSetup','Open-WorkflowUninstallBinding')){
     $nodes=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Expected one fixed product process/inspection helper'}
     . ([scriptblock]::Create($nodes[0].Extent.Text))

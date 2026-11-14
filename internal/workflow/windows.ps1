@@ -4234,6 +4234,42 @@ function Assert-WorkflowUninstallProtection([string]$Path) {
     $writes=[int][Security.AccessControl.FileSystemRights]'Write,DeleteSubdirectoriesAndFiles,Delete,ChangePermissions,TakeOwnership'
     Assert-WorkflowUninstallACL (Get-Acl -LiteralPath $Path -ErrorAction Stop) $writes
 }
+function Assert-NoAccessWeaverSetup {
+    if(-not ('AccessWeaver.InstallerSetupMutex' -as [type])){
+        Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace AccessWeaver
+{
+    public static class InstallerSetupMutex
+    {
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
+        private static extern IntPtr OpenMutexW(uint access, bool inherit, string name);
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        private static extern bool CloseHandle(IntPtr handle);
+
+        public static bool IsAbsent(string name)
+        {
+            // Inspect existence without waiting or creating another mutex.
+            IntPtr handle = OpenMutexW(0x00100000, false, name); // SYNCHRONIZE
+            if (handle == IntPtr.Zero)
+                return Marshal.GetLastWin32Error() == 2; // ERROR_FILE_NOT_FOUND
+
+            if (!CloseHandle(handle))
+                throw new InvalidOperationException("Could not close the AccessWeaver Setup mutex handle");
+            return false;
+        }
+    }
+}
+'@
+    }
+    if(-not [AccessWeaver.InstallerSetupMutex]::IsAbsent('Global\AccessWeaver-Setup-B13D4677-4660-4E63-B3DB-03077ACBB092')){
+        throw 'AccessWeaver Setup is active or its mutex could not be inspected'
+    }
+}
+
 function Get-AccessWeaverInstallerRecoveryState {
     # The detector ships standalone. Its source fixture checks both copies.
     try {
@@ -4295,6 +4331,7 @@ function Enter-WorkflowUninstallLifecycle {
     return $mutex
 }
 function Open-WorkflowUninstallBinding([string]$Architecture=$inputData.nativeArchitecture) {
+    Assert-NoAccessWeaverSetup
     Assert-NoPendingWorkflowInstallation
     $registration=Read-WorkflowUninstallRegistration
     if($null -eq $registration){return $null}
@@ -4340,6 +4377,9 @@ function Invoke-WorkflowDeferredUninstaller($Binding) {
                 throw 'AccessWeaver uninstall registration changed before handoff'
             }
         }
+        # The file inspection can overlap a new Setup or recovery marker.
+        Assert-NoPendingWorkflowInstallation
+        Assert-NoAccessWeaverSetup
         # Keep the confirmed executable open through detached process creation.
         Start-Process -FilePath $current.path -WorkingDirectory ([IO.Path]::GetDirectoryName($current.path)) -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -WindowStyle Hidden
     } finally {$current.stream.Dispose()}
@@ -4352,6 +4392,8 @@ function Invoke-WorkflowUninstall {
             $binding.stream.Dispose()
             $binding.Remove('stream')
         }
+        Assert-NoPendingWorkflowInstallation
+        Assert-NoAccessWeaverSetup
         Remove-All
     } finally {
         try {$lifecycle.ReleaseMutex()}
@@ -4365,6 +4407,8 @@ function Invoke-WorkflowUninstall {
 }
 function Complete-WorkflowFinalization([Collections.IDictionary]$Result,[string]$Path,[string]$ResultToken) {
     $failures=[Collections.Generic.List[string]]::new()
+    $handoffPlanned=$Result['ok'] -is [bool] -and $Result['ok'] -and $null -ne $script:pendingUninstaller
+    if($handoffPlanned){$script:externalEffectsPending=$true}
     # Every owned cleanup stage is attempted independently. A failed journal
     # save must not skip mutex release/disposal or bounded result publication.
     try {Save-Journal}catch {[void]$failures.Add('journal-save')}
@@ -4374,11 +4418,10 @@ function Complete-WorkflowFinalization([Collections.IDictionary]$Result,[string]
         }
         try {$script:mutex.Dispose();$script:mutex=$null}catch {[void]$failures.Add('mutex-dispose')}
     }
-    if($Result['ok'] -is [bool] -and $Result['ok'] -and $script:pendingUninstaller -and $failures.Count -eq 0){
+    if($handoffPlanned -and $failures.Count -eq 0){
         # Mark before the attempt: a launch exception cannot prove that no
         # detached process was accepted. Never rewrite the machine journal
         # after releasing the mutex or retry an uncertain native handoff.
-        $script:externalEffectsPending=$true
         $Result['uninstallerHandoff']='attempted'
         try {Invoke-WorkflowDeferredUninstaller $script:pendingUninstaller;$Result['uninstallerHandoff']='started'}catch {
             $Result['uninstallerHandoff']='unconfirmed';[void]$failures.Add('uninstaller-start')

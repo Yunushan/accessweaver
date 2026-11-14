@@ -21,6 +21,14 @@ $probes=@(foreach($scriptAst in @($ast,$controllerAst)){
 if($probes.Count -ne 2 -or $probes[0].Extent.Text -cne $probes[1].Extent.Text){
     throw 'Standalone detector and embedded controller recovery probes differ'
 }
+$setupProbes=@(foreach($scriptAst in @($ast,$controllerAst)){
+    $scriptAst.EndBlock.Statements | Where-Object {
+        $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq 'Assert-NoAccessWeaverSetup'
+    }
+})
+if($setupProbes.Count -ne 2 -or $setupProbes[0].Extent.Text -cne $setupProbes[1].Extent.Text){
+    throw 'Standalone detector and embedded controller Setup mutex checks differ'
+}
 $testRoot=Join-Path ([IO.Path]::GetTempPath()) ('accessweaver-detection-'+[guid]::NewGuid().ToString('N'))
 $fixtureDirectory=[IO.Directory]::CreateDirectory($testRoot)
 $payload=Join-Path $testRoot 'accessweaver.exe'
