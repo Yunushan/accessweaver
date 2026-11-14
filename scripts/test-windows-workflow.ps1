@@ -1873,7 +1873,7 @@ try {
 }
 # Verify vendor completion against the previous executable and a fresh process snapshot.
 $appRemovalSaved=@{}
-foreach($name in @('Require-DesktopUser','Find-App','Native','Event','Stop-AppProcesses','Wait-SplitCordService')){
+foreach($name in @('Require-DesktopUser','Find-App','Native','Event','Stop-AppProcesses','Wait-SplitCordService','Save-Journal')){
     $appRemovalSaved[$name]=(Get-Command $name).ScriptBlock
 }
 try {
@@ -1884,14 +1884,18 @@ try {
         if(-not $script:appRemovalInvoked){return $fixtureApp}
     }
     function Native {
-        param($program,$arguments,$Timeout,[IO.FileStream]$StartGuard)
-        if($program -cne $fixtureUninstaller -or $null -eq $StartGuard -or -not $StartGuard.CanRead){
-            throw 'Vendor launch did not receive the verified uninstaller handle'
+        param($program,$arguments,$Timeout,[IO.FileStream[]]$StartGuard)
+        if($program -cne $fixtureUninstaller -or $StartGuard.Count -ne 2 -or
+            $StartGuard[0].Name -ine $program -or $StartGuard[1].Name -ine $fixtureApp){
+            throw 'Vendor launch did not receive both verified executable handles'
         }
-        $denied=$false
-        try {$writer=[IO.File]::OpenWrite($program);$writer.Dispose()}catch [IO.IOException] {$denied=$true}
-        if(-not $denied){throw 'The verified uninstaller was writable before launch'}
-        $StartGuard.Dispose()
+        foreach($file in $StartGuard){
+            if(-not $file.CanRead){throw 'Vendor launch received a closed executable handle'}
+            $denied=$false
+            try {$writer=[IO.File]::OpenWrite($file.Name);$writer.Dispose()}catch [IO.IOException] {$denied=$true}
+            if(-not $denied){throw 'A verified executable was writable before launch'}
+            $file.Dispose()
+        }
         $script:appRemovalInvoked=$true
         if($script:appRemovalDelete){[IO.File]::Delete($fixtureApp)}
         if($script:appRemovalFail){throw 'synthetic vendor failure'}
@@ -1980,6 +1984,9 @@ try {
     $writer=[IO.File]::OpenWrite($fixtureUninstaller)
     $writer.Dispose()
     Assert $true 'Application removal releases the uninstaller guard after vendor failure'
+    $writer=[IO.File]::OpenWrite($fixtureApp)
+    $writer.Dispose()
+    Assert $true 'Application removal releases the client guard after vendor failure'
     function Stop-AppProcesses {
         param($variant,$app)
         switch ($script:appRemovalChange) {
@@ -2017,6 +2024,28 @@ try {
     try{Remove-App 'splitcord' $fixtureApp ('0'*64)}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before removal'}
     Assert ($rejected -and -not $script:appRemovalInvoked -and [IO.File]::ReadAllBytes($fixtureApp)[0] -eq 0) 'Application removal refuses stale client bytes before stopping processes'
     $script:appRemovalChange=$null
+    function Save-Journal {
+        switch($script:appRemovalJournalChange){
+            'client' {$script:appRemovalMoved=$true}
+            'uninstaller' {[IO.File]::WriteAllBytes($secondUninstaller,[byte[]]@(1))}
+            'process' {$newProcess.HasExited=$false;$script:appRemovalProcesses=@($newProcess)}
+        }
+    }
+    foreach($case in @(
+        @{kind='client';message='Application installation changed before uninstall launch'},
+        @{kind='uninstaller';message='Expected exactly one SplitCord uninstaller'},
+        @{kind='process';message='Application process exit could not be verified before uninstall; close the client and retry'}
+    )){
+        $script:appRemovalJournalChange=$case.kind
+        $script:externalEffectsPending=$false
+        $rejected=$false
+        try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq $case.message}
+        Assert ($rejected -and -not $script:appRemovalInvoked -and $script:externalEffectsPending) ('Application removal refuses '+$case.kind+' changes during journal publication')
+        $script:appRemovalMoved=$false
+        $script:appRemovalProcesses=@()
+        [IO.File]::Delete($secondUninstaller)
+    }
+    Set-Item Function:Save-Journal $appRemovalSaved['Save-Journal']
     $script:appRemovalInvoked=$false
     $script:appRemovalFail=$false
     $script:appRemovalDelete=$true
@@ -2648,20 +2677,27 @@ $native=Native $node @('-e','process.stdout.write(JSON.stringify(process.argv.sl
 $nativeArgs=$native.stdout|ConvertFrom-Json
 Assert ($nativeArgs.Count -eq 8 -and $nativeArgs[0] -eq 'with spaces' -and $nativeArgs[1] -eq '' -and $nativeArgs[2] -eq 'trailing\' -and $nativeArgs[3] -eq 'quote"inside' -and $nativeArgs[4] -ceq 'help' -and $nativeArgs[5] -ceq '--flag=value' -and $nativeArgs[6] -ceq 'literal&|<>^%!,;' -and $nativeArgs[7] -ceq 'hyphen-name') 'Native processes receive literal Windows arguments without shell evaluation'
 Assert $native.outputComplete 'Ordinary native output reaches EOF'
-$guardPath=Join-Path $testRoot 'native-start-guard'
-[IO.File]::WriteAllText($guardPath,'inert launch fixture')
-$startGuard=[IO.File]::Open($guardPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-try {
-    $guardFixture='const fs=require("node:fs"); const path=process.argv[1]; let n=0; function attempt(){try{fs.appendFileSync(path," child");process.stdout.write("released")}catch(error){if(++n>=40)throw error;setTimeout(attempt,25)}} attempt()'
-    $native=Native $node @('-e',$guardFixture,$guardPath) -Timeout 5 -StartGuard $startGuard
-    Assert (-not $startGuard.CanRead -and $native.stdout -ceq 'released' -and $native.outputComplete) 'Native launch releases the verified file before waiting for the child'
-} finally {$startGuard.Dispose()}
-$startGuard=[IO.File]::Open($guardPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-try {
-    $refused=$false
-    try {Native (Join-Path $testRoot 'missing-tool.exe') -Timeout 5 -StartGuard $startGuard | Out-Null}catch{$refused=$true}
-    Assert ($refused -and -not $startGuard.CanRead) 'A failed native launch releases the verified file'
-} finally {$startGuard.Dispose();[IO.File]::Delete($guardPath)}
+$guardPaths=@((Join-Path $testRoot 'native-start-guard'),(Join-Path $testRoot 'native-client-guard'))
+foreach($path in $guardPaths){[IO.File]::WriteAllText($path,'inert launch fixture')}
+foreach($shouldStart in @($true,$false)){
+    $startGuards=[Collections.Generic.List[IO.FileStream]]::new()
+    try {
+        foreach($path in $guardPaths){
+            $startGuards.Add([IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read))
+        }
+        if($shouldStart){
+            $guardFixture='const fs=require("node:fs"); let n=0; function attempt(){try{for(const path of process.argv.slice(1))fs.appendFileSync(path," child");process.stdout.write("released")}catch(error){if(++n>=40)throw error;setTimeout(attempt,25)}} attempt()'
+            $native=Native $node (@('-e',$guardFixture)+$guardPaths) -Timeout 5 -StartGuard ($startGuards.ToArray())
+            Assert (-not $startGuards[0].CanRead -and -not $startGuards[1].CanRead -and
+                $native.stdout -ceq 'released' -and $native.outputComplete) 'Native launch releases the verified file before waiting for the child'
+        }else{
+            $refused=$false
+            try{Native (Join-Path $testRoot 'missing-tool.exe') -Timeout 5 -StartGuard ($startGuards.ToArray()) | Out-Null}catch{$refused=$true}
+            Assert ($refused -and -not $startGuards[0].CanRead -and -not $startGuards[1].CanRead) 'A failed native launch releases the verified file'
+        }
+    } finally {foreach($guard in $startGuards){$guard.Dispose()}}
+}
+foreach($path in $guardPaths){[IO.File]::Delete($path)}
 $clock=[Diagnostics.Stopwatch]::StartNew()
 [void](Native $node @('-e','require("child_process").spawn(process.execPath,["-e","setTimeout(()=>{},12000)"],{stdio:"inherit"});process.exit(0)'))
 Assert ($clock.Elapsed.TotalSeconds -lt 10) 'Exited installer does not wait for a GUI child holding inherited output pipes'
