@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import ssl
 import stat
 import subprocess
@@ -20,7 +19,7 @@ from sbom import prop_map, validate_digest
 from verify_macos_installer_publisher import check_package_publisher, verify_packaged_application
 from verify_release import require
 from verify_release_provenance import REPOSITORY, regular_file, validate_identity
-from verify_release_rebuild import digest, snapshot
+from verify_release_rebuild import MAX_FILE, digest, snapshot
 
 MANIFEST = "SIGNED-RELEASE.json"
 SIGNATURE = "SIGNED-RELEASE.p7s"
@@ -521,27 +520,64 @@ def verify_staged_update(path, size, approved_digest):
         require(result.hexdigest() == approved_digest, "Staged installer differs from the approved digest")
 
 
-def stage_managed_update(root, directory, update, policy):
+def staging_directory_identity(path):
+    info = path.lstat()
+    require(stat.S_ISDIR(info.st_mode)
+            and not getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT,
+            "Expected a real managed update staging directory")
+    return info.st_dev, info.st_ino
+
+
+def copy_approved_installer(source_path, staged, size):
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    before = source_path.lstat()
+    require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_size == size
+            and not getattr(before, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT,
+            "Signed installer snapshot differs from the approved size or file type")
+    with os.fdopen(os.open(source_path, flags), "rb") as source:
+        opened = os.fstat(source.fileno())
+        require(stat.S_ISREG(opened.st_mode) and os.path.samestat(before, opened)
+                and opened.st_size == size and opened.st_nlink == 1,
+                "Signed installer snapshot changed before staging")
+        with staged.open("xb") as output:
+            remaining = size
+            while remaining:
+                block = source.read(min(1 << 20, remaining))
+                require(block, "Signed installer snapshot was truncated during staging")
+                output.write(block)
+                remaining -= len(block)
+            require(not source.read(1), "Signed installer snapshot grew during staging")
+            output.flush()
+            os.fsync(output.fileno())
+
+
+def stage_managed_update(root, directory, update, policy, *, size, directory_identity):
+    require(type(size) is int and 0 < size <= MAX_FILE, "Expected a bounded signed installer size")
+
+    def check_directory():
+        require(staging_directory_identity(directory) == directory_identity,
+                "Managed update staging directory changed during verification")
+
     name = update["installer"]
     source_path = root / name
     destination = directory / name
-    size = source_path.stat().st_size
     approved_digest = update["installerSHA256"]
+    check_directory()
     try:
         verify_staged_update(destination, size, approved_digest)
     except FileNotFoundError:
         pass
     else:
+        check_directory()
         require_current_revocation_policy(policy)
         return
 
+    check_directory()
     with tempfile.TemporaryDirectory(prefix=".accessweaver-update-", dir=directory) as temporary:
         staged = Path(temporary) / name
-        with source_path.open("rb") as source, staged.open("xb") as output:
-            shutil.copyfileobj(source, output, length=1 << 20)
-            output.flush()
-            os.fsync(output.fileno())
+        copy_approved_installer(source_path, staged, size)
         verify_staged_update(staged, size, approved_digest)
+        check_directory()
         # Copy and digest verification can each consume the remaining validity.
         require_current_revocation_policy(policy)
         try:
@@ -549,7 +585,9 @@ def stage_managed_update(root, directory, update, policy):
         except FileExistsError:
             # Another publisher won the name. Verify its file after cleanup.
             pass
+    check_directory()
     verify_staged_update(destination, size, approved_digest)
+    check_directory()
     require_current_revocation_policy(policy)
 
 
@@ -609,11 +647,10 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
         installer_pin, application_pin = installer_pin.lower(), application_pin.lower()
     if stage_directory is not None:
         require(target is not None, "Managed update staging requires an installed version and target")
-        info = stage_directory.lstat()
-        require(stat.S_ISDIR(info.st_mode)
-                and not getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT,
-                "Expected a real managed update staging directory")
+        stage_directory_id = staging_directory_identity(stage_directory)
         stage_directory = stage_directory.resolve(strict=True)
+        require(staging_directory_identity(stage_directory) == stage_directory_id,
+                "Managed update staging directory changed during resolution")
         require(not stage_directory.is_relative_to(directory.resolve()),
                 "Stage the installer outside the release input directory")
     subjects = release_subjects(commit, ref)
@@ -728,7 +765,9 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
         if stage_directory is not None:
             update = report["managedUpdate"]
             require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
-            stage_managed_update(root, stage_directory, update, policy)
+            installer = next(item for item in files if item["file"] == update["installer"])
+            stage_managed_update(root, stage_directory, update, policy,
+                                 size=installer["size"], directory_identity=stage_directory_id)
             update["installerStaged"] = True
         return report
 

@@ -511,9 +511,9 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertEqual((macos_staging / pkg_name).read_bytes(), (self.candidate / pkg_name).read_bytes())
 
         real_stage = release.stage_managed_update
-        def replace_input_after_verification(snapshot, directory, decision, policy):
+        def replace_input_after_verification(snapshot, directory, decision, policy, **binding):
             input_file.write_bytes(b"replacement after verification")
-            real_stage(snapshot, directory, decision, policy)
+            real_stage(snapshot, directory, decision, policy, **binding)
 
         with patch.object(release, "stage_managed_update", side_effect=replace_input_after_verification):
             staged = self.verify(approved, pin, **update)["managedUpdate"]
@@ -604,10 +604,10 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.assertEqual(list(staging.iterdir()), [macos_file])
         macos_file.unlink()
 
-        def corrupt_copy(source, output, length):
-            output.write(b"corrupted copy")
+        def corrupt_copy(source, staged, size):
+            staged.write_bytes(b"corrupted copy")
 
-        with patch.object(release.shutil, "copyfileobj", side_effect=corrupt_copy):
+        with patch.object(release, "copy_approved_installer", side_effect=corrupt_copy):
             with self.assertRaisesRegex(ValueError, "bounded ordinary staged installer"):
                 self.verify(approved, pin, **update)
         self.assertEqual(list(staging.iterdir()), [])
@@ -987,13 +987,39 @@ class SignedReleaseManifestTests(unittest.TestCase):
                     destination.write_bytes(original)
                 with patch.object(release, "datetime", ControlledClock), \
                         self.assertRaisesRegex(ValueError, "outside its validity window"):
-                    release.stage_managed_update(self.candidate, staging, update, policy)
+                    release.stage_managed_update(self.candidate, staging, update, policy, size=len(original),
+                                                 directory_identity=release.staging_directory_identity(staging))
                 if phase == "before publication":
                     self.assertEqual(list(staging.iterdir()), [])
                 else:
                     self.assertEqual(destination.read_bytes(), original)
                     self.assertEqual(list(staging.iterdir()), [destination])
                     destination.unlink()
+
+    def test_staging_refuses_changed_snapshot_size_and_directory(self):
+        update = release.managed_update(release.inventory(self.candidate, self.subjects),
+                                        "windows/amd64", "1.2.2-rc.1", VERSION)
+        source = self.candidate / update["installer"]
+        original = source.read_bytes()
+        staging = self.root / "bound-staging"
+        staging.mkdir()
+        identity = release.staging_directory_identity(staging)
+        with source.open("ab") as output:
+            output.write(b"excess bytes")
+        with self.assertRaisesRegex(ValueError, "differs from the approved size"):
+            release.stage_managed_update(self.candidate, staging, update, self.policy,
+                                         size=len(original), directory_identity=identity)
+        self.assertEqual(list(staging.iterdir()), [])
+        source.write_bytes(original)
+
+        other = staging.with_name("displaced-staging")
+        staging.rename(other)
+        staging.mkdir()
+        with self.assertRaisesRegex(ValueError, "staging directory changed"):
+            release.stage_managed_update(self.candidate, staging, update, self.policy,
+                                         size=len(original), directory_identity=identity)
+        self.assertEqual(list(staging.iterdir()), [])
+        self.assertEqual(list(other.iterdir()), [])
 
     def test_sequenced_revocation_policy_requires_current_utc_window(self):
         now = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
