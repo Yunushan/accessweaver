@@ -109,7 +109,9 @@ def release_file(path, maximum):
     return info
 
 
-def snapshot(source, destination, count):
+def snapshot(source, destination, count, *, maximum_file=None):
+    if maximum_file is None:
+        maximum_file = MAX_FILE
     directory = source.lstat()
     require(stat.S_ISDIR(directory.st_mode) and not source.is_symlink()
             and not getattr(directory, 'st_file_attributes', 0) & 0x400, 'Expected a real input directory')
@@ -122,7 +124,7 @@ def snapshot(source, destination, count):
             before = path.lstat()
             require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
                     and not getattr(before, 'st_file_attributes', 0) & 0x400
-                    and 0 < before.st_size <= MAX_FILE, 'Expected a bounded regular single-link input')
+                    and 0 < before.st_size <= maximum_file, 'Expected a bounded regular single-link input')
             total += before.st_size
             require(total <= MAX_SET, 'Input set exceeds snapshot bound')
             flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
@@ -134,7 +136,7 @@ def snapshot(source, destination, count):
                 with (destination / entry.name).open('xb') as output:
                     copied = 0
                     while True:
-                        block = os.read(descriptor, min(1 << 20, MAX_FILE + 1 - copied))
+                        block = os.read(descriptor, min(1 << 20, maximum_file + 1 - copied))
                         if not block:
                             break
                         copied += len(block)

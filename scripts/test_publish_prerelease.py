@@ -84,10 +84,24 @@ class PrereleasePublicationTests(unittest.TestCase):
         (self.directory / names[12]).rename(bundle_path)
         with tempfile.TemporaryDirectory() as folder:
             receipts = Path(folder)
-            for target, name in zip(sorted(publisher.TARGETS), names):
-                system, arch = target
+            for (system, arch), input_name in zip(sorted(publisher.TARGETS), names):
+                suffix = ".zip" if system == "windows" else ".tar.gz"
+                name = f"accessweaver-{system}-{arch}{suffix}"
+                (self.directory / input_name).rename(self.directory / name)
                 manifest["artifacts"].append({"goos": system, "goarch": arch, "file": name})
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            def archived_build(system, arch):
+                return {"commit": self.commit, "version": "1.2.3-alpha", "sourceState": "clean",
+                        "platform": system, "arch": arch}
+
+            def inspect_archive(path, root, binary_name):
+                name = path.name
+                system, arch = next((item["goos"], item["goarch"]) for item in manifest["artifacts"]
+                                     if item["file"] == name)
+                self.assertEqual(root, f"accessweaver-{system}-{arch}")
+                self.assertEqual(binary_name, "accessweaver.exe" if system == "windows" else "accessweaver")
+                return archived_build(system, arch), path.read_bytes()
+
             for item in manifest["artifacts"]:
                 system, arch, name = item["goos"], item["goarch"], item["file"]
                 target = receipts / f"release-qualified-{system}-{arch}"
@@ -96,15 +110,23 @@ class PrereleasePublicationTests(unittest.TestCase):
                            "sourceCommit": self.commit, "sourceRef": self.ref, "target": f"{system}/{arch}",
                            "archive": name, "archiveSha256": publisher.digest(self.directory / name),
                            "manifestSha256": publisher.digest(manifest_path), "bundleSha256": publisher.digest(bundle_path),
-                           "provenanceSubjectsVerified": 12, "authenticatedBeforeStaging": True}
+                           "provenanceSubjectsVerified": 12, "authenticatedBeforeStaging": True,
+                           "binary": "accessweaver.exe" if system == "windows" else "accessweaver",
+                           "binarySha256": publisher.digest(self.directory / name),
+                           "build": archived_build(system, arch), "publisherSignatureVerified": False,
+                           "productionQualificationComplete": False}
+                if system in {"freebsd", "openbsd"}:
+                    receipt["executionEnvironment"] = f"disposable-{system}-guest"
                 (target / "candidate.json").write_text(json.dumps(receipt), encoding="utf-8")
             path = receipts / "release-qualified-windows-arm64" / "candidate.json"
             original = path.read_bytes()
-            faults = (None, "missing", "extra", "archiveSha256", "manifestSha256", "bundleSha256", "target", "sourceRef")
+            faults = (None, "missing", "extra", "oversize", "array", "archiveSha256", "manifestSha256",
+                      "bundleSha256", "target", "sourceRef", "binary", "binarySha256", "build",
+                      "publisherSignatureVerified", "productionQualificationComplete", "executionEnvironment")
             for fault in faults:
-                with self.subTest(fault=fault), patch.object(publisher, "verify"), patch.object(
-                    publisher, "publish_verified",
-                ) as publish_verified:
+                with (self.subTest(fault=fault), patch.object(publisher, "verify"),
+                      patch.object(publisher, "inspect_archive", side_effect=inspect_archive),
+                      patch.object(publisher, "publish_verified") as publish_verified):
                     if fault is None:
                         publisher.publish(self.directory, self.commit, self.ref, native_qualification=receipts)
                         publish_verified.assert_called_once()
@@ -113,6 +135,10 @@ class PrereleasePublicationTests(unittest.TestCase):
                         path.unlink()
                     elif fault == "extra":
                         (path.parent / "extra.json").touch()
+                    elif fault == "oversize":
+                        path.write_bytes(original + b" " * (16 << 10))
+                    elif fault == "array":
+                        path.write_text("[]", encoding="utf-8")
                     else:
                         path.write_text(json.dumps({**json.loads(original), fault: "different"}), encoding="utf-8")
                     try:
@@ -122,6 +148,16 @@ class PrereleasePublicationTests(unittest.TestCase):
                     finally:
                         (path.parent / "extra.json").unlink(missing_ok=True)
                         path.write_bytes(original)
+            path = receipts / "release-qualified-openbsd-arm64" / "candidate.json"
+            receipt = json.loads(path.read_bytes())
+            receipt["executionEnvironment"] = "disposable-freebsd-guest"
+            path.write_text(json.dumps(receipt), encoding="utf-8")
+            with (patch.object(publisher, "verify"),
+                  patch.object(publisher, "inspect_archive", side_effect=inspect_archive),
+                  patch.object(publisher, "publish_verified") as publish_verified):
+                with self.assertRaisesRegex(ValueError, "does not match openbsd/arm64"):
+                    publisher.publish(self.directory, self.commit, self.ref, native_qualification=receipts)
+                publish_verified.assert_not_called()
 
     def test_new_draft_uploads_and_verifies_before_publication(self):
         self.run_publisher([None, self.release(True, 0), self.release(True), self.release(False)])

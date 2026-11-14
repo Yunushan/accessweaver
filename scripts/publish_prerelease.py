@@ -8,13 +8,15 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tarfile
 import tempfile
+import zipfile
 from threading import Timer
 from urllib.parse import urlencode
 
-from verify_release import TARGETS, release_file
+from verify_release import TARGETS, inspect_archive, snapshot
 from verify_release_provenance import BUNDLE_NAME, REPOSITORY, WORKFLOW, validate_identity, verify
-from verify_release_rebuild import digest, snapshot
+from verify_release_rebuild import digest
 
 REMOTE = "https://github.com/" + REPOSITORY + ".git"
 MAX_BUNDLE = 16 << 20
@@ -155,32 +157,43 @@ def reuse_existing_bundle(directory, release, commit, tag, expected):
     return {**expected, BUNDLE_NAME: bundle["digest"]}
 
 
-def verify_native_qualification(directory, manifest, commit, ref, expected):
-    """Bind successful target jobs to the authenticated snapshot we will publish."""
+def verify_native_qualification(directory, package, manifest, commit, ref, expected):
+    """Bind each target's staging receipt to the executable in the authenticated package."""
     artifacts = {(item["goos"], item["goarch"]): item["file"] for item in manifest["artifacts"]}
     folders = {"release-qualified-" + "-".join(target) for target in TARGETS}
     if directory.is_symlink() or {path.name for path in directory.iterdir()} != folders:
         raise ValueError("Expected one successful packaged qualification receipt for each desktop target")
-    for target in sorted(TARGETS):
-        folder = directory / ("release-qualified-" + "-".join(target))
-        path = folder / "candidate.json"
-        if folder.is_symlink() or {item.name for item in folder.iterdir()} != {path.name}:
-            raise ValueError("Unexpected packaged qualification receipt contents")
-        release_file(path, 16 << 10)
-        receipt = json.loads(path.read_bytes())
-        archive = artifacts[target]
+    for system, arch in sorted(TARGETS):
+        target = f"{system}/{arch}"
+        folder = directory / f"release-qualified-{system}-{arch}"
+        with tempfile.TemporaryDirectory(prefix="accessweaver-qualified-") as temporary:
+            frozen = Path(temporary)
+            if snapshot(folder, frozen, 1, maximum_file=16 << 10) != {"candidate.json"}:
+                raise ValueError("Unexpected packaged qualification receipt contents")
+            receipt = json.loads((frozen / "candidate.json").read_bytes())
+        if not isinstance(receipt, dict):
+            raise ValueError("Packaged qualification does not match " + target)
+
+        archive = artifacts[system, arch]
+        binary_name = "accessweaver.exe" if system == "windows" else "accessweaver"
+        suffix = ".zip" if system == "windows" else ".tar.gz"
+        build, executable = inspect_archive(package / archive, archive.removesuffix(suffix), binary_name)
         identity = {
             "schemaVersion": 1, "repository": REPOSITORY, "workflow": WORKFLOW,
-            "sourceCommit": commit, "sourceRef": ref, "target": "/".join(target),
+            "sourceCommit": commit, "sourceRef": ref, "target": target,
             "archive": archive, "archiveSha256": expected[archive].removeprefix("sha256:"),
             "manifestSha256": expected["BUILD-MANIFEST.json"].removeprefix("sha256:"),
             "bundleSha256": expected[BUNDLE_NAME].removeprefix("sha256:"),
-            "provenanceSubjectsVerified": 12,
+            "binary": binary_name, "binarySha256": hashlib.sha256(executable).hexdigest(),
+            "build": build, "authenticatedBeforeStaging": True, "provenanceSubjectsVerified": 12,
+            "publisherSignatureVerified": False, "productionQualificationComplete": False,
         }
-        if (receipt.get("authenticatedBeforeStaging") is not True
-                or any(type(receipt.get(key)) is not type(value) or receipt[key] != value
-                       for key, value in identity.items())):
-            raise ValueError("Packaged qualification does not match " + "/".join(target))
+        if system in {"freebsd", "openbsd"}:
+            identity["executionEnvironment"] = f"disposable-{system}-guest"
+        if receipt.keys() != identity.keys() or any(
+            type(receipt[key]) is not type(value) or receipt[key] != value for key, value in identity.items()
+        ):
+            raise ValueError("Packaged qualification does not match " + target)
 
 
 def publish(directory, commit, ref, *, rebuild_checksums_sha256=None, native_qualification=None):
@@ -199,7 +212,7 @@ def publish(directory, commit, ref, *, rebuild_checksums_sha256=None, native_qua
             raise ValueError("Published candidate differs from the authenticated rebuild reference")
         if native_qualification is not None:
             manifest = json.loads((frozen / "BUILD-MANIFEST.json").read_bytes())
-            verify_native_qualification(native_qualification, manifest, commit, ref, expected)
+            verify_native_qualification(native_qualification, frozen, manifest, commit, ref, expected)
         publish_verified(frozen, tag, commit, expected)
 
 
@@ -288,7 +301,7 @@ def main():
     try:
         publish(args.directory.absolute(), args.source_commit, args.source_ref,
                 rebuild_checksums_sha256=args.rebuild_checksums_sha256, native_qualification=args.native_qualification)
-    except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError):
+    except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile):
         print("Prerelease verification or publication failed; inspect the draft and keep existing assets intact.",
               file=sys.stderr)
         return 1
