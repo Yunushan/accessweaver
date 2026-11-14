@@ -2362,6 +2362,31 @@ function Assert-DNSCryptConfiguration([string]$Path,[string]$ExpectedSHA256) {
         throw 'DNSCrypt configuration changed after publication; retain the recovery snapshot'
     }
 }
+function Restore-DNSCryptAfterRestartFailure($Resolver,[string]$Config,[string]$OriginalSHA256,[string]$SnapshotSHA256) {
+    try {
+        $records=@($script:undo | Where-Object {$_.kind -ceq 'file' -and $_.path -ieq $Config})
+        if($records.Count -ne 1 -or $records[0].originalHash -ine $OriginalSHA256){
+            throw 'Original DNSCrypt file recovery is unverified'
+        }
+        Assert-DNSRecoverySnapshotUnchanged $SnapshotSHA256
+        if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
+        Restore-RecordedWorkflowFile $records[0]
+        Assert-DNSCryptConfiguration $Config $OriginalSHA256
+        if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
+        $service=Get-Service -Name $Resolver.name -ErrorAction Stop
+        try {
+            if($service.Status -eq 'Stopped'){
+                Start-Service -InputObject $service -ErrorAction Stop
+            }else{
+                Restart-Service -InputObject $service -ErrorAction Stop
+            }
+            $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
+        }finally {if($service -is [IDisposable]){$service.Dispose()}}
+        Assert-DNSCryptConfiguration $Config $OriginalSHA256
+    }catch{
+        throw 'DNSCrypt restart failed and the original service could not be recovered; inspect the retained recovery journal'
+    }
+}
 function Configure-DNS([string]$method) {
     if($method -notin @('doh','dnscrypt')){throw 'Choose doh or dnscrypt'}
     if($method -eq 'doh'){foreach($command in @('Get-DnsClientDohServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'This Windows version does not expose native DoH management; choose DNSCrypt instead'}}}
@@ -2509,13 +2534,20 @@ function Configure-DNS([string]$method) {
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             Assert-DNSCryptConfiguration $config $publishedConfigSHA256
             $service=Get-Service -Name $serviceName -ErrorAction Stop
+            $restartAttempted=$false
             try {
                 if($service.Status -eq 'Stopped'){
                     Start-Service -InputObject $service -ErrorAction Stop
                 }elseif($configChanged){
+                    $restartAttempted=$true
                     Restart-Service -InputObject $service -ErrorAction Stop
                 }
                 $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
+            }catch{
+                if($restartAttempted -and $configBefore){
+                    Restore-DNSCryptAfterRestartFailure $existingResolver $config $configBefore $snapshotSHA256
+                }
+                throw
             }finally {if($service -is [IDisposable]){$service.Dispose()}}
         }else{
             Assert-DNSCryptConfiguration $config $publishedConfigSHA256
