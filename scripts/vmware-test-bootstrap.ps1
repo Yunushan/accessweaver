@@ -22,11 +22,21 @@ function Copy-TestTree([string]$source,[string]$destination) {
     & robocopy.exe $source $destination /E /R:2 /W:1 /NFL /NDL /NJH /NJS | Out-Null
     if($LASTEXITCODE -gt 7){throw ('Test file copy failed: '+$LASTEXITCODE)}
 }
-function Copy-TestInputs([string]$executable) {
+function Copy-TestInputs([string]$executable,[switch]$DnsReboot) {
     if($executable -notmatch '^accessweaver[a-zA-Z0-9-]*\.exe$'){throw 'Unsupported controller filename'}
-    if(-not (Test-Path -LiteralPath (Join-Path $share 'dns-acceptance-state.ps1'))){throw 'DNS acceptance state helper must be staged with the candidate scripts'}
-    foreach($name in @($executable,'setup.exe','wgpeer.exe','probe-selected.exe','probe-direct.exe','test-windows-integration.ps1','dns-acceptance-state.ps1','test-windows-apps.ps1','test-windows-wiresock.ps1','test-windows-reboot.ps1','vmware-reboot-resume.ps1')){
-        $source=Join-Path $share $name;if(Test-Path $source){Copy-Item -LiteralPath $source -Destination (Join-Path $local $name) -Force}
+    $required=@($executable,'dns-acceptance-state.ps1')
+    if($DnsReboot){$required+=@('test-windows-reboot.ps1','vmware-reboot-resume.ps1')}
+    foreach($name in $required){
+        $item=Get-Item -LiteralPath (Join-Path $share $name) -Force -ErrorAction Stop
+        if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)){
+            throw 'Required test input must be an ordinary file'
+        }
+        Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $local $name) -Force -ErrorAction Stop
+    }
+    foreach($name in @('setup.exe','wgpeer.exe','probe-selected.exe','probe-direct.exe','test-windows-integration.ps1','test-windows-apps.ps1','test-windows-wiresock.ps1','test-windows-reboot.ps1','vmware-reboot-resume.ps1')){
+        if($name -cin $required){continue}
+        $source=Join-Path $share $name
+        if(Test-Path -LiteralPath $source -PathType Leaf){Copy-Item -LiteralPath $source -Destination (Join-Path $local $name) -Force}
     }
     foreach($name in @('components','fixture-licenses')){$source=Join-Path $share $name;if(Test-Path $source){Copy-TestTree $source (Join-Path $local $name)}}
     if(-not (Test-Path (Join-Path $local $executable))){throw 'Test controller was not staged'}
@@ -47,12 +57,17 @@ try{
             if($request.stage -eq 'exit'){break}
             if($request.stage -notin @('system','apps','wiresock','reboot-prepare')){throw 'Unknown test stage'}
             $executable=if($request.executable){[string]$request.executable}else{'accessweaver.exe'}
-            Copy-TestInputs $executable;$binary=Join-Path $local $executable
+            Copy-TestInputs $executable -DnsReboot:($request.stage -ceq 'reboot-prepare')
+            $binary=Join-Path $local $executable
             switch($request.stage){
                 'system' {& (Join-Path $local 'test-windows-integration.ps1') -Executable $executable -Extended}
                 'apps' {throw 'Application tests require an unelevated desktop window. Run test-windows-apps.ps1 -DisposableVM there and collect its LocalAppData\AccessWeaver-App-Test-Results separately.'}
                 'wiresock' {& (Join-Path $local 'test-windows-wiresock.ps1') -Executable $binary -DisposableVM -RemoveVendor}
                 'reboot-prepare' {
+                    $digest=$request.executableSHA256
+                    if($digest -isnot [string] -or $digest -cnotmatch '\A[A-Fa-f0-9]{64}\z'){
+                        throw 'Expected an independently approved reboot controller SHA-256'
+                    }
                     $taskName='AccessWeaver-Parity-Reboot-Verify'
                     if(Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue){
                         throw 'A DNS reboot verification task is already registered'
@@ -60,13 +75,13 @@ try{
                     $method=if($request.dns){[string]$request.dns}else{'auto'}
                     if($method -cnotin @('auto','doh','dnscrypt')){throw 'Unknown DNS reboot method'}
                     $originalMode=if($null -eq $request.dnsOriginalMode){'any'}else{[string]$request.dnsOriginalMode}
-                    $arguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\AccessWeaver-Test\vmware-reboot-resume.ps1 -ExecutableName '+$executable
+                    $arguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\AccessWeaver-Test\vmware-reboot-resume.ps1 -ExecutableName '+$executable+' -ExecutableSHA256 '+$digest
                     $action=New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument $arguments
                     $trigger=New-ScheduledTaskTrigger -AtStartup;$trigger.Delay='PT30S'
                     $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1))
                     [void](Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -User 'SYSTEM' -RunLevel Highest -ErrorAction Stop)
                     try {
-                        & (Join-Path $local 'test-windows-reboot.ps1') -Phase Prepare -Executable $binary -DNS $method -RequiredOriginalMode $originalMode
+                        & (Join-Path $local 'test-windows-reboot.ps1') -Phase Prepare -Executable $binary -ExecutableSHA256 $digest -DNS $method -RequiredOriginalMode $originalMode
                     } catch {
                         $preparationFailure=$_
                         try {

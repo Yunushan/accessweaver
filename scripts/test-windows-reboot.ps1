@@ -2,6 +2,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidateSet('Prepare','Verify')][string]$Phase,
+    [Parameter(Mandatory)][ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$ExecutableSHA256,
     [string]$Executable='C:\AccessWeaver-Test\accessweaver.exe',
     [ValidateSet('auto','doh','dnscrypt')][string]$DNS='auto',
     [ValidateSet('any','dhcp-ipv4','static-ipv4','dhcp-ipv6','static-ipv6')][string]$RequiredOriginalMode='any'
@@ -53,6 +54,20 @@ function Get-DNSRebootDigest([string]$Path,[long]$Maximum) {
         if($stream.Length -le 0 -or $stream.Length -gt $Maximum){throw 'DNS reboot input exceeds its size limit'}
         return (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash
     } finally {$stream.Dispose()}
+}
+function Open-ApprovedDNSRebootController([string]$Path,[string]$ExpectedSHA256) {
+    $stream=Open-DNSRebootInput $Path
+    try {
+        if($ExpectedSHA256 -cnotmatch '\A[A-Fa-f0-9]{64}\z' -or
+            $stream.Length -le 0 -or $stream.Length -gt 128MB -or
+            (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash -ine $ExpectedSHA256){
+            throw 'Staged DNS reboot controller does not match the approved candidate'
+        }
+        return $stream
+    } catch {
+        $stream.Dispose()
+        throw
+    }
 }
 function Read-DNSRebootRecord([string]$Path,[int]$Maximum) {
     $stream=Open-DNSRebootInput $Path
@@ -128,7 +143,7 @@ $os=Get-CimInstance Win32_OperatingSystem
 if(@($os).Count -ne 1 -or $os.LastBootUpTime -isnot [DateTime]){throw 'Cannot identify guest boot'}
 $current=@{
     schemaVersion=7;guestID=$guestID.ToString('D');
-    binarySHA256=(Get-DNSRebootDigest $Executable 128MB);oracleSHA256=(Get-DNSRebootDigest $oracle 1MB);
+    binarySHA256=$ExecutableSHA256.ToUpperInvariant();oracleSHA256=(Get-DNSRebootDigest $oracle 1MB);
     fixtureSHA256=(Get-DNSRebootDigest $PSCommandPath 1MB);
     boot=$os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
 }
@@ -270,6 +285,9 @@ function Assert-RebootServices([string]$Method) {
 }
 
 $previousHome=$env:ACCESSWEAVER_HOME
+# Hold the approved executable through all dispatches. Windows read sharing
+# permits execution while denying writes, renames and deletion of the file.
+$controller=Open-ApprovedDNSRebootController $Executable $current.binarySHA256
 try {
     $env:ACCESSWEAVER_HOME=Join-Path $private 'controller-state'
     if($Phase -eq 'Prepare'){
@@ -397,4 +415,6 @@ try {
         Save-DNSRebootRecord $report $outcome
     }
     if(-not $outcome.passed){throw 'DNS reboot acceptance failed; inspect the fixed guest result'}
-} finally {$env:ACCESSWEAVER_HOME=$previousHome}
+} finally {
+    try {$env:ACCESSWEAVER_HOME=$previousHome} finally {$controller.Dispose()}
+}

@@ -5,7 +5,7 @@ $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS reboot fixture failed parsing'}
 foreach($name in @('Assert-DNSRebootAdmission','Save-DNSRebootRecord','Open-DNSRebootInput','Read-DNSRebootRecord',
-        'Get-DNSRebootDigest','Get-DNSRebootJournalID','Assert-DNSRebootJournal',
+        'Get-DNSRebootDigest','Open-ApprovedDNSRebootController','Get-DNSRebootJournalID','Assert-DNSRebootJournal',
         'Get-DNSRebootCoverage','Assert-DNSRebootConfigured','Assert-RebootResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved',
         'Invoke-DNSRebootPreparation')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
@@ -66,6 +66,28 @@ try {
     }
 } finally {[IO.File]::Delete($readFixture)}
 
+# Exercise candidate pinning through the same Windows file handle used at dispatch.
+$controllerFixture=Join-Path ([IO.Path]::GetTempPath()) ('accessweaver-dns-pin-'+[guid]::NewGuid().ToString('N'))
+$controller=$null
+try {
+    [IO.File]::WriteAllText($controllerFixture,'inert test content')
+    $digest=(Get-FileHash -LiteralPath $controllerFixture -Algorithm SHA256).Hash
+    Refuse {Open-ApprovedDNSRebootController $controllerFixture 'invalid'}
+    Refuse {Open-ApprovedDNSRebootController $controllerFixture ('0'*64)}
+    $controller=Open-ApprovedDNSRebootController $controllerFixture $digest.ToLowerInvariant()
+    if($controller -isnot [IO.FileStream]){throw 'DNS reboot controller approval did not retain its file handle'}
+    if($env:OS -ceq 'Windows_NT'){
+        Refuse {[IO.File]::WriteAllText($controllerFixture,'replacement')}
+        Refuse {[IO.File]::Delete($controllerFixture)}
+    }
+    $controller.Dispose()
+    [IO.File]::WriteAllText($controllerFixture,'replacement')
+    Refuse {Open-ApprovedDNSRebootController $controllerFixture $digest}
+} finally {
+    if($null -ne $controller){$controller.Dispose()}
+    [IO.File]::Delete($controllerFixture)
+}
+
 # Exercise the actual preparation boundary with a success, each failed stage
 # and a second failure while attempting to restore.
 $steps=@('install','configure','verify','save')
@@ -117,7 +139,7 @@ $stages=@($body.FindAll({
          $node.Extent.Text -match 'test-windows-reboot\.ps1.*-Phase Prepare'))
 },$true))
 if($stages.Count -ne 3 -or $stages[0].GetCommandName() -cne 'Register-ScheduledTask' -or
-    $stages[1].Extent.Text -notmatch '-Phase Prepare' -or $stages[2].GetCommandName() -cne 'Unregister-ScheduledTask'){
+    $stages[1].Extent.Text -notmatch '-Phase Prepare.+-ExecutableSHA256 \$digest' -or $stages[2].GetCommandName() -cne 'Unregister-ScheduledTask'){
     throw 'VMware DNS preparation must follow task registration and retire the task on failure'
 }
 $journalId='workflow-'+('a'*32)+'.json'
@@ -393,7 +415,8 @@ $record=@{schemaVersion=7;qualificationID=('a'*32);method='doh';binarySHA256=('A
     journalBindingVerified=$true;journalRecoveryAccepted=$true;originalStateRestored=$true;originalResolverVerified=$true
     snapshotRetired=$true;servicesRemoved=$true;passed=$true;stage='complete';cleanupStage='complete'}
 $legacy=$record.Clone();$legacy.schemaVersion=6
-Refuse {Assert-DNSRebootPublicReport ([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $legacy -Depth 8)))}
+$pin=$record.binarySHA256.ToLowerInvariant()
+Refuse {Assert-DNSRebootPublicReport ([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $legacy -Depth 8))) $pin}
 foreach($invalid in @(
     @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0},
     @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=0},
@@ -403,7 +426,12 @@ foreach($invalid in @(
 )){
     $candidate=$record.Clone();$candidate.originalModeCoverage=$invalid
     $data=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $candidate -Depth 8))
-    Refuse {Assert-DNSRebootPublicReport $data}
+    Refuse {Assert-DNSRebootPublicReport $data $pin}
+}
+$startupCommand=$startup.EndBlock.Extent.Text
+if($startupCommand -cnotmatch '-Phase Verify -Executable \$binary -ExecutableSHA256 \$ExecutableSHA256' -or
+   $body.Extent.Text -cnotmatch '-ExecutableSHA256 ''\+\$digest'){
+    throw 'Scheduled reboot verification does not inherit the approved controller digest'
 }
 $script:verifications=0;$script:retirements=0
 $verify={
@@ -412,14 +440,18 @@ $verify={
 }
 $retire={$script:retirements++}
 try {
-    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire}
+    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire $pin}
     if($script:verifications -ne 1 -or $script:retirements -ne 0 -or -not [IO.File]::Exists($report)){
         throw 'Unavailable share discarded the result or retired the task'
     }
     [void][IO.Directory]::CreateDirectory($shared)
-    Refuse {Complete-DNSRebootStartup $report $destination $verify {throw 'Synthetic task retirement failure'}}
+    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire ('0'*64)}
+    if([IO.File]::Exists($destination) -or $script:verifications -ne 1 -or $script:retirements -ne 0){
+        throw 'Report from a different candidate was published or retired its task'
+    }
+    Refuse {Complete-DNSRebootStartup $report $destination $verify {throw 'Synthetic task retirement failure'} $pin}
     if(-not [IO.File]::Exists($destination)){throw 'Task retirement failure lost the published result'}
-    if(-not (Complete-DNSRebootStartup $report $destination $verify $retire) -or $script:verifications -ne 1 -or
+    if(-not (Complete-DNSRebootStartup $report $destination $verify $retire $pin) -or $script:verifications -ne 1 -or
         $script:retirements -ne 1 -or [IO.Directory]::GetFileSystemEntries($shared).Length -ne 1){
         throw 'Publication retry repeated verification or left a staging file'
     }
@@ -427,7 +459,7 @@ try {
     $different=$record.Clone();$different.qualificationID=('b'*32)
     Save-DNSRebootRecord $destination $different
     $before=[IO.File]::ReadAllText($destination)
-    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire}
+    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire $pin}
     if([IO.File]::ReadAllText($destination) -cne $before -or $script:retirements -ne 1){
         throw 'Publication replaced different evidence or retired its task'
     }
@@ -435,7 +467,7 @@ try {
     [IO.File]::Delete($report)
     $record.servicesVerified=$false
     Save-DNSRebootRecord $report $record
-    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire}
+    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire $pin}
     if([IO.File]::Exists($destination) -or $script:retirements -ne 1){
         throw 'Inconsistent passing report was published'
     }
@@ -444,13 +476,13 @@ try {
     $passed=Complete-DNSRebootStartup $report $destination {
         Save-DNSRebootRecord $report $record
         throw 'Synthetic acceptance failure with evidence'
-    } $retire
+    } $retire $pin
     if($passed -or -not [IO.File]::Exists($destination) -or $script:retirements -ne 2){
         throw 'Completed failed report was lost or reported as passed'
     }
     [IO.File]::Delete($destination)
     [IO.File]::Delete($report)
-    Refuse {Complete-DNSRebootStartup $report $destination {throw 'Synthetic interruption before publication'} $retire}
+    Refuse {Complete-DNSRebootStartup $report $destination {throw 'Synthetic interruption before publication'} $retire $pin}
     if([IO.File]::Exists($destination) -or $script:retirements -ne 2){
         throw 'Interrupted verification fabricated evidence or retired the task'
     }
