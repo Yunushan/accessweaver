@@ -48,16 +48,40 @@ class ProvenanceTests(unittest.TestCase):
                 self.assertEqual(run.call_count, 1)
                 contents.assert_not_called()
 
-    def test_every_subject_authenticated_before_content_check(self):
+    def test_authentication_and_content_checks_use_the_same_private_snapshot(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             self.fixture(root)
-            with patch("verify_release_provenance.subprocess.run") as run, patch("verify_release_provenance.verify_contents") as contents:
+            original = {path.name: path.read_bytes() for path in root.iterdir()}
+            authenticated = []
+
+            def authenticate(command, **_):
+                subject = Path(command[3])
+                bundle = Path(command[command.index("--bundle") + 1])
+                self.assertNotEqual(subject.parent, root.resolve())
+                self.assertEqual(bundle.parent, subject.parent)
+                self.assertEqual(subject.read_bytes(), original[subject.name])
+                self.assertEqual(bundle.read_bytes(), original[BUNDLE_NAME])
+                if not authenticated:
+                    self.assertEqual(subject.name, "BUILD-MANIFEST.json")
+                    for name in original:
+                        (root / name).write_bytes(b"replacement")
+                    (root / "extra.exe").write_bytes(b"late extra")
+                authenticated.append(subject)
+
+            def check_contents(directory, *, execute_native):
+                self.assertFalse(execute_native)
+                self.assertEqual(len(authenticated), 12)
+                self.assertEqual({path.name for path in authenticated}, original.keys() - {BUNDLE_NAME})
+                self.assertEqual({path.parent for path in authenticated}, {directory.resolve()})
+                self.assertEqual({path.name: path.read_bytes() for path in directory.iterdir()}, original)
+
+            with patch("verify_release_provenance.subprocess.run", side_effect=authenticate), patch(
+                "verify_release_provenance.verify_contents", side_effect=check_contents
+            ) as contents:
                 result = verify(root, COMMIT, REF)
-                self.assertEqual(run.call_count, 12)
-                contents.assert_called_once_with(root.resolve(), execute_native=False)
-                subjects = {Path(call.args[0][3]).name for call in run.call_args_list}
-                self.assertEqual(subjects, {p.name for p in root.iterdir()} - {BUNDLE_NAME})
+                contents.assert_called_once()
+                self.assertFalse(contents.call_args.args[0].exists())
                 self.assertEqual(result["subjectsVerified"], 12)
                 self.assertFalse(result["publisherSignatureVerified"])
 

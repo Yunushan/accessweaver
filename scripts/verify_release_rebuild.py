@@ -7,60 +7,15 @@ metadata differences are failures, and there is no integrity-only fallback.
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
-import stat
 import subprocess
 import sys
 import tarfile
 import tempfile
 import zipfile
 
-from verify_release import require
+from verify_release import MAX_FILE, require, snapshot
 from verify_release_provenance import BUNDLE_NAME, REPOSITORY, WORKFLOW, validate_identity, verify as verify_provenance
-
-MAX_FILE = 128 << 20
-MAX_SET = 256 << 20
-
-
-def snapshot(source, destination, count):
-    directory = source.lstat()
-    require(stat.S_ISDIR(directory.st_mode) and not source.is_symlink()
-            and not getattr(directory, 'st_file_attributes', 0) & 0x400, 'Expected a real input directory')
-    names = set()
-    total = 0
-    with os.scandir(source) as entries:
-        for entry in entries:
-            require(len(names) < count and entry.name not in names, 'Unexpected extra input')
-            path = source / entry.name
-            before = path.lstat()
-            require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
-                    and not getattr(before, 'st_file_attributes', 0) & 0x400
-                    and 0 < before.st_size <= MAX_FILE, 'Expected a bounded regular single-link input')
-            total += before.st_size
-            require(total <= MAX_SET, 'Input set exceeds snapshot bound')
-            flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
-            descriptor = os.open(path, flags)
-            try:
-                opened = os.fstat(descriptor)
-                identity = lambda item: (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_nlink)
-                require(stat.S_ISREG(opened.st_mode) and identity(opened) == identity(before), 'Input changed before snapshot')
-                with (destination / entry.name).open('xb') as output:
-                    copied = 0
-                    while True:
-                        block = os.read(descriptor, min(1 << 20, MAX_FILE + 1 - copied))
-                        if not block:
-                            break
-                        copied += len(block)
-                        require(copied <= before.st_size, 'Input changed or exceeded its snapshot bound')
-                        output.write(block)
-                require(copied == before.st_size and identity(os.fstat(descriptor)) == identity(before), 'Input changed during snapshot')
-            finally:
-                os.close(descriptor)
-            names.add(entry.name)
-    require(len(names) == count, 'Missing release inputs')
-    return names
-
 
 def digest(path):
     result = hashlib.sha256()

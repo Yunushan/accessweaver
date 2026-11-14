@@ -6,16 +6,16 @@ Expected source commit/ref must come from a trusted channel, not this directory.
 """
 import argparse
 import json
-import os
 from pathlib import Path
 import re
 import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 import zipfile
 
-from verify_release import PROVENANCE_BUNDLE as BUNDLE_NAME, TARGETS, require, verify as verify_contents
+from verify_release import PROVENANCE_BUNDLE as BUNDLE_NAME, TARGETS, require, snapshot, verify as verify_contents
 
 REPOSITORY = "Yunushan/accessweaver"
 WORKFLOW = REPOSITORY + "/.github/workflows/release.yml"
@@ -55,20 +55,17 @@ def authenticate(path, bundle, commit, ref, gh):
 
 def verify(directory, commit, ref, gh="gh"):
     validate_identity(commit, ref)
-    directory = directory.resolve()
+    with tempfile.TemporaryDirectory(prefix="accessweaver-provenance-") as temporary:
+        private = Path(temporary)
+        names = snapshot(directory, private, 13)
+        return _verify_snapshot(private, names, commit, ref, gh)
+
+
+def _verify_snapshot(directory, names, commit, ref, gh):
+    require({BUNDLE_NAME, "BUILD-MANIFEST.json", "SHA256SUMS.txt"} <= names,
+            "Expected ten archives, manifest, checksums and provenance bundle")
     bundle = directory / BUNDLE_NAME
     regular_file(bundle, 16 << 20)
-    # Bound enumeration and reject auxiliary files/links rather than accepting an
-    # unattested installer, script or extra archive next to the verified set.
-    names = set()
-    with os.scandir(directory) as entries:
-        for entry in entries:
-            require(len(names) < 13, "Release directory has unexpected extra entries")
-            require(entry.name not in names, "Duplicate release input")
-            regular_file(directory / entry.name, 128 << 20)
-            names.add(entry.name)
-    require(len(names) == 13 and {BUNDLE_NAME, "BUILD-MANIFEST.json", "SHA256SUMS.txt"} <= names,
-            "Expected ten archives, manifest, checksums and provenance bundle")
     manifest_path = directory / "BUILD-MANIFEST.json"
     regular_file(manifest_path, 1 << 20)
     regular_file(directory / "SHA256SUMS.txt", 64 << 10)

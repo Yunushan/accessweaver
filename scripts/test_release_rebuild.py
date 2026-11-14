@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import verify_release
 import verify_release_rebuild as rebuild
 
 COMMIT = 'a'*40
@@ -124,7 +125,7 @@ class RebuildTests(unittest.TestCase):
                 rebuild.snapshot(source, destination, 1)
         with tempfile.TemporaryDirectory() as folder:
             reference, candidate = self.fixture(Path(folder))
-            with patch.object(rebuild, 'MAX_SET', 1), patch.object(rebuild, 'verify_provenance') as verify, self.assertRaises(ValueError):
+            with patch.object(verify_release, 'MAX_SET', 1), patch.object(rebuild, 'verify_provenance') as verify, self.assertRaises(ValueError):
                 rebuild.compare(reference, candidate, COMMIT, REF)
             verify.assert_not_called()
 
