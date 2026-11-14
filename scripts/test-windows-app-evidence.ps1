@@ -502,10 +502,11 @@ foreach($bad in @(
 $id='a'*32
 $pin='b'*64
 $action='app-install'
-$job=@{action=$action;state='succeeded';result=@{ok=$true;finalizationFailures=@();data=@{application='splitcord';installed=$true;path='private fixture path'}}}
+$job=@{action=$action;state='succeeded';result=@{ok=$true;finalizationFailures=@();data=@{application='splitcord';installed=$true;previouslyInstalled=$false;path='private fixture path'}}}
 $receipt=New-SplitCordHandoff ($job | ConvertTo-Json -Depth 5 -Compress) $id $action $pin
 $decoded=Read-SplitCordHandoff $receipt $id $action $pin
-if($receipt.Length -ge 512 -or $receipt.Contains('private fixture path') -or $decoded.application -cne 'splitcord' -or $decoded.installed -ne $true){
+if($receipt.Length -ge 512 -or $receipt.Contains('private fixture path') -or $decoded.application -cne 'splitcord' -or $decoded.installed -ne $true -or
+   $decoded.previouslyInstalled -isnot [bool] -or $decoded.previouslyInstalled){
     throw 'SplitCord receipt did not retain only the approved handoff result'
 }
 foreach($case in @(
@@ -513,6 +514,7 @@ foreach($case in @(
     @{id=$id;action='app-remove';pin=$pin;receipt=$receipt},
     @{id=$id;action=$action;pin=('c'*64);receipt=$receipt},
     @{id=$id;action=$action;pin=$pin;receipt=($receipt.Replace('"changed":true','"changed":"true"'))},
+    @{id=$id;action=$action;pin=$pin;receipt=($receipt.Replace('"previouslyInstalled":false','"previouslyInstalled":"false"'))},
     @{id=$id;action=$action;pin=$pin;receipt=('['+$receipt+']')},
     @{id=$id;action=$action;pin=$pin;receipt=''}
 )){
@@ -525,13 +527,56 @@ foreach($case in @(
     @{action='app-remove';state='succeeded';ok=$true;data=$job.result.data},
     @{action=$action;state='succeeded';ok='true';data=$job.result.data},
     @{action=$action;state='succeeded';ok=$true;data=@{application='discord';installed=$true}},
-    @{action=$action;state='succeeded';ok=$true;data=@{application='splitcord';installed=$false}}
+    @{action=$action;state='succeeded';ok=$true;data=@{application='splitcord';installed=$false;previouslyInstalled=$false}},
+    @{action=$action;state='succeeded';ok=$true;data=@{application='splitcord';installed=$true}},
+    @{action=$action;state='succeeded';ok=$true;data=@{application='splitcord';installed=$true;previouslyInstalled='false'}}
 )){
     $candidate=@{action=$case.action;state=$case.state;result=@{ok=$case.ok;finalizationFailures=@();data=$case.data}} | ConvertTo-Json -Depth 5
     $refused=$false
     try {New-SplitCordHandoff $candidate $id $action $pin | Out-Null} catch {$refused=$true}
     if(-not $refused){throw 'Invalid product result produced a SplitCord receipt'}
 }
+$job.result.data.previouslyInstalled=$true
+$existing=New-SplitCordHandoff ($job | ConvertTo-Json -Depth 5) $id $action $pin
+if((Read-SplitCordHandoff $existing $id $action $pin).previouslyInstalled -ne $true){
+    throw 'SplitCord receipt changed an existing installation into a fresh install'
+}
+$install=@($ast.FindAll({param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Install-FixtureApp'
+},$true))
+if($install.Count -ne 1){throw 'Expected one application installation verifier'}
+& {
+    . ([scriptblock]::Create($install[0].Extent.Text))
+    $attempted=[Collections.Generic.List[string]]::new()
+    $installedImages=@{}
+    $installedDigests=@{}
+    $InteractiveCommunications=$false
+    function Invoke-AppWorkflow([hashtable]$Request){
+        if($Request.action -cne 'app-install' -or $Request.engine -cne 'splitcord'){throw 'Unexpected fixture request'}
+        Read-SplitCordHandoff $selected $id $action $pin
+    }
+    function Inspect-Apps {return [pscustomobject]@{splitcord=$splitCord}}
+    function Test-Path {
+        [CmdletBinding()]param($LiteralPath,$PathType)
+        if($LiteralPath -cne $splitCord -or $PathType -cne 'Leaf'){throw 'Unexpected fixture path'}
+        return $true
+    }
+    function Assert-FixtureSplitCordServiceState([string]$Expected,[string]$Image){
+        if($Expected -cne 'Running' -or $Image -cne $splitCord){throw 'Unexpected fixture service check'}
+        $serviceChecks.Add($Image)
+    }
+    $serviceChecks=[Collections.Generic.List[string]]::new()
+    $selected=$receipt
+    Install-FixtureApp 'splitcord'
+    if($serviceChecks.Count -ne 1 -or $installedImages['splitcord'] -cne $splitCord){
+        throw 'A clean SplitCord receipt did not reach the independent installation readback'
+    }
+    $selected=$existing
+    $refused=$false
+    try {Install-FixtureApp 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'New application installation could not be verified'}
+    if(-not $refused -or $serviceChecks.Count -ne 1){throw 'An existing SplitCord installation was credited as a clean install'}
+}
+
 $job.result.finalizationFailures=@('synthetic')
 $refused=$false
 try {New-SplitCordHandoff ($job | ConvertTo-Json -Depth 5) $id $action $pin | Out-Null} catch {$refused=$true}

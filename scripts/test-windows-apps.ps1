@@ -257,10 +257,13 @@ function New-SplitCordHandoff([string]$JSON,[string]$ID,[string]$Action,[string]
     if($job -isnot [pscustomobject] -or $job.action -cne $Action -or $job.state -cne 'succeeded' -or
         $job.result.ok -isnot [bool] -or -not $job.result.ok -or @($job.result.finalizationFailures).Count -ne 0 -or
         $job.result.data.application -cne 'splitcord' -or $job.result.data.$field -isnot [bool] -or
-        ($field -ceq 'installed' -and -not $job.result.data.$field)){
+        ($Action -ceq 'app-install' -and (-not $job.result.data.installed -or
+            $job.result.data.previouslyInstalled -isnot [bool]))){
         throw 'SplitCord machine workflow did not verify the requested operation'
     }
-    @{id=$ID;action=$Action;controllerSHA256=$Digest;changed=$job.result.data.$field} | ConvertTo-Json -Compress
+    $receipt=@{id=$ID;action=$Action;controllerSHA256=$Digest;changed=$job.result.data.$field}
+    if($Action -ceq 'app-install'){$receipt.previouslyInstalled=$job.result.data.previouslyInstalled}
+    $receipt | ConvertTo-Json -Compress
 }
 
 function Read-SplitCordHandoff([string]$Receipt,[string]$ID,[string]$Action,[string]$Digest){
@@ -269,15 +272,18 @@ function Read-SplitCordHandoff([string]$Receipt,[string]$ID,[string]$Action,[str
     }
     $record=ConvertFrom-Json -InputObject $Receipt -ErrorAction Stop
     $keys=@('id','action','controllerSHA256','changed')
+    if($Action -ceq 'app-install'){$keys+=@('previouslyInstalled')}
     if($record -isnot [pscustomobject] -or @($record.PSObject.Properties).Count -ne $keys.Count -or
         @($record.PSObject.Properties.Name | Where-Object {$_ -cnotin $keys}).Count -ne 0 -or
         $record.id -isnot [string] -or $record.id -cne $ID -or
         $record.action -isnot [string] -or $record.action -cne $Action -or
         $record.controllerSHA256 -isnot [string] -or $record.controllerSHA256 -cne $Digest -or
-        $record.changed -isnot [bool] -or ($Action -ceq 'app-install' -and -not $record.changed)){
+        $record.changed -isnot [bool] -or ($Action -ceq 'app-install' -and (-not $record.changed -or $record.previouslyInstalled -isnot [bool]))){
         throw 'SplitCord machine receipt does not match the current request'
     }
-    if($Action -ceq 'app-install'){return @{application='splitcord';installed=$record.changed}}
+    if($Action -ceq 'app-install'){
+        return @{application='splitcord';installed=$record.changed;previouslyInstalled=$record.previouslyInstalled}
+    }
     return @{application='splitcord';removed=$record.changed}
 }
 
