@@ -2305,6 +2305,14 @@ function Test-DNSCryptListenerNeeded([object[]]$Records) {
     }
     return $false
 }
+function Test-DNSRecoveryUsesAdapterOwnership([object]$Record) {
+    $ownership=$Record.PSObject.Properties['adapterConditional']
+    if($null -eq $ownership){return $false}
+    if($ownership.Value -isnot [bool] -or -not $ownership.Value){
+        throw 'Original DNS snapshot has invalid adapter ownership metadata'
+    }
+    return $true
+}
 function Configure-DNS([string]$method) {
     if($method -notin @('doh','dnscrypt')){throw 'Choose doh or dnscrypt'}
     if($method -eq 'doh'){foreach($command in @('Get-DnsClientDohServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'This Windows version does not expose native DoH management; choose DNSCrypt instead'}}}
@@ -2322,6 +2330,7 @@ function Configure-DNS([string]$method) {
     $original=if($hadSnapshot){$originalSnapshot.record}else{[pscustomobject]@{adapters=@();doh=@();dohManaged=$false}}
     $ownsDoh=Test-DNSRecoveryOwnsDoh $original
     $guardDoh=Test-DNSRecoveryUsesDohOwnership $original $ownsDoh
+    $guardAdapters=Test-DNSRecoveryUsesAdapterOwnership $original
     if($hadSnapshot -and ($null -eq $original.adapters -or @($original.adapters).Count -eq 0)){throw 'Original DNS snapshot has no adapter records; no new DNS configuration was applied'}
     $records=@($original.adapters);$known=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach($record in $records){
@@ -2332,7 +2341,12 @@ function Configure-DNS([string]$method) {
         foreach($number in @('4','6')){
             if($bounds['bound'+$number]){
                 if(-not $record.('dhcp'+$number)){[void](Get-StaticDNSServers @($record.('ipv'+$number)) ('IPv'+$number) $record.index)}
-                if(@(Get-DNSClientRows $clients $matches[0].ifIndex ('IPv'+$number)).Count -ne 1){throw 'An owned DNS family is unavailable; retain the snapshot before further configuration'}
+                $family='IPv'+$number
+                if(@(Get-DNSClientRows $clients $matches[0].ifIndex $family).Count -ne 1){throw 'An owned DNS family is unavailable; retain the snapshot before further configuration'}
+                if($guardAdapters -and $record.guid -in $adapters.InterfaceGuid){
+                    $observed=Read-OriginalDNSFamily $matches[0] $family $clients
+                    [void](Test-DNSFamilyNeedsRollback $record $number $observed)
+                }
             }
         }
     }
@@ -2474,11 +2488,16 @@ function Configure-DNS([string]$method) {
             $familyServers=@($servers | Where-Object {($_.Contains(':')) -eq ($number -eq '6')})
             $family='IPv'+$number
             $dns=Get-DNSClientMutationRow $record.guid $family -RequireUp
-            if($newOriginals.ContainsKey($record.guid) -and $newOriginals[$record.guid].bounds['bound'+$number]){
+            $newFamily=$newOriginals.ContainsKey($record.guid) -and $newOriginals[$record.guid].bounds['bound'+$number]
+            if($newFamily -or $guardAdapters){
                 $currentAdapter=@{InterfaceGuid=$record.guid;ifIndex=$dns.InterfaceIndex}
                 $observed=Read-ObservedDNSFamily $currentAdapter $family $dns
-                if(-not (Test-DNSFamilyMatchesOriginal $record $number $observed)){
-                    throw 'Original DNS settings changed before the adapter update; review current settings and retain the recovery snapshot'
+                if($newFamily){
+                    if(-not (Test-DNSFamilyMatchesOriginal $record $number $observed)){
+                        throw 'Original DNS settings changed before the adapter update; review current settings and retain the recovery snapshot'
+                    }
+                }else{
+                    [void](Test-DNSFamilyNeedsRollback $record $number $observed)
                 }
             }
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
@@ -2575,9 +2594,7 @@ function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$Doh
         }
     }
 }
-function Test-DNSFamilyNeedsRollback([object]$Record,[string]$Number,[object]$Adapter,[object]$Row) {
-    $family='IPv'+$Number
-    $observed=Read-ObservedDNSFamily $Adapter $family $Row
+function Test-DNSFamilyNeedsRollback([object]$Record,[string]$Number,[object]$Observed) {
     if(Test-DNSFamilyMatchesOriginal $Record $Number $observed){return $false}
     if(-not $observed.dhcp){
         $current=$observed.values -join ','
@@ -2596,11 +2613,8 @@ function Restore-DNS([string]$ExpectedSHA256) {
         throw 'DNS recovery journal does not match the active snapshot; review dns-restore'
     }
     $saved=$restoration.record
-    $ownership=$saved.PSObject.Properties['adapterConditional']
-    if($null -ne $ownership -and ($ownership.Value -isnot [bool] -or -not $ownership.Value)){
-        throw 'Original DNS snapshot has invalid adapter ownership metadata'
-    }
-    $guardAdapters=[bool]($ExpectedSHA256 -and $null -ne $ownership)
+    $usesAdapterOwnership=Test-DNSRecoveryUsesAdapterOwnership $saved
+    $guardAdapters=[bool]($ExpectedSHA256 -and $usesAdapterOwnership)
     if($null -eq $saved.adapters -or @($saved.adapters).Count -eq 0){throw 'Original DNS snapshot has no adapter records; retain it for manual recovery'}
     # Inspect every original adapter and relevant DoH entry before changing any
     # settings. This is preflight, not a guarantee of an atomic OS transaction.
@@ -2621,7 +2635,10 @@ function Restore-DNS([string]$ExpectedSHA256) {
             if(-not $plan.bounds['bound'+$number]){continue}
             $rows=@(Get-DNSClientRows $clients $plan.adapter.ifIndex ('IPv'+$number))
             if($rows.Count -ne 1){throw 'An owned DNS family cannot be inspected; retain the recovery snapshot'}
-            if($guardAdapters){[void](Test-DNSFamilyNeedsRollback $plan.record $number $plan.adapter $rows[0])}
+            if($guardAdapters){
+                $observed=Read-ObservedDNSFamily $plan.adapter ('IPv'+$number) $rows[0]
+                [void](Test-DNSFamilyNeedsRollback $plan.record $number $observed)
+            }
         }
     }
     $ownsDoh=Test-DNSRecoveryOwnsDoh $saved
@@ -2651,7 +2668,8 @@ function Restore-DNS([string]$ExpectedSHA256) {
             $dns=Get-DNSClientMutationRow $record.guid ('IPv'+$number)
             if($guardAdapters){
                 $adapter=@{InterfaceGuid=$record.guid;ifIndex=$dns.InterfaceIndex}
-                if(-not (Test-DNSFamilyNeedsRollback $record $number $adapter $dns)){continue}
+                $observed=Read-ObservedDNSFamily $adapter ('IPv'+$number) $dns
+                if(-not (Test-DNSFamilyNeedsRollback $record $number $observed)){continue}
             }
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             $script:externalEffectsPending=$true
