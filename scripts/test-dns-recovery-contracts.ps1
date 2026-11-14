@@ -65,7 +65,7 @@ function New-DNSCase {
     $script:failAction='';$script:failAddress='';$script:failDelete=$false;$script:failSnapshotWrite=$false;$script:failJournalWrite=$false;$script:corruptSnapshotWrite=$false;$script:failActivationWrite=$false;$script:failReceiptWrite=$false
     $script:configureDohReadFault='';$script:postConfigureDohReadFault='';$script:configureDohFaultAddress='';$script:resolverQueries=0;$script:configurationLag=0;$script:readbackWaits=0
     $script:resolverServicePresent=$false;$script:resolverOwnershipFault=$false;$script:resolverBindingFailureRead=0;$script:resolverBindingReads=0;$script:serviceRestarts=0;$script:dnscryptConfigReads=0;$script:dnscryptConfigWrites=0;$script:stageDNSCrypt=$false;$script:changeDNSCryptBeforePublish=$false;$script:changeDNSCryptAfter='';$script:failDNSCryptRestart=$false;$script:allowNewResolver=$false;$script:newResolverRegistered=$false;$script:serviceStops=0;$script:serviceStartupChanges=0
-    $script:resolverReadbacks=0;$script:resolverReadbackFault='';$script:expectedResolverStartup=''
+    $script:resolverReadbacks=0;$script:resolverReadbackFault='';$script:expectedResolverStartup='';$script:failResolverStartupWrite=$false
     $script:resolverStopped=$false;$script:serviceStarts=0
     $script:restartRecoveryOriginal=$null;$script:restartRecoveryWrites=0;$script:restartRecoveryFault=''
     $script:resolverCommand='synthetic DNSCrypt service command'
@@ -469,6 +469,7 @@ function Set-Service {
     }
     $script:expectedResolverStartup=$StartupType
     $script:serviceStartupChanges++
+    if($script:failResolverStartupWrite){throw 'Synthetic DNSCrypt startup write failure'}
 }
 function Restore-RecordedWorkflowFile($Record) {
     $path=Join-Path $root 'dnscrypt-proxy.toml'
@@ -492,7 +493,9 @@ function Start-Service {
 function Restart-Service {
     param($InputObject,$ErrorAction)
     if($InputObject.Status -cne 'Running' -or $ErrorAction -cne 'Stop' -or
-        -not $script:stageDNSCrypt -or $script:serviceStartupChanges -ne 0){throw 'Unexpected fixture service restart'}
+        -not $script:stageDNSCrypt -or ($script:serviceStartupChanges -ne 0 -and -not $script:restartRecoveryWrites)){
+        throw 'Unexpected fixture service restart'
+    }
     $script:serviceRestarts++
     if($script:failDNSCryptRestart){
         $script:resolverStopped=$true
@@ -812,14 +815,21 @@ try {
             ($script:listenerQueries -join ',') -ceq '127.0.0.1,::1' -and $script:resolverQueries -eq 1 -and
             [IO.File]::ReadAllText($path) -ceq $configText) 'dnscrypt-reuses-unchanged-configuration'
     }
-    foreach($fault in @('mode','state','late-mode')){
+    foreach($fault in @('write','mode','state','late-mode')){
         New-DNSCase;$script:stageDNSCrypt=$true;$script:resolverServicePresent=$true
         $script:resolverReadbackFault=$fault
-        [IO.File]::WriteAllText((Join-Path $root 'dnscrypt-proxy.toml'),"listen_addresses = ['192.0.2.53:53']")
-        Reject-DNS {Configure-DNS 'dnscrypt'} 'DNSCrypt service automatic startup or running state could not be verified'
+        $script:failResolverStartupWrite=$fault -ceq 'write'
+        $path=Join-Path $root 'dnscrypt-proxy.toml'
+        $original="listen_addresses = ['192.0.2.53:53']"
+        $script:restartRecoveryOriginal=[Text.UTF8Encoding]::new($false).GetBytes($original)
+        [IO.File]::WriteAllBytes($path,$script:restartRecoveryOriginal)
+        $expected=if($fault -ceq 'write'){'Synthetic DNSCrypt startup write failure'}else{'DNSCrypt service automatic startup or running state could not be verified'}
+        Reject-DNS {Configure-DNS 'dnscrypt'} $expected
         $late=[int]($fault -ceq 'late-mode')
-        Assert-DNS ($script:serviceStartupChanges -eq 1 -and $script:resolverReadbacks -eq (1+$late) -and
+        Assert-DNS ($script:serviceStartupChanges -eq 1 -and $script:resolverReadbacks -eq ([int]($fault -cne 'write')+$late) -and
             (Mutation-Count) -eq (2*$late) -and $script:resolverQueries -eq $late -and
+            $script:serviceRestarts -eq (2-$late) -and $script:restartRecoveryWrites -eq (1-$late) -and
+            ([IO.File]::ReadAllText($path) -ceq $original) -eq (-not $late) -and
             $script:journalActive -and (Snapshot-Hash) -ceq $script:journalDigest -and
             -not $script:dnsConfigured) 'dnscrypt-listeners-before-adapters'
     }
@@ -860,7 +870,8 @@ try {
         New-DNSCase;$script:stageDNSCrypt=$true;$script:resolverServicePresent=$true;$script:changeDNSCryptAfter=$stage
         $target=Join-Path $root 'dnscrypt-proxy.toml'
         [IO.File]::WriteAllText($target,"listen_addresses = ['192.0.2.53:53']")
-        Reject-DNS {Configure-DNS 'dnscrypt'} 'DNSCrypt configuration changed after publication'
+        $expected=if($stage -ceq 'listener'){'DNSCrypt activation failed and the original service could not be recovered'}else{'DNSCrypt configuration changed after publication'}
+        Reject-DNS {Configure-DNS 'dnscrypt'} $expected
         $writes=if($stage -ceq 'ordinary-probe'){2}else{0}
         $preserved=if($stage -ceq 'publish'){-not [IO.File]::Exists($target)}else{
             [IO.File]::ReadAllText($target) -ceq 'independent configuration'

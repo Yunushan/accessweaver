@@ -2562,41 +2562,41 @@ function Configure-DNS([string]$method) {
                 }
             }
         })
-        if($existingResolver){
-            if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before startup'}
-            Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-            Assert-DNSCryptConfiguration $config $publishedConfigSHA256
-            $service=Get-Service -Name $serviceName -ErrorAction Stop
-            $restartAttempted=$false
-            try {
-                if($service.Status -eq 'Stopped'){
-                    Start-Service -InputObject $service -ErrorAction Stop
-                }elseif($configChanged){
-                    $restartAttempted=$true
-                    Restart-Service -InputObject $service -ErrorAction Stop
-                }
-                $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
-                # SCM can report Running before the replacement listener is usable.
-                Wait-DNSCryptListeners $listeners
-            }catch{
-                if($restartAttempted -and $configBefore){
-                    Restore-DNSCryptAfterActivationFailure $existingResolver $config $configBefore $snapshotSHA256
-                }
-                throw
-            }finally {if($service -is [IDisposable]){$service.Dispose()}}
-        }else{
-            Assert-DNSCryptConfiguration $config $publishedConfigSHA256
-            $newResolver=Install-EngineService 'dnscrypt' $binary @('-config',$config) -DeferAutomaticStartup
+        $restartAttempted=$false
+        try {
+            if($existingResolver){
+                if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before startup'}
+                Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+                Assert-DNSCryptConfiguration $config $publishedConfigSHA256
+                $service=Get-Service -Name $serviceName -ErrorAction Stop
+                try {
+                    if($service.Status -eq 'Stopped'){
+                        Start-Service -InputObject $service -ErrorAction Stop
+                    }elseif($configChanged){
+                        $restartAttempted=$true
+                        Restart-Service -InputObject $service -ErrorAction Stop
+                    }
+                    $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
+                } finally {if($service -is [IDisposable]){$service.Dispose()}}
+                $resolver=$existingResolver
+            }else{
+                Assert-DNSCryptConfiguration $config $publishedConfigSHA256
+                $resolver=Install-EngineService 'dnscrypt' $binary @('-config',$config) -DeferAutomaticStartup
+            }
+            # SCM can report Running before the replacement listener is usable.
             Wait-DNSCryptListeners $listeners
+            Assert-DNSCryptConfiguration $config $publishedConfigSHA256
+            # Verify automatic startup before adding any loopback DNS dependency.
+            if((Assert-RecordedServiceBinding $resolver) -ne 0){throw 'DNSCrypt service disappeared before enabling automatic startup'}
+            Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+            Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
+            Assert-DNSCryptServiceState $resolver
+        } catch {
+            if($restartAttempted -and $configBefore){
+                Restore-DNSCryptAfterActivationFailure $existingResolver $config $configBefore $snapshotSHA256
+            }
+            throw
         }
-        Assert-DNSCryptConfiguration $config $publishedConfigSHA256
-        # An existing service can be manual after a switch to DoH. Verify
-        # automatic startup before making any new loopback DNS dependency.
-        $resolver=if($existingResolver){$existingResolver}else{$newResolver}
-        if((Assert-RecordedServiceBinding $resolver) -ne 0){throw 'DNSCrypt service disappeared before enabling automatic startup'}
-        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
-        Set-Service -Name $serviceName -StartupType Automatic -ErrorAction Stop
-        Assert-DNSCryptServiceState $resolver
     } elseif($method -eq 'doh') {
         foreach($provider in $providers){
             $address=$provider.ServerAddress
