@@ -273,6 +273,7 @@ class PrereleasePublicationTests(unittest.TestCase):
                       contextlib.redirect_stdout(io.StringIO()) as output):
                     self.assertEqual(publisher.main(), 0)
                     preview = json.loads(output.getvalue())
+                    self.assertEqual(preview["schemaVersion"], 2)
                     preview_digest = preview["qualificationSHA256"]
                     self.assertRegex(preview_digest, r"^[0-9a-f]{64}$")
                     self.assertEqual(preview["sourceCommit"], self.commit)
@@ -289,7 +290,8 @@ class PrereleasePublicationTests(unittest.TestCase):
                         for system, arch in publisher.TARGETS
                     }
                     self.assertEqual(preview["targetEvidenceSHA256"], expected_reports)
-                    canonical = json.dumps(expected_reports, sort_keys=True, separators=(",", ":")).encode("ascii")
+                    record = {key: value for key, value in preview.items() if key != "qualificationSHA256"}
+                    canonical = json.dumps(record, sort_keys=True, separators=(",", ":")).encode("ascii")
                     self.assertEqual(preview_digest, hashlib.sha256(canonical).hexdigest())
                     self.assertNotIn(str(self.directory), output.getvalue())
                     verify.assert_called_once()
@@ -325,6 +327,41 @@ class PrereleasePublicationTests(unittest.TestCase):
                 tag.assert_not_called()
                 gh.assert_not_called()
                 publish_verified.assert_not_called()
+
+    def test_publication_handoff_requires_the_same_package_provenance_and_rebuild_digest(self):
+        manifest = self.directory / "BUILD-MANIFEST.json"
+        (self.directory / "fixture-00.zip").rename(manifest)
+        manifest.write_text("{}", encoding="utf-8")
+        bundle = self.directory / publisher.BUNDLE_NAME
+        (self.directory / "fixture-01.zip").rename(bundle)
+        checksums = self.directory / "SHA256SUMS.txt"
+        (self.directory / "fixture-02.zip").rename(checksums)
+        qualification = self.directory / "unused-receipts"
+        rebuild_digest = publisher.digest(checksums)
+
+        with (patch.object(publisher, "verify"),
+              patch.object(publisher, "verify_native_qualification", return_value={}),
+              patch.object(publisher, "publish_verified") as publish_verified):
+            with publisher.verified_candidate(
+                self.directory, self.commit, self.ref, rebuild_digest, qualification, "123"
+            ) as candidate:
+                approved = candidate[2]["qualificationSHA256"]
+
+            for path in (bundle, checksums):
+                with self.subTest(file=path.name):
+                    original = path.read_bytes()
+                    path.write_bytes(original + b"\n")
+                    try:
+                        with self.assertRaisesRegex(ValueError, "differ from the read-only verification job"):
+                            publisher.publish(
+                                self.directory, self.commit, self.ref,
+                                rebuild_checksums_sha256=publisher.digest(checksums),
+                                native_qualification=qualification, expected_qualification_sha256=approved,
+                                run_id="123",
+                            )
+                    finally:
+                        path.write_bytes(original)
+            publish_verified.assert_not_called()
 
     def test_attestation_requires_a_repository_signed_run_uri(self):
         path = self.directory / "execution.json"

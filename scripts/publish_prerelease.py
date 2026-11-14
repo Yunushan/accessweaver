@@ -276,9 +276,8 @@ def verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_
         if native_qualification is not None:
             manifest = json.loads((frozen / "BUILD-MANIFEST.json").read_bytes())
             reports = verify_native_qualification(native_qualification, frozen, manifest, commit, ref, expected, run_id)
-            canonical = json.dumps(reports, sort_keys=True, separators=(",", ":")).encode("ascii")
             qualification = {
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "sourceCommit": commit,
                 "sourceRef": ref,
                 "repository": REPOSITORY,
@@ -287,9 +286,10 @@ def verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_
                 "manifestSHA256": expected["BUILD-MANIFEST.json"].removeprefix("sha256:"),
                 "provenanceBundleSHA256": expected[BUNDLE_NAME].removeprefix("sha256:"),
                 "rebuildReferenceChecksumsSHA256": rebuild_checksums_sha256,
-                "qualificationSHA256": hashlib.sha256(canonical).hexdigest(),
                 "targetEvidenceSHA256": reports,
             }
+            canonical = json.dumps(qualification, sort_keys=True, separators=(",", ":")).encode("ascii")
+            qualification["qualificationSHA256"] = hashlib.sha256(canonical).hexdigest()
         yield frozen, expected, qualification
 
 
@@ -392,7 +392,7 @@ def main():
     parser.add_argument("--verify-only", action="store_true",
                         help="verify package, rebuild and qualification without accessing release state")
     parser.add_argument("--expected-qualification-sha256",
-                        help="digest of target evidence and attestation files from the read-only verification job")
+                        help="digest of the complete qualification record from the read-only verification job")
     parser.add_argument("--workflow-run-id", required=True, help="expected GitHub Actions run ID for the archive and target attestations")
     args = parser.parse_args()
     if not re.fullmatch(r"[1-9][0-9]{0,19}", args.workflow_run_id):
