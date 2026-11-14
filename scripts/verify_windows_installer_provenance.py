@@ -222,12 +222,15 @@ def validate_setup_uninstall_registration_refusal(value):
     return {"setupUninstallRegistrationRefusalVerified": True}
 
 
-def validate_setup_marker_replacement(value, check_subject_guards=False, *, check_package_guards=False):
+def validate_setup_marker_replacement(value, check_subject_guards=False, *, check_package_guards=False,
+                                      check_runtime_notice_guard=False):
     flags = {"replacementPreserved", "completionRefusalLogged", "approvedPayloadVerified", "unrelatedStatePreserved"}
     if check_subject_guards:
         flags.add("subjectAndDirectoryGuardsVerified")
     if check_package_guards:
         flags.add("packageDirectoryGuardsVerified")
+    if check_runtime_notice_guard:
+        flags.add("innoRuntimeNoticeGuardVerified")
     require(isinstance(value, dict)
             and value.keys() == flags | {"exitCode", "elapsedMilliseconds", "deadlineMilliseconds"}
             and type(value["exitCode"]) is int and value["exitCode"] == 1603
@@ -239,6 +242,8 @@ def validate_setup_marker_replacement(value, check_subject_guards=False, *, chec
         verified["setupCompletionSubjectAndDirectoryGuardsVerified"] = True
     if check_package_guards:
         verified["setupCompletionPackageDirectoryGuardsVerified"] = True
+    if check_runtime_notice_guard:
+        verified["setupCompletionInnoRuntimeNoticeGuardVerified"] = True
     return verified
 
 
@@ -438,6 +443,14 @@ def validate_fixed_restoration(refused, removed):
     return {"fixedRestorationCommandVerified": True}
 
 
+def validate_inno_runtime_notice(compiler, installed_digest):
+    require(isinstance(installed_digest, str) and SHA.fullmatch(installed_digest),
+            "Installed Inno Setup notice digest is missing or malformed")
+    notices = json.loads(prop_map(compiler).get("accessweaver:license-evidence", "[]"))
+    require(notices == [{"path": "licenses/Inno-Setup-License.txt", "sha256": installed_digest}],
+            "Installer SBOM Inno Setup notice differs from installed readback")
+
+
 def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_attempt=None):
     report=load(root,arch+".json")
     if run_attempt is not None:
@@ -446,7 +459,7 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
     if report_schema is not None:
         require(type(report.get("schemaVersion")) is int and report["schemaVersion"] == report_schema,
                 "Native lifecycle report schema differs from the approved schema")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in range(11, 52) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in range(11, 53) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -474,7 +487,8 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
     if report["schemaVersion"] >= 32:
         setup_readback.update(validate_setup_marker_replacement(
             report.get("setupMarkerReplacement"), check_subject_guards=report["schemaVersion"] >= 33,
-            check_package_guards=report["schemaVersion"] >= 50))
+            check_package_guards=report["schemaVersion"] >= 50,
+            check_runtime_notice_guard=report["schemaVersion"] >= 52))
     if report["schemaVersion"] >= 34:
         setup_readback.update(validate_setup_uninstall_registration_refusal(report.get("setupUninstallRegistrationRefusal")))
     if report["schemaVersion"] >= 35:
@@ -581,6 +595,8 @@ def validate_contents(root,commit,ref,arch,versions, *, report_schema=None, run_
         components={c["bom-ref"]:c for c in bom["components"]};payload=components.get("payload-application",{});compiler=components.get("inno-setup",{})
         require(payload.get("version")==version and payload.get("hashes")==[{"alg":"SHA-256","content":build["payloadSha256"]}],"Installer SBOM payload subject differs")
         require(compiler.get("version")=="6.7.1" and prop_map(compiler).get("accessweaver:compiler-sha256")==build["compilerSHA256"],"Installer SBOM compiler subject differs")
+        if report["schemaVersion"] >= 52:
+            validate_inno_runtime_notice(compiler, build.get("innoRuntimeNoticeSHA256"))
         candidates.append({"file":name,"sha256":digest(binary),"bytes":len(binary),"payloadSHA256":build["payloadSha256"],"payloadTarget":"windows/"+arch,"bootstrapPEMachine":"0x014c","sbomSHA256":digest((root/(name+".cdx.json")).read_bytes())})
     return {"candidates":candidates,**detection_counts,**architecture,**restoration,**uninstall_registration,**redirected_upgrade,**path_refusals,**setup_readback,**locked_upgrade,**failed_copy_recovery,**marker_access,**state_counts,**origin_counts,**event_counts,**attempt_counts,"nativeLifecycleOperationsVerified":len(expected),"nativeRunID":str(report["runID"]),**({"nativeRunAttempt":run_attempt} if run_attempt is not None else {}),"nativeDependencyClosureComplete":False}
 
@@ -642,7 +658,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("directory",type=Path)
     parser.add_argument("--source-commit",required=True);parser.add_argument("--source-ref",required=True);parser.add_argument("--architecture",required=True)
     parser.add_argument("--versions",nargs=2,default=DEFAULT_VERSIONS);parser.add_argument("--gh",default="gh");parser.add_argument("--check-rejections",action="store_true");parser.add_argument("--stage-build-root",type=Path);parser.add_argument("--run-id",required=True)
-    parser.add_argument("--report-schema", type=int, choices=range(11, 52),
+    parser.add_argument("--report-schema", type=int, choices=range(11, 53),
                         help="require the report schema approved for this invocation")
     parser.add_argument("--run-attempt", help="require the approved GitHub Actions attempt on every subject")
     args=parser.parse_args()

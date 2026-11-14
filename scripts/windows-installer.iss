@@ -26,6 +26,16 @@
 #define PayloadDigest GetSHA256OfFile(PayloadPath)
 #define BuildInfoDigest GetSHA256OfFile(BuildInfoPath)
 #define PayloadSBOMDigest GetSHA256OfFile(PayloadSBOMPath)
+#define InnoRuntimeNoticePath BuildRoot + "\licenses\Inno-Setup-License.txt"
+#if FileExists(InnoRuntimeNoticePath)
+  #define InnoRuntimeNoticeBytes FileSize(InnoRuntimeNoticePath)
+  #if InnoRuntimeNoticeBytes <= 0 || InnoRuntimeNoticeBytes > 1048576
+    #error The staged Inno Setup runtime notice must contain between one byte and 1 MiB
+  #endif
+  #define InnoRuntimeNoticeDigest GetSHA256OfFile(InnoRuntimeNoticePath)
+#elif Defined(RequireInnoRuntimeNotice) || Defined(OrganizationSigning)
+  #error The staged Inno Setup runtime notice is required
+#endif
 
 [Setup]
 #ifdef OrganizationSigning
@@ -332,7 +342,7 @@ begin
 end;
 
 function AWVerifyCompletedInstall(const Destination: String; var Held: AWDirectoryHandles;
-  var Executable, BuildInfo, SBOM, Uninstaller, UninstallData: LongWord): Boolean;
+  var Executable, BuildInfo, SBOM, RuntimeNotice, Uninstaller, UninstallData: LongWord): Boolean;
 var Found64, Found32: Boolean;
     Version, Location, Version32, Location32, UninstallerPath: String;
 begin
@@ -342,6 +352,9 @@ begin
   if not AWVerifyInstalledFile(Destination + '\accessweaver.exe', '{#PayloadDigest}', {#PayloadBytes}, True, Executable) then Exit;
   if not AWVerifyInstalledFile(Destination + '\BUILD-INFO.json', '{#BuildInfoDigest}', {#BuildInfoBytes}, True, BuildInfo) then Exit;
   if not AWVerifyInstalledFile(Destination + '\SBOM.cdx.json', '{#PayloadSBOMDigest}', {#PayloadSBOMBytes}, True, SBOM) then Exit;
+#ifdef InnoRuntimeNoticeDigest
+  if not AWVerifyInstalledFile(Destination + '\licenses\Inno-Setup-License.txt', '{#InnoRuntimeNoticeDigest}', {#InnoRuntimeNoticeBytes}, True, RuntimeNotice) then Exit;
+#endif
   UninstallerPath := ExpandConstant('{uninstallexe}');
   if not AWIsInstallationDirectory(Destination, ExtractFileDir(UninstallerPath)) then Exit;
   if not AWOpenUninstallSubject(UninstallerPath, Uninstaller) then Exit;
@@ -386,6 +399,10 @@ begin
     Result := 'The AccessWeaver BUILD-INFO.json cannot be replaced. Release any file locks and check its file attributes before retrying setup.'
   else if not AWCanReplaceInstalledFile(Destination + '\SBOM.cdx.json') then
     Result := 'The AccessWeaver SBOM.cdx.json cannot be replaced. Release any file locks and check its file attributes before retrying setup.';
+#ifdef InnoRuntimeNoticeDigest
+  if (Result = '') and not AWCanReplaceInstalledFile(Destination + '\licenses\Inno-Setup-License.txt') then
+    Result := 'The Inno Setup runtime notice cannot be replaced. Release any file locks and check its file attributes before retrying setup.';
+#endif
 end;
 
 function AWRegistrationPreflight(const Destination: String): String;
@@ -519,14 +536,14 @@ begin
 end;
 
 procedure AWCompleteInstallation(const Destination: String);
-var Held: AWDirectoryHandles; Executable, BuildInfo, SBOM, Uninstaller, UninstallData: LongWord; I: Integer;
+var Held: AWDirectoryHandles; Executable, BuildInfo, SBOM, RuntimeNotice, Uninstaller, UninstallData: LongWord; I: Integer;
     Verified: Boolean;
 begin
   Executable := $FFFFFFFF; BuildInfo := $FFFFFFFF; SBOM := $FFFFFFFF;
-  Uninstaller := $FFFFFFFF; UninstallData := $FFFFFFFF;
+  RuntimeNotice := $FFFFFFFF; Uninstaller := $FFFFFFFF; UninstallData := $FFFFFFFF;
   try
     try
-      Verified := AWVerifyCompletedInstall(Destination, Held, Executable, BuildInfo, SBOM, Uninstaller, UninstallData);
+      Verified := AWVerifyCompletedInstall(Destination, Held, Executable, BuildInfo, SBOM, RuntimeNotice, Uninstaller, UninstallData);
     except
       Verified := False;
     end;
@@ -544,6 +561,7 @@ begin
   finally
     if UninstallData <> $FFFFFFFF then AWCloseNativeHandle(UninstallData);
     if Uninstaller <> $FFFFFFFF then AWCloseNativeHandle(Uninstaller);
+    if RuntimeNotice <> $FFFFFFFF then AWCloseNativeHandle(RuntimeNotice);
     if SBOM <> $FFFFFFFF then AWCloseNativeHandle(SBOM);
     if BuildInfo <> $FFFFFFFF then AWCloseNativeHandle(BuildInfo);
     if Executable <> $FFFFFFFF then AWCloseNativeHandle(Executable);

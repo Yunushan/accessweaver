@@ -97,7 +97,8 @@ try {
     [IO.File]::WriteAllText((Join-Path $stage 'uninstall-system.json'),'{"action":"remove-all"}')
     $compilerLicense=Join-Path (Split-Path -Parent $Compiler) 'License.txt'
     if(-not (Test-Path -LiteralPath $compilerLicense -PathType Leaf)){throw 'Inno Setup license evidence is missing'}
-    Copy-Item -LiteralPath $compilerLicense -Destination (Join-Path $stage 'licenses\Inno-Setup-License.txt')
+    $runtimeNoticePath=Join-Path $stage 'licenses\Inno-Setup-License.txt'
+    Copy-Item -LiteralPath $compilerLicense -Destination $runtimeNoticePath
     $validator=Join-Path $project ('build\tools\sbom-schema-'+$TargetArch+'.exe')
     & $Go -C (Join-Path $project 'scripts\sbom-tools') build -mod=readonly -trimpath -o $validator .
     if($LASTEXITCODE -ne 0){throw 'SBOM validator build failed'}
@@ -112,12 +113,21 @@ try {
     $preprocessed=Join-Path $evidence 'setup-preprocessed.iss'
     Assert-InstallerPackageDirectories $stage $setupScript
     $compile={
-        & $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) @signingArguments $setupScript
+        & $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) '/DRequireInnoRuntimeNotice' @signingArguments $setupScript
         if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
     }
-    $compilerOutput=@(if($organizationSigning){
-        Invoke-InstallerSigningContext $SigningTool $PublisherCertificateSHA256 $compile
-    } else {& $compile})
+    $noticeGuard=[IO.File]::Open($runtimeNoticePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        $noticeDigest=(Get-FileHash -InputStream $noticeGuard -Algorithm SHA256).Hash.ToLowerInvariant()
+        $noticeLength=$noticeGuard.Length
+        $compilerOutput=@(if($organizationSigning){
+            Invoke-InstallerSigningContext $SigningTool $PublisherCertificateSHA256 $compile
+        } else {& $compile})
+        $expectedNoticeCheck="AWVerifyInstalledFile(Destination + '\licenses\Inno-Setup-License.txt', '$noticeDigest', $noticeLength, True, RuntimeNotice)"
+        if([IO.File]::ReadAllText($preprocessed).IndexOf($expectedNoticeCheck,[StringComparison]::OrdinalIgnoreCase) -lt 0){
+            throw 'Installer completion is missing the compiled Inno Setup notice identity'
+        }
+    } finally {$noticeGuard.Dispose()}
     $null=Assert-InstallerSetupScript $preprocessed $TargetArch $Version -OrganizationSigning:$organizationSigning
     $compilerOutput | Write-Output
     $actualVersion=[regex]::Match(($compilerOutput -join "`n"),'(?im)^Compiler engine version:\s*Inno Setup\s+(\d+\.\d+\.\d+)\b')
@@ -130,6 +140,9 @@ try {
     if((Get-FileHash -LiteralPath $buildInfoPath -Algorithm SHA256).Hash -ine $buildInfoDigest){throw 'Installer build metadata changed during compilation'}
     & python (Join-Path $project 'scripts\sbom.py') --binary $artifact --payload-sbom $payloadSBOM --windows-build-info-sha256 $buildInfoDigest --compiler $Compiler --compiler-version $actualVersion.Groups[1].Value --compiler-license $compilerLicense --notices (Join-Path $stage 'licenses') --out ($artifact+'.cdx.json')
     if($LASTEXITCODE -ne 0){throw 'Installer SBOM generation failed'}
+    if((Get-FileHash -LiteralPath $runtimeNoticePath -Algorithm SHA256).Hash -ine $noticeDigest){
+        throw 'Installer SBOM notice differs from the staged notice used during compilation'
+    }
     & $validator --schemas (Join-Path $project 'scripts\sbom\schema') ($artifact+'.cdx.json')
     if($LASTEXITCODE -ne 0){throw 'Installer SBOM validation failed'}
     Copy-Item -LiteralPath $payloadSBOM -Destination (Join-Path $evidence 'payload-SBOM.cdx.json') -Force

@@ -11,7 +11,7 @@ from verify_windows_installer_provenance import (
     validate_installation_path_refusals, validate_setup_completion_refusal, validate_uninstall_registration_refusal,
     validate_post_restoration_refusal, validate_restoration_controller_refusals, validate_setup_marker_replacement,
     validate_setup_uninstall_registration_refusal, validate_setup_upgrade_baseline, validate_uninstall_license_refusal,
-    validate_native_documentation_refusals,
+    validate_native_documentation_refusals, validate_inno_runtime_notice,
 )
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
@@ -363,6 +363,32 @@ class SetupMarkerReplacementTests(unittest.TestCase):
         self.assertTrue(validate_setup_marker_replacement({**guarded, "packageDirectoryGuardsVerified": True},
                                                          check_subject_guards=True, check_package_guards=True)
                         ["setupCompletionPackageDirectoryGuardsVerified"])
+        guard_options = dict(check_subject_guards=True, check_package_guards=True, check_runtime_notice_guard=True)
+        guarded["packageDirectoryGuardsVerified"] = True
+        self.assertTrue(validate_setup_marker_replacement({**guarded, "innoRuntimeNoticeGuardVerified": True},
+                                                         **guard_options)
+                        ["setupCompletionInnoRuntimeNoticeGuardVerified"])
+        for bad in (guarded, {**guarded, "innoRuntimeNoticeGuardVerified": 1}):
+            with self.assertRaisesRegex(ValueError, "Setup replacement marker"):
+                validate_setup_marker_replacement(bad, **guard_options)
+
+
+class InnoRuntimeNoticeTests(unittest.TestCase):
+    def test_runtime_notice_binds_fixed_sidecar_path_to_installed_digest(self):
+        pin = "a" * 64
+        notice = {"path": "licenses/Inno-Setup-License.txt", "sha256": pin}
+
+        def compiler(records):
+            return {"properties": [{"name": "accessweaver:license-evidence", "value": json.dumps(records)}]}
+
+        validate_inno_runtime_notice(compiler([notice]), pin)
+        for records in ([], [{**notice, "sha256": "b" * 64}],
+                        [{**notice, "path": "licenses/different-notice.txt"}], [notice, notice]):
+            with self.subTest(records=records), self.assertRaisesRegex(ValueError, "differs from installed readback"):
+                validate_inno_runtime_notice(compiler(records), pin)
+        for invalid_pin in (None, True, pin.upper()):
+            with self.subTest(pin=invalid_pin), self.assertRaisesRegex(ValueError, "missing or malformed"):
+                validate_inno_runtime_notice(compiler([notice]), invalid_pin)
 
 
 class PostRestorationRefusalTests(unittest.TestCase):

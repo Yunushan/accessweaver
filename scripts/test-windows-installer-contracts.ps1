@@ -130,6 +130,11 @@ foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
     Assert ($completion.Contains("Destination + '\$name',")) 'Setup completion must verify each staged release subject'
 }
 Assert ($completion -cmatch '(?s)AWReadRegistration\(\$0100, True.*AWReadRegistration\(\$0200, False.*Found64 and not Found32') 'Setup completion must verify its unique machine registration'
+$runtimeNoticeRelative='\licenses\Inno-Setup-License.txt'
+Assert ($installerSource.Contains('#elif Defined(RequireInnoRuntimeNotice) || Defined(OrganizationSigning)') -and
+    $replacement.Contains("AWCanReplaceInstalledFile(Destination + '$runtimeNoticeRelative')") -and
+    $completion.Contains("AWVerifyInstalledFile(Destination + '$runtimeNoticeRelative', '{#InnoRuntimeNoticeDigest}', {#InnoRuntimeNoticeBytes}, True, RuntimeNotice)") -and
+    $retirement -cmatch '(?s)AWVerifyCompletedInstall\([^;]+RuntimeNotice.*AWFlushLifecycleRecord.*finally.*AWCloseNativeHandle\(RuntimeNotice\)') 'Release Setup must require the notice and hold its verified bytes through pending record retirement'
 $detectorSource=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'detect-windows-installer.ps1'))
 foreach($subject in @(@{name='accessweaver.exe';limit='128MB';handle='Executable'},
     @{name='BUILD-INFO.json';limit='64KB';handle='BuildInfo'},@{name='SBOM.cdx.json';limit='4MB';handle='SBOM'})){
