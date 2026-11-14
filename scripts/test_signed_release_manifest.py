@@ -120,6 +120,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
             )
         if overrides.get("schemaVersion", 5) >= 9:
             report["payloadPublisherSHA256"] = "7" * 64
+        if overrides.get("schemaVersion", 5) >= 10:
+            report.update(buildInfoSHA256="6" * 64, installedBuildInfoVerified=True)
         evidence = self.root / filename
         evidence.write_text(json.dumps({**report, **overrides}), encoding="utf-8")
         return evidence, release.digest(evidence)
@@ -257,6 +259,9 @@ class SignedReleaseManifestTests(unittest.TestCase):
             (self.write_reboot_report("wrong-sbom.json", schemaVersion=6, payloadSBOMSHA256="d" * 64),),
             (self.write_reboot_report("missing-payload-publisher.json", schemaVersion=9, payloadPublisherSHA256=None),),
             (self.write_reboot_report("invalid-payload-publisher.json", schemaVersion=9, payloadPublisherSHA256="bad"),),
+            (self.write_reboot_report("unverified-build-info.json", schemaVersion=10, installedBuildInfoVerified=1),),
+            (self.write_reboot_report("missing-build-info.json", schemaVersion=10, buildInfoSHA256=None),),
+            (self.write_reboot_report("bad-build-info.json", schemaVersion=10, buildInfoSHA256="bad"),),
             (self.write_reboot_report("sbom-unverified.json", schemaVersion=6, installedPayloadSBOMVerified=1),),
             (self.write_reboot_report("publisher-unverified.json", schemaVersion=6, installedPayloadPublisherVerified=False),),
             (self.write_reboot_report("profile-read-failed.json", schemaVersion=7,
@@ -686,12 +691,12 @@ class SignedReleaseManifestTests(unittest.TestCase):
                                            userProfilePreservedThroughUpgrade=True, uninstallerSHA256="e" * 64,
                                            downgradeRequested=True, downgradeRefused=True, downgradeStatePreserved=True,
                                            previousSetupSHA256="8" * 64, previousPublisherSHA256="9" * 64)
-        arm = self.write_reboot_report("arm.json", architecture="arm64", schemaVersion=7, uninstallerSHA256="f" * 64)
+        arm = self.write_reboot_report("arm.json", architecture="arm64", schemaVersion=10, uninstallerSHA256="f" * 64)
         release.prepare(self.candidate, prepared, COMMIT, REF, windows_reboot_evidence=[arm, upgrade, clean])
         shutil.copyfile(prepared, manifest)
         sign_manifest()
         report = self.verify(approved, pin)
-        self.assertEqual(report["schemaVersion"], 5)
+        self.assertEqual(report["schemaVersion"], 6)
         self.assertEqual(report["subjectsVerified"], 12)
         clean_entry, upgrade_entry, arm_entry = report["windowsDetection"]
         self.assertEqual(clean_entry, {
@@ -711,6 +716,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
             "previousSetupSHA256": "8" * 64, "previousPublisherSHA256": "9" * 64,
         })
         self.assertEqual(arm_entry["target"], "windows/arm64")
+        self.assertEqual(arm_entry["buildInfoSHA256"], "6" * 64)
         self.assertEqual(arm_entry["payloadSBOMSHA256"],
                          release.digest(self.candidate / "accessweaver-1.2.3-rc.1-windows-arm64.exe.cdx.json"))
         self.assertEqual(arm_entry["uninstallerSHA256"], "f" * 64)
@@ -836,7 +842,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
             self.assertEqual(list(staging.iterdir()), [])
         for revoked in (clean[1], "b" * 64, "d" * 64, "e" * 64,
                         upgrade_entry["previousPayloadSBOMSHA256"], upgrade_entry["previousPayloadPublisherSHA256"],
-                        upgrade_entry["payloadPublisherCertificateSHA256"],
+                        upgrade_entry["payloadPublisherCertificateSHA256"], arm_entry["buildInfoSHA256"],
                         *(upgrade_entry[field] for field in release.WINDOWS_DOWNGRADE_FIELDS)):
             current_pin = self.write_policy({**self.policy, "subjectSHA256": [revoked]})
             with self.subTest(revoked=revoked), self.assertRaisesRegex(ValueError, "revoked"):
@@ -846,11 +852,18 @@ class SignedReleaseManifestTests(unittest.TestCase):
 
         original = manifest.read_bytes()
         data = json.loads(original)
-        no_downgrade = [
-            {field: value for field, value in entry.items() if field not in release.WINDOWS_DOWNGRADE_FIELDS}
+        files = release.inventory(self.candidate, self.subjects)
+        without_build_info = [
+            {field: value for field, value in entry.items() if field != release.WINDOWS_BUILD_INFO}
             for entry in data["windowsDetection"]
         ]
-        files = release.inventory(self.candidate, self.subjects)
+        manifest.write_bytes(release.encode_manifest(COMMIT, REF, files, without_build_info))
+        sign_manifest()
+        self.assertEqual(self.verify(approved, pin, **qualified)["schemaVersion"], 5)
+        no_downgrade = [
+            {field: value for field, value in entry.items() if field not in release.WINDOWS_DOWNGRADE_FIELDS}
+            for entry in without_build_info
+        ]
         manifest.write_bytes(release.encode_manifest(COMMIT, REF, files, no_downgrade))
         sign_manifest()
         self.assertEqual(self.verify(approved, pin, **qualified)["schemaVersion"], 4)

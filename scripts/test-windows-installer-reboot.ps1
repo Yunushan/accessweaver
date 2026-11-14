@@ -15,7 +15,8 @@ param(
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousSetupSHA256='',
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousPublisherCertificateSHA256='',
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PayloadPublisherCertificateSHA256='',
-    [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$PayloadSBOMSHA256
+    [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$PayloadSBOMSHA256,
+    [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$BuildInfoSHA256
 )
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
@@ -70,7 +71,7 @@ function Assert-RebootUpgradeOrder($Comparison,[string]$PreviousVersion,[string]
     }
 }
 function Assert-RebootIdentity($Record,$Expected){
-    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 9 -or
+    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 10 -or
        $Record.runID -cne $Expected.runID -or $Record.architecture -cne $Expected.architecture -or
        $Record.installMode -cne $Expected.installMode -or $Record.previousVersion -cne $Expected.previousVersion -or
        $Record.previousPayloadSHA256 -cne $Expected.previousPayloadSHA256 -or
@@ -85,6 +86,8 @@ function Assert-RebootIdentity($Record,$Expected){
        $Record.version -cne $Expected.version -or $Record.setupSHA256 -cne $Expected.setupSHA256 -or
        $Record.payloadSHA256 -cne $Expected.payloadSHA256 -or $Record.publisherSHA256 -cne $Expected.publisherSHA256 -or
        $Record.payloadSBOMSHA256 -cne $Expected.payloadSBOMSHA256 -or
+       $Record.buildInfoSHA256 -isnot [string] -or $Record.buildInfoSHA256 -cnotmatch '\A[a-f0-9]{64}\z' -or
+       $Record.buildInfoSHA256 -cne $Expected.buildInfoSHA256 -or
        $Record.payloadPublisherSHA256 -cne $Expected.payloadPublisherSHA256 -or
        $Record.guestID -cne $Expected.guestID -or $Record.userSID -cne $Expected.userSID -or
        $Record.detectorSHA256 -cne $Expected.detectorSHA256 -or $Record.fixtureSHA256 -cne $Expected.fixtureSHA256 -or
@@ -283,8 +286,9 @@ function Assert-RebootProfileReadable([string]$Controller,[string]$ControllerSHA
         $guard.Dispose()
     }
 }
-function Assert-InstalledDetection([bool]$Detected,[string]$CandidateVersion=$Version,[string]$CandidateSHA256=$PayloadSHA256,[string]$UninstallerDigest='',[string]$CandidateSBOMSHA256=$PayloadSBOMSHA256){
-    $output=@(& $detector -Version $CandidateVersion -Architecture $Architecture -PayloadSHA256 $CandidateSHA256 -UninstallerSHA256 $UninstallerDigest -PayloadSBOMSHA256 $CandidateSBOMSHA256 2>&1)
+function Assert-InstalledDetection([bool]$Detected,[string]$CandidateVersion=$Version,[string]$CandidateSHA256=$PayloadSHA256,[string]$UninstallerDigest='',[string]$CandidateSBOMSHA256=$PayloadSBOMSHA256,
+        [string]$CandidateBuildInfoSHA256=$BuildInfoSHA256){
+    $output=@(& $detector -Version $CandidateVersion -Architecture $Architecture -PayloadSHA256 $CandidateSHA256 -UninstallerSHA256 $UninstallerDigest -PayloadSBOMSHA256 $CandidateSBOMSHA256 -BuildInfoSHA256 $CandidateBuildInfoSHA256 2>&1)
     if($LASTEXITCODE -ne 0){throw 'Installed candidate detection could not complete'}
     if($Detected){
         if($output.Count -ne 1 -or $output[0] -cne 'AccessWeaver detected'){throw 'Approved installed payload was not detected'}
@@ -358,14 +362,14 @@ $capsule=Join-Path $programFiles ('AccessWeaver reboot fixture '+$RunID)
 $baseline=Join-Path $capsule 'prepared.json'
 $report=Join-Path $capsule 'result.json'
 if(-not $PayloadPublisherCertificateSHA256){$PayloadPublisherCertificateSHA256=$PublisherCertificateSHA256}
-$expected=[ordered]@{schemaVersion=9;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+$expected=[ordered]@{schemaVersion=10;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
     previousVersion=$PreviousVersion;previousPayloadSHA256=$PreviousPayloadSHA256.ToLowerInvariant();
     previousPayloadSBOMSHA256=$PreviousPayloadSBOMSHA256.ToLowerInvariant();
     previousPayloadPublisherSHA256=$PreviousPayloadPublisherCertificateSHA256.ToLowerInvariant();previousPayloadTrustVerified=$false;
     previousSetupSHA256=$PreviousSetupSHA256.ToLowerInvariant();previousPublisherSHA256=$PreviousPublisherCertificateSHA256.ToLowerInvariant();
     userProfilePreservedThroughUpgrade=$false;
     setupSHA256=$SetupSHA256.ToLowerInvariant();payloadSHA256=$PayloadSHA256.ToLowerInvariant();
-    payloadSBOMSHA256=$PayloadSBOMSHA256.ToLowerInvariant();guestID=$guestUUID.ToString('D');
+    payloadSBOMSHA256=$PayloadSBOMSHA256.ToLowerInvariant();buildInfoSHA256=$BuildInfoSHA256.ToLowerInvariant();guestID=$guestUUID.ToString('D');
     publisherSHA256=$PublisherCertificateSHA256.ToLowerInvariant();
     payloadPublisherSHA256=$PayloadPublisherCertificateSHA256.ToLowerInvariant();userSID=$userSID;
     detectorSHA256=(Get-RebootDigest $detector);fixtureSHA256=(Get-RebootDigest $PSCommandPath);
@@ -395,7 +399,7 @@ if($Phase -ceq 'Prepare'){
             Assert-RebootPath $controller
             $guard=[IO.File]::Open($controller,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
             try {
-                Assert-InstalledDetection $true $PreviousVersion $PreviousPayloadSHA256 -CandidateSBOMSHA256 $PreviousPayloadSBOMSHA256
+                Assert-InstalledDetection $true $PreviousVersion $PreviousPayloadSHA256 -CandidateSBOMSHA256 $PreviousPayloadSBOMSHA256 -CandidateBuildInfoSHA256 ''
                 Assert-InstalledPublisher $PreviousPayloadSHA256 $PreviousPayloadPublisherCertificateSHA256
                 $expected.previousPayloadTrustVerified=$true
                 $comparison=@(& $controller system check-version $Version 2>$null) -join ""
@@ -436,7 +440,7 @@ if($Phase -ceq 'Prepare'){
         }
         Write-NewRebootEvidence $baseline $expected
     } catch {
-        Write-NewRebootEvidence $report @{schemaVersion=9;runID=$RunID;stage=$stage;passed=$false}
+        Write-NewRebootEvidence $report @{schemaVersion=10;runID=$RunID;stage=$stage;passed=$false}
         throw 'Windows installer reboot preparation failed. Retain the disposable guest for review.'
     }
     Write-Output 'Prepared the approved installation. Reboot the disposable guest before verification.'
@@ -448,8 +452,8 @@ if((Get-Item -LiteralPath $baseline).Length -gt 8192 -or (Test-Path -LiteralPath
 $saved=Get-Content -LiteralPath $baseline -Raw|ConvertFrom-Json
 Assert-RebootIdentity $saved $expected
 Assert-LaterGuestBoot $saved.boot $boot
-Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=9;runID=$RunID}
-$result=[ordered]@{schemaVersion=9;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=10;runID=$RunID}
+$result=[ordered]@{schemaVersion=10;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
     previousVersion=$expected.previousVersion;previousPayloadSHA256=$expected.previousPayloadSHA256;
     previousPayloadSBOMSHA256=$expected.previousPayloadSBOMSHA256;previousPayloadPublisherSHA256=$expected.previousPayloadPublisherSHA256;
     previousPayloadTrustVerified=$saved.previousPayloadTrustVerified;
@@ -459,6 +463,7 @@ $result=[ordered]@{schemaVersion=9;runID=$RunID;architecture=$Architecture;versi
     setupSHA256=$expected.setupSHA256;payloadSHA256=$expected.payloadSHA256;publisherSHA256=$expected.publisherSHA256;
     payloadPublisherSHA256=$expected.payloadPublisherSHA256;
     payloadSBOMSHA256=$expected.payloadSBOMSHA256;installedPayloadSBOMVerified=$false;installedPayloadPublisherVerified=$false;
+    buildInfoSHA256=$expected.buildInfoSHA256;installedBuildInfoVerified=$false;
     detectorSHA256=$expected.detectorSHA256;fixtureSHA256=$expected.fixtureSHA256;
     commonSHA256=$expected.commonSHA256;publisherVerifierSHA256=$expected.publisherVerifierSHA256;
     uninstallerSHA256=$saved.uninstallerSHA256;installedTreeSHA256=$saved.installedTreeSHA256;registrationSHA256=$saved.registrationSHA256;
@@ -470,6 +475,7 @@ try {
     Assert-InstalledDetection $true -UninstallerDigest $saved.uninstallerSHA256
     $result.installedPayloadVerified=$true
     $result.installedPayloadSBOMVerified=$true
+    $result.installedBuildInfoVerified=$true
     $result.stage='installed-publisher'
     Assert-InstalledPublisher
     $result.installedPayloadPublisherVerified=$true
