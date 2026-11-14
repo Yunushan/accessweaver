@@ -90,14 +90,22 @@ async function applySystem(){
 function isApplicationWorkflow(action){
  return ['app-install','app-reinstall','app-remove','app-start','app-repair'].includes(action);
 }
+function applicationRecoveryMessage(action,state,result,resultPresent=result!=null){
+ if(!isApplicationWorkflow(action))return '';
+ if(state==='interrupted'||(state==='failed'&&!resultPresent))return 'applicationInterruptedNotice';
+ if(state==='failed'&&result?.externalEffectsPending===true)return 'applicationRecoveryNotice';
+ return '';
+}
 function renderSystemJob(job){
  if(!job?.id)return;
  notifySystemUpdate(job);showSystemOutput(job);$('system-cancel').disabled=job.state!=='running';
- const application=isApplicationWorkflow(job.action);
  const data=job.result?.data;
+ const recoveryMessage=applicationRecoveryMessage(job.action,job.state,job.result);
  let notice;
- if(application&&job.state==='failed'&&job.result?.externalEffectsPending===true){
+ if(recoveryMessage){
   notice=$('system-application-recovery');
+  notice.dataset.i18n=recoveryMessage;
+  setText(notice.id,t(recoveryMessage));
  }else if(job.action==='app-remove'&&job.state==='succeeded'&&job.result?.ok===true&&
           ['discord','discord-ptb','splitcord'].includes(data?.application)&&typeof data?.removed==='boolean'){
   notice=$('system-application-outcome');
@@ -120,7 +128,7 @@ function renderSystemJob(job){
   }
  }
  const journal=job.result?.journal;
- if(!application&&typeof journal==='string'){
+ if(!isApplicationWorkflow(job.action)&&typeof journal==='string'){
   const name=journal.split(/[\\/]/).pop();
   if(/^workflow-[a-fA-F0-9]{32}\.json(?![\s\S])/.test(name)&&name!==$('system-journal').value){
    $('system-journal').value=name;
@@ -271,16 +279,10 @@ function renderHistoryDetail(){
  $('history-detail-panel').hidden=!record;notice.hidden=true;notice.textContent='';
  output.removeAttribute('aria-describedby');
  if(!record)return;
- if(isApplicationWorkflow(record.action)){
-  const job=historyUI.detailReady?historyUI.job:null;
-  if(record.state==='interrupted'){
-   notice.textContent=t('applicationInterruptedNotice');
-  }else if(record.state==='failed'&&job?.id===record.id&&job.action===record.action&&
-           job.state==='failed'&&job.result?.externalEffectsPending===true){
-   notice.textContent=t('applicationRecoveryNotice');
-  }
-  notice.hidden=!notice.textContent;
- }
+ const job=historyUI.detailReady?historyUI.job:null;
+ const matchingJob=job?.id===record.id&&job.action===record.action&&job.state===record.state;
+ const message=applicationRecoveryMessage(record.action,record.state,matchingJob?job.result:null,record.resultPresent);
+ if(message){notice.textContent=t(message);notice.hidden=false;}
  $('history-detail-title').textContent=historyText('historyDetailTitle',{record:historyRecordName(record)});
  $('history-detail-summary').textContent=[historyOperation(record),t('historyState_'+record.state),t('historyClass_'+record.classification),historySize(record.size),t('historyProtected')].join(' · ');
  let text=t(historyUI.detailing?'historyDetailLoading':!record.rawAvailable?'historyRawUnavailable':'historyDetailUnavailable'),limited=false;

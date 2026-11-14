@@ -591,6 +591,17 @@ test('application failure exposes vendor uncertainty and preserves the protected
  assert.equal(journal.value,protectedName);
  assert.equal(env.run('systemUI.plan.id'),'reviewed');
  assert.equal(env.get('system-consent').checked,true);
+ assert.equal(notice.dataset.i18n,'applicationRecoveryNotice');
+ for(const result of [undefined,null]){
+  render('app-reinstall','failed',result);
+  assert.equal(notice.hidden,false);
+  assert.match(notice.textContent,/recorded no final outcome/);
+  assert.equal(notice.dataset.i18n,'applicationInterruptedNotice');
+  assert.equal(output.getAttribute('aria-describedby'),notice.id);
+  assert.equal(journal.value,protectedName);
+ }
+ render('install','failed',undefined);
+ assert.equal(notice.hidden,true);
  for(const [action,state,flag] of [['app-install','failed','true'],['app-remove','succeeded',true],['app-start','running',true],['install','failed',true]]){
   render(action,state,{journal:'application.json',externalEffectsPending:flag});
   assert.equal(notice.hidden,true);assert.equal(output.getAttribute('aria-describedby'),null);assert.equal(journal.value,protectedName);
@@ -834,6 +845,10 @@ test('retained application history distinguishes interrupted work and confirmed 
   render(failed,value);assert.equal(notice.hidden,true);assert.equal(notice.textContent,'');
  }
  render(failed,job,false);assert.equal(notice.hidden,true);
+ render({...failed,resultPresent:false},null,false);
+ assert.equal(notice.hidden,false);assert.match(notice.textContent,/recorded no final outcome/);
+ assert.equal(output.getAttribute('aria-describedby'),notice.id);
+ render({...failed,resultPresent:false,action:'install'},null,false);assert.equal(notice.hidden,true);
  render({...interrupted,action:'install'},null);assert.equal(notice.hidden,true);
  render(null,null);assert.equal(output.getAttribute('aria-describedby'),null);
  assert.equal(env.get('system-journal').value,'protected selection');

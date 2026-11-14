@@ -631,7 +631,7 @@ test('optional workflow metadata cannot stop polling or replace reviewed inputs'
  await page.locator('#system-action').selectOption('recover');
  await page.locator('#system-form details > summary').click();await expect(page.locator('#system-journal')).toBeVisible();await page.locator('#system-journal').fill('reviewed.json');
  await page.locator('#system-action').selectOption('config');await page.locator('#system-applications').fill('C:\\existing');
- const errors=[];page.on('pageerror',error=>errors.push(error.message));let choices=0,reports=0,applicationFailure=false,removalOutcome;
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));let choices=0,reports=0,applicationFailure=false,applicationInterrupted=false,removalOutcome;
  const chosen='workflow-'+'a'.repeat(32)+'.json',replacement='workflow-'+'b'.repeat(32)+'.json';
  let journal=chosen;
  await page.route('**/api/v1/system/folder',async route=>{
@@ -644,7 +644,7 @@ test('optional workflow metadata cannot stop polling or replace reviewed inputs'
   const state=choices===1?(reports===1?'running':'failed'):'succeeded';
   const result=choices===1?{journal:{legacy:'RAW_OPTIONAL_METADATA'},data:{folder:'C:\\failed-choice'}}:{journal:'C:\\journals\\'+journal,data:{folder:'C:\\selected'}};
   const job=applicationFailure?{id:'application-fixture',action:'app-reinstall',state:'failed',
-   result:{journal:'application.json',externalEffectsPending:true}}:typeof removalOutcome==='boolean'?
+   ...(applicationInterrupted?{}:{result:{journal:'application.json',externalEffectsPending:true}})}:typeof removalOutcome==='boolean'?
    {id:'removal-fixture',action:'app-remove',state:'succeeded',result:{ok:true,data:{application:'discord',removed:removalOutcome}}}:
    {id:'chooser-'+choices,action:'choose-folder',state,result};
   await route.fulfill({json:{operations,job}});
@@ -663,6 +663,12 @@ test('optional workflow metadata cannot stop polling or replace reviewed inputs'
  applicationFailure=true;
  await page.locator('.nav-item[data-view="dashboard"]').click();await page.locator('.nav-item[data-view="system"]').click();
  await expect(page.locator('#system-application-recovery')).toBeVisible();
+ await expect(page.locator('#system-output')).toHaveAttribute('aria-describedby','system-application-recovery');
+ await expect(page.locator('#system-journal')).toHaveValue(chosen);
+ await expect(page.locator('#system-consent')).toBeChecked();
+ applicationInterrupted=true;
+ await page.locator('.nav-item[data-view="dashboard"]').click();await page.locator('.nav-item[data-view="system"]').click();
+ await expect(page.locator('#system-application-recovery')).toHaveText('The controller recorded no final outcome. Check the client and any local journal before retrying.');
  await expect(page.locator('#system-output')).toHaveAttribute('aria-describedby','system-application-recovery');
  await expect(page.locator('#system-journal')).toHaveValue(chosen);
  await expect(page.locator('#system-consent')).toBeChecked();
