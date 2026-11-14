@@ -4,7 +4,7 @@ $source=Join-Path $PSScriptRoot 'test-windows-installer-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Reboot fixture failed parsing'}
-foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootSetupLog','Get-RebootUpgradeArguments','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Open-ApprovedRebootScript','Assert-RebootPublisher','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-InstalledDetection','Assert-InstalledPublisher')){
+foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootSetupLog','Get-RebootUpgradeArguments','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Open-ApprovedRebootScript','Assert-RebootPublisher','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootAccessDescriptor','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-InstalledDetection','Assert-InstalledPublisher')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -210,7 +210,7 @@ Assert-Refused {Assert-RebootInstalledState $saved ('d'*64) $saved.registrationS
 Assert-Refused {Assert-RebootInstalledState $saved $saved.installedTreeSHA256 ('d'*64)}
 
 $key=[pscustomobject]@{
-    SubKeyCount=0;ValueCount=2;Names=@('Version','Install')
+    SubKeyCount=0;ValueCount=2;Names=@('Version','Install');Descriptor='O:SYG:SYD:P(A;;KA;;;SY)'
     Values=@{Version='1.0.0';Install='synthetic location'}
     Kinds=@{Version=[Microsoft.Win32.RegistryValueKind]::String;Install=[Microsoft.Win32.RegistryValueKind]::String}
 }
@@ -221,6 +221,12 @@ $key | Add-Member ScriptMethod GetValue {
     if($Options -ne [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames){throw 'Unexpected registry read options'}
     return $this.Values[$Name]
 }
+$key | Add-Member ScriptMethod GetAccessControl {
+    param($Sections)
+    $security=[Security.AccessControl.RegistrySecurity]::new()
+    $security.SetSecurityDescriptorSddlForm($this.Descriptor,$Sections)
+    return $security
+}
 $fingerprint=Get-RebootRegistrationFingerprint $key
 $key.Names=@('Install','Version')
 if((Get-RebootRegistrationFingerprint $key) -cne $fingerprint){throw 'Registry enumeration order changed its fingerprint'}
@@ -229,6 +235,11 @@ if((Get-RebootRegistrationFingerprint $key) -ceq $fingerprint){throw 'Registrati
 $key.Values.Version='1.0.0'
 $key.Kinds.Install=[Microsoft.Win32.RegistryValueKind]::ExpandString
 if((Get-RebootRegistrationFingerprint $key) -ceq $fingerprint){throw 'Registration value kind change was missed'}
+$key.Kinds.Install=[Microsoft.Win32.RegistryValueKind]::String
+$key.Descriptor='O:BAG:SYD:P(A;;KA;;;SY)'
+if((Get-RebootRegistrationFingerprint $key) -ceq $fingerprint){throw 'Registration owner change was missed'}
+$key.Descriptor='O:SYG:SYD:P(A;;KA;;;SY)(A;;KR;;;BU)'
+if((Get-RebootRegistrationFingerprint $key) -ceq $fingerprint){throw 'Registration access rule change was missed'}
 $key.Values.Remove('Install')
 Assert-Refused {Get-RebootRegistrationFingerprint $key}
 Assert-Refused {Get-RebootRegistrationFingerprint $null}
@@ -301,6 +312,37 @@ try {
     [IO.File]::WriteAllText($notice,'modified notice')
     if((Get-RebootInstalledTreeDigest $tree) -ceq $first){throw 'Changed package content was missed'}
     [IO.File]::WriteAllText($notice,'original notice')
+    $originalAttributes=[IO.File]::GetAttributes($notice)
+    [IO.File]::SetAttributes($notice,($originalAttributes -bxor [IO.FileAttributes]::ReadOnly))
+    try {
+        if((Get-RebootInstalledTreeDigest $tree) -ceq $first){throw 'Changed package file attributes were missed'}
+    } finally {[IO.File]::SetAttributes($notice,$originalAttributes)}
+    $originalAttributes=[IO.File]::GetAttributes($tree)
+    [IO.File]::SetAttributes($tree,($originalAttributes -bxor [IO.FileAttributes]::Hidden))
+    try {
+        if((Get-RebootInstalledTreeDigest $tree) -ceq $first){throw 'Changed package root attributes were missed'}
+    } finally {[IO.File]::SetAttributes($tree,$originalAttributes)}
+    & {
+        $script:fixtureAccessMode='original'
+        function Get-Acl {
+            [CmdletBinding()]param([string]$LiteralPath)
+            if($LiteralPath -cnotin @($tree,$sub,$payload,$notice)){throw 'Unexpected fixture permission read'}
+            if($LiteralPath -cne $notice -or $script:fixtureAccessMode -ceq 'original'){
+                return Microsoft.PowerShell.Security\Get-Acl -LiteralPath $LiteralPath -ErrorAction Stop
+            }
+            if($script:fixtureAccessMode -ceq 'unreadable'){throw 'Fixture permission read failed'}
+            $security=[Security.AccessControl.FileSecurity]::new()
+            $security.SetSecurityDescriptorSddlForm('O:SYG:SYD:P(A;;FA;;;SY)')
+            return $security
+        }
+        try {
+            if((Get-RebootInstalledTreeDigest $tree) -cne $first){throw 'Unchanged file permissions changed the digest'}
+            $script:fixtureAccessMode='changed'
+            if((Get-RebootInstalledTreeDigest $tree) -ceq $first){throw 'Changed file permissions were missed'}
+            $script:fixtureAccessMode='unreadable'
+            Assert-Refused {Get-RebootInstalledTreeDigest $tree}
+        } finally {Remove-Variable fixtureAccessMode -Scope Script}
+    }
     $extra=Join-Path $tree 'empty'
     [void][IO.Directory]::CreateDirectory($extra)
     try {

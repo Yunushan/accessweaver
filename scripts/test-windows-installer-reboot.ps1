@@ -171,8 +171,22 @@ function Get-RebootMetadataDigest($Value){
     try {return [BitConverter]::ToString($hash.ComputeHash($bytes)).Replace('-','').ToLowerInvariant()}
     finally {$hash.Dispose()}
 }
+function Get-RebootAccessDescriptor($Security){
+    $sections=[Security.AccessControl.AccessControlSections]'Owner,Group,Access'
+    $descriptor=$Security.GetSecurityDescriptorSddlForm($sections)
+    if([string]::IsNullOrEmpty($descriptor) -or $descriptor.Length -gt 65536){
+        throw 'Installed security descriptor is missing or outside the fixture bounds'
+    }
+    return $descriptor
+}
 function Get-RebootInstalledTreeDigest([string]$Directory){
     Assert-RebootPath $Directory
+    $rootItem=Get-Item -LiteralPath $Directory -Force -ErrorAction Stop
+    if(-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)){
+        throw 'Installed package root is not an ordinary directory'
+    }
+    $rootState=[ordered]@{attributes=[int]$rootItem.Attributes;
+        access=(Get-RebootAccessDescriptor (Get-Acl -LiteralPath $Directory -ErrorAction Stop))}
     $pending=[Collections.Generic.Queue[string]]::new()
     $pending.Enqueue($Directory)
     $records=[Collections.Generic.SortedDictionary[string,object]]::new([StringComparer]::Ordinal)
@@ -184,18 +198,23 @@ function Get-RebootInstalledTreeDigest([string]$Directory){
             $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
             if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Installed package contains an alias'}
             $relative=$path.Substring($Directory.Length+1)
+            $record=[ordered]@{path=$relative;attributes=[int]$item.Attributes;
+                access=(Get-RebootAccessDescriptor (Get-Acl -LiteralPath $path -ErrorAction Stop))}
             if($item.PSIsContainer){
-                $records.Add($relative,[ordered]@{path=$relative;kind='directory'})
+                $record.kind='directory'
                 $pending.Enqueue($path)
             }else{
                 $total+=$item.Length
                 if($total -gt 512MB){throw 'Installed package exceeds the fingerprint budget'}
-                $records.Add($relative,[ordered]@{path=$relative;kind='file';size=$item.Length;sha256=(Get-RebootDigest $path -AllowEmpty)})
+                $record.kind='file'
+                $record.size=$item.Length
+                $record.sha256=Get-RebootDigest $path -AllowEmpty
             }
+            $records.Add($relative,$record)
         }
     }
     if(-not $records.Count){throw 'Installed package is empty'}
-    return Get-RebootMetadataDigest @($records.Values)
+    return Get-RebootMetadataDigest ([ordered]@{root=$rootState;entries=@($records.Values)})
 }
 function Get-RebootRegistrationFingerprint($Key){
     if($null -eq $Key -or $Key.SubKeyCount -ne 0 -or $Key.ValueCount -le 0 -or $Key.ValueCount -gt 256){
@@ -210,7 +229,9 @@ function Get-RebootRegistrationFingerprint($Key){
         if($null -eq $value){throw 'Machine registration changed during inspection'}
         [ordered]@{name=$name;kind=$kind.ToString();value=$value}
     }
-    return Get-RebootMetadataDigest @($records)
+    $sections=[Security.AccessControl.AccessControlSections]'Owner,Group,Access'
+    $access=Get-RebootAccessDescriptor ($Key.GetAccessControl($sections))
+    return Get-RebootMetadataDigest ([ordered]@{access=$access;values=@($records)})
 }
 function Get-RebootRegistrationDigest {
     $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
