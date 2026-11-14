@@ -38,8 +38,45 @@ $stages=@($commands | ForEach-Object {$_.CommandElements[1].Value})
 $stableRemove=[array]::IndexOf($stages,'discord-remove')
 $stableInstall=[array]::IndexOf($stages,'discord-install-for-ptb-clean')
 $ptbClean=[array]::IndexOf($stages,'ptb-clean-install')
-if($stableRemove -lt 0 -or $stableInstall -ne ($stableRemove+1) -or $ptbClean -ne ($stableInstall+1)){
-    throw 'Stable Discord removal and clean PTB do not run independently'
+$coexistence=@('ptb-install-with-stable','ptb-start-with-stable','ptb-remove-with-stable')
+if($stableRemove -lt 0 -or $stableInstall -ne ($stableRemove+1) -or $ptbClean -ne ($stableInstall+4) -or
+    ($stages[($stableInstall+1)..($ptbClean-1)] -join ',') -cne ($coexistence -join ',')){
+    throw 'Standard PTB coexistence must run separately before PTB clean mode'
+}
+$peerRoutine=@($ast.FindAll({param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Assert-FixtureStablePeer'
+},$true))
+if($peerRoutine.Count -ne 1){throw 'Expected one stable Discord preservation observation'}
+& {
+    . ([scriptblock]::Create($peerRoutine[0].Extent.Text))
+    $peer='C:\Fixture\Discord.exe'
+    $pin='A'*64
+    function Inspect-Apps {return [pscustomobject]@{discord=$currentPeer}}
+    function Get-FileHash {
+        [CmdletBinding()]param($LiteralPath,$Algorithm)
+        if($LiteralPath -cne $peer -or $Algorithm -cne 'SHA256'){throw 'Unexpected stable executable digest request'}
+        return @{Hash=$currentDigest}
+    }
+    foreach($case in @(
+        @{path=$peer;digest=$pin;accepted=$true},
+        @{path=$null;digest=$pin;accepted=$false},
+        @{path='C:\Fixture\Changed\Discord.exe';digest=$pin;accepted=$false},
+        @{path=$peer;digest=('B'*64);accepted=$false}
+    )){
+        $currentPeer=$case.path
+        $currentDigest=$case.digest
+        $accepted=$false
+        try {Assert-FixtureStablePeer $peer $pin;$accepted=$true}catch{}
+        if($accepted -ne $case.accepted){throw 'Standard PTB incorrectly credited a changed stable peer'}
+    }
+}
+foreach($stage in $coexistence){
+    $command=$commands[[array]::IndexOf($stages,$stage)]
+    if($command.Extent.Text -notmatch 'Assert-FixtureStablePeer'){throw 'A standard PTB stage omitted stable Discord verification'}
+}
+$cleanCommand=$commands[$ptbClean].Extent.Text
+if($cleanCommand -notmatch '(?s)\$stablePeer\.removalVerified.*Get-FixtureAppImage.*Test-Path.*Assert-FixtureLiveImage.*-AllSessions.*Install-FixtureApp'){
+    throw 'PTB clean mode did not require a fresh PTB baseline before setup'
 }
 $splitCord='C:\Fixture\SplitCord\SplitCord-Turkey.exe'
 $main=[pscustomobject]@{Path=$splitCord;ProcessName='SplitCord-Turkey';SessionId=8;HasExited=$false}

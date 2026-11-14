@@ -258,7 +258,7 @@ try {
     $expectedChecks=@(
         'discord-install','discord-start','combined-repair-refused-with-state-preserved',
         'discord-reinstall','discord-start-after-reinstall','discord-remove','discord-install-for-ptb-clean',
-        'ptb-clean-install','ptb-start','ptb-remove'
+        'ptb-install-with-stable','ptb-start-with-stable','ptb-remove-with-stable','ptb-clean-install','ptb-start','ptb-remove'
     )
     if(-not $SkipSplitCord){$expectedChecks+=@('splitcord-install','splitcord-start','splitcord-remove')}
     foreach($variant in $variants){
@@ -271,7 +271,7 @@ try {
     $checks=[Collections.Generic.List[object]]::new()
     $script:appEvidenceStage='baseline'
     $report=[ordered]@{
-        schemaVersion=8;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
+        schemaVersion=9;runID=$runID;controllerSHA256=$digest;approvedDigestMatched=[bool]$ExpectedSHA256;
         fixtureSHA256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();
         architecture=[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant();
         checks=$null;baselineClear=$false;splitCordIncluded=(-not $SkipSplitCord);
@@ -346,6 +346,14 @@ try {
             $installedDigests[$Variant]=(Get-FileHash -LiteralPath $image -Algorithm SHA256 -ErrorAction Stop).Hash
         }
     }
+    function Assert-FixtureStablePeer([string]$Image,[string]$Digest){
+        $observed=Get-FixtureAppImage (Inspect-Apps) 'discord'
+        $script:appEvidenceStage='stable-peer-readback'
+        if(-not $Image -or -not $Digest -or $observed -ine $Image -or
+           (Get-FileHash -LiteralPath $Image -Algorithm SHA256 -ErrorAction Stop).Hash -cne $Digest){
+            throw 'Standard PTB lifecycle did not preserve the stable Discord executable'
+        }
+    }
     function Check-FixtureCommunications([string]$Variant){
         if(-not $InteractiveCommunications){return}
         foreach($kind in @('text','voice')){
@@ -413,9 +421,38 @@ try {
             if(Get-FixtureAppImage (Inspect-Apps) 'discord'){throw 'Stable Discord removal prerequisite failed'}
             Install-FixtureApp 'discord'
         }
+        $stablePeer=@{}
+        Check 'ptb-install-with-stable' {
+            $image=$installedImages['discord']
+            if(-not $image -or (Get-FixtureAppImage (Inspect-Apps) 'discord') -ine $image){
+                throw 'Standard PTB coexistence requires an installed stable client'
+            }
+            $digest=(Get-FileHash -LiteralPath $image -Algorithm SHA256 -ErrorAction Stop).Hash
+            Install-FixtureApp 'discord-ptb'
+            Assert-FixtureStablePeer $image $digest
+            $stablePeer.image=$image
+            $stablePeer.digest=$digest
+        }
+        Check 'ptb-start-with-stable' {
+            if(-not $stablePeer.image){throw 'Standard PTB install prerequisite failed'}
+            Start-FixtureApp 'discord-ptb'
+            Assert-FixtureStablePeer $stablePeer.image $stablePeer.digest
+        }
+        Check 'ptb-remove-with-stable' {
+            if(-not $stablePeer.image){throw 'Standard PTB install prerequisite failed'}
+            Remove-FixtureApp 'discord-ptb'
+            Assert-FixtureStablePeer $stablePeer.image $stablePeer.digest
+            $stablePeer.removalVerified=$true
+        }
         Check 'ptb-clean-install' {
-            if(-not $installedImages.ContainsKey('discord') -or
-               -not (Get-FixtureAppImage (Inspect-Apps) 'discord')){throw 'Clean mode requires an installed stable client'}
+            if(-not $stablePeer.removalVerified){throw 'Standard PTB cleanup prerequisite failed'}
+            Assert-FixtureStablePeer $stablePeer.image $stablePeer.digest
+            $previousPTB=$installedImages['discord-ptb']
+            if((Get-FixtureAppImage (Inspect-Apps) 'discord-ptb') -or
+               (Test-Path -LiteralPath $previousPTB -ErrorAction Stop)){
+                throw 'Standard PTB reappeared before clean-mode setup'
+            }
+            Assert-FixtureLiveImage $previousPTB $false -AllSessions -CleanupVariant 'discord-ptb'
             Install-FixtureApp 'discord-ptb' -Clean
             $prior=$installedImages['discord']
             $stable=Get-FixtureAppImage (Inspect-Apps) 'discord'
