@@ -36,6 +36,7 @@ WINDOWS_PAYLOAD_PUBLISHER = "payloadPublisherCertificateSHA256"
 WINDOWS_BUILD_INFO = "buildInfoSHA256"
 WINDOWS_PREVIOUS_BUILD_INFO = "previousBuildInfoSHA256"
 WINDOWS_SETUP_BASELINE = "setupUpgradeBaselineVerified"
+WINDOWS_SETUP_WRONG_BASELINE = "setupWrongBaselineRefusedWithStatePreserved"
 WINDOWS_PREVIOUS_TRUST_FIELDS = ("previousPayloadSBOMSHA256", "previousPayloadPublisherSHA256")
 WINDOWS_DOWNGRADE_FIELDS = ("previousSetupSHA256", "previousPublisherSHA256")
 REBOOT_CHECKS = (
@@ -170,7 +171,7 @@ def validate_detection(entries, subjects, version):
     build_info_by_target = {}
     for entry in entries:
         require(isinstance(entry, dict) and all(
-            value is True if key == WINDOWS_SETUP_BASELINE else isinstance(value, str)
+            value is True if key in (WINDOWS_SETUP_BASELINE, WINDOWS_SETUP_WRONG_BASELINE) else isinstance(value, str)
             for key, value in entry.items()
         ),
                 "Malformed Windows detection entry")
@@ -182,7 +183,9 @@ def validate_detection(entries, subjects, version):
             require(WINDOWS_BUILD_INFO in build_info_fields and entry.get("installMode") == "upgrade"
                     and trust_fields == set(WINDOWS_PREVIOUS_TRUST_FIELDS),
                     "Malformed previous Windows build metadata evidence")
-        baseline_fields = {WINDOWS_SETUP_BASELINE}.intersection(entry)
+        baseline_fields = {WINDOWS_SETUP_BASELINE, WINDOWS_SETUP_WRONG_BASELINE}.intersection(entry)
+        require(WINDOWS_SETUP_WRONG_BASELINE not in baseline_fields or WINDOWS_SETUP_BASELINE in baseline_fields,
+                "Windows incorrect Setup baseline refusal requires approved baseline enforcement")
         require(not baseline_fields or WINDOWS_PREVIOUS_BUILD_INFO in build_info_fields,
                 "Windows Setup baseline evidence requires the approved prior build pins")
         require(entry.keys() == set(WINDOWS_DETECTION_FIELDS) | trust_fields | publisher_fields
@@ -237,9 +240,8 @@ def validate_bound_reboot_report(report, mode):
         require(report.get(WINDOWS_SETUP_BASELINE) is (mode == "upgrade"),
                 "Windows reboot evidence does not match the Setup baseline requirement")
     if report["schemaVersion"] >= 13:
-        field = "setupWrongBaselineRefusedWithStatePreserved"
-        fields.add(field)
-        require(report.get(field) is (mode == "upgrade"),
+        fields.add(WINDOWS_SETUP_WRONG_BASELINE)
+        require(report.get(WINDOWS_SETUP_WRONG_BASELINE) is (mode == "upgrade"),
                 "Windows reboot evidence does not match the incorrect Setup baseline refusal requirement")
     require(report.keys() == fields, "Windows reboot evidence differs from the current report schema")
     run_id = report["runID"]
@@ -321,6 +323,8 @@ def load_detection_evidence(directory, evidence, subjects, version):
                 entry[WINDOWS_PREVIOUS_BUILD_INFO] = prior_build_info
                 if report["schemaVersion"] >= 12:
                     entry[WINDOWS_SETUP_BASELINE] = True
+                if report["schemaVersion"] >= 13:
+                    entry[WINDOWS_SETUP_WRONG_BASELINE] = True
             else:
                 require(prior_build_info == "", "Clean Windows evidence contains prior build metadata")
         if downgrade:
@@ -348,6 +352,8 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
         schema = 7
     if any(WINDOWS_SETUP_BASELINE in entry for entry in windows_detection):
         schema = 8
+    if any(WINDOWS_SETUP_WRONG_BASELINE in entry for entry in windows_detection):
+        schema = 9
     manifest = {
         "schemaVersion": schema,
         "scope": "accessweaver-signed-desktop-release",
@@ -360,7 +366,8 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
         manifest["windowsDetection"] = [
             {field: entry[field] for field in WINDOWS_DETECTION_FIELDS + WINDOWS_PREVIOUS_TRUST_FIELDS
              + (WINDOWS_PAYLOAD_PUBLISHER,) + WINDOWS_DOWNGRADE_FIELDS
-             + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO, WINDOWS_SETUP_BASELINE) if field in entry}
+             + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO, WINDOWS_SETUP_BASELINE,
+                WINDOWS_SETUP_WRONG_BASELINE) if field in entry}
             for entry in sorted(windows_detection, key=detection_key)
         ]
     return (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
@@ -716,7 +723,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
            current_payload_sha256=None, current_payload_sbom_sha256=None, current_payload_publisher_sha256=None,
            current_build_info_sha256=None, minimum_revocation_sequence=None, windows_upgrade_inventory=None, macos_publisher=None,
            windows_publisher=None, windows_payload_publisher=None, require_windows_setup_baseline=False,
-           resume_windows_upgrade_setup_sha256=None):
+           resume_windows_upgrade_setup_sha256=None, require_windows_setup_wrong_baseline_refusal=False):
     if windows_upgrade_inventory is not None:
         require(all(value is None for value in (
             current_version, target, current_payload_sha256, current_payload_sbom_sha256,
@@ -753,7 +760,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 and re.fullmatch(r"[a-fA-F0-9]{64}", resume_windows_upgrade_setup_sha256),
                 "Expected the original approved Windows Setup SHA-256 for retry")
         require_windows_setup_baseline = True
-    if require_windows_setup_baseline:
+    if require_windows_setup_baseline or require_windows_setup_wrong_baseline_refusal:
         require(target in ("windows/amd64", "windows/arm64") and current_version is not None
                 and WINDOWS_PREVIOUS_BUILD_INFO in installed_trust,
                 "Required Windows Setup baseline needs a Windows target and complete installed trust pins")
@@ -859,6 +866,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             baseline_verified = baseline.get(WINDOWS_SETUP_BASELINE) is True
             require(not require_windows_setup_baseline or baseline_verified,
                     "The selected Windows upgrade lacks signed Setup baseline enforcement evidence")
+            require(not require_windows_setup_wrong_baseline_refusal or baseline.get(WINDOWS_SETUP_WRONG_BASELINE) is True,
+                    "The selected Windows upgrade lacks signed incorrect Setup baseline refusal evidence")
             if resume_windows_upgrade_setup_sha256 is not None:
                 require(update["installerSHA256"] == resume_windows_upgrade_setup_sha256.lower(),
                         "Signed Windows Setup differs from the original approved upgrade package")
@@ -953,6 +962,8 @@ def main():
                              help="match an independently pinned Windows detector inventory to signed reboot evidence")
     verify_args.add_argument("--require-windows-setup-baseline", action="store_true",
                              help="require signed Setup baseline enforcement for the exact installed Windows build")
+    verify_args.add_argument("--require-windows-setup-wrong-baseline-refusal", action="store_true",
+                             help="require evidence that Windows Setup refused an incorrect baseline and preserved installed state")
     verify_args.add_argument("--resume-windows-upgrade-setup-sha256",
                              help="reverify an interrupted upgrade using its original approval and exact Setup digest")
     verify_args.add_argument("--windows-publisher-sha256",
@@ -991,7 +1002,8 @@ def main():
                                     windows_publisher=args.windows_publisher_sha256,
                                     windows_payload_publisher=args.windows_payload_publisher_sha256,
                                     require_windows_setup_baseline=args.require_windows_setup_baseline,
-                                    resume_windows_upgrade_setup_sha256=args.resume_windows_upgrade_setup_sha256)))
+                                    resume_windows_upgrade_setup_sha256=args.resume_windows_upgrade_setup_sha256,
+                                    require_windows_setup_wrong_baseline_refusal=args.require_windows_setup_wrong_baseline_refusal)))
     except (ValueError, OSError, subprocess.SubprocessError):
         print("Signed release inventory, approval or revocation verification failed.", file=sys.stderr)
         return 1

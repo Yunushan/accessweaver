@@ -188,6 +188,14 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 if accepted:
                     entry, = release.load_detection_evidence(self.candidate, [evidence], files, VERSION)
                     self.assertEqual(entry["rebootEvidenceSHA256"], evidence[1])
+                    self.assertEqual(entry.get(field), True if claim else None)
+                    manifest = json.loads(release.encode_manifest(COMMIT, REF, files, [entry]))
+                    self.assertEqual(manifest["schemaVersion"], 9 if claim else 6)
+                    self.assertEqual(manifest["windowsDetection"], [entry])
+                    if claim:
+                        incomplete = {key: value for key, value in entry.items() if key != "setupUpgradeBaselineVerified"}
+                        with self.assertRaisesRegex(ValueError, "requires approved baseline enforcement"):
+                            release.validate_detection([incomplete], files, VERSION)
                 else:
                     with self.assertRaisesRegex(ValueError, "incorrect Setup baseline refusal"):
                         release.load_detection_evidence(self.candidate, [evidence], files, VERSION)
@@ -1082,6 +1090,31 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.assertEqual(verified["managedUpdate"]["windowsSetupBaselineArgument"],
                          selected["managedUpdate"]["windowsSetupBaselineArgument"])
         self.assertEqual(list(staging.iterdir()), [])
+        strict_args = [*retry_cli, "--require-windows-setup-wrong-baseline-refusal"]
+        refused = subprocess.run(strict_args, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertEqual(refused.stdout, "")
+        with self.assertRaisesRegex(ValueError, "lacks signed incorrect Setup baseline refusal evidence"):
+            self.verify(approved, pin, stage_directory=staging, **inventory_options,
+                        require_windows_setup_wrong_baseline_refusal=True)
+        self.assertEqual(list(staging.iterdir()), [])
+
+        evidence = self.write_reboot_report(
+            "upgrade-wrong-baseline-refused.json", schemaVersion=13, installMode="upgrade",
+            previousVersion="1.2.2-rc.1", previousPayloadSHA256="d" * 64,
+            userProfilePreservedThroughUpgrade=True, uninstallerSHA256="e" * 64,
+        )
+        latest_entry, = release.load_detection_evidence(self.candidate, [evidence], files, VERSION)
+        manifest.write_bytes(release.encode_manifest(COMMIT, REF, files, [entries[0], latest_entry, entries[2]]))
+        sign_manifest()
+        completed = subprocess.run(strict_args, check=True, capture_output=True, text=True, timeout=30)
+        report = json.loads(completed.stdout)
+        self.assertEqual(report["schemaVersion"], 9)
+        update = report["managedUpdate"]
+        self.assertIs(update["windowsUpgradeDetection"]["setupWrongBaselineRefusedWithStatePreserved"], True)
+        self.assertEqual(update["windowsSetupBaselineArgument"], selected["managedUpdate"]["windowsSetupBaselineArgument"])
+        self.assertTrue(update["installerStaged"])
+        staged_path.unlink()
         manifest.write_bytes(release.encode_manifest(COMMIT, REF, files, entries))
         sign_manifest()
         self.verify(approved, pin, current_build_info_sha256="5" * 64, **trusted)
