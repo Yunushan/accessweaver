@@ -158,6 +158,38 @@ def reuse_existing_bundle(directory, release, commit, tag, expected):
     return {**expected, BUNDLE_NAME: bundle["digest"]}
 
 
+def verify_target_execution(report, receipt, system):
+    target = receipt["target"]
+    identity = {
+        "schemaVersion": 1, "sourceCommit": receipt["sourceCommit"], "target": target,
+        "productionQualificationComplete": False,
+    }
+    if system in {"freebsd", "openbsd"}:
+        emulator_flag = "ownedEmulatorStopped" if system == "freebsd" else "ownedEmulatorsStopped"
+        identity.update({
+            "packagedCandidate": receipt, "executedCLI": receipt["build"],
+            "cliSHA256": receipt["binarySha256"], "guestExecutionPassed": True,
+            "packagedCandidateExecuted": True, "allTransportedExecutableHashesVerified": True,
+            "ownedCapsuleRemoved": True, emulator_flag: True,
+            "packagedBackupChecks": {
+                "encryptedBackupCreated": True, "archiveAuthenticated": True, "restoredProfileMatched": True,
+                "wrongPassphraseRejected": True, "backupNoPlaintext": True, "offlineOnly": True,
+                "settingsChanged": False, "productionQualificationComplete": False,
+            },
+        })
+    else:
+        identity.update({
+            "sourceRef": receipt["sourceRef"], "archiveSha256": receipt["archiveSha256"],
+            "binarySha256": receipt["binarySha256"], "build": receipt["build"],
+            "authenticatedCandidateExecuted": True, "backupAndRecoveryVerified": True,
+            "loopbackDiagnosticsVerified": True, "unixControllerVerified": system != "windows",
+            "windowsDiscoveryVerified": system == "windows", "publisherSignatureVerified": False,
+        })
+    if (not isinstance(report, dict) or {"failurePhase", "failureType", "cleanupFailed"} & report.keys()
+            or any(type(report.get(key)) is not type(value) or report[key] != value for key, value in identity.items())):
+        raise ValueError("Packaged execution evidence does not match " + target)
+
+
 def verify_native_qualification(directory, package, manifest, commit, ref, expected):
     """Bind each target's staging receipt to the executable in the authenticated package."""
     artifacts = {(item["goos"], item["goarch"]): item["file"] for item in manifest["artifacts"]}
@@ -169,9 +201,13 @@ def verify_native_qualification(directory, package, manifest, commit, ref, expec
         folder = directory / f"release-qualified-{system}-{arch}"
         with tempfile.TemporaryDirectory(prefix="accessweaver-qualified-") as temporary:
             frozen = Path(temporary)
-            if snapshot(folder, frozen, 1, maximum_file=16 << 10) != {"candidate.json"}:
-                raise ValueError("Unexpected packaged qualification receipt contents")
-            receipt = json.loads((frozen / "candidate.json").read_bytes())
+            if snapshot(folder, frozen, 2, maximum_file=1 << 20) != {"candidate.json", "execution.json"}:
+                raise ValueError("Expected a staging receipt and execution result for " + target)
+            candidate = frozen / "candidate.json"
+            if candidate.stat().st_size > 16 << 10:
+                raise ValueError("Packaged qualification receipt exceeds its size bound")
+            receipt = json.loads(candidate.read_bytes())
+            execution = json.loads((frozen / "execution.json").read_bytes())
         if not isinstance(receipt, dict):
             raise ValueError("Packaged qualification does not match " + target)
 
@@ -195,6 +231,7 @@ def verify_native_qualification(directory, package, manifest, commit, ref, expec
             type(receipt[key]) is not type(value) or receipt[key] != value for key, value in identity.items()
         ):
             raise ValueError("Packaged qualification does not match " + target)
+        verify_target_execution(execution, receipt, system)
 
 
 @contextmanager

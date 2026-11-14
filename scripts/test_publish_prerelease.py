@@ -120,6 +120,27 @@ class PrereleasePublicationTests(unittest.TestCase):
                 if system in {"freebsd", "openbsd"}:
                     receipt["executionEnvironment"] = f"disposable-{system}-guest"
                 (target / "candidate.json").write_text(json.dumps(receipt), encoding="utf-8")
+                execution = {"schemaVersion": 1, "sourceCommit": self.commit, "target": receipt["target"],
+                             "productionQualificationComplete": False}
+                if system in {"freebsd", "openbsd"}:
+                    execution.update(
+                        packagedCandidate=receipt, executedCLI=receipt["build"], cliSHA256=receipt["binarySha256"],
+                        guestExecutionPassed=True, packagedCandidateExecuted=True,
+                        allTransportedExecutableHashesVerified=True, ownedCapsuleRemoved=True,
+                        packagedBackupChecks={"encryptedBackupCreated": True, "archiveAuthenticated": True,
+                                              "restoredProfileMatched": True, "wrongPassphraseRejected": True,
+                                              "backupNoPlaintext": True, "offlineOnly": True,
+                                              "settingsChanged": False, "productionQualificationComplete": False},
+                    )
+                    execution["ownedEmulatorStopped" if system == "freebsd" else "ownedEmulatorsStopped"] = True
+                else:
+                    execution.update(
+                        sourceRef=self.ref, archiveSha256=receipt["archiveSha256"], binarySha256=receipt["binarySha256"],
+                        build=receipt["build"], authenticatedCandidateExecuted=True, backupAndRecoveryVerified=True,
+                        loopbackDiagnosticsVerified=True, unixControllerVerified=system != "windows",
+                        windowsDiscoveryVerified=system == "windows", publisherSignatureVerified=False,
+                    )
+                (target / "execution.json").write_text(json.dumps(execution), encoding="utf-8")
             path = receipts / "release-qualified-windows-arm64" / "candidate.json"
             original = path.read_bytes()
             faults = (None, "missing", "extra", "oversize", "array", "archiveSha256", "manifestSha256",
@@ -160,14 +181,42 @@ class PrereleasePublicationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "does not match openbsd/arm64"):
                     publisher.publish(self.directory, self.commit, self.ref, native_qualification=receipts)
                 publish_verified.assert_not_called()
+            receipt["executionEnvironment"] = "disposable-openbsd-guest"
+            path.write_text(json.dumps(receipt), encoding="utf-8")
+
+            for system, faults in (
+                ("windows", {"authenticatedCandidateExecuted": False, "binarySha256": "b" * 64,
+                             "sourceRef": "refs/heads/other", "windowsDiscoveryVerified": False}),
+                ("openbsd", {"packagedCandidateExecuted": False, "guestExecutionPassed": False,
+                             "ownedEmulatorsStopped": False, "ownedCapsuleRemoved": False,
+                             "cliSHA256": "b" * 64, "packagedBackupChecks": {}, "failurePhase": "guest-cli"}),
+            ):
+                result = receipts / f"release-qualified-{system}-arm64" / "execution.json"
+                original_result = result.read_bytes()
+                for key, value in faults.items():
+                    with (self.subTest(system=system, execution=key), patch.object(publisher, "verify"),
+                          patch.object(publisher, "inspect_archive", side_effect=inspect_archive),
+                          patch.object(publisher, "publish_verified") as publish_verified):
+                        result.write_text(json.dumps({**json.loads(original_result), key: value}), encoding="utf-8")
+                        try:
+                            with self.assertRaisesRegex(ValueError, "execution evidence does not match"):
+                                publisher.publish(self.directory, self.commit, self.ref, native_qualification=receipts)
+                            publish_verified.assert_not_called()
+                        finally:
+                            result.write_bytes(original_result)
 
             preview_ref = "refs/heads/codex/dns-adapter-coverage"
             for receipt_path in receipts.glob("*/candidate.json"):
                 receipt = json.loads(receipt_path.read_bytes())
                 receipt["sourceRef"] = preview_ref
-                if receipt["target"] == "openbsd/arm64":
-                    receipt["executionEnvironment"] = "disposable-openbsd-guest"
                 receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+                result_path = receipt_path.with_name("execution.json")
+                execution = json.loads(result_path.read_bytes())
+                if "packagedCandidate" in execution:
+                    execution["packagedCandidate"] = receipt
+                else:
+                    execution["sourceRef"] = preview_ref
+                result_path.write_text(json.dumps(execution), encoding="utf-8")
             checksums = self.directory / "SHA256SUMS.txt"
             (self.directory / names[10]).rename(checksums)
             argv = ["publish_prerelease.py", str(self.directory), "--source-commit", self.commit,
@@ -184,6 +233,11 @@ class PrereleasePublicationTests(unittest.TestCase):
                     self.assertIn("Verified package, rebuild and native target receipts.", output.getvalue())
                     verify.assert_called_once()
                 with (patch.object(sys, "argv", [*argv, "0" * 64]),
+                      contextlib.redirect_stderr(io.StringIO()) as errors):
+                    self.assertEqual(publisher.main(), 1)
+                    self.assertIn("candidate verification failed", errors.getvalue())
+                (receipts / "release-qualified-windows-arm64" / "execution.json").unlink()
+                with (patch.object(sys, "argv", [*argv, publisher.digest(checksums)]),
                       contextlib.redirect_stderr(io.StringIO()) as errors):
                     self.assertEqual(publisher.main(), 1)
                     self.assertIn("candidate verification failed", errors.getvalue())
