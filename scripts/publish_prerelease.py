@@ -2,16 +2,17 @@
 """Publish a verified portable build through a draft without replacing assets."""
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
+from threading import Timer
 from urllib.parse import urlencode
 
-from verify_release_provenance import BUNDLE_NAME, REPOSITORY, regular_file, validate_identity, verify
+from verify_release_provenance import BUNDLE_NAME, REPOSITORY, validate_identity, verify
 from verify_release_rebuild import digest, snapshot
 
 REMOTE = "https://github.com/" + REPOSITORY + ".git"
@@ -107,6 +108,31 @@ def missing_assets(release, tag, expected, *, allow_existing_bundle=False):
     return missing
 
 
+def download_existing_bundle(asset_id, size):
+    command = [
+        "gh", "api", "--hostname", "github.com", "--method", "GET",
+        f"repos/{REPOSITORY}/releases/assets/{asset_id}",
+        "--header", "Accept: application/octet-stream",
+    ]
+    with subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                          stderr=subprocess.DEVNULL) as child:
+        # The deadline covers both the bounded read and process exit.
+        deadline = Timer(240, child.kill)
+        deadline.start()
+        try:
+            data = child.stdout.read(size + 1)
+            if len(data) != size:
+                raise ValueError("Existing provenance bundle length differs")
+            if child.wait() != 0:
+                raise ValueError("Existing provenance bundle could not be downloaded")
+            return data
+        finally:
+            deadline.cancel()
+            deadline.join()
+            if child.poll() is None:
+                child.kill()
+
+
 def reuse_existing_bundle(directory, release, commit, tag, expected):
     bundle = next((asset for asset in release["assets"] if asset["name"] == BUNDLE_NAME), None)
     if bundle is None or bundle["digest"] == expected[BUNDLE_NAME]:
@@ -118,25 +144,13 @@ def reuse_existing_bundle(directory, release, commit, tag, expected):
     if asset_id is None or type(size) is not int or not 0 < size <= MAX_BUNDLE:
         raise ValueError("Existing provenance bundle metadata differs")
 
-    with tempfile.TemporaryDirectory(prefix="accessweaver-existing-bundle-") as temporary:
-        download = Path(temporary) / BUNDLE_NAME
-        with download.open("xb") as output:
-            result = subprocess.run(
-                ["gh", "api", "--hostname", "github.com", "--method", "GET",
-                 f"repos/{REPOSITORY}/releases/assets/{asset_id[1]}",
-                 "--header", "Accept: application/octet-stream"],
-                stdout=output, stderr=subprocess.PIPE, timeout=240,
-            )
-        if result.returncode != 0:
-            raise ValueError("Existing provenance bundle could not be downloaded")
-        regular_file(download, MAX_BUNDLE)
-        if download.stat().st_size != size or "sha256:" + digest(download) != bundle["digest"]:
-            raise ValueError("Existing provenance bundle bytes differ")
-        # The directory is the private snapshot owned by publish(). Verify the
-        # original bundle against the exact unsigned subjects before any write
-        # to GitHub, including when resuming an already published prerelease.
-        shutil.copyfile(download, directory / BUNDLE_NAME)
-        verify(directory, commit, "refs/tags/" + tag)
+    data = download_existing_bundle(asset_id[1], size)
+    if "sha256:" + hashlib.sha256(data).hexdigest() != bundle["digest"]:
+        raise ValueError("Existing provenance bundle bytes differ")
+    # Verify the existing bundle against the private snapshot's exact subjects
+    # before writing to GitHub, including on an already published prerelease.
+    (directory / BUNDLE_NAME).write_bytes(data)
+    verify(directory, commit, "refs/tags/" + tag)
     return {**expected, BUNDLE_NAME: bundle["digest"]}
 
 

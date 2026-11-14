@@ -2,6 +2,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -155,6 +156,42 @@ class PrereleasePublicationTests(unittest.TestCase):
         self.assertEqual(uploaded_names, sorted(self.assets.keys() - {name}) + [name])
         self.promote.assert_called_once_with(456)
 
+    def test_existing_bundle_download_bounds_bytes_and_checks_exit(self):
+        for payload, exit_code, expected in (
+            (b"abc", 0, b"abc"),
+            (b"ab", 0, "length differs"),
+            (b"x" * (128 << 10), 0, "length differs"),
+            (b"abc", 1, "could not be downloaded"),
+        ):
+            with self.subTest(length=len(payload), exit_code=exit_code):
+                program = f"import sys; sys.stdout.buffer.write({payload[:3]!r} + b'x' * {max(0, len(payload) - 3)}); sys.exit({exit_code})"
+                popen = subprocess.Popen
+                with patch.object(publisher.subprocess, "Popen", side_effect=lambda _command, **kwargs: popen(
+                    [sys.executable, "-c", program], **kwargs
+                )) as start:
+                    if isinstance(expected, bytes):
+                        self.assertEqual(publisher.download_existing_bundle("987", 3), expected)
+                    else:
+                        with self.assertRaisesRegex(ValueError, expected):
+                            publisher.download_existing_bundle("987", 3)
+                    self.assertEqual(start.call_args.args[0], [
+                        "gh", "api", "--hostname", "github.com", "--method", "GET",
+                        f"repos/{publisher.REPOSITORY}/releases/assets/987",
+                        "--header", "Accept: application/octet-stream",
+                    ])
+
+    def test_existing_bundle_download_stops_a_child_that_never_closes_stdout(self):
+        popen = subprocess.Popen
+        timer = publisher.Timer
+        with (
+            patch.object(publisher.subprocess, "Popen", side_effect=lambda _command, **kwargs: popen(
+                [sys.executable, "-c", "import time; time.sleep(10)"], **kwargs
+            )),
+            patch.object(publisher, "Timer", side_effect=lambda _seconds, callback: timer(0.1, callback)),
+            self.assertRaisesRegex(ValueError, "length differs"),
+        ):
+            publisher.download_existing_bundle("987", 3)
+
     def test_retry_reuses_an_authenticated_existing_bundle(self):
         bundle_name = publisher.BUNDLE_NAME
         new_bundle = b"fresh attestation"
@@ -181,27 +218,18 @@ class PrereleasePublicationTests(unittest.TestCase):
                     seen.append((directory / bundle_name).read_bytes())
                     self.assertEqual((directory / "fixture-12.zip").read_bytes(), b"fixture-12.zip")
 
-                def download(args, *, stdout, **kwargs):
-                    self.assertEqual(args, [
-                        "gh", "api", "--hostname", "github.com", "--method", "GET",
-                        f"repos/{publisher.REPOSITORY}/releases/assets/987",
-                        "--header", "Accept: application/octet-stream",
-                    ])
-                    stdout.write(old_bundle)
-                    return subprocess.CompletedProcess(args, 0)
-
                 with (
                     patch.object(publisher, "verify", side_effect=verify),
                     patch.object(publisher, "git_tag_commit", return_value=self.commit),
                     patch.object(publisher, "view", side_effect=releases),
                     patch.object(publisher, "upload_asset") as upload,
                     patch.object(publisher, "promote_draft") as promote,
-                    patch.object(publisher.subprocess, "run", side_effect=download) as fetch,
+                    patch.object(publisher, "download_existing_bundle", return_value=old_bundle) as fetch,
                 ):
                     publisher.publish(self.directory, self.commit, self.ref)
                 self.assertEqual(seen, [new_bundle, old_bundle])
                 self.assertEqual((self.directory / bundle_name).read_bytes(), new_bundle)
-                fetch.assert_called_once()
+                fetch.assert_called_once_with("987", len(old_bundle))
                 if published:
                     upload.assert_not_called()
                     promote.assert_not_called()
@@ -222,10 +250,6 @@ class PrereleasePublicationTests(unittest.TestCase):
         }
         for payload, trusted in ((b"x" * len(good), True), (good, False)):
             with self.subTest(trusted=trusted):
-                def download(args, *, stdout, **kwargs):
-                    stdout.write(payload)
-                    return subprocess.CompletedProcess(args, 0)
-
                 def verify(directory, _commit, _ref):
                     if (directory / bundle_name).read_bytes() == good and not trusted:
                         raise ValueError("Synthetic authentication failure")
@@ -236,7 +260,7 @@ class PrereleasePublicationTests(unittest.TestCase):
                     patch.object(publisher, "view", return_value=self.release(True)),
                     patch.object(publisher, "upload_asset") as upload,
                     patch.object(publisher, "promote_draft") as promote,
-                    patch.object(publisher.subprocess, "run", side_effect=download),
+                    patch.object(publisher, "download_existing_bundle", return_value=payload),
                     self.assertRaises(ValueError),
                 ):
                     publisher.publish(self.directory, self.commit, self.ref)
