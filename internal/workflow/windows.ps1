@@ -2103,8 +2103,11 @@ function Read-OriginalDNSFamily([object]$Adapter,[string]$Family,[object[]]$Clie
     }
     $rows=@(Get-DNSClientRows $Clients $Adapter.ifIndex $Family)
     if($rows.Count -ne 1){throw 'Original adapter DNS family could not be inspected; no new DNS configuration was applied'}
+    Read-ObservedDNSFamily $Adapter $Family $rows[0]
+}
+function Read-ObservedDNSFamily([object]$Adapter,[string]$Family,[object]$Row) {
     $stored=@(Read-DNSStaticOverride $Adapter $Family)
-    $values=@($rows[0].ServerAddresses)
+    $values=@($Row.ServerAddresses)
     if($stored.Count){
         $values=@(Get-StaticDNSServers $values $Family $Adapter.ifIndex)
         if(($stored -join ',') -cne ($values -join ',')){throw 'Stored static DNS servers differ from the effective adapter settings'}
@@ -2388,6 +2391,7 @@ function Configure-DNS([string]$method) {
     # are identical. DNS alone owns retirement of the published snapshot.
     $original | Add-Member -NotePropertyName recoveryID -NotePropertyValue ([guid]::NewGuid().ToString('N')) -Force
     $original.adapters=@($records)
+    $original | Add-Member -NotePropertyName adapterConditional -NotePropertyValue $true -Force
     $encoded=$original|ConvertTo-Json -Depth 10
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes($encoded)
     if($bytes.Length -gt 8MB){throw 'DNS recovery snapshot exceeds its size limit'}
@@ -2558,6 +2562,23 @@ function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$Doh
         }
     }
 }
+function Assert-DNSRollbackOwnsFamily([object]$Record,[string]$Number,[object]$Adapter,[object]$Row) {
+    $family='IPv'+$Number
+    $observed=Read-ObservedDNSFamily $Adapter $family $Row
+    if($observed.dhcp){
+        if($Record.('dhcp'+$Number)){return}
+    }else{
+        $current=$observed.values -join ','
+        if(-not $Record.('dhcp'+$Number)){
+            $original=@(Get-StaticDNSServers @($Record.('ipv'+$Number)) $family $Record.index)
+            if($current -ceq ($original -join ',')){return}
+        }
+        $loopback=if($Number -ceq '4'){'127.0.0.1'}else{'::1'}
+        $providers=@(Get-DNSDohProviders | Where-Object {($_.ServerAddress.Contains(':')) -eq ($Number -ceq '6')})
+        if($current -ceq $loopback -or $current -ceq ($providers.ServerAddress -join ',')){return}
+    }
+    throw 'Adapter DNS settings changed independently; review current settings before running dns-restore'
+}
 function Restore-DNS([string]$ExpectedSHA256) {
     $snapshot=Join-Path $root 'profiles\dns-original.json'
     $restoration=Read-DNSRecoverySnapshot
@@ -2567,6 +2588,11 @@ function Restore-DNS([string]$ExpectedSHA256) {
         throw 'DNS recovery journal does not match the active snapshot; review dns-restore'
     }
     $saved=$restoration.record
+    $ownership=$saved.PSObject.Properties['adapterConditional']
+    if($null -ne $ownership -and ($ownership.Value -isnot [bool] -or -not $ownership.Value)){
+        throw 'Original DNS snapshot has invalid adapter ownership metadata'
+    }
+    $guardAdapters=[bool]($ExpectedSHA256 -and $null -ne $ownership)
     if($null -eq $saved.adapters -or @($saved.adapters).Count -eq 0){throw 'Original DNS snapshot has no adapter records; retain it for manual recovery'}
     # Inspect every original adapter and relevant DoH entry before changing any
     # settings. This is preflight, not a guarantee of an atomic OS transaction.
@@ -2582,7 +2608,14 @@ function Restore-DNS([string]$ExpectedSHA256) {
         $plans+=@{record=$record;adapter=$matches[0];bounds=$bounds}
     }
     $clients=@(Read-DNSClientInventory)
-    foreach($plan in $plans){foreach($number in @('4','6')){if($plan.bounds['bound'+$number] -and @(Get-DNSClientRows $clients $plan.adapter.ifIndex ('IPv'+$number)).Count -ne 1){throw 'An owned DNS family cannot be inspected; retain the recovery snapshot'}}}
+    foreach($plan in $plans){
+        foreach($number in @('4','6')){
+            if(-not $plan.bounds['bound'+$number]){continue}
+            $rows=@(Get-DNSClientRows $clients $plan.adapter.ifIndex ('IPv'+$number))
+            if($rows.Count -ne 1){throw 'An owned DNS family cannot be inspected; retain the recovery snapshot'}
+            if($guardAdapters){Assert-DNSRollbackOwnsFamily $plan.record $number $plan.adapter $rows[0]}
+        }
+    }
     $ownsDoh=Test-DNSRecoveryOwnsDoh $saved
     $guardDoh=Test-DNSRecoveryUsesDohOwnership $saved $ownsDoh
     $dohAvailable=$ownsDoh -and [bool](Get-Command 'Get-DnsClientDohServerAddress' -ErrorAction SilentlyContinue)
@@ -2608,6 +2641,10 @@ function Restore-DNS([string]$ExpectedSHA256) {
         foreach($number in @('4','6')){
             if(-not $plan.bounds['bound'+$number]){continue}
             $dns=Get-DNSClientMutationRow $record.guid ('IPv'+$number)
+            if($guardAdapters){
+                $adapter=@{InterfaceGuid=$record.guid;ifIndex=$dns.InterfaceIndex}
+                Assert-DNSRollbackOwnsFamily $record $number $adapter $dns
+            }
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             $script:externalEffectsPending=$true
             if($record.('dhcp'+$number)){
