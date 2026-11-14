@@ -2083,21 +2083,39 @@ function Read-OriginalDNSAdapter([object]$Adapter,[object[]]$Clients) {
     [void](Get-OriginalDNSBounds $record)
     return $record
 }
+function Get-ActiveDNSAdapters([object[]]$Adapters,[object[]]$Clients) {
+    $Adapters | Where-Object {
+        $_.Status -eq 'Up' -and $_.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN' -and
+        (@(Get-DNSClientRows $Clients $_.ifIndex 'IPv4').Count -eq 1 -or @(Get-DNSClientRows $Clients $_.ifIndex 'IPv6').Count -eq 1)
+    }
+}
 # Native setters can return successfully while effective adapter state lags or
 # differs. Compare the complete selected-family inventory without reapplying it.
 function Assert-ConfiguredDNSServers([object[]]$Adapters,[object[]]$Records,[string[]]$Servers) {
     if($Adapters.Count -eq 0 -or $Servers.Count -eq 0){throw 'Configured DNS readback is incomplete'}
     $first=@(Get-NetAdapter -ErrorAction Stop);$clients=@(Read-DNSClientInventory);$last=@(Get-NetAdapter -ErrorAction Stop)
+    $activeBefore=@(Get-ActiveDNSAdapters $first $clients)
+    $activeAfter=@(Get-ActiveDNSAdapters $last $clients)
+    if($activeBefore.Count -ne $Adapters.Count -or $activeAfter.Count -ne $Adapters.Count){
+        throw 'Active DNS adapter coverage changed during readback'
+    }
     foreach($adapter in $Adapters){
         $guid=[string]$adapter.InterfaceGuid
-        $before=@($first | Where-Object {[string]$_.InterfaceGuid -eq $guid});$after=@($last | Where-Object {[string]$_.InterfaceGuid -eq $guid})
+        $before=@($activeBefore | Where-Object {[string]$_.InterfaceGuid -eq $guid})
+        $after=@($activeAfter | Where-Object {[string]$_.InterfaceGuid -eq $guid})
         $saved=@($Records | Where-Object {[string]$_.guid -eq $guid})
-        if([string]::IsNullOrWhiteSpace($guid) -or $before.Count -ne 1 -or $after.Count -ne 1 -or $saved.Count -ne 1 -or $before[0].Status -ne 'Up' -or $after[0].Status -ne 'Up' -or $before[0].ifIndex -le 0 -or $before[0].ifIndex -ne $after[0].ifIndex){throw 'Configured DNS adapter changed during readback'}
+        if([string]::IsNullOrWhiteSpace($guid) -or $before.Count -ne 1 -or $after.Count -ne 1 -or $saved.Count -ne 1 -or
+           $before[0].ifIndex -le 0 -or
+           $before[0].ifIndex -ne $after[0].ifIndex -or
+           @($first | Where-Object {$_.ifIndex -eq $before[0].ifIndex}).Count -ne 1 -or
+           @($last | Where-Object {$_.ifIndex -eq $after[0].ifIndex}).Count -ne 1){
+            throw 'Configured DNS adapter changed during readback'
+        }
         $bounds=Get-OriginalDNSBounds $saved[0]
         foreach($number in @('4','6')){
-            if(-not $bounds['bound'+$number]){continue}
             $family='IPv'+$number;$rows=@(Get-DNSClientRows $clients $before[0].ifIndex $family)
-            if($rows.Count -ne 1 -or $null -eq $rows[0]){throw 'Configured DNS family unavailable during readback'}
+            if(($rows.Count -eq 1) -ne $bounds['bound'+$number]){throw 'Configured DNS family coverage changed during readback'}
+            if(-not $bounds['bound'+$number]){continue}
             $wanted=@($Servers | Where-Object {($_.Contains(':')) -eq ($number -eq '6')})
             $expected=@(Get-StaticDNSServers $wanted $family $before[0].ifIndex)
             $actual=@(Get-StaticDNSServers @($rows[0].ServerAddresses) $family $before[0].ifIndex)
@@ -2193,6 +2211,13 @@ function Get-DNSOriginalDohEntry($Record,[string]$Address) {
     }
     return $entry
 }
+function Assert-ConfiguredDNSDohPolicy([object[]]$Providers,[string]$FailureMessage) {
+    $observed=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
+    foreach($provider in $Providers){
+        $entry=@($observed | Where-Object {$_.ServerAddress -eq $provider.ServerAddress})
+        if(-not (Test-DNSDohEntriesEqual $entry @($provider))){throw $FailureMessage}
+    }
+}
 function Configure-DNS([string]$method) {
     if($method -notin @('doh','dnscrypt')){throw 'Choose doh or dnscrypt'}
     if($method -eq 'doh'){foreach($command in @('Get-DnsClientDohServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'This Windows version does not expose native DoH management; choose DNSCrypt instead'}}}
@@ -2203,7 +2228,7 @@ function Configure-DNS([string]$method) {
     # A complete successful DNS-client query distinguishes non-IP adapters from
     # inspection failure. Up/hardware status alone does not expose DNS families.
     $clients=@(Read-DNSClientInventory)
-    $adapters=@($inventory | Where-Object {$_.Status -eq 'Up' -and $_.InterfaceDescription -notmatch 'WireSock|WireGuard|TAP|TUN' -and (@(Get-DNSClientRows $clients $_.ifIndex 'IPv4').Count -eq 1 -or @(Get-DNSClientRows $clients $_.ifIndex 'IPv6').Count -eq 1)})
+    $adapters=@(Get-ActiveDNSAdapters $inventory $clients)
     if(-not $adapters.Count){throw 'No active adapter exposes a DNS client family'}
     $originalSnapshot=Read-DNSRecoverySnapshot
     $hadSnapshot=$null -ne $originalSnapshot
@@ -2329,11 +2354,7 @@ function Configure-DNS([string]$method) {
             }
         }
         # Require verified policy before switching adapter resolvers.
-        $verifiedDoh=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
-        foreach($provider in $providers){
-            $verified=@($verifiedDoh | Where-Object {$_.ServerAddress -eq $provider.ServerAddress})
-            if(-not (Test-DNSDohEntriesEqual $verified @($provider))){throw 'Configured DoH policy could not be verified; retain the original DNS snapshot'}
-        }
+        Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy could not be verified; retain the original DNS snapshot'
         $servers=@($providers | ForEach-Object {$_.ServerAddress})
     } else {throw 'Choose doh or dnscrypt'}
     foreach($adapter in $adapters){
@@ -2354,11 +2375,7 @@ function Configure-DNS([string]$method) {
     }
     if(-not $adapterReadbackVerified){throw 'Configured DNS servers could not be verified; retain the original DNS snapshot'}
     if($method -ceq 'doh'){
-        $verifiedDoh=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
-        foreach($provider in $providers){
-            $verified=@($verifiedDoh | Where-Object {$_.ServerAddress -eq $provider.ServerAddress})
-            if(-not (Test-DNSDohEntriesEqual $verified @($provider))){throw 'Configured DoH policy changed after adapter configuration; retain the original DNS snapshot'}
-        }
+        Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed after adapter configuration; retain the original DNS snapshot'
     }
     $ready=$false;$timer=[Diagnostics.Stopwatch]::StartNew()
     do {
@@ -2374,6 +2391,11 @@ function Configure-DNS([string]$method) {
         if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot disappeared during verification'}
         Restore-DNS $snapshotSHA256
         throw 'Resolver verification failed; original DNS settings restored: the ordinary resolver did not return the expected DNS answer'
+    }
+    # A DNS answer could have come through settings that changed during the probe.
+    Assert-ConfiguredDNSServers $adapters $records $servers
+    if($method -ceq 'doh'){
+        Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed during resolver verification; retain the original DNS snapshot'
     }
     if($method -ceq 'doh' -and $existingResolver){
         # Keep the old listener available until the new adapter DNS is usable.
