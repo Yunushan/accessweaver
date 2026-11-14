@@ -708,6 +708,48 @@ test('pending lifecycle invalidates an open launch review and blocks direct laun
   assert.equal(env.run('state.busy'),false);
 });
 
+test('failed engine preparation immediately blocks launch and clears only on fresh runtime status',async()=>{
+ const env=environment();env.put('fixture',baseProfile());
+ env.run('state.offline=false;state.loading=false;state.profiles=[fixture];state.launch={profile:fixture,ready:true};state.runtime={state:"stopped"};toast=message=>setText("toast",message)');
+ const pending=[];
+ env.context.fetch=(path,options)=>new Promise(resolve=>pending.push({path,options,resolve}));
+ const stale=env.run('pollStatus()'),launch=env.run('confirmLaunch()');
+ assert.equal(pending[0].path,'/api/v1/runtime');assert.equal(pending[1].path,'/api/v1/start');
+ pending[1].resolve({ok:false,status:503,json:async()=>({error:'PRIVATE_CLEANUP_DETAIL',code:'engine-preparation-restart-required'})});
+ await launch;
+ assert.equal(env.run('state.runtime.preparationRestartRequired'),true);
+ assert.equal(env.run('state.launch.ready'),false);
+ assert.equal(env.get('launch-confirm').disabled,true);
+ assert.equal(env.get('hero-primary').disabled,true);
+ assert.equal(env.get('hero-status').textContent,env.run('t("preparationRestart")'));
+ assert.equal(env.get('launch-plan').textContent,env.run('t("preparationRestartDesc")'));
+ assert.equal(env.get('toast').textContent,env.run('t("preparationRestartDesc")'));
+ pending[0].resolve({ok:true,status:200,json:async()=>({state:'stopped'})});
+ await stale;
+ assert.equal(env.get('hero-primary').disabled,true);
+ await assert.rejects(env.run('reviewLaunch(fixture)'),/Restart the AccessWeaver controller/);
+ await env.run('confirmLaunch()');assert.equal(pending.length,2);
+ const next=env.run('pollStatus()');pending[2].resolve({ok:true,status:200,json:async()=>({state:'stopped'})});await next;
+ assert.equal(env.get('hero-primary').disabled,false);
+ assert.equal(env.get('launch-confirm').disabled,true);
+ assert.equal(env.run('state.launch.ready'),false);
+});
+
+test('runtime restart requirement invalidates an open review without marking a running child',async()=>{
+ const env=environment();env.put('fixture',baseProfile());
+ env.run('state.offline=false;state.loading=false;state.launch={profile:fixture,ready:true};state.runtime={state:"error"};globalThis.profileUpdates=0;renderProfiles=()=>{profileUpdates++};apiRequest=async()=>({state:"error",preparationRestartRequired:true})');
+ await env.run('pollStatus()');
+ assert.equal(env.context.profileUpdates,1);
+ assert.equal(env.get('running-engine').textContent,'—');
+ assert.equal(env.get('runtime-announcement').textContent,env.run('t("preparationRestart")'));
+ assert.equal(env.get('launch-plan').textContent,env.run('t("preparationRestartDesc")'));
+ for(const lang of ['tr','ru','es']){
+  env.put('testLanguage',lang);env.run('state.lang=testLanguage;renderHero()');
+  assert.equal(env.get('hero-status').textContent,env.run('t("preparationRestart")'));
+  assert.notEqual(env.get('hero-status').textContent,'Controller restart required');
+ }
+});
+
 test('a late launch preview cannot reenable launch during pending cleanup',async()=>{
   const env=environment();env.put('fixture',baseProfile());
   env.run('state.offline=false;state.loading=false;apiRequest=async path=>path.startsWith("/api/v1/profiles/")?fixture:new Promise(resolve=>{globalThis.finishPreview=resolve})');

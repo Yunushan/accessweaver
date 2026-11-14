@@ -36,6 +36,7 @@ func (m *Manager) rememberPreparationFailure(err error) error {
 	// There is no started child or in-flight operation to wait on. Stop/Shutdown
 	// return this retained fault; process exit owns remaining kernel reclamation.
 	m.state.LifecyclePending = false
+	m.state.PreparationRestartRequired = true
 	failure := m.preparationFault
 	m.mu.Unlock()
 	return failure

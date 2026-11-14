@@ -183,6 +183,15 @@ Object.assign(tr,{
   applicationInterruptedNotice:'Denetleyici nihai sonucu kaydetmedi. Yeniden denemeden önce istemciyi ve varsa yerel işlem günlüğünü kontrol edin.'
 });
 const translations = {en,tr,...(typeof extraLocales==='object'?extraLocales:{})};
+const preparationRestartCopy = {
+  en: ['Controller restart required','Engine setup stopped before launch. Restart the AccessWeaver controller before starting another engine.'],
+  tr: ['Yerel çekirdek yeniden başlatılmalı','Motor kurulumu başlatmadan önce durdu. Yeni bir motor başlatmadan önce AccessWeaver çekirdeğini yeniden başlatın.'],
+  ru: ['Требуется перезапуск контроллера','Подготовка движка остановилась до запуска. Перезапустите контроллер AccessWeaver, прежде чем запускать другой движок.'],
+  es: ['Es necesario reiniciar el controlador','La preparación del motor se detuvo antes del inicio. Reinicia el controlador de AccessWeaver antes de iniciar otro motor.']
+};
+for(const [lang,[title,description]] of Object.entries(preparationRestartCopy)){
+  Object.assign(translations[lang],{preparationRestart:title,preparationRestartDesc:description});
+}
 const applicationRemovalCopy = {
   en: ['The selected application was removed.','The selected application was already absent.'],
   tr: ['Seçilen uygulama kaldırıldı.','Seçilen uygulama zaten yüklü değildi.'],
@@ -226,6 +235,11 @@ function copyName(name) {
 const platformName = value => ({windows:'Windows',linux:'Linux',darwin:'macOS',freebsd:'FreeBSD',openbsd:'OpenBSD',android:'Android',ios:'iOS',browser:t('mobileEditor'),unknown:'—'})[value] || value;
 const coreAvailable = () => !state.offline && !state.disconnected && !state.loading;
 const lifecyclePending = () => state.runtime.lifecyclePending === true;
+function launchBlockMessage(){
+  if(lifecyclePending())return 'shutdownPendingDesc';
+  if(state.runtime.preparationRestartRequired===true)return 'preparationRestartDesc';
+  return null;
+}
 const supportAvailable = () => !state.profileEditingOnly && !!state.coreAuthenticated && !!state.token && !state.loading;
 const safeSource = source => /^https?:\/\//i.test(source || '') ? escapeHTML(source) : '#';
 function readSession(){
@@ -337,7 +351,7 @@ async function apiRequest(path, method='GET', data, timeout=12000, externalSigna
     let json;
     try { json = await response.json(); } catch(error) { ensureActive(); if(error?.name==='AbortError')throw error; throw new Error(t('disconnectedDesc')); }
     ensureActive();
-    if (!response.ok) throw Object.assign(new Error(json.error || `HTTP ${response.status}`),{status:response.status,...(['workflow-storage-invalid','workflow-storage-denied','workflow-storage-policy-unavailable','workflow-storage-busy','workflow-storage-request-ended','workflow-storage-pending','workflow-storage-capacity','workflow-storage-unavailable','workflow-lifecycle-pending','diagnostic-busy','reconciliation-invalid','reconciliation-unavailable','reconciliation-conflict','reconciliation-expired','reconciliation-pending','reconciliation-denied','reconciliation-policy-unavailable','reconciliation-request-ended','reconciliation-busy','reconciliation-store-unavailable'].includes(json.code)?{code:json.code}:{})});
+    if (!response.ok) throw Object.assign(new Error(json.error || `HTTP ${response.status}`),{status:response.status,...(['workflow-storage-invalid','workflow-storage-denied','workflow-storage-policy-unavailable','workflow-storage-busy','workflow-storage-request-ended','workflow-storage-pending','workflow-storage-capacity','workflow-storage-unavailable','workflow-lifecycle-pending','diagnostic-busy','engine-preparation-restart-required','reconciliation-invalid','reconciliation-unavailable','reconciliation-conflict','reconciliation-expired','reconciliation-pending','reconciliation-denied','reconciliation-policy-unavailable','reconciliation-request-ended','reconciliation-busy','reconciliation-store-unavailable'].includes(json.code)?{code:json.code}:{})});
     return json;
   } finally { clearTimeout(timer); externalSignal?.removeEventListener('abort',abort); }
 }
@@ -411,6 +425,7 @@ async function reconnect() {
 }
 function runtimeStatusKey(runtime) {
   if (runtime.lifecyclePending === true) return 'shutdownPending';
+  if (runtime.preparationRestartRequired === true) return 'preparationRestart';
   if (runtime.state === 'running') return 'running';
   if (['failed','exited','error'].includes(runtime.state)) return 'failedState';
   return runtime.state === 'stopped' ? 'stopped' : null;
@@ -420,7 +435,7 @@ async function pollStatus() {
   state.polling = true;
   const previousRuntime = state.runtime;
   try {
-    const old = [previousRuntime.state,previousRuntime.profileId,previousRuntime.pid,lifecyclePending()].join(':');
+    const old = [previousRuntime.state,previousRuntime.profileId,previousRuntime.pid,launchBlockMessage()].join(':');
     const runtime = await apiRequest('/api/v1/runtime','GET',undefined,6000);
     if (state.runtime !== previousRuntime) return;
     const previousStatus = runtimeStatusKey(previousRuntime);
@@ -428,7 +443,7 @@ async function pollStatus() {
     const currentStatus = runtimeStatusKey(runtime);
     if (previousStatus !== currentStatus) setText('runtime-announcement',currentStatus ? t(currentStatus) : '');
     renderHero();
-    if (old !== [state.runtime.state,state.runtime.profileId,state.runtime.pid,lifecyclePending()].join(':')) renderProfiles();
+    if (old !== [state.runtime.state,state.runtime.profileId,state.runtime.pid,launchBlockMessage()].join(':')) renderProfiles();
     if (!$('logs-modal').hidden) renderLogs();
   } catch {
     if (state.runtime === previousRuntime) {
@@ -445,13 +460,15 @@ function renderHero() {
   if(state.profileEditingOnly&&['system','diagnostics'].includes(state.view))navigate('profiles');
   const runtimeStatus = runtimeStatusKey(state.runtime);
   const pending = runtimeStatus === 'shutdownPending';
+  const restart = runtimeStatus === 'preparationRestart';
+  const block = launchBlockMessage();
   const running = runtimeStatus === 'running';
   const failed = runtimeStatus === 'failedState';
-  const status = state.disconnected ? 'disconnected' : state.offline ? 'offline' : pending ? 'shutdownPending' : running ? 'running' : failed ? 'failedState' : 'ready';
+  const status = state.disconnected ? 'disconnected' : state.offline ? 'offline' : pending || restart ? runtimeStatus : running ? 'running' : failed ? 'failedState' : 'ready';
   setText('hero-status',state.loading ? t('connecting') : t(status));
-  setText('hero-description',t(state.disconnected ? 'disconnectedDesc' : state.offline ? 'offlineDesc' : pending ? 'shutdownPendingDesc' : running ? 'runningDesc' : failed ? 'failedDesc' : 'readyDesc'));
-  setText('status-badge',t(state.disconnected ? 'disconnected' : state.offline ? 'offlineBadge' : pending ? 'shutdownPendingBadge' : running ? 'runningBadge' : 'notRunning'));
-  const badgeClass = 'tag ' + (state.disconnected || pending ? 'tag-red' : running && coreAvailable() ? 'tag-teal' : state.offline ? 'tag-purple' : 'tag-neutral');
+  setText('hero-description',t(state.disconnected ? 'disconnectedDesc' : state.offline ? 'offlineDesc' : block ? block : running ? 'runningDesc' : failed ? 'failedDesc' : 'readyDesc'));
+  setText('status-badge',t(state.disconnected ? 'disconnected' : state.offline ? 'offlineBadge' : pending ? 'shutdownPendingBadge' : restart ? 'preparationRestart' : running ? 'runningBadge' : 'notRunning'));
+  const badgeClass = 'tag ' + (state.disconnected || block ? 'tag-red' : running && coreAvailable() ? 'tag-teal' : state.offline ? 'tag-purple' : 'tag-neutral');
   if($('status-badge').className!==badgeClass)$('status-badge').className=badgeClass;
   setText('running-engine',running ? state.runtime.engine + ' · PID ' + state.runtime.pid : '—');
   setText('stats-profiles',state.profiles.length);
@@ -459,8 +476,8 @@ function renderHero() {
   setText('nav-profile-count',state.profiles.length);
   setText('stats-platform',platformName(state.platform));
   setText('settings-platform',platformName(state.platform));
-  renderMarkup($('hero-primary'),icon(pending ? 'alert' : running && coreAvailable() ? 'stop' : 'layers') + `<span>${t(pending ? 'shutdownPending' : running && coreAvailable() ? 'stop' : 'selectProfile')}</span>`);
-  setDisabled('hero-primary',pending || state.loading || state.busy);
+  renderMarkup($('hero-primary'),icon(block ? 'alert' : running && coreAvailable() ? 'stop' : 'layers') + `<span>${t(block ? runtimeStatus : running && coreAvailable() ? 'stop' : 'selectProfile')}</span>`);
+  setDisabled('hero-primary',block || state.loading || state.busy);
   setHidden('connection-notice',!state.offline && !state.disconnected);
   setText('connection-notice-text',t(state.disconnected ? 'disconnectedNotice' : 'offlineNotice'));
   setText('storage-description',t(state.storageBlocked || state.preservedProfiles.length ? 'storageRecovery' : state.offline ? 'browserStorage' : 'coreStorage'));
@@ -471,11 +488,11 @@ function renderHero() {
   setDisabled('show-logs',state.offline || state.loading);
   updateSupportAvailability();
   if(typeof updateSystemExportButtons==='function')updateSystemExportButtons();
-  if (pending && state.launch) {
+  if (block && state.launch) {
     state.launch.ready = false;
-    setText('launch-plan',t('shutdownPendingDesc'));
+    setText('launch-plan',t(block));
   }
-  setDisabled('launch-confirm',pending || state.profileEditingOnly || !coreAvailable() || !state.launch?.ready || state.busy);
+  setDisabled('launch-confirm',block || state.profileEditingOnly || !coreAvailable() || !state.launch?.ready || state.busy);
 }
 function profileCard(p, full=false) {
   const active = !lifecyclePending() && coreAvailable() && state.runtime.state === 'running' && state.runtime.profileId === p.id;
@@ -487,7 +504,7 @@ function profileCard(p, full=false) {
   const includes = p.routing?.includeDomains?.length || 0;
   const excludes = p.routing?.excludeDomains?.length || 0;
   const profileAction = (action, symbol, label, disabled=false) => `<button data-profile-action="${action}" data-profile-id="${escapeHTML(p.id)}" aria-label="${escapeHTML(t(label))}: ${escapeHTML(p.name)}" title="${escapeHTML(t(label))}" ${disabled ? 'disabled' : ''}>${icon(symbol)}</button>`;
-  return `<article class="profile-card ${active ? 'profile-active' : ''}"><div class="profile-top"><div class="profile-symbol ${p.engine === 'byedpi' ? 'teal' : ''}">${icon(['wiresock','wireguard'].includes(p.engine) ? 'shield' : p.engine === 'byedpi' ? 'globe' : 'layers')}</div><span class="tag ${active ? 'tag-teal' : 'tag-neutral'}">${active ? t('runningBadge') : escapeHTML(p.category || t('customCategory'))}</span></div><${heading} class="profile-card-heading"><button class="profile-title" data-profile-action="edit" data-profile-id="${escapeHTML(p.id)}">${escapeHTML(p.name)}</button></${heading}><p title="${escapeHTML(desc)}">${escapeHTML(desc)}</p><div class="profile-rules"><span>${icon('globe')}${includes} ${t('includeCount')}</span><span>${icon('shield')}${excludes} ${t('excludeCount')}</span></div><div class="profile-card-foot"><span class="engine-label">${escapeHTML(e?.name || p.engine)}</span><div class="profile-card-actions">${profileAction(active ? 'stop' : 'run',active ? 'stop' : 'play',active ? 'stop' : 'reviewSetup',lifecyclePending() || state.profileEditingOnly || !coreAvailable() || state.busy || external)}${profileAction('edit','pen','edit',active)}${profileAction('duplicate','copy','duplicate',state.busy)}${profileAction('export','download','export')}${full ? profileAction('delete','trash','delete',active || state.busy) : ''}</div></div>${full ? `<div class="profile-availability"><span class="availability-dot ${capable ? 'available' : ''}"></span>${escapeHTML(t(external ? 'engineExternal' : capable ? 'engineAvailable' : state.offline ? 'platformUnknown' : 'engineUnsupported'))}</div>` : ''}</article>`;
+  return `<article class="profile-card ${active ? 'profile-active' : ''}"><div class="profile-top"><div class="profile-symbol ${p.engine === 'byedpi' ? 'teal' : ''}">${icon(['wiresock','wireguard'].includes(p.engine) ? 'shield' : p.engine === 'byedpi' ? 'globe' : 'layers')}</div><span class="tag ${active ? 'tag-teal' : 'tag-neutral'}">${active ? t('runningBadge') : escapeHTML(p.category || t('customCategory'))}</span></div><${heading} class="profile-card-heading"><button class="profile-title" data-profile-action="edit" data-profile-id="${escapeHTML(p.id)}">${escapeHTML(p.name)}</button></${heading}><p title="${escapeHTML(desc)}">${escapeHTML(desc)}</p><div class="profile-rules"><span>${icon('globe')}${includes} ${t('includeCount')}</span><span>${icon('shield')}${excludes} ${t('excludeCount')}</span></div><div class="profile-card-foot"><span class="engine-label">${escapeHTML(e?.name || p.engine)}</span><div class="profile-card-actions">${profileAction(active ? 'stop' : 'run',active ? 'stop' : 'play',active ? 'stop' : 'reviewSetup',launchBlockMessage() || state.profileEditingOnly || !coreAvailable() || state.busy || external)}${profileAction('edit','pen','edit',active)}${profileAction('duplicate','copy','duplicate',state.busy)}${profileAction('export','download','export')}${full ? profileAction('delete','trash','delete',active || state.busy) : ''}</div></div>${full ? `<div class="profile-availability"><span class="availability-dot ${capable ? 'available' : ''}"></span>${escapeHTML(t(external ? 'engineExternal' : capable ? 'engineAvailable' : state.offline ? 'platformUnknown' : 'engineUnsupported'))}</div>` : ''}</article>`;
 }
 // Repeated navigation should retain unchanged cards, their DOM state and focus.
 // Cache per owned container; new nodes or changed markup still render normally.
@@ -993,7 +1010,7 @@ async function previewEditor() {
 }
 async function reviewLaunch(p) {
   if (!coreAvailable()) throw new Error(t('coreRequired'));
-  if (lifecyclePending()) throw new Error(t('shutdownPendingDesc'));
+  if (launchBlockMessage()) throw new Error(t(launchBlockMessage()));
   if (state.runtime.state === 'running') throw new Error(t('otherRunning'));
   const launch = {profile:p,ready:false};
   state.launch = launch;
@@ -1005,14 +1022,14 @@ async function reviewLaunch(p) {
   try {
     const current = await apiRequest('/api/v1/profiles/' + encodeURIComponent(p.id));
     if (state.launch !== launch) return;
-    if (lifecyclePending()) throw new Error(t('shutdownPendingDesc'));
+    if (launchBlockMessage()) throw new Error(t(launchBlockMessage()));
     launch.profile = current;
     $('launch-profile-name').textContent = current.name;
     const index = state.profiles.findIndex(profile => profile.id === current.id);
     if (index >= 0) state.profiles[index] = current;
     const plan = await apiRequest('/api/v1/preview','POST',current);
     if (state.launch !== launch) return;
-    if (lifecyclePending()) throw new Error(t('shutdownPendingDesc'));
+    if (launchBlockMessage()) throw new Error(t(launchBlockMessage()));
     launch.ready = !!plan.ready;
     renderPlan(plan,$('launch-plan'));
     $('launch-confirm').disabled = !plan.ready || !coreAvailable();
@@ -1023,7 +1040,7 @@ function closeLaunch() {
   setModal('launch-modal',false); state.launch = null;
 }
 async function confirmLaunch() {
-  if (lifecyclePending() || !state.launch?.ready || state.busy || !coreAvailable()) return;
+  if (launchBlockMessage() || !state.launch?.ready || state.busy || !coreAvailable()) return;
   const launch = state.launch, id = launch.profile.id;
   state.busy = true; $('launch-confirm').disabled = true; $('launch-edit').disabled = true;
   try {
@@ -1031,7 +1048,19 @@ async function confirmLaunch() {
     state.busy = false;
     setText('runtime-announcement','');
     closeLaunch(); renderAll(); toast(t('startOk'));
-  } catch (err) { toast(err.message,true); if (state.launch === launch) { launch.ready = false; $('launch-plan').insertAdjacentHTML('afterbegin',`<p class="plan-error">${escapeHTML(err.message)}</p>`); } }
+  } catch (err) {
+    if(err.status===503&&err.code==='engine-preparation-restart-required'){
+      state.runtime={...state.runtime,state:'error',pid:0,preparationRestartRequired:true};
+      renderProfiles();
+      toast(t('preparationRestartDesc'),true);
+    }else{
+      toast(err.message,true);
+      if(state.launch===launch){
+        launch.ready=false;
+        $('launch-plan').insertAdjacentHTML('afterbegin',`<p class="plan-error">${escapeHTML(err.message)}</p>`);
+      }
+    }
+  }
   finally { state.busy = false; $('launch-edit').disabled = false; renderHero(); }
 }
 function addExclusions(group) {
@@ -1222,7 +1251,7 @@ function bindEvents() {
   $('settings-language').addEventListener('change',event => changeLanguage(event.target.value));
   $('settings-theme').addEventListener('change',event => setTheme(event.target.value));
   $('new-profile').addEventListener('click',() => newProfile());
-  $('hero-primary').addEventListener('click',() => { if (lifecyclePending()) return; if (coreAvailable() && state.runtime.state === 'running') handleProfileAction('stop',state.runtime.profileId); else navigate('profiles',true); });
+  $('hero-primary').addEventListener('click',() => { if (launchBlockMessage()) return; if (coreAvailable() && state.runtime.state === 'running') handleProfileAction('stop',state.runtime.profileId); else navigate('profiles',true); });
   $('import-button').addEventListener('click',() => $('import-file').click());
   $('import-file').addEventListener('change',event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) importProfile(file); });
   $('profile-search').addEventListener('input',renderProfiles);

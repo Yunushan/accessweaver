@@ -692,7 +692,7 @@ test('pending lifecycle blocks launch while retaining profile editing and local 
   const engine={id:'byedpi',name:'ByeDPI',kind:'proxy',platforms:['linux'],includes:true,excludes:true,integration:'managed',source:'https://example.invalid',notes:'Synthetic UI fixture'};
   const assets=new Map();
   for(const [route,file,type] of [['/','index.html','text/html'],['/app.js','app.js','text/javascript'],['/locales.js','locales.js','text/javascript'],['/system.js','system.js','text/javascript'],['/app.css','app.css','text/css']])assets.set(route,{body:await fs.readFile(path.join(repo,'web',file)),contentType:type});
-  let pending=false,starts=0;
+  let pending=false,restartRequired=false,starts=0;
   await page.route('**/*',async route=>{
     const target=new URL(route.request().url());
     if(target.origin!==origin){await route.abort();return;}
@@ -702,7 +702,7 @@ test('pending lifecycle blocks launch while retaining profile editing and local 
     else if(target.pathname==='/api/v1/engines')json=[engine];
     else if(target.pathname==='/api/v1/profiles')json=[profile];
     else if(target.pathname==='/api/v1/profiles/'+profile.id)json=profile;
-    else if(target.pathname==='/api/v1/runtime')json={state:pending?'error':'stopped',profileId:profile.id,engine:'byedpi',pid:0,lifecyclePending:pending,log:[]};
+    else if(target.pathname==='/api/v1/runtime')json={state:pending||restartRequired?'error':'stopped',profileId:profile.id,engine:'byedpi',pid:0,lifecyclePending:pending,preparationRestartRequired:restartRequired,log:[]};
     else if(target.pathname==='/api/v1/preview')json={ready:true,args:[],issues:[],warnings:[]};
     else if(target.pathname==='/api/v1/start'){starts++;await route.fulfill({status:500,json:{error:'unexpected synthetic launch'}});return;}
     else {await route.fulfill({status:404,json:{error:'synthetic route unavailable'}});return;}
@@ -728,6 +728,14 @@ test('pending lifecycle blocks launch while retaining profile editing and local 
   await expect(page.locator('#export-support')).toBeEnabled();
   await expect(page.locator('#show-logs')).toBeEnabled();await page.locator('#show-logs').click();
   await expect(page.locator('#logs-modal')).toBeVisible();await page.locator('#close-logs').click();
+  pending=false;restartRequired=true;await page.evaluate(()=>pollStatus());
+  await expect(page.locator('#hero-status')).toHaveText('Controller restart required');
+  await expect(page.locator('#hero-description')).toContainText('Restart the AccessWeaver controller');
+  await profiles(page);
+  await expect(action(page,'run',profile.id)).toBeDisabled();
+  await expect(action(page,'edit',profile.id)).toBeEnabled();
+  restartRequired=false;await page.evaluate(()=>pollStatus());
+  await expect(action(page,'run',profile.id)).toBeEnabled();
   expect(starts).toBe(0);
 });
 

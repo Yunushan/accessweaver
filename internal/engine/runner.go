@@ -17,14 +17,15 @@ import (
 )
 
 type Snapshot struct {
-	State            string    `json:"state"`
-	ProfileID        string    `json:"profileId,omitempty"`
-	Engine           string    `json:"engine,omitempty"`
-	PID              int       `json:"pid,omitempty"`
-	StartedAt        time.Time `json:"startedAt,omitempty"`
-	LastError        string    `json:"lastError,omitempty"`
-	LifecyclePending bool      `json:"lifecyclePending,omitempty"`
-	Log              []string  `json:"log"`
+	State                      string    `json:"state"`
+	ProfileID                  string    `json:"profileId,omitempty"`
+	Engine                     string    `json:"engine,omitempty"`
+	PID                        int       `json:"pid,omitempty"`
+	StartedAt                  time.Time `json:"startedAt,omitempty"`
+	LastError                  string    `json:"lastError,omitempty"`
+	LifecyclePending           bool      `json:"lifecyclePending,omitempty"`
+	PreparationRestartRequired bool      `json:"preparationRestartRequired,omitempty"`
+	Log                        []string  `json:"log"`
 }
 
 // Summary excludes user identifiers, paths and child output from support metadata.

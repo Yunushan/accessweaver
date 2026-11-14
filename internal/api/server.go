@@ -119,7 +119,10 @@ func failProfile(w http.ResponseWriter, err error, fallback int) {
 // Preserve uncertainty/policy precedence while categorizing canceled launch work.
 func failEnginePreparation(w http.ResponseWriter, err error) {
 	if errors.Is(err, engine.ErrPreparationCleanupUncertain) {
-		fail(w, http.StatusServiceUnavailable, engine.ErrPreparationCleanupUncertain.Error())
+		JSON(w, http.StatusServiceUnavailable, map[string]string{
+			"error": engine.ErrPreparationCleanupUncertain.Error(),
+			"code":  "engine-preparation-restart-required",
+		})
 		return
 	}
 	status := http.StatusBadRequest

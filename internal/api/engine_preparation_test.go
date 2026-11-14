@@ -77,12 +77,16 @@ func TestEnginePreparationErrorPrecedence(t *testing.T) {
 			failEnginePreparation(response, row.err)
 			var body struct {
 				Error string `json:"error"`
+				Code  string `json:"code"`
 			}
 			if json.Unmarshal(response.Body.Bytes(), &body) != nil {
 				t.Fatal("invalid error response")
 			}
 			if response.Code != row.status || (row.fixed != "" && body.Error != row.fixed) || response.Header().Get("Retry-After") != "" {
 				t.Fatal("cancellation overrode uncertainty or policy classification")
+			}
+			if (body.Code == "engine-preparation-restart-required") != (row.name == "cleanup-uncertain") {
+				t.Fatal("cleanup restart code did not match the error category")
 			}
 		})
 	}

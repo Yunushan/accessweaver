@@ -72,7 +72,7 @@ func TestPreStartOwnerCleanupAndRetainedFault(t *testing.T) {
 					t.Fatal("pre-start failure invented a live child")
 				}
 				if !uncertain {
-					if errors.Is(err, ErrPreparationCleanupUncertain) || state.State != "stopped" || state.LastError != "" {
+					if errors.Is(err, ErrPreparationCleanupUncertain) || state.State != "stopped" || state.LastError != "" || state.PreparationRestartRequired {
 						t.Fatal("confirmed cleanup became sticky")
 					}
 					refusal := errors.New("source refuses another owner")
@@ -88,7 +88,7 @@ func TestPreStartOwnerCleanupAndRetainedFault(t *testing.T) {
 				if !errors.Is(err, ErrPreparationCleanupUncertain) || err.Error() != ErrPreparationCleanupUncertain.Error() || !errors.Is(err, closeCause) {
 					t.Fatal("cleanup uncertainty lost cause or exposed private details")
 				}
-				if state.State != "error" || state.LastError != ErrPreparationCleanupUncertain.Error() {
+				if state.State != "error" || state.LastError != ErrPreparationCleanupUncertain.Error() || !state.PreparationRestartRequired {
 					t.Fatal("cleanup uncertainty absent from runtime")
 				}
 				for _, context := range []context.Context{context.Background(), ctx} {
