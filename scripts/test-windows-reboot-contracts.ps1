@@ -38,7 +38,7 @@ function Refuse([scriptblock]$Action){
 $readFixture=Join-Path ([IO.Path]::GetTempPath()) ('accessweaver-dns-reboot-read-'+[guid]::NewGuid().ToString('N')+'.json')
 $encoding=[Text.UTF8Encoding]::new($false,$true)
 try {
-    $first=$encoding.GetBytes('{"schemaVersion":6,"method":"doh"}')
+    $first=$encoding.GetBytes('{"schemaVersion":7,"method":"doh"}')
     $stream=[IO.File]::Open($readFixture,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
     try {$stream.Write($first,0,$first.Length)} finally {$stream.Dispose()}
     $observed=Read-DNSRebootRecord $readFixture $first.Length
@@ -57,7 +57,7 @@ try {
         [IO.File]::WriteAllBytes($readFixture,$bad.bytes)
         Refuse {Read-DNSRebootRecord $readFixture 1MB}
     }
-    $withBom=[byte[]](@(239,187,191)+$encoding.GetBytes('{"schemaVersion":6,"method":"dnscrypt"}'))
+    $withBom=[byte[]](@(239,187,191)+$encoding.GetBytes('{"schemaVersion":7,"method":"dnscrypt"}'))
     [IO.File]::WriteAllBytes($readFixture,$withBom)
     $changed=Read-DNSRebootRecord $readFixture 1MB
     if($changed.record.method -cne 'dnscrypt' -or $changed.sha256 -ceq $observed.sha256 -or
@@ -121,7 +121,7 @@ if($stages.Count -ne 3 -or $stages[0].GetCommandName() -cne 'Register-ScheduledT
     throw 'VMware DNS preparation must follow task registration and retire the task on failure'
 }
 $journalId='workflow-'+('a'*32)+'.json'
-$saved=@{schemaVersion=6;qualificationID=('a'*32);method='doh';guestID='synthetic';
+$saved=@{schemaVersion=7;qualificationID=('a'*32);method='doh';guestID='synthetic';
     binarySHA256=('a'*64);fixtureSHA256=('b'*64);oracleSHA256=('c'*64);snapshotSHA256=('D'*64);
     journalId=$journalId;journalSHA256=('E'*64);boot='639303000000000000'}
 $current=$saved.Clone()
@@ -138,7 +138,7 @@ foreach($value in @($saved.boot,'639302000000000000','unknown')){
     Refuse {Assert-DNSRebootAdmission $saved $changed}
 }
 $legacy=$saved.Clone()
-$legacy.schemaVersion=5
+$legacy.schemaVersion=6
 Refuse {Assert-DNSRebootAdmission $legacy $current}
 foreach($value in @('..\\'+$journalId,'workflow-'+('A'*32)+'.json','foreign.json')){
     $invalid=$saved.Clone();$invalid.journalId=$value
@@ -199,7 +199,8 @@ foreach($invalid in @(
 
 # Run the actual observation functions with no resolver or service access.
 & {
-    $state=@{flushes=0;queries=0;waits=0;attempts=0;cacheFails=$false;serviceFails=$false;services=@()}
+    $state=@{flushes=0;requests=[Collections.Generic.List[string]]::new();waits=0;attempts=0;
+        cacheFails=$false;serviceFails=$false;services=@();answers=@{}}
     function Clear-DnsClientCache {
         [CmdletBinding()]param()
         if($ErrorActionPreference -ne 'Stop'){throw 'DNS cache clear must fail closed'}
@@ -208,10 +209,10 @@ foreach($invalid in @(
     }
     function Resolve-DnsName {
         [CmdletBinding()]param($Name,$Type,[switch]$DnsOnly,[switch]$NoHostsFile,[switch]$QuickTimeout)
-        $state.queries++
-        if($Name -cne 'example.com.' -or $Type -cne 'A' -or -not $DnsOnly -or -not $NoHostsFile -or
+        if($Name -cne 'example.com.' -or $Type -cnotin @('A','AAAA') -or -not $DnsOnly -or -not $NoHostsFile -or
            -not $QuickTimeout -or $ErrorActionPreference -ne 'Stop'){throw 'Unexpected ordinary DNS request'}
-        $state.answers
+        $state.requests.Add($Type)
+        $state.answers[$Type]
     }
     function Get-Service {
         [CmdletBinding()]param()
@@ -224,21 +225,38 @@ foreach($invalid in @(
         $state.waits++
     }
     $answer=@{Name='example.com.';Type='A';Section='Answer';IPAddress='192.0.2.15'}
-    $state.answers=@([pscustomobject]$answer)
+    $answer6=@{Name='example.com.';Type='AAAA';Section='Answer';IPAddress='2001:db8::15'}
+    $state.answers=@{A=@([pscustomobject]$answer);AAAA=@([pscustomobject]$answer6)}
     Assert-RebootResolver
+    if(($state.requests -join ',') -cne 'A,AAAA'){throw 'The fixture did not verify both ordinary DNS record types'}
     foreach($invalid in @(
         @{Name='example.net.'},@{Type='AAAA'},@{Section='Additional'},@{IPAddress='2001:db8::1'},@{IPAddress='invalid'}
     )){
         $row=$answer.Clone()
         foreach($key in $invalid.Keys){$row[$key]=$invalid[$key]}
-        $state.answers=@([pscustomobject]$row)
+        $state.answers.A=@([pscustomobject]$row)
+        $state.requests.Clear()
         Refuse {Assert-RebootResolver}
+        if(($state.requests -join ',') -cne 'A'){throw 'An invalid A answer was credited'}
     }
-    $state.answers=@()
+    $state.answers.A=@([pscustomobject]$answer)
+    foreach($invalid in @(
+        @{Name='example.net.'},@{Type='A'},@{Section='Additional'},@{IPAddress='192.0.2.15'},
+        @{IPAddress='::ffff:192.0.2.15'},@{IPAddress='invalid'}
+    )){
+        $row=$answer6.Clone()
+        foreach($key in $invalid.Keys){$row[$key]=$invalid[$key]}
+        $state.answers.AAAA=@([pscustomobject]$row)
+        $state.requests.Clear()
+        Refuse {Assert-RebootResolver}
+        if(($state.requests -join ',') -cne 'A,AAAA'){throw 'The fixture did not reach the invalid AAAA answer'}
+    }
+    $state.answers.AAAA=@()
     Refuse {Assert-RebootResolver}
     $state.cacheFails=$true
+    $state.requests.Clear()
     Refuse {Assert-RebootResolver}
-    if($state.flushes -ne 8 -or $state.queries -ne 7){throw 'Failed cache flush allowed a DNS query'}
+    if($state.flushes -ne 14 -or $state.requests.Count){throw 'Failed cache flush allowed a DNS query'}
 
     Wait-DNSRebootObservation {
         $state.attempts++
@@ -369,11 +387,13 @@ $root=[IO.Path]::Combine([IO.Path]::GetTempPath(),('aw-dns-reboot-publication-'+
 $shared=Join-Path $root 'share'
 $destination=Join-Path $shared 'reboot-results.json'
 $report=Join-Path $root 'reboot-results.json'
-$record=@{schemaVersion=6;qualificationID=('a'*32);method='doh';binarySHA256=('A'*64);fixtureSHA256=('B'*64);oracleSHA256=('C'*64)
+$record=@{schemaVersion=7;qualificationID=('a'*32);method='doh';binarySHA256=('A'*64);fixtureSHA256=('B'*64);oracleSHA256=('C'*64)
     requiredOriginalMode='static-ipv6';originalModeCoverage=@{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=1}
     rebootVerified=$true;servicesVerified=$true;configuredStateVerified=$true;resolverVerified=$true
     journalBindingVerified=$true;journalRecoveryAccepted=$true;originalStateRestored=$true;originalResolverVerified=$true
     snapshotRetired=$true;servicesRemoved=$true;passed=$true;stage='complete';cleanupStage='complete'}
+$legacy=$record.Clone();$legacy.schemaVersion=6
+Refuse {Assert-DNSRebootPublicReport ([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $legacy -Depth 8)))}
 foreach($invalid in @(
     @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0},
     @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=0},

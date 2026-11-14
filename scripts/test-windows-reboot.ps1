@@ -10,7 +10,7 @@ $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 
 function Assert-DNSRebootAdmission($Saved,$Current) {
-    if($Saved.schemaVersion -ne 6 -or $Saved.method -cnotin @('doh','dnscrypt') -or
+    if($Saved.schemaVersion -ne 7 -or $Saved.method -cnotin @('doh','dnscrypt') -or
        $Saved.qualificationID -isnot [string] -or $Saved.qualificationID -cnotmatch '\A[a-f0-9]{32}\z' -or
        $Saved.guestID -cne $Current.guestID -or $Saved.binarySHA256 -cne $Current.binarySHA256 -or
        $Saved.oracleSHA256 -cne $Current.oracleSHA256 -or $Saved.fixtureSHA256 -cne $Current.fixtureSHA256 -or
@@ -127,7 +127,7 @@ if(@($guest).Count -ne 1 -or -not [guid]::TryParseExact([string]$guest.UUID,'D',
 $os=Get-CimInstance Win32_OperatingSystem
 if(@($os).Count -ne 1 -or $os.LastBootUpTime -isnot [DateTime]){throw 'Cannot identify guest boot'}
 $current=@{
-    schemaVersion=6;guestID=$guestID.ToString('D');
+    schemaVersion=7;guestID=$guestID.ToString('D');
     binarySHA256=(Get-DNSRebootDigest $Executable 128MB);oracleSHA256=(Get-DNSRebootDigest $oracle 1MB);
     fixtureSHA256=(Get-DNSRebootDigest $PSCommandPath 1MB);
     boot=$os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
@@ -205,15 +205,24 @@ function Assert-DNSRebootConfigured([object]$Before,[object]$After,[string]$Meth
 }
 function Assert-RebootResolver {
     Clear-DnsClientCache -ErrorAction Stop
-    $answers=@(Resolve-DnsName -Name 'example.com.' -DnsOnly -Type A -NoHostsFile -QuickTimeout -ErrorAction Stop)
-    foreach($answer in $answers){
-        $address=$null
-        if($answer.Type -eq 'A' -and $answer.Section -eq 'Answer' -and
-           $answer.Name -is [string] -and $answer.Name.TrimEnd('.') -ieq 'example.com' -and
-           $answer.IPAddress -is [string] -and [Net.IPAddress]::TryParse($answer.IPAddress,[ref]$address) -and
-           $address.AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork){return}
+    # Query both record types through the ordinary resolver. An AAAA answer
+    # says nothing about the transport address family used for that lookup.
+    $recordTypes=[ordered]@{A=[Net.Sockets.AddressFamily]::InterNetwork;AAAA=[Net.Sockets.AddressFamily]::InterNetworkV6}
+    foreach($type in $recordTypes.Keys){
+        $answers=@(Resolve-DnsName -Name 'example.com.' -DnsOnly -Type $type -NoHostsFile -QuickTimeout -ErrorAction Stop)
+        $verified=$false
+        foreach($answer in $answers){
+            $address=$null
+            if($answer.Type -eq $type -and $answer.Section -eq 'Answer' -and
+               $answer.Name -is [string] -and $answer.Name.TrimEnd('.') -ieq 'example.com' -and
+               $answer.IPAddress -is [string] -and [Net.IPAddress]::TryParse($answer.IPAddress,[ref]$address) -and
+               $address.AddressFamily -eq $recordTypes[$type] -and -not $address.IsIPv4MappedToIPv6){
+                $verified=$true
+                break
+            }
+        }
+        if(-not $verified){throw ('Ordinary Windows DNS returned no valid '+$type+' answer')}
     }
-    throw 'Ordinary Windows DNS returned no IPv4 answer'
 }
 function Wait-DNSRebootObservation([scriptblock]$Observe,[int]$TimeoutSeconds=60) {
     $timer=[Diagnostics.Stopwatch]::StartNew()
@@ -282,7 +291,7 @@ try {
             $security.AddAccessRule($rule)
         }
         Set-Acl -LiteralPath $private -AclObject $security -ErrorAction Stop
-        Save-DNSRebootRecord (Join-Path $private 'original.json') @{schemaVersion=6;dns=$before}
+        Save-DNSRebootRecord (Join-Path $private 'original.json') @{schemaVersion=7;dns=$before}
         Invoke-DNSRebootPreparation {
             [void](Invoke-TestWorkflow @{action='install';engine='byedpi';mode='service';bundlePath='C:\AccessWeaver-Test\components'})
             $applied=Invoke-TestWorkflow @{action='dns';dns=$DNS;bundlePath='C:\AccessWeaver-Test\components'}
@@ -329,8 +338,8 @@ try {
     if(Test-Path -LiteralPath (Join-Path $private 'verification-started.json')){
         throw 'Interrupted DNS reboot verification requires a fresh checkpoint'
     }
-    Save-DNSRebootRecord (Join-Path $private 'verification-started.json') @{schemaVersion=6}
-    $outcome=[ordered]@{schemaVersion=6;qualificationID=$saved.qualificationID;method=$saved.method;binarySHA256=$current.binarySHA256;
+    Save-DNSRebootRecord (Join-Path $private 'verification-started.json') @{schemaVersion=7}
+    $outcome=[ordered]@{schemaVersion=7;qualificationID=$saved.qualificationID;method=$saved.method;binarySHA256=$current.binarySHA256;
         requiredOriginalMode=$saved.requiredOriginalMode;originalModeCoverage=$coverage;
         fixtureSHA256=$current.fixtureSHA256;oracleSHA256=$current.oracleSHA256;
         rebootVerified=$true;servicesVerified=$false;configuredStateVerified=$false;
