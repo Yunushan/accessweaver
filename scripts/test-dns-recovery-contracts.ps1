@@ -261,7 +261,8 @@ function Set-DnsClientServerAddress {
             $script:changeDohAfterAdapterWrite=''
         }
         if($script:readbackFault -ceq 'noop'){return}
-        $state=@{dhcp=[bool]$ResetServerAddresses;values=@($ServerAddresses)}
+        $addresses=if($ResetServerAddresses){@()}else{@($ServerAddresses)}
+        $state=@{dhcp=[bool]$ResetServerAddresses;values=@($addresses)}
         if($script:readbackFault -ceq 'wrong-mode' -and $ResetServerAddresses){$state.dhcp=$false;$state.values=@('2001:db8::99')}
         if(-not $ResetServerAddresses){
             if($script:readbackFault -ceq 'wrong-value' -and $state.values.Count -gt 0){$state.values[0]='198.51.100.99'}
@@ -497,6 +498,9 @@ function Resolve-DnsName {
     if($Server -cnotin @('127.0.0.1','::1') -or $Name -cne 'example.net.' -or $Type -cne 'A' -or
         -not $DnsOnly -or -not $NoHostsFile -or -not $QuickTimeout -or $ErrorActionPreference -ne 'Stop'){
         throw 'Unexpected DNSCrypt listener probe'
+    }
+    if($script:restartRecoveryWrites){
+        return [pscustomobject]@{Name='example.net.';Type='A';Section='Answer';IPAddress='192.0.2.15'}
     }
     if($script:resolverQueries){
         $script:finalListenerQueries.Add($Server)
