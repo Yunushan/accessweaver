@@ -2,7 +2,7 @@
 """Publish a verified portable build through a draft without replacing assets."""
 
 import argparse
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 import hashlib
 import json
 from pathlib import Path
@@ -196,6 +196,7 @@ def verify_native_qualification(directory, package, manifest, commit, ref, expec
     folders = {"release-qualified-" + "-".join(target) for target in TARGETS}
     if directory.is_symlink() or {path.name for path in directory.iterdir()} != folders:
         raise ValueError("Expected one successful packaged qualification receipt for each desktop target")
+    verified_reports = {}
     for system, arch in sorted(TARGETS):
         target = f"{system}/{arch}"
         folder = directory / f"release-qualified-{system}-{arch}"
@@ -206,8 +207,10 @@ def verify_native_qualification(directory, package, manifest, commit, ref, expec
             candidate = frozen / "candidate.json"
             if candidate.stat().st_size > 16 << 10:
                 raise ValueError("Packaged qualification receipt exceeds its size bound")
-            receipt = json.loads(candidate.read_bytes())
-            execution = json.loads((frozen / "execution.json").read_bytes())
+            candidate_bytes = candidate.read_bytes()
+            execution_bytes = (frozen / "execution.json").read_bytes()
+            receipt = json.loads(candidate_bytes)
+            execution = json.loads(execution_bytes)
         if not isinstance(receipt, dict):
             raise ValueError("Packaged qualification does not match " + target)
 
@@ -232,6 +235,11 @@ def verify_native_qualification(directory, package, manifest, commit, ref, expec
         ):
             raise ValueError("Packaged qualification does not match " + target)
         verify_target_execution(execution, receipt, system)
+        verified_reports[target] = {
+            "candidate.json": hashlib.sha256(candidate_bytes).hexdigest(),
+            "execution.json": hashlib.sha256(execution_bytes).hexdigest(),
+        }
+    return hashlib.sha256(json.dumps(verified_reports, sort_keys=True, separators=(",", ":")).encode("ascii")).hexdigest()
 
 
 @contextmanager
@@ -245,18 +253,23 @@ def verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_
         if (rebuild_checksums_sha256 is not None
                 and expected.get("SHA256SUMS.txt") != "sha256:" + rebuild_checksums_sha256):
             raise ValueError("Published candidate differs from the authenticated rebuild reference")
+        qualification_digest = None
         if native_qualification is not None:
             manifest = json.loads((frozen / "BUILD-MANIFEST.json").read_bytes())
-            verify_native_qualification(native_qualification, frozen, manifest, commit, ref, expected)
-        yield frozen, expected
+            qualification_digest = verify_native_qualification(native_qualification, frozen, manifest, commit, ref, expected)
+        yield frozen, expected, qualification_digest
 
 
-def publish(directory, commit, ref, *, rebuild_checksums_sha256=None, native_qualification=None):
+def publish(directory, commit, ref, *, rebuild_checksums_sha256=None, native_qualification=None,
+            expected_qualification_sha256=None):
     prefix = "refs/tags/v"
     if not ref.startswith(prefix) or "/" in ref[len(prefix):] or ref == prefix:
         raise ValueError("Prerelease publication requires a version tag")
     tag = ref.removeprefix("refs/tags/")
-    with verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_qualification) as (frozen, expected):
+    with verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_qualification) as candidate:
+        frozen, expected, qualification_digest = candidate
+        if expected_qualification_sha256 is not None and qualification_digest != expected_qualification_sha256:
+            raise ValueError("Packaged qualification inputs differ from the read-only verification job")
         publish_verified(frozen, tag, commit, expected)
 
 
@@ -343,15 +356,25 @@ def main():
                         help="directory containing the ten successful packaged target receipts")
     parser.add_argument("--verify-only", action="store_true",
                         help="verify package, rebuild and qualification without accessing release state")
+    parser.add_argument("--expected-qualification-sha256",
+                        help="digest of the staging and execution files from the read-only verification job")
     args = parser.parse_args()
+    if args.verify_only:
+        if args.expected_qualification_sha256 is not None:
+            parser.error("--expected-qualification-sha256 is only accepted for publication")
+    elif not re.fullmatch(r"[a-f0-9]{64}", args.expected_qualification_sha256 or ""):
+        parser.error("publication requires --expected-qualification-sha256 from the verification job")
     try:
         if args.verify_only:
-            with verified_candidate(args.directory.absolute(), args.source_commit, args.source_ref,
-                                    args.rebuild_checksums_sha256, args.native_qualification):
-                print("Verified package, rebuild and native target receipts.")
+            with redirect_stdout(sys.stderr):
+                with verified_candidate(args.directory.absolute(), args.source_commit, args.source_ref,
+                                        args.rebuild_checksums_sha256, args.native_qualification) as candidate:
+                    _, _, qualification_digest = candidate
+            print(json.dumps({"qualificationSHA256": qualification_digest}))
         else:
             publish(args.directory.absolute(), args.source_commit, args.source_ref,
-                    rebuild_checksums_sha256=args.rebuild_checksums_sha256, native_qualification=args.native_qualification)
+                    rebuild_checksums_sha256=args.rebuild_checksums_sha256, native_qualification=args.native_qualification,
+                    expected_qualification_sha256=args.expected_qualification_sha256)
             print("Verified prerelease assets are published.")
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile):
         message = ("Prerelease candidate verification failed." if args.verify_only else

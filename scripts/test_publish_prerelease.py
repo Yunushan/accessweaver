@@ -151,8 +151,16 @@ class PrereleasePublicationTests(unittest.TestCase):
                       patch.object(publisher, "inspect_archive", side_effect=inspect_archive),
                       patch.object(publisher, "publish_verified") as publish_verified):
                     if fault is None:
-                        publisher.publish(self.directory, self.commit, self.ref, native_qualification=receipts)
+                        with publisher.verified_candidate(self.directory, self.commit, self.ref, None, receipts) as candidate:
+                            approved_digest = candidate[2]
+                        publisher.publish(self.directory, self.commit, self.ref, native_qualification=receipts,
+                                          expected_qualification_sha256=approved_digest)
                         publish_verified.assert_called_once()
+                        publish_verified.reset_mock()
+                        with self.assertRaisesRegex(ValueError, "differ from the read-only verification job"):
+                            publisher.publish(self.directory, self.commit, self.ref, native_qualification=receipts,
+                                              expected_qualification_sha256="0" * 64)
+                        publish_verified.assert_not_called()
                         continue
                     elif fault == "missing":
                         path.unlink()
@@ -230,13 +238,21 @@ class PrereleasePublicationTests(unittest.TestCase):
                 with (patch.object(sys, "argv", [*argv, publisher.digest(checksums)]),
                       contextlib.redirect_stdout(io.StringIO()) as output):
                     self.assertEqual(publisher.main(), 0)
-                    self.assertIn("Verified package, rebuild and native target receipts.", output.getvalue())
+                    preview_digest = json.loads(output.getvalue())["qualificationSHA256"]
+                    self.assertRegex(preview_digest, r"^[0-9a-f]{64}$")
                     verify.assert_called_once()
                 with (patch.object(sys, "argv", [*argv, "0" * 64]),
                       contextlib.redirect_stderr(io.StringIO()) as errors):
                     self.assertEqual(publisher.main(), 1)
                     self.assertIn("candidate verification failed", errors.getvalue())
-                (receipts / "release-qualified-windows-arm64" / "execution.json").unlink()
+                result_path = receipts / "release-qualified-windows-arm64" / "execution.json"
+                original_result = result_path.read_bytes()
+                result_path.write_bytes(original_result + b"\n")
+                with (patch.object(sys, "argv", [*argv, publisher.digest(checksums)]),
+                      contextlib.redirect_stdout(io.StringIO()) as output):
+                    self.assertEqual(publisher.main(), 0)
+                    self.assertNotEqual(json.loads(output.getvalue())["qualificationSHA256"], preview_digest)
+                result_path.unlink()
                 with (patch.object(sys, "argv", [*argv, publisher.digest(checksums)]),
                       contextlib.redirect_stderr(io.StringIO()) as errors):
                     self.assertEqual(publisher.main(), 1)

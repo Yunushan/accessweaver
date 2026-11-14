@@ -811,6 +811,8 @@ jobs:
           retention-days: 14
   verify-publication:
     name: Verify publication inputs
+    outputs:
+      qualification_sha256: ${{ steps.verify.outputs.qualification_sha256 }}
     needs: [package, hosted-rebuild, packaged-native, packaged-freebsd, packaged-openbsd]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -830,6 +832,7 @@ jobs:
           pattern: release-qualified-*
           path: release-qualification
       - name: Verify prerelease candidate
+        id: verify
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -837,8 +840,11 @@ jobs:
           REBUILD_CHECKSUMS_SHA256: ${{ needs.hosted-rebuild.outputs.reference_checksums_sha256 }}
         run: |
           verified_directory="release-assets/${PACKAGE_DIRECTORY#dist/}"
-          python3 scripts/publish_prerelease.py "$verified_directory" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" \
-            --rebuild-checksums-sha256 "$REBUILD_CHECKSUMS_SHA256" --native-qualification release-qualification --verify-only
+          result="$(python3 scripts/publish_prerelease.py "$verified_directory" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" \
+            --rebuild-checksums-sha256 "$REBUILD_CHECKSUMS_SHA256" --native-qualification release-qualification --verify-only)"
+          digest="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["qualificationSHA256"])' <<< "$result")"
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+          echo "qualification_sha256=$digest" >> "$GITHUB_OUTPUT"
   publish:
     name: Publish prerelease assets
     needs: [package, hosted-rebuild, verify-publication]
@@ -866,7 +872,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PACKAGE_DIRECTORY: ${{ needs.package.outputs.directory }}
           REBUILD_CHECKSUMS_SHA256: ${{ needs.hosted-rebuild.outputs.reference_checksums_sha256 }}
+          EXPECTED_QUALIFICATION_SHA256: ${{ needs.verify-publication.outputs.qualification_sha256 }}
         run: |
           verified_directory="release-assets/${PACKAGE_DIRECTORY#dist/}"
           python3 scripts/publish_prerelease.py "$verified_directory" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" \
-            --rebuild-checksums-sha256 "$REBUILD_CHECKSUMS_SHA256" --native-qualification release-qualification
+            --rebuild-checksums-sha256 "$REBUILD_CHECKSUMS_SHA256" --native-qualification release-qualification \
+            --expected-qualification-sha256 "$EXPECTED_QUALIFICATION_SHA256"
