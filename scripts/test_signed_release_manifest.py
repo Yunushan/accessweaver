@@ -1143,7 +1143,9 @@ class SignedReleaseManifestTests(unittest.TestCase):
                               "windows_payload_publisher": qualified_entry[release.WINDOWS_PAYLOAD_PUBLISHER],
                               "minimum_revocation_sequence": 4, "launch_staged_windows_setup": True}
             native_launch = release.launch_windows_setup
-            with patch.object(release, "require_native_windows_setup_host") as host, \
+            initial_boot = {"endpointSHA256": "f" * 64, "bootTicks": "638900000000000000"}
+            with patch.object(release, "read_windows_boot", return_value=initial_boot) as boot, \
+                    patch.object(release, "require_native_windows_setup_host") as host, \
                     patch.object(release, "__file__", str(self.root / "signed_release_manifest.py")), \
                     patch.object(release, "check_windows_publisher") as publisher, \
                     patch.object(release, "launch_windows_setup", return_value=3010) as launch, \
@@ -1285,6 +1287,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
                                      windows_upgrade_attempt_id=attempt_id)["managedUpdate"]
                 attempt = launch.call_args.kwargs["attempt"]
                 self.assertEqual(attempt["attemptID"], attempt_id)
+                self.assertEqual(attempt["schemaVersion"], 2)
+                self.assertEqual(attempt["boot"], initial_boot)
                 self.assertEqual(attempt["manifestSHA256"], release.digest(manifest))
                 self.assertEqual(attempt["approvalCertificateSHA256"], pin)
                 self.assertEqual(attempt["revocationListSHA256"], launch_pin)
@@ -1376,6 +1380,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
                      "differs from the saved start receipt"),
                     ({"revocationListSHA256": "0" * 64}, "original revocation policy or a newer sequence"),
                     ({"revocationPolicySequence": True}, "Malformed Windows upgrade start receipt"),
+                    ({"boot": {**initial_boot, "bootTicks": 638900000000000000}}, "Malformed Windows upgrade boot evidence"),
+                    ({"boot": {**initial_boot, "endpointSHA256": "private host"}}, "Malformed Windows upgrade boot evidence"),
                     ({"revocationPolicySequence": 5}, "original revocation policy or a newer sequence"),
                     ({"setupExitCode": 0}, "Malformed Windows upgrade start receipt"),
                 ):
@@ -1427,11 +1433,28 @@ class SignedReleaseManifestTests(unittest.TestCase):
                                 self.verify(approved, pin, policy_pin=newer_pin, **options)
                             detect.assert_not_called()
                         else:
-                            readback = self.verify(approved, pin, policy_pin=newer_pin, **options)["managedUpdate"]
-                            self.assertEqual(readback["recordedSetupResult"], historical)
-                            self.assertEqual(readback["installedDetection"], "detected")
-                            self.assertNotIn("setupExitCode", readback)
-                            detect.assert_called_once()
+                            for observation, reason in (
+                                (initial_boot, "restart-required"),
+                                ({**initial_boot, "bootTicks": "638899999999999999"}, "restart-required"),
+                                ({**initial_boot, "endpointSHA256": "a" * 64}, "endpoint-mismatch"),
+                                (OSError("private provider error"), "boot-evidence-unavailable"),
+                                ({**initial_boot, "bootTicks": "638900000000000001"}, None),
+                            ):
+                                with self.subTest(boot=reason):
+                                    boot.side_effect = [observation]
+                                    detect.reset_mock()
+                                    readback = self.verify(approved, pin, policy_pin=newer_pin, **options)["managedUpdate"]
+                                    self.assertEqual(readback["recordedSetupResult"], historical)
+                                    self.assertEqual(readback["attemptID"], attempt_id)
+                                    self.assertNotIn("setupExitCode", readback)
+                                    if reason is None:
+                                        self.assertEqual(readback["installedDetection"], "detected")
+                                        detect.assert_called_once()
+                                    else:
+                                        self.assertEqual(readback["installedDetection"], "unverified")
+                                        self.assertEqual(readback["installedDetectionReason"], reason)
+                                        detect.assert_not_called()
+                            boot.side_effect = None
                         launch.assert_not_called()
                         self.assertEqual(completed_receipt.read_bytes(), result_bytes)
                         self.assertEqual(release.digest(start_file), start_digest)

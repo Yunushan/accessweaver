@@ -466,13 +466,19 @@ def load_windows_upgrade_start_receipt(directory, path, fingerprint):
     digests = ("manifestSHA256", "approvalCertificateSHA256", "installerSHA256",
                "rebootEvidenceSHA256", "revocationListSHA256")
     strings = ("attemptID", "sourceCommit", "sourceRef", "target", "windowsSetupBaselineArgument")
-    require(isinstance(receipt, dict) and receipt.keys() == {*digests, *strings, "schemaVersion", "revocationPolicySequence"}
-            and type(receipt["schemaVersion"]) is int and receipt["schemaVersion"] == 1
+    require(isinstance(receipt, dict) and type(receipt.get("schemaVersion")) is int
+            and receipt["schemaVersion"] in (1, 2), "Malformed Windows upgrade start receipt")
+    fields = {*digests, *strings, "schemaVersion", "revocationPolicySequence"}
+    if receipt["schemaVersion"] == 2:
+        fields.add("boot")
+    require(receipt.keys() == fields
             and type(receipt["revocationPolicySequence"]) is int and receipt["revocationPolicySequence"] > 0
             and all(isinstance(receipt[field], str) and re.fullmatch(SHA256, receipt[field]) for field in digests)
             and all(isinstance(receipt[field], str) for field in strings)
             and re.fullmatch(r"[a-f0-9]{32}", receipt["attemptID"]),
             "Malformed Windows upgrade start receipt")
+    if receipt["schemaVersion"] == 2:
+        validate_windows_boot(receipt["boot"])
     return receipt
 
 
@@ -609,6 +615,46 @@ def windows_system_directory():
     length = ctypes.windll.kernel32.GetSystemDirectoryW(system_directory, len(system_directory))
     require(0 < length < len(system_directory), "Windows system directory could not be resolved")
     return Path(system_directory.value)
+
+
+def validate_windows_boot(record):
+    require(isinstance(record, dict) and record.keys() == {"endpointSHA256", "bootTicks"}
+            and isinstance(record["endpointSHA256"], str) and re.fullmatch(SHA256, record["endpointSHA256"])
+            and isinstance(record["bootTicks"], str) and re.fullmatch(r"[1-9][0-9]{17}", record["bootTicks"]),
+            "Malformed Windows upgrade boot evidence")
+    return record
+
+
+def read_windows_boot(attempt_id):
+    require(re.fullmatch(r"[a-f0-9]{32}", attempt_id), "Malformed Windows upgrade attempt ID")
+    shell = windows_system_directory() / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    # The provider UUID stays within PowerShell. The receipt uses a digest
+    # scoped to this attempt and omits computer names and hardware details.
+    command = r"""
+$ErrorActionPreference='Stop'
+$os=@(Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop)
+$system=@(Get-CimInstance -ClassName Win32_ComputerSystemProduct -ErrorAction Stop)
+$id=[guid]::Empty
+if($os.Count -ne 1 -or $os[0].LastBootUpTime -isnot [datetime] -or $system.Count -ne 1 -or
+   -not [guid]::TryParseExact([string]$system[0].UUID,'D',[ref]$id) -or
+   $id -eq [guid]::Empty -or $id.ToString('D') -ceq 'ffffffff-ffff-ffff-ffff-ffffffffffff'){
+    throw 'Cannot establish Windows endpoint and boot identity'
+}
+$sha=[Security.Cryptography.SHA256]::Create()
+try {
+    $data=[Text.Encoding]::ASCII.GetBytes('AccessWeaver-Windows-upgrade:'+'ATTEMPT_ID'+':'+$id.ToString('D'))
+    $digest=[BitConverter]::ToString($sha.ComputeHash($data)).Replace('-','').ToLowerInvariant()
+} finally {$sha.Dispose()}
+@{endpointSHA256=$digest;bootTicks=$os[0].LastBootUpTime.ToUniversalTime().Ticks.ToString(
+    [Globalization.CultureInfo]::InvariantCulture)} | ConvertTo-Json -Compress
+""".replace("ATTEMPT_ID", attempt_id)
+    with tempfile.TemporaryFile() as output:
+        subprocess.run([shell, "-NoProfile", "-NonInteractive", "-Command", command],
+                       stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.DEVNULL, check=True, timeout=30)
+        output.seek(0)
+        content = output.read(513)
+    require(0 < len(content) <= 512, "Windows boot evidence exceeds inspection bounds")
+    return validate_windows_boot(decode_json(content))
 
 
 def check_windows_publisher(artifact, approved_digest, publisher_pin):
@@ -1216,6 +1262,27 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 update["attemptID"] = start_receipt["attemptID"]
                 if recorded_result is not None:
                     update["recordedSetupResult"] = recorded_result
+                restart_required = recorded_result is not None and recorded_result["setupExitCode"] == 3010
+                if start_receipt["schemaVersion"] == 2:
+                    try:
+                        current_boot = read_windows_boot(start_receipt["attemptID"])
+                    except (ValueError, OSError, subprocess.SubprocessError):
+                        update["installedDetection"] = "unverified"
+                        update["installedDetectionReason"] = "boot-evidence-unavailable"
+                        return report
+                    old_boot = start_receipt["boot"]
+                    if current_boot["endpointSHA256"] != old_boot["endpointSHA256"]:
+                        update["installedDetection"] = "unverified"
+                        update["installedDetectionReason"] = "endpoint-mismatch"
+                        return report
+                    if restart_required and current_boot["bootTicks"] <= old_boot["bootTicks"]:
+                        update["installedDetection"] = "unverified"
+                        update["installedDetectionReason"] = "restart-required"
+                        return report
+                elif restart_required:
+                    update["installedDetection"] = "unverified"
+                    update["installedDetectionReason"] = "boot-evidence-unavailable"
+                    return report
             record_windows_installed_detection(update, payload_publisher, policy)
         if stage_directory is not None:
             update = report["managedUpdate"]
@@ -1228,7 +1295,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 attempt = None
                 if windows_upgrade_attempt_id is not None:
                     attempt = {
-                        "schemaVersion": 1, "attemptID": windows_upgrade_attempt_id,
+                        "schemaVersion": 2, "attemptID": windows_upgrade_attempt_id,
+                        "boot": read_windows_boot(windows_upgrade_attempt_id),
                         "sourceCommit": commit, "sourceRef": ref, "target": update["target"],
                         "manifestSHA256": hashlib.sha256(manifest_bytes).hexdigest(),
                         "approvalCertificateSHA256": certificate_sha256,
