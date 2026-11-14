@@ -1,6 +1,7 @@
 """Stable metadata for unsigned portable archives; no installer/signing claim."""
 from datetime import datetime, timezone
 import gzip
+import hashlib
 from pathlib import Path
 import re
 import shutil
@@ -78,6 +79,40 @@ def write_archive(archive, pairs, epoch, executable):
                         # TarInfo defaults to uid/gid 0 and empty owner names.
                         with Path(source).open("rb") as content:
                             output.addfile(info, content)
+
+
+def publish_release_directory(staged, destination, names):
+    """Publish a complete portable release, or confirm an identical prior run."""
+    from verify_release import publish_staged_file, release_file, MAX_FILE
+
+    try:
+        if sys.platform.startswith(("freebsd", "openbsd")):
+            # These hosts use rename with a lock on the common output parent.
+            # Cooperating packagers cannot replace an existing release.
+            import fcntl
+            import os
+
+            descriptor = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX)
+                if os.path.lexists(destination):
+                    raise FileExistsError(destination)
+                os.rename(staged, destination)
+            finally:
+                os.close(descriptor)
+        else:
+            publish_staged_file(staged, destination)
+    except (FileExistsError, NotADirectoryError, IsADirectoryError):
+        if (destination.is_symlink() or not destination.is_dir()
+                or getattr(destination.lstat(), "st_file_attributes", 0) & 0x400
+                or {path.name for path in destination.iterdir()} != names):
+            raise ValueError("Release output already exists with a different inventory")
+        for name in sorted(names):
+            left, right = staged / name, destination / name
+            release_file(right, MAX_FILE)
+            with left.open("rb") as first, right.open("rb") as second:
+                if hashlib.file_digest(first, "sha256").digest() != hashlib.file_digest(second, "sha256").digest():
+                    raise ValueError("Release output already exists with different bytes")
 
 
 if __name__ == "__main__":

@@ -13,7 +13,8 @@ import unittest
 import zipfile
 from unittest.mock import patch
 
-from release_archive import epoch_from_timestamp, stage_release_documents, timestamp, tracked_release_documents, write_archive
+from release_archive import (epoch_from_timestamp, publish_release_directory, stage_release_documents,
+                             timestamp, tracked_release_documents, write_archive)
 import verify_release as release
 
 
@@ -40,6 +41,41 @@ class ArchiveTests(unittest.TestCase):
             manual.unlink()
             with self.assertRaisesRegex(ValueError, "Tracked release documentation"):
                 tracked_release_documents(root)
+
+    @unittest.skipUnless(release.HOST_PLATFORM.startswith(("linux", "win32", "darwin", "freebsd", "openbsd")),
+                         "requires supported directory publication")
+    def test_release_directory_publication_preserves_existing_output(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            staged, destination = root / "staged", root / "preview"
+            names = {"BUILD-MANIFEST.json", "SHA256SUMS.txt", "candidate.zip"}
+
+            def stage():
+                staged.mkdir()
+                for name in names:
+                    (staged / name).write_bytes(name.encode())
+
+            stage()
+            publish_release_directory(staged, destination, names)
+            self.assertFalse(staged.exists())
+            self.assertEqual({path.name for path in destination.iterdir()}, names)
+
+            stage()
+            publish_release_directory(staged, destination, names)
+            self.assertTrue(staged.is_dir())
+            (staged / "candidate.zip").write_bytes(b"different")
+            with self.assertRaisesRegex(ValueError, "different bytes"):
+                publish_release_directory(staged, destination, names)
+            self.assertEqual((destination / "candidate.zip").read_bytes(), b"candidate.zip")
+            (destination / "unexpected").touch()
+            with self.assertRaisesRegex(ValueError, "different inventory"):
+                publish_release_directory(staged, destination, names)
+            self.assertTrue((destination / "unexpected").is_file())
+            empty = root / "empty"
+            empty.mkdir()
+            with self.assertRaisesRegex(ValueError, "different inventory"):
+                publish_release_directory(staged, empty, names)
+            self.assertEqual(list(empty.iterdir()), [])
 
     def test_epoch_validation_and_roundtrip(self):
         for epoch in ("0", "1", "1760000001", "4294967295"):
