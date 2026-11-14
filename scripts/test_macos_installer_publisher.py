@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import importlib.util
 from pathlib import Path
@@ -8,6 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
+import test_macos_deployment
 from test_macos_deployment import image
 from macos_deployment import PACKAGE_ID
 
@@ -121,8 +123,9 @@ class PublisherTests(unittest.TestCase):
         application_pin = hashlib.sha256(approved_certificate).hexdigest()
         helper = image("arm64")
         phases = '<preinstall file="./preinstall"/><postinstall file="./postinstall"/>'
-        version = "1.2.3"
-        manifest = b"fixture detached manifest bytes"
+        identity, _, manifest, payload_files, *_ = test_macos_deployment.DeploymentPackageContracts().fixture("arm64")
+        real_verify_bundle = publisher.verify_deployment_bundle
+        version = identity["version"]
         location = publisher.install_location(hashlib.sha256(manifest).hexdigest())
         for scenario, error in (
             ("approved", None),
@@ -133,6 +136,8 @@ class PublisherTests(unittest.TestCase):
             ("relocated", "package metadata differs"),
             ("wrong-authorization", "package metadata differs"),
             ("wrong-bundle", "strict bundle identity differs"),
+            ("wrong-source", "build identity differs from the approved release"),
+            ("changed-payload", "App bundle differs from its sealed manifest"),
             ("duplicate-scripts", "phase entry points differ"),
             ("different-helpers", "do not use the same helper"),
             ("wrong-architecture", "matching thin native 64-bit executable"),
@@ -151,9 +156,19 @@ class PublisherTests(unittest.TestCase):
 
                 def tool(args, *, cwd=None):
                     if args[1] == "--expand-full":
-                        core = app / "Contents" / "MacOS" / "accessweaver"
-                        core.parent.mkdir(parents=True)
-                        core.write_bytes(helper)
+                        for relative, entry in payload_files.items():
+                            path = expanded / "Payload" / relative
+                            if "data" in entry:
+                                content = entry["data"]
+                                if relative.endswith("/BUILD-INFO.json") and scenario == "wrong-source":
+                                    content = json.dumps({**identity, "commit": "0" * 40}).encode()
+                                if relative.endswith("/accessweaver") and scenario == "changed-payload":
+                                    content += b"changed"
+                                path.write_bytes(content)
+                                path.chmod(entry.get("mode", 0o644) & 0o777)
+                            else:
+                                path.mkdir(parents=True, exist_ok=True)
+                                path.chmod(entry["mode"] & 0o777)
                         scripts.mkdir()
                         native = image("amd64") if scenario == "wrong-architecture" else helper
                         (scripts / "postinstall").write_bytes(native)
@@ -164,7 +179,6 @@ class PublisherTests(unittest.TestCase):
                         section = f"<scripts>{entries}</scripts>"
                         if scenario == "duplicate-scripts":
                             section += "<scripts/>"
-                        (expanded / "Payload" / publisher.DETACHED_MANIFEST).write_bytes(manifest)
                         attrs = {
                             "identifier": PACKAGE_ID, "version": version, "install-location": location,
                             "auth": "root", "relocatable": "false",
@@ -205,13 +219,28 @@ class PublisherTests(unittest.TestCase):
 
                 helper_pin = "0" * 64 if scenario == "wrong-helper-digest" else hashlib.sha256(helper).hexdigest()
                 manifest_pin = "0" * 64 if scenario == "wrong-manifest-digest" else hashlib.sha256(manifest).hexdigest()
-                options = {"version": version, "helper_sha256": helper_pin, "manifest_sha256": manifest_pin}
-                with patch.object(publisher, "tool", side_effect=tool):
+                options = {"commit": identity["commit"], "version": version,
+                           "helper_sha256": helper_pin, "manifest_sha256": manifest_pin}
+
+                def verify_bundle(path, parsed, build, encoded):
+                    self.assertEqual((path, parsed, build, encoded), (app, json.loads(manifest), identity, manifest))
+                    if os.name == "posix":
+                        return real_verify_bundle(path, parsed, build, encoded)
+                    if scenario == "changed-payload":
+                        raise ValueError("App bundle differs from its sealed manifest")
+
+                with patch.object(publisher, "tool", side_effect=tool), \
+                        patch.object(publisher, "verify_deployment_bundle", side_effect=verify_bundle) as bundle_check:
                     if error is None:
                         publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin, **options)
                     else:
                         with self.assertRaisesRegex(ValueError, error):
                             publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin, **options)
+                if scenario in ("approved", "changed-payload", "different-helpers", "wrong-architecture",
+                                "wrong-helper-digest", "different-certificate", "helper-changed"):
+                    bundle_check.assert_called_once()
+                else:
+                    bundle_check.assert_not_called()
                 expected = [app]
                 if scenario in ("approved", "different-certificate", "helper-changed"):
                     expected.append(scripts / "postinstall")

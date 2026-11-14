@@ -1078,7 +1078,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             approved_package = detectors[0]
             check_package_publisher(package, team, installer_pin)
             verify_packaged_deployment(package, team, architecture, application_pin,
-                                       version=approved_package["version"], helper_sha256=approved_package["detectorSHA256"],
+                                       commit=commit, version=approved_package["version"],
+                                       helper_sha256=approved_package["detectorSHA256"],
                                        manifest_sha256=approved_package["manifestSHA256"])
             require(digest(package) == update["installerSHA256"], "macOS package changed during publisher verification")
             update["nativePublisherVerification"] = {

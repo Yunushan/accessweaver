@@ -12,7 +12,9 @@ import sys
 import tempfile
 from xml.etree.ElementTree import ParseError
 
-from macos_deployment import DETACHED_MANIFEST, install_location, validate_deployment_metadata
+from macos_deployment import (
+    DETACHED_MANIFEST, install_location, manifest_contract, validate_deployment_metadata, verify_deployment_bundle,
+)
 from macos_installer import BUNDLE_ID, BUNDLE_NAME, macho_identity
 from macos_package_archive import xml
 from verify_release import publish_staged_file, require
@@ -139,16 +141,29 @@ def check_helper_publisher(helper, team, application_pin):
         check_application_certificate(helper, application_pin)
 
 
-def verify_packaged_deployment(package, team, architecture, application_pin, *, version, helper_sha256, manifest_sha256):
+def verify_packaged_deployment(package, team, architecture, application_pin, *, commit, version, helper_sha256, manifest_sha256):
     expanded = verify_packaged_application(package, team, architecture, application_pin)
     try:
         metadata = xml(read_expanded_file(expanded / "PackageInfo", 256 << 10))
     except ParseError as error:
         raise ValueError("Invalid deployment package metadata") from error
-    manifest = read_expanded_file(expanded / "Payload" / DETACHED_MANIFEST, 2 << 20)
-    require(hashlib.sha256(manifest).hexdigest() == manifest_sha256,
+    payload = expanded / "Payload"
+    manifest_bytes = read_expanded_file(payload / DETACHED_MANIFEST, 2 << 20)
+    require(hashlib.sha256(manifest_bytes).hexdigest() == manifest_sha256,
             "Packaged install manifest differs from the approved SBOM digest")
     validate_deployment_metadata(metadata, version, install_location(manifest_sha256))
+    manifest = json.loads(manifest_bytes)
+    manifest_contract(manifest)
+    require(manifest["schemaVersion"] == 2, "Managed package requires a detached payload SBOM")
+    app = payload / BUNDLE_NAME
+    resources = app / "Contents" / "Resources"
+    require(stat.S_ISDIR(resources.lstat().st_mode), "Expected an ordinary expanded package resources directory")
+    identity = json.loads(read_expanded_file(resources / "BUILD-INFO.json", 64 << 10))
+    expected = {"commit": commit, "version": version, "sourceState": "clean",
+                "platform": "darwin", "arch": architecture}
+    require(isinstance(identity, dict) and all(identity.get(key) == value for key, value in expected.items()),
+            "Managed package build identity differs from the approved release")
+    verify_deployment_bundle(app, manifest, identity, manifest_bytes)
 
     data = read_packaged_helper(expanded, architecture)
     require(hashlib.sha256(data).hexdigest() == helper_sha256,
