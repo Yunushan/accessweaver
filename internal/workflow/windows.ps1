@@ -3144,16 +3144,61 @@ function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
     Event 'Original DNS and DoH settings restored'
 }
 
-function Remove-WireSockRefreshTask {
+function Get-WireSockRefreshActionDigest([string]$Execute,[string]$Arguments,[string]$WorkingDirectory) {
+    $text=ConvertTo-Json -InputObject @($Execute.ToUpperInvariant(),$Arguments,$WorkingDirectory) -Compress
+    return (Get-WorkflowBytesSHA256 ([Text.Encoding]::UTF8.GetBytes($text)))
+}
+function Get-WireSockRefreshTaskDefinition {
+    $tasks=@(Get-ScheduledTask -TaskName 'AccessWeaver-WireSock-Refresh' -TaskPath '\' -ErrorAction Stop)
+    if($tasks.Count -ne 1){throw 'WireSock reconnect task definition could not be verified'}
+    $task=$tasks[0]
+    $actions=@($task.Actions)
+    $actionDigest=$null
+    if($actions.Count -eq 1 -and $actions[0].Execute -is [string] -and $actions[0].Execute){
+        $actionDigest=Get-WireSockRefreshActionDigest $actions[0].Execute $actions[0].Arguments $actions[0].WorkingDirectory
+    }
+    $triggers=@($task.Triggers)
+    return @{
+        description=[string]$task.Description;actionSHA256=$actionDigest
+        ready=($task.State -in @('Ready','Running','Queued') -and $triggers.Count -eq 1 -and
+            $triggers[0].Enabled -eq $true -and $triggers[0].Repetition.Interval -ceq 'PT5M')
+    }
+}
+function Test-WireSockRefreshTaskUndo($Entry,[switch]$RequireReady) {
+    if($Entry.name -cne 'AccessWeaver-WireSock-Refresh'){throw 'Recovery journal contains an unmanaged task'}
+    $bound=$null -ne $Entry.instance -or $null -ne $Entry.actionSHA256
+    if($bound -and ($Entry.instance -isnot [string] -or $Entry.instance -cnotmatch '\A[a-f0-9]{32}\z' -or
+        $Entry.actionSHA256 -isnot [string] -or $Entry.actionSHA256 -notmatch '\A[a-f0-9]{64}\z')){
+        throw 'Recovery journal contains an invalid reconnect task identity'
+    }
     $inspection=Get-RefreshTaskInspection
-    if($inspection.present -eq $false){return}
+    if($inspection.present -eq $false){return $false}
     if($inspection.present -ne $true){throw 'WireSock reconnect task state could not be verified'}
+    if(-not $bound){throw 'Legacy journal cannot identify the reconnect task; inspect it before explicit cleanup'}
+    $definition=Get-WireSockRefreshTaskDefinition
+    if($definition.description -cne ('AccessWeaver reconnect '+$Entry.instance) -or
+       $definition.actionSHA256 -ine $Entry.actionSHA256){
+        throw 'WireSock reconnect task differs from the recovery journal'
+    }
+    if($RequireReady -and -not $definition.ready){throw 'WireSock reconnect task creation could not be verified'}
+    return $true
+}
+function Remove-WireSockRefreshTask($JournalEntry) {
+    if($JournalEntry){
+        if(-not (Test-WireSockRefreshTaskUndo $JournalEntry)){return}
+    }else{
+        $inspection=Get-RefreshTaskInspection
+        if($inspection.present -eq $false){return}
+        if($inspection.present -ne $true){throw 'WireSock reconnect task state could not be verified'}
+    }
     $task=@{TaskName='AccessWeaver-WireSock-Refresh';TaskPath='\';ErrorAction='Stop'}
     try {
         # Prevent new runs before stopping any active instance.
         $script:externalEffectsPending=$true
         Disable-ScheduledTask @task | Out-Null
+        if($JournalEntry -and -not (Test-WireSockRefreshTaskUndo $JournalEntry)){return}
         Stop-ScheduledTask @task | Out-Null
+        if($JournalEntry -and -not (Test-WireSockRefreshTaskUndo $JournalEntry)){return}
         Unregister-ScheduledTask @task -Confirm:$false
     } catch {
         throw 'WireSock reconnect task cleanup failed; retry before removing the profile'
@@ -3162,16 +3207,71 @@ function Remove-WireSockRefreshTask {
         throw 'WireSock reconnect task removal could not be verified'
     }
 }
+function Register-WireSockRefreshTask([string]$Execute,[string]$Arguments,[string]$Instance) {
+    $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+    try {$sid=$identity.User.Value}finally {$identity.Dispose()}
+    try {
+        $scheduler=New-Object -ComObject 'Schedule.Service'
+        $scheduler.Connect()
+        $folder=$scheduler.GetFolder('\')
+        $definition=$scheduler.NewTask(0)
+        $definition.RegistrationInfo.Description='AccessWeaver reconnect '+$Instance
+        $definition.Principal.UserId=$sid
+        $definition.Principal.LogonType=3 # TASK_LOGON_INTERACTIVE_TOKEN
+        $definition.Principal.RunLevel=1 # TASK_RUNLEVEL_HIGHEST
+        $trigger=$definition.Triggers.Create(1) # TASK_TRIGGER_TIME
+        $trigger.StartBoundary=[DateTime]::Now.AddMinutes(5).ToString("yyyy-MM-dd'T'HH:mm:ss",[Globalization.CultureInfo]::InvariantCulture)
+        $trigger.Repetition.Interval='PT5M'
+        $action=$definition.Actions.Create(0) # TASK_ACTION_EXEC
+        $action.Path=$Execute
+        $action.Arguments=$Arguments
+        # TASK_CREATE is an atomic refusal if the name already exists.
+        [void]$folder.RegisterTaskDefinition('AccessWeaver-WireSock-Refresh',$definition,2,$sid,$null,3,$null)
+    } catch {
+        throw 'WireSock reconnect task creation failed; inspect the task and retained recovery journal'
+    }
+}
 function Refresh-Task {
-    $name='AccessWeaver-WireSock-Refresh'
     if(-not $r.enabled){Remove-WireSockRefreshTask;Event 'Reconnect task removed';return}
-    $recordPath=Join-Path $root 'profiles\wiresock-owned.json';if(-not (Test-Path -LiteralPath $recordPath)){throw 'Connect a managed WireSock profile first'}
+    $recordPath=Join-Path $root 'profiles\wiresock-owned.json'
+    if(-not (Test-Path -LiteralPath $recordPath)){throw 'Connect a managed WireSock profile first'}
     $record=Read-OwnedWireSockProfile $recordPath
-    if($record.legacy){$command="Restart-Service -Name 'wiresock-client-service' -ErrorAction Stop";$encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command));$action=New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument ('-NoProfile -NonInteractive -EncodedCommand '+$encoded)}
-    else{$action=New-ScheduledTaskAction -Execute $record.cli -Argument ('connect '+(Quote-Arg $record.profile)+' -exit')}
-    $trigger=New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(5)) -RepetitionInterval (New-TimeSpan -Minutes 5)
-    [void](Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger -User $env:USERNAME -RunLevel Highest -Force)
-    $script:undo.Add(@{kind='task';name=$name});Save-Journal;Event 'Reconnect task installed (every five minutes)'
+    if($record.legacy){
+        $command="Restart-Service -Name 'wiresock-client-service' -ErrorAction Stop"
+        $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+        $execute=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $arguments='-NoProfile -NonInteractive -EncodedCommand '+$encoded
+    }else{
+        $execute=$record.cli
+        $arguments='connect '+(Quote-Arg $record.profile)+' -exit'
+    }
+    $digest=Get-WireSockRefreshActionDigest $execute $arguments ''
+    $inspection=Get-RefreshTaskInspection
+    if($inspection.present -eq $true){
+        $task=Get-WireSockRefreshTaskDefinition
+        if($task.ready -and $task.actionSHA256 -ieq $digest -and
+           ($task.description -ceq '' -or $task.description -cmatch '\AAccessWeaver reconnect [a-f0-9]{32}\z')){
+            Event 'Reconnect task already configured (every five minutes)'
+            return
+        }
+        throw 'Existing WireSock reconnect task differs from this profile; review it before explicit cleanup'
+    }
+    if($inspection.present -ne $false){throw 'WireSock reconnect task state could not be verified'}
+    $instance=[guid]::NewGuid().ToString('N')
+    $entry=@{kind='task';name='AccessWeaver-WireSock-Refresh';instance=$instance;actionSHA256=$digest}
+    $script:undo.Add($entry)
+    $previousEffects=$script:externalEffectsPending
+    $script:externalEffectsPending=$true
+    try {Save-Journal}catch{$script:externalEffectsPending=$previousEffects;throw}
+    $current=Read-OwnedWireSockProfile $recordPath
+    if($current.legacy -ne $record.legacy -or $current.cli -ine $record.cli -or $current.profile -cne $record.profile){
+        throw 'WireSock profile ownership changed before reconnect task creation'
+    }
+    Register-WireSockRefreshTask $execute $arguments $instance
+    if(-not (Test-WireSockRefreshTaskUndo $entry -RequireReady)){
+        throw 'WireSock reconnect task creation could not be verified'
+    }
+    Event 'Reconnect task installed (every five minutes)'
 }
 function Invoke-ManagedServiceControl([string]$Operation,[string]$Name,[int[]]$Codes) {
     $program=Join-Path $env:SystemRoot 'System32\sc.exe'
@@ -4579,13 +4679,14 @@ function Get-RefreshTaskInspection {
     # The executor supplies a canonical SystemRoot and a trusted native PATH.
     # Avoid an unbounded ScheduledTasks/WMI module query during discovery.
     $program=Join-Path $env:SystemRoot 'System32\schtasks.exe'
+    $previousEffects=$script:externalEffectsPending
     try {
         $query=Native $program @('/Query','/TN','\AccessWeaver-WireSock-Refresh','/FO','CSV','/NH','/HRESULT') @(0,-2147024894) -Secret -Timeout 5
         if($query.outputComplete -ne $true){return @{present=$null;error='Scheduled task query output was incomplete; status is unknown'}}
         if($query.exitCode -eq 0){return @{present=$true;error=$null}}
         # HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND), independently of UI language.
         if($query.exitCode -eq -2147024894){return @{present=$false;error=$null}}
-    }catch{}
+    }catch{}finally{$script:externalEffectsPending=$previousEffects}
     return @{present=$null;error='Scheduled task inspection failed; status is unknown'}
 }
 function Get-DriverServiceControllers {
@@ -4751,10 +4852,7 @@ function Rollback([string]$OwnerlessWireSockProfile) {
             if((Assert-RecordedServiceBinding $item) -eq 0){Stop-Service -Name $item.name -ErrorAction Stop}
         }
         'firewall' {Remove-ManagedFirewallRule $item.name $item.instance -Journal}
-        'task' {
-            if($item.name -ne 'AccessWeaver-WireSock-Refresh'){throw 'Recovery journal contains an unmanaged task'}
-            Remove-WireSockRefreshTask
-        }
+        'task' {Remove-WireSockRefreshTask -JournalEntry $item}
         'dns' {continue}
         'dnscrypt-reload' {continue}
         'wiresock' {
@@ -4779,7 +4877,7 @@ function Rollback([string]$OwnerlessWireSockProfile) {
     }}catch{
         $rollbackErrors+=@($_.Exception.Message)
         # Keep earlier files when a service, rule or profile still needs cleanup.
-        if($item.kind -in @('service','firewall','wiresock')){break}
+        if($item.kind -in @('service','firewall','wiresock','task')){break}
     }}
     return $rollbackErrors
 }
@@ -5015,7 +5113,7 @@ function Recover-Operation {
                 [void](Assert-RecordedServiceBinding $entry)
             }
             'firewall' {[void](Get-ManagedFirewallRule $entry.name $entry.instance -Journal)}
-            'task' {if($entry.name -ne 'AccessWeaver-WireSock-Refresh'){throw 'Recovery journal contains an unmanaged task'}}
+            'task' {[void](Test-WireSockRefreshTaskUndo $entry)}
             'dns' {[void](Confirm-DNSRecoveryEntry $entry)}
             'dnscrypt-reload' {
                 [void](Get-DNSCryptReloadFile $entry $saved.undo)

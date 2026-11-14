@@ -3834,6 +3834,102 @@ foreach($url in @('https://github.com/hufrea/byedpi/releases/download/v-test/com
 }
 
 
+# Exercise the real reconnect dispatcher with an inert profile and scheduler.
+& {
+    $root=Join-Path $testRoot 'reconnect-task-fixture'
+    $directory=Join-Path $root 'profiles'
+    [void][IO.Directory]::CreateDirectory($directory)
+    [IO.File]::WriteAllText((Join-Path $directory 'wiresock-owned.json'),'inert ownership record')
+    $r=[pscustomobject]@{enabled=$true}
+    $profile=@{legacy=$false;cli='C:\fixtures\wiresock-connect-cli.exe';profile=('AccessWeaver-'+('a'*32))}
+    $state=@{definition=$null;fault='';operations=[Collections.Generic.List[string]]::new()}
+    $priorEffects=$script:externalEffectsPending
+    $priorUndo=$script:undo
+    $script:undo=[Collections.Generic.List[object]]::new()
+    function Read-OwnedWireSockProfile {return $profile}
+    function Get-RefreshTaskInspection {return @{present=($null -ne $state.definition)}}
+    function Get-WireSockRefreshTaskDefinition {return $state.definition}
+    function Save-Journal {
+        $state.operations.Add('save')
+        if($state.fault -ceq 'journal'){throw 'Synthetic journal publication failed'}
+        $pending=$script:undo[$script:undo.Count-1]
+        if(-not $script:externalEffectsPending -or $pending.instance -cnotmatch '\A[a-f0-9]{32}\z'){
+            throw 'Reconnect task lacked a recorded mutation boundary'
+        }
+    }
+    function Register-WireSockRefreshTask {
+        param($Execute,$Arguments,$Instance)
+        $state.operations.Add('create')
+        if($state.fault -ceq 'race'){
+            $state.definition=@{description='Independent replacement';actionSHA256='0'*64;ready=$true}
+            throw 'Synthetic create-only refusal'
+        }
+        if($null -ne $state.definition){throw 'Unexpected overwrite'}
+        $state.definition=@{description=('AccessWeaver reconnect '+$Instance);ready=$true;
+            actionSHA256=(Get-WireSockRefreshActionDigest $Execute $Arguments '')}
+    }
+    function Event {}
+    function Disable-ScheduledTask {
+        param($TaskName,$TaskPath,$ErrorAction)
+        $state.operations.Add('disable')
+        if($state.fault -ceq 'replace-after-disable'){$state.definition.description='Independent replacement'}
+    }
+    function Stop-ScheduledTask {param($TaskName,$TaskPath,$ErrorAction);$state.operations.Add('stop')}
+    function Unregister-ScheduledTask {
+        param($TaskName,$TaskPath,$ErrorAction,$Confirm)
+        $state.operations.Add('unregister')
+        $state.definition=$null
+    }
+    try {
+        $script:externalEffectsPending=$false
+        $state.fault='journal'
+        $refused=$false
+        try{Refresh-Task}catch{$refused=$_.Exception.Message -ceq 'Synthetic journal publication failed'}
+        Assert ($refused -and -not $script:externalEffectsPending -and ($state.operations -join ',') -ceq 'save') 'Reconnect task creation requires a saved undo entry'
+
+        $state.operations.Clear()
+        $script:undo.Clear()
+        $state.fault='race'
+        $refused=$false
+        try{Refresh-Task}catch{$refused=$_.Exception.Message -ceq 'Synthetic create-only refusal'}
+        $retained=$false
+        try{Remove-WireSockRefreshTask -JournalEntry $script:undo[0]}catch{$retained=$_.Exception.Message -ceq 'WireSock reconnect task differs from the recovery journal'}
+        Assert ($refused -and $retained -and ($state.operations -join ',') -ceq 'save,create' -and
+            $state.definition.description -ceq 'Independent replacement') 'Reconnect task recovery preserves a concurrently created replacement'
+
+        $state.operations.Clear()
+        $state.definition=$null
+        $script:undo.Clear()
+        $state.fault=''
+        Refresh-Task
+        $recorded=$script:undo[0]
+        Refresh-Task
+        $state.definition.actionSHA256='1'*64
+        $refused=$false
+        try{Remove-WireSockRefreshTask -JournalEntry $recorded}catch{$refused=$_.Exception.Message -ceq 'WireSock reconnect task differs from the recovery journal'}
+        Assert ($refused -and $script:undo.Count -eq 1 -and ($state.operations -join ',') -ceq 'save,create') 'Reconnect task reuses a matching installation and refuses changed action recovery'
+        $state.definition.actionSHA256=$recorded.actionSHA256
+
+        $refused=$false
+        try{Remove-WireSockRefreshTask -JournalEntry @{name=$recorded.name}}catch{$refused=$_.Exception.Message -like 'Legacy journal cannot identify*'}
+        Assert ($refused -and ($state.operations -join ',') -ceq 'save,create') 'Legacy reconnect journal leaves an unidentified task intact'
+
+        $state.fault='replace-after-disable'
+        $refused=$false
+        try{Remove-WireSockRefreshTask -JournalEntry $recorded}catch{$refused=$_.Exception.Message -like 'WireSock reconnect task cleanup failed*'}
+        Assert ($refused -and ($state.operations -join ',') -ceq 'save,create,disable') 'Reconnect cleanup stops when task identity changes after disable'
+
+        $state.definition.description='AccessWeaver reconnect '+$recorded.instance
+        $state.fault=''
+        Remove-WireSockRefreshTask -JournalEntry $recorded
+        Remove-WireSockRefreshTask -JournalEntry $recorded
+        Assert ($null -eq $state.definition -and ($state.operations -join ',') -ceq 'save,create,disable,disable,stop,unregister') 'Reconnect task recovery removes its recorded instance once'
+    }finally {
+        $script:externalEffectsPending=$priorEffects
+        $script:undo=$priorUndo
+    }
+}
+
 # Scheduled-task inspection remains read-only, bounded and language-independent.
 $previousTaskNative=(Get-Command Native).ScriptBlock
 try {
