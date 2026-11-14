@@ -117,6 +117,8 @@ foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
     Assert ($completion.Contains("Destination + '\$name',")) 'Setup completion must verify each staged release subject'
 }
 Assert ($completion -cmatch '(?s)AWReadRegistration\(\$0100, True.*AWReadRegistration\(\$0200, False.*Found64 and not Found32') 'Setup completion must verify its unique machine registration'
+$detectorSource=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'detect-windows-installer.ps1'))
+Assert ($detectorSource.Contains("::OpenFile((Join-Path `$directory 'accessweaver.exe'),128MB,`$true)")) 'Managed detection must require a single-link controller'
 $registrySource=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-installer-registry.iss'))
 $uninstallSubject=[regex]::Match($installerSource,'(?ms)^function AWOpenUninstallSubject\(.*?^end;').Value
 Assert ($completion.Contains("ExpandConstant('{uninstallexe}')") -and

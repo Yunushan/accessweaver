@@ -169,7 +169,7 @@ namespace AccessWeaver
                     StandardInfo info;
                     if (!GetFileInformationByHandleEx(handle, FileStandardInfo,
                         out info, (uint)Marshal.SizeOf(typeof(StandardInfo))) || info.NumberOfLinks != 1)
-                        throw new IOException("Installed uninstall file is not a verified single-link file");
+                        throw new IOException("Installed file is not a verified single-link file");
                 }
                 var stream = new FileStream(handle, FileAccess.Read);
                 try
@@ -322,7 +322,7 @@ function Test-AccessWeaverInstallation([string]$directory) {
             $current=[IO.Path]::Combine($current,$component)
             $parents.Add([AccessWeaver.InstallerFileAccess]::OpenDirectory($current))
         }
-        $payload=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $directory 'accessweaver.exe'),128MB)
+        $payload=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $directory 'accessweaver.exe'),128MB,$true)
         if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $payload -Algorithm SHA256).Hash -ine $PayloadSHA256){return $false}
         if($PayloadSBOMSHA256){
             $sbom=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $directory 'SBOM.cdx.json'),4MB)

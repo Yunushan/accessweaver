@@ -540,8 +540,20 @@ try {
     Assert-Installed $builds[0]
     Require ((Test-Path -LiteralPath $uninstallData -PathType Leaf) -and $null -eq (Get-PendingInstallFixtureValue)) 'Approved Setup retry did not verify uninstall data and retire the marker'
     $uninstallDataRecoveryVerified=$true
-    $stage='managed-detection-missing-uninstall-data'
+    $stage='managed-detection-hard-linked-controller'
     $uninstallerDigest=Digest (Join-Path $install 'unins000.exe')
+    $detectedCore=Join-Path $install 'accessweaver.exe'
+    $linkedCore=Join-Path $capsule 'detection-controller-link.exe'
+    $null=New-Item -ItemType HardLink -Path $linkedCore -Target $detectedCore -ErrorAction Stop
+    try {
+        Require ((Digest $linkedCore) -ceq $builds[0].payloadSha256) 'Hard-linked detection fixture does not match the approved bytes'
+        $output=@(& $detector -Version $builds[0].version -Architecture $Architecture -PayloadSHA256 $builds[0].payloadSha256 -UninstallerSHA256 $uninstallerDigest -InstallDirectory $install 2>&1)
+        Require ($LASTEXITCODE -eq 1 -and $output.Count -eq 0) 'Managed detection accepted a hard-linked controller'
+        Require ((Digest $detectedCore) -ceq $builds[0].payloadSha256 -and
+            (Digest $linkedCore) -ceq $builds[0].payloadSha256) 'Managed detection altered the hard-linked fixture'
+    } finally {[IO.File]::Delete($linkedCore)}
+
+    $stage='managed-detection-missing-uninstall-data'
     [IO.File]::Move($uninstallData,$dataBackup)
     try {
         $output=@(& $detector -Version $builds[0].version -Architecture $Architecture -PayloadSHA256 $builds[0].payloadSha256 -UninstallerSHA256 $uninstallerDigest -InstallDirectory $install 2>&1)
