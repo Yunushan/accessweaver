@@ -163,7 +163,8 @@ class ArchiveMemberValidationTests(unittest.TestCase):
 class ReleaseVerificationTests(unittest.TestCase):
     def fixture(self, directory):
         manifest = dict(unsigned=True, sourceState="clean", sourceCommit="a" * 40,
-                        targetExecutionTested=False, version="1.0.0-alpha", builtAt="fixture", artifacts=[])
+                        targetExecutionTested=False, version="1.0.0-alpha", builtAt="fixture",
+                        goVersion="go version go1.27.4 linux/amd64", artifacts=[])
         # Put the host first to detect execution before later validation.
         targets = [("windows", "amd64")] + sorted(release.TARGETS - {("windows", "amd64")})
         checksums = {}
@@ -180,11 +181,11 @@ class ReleaseVerificationTests(unittest.TestCase):
         return manifest
 
     def test_native_execution_occurs_only_after_every_archive_passes(self):
-        for damaged in (False, True):
-            with self.subTest(damaged=damaged), tempfile.TemporaryDirectory() as folder:
+        for fault in ("none", "checksum", "sdk"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as folder:
                 directory = Path(folder)
                 manifest = self.fixture(directory)
-                if damaged:
+                if fault == "checksum":
                     path = directory / manifest["artifacts"][-1]["file"]
                     path.write_bytes(b"x" * path.stat().st_size)
 
@@ -193,7 +194,9 @@ class ReleaseVerificationTests(unittest.TestCase):
                     item = next(row for row in manifest["artifacts"] if row["file"] == path.name)
                     info = dict(version=manifest["version"], commit=manifest["sourceCommit"],
                                 sourceState=manifest["sourceState"], builtAt=manifest["builtAt"],
-                                platform=item["goos"], arch=item["goarch"])
+                                platform=item["goos"], arch=item["goarch"], goVersion="go1.27.4")
+                    if fault == "sdk" and item == manifest["artifacts"][-1]:
+                        info["goVersion"] = "go1.27.3"
                     return info, path.read_bytes()
 
                 with (
@@ -203,8 +206,9 @@ class ReleaseVerificationTests(unittest.TestCase):
                     patch.object(release, "execute_metadata") as execute,
                     contextlib.redirect_stdout(io.StringIO()),
                 ):
-                    if damaged:
-                        with self.assertRaisesRegex(ValueError, "Checksum mismatch"):
+                    if fault != "none":
+                        message = "Checksum mismatch" if fault == "checksum" else "Inconsistent goVersion"
+                        with self.assertRaisesRegex(ValueError, message):
                             release.verify(directory, execute_native=True)
                         execute.assert_not_called()
                     else:
@@ -213,6 +217,31 @@ class ReleaseVerificationTests(unittest.TestCase):
                         execute.assert_called_once()
                         self.assertEqual(execute.call_args.args[:2],
                                          (manifest["artifacts"][0]["file"].encode(), "accessweaver.exe"))
+
+    def test_native_version_comparison_must_match_packaged_version(self):
+        info = {"version": "1.2.3-alpha", "commit": "a" * 40, "goVersion": "go1.27.4"}
+        expected = {"version": "v1.2.3-alpha", "currentVersion": "1.2.3-alpha", "updateAvailable": False}
+        for label, comparison, failure in (
+            ("match", json.dumps(expected).encode(), None),
+            ("wrong-version", json.dumps({**expected, "currentVersion": "0.9.0"}).encode(), "Update comparison differs"),
+            ("update", json.dumps({**expected, "updateAvailable": True}).encode(), "Update comparison differs"),
+            ("numeric-false", json.dumps({**expected, "updateAvailable": 0}).encode(), "Update comparison differs"),
+            ("duplicate", b'{"version":"v1.2.3-alpha","version":"v1.2.3-alpha"}', "Duplicate native metadata"),
+            ("oversized", b" " * 4097, "Native metadata response exceeds"),
+        ):
+            with self.subTest(label=label):
+                def run(command, *, stdout, **_):
+                    data = json.dumps(info).encode() if command[1:] == ["version", "--json"] else comparison
+                    stdout.write(data)
+
+                with patch.object(release.subprocess, "run", side_effect=run) as probe:
+                    if failure:
+                        with self.assertRaisesRegex(ValueError, failure):
+                            release.execute_metadata(b"inert", "accessweaver.exe", info)
+                    else:
+                        release.execute_metadata(b"inert", "accessweaver.exe", info)
+                    self.assertEqual(probe.call_count, 2)
+                    self.assertEqual(probe.call_args.args[0][1:], ["system", "check-version", "v1.2.3-alpha"])
 
     def test_unexpected_release_file_is_refused_before_archive_inspection(self):
         with tempfile.TemporaryDirectory() as folder:

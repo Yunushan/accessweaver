@@ -104,6 +104,22 @@ def release_file(path, maximum):
     return info
 
 
+def native_metadata_json(executable, arguments, environment):
+    with tempfile.TemporaryFile() as output:
+        subprocess.run([str(executable), *arguments], env=environment, check=True,
+                       stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.DEVNULL, timeout=30)
+        output.seek(0)
+        data = output.read(4097)
+    require(0 < len(data) <= 4096, "Native metadata response exceeds inspection bounds")
+    return json.loads(data.decode("utf-8"), object_pairs_hook=unique_metadata_keys)
+
+
+def unique_metadata_keys(pairs):
+    result = dict(pairs)
+    require(len(result) == len(pairs), "Duplicate native metadata field")
+    return result
+
+
 def execute_metadata(binary, binary_name, info):
     with tempfile.TemporaryDirectory(prefix="accessweaver-release-check-") as temporary:
         exe = Path(temporary) / binary_name
@@ -111,11 +127,15 @@ def execute_metadata(binary, binary_name, info):
         exe.chmod(0o700)
         state = Path(temporary) / "must-not-create-user-state"
         environment = dict(os.environ, ACCESSWEAVER_HOME=str(state), ACCESSWEAVER_NO_BROWSER="1")
-        result = subprocess.run([str(exe), "version", "--json"], env=environment, check=True,
-                                capture_output=True, text=True, timeout=30)
-        require(json.loads(result.stdout) == info, "Runtime identity differs from packaged metadata")
-        subprocess.run([str(exe), "system", "check-version", "v" + info["version"]], env=environment,
-                       check=True, capture_output=True, timeout=30)
+        require(native_metadata_json(exe, ["version", "--json"], environment) == info,
+                "Runtime identity differs from packaged metadata")
+        tag = "v" + info["version"]
+        comparison = native_metadata_json(exe, ["system", "check-version", tag], environment)
+        require(isinstance(comparison, dict)
+                and comparison.keys() == {"version", "currentVersion", "updateAvailable"}
+                and comparison["version"] == tag and comparison["currentVersion"] == info["version"]
+                and comparison["updateAvailable"] is False,
+                "Update comparison differs from the packaged version")
         require(not state.exists(), "Metadata commands unexpectedly wrote user state")
 
 
@@ -126,7 +146,13 @@ def verify(directory, execute_native=False):
     manifest = json.loads(manifest_bytes.decode("utf-8"))
     require(manifest.get("unsigned") is True, "Unsigned packaging must be labeled accurately")
     require(manifest.get("sourceState") in ("clean", "modified", "unknown"), "Missing source modification state")
-    require(manifest.get("sourceCommit") == "unknown" or re.fullmatch(r"[a-f0-9]{40,64}", manifest.get("sourceCommit", "")), "Invalid source commit")
+    commit = manifest.get("sourceCommit")
+    require(isinstance(commit, str) and (commit == "unknown" or re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", commit)),
+            "Invalid source commit")
+    sdk = manifest.get("goVersion")
+    match = re.fullmatch(r"go version (\S+) [a-z0-9]+/[a-z0-9]+", sdk) if isinstance(sdk, str) else None
+    require(match is not None, "Invalid release Go toolchain identity")
+    go_version = match.group(1)
     require(manifest.get("targetExecutionTested") is False, "Packaging must not imply target execution")
 
     artifacts = manifest["artifacts"]
@@ -188,7 +214,7 @@ def verify(directory, execute_native=False):
                     output.write(block)
             require(copied == size and digest.hexdigest() == checksums[name], f"Checksum mismatch: {name}")
             info, binary = inspect_archive(frozen, name[:-len(extension)], binary_name)
-        for key, expected in {"version": manifest["version"], "commit": manifest["sourceCommit"], "sourceState": manifest["sourceState"], "builtAt": manifest["builtAt"], "platform": target[0], "arch": target[1]}.items():
+        for key, expected in {"version": manifest["version"], "commit": manifest["sourceCommit"], "sourceState": manifest["sourceState"], "builtAt": manifest["builtAt"], "platform": target[0], "arch": target[1], "goVersion": go_version}.items():
             require(info.get(key) == expected, f"Inconsistent {key}: {name}")
         if execute_native and target == (host_os, host_arch):
             native = binary, binary_name, info
