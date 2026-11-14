@@ -34,9 +34,16 @@ def validate_run_id(run_id):
             "Expected an independently approved GitHub Actions run ID")
 
 
-def authenticate_run(command, run_id, *, command_failure=None):
+def validate_run_attempt(run_attempt):
+    require(isinstance(run_attempt, str) and re.fullmatch(r"[1-9][0-9]{0,19}", run_attempt),
+            "Expected an independently approved GitHub Actions run attempt")
+
+
+def authenticate_run(command, run_id, *, run_attempt=None, command_failure=None):
     """Check the invocation in the certificate returned by the trusted verifier."""
     validate_run_id(run_id)
+    if run_attempt is not None:
+        validate_run_attempt(run_attempt)
     command = [*command, "--jq", ".[] | .verificationResult.signature.certificate.runInvocationURI"]
     result = subprocess.run(command, capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
@@ -44,9 +51,10 @@ def authenticate_run(command, run_id, *, command_failure=None):
             raise command_failure(result)
         raise ValueError("GitHub cryptographic provenance verification failed")
     prefix = re.escape(f"https://github.com/{REPOSITORY}/actions/runs/{run_id}/attempts/")
-    # A rerun can reuse successful jobs from a previous attempt of the same run.
-    require(any(re.fullmatch(prefix + r"[1-9][0-9]{0,19}", line) for line in result.stdout.splitlines()),
-            "Verified attestation does not match the expected GitHub Actions run")
+    # Run-only callers can accept successful jobs retained from previous attempts.
+    attempt = run_attempt if run_attempt is not None else r"[1-9][0-9]{0,19}"
+    require(any(re.fullmatch(prefix + attempt, line) for line in result.stdout.splitlines()),
+            "Verified attestation does not match the expected GitHub Actions run or attempt")
 
 
 def regular_file(path, maximum):

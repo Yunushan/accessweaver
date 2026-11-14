@@ -396,10 +396,12 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
     def test_all_five_private_snapshot_subjects_authenticate_before_any_parse(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);names=self.fixture(root);seen=[]
-            def authenticate(path,bundle,commit,ref,gh,run_id):
+            def authenticate(path,bundle,commit,ref,gh,run_id,*,run_attempt):
+                self.assertIsNone(run_attempt)
                 self.assertNotEqual(path.parent,root);self.assertEqual(bundle.parent,path.parent)
                 self.assertEqual((commit,ref,gh),(COMMIT,REF,'trusted-gh'));seen.append(path.name)
-            def contents(private,*args,report_schema):
+            def contents(private,*args,report_schema,run_attempt):
+                self.assertIsNone(run_attempt)
                 self.assertEqual(report_schema,41)
                 self.assertEqual(set(seen),names);(root/'amd64.json').write_bytes(b'changed original input')
                 self.assertNotEqual((private/'amd64.json').read_bytes(),(root/'amd64.json').read_bytes());return {'mocked':True,'nativeRunID':'7'}
@@ -429,6 +431,19 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
             self.assertEqual(run.call_count, 5)
             parse.assert_not_called()
 
+    def test_rejects_mixed_attempts_from_the_same_run_before_parsing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            self.fixture(root)
+            good = subprocess.CompletedProcess(["gh"], 0, stdout=RUN_URI)
+            older = subprocess.CompletedProcess(["gh"], 0, stdout=RUN_URI.replace("/attempts/2", "/attempts/1"))
+            with patch("verify_windows_installer_provenance.subprocess.run", side_effect=[good] * 4 + [older]) as run, patch(
+                "verify_windows_installer_provenance.validate_contents"
+            ) as parse, self.assertRaisesRegex(ValueError, "run or attempt"):
+                verify(root, COMMIT, REF, "amd64", run_id="7", run_attempt="2")
+            self.assertEqual(run.call_count, 5)
+            parse.assert_not_called()
+
     def test_bad_input_set_and_wrong_target_fail_before_authentication(self):
         for kind in ('extra','missing','hardlink','target'):
             with self.subTest(kind=kind),tempfile.TemporaryDirectory() as folder:
@@ -455,7 +470,7 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
             root = Path(folder)
             self.fixture(root)
             (root / 'amd64.json').write_text(json.dumps({
-                'schemaVersion': 40, 'sourceCommit': COMMIT, 'sourceRef': REF, 'target': 'windows/amd64',
+                'schemaVersion': 40, 'sourceCommit': COMMIT, 'sourceRef': REF, 'target': 'windows/amd64', 'runAttempt': '2',
             }), encoding='utf-8')
             build_root = root / 'build'
             reports = build_root / 'installer-lifecycle-checks'
@@ -476,6 +491,8 @@ class WindowsInstallerProvenanceTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'approved schema'):
                     verify(candidate, COMMIT, REF, 'amd64', run_id='7', report_schema=41)
                 self.assertEqual(authenticate.call_count, 5)
+                with self.assertRaisesRegex(ValueError, 'approved run attempt'):
+                    verify(candidate, COMMIT, REF, 'amd64', run_id='7', run_attempt='3')
                 with self.assertRaisesRegex(ValueError, 'did not finish cleanly'):
                     verify(candidate, COMMIT, REF, 'amd64', run_id='7')
 
