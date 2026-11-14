@@ -292,7 +292,7 @@ function Test-AccessWeaverInstallation([string]$directory) {
     elseif($registeredDirectory -ine $directory){throw 'Unexpected registered installation directory'}
     Initialize-AccessWeaverInstalledFileAccess
     $parents=[Collections.Generic.List[Microsoft.Win32.SafeHandles.SafeFileHandle]]::new()
-    $payload=$null;$uninstaller=$null;$sbom=$null;$buildInfo=$null
+    $payload=$null;$uninstaller=$null;$uninstallData=$null;$sbom=$null;$buildInfo=$null
     try {
         $root=[IO.Path]::GetPathRoot($directory)
         $current=$root
@@ -317,6 +317,8 @@ function Test-AccessWeaverInstallation([string]$directory) {
             $path=Get-AccessWeaverRegisteredUninstaller $registration $directory
             $uninstaller=[AccessWeaver.InstallerFileAccess]::OpenFile($path,512MB)
             if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $uninstaller -Algorithm SHA256).Hash -ine $UninstallerSHA256){return $false}
+            $dataPath=[IO.Path]::ChangeExtension($path,'.dat')
+            $uninstallData=[AccessWeaver.InstallerFileAccess]::OpenFile($dataPath,512MB)
         }
         $confirmed=Read-AccessWeaverRegistration Registry64
         if($null -eq $confirmed -or $confirmed.version -cne $registration.version -or
@@ -328,12 +330,15 @@ function Test-AccessWeaverInstallation([string]$directory) {
         Assert-NoAccessWeaverSetup
     } finally {
         try {
-            try {if($null -ne $uninstaller){$uninstaller.Dispose()}}
+            try {if($null -ne $uninstallData){$uninstallData.Dispose()}}
             finally {
-                try {if($null -ne $buildInfo){$buildInfo.Dispose()}}
+                try {if($null -ne $uninstaller){$uninstaller.Dispose()}}
                 finally {
-                    try {if($null -ne $sbom){$sbom.Dispose()}}
-                    finally {if($null -ne $payload){$payload.Dispose()}}
+                    try {if($null -ne $buildInfo){$buildInfo.Dispose()}}
+                    finally {
+                        try {if($null -ne $sbom){$sbom.Dispose()}}
+                        finally {if($null -ne $payload){$payload.Dispose()}}
+                    }
                 }
             }
         } finally {

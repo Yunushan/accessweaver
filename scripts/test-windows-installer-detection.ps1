@@ -34,6 +34,7 @@ $fixtureDirectory=[IO.Directory]::CreateDirectory($testRoot)
 $payload=Join-Path $testRoot 'accessweaver.exe'
 $fixture=Join-Path $testRoot 'fixture.ps1'
 $uninstaller=Join-Path $testRoot 'unins001.exe'
+$uninstallData=[IO.Path]::ChangeExtension($uninstaller,'.dat')
 $sbom=Join-Path $testRoot 'SBOM.cdx.json'
 $buildInfo=Join-Path $testRoot 'BUILD-INFO.json'
 $buildInfoBytes=[Text.Encoding]::UTF8.GetBytes('{"version":"0.1.0-alpha"}')
@@ -151,6 +152,9 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             @{mode='registration-changed';code=1;count=0;hash=$hash},
             @{mode='approved';code=0;count=1;hash=$hash;uninstaller=$uninstallerHash},
             @{mode='logging';code=0;count=1;hash=$hash;uninstaller=$uninstallerHash},
+            @{mode='approved';code=1;count=0;hash=$hash;uninstaller=$uninstallerHash;removeUninstallData=$true},
+            @{mode='approved';code=1;count=0;hash=$hash;uninstaller=$uninstallerHash;emptyUninstallData=$true},
+            @{mode='approved';code=0;count=1;hash=$hash;removeUninstallData=$true},
             @{mode='approved';code=0;count=0;hash=$hash;uninstaller=('0'*64)},
             @{mode='approved';code=1;count=0;hash=$hash;uninstaller='invalid'},
             @{mode='missing-command';code=1;count=0;hash=$hash;uninstaller=$uninstallerHash},
@@ -192,6 +196,9 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             @{mode='pending';code=1;count=0;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true}
         )
         foreach($case in $cases){
+            if($case.removeUninstallData){[IO.File]::Delete($uninstallData)}
+            elseif($case.emptyUninstallData){[IO.File]::WriteAllBytes($uninstallData,[byte[]]@())}
+            else{[IO.File]::WriteAllText($uninstallData,'inert uninstall data fixture')}
             if($case.removeSBOM){[IO.File]::Delete($sbom)}else{[IO.File]::WriteAllBytes($sbom,$sbomBytes)}
             if($case.removeBuildInfo){[IO.File]::Delete($buildInfo)}
             elseif($case.changedBuildInfo){[IO.File]::WriteAllText($buildInfo,'{"version":"0.1.1-alpha"}')}
@@ -307,7 +314,7 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
         }
     } finally {$env:AW_DETECTION_FIXTURE=$saved}
 } finally {
-    foreach($file in @($payload,$fixture,$uninstaller,$sbom,$buildInfo)){
+    foreach($file in @($payload,$fixture,$uninstaller,$uninstallData,$sbom,$buildInfo)){
         if(Test-Path -LiteralPath $file){Remove-Item -LiteralPath $file -Force}
     }
     $fixtureDirectory.Delete()
