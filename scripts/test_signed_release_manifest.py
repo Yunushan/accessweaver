@@ -122,6 +122,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
             report["payloadPublisherSHA256"] = "7" * 64
         if overrides.get("schemaVersion", 5) >= 10:
             report.update(buildInfoSHA256="6" * 64, installedBuildInfoVerified=True)
+        if overrides.get("schemaVersion", 5) >= 11:
+            report["previousBuildInfoSHA256"] = "5" * 64 if overrides.get("installMode") == "upgrade" else ""
         evidence = self.root / filename
         evidence.write_text(json.dumps({**report, **overrides}), encoding="utf-8")
         return evidence, release.digest(evidence)
@@ -853,6 +855,52 @@ class SignedReleaseManifestTests(unittest.TestCase):
         original = manifest.read_bytes()
         data = json.loads(original)
         files = release.inventory(self.candidate, self.subjects)
+        upgraded_evidence = self.write_reboot_report(
+            "upgrade-build-info.json", schemaVersion=11, installMode="upgrade",
+            previousVersion="1.2.2-rc.1", previousPayloadSHA256="d" * 64,
+            userProfilePreservedThroughUpgrade=True, uninstallerSHA256="e" * 64,
+        )
+        new_entry, = release.load_detection_evidence(self.candidate, [upgraded_evidence], files, VERSION)
+        self.assertEqual(new_entry["previousBuildInfoSHA256"], "5" * 64)
+        entries = [data["windowsDetection"][0], new_entry, data["windowsDetection"][2]]
+        manifest.write_bytes(release.encode_manifest(COMMIT, REF, files, entries))
+        sign_manifest()
+        new_inventory = {**inventory_record, "schemaVersion": 2, "buildInfoSHA256": "5" * 64}
+        inventory_path.write_text(json.dumps(new_inventory), encoding="utf-8")
+        inventory_options = {"windows_upgrade_inventory": (inventory_path, release.digest(inventory_path))}
+        with self.assertRaisesRegex(ValueError, "matches the installed Windows SBOM and publisher"):
+            self.verify(approved, pin, stage_directory=staging, **qualified)
+        with self.assertRaisesRegex(ValueError, "matches the installed Windows build metadata"):
+            self.verify(approved, pin, stage_directory=staging, **trusted)
+        self.assertEqual(list(staging.iterdir()), [])
+        selected = self.verify(approved, pin, stage_directory=staging, **inventory_options)
+        self.assertEqual(selected["schemaVersion"], 7)
+        self.assertTrue(selected["managedUpdate"]["installerStaged"])
+        self.assertEqual(selected["managedUpdate"]["windowsUpgradeDetection"]["previousBuildInfoSHA256"], "5" * 64)
+        (staging / selected["managedUpdate"]["installer"]).unlink()
+        self.verify(approved, pin, current_build_info_sha256="5" * 64, **trusted)
+        for update, error in (
+            ({"current_build_info_sha256": "0" * 64}, "matches the installed Windows build metadata"),
+            ({"current_build_info_sha256": "invalid"}, "requires all installed trust pins"),
+        ):
+            with self.subTest(build_info=update), self.assertRaisesRegex(ValueError, error):
+                self.verify(approved, pin, stage_directory=staging, **trusted, **update)
+        for invalid_inventory, error in (
+            (inventory_record, "matches the installed Windows build metadata"),
+            ({**new_inventory, "buildInfoSHA256": "0" * 64}, "matches the installed Windows build metadata"),
+            ({**new_inventory, "buildInfoSHA256": ""}, "Malformed Windows upgrade inventory digest"),
+            ({**new_inventory, "schemaVersion": 1}, "Malformed Windows upgrade inventory"),
+        ):
+            inventory_path.write_text(json.dumps(invalid_inventory), encoding="utf-8")
+            with self.subTest(new_inventory=invalid_inventory), self.assertRaisesRegex(ValueError, error):
+                self.verify(approved, pin, stage_directory=staging,
+                            windows_upgrade_inventory=(inventory_path, release.digest(inventory_path)))
+        inventory_path.write_text(json.dumps(new_inventory), encoding="utf-8")
+        revoked_prior = self.write_policy({**self.policy, "subjectSHA256": ["5" * 64]})
+        with self.assertRaisesRegex(ValueError, "revoked"):
+            self.verify(approved, pin, policy_pin=revoked_prior, stage_directory=staging, **inventory_options)
+        self.assertEqual(list(staging.iterdir()), [])
+        self.write_policy(self.policy)
         without_build_info = [
             {field: value for field, value in entry.items() if field != release.WINDOWS_BUILD_INFO}
             for entry in data["windowsDetection"]

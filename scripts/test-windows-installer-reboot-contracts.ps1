@@ -22,9 +22,9 @@ Assert-Refused {Assert-LaterGuestBoot '639303000000000001' '639303000000000000'}
 Assert-Refused {Assert-LaterGuestBoot 'missing' '639303000000000000'}
 $pin='a'*64
 $expected=@{
-    schemaVersion=10;runID=('b'*32);architecture='amd64';version='1.0.0';
+    schemaVersion=11;runID=('b'*32);architecture='amd64';version='1.0.0';
     installMode='clean';previousVersion='';previousPayloadSHA256='';previousSetupSHA256='';previousPublisherSHA256='';userProfilePreservedThroughUpgrade=$false;
-    previousPayloadSBOMSHA256='';previousPayloadPublisherSHA256='';previousPayloadTrustVerified=$false;
+    previousPayloadSBOMSHA256='';previousPayloadPublisherSHA256='';previousPayloadTrustVerified=$false;previousBuildInfoSHA256='';
     setupSHA256=$pin;payloadSHA256=$pin;payloadSBOMSHA256=('f'*64);buildInfoSHA256=('7'*64);publisherSHA256=$pin;payloadPublisherSHA256=('e'*64);userSID='synthetic-user';guestID='10000000-2000-3000-4000-000000000005';
     detectorSHA256=$pin;fixtureSHA256=$pin;commonSHA256=$pin;publisherVerifierSHA256=$pin
 }
@@ -40,7 +40,7 @@ foreach($key in $saved.Keys){
     $changed[$key]='changed'
     Assert-Refused {Assert-RebootIdentity $changed $expected}
 }
-$oldSchema=$saved.Clone();$oldSchema.schemaVersion=9
+$oldSchema=$saved.Clone();$oldSchema.schemaVersion=10
 Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
 
 & {
@@ -70,9 +70,9 @@ Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
            $trace[1].artifact -cne $controller -or $trace[1].sha256 -cne $PayloadSHA256 -or $trace[1].publisher -cne $PayloadPublisherCertificateSHA256){
             throw 'Installed candidate pins did not reach verification'
         }
-        Assert-InstalledDetection $true '1.0.0' ('e'*64) -CandidateSBOMSHA256 ('f'*64) -CandidateBuildInfoSHA256 ''
+        Assert-InstalledDetection $true '1.0.0' ('e'*64) -CandidateSBOMSHA256 ('f'*64) -CandidateBuildInfoSHA256 ('9'*64)
         Assert-InstalledPublisher ('e'*64) ('a'*64)
-        if($trace[2].version -cne '1.0.0' -or $trace[2].payload -cne ('e'*64) -or $trace[2].sbom -cne ('f'*64) -or $trace[2].buildInfo -cne '' -or
+        if($trace[2].version -cne '1.0.0' -or $trace[2].payload -cne ('e'*64) -or $trace[2].sbom -cne ('f'*64) -or $trace[2].buildInfo -cne ('9'*64) -or
            $trace[3].artifact -cne $controller -or $trace[3].sha256 -cne ('e'*64) -or $trace[3].publisher -cne ('a'*64)){
             throw 'Prior installed payload verification did not receive the independent pins'
         }
@@ -127,8 +127,10 @@ $upgraded.previousPayloadSBOMSHA256=$priorSBOM;$upgraded.previousPayloadPublishe
 $upgraded.userProfilePreservedThroughUpgrade=$true
 Assert-Refused {Assert-RebootIdentity $upgraded $upgradeExpected}
 $upgraded.previousPayloadTrustVerified=$true
+$upgraded.previousBuildInfoSHA256='9'*64
+$upgradeExpected.previousBuildInfoSHA256='9'*64
 Assert-RebootIdentity $upgraded $upgradeExpected
-foreach($pinName in @('previousPayloadSBOMSHA256','previousPayloadPublisherSHA256')){
+foreach($pinName in @('previousPayloadSBOMSHA256','previousPayloadPublisherSHA256','previousBuildInfoSHA256')){
     $mismatched=$upgraded.Clone()
     $mismatched[$pinName]='0'*64
     Assert-Refused {Assert-RebootIdentity $mismatched $upgradeExpected}

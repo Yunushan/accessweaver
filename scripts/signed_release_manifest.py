@@ -33,6 +33,7 @@ WINDOWS_DETECTION_FIELDS = (
 )
 WINDOWS_PAYLOAD_PUBLISHER = "payloadPublisherCertificateSHA256"
 WINDOWS_BUILD_INFO = "buildInfoSHA256"
+WINDOWS_PREVIOUS_BUILD_INFO = "previousBuildInfoSHA256"
 WINDOWS_PREVIOUS_TRUST_FIELDS = ("previousPayloadSBOMSHA256", "previousPayloadPublisherSHA256")
 WINDOWS_DOWNGRADE_FIELDS = ("previousSetupSHA256", "previousPublisherSHA256")
 REBOOT_CHECKS = (
@@ -155,7 +156,11 @@ def validate_detection(entries, subjects, version):
         trust_fields = set(WINDOWS_PREVIOUS_TRUST_FIELDS).intersection(entry)
         publisher_fields = {WINDOWS_PAYLOAD_PUBLISHER}.intersection(entry)
         downgrade_fields = set(WINDOWS_DOWNGRADE_FIELDS).intersection(entry)
-        build_info_fields = {WINDOWS_BUILD_INFO}.intersection(entry)
+        build_info_fields = {WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO}.intersection(entry)
+        if WINDOWS_PREVIOUS_BUILD_INFO in build_info_fields:
+            require(WINDOWS_BUILD_INFO in build_info_fields and entry.get("installMode") == "upgrade"
+                    and trust_fields == set(WINDOWS_PREVIOUS_TRUST_FIELDS),
+                    "Malformed previous Windows build metadata evidence")
         require(entry.keys() == set(WINDOWS_DETECTION_FIELDS) | trust_fields | publisher_fields
                 | downgrade_fields | build_info_fields
                 and (not trust_fields or trust_fields == set(WINDOWS_PREVIOUS_TRUST_FIELDS)
@@ -197,7 +202,7 @@ def load_detection_evidence(directory, evidence, subjects, version):
         content = independently_pinned_file(directory, path, fingerprint, maximum=8192)
         report = decode_json(content)
         require(isinstance(report, dict) and type(report.get("schemaVersion")) is int
-                and report["schemaVersion"] in (5, 6, 7, 8, 9, 10) and report.get("stage") == "complete"
+                and report["schemaVersion"] in (5, 6, 7, 8, 9, 10, 11) and report.get("stage") == "complete"
                 and all(report.get(field) is True for field in REBOOT_CHECKS),
                 "Windows reboot qualification is incomplete")
         architecture = report.get("architecture")
@@ -247,6 +252,12 @@ def load_detection_evidence(directory, evidence, subjects, version):
             require(report.get("installedBuildInfoVerified") is True,
                     "Windows reboot evidence does not verify installed build metadata")
             entry[WINDOWS_BUILD_INFO] = report.get(WINDOWS_BUILD_INFO)
+        if report["schemaVersion"] >= 11:
+            prior_build_info = report.get(WINDOWS_PREVIOUS_BUILD_INFO)
+            if mode == "upgrade":
+                entry[WINDOWS_PREVIOUS_BUILD_INFO] = prior_build_info
+            else:
+                require(prior_build_info == "", "Clean Windows evidence contains prior build metadata")
         if downgrade:
             entry.update({field: report.get(field) for field in WINDOWS_DOWNGRADE_FIELDS})
         else:
@@ -268,6 +279,8 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
         schema = 5
     if any(WINDOWS_BUILD_INFO in entry for entry in windows_detection):
         schema = 6
+    if any(WINDOWS_PREVIOUS_BUILD_INFO in entry for entry in windows_detection):
+        schema = 7
     manifest = {
         "schemaVersion": schema,
         "scope": "accessweaver-signed-desktop-release",
@@ -279,7 +292,8 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
     if windows_detection:
         manifest["windowsDetection"] = [
             {field: entry[field] for field in WINDOWS_DETECTION_FIELDS + WINDOWS_PREVIOUS_TRUST_FIELDS
-             + (WINDOWS_PAYLOAD_PUBLISHER,) + WINDOWS_DOWNGRADE_FIELDS + (WINDOWS_BUILD_INFO,) if field in entry}
+             + (WINDOWS_PAYLOAD_PUBLISHER,) + WINDOWS_DOWNGRADE_FIELDS
+             + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO) if field in entry}
             for entry in sorted(windows_detection, key=detection_key)
         ]
     return (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
@@ -336,11 +350,15 @@ def load_windows_upgrade_inventory(directory, path, fingerprint):
     record = decode_json(content)
     fields = {"schemaVersion", "target", "version", "payloadSHA256", "payloadSBOMSHA256",
               "payloadPublisherSHA256"}
-    require(isinstance(record, dict) and record.keys() == fields
-            and type(record["schemaVersion"]) is int and record["schemaVersion"] == 1
-            and record["target"] in ("windows/amd64", "windows/arm64")
+    require(isinstance(record, dict) and type(record.get("schemaVersion")) is int
+            and record["schemaVersion"] in (1, 2), "Malformed Windows upgrade inventory")
+    digests = ("payloadSHA256", "payloadSBOMSHA256", "payloadPublisherSHA256")
+    if record["schemaVersion"] == 2:
+        fields.add(WINDOWS_BUILD_INFO)
+        digests += (WINDOWS_BUILD_INFO,)
+    require(record.keys() == fields and record["target"] in ("windows/amd64", "windows/arm64")
             and isinstance(record["version"], str), "Malformed Windows upgrade inventory")
-    for field in ("payloadSHA256", "payloadSBOMSHA256", "payloadPublisherSHA256"):
+    for field in digests:
         require(isinstance(record[field], str) and re.fullmatch(SHA256, record[field]),
                 "Malformed Windows upgrade inventory digest")
     return record
@@ -440,9 +458,14 @@ def select_windows_upgrade(detection, update, installed_digest, installed_trust)
     ]
     require(len(matches) == 1, "No approved reboot evidence matches the installed Windows payload")
     entry = matches[0]
-    if installed_trust:
-        require(all(entry.get(field) == digest for field, digest in installed_trust.items()),
+    if installed_trust or WINDOWS_PREVIOUS_BUILD_INFO in entry:
+        require(all(field in installed_trust and entry.get(field) == installed_trust[field]
+                    for field in WINDOWS_PREVIOUS_TRUST_FIELDS),
                 "No approved reboot evidence matches the installed Windows SBOM and publisher")
+    if WINDOWS_PREVIOUS_BUILD_INFO in entry or WINDOWS_PREVIOUS_BUILD_INFO in installed_trust:
+        require(WINDOWS_PREVIOUS_BUILD_INFO in entry
+                and entry[WINDOWS_PREVIOUS_BUILD_INFO] == installed_trust.get(WINDOWS_PREVIOUS_BUILD_INFO),
+                "No approved reboot evidence matches the installed Windows build metadata")
     return entry
 
 
@@ -533,12 +556,12 @@ def stage_managed_update(root, directory, update, policy):
 def verify(directory, certificate, certificate_sha256, commit, ref, openssl="openssl",
            *, revocation_list, revocation_list_sha256, current_version=None, target=None, stage_directory=None,
            current_payload_sha256=None, current_payload_sbom_sha256=None, current_payload_publisher_sha256=None,
-           minimum_revocation_sequence=None, windows_upgrade_inventory=None, macos_publisher=None,
+           current_build_info_sha256=None, minimum_revocation_sequence=None, windows_upgrade_inventory=None, macos_publisher=None,
            windows_publisher=None, windows_payload_publisher=None):
     if windows_upgrade_inventory is not None:
         require(all(value is None for value in (
             current_version, target, current_payload_sha256, current_payload_sbom_sha256,
-            current_payload_publisher_sha256,
+            current_payload_publisher_sha256, current_build_info_sha256,
         )), "Windows upgrade inventory cannot be combined with explicit installed identity inputs")
         path, fingerprint = windows_upgrade_inventory
         record = load_windows_upgrade_inventory(directory, path, fingerprint)
@@ -546,6 +569,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
         current_payload_sha256 = record["payloadSHA256"]
         current_payload_sbom_sha256 = record["payloadSBOMSHA256"]
         current_payload_publisher_sha256 = record["payloadPublisherSHA256"]
+        current_build_info_sha256 = record.get(WINDOWS_BUILD_INFO)
     require((current_version is None) == (target is None),
             "Managed update evaluation requires an installed version and target")
     if current_payload_sha256 is not None:
@@ -560,6 +584,11 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             isinstance(pin, str) and re.fullmatch(r"[a-fA-F0-9]{64}", pin) for pin in pins
         ), "Installed Windows trust matching requires the payload, SBOM and publisher SHA-256 digests")
         installed_trust = dict(zip(WINDOWS_PREVIOUS_TRUST_FIELDS, (pin.lower() for pin in pins)))
+    if current_build_info_sha256 is not None:
+        require(installed_trust and isinstance(current_build_info_sha256, str)
+                and re.fullmatch(r"[a-fA-F0-9]{64}", current_build_info_sha256),
+                "Installed Windows build metadata matching requires all installed trust pins")
+        installed_trust[WINDOWS_PREVIOUS_BUILD_INFO] = current_build_info_sha256.lower()
     if windows_publisher is not None or windows_payload_publisher is not None:
         require(sys.platform == "win32" and target in ("windows/amd64", "windows/arm64")
                 and current_version is not None, "Native publisher verification requires Windows and a Windows managed update target")
@@ -619,7 +648,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     entry[field] for field in ("uninstallerSHA256", "rebootEvidenceSHA256",
                                                "previousPayloadSHA256", "publisherCertificateSHA256")
                     + WINDOWS_PREVIOUS_TRUST_FIELDS + (WINDOWS_PAYLOAD_PUBLISHER,)
-                    + WINDOWS_DOWNGRADE_FIELDS + (WINDOWS_BUILD_INFO,) if field in entry
+                    + WINDOWS_DOWNGRADE_FIELDS + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO) if field in entry
                 ) for entry in entries),
                 "Release subject or Windows detection evidence is revoked")
         sboms_verified, macos_detectors = validate_release_sboms(root, files, commit, version)
@@ -728,6 +757,8 @@ def main():
                              help="match the installed Windows payload SBOM to signed reboot evidence")
     verify_args.add_argument("--current-payload-publisher-sha256",
                              help="match the installed Windows payload signer certificate to signed reboot evidence")
+    verify_args.add_argument("--current-build-info-sha256",
+                             help="match the installed Windows build metadata digest to signed reboot evidence")
     verify_args.add_argument("--windows-upgrade-inventory", nargs=2, metavar=("PATH", "SHA256"),
                              help="match an independently pinned Windows detector inventory to signed reboot evidence")
     verify_args.add_argument("--windows-publisher-sha256",
@@ -760,6 +791,7 @@ def main():
                                     current_payload_sha256=args.current_payload_sha256,
                                     current_payload_sbom_sha256=args.current_payload_sbom_sha256,
                                     current_payload_publisher_sha256=args.current_payload_publisher_sha256,
+                                    current_build_info_sha256=args.current_build_info_sha256,
                                     minimum_revocation_sequence=args.minimum_revocation_sequence,
                                     windows_upgrade_inventory=inventory, macos_publisher=args.macos_publisher,
                                     windows_publisher=args.windows_publisher_sha256,

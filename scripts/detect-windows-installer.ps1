@@ -236,14 +236,19 @@ try {
     }
     if(-not $detected){exit 0}
     if($UpgradeInventory){
-        [ordered]@{
+        $inventory=[ordered]@{
             schemaVersion=1
             target='windows/'+$Architecture
             version=$Version
             payloadSHA256=$PayloadSHA256.ToLowerInvariant()
             payloadSBOMSHA256=$PayloadSBOMSHA256.ToLowerInvariant()
             payloadPublisherSHA256=$PayloadPublisherSHA256.ToLowerInvariant()
-        } | Microsoft.PowerShell.Utility\ConvertTo-Json -Compress
+        }
+        if($BuildInfoSHA256){
+            $inventory.schemaVersion=2
+            $inventory.buildInfoSHA256=$BuildInfoSHA256.ToLowerInvariant()
+        }
+        $inventory | Microsoft.PowerShell.Utility\ConvertTo-Json -Compress
     } else {Microsoft.PowerShell.Utility\Write-Output 'AccessWeaver detected'}
     exit 0
 } catch {

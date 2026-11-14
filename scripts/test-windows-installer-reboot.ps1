@@ -16,7 +16,8 @@ param(
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousPublisherCertificateSHA256='',
     [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PayloadPublisherCertificateSHA256='',
     [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$PayloadSBOMSHA256,
-    [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$BuildInfoSHA256
+    [Parameter(Mandatory)][ValidatePattern('\A[a-fA-F0-9]{64}\z')][string]$BuildInfoSHA256,
+    [ValidatePattern('\A(?:[a-fA-F0-9]{64})?\z')][string]$PreviousBuildInfoSHA256=''
 )
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
@@ -71,12 +72,16 @@ function Assert-RebootUpgradeOrder($Comparison,[string]$PreviousVersion,[string]
     }
 }
 function Assert-RebootIdentity($Record,$Expected){
-    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 10 -or
+    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 11 -or
        $Record.runID -cne $Expected.runID -or $Record.architecture -cne $Expected.architecture -or
        $Record.installMode -cne $Expected.installMode -or $Record.previousVersion -cne $Expected.previousVersion -or
        $Record.previousPayloadSHA256 -cne $Expected.previousPayloadSHA256 -or
        $Record.previousPayloadSBOMSHA256 -cne $Expected.previousPayloadSBOMSHA256 -or
        $Record.previousPayloadPublisherSHA256 -cne $Expected.previousPayloadPublisherSHA256 -or
+       $Record.previousBuildInfoSHA256 -isnot [string] -or
+       $Record.previousBuildInfoSHA256 -cne $Expected.previousBuildInfoSHA256 -or
+       ($Expected.installMode -ceq 'upgrade' -and $Record.previousBuildInfoSHA256 -cnotmatch '\A[a-f0-9]{64}\z') -or
+       ($Expected.installMode -ceq 'clean' -and $Record.previousBuildInfoSHA256 -cne '') -or
        $Record.previousPayloadTrustVerified -isnot [bool] -or
        $Record.previousPayloadTrustVerified -ne ($Expected.installMode -ceq 'upgrade') -or
        $Record.previousSetupSHA256 -cne $Expected.previousSetupSHA256 -or
@@ -349,6 +354,9 @@ Assert-RebootPath $common
 . $common
 Assert-InstallerReleaseVersion $Version
 $installMode=Get-RebootInstallMode $Version $PayloadSHA256 $PreviousVersion $PreviousPayloadSHA256 $PreviousPayloadSBOMSHA256 $PreviousPayloadPublisherCertificateSHA256
+if(($installMode -ceq 'upgrade') -ne [bool]$PreviousBuildInfoSHA256){
+    throw 'Upgrade qualification requires an approved prior build metadata digest'
+}
 if($installMode -ceq 'upgrade'){Assert-InstallerReleaseVersion $PreviousVersion}
 $testDowngrade=Test-RebootDowngradeInputs $installMode $SetupSHA256 $PreviousSetupSHA256 $PreviousPublisherCertificateSHA256
 $setup=Join-Path $PSScriptRoot 'setup.exe'
@@ -362,9 +370,10 @@ $capsule=Join-Path $programFiles ('AccessWeaver reboot fixture '+$RunID)
 $baseline=Join-Path $capsule 'prepared.json'
 $report=Join-Path $capsule 'result.json'
 if(-not $PayloadPublisherCertificateSHA256){$PayloadPublisherCertificateSHA256=$PublisherCertificateSHA256}
-$expected=[ordered]@{schemaVersion=10;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+$expected=[ordered]@{schemaVersion=11;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
     previousVersion=$PreviousVersion;previousPayloadSHA256=$PreviousPayloadSHA256.ToLowerInvariant();
     previousPayloadSBOMSHA256=$PreviousPayloadSBOMSHA256.ToLowerInvariant();
+    previousBuildInfoSHA256=$PreviousBuildInfoSHA256.ToLowerInvariant();
     previousPayloadPublisherSHA256=$PreviousPayloadPublisherCertificateSHA256.ToLowerInvariant();previousPayloadTrustVerified=$false;
     previousSetupSHA256=$PreviousSetupSHA256.ToLowerInvariant();previousPublisherSHA256=$PreviousPublisherCertificateSHA256.ToLowerInvariant();
     userProfilePreservedThroughUpgrade=$false;
@@ -399,7 +408,7 @@ if($Phase -ceq 'Prepare'){
             Assert-RebootPath $controller
             $guard=[IO.File]::Open($controller,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
             try {
-                Assert-InstalledDetection $true $PreviousVersion $PreviousPayloadSHA256 -CandidateSBOMSHA256 $PreviousPayloadSBOMSHA256 -CandidateBuildInfoSHA256 ''
+                Assert-InstalledDetection $true $PreviousVersion $PreviousPayloadSHA256 -CandidateSBOMSHA256 $PreviousPayloadSBOMSHA256 -CandidateBuildInfoSHA256 $PreviousBuildInfoSHA256
                 Assert-InstalledPublisher $PreviousPayloadSHA256 $PreviousPayloadPublisherCertificateSHA256
                 $expected.previousPayloadTrustVerified=$true
                 $comparison=@(& $controller system check-version $Version 2>$null) -join ""
@@ -440,7 +449,7 @@ if($Phase -ceq 'Prepare'){
         }
         Write-NewRebootEvidence $baseline $expected
     } catch {
-        Write-NewRebootEvidence $report @{schemaVersion=10;runID=$RunID;stage=$stage;passed=$false}
+        Write-NewRebootEvidence $report @{schemaVersion=11;runID=$RunID;stage=$stage;passed=$false}
         throw 'Windows installer reboot preparation failed. Retain the disposable guest for review.'
     }
     Write-Output 'Prepared the approved installation. Reboot the disposable guest before verification.'
@@ -452,10 +461,11 @@ if((Get-Item -LiteralPath $baseline).Length -gt 8192 -or (Test-Path -LiteralPath
 $saved=Get-Content -LiteralPath $baseline -Raw|ConvertFrom-Json
 Assert-RebootIdentity $saved $expected
 Assert-LaterGuestBoot $saved.boot $boot
-Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=10;runID=$RunID}
-$result=[ordered]@{schemaVersion=10;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=11;runID=$RunID}
+$result=[ordered]@{schemaVersion=11;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
     previousVersion=$expected.previousVersion;previousPayloadSHA256=$expected.previousPayloadSHA256;
     previousPayloadSBOMSHA256=$expected.previousPayloadSBOMSHA256;previousPayloadPublisherSHA256=$expected.previousPayloadPublisherSHA256;
+    previousBuildInfoSHA256=$expected.previousBuildInfoSHA256;
     previousPayloadTrustVerified=$saved.previousPayloadTrustVerified;
     previousSetupSHA256=$expected.previousSetupSHA256;previousPublisherSHA256=$expected.previousPublisherSHA256;
     downgradeRequested=$testDowngrade;downgradeRefused=$false;downgradeStatePreserved=$false;

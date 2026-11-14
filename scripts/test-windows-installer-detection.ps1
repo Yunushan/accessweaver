@@ -161,6 +161,8 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             @{mode='publisher-no-timestamp';code=0;count=0;hash=$hash;publisher=$publisherHash},
             @{mode='publisher-no-certificate';code=0;count=0;hash=$hash;publisher=$publisherHash},
             @{mode='approved';code=0;count=1;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true},
+            @{mode='approved';code=0;count=1;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true;buildInfo=$buildInfoHash},
+            @{mode='approved';code=0;count=0;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true;buildInfo=$buildInfoHash;changedBuildInfo=$true},
             @{mode='approved';code=0;count=0;hash=$hash;sbom=$sbomHash;publisher=('0'*64);inventory=$true},
             @{mode='approved';code=1;count=0;hash=$hash;sbom=$sbomHash;inventory=$true},
             @{mode='approved';code=1;count=0;hash=$hash;publisher=$publisherHash;inventory=$true},
@@ -185,7 +187,9 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             if($case.count -eq 1){
                 if($case.inventory){
                     $record=$output[0] | ConvertFrom-Json
-                    if(@($record.PSObject.Properties).Count -ne 6 -or $record.schemaVersion -ne 1 -or
+                    $schema=if($case.buildInfo){2}else{1}
+                    if(@($record.PSObject.Properties).Count -ne (5+$schema) -or $record.schemaVersion -ne $schema -or
+                       ($schema -eq 2 -and $record.buildInfoSHA256 -cne $buildInfoHash.ToLowerInvariant()) -or
                        $record.target -cne ('windows/'+$arch) -or $record.version -cne '0.1.0-alpha' -or
                        $record.payloadSHA256 -cne $hash.ToLowerInvariant() -or
                        $record.payloadSBOMSHA256 -cne $sbomHash.ToLowerInvariant() -or
