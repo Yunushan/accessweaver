@@ -13,7 +13,7 @@ import unittest
 import zipfile
 from unittest.mock import patch
 
-from release_archive import epoch_from_timestamp, timestamp, tracked_release_documents, write_archive
+from release_archive import epoch_from_timestamp, stage_release_documents, timestamp, tracked_release_documents, write_archive
 import verify_release as release
 
 
@@ -30,6 +30,13 @@ class ArchiveTests(unittest.TestCase):
             (root / "docs/draft.md").write_text("untracked fixture", encoding="utf-8")
             subprocess.run(["git", "add", "docs/.gitignore", "docs/guide.md"], cwd=root, check=True)
             self.assertEqual(tracked_release_documents(root), [Path("docs/.gitignore"), Path("docs/guide.md")])
+            stage = root / "stage"
+            stage_release_documents(root, stage)
+            self.assertEqual(sorted(p.relative_to(stage).as_posix() for p in stage.rglob("*") if p.is_file()),
+                             ["docs/.gitignore", "docs/guide.md"])
+            self.assertEqual((stage / "docs/guide.md").read_bytes(), manual.read_bytes())
+            with self.assertRaises(FileExistsError):
+                stage_release_documents(root, stage)
             manual.unlink()
             with self.assertRaisesRegex(ValueError, "Tracked release documentation"):
                 tracked_release_documents(root)

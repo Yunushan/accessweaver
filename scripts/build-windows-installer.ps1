@@ -40,8 +40,10 @@ if($organizationSigning){
 [void](New-Item -ItemType Directory -Force -Path $stage)
 Push-Location $project
 $previousOS=$env:GOOS;$previousArch=$env:GOARCH;$previousCGO=$env:CGO_ENABLED
+$previousGoEnv=$env:GOENV;$previousGoWork=$env:GOWORK;$previousGoFlags=$env:GOFLAGS
 try {
     $env:GOOS='windows';$env:GOARCH=$TargetArch;$env:CGO_ENABLED='0'
+    $env:GOENV='off';$env:GOWORK='off';$env:GOFLAGS=''
     $commit='unknown';$sourceState='unknown'
     if(Get-Command git -ErrorAction SilentlyContinue){
         $revision=& git rev-parse HEAD 2>$null
@@ -55,7 +57,7 @@ try {
     if($organizationSigning -and $sourceState -cne 'clean'){throw 'Organization signing requires a clean source checkout'}
     $builtAt=[DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     $flags='-X github.com/Yunushan/accessweaver/internal/buildinfo.Version='+$Version+' -X github.com/Yunushan/accessweaver/internal/buildinfo.Commit='+$commit+' -X github.com/Yunushan/accessweaver/internal/buildinfo.SourceState='+$sourceState+' -X github.com/Yunushan/accessweaver/internal/buildinfo.BuiltAt='+$builtAt
-    & $Go build -trimpath -buildvcs=false -ldflags $flags -o (Join-Path $stage 'accessweaver.exe') ./cmd/accessweaver
+    & $Go build -mod=readonly -trimpath -buildvcs=false -ldflags $flags -o (Join-Path $stage 'accessweaver.exe') ./cmd/accessweaver
     if($LASTEXITCODE -ne 0){throw 'Go build failed'}
     Assert-InstallerPEArchitecture (Join-Path $stage 'accessweaver.exe') $TargetArch
     $payload=Join-Path $stage 'accessweaver.exe'
@@ -72,7 +74,8 @@ try {
     [IO.File]::WriteAllText($buildInfoPath,($identity -join "`n"))
     $buildInfoDigest=(Get-FileHash -LiteralPath $buildInfoPath -Algorithm SHA256).Hash.ToLowerInvariant()
     foreach($file in @('LICENSE','README.md','README.tr.md','THIRD_PARTY.md','SECURITY.md')){Copy-Item -LiteralPath (Join-Path $project $file) -Destination $stage}
-    Copy-Item -LiteralPath (Join-Path $project 'docs') -Destination (Join-Path $stage 'docs') -Recurse
+    & python (Join-Path $PSScriptRoot 'release_archive.py') stage-docs $project $stage
+    if($LASTEXITCODE -ne 0){throw 'Installer documentation staging failed'}
     [void](New-Item -ItemType Directory -Path (Join-Path $stage 'licenses'))
     Copy-Item -LiteralPath (Join-Path $project 'internal\workflow\presets\LICENSE.SplitWire-Turkey') -Destination (Join-Path $stage 'licenses\SplitWire-Turkey-MIT.txt')
     $goRoot=& $Go env GOROOT
@@ -140,5 +143,6 @@ try {
     $artifactHash
 } finally {
     $env:GOOS=$previousOS;$env:GOARCH=$previousArch;$env:CGO_ENABLED=$previousCGO
+    $env:GOENV=$previousGoEnv;$env:GOWORK=$previousGoWork;$env:GOFLAGS=$previousGoFlags
     Pop-Location
 }

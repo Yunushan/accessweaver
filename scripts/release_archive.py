@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import gzip
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -38,6 +39,15 @@ def tracked_release_documents(root):
     return paths
 
 
+def stage_release_documents(root, destination):
+    paths = tracked_release_documents(root)
+    for path in paths:
+        target = destination / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with (root / path).open("rb") as source, target.open("xb") as output:
+            shutil.copyfileobj(source, output)
+
+
 def write_archive(archive, pairs, epoch, executable):
     """Ignore host uid, permissions, file times, paths and timezone.
 
@@ -71,9 +81,12 @@ def write_archive(archive, pairs, epoch, executable):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3 or sys.argv[1] != "timestamp":
-        sys.exit("Usage: release_archive.py timestamp SOURCE_DATE_EPOCH")
     try:
-        print(timestamp(sys.argv[2]))
+        if len(sys.argv) == 3 and sys.argv[1] == "timestamp":
+            print(timestamp(sys.argv[2]))
+        elif len(sys.argv) == 4 and sys.argv[1] == "stage-docs":
+            stage_release_documents(Path(sys.argv[2]), Path(sys.argv[3]))
+        else:
+            sys.exit("Usage: release_archive.py timestamp SOURCE_DATE_EPOCH | stage-docs SOURCE DESTINATION")
     except ValueError as error:
         sys.exit(str(error))
