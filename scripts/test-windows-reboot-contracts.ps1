@@ -145,7 +145,7 @@ $stages=@($body.FindAll({
     $node -is [Management.Automation.Language.CommandAst] -and (
         $node.GetCommandName() -cin @('Register-ScheduledTask','Unregister-ScheduledTask') -or
         ($node.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and
-         $node.Extent.Text -match 'test-windows-reboot\.ps1.*-Phase Prepare'))
+         $node.Extent.Text -cmatch '^& \$fixturePath -Phase Prepare'))
 },$true))
 if($stages.Count -ne 3 -or $stages[0].GetCommandName() -cne 'Register-ScheduledTask' -or
     $stages[1].Extent.Text -cnotmatch '-Phase Prepare.+-ExecutableSHA256 \$digest.+-QualificationID \$qualificationID' -or $stages[2].GetCommandName() -cne 'Unregister-ScheduledTask'){
@@ -466,10 +466,12 @@ $pin=$record.binarySHA256.ToLowerInvariant()
 $qualificationID=$record.qualificationID
 $method=$record.method
 $originalMode=$record.requiredOriginalMode
+$fixturePin=$record.fixtureSHA256.ToLowerInvariant()
+$oraclePin=$record.oracleSHA256.ToLowerInvariant()
 $destination=Join-Path $shared ('reboot-results-'+$qualificationID+'.json')
 $secondID='b'*32
 $secondDestination=Join-Path $shared ('reboot-results-'+$secondID+'.json')
-Refuse {Assert-DNSRebootPublicReport ([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $legacy -Depth 8))) $pin $qualificationID $method $originalMode}
+Refuse {Assert-DNSRebootPublicReport ([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $legacy -Depth 8))) $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
 foreach($invalid in @(
     @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0},
     @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=0},
@@ -479,13 +481,13 @@ foreach($invalid in @(
 )){
     $candidate=$record.Clone();$candidate.originalModeCoverage=$invalid
     $data=[Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $candidate -Depth 8))
-    Refuse {Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode}
+    Refuse {Assert-DNSRebootPublicReport $data $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
 }
 $startupCommand=$startup.EndBlock.Extent.Text
-if($startupCommand -cnotmatch '-Phase Verify -Executable \$binary -ExecutableSHA256 \$ExecutableSHA256 -QualificationID \$QualificationID -DNS \$DNS -RequiredOriginalMode \$RequiredOriginalMode' -or
-   $body.Extent.Text -cnotmatch '-ExecutableSHA256 ''\+\$digest\+'' -QualificationID ''\+\$qualificationID\+'' -DNS ''\+\$method\+'' -RequiredOriginalMode ''\+\$originalMode' -or
-   $stages[1].Extent.Text -cnotmatch '-DNS \$method -RequiredOriginalMode \$originalMode'){
-    throw 'Scheduled reboot verification does not inherit the approved controller digest, qualification ID, DNS method and original adapter mode'
+if($startupCommand -cnotmatch '-Phase Verify -Executable \$binary -ExecutableSHA256 \$ExecutableSHA256 -QualificationID \$QualificationID -DNS \$DNS -RequiredOriginalMode \$RequiredOriginalMode -FixtureSHA256 \$FixtureSHA256 -OracleSHA256 \$OracleSHA256' -or
+   $body.Extent.Text -cnotmatch '-ExecutableSHA256 ''\+\$digest\+'' -QualificationID ''\+\$qualificationID\+'' -DNS ''\+\$method\+'' -RequiredOriginalMode ''\+\$originalMode\+'' -FixtureSHA256 ''\+\$fixtureDigest\+'' -OracleSHA256 ''\+\$oracleDigest' -or
+   $stages[1].Extent.Text -cnotmatch '-DNS \$method -RequiredOriginalMode \$originalMode -QualificationID \$qualificationID -FixtureSHA256 \$fixtureDigest -OracleSHA256 \$oracleDigest'){
+    throw 'Scheduled reboot verification does not inherit the approved controller and script digests, qualification ID, DNS method and original adapter mode'
 }
 $script:verifications=0;$script:retirements=0
 $verify={
@@ -494,21 +496,23 @@ $verify={
 }
 $retire={$script:retirements++}
 try {
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
     if($script:verifications -ne 1 -or $script:retirements -ne 0 -or -not [IO.File]::Exists($report)){
         throw 'Unavailable share discarded the result or retired the task'
     }
     [void][IO.Directory]::CreateDirectory($shared)
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire ('0'*64) $qualificationID $method $originalMode}
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin ('b'*32) $method $originalMode}
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID 'dnscrypt' $originalMode}
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method 'dhcp-ipv4'}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire ('0'*64) $qualificationID $method $originalMode $fixturePin $oraclePin}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin ('b'*32) $method $originalMode $fixturePin $oraclePin}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID 'dnscrypt' $originalMode $fixturePin $oraclePin}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method 'dhcp-ipv4' $fixturePin $oraclePin}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode ('0'*64) $oraclePin}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin ('0'*64)}
     if([IO.File]::Exists($destination) -or $script:verifications -ne 1 -or $script:retirements -ne 0){
         throw 'A mismatched DNS reboot report was published or retired its task'
     }
-    Refuse {Complete-DNSRebootStartup $report $shared $verify {throw 'Synthetic task retirement failure'} $pin $qualificationID $method $originalMode}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify {throw 'Synthetic task retirement failure'} $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
     if(-not [IO.File]::Exists($destination)){throw 'Task retirement failure lost the published result'}
-    if(-not (Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode) -or $script:verifications -ne 1 -or
+    if(-not (Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin) -or $script:verifications -ne 1 -or
         $script:retirements -ne 1 -or [IO.Directory]::GetFileSystemEntries($shared).Length -ne 1){
         throw 'Publication retry repeated verification or left a staging file'
     }
@@ -516,7 +520,7 @@ try {
     $firstReport=[IO.File]::ReadAllText($destination)
     $second=$record.Clone();$second.qualificationID=$secondID
     Save-DNSRebootRecord $report $second
-    if(-not (Complete-DNSRebootStartup $report $shared {throw 'Existing second report must be reused'} $retire $pin $secondID $method $originalMode) -or
+    if(-not (Complete-DNSRebootStartup $report $shared {throw 'Existing second report must be reused'} $retire $pin $secondID $method $originalMode $fixturePin $oraclePin) -or
         [IO.File]::ReadAllText($destination) -cne $firstReport -or
         (Get-Content -LiteralPath $secondDestination -Raw | ConvertFrom-Json).qualificationID -cne $secondID){
         throw 'Qualifications could not publish independently to the same share'
@@ -527,7 +531,7 @@ try {
     $different=$record.Clone();$different.qualificationID=$secondID
     Save-DNSRebootRecord $destination $different
     $before=[IO.File]::ReadAllText($destination)
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
     if([IO.File]::ReadAllText($destination) -cne $before -or $script:retirements -ne 2){
         throw 'Publication replaced different evidence or retired its task'
     }
@@ -535,7 +539,7 @@ try {
     [IO.File]::Delete($report)
     $record.servicesVerified=$false
     Save-DNSRebootRecord $report $record
-    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
     if([IO.File]::Exists($destination) -or $script:retirements -ne 2){
         throw 'Inconsistent passing report was published'
     }
@@ -544,13 +548,13 @@ try {
     $passed=Complete-DNSRebootStartup $report $shared {
         Save-DNSRebootRecord $report $record
         throw 'Synthetic acceptance failure with evidence'
-    } $retire $pin $qualificationID $method $originalMode
+    } $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin
     if($passed -or -not [IO.File]::Exists($destination) -or $script:retirements -ne 3){
         throw 'Completed failed report was lost or reported as passed'
     }
     [IO.File]::Delete($destination)
     [IO.File]::Delete($report)
-    Refuse {Complete-DNSRebootStartup $report $shared {throw 'Synthetic interruption before publication'} $retire $pin $qualificationID $method $originalMode}
+    Refuse {Complete-DNSRebootStartup $report $shared {throw 'Synthetic interruption before publication'} $retire $pin $qualificationID $method $originalMode $fixturePin $oraclePin}
     if([IO.File]::Exists($destination) -or $script:retirements -ne 3){
         throw 'Interrupted verification fabricated evidence or retired the task'
     }

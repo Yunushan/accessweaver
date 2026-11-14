@@ -73,6 +73,14 @@ try{
                     if($digest -isnot [string] -or $digest -cnotmatch '\A[A-Fa-f0-9]{64}\z'){
                         throw 'Expected an independently approved reboot controller SHA-256'
                     }
+                    $fixtureDigest=$request.fixtureSHA256
+                    $oracleDigest=$request.oracleSHA256
+                    foreach($scriptDigest in @($fixtureDigest,$oracleDigest)){
+                        if($scriptDigest -isnot [string] -or $scriptDigest -cnotmatch '\A[A-Fa-f0-9]{64}\z'){
+                            throw 'Expected independently approved DNS reboot fixture and oracle SHA-256 values'
+                        }
+                    }
+                    $fixturePath=Join-Path $local 'test-windows-reboot.ps1'
                     $method=if($request.dns){[string]$request.dns}else{'auto'}
                     if($method -cnotin @('auto','doh','dnscrypt')){throw 'Unknown DNS reboot method'}
                     if($method -ceq 'auto'){$method=if(Get-Command Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue){'doh'}else{'dnscrypt'}}
@@ -82,13 +90,20 @@ try{
                     }
                     $originalMode=$originalMode.ToLowerInvariant()
                     $qualificationID=[guid]::NewGuid().ToString('N')
-                    $arguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\AccessWeaver-Test\vmware-reboot-resume.ps1 -ExecutableName '+$executable+' -ExecutableSHA256 '+$digest+' -QualificationID '+$qualificationID+' -DNS '+$method+' -RequiredOriginalMode '+$originalMode
+                    $arguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\AccessWeaver-Test\vmware-reboot-resume.ps1 -ExecutableName '+$executable+' -ExecutableSHA256 '+$digest+' -QualificationID '+$qualificationID+' -DNS '+$method+' -RequiredOriginalMode '+$originalMode+' -FixtureSHA256 '+$fixtureDigest+' -OracleSHA256 '+$oracleDigest
                     $action=New-ScheduledTaskAction -Execute (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Argument $arguments
                     $trigger=New-ScheduledTaskTrigger -AtStartup;$trigger.Delay='PT30S'
                     $settings=New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1))
                     [void](Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -User 'SYSTEM' -RunLevel Highest -ErrorAction Stop)
                     try {
-                        & (Join-Path $local 'test-windows-reboot.ps1') -Phase Prepare -Executable $binary -ExecutableSHA256 $digest -DNS $method -RequiredOriginalMode $originalMode -QualificationID $qualificationID
+                        $stream=[IO.File]::Open($fixturePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+                        try {
+                            if($stream.Length -le 0 -or $stream.Length -gt 1MB -or
+                                (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash -ine $fixtureDigest){
+                                throw 'Staged DNS reboot fixture differs from the approved source'
+                            }
+                            & $fixturePath -Phase Prepare -Executable $binary -ExecutableSHA256 $digest -DNS $method -RequiredOriginalMode $originalMode -QualificationID $qualificationID -FixtureSHA256 $fixtureDigest -OracleSHA256 $oracleDigest
+                        } finally {$stream.Dispose()}
                     } catch {
                         $preparationFailure=$_
                         try {

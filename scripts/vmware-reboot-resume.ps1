@@ -4,6 +4,8 @@ param(
     [Parameter(Mandatory)][string]$ExecutableName,
     [Parameter(Mandatory)][ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$ExecutableSHA256,
     [Parameter(Mandatory)][ValidateScript({$_ -cmatch '\A[0-9a-f]{32}\z'})][string]$QualificationID,
+    [Parameter(Mandatory)][ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$FixtureSHA256,
+    [Parameter(Mandatory)][ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$OracleSHA256,
     [Parameter(Mandatory)][ValidateSet('doh','dnscrypt')][string]$DNS,
     [Parameter(Mandatory)][ValidateSet('any','dhcp-ipv4','static-ipv4','dhcp-ipv6','static-ipv6')][string]$RequiredOriginalMode
 )
@@ -29,7 +31,7 @@ function Read-DNSRebootReport([string]$Path) {
     } finally {$stream.Dispose()}
 }
 function Assert-DNSRebootPublicReport([byte[]]$Data,[string]$ApprovedSHA256,[string]$ExpectedQualificationID,
-    [string]$ExpectedMethod,[string]$ExpectedOriginalMode) {
+    [string]$ExpectedMethod,[string]$ExpectedOriginalMode,[string]$ExpectedFixtureSHA256,[string]$ExpectedOracleSHA256) {
     $record=[Text.UTF8Encoding]::new($false,$true).GetString($Data) | ConvertFrom-Json -ErrorAction Stop
     $flags=@('rebootVerified','servicesVerified','configuredStateVerified','resolverVerified','journalBindingVerified',
         'journalRecoveryAccepted','originalStateRestored','originalResolverVerified','snapshotRetired','servicesRemoved','passed')
@@ -70,6 +72,9 @@ function Assert-DNSRebootPublicReport([byte[]]$Data,[string]$ApprovedSHA256,[str
     if($record.binarySHA256 -ine $ApprovedSHA256){
         throw 'DNS reboot report does not match the approved controller'
     }
+    if($record.fixtureSHA256 -ine $ExpectedFixtureSHA256 -or $record.oracleSHA256 -ine $ExpectedOracleSHA256){
+        throw 'DNS reboot report does not match the approved fixture and oracle'
+    }
     if($record.qualificationID -cne $ExpectedQualificationID){
         throw 'DNS reboot report does not match the scheduled qualification'
     }
@@ -99,7 +104,7 @@ function Publish-DNSRebootPublicReport([string]$Destination,[byte[]]$Data) {
     } finally {[IO.File]::Delete($staged)}
 }
 function Complete-DNSRebootStartup([string]$Report,[string]$ResultsDirectory,[scriptblock]$Verify,[scriptblock]$Retire,[string]$ApprovedSHA256,[string]$ExpectedQualificationID,
-    [string]$ExpectedMethod,[string]$ExpectedOriginalMode) {
+    [string]$ExpectedMethod,[string]$ExpectedOriginalMode,[string]$ExpectedFixtureSHA256,[string]$ExpectedOracleSHA256) {
     if(-not [IO.File]::Exists($Report)){
         try{[void](& $Verify)}catch{
             # A failed acceptance can still have a complete fixed report.
@@ -107,7 +112,7 @@ function Complete-DNSRebootStartup([string]$Report,[string]$ResultsDirectory,[sc
         }
     }
     $data=Read-DNSRebootReport $Report
-    $passed=Assert-DNSRebootPublicReport $data $ApprovedSHA256 $ExpectedQualificationID $ExpectedMethod $ExpectedOriginalMode
+    $passed=Assert-DNSRebootPublicReport $data $ApprovedSHA256 $ExpectedQualificationID $ExpectedMethod $ExpectedOriginalMode $ExpectedFixtureSHA256 $ExpectedOracleSHA256
     $destination=Join-Path $ResultsDirectory ('reboot-results-'+$ExpectedQualificationID+'.json')
     Publish-DNSRebootPublicReport $destination $data
     [void](& $Retire)
@@ -126,8 +131,16 @@ $report=Join-Path $private 'reboot-results.json'
 $resultsDirectory='\\vmware-host\Shared Folders\AccessWeaver-Results'
 $binary=Join-Path 'C:\AccessWeaver-Test' $ExecutableName
 $passed=Complete-DNSRebootStartup $report $resultsDirectory {
-    & C:\AccessWeaver-Test\test-windows-reboot.ps1 -Phase Verify -Executable $binary -ExecutableSHA256 $ExecutableSHA256 -QualificationID $QualificationID -DNS $DNS -RequiredOriginalMode $RequiredOriginalMode
+    $fixture='C:\AccessWeaver-Test\test-windows-reboot.ps1'
+    $stream=[IO.File]::Open($fixture,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($stream.Length -le 0 -or $stream.Length -gt 1MB -or
+            (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash -ine $FixtureSHA256){
+            throw 'Staged DNS reboot fixture differs from the approved source'
+        }
+        & $fixture -Phase Verify -Executable $binary -ExecutableSHA256 $ExecutableSHA256 -QualificationID $QualificationID -DNS $DNS -RequiredOriginalMode $RequiredOriginalMode -FixtureSHA256 $FixtureSHA256 -OracleSHA256 $OracleSHA256
+    } finally {$stream.Dispose()}
 } {
     Unregister-ScheduledTask -TaskName 'AccessWeaver-Parity-Reboot-Verify' -Confirm:$false -ErrorAction Stop
-} $ExecutableSHA256 $QualificationID ($DNS.ToLowerInvariant()) ($RequiredOriginalMode.ToLowerInvariant())
+} $ExecutableSHA256 $QualificationID ($DNS.ToLowerInvariant()) ($RequiredOriginalMode.ToLowerInvariant()) $FixtureSHA256 $OracleSHA256
 if(-not $passed){throw 'DNS reboot acceptance failed; fixed evidence published'}

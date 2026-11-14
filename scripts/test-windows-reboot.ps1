@@ -4,6 +4,8 @@ param(
     [Parameter(Mandatory)][ValidateSet('Prepare','Verify')][string]$Phase,
     [Parameter(Mandatory)][ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$ExecutableSHA256,
     [Parameter(Mandatory)][ValidateScript({$_ -cmatch '\A[0-9a-f]{32}\z'})][string]$QualificationID,
+    [Parameter(Mandatory)][ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$FixtureSHA256,
+    [Parameter(Mandatory)][ValidatePattern('\A[A-Fa-f0-9]{64}\z')][string]$OracleSHA256,
     [string]$Executable='C:\AccessWeaver-Test\accessweaver.exe',
     [ValidateSet('auto','doh','dnscrypt')][string]$DNS='auto',
     [ValidateSet('any','dhcp-ipv4','static-ipv4','dhcp-ipv6','static-ipv6')][string]$RequiredOriginalMode='any'
@@ -149,11 +151,11 @@ $DNS=$DNS.ToLowerInvariant()
 if($DNS -ceq 'auto'){$DNS=if(Get-Command Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue){'doh'}else{'dnscrypt'}}
 $current=@{
     schemaVersion=7;method=$DNS;requiredOriginalMode=$RequiredOriginalMode.ToLowerInvariant();guestID=$guestID.ToString('D');qualificationID=$QualificationID;
-    binarySHA256=$ExecutableSHA256.ToUpperInvariant();oracleSHA256=(Get-DNSRebootDigest $oracle 1MB);
+    binarySHA256=$ExecutableSHA256.ToUpperInvariant();
     fixtureSHA256=(Get-DNSRebootDigest $PSCommandPath 1MB);
     boot=$os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
 }
-. $oracle
+if($current.fixtureSHA256 -ine $FixtureSHA256){throw 'DNS reboot fixture differs from the approved source'}
 $private=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'AccessWeaver DNS reboot fixture'
 $baseline=Join-Path $private 'prepared.json'
 $machineRoot=Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'AccessWeaver'
@@ -309,6 +311,13 @@ $previousHome=$env:ACCESSWEAVER_HOME
 # permits execution while denying writes, renames and deletion of the file.
 $controller=Open-ApprovedDNSRebootController $Executable $current.binarySHA256
 try {
+    $oracleStream=Open-DNSRebootInput $oracle
+    try {
+        if($oracleStream.Length -le 0 -or $oracleStream.Length -gt 1MB){throw 'DNS reboot oracle exceeds its size limit'}
+        $current.oracleSHA256=(Get-FileHash -InputStream $oracleStream -Algorithm SHA256).Hash
+        if($current.oracleSHA256 -ine $OracleSHA256){throw 'DNS reboot oracle differs from the approved source'}
+        . $oracle
+    } finally {$oracleStream.Dispose()}
     $env:ACCESSWEAVER_HOME=Join-Path $private 'controller-state'
     if($Phase -eq 'Prepare'){
         if((Test-Path -LiteralPath $private -ErrorAction Stop) -or
