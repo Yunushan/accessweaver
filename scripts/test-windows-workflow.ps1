@@ -705,6 +705,38 @@ try {
     $ambiguous=$false
     try {Find-App 'splitcord' | Out-Null}catch{$ambiguous=$_.Exception.Message -ceq 'Multiple registered SplitCord installations matched'}
     Assert $ambiguous 'SplitCord discovery refuses two different registered installations'
+
+    $savedLocal=$env:LOCALAPPDATA
+    $savedProgram=$env:ProgramFiles
+    $savedProgramX86=${env:ProgramFiles(x86)}
+    try {
+        $env:LOCALAPPDATA=Join-Path $testRoot 'SplitCord fallback user'
+        $env:ProgramFiles=Join-Path $testRoot 'SplitCord fallback machine'
+        ${env:ProgramFiles(x86)}=$env:ProgramFiles
+        $userDirectory=Join-Path $env:LOCALAPPDATA 'Programs/SplitCord-Turkey'
+        $machineDirectory=Join-Path $env:ProgramFiles 'SplitCord-Turkey'
+        foreach($directory in @($userDirectory,$machineDirectory)){
+            [void][IO.Directory]::CreateDirectory($directory)
+        }
+        $userApp=Join-Path $userDirectory 'SplitCord-Turkey.exe'
+        $machineApp=Join-Path $machineDirectory 'SplitCord-Turkey.exe'
+        [IO.File]::WriteAllText($machineApp,'inert machine copy')
+        $splitCordLocations[$machineKey]=Join-Path $testRoot 'stale registration'
+        $splitCordLocations.Remove($alternateKey)
+        Assert ((Find-App 'splitcord') -ieq $machineApp) 'SplitCord discovery uses one fallback executable when vendor registration is stale'
+        [IO.File]::WriteAllText($userApp,'inert user copy')
+        $ambiguous=$false
+        try {Find-App 'splitcord' | Out-Null}catch{
+            $ambiguous=$_.Exception.Message -ceq 'Multiple SplitCord executables matched in the default installation directories'
+        }
+        Assert $ambiguous 'SplitCord discovery refuses different executables across default folders'
+        $splitCordLocations[$machineKey]=$splitCordFirst
+        Assert ((Find-App 'splitcord') -ieq (Join-Path $splitCordFirst 'SplitCord-Turkey.exe')) 'SplitCord vendor registration takes precedence over fallback copies'
+    }finally{
+        $env:LOCALAPPDATA=$savedLocal
+        $env:ProgramFiles=$savedProgram
+        ${env:ProgramFiles(x86)}=$savedProgramX86
+    }
 }
 # Custom installer admission is exercised without discovery or network access.
 $previousWireSockCLI=(Get-Command WireSock-CLI).ScriptBlock;$previousWireSockRequest=$r

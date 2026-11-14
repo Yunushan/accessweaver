@@ -3200,15 +3200,19 @@ function Find-SplitCordApp {
     if($registered.Count -eq 1){return $registered[0]}
 
     $bases=@((Join-Path $env:LOCALAPPDATA 'Programs'),$env:ProgramFiles,${env:ProgramFiles(x86)})
+    $fallback=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach($base in @($bases | Where-Object {$_} | Select-Object -Unique)){
         $directory=Join-Path $base 'SplitCord-Turkey'
         No-Reparse $directory
         if(Test-Path -LiteralPath $directory -PathType Container -ErrorAction Stop){
-            $files=@(Get-ChildItem -LiteralPath $directory -Recurse -Filter 'SplitCord-Turkey.exe' -File -ErrorAction Stop)
-            if($files.Count -gt 1){throw 'Multiple SplitCord executables matched in the installation directory'}
-            if($files.Count -eq 1){No-Reparse $files[0].FullName;return $files[0].FullName}
+            foreach($file in (Get-ChildItem -LiteralPath $directory -Recurse -Filter 'SplitCord-Turkey.exe' -File -ErrorAction Stop)){
+                No-Reparse $file.FullName
+                [void]$fallback.Add($file.FullName)
+                if($fallback.Count -gt 1){throw 'Multiple SplitCord executables matched in the default installation directories'}
+            }
         }
     }
+    if($fallback.Count -eq 1){return @($fallback)[0]}
     return $null
 }
 function Find-App([string]$variant) {
