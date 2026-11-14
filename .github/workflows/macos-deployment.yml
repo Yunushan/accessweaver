@@ -93,7 +93,7 @@ jobs:
           if [[ "$GITHUB_ACTIONS" != true || "$RUNNER_ENVIRONMENT" != github-hosted || "$RUNNER_OS" != macOS ]]; then exit 1; fi
           fixture=$(mktemp -d "$RUNNER_TEMP/accessweaver-registration-removal.XXXXXXXX")
           go test -c -mod=readonly -trimpath -buildvcs=false -o "$fixture/removal.test" ./internal/packageupgrade
-          /usr/bin/sudo -n /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted RUNNER_OS=macOS ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST=1 "$fixture/removal.test" -test.run '^TestDarwinRemoval(RegistrationRecovery|ReceiptRecovery|ReceiptToolReinstall)$' -test.timeout=240s -test.v
+          /usr/bin/sudo -n /usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin GITHUB_ACTIONS=true RUNNER_ENVIRONMENT=github-hosted RUNNER_OS=macOS ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST=1 "$fixture/removal.test" -test.run '^TestDarwinRemoval(RegistrationRecovery|ReceiptRecovery|ReceiptToolReinstall|TransactionRecovery)$' -test.timeout=240s -test.v
       - name: Build and inspect two actual native deployment packages
         env:
           GOTOOLCHAIN: local

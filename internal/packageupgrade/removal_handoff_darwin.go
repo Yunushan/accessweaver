@@ -16,6 +16,45 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// The caller must hold the removal authority and exclude Installer for the
+// whole operation. The private orchestrator leaves each interrupted action
+// to the existing durable journal.
+func (r *removalIntentStore) completeRemovalUsing(ctx context.Context, resolve removalParentResolver, forget func(context.Context, string) error) (bool, error) {
+	if forget == nil {
+		return false, errors.New("removal requires a receipt retirement tool")
+	}
+	if e := r.quarantinePublicAppUsing(ctx, resolve); e != nil {
+		return false, e
+	}
+	actions, e := removalAllActions(r.plan)
+	if e != nil {
+		return false, e
+	}
+	_, _, journal, e := readRemovalJournalAt(r.store.current, 0, removalJournalSeed(r.fence), len(actions))
+	if e != nil {
+		return false, e
+	}
+	for completed := journal.completed; completed < len(actions); completed++ {
+		scope := removalPayloadScope
+		switch r.plan.Roots[actions[completed].root].Kind {
+		case "registrations":
+			scope = removalRegistrationScope
+		case "receipts":
+			scope = removalReceiptScope
+		}
+		// Payload scope covers the protected prefix and then the quarantined
+		// application. Registration and receipt scopes enforce their own order.
+		progress, e := r.removeNextRemovalObjectUsing(ctx, resolve, scope, forget)
+		if e != nil {
+			return false, e
+		}
+		if progress.completed != completed+1 {
+			return false, errors.New("removal journal did not advance by one planned action")
+		}
+	}
+	return r.finalizeRemovalUsing(ctx, resolve)
+}
+
 func removalArchiveName(fence removalFence) string {
 	return ".AccessWeaver-removed-" + strings.TrimPrefix(fence.DisplacedRecord, ".record-")
 }

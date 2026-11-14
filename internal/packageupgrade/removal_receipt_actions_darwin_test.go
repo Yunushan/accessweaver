@@ -297,6 +297,78 @@ func exerciseNativeReceiptForgetWindow(t *testing.T, command func(context.Contex
 	}
 }
 
+func TestDarwinRemovalTransactionRecovery(t *testing.T) {
+	requireHostedReceiptFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	f := newOwnedRemovalTargetFixture(t, t.TempDir(), true, true)
+	if e := os.Chmod(f.base, 0755); e != nil {
+		t.Fatal(e)
+	}
+	identity := f.intent.fence.Target.Identity
+	archive := filepath.Join(f.base, removalArchiveName(f.intent.fence))
+	calls := map[string]int{}
+	interruption := errors.New("injected receipt retirement interruption")
+	forget := func(_ context.Context, id string) error {
+		calls[id]++
+		bom := filepath.Join(f.receiptRoot, id+".bom")
+		plist := filepath.Join(f.receiptRoot, id+".plist")
+		if len(calls) == 1 {
+			switch calls[id] {
+			case 1:
+				if e := os.Remove(bom); e != nil {
+					return e
+				}
+				return interruption
+			case 2:
+				return os.Remove(plist)
+			}
+		}
+		if calls[id] != 1 {
+			t.Fatal("transaction repeated completed receipt retirement")
+		}
+		return errors.Join(os.Remove(bom), os.Remove(plist))
+	}
+	if published, e := f.intent.completeRemovalUsing(ctx, f.resolve, forget); published || !errors.Is(e, interruption) {
+		t.Fatal("removal did not preserve the interrupted receipt transaction", published, e)
+	}
+	if _, e := os.Stat(archive); !os.IsNotExist(e) {
+		t.Fatal("removal published a handoff before completing receipt retirement", e)
+	}
+	reopenOwnedRemovalFileIntent(t, f)
+	if published, e := f.intent.completeRemovalUsing(ctx, f.resolve, forget); !published || e != nil {
+		t.Fatal("removal transaction did not resume and publish", published, e)
+	}
+	if e := f.intent.Close(); e != nil {
+		t.Fatal(e)
+	}
+	if len(calls) != 3 {
+		t.Fatal("removal transaction did not retire all three fixture receipts")
+	}
+	entries, e := os.ReadDir(f.receiptRoot)
+	if e != nil || len(entries) != 1 || entries[0].Name() != "unrelated-private.plist" {
+		t.Fatal("removal transaction did not preserve unrelated receipts", e)
+	}
+	if _, e := os.Stat(filepath.Join(archive, "state", removalJournalName)); e != nil {
+		t.Fatal("removal transaction did not retain its journal", e)
+	}
+	parent, e := os.Open(f.base)
+	if e != nil {
+		t.Fatal(e)
+	}
+	store, e := beginDeploymentMode(parent, 0, nil, false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer store.Close()
+	if store.state.Active != (deploymentSlot{}) || len(store.state.Pending) != 0 {
+		t.Fatal("removal transaction published an active or pending record")
+	}
+	if _, e = store.prepare(identity); e != nil {
+		t.Fatal("removal transaction prevented same-release preparation", e)
+	}
+}
+
 func TestDarwinRemovalReceiptRecovery(t *testing.T) {
 	requireHostedReceiptFixture(t)
 	capsule, e := os.MkdirTemp("/private/tmp", "accessweaver-deployment-")
