@@ -89,15 +89,14 @@ def verify_detector_bytes(path, approved_sha256):
     require(hashlib.sha256(data).hexdigest() == approved_sha256, "Package helper differs from the approved digest")
 
 
-def stage_detector(package, team, architecture, approved_sha256, destination):
+def verify_packaged_application(package, team, architecture):
     expanded = package.parent / "expanded"
     tool(["/usr/sbin/pkgutil", "--expand-full", package, expanded])
     payload = expanded / "Payload"
     app = payload / BUNDLE_NAME
     contents = app / "Contents"
     executables = contents / "MacOS"
-    scripts = expanded / "Scripts"
-    for path in (expanded, payload, app, contents, executables, scripts):
+    for path in (expanded, payload, app, contents, executables):
         require(stat.S_ISDIR(path.lstat().st_mode), "Expected an ordinary expanded package directory")
 
     core = read_expanded_executable(executables / "accessweaver", 64 << 20)
@@ -105,7 +104,12 @@ def stage_detector(package, team, architecture, approved_sha256, destination):
     requirement = developer_application_requirement(team)
     tool(["/usr/bin/codesign", "--verify", "--strict", "--all-architectures",
           "-R=" + requirement + f' and identifier "{BUNDLE_ID}"', app])
+    return expanded
 
+
+def stage_detector(expanded, team, architecture, approved_sha256, destination):
+    scripts = expanded / "Scripts"
+    require(stat.S_ISDIR(scripts.lstat().st_mode), "Expected an ordinary expanded package scripts directory")
     data = read_expanded_executable(scripts / "postinstall", 16 << 20)
     require(read_expanded_executable(scripts / "preinstall", 16 << 20) == data,
             "Expanded package scripts do not use the same detector")
@@ -120,7 +124,7 @@ def stage_detector(package, team, architecture, approved_sha256, destination):
             os.fsync(stream.fileno())
         verify_detector_bytes(staged, approved_sha256)
         tool(["/usr/bin/codesign", "--verify", "--strict", "--all-architectures",
-              "-R=" + requirement, staged])
+              "-R=" + developer_application_requirement(team), staged])
         verify_detector_bytes(staged, approved_sha256)
         try:
             os.link(staged, destination)
@@ -135,11 +139,13 @@ def verify(directory, artifact_sha256, team, certificate_sha256, *,
     require(sys.platform == "darwin", "macOS is required for Developer ID verification")
     require(FINGERPRINT.fullmatch(artifact_sha256) and FINGERPRINT.fullmatch(certificate_sha256)
             and re.fullmatch(r"[A-Z0-9]{10}", team), "Invalid approved publisher inputs")
-    if any(value is not None for value in (detector_output, detector_sha256, architecture)):
+    if architecture is not None:
+        require(architecture in ("amd64", "arm64"), "Invalid approved application architecture")
+    if detector_output is not None or detector_sha256 is not None:
         require(detector_output is not None and detector_output.name == "accessweaver-installer"
                 and not detector_output.parent.resolve().is_relative_to(directory.resolve())
                 and detector_sha256 is not None and FINGERPRINT.fullmatch(detector_sha256)
-                and architecture in ("amd64", "arm64"), "Invalid managed detector staging inputs")
+                and architecture is not None, "Invalid managed detector staging inputs")
         parent = detector_output.parent
         require(stat.S_ISDIR(parent.lstat().st_mode), "Expected a real detector output directory")
         detector_output = parent.resolve(strict=True) / detector_output.name
@@ -153,8 +159,10 @@ def verify(directory, artifact_sha256, team, certificate_sha256, *,
         package = root / name
         require(digest(package) == artifact_sha256, "Package digest differs from the approved release")
         check_package_publisher(package, team, certificate_sha256)
-        if detector_output is not None:
-            stage_detector(package, team, architecture, detector_sha256, detector_output)
+        if architecture is not None:
+            expanded = verify_packaged_application(package, team, architecture)
+            if detector_output is not None:
+                stage_detector(expanded, team, architecture, detector_sha256, detector_output)
     report = {
         "schemaVersion": 1,
         "scope": "macos-package-publisher",
@@ -165,8 +173,10 @@ def verify(directory, artifact_sha256, team, certificate_sha256, *,
         "gatekeeperAccepted": True,
         "stapledTicketValidated": True,
     }
-    if detector_output is not None:
+    if architecture is not None:
         report["packagedApplicationDeveloperIDVerified"] = True
+        report["packagedApplicationArchitecture"] = architecture
+    if detector_output is not None:
         report["managedDetector"] = {
             "architecture": architecture, "sha256": detector_sha256,
             "developerIDApplicationVerified": True,
@@ -182,7 +192,7 @@ def main():
     parser.add_argument("--publisher-certificate-sha256", required=True)
     parser.add_argument("--detector-output", type=Path, help="new accessweaver-installer path in a trusted directory")
     parser.add_argument("--detector-sha256", help="approved script-file:postinstall SHA-256")
-    parser.add_argument("--architecture", choices=("amd64", "arm64"), help="approved managed detector target")
+    parser.add_argument("--architecture", choices=("amd64", "arm64"), help="verify the packaged application's Developer ID and this native architecture")
     args = parser.parse_args()
     try:
         result = verify(args.directory, args.artifact_sha256, args.team_id, args.publisher_certificate_sha256,

@@ -73,6 +73,47 @@ class PublisherTests(unittest.TestCase):
                         publisher.verify(directory, digest, TEAM, PIN)
                     self.assertEqual(tool.call_count, stage + 1)
 
+    def test_verify_packaged_application_without_staging_detector(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(publisher.sys, "platform", "darwin"):
+            directory = Path(temporary)
+            package = directory / "approved.pkg"
+            package.write_bytes(b"inert macOS package")
+            package_digest = publisher.digest(package)
+
+            for architecture in ("amd64", "arm64"):
+                for outcome in ("approved", "wrong-architecture", "wrong-publisher"):
+                    def tool(args):
+                        if args[1] == "--check-signature":
+                            return PACKAGE_OUTPUT
+                        if args[1] == "--expand-full":
+                            core = args[-1] / "Payload" / publisher.BUNDLE_NAME / "Contents" / "MacOS" / "accessweaver"
+                            core.parent.mkdir(parents=True)
+                            wrong_arch = "amd64" if architecture == "arm64" else "arm64"
+                            core.write_bytes(image(wrong_arch if outcome == "wrong-architecture" else architecture))
+                        if args[0] == "/usr/bin/codesign":
+                            self.assertEqual(args[1:4], ["--verify", "--strict", "--all-architectures"])
+                            self.assertIn(f'certificate leaf[subject.OU] = "{TEAM}"', args[-2])
+                            self.assertIn(f'identifier "{publisher.BUNDLE_ID}"', args[-2])
+                            self.assertEqual(args[-1].name, publisher.BUNDLE_NAME)
+                            if outcome == "wrong-publisher":
+                                raise subprocess.CalledProcessError(1, args)
+                        return ""
+
+                    with self.subTest(architecture=architecture, outcome=outcome), \
+                            patch.object(publisher, "tool", side_effect=tool) as native:
+                        if outcome == "approved":
+                            report = publisher.verify(directory, package_digest, TEAM, PIN, architecture=architecture)
+                            self.assertTrue(report["packagedApplicationDeveloperIDVerified"])
+                            self.assertEqual(report["packagedApplicationArchitecture"], architecture)
+                            self.assertNotIn("managedDetector", report)
+                            self.assertEqual(native.call_count, 5)
+                        else:
+                            error = ValueError if outcome == "wrong-architecture" else subprocess.CalledProcessError
+                            with self.assertRaises(error):
+                                publisher.verify(directory, package_digest, TEAM, PIN, architecture=architecture)
+                            self.assertEqual(native.call_count, 4 if outcome == "wrong-architecture" else 5)
+                    self.assertEqual(list(directory.iterdir()), [package])
+
     def test_stage_detector_only_from_verified_package_with_exact_pin(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(publisher.sys, "platform", "darwin"):
             root = Path(temporary)
