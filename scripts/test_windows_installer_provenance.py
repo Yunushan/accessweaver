@@ -6,7 +6,9 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-from verify_windows_installer_provenance import validate_installation_path_refusals, validate_uninstall_registration_refusal
+from verify_windows_installer_provenance import (
+    validate_installation_path_refusals, validate_setup_completion_refusal, validate_uninstall_registration_refusal,
+)
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
 COMMIT='a'*40
@@ -33,6 +35,28 @@ class ArchitectureRefusalTests(unittest.TestCase):
                     validate_architecture_refusal({"architectureRefusal": {**observation, **override}}, host)
             with self.assertRaises(ValueError):
                 validate_architecture_refusal({}, host)
+
+
+class SetupCompletionRefusalTests(unittest.TestCase):
+    def test_requires_failed_readback_retained_marker_and_genuine_recovery(self):
+        record = {
+            "fixtureSHA256": "a" * 64, "exitCode": 1603, "elapsedMilliseconds": 83,
+            "deadlineMilliseconds": 180000, "refusalLogged": True, "installedFixtureVerified": True,
+            "pendingMarkerRetained": True, "managedDetectionRefused": True, "machineStateUnchanged": True,
+            "profilePreserved": True, "unrelatedFilePreserved": True, "genuineRetryVerified": True,
+        }
+        self.assertEqual(validate_setup_completion_refusal(record), {"setupCompletionRefusalVerified": True})
+        for field in record:
+            incomplete = {key: value for key, value in record.items() if key != field}
+            with self.subTest(missing=field), self.assertRaisesRegex(ValueError, "refusal and recovery"):
+                validate_setup_completion_refusal(incomplete)
+        for invalid in (
+            {"exitCode": 0}, {"elapsedMilliseconds": 180000}, {"fixtureSHA256": "wrong"},
+            {"pendingMarkerRetained": 1}, {"managedDetectionRefused": False}, {"genuineRetryVerified": False},
+            {"unexpected": True},
+        ):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "refusal and recovery"):
+                validate_setup_completion_refusal({**record, **invalid})
 
 
 class InstallationPathRefusalTests(unittest.TestCase):

@@ -280,6 +280,7 @@ $script:firewallEventWindowStartUtc=[datetime]::MinValue;
 $script:stateObservations=@();$script:stateBaseline=$null;$script:statePrevious=$null;$script:assertionFailureLine=$null
 $script:stateFirewallRules=@();$script:statePreviousFirewallRules=@();$script:firewallOriginObservations=@();$script:firewallOriginTruncated=$false;$script:firewallOriginUnavailable=$false
 $pathRefusal=@()
+$completionRefusal=$null
 $stage='compile';$failureType=$null;$script:assertionFailure=$null;$script:lastNative=$null;$script:lastNativeAttempt=$null;$complete=$false;$builds=@();$observations=@();$architectureRefusal=$null;$pendingMarkerAccess=$null;$versionPolicyCases=@();$versionContractCases=0;$versionFixtureSHA256=$null;$lifecycleLockCases=@();$lifecycleLockFixtureSHA256=$null;$productLockSHA256=$null;$registryReadCases=@();$registryViewCases=@();$registryAccessCases=@();$failureSourceLine=$null;$registryFixtureSHA256=$null;$productRegistrySHA256=$null;$restorationCases=@();$productRestoreSHA256=$null;$restoreFixtureSourceSHA256=$null;$restoreFixtureBinarySHA256=$null;$restoreContractSourceSHA256=$null;$restoreContractBinarySHA256=$null;$restorationOwnerCases=@();$restoreOwnerFixtureSHA256=$null;$restorationLaunchCases=@();$restoreLaunchFixtureSHA256=$null
 try {
     foreach($version in @('0.1.0-alpha','0.1.1-alpha')){
@@ -379,6 +380,61 @@ try {
     Assert-ManagedDetection 'after-install' $builds[0] $true
     Assert-ManagedDetection 'wrong-digest' $builds[0] $false ('0'*64)
     $null=State-Checkpoint 'after-install'
+    $stage='setup-completion-refusal'
+    $faultSource=Join-Path $capsule 'setup-completion-source'
+    $faultPayload=Join-Path $capsule 'setup-completion-payload'
+    foreach($folder in @($faultSource,$faultPayload)){[void][IO.Directory]::CreateDirectory($folder)}
+    foreach($name in @('windows-installer-lock.iss','windows-installer-version.iss','windows-installer-registry.iss','windows-installer-restore.iss')){
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $faultSource -ErrorAction Stop
+    }
+    $productSetup=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-installer.iss'))
+    $digestDefinition='#define PayloadSBOMDigest GetSHA256OfFile(PayloadSBOMPath)'
+    Require ([regex]::Matches($productSetup,[regex]::Escape($digestDefinition)).Count -eq 1) 'Expected exactly one Setup SBOM digest definition'
+    $faultSetup=Join-Path $faultSource 'windows-installer.iss'
+    $wrongDigest='0'*64
+    [IO.File]::WriteAllText($faultSetup,$productSetup.Replace($digestDefinition,('#define PayloadSBOMDigest "'+$wrongDigest+'"')))
+    Copy-Item -LiteralPath (Join-Path $project 'LICENSE') -Destination $faultPayload -ErrorAction Stop
+    foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
+        [IO.File]::WriteAllText((Join-Path $faultPayload $name),'inert completion fixture')
+    }
+    $faultTarget=Join-Path $faultPayload 'SBOM.cdx.json'
+    Require ((Digest $faultTarget) -cne $wrongDigest) 'Setup completion fixture does not differ from the expected digest'
+    $null=@(& $compiler ('/DBuildRoot='+$faultPayload) ('/DReleaseVersion='+$builds[0].version) ('/DTargetArch='+$Architecture) $faultSetup)
+    Require ($LASTEXITCODE -eq 0) 'Setup completion fault fixture compilation failed'
+    $faultInstaller=Join-Path $capsule $builds[0].installerName
+    $faultLog=Join-Path $capsule 'setup-completion-refusal.log'
+    $refused=Native-Record $faultInstaller ($arguments+@('/LOG='+$faultLog)) @(1603)
+    No-Reparse $faultLog
+    $faultLogSize=(Get-Item -LiteralPath $faultLog -ErrorAction Stop).Length
+    Require ($faultLogSize -gt 0 -and $faultLogSize -le 4MB) 'Setup completion refusal log is unavailable or exceeds its bound'
+    Require ([IO.File]::ReadAllText($faultLog).Contains('AccessWeaver installed payload or registration verification failed. Pending installation record retained.')) 'Setup did not record the readback refusal'
+    $installedRegistration=Registration
+    Require ($null -ne $installedRegistration -and $installedRegistration.version -ceq $builds[0].version -and
+        $installedRegistration.location.TrimEnd('\') -ieq $install) 'Setup completion fault did not reach registration'
+    foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
+        $installedFile=Join-Path $install $name
+        No-Reparse $installedFile
+        Require ((Digest $installedFile) -ceq (Digest (Join-Path $faultPayload $name))) 'Setup completion fault did not copy the expected fixture bytes'
+    }
+    Require ((Get-PendingInstallFixtureValue) -ceq ($builds[0].version+'|'+$install)) 'Setup completion refusal did not retain its own pending record'
+    $detectorOutput=@(& $detector -Version $builds[0].version -Architecture $Architecture -PayloadSHA256 (Digest (Join-Path $install 'accessweaver.exe')) -InstallDirectory $install 2>&1)
+    Require ($LASTEXITCODE -eq 1 -and $detectorOutput.Count -eq 0) 'Managed detection accepted the pending installation'
+    Require ((State-Snapshot) -ceq $before) 'Setup completion refusal changed observed machine state'
+    Assert-UserState
+    Require ((Digest $marker) -ceq $markerHash) 'Setup completion refusal changed an unrelated file'
+    $completionRefusal=[ordered]@{
+        fixtureSHA256=(Digest $faultInstaller);exitCode=$refused.result.exitCode;elapsedMilliseconds=$refused.milliseconds;deadlineMilliseconds=180000;
+        refusalLogged=$true;installedFixtureVerified=$true;pendingMarkerRetained=$true;managedDetectionRefused=$true;machineStateUnchanged=$true;
+        profilePreserved=$true;unrelatedFilePreserved=$true;genuineRetryVerified=$false
+    }
+    $stage='setup-completion-retry'
+    $completionLog=Join-Path $capsule 'setup-completion-retry.log'
+    $null=Native-Record $first ($arguments+@('/LOG='+$completionLog))
+    Assert-SetupCompletionReadback $completionLog
+    Assert-Installed $builds[0]
+    Require ((Digest $marker) -ceq $markerHash) 'Setup completion retry changed an unrelated file'
+    Require ($null -eq (Get-PendingInstallFixtureValue)) 'Genuine Setup retry did not retire the completion marker'
+    $completionRefusal.genuineRetryVerified=$true
     $stage='upgrade';$second=Join-Path $project ('build\'+$builds[1].installerName)
     Require ((Digest $second) -ceq $builds[1].installerSHA256) 'Upgrade installer changed after compilation'
     $stage='redirected-upgrade'
@@ -1047,7 +1103,7 @@ try {
 $eventDiagnostics=New-InstallerFirewallEventDiagnostic
 if(-not $complete){$eventDiagnostics=Read-FirewallEventDiagnostic}
 $originDiagnostics=[ordered]@{schemaVersion=1;source='captured-rule-properties';maxRecords=16;maxPropertyBytes=4096;records=@($script:firewallOriginObservations);truncated=$script:firewallOriginTruncated;unavailable=$script:firewallOriginUnavailable;extraNativeQueriesPerformed=$false;processOriginEstablished=$false}
-$record=[ordered]@{schemaVersion=25;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=26;setupCompletionRefusal=$completionRefusal;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'

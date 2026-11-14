@@ -153,6 +153,19 @@ def validate_architecture_refusal(report, arch):
     return {"wrongArchitectureRefusalVerified": True}
 
 
+def validate_setup_completion_refusal(value):
+    flags = {"refusalLogged", "installedFixtureVerified", "pendingMarkerRetained", "managedDetectionRefused",
+             "machineStateUnchanged", "profilePreserved", "unrelatedFilePreserved", "genuineRetryVerified"}
+    require(isinstance(value, dict)
+            and value.keys() == flags | {"fixtureSHA256", "exitCode", "elapsedMilliseconds", "deadlineMilliseconds"}
+            and isinstance(value["fixtureSHA256"], str) and SHA.fullmatch(value["fixtureSHA256"])
+            and type(value["exitCode"]) is int and value["exitCode"] == 1603
+            and type(value["deadlineMilliseconds"]) is int and value["deadlineMilliseconds"] == 180000
+            and type(value["elapsedMilliseconds"]) is int and 0 <= value["elapsedMilliseconds"] < 180000
+            and all(value[key] is True for key in flags), "Setup completion refusal and recovery were not verified")
+    return {"setupCompletionRefusalVerified": True}
+
+
 def validate_installation_path_refusals(values):
     kinds = ("leaf-junction", "ancestor-junction")
     flags = {"preflightRefusalLogged", "targetPreserved", "pendingMarkerAbsent",
@@ -259,7 +272,7 @@ def validate_fixed_restoration(refused, removed):
 
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21,22,23,24,25) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -278,6 +291,8 @@ def validate_contents(root,commit,ref,arch,versions):
         require(report.get("setupCompletionReadbackVerified") is True,
                 "Setup completion readback was not verified")
         setup_readback["setupCompletionReadbackVerified"] = True
+    if report["schemaVersion"] >= 26:
+        setup_readback.update(validate_setup_completion_refusal(report.get("setupCompletionRefusal")))
     event_counts=validate_firewall_event_diagnostics(report.get("firewallEventDiagnostics"))
     attempt_counts=validate_native_attempt(report.get("lastNativeAttempt"))
     state_counts=validate_state_observations(report.get("stateObservations"))
