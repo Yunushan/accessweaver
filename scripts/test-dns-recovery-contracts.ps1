@@ -21,8 +21,8 @@ $sourceHash=(Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
 $tokens=$null;$parseErrors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($sourcePath,[ref]$tokens,[ref]$parseErrors)
 if($parseErrors.Count){throw 'DNS workflow source did not parse'}
-$selected=@('Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Assert-ConfiguredDNSServers','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Read-DNSStaticOverride','Test-DNSIPv4Answer','Wait-DNSCryptListeners','Test-DNSCryptListenerNeeded','Configure-DNS','Restore-DNS')
-$allowed=@('Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Save-DNSRecoveryReceipt','Publish-WorkflowFile','No-Reparse','Get-Item','Assert-ConfiguredDNSServers','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Read-DNSStaticOverride','Test-DNSIPv4Answer','Wait-DNSCryptListeners','Test-DNSCryptListenerNeeded','Restore-DNS','Get-ItemProperty','Get-Command','Join-Path','Get-NetAdapter','Where-Object','ForEach-Object','Select-Object','Test-Path','Get-DnsClientServerAddress','Get-DnsClientDohServerAddress','Write-Atomic','Get-FileHash','Add-Member','ConvertTo-Json','Save-Journal','Ensure-Asset','Split-Path','Copy-Checked','Get-Content','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Get-Service','Install-EngineService','Set-Service','Restart-Service','Stop-Service','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress','Set-DnsClientServerAddress','Clear-DnsClientCache','Resolve-DnsName','Start-Sleep','Event','ConvertFrom-Json','Remove-Item')
+$selected=@('Assert-DNSMutationAdapter','Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Assert-ConfiguredDNSServers','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Read-DNSStaticOverride','Test-DNSIPv4Answer','Wait-DNSCryptListeners','Test-DNSCryptListenerNeeded','Configure-DNS','Restore-DNS')
+$allowed=@('Assert-DNSMutationAdapter','Test-DNSRecoveryUsesAdapterOwnership','Test-DNSFamilyMatchesOriginal','Read-ObservedDNSFamily','Test-DNSFamilyNeedsRollback','Get-ActiveDNSAdapters','Assert-ConfiguredDNSDohPolicy','Get-DNSDohProviders','Test-DNSRecoveryUsesDohOwnership','Get-DNSOriginalDohEntry','Test-DNSDohEntriesEqual','Test-DNSRecoveryOwnsDoh','Get-DNSClientMutationRow','Read-DNSRecoveryFileBytes','Read-DNSRecoverySnapshot','Assert-DNSRecoverySnapshotUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Confirm-DNSRecoverySnapshot','Get-DNSRecoverySnapshotDigest','Save-DNSRecoveryReceipt','Publish-WorkflowFile','No-Reparse','Get-Item','Assert-ConfiguredDNSServers','Assert-RestoredDNSState','Get-StaticDNSServers','Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Assert-OriginalDNSModes','Read-OriginalDNSFamily','Read-OriginalDNSAdapter','Read-OriginalDNSNameServer','Read-DNSStaticOverride','Test-DNSIPv4Answer','Wait-DNSCryptListeners','Test-DNSCryptListenerNeeded','Restore-DNS','Get-ItemProperty','Get-Command','Join-Path','Get-NetAdapter','Where-Object','ForEach-Object','Select-Object','Test-Path','Get-DnsClientServerAddress','Get-DnsClientDohServerAddress','Write-Atomic','Get-FileHash','Add-Member','ConvertTo-Json','Save-Journal','Ensure-Asset','Split-Path','Copy-Checked','Get-Content','Assert-ManagedServiceOwnership','Assert-RecordedServiceBinding','Get-Service','Install-EngineService','Set-Service','Restart-Service','Stop-Service','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress','Set-DnsClientServerAddress','Clear-DnsClientCache','Resolve-DnsName','Start-Sleep','Event','ConvertFrom-Json','Remove-Item')
 foreach($name in $selected){
     $nodes=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
     if($nodes.Count -ne 1){throw 'Required DNS function is unavailable'}
@@ -68,7 +68,7 @@ function New-DNSCase {
     $script:ordinaryResolverWaits=0;$script:emptyOrdinaryAnswers=0;$script:resolverDrift=''
     $script:listenerReplies=@{};$script:listenerChecksBeforeAdapters=$true;$script:listenerWaits=0;$script:refuseListenerWait=$false
     $script:dnsRowFault='';$script:unverifiedDNSWrites=0;$script:failDNSSetterFamily=''
-    $script:recoveryLag=0;$script:renumberDuringRecoveryRead=$false;$script:reuseBeforeDNSSetter=$false;$script:silentSnapshotRemoval=$false
+    $script:recoveryLag=0;$script:renumberDuringRecoveryRead=$false;$script:reuseBeforeDNSSetter=$false;$script:reuseOnFinalRegistryRead=$false;$script:silentSnapshotRemoval=$false
     $script:changeDohAfterAdapterWrite='';$script:changeDohAfterProviderWrite=$false
     $script:changeDohOnActivation='';$script:changeDNSOnActivation=''
     $script:currentDoh=@{};$script:calls=[Collections.Generic.List[object]]::new();$script:events=[Collections.Generic.List[string]]::new()
@@ -103,6 +103,14 @@ function Get-ItemProperty {
     $guid=$LiteralPath.Substring($LiteralPath.LastIndexOf('\')+1);$matching=@($script:adapters | Where-Object {$_.InterfaceGuid -eq $guid});if($matching.Count -eq 1){$key=([string]$matching[0].ifIndex)+'/'+$family;if($script:exposure.ContainsKey($key) -and -not $script:exposure[$key]){throw 'source-unexposed-registry-read'}}
     if($script:registryFailure -eq $family){Write-Error 'source-registry-inspection-failed';return}
     $stateKey=$guid+'/'+$family
+    if($script:reuseOnFinalRegistryRead -and $script:dnsInterfaceReads -eq 1){
+        $script:reuseOnFinalRegistryRead=$false
+        $script:adapters[0].ifIndex=101
+        $script:adapters+=@([pscustomobject]@{
+            Status='Up';InterfaceDescription='Replacement fixture adapter'
+            InterfaceGuid='{00000000-0000-0000-0000-000000000002}';ifIndex=77
+        })
+    }
     if($script:appliedDNS.ContainsKey($stateKey)){
         $state=$script:appliedDNS[$stateKey]
         if($script:storedDNS.ContainsKey($stateKey)){return [pscustomobject]@{NameServer=$script:storedDNS[$stateKey]}}
@@ -1064,6 +1072,22 @@ try {
         Assert-DNS ($script:dnsInterfaceReads -eq 1 -and $script:unverifiedDNSWrites -eq 0 -and
             $script:resolverQueries -eq 0 -and $script:journalActive -and [IO.File]::Exists($snapshot) -and
             $script:undo[0].snapshotSHA256 -ceq (Snapshot-Hash)) 'configure-interface-reuse-before-setter'
+    }
+    foreach($mode in @('configure','rollback')){
+        New-DNSCase
+        if($mode -ceq 'rollback'){
+            Configure-DNS 'doh';$hash=Snapshot-Hash
+            $script:calls.Clear();$script:dnsInterfaceReads=0;$script:unverifiedDNSWrites=0
+            $script:reuseOnFinalRegistryRead=$true
+            Reject-DNS {Restore-DNS $hash} 'A DNS adapter changed before the update'
+            Assert-SnapshotRetained $hash
+        }else{
+            $script:reuseOnFinalRegistryRead=$true
+            Reject-DNS {Configure-DNS 'doh'} 'A DNS adapter changed before the update'
+            Assert-SnapshotRetained $script:journalDigest
+        }
+        Assert-DNS ($script:dnsInterfaceReads -eq 1 -and $script:unverifiedDNSWrites -eq 0 -and
+            $script:adapters[0].ifIndex -eq 101 -and $script:adapters[1].ifIndex -eq 77) 'configure-interface-reuse-before-setter'
     }
     New-DNSCase;Write-DNSFixture (Original-DNSFixture);$hash=Snapshot-Hash;$script:reuseBeforeDNSSetter=$true
     Reject-DNS {Restore-DNS};Assert-SnapshotRetained $hash

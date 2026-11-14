@@ -2219,14 +2219,17 @@ function Get-DNSClientMutationRow([string]$Guid,[string]$Family,[switch]$Require
     if($rows.Count -ne 1 -or @(Get-DNSClientRows $rows $index $Family).Count -ne 1){
         throw 'The DNS adapter family changed before the update; retain the recovery snapshot'
     }
+    Assert-DNSMutationAdapter $Guid $index -RequireUp:$RequireUp
+    return $rows[0]
+}
+function Assert-DNSMutationAdapter([string]$Guid,[uint32]$Index,[switch]$RequireUp) {
     $fresh=@(Get-NetAdapter -ErrorAction Stop)
-    $current=@($fresh | Where-Object {$_.ifIndex -eq $index})
-    if($current.Count -ne 1 -or [string]$current[0].InterfaceGuid -ne $Guid -or
+    $current=@($fresh | Where-Object {$_.ifIndex -eq $Index})
+    if($Index -eq 0 -or $current.Count -ne 1 -or [string]$current[0].InterfaceGuid -ne $Guid -or
        @($fresh | Where-Object {[string]$_.InterfaceGuid -eq $Guid}).Count -ne 1 -or
        ($RequireUp -and $current[0].Status -ne 'Up')){
         throw 'A DNS adapter changed before the update; retain the recovery snapshot'
     }
-    return $rows[0]
 }
 function Test-DNSRecoveryOwnsDoh($Record) {
     $scope=$Record.PSObject.Properties['dohManaged']
@@ -2501,6 +2504,7 @@ function Configure-DNS([string]$method) {
                 }
             }
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+            Assert-DNSMutationAdapter $record.guid $dns.InterfaceIndex -RequireUp
             $script:externalEffectsPending=$true
             $dns | Set-DnsClientServerAddress -ServerAddresses $familyServers -ErrorAction Stop
         }
@@ -2672,6 +2676,7 @@ function Restore-DNS([string]$ExpectedSHA256) {
                 if(-not (Test-DNSFamilyNeedsRollback $record $number $observed)){continue}
             }
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+            Assert-DNSMutationAdapter $record.guid $dns.InterfaceIndex
             $script:externalEffectsPending=$true
             if($record.('dhcp'+$number)){
                 $dns | Set-DnsClientServerAddress -ResetServerAddresses -ErrorAction Stop
