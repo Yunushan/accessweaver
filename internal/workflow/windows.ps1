@@ -2537,10 +2537,10 @@ function Get-DNSCryptReloadFile($Resolver,$Journal) {
     }
     return $record
 }
-function Restore-DNSCryptAfterActivationFailure($Resolver,[string]$SnapshotSHA256,[switch]$DNSRestored) {
+function Restore-DNSCryptAfterActivationFailure($Resolver,[string]$SnapshotSHA256,[switch]$LegacyReceipt) {
     try {
         $record=Get-DNSCryptReloadFile $Resolver $script:undo
-        if($DNSRestored){Assert-DNSRecoverySnapshotUnchanged ''}
+        if($LegacyReceipt){Assert-DNSRecoverySnapshotUnchanged ''}
         else{Assert-DNSRecoverySnapshotUnchanged $SnapshotSHA256}
         if((Assert-RecordedServiceBinding $Resolver) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
         Restore-RecordedWorkflowFile $record
@@ -2700,7 +2700,7 @@ function Configure-DNS([string]$method) {
     Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
     $resolverReload=$null
     $adapterMutationAttempted=$false
-    $restoredAfterResolverFailure=$false
+    $recoveryAttempted=$false
     try {
         if($method -eq 'dnscrypt') {
             if($existingResolver -and (Assert-RecordedServiceBinding $existingResolver) -ne 0){
@@ -2848,8 +2848,9 @@ function Configure-DNS([string]$method) {
         }
         if(-not (Wait-OrdinaryDNSResolver 90)){
             if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'DNS recovery snapshot disappeared during verification'}
-            Restore-DNS $snapshotSHA256
-            $restoredAfterResolverFailure=$true
+            $recoveryAttempted=$true
+            Restore-DNS $snapshotSHA256 -ResolverReload $resolverReload
+            if($resolverReload){[void]$script:undo.Remove($resolverReload)}
             throw 'Resolver verification failed; original DNS settings restored: the ordinary resolver did not return the expected DNS answer'
         }
         if($method -ceq 'dnscrypt'){
@@ -2898,13 +2899,9 @@ function Configure-DNS([string]$method) {
         Event ('Encrypted DNS configured: '+$method)
         $script:dnsConfigured=$true
     } catch {
-        if($resolverReload){
-            if($adapterMutationAttempted -and -not $restoredAfterResolverFailure){
-                # Keep the replacement resolver available until the original adapter settings are back.
-                Restore-DNS $snapshotSHA256
-                $restoredAfterResolverFailure=$true
-            }
-            Restore-DNSCryptAfterActivationFailure $resolverReload $snapshotSHA256 -DNSRestored:$restoredAfterResolverFailure
+        if($resolverReload -and -not $recoveryAttempted){
+            if($adapterMutationAttempted){Restore-DNS $snapshotSHA256 -ResolverReload $resolverReload}
+            else{Restore-DNSCryptAfterActivationFailure $resolverReload $snapshotSHA256}
             [void]$script:undo.Remove($resolverReload)
         }
         throw
@@ -2983,13 +2980,17 @@ function Test-DNSFamilyNeedsRollback([object]$Record,[string]$Number,[object]$Ob
     }
     throw 'Adapter DNS settings changed independently; review current settings before running dns-restore'
 }
-function Restore-DNS([string]$ExpectedSHA256) {
+function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
     $snapshot=Join-Path $root 'profiles\dns-original.json'
     $restoration=Read-DNSRecoverySnapshot
     if(-not $restoration){throw 'No original DNS snapshot exists; no settings were changed'}
     $snapshotSHA256=$restoration.sha256
     if($ExpectedSHA256 -and $snapshotSHA256 -ine $ExpectedSHA256){
         throw 'DNS recovery journal does not match the active snapshot; review dns-restore'
+    }
+    if($ResolverReload){
+        [void](Get-DNSCryptReloadFile $ResolverReload $script:undo)
+        if((Assert-RecordedServiceBinding $ResolverReload) -ne 0){throw 'Existing DNSCrypt service disappeared during recovery'}
     }
     $saved=$restoration.record
     $usesAdapterOwnership=Test-DNSRecoveryUsesAdapterOwnership $saved
@@ -3093,6 +3094,11 @@ function Restore-DNS([string]$ExpectedSHA256) {
     Clear-DnsClientCache -ErrorAction Stop
     Assert-RestoredDNSState $plans $dohPlans $dohAvailable
     Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+    if($ResolverReload){
+        Restore-DNSCryptAfterActivationFailure $ResolverReload $snapshotSHA256
+        Assert-RestoredDNSState $plans $dohPlans $dohAvailable
+        Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
+    }
     Save-DNSRecoveryReceipt $snapshotSHA256
     # Receipt publication may overlap an adapter or policy change. The active
     # snapshot takes precedence over a receipt until retirement succeeds.
@@ -4673,8 +4679,12 @@ function Rollback([string]$OwnerlessWireSockProfile) {
     }
     if($dnsEntries.Count -eq 1){
         try {
-            if(Confirm-DNSRecoveryEntry $dnsEntries[0]){Restore-DNS $dnsEntries[0].snapshotSHA256}
-            if($resolverReload){Restore-DNSCryptAfterActivationFailure $resolverReload $dnsEntries[0].snapshotSHA256 -DNSRestored}
+            if(Confirm-DNSRecoveryEntry $dnsEntries[0]){
+                Restore-DNS $dnsEntries[0].snapshotSHA256 -ResolverReload $resolverReload
+            }elseif($resolverReload){
+                # A previous release may already have retired the adapter snapshot.
+                Restore-DNSCryptAfterActivationFailure $resolverReload $dnsEntries[0].snapshotSHA256 -LegacyReceipt
+            }
         } catch {return $_.Exception.Message}
     }
     # Drover can still route Discord through the recorded proxy. Restore its
