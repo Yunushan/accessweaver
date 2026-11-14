@@ -1834,6 +1834,16 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
     try{Wait-SplitCordService '' 0}catch{$refused=$_.Exception.Message -ceq 'Fixture SCM query refused'}
     if($script:externalEffectsPending){throw 'Read-only service checks changed the external effects flag'}
     Assert $refused 'SplitCord service lifecycle requires the expected running registration and verified removal'
+    $queryFails=$false;$serviceState=0;$serviceCommand='"'+$binary+'"'
+    [IO.File]::Delete($binary)
+    $serviceStatus='Stopped'
+    Wait-SplitCordService $app 0 -AllowAbsentOrStopped -AllowMissingStoppedImage
+    $serviceStatus='Running'
+    $refused=$false
+    try{Wait-SplitCordService $app 0 -AllowAbsentOrStopped -AllowMissingStoppedImage}catch{
+        $refused=$_.Exception.Message -ceq 'SplitCord service executable is missing'
+    }
+    Assert $refused 'SplitCord removal retry accepts an absent service image only when its bound service is stopped'
 }
 # Synthetic process records verify session-scoped launch observation without launching an app.
 $fixtureApp='C:\fixture\SplitCord.exe'
@@ -1861,7 +1871,7 @@ Assert ($false -ceq (Test-AppProcessInSession $fixtureApp 7 @($oldApp) $handoff)
 # Inert files, process records and command mocks exercise uninstall preflight.
 $fixtureAppDirectory=Join-Path $testRoot 'splitcord-uninstall'
 [void](New-Item -ItemType Directory -Path $fixtureAppDirectory)
-$fixtureApp=Join-Path $fixtureAppDirectory 'SplitCord.exe'
+$fixtureApp=Join-Path $fixtureAppDirectory 'SplitCord-Turkey.exe'
 $fixtureUninstaller=Join-Path $fixtureAppDirectory 'Uninstall.exe'
 $secondUninstaller=Join-Path $fixtureAppDirectory 'Uninstall-old.exe'
 [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
@@ -1911,7 +1921,7 @@ try {
     $rejected=$false
     try {Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application process session could not be verified'}
     Assert ($rejected -and $script:appStopCalls -eq 0 -and -not $script:externalEffectsPending) 'Application removal refuses an unverified matching session before stopping any process'
-    $hiddenImage=[pscustomobject]@{ProcessName='SplitCord';HasExited=$false}
+    $hiddenImage=[pscustomobject]@{ProcessName='SplitCord-Turkey';HasExited=$false}
     $hiddenImage | Add-Member ScriptProperty Path {throw 'Synthetic inaccessible executable'}
     $script:hiddenImageDisposals=0
     $hiddenImage | Add-Member ScriptMethod Dispose {$script:hiddenImageDisposals++}
@@ -1970,7 +1980,7 @@ try {
     function Require-Admin {}
     function Assert-SplitCordMaintenancePaths {}
     function Read-SplitCordMachineUninstallCommand {
-        if($script:appRemovalForeignCommand){return '"C:\Other\Uninstall.exe" /allusers'}
+        if($script:appRemovalForeignCommand){return ('"'+$secondUninstaller+'" /allusers')}
         if((-not $script:appRemovalInvoked -and -not $script:appRemovalMoved) -or $script:appRemovalOrphanedCommand){
             return ('"'+$fixtureUninstaller+'" /allusers')
         }
@@ -1982,9 +1992,10 @@ try {
     }
     function Native {
         param($program,$arguments,$Timeout,[IO.FileStream[]]$StartGuard)
-        if($program -cne $fixtureUninstaller -or ($arguments -join ' ') -cne '/allusers /S' -or $StartGuard.Count -ne 2 -or
-            $StartGuard[0].Name -ine $program -or $StartGuard[1].Name -ine $fixtureApp){
-            throw 'Vendor launch did not receive both verified executable handles'
+        $guardCount=if($script:appRemovalOrphanedCommand){1}else{2}
+        if($program -cne $fixtureUninstaller -or ($arguments -join ' ') -cne '/allusers /S' -or $StartGuard.Count -ne $guardCount -or
+            $StartGuard[0].Name -ine $program -or ($guardCount -eq 2 -and $StartGuard[1].Name -ine $fixtureApp)){
+            throw 'Vendor launch did not receive the expected verified executable handles'
         }
         foreach($file in $StartGuard){
             if(-not $file.CanRead){throw 'Vendor launch received a closed executable handle'}
@@ -1994,14 +2005,19 @@ try {
             $file.Dispose()
         }
         $script:appRemovalInvoked=$true
+        if($script:appRemovalOrphanedCommand){$script:appRemovalOrphanedCommand=$false;$script:appRemovalResumed=$true}
         if($script:appRemovalDelete){[IO.File]::Delete($fixtureApp)}
         if($script:appRemovalFail){throw 'synthetic vendor failure'}
     }
     function Event {param($message);$script:appRemovalEvents.Add($message)}
     function Wait-SplitCordService {
-        param([string]$App,[int]$Seconds=20,[switch]$AllowAbsentOrStopped)
+        param([string]$App,[int]$Seconds=20,[switch]$AllowAbsentOrStopped,[switch]$AllowMissingStoppedImage)
         if($AllowAbsentOrStopped){
-            if($App -ine $fixtureApp -or $Seconds -ne 0){throw 'Expected immediate service binding check for the selected installation'}
+            if([bool]$AllowMissingStoppedImage -ne [bool]$script:appRemovalOrphanedCommand){
+                throw 'Only the orphaned uninstall may accept a missing stopped service image'
+            }
+            $expectedImage=if($script:appRemovalOrphanedCommand){Join-Path $fixtureAppDirectory 'SplitCord-Turkey.exe'}else{$fixtureApp}
+            if($App -ine $expectedImage -or $Seconds -ne 0){throw 'Expected immediate service binding check for the selected installation'}
             if($script:appForeignService){throw 'SplitCord service registration differs from the installed application'}
             return
         }
@@ -2021,9 +2037,9 @@ try {
     try {
         $refused=$false
         try {Get-AppUninstaller 'splitcord' $fixtureApp}catch{
-            $refused=$_.Exception.Message -ceq 'SplitCord machine uninstall registration does not match the protected uninstaller'
+            $refused=$_.Exception.Message -ceq 'Application uninstaller not found'
         }
-        Assert $refused 'SplitCord refuses an unrelated machine uninstall registration'
+        Assert $refused 'SplitCord refuses a machine registration pointing to a missing uninstaller'
     } finally {$script:appRemovalForeignCommand=$false}
     $script:appReappearance=$null
     $script:appRemovalInvoked=$true
@@ -2044,7 +2060,7 @@ try {
     $rejected=$false
     try {Wait-AppProcessesExited 'splitcord' $fixtureApp 0}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
     Assert $rejected 'Application removal refuses an unreadable matching process exit state'
-    $hiddenImage=[pscustomobject]@{ProcessName='SplitCord';Path=$null;HasExited=$false}
+    $hiddenImage=[pscustomobject]@{ProcessName='SplitCord-Turkey';Path=$null;HasExited=$false}
     $unrelatedHiddenImage=[pscustomobject]@{ProcessName='Unrelated';Path=$null;HasExited=$false}
     $script:appRemovalProcesses=@($unrelatedHiddenImage,$hiddenImage)
     $rejected=$false
@@ -2220,12 +2236,39 @@ try {
     }
     $orphan.HasExited=$true
     Assert ((Remove-App 'splitcord') -ceq $false -and -not $script:externalEffectsPending) 'SplitCord absent-client cleanup disregards an exited client and an unrelated shared helper'
-    $script:appRemovalOrphanedCommand=$true
+    $script:appRemovalProcesses=@()
+    $script:appRemovalOrphanedCommand=$true;$script:appRemovalResumed=$false
     try {
+        foreach($command in @(
+            ('"'+$fixtureUninstaller+'" /currentuser'),
+            ('"'+$fixtureUninstaller+'" /allusers /extra'),
+            ('"'+$fixtureUninstaller+'" /allusers' + [char]10)
+        )){
+            $refused=$false
+            try {Get-RegisteredSplitCordUninstaller $command}catch{
+                $refused=$_.Exception.Message -ceq 'SplitCord machine uninstall registration is invalid'
+            }
+            Assert $refused 'SplitCord removal retry refuses an unexpected registered command'
+        }
+        $actualImage=Join-Path $fixtureAppDirectory 'SplitCord-Turkey.exe'
+        $survivor=[pscustomobject]@{Path=$actualImage;HasExited=$false}
+        $script:appRemovalProcesses=@($survivor)
         $refused=$false
-        try {Remove-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'SplitCord machine uninstall registration remains'}
-        Assert $refused 'SplitCord absent-client cleanup refuses a surviving machine registration'
-    } finally {$script:appRemovalOrphanedCommand=$false}
+        try{Remove-App 'splitcord'}catch{$refused=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
+        Assert ($refused -and -not $script:appRemovalResumed) 'SplitCord removal retry preserves a surviving process at the registered image'
+        $script:appRemovalProcesses=@()
+        & {
+            function Save-Journal {$script:appRemovalForeignCommand=$true}
+            $refused=$false
+            try {Remove-App 'splitcord'}catch{
+                $refused=$_.Exception.Message -ceq 'SplitCord installation changed before removal retry'
+            } finally {$script:appRemovalForeignCommand=$false}
+            Assert ($refused -and -not $script:appRemovalResumed) 'SplitCord removal retry refuses registration drift after journaling'
+        }
+        $result=Remove-App 'splitcord'
+        Assert ($result -ceq $true -and $script:appRemovalResumed -and $script:appRemovalEvents.Count -eq 2) 'SplitCord removal retries the protected registered uninstaller when the client is absent'
+        Assert ((Remove-App 'splitcord') -ceq $false) 'SplitCord removal retry reaches a verified no-op on a subsequent call'
+    } finally {$script:appRemovalOrphanedCommand=$false;$script:appRemovalResumed=$false}
     foreach($variant in @('discord','discord-ptb')){
         $base=Get-AppProcessBase $variant
         $updater=[pscustomobject]@{Path=(Join-Path $base 'Update.exe');HasExited=$false}
@@ -2233,7 +2276,7 @@ try {
         $script:externalEffectsPending=$false
         $rejected=$false
         try{Remove-App $variant}catch{$rejected=$_.Exception.Message -ceq 'Application process exit could not be verified after uninstall'}
-        Assert ($rejected -and -not $script:externalEffectsPending -and $script:appRemovalEvents.Count -eq 1) ('Application removal refuses absent '+$variant+' while an updater remains')
+        Assert ($rejected -and -not $script:externalEffectsPending -and $script:appRemovalEvents.Count -eq 2) ('Application removal refuses absent '+$variant+' while an updater remains')
         $updater.HasExited=$true
         Assert ((Remove-App $variant) -ceq $false -and -not $script:externalEffectsPending) ('Application removal confirms '+$variant+' absence after updater exit')
     }

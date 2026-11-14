@@ -3465,7 +3465,7 @@ function Get-SplitCordInstaller {
     if($hash -notmatch '\A[a-fA-F0-9]{64}\z'){throw 'SplitCord installer requires a published or explicitly supplied SHA-256'}
     return @{url=$url;hash=$hash}
 }
-function Wait-SplitCordService([string]$App,[int]$Seconds=20,[switch]$AllowAbsentOrStopped) {
+function Wait-SplitCordService([string]$App,[int]$Seconds=20,[switch]$AllowAbsentOrStopped,[switch]$AllowMissingStoppedImage) {
     $name='SplitCordDpiService'
     $binary=if($App){Join-Path (Split-Path -Parent $App) 'resources\service-installer\SplitCordService.exe'}
     if($binary -and -not $AllowAbsentOrStopped){
@@ -3487,7 +3487,9 @@ function Wait-SplitCordService([string]$App,[int]$Seconds=20,[switch]$AllowAbsen
             }
             if($AllowAbsentOrStopped){
                 No-Reparse $binary
-                if(-not (Test-Path -LiteralPath $binary -PathType Leaf -ErrorAction Stop)){
+                if(-not (Test-Path -LiteralPath $binary -PathType Leaf -ErrorAction Stop) -and
+                   (-not $AllowMissingStoppedImage -or $service.State -cne 'Stopped' -or
+                    (Test-Path -LiteralPath $binary -ErrorAction Stop))){
                     throw 'SplitCord service executable is missing'
                 }
                 if($service.State -cin @('Running','Stopped')){return}
@@ -3647,13 +3649,11 @@ function Get-AppUninstaller([string]$variant,[string]$app) {
         $candidates=@(Get-ChildItem -LiteralPath $directory -Filter 'Uninstall*.exe' -File -ErrorAction Stop)
         if($candidates.Count -ne 1){throw 'Expected exactly one SplitCord uninstaller'}
         $path=$candidates[0].FullName
-        Assert-SplitCordMaintenancePaths $app $path
-        $command=Read-SplitCordMachineUninstallCommand
-        if($command -ine ('"'+$path+'" /allusers')){
+        $registration=Get-RegisteredSplitCordUninstaller (Read-SplitCordMachineUninstallCommand)
+        if($null -eq $registration -or $registration.path -ine $path -or $registration.app -ine $app){
             throw 'SplitCord machine uninstall registration does not match the protected uninstaller'
         }
-        $arguments=@('/allusers','/S')
-        $timeout=600
+        return $registration
     }
     No-Reparse $path
     if(-not (Test-Path -LiteralPath $path -PathType Leaf -ErrorAction Stop)){throw 'Application uninstaller not found'}
@@ -3680,6 +3680,19 @@ function Read-SplitCordMachineUninstallCommand {
     })
     if($commands.Count -gt 1){throw 'Multiple SplitCord machine uninstall registrations matched'}
     if($commands.Count -eq 1){return $commands[0]}
+}
+function Get-RegisteredSplitCordUninstaller([string]$Command) {
+    if(-not $Command){return}
+    $match=[regex]::Match($Command,'\A"([A-Za-z]:\\[^:*?"<>|\x00-\x1f]+\\Uninstall[^\\:*?"<>|\x00-\x1f]*\.exe)" /allusers\z',
+        [Text.RegularExpressions.RegexOptions]'IgnoreCase,CultureInvariant')
+    if(-not $match.Success){throw 'SplitCord machine uninstall registration is invalid'}
+    $path=$match.Groups[1].Value
+    if([IO.Path]::GetFullPath($path) -ine $path){throw 'SplitCord machine uninstall path is not canonical'}
+    No-Reparse $path
+    if(-not (Test-Path -LiteralPath $path -PathType Leaf -ErrorAction Stop)){throw 'Application uninstaller not found'}
+    $app=Join-Path ([IO.Path]::GetDirectoryName($path)) 'SplitCord-Turkey.exe'
+    Assert-SplitCordMaintenancePaths $app $path
+    return @{path=$path;arguments=@('/allusers','/S');timeout=600;app=$app}
 }
 function Assert-SplitCordSetupPreflight([string]$App) {
     # The per-machine NSIS installer also inspects the current user's old uninstall entry.
@@ -3711,7 +3724,7 @@ function Assert-SplitCordMaintenancePaths([string]$App,[string]$Uninstaller) {
             Assert-WorkflowUninstallProtection $parent
             if($parent -ieq $protectedRoot){break}
         }
-        Assert-WorkflowUninstallProtection $App
+        if(Test-Path -LiteralPath $App -ErrorAction Stop){Assert-WorkflowUninstallProtection $App}
         Assert-WorkflowUninstallProtection $Uninstaller
     }catch{
         throw 'SplitCord installation and uninstaller must be in protected machine storage'
@@ -3725,6 +3738,47 @@ function Get-AppExecutableDigest([string]$path) {
         return (Get-FileHash -InputStream $file -Algorithm SHA256 -ErrorAction Stop).Hash
     } finally {$file.Dispose()}
 }
+function Resume-SplitCordRemoval([string]$Command) {
+    $uninstaller=Get-RegisteredSplitCordUninstaller $Command
+    $path=$uninstaller.path;$app=$uninstaller.app
+    if(Test-Path -LiteralPath $app -ErrorAction Stop){
+        throw 'SplitCord executable still exists; review the installed product before retrying'
+    }
+    $digest=Get-AppExecutableDigest $path
+    Wait-SplitCordService $app 0 -AllowAbsentOrStopped -AllowMissingStoppedImage
+    Wait-AppProcessesExited 'splitcord' $app 0
+    $guard=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($guard.Length -le 0 -or $guard.Length -gt 512MB -or
+            (Get-FileHash -InputStream $guard -Algorithm SHA256 -ErrorAction Stop).Hash -cne $digest){
+            throw 'SplitCord uninstaller changed before retry'
+        }
+        Save-ApplicationEffectBoundary
+        if((Read-SplitCordMachineUninstallCommand) -cne $Command -or (Find-App 'splitcord') -or
+           (Test-Path -LiteralPath $app -ErrorAction Stop)){
+            throw 'SplitCord installation changed before removal retry'
+        }
+        Assert-SplitCordMaintenancePaths $app $path
+        Wait-SplitCordService $app 0 -AllowAbsentOrStopped -AllowMissingStoppedImage
+        Wait-AppProcessesExited 'splitcord' $app 0
+        [void](Native $path $uninstaller.arguments -Timeout $uninstaller.timeout -StartGuard $guard)
+    } finally {$guard.Dispose()}
+    Confirm-AppRemoval 'splitcord' $app
+}
+function Confirm-AppRemoval([string]$variant,[string]$app) {
+    Wait-App $variant $false 60 $app
+    if($variant -eq 'splitcord'){Wait-SplitCordService ''}
+    Wait-AppProcessesExited $variant $app
+    if((Find-App $variant) -or (Test-Path -LiteralPath $app -ErrorAction Stop)){
+        throw 'Application installation reappeared during uninstall verification'
+    }
+    if($variant -eq 'splitcord'){
+        Wait-SplitCordService '' 0
+        if(Read-SplitCordMachineUninstallCommand){throw 'SplitCord machine uninstall registration remains'}
+    }
+    Event ('Application uninstalled: '+$variant)
+    return $true
+}
 function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDigest) {
     if($variant -eq 'splitcord'){Require-Admin}else{Require-DesktopUser}
     $app=Find-App $variant
@@ -3732,8 +3786,10 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
     if(-not $app){
         Wait-AppProcessesExited $variant '' 0
         if($variant -eq 'splitcord'){
+            $command=Read-SplitCordMachineUninstallCommand
+            if($command){return (Resume-SplitCordRemoval $command)}
             Wait-SplitCordService '' 0
-            if(Read-SplitCordMachineUninstallCommand){throw 'SplitCord machine uninstall registration remains'}
+            if(Read-SplitCordMachineUninstallCommand){throw 'SplitCord machine uninstall registration reappeared'}
         }
         if(Find-App $variant){throw 'Application installation reappeared during uninstall verification'}
         return $false
@@ -3780,18 +3836,7 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
         if($null -ne $clientGuard){$clientGuard.Dispose()}
         $guard.Dispose()
     }
-    Wait-App $variant $false 60 $app
-    if($variant -eq 'splitcord'){Wait-SplitCordService ''}
-    Wait-AppProcessesExited $variant $app
-    if((Find-App $variant) -or (Test-Path -LiteralPath $app -ErrorAction Stop)){
-        throw 'Application installation reappeared during uninstall verification'
-    }
-    if($variant -eq 'splitcord'){
-        Wait-SplitCordService '' 0
-        if(Read-SplitCordMachineUninstallCommand){throw 'SplitCord machine uninstall registration remains'}
-    }
-    Event ('Application uninstalled: '+$variant)
-    return $true
+    return (Confirm-AppRemoval $variant $app)
 }
 function Get-AppProcessBase([string]$variant) {
     if($variant -in @('discord','discord-ptb')){
