@@ -687,6 +687,30 @@ end;
         Require ((State-Snapshot) -ceq $machineBeforeUpgrade) 'Locked upgrade changed observed machine state'
         $observations+=,@{operation=$case.operation;exitCode=$blocked.result.exitCode;elapsedMilliseconds=$blocked.milliseconds;deadlineMilliseconds=180000;preflightRefusalLogged=$true;pendingMarkerAbsent=$true;installedFileTreePreserved=$true;completeRegistrationPreserved=$true;profilePreserved=$true;machineStateUnchanged=$true}
     }
+    $stage='hard-linked-payload-upgrade'
+    foreach($case in @(
+        @{file='accessweaver.exe';subject='executable'},
+        @{file='BUILD-INFO.json';subject='BUILD-INFO.json'},
+        @{file='SBOM.cdx.json';subject='SBOM.cdx.json'}
+    )){
+        $subject=Join-Path $install $case.file
+        $alias=Join-Path $capsule ('upgrade-alias-'+$case.file)
+        $upgradeLog=Join-Path $capsule ('upgrade-alias-'+$case.file+'.log')
+        $original=Digest $subject
+        $null=New-Item -ItemType HardLink -Path $alias -Target $subject -ErrorAction Stop
+        try {
+            $null=Native-Record $second ($arguments+@('/LOG='+$upgradeLog)) @(7)
+            No-Reparse $upgradeLog
+            $size=(Get-Item -LiteralPath $upgradeLog -ErrorAction Stop).Length
+            Require ($size -gt 0 -and $size -le 1MB) 'Hard-linked upgrade log is missing or exceeds its bound'
+            Require ([IO.File]::ReadAllText($upgradeLog).Contains('The AccessWeaver '+$case.subject+' cannot be replaced.')) 'Hard-linked upgrade did not reach release-file preflight'
+            Require ((Digest $alias) -ceq $original -and (Digest $subject) -ceq $original -and
+                $null -eq (Get-PendingInstallFixtureValue)) 'Hard-linked upgrade changed a release file or published a pending record'
+        } finally {[IO.File]::Delete($alias)}
+        Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint) -ceq $registrationBefore -and
+            (State-Snapshot) -ceq $machineBeforeUpgrade) 'Hard-linked upgrade changed installed or machine state'
+        Assert-UserState
+    }
     $stage='upgrade'
     $baselineVersion=$builds[0].version
     $baselinePayload=Digest (Join-Path $install 'accessweaver.exe')

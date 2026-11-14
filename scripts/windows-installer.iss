@@ -305,7 +305,7 @@ begin
 end;
 
 function AWCanReplaceInstalledFile(const Path: String): Boolean;
-var Attributes, Handle, Code: LongWord;
+var Attributes, Handle, Code: LongWord; Info: AWFileInfo;
 begin
   Result := False;
   Attributes := AWPathAttributes(Path);
@@ -315,10 +315,15 @@ begin
     Exit;
   end;
   if (Attributes and ($00000400 or $00000010)) <> 0 then Exit;
-  { Probe DELETE access without writing, truncating or deleting. }
-  Handle := AWOpenReplaceProbe(Path, $00010000, $00000007, 0, 3, $00200000, 0);
+  { Probe DELETE and FILE_READ_ATTRIBUTES without writing, truncating or deleting. }
+  Handle := AWOpenReplaceProbe(Path, $00010080, $00000007, 0, 3, $00200000, 0);
   if Handle = $FFFFFFFF then Exit;
-  Result := AWCloseNativeHandle(Handle) <> 0;
+  try
+    Result := (AWGetFileInfo(Handle, Info) <> 0) and
+      ((Info.Attributes and ($00000400 or $00000010)) = 0) and (Info.Links = 1);
+  finally
+    if AWCloseNativeHandle(Handle) = 0 then Result := False;
+  end;
 end;
 
 function AWPayloadReplacementPreflight(const Destination: String): String;

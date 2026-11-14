@@ -97,6 +97,9 @@ $copy=[regex]::Match($installerSource,'(?ms)^procedure CurStepChanged\(.*?^end;'
 $uninstallPreflight=[regex]::Match($installerSource,'(?ms)^function AWUninstallPreflight: String;.*?^end;').Value
 Assert ($prepare -cmatch "(?s)AWInstallationPathPreflight\(ExpandConstant\('\{app\}'\), True\).*AWPayloadReplacementPreflight") 'Setup must check the destination before probing the payload'
 Assert ($copy -cmatch '(?s)AWInstallationPathPreflight\(Destination, True\).*AWPayloadReplacementPreflight\(Destination\).*RaiseException\(Failure\).*RegWriteStringValue') 'Setup must recheck the destination and release files before recording pending installation'
+$replaceProbe=[regex]::Match($installerSource,'(?ms)^function AWCanReplaceInstalledFile\(.*?^end;').Value
+Assert ($replaceProbe.Contains('AWOpenReplaceProbe(Path, $00010080, $00000007, 0, 3, $00200000, 0)') -and
+    $replaceProbe -cmatch '(?s)AWGetFileInfo\(Handle, Info\).*Info.Attributes.*Info.Links = 1.*finally.*AWCloseNativeHandle') 'Setup must refuse aliased or redirected files before replacement'
 $replacement=[regex]::Match($installerSource,'(?ms)^function AWPayloadReplacementPreflight\([^;\r\n]+\): String;\r?\nbegin.*?^end;').Value
 foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
     Assert ($replacement.Contains("AWCanReplaceInstalledFile(Destination + '\$name')")) 'Setup must check each release subject before replacement'
