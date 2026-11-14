@@ -2671,6 +2671,12 @@ function Configure-DNS([string]$method) {
                 }else{
                     [void](Test-DNSFamilyNeedsRollback $record $number $observed)
                 }
+                if($method -ceq 'doh' -and -not $observed.dhcp -and
+                   ($observed.values -join ',') -ceq ($familyServers -join ',')){
+                    # A redundant setter can make the DNS Client reinitialize DoH.
+                    # Final readback still verifies this family and its adapter.
+                    continue
+                }
             }
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
             if($method -ceq 'dnscrypt'){Assert-DNSCryptConfiguration $config $publishedConfigSHA256}
