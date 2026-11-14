@@ -5,7 +5,13 @@ function Invoke-NativeDoHScenario([scriptblock]$Apply,[scriptblock]$Capture,[scr
     $testsServiceLoss=$ScenarioKind -cin @('service-loss','service-reactivation')
     if($ScenarioKind -ceq 'service-reactivation'){$result.reactivationVerified=$false}
     try {
-        if($ScenarioKind -cnotin @('roundtrip','service-loss','service-reactivation','remove-all') -or ($ScenarioKind -ceq 'remove-all' -and ($Method -cne 'dnscrypt' -or $null -eq $ResolveRestored)) -or ($testsServiceLoss -and ($Method -cne 'dnscrypt' -or $null -eq $InduceFailure -or $null -eq $ResolveFailed -or $null -eq $ResolveRestored)) -or $Method -cnotin @('doh','dnscrypt') -or $null -eq $Apply -or $null -eq $Capture -or $null -eq $Resolve){throw 'Missing native DoH boundary'}
+        if($ScenarioKind -cnotin @('roundtrip','service-loss','service-reactivation','remove-all') -or
+            $Method -cnotin @('doh','dnscrypt') -or
+            (($testsServiceLoss -or $ScenarioKind -ceq 'remove-all') -and $Method -cne 'dnscrypt') -or
+            ($testsServiceLoss -and ($null -eq $InduceFailure -or $null -eq $ResolveFailed)) -or
+            $null -eq $Apply -or $null -eq $Capture -or $null -eq $Resolve -or $null -eq $ResolveRestored){
+            throw 'Missing native DoH boundary'
+        }
         $before=& $Capture;$index=Get-DNSAcceptanceIndex $before
         if(($Method -ceq 'doh' -and -not $before.dohAvailable) -or @($index.adapters.Values | Where-Object {$_.selected}).Count -eq 0){throw 'Native DoH baseline cannot support this scenario'}
         $result.baselineCaptured=$true
@@ -44,8 +50,17 @@ function Invoke-NativeDoHScenario([scriptblock]$Apply,[scriptblock]$Capture,[scr
             Assert-DNSAcceptanceRestored $before (& $Capture)
             $result.restoredStateVerified=$true
         } catch {$result.verificationCode='restored-state'}
-        if(($testsServiceLoss -or $ScenarioKind -ceq 'remove-all') -and $result.restoredStateVerified){
-            try{[void](& $ResolveRestored);$result.restoredResolverVerified=$true}catch{$result.verificationCode='restored-resolver'}
+        if($result.restoredStateVerified){
+            $phase='restored-resolver'
+            try {
+                [void](& $ResolveRestored)
+                $result.restoredResolverVerified=$true
+                $phase='restored-state'
+                Assert-DNSAcceptanceRestored $before (& $Capture)
+            } catch {
+                if($phase -ceq 'restored-state'){$result.restoredStateVerified=$false}
+                $result.verificationCode=$phase
+            }
         }
     }
     if($result.operationCode -ceq 'none' -and $result.restorationCode -ceq 'none' -and $result.verificationCode -ceq 'none'){$result.outcome='passed';$result.code='none'}

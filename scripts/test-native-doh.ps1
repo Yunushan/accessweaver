@@ -360,8 +360,8 @@ public static class AccessWeaverNativeDoHIdentity {
     }
     # Read-only shape metadata uses no adapter names/GUIDs, addresses or values.
     try{$adapterShapes=@(Get-NativeDoHAdapterShapes);$probeOutcome='complete'}catch{$probeOutcome='failed'}
-    function Get-NativeDNSAnswerCount {
-        if($WireTransport){if($null -eq $script:wire -or -not $queryProbeReady){throw 'Wire query helper unavailable'};$answer=Invoke-NativeFreshDNSQuery $script:wire 'example.com';return $answer.answerCount}
+    function Get-NativeDNSAnswerCount([switch]$Restored) {
+        if($WireTransport -and -not $Restored){if($null -eq $script:wire -or -not $queryProbeReady){throw 'Wire query helper unavailable'};$answer=Invoke-NativeFreshDNSQuery $script:wire 'example.com';return $answer.answerCount}
         Clear-DnsClientCache -ErrorAction Stop
         $answers=@(Resolve-DnsName 'example.com' -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)
         $count=@($answers | Where-Object {$_.IPAddress -and ([Net.IPAddress]$_.IPAddress).AddressFamily -eq [Net.Sockets.AddressFamily]::InterNetwork}).Count
@@ -566,7 +566,7 @@ public static class AccessWeaverNativeDoHIdentity {
         try{[void](Resolve-DnsName 'example.com' -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop)}catch{$failed=$true}
         $script:failedResolverObserved=$failed
         if(-not $failed){throw 'Ordinary resolver unexpectedly succeeded after managed resolver loss'}
-    } -ResolveRestored {$script:restoredAnswers=Get-NativeDNSAnswerCount}
+    } -ResolveRestored {$script:restoredAnswers=Get-NativeDNSAnswerCount -Restored}
     return ($script:scenario.outcome -ceq 'passed')
     }
     if($ScenarioKind -ceq 'missing-snapshot'){
@@ -665,7 +665,7 @@ public static class AccessWeaverNativeDoHIdentity {
         }
     }
     $snapshotRemoved=-not (Test-Path -LiteralPath (Join-Path $machineRoot 'profiles\dns-original.json'))
-    $scenarioPassed=($scenario.outcome -ceq 'passed' -and $snapshotRemoved -and $script:cliCount -eq $(if($ScenarioKind -ceq 'service-reactivation'){4}elseif($Method -ceq 'dnscrypt' -and $ScenarioKind -cne 'remove-all'){3}else{2}) -and $script:joined -eq $script:cliCount -and ($Method -ceq 'doh' -or ($serviceRunning -and $serviceAutomatic -and $serviceRemoved -and $script:cleanupExit -eq 0)) -and -not $script:overflow -and -not $script:captureFailed)
+    $scenarioPassed=($scenario.outcome -ceq 'passed' -and $scenario.restoredResolverVerified -and $script:restoredAnswers -ge 1 -and $snapshotRemoved -and $script:cliCount -eq $(if($ScenarioKind -ceq 'service-reactivation'){4}elseif($Method -ceq 'dnscrypt' -and $ScenarioKind -cne 'remove-all'){3}else{2}) -and $script:joined -eq $script:cliCount -and ($Method -ceq 'doh' -or ($serviceRunning -and $serviceAutomatic -and $serviceRemoved -and $script:cleanupExit -eq 0)) -and -not $script:overflow -and -not $script:captureFailed)
     if($ScenarioKind -ceq 'missing-snapshot'){
         $serviceConfig=Join-Path $machineRoot 'services\dnscrypt.json'
         $registration=Join-Path $machineRoot 'services\dnscrypt.registration'
@@ -684,9 +684,8 @@ public static class AccessWeaverNativeDoHIdentity {
             $script:joined -eq 4 -and -not $script:overflow -and -not $script:captureFailed)
     }
     if($ScenarioKind -ceq 'static-ipv6'){$scenarioPassed=($scenarioPassed -and $staticFixture.outcome -ceq 'passed' -and $script:staticSnapshotNormalized -and $script:staticFirewallProtected -and $script:staticFirewallRemoved)}
-    if($ScenarioKind -ceq 'remove-all'){$scenarioPassed=($scenarioPassed -and $scenario.restoredResolverVerified -and $script:restoredAnswers -ge 1)}
     if($ScenarioKind -ceq 'service-reactivation'){$scenarioPassed=($scenarioPassed -and $scenario.reactivationVerified)}
-    if($ScenarioKind -cin @('service-loss','service-reactivation')){$scenarioPassed=($scenarioPassed -and $scenario.failureInjected -and $scenario.failedResolverVerified -and $scenario.restoredResolverVerified -and $script:failureServiceStopped -and $script:resolverProcessExited -and $script:failedResolverObserved -and $script:restoredAnswers -ge 1)}
+    if($ScenarioKind -cin @('service-loss','service-reactivation')){$scenarioPassed=($scenarioPassed -and $scenario.failureInjected -and $scenario.failedResolverVerified -and $script:failureServiceStopped -and $script:resolverProcessExited -and $script:failedResolverObserved)}
     if($ScenarioKind -ceq 'verification-failure'){$scenarioPassed=($rollbackScenario.outcome -ceq 'passed' -and -not $rollbackScenario.emergencyRestoreAttempted -and $script:rollbackSnapshotRemoved -and $script:rollbackServiceRemoved -and $script:configureExit -ne 0 -and $script:resolverVerificationRejected -and $script:configureElapsedMilliseconds -ge 90000 -and $script:restoreExit -eq -1 -and $script:cliCount -eq 2 -and $script:joined -eq 2 -and $snapshotRemoved -and $serviceRunning -and $serviceAutomatic -and $serviceRemoved -and $script:cleanupExit -eq 0 -and $script:installedComponentVerified -and $script:configuredDuringRejectedApply -and $script:forwarderResponses -gt 0 -and -not $script:forwarderFailed -and -not $script:overflow -and -not $script:captureFailed)}
     if($WireTransport){$scenarioPassed=($scenarioPassed -and $null -ne $wireSummary -and $wireSummary.outcome -ceq 'passed')}
     $code='post-validation';$integrityVerified=$true

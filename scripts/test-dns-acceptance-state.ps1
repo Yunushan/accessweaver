@@ -289,7 +289,7 @@ try {
     try{[void](Read-DNSAcceptanceState ([ref]$capturePhase))}catch{$refused=$true}
     Assert-A ($refused -and $capturePhase -ceq 'registry-error-ipv6') 'capture-stage-refusal'
     foreach($method in @('doh','dnscrypt')){
-    foreach($failure in @('none','baseline','capability','selected','configuration','configured-state','ordinary-resolver','restoration','restored-state','dual')){
+    foreach($failure in @('none','baseline','capability','selected','configuration','configured-state','ordinary-resolver','restoration','restored-state','restored-resolver','drift-after-query','dual')){
         New-ACase;$script:nativeBefore=Read-DNSAcceptanceState;Set-AConfigured $method;$script:nativeConfigured=Read-DNSAcceptanceState;$script:nativeAfter=Clone-A $script:nativeBefore
         $script:nativeActions=[Collections.Generic.List[string]]::new();$script:nativeFailure=$failure;$script:nativeResolves=0
         if($failure -ceq 'capability'){foreach($state in @($script:nativeBefore,$script:nativeConfigured,$script:nativeAfter)){$state.dohAvailable=$false;$state.doh=@()}}
@@ -304,16 +304,21 @@ try {
         } -Capture {
             if($script:nativeActions.Count -eq 0){if($script:nativeFailure -ceq 'baseline'){throw 'fixture-native-baseline'};return $script:nativeBefore}
             if($script:nativeActions[$script:nativeActions.Count-1] -ceq 'dns'){return $script:nativeConfigured};return $script:nativeAfter
-        } -Resolve {$script:nativeResolves++;if($script:nativeFailure -ceq 'ordinary-resolver'){throw 'fixture-native-resolver'}}
-        Assert-A (-not $result.failureInjected -and -not $result.failedResolverVerified -and -not $result.restoredResolverVerified) 'roundtrip-does-not-inject'
+        } -Resolve {$script:nativeResolves++;if($script:nativeFailure -ceq 'ordinary-resolver'){throw 'fixture-native-resolver'}} -ResolveRestored {
+            if($failure -ceq 'restored-resolver'){throw 'Synthetic restored resolver failure'}
+            if($failure -ceq 'drift-after-query'){$script:nativeAfter=Clone-A $script:nativeConfigured}
+        }
+        Assert-A (-not $result.failureInjected -and -not $result.failedResolverVerified) 'roundtrip-does-not-inject'
         $expectedOperation=if($failure -cin @('baseline','selected') -or ($method -ceq 'doh' -and $failure -ceq 'capability')){'baseline'}elseif($failure -ceq 'dual'){'configuration'}elseif($failure -cin @('configuration','configured-state','ordinary-resolver')){$failure}else{'none'}
         $expectedRestoration=if($failure -ceq 'dual'){'restoration'}elseif($failure -ceq 'restoration'){'restoration'}else{'none'}
-        $expectedVerification=if($failure -cin @('restoration','restored-state')){'restored-state'}else{'none'}
+        $expectedVerification=if($failure -cin @('restoration','restored-state','drift-after-query')){'restored-state'}elseif($failure -ceq 'restored-resolver'){'restored-resolver'}else{'none'}
+        $expectedRestoredQuery=$expectedOperation -cne 'baseline' -and $failure -cnotin @('restoration','restored-state','restored-resolver')
+        Assert-A ($result.restoredResolverVerified -eq $expectedRestoredQuery) 'roundtrip-restored-resolver'
         Assert-A ($result.verificationCode -ceq $expectedVerification -and $result.operationCode -ceq $expectedOperation -and $result.restorationCode -ceq $expectedRestoration -and ($result.outcome -ceq 'passed') -eq ($failure -ceq 'none' -or ($method -ceq 'dnscrypt' -and $failure -ceq 'capability'))) 'native-coordinator-result'
         if($expectedOperation -ceq 'baseline'){
             Assert-A ($script:nativeActions.Count -eq 0 -and -not $result.configurationAttempted -and -not $result.restorationAttempted) 'native-coordinator-cleanup'
         } else {
-            Assert-A (($script:nativeActions -join ',') -ceq 'dns,dns-restore' -and $result.restorationAttempted -and $result.restoredStateVerified -eq ($expectedVerification -ceq 'none')) 'native-coordinator-cleanup'
+            Assert-A (($script:nativeActions -join ',') -ceq 'dns,dns-restore' -and $result.restorationAttempted -and $result.restoredStateVerified -eq ($expectedVerification -cne 'restored-state')) 'native-coordinator-cleanup'
         }
     }
     }
@@ -484,7 +489,7 @@ try {
     }
     foreach($invalid in @('DOH','DNSCRYPT','','auto','unknown')){
         $script:nativeActions.Clear();$script:nativeResolves=0;$script:invalidCaptures=0
-        $invalidResult=Invoke-NativeDoHScenario -Method $invalid -Apply {$script:nativeActions.Add('invalid')} -Capture {$script:invalidCaptures++;return $script:nativeBefore} -Resolve {$script:nativeResolves++}
+        $invalidResult=Invoke-NativeDoHScenario -Method $invalid -Apply {$script:nativeActions.Add('invalid')} -Capture {$script:invalidCaptures++;return $script:nativeBefore} -Resolve {$script:nativeResolves++} -ResolveRestored {$script:nativeResolves++}
         Assert-A ($invalidResult.operationCode -ceq 'baseline' -and $script:nativeActions.Count -eq 0 -and $script:invalidCaptures -eq 0 -and $script:nativeResolves -eq 0) 'native-invalid-method-no-effects'
     }
     foreach($failure in @('none','baseline','configuration','configured-state','ordinary-resolver','fault-injection','failed-resolver','restoration','restored-state','restored-resolver','dual')){
@@ -529,7 +534,7 @@ try {
         $recovered=$failure -cnotin @('baseline','restoration','restored-state','restored-resolver')
         Assert-A ($result.failureInjected -eq $injected -and $result.failedResolverVerified -eq $failedQuery -and $result.restoredResolverVerified -eq $recovered) 'failure-native-flags'
         Assert-A ($result.restorationAttempted -eq ($failure -cne 'baseline') -and @($script:failureTrace | Where-Object {$_ -ceq 'restore'}).Count -eq $(if($failure -ceq 'baseline'){0}else{1})) 'failure-native-cleanup'
-        if($failure -ceq 'none'){Assert-A (($script:failureTrace -join ',') -ceq 'capture,configure,capture,resolve,inject,failed-query,restore,capture,recovered-query') 'failure-native-order'}
+        if($failure -ceq 'none'){Assert-A (($script:failureTrace -join ',') -ceq 'capture,configure,capture,resolve,inject,failed-query,restore,capture,recovered-query,capture') 'failure-native-order'}
     }
     foreach($failure in @('none','apply','state','resolver','post-query-state')){
         New-ACase
@@ -569,10 +574,10 @@ try {
             $result.failedResolverVerified -and $result.restoredStateVerified -and $result.restoredResolverVerified -and
             $state.applies -eq 2 -and $state.restoring) 'service-reactivation-result'
         if($failure -ceq 'none'){
-            Assert-A (($state.trace -join ',') -ceq 'capture,configure,capture,resolve,stop,failed-query,configure,capture,resolve,capture,restore,capture,restored-query') 'service-reactivation-order'
+            Assert-A (($state.trace -join ',') -ceq 'capture,configure,capture,resolve,stop,failed-query,configure,capture,resolve,capture,restore,capture,restored-query,capture') 'service-reactivation-order'
         }
     }
-    foreach($invalid in @('wrong-method','missing-injection','missing-failed-query','missing-recovered-query','unknown-kind','wrong-case-kind')){
+    foreach($invalid in @('wrong-method','missing-injection','missing-failed-query','missing-recovered-query','roundtrip-missing-recovered-query','unknown-kind','wrong-case-kind')){
         $script:invalidEffects=0
         $boundary={$script:invalidEffects++}
         $parameters=@{Method='dnscrypt';ScenarioKind='service-loss';Apply=$boundary;Capture=$boundary;Resolve=$boundary;InduceFailure=$boundary;ResolveFailed=$boundary;ResolveRestored=$boundary}
@@ -581,6 +586,7 @@ try {
             'missing-injection' {$parameters.Remove('InduceFailure')}
             'missing-failed-query' {$parameters.Remove('ResolveFailed')}
             'missing-recovered-query' {$parameters.Remove('ResolveRestored')}
+            'roundtrip-missing-recovered-query' {$parameters.ScenarioKind='roundtrip';$parameters.Remove('ResolveRestored')}
             'unknown-kind' {$parameters.ScenarioKind='unknown'}
             'wrong-case-kind' {$parameters.ScenarioKind='SERVICE-LOSS'}
         }
@@ -798,7 +804,7 @@ try {
         New-ACase;$script:sourceResolverCalls=0;$script:staticSnapshotNormalized=$false;$script:staticPlan=@{guid=$script:g1;servers=@('fe80::53','::1')}
         $servers=if($badSnapshot){@('fe80::53%77','::1')}else{@('fe80::53','::1')}
         $script:staticSnapshotText=ConvertTo-Json -InputObject @{adapters=@(@{guid=$script:g1;dhcp6=$false;ipv6=$servers})} -Depth 5
-        $result=Invoke-NativeDoHScenario -Method doh -ScenarioKind roundtrip -Capture {Read-DNSAcceptanceState} -Apply $script:applyFixture -Resolve $nativeResolve
+        $result=Invoke-NativeDoHScenario -Method doh -ScenarioKind roundtrip -Capture {Read-DNSAcceptanceState} -Apply $script:applyFixture -Resolve $nativeResolve -ResolveRestored {}
         Assert-A (($result.outcome -ceq 'passed') -eq (-not $badSnapshot) -and $script:staticSnapshotNormalized -eq (-not $badSnapshot) -and $script:sourceResolverCalls -eq $(if($badSnapshot){0}else{1}) -and $result.restoredStateVerified) 'static-resolver-source-callback'
     }
     $script:staticPlan=$null
