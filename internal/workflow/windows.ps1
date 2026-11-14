@@ -1809,9 +1809,18 @@ function Install-Prerequisite([string]$component) {
 function Discord-Directories([string]$variant='discord') {
     $folder=if($variant -eq 'discord-ptb'){'DiscordPTB'}else{'Discord'}
     $base=Join-Path $env:LOCALAPPDATA $folder
-    if(-not (Test-Path -LiteralPath $base)){return @()}
-    $candidates=@(foreach($item in Get-ChildItem -LiteralPath $base -Directory -Filter 'app-*'){
-        if(-not (Test-Path -LiteralPath (Join-Path $item.FullName ($folder+'.exe')) -PathType Leaf)){continue}
+    No-Reparse $base
+    if(-not (Test-Path -LiteralPath $base -ErrorAction Stop)){return @()}
+    if(-not (Test-Path -LiteralPath $base -PathType Container -ErrorAction Stop)){
+        throw 'Discord installation root is not a directory'
+    }
+    $candidates=@(foreach($item in Get-ChildItem -LiteralPath $base -Directory -Filter 'app-*' -Force -ErrorAction Stop){
+        $image=Join-Path $item.FullName ($folder+'.exe')
+        No-Reparse $image
+        if(-not (Test-Path -LiteralPath $image -ErrorAction Stop)){continue}
+        if(-not (Test-Path -LiteralPath $image -PathType Leaf -ErrorAction Stop)){
+            throw 'Discord executable path is not a file'
+        }
         [version]$parsed=$null;$hasVersion=[version]::TryParse($item.Name.Substring(4),[ref]$parsed)
         if(-not $hasVersion){$parsed=[version]'0.0'}
         [pscustomobject]@{path=$item.FullName;hasVersion=$hasVersion;version=$parsed;modified=$item.LastWriteTimeUtc;name=$item.Name}

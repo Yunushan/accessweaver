@@ -670,6 +670,45 @@ try {
     Assert ($found.Count -eq 3 -and $found[0] -ceq (Join-Path $appBase 'app-1.0.10') -and $found[1] -ceq (Join-Path $appBase 'app-1.0.9')) 'Discord discovery selects the highest version before modification time'
     Assert ($found[2] -ceq (Join-Path $appBase 'app-unknown')) 'Discord discovery retains nonstandard directory fallback after valid versions'
     Assert ((Find-App 'discord') -ceq (Join-Path $appBase 'app-1.0.10\Discord.exe')) 'Discord application lookup uses the highest discovered version'
+    $badImage=Join-Path $appBase 'app-9.0.0\Discord.exe'
+    [void](New-Item -ItemType Directory -Path $badImage -Force)
+    $refused=$false
+    try{Find-App 'discord'}catch{$refused=$_.Exception.Message -ceq 'Discord executable path is not a file'}
+    Assert $refused 'Discord discovery refuses a directory at the client executable path'
+    [IO.Directory]::Delete($badImage)
+    [IO.Directory]::Delete((Split-Path -Parent $badImage))
+
+    $outside=Join-Path $env:LOCALAPPDATA 'unrelated'
+    [void](New-Item -ItemType Directory -Path (Join-Path $outside 'app-1.0.0') -Force)
+    $outsideImage=Join-Path $outside 'app-1.0.0\DiscordPTB.exe'
+    [IO.File]::WriteAllText($outsideImage,'must stay untouched')
+    foreach($linkCase in @(
+        @{variant='discord';path=(Join-Path $appBase 'app-9.0.0');target=(Join-Path $outside 'app-1.0.0')},
+        @{variant='discord-ptb';path=(Join-Path $env:LOCALAPPDATA 'DiscordPTB');target=$outside}
+    )){
+        [void](New-Item -ItemType Junction -Path $linkCase.path -Target $linkCase.target -ErrorAction Stop)
+        try {
+            $refused=$false
+            try{Find-App $linkCase.variant}catch{$refused=$_.Exception.Message -ceq 'Reparse points are not supported in installation paths'}
+            Assert ($refused -and [IO.File]::ReadAllText($outsideImage) -ceq 'must stay untouched') ('Discord discovery refuses a junction for '+$linkCase.variant)
+        } finally {[IO.Directory]::Delete($linkCase.path)}
+    }
+    $ptbPath=Join-Path $env:LOCALAPPDATA 'DiscordPTB'
+    [IO.File]::WriteAllText($ptbPath,'file occupying the installation root')
+    $refused=$false
+    try{Find-App 'discord-ptb'}catch{$refused=$_.Exception.Message -ceq 'Discord installation root is not a directory'}
+    Assert $refused 'Discord discovery refuses a file at the client root'
+    [IO.File]::Delete($ptbPath)
+    & {
+        function Get-ChildItem {
+            [CmdletBinding()]param($LiteralPath,[switch]$Directory,$Filter,[switch]$Force)
+            if($LiteralPath -cne $appBase -or -not $Directory -or -not $Force -or $Filter -cne 'app-*'){throw 'Unexpected Discord inventory request'}
+            Write-Error 'fixture inventory denied'
+        }
+        $refused=$false
+        try{Find-App 'discord'}catch{$refused=$_.Exception.Message -ceq 'fixture inventory denied'}
+        Assert $refused 'Discord discovery propagates a failed version inventory'
+    }
 } finally {$env:LOCALAPPDATA=$previousLocalAppData}
 # Exercise registered custom paths with inert files and an in-memory registry view.
 & {
