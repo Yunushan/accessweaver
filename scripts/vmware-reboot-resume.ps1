@@ -92,7 +92,7 @@ function Publish-DNSRebootPublicReport([string]$Destination,[byte[]]$Data) {
         [IO.File]::Move($staged,$Destination)
     } finally {[IO.File]::Delete($staged)}
 }
-function Complete-DNSRebootStartup([string]$Report,[string]$Destination,[scriptblock]$Verify,[scriptblock]$Retire,[string]$ApprovedSHA256,[string]$ExpectedQualificationID) {
+function Complete-DNSRebootStartup([string]$Report,[string]$ResultsDirectory,[scriptblock]$Verify,[scriptblock]$Retire,[string]$ApprovedSHA256,[string]$ExpectedQualificationID) {
     if(-not [IO.File]::Exists($Report)){
         try{[void](& $Verify)}catch{
             # A failed acceptance can still have a complete fixed report.
@@ -101,7 +101,8 @@ function Complete-DNSRebootStartup([string]$Report,[string]$Destination,[scriptb
     }
     $data=Read-DNSRebootReport $Report
     $passed=Assert-DNSRebootPublicReport $data $ApprovedSHA256 $ExpectedQualificationID
-    Publish-DNSRebootPublicReport $Destination $data
+    $destination=Join-Path $ResultsDirectory ('reboot-results-'+$ExpectedQualificationID+'.json')
+    Publish-DNSRebootPublicReport $destination $data
     [void](& $Retire)
     return $passed
 }
@@ -115,9 +116,9 @@ if($LASTEXITCODE -ne 0 -or ($marker -join '').Trim() -cne 'AccessWeaver-Clean-Wi
 }
 $private=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'AccessWeaver DNS reboot fixture'
 $report=Join-Path $private 'reboot-results.json'
-$destination='\\vmware-host\Shared Folders\AccessWeaver-Results\reboot-results.json'
+$resultsDirectory='\\vmware-host\Shared Folders\AccessWeaver-Results'
 $binary=Join-Path 'C:\AccessWeaver-Test' $ExecutableName
-$passed=Complete-DNSRebootStartup $report $destination {
+$passed=Complete-DNSRebootStartup $report $resultsDirectory {
     & C:\AccessWeaver-Test\test-windows-reboot.ps1 -Phase Verify -Executable $binary -ExecutableSHA256 $ExecutableSHA256 -QualificationID $QualificationID
 } {
     Unregister-ScheduledTask -TaskName 'AccessWeaver-Parity-Reboot-Verify' -Confirm:$false -ErrorAction Stop

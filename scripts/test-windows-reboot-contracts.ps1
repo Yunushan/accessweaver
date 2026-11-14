@@ -451,7 +451,6 @@ foreach($name in $selected){
 $root=[IO.Path]::Combine([IO.Path]::GetTempPath(),('aw-dns-reboot-publication-'+[guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($root)
 $shared=Join-Path $root 'share'
-$destination=Join-Path $shared 'reboot-results.json'
 $report=Join-Path $root 'reboot-results.json'
 $record=@{schemaVersion=7;qualificationID=('a'*32);method='doh';binarySHA256=('A'*64);fixtureSHA256=('B'*64);oracleSHA256=('C'*64)
     requiredOriginalMode='static-ipv6';originalModeCoverage=@{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0;'static-ipv6'=1}
@@ -461,6 +460,9 @@ $record=@{schemaVersion=7;qualificationID=('a'*32);method='doh';binarySHA256=('A
 $legacy=$record.Clone();$legacy.schemaVersion=6
 $pin=$record.binarySHA256.ToLowerInvariant()
 $qualificationID=$record.qualificationID
+$destination=Join-Path $shared ('reboot-results-'+$qualificationID+'.json')
+$secondID='b'*32
+$secondDestination=Join-Path $shared ('reboot-results-'+$secondID+'.json')
 Refuse {Assert-DNSRebootPublicReport ([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $legacy -Depth 8))) $pin $qualificationID}
 foreach($invalid in @(
     @{'dhcp-ipv4'=1;'static-ipv4'=0;'dhcp-ipv6'=0},
@@ -485,55 +487,67 @@ $verify={
 }
 $retire={$script:retirements++}
 try {
-    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire $pin $qualificationID}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID}
     if($script:verifications -ne 1 -or $script:retirements -ne 0 -or -not [IO.File]::Exists($report)){
         throw 'Unavailable share discarded the result or retired the task'
     }
     [void][IO.Directory]::CreateDirectory($shared)
-    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire ('0'*64) $qualificationID}
-    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire $pin ('b'*32)}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire ('0'*64) $qualificationID}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin ('b'*32)}
     if([IO.File]::Exists($destination) -or $script:verifications -ne 1 -or $script:retirements -ne 0){
         throw 'Report from a different candidate or qualification was published or retired its task'
     }
-    Refuse {Complete-DNSRebootStartup $report $destination $verify {throw 'Synthetic task retirement failure'} $pin $qualificationID}
+    Refuse {Complete-DNSRebootStartup $report $shared $verify {throw 'Synthetic task retirement failure'} $pin $qualificationID}
     if(-not [IO.File]::Exists($destination)){throw 'Task retirement failure lost the published result'}
-    if(-not (Complete-DNSRebootStartup $report $destination $verify $retire $pin $qualificationID) -or $script:verifications -ne 1 -or
+    if(-not (Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID) -or $script:verifications -ne 1 -or
         $script:retirements -ne 1 -or [IO.Directory]::GetFileSystemEntries($shared).Length -ne 1){
         throw 'Publication retry repeated verification or left a staging file'
     }
+    [IO.File]::Delete($report)
+    $firstReport=[IO.File]::ReadAllText($destination)
+    $second=$record.Clone();$second.qualificationID=$secondID
+    Save-DNSRebootRecord $report $second
+    if(-not (Complete-DNSRebootStartup $report $shared {throw 'Existing second report must be reused'} $retire $pin $secondID) -or
+        [IO.File]::ReadAllText($destination) -cne $firstReport -or
+        (Get-Content -LiteralPath $secondDestination -Raw | ConvertFrom-Json).qualificationID -cne $secondID){
+        throw 'Qualifications could not publish independently to the same share'
+    }
+    [IO.File]::Delete($report)
+    Save-DNSRebootRecord $report $record
     [IO.File]::Delete($destination)
-    $different=$record.Clone();$different.qualificationID=('b'*32)
+    $different=$record.Clone();$different.qualificationID=$secondID
     Save-DNSRebootRecord $destination $different
     $before=[IO.File]::ReadAllText($destination)
-    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire $pin $qualificationID}
-    if([IO.File]::ReadAllText($destination) -cne $before -or $script:retirements -ne 1){
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID}
+    if([IO.File]::ReadAllText($destination) -cne $before -or $script:retirements -ne 2){
         throw 'Publication replaced different evidence or retired its task'
     }
     [IO.File]::Delete($destination)
     [IO.File]::Delete($report)
     $record.servicesVerified=$false
     Save-DNSRebootRecord $report $record
-    Refuse {Complete-DNSRebootStartup $report $destination $verify $retire $pin $qualificationID}
-    if([IO.File]::Exists($destination) -or $script:retirements -ne 1){
+    Refuse {Complete-DNSRebootStartup $report $shared $verify $retire $pin $qualificationID}
+    if([IO.File]::Exists($destination) -or $script:retirements -ne 2){
         throw 'Inconsistent passing report was published'
     }
     [IO.File]::Delete($report)
     $record.stage='services';$record.passed=$false
-    $passed=Complete-DNSRebootStartup $report $destination {
+    $passed=Complete-DNSRebootStartup $report $shared {
         Save-DNSRebootRecord $report $record
         throw 'Synthetic acceptance failure with evidence'
     } $retire $pin $qualificationID
-    if($passed -or -not [IO.File]::Exists($destination) -or $script:retirements -ne 2){
+    if($passed -or -not [IO.File]::Exists($destination) -or $script:retirements -ne 3){
         throw 'Completed failed report was lost or reported as passed'
     }
     [IO.File]::Delete($destination)
     [IO.File]::Delete($report)
-    Refuse {Complete-DNSRebootStartup $report $destination {throw 'Synthetic interruption before publication'} $retire $pin $qualificationID}
-    if([IO.File]::Exists($destination) -or $script:retirements -ne 2){
+    Refuse {Complete-DNSRebootStartup $report $shared {throw 'Synthetic interruption before publication'} $retire $pin $qualificationID}
+    if([IO.File]::Exists($destination) -or $script:retirements -ne 3){
         throw 'Interrupted verification fabricated evidence or retired the task'
     }
 } finally {
     [IO.File]::Delete($destination)
+    [IO.File]::Delete($secondDestination)
     [IO.File]::Delete($report)
     if([IO.Directory]::Exists($shared)){[IO.Directory]::Delete($shared)}
     [IO.Directory]::Delete($root)
