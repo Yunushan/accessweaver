@@ -284,6 +284,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                                       userProfilePreservedThroughUpgrade=True),),
             (self.write_reboot_report("downgrade.json", downgradeRequested=True,
                                       downgradeRefused=True, downgradeStatePreserved=True),),
+            (self.write_reboot_report("unused-downgrade.json", previousSetupSHA256="a" * 64),),
         ]
         duplicate = self.root / "duplicate.json"
         duplicate.write_bytes(valid[0].read_bytes().replace(b'"passed": true', b'"passed": false, "passed": true'))
@@ -292,6 +293,35 @@ class SignedReleaseManifestTests(unittest.TestCase):
             with self.subTest(evidence=evidence), self.assertRaises(ValueError):
                 release.prepare(self.candidate, output, COMMIT, REF, windows_reboot_evidence=evidence)
             self.assertFalse(output.exists())
+
+    def test_downgrade_refusal_evidence_requires_both_distinct_prior_setup_pins(self):
+        files = release.inventory(self.candidate, self.subjects)
+        setup = next(item for item in files if item["target"] == "windows/amd64" and item["role"] == "installer")
+        upgrade = {
+            "schemaVersion": 9, "installMode": "upgrade", "previousVersion": "1.2.2-rc.1",
+            "previousPayloadSHA256": "d" * 64, "userProfilePreservedThroughUpgrade": True,
+            "downgradeRequested": True, "downgradeRefused": True, "downgradeStatePreserved": True,
+            "previousSetupSHA256": "8" * 64, "previousPublisherSHA256": "9" * 64,
+        }
+        for override in (
+            {"previousSetupSHA256": None},
+            {"previousPublisherSHA256": None},
+            {"previousPublisherSHA256": "Z" * 64},
+            {"previousSetupSHA256": setup["sha256"]},
+            {"downgradeStatePreserved": False},
+        ):
+            report = self.write_reboot_report("invalid-downgrade.json", **{**upgrade, **override})
+            with self.subTest(override=override), self.assertRaises(ValueError):
+                release.load_detection_evidence(self.candidate, [report], files, VERSION)
+        report = self.write_reboot_report("downgrade.json", **upgrade)
+        entry, = release.load_detection_evidence(self.candidate, [report], files, VERSION)
+        for omitted in release.WINDOWS_DOWNGRADE_FIELDS:
+            incomplete = {key: value for key, value in entry.items() if key != omitted}
+            with self.subTest(omitted=omitted), self.assertRaisesRegex(ValueError, "downgrade evidence"):
+                release.validate_detection([incomplete], files, VERSION)
+        manifest = json.loads(release.encode_manifest(COMMIT, REF, files, [entry]))
+        self.assertEqual(manifest["schemaVersion"], 5)
+        self.assertEqual(manifest["windowsDetection"], [entry])
 
     def test_managed_update_orders_versions_and_requires_an_exact_target(self):
         files = release.inventory(self.candidate, self.subjects)
@@ -653,13 +683,15 @@ class SignedReleaseManifestTests(unittest.TestCase):
         clean = self.write_reboot_report("clean.json")
         upgrade = self.write_reboot_report("upgrade.json", schemaVersion=9, installMode="upgrade",
                                            previousVersion="1.2.2-rc.1", previousPayloadSHA256="d" * 64,
-                                           userProfilePreservedThroughUpgrade=True, uninstallerSHA256="e" * 64)
+                                           userProfilePreservedThroughUpgrade=True, uninstallerSHA256="e" * 64,
+                                           downgradeRequested=True, downgradeRefused=True, downgradeStatePreserved=True,
+                                           previousSetupSHA256="8" * 64, previousPublisherSHA256="9" * 64)
         arm = self.write_reboot_report("arm.json", architecture="arm64", schemaVersion=7, uninstallerSHA256="f" * 64)
         release.prepare(self.candidate, prepared, COMMIT, REF, windows_reboot_evidence=[arm, upgrade, clean])
         shutil.copyfile(prepared, manifest)
         sign_manifest()
         report = self.verify(approved, pin)
-        self.assertEqual(report["schemaVersion"], 4)
+        self.assertEqual(report["schemaVersion"], 5)
         self.assertEqual(report["subjectsVerified"], 12)
         clean_entry, upgrade_entry, arm_entry = report["windowsDetection"]
         self.assertEqual(clean_entry, {
@@ -676,6 +708,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
             "previousPayloadSHA256": "d" * 64, "uninstallerSHA256": "e" * 64, "rebootEvidenceSHA256": upgrade[1],
             "previousPayloadSBOMSHA256": "1" * 64, "previousPayloadPublisherSHA256": "2" * 64,
             "payloadPublisherCertificateSHA256": "7" * 64,
+            "previousSetupSHA256": "8" * 64, "previousPublisherSHA256": "9" * 64,
         })
         self.assertEqual(arm_entry["target"], "windows/arm64")
         self.assertEqual(arm_entry["payloadSBOMSHA256"],
@@ -803,7 +836,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
             self.assertEqual(list(staging.iterdir()), [])
         for revoked in (clean[1], "b" * 64, "d" * 64, "e" * 64,
                         upgrade_entry["previousPayloadSBOMSHA256"], upgrade_entry["previousPayloadPublisherSHA256"],
-                        upgrade_entry["payloadPublisherCertificateSHA256"]):
+                        upgrade_entry["payloadPublisherCertificateSHA256"],
+                        *(upgrade_entry[field] for field in release.WINDOWS_DOWNGRADE_FIELDS)):
             current_pin = self.write_policy({**self.policy, "subjectSHA256": [revoked]})
             with self.subTest(revoked=revoked), self.assertRaisesRegex(ValueError, "revoked"):
                 self.verify(approved, pin, policy_pin=current_pin, stage_directory=staging, **qualified)
@@ -812,9 +846,19 @@ class SignedReleaseManifestTests(unittest.TestCase):
 
         original = manifest.read_bytes()
         data = json.loads(original)
-        legacy_entries = [
-            {field: value for field, value in entry.items() if field not in (*release.WINDOWS_PREVIOUS_TRUST_FIELDS, release.WINDOWS_PAYLOAD_PUBLISHER)}
+        no_downgrade = [
+            {field: value for field, value in entry.items() if field not in release.WINDOWS_DOWNGRADE_FIELDS}
             for entry in data["windowsDetection"]
+        ]
+        files = release.inventory(self.candidate, self.subjects)
+        manifest.write_bytes(release.encode_manifest(COMMIT, REF, files, no_downgrade))
+        sign_manifest()
+        self.assertEqual(self.verify(approved, pin, **qualified)["schemaVersion"], 4)
+
+        legacy_fields = (*release.WINDOWS_PREVIOUS_TRUST_FIELDS, release.WINDOWS_PAYLOAD_PUBLISHER)
+        legacy_entries = [
+            {field: value for field, value in entry.items() if field not in legacy_fields}
+            for entry in no_downgrade
         ]
         manifest.write_bytes(release.encode_manifest(COMMIT, REF, release.inventory(self.candidate, self.subjects), legacy_entries))
         sign_manifest()
@@ -825,7 +869,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.assertEqual(list(staging.iterdir()), [])
         self.assertEqual(legacy_report["managedUpdate"]["windowsUpgradeDetection"],
                          {field: value for field, value in upgrade_entry.items()
-                          if field not in (*release.WINDOWS_PREVIOUS_TRUST_FIELDS, release.WINDOWS_PAYLOAD_PUBLISHER)})
+                          if field not in legacy_fields + release.WINDOWS_DOWNGRADE_FIELDS})
 
         for bad_entries in (
             [legacy_entries[0], {**legacy_entries[1], "previousPayloadPublisherSHA256": "2" * 64}],

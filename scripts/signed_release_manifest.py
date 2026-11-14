@@ -33,6 +33,7 @@ WINDOWS_DETECTION_FIELDS = (
 )
 WINDOWS_PAYLOAD_PUBLISHER = "payloadPublisherCertificateSHA256"
 WINDOWS_PREVIOUS_TRUST_FIELDS = ("previousPayloadSBOMSHA256", "previousPayloadPublisherSHA256")
+WINDOWS_DOWNGRADE_FIELDS = ("previousSetupSHA256", "previousPublisherSHA256")
 REBOOT_CHECKS = (
     "passed", "guestRebootVerified", "installedPayloadVerifiedBeforeRestart",
     "installedPayloadVerified", "uninstallerIdentityVerified", "installedTreeVerified",
@@ -152,9 +153,14 @@ def validate_detection(entries, subjects, version):
                 "Malformed Windows detection entry")
         trust_fields = set(WINDOWS_PREVIOUS_TRUST_FIELDS).intersection(entry)
         publisher_fields = {WINDOWS_PAYLOAD_PUBLISHER}.intersection(entry)
-        require(entry.keys() == set(WINDOWS_DETECTION_FIELDS) | trust_fields | publisher_fields
+        downgrade_fields = set(WINDOWS_DOWNGRADE_FIELDS).intersection(entry)
+        require(entry.keys() == set(WINDOWS_DETECTION_FIELDS) | trust_fields | publisher_fields | downgrade_fields
                 and (not trust_fields or trust_fields == set(WINDOWS_PREVIOUS_TRUST_FIELDS)
                      and entry["installMode"] == "upgrade"), "Malformed Windows detection entry")
+        if downgrade_fields:
+            require(downgrade_fields == set(WINDOWS_DOWNGRADE_FIELDS) and entry["installMode"] == "upgrade"
+                    and all(re.fullmatch(SHA256, entry[field]) for field in downgrade_fields),
+                    "Malformed Windows downgrade evidence digests")
         for field in trust_fields | publisher_fields:
             require(re.fullmatch(SHA256, entry[field]), "Malformed Windows payload trust digest")
         target = entry["target"]
@@ -164,6 +170,9 @@ def validate_detection(entries, subjects, version):
             require(re.fullmatch(SHA256, entry[field]), "Malformed Windows detection digest")
         previous_version = entry["previousVersion"]
         previous_payload = entry["previousPayloadSHA256"]
+        if downgrade_fields:
+            require(entry["previousSetupSHA256"] != targets[target, "installer"],
+                    "Windows downgrade evidence names the candidate installer")
         if entry["installMode"] == "upgrade":
             version_parts(previous_version)
             require(update_order(*parse_release_version(previous_version)) < update_order(*parse_release_version(version))
@@ -231,6 +240,11 @@ def load_detection_evidence(directory, evidence, subjects, version):
             entry.update({field: report[field] for field in WINDOWS_PREVIOUS_TRUST_FIELDS})
         if report["schemaVersion"] >= 9:
             entry[WINDOWS_PAYLOAD_PUBLISHER] = report.get("payloadPublisherSHA256")
+        if downgrade:
+            entry.update({field: report.get(field) for field in WINDOWS_DOWNGRADE_FIELDS})
+        else:
+            require(all(report.get(field, "") == "" for field in WINDOWS_DOWNGRADE_FIELDS),
+                    "Windows reboot evidence has unused downgrade inputs")
         entries.append(entry)
     validate_detection(entries, subjects, version)
     return entries
@@ -239,9 +253,14 @@ def load_detection_evidence(directory, evidence, subjects, version):
 def encode_manifest(commit, ref, subjects, windows_detection=()):
     has_payload_publisher = any(WINDOWS_PAYLOAD_PUBLISHER in entry for entry in windows_detection)
     has_previous_trust = any(WINDOWS_PREVIOUS_TRUST_FIELDS[0] in entry for entry in windows_detection)
+    has_downgrade = any(WINDOWS_DOWNGRADE_FIELDS[0] in entry for entry in windows_detection)
     schema = 3 if has_previous_trust else 2 if windows_detection else 1
+    if has_payload_publisher:
+        schema = 4
+    if has_downgrade:
+        schema = 5
     manifest = {
-        "schemaVersion": 4 if has_payload_publisher else schema,
+        "schemaVersion": schema,
         "scope": "accessweaver-signed-desktop-release",
         "repository": REPOSITORY,
         "sourceCommit": commit,
@@ -250,8 +269,8 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
     }
     if windows_detection:
         manifest["windowsDetection"] = [
-            {field: entry[field] for field in WINDOWS_DETECTION_FIELDS + WINDOWS_PREVIOUS_TRUST_FIELDS + (WINDOWS_PAYLOAD_PUBLISHER,)
-             if field in entry}
+            {field: entry[field] for field in WINDOWS_DETECTION_FIELDS + WINDOWS_PREVIOUS_TRUST_FIELDS
+             + (WINDOWS_PAYLOAD_PUBLISHER,) + WINDOWS_DOWNGRADE_FIELDS if field in entry}
             for entry in sorted(windows_detection, key=detection_key)
         ]
     return (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
@@ -590,7 +609,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 and all(not revoked_subjects.intersection(
                     entry[field] for field in ("uninstallerSHA256", "rebootEvidenceSHA256",
                                                "previousPayloadSHA256", "publisherCertificateSHA256")
-                    + WINDOWS_PREVIOUS_TRUST_FIELDS + (WINDOWS_PAYLOAD_PUBLISHER,) if field in entry
+                    + WINDOWS_PREVIOUS_TRUST_FIELDS + (WINDOWS_PAYLOAD_PUBLISHER,)
+                    + WINDOWS_DOWNGRADE_FIELDS if field in entry
                 ) for entry in entries),
                 "Release subject or Windows detection evidence is revoked")
         sboms_verified, macos_detectors = validate_release_sboms(root, files, commit, version)
