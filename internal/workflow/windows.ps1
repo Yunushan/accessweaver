@@ -3740,43 +3740,50 @@ function Stop-AppProcesses([string]$variant,[string]$app) {
     $names=@(Get-AppProcessNames $base $app)
     $current=[Diagnostics.Process]::GetCurrentProcess()
     try {$sessionId=$current.SessionId} finally {$current.Dispose()}
-    $matching=[Collections.Generic.List[object]]::new()
-    $processes=@(Get-Process -ErrorAction Stop)
-    try {
-        # Check all observed matches before stopping a client. A shared install
-        # may still be in use by a disconnected or concurrent desktop session.
-        foreach($process in $processes){
-            $match=Get-AppProcessMatch $process $base $app $names
-            if($null -eq $match){throw 'A possible application process executable could not be verified'}
-            if(-not $match){continue}
-            $matching.Add($process)
-            $processSession=$null
-            try {$processSession=$process.SessionId}catch{}
-            if($processSession -isnot [int] -or $processSession -lt 0){throw 'A matching application process session could not be verified'}
-            if($processSession -ne $sessionId){throw 'A matching application is running in another Windows session'}
-        }
-        if($matching.Count -gt 0 -and $r.action -in @('app-install','app-remove','app-reinstall')){
-            Save-ApplicationEffectBoundary
-        }
-        foreach($process in $matching){
-            # Terminating a user application is an external effect even if a
-            # later stop or uninstall fails; it cannot be rolled back here.
-            $script:externalEffectsPending=$true
-            try {
-                # Cache the native handle on this Process instance. Stop and
-                # wait use that instance rather than reopening a numeric PID.
-                if($process.Handle -eq [IntPtr]::Zero){throw 'Application process handle is unavailable'}
-                $process.Kill()
-                if(-not $process.WaitForExit(5000)){throw 'Application exit was not observed'}
-            } catch {
-                $exited=$null
-                try {$exited=$process.HasExited}catch{}
-                if($exited -isnot [bool] -or -not $exited){throw 'A matching application process could not be stopped; the operation was not continued'}
+    $recordStop=$r.action -in @('app-install','app-remove','app-reinstall')
+    do {
+        $matching=[Collections.Generic.List[object]]::new()
+        $processes=@(Get-Process -ErrorAction Stop)
+        try {
+            # Check all observed matches before stopping a client. A shared install
+            # may still be in use by a disconnected or concurrent desktop session.
+            foreach($process in $processes){
+                $match=Get-AppProcessMatch $process $base $app $names
+                if($null -eq $match){throw 'A possible application process executable could not be verified'}
+                if(-not $match){continue}
+                $matching.Add($process)
+                $processSession=$null
+                try {$processSession=$process.SessionId}catch{}
+                if($processSession -isnot [int] -or $processSession -lt 0){throw 'A matching application process session could not be verified'}
+                if($processSession -ne $sessionId){throw 'A matching application is running in another Windows session'}
             }
+            if($matching.Count -gt 0 -and $recordStop){
+                Save-ApplicationEffectBoundary
+                $recordStop=$false
+                # Journal publication can overlap a client starting in another session.
+                continue
+            }
+            foreach($process in $matching){
+                # Terminating a user application is an external effect even if a
+                # later stop or uninstall fails; it cannot be rolled back here.
+                $script:externalEffectsPending=$true
+                try {
+                    # Cache the native handle on this Process instance. Stop and
+                    # wait use that instance rather than reopening a numeric PID.
+                    if($process.Handle -eq [IntPtr]::Zero){throw 'Application process handle is unavailable'}
+                    $process.Kill()
+                    if(-not $process.WaitForExit(5000)){throw 'Application exit was not observed'}
+                } catch {
+                    $exited=$null
+                    try {$exited=$process.HasExited}catch{}
+                    if($exited -isnot [bool] -or -not $exited){throw 'A matching application process could not be stopped; the operation was not continued'}
+                }
+            }
+            return
+        } finally {
+            foreach($process in $processes){$process.Dispose()}
         }
-    } finally {
-        foreach($process in $processes){$process.Dispose()}
-    }
+    } while($true)
 }
 function Test-AppProcessInSession([string]$path,[int]$sessionId,$processes,[datetime]$StartedAfter=[datetime]::MinValue) {
     $name=[IO.Path]::GetFileNameWithoutExtension($path)

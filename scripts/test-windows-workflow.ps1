@@ -1834,6 +1834,8 @@ $secondUninstaller=Join-Path $fixtureAppDirectory 'Uninstall-old.exe'
 [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
 $previousFindApp=(Get-Command Find-App).ScriptBlock
 $previousDesktopGuard=(Get-Command Require-DesktopUser).ScriptBlock
+$previousAppStopRequest=$r
+$previousAppStopJournal=(Get-Command Save-Journal).ScriptBlock
 try {
     function Find-App {param($variant);return $fixtureApp}
     function Require-DesktopUser {}
@@ -1898,7 +1900,23 @@ try {
     $script:appStopRecord.ExitObserved=$true
     Stop-AppProcesses 'splitcord'
     Assert ($script:appStopCalls -eq 1 -and $script:appStopWaits -eq 1 -and $script:appStopDisposals -eq 4 -and $script:externalEffectsPending) 'Application process stop records an external effect'
+
+    $r=[pscustomobject]@{action='app-remove'}
+    $conflictingProcess.SessionId=$fixtureSession+1
+    $script:appStopJournalWrites=0
+    $script:appStopCalls=0;$script:externalEffectsPending=$false
+    $appStopRecords=@($script:appStopRecord)
+    function Save-Journal {
+        $script:appStopJournalWrites++
+        $script:appStopRecords=@($script:appStopRecord,$conflictingProcess)
+    }
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'A matching application is running in another Windows session'}
+    Assert ($rejected -and $script:appStopCalls -eq 0 -and $script:appStopJournalWrites -eq 1 -and
+        $script:externalEffectsPending) 'Application removal rechecks other sessions after journal publication before stopping a client'
 } finally {
+    $r=$previousAppStopRequest
+    Set-Item Function:Save-Journal $previousAppStopJournal
     Remove-Item Function:Get-Process
     Set-Item Function:Find-App $previousFindApp;Set-Item Function:Require-DesktopUser $previousDesktopGuard
     $script:externalEffectsPending=$false
