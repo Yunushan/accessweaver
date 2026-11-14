@@ -99,8 +99,8 @@ function Test-NativeConfiguredDNSReadback([object]$State) {
         Assert-DoHNetEventSources $State
         $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $State.ndis.project 'internal/workflow/windows.ps1'),[ref]$tokens,[ref]$errors)
         if($errors.Count){throw 'Readback source syntax'}
-        $selected=@('Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Get-StaticDNSServers','Get-ActiveDNSAdapters','Assert-ConfiguredDNSServers')
-        $allowed=$selected+@('Get-NetAdapter','Get-DnsClientServerAddress','Where-Object')
+        $selected=@('Get-DNSClientFamily','Read-DNSClientInventory','Get-DNSClientRows','Get-OriginalDNSBounds','Get-StaticDNSServers','Get-ActiveDNSAdapters','Read-OriginalDNSNameServer','Read-DNSStaticOverride','Assert-ConfiguredDNSServers')
+        $allowed=$selected+@('Get-NetAdapter','Get-DnsClientServerAddress','Get-ItemProperty','Where-Object')
         foreach($name in $selected){
             $nodes=@($ast.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
             if($nodes.Count -ne 1){throw 'Readback function identity'}

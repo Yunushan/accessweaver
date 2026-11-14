@@ -2086,17 +2086,26 @@ function Get-StaticDNSServers([object[]]$Values,[string]$Family,[object]$Origina
     }
     return @($addresses)
 }
+function Read-DNSStaticOverride([object]$Adapter,[string]$Family) {
+    $service=if($Family -eq 'IPv4'){'Tcpip'}else{'Tcpip6'}
+    $path='HKLM:\SYSTEM\CurrentControlSet\Services\'+$service+'\Parameters\Interfaces\'+([guid]$Adapter.InterfaceGuid).ToString('B')
+    $names=Read-OriginalDNSNameServer $path
+    if([string]::IsNullOrWhiteSpace($names)){return}
+    if($names.Length -gt 16384){throw 'Stored DNS server list exceeds its size limit'}
+    Get-StaticDNSServers ($names.Trim() -split '[,\s]+') $Family $Adapter.ifIndex
+}
 function Read-OriginalDNSFamily([object]$Adapter,[string]$Family,[object[]]$Clients) {
     $current=@(Get-NetAdapter -ErrorAction Stop | Where-Object {[string]$_.InterfaceGuid -eq [string]$Adapter.InterfaceGuid})
     if($current.Count -ne 1 -or $current[0].ifIndex -ne $Adapter.ifIndex){throw 'An adapter changed during original DNS capture; no new DNS configuration was applied'}
     $rows=@(Get-DNSClientRows $Clients $Adapter.ifIndex $Family)
     if($rows.Count -ne 1){throw 'Original adapter DNS family could not be inspected; no new DNS configuration was applied'}
-    $service=if($Family -eq 'IPv4'){'Tcpip'}else{'Tcpip6'}
-    $path='HKLM:\SYSTEM\CurrentControlSet\Services\'+$service+'\Parameters\Interfaces\'+([guid]$Adapter.InterfaceGuid).ToString('B')
-    $names=Read-OriginalDNSNameServer $path
-    $dhcp=[string]::IsNullOrWhiteSpace($names);$values=@($rows[0].ServerAddresses)
-    if(-not $dhcp){$values=@(Get-StaticDNSServers $values $Family $Adapter.ifIndex)}
-    return @{dhcp=$dhcp;values=@($values)}
+    $stored=@(Read-DNSStaticOverride $Adapter $Family)
+    $values=@($rows[0].ServerAddresses)
+    if($stored.Count){
+        $values=@(Get-StaticDNSServers $values $Family $Adapter.ifIndex)
+        if(($stored -join ',') -cne ($values -join ',')){throw 'Stored static DNS servers differ from the effective adapter settings'}
+    }
+    return @{dhcp=($stored.Count -eq 0);values=@($values)}
 }
 function Read-OriginalDNSAdapter([object]$Adapter,[object[]]$Clients) {
     $record=@{guid=[string]$Adapter.InterfaceGuid;index=$Adapter.ifIndex;ipv4=@();ipv6=@();dhcp4=$false;dhcp6=$false;bound4=$false;bound6=$false}
@@ -2117,7 +2126,7 @@ function Get-ActiveDNSAdapters([object[]]$Adapters,[object[]]$Clients) {
     }
 }
 # Native setters can return successfully while effective adapter state lags or
-# differs. Compare the complete selected-family inventory without reapplying it.
+# differs. Compare both effective settings and the stored static override.
 function Assert-ConfiguredDNSServers([object[]]$Adapters,[object[]]$Records,[string[]]$Servers) {
     if($Adapters.Count -eq 0 -or $Servers.Count -eq 0){throw 'Configured DNS readback is incomplete'}
     $first=@(Get-NetAdapter -ErrorAction Stop);$clients=@(Read-DNSClientInventory);$last=@(Get-NetAdapter -ErrorAction Stop)
@@ -2147,7 +2156,9 @@ function Assert-ConfiguredDNSServers([object[]]$Adapters,[object[]]$Records,[str
             $expected=@(Get-StaticDNSServers $wanted $family $before[0].ifIndex)
             $actual=@(Get-StaticDNSServers @($rows[0].ServerAddresses) $family $before[0].ifIndex)
             if($actual.Count -ne $expected.Count){throw 'Configured DNS server count differs'}
-            for($i=0;$i -lt $actual.Count;$i++){if($actual[$i] -cne $expected[$i]){throw 'Configured DNS servers differ'}}
+            if(($actual -join ',') -cne ($expected -join ',')){throw 'Configured DNS servers differ'}
+            $stored=@(Read-DNSStaticOverride $before[0] $family)
+            if(($stored -join ',') -cne ($expected -join ',')){throw 'Stored DNS servers do not match the configured static addresses'}
         }
     }
 }
