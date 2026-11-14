@@ -32,7 +32,7 @@ $definitions=@($ast.EndBlock.Statements)
 $tokens=$null;$issues=$null;$coordinator=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'native-doh-scenario.ps1'),[ref]$tokens,[ref]$issues)
 if($issues.Count){throw 'Native coordinator source did not parse'}
 $definitions+=@($coordinator.EndBlock.Statements)
-$selected=@('Get-NativeDNSStaticFailure','Invoke-NativeDNSStaticFixture','Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Invoke-NativeDNSJournalScenario','Invoke-NativeDNSMissingSnapshotScenario','Invoke-NativeDNSRollbackScenario','New-NativeDNSFailureResponse','Get-NativeDNSVerificationMarker','Get-NativeDNSForwarderFailure','Get-NativeDNSComponentFailure','Get-NativeDNSComponentRetry','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
+$selected=@('Get-NativeDNSStaticFailure','Invoke-NativeDNSStaticFixture','Read-DNSAcceptanceRegistry','Get-DNSAcceptanceRegistryHash','Invoke-NativeDoHScenario','Invoke-NativeDNSJournalScenario','Invoke-NativeDNSMissingSnapshotScenario','Invoke-NativeDNSRollbackScenario','New-NativeDNSFailureResponse','Get-NativeDNSVerificationMarker','Get-NativeDNSForwarderFailure','Get-NativeDNSComponentFailure','Get-NativeDNSComponentRetry','Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Read-DNSAcceptanceState','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceRestored','Assert-DNSAcceptanceFamilyPreserved','Assert-DNSAcceptanceConfigured','Invoke-DNSAcceptanceRoundTrip')
 $allowed=$selected+@('ConvertTo-Json','Get-NetAdapter','Get-ItemProperty','Get-DnsClientServerAddress','Get-Command','Get-DnsClientDohServerAddress','Where-Object','Get-Service','Clear-DnsClientCache','Resolve-DnsName')
 foreach($name in $selected){
     $nodes=@($definitions | Where-Object {$_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name})
@@ -197,6 +197,28 @@ try {
                 'no-selected' {$original.adapters[0].selected=$false}
             }
             Reject-A {Assert-DNSAcceptanceConfigured $original $bad $method};Assert-A $true 'configured-method-negative'
+        }
+        foreach($failure in @('extra-adapter','selection','unselected-mode','unselected-order','unselected-dormant','doh-added','doh-removed','doh-changed')){
+            New-ACase
+            if($failure -ceq 'unselected-dormant'){$script:exposure[$script:g2+'/IPv4']=$false}
+            $before=Read-DNSAcceptanceState
+            Set-AConfigured $method
+            $current=Clone-A (Read-DNSAcceptanceState)
+            switch -CaseSensitive ($failure){
+                'extra-adapter' {
+                    $extra=Clone-A $current.adapters[1]
+                    $extra.guid='abcdef00-0000-0000-0000-000000000003'
+                    $current.adapters+=@($extra)
+                }
+                'selection' {$current.adapters[1].selected=$true}
+                'unselected-mode' {$current.adapters[1].ipv4.mode='dhcp';$current.adapters[1].ipv4.servers=@()}
+                'unselected-order' {[array]::Reverse($current.adapters[1].ipv4.servers)}
+                'unselected-dormant' {$current.adapters[1].ipv4.registryHash='0'*64}
+                'doh-added' {$current.doh+=@(@{address='192.0.2.91';template='https://added.invalid/dns-query';fallback=$false;upgrade=$true})}
+                'doh-removed' {$current.doh=@($current.doh | Where-Object {$_.address -cne '192.0.2.90'})}
+                'doh-changed' {($current.doh | Where-Object {$_.address -ceq '192.0.2.90'}).fallback=$false}
+            }
+            Reject-A {Assert-DNSAcceptanceConfigured $before $current $method}
         }
         New-ACase;Invoke-DNSAcceptanceRoundTrip $method $script:applyFixture
         Assert-A (($script:actions -join ',') -ceq 'dns,dns-restore') 'roundtrip-positive'

@@ -145,20 +145,22 @@ function Get-DNSAcceptanceIndex([object]$State) {
     if(-not $State.dohAvailable -and $doh.Count -ne 0){throw 'DNS acceptance DoH capability metadata is inconsistent'}
     return @{adapters=$adapters;doh=$doh}
 }
+function Assert-DNSAcceptanceFamilyPreserved([object]$Old,[object]$New) {
+    if($Old.mode -cne $New.mode){throw 'DNS acceptance original DHCP/static mode differs'}
+    if($Old.mode -ceq 'not-exposed' -and $Old.registryHash -cne $New.registryHash){throw 'DNS acceptance dormant registry state differs'}
+    $oldServers=@($Old.servers);$newServers=@($New.servers)
+    if($oldServers.Count -ne $newServers.Count){throw 'DNS acceptance original static server count differs'}
+    for($i=0;$i -lt $oldServers.Count;$i++){
+        if((Convert-DNSAcceptanceAddress $oldServers[$i] '') -cne (Convert-DNSAcceptanceAddress $newServers[$i] '')){throw 'DNS acceptance original static server order or value differs'}
+    }
+}
 function Assert-DNSAcceptanceRestored([object]$Before,[object]$After) {
     $expected=Get-DNSAcceptanceIndex $Before;$actual=Get-DNSAcceptanceIndex $After
     if($expected.adapters.Count -ne $actual.adapters.Count){throw 'DNS acceptance adapter inventory changed'}
     foreach($guid in $expected.adapters.Keys){
         if(-not $actual.adapters.ContainsKey($guid)){throw 'DNS acceptance original adapter is missing'}
         foreach($family in @('ipv4','ipv6')){
-            $old=$expected.adapters[$guid].$family;$new=$actual.adapters[$guid].$family
-            if($old.mode -cne $new.mode){throw 'DNS acceptance original DHCP/static mode differs'}
-            if($old.mode -ceq 'not-exposed' -and $old.registryHash -cne $new.registryHash){throw 'DNS acceptance dormant registry state differs'}
-            $oldServers=@($old.servers);$newServers=@($new.servers)
-            if($oldServers.Count -ne $newServers.Count){throw 'DNS acceptance original static server count differs'}
-            for($i=0;$i -lt $oldServers.Count;$i++){
-                if((Convert-DNSAcceptanceAddress $oldServers[$i] '') -cne (Convert-DNSAcceptanceAddress $newServers[$i] '')){throw 'DNS acceptance original static server order or value differs'}
-            }
+            Assert-DNSAcceptanceFamilyPreserved $expected.adapters[$guid].$family $actual.adapters[$guid].$family
         }
     }
     if($Before.dohAvailable -ne $After.dohAvailable -or $expected.doh.Count -ne $actual.doh.Count){throw 'DNS acceptance original DoH capability or inventory differs'}
@@ -171,16 +173,17 @@ function Assert-DNSAcceptanceRestored([object]$Before,[object]$After) {
 function Assert-DNSAcceptanceConfigured([object]$Before,[object]$Current,[string]$Method) {
     if($Method -cnotin @('doh','dnscrypt')){throw 'Unknown DNS acceptance method'}
     $original=Get-DNSAcceptanceIndex $Before;$actual=Get-DNSAcceptanceIndex $Current
-    $selected=@($original.adapters.Values | Where-Object {$_.selected})
-    if($selected.Count -eq 0){throw 'DNS acceptance has no selected original adapter'}
+    if(@($original.adapters.Values | Where-Object {$_.selected}).Count -eq 0){throw 'DNS acceptance has no selected original adapter'}
+    if($original.adapters.Count -ne $actual.adapters.Count){throw 'DNS acceptance adapter inventory changed'}
     $v4=if($Method -ceq 'doh'){@('8.8.8.8','9.9.9.9')}else{@('127.0.0.1')}
     $v6=if($Method -ceq 'doh'){@('2001:4860:4860::8888','2620:fe::fe')}else{@('::1')}
-    foreach($record in $selected){
-        $guid=Convert-DNSAcceptanceGuid $record.guid
+    foreach($guid in $original.adapters.Keys){
+        $record=$original.adapters[$guid]
         if(-not $actual.adapters.ContainsKey($guid)){throw 'DNS acceptance configured adapter is missing'}
+        if($record.selected -ne $actual.adapters[$guid].selected){throw 'DNS acceptance configured adapter selection changed'}
         foreach($family in @('ipv4','ipv6')){
-            if($record.$family.mode -ceq 'not-exposed'){
-                if($actual.adapters[$guid].$family.mode -cne 'not-exposed' -or $record.$family.registryHash -cne $actual.adapters[$guid].$family.registryHash){throw 'DNS acceptance unowned family changed'}
+            if(-not $record.selected -or $record.$family.mode -ceq 'not-exposed'){
+                Assert-DNSAcceptanceFamilyPreserved $record.$family $actual.adapters[$guid].$family
                 continue
             }
             [string[]]$expected=if($family -eq 'ipv4'){@($v4)}else{@($v6)};$observed=$actual.adapters[$guid].$family;$servers=@($observed.servers)
@@ -188,13 +191,28 @@ function Assert-DNSAcceptanceConfigured([object]$Before,[object]$Current,[string
             for($i=0;$i -lt $expected.Count;$i++){if((Convert-DNSAcceptanceAddress $servers[$i] '') -cne $expected[$i]){throw 'DNS acceptance configured server differs'}}
         }
     }
+    if($Before.dohAvailable -ne $Current.dohAvailable){throw 'DNS acceptance DoH capability changed during configuration'}
+    $managedProviders=@()
     if($Method -ceq 'doh'){
         if(-not $Current.dohAvailable){throw 'Native DoH acceptance capability missing'}
-        foreach($address in @('8.8.8.8','9.9.9.9','2001:4860:4860::8888','2620:fe::fe')){
+        $managedProviders=@($v4)+@($v6)
+        foreach($address in $managedProviders){
             $template=switch -CaseSensitive ($address){'8.8.8.8'{'https://8.8.8.8/dns-query'}'9.9.9.9'{'https://9.9.9.9/dns-query'}'2001:4860:4860::8888'{'https://[2001:4860:4860::8888]/dns-query'}'2620:fe::fe'{'https://[2620:fe::fe]/dns-query'}default{throw 'Unexpected fixed DoH provider'}}
             if(-not $actual.doh.ContainsKey($address)){throw 'Native DoH acceptance provider missing'}
             $entry=$actual.doh[$address]
             if($entry.template -cne $template -or $entry.fallback -or -not $entry.upgrade){throw 'Native DoH acceptance provider policy differs'}
+        }
+    }
+    foreach($address in $original.doh.Keys){
+        if($address -in $managedProviders){continue}
+        $old=$original.doh[$address];$new=$actual.doh[$address]
+        if($null -eq $new -or $old.template -cne $new.template -or $old.fallback -ne $new.fallback -or $old.upgrade -ne $new.upgrade){
+            throw 'DNS acceptance unrelated DoH policy changed'
+        }
+    }
+    foreach($address in $actual.doh.Keys){
+        if($address -notin $managedProviders -and -not $original.doh.ContainsKey($address)){
+            throw 'DNS acceptance unrelated DoH policy changed'
         }
     }
 }

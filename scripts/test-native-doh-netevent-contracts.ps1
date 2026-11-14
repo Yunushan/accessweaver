@@ -22,7 +22,7 @@ foreach($def in $phaseAst.FindAll({param($n)$n -is [Management.Automation.Langua
 }
 # Pure independent acceptance functions used by the binding admission tests.
 $t=$null;$e=$null;$oracleAst=[Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'dns-acceptance-state.ps1'),[ref]$t,[ref]$e);if($e.Count){throw 'Binding oracle source syntax'}
-$oracleSelected=@('Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceConfigured')
+$oracleSelected=@('Convert-DNSAcceptanceGuid','Convert-DNSAcceptanceAddress','Get-DNSAcceptanceIndex','Assert-DNSAcceptanceFamilyPreserved','Assert-DNSAcceptanceConfigured')
 foreach($def in $oracleAst.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$false)){
  if($def.Name -cnotin $oracleSelected){continue};foreach($cmd in $def.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)){if($cmd.GetCommandName() -cnotin ($oracleSelected+@('Where-Object'))){throw 'Binding oracle command boundary'}}
  . ([scriptblock]::Create($def.Extent.Text))
