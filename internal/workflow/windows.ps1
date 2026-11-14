@@ -2256,6 +2256,41 @@ function Assert-ConfiguredDNSDohPolicy([object[]]$Providers,[string]$FailureMess
         if(-not (Test-DNSDohEntriesEqual $entry @($provider))){throw $FailureMessage}
     }
 }
+function Test-DNSCryptListenerNeeded([object[]]$Records) {
+    try {
+        $inventory=@(Get-NetAdapter -ErrorAction Stop)
+        $clients=@(Read-DNSClientInventory)
+        # Include down and excluded interfaces. Also check stored overrides for
+        # previously managed families whose effective rows can lag or disappear.
+        # Keep the service if restoring a saved static setting would need it.
+        foreach($client in $clients){
+            foreach($server in $client.ServerAddresses){
+                $address=$null
+                if(-not [Net.IPAddress]::TryParse([string]$server,[ref]$address) -or
+                   $address.Equals([Net.IPAddress]::Loopback) -or $address.Equals([Net.IPAddress]::IPv6Loopback)){return $true}
+            }
+        }
+        foreach($record in $Records){
+            $matches=@($inventory | Where-Object {[string]$_.InterfaceGuid -eq $record.guid})
+            if($matches.Count -ne 1){return $true}
+            $adapter=$matches[0];$bounds=Get-OriginalDNSBounds $record
+            foreach($number in @('4','6')){
+                if(-not $bounds['bound'+$number]){continue}
+                $family='IPv'+$number
+                if(@(Get-DNSClientRows $clients $adapter.ifIndex $family).Count -ne 1){return $true}
+                if(-not $record.('dhcp'+$number)){
+                    $original=@(Get-StaticDNSServers @($record.('ipv'+$number)) $family $record.index)
+                    if($original -contains '127.0.0.1' -or $original -contains '::1'){return $true}
+                }
+                $stored=@(Read-DNSStaticOverride $adapter $family)
+                if($stored -contains '127.0.0.1' -or $stored -contains '::1'){return $true}
+            }
+        }
+    } catch {
+        return $true
+    }
+    return $false
+}
 function Configure-DNS([string]$method) {
     if($method -notin @('doh','dnscrypt')){throw 'Choose doh or dnscrypt'}
     if($method -eq 'doh'){foreach($command in @('Get-DnsClientDohServerAddress','Set-DnsClientDohServerAddress','Add-DnsClientDohServerAddress','Remove-DnsClientDohServerAddress')){if(-not (Get-Command $command -ErrorAction SilentlyContinue)){throw 'This Windows version does not expose native DoH management; choose DNSCrypt instead'}}}
@@ -2435,8 +2470,9 @@ function Configure-DNS([string]$method) {
     if($method -ceq 'doh'){
         Assert-ConfiguredDNSDohPolicy $providers 'Configured DoH policy changed during resolver verification; retain the original DNS snapshot'
     }
-    if($method -ceq 'doh' -and $existingResolver){
-        # Keep the old listener available until the new adapter DNS is usable.
+    if($method -ceq 'doh' -and $existingResolver -and -not (Test-DNSCryptListenerNeeded $records)){
+        # Keep the old listener available until the new adapter DNS is usable
+        # and there is no remaining observed dependency on the loopback listener.
         if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared during DoH configuration'}
         Stop-Service -Name $serviceName -ErrorAction Stop
         Set-Service -Name $serviceName -StartupType Manual -ErrorAction Stop
