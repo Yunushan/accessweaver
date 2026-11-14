@@ -189,14 +189,29 @@ function Get-GuestBoot {
     if(@($os).Count -ne 1 -or $os.LastBootUpTime -isnot [datetime]){throw 'Cannot establish the current guest boot'}
     return $os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
 }
-function Invoke-ApprovedInstaller([string]$Path,[string[]]$Arguments,[switch]$AllowRestartRequired,[int]$ExpectedExitCode=0,[string]$OutputPath){
+function Invoke-ApprovedInstaller([string]$Path,[string[]]$Arguments,[switch]$AllowRestartRequired,[int]$ExpectedExitCode=0,[string]$OutputPath,
+    [string]$ApprovedSHA256,[string]$ApprovedPublisherSHA256){
     if($AllowRestartRequired -and $ExpectedExitCode -ne 0){throw 'Conflicting installer exit expectations'}
     $capture=@{}
     if($OutputPath){
         if(Test-Path -LiteralPath $OutputPath -ErrorAction Stop){throw 'Fixture output path already exists'}
         $capture.RedirectStandardOutput=$OutputPath
     }
-    $process=Start-Process -FilePath $Path -ArgumentList $Arguments -WindowStyle Hidden -PassThru @capture
+    if([bool]$ApprovedSHA256 -ne [bool]$ApprovedPublisherSHA256){throw 'Both artifact and publisher digests are required'}
+    $guard=$null
+    try {
+        if($ApprovedSHA256){
+            Assert-RebootPath $Path
+            $guard=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+            $null=@(& $publisher -Artifact $Path -ArtifactSHA256 $ApprovedSHA256 -PublisherCertificateSHA256 $ApprovedPublisherSHA256)
+            if($LASTEXITCODE -ne 0){throw 'Installer publisher verification failed'}
+        }
+        $process=Start-Process -FilePath $Path -ArgumentList $Arguments -WindowStyle Hidden -PassThru @capture
+    } finally {
+        # Keep verified bytes bound through process creation. Release the read
+        # handle before waiting so the uninstaller can remove its own files.
+        if($null -ne $guard){$guard.Dispose()}
+    }
     try {
         if(-not $process.WaitForExit(180000)){
             # Retain the process and its installer guard through the actual exit.
@@ -485,13 +500,9 @@ try {
         Assert-RebootUserProfile $userProfile $saved.userProfileSHA256
         $result.downgradeStatePreserved=$true
     }
-    $result.stage='uninstaller-identity'
-    if((Get-RebootDigest $uninstaller) -cne $saved.uninstallerSHA256){throw 'Installed uninstaller changed after preparation'}
-    $null=@(& $publisher -Artifact $uninstaller -ArtifactSHA256 $saved.uninstallerSHA256 -PublisherCertificateSHA256 $PublisherCertificateSHA256)
-    if($LASTEXITCODE -ne 0){throw 'Uninstaller publisher verification failed'}
-    $result.uninstallerIdentityVerified=$true
     $result.stage='uninstall'
-    [void](Invoke-ApprovedInstaller $uninstaller @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'))
+    [void](Invoke-ApprovedInstaller $uninstaller @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -ApprovedSHA256 $saved.uninstallerSHA256 -ApprovedPublisherSHA256 $PublisherCertificateSHA256)
+    $result.uninstallerIdentityVerified=$true
     $result.stage='removal-readback'
     $deadline=[Diagnostics.Stopwatch]::StartNew()
     while((Test-Path -LiteralPath $uninstaller) -and $deadline.Elapsed.TotalSeconds -lt 20){Start-Sleep -Milliseconds 200}

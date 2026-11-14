@@ -286,6 +286,74 @@ foreach($test in @(
         throw 'Installer fixture accepted an invalid exit or abandoned the owned process'
     }
 }
+& {
+    $artifact=Join-Path $root 'inert-uninstaller.exe'
+    $trace=[Collections.Generic.List[string]]::new()
+    $previousExitCode=Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+    [void][IO.Directory]::CreateDirectory($root)
+    try {
+        [IO.File]::WriteAllText($artifact,'inert uninstaller')
+        $approved=(Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash
+        $certificate='a'*64
+        function Assert-RebootPath([string]$Path){
+            if($Path -cne $artifact){throw 'Unexpected uninstaller approval path'}
+        }
+        function Assert-UninstallerHeld {
+            $denied=$false
+            try {$writer=[IO.File]::Open($artifact,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite);$writer.Dispose()}
+            catch [IO.IOException] {$denied=$true}
+            if(-not $denied){throw 'The uninstaller was writable during verification or process creation'}
+        }
+        $publisher={
+            param($Artifact,$ArtifactSHA256,$PublisherCertificateSHA256)
+            $trace.Add('verify')
+            Assert-UninstallerHeld
+            if($Artifact -cne $artifact -or $PublisherCertificateSHA256 -cne $certificate){
+                throw 'Uninstaller approval did not use the intended artifact or publisher'
+            }
+            $actual=(Get-FileHash -LiteralPath $Artifact -Algorithm SHA256).Hash
+            $global:LASTEXITCODE=[int]($actual -ine $ArtifactSHA256)
+        }
+        function Start-Process {
+            [CmdletBinding()]param($FilePath,$ArgumentList,$WindowStyle,[switch]$PassThru)
+            $trace.Add('launch')
+            if($FilePath -cne $artifact -or $ArgumentList -cne '/NORESTART'){throw 'Unexpected uninstall launch'}
+            Assert-UninstallerHeld
+            if($failLaunch){throw 'Synthetic uninstall launch failure'}
+            $process=[pscustomobject]@{ExitCode=0}
+            $process | Add-Member ScriptMethod WaitForExit {
+                param($Milliseconds)
+                $trace.Add('wait')
+                $writer=[IO.File]::Open($artifact,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None)
+                $writer.Dispose()
+                return $true
+            }
+            $process | Add-Member ScriptMethod Dispose {$trace.Add('dispose')}
+            return $process
+        }
+        Assert-Refused {Invoke-ApprovedInstaller $artifact @('/NORESTART') -ApprovedSHA256 $approved}
+        if($trace.Count){throw 'Incomplete approval accessed the uninstaller'}
+        Assert-Refused {Invoke-ApprovedInstaller $artifact @('/NORESTART') -ApprovedSHA256 ('0'*64) -ApprovedPublisherSHA256 $certificate}
+        if(($trace -join ',') -cne 'verify'){throw 'Failed approval reached process creation'}
+        $trace.Clear()
+        $failLaunch=$true
+        Assert-Refused {Invoke-ApprovedInstaller $artifact @('/NORESTART') -ApprovedSHA256 $approved -ApprovedPublisherSHA256 $certificate}
+        if(($trace -join ',') -cne 'verify,launch'){throw 'Launch failure escaped the verification boundary'}
+        $writer=[IO.File]::Open($artifact,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        $writer.Dispose()
+        $trace.Clear()
+        $failLaunch=$false
+        $exit=Invoke-ApprovedInstaller $artifact @('/NORESTART') -ApprovedSHA256 $approved -ApprovedPublisherSHA256 $certificate
+        if($exit -ne 0 -or ($trace -join ',') -cne 'verify,launch,wait,dispose'){
+            throw 'The verified launch did not release its guard before waiting'
+        }
+    } finally {
+        if($null -ne $previousExitCode){$global:LASTEXITCODE=$previousExitCode.Value}
+        else {Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue}
+        [IO.File]::Delete($artifact)
+        [IO.Directory]::Delete($root)
+    }
+}
 $installer=(Get-Command Invoke-ApprovedInstaller).ScriptBlock
 function Invoke-ApprovedInstaller {
     param($Path,$Arguments)
