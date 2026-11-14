@@ -1429,12 +1429,13 @@ try {
         @{draft=$true;prerelease=$false;tag_name='v99.0.0'},
         @{draft=$false;prerelease=$true;tag_name='v88.0.0';assets=@(New-ReleaseAssets 'v88.0.0' 'amd64')},
         @{draft=$false;prerelease=$false;tag_name='v89.0.0-rc.1';assets=@(New-ReleaseAssets 'v89.0.0-rc.1' 'amd64')},
-        @{draft=$false;prerelease=$true;tag_name='v87.0.0+build-1';assets=@(New-ReleaseAssets 'v87.0.0+build-1' 'amd64')},
+        @{draft=$false;prerelease=$false;tag_name='v87.0.0+build-1';assets=@(New-ReleaseAssets 'v87.0.0+build-1' 'amd64')},
+        @{draft=$false;prerelease=$false;tag_name='86.0.0';assets=@(New-ReleaseAssets '86.0.0' 'amd64')},
         @{draft='false';prerelease=$false;tag_name='v77.0.0'},
         @{draft=$false;prerelease=$false;tag_name=('1'*257)},
         @{draft=$false;prerelease=$false;tag_name=('v8.0.0'+[char]0)},
         @{draft=$false;prerelease=$true;tag_name='v2.0.0-rc.1';assets=@(New-ReleaseAssets 'v2.0.0-rc.1' 'amd64')},
-        @{draft=$false;prerelease=$false;tag_name='v1.9.0+build.3';html_url='https://outside.invalid/ignored';published_at=$published;assets=@(New-ReleaseAssets 'v1.9.0+build.3' 'amd64')}
+        @{draft=$false;prerelease=$false;tag_name='v1.9.0';html_url='https://outside.invalid/ignored';published_at=$published;assets=@(New-ReleaseAssets 'v1.9.0' 'amd64')}
     )
     function Read-RemoteJSON {
         param($Uri,$Headers)
@@ -1452,14 +1453,14 @@ try {
     $metadata[-1].assets[-1].digest='sha256:'+('b'*64)
     $metadata[-1].assets+=@{name='private-fixture.txt';state='uploaded';digest=('sha256:'+('c'*64))}
     $outputComplete=$true
-    $comparison='{"version":"v1.9.0+build.3","currentVersion":"1.8.0","updateAvailable":true}'
+    $comparison='{"version":"v1.9.0","currentVersion":"1.8.0","updateAvailable":true}'
     $result=Check-AccessWeaverUpdates
-    Assert ($calls.Count -eq 1 -and $calls[0] -ceq 'system,check-version,--build-identity,--follow-channel,v2.0.0-rc.1,v1.9.0+build.3' -and
-        $result.url -ceq 'https://github.com/Yunushan/accessweaver/releases/tag/v1.9.0%2Bbuild.3' -and
+    Assert ($calls.Count -eq 1 -and $calls[0] -ceq 'system,check-version,--build-identity,--follow-channel,v2.0.0-rc.1,v1.9.0' -and
+        $result.url -ceq 'https://github.com/Yunushan/accessweaver/releases/tag/v1.9.0' -and
         $result.updateAvailable -eq $true -and $result.publishedAt -ceq $published -and
         $result.build.commit -ceq $controllerBuild.commit -and $result.build.sourceState -ceq 'clean') 'Update discovery filters release metadata and returns the official tag link'
     Assert ($result.githubAssetSHA256.Count -eq 4 -and
-        $result.githubAssetSHA256['accessweaver-v1.9.0+build.3-windows-amd64.zip'] -ceq ('b'*64) -and
+        $result.githubAssetSHA256['accessweaver-v1.9.0-windows-amd64.zip'] -ceq ('b'*64) -and
         $result.githubAssetSHA256['BUILD-MANIFEST.json'] -ceq ('a'*64) -and
         $result.githubAssetSHA256['SHA256SUMS.txt'] -ceq ('a'*64) -and
         $result.githubAssetSHA256['BUILD-PROVENANCE.sigstore.json'] -ceq ('a'*64)) 'Update discovery returns only the selected GitHub asset digests'
@@ -1479,15 +1480,15 @@ try {
         if(-not $refused){throw 'Unexpected release metadata shape outcome'}
     }
     Assert ($calls.Count -eq 3) 'Update discovery rejects invalid list shapes before comparison'
-    $eligible=@{draft=$false;prerelease=$false;tag_name='v1.9.0+build-3';assets=@(New-ReleaseAssets 'v1.9.0+build-3' 'amd64')}
+    $eligible=@{draft=$false;prerelease=$false;tag_name='v1.9.0';assets=@(New-ReleaseAssets 'v1.9.0' 'amd64')}
     $metadata=@($eligible,$eligible.Clone())
     $refused=$false
     try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'AccessWeaver release metadata contains a duplicate eligible tag'}
     Assert ($refused -and $calls.Count -eq 3) 'Update discovery refuses duplicate eligible tags before comparing versions'
-    $metadata=@($eligible)
-    $comparison='{"version":"v1.9.0+build-3","currentVersion":"1.8.0","updateAvailable":true}'
-    $result=Check-AccessWeaverUpdates
-    Assert ($result.updateAvailable -and $result.version -ceq 'v1.9.0+build-3') 'Update discovery accepts hyphens in stable build metadata'
+    $metadata=@(@{draft=$false;prerelease=$false;tag_name='v1.9.0+build.3';assets=@(New-ReleaseAssets 'v1.9.0+build.3' 'amd64')})
+    $refused=$false
+    try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'No published AccessWeaver releases include a Windows archive and verification files for this architecture'}
+    Assert ($refused -and $calls.Count -eq 3) 'Update discovery refuses build metadata in portable release tags'
     $calls.Clear()
     $inputData.nativeArchitecture='arm64'
     $wrongArch=@(New-ReleaseAssets 'v9.0.0' 'amd64')

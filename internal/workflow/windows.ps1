@@ -493,11 +493,12 @@ function Check-AccessWeaverUpdates {
     $allReleases=Read-RemoteJSON -Headers @{'User-Agent'='AccessWeaver'} -Uri 'https://api.github.com/repos/Yunushan/accessweaver/releases?per_page=30'
     if($allReleases -isnot [array] -or $allReleases.Count -gt 30){throw 'AccessWeaver release metadata did not contain a valid release list'}
     $releases=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+    # Portable releases use the published v-tag as the archive label.
     $tags=@(foreach($release in $allReleases){
         if($release.draft -isnot [bool] -or $release.draft -or $release.prerelease -isnot [bool] -or
             $release.tag_name -isnot [string] -or $release.tag_name.Length -gt 256 -or
-            $release.tag_name -cnotmatch '\Av?[0-9][0-9A-Za-z.+-]*\z' -or
-            $release.prerelease -ne ($release.tag_name -cmatch '^[^+]+-[^+]+')){continue}
+            $release.tag_name -cnotmatch '\Av[0-9][0-9A-Za-z.-]*\z' -or
+            $release.prerelease -ne $release.tag_name.Contains('-')){continue}
         $digests=Get-AccessWeaverReleaseAssets $release $architecture
         if(-not $digests){continue}
         $tag=$release.tag_name
