@@ -401,7 +401,9 @@ try {
         $report=Microsoft.PowerShell.Utility\ConvertTo-Json -InputObject $result -Compress
         Assert-A ($report -cnotmatch 'workflow-|[a-f0-9]{64}') 'journal-scenario-private-output'
     }
-    foreach($failure in @('none','snapshot-hold','missing-snapshot-refusal','resolver-preservation','snapshot-return','journal-retry','original-state','original-resolver')){
+    foreach($failure in @('none','snapshot-hold','missing-snapshot-refusal','resolver-preservation',
+        'resolver-state-drift','configured-state-drift','snapshot-return','journal-retry','original-state',
+        'original-resolver','original-state-drift')){
         New-ACase
         $script:missingBefore=Read-DNSAcceptanceState
         Set-AConfigured 'dnscrypt'
@@ -436,7 +438,11 @@ try {
             return $script:missingBefore
         } -Resolve {
             $script:resolverQueries++
-            if($script:resolverQueries -eq 4 -and $failure -ceq 'original-resolver'){throw 'Synthetic original resolver failure'}
+            if($script:resolverQueries -eq 3 -and $failure -ceq 'configured-state-drift'){$script:configured=$false}
+            if($script:resolverQueries -eq 4){
+                if($failure -ceq 'original-resolver'){throw 'Synthetic original resolver failure'}
+                if($failure -ceq 'original-state-drift'){$script:configured=$true}
+            }
         } -ReadBinding {$binding} -HoldSnapshot {
             param($Digest)
             if($Digest -cne $binding.digest){throw 'Unexpected snapshot digest'}
@@ -450,10 +456,16 @@ try {
             $script:held=$false
         } -ReadResolver {
             $script:resolverReads++
-            if($script:resolverReads -eq 2 -and $failure -ceq 'resolver-preservation'){return 'changed'}
+            if(($script:resolverReads -eq 2 -and $failure -ceq 'resolver-preservation') -or
+                ($script:resolverReads -eq 3 -and $failure -ceq 'resolver-state-drift')){return 'changed'}
             return 'unchanged'
         }
-        Assert-A ($result.code -ceq $failure -and ($result.outcome -ceq 'passed') -eq ($failure -ceq 'none')) 'missing-snapshot-scenario'
+        $expectedCode=if($failure -cin @('resolver-state-drift','configured-state-drift')){'resolver-preservation'}
+            elseif($failure -ceq 'original-state-drift'){'original-state'}else{$failure}
+        if($failure -ceq 'original-state-drift'){
+            Assert-A ($result.originalResolverVerified -and -not $result.originalStateRestored) 'missing-snapshot-post-query-drift'
+        }
+        Assert-A ($result.code -ceq $expectedCode -and ($result.outcome -ceq 'passed') -eq ($failure -ceq 'none')) 'missing-snapshot-scenario'
         if($failure -ceq 'none'){
             Assert-A (($script:missingTrace -join ',') -ceq 'configure,hold,refuse,return,retry' -and
                 -not $script:held -and $result.originalResolverVerified -and $result.resolverPreserved -and
@@ -631,7 +643,7 @@ try {
     Assert-A (-not (Get-NativeDNSVerificationMarker '' $staleMarker -MissingSnapshot).matched -and
         -not (Get-NativeDNSVerificationMarker '' $missingMarker -StaleJournal).matched) 'missing-snapshot-marker'
     Reject-A {Get-NativeDNSVerificationMarker ('x'*$marker.Length) ''};Reject-A {Get-NativeDNSVerificationMarker '' ('x'*4097)}
-    foreach($failure in @('none','baseline','baseline-resolver','configuration','accepted','nonboolean','observation','missing-configured','missing-forwarded','malformed-observation','restored-state','restored-resolver','emergency-failure')){
+    foreach($failure in @('none','baseline','baseline-resolver','configuration','accepted','nonboolean','observation','missing-configured','missing-forwarded','malformed-observation','restored-state','restored-resolver','restored-state-drift','emergency-failure')){
         New-ACase;$script:nativeBefore=Read-DNSAcceptanceState;Set-AConfigured 'dnscrypt';$script:nativeConfigured=Read-DNSAcceptanceState;$script:nativeAfter=Clone-A $script:nativeBefore
         $script:nativeFailure=$failure;$script:rollbackTrace=[Collections.Generic.List[string]]::new();$script:rollbackConfigured=$false;$script:rollbackQueries=0
         if($failure -cin @('restored-state','emergency-failure')){$script:nativeAfter=Clone-A $script:nativeConfigured}
@@ -650,19 +662,25 @@ try {
             return @{configured=($script:nativeFailure -cne 'missing-configured');forwarded=($script:nativeFailure -cne 'missing-forwarded')}
         } -Resolve {
             $script:rollbackQueries++;$script:rollbackTrace.Add('resolve')
+            if($script:rollbackQueries -eq 2 -and $script:nativeFailure -ceq 'restored-state-drift'){
+                $script:nativeAfter=Clone-A $script:nativeConfigured
+            }
             if(($script:rollbackQueries -eq 1 -and $script:nativeFailure -ceq 'baseline-resolver') -or ($script:rollbackQueries -eq 2 -and $script:nativeFailure -ceq 'restored-resolver')){throw 'fixture-resolver-fault'}
         } -EmergencyRestore {
             $script:rollbackTrace.Add('emergency')
             if($script:nativeFailure -ceq 'emergency-failure'){throw 'fixture-emergency-fault'}
         }
         $operation=if($failure -cin @('baseline','baseline-resolver')){'baseline'}elseif($failure -cin @('configuration','accepted','nonboolean')){'configuration'}elseif($failure -cin @('observation','missing-configured','missing-forwarded','malformed-observation')){'effects-observation'}else{'none'}
-        $recovery=if($failure -cin @('restored-state','emergency-failure')){'restored-state'}elseif($failure -ceq 'restored-resolver'){'restored-resolver'}else{'none'}
+        $recovery=if($failure -cin @('restored-state','restored-state-drift','emergency-failure')){'restored-state'}elseif($failure -ceq 'restored-resolver'){'restored-resolver'}else{'none'}
         Assert-A (($result.outcome -ceq 'passed') -eq ($failure -ceq 'none') -and $result.operationCode -ceq $operation -and $result.recoveryCode -ceq $recovery) 'rollback-native-result'
-        $expectedEmergency=$failure -cin @('restored-state','emergency-failure')
+        $expectedEmergency=$failure -cin @('restored-state','restored-state-drift','emergency-failure')
+        if($failure -ceq 'restored-state-drift'){
+            Assert-A ($result.restoredResolverPassed -and -not $result.originalStateRestored) 'rollback-native-post-query-drift'
+        }
         Assert-A ($result.emergencyRestoreAttempted -eq $expectedEmergency -and @($script:rollbackTrace | Where-Object {$_ -ceq 'emergency'}).Count -eq $(if($expectedEmergency){1}else{0})) 'rollback-native-cleanup'
         if($failure -ceq 'none'){
             Assert-A ($result.configurationRejected -and $result.configuredStateObserved -and $result.forwardedFailureObserved -and $result.originalStateRestored -and $result.restoredResolverPassed) 'rollback-native-flags'
-            Assert-A (($script:rollbackTrace -join ',') -ceq 'capture,resolve,configure,observe,capture,resolve') 'rollback-native-order'
+            Assert-A (($script:rollbackTrace -join ',') -ceq 'capture,resolve,configure,observe,capture,resolve,capture') 'rollback-native-order'
         }
     }
     foreach($missing in @('Configure','Capture','Observe','Resolve','EmergencyRestore')){

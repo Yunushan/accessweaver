@@ -166,9 +166,11 @@ function Invoke-NativeDNSMissingSnapshotScenario([scriptblock]$Apply,[scriptbloc
         $result.recoveryRefused=$true
         $result.code='resolver-preservation'
         if((& $ReadResolver) -cne $resolver){throw 'DNSCrypt service or files changed'}
-        $result.resolverPreserved=$true
         Assert-DNSAcceptanceRestored $configured (& $Capture)
         [void](& $Resolve)
+        if((& $ReadResolver) -cne $resolver){throw 'DNSCrypt service or files changed during the resolver query'}
+        $result.resolverPreserved=$true
+        Assert-DNSAcceptanceRestored $configured (& $Capture)
         $result.configuredStatePreserved=$true
         $result.code='snapshot-return'
         [void](& $ReturnSnapshot $binding.digest)
@@ -182,6 +184,10 @@ function Invoke-NativeDNSMissingSnapshotScenario([scriptblock]$Apply,[scriptbloc
         $result.code='original-resolver'
         [void](& $Resolve)
         $result.originalResolverVerified=$true
+        $result.code='original-state'
+        $result.originalStateRestored=$false
+        Assert-DNSAcceptanceRestored $before (& $Capture)
+        $result.originalStateRestored=$true
         $result.outcome='passed';$result.code='none'
     }catch{}finally{
         if($holdingAttempted -and -not $result.snapshotReturned){
@@ -234,7 +240,12 @@ function Invoke-NativeDNSRollbackScenario([scriptblock]$Configure,[scriptblock]$
         try{Assert-DNSAcceptanceRestored $before (& $Capture);$result.originalStateRestored=$true}catch{$result.recoveryCode='restored-state'}
         if($result.originalStateRestored){
             try{[void](& $Resolve);$result.restoredResolverPassed=$true}catch{$result.recoveryCode='restored-resolver'}
-        }else{
+            try{Assert-DNSAcceptanceRestored $before (& $Capture)}catch{
+                $result.originalStateRestored=$false
+                $result.recoveryCode='restored-state'
+            }
+        }
+        if(-not $result.originalStateRestored){
             $result.emergencyRestoreAttempted=$true
             try{[void](& $EmergencyRestore)}catch{}
         }
