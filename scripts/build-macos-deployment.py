@@ -12,6 +12,7 @@ import plistlib
 import re
 import shutil
 import tempfile
+from typing import NamedTuple
 
 from macos_deployment import BUNDLE_NAME,PACKAGE_ID,MANIFEST,DETACHED_MANIFEST,PAYLOAD_SBOM,EMBEDDED_SBOM,detached_payload_manifest,verify_deployment_bundle,install_location,inspect_deployment,deployment_sbom,manifest_contract
 from macos_installer import BUNDLE_ID,bundle_manifest,digest,macho_identity,require,version_parts,MAX_BYTES
@@ -19,7 +20,10 @@ from macos_package_archive import flat_members,cpio,inflate,inspect as inspect_l
 from sbom import generate,validate
 from macos_launcher import archive_name,inspect_launcher,BINARY
 
-from verify_macos_installer_publisher import FINGERPRINT, check_package_certificate, check_package_publisher, developer_application_requirement
+from verify_macos_installer_publisher import (
+    FINGERPRINT, check_application_certificate, check_package_certificate, check_package_publisher,
+    developer_application_requirement,
+)
 
 REPO=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location("accessweaver_native_package_builder",Path(__file__).with_name("build-macos-installer.py"))
@@ -28,35 +32,47 @@ run=legacy.run
 encode=legacy.encode
 
 
-def publisher_options(application, installer, team, fingerprint, notary_profile):
+class Publisher(NamedTuple):
+    application: str
+    installer: str
+    team: str
+    installer_fingerprint: str
+    notary_profile: str
+    application_fingerprint: str | None
+
+
+def publisher_options(application, installer, team, fingerprint, notary_profile, application_fingerprint=None):
     values=(application,installer,team,fingerprint,notary_profile)
-    if not any(values):
+    if not any(values) and application_fingerprint is None:
         return None
     require(all(values) and re.fullmatch(r"[A-Z0-9]{10}",team) and FINGERPRINT.fullmatch(fingerprint)
             and all(0<len(value)<=256 and not value.startswith("-") and value.isprintable()
                     for value in (application,installer,notary_profile)),
             "Expected both Developer ID identities, team, installer certificate SHA-256 and notary profile")
-    return application,installer,team,fingerprint.lower(),notary_profile
+    if application_fingerprint is not None:
+        require(FINGERPRINT.fullmatch(application_fingerprint), "Expected a Developer ID Application certificate SHA-256")
+        application_fingerprint = application_fingerprint.lower()
+    return Publisher(application, installer, team, fingerprint.lower(), notary_profile, application_fingerprint)
 
 
 def sign_code(path, publisher, *, bundle=False):
-    application,_,team,_,_=publisher
-    run(["/usr/bin/codesign","--force","--sign",application,"--options","runtime","--timestamp",path])
-    requirement=developer_application_requirement(team)
+    run(["/usr/bin/codesign","--force","--sign",publisher.application,"--options","runtime","--timestamp",path])
+    requirement=developer_application_requirement(publisher.team)
     if bundle:
         requirement+=f' and identifier "{BUNDLE_ID}"'
     run(["/usr/bin/codesign","--verify","--strict","--all-architectures","-R="+requirement,path])
+    if publisher.application_fingerprint is not None:
+        check_application_certificate(path, publisher.application_fingerprint)
 
 
 def sign_package(unsigned, signed, publisher):
-    _,installer,team,fingerprint,profile=publisher
-    run(["/usr/bin/productsign","--sign",installer,"--timestamp",unsigned,signed])
-    check_package_certificate(signed,team,fingerprint)
-    result=run(["/usr/bin/xcrun","notarytool","submit",signed,"--keychain-profile",profile,
+    run(["/usr/bin/productsign","--sign",publisher.installer,"--timestamp",unsigned,signed])
+    check_package_certificate(signed,publisher.team,publisher.installer_fingerprint)
+    result=run(["/usr/bin/xcrun","notarytool","submit",signed,"--keychain-profile",publisher.notary_profile,
                 "--wait","--timeout","30m","--output-format","json"],timeout=1920)
     require(json.loads(result.stdout).get("status")=="Accepted","Apple did not accept the package for notarization")
     run(["/usr/bin/xcrun","stapler","staple",signed])
-    check_package_publisher(signed,team,fingerprint)
+    check_package_publisher(signed,publisher.team,publisher.installer_fingerprint)
 
 
 def build(version,arch,go="go",publisher=None):
@@ -174,8 +190,10 @@ def build(version,arch,go="go",publisher=None):
         if publisher:
             report["unsignedComponentInspection"]=report.pop("archiveInspection")
             report.update(unsigned=False,publisherSignatureVerified=True,notarized=True,
-                          developerTeamID=publisher[2],publisherCertificateSHA256=publisher[3],
+                          developerTeamID=publisher.team,publisherCertificateSHA256=publisher.installer_fingerprint,
                           signedPayloadAndScriptsVerified=True)
+            if publisher.application_fingerprint is not None:
+                report["applicationCertificateSHA256"] = publisher.application_fingerprint
             with (output/filename).open("xb") as stream:
                 stream.write(package_bytes)
         encode(output/"compiler-artifact.json",report)
@@ -229,10 +247,13 @@ def main():
     parser.add_argument("--installer-identity")
     parser.add_argument("--team-id")
     parser.add_argument("--publisher-certificate-sha256")
+    parser.add_argument("--application-certificate-sha256",
+                        help="approved Developer ID Application leaf DER SHA-256 for both executable subjects")
     parser.add_argument("--notary-keychain-profile")
     args=parser.parse_args()
     publisher=publisher_options(args.application_identity,args.installer_identity,args.team_id,
-                                args.publisher_certificate_sha256,args.notary_keychain_profile)
+                                args.publisher_certificate_sha256,args.notary_keychain_profile,
+                                args.application_certificate_sha256)
     if args.launcher:
         require(publisher is None,"Organization signing is available for versioned deployment packages")
         print(json.dumps(build_launcher(args.architecture,args.go)));return

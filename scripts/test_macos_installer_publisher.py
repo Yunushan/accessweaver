@@ -273,7 +273,12 @@ class PublisherTests(unittest.TestCase):
     def test_signing_options_require_complete_approved_identity(self):
         settings = ("Fixture application", "Fixture installer", TEAM, PIN.upper(), "Fixture profile")
         self.assertIsNone(builder.publisher_options(None, None, None, None, None))
-        self.assertEqual(builder.publisher_options(*settings), (*settings[:3], PIN, settings[-1]))
+        self.assertEqual(builder.publisher_options(*settings), (*settings[:3], PIN, settings[-1], None))
+        self.assertEqual(builder.publisher_options(*settings, "CD" * 32).application_fingerprint, "cd" * 32)
+        with self.assertRaises(ValueError):
+            builder.publisher_options(*settings, "invalid")
+        with self.assertRaises(ValueError):
+            builder.publisher_options(None, None, None, None, None, PIN)
         for index in range(len(settings)):
             rejected = list(settings)
             rejected[index] = None
@@ -283,7 +288,7 @@ class PublisherTests(unittest.TestCase):
             builder.publisher_options(*settings[:-1], "--wait")
 
     def test_notary_submission_follows_certificate_and_requires_acceptance(self):
-        context = ("Fixture application", "Fixture installer", TEAM, PIN, "Fixture profile")
+        context = builder.publisher_options("Fixture application", "Fixture installer", TEAM, PIN, "Fixture profile")
         unsigned, signed = Path("unsigned.pkg"), Path("signed.pkg")
         for status in ("Accepted", "Invalid", "In Progress"):
             calls = MagicMock()
@@ -306,7 +311,7 @@ class PublisherTests(unittest.TestCase):
             run.assert_called_once()
 
     def test_code_signature_verifies_team_and_bundle_identifier(self):
-        context = ("Fixture application", "Fixture installer", TEAM, PIN, "Fixture profile")
+        context = builder.publisher_options("Fixture application", "Fixture installer", TEAM, PIN, "Fixture profile")
         with patch.object(builder, "run") as run:
             builder.sign_code(Path("AccessWeaver.app"), context, bundle=True)
         sign, verify = [call.args[0] for call in run.call_args_list]
@@ -315,6 +320,26 @@ class PublisherTests(unittest.TestCase):
         self.assertIn("--all-architectures", verify)
         self.assertIn(f'certificate leaf[subject.OU] = "{TEAM}"', verify[-2])
         self.assertIn(f'identifier "{builder.BUNDLE_ID}"', verify[-2])
+
+    def test_signed_builder_checks_exact_certificate_for_both_executable_subjects(self):
+        context = builder.publisher_options("Fixture application", "Fixture installer", TEAM, PIN, "Fixture profile",
+                                            "cd" * 32)
+        for path, bundle in ((Path("AccessWeaver.app"), True), (Path("accessweaver-installer"), False)):
+            calls = MagicMock()
+            with self.subTest(path=path), patch.multiple(builder, run=calls.run,
+                                                         check_application_certificate=calls.check_leaf):
+                builder.sign_code(path, context, bundle=bundle)
+                self.assertEqual([call[0] for call in calls.mock_calls], ["run", "run", "check_leaf"])
+                calls.check_leaf.assert_called_once_with(path, "cd" * 32)
+                calls.reset_mock()
+                calls.run.side_effect = [None, subprocess.CalledProcessError(1, "codesign")]
+                with self.assertRaises(subprocess.CalledProcessError):
+                    builder.sign_code(path, context, bundle=bundle)
+                calls.check_leaf.assert_not_called()
+                calls.run.side_effect = None
+                calls.check_leaf.side_effect = ValueError("Fixture certificate mismatch")
+                with self.assertRaisesRegex(ValueError, "certificate mismatch"):
+                    builder.sign_code(path, context, bundle=bundle)
 
     @unittest.skipUnless(publisher.sys.platform == "darwin", "requires macOS package verifier")
     def test_native_pkgutil_refuses_unsigned_artifact(self):
