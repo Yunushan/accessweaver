@@ -14,7 +14,7 @@ Obtain the expected full source commit and complete ref from your independently 
 python scripts/verify_release_provenance.py DOWNLOADED_DIRECTORY --source-commit FULL_TRUSTED_COMMIT --source-ref refs/tags/APPROVED_VERSION_TAG
 ```
 
-If you retained `githubAssetSHA256` from Windows update discovery, pass `--expected-asset-sha256 FILENAME SHA256` for each of its four entries. The verifier compares those pins against the frozen download and reports `assetDigestsMatched`. To verify only one target, supply its archive, the build manifest, checksums and provenance bundle, and add `--target windows/amd64` or `--target windows/arm64`. The independently trusted commit and ref remain required. Target verification authenticates three signed subjects and inspects only the selected archive.
+If you retained `githubAssetSHA256` from Windows update discovery, pass `--expected-asset-sha256 FILENAME SHA256` for each of its four entries. The verifier compares those pins against the frozen download and reports `assetDigestsMatched`. To verify only one target, supply its archive, the build manifest, checksums and provenance bundle, and add `--target windows/amd64` or `--target windows/arm64`. The independently trusted commit and ref remain required. Target verification authenticates three signed subjects and inspects only the selected archive. The release workflow exercises this path for AMD64 and ARM64 using the signed packages and retains the results as `windows-amd64.json` and `windows-arm64.json` in the `release-provenance-check-ATTEMPT` artifact.
 
 A manual preview uses its independently recorded commit and `refs/heads/main`. The verifier pins all of the following:
 

@@ -472,11 +472,33 @@ jobs:
           gh version > build/provenance-checks/gh-version.txt
           python3 scripts/verify_release_provenance.py "$PACKAGE_DIRECTORY" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" > build/provenance-checks/verified-subjects.txt
           python3 scripts/check_provenance_rejections.py "$PACKAGE_DIRECTORY" --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" > build/provenance-checks/rejections.json
+      - name: Verify each Windows archive with only its download files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_DIRECTORY: ${{ steps.build_portable.outputs.directory }}
+          PACKAGE_LABEL: ${{ steps.build_portable.outputs.label }}
+        run: |
+          staging="$(mktemp -d "$RUNNER_TEMP/accessweaver-targets.XXXXXXXX")"
+          for arch in amd64 arm64; do
+            archive="accessweaver-$PACKAGE_LABEL-windows-$arch.zip"
+            target_directory="$staging/$arch"
+            mkdir "$target_directory"
+            pins=()
+            for file in "$archive" BUILD-MANIFEST.json SHA256SUMS.txt BUILD-PROVENANCE.sigstore.json; do
+              checksum="$(sha256sum -- "$PACKAGE_DIRECTORY/$file")"
+              cp -- "$PACKAGE_DIRECTORY/$file" "$target_directory/$file"
+              pins+=(--expected-asset-sha256 "$file" "${checksum%% *}")
+            done
+            python3 scripts/verify_release_provenance.py "$target_directory" \
+              --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --workflow-run-id "$GITHUB_RUN_ID" \
+              --target "windows/$arch" "${pins[@]}" > "build/provenance-checks/windows-$arch.json"
+          done
       - name: Retain provenance verification evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-provenance-check
+          name: release-provenance-check-${{ github.run_attempt }}
           path: build/provenance-checks/
           if-no-files-found: ignore
           retention-days: 14
