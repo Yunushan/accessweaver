@@ -17,7 +17,7 @@ import tempfile
 from macos_installer import parse_release_version, version_parts
 from sbom import prop_map, validate_digest
 from verify_macos_installer_publisher import check_package_publisher, verify_packaged_application
-from verify_release import publish_staged_file as publish_staged_installer, require
+from verify_release import publish_staged_file as publish_staged_installer, release_file, require
 from verify_release_provenance import REPOSITORY, regular_file, validate_identity
 from verify_release_rebuild import MAX_FILE, digest, snapshot
 
@@ -320,13 +320,18 @@ def independently_pinned_file(directory, path, fingerprint, *, maximum=65536):
     require(re.fullmatch(r"[a-fA-F0-9]{64}", fingerprint)
             and not path.resolve().is_relative_to(directory.resolve()),
             "Expected an independently pinned file outside the release directory")
-    regular_file(path, maximum)
-    info = path.lstat()
-    require(not getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT,
-            "Independently pinned input is a reparse point")
-    with path.open("rb") as stream:
-        content = stream.read(maximum + 1)
-    require(0 < len(content) <= maximum and hashlib.sha256(content).hexdigest() == fingerprint.lower(),
+    before = release_file(path, maximum)
+    expected = file_identity(before)
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    with os.fdopen(os.open(path, flags), "rb") as stream:
+        require(file_identity(os.fstat(stream.fileno())) == expected,
+                "Independently pinned input changed before verification")
+        content = stream.read(before.st_size + 1)
+        require(len(content) == before.st_size
+                and file_identity(os.fstat(stream.fileno())) == expected
+                and file_identity(release_file(path, maximum)) == expected,
+                "Independently pinned input changed during verification")
+    require(hashlib.sha256(content).hexdigest() == fingerprint.lower(),
             "Input differs from the independently approved fingerprint")
     return content
 
@@ -494,10 +499,11 @@ def check_windows_publisher(artifact, approved_digest, publisher_pin):
             "Windows publisher report differs from the approved artifact or signer")
 
 
-def verify_staged_update(path, size, approved_digest):
-    def identity(info):
-        return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_nlink
+def file_identity(info):
+    return info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode), info.st_size, info.st_mtime_ns, info.st_nlink
 
+
+def verify_staged_update(path, size, approved_digest):
     before = path.lstat()
     require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_size == size
             and not getattr(before, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT,
@@ -505,7 +511,7 @@ def verify_staged_update(path, size, approved_digest):
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     with os.fdopen(os.open(path, flags), "rb") as stream:
         opened = os.fstat(stream.fileno())
-        require(stat.S_ISREG(opened.st_mode) and identity(opened) == identity(before),
+        require(stat.S_ISREG(opened.st_mode) and file_identity(opened) == file_identity(before),
                 "Staged installer changed before verification")
         result = hashlib.sha256()
         remaining = size
@@ -514,8 +520,8 @@ def verify_staged_update(path, size, approved_digest):
             require(block, "Staged installer changed during verification")
             result.update(block)
             remaining -= len(block)
-        require(not stream.read(1) and identity(os.fstat(stream.fileno())) == identity(before)
-                and identity(path.lstat()) == identity(before),
+        require(not stream.read(1) and file_identity(os.fstat(stream.fileno())) == file_identity(before)
+                and file_identity(path.lstat()) == file_identity(before),
                 "Staged installer changed during verification")
         require(result.hexdigest() == approved_digest, "Staged installer differs from the approved digest")
 

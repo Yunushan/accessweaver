@@ -1092,6 +1092,38 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
             with self.subTest(omitted=omitted), self.assertRaises(ValueError):
                 release.revocations(json.dumps({key: value for key, value in policy.items() if key != omitted}).encode())
 
+    def test_independently_pinned_input_rejects_replacement_with_identical_bytes(self):
+        path = self.revocation_list
+        replacement = self.root / "replacement.json"
+        replacement.write_bytes(path.read_bytes())
+        open_file = os.open
+
+        def open_replacement(name, flags):
+            self.assertEqual(name, path)
+            self.assertEqual(flags & getattr(os, "O_NONBLOCK", 0), getattr(os, "O_NONBLOCK", 0))
+            replacement.replace(path)
+            return open_file(name, flags)
+
+        with patch.object(release.os, "open", side_effect=open_replacement):
+            with self.assertRaisesRegex(ValueError, "changed before verification"):
+                release.independently_pinned_file(self.candidate, path, self.policy_pin)
+
+        replacement.write_bytes(path.read_bytes())
+        original_lstat = Path.lstat
+        inspections = 0
+
+        def replaced_path_info(name):
+            nonlocal inspections
+            if name == path:
+                inspections += 1
+                if inspections > 1:
+                    return original_lstat(replacement)
+            return original_lstat(name)
+
+        with patch.object(Path, "lstat", replaced_path_info):
+            with self.assertRaisesRegex(ValueError, "changed during verification"):
+                release.independently_pinned_file(self.candidate, path, self.policy_pin)
+
     def test_revocation_policy_refuses_malformed_inputs(self):
         self.assertEqual(release.revocations(json.dumps(self.policy).encode()), self.policy)
         invalid = [
