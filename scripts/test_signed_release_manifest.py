@@ -1660,6 +1660,54 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
         self.assertEqual(json.loads(started.read_bytes()), attempt)
         self.assertEqual(set(directory.iterdir()), {setup, started})
 
+    @unittest.skipUnless(os.name == "nt", "requires native Windows process waiting and file sharing")
+    def test_windows_staging_wait_timeout_leaves_real_process_running(self):
+        directory = self.root / "staged"
+        directory.mkdir()
+        setup = directory / "accessweaver-setup.exe"
+        setup.write_bytes(b"inert Setup fixture")
+        update = {"installer": setup.name, "installerSHA256": release.digest(setup),
+                  "windowsSetupBaselineArgument": "/AWUpgradeFrom=approved"}
+        attempt = {"attemptID": "a" * 32}
+        started = directory / (attempt["attemptID"] + ".started.json")
+        real_popen = subprocess.Popen
+        process = None
+
+        def start_fixture(arguments, *, executable, cwd, stdin, stdout, stderr):
+            nonlocal process
+            self.assertEqual(executable, str(setup))
+            self.assertEqual(arguments[0], executable)
+            self.assertEqual(json.loads(started.read_bytes()), attempt)
+            # Use the test runner's Python executable so the wait can be exercised
+            # even on hosts that block newly built executable fixtures.
+            process = real_popen(
+                [sys.executable, "-I", "-S", "-c",
+                 "import os, sys, threading; guard = threading.Timer(15, os._exit, args=(43,)); "
+                 "guard.daemon = True; guard.start(); sys.stdin.read(); sys.exit(42)"],
+                cwd=cwd, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr,
+            )
+            return process
+
+        try:
+            with patch.object(release.subprocess, "Popen", side_effect=start_fixture):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    release.launch_windows_setup(directory, update, self.policy, size=setup.stat().st_size,
+                                                 directory_identity=release.staging_directory_identity(directory),
+                                                 attempt=attempt, wait_seconds=1)
+            self.assertIsNone(process.poll())
+            self.assertEqual(set(directory.iterdir()), {setup, started})
+            # The wait released the staging handles. The child remains live until
+            # the harness signals it, so the timeout cannot be a fast child exit.
+            setup.rename(directory / "retired.exe")
+            process.stdin.close()
+            self.assertEqual(process.wait(timeout=10), 42)
+        finally:
+            if process is not None:
+                process.stdin.close()
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=10)
+
     @unittest.skipUnless(os.name == "nt", "requires native Windows file sharing")
     def test_windows_staging_reserves_attempt_before_launch_and_refuses_replay(self):
         directory = self.root / "staged"
