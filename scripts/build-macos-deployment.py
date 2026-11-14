@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Build and inspect a versioned macOS deployment package without installing it."""
 import argparse
-import datetime
 import stat
 import zipfile
 import importlib.util
@@ -19,6 +18,7 @@ from macos_installer import BUNDLE_ID,bundle_manifest,digest,macho_identity,requ
 from macos_package_archive import flat_members,cpio,inflate,inspect as inspect_legacy
 from sbom import generate,validate,go_module_environment
 from macos_launcher import archive_name,inspect_launcher,BINARY
+from release_archive import epoch_from_timestamp, zip_member_timestamp
 
 from verify_macos_installer_publisher import (
     FINGERPRINT, check_application_certificate, check_package_certificate, check_package_publisher,
@@ -224,7 +224,7 @@ def build_launcher(arch,go="go",version="0.1.1-alpha"):
         encode(output/"BUILD-INFO.json",identity);encode(output/"SBOM.cdx.json",bom)
         report={"schemaVersion":1,"build":identity,"binarySHA256":digest(binary.read_bytes()),"binaryBytes":binary.stat().st_size,"macho":macho_identity(binary.read_bytes(),arch),"goBuildMetadata":metadata,"linkerFlags":flags,"unsigned":True,"publisherSignatureVerified":False,"publicApplicationIntegrated":False,"productionQualificationComplete":False}
         encode(output/"compiler-artifact.json",report)
-        epoch=int(run(["git","show","-s","--format=%ct","HEAD"]).stdout);stamp=datetime.datetime.fromtimestamp(epoch,datetime.timezone.utc).timetuple()[:6]
+        stamp = zip_member_timestamp(epoch_from_timestamp(identity["builtAt"]))
         target=root/archive_name(arch,None if version=="0.1.1-alpha" else version);require(not target.exists(),"Launcher archive exists")
         with zipfile.ZipFile(target,"x",compression=zipfile.ZIP_DEFLATED,compresslevel=9) as archive:
             for path in sorted(p for p in output.rglob("*") if p.is_file()):

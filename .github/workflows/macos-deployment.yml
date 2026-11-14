@@ -12,6 +12,8 @@ on:
       - scripts/test_macos_installer_publisher.py
       - scripts/macos_installer.py
       - scripts/macos_package_archive.py
+      - scripts/release_archive.py
+      - scripts/test_macos_installer.py
       - scripts/sbom.py
       - scripts/sbom/**
       - scripts/verify_release.py
@@ -80,6 +82,7 @@ jobs:
           CGO_ENABLED: '0'
         run: |
           python3 -m unittest discover -s scripts -p test_macos_deployment.py -v
+          python3 -m unittest discover -s scripts -p test_macos_installer.py -k test_build_timestamp -v
           python3 -m unittest discover -s scripts -p test_macos_installer_publisher.py -v
           python3 -m unittest discover -s scripts -p test_signed_release_manifest.py -k test_retry_recovers_after_exit -v
           python3 -m unittest discover -s scripts -p test_macos_deployment_provenance.py -v

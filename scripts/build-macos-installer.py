@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Build and inspect an experimental unsigned native macOS app/package. Never installs it."""
 import argparse
-import datetime
 import hashlib
 import json
 import os
@@ -15,6 +14,7 @@ import tempfile
 from macos_installer import BUNDLE_ID,BUNDLE_NAME,bundle_manifest,bundle_plist,digest,macho_identity,require,verify_bundle,version_parts
 from sbom import generate,macos_package,go_module_environment
 from macos_package_archive import inspect as inspect_flat_package
+from release_archive import timestamp
 
 REPO=Path(__file__).resolve().parent.parent
 
@@ -43,6 +43,13 @@ def run(args,cwd=None,env=None,timeout=180,codes=(0,)):
 
 def encode(path,value):path.write_text(json.dumps(value,indent=2,ensure_ascii=True)+"\n",encoding="utf-8")
 
+def build_timestamp(commit):
+    epoch = os.environ.get("SOURCE_DATE_EPOCH")
+    if epoch is None:
+        epoch = run(["git", "show", "-s", "--format=%ct", commit]).stdout.decode("ascii").strip()
+    return timestamp(epoch)
+
+
 def build(version,arch,go="go"):
     require(platform.system()=="Darwin" and arch in ("amd64","arm64"),"Native macOS builder required")
     numeric=version_parts(version)
@@ -55,8 +62,7 @@ def build(version,arch,go="go"):
     require(arch==("arm64" if native==b"1" else "amd64"),"Cross/emulated package builds are not qualified")
     commit=run(["git","rev-parse","HEAD"]).stdout.decode().strip()
     changed=bool(run(["git","status","--porcelain","--untracked-files=normal"]).stdout.strip())
-    epoch=int(run(["git","show","-s","--format=%ct","HEAD"]).stdout)
-    built=datetime.datetime.fromtimestamp(epoch,datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    built=build_timestamp(commit)
     identity={"version":version,"commit":commit,"sourceState":"modified" if changed else "clean","builtAt":built,"goVersion":sdk["GOVERSION"],"platform":"darwin","arch":arch}
     output=REPO/"build"/"macos-installer-checks"/arch/version
     require(not output.exists(),"Package output already exists; preserve it and use a new build workspace")

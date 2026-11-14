@@ -157,6 +157,23 @@ class NativeBuildDiagnosticTests(unittest.TestCase):
     def builder(self):
         spec=importlib.util.spec_from_file_location("native_build_diagnostics",Path(__file__).with_name("build-macos-installer.py"))
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module);return module
+    def test_build_timestamp_uses_exact_commit_or_validated_override(self):
+        from subprocess import CompletedProcess
+        from unittest.mock import patch
+        builder = self.builder()
+        commit = "a" * 40
+        with patch.dict(builder.os.environ, {}, clear=True), patch.object(builder, "run") as run:
+            run.return_value = CompletedProcess([], 0, b"1794666000\n")
+            self.assertEqual(builder.build_timestamp(commit), "2026-11-14T14:20:00Z")
+            run.assert_called_once_with(["git", "show", "-s", "--format=%ct", commit])
+        with patch.dict(builder.os.environ, {"SOURCE_DATE_EPOCH": "0"}), patch.object(builder, "run") as run:
+            self.assertEqual(builder.build_timestamp(commit), "1970-01-01T00:00:00Z")
+            run.assert_not_called()
+        for epoch in ("", "-1", "4294967296", "1\n"):
+            with self.subTest(epoch=epoch), patch.dict(builder.os.environ, {"SOURCE_DATE_EPOCH": epoch}):
+                with self.assertRaisesRegex(ValueError, "SOURCE_DATE_EPOCH"):
+                    builder.build_timestamp(commit)
+
     def test_failed_tool_retains_exit_size_hash_and_known_patterns_without_private_text(self):
         from subprocess import CompletedProcess
         from unittest.mock import patch
