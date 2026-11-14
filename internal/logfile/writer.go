@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 )
@@ -34,60 +35,175 @@ func Open(path string, limit int64, backups int) (*Writer, error) {
 	return w, nil
 }
 
-func (w *Writer) open() error {
-	if info, err := os.Lstat(w.path); err == nil && !info.Mode().IsRegular() {
-		return errors.New("process log must be a regular file")
-	} else if err != nil && !os.IsNotExist(err) {
-		return err
+func regularLog(path string) (os.FileInfo, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
 	}
-	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_WRONLY, 0600)
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("process log must be a regular file")
+	}
+	return info, nil
+}
+
+func (w *Writer) open() (failure error) {
+	named, err := regularLog(w.path)
+	if errors.Is(err, os.ErrNotExist) {
+		f, createErr := os.OpenFile(w.path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if createErr != nil {
+			return createErr
+		}
+		w.file, w.size = f, 0
+		return nil
+	}
 	if err != nil {
 		return err
 	}
-	info, err := f.Stat()
+	source, err := os.OpenFile(w.path, os.O_WRONLY, 0)
 	if err != nil {
-		_ = f.Close()
 		return err
 	}
-	w.file, w.size = f, info.Size()
-	if w.size > w.limit {
-		// Keep the most recent bytes when upgrading an older unbounded log.
-		previous, err := os.Open(w.path)
-		if err != nil {
-			_ = f.Close()
-			return err
+	defer func() {
+		if source != nil {
+			failure = errors.Join(failure, source.Close())
 		}
-		tail := make([]byte, int(w.limit))
-		_, err = previous.ReadAt(tail, w.size-w.limit)
-		_ = previous.Close()
-		if err == nil {
-			err = f.Truncate(0)
-		}
-		if err == nil {
-			_, err = f.Seek(0, io.SeekStart)
-		}
-		if err == nil {
-			_, err = f.Write(tail)
-		}
-		if err != nil {
-			_ = f.Close()
-			return err
-		}
-		w.size = w.limit
-	}
-	if _, err = f.Seek(0, io.SeekEnd); err != nil {
-		_ = f.Close()
+	}()
+	opened, err := source.Stat()
+	if err != nil {
 		return err
+	}
+	if !sameLog(named, opened) {
+		return errors.New("process log changed before opening")
+	}
+	if opened.Size() > w.limit {
+		closeErr := source.Close()
+		source = nil
+		if closeErr != nil {
+			return closeErr
+		}
+		return w.retainTail(opened)
+	}
+	if _, err = source.Seek(0, io.SeekEnd); err != nil {
+		return err
+	}
+	w.file, w.size = source, opened.Size()
+	source = nil
+	return nil
+}
+
+func sameLog(want, got os.FileInfo) bool {
+	return got.Mode().IsRegular() && os.SameFile(want, got) &&
+		want.Size() == got.Size() && want.ModTime().Equal(got.ModTime())
+}
+
+// retainTail publishes a private same-directory copy after its bytes are
+// written and synced.
+func (w *Writer) retainTail(original os.FileInfo) (failure error) {
+	source, err := os.Open(w.path)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if source != nil {
+			failure = errors.Join(failure, source.Close())
+		}
+	}()
+	opened, err := source.Stat()
+	if err != nil {
+		return err
+	}
+	if !sameLog(original, opened) {
+		return errors.New("process log changed before retaining its tail")
+	}
+	stage, err := os.CreateTemp(filepath.Dir(w.path), ".log-tail-*")
+	if err != nil {
+		return err
+	}
+	stagePath := stage.Name()
+	defer func() {
+		if stage != nil {
+			failure = errors.Join(failure, stage.Close())
+		}
+		if stagePath != "" {
+			failure = errors.Join(failure, os.Remove(stagePath))
+		}
+	}()
+	tail := io.NewSectionReader(source, original.Size()-w.limit, w.limit)
+	written, err := io.CopyBuffer(stage, tail, make([]byte, 32<<10))
+	if err != nil {
+		return err
+	}
+	if written != w.limit {
+		return io.ErrUnexpectedEOF
+	}
+	// Windows denies rename of this file while our read handle is open.
+	closeErr := source.Close()
+	source = nil
+	if closeErr != nil {
+		return closeErr
+	}
+	if err := stage.Sync(); err != nil {
+		return err
+	}
+	stagedInfo, err := stage.Stat()
+	if err != nil {
+		return err
+	}
+	closeErr = stage.Close()
+	stage = nil
+	if closeErr != nil {
+		return closeErr
+	}
+	if err := verifyNamedLog(w.path, original); err != nil {
+		return err
+	}
+	if err := verifyNamedLog(stagePath, stagedInfo); err != nil {
+		return err
+	}
+	if err := os.Rename(stagePath, w.path); err != nil {
+		return err
+	}
+	stagePath = ""
+	f, err := os.OpenFile(w.path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return err
+	}
+	opened, err = f.Stat()
+	if err != nil || !sameLog(stagedInfo, opened) {
+		return errors.Join(errors.New("retained process log could not be verified"), err, f.Close())
+	}
+	w.file, w.size = f, opened.Size()
+	return nil
+}
+
+func verifyNamedLog(path string, expected os.FileInfo) error {
+	named, err := regularLog(path)
+	if err != nil {
+		return err
+	}
+	if !sameLog(expected, named) {
+		return errors.New("process log changed before replacement")
 	}
 	return nil
 }
 
 func (w *Writer) rotate() error {
-	if w.file != nil {
-		if err := w.file.Close(); err != nil {
+	current, err := w.file.Stat()
+	if err != nil {
+		return err
+	}
+	if err := verifyNamedLog(w.path, current); err != nil {
+		return err
+	}
+	for i := 1; i <= w.backups; i++ {
+		if _, err := regularLog(w.path + "." + strconv.Itoa(i)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		w.file = nil
+	}
+	closeErr := w.file.Close()
+	w.file = nil
+	if closeErr != nil {
+		return closeErr
 	}
 	if w.backups == 0 {
 		if err := os.Remove(w.path); err != nil && !os.IsNotExist(err) {

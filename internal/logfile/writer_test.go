@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 )
@@ -64,6 +65,92 @@ func TestExistingOversizedLogPreservesTail(t *testing.T) {
 	data, err = os.ReadFile(path + ".1")
 	if err != nil || string(data) != "new-tail" {
 		t.Fatalf("%q %v", data, err)
+	}
+}
+
+func TestOversizedLogRefusesChangedOriginal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "engine.log")
+	if err := os.WriteFile(path, []byte("original oversized log"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const changed = "independently changed oversized process log"
+	if err := os.WriteFile(path, []byte(changed), 0600); err != nil {
+		t.Fatal(err)
+	}
+	w := &Writer{path: path, limit: 8}
+	if err := w.retainTail(original); err == nil {
+		t.Fatal("accepted a changed source")
+	}
+	if data, err := os.ReadFile(path); err != nil || string(data) != changed {
+		t.Fatalf("changed log lost: %q %v", data, err)
+	}
+	if entries, err := os.ReadDir(filepath.Dir(path)); err != nil || len(entries) != 1 {
+		t.Fatalf("unexpected files after refusal: %v %v", entries, err)
+	}
+}
+
+func TestOversizedLogRetainsOriginalWhenReplacementIsBlocked(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows open handles can deny replacement")
+	}
+	path := filepath.Join(t.TempDir(), "engine.log")
+	const original = "original oversized log"
+	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	blocker, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = blocker.Close() })
+	if w, err := Open(path, 8, 1); err == nil {
+		_ = w.Close()
+		t.Fatal("replacement succeeded while an independent handle blocked it")
+	}
+	if data, err := os.ReadFile(path); err != nil || string(data) != original {
+		t.Fatalf("original log lost: %q %v", data, err)
+	}
+	if entries, err := os.ReadDir(filepath.Dir(path)); err != nil || len(entries) != 1 {
+		t.Fatalf("unexpected files after failed replacement: %v %v", entries, err)
+	}
+	if err := blocker.Close(); err != nil {
+		t.Fatal(err)
+	}
+	w, err := Open(path, 8, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(path); err != nil || string(data) != original[len(original)-8:] {
+		t.Fatalf("retry did not retain the newest bytes: %q %v", data, err)
+	}
+}
+
+func TestRotationPreservesEmptyBackupDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "engine.log")
+	backup := path + ".2"
+	if err := os.Mkdir(backup, 0700); err != nil {
+		t.Fatal(err)
+	}
+	w, err := Open(path, 4, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = w.Close() })
+	if n, err := w.Write([]byte("12345")); err == nil || n != 4 {
+		t.Fatalf("expected rotation refusal after four bytes, got %d %v", n, err)
+	}
+	if info, err := os.Stat(backup); err != nil || !info.IsDir() {
+		t.Fatalf("backup directory lost: %v %v", info, err)
+	}
+	if data, err := os.ReadFile(path); err != nil || string(data) != "1234" {
+		t.Fatalf("current log changed: %q %v", data, err)
 	}
 }
 
