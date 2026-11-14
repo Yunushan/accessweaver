@@ -1415,7 +1415,9 @@ try {
 }
 # Exercise the updates dispatch helper with fixed public-shape release metadata.
 & {
-    $inputData=@{controller='C:\fixture\accessweaver.exe';nativeArchitecture='amd64'}
+    $controllerBuild=@{version='1.8.0';commit=('1'*40);sourceState='clean';builtAt='unknown';goVersion='go1.27.4';platform='windows';arch='amd64'}
+    $inputData=@{controller='C:\fixture\accessweaver.exe';nativeArchitecture='amd64';controllerBuild=$controllerBuild}
+    $comparisonBuild=$controllerBuild
     $calls=[Collections.Generic.List[string]]::new()
     $published='2026-01-02T00:00:00Z'
     function New-ReleaseAssets([string]$tag,[string]$arch){
@@ -1441,14 +1443,17 @@ try {
         param($Program,$Arguments,[switch]$Secret)
         if($Program -cne $inputData.controller -or -not $Secret){throw 'Unexpected update comparison process'}
         $calls.Add(($Arguments -join ','))
-        return @{stdout=$comparison;outputComplete=$outputComplete}
+        $result=ConvertFrom-Json -InputObject $comparison
+        $result | Add-Member -NotePropertyName build -NotePropertyValue $comparisonBuild
+        return @{stdout=(ConvertTo-Json -InputObject $result -Depth 3 -Compress);outputComplete=$outputComplete}
     }
     $outputComplete=$true
     $comparison='{"version":"v1.9.0+build.3","currentVersion":"1.8.0","updateAvailable":true}'
     $result=Check-AccessWeaverUpdates
-    Assert ($calls.Count -eq 1 -and $calls[0] -ceq 'system,check-version,--follow-channel,v2.0.0-rc.1,v1.9.0+build.3' -and
+    Assert ($calls.Count -eq 1 -and $calls[0] -ceq 'system,check-version,--build-identity,--follow-channel,v2.0.0-rc.1,v1.9.0+build.3' -and
         $result.url -ceq 'https://github.com/Yunushan/accessweaver/releases/tag/v1.9.0%2Bbuild.3' -and
-        $result.updateAvailable -eq $true -and $result.publishedAt -ceq $published) 'Update discovery filters release metadata and returns the official tag link'
+        $result.updateAvailable -eq $true -and $result.publishedAt -ceq $published -and
+        $result.build.commit -ceq $controllerBuild.commit -and $result.build.sourceState -ceq 'clean') 'Update discovery filters release metadata and returns the official tag link'
     $metadata=@($metadata | Where-Object {$_.tag_name -ceq 'v2.0.0-rc.1'})
     $comparison='{"version":"","currentVersion":"1.8.0","updateAvailable":false}'
     $result=Check-AccessWeaverUpdates
@@ -1485,7 +1490,7 @@ try {
     )
     $comparison='{"version":"v4.0.0","currentVersion":"1.8.0","updateAvailable":true}'
     $result=Check-AccessWeaverUpdates
-    Assert ($result.version -ceq 'v4.0.0' -and $calls.Count -eq 1 -and $calls[0] -ceq 'system,check-version,--follow-channel,v4.0.0') 'Update discovery requires architecture-specific uploaded assets with digests'
+    Assert ($result.version -ceq 'v4.0.0' -and $calls.Count -eq 1 -and $calls[0] -ceq 'system,check-version,--build-identity,--follow-channel,v4.0.0') 'Update discovery requires architecture-specific uploaded assets with digests'
     $calls.Clear()
     $inputData.nativeArchitecture=''
     $refused=$false
@@ -1500,6 +1505,18 @@ try {
     $badType=$false
     try{Check-AccessWeaverUpdates | Out-Null}catch{$badType=$_.Exception.Message -ceq 'AccessWeaver release comparison returned an invalid result'}
     Assert ($refused -and $badType -and $calls.Count -eq 2) 'Update discovery rejects incomplete and invalid comparison results'
+    $comparison='{"version":"v4.0.0","currentVersion":"1.8.0","updateAvailable":true}'
+    foreach($field in @('version','commit','sourceState','builtAt','goVersion','platform','arch')){
+        $comparisonBuild=$controllerBuild.Clone()
+        $comparisonBuild[$field]='unexpected-build-field'
+        $refused=$false
+        try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'AccessWeaver release comparison returned an invalid result'}
+        if(-not $refused){throw 'Update discovery accepted mismatched controller identity'}
+    }
+    $comparisonBuild=$null
+    $refused=$false
+    try{Check-AccessWeaverUpdates | Out-Null}catch{$refused=$_.Exception.Message -ceq 'AccessWeaver release comparison returned an invalid result'}
+    Assert $refused 'Update discovery requires the launching controller build identity'
 }
 # Publisher-category checks use synthetic signature records only.
 $signatureDiscord=[pscustomobject]@{Status='Valid';SignerCertificate=[pscustomobject]@{Subject='CN=Discord fixture'}}

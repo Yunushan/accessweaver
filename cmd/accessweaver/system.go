@@ -25,17 +25,28 @@ func systemCommand(args []string, root string) error {
 	switch args[0] {
 	case "check-version":
 		tags := args[1:]
+		includeBuild := len(tags) > 0 && tags[0] == "--build-identity"
+		if includeBuild {
+			tags = tags[1:]
+		}
 		compare := workflow.CheckVersions
 		if len(tags) > 0 && tags[0] == "--follow-channel" {
 			tags = tags[1:]
 			compare = workflow.CheckReleaseVersions
 		}
 		if len(tags) == 0 || len(tags) > 64 {
-			return errors.New("usage: system check-version [--follow-channel] TAG [TAG...]")
+			return errors.New("usage: system check-version [--build-identity] [--follow-channel] TAG [TAG...]")
 		}
-		check, err := compare(buildinfo.Version, tags)
+		build := buildinfo.Current()
+		check, err := compare(build.Version, tags)
 		if err != nil {
 			return err
+		}
+		if includeBuild {
+			return printJSON(struct {
+				workflow.VersionCheck
+				Build buildinfo.Info `json:"build"`
+			}{check, build})
 		}
 		return printJSON(check)
 	case "operations":

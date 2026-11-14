@@ -488,7 +488,7 @@ function Check-AccessWeaverUpdates {
         (Test-AccessWeaverReleaseAssets $_ $architecture)
     })
     if(-not $releases.Count){throw 'No published AccessWeaver releases include a Windows archive and verification files for this architecture'}
-    $comparison=Native $inputData.controller (@('system','check-version','--follow-channel')+@($releases|ForEach-Object {$_.tag_name})) -Secret
+    $comparison=Native $inputData.controller (@('system','check-version','--build-identity','--follow-channel')+@($releases|ForEach-Object {$_.tag_name})) -Secret
     $invalidComparison='AccessWeaver release comparison returned an invalid result'
     if($comparison.outputComplete -ne $true -or $comparison.stdout -isnot [string] -or $comparison.stdout.Length -gt 4096){throw $invalidComparison}
     try {$check=ConvertFrom-Json -InputObject $comparison.stdout -ErrorAction Stop}catch{throw $invalidComparison}
@@ -496,13 +496,22 @@ function Check-AccessWeaverUpdates {
         $check.currentVersion -isnot [string] -or -not $check.currentVersion -or $check.updateAvailable -isnot [bool]){
         throw $invalidComparison
     }
+    $expected=$inputData.controllerBuild
+    if($check.build -isnot [pscustomobject] -or $null -eq $expected -or $check.currentVersion -cne $expected.version){throw $invalidComparison}
+    $fields=@('version','commit','sourceState','builtAt','goVersion','platform','arch')
+    $build=@{}
+    foreach($field in $fields){
+        $value=$check.build.$field
+        if($value -isnot [string] -or $value -cne $expected.$field){throw $invalidComparison}
+        $build[$field]=$value
+    }
     if($check.version -ceq '' -and $check.updateAvailable -eq $false){
-        return @{version='';currentVersion=$check.currentVersion;updateAvailable=$false;url=$null;publishedAt=$null}
+        return @{version='';currentVersion=$check.currentVersion;build=$build;updateAvailable=$false;url=$null;publishedAt=$null}
     }
     $release=$releases|Where-Object {$_.tag_name -ceq $check.version}|Select-Object -First 1
     if(-not $release){throw 'Selected AccessWeaver release was not in the reviewed metadata'}
     $url='https://github.com/Yunushan/accessweaver/releases/tag/'+[uri]::EscapeDataString($check.version)
-    @{version=$check.version;currentVersion=$check.currentVersion;updateAvailable=$check.updateAvailable;url=$url;publishedAt=$release.published_at}
+    @{version=$check.version;currentVersion=$check.currentVersion;build=$build;updateAvailable=$check.updateAvailable;url=$url;publishedAt=$release.published_at}
 }
 function Allowed-Download([string]$url) {
     $uri=[uri]$url

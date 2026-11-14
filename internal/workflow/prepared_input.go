@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Yunushan/accessweaver/internal/buildinfo"
 	"github.com/Yunushan/accessweaver/internal/managed"
 	"github.com/Yunushan/accessweaver/internal/nativepath"
 )
@@ -47,17 +48,23 @@ func prepareWorkflowInput(dir string, r Request, permission managed.WorkflowPerm
 		return nil, err
 	}
 	p.RequestSHA256 = workflowLifecycleHash(requestBytes)
+	var controllerBuild *buildinfo.Info
+	if r.Action == "updates" {
+		build := buildinfo.Current()
+		controllerBuild = &build
+	}
 	p.Input, err = json.Marshal(struct {
 		NativeArchitecture string                 `json:"nativeArchitecture"`
 		Request            Request                `json:"request"`
 		Controller         string                 `json:"controller"`
+		ControllerBuild    *buildinfo.Info        `json:"controllerBuild,omitempty"`
 		ResultPath         string                 `json:"resultPath"`
 		ResultToken        string                 `json:"resultToken"`
 		ISPHook            string                 `json:"ispHook"`
 		ManagedPolicy      bool                   `json:"managedPolicy"`
 		AllowDownloads     bool                   `json:"allowDownloads"`
 		Downloads          []managed.DownloadRule `json:"downloads"`
-	}{architecture, r, executable, p.ResultPath, p.ResultToken, string(hook), permission.Managed, permission.AllowDownloads, permission.Downloads})
+	}{architecture, r, executable, controllerBuild, p.ResultPath, p.ResultToken, string(hook), permission.Managed, permission.AllowDownloads, permission.Downloads})
 	if err != nil {
 		return nil, err
 	}

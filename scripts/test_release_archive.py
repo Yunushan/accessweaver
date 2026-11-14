@@ -453,12 +453,15 @@ class ReleaseVerificationTests(unittest.TestCase):
                 else:
                     release.verify_go_metadata(b"inert", "accessweaver.exe", info)
 
-    def test_native_version_comparison_must_match_packaged_version(self):
+    def test_native_version_comparison_must_match_packaged_build(self):
         info = {"version": "1.2.3-alpha", "commit": "a" * 40, "goVersion": "go1.27.4"}
-        expected = {"version": "v1.2.3-alpha", "currentVersion": "1.2.3-alpha", "updateAvailable": False}
+        expected = {"version": "v1.2.3-alpha", "currentVersion": "1.2.3-alpha", "updateAvailable": False,
+                    "build": info}
         for label, comparison, failure in (
             ("match", json.dumps(expected).encode(), None),
             ("wrong-version", json.dumps({**expected, "currentVersion": "0.9.0"}).encode(), "Update comparison differs"),
+            ("other-build", json.dumps({**expected, "build": {**info, "commit": "b" * 40}}).encode(),
+             "Update comparison differs"),
             ("update", json.dumps({**expected, "updateAvailable": True}).encode(), "Update comparison differs"),
             ("numeric-false", json.dumps({**expected, "updateAvailable": 0}).encode(), "Update comparison differs"),
             ("duplicate", b'{"version":"v1.2.3-alpha","version":"v1.2.3-alpha"}', "Duplicate native metadata"),
@@ -472,11 +475,11 @@ class ReleaseVerificationTests(unittest.TestCase):
                 with patch.object(release.subprocess, "run", side_effect=run) as probe:
                     if failure:
                         with self.assertRaisesRegex(ValueError, failure):
-                            release.execute_metadata(b"inert", "accessweaver.exe", info)
+                            release.execute_metadata(b"inert", "accessweaver.exe", info, require_update_build=True)
                     else:
-                        release.execute_metadata(b"inert", "accessweaver.exe", info)
+                        release.execute_metadata(b"inert", "accessweaver.exe", info, require_update_build=True)
                     self.assertEqual(probe.call_count, 2)
-                    self.assertEqual(probe.call_args.args[0][1:], ["system", "check-version", "v1.2.3-alpha"])
+                    self.assertEqual(probe.call_args.args[0][1:], ["system", "check-version", "--build-identity", "v1.2.3-alpha"])
 
     def test_unexpected_release_file_is_refused_before_archive_inspection(self):
         with tempfile.TemporaryDirectory() as folder:

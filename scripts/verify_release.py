@@ -228,7 +228,7 @@ def unique_metadata_keys(pairs):
     return result
 
 
-def execute_metadata(binary, binary_name, info):
+def execute_metadata(binary, binary_name, info, *, require_update_build=False):
     with tempfile.TemporaryDirectory(prefix="accessweaver-release-check-") as temporary:
         exe = Path(temporary) / binary_name
         exe.write_bytes(binary)
@@ -238,12 +238,18 @@ def execute_metadata(binary, binary_name, info):
         require(native_metadata_json(exe, ["version", "--json"], environment) == info,
                 "Runtime identity differs from packaged metadata")
         tag = "v" + info["version"]
-        comparison = native_metadata_json(exe, ["system", "check-version", tag], environment)
+        comparison_args = ["system", "check-version"]
+        fields = {"version", "currentVersion", "updateAvailable"}
+        if require_update_build:
+            comparison_args.append("--build-identity")
+            fields.add("build")
+        comparison = native_metadata_json(exe, [*comparison_args, tag], environment)
         require(isinstance(comparison, dict)
-                and comparison.keys() == {"version", "currentVersion", "updateAvailable"}
+                and comparison.keys() == fields
+                and (not require_update_build or comparison["build"] == info)
                 and comparison["version"] == tag and comparison["currentVersion"] == info["version"]
                 and comparison["updateAvailable"] is False,
-                "Update comparison differs from the packaged version")
+                "Update comparison differs from the packaged build identity")
         require(not state.exists(), "Metadata commands unexpectedly wrote user state")
 
 
@@ -274,7 +280,7 @@ def verify_go_metadata(binary, binary_name, info):
                 "Packaged binary Git revision or modification state differs")
 
 
-def verify(directory, execute_native=False, *, check_go_metadata=False):
+def verify(directory, execute_native=False, *, check_go_metadata=False, require_update_build=False):
     manifest_path = directory / "BUILD-MANIFEST.json"
     release_file(manifest_path, 1 << 20)
     manifest_bytes = manifest_path.read_bytes()
@@ -350,7 +356,7 @@ def verify(directory, execute_native=False, *, check_go_metadata=False):
             native = binary, binary_name, info
     if execute_native:
         require(native is not None, "No artifact matches the current host")
-        execute_metadata(*native)
+        execute_metadata(*native, require_update_build=require_update_build)
     print(f"Verified {len(archive_names)} archives, checksums, required notices and source identity. "
           f"Static Go metadata={check_go_metadata}, native metadata execution={execute_native}.")
 
@@ -359,11 +365,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--execute-native", action="store_true")
+    parser.add_argument("--require-update-build", action="store_true",
+                        help="require native version comparison to return the full packaged build identity")
     parser.add_argument("--check-go-metadata", action="store_true",
                         help="inspect each executable using the installed Go toolchain without running it")
     arguments = parser.parse_args()
+    if arguments.require_update_build and not arguments.execute_native:
+        parser.error("--require-update-build requires --execute-native")
     try:
-        verify(arguments.directory, arguments.execute_native, check_go_metadata=arguments.check_go_metadata)
+        verify(arguments.directory, arguments.execute_native, check_go_metadata=arguments.check_go_metadata,
+               require_update_build=arguments.require_update_build)
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError, zipfile.BadZipFile, tarfile.TarError) as error:
         print(f"Release verification failed: {error}", file=sys.stderr)
         return 1
