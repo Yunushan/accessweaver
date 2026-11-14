@@ -3014,12 +3014,18 @@ function Remove-RecordedService([string]$Name,$Entry) {
     $state=Assert-RecordedServiceBinding $Entry
     if($state -eq 1060){return}
     if($state -eq 0){
-        if($Name -ieq 'AccessWeaver-dnscrypt' -and (Test-DNSCryptListenerNeeded)){
-            throw 'DNSCrypt service retained because adapter loopback DNS is configured or could not be ruled out'
+        if($Name -ieq 'AccessWeaver-dnscrypt'){
+            if(Test-DNSCryptListenerNeeded){
+                throw 'DNSCrypt service retained because adapter loopback DNS is configured or could not be ruled out'
+            }
+            # Inventory reads can outlast the service binding observed above.
+            if((Assert-RecordedServiceBinding $Entry) -ne 0){return}
         }
         $stopped=Invoke-ManagedServiceControl 'stop' $Name @(0,1060,1062,1072)
         if($stopped -eq 0){Wait-RecordedServiceStopped $Name}
-        if($stopped -in @(0,1062)){[void](Invoke-ManagedServiceControl 'delete' $Name @(0,1060,1072))}
+        if($stopped -in @(0,1062) -and (Assert-RecordedServiceBinding $Entry) -eq 0){
+            [void](Invoke-ManagedServiceControl 'delete' $Name @(0,1060,1072))
+        }
     }
     Wait-RecordedServiceAbsent $Name
 }

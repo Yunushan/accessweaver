@@ -16,11 +16,18 @@ function Read-WorkflowRecoveryJournal {return @{undo=$script:saved}}
 $saveJournal=(Get-Command Save-Journal).ScriptBlock
 function Save-Journal {$script:journalWrites++}
 function Event {}
-function Test-DNSCryptListenerNeeded {return [bool]$script:resolverInUse}
+function Test-DNSCryptListenerNeeded {
+    if($script:serviceFault -ceq 'replace-during-dns-inventory'){$script:serviceCommand='replacement service command'}
+    return [bool]$script:resolverInUse
+}
 function Wait-RecordedServiceStopped([string]$Name) {
     if($Name -cne 'AccessWeaver-dnscrypt'){throw 'Unexpected service stop wait'}
     $script:order.Add('wait-stopped')
     if($script:serviceFault -ceq 'stop-timeout'){throw 'Synthetic service stop timeout'}
+    if($script:serviceFault -ceq 'replace-during-stop'){
+        $script:serviceCommand='replacement service command'
+        $script:serviceState='running'
+    }
 }
 function Assert-TrustedItem([string]$Path){No-Reparse $Path;[void](Get-Item -LiteralPath $Path -Force -ErrorAction Stop)}
 function Get-CimInstance {
@@ -52,6 +59,7 @@ function Native {
             if($script:serviceFault -ceq 'stop-command'){throw 'Synthetic SCM stop failure'}
             $exitCode=if($script:serviceState -ceq 'stopped'){1062}else{0}
             $script:serviceState='stopped'
+            if($script:serviceFault -ceq 'replace-already-stopped'){$script:serviceCommand='replacement service command'}
         }
         'delete' {
             if($script:serviceState -cne 'stopped'){throw 'Unstopped service reached deletion'}
@@ -440,7 +448,7 @@ try {
     Publish-WorkflowFile $snapshot $secondBytes
     $script:serviceFault='pending-then-absent'
     $rollback=@(Rollback)
-    Require ($rollback.Count -eq 0 -and ($script:order -join ',') -ceq 'restore,query,stop,wait-stopped,delete,query,query' -and
+    Require ($rollback.Count -eq 0 -and ($script:order -join ',') -ceq 'restore,query,query,stop,wait-stopped,query,delete,query,query' -and
         -not [IO.File]::Exists($snapshot) -and -not [IO.File]::Exists($serviceConfig)) 'Retry did not verify service removal before file rollback'
     $script:order.Clear()
     Recover-Operation
@@ -451,8 +459,8 @@ try {
         @{fault='inspect';trace='query'},
         @{fault='truncated';trace='query'},
         @{fault='identity';trace='query'},
-        @{fault='stop-command';trace='query,query,stop'},
-        @{fault='stop-timeout';trace='query,query,stop,wait-stopped'}
+        @{fault='stop-command';trace='query,query,query,stop'},
+        @{fault='stop-timeout';trace='query,query,query,stop,wait-stopped'}
     )
     foreach($case in $failureModes){
         [IO.File]::WriteAllText($serviceConfig,'inert resolver configuration')
@@ -467,10 +475,22 @@ try {
         $script:serviceState -ceq 'running' -and ($script:order -join ',') -ceq 'query,query' -and
         (Get-FileHash -LiteralPath $serviceConfig).Hash -ceq $configHash) 'Rollback stopped a resolver that was still needed'
     $script:resolverInUse=$false
+    foreach($case in @(
+        @{fault='replace-during-dns-inventory';state='running';trace='query,query,query'},
+        @{fault='replace-during-stop';state='running';trace='query,query,query,stop,wait-stopped,query'},
+        @{fault='replace-already-stopped';state='stopped';trace='query,query,query,stop,query'}
+    )){
+        $script:serviceFault=$case.fault;$script:serviceState=$case.state;$script:order.Clear()
+        $rollback=@(Rollback)
+        Require ($rollback.Count -eq 1 -and $rollback[0] -ceq 'Recovery journal does not match the current managed service' -and
+            ($script:order -join ',') -ceq $case.trace -and
+            (Get-FileHash -LiteralPath $serviceConfig).Hash -ceq $configHash) 'Service replacement reached an unowned mutation or removed its configuration'
+        $script:serviceCommand=$originalCommand
+    }
     $script:serviceFault='pending';$script:serviceState='stopped';$script:order.Clear()
     $rollback=@(Rollback)
     Require ($rollback.Count -eq 1 -and $rollback[0] -match '^Managed service removal is pending' -and
-        $script:order[0] -ceq 'query' -and $script:order[2] -ceq 'stop' -and $script:order[3] -ceq 'delete' -and
+        $script:order[0] -ceq 'query' -and $script:order[3] -ceq 'stop' -and $script:order[5] -ceq 'delete' -and
         [IO.File]::Exists($serviceConfig)) 'Delete acceptance was mistaken for verified service removal'
     $script:serviceFault='';$script:order.Clear()
     $rollback=@(Rollback)
