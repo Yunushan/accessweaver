@@ -2384,7 +2384,7 @@ function Assert-DNSCryptConfiguration([string]$Path,[string]$ExpectedSHA256) {
         throw 'DNSCrypt configuration changed after publication; retain the recovery snapshot'
     }
 }
-function Restore-DNSCryptAfterRestartFailure($Resolver,[string]$Config,[string]$OriginalSHA256,[string]$SnapshotSHA256) {
+function Restore-DNSCryptAfterActivationFailure($Resolver,[string]$Config,[string]$OriginalSHA256,[string]$SnapshotSHA256) {
     try {
         $records=@($script:undo | Where-Object {$_.kind -ceq 'file' -and $_.path -ieq $Config})
         if($records.Count -ne 1 -or $records[0].originalHash -ine $OriginalSHA256){
@@ -2406,7 +2406,7 @@ function Restore-DNSCryptAfterRestartFailure($Resolver,[string]$Config,[string]$
         }finally {if($service -is [IDisposable]){$service.Dispose()}}
         Assert-DNSCryptConfiguration $Config $OriginalSHA256
     }catch{
-        throw 'DNSCrypt restart failed and the original service could not be recovered; inspect the retained recovery journal'
+        throw 'DNSCrypt activation failed and the original service could not be recovered; inspect the retained recovery journal'
     }
 }
 function Configure-DNS([string]$method) {
@@ -2551,6 +2551,17 @@ function Configure-DNS([string]$method) {
         $publishedConfigSHA256=Get-WorkflowBytesSHA256 $updatedConfig
         $configChanged=$configBefore -cne $publishedConfigSHA256
         if($configChanged){Publish-WorkflowFile $config $updatedConfig -Recorded -BeforeHash $configBefore}
+        $servers=@('127.0.0.1','::1')
+        $listeners=@(foreach($number in @('4','6')){
+            foreach($adapter in $adapters){
+                $record=@($records | Where-Object {$_.guid -eq [string]$adapter.InterfaceGuid})[0]
+                $bounds=Get-OriginalDNSBounds $record
+                if($bounds['bound'+$number]){
+                    if($number -eq '4'){$servers[0]}else{$servers[1]}
+                    break
+                }
+            }
+        })
         if($existingResolver){
             if((Assert-RecordedServiceBinding $existingResolver) -ne 0){throw 'Existing DNSCrypt service disappeared before startup'}
             Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
@@ -2565,28 +2576,19 @@ function Configure-DNS([string]$method) {
                     Restart-Service -InputObject $service -ErrorAction Stop
                 }
                 $service.WaitForStatus('Running',[TimeSpan]::FromSeconds(20))
+                # SCM can report Running before the replacement listener is usable.
+                Wait-DNSCryptListeners $listeners
             }catch{
                 if($restartAttempted -and $configBefore){
-                    Restore-DNSCryptAfterRestartFailure $existingResolver $config $configBefore $snapshotSHA256
+                    Restore-DNSCryptAfterActivationFailure $existingResolver $config $configBefore $snapshotSHA256
                 }
                 throw
             }finally {if($service -is [IDisposable]){$service.Dispose()}}
         }else{
             Assert-DNSCryptConfiguration $config $publishedConfigSHA256
             $newResolver=Install-EngineService 'dnscrypt' $binary @('-config',$config) -DeferAutomaticStartup
+            Wait-DNSCryptListeners $listeners
         }
-        $servers=@('127.0.0.1','::1')
-        $listeners=@(foreach($number in @('4','6')){
-            foreach($adapter in $adapters){
-                $record=@($records | Where-Object {$_.guid -eq [string]$adapter.InterfaceGuid})[0]
-                $bounds=Get-OriginalDNSBounds $record
-                if($bounds['bound'+$number]){
-                    if($number -eq '4'){$servers[0]}else{$servers[1]}
-                    break
-                }
-            }
-        })
-        Wait-DNSCryptListeners $listeners
         Assert-DNSCryptConfiguration $config $publishedConfigSHA256
         # An existing service can be manual after a switch to DoH. Verify
         # automatic startup before making any new loopback DNS dependency.
