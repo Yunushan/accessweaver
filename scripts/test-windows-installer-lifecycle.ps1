@@ -650,25 +650,42 @@ end;
         (Digest (Join-Path $upgradePayload 'BUILD-INFO.json')) -ceq $builds[1].identityFileSHA256 -and
         (Digest (Join-Path $upgradePayload 'SBOM.cdx.json')) -ceq $builds[1].payloadSBOMSHA256) 'Managed upgrade recovery fixture differs from the candidate'
     $stage='managed-upgrade-retained-after-copy'
-    # Simulate failure after copy and registration while retaining the genuine write and readback paths.
+    # End only the fixture's own Setup process after the genuine copy and readback.
     $retirementPoint='    AWPendingRetirementFailed := True;'
     Require ([regex]::Matches($productSetup,[regex]::Escape($retirementPoint)).Count -eq 1) 'Expected one managed upgrade recovery fixture boundary'
-    $retirementFault=$retirementPoint+[Environment]::NewLine+"    if not Verified then RaiseException('Managed upgrade recovery fixture did not verify the installed release.');"+[Environment]::NewLine+"    Log('AccessWeaver fixture interrupted pending retirement.'); Exit;"
-    [IO.File]::WriteAllText($faultSetup,$productSetup.Replace($retirementPoint,$retirementFault))
+    $abruptExitCode=197
+    $retirementFault=@"
+$retirementPoint
+    if not Verified then RaiseException('Managed upgrade recovery fixture did not verify the installed release.');
+    if not AWPendingInstallMatches(Destination) then RaiseException('Managed upgrade recovery fixture did not verify the pending record.');
+    AWFixtureTerminateProcess(AWFixtureCurrentProcess, $abruptExitCode);
+    RaiseException('Managed upgrade recovery fixture unexpectedly continued.');
+"@
+    $fixtureDeclarations=@'
+function AWFixtureCurrentProcess: LongWord;
+  external 'GetCurrentProcess@kernel32.dll stdcall';
+function AWFixtureTerminateProcess(Process: LongWord; ExitCode: LongWord): Integer;
+  external 'TerminateProcess@kernel32.dll stdcall';
+
+'@
+    $declarationPoint='procedure AWCompleteInstallation(const Destination: String);'
+    Require ([regex]::Matches($productSetup,[regex]::Escape($declarationPoint)).Count -eq 1) 'Expected one managed upgrade fixture declaration point'
+    $interruptedSource=$productSetup.Replace($declarationPoint,$fixtureDeclarations+[Environment]::NewLine+$declarationPoint)
+    [IO.File]::WriteAllText($faultSetup,$interruptedSource.Replace($retirementPoint,$retirementFault))
     $null=@(& $compiler ('/DBuildRoot='+$upgradePayload) ('/DReleaseVersion='+$builds[1].version) ('/DTargetArch='+$Architecture) $faultSetup)
     Require ($LASTEXITCODE -eq 0) 'Managed upgrade recovery fixture compilation failed'
     $interruptedSetup=Join-Path $capsule $builds[1].installerName
     $interruptedSetupDigest=Digest $interruptedSetup
     Require ($interruptedSetupDigest -cne $builds[1].installerSHA256) 'Managed recovery fault fixture matches the genuine installer'
     $interruptedLog=Join-Path $capsule 'managed-upgrade-interrupted.log'
-    $null=Native-Record $interruptedSetup ($arguments+@($baselineArgument,('/LOG='+$interruptedLog))) @(1603)
+    $interrupted=Native-Record $interruptedSetup ($arguments+@($baselineArgument,('/LOG='+$interruptedLog))) @($abruptExitCode)
     No-Reparse $interruptedLog
     $interruptedSize=(Get-Item -LiteralPath $interruptedLog -ErrorAction Stop).Length
     Require ($interruptedSize -gt 0 -and $interruptedSize -le 4MB) 'Managed upgrade interruption log exceeds its bounds'
     $interruptedText=[IO.File]::ReadAllText($interruptedLog)
     $verifiedMarker='AccessWeaver approved upgrade baseline verified.'
     Require ([regex]::Matches($interruptedText,[regex]::Escape($verifiedMarker)).Count -ge 2 -and
-        $interruptedText.Contains('AccessWeaver fixture interrupted pending retirement.')) 'Managed upgrade did not verify its baseline and reach the recovery boundary'
+        -not $interruptedText.Contains('Pending installation record retired.')) 'Managed upgrade did not terminate before pending record retirement'
     Assert-Installed $builds[1]
     $managedPending=Get-PendingInstallFixtureValue
     Require ($managedPending -cmatch ('\A'+[regex]::Escape($builds[1].version+'|'+$install)+'\|[a-f0-9]{64}\z')) 'Managed upgrade did not retain its bound pending record'
@@ -704,7 +721,7 @@ end;
     $setupUpgradeBaseline=@{refusalExitCode=$wrongBaseline.result.exitCode;refusalElapsedMilliseconds=$wrongBaseline.milliseconds;
         deadlineMilliseconds=180000;installedStatePreserved=$true;profilePreserved=$true;pendingMarkerAbsent=$true;
         matchingUpgradeAccepted=$true;copyCompletedBeforeRecovery=$true;changedRetryRefused=$true;
-        matchingRetryRetiredMarker=$true}
+        matchingRetryRetiredMarker=$true;abruptTerminationExitCode=$interrupted.result.exitCode}
     Require ((Digest $marker) -ceq $markerHash) 'Upgrade changed an unrelated installed-directory file'
     $observations+=,@{operation='upgrade';exitCode=$upgraded.result.exitCode;elapsedMilliseconds=$upgraded.milliseconds;deadlineMilliseconds=180000;payloadAndRegistrationVerified=$true;unrelatedStatePreserved=$true}
     Assert-ManagedDetection 'after-upgrade' $builds[1] $true -UseRegisteredDirectory
@@ -1420,7 +1437,7 @@ end;
 $eventDiagnostics=New-InstallerFirewallEventDiagnostic
 if(-not $complete){$eventDiagnostics=Read-FirewallEventDiagnostic}
 $originDiagnostics=[ordered]@{schemaVersion=1;source='captured-rule-properties';maxRecords=16;maxPropertyBytes=4096;records=@($script:firewallOriginObservations);truncated=$script:firewallOriginTruncated;unavailable=$script:firewallOriginUnavailable;extraNativeQueriesPerformed=$false;processOriginEstablished=$false}
-$record=[ordered]@{schemaVersion=36;setupUpgradeBaseline=$setupUpgradeBaseline;setupUninstallRegistrationRefusal=$setupUninstallRegistrationRefusal;setupMarkerReplacement=$setupMarkerReplacement;postRestorationRefusal=$postRestorationRefusal;setupCompletionRefusal=$completionRefusal;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=37;setupUpgradeBaseline=$setupUpgradeBaseline;setupUninstallRegistrationRefusal=$setupUninstallRegistrationRefusal;setupMarkerReplacement=$setupMarkerReplacement;postRestorationRefusal=$postRestorationRefusal;setupCompletionRefusal=$completionRefusal;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'

@@ -92,6 +92,23 @@ class SetupCompletionRefusalTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     validate_setup_upgrade_baseline({**recovery, name: False}, check_recovery=True)
 
+    def test_managed_upgrade_requires_the_abrupt_termination_exit(self):
+        recovery = {
+            "refusalExitCode": 7, "refusalElapsedMilliseconds": 200, "deadlineMilliseconds": 180000,
+            "installedStatePreserved": True, "profilePreserved": True, "pendingMarkerAbsent": True,
+            "matchingUpgradeAccepted": True, "copyCompletedBeforeRecovery": True,
+            "changedRetryRefused": True, "matchingRetryRetiredMarker": True,
+        }
+        with self.assertRaisesRegex(ValueError, "Incomplete managed Setup"):
+            validate_setup_upgrade_baseline(recovery, check_recovery=True, check_abrupt_termination=True)
+        for code in (0, 1603, "197", True):
+            with self.subTest(code=code), self.assertRaisesRegex(ValueError, "abrupt termination"):
+                validate_setup_upgrade_baseline({**recovery, "abruptTerminationExitCode": code},
+                                                check_recovery=True, check_abrupt_termination=True)
+        verified = validate_setup_upgrade_baseline({**recovery, "abruptTerminationExitCode": 197},
+                                                   check_recovery=True, check_abrupt_termination=True)
+        self.assertIs(verified["setupUpgradeAbruptTerminationVerified"], True)
+
     def test_rejects_unproven_uninstall_registration_repair(self):
         record = {
             "fixtureSHA256": "a" * 64, "exitCode": 1603, "elapsedMilliseconds": 83,
