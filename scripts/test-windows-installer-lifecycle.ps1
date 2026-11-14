@@ -245,12 +245,13 @@ function Create-UserProfile {
     $verified=Native-Record $binary @('show','installer-preserve')
     Require (($verified.result.stdout | ConvertFrom-Json).name -ceq $data.name) 'Installed core did not round-trip the actual user profile'
 }
-function Assert-ManagedDetection([string]$Phase,$Expected,[bool]$Detected,[string]$DigestOverride=''){
+function Assert-ManagedDetection([string]$Phase,$Expected,[bool]$Detected,[string]$DigestOverride='', [switch]$UseRegisteredDirectory){
     $hash=$Expected.payloadSha256
     if($DigestOverride){$hash=$DigestOverride}
     $uninstallerDigest=''
     if($Detected){$uninstallerDigest=Digest (Join-Path $install 'unins000.exe')}
-    $output=@(& $detector -Version $Expected.version -Architecture $Architecture -PayloadSHA256 $hash -PayloadSBOMSHA256 $Expected.payloadSBOMSHA256 -BuildInfoSHA256 $Expected.identityFileSHA256 -InstallDirectory $install -UninstallerSHA256 $uninstallerDigest 2>&1)
+    $location=if($UseRegisteredDirectory){@{UseRegisteredDirectory=$true}}else{@{InstallDirectory=$install}}
+    $output=@(& $detector -Version $Expected.version -Architecture $Architecture -PayloadSHA256 $hash -PayloadSBOMSHA256 $Expected.payloadSBOMSHA256 -BuildInfoSHA256 $Expected.identityFileSHA256 -UninstallerSHA256 $uninstallerDigest @location 2>&1)
     Require ($LASTEXITCODE -eq 0) 'Managed detection reported an inspection error'
     if($Detected){
         Require ($output.Count -eq 1 -and $output[0] -ceq 'AccessWeaver detected') 'Managed detection missed the approved payload'
@@ -706,8 +707,8 @@ end;
         matchingRetryRetiredMarker=$true}
     Require ((Digest $marker) -ceq $markerHash) 'Upgrade changed an unrelated installed-directory file'
     $observations+=,@{operation='upgrade';exitCode=$upgraded.result.exitCode;elapsedMilliseconds=$upgraded.milliseconds;deadlineMilliseconds=180000;payloadAndRegistrationVerified=$true;unrelatedStatePreserved=$true}
-    Assert-ManagedDetection 'after-upgrade' $builds[1] $true
-    Assert-ManagedDetection 'superseded-version' $builds[0] $false
+    Assert-ManagedDetection 'after-upgrade' $builds[1] $true -UseRegisteredDirectory
+    Assert-ManagedDetection 'superseded-version' $builds[0] $false -UseRegisteredDirectory
     $null=State-Checkpoint 'after-upgrade'
     $stage='reinstall'
     $reinstalled=Native-Record $second $arguments;Assert-Installed $builds[1]

@@ -705,6 +705,26 @@ def launch_windows_setup(directory, update, policy, *, size, directory_identity)
                 return process.wait()
 
 
+def detect_windows_upgrade(qualification, publisher_pin):
+    shell = windows_system_directory() / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+    script = Path(__file__).resolve().with_name("detect-windows-installer.ps1")
+    with tempfile.TemporaryFile() as output:
+        try:
+            result = subprocess.run(
+                [shell, "-NoProfile", "-NonInteractive", "-File", script, "-UseRegisteredDirectory",
+                 "-Version", qualification["version"], "-Architecture", qualification["target"].split("/")[1],
+                 "-PayloadSHA256", qualification["payloadSHA256"], "-PayloadSBOMSHA256", qualification["payloadSBOMSHA256"],
+                 "-BuildInfoSHA256", qualification[WINDOWS_BUILD_INFO], "-UninstallerSHA256", qualification["uninstallerSHA256"],
+                 "-PayloadPublisherSHA256", publisher_pin],
+                stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.DEVNULL, timeout=90,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return "unverified"
+        output.seek(0)
+        content = output.read(4097)
+    return "detected" if result.returncode == 0 and content in (b"AccessWeaver detected\r\n", b"AccessWeaver detected\n") else "unverified"
+
+
 def copy_approved_installer(source_path, staged, size):
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     before = source_path.lstat()
@@ -1009,8 +1029,15 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                                  size=installer["size"], directory_identity=stage_directory_id)
             update["installerStaged"] = True
             if launch_staged_windows_setup:
-                update["setupExitCode"] = launch_windows_setup(stage_directory, update, policy,
-                                                             size=installer["size"], directory_identity=stage_directory_id)
+                code = launch_windows_setup(stage_directory, update, policy,
+                                            size=installer["size"], directory_identity=stage_directory_id)
+                update["setupExitCode"] = code
+                if code == 0:
+                    update["installedDetection"] = detect_windows_upgrade(update["windowsUpgradeDetection"], payload_publisher)
+                elif code == 3010:
+                    update["installedDetection"] = "restart-required"
+                else:
+                    update["installedDetection"] = "setup-failed"
         return report
 
 
@@ -1094,7 +1121,8 @@ def main():
                                     launch_staged_windows_setup=args.launch_staged_windows_setup)
             print(json.dumps(report))
             if args.launch_staged_windows_setup:
-                return report["managedUpdate"]["setupExitCode"]
+                update = report["managedUpdate"]
+                return 1 if update["installedDetection"] == "unverified" else update["setupExitCode"]
     except (ValueError, OSError, subprocess.SubprocessError):
         print("Signed release inventory, approval or revocation verification failed.", file=sys.stderr)
         return 1

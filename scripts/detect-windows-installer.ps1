@@ -9,7 +9,8 @@ param(
     [string]$PayloadSBOMSHA256 = '',
     [string]$PayloadPublisherSHA256 = '',
     [switch]$UpgradeInventory,
-    [string]$BuildInfoSHA256 = ''
+    [string]$BuildInfoSHA256 = '',
+    [switch]$UseRegisteredDirectory
 )
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
@@ -286,7 +287,9 @@ function Test-AccessWeaverInstallation([string]$directory) {
     $registration=Read-AccessWeaverRegistration Registry64
     if($null -ne (Read-AccessWeaverRegistration Registry32)){throw 'Unexpected alternate machine registration'}
     if($null -eq $registration -or $registration.version -cne $Version){return $false}
-    if((Get-AccessWeaverLocalDirectory $registration.location) -ine $directory){throw 'Unexpected registered installation directory'}
+    $registeredDirectory=Get-AccessWeaverLocalDirectory $registration.location
+    if($UseRegisteredDirectory){$directory=$registeredDirectory}
+    elseif($registeredDirectory -ine $directory){throw 'Unexpected registered installation directory'}
     Initialize-AccessWeaverInstalledFileAccess
     $parents=[Collections.Generic.List[Microsoft.Win32.SafeHandles.SafeFileHandle]]::new()
     $payload=$null;$uninstaller=$null;$sbom=$null;$buildInfo=$null
@@ -354,8 +357,12 @@ try {
        ($UninstallerSHA256 -and $UninstallerSHA256 -notmatch '\A[a-fA-F0-9]{64}\z')){
         throw 'Expected pinned Windows payload identity and a matching 64-bit host'
     }
-    if(-not $InstallDirectory){$InstallDirectory=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'AccessWeaver'}
-    $directory=Get-AccessWeaverLocalDirectory $InstallDirectory
+    if($UseRegisteredDirectory -and $InstallDirectory){throw 'Specify either a directory or registered location detection'}
+    $directory=$null
+    if(-not $UseRegisteredDirectory){
+        if(-not $InstallDirectory){$InstallDirectory=Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'AccessWeaver'}
+        $directory=Get-AccessWeaverLocalDirectory $InstallDirectory
+    }
     $lifecycle=Enter-AccessWeaverDetection
     try {$detected=Test-AccessWeaverInstallation $directory}
     finally {

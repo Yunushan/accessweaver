@@ -1122,7 +1122,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
                               "minimum_revocation_sequence": 4, "launch_staged_windows_setup": True}
             with patch.object(release, "require_native_windows_setup_host") as host, \
                     patch.object(release, "check_windows_publisher") as publisher, \
-                    patch.object(release, "launch_windows_setup", return_value=3010) as launch:
+                    patch.object(release, "launch_windows_setup", return_value=3010) as launch, \
+                    patch.object(release, "detect_windows_upgrade", return_value="detected") as detect:
                 with self.assertRaisesRegex(ValueError, "revocation sequence"):
                     self.verify(approved, pin, policy_pin=launch_pin,
                                 **{**launch_options, "minimum_revocation_sequence": None})
@@ -1134,11 +1135,24 @@ class SignedReleaseManifestTests(unittest.TestCase):
 
                 result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options)["managedUpdate"]
                 self.assertEqual(result["setupExitCode"], 3010)
+                self.assertEqual(result["installedDetection"], "restart-required")
+                detect.assert_not_called()
                 self.assertEqual(result["windowsSetupBaselineArgument"], original_baseline)
                 self.assertEqual(publisher.call_count, 2)
                 host.assert_called_once_with(result["target"])
                 launch.assert_called_once()
                 self.assertEqual(release.digest(staged_path), original_setup_pin)
+                launch.return_value = 0
+                result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options)["managedUpdate"]
+                self.assertEqual(result["setupExitCode"], 0)
+                self.assertEqual(result["installedDetection"], "detected")
+                detect.assert_called_once_with(result["windowsUpgradeDetection"], launch_options["windows_payload_publisher"])
+                detect.reset_mock()
+                launch.return_value = 7
+                result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options)["managedUpdate"]
+                self.assertEqual(result["setupExitCode"], 7)
+                self.assertEqual(result["installedDetection"], "setup-failed")
+                detect.assert_not_called()
             staged_path.unlink()
             self.write_policy(self.policy)
         strict_args = [*retry_cli, "--require-windows-setup-wrong-baseline-refusal"]
@@ -1376,13 +1390,40 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
                 "--source-commit", COMMIT, "--source-ref", REF, "--approval-certificate", "approval.cer",
                 "--approval-certificate-sha256", "b" * 64, "--revocation-list", "revocation.json",
                 "--revocation-list-sha256", self.policy_pin, "--launch-staged-windows-setup"]
-        for code in (0, 7, 3010, 1603):
-            report = {"managedUpdate": {"setupExitCode": code}}
+        for code, detection, expected in ((0, "detected", 0), (0, "unverified", 1),
+                                          (7, "setup-failed", 7), (3010, "restart-required", 3010)):
+            report = {"managedUpdate": {"setupExitCode": code, "installedDetection": detection}}
             with self.subTest(code=code), patch.object(sys, "argv", argv), \
                     patch.object(release, "verify", return_value=report) as verify, redirect_stdout(io.StringIO()) as output:
-                self.assertEqual(release.main(), code)
+                self.assertEqual(release.main(), expected)
                 self.assertEqual(json.loads(output.getvalue()), report)
                 self.assertIs(verify.call_args.kwargs["launch_staged_windows_setup"], True)
+
+    def test_windows_staging_detector_requires_exact_success_and_uses_signed_pins(self):
+        qualification = {"target": "windows/arm64", "version": VERSION, "payloadSHA256": "a" * 64,
+                         "payloadSBOMSHA256": "b" * 64, "buildInfoSHA256": "c" * 64, "uninstallerSHA256": "d" * 64}
+        publisher = "e" * 64
+        for code, content, expected in ((0, b"AccessWeaver detected\r\n", "detected"),
+                                        (0, b"", "unverified"),
+                                        (0, b"AccessWeaver detected\nextra\n", "unverified"),
+                                        (1, b"AccessWeaver detected\n", "unverified")):
+            def run(argv, *, stdout, **options):
+                stdout.write(content)
+                return subprocess.CompletedProcess(argv, code)
+
+            with self.subTest(code=code, content=content), patch.object(release.subprocess, "run", side_effect=run) as call, \
+                    patch.object(release, "windows_system_directory", return_value=self.root):
+                self.assertEqual(release.detect_windows_upgrade(qualification, publisher), expected)
+                arguments = call.call_args.args[0]
+                self.assertEqual(arguments[5:], [
+                    "-UseRegisteredDirectory", "-Version", VERSION, "-Architecture", "arm64",
+                    "-PayloadSHA256", "a" * 64, "-PayloadSBOMSHA256", "b" * 64, "-BuildInfoSHA256",
+                    "c" * 64, "-UninstallerSHA256", "d" * 64, "-PayloadPublisherSHA256", publisher,
+                ])
+                self.assertEqual(call.call_args.kwargs["timeout"], 90)
+        with patch.object(release.subprocess, "run", side_effect=subprocess.TimeoutExpired("detector", 90)), \
+                patch.object(release, "windows_system_directory", return_value=self.root):
+            self.assertEqual(release.detect_windows_upgrade(qualification, publisher), "unverified")
 
     @unittest.skipUnless(os.name == "nt", "requires native Windows file sharing")
     def test_windows_staging_holds_approved_setup_and_parents_through_launch(self):

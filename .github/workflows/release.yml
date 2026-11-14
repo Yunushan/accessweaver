@@ -33,6 +33,7 @@ on:
       - scripts/sbom.py
       - scripts/test_signed_release_manifest.py
       - scripts/verify-windows-installer-publisher.ps1
+      - scripts/detect-windows-installer.ps1
       - scripts/build-windows-installer.ps1
       - scripts/sign-windows-installer-artifact.ps1
       - scripts/windows-installer.iss
