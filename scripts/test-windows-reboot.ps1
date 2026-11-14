@@ -357,6 +357,7 @@ try {
             [void](Invoke-TestWorkflow @{action='remove-all'})
             Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState)
             Assert-RebootResolver
+            Assert-DNSAcceptanceRestored $before (Read-DNSAcceptanceState)
             if((Test-Path -LiteralPath $snapshot -ErrorAction Stop) -or -not (Test-DNSRebootServicesRemoved)){
                 throw 'DNS reboot preparation cleanup retained a snapshot or managed service'
             }
@@ -417,6 +418,8 @@ try {
             $outcome.originalStateRestored=$true
             $outcome.cleanupStage='original-resolver'
             Assert-RebootResolver
+            # Verify that the probe still corresponds to the restored DNS state.
+            Assert-DNSAcceptanceRestored $saved.dns (Read-DNSAcceptanceState)
             $outcome.originalResolverVerified=$true
             $outcome.cleanupStage='snapshot-retirement'
             $outcome.snapshotRetired=-not (Test-Path -LiteralPath $snapshot -ErrorAction Stop)
@@ -432,6 +435,7 @@ try {
             Assert-DNSAcceptanceRestored $saved.dns (Read-DNSAcceptanceState)
             $outcome.teardownStage='original-resolver'
             Assert-RebootResolver
+            Assert-DNSAcceptanceRestored $saved.dns (Read-DNSAcceptanceState)
             $outcome.teardownStage='snapshot-retirement'
             if(Test-Path -LiteralPath $snapshot -ErrorAction Stop){throw 'Teardown retained the active snapshot'}
             $outcome.teardownStage='service-inventory'

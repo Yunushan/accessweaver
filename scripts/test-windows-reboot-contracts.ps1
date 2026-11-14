@@ -378,8 +378,13 @@ function Invoke-TestWorkflow([hashtable]$Request) {
     }
 }
 function Assert-DNSAcceptanceRestored {
-    if(($script:trace[-1] -eq 'recover' -and $script:failure -eq 'state') -or
-        ($script:trace[-1] -eq 'remove-all' -and $script:failure -eq 'teardown-state')){throw 'Synthetic state mismatch'}
+    $phase=$script:trace[-1]
+    $script:stateReads[$phase]++
+    $failure=if($phase -ceq 'recover'){'state'}else{'teardown-state'}
+    if(($script:stateReads[$phase] -eq 1 -and $script:failure -ceq $failure) -or
+        ($script:stateReads[$phase] -eq 2 -and $script:failure -ceq "$failure-after-probe")){
+        throw 'Synthetic state mismatch'
+    }
 }
 function Read-DNSAcceptanceState {return @{}}
 function Assert-RebootResolver {
@@ -401,9 +406,10 @@ function Get-DNSRebootDigest {
     if($script:failure -ceq 'journal-changed'){return 'F'*64}
     return $current.journalSHA256
 }
-foreach($failure in @('none','journal-changed','recover','state','resolver','snapshot','remove','teardown-state','teardown-resolver','teardown-snapshot',
-        'inventory','service','recover-and-remove')){
+foreach($failure in @('none','journal-changed','recover','state','resolver','state-after-probe','snapshot','remove',
+        'teardown-state','teardown-resolver','teardown-state-after-probe','teardown-snapshot','inventory','service','recover-and-remove')){
     $script:failure=$failure;$script:trace=[Collections.Generic.List[string]]::new()
+    $script:stateReads=@{recover=0;'remove-all'=0}
     $script:snapshotPresent=$true;$script:published=$null
     $outcome=@{stage='complete';cleanupStage='not-started';teardownStage='not-started';journalRecoveryAccepted=$false;originalStateRestored=$false;originalResolverVerified=$false;snapshotRetired=$false;servicesRemoved=$false}
     & $cleanup
@@ -412,6 +418,7 @@ foreach($failure in @('none','journal-changed','recover','state','resolver','sna
         'recover' {'journal-recovery'}
         'state' {'original-state'}
         'resolver' {'original-resolver'}
+        'state-after-probe' {'original-resolver'}
         'snapshot' {'snapshot-retirement'}
         'recover-and-remove' {'journal-recovery'}
         default {'recovered'}
@@ -421,6 +428,7 @@ foreach($failure in @('none','journal-changed','recover','state','resolver','sna
         'recover-and-remove' {'remove-all'}
         'teardown-state' {'original-state'}
         'teardown-resolver' {'original-resolver'}
+        'teardown-state-after-probe' {'original-resolver'}
         'teardown-snapshot' {'snapshot-retirement'}
         'inventory' {'service-inventory'}
         'service' {'services-remain'}
@@ -428,9 +436,13 @@ foreach($failure in @('none','journal-changed','recover','state','resolver','sna
     }
     $expectedTrace=if($failure -ceq 'journal-changed'){'remove-all'}else{'recover,remove-all'}
     if($script:published.cleanupStage -cne $stage -or $script:published.teardownStage -cne $teardown -or
+        $script:published.originalResolverVerified -ne ($stage -cin @('snapshot-retirement','recovered')) -or
         $script:published.servicesRemoved -ne ($teardown -ceq 'complete') -or $script:published.passed -ne ($failure -ceq 'none') -or
         ($script:trace -join ',') -cne $expectedTrace){
         throw 'DNS reboot cleanup failed to distinguish journal recovery from teardown'
+    }
+    if($failure -ceq 'none' -and ($script:stateReads.recover -ne 2 -or $script:stateReads['remove-all'] -ne 2)){
+        throw 'Passing recovery and teardown must verify original state on both sides of the resolver probe'
     }
 }
 Set-Item Function:Save-DNSRebootRecord $save
