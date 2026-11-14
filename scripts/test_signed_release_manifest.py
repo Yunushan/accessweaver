@@ -1153,7 +1153,29 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertEqual(result["setupExitCode"], 7)
                 self.assertEqual(result["installedDetection"], "setup-failed")
                 detect.assert_not_called()
-            staged_path.unlink()
+                launch.reset_mock()
+                detect_options = {**launch_options, "stage_directory": None, "launch_staged_windows_setup": False,
+                                  "detect_installed_windows_upgrade": True,
+                                  "resume_windows_upgrade_setup_sha256": original_setup_pin,
+                                  "resume_windows_upgrade_baseline_argument": original_baseline}
+                for changed, message in (
+                    ({"stage_directory": staging}, "cannot stage or launch"),
+                    ({"resume_windows_upgrade_baseline_argument": None}, "original approved Setup digest and baseline"),
+                    ({"resume_windows_upgrade_baseline_argument": wrong_baseline}, "differs from the original approved upgrade"),
+                    ({"resume_windows_upgrade_setup_sha256": "0" * 64}, "differs from the original approved upgrade package"),
+                ):
+                    with self.subTest(post_restart=changed), self.assertRaisesRegex(ValueError, message):
+                        self.verify(approved, pin, policy_pin=launch_pin, **{**detect_options, **changed})
+                detect.assert_not_called()
+                launch.assert_not_called()
+                staged_path.unlink()
+                observed = self.verify(approved, pin, policy_pin=launch_pin, **detect_options)["managedUpdate"]
+                self.assertEqual(observed["installedDetection"], "detected")
+                self.assertNotIn("setupExitCode", observed)
+                detect.assert_called_once_with(observed["windowsUpgradeDetection"], launch_options["windows_payload_publisher"])
+                self.assertEqual(host.call_args.kwargs, {"elevated": False})
+                launch.assert_not_called()
+                self.assertEqual(list(staging.iterdir()), [])
             self.write_policy(self.policy)
         strict_args = [*retry_cli, "--require-windows-setup-wrong-baseline-refusal"]
         refused = subprocess.run(strict_args, capture_output=True, text=True, timeout=30)
@@ -1398,6 +1420,20 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
                 self.assertEqual(release.main(), expected)
                 self.assertEqual(json.loads(output.getvalue()), report)
                 self.assertIs(verify.call_args.kwargs["launch_staged_windows_setup"], True)
+
+    def test_installed_detection_cli_returns_confirmation_status(self):
+        argv = ["signed_release_manifest.py", "verify", str(self.candidate),
+                "--source-commit", COMMIT, "--source-ref", REF, "--approval-certificate", "approval.cer",
+                "--approval-certificate-sha256", "b" * 64, "--revocation-list", "revocation.json",
+                "--revocation-list-sha256", self.policy_pin, "--detect-installed-windows-upgrade"]
+        for detection, code in (("detected", 0), ("unverified", 1)):
+            report = {"managedUpdate": {"installedDetection": detection}}
+            with self.subTest(code=code), patch.object(sys, "argv", argv), \
+                    patch.object(release, "verify", return_value=report) as verify, redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(release.main(), code)
+                self.assertEqual(json.loads(output.getvalue()), report)
+                self.assertIs(verify.call_args.kwargs["detect_installed_windows_upgrade"], True)
+                self.assertIs(verify.call_args.kwargs["launch_staged_windows_setup"], False)
 
     def test_windows_staging_detector_requires_exact_success_and_uses_signed_pins(self):
         qualification = {"target": "windows/arm64", "version": VERSION, "payloadSHA256": "a" * 64,
