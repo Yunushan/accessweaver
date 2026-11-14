@@ -92,6 +92,14 @@ Case-P 'partial-stage-failure-restores-all-prepared-adapters' {Reset-P 4 15;$scr
 Case-P 'topology-refusal-prevents-capture-start' {Reset-P;$script:fault='verify';Reject-P {Start-DoHNetEventCapture $state};Assert-P ('ndis-start' -cnotin @($events) -and 'ndis-provider' -cnotin @($events))}
 Case-P 'ordinary-resolver-and-causal-block-order-preserved' {Reset-P;Start-DoHNetEventCapture $state;Measure-DoHNetEventWire $state;$a=@($events);Assert-P ($a.IndexOf('add-dns-UDP') -lt $a.IndexOf('query-example.net-False') -and $a.IndexOf('query-example.net-False') -lt $a.IndexOf('ndis-stop') -and $a.IndexOf('read-capture') -lt $a.IndexOf('add-tls-TCP') -and $a.IndexOf('add-tls-TCP') -lt $a.IndexOf('query-example.org-True') -and $a.IndexOf('query-example.org-True') -lt $a.IndexOf('remove-tls') -and $a.IndexOf('remove-tls') -lt $a.IndexOf('query-example.org-False'))}
 Case-P 'handled-decoder-refusal-still-runs-causal-control' {Reset-P;Start-DoHNetEventCapture $state;$script:fault='decoder-refusal';Reject-P {Measure-DoHNetEventWire $state};Assert-P ($state.flags.blockedQueryRejected -and $state.flags.resumedQueryPassed -and -not $state.flags.tlsObserved)}
+Case-P 'capture-read-exception-preserves-phase-and-finishes-causal-control' {
+ Reset-P;Start-DoHNetEventCapture $state
+ function Read-DoHNetEventCapture($State){$State.phase='loss-metadata';throw 'Synthetic capture read failure'}
+ Reject-P {Measure-DoHNetEventWire $state}
+ Assert-P ($state.failurePhase -ceq 'loss-metadata' -and $state.flags.blockedQueryRejected -and $state.flags.tlsBlockRemoved -and $state.flags.resumedQueryPassed -and -not $state.flags.tlsObserved)
+ Complete-DoHNetEventCleanup $state
+ Assert-P ($state.cleanupCompleted -and (Get-DoHNetEventSummary $state).outcome -ceq 'failed')
+}
 Case-P 'causal-query-contradiction-always-unblocks-owned-rule' {Reset-P;Start-DoHNetEventCapture $state;$script:fault='negative';Reject-P {Measure-DoHNetEventWire $state};Assert-P ($state.flags.tlsBlockRemoved -and -not $state.flags.blockedQueryRejected -and -not $state.flags.resumedQueryPassed)}
 Case-P 'restore-failure-attempts-remaining-adapters-and-retains-session' {Reset-P 4 15;Start-DoHNetEventCapture $state;$script:fault='restore-one';Reject-P {Complete-DoHNetEventCleanup $state};Assert-P ($state.ndis.public.offloadRestoreEvidence.Count -eq 4 -and 'offload-restore-3' -cin @($events) -and 'ndis-remove' -cnotin @($events) -and -not $state.ndis.plan.originalVerified)}
 Case-P 'stop-refusal-still-attempts-all-offload-recovery' {Reset-P 4 15;Start-DoHNetEventCapture $state;$script:fault='stop';Reject-P {Complete-DoHNetEventCleanup $state};Assert-P ($state.ndis.public.offloadRestoreEvidence.Count -eq 4 -and 'ndis-remove' -cnotin @($events))}
