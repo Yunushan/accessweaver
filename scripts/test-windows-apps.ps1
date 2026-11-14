@@ -106,11 +106,20 @@ function Assert-FixtureLiveImage([string]$Path,[bool]$Expected,[switch]$AllSessi
     throw 'Application process state was not confirmed in this desktop session'
 }
 
-function Test-FixtureCommunication([string]$Variant,[string]$Image,[string]$Kind) {
+function Assert-FixtureCommunicationImage([string]$Variant,[string]$Image,[string]$ExpectedDigest){
+    if((Get-FixtureAppImage (Inspect-Apps) $Variant) -ine $Image -or
+       (Get-FileHash -LiteralPath $Image -Algorithm SHA256 -ErrorAction Stop).Hash -ine $ExpectedDigest){
+        throw 'Application identity changed during communication verification'
+    }
+    Assert-FixtureLiveImage $Image $true
+}
+
+function Test-FixtureCommunication([string]$Variant,[string]$Image,[string]$Kind,[string]$ExpectedDigest) {
     if($Variant -cnotin @('discord','discord-ptb','splitcord') -or $Kind -cnotin @('text','voice')){
         throw 'Unknown application communication check'
     }
-    Assert-FixtureLiveImage $Image $true
+    if($ExpectedDigest -notmatch '\A[a-f0-9]{64}\z'){throw 'Expected an installed application digest'}
+    Assert-FixtureCommunicationImage $Variant $Image $ExpectedDigest
     if($Kind -ceq 'text'){
         $prompt="In $Variant, use an authorized disposable account and peer in a private test channel. Send a synthetic message and verify a reply. Type PASS only after both directions work"
     }else{
@@ -118,7 +127,7 @@ function Test-FixtureCommunication([string]$Variant,[string]$Image,[string]$Kind
     }
     $answer=Read-Host $prompt
     if($answer -cne 'PASS'){throw 'Operator did not confirm two-way communication'}
-    Assert-FixtureLiveImage $Image $true
+    Assert-FixtureCommunicationImage $Variant $Image $ExpectedDigest
 }
 
 function Test-FixtureAppChecks([object[]]$Checks,[string[]]$Expected) {
@@ -258,6 +267,7 @@ try {
     }
     $attempted=[Collections.Generic.List[string]]::new()
     $installedImages=@{}
+    $installedDigests=@{}
     $checks=[Collections.Generic.List[object]]::new()
     $script:appEvidenceStage='baseline'
     $report=[ordered]@{
@@ -314,6 +324,7 @@ try {
         return $job.result.data.applications
     }
     function Install-FixtureApp([string]$Variant,[switch]$Clean){
+        $installedDigests.Remove($Variant)
         if(-not $attempted.Contains($Variant)){$attempted.Add($Variant)}
         $request=@{action='app-install';engine=$Variant}
         if($Clean){$request.clean=$true}
@@ -330,18 +341,18 @@ try {
             $script:appEvidenceStage='service-readback'
             Assert-FixtureSplitCordServiceState 'Running' $image
         }
+        if($InteractiveCommunications){
+            $script:appEvidenceStage='install-readback'
+            $installedDigests[$Variant]=(Get-FileHash -LiteralPath $image -Algorithm SHA256 -ErrorAction Stop).Hash
+        }
     }
     function Check-FixtureCommunications([string]$Variant){
         if(-not $InteractiveCommunications){return}
         foreach($kind in @('text','voice')){
             Check ('communications-'+$Variant+'-'+$kind) {
-                if(-not $installedImages.ContainsKey($Variant)){throw 'Application install prerequisite failed'}
-                $image=$installedImages[$Variant]
-                if((Get-FixtureAppImage (Inspect-Apps) $Variant) -ine $image){
-                    throw 'Application identity changed before communication check'
-                }
+                if(-not $installedDigests.ContainsKey($Variant)){throw 'Application install prerequisite failed'}
                 $script:appEvidenceStage='interactive-communication'
-                Test-FixtureCommunication $Variant $image $kind
+                Test-FixtureCommunication $Variant $installedImages[$Variant] $kind $installedDigests[$Variant]
             }
         }
     }
@@ -384,12 +395,16 @@ try {
             }
         }
         Check 'discord-reinstall' {
+            $installedDigests.Remove('discord')
             if(-not $installedImages.ContainsKey('discord')){throw 'Stable Discord install prerequisite failed'}
             $data=Invoke-AppWorkflow @{action='app-reinstall';engine='discord'}
             $image=Get-FixtureAppImage (Inspect-Apps) 'discord'
             if($data.application -cne 'discord' -or $data.reinstalled -isnot [bool] -or -not $data.reinstalled -or -not $image -or
                -not (Test-Path -LiteralPath $image -PathType Leaf)){throw 'Stable Discord replacement was not confirmed'}
             $installedImages['discord']=$image
+            if($InteractiveCommunications){
+                $installedDigests['discord']=(Get-FileHash -LiteralPath $image -Algorithm SHA256 -ErrorAction Stop).Hash
+            }
         }
         Check 'discord-start-after-reinstall' {Start-FixtureApp 'discord'}
         Check-FixtureCommunications 'discord'

@@ -4,7 +4,7 @@ $fixture=Join-Path $PSScriptRoot 'test-windows-apps.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($fixture,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Interactive Windows app fixture failed parsing'}
-foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Test-FixtureCommunication','Test-FixtureAppChecks','Start-FixtureApp','Remove-FixtureApp','Assert-FixtureSplitCordServiceState')){
+foreach($name in @('Test-FixtureAppProcess','Get-FixtureAppImage','Assert-FixtureLiveImage','Assert-FixtureCommunicationImage','Test-FixtureCommunication','Test-FixtureAppChecks','Start-FixtureApp','Remove-FixtureApp','Assert-FixtureSplitCordServiceState')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -110,42 +110,70 @@ foreach($inventory in @(
     if(-not $refused){throw 'Unverified discovery identity was accepted'}
 }
 # Drive the same prompt function with an inert process inventory and terminal.
-$script:promptCount=0
-$script:promptAnswer='PASS'
-function Read-Host([string]$Prompt){
-    if($Prompt -notmatch 'two-way|both directions'){throw 'Prompt omitted the two-way condition'}
-    $script:promptCount++
-    return $script:promptAnswer
-}
-foreach($kind in @('text','voice')){
-    $script:observations.Enqueue($true)
-    $script:observations.Enqueue($true)
-    Test-FixtureCommunication 'discord' $image $kind
-    if($script:observations.Count){throw 'Communication check omitted the post-prompt process check'}
-}
-if($script:promptCount -ne 2){throw 'Expected distinct text and voice confirmations'}
-foreach($answer in @('','pass','PASS ')){
-    $script:promptAnswer=$answer
+& {
+    $clientImages=@{discord=$image;'discord-ptb'='C:\Fixture\DiscordPTB.exe';splitcord=$splitCord}
+    $expectedDigest='a'*64
+    $script:promptCount=0
+    $script:changeDuringPrompt=''
+    $script:communicationDigest=$expectedDigest
+    function Inspect-Apps {return [pscustomobject]$clientImages}
+    function Get-FileHash {
+        [CmdletBinding()]param($LiteralPath,$Algorithm)
+        if($Algorithm -cne 'SHA256' -or $LiteralPath -notin $clientImages.Values){throw 'Unexpected communication hash query'}
+        return @{Hash=$script:communicationDigest}
+    }
+    $script:promptAnswer='PASS'
+    function Read-Host([string]$Prompt){
+        if($Prompt -notmatch 'two-way|both directions'){throw 'Prompt omitted the two-way condition'}
+        $script:promptCount++
+        if($script:changeDuringPrompt -ceq 'bytes'){$script:communicationDigest='b'*64}
+        if($script:changeDuringPrompt -ceq 'path'){$clientImages.discord='C:\Fixture\New\Discord.exe'}
+        return $script:promptAnswer
+    }
+    foreach($kind in @('text','voice')){
+        $script:observations.Enqueue($true)
+        $script:observations.Enqueue($true)
+        Test-FixtureCommunication 'discord' $image $kind $expectedDigest
+        if($script:observations.Count){throw 'Communication check omitted the post-prompt process check'}
+    }
+    if($script:promptCount -ne 2){throw 'Expected distinct text and voice confirmations'}
+    foreach($answer in @('','pass','PASS ')){
+        $script:promptAnswer=$answer
+        $script:observations.Enqueue($true)
+        $refused=$false
+        try{Test-FixtureCommunication 'discord-ptb' $clientImages['discord-ptb'] 'text' $expectedDigest}catch{
+            $refused=$_.Exception.Message -ceq 'Operator did not confirm two-way communication'
+        }
+        if(-not $refused -or $script:observations.Count){throw 'Unconfirmed communication was accepted'}
+    }
+    $before=$script:promptCount
+    $refused=$false
+    try{Test-FixtureCommunication 'splitcord' $splitCord 'voice' $expectedDigest}catch{
+        $refused=$_.Exception.Message -ceq 'Fixture observation limit reached'
+    }
+    if(-not $refused -or $script:promptCount -ne $before){throw 'Communication was prompted without a live image'}
+    $script:promptAnswer='PASS'
     $script:observations.Enqueue($true)
     $refused=$false
-    try{Test-FixtureCommunication 'discord-ptb' $image 'text'}catch{
-        $refused=$_.Exception.Message -ceq 'Operator did not confirm two-way communication'
+    try{Test-FixtureCommunication 'splitcord' $splitCord 'voice' $expectedDigest}catch{
+        $refused=$_.Exception.Message -ceq 'Fixture observation limit reached'
     }
-    if(-not $refused -or $script:observations.Count){throw 'Unconfirmed communication was accepted'}
+    if(-not $refused -or $script:promptCount -ne ($before+1)){throw 'Operator input replaced final live-image verification'}
+    foreach($change in @('bytes','path')){
+        $before=$script:promptCount
+        $script:changeDuringPrompt=$change
+        $script:observations.Enqueue($true)
+        $refused=$false
+        try{Test-FixtureCommunication 'discord' $image 'text' $expectedDigest}catch{
+            $refused=$_.Exception.Message -ceq 'Application identity changed during communication verification'
+        }
+        if(-not $refused -or $script:promptCount -ne ($before+1) -or $script:observations.Count){
+            throw 'Communication confirmation survived a changed application'
+        }
+        $clientImages.discord=$image
+        $script:communicationDigest=$expectedDigest
+    }
 }
-$before=$script:promptCount
-$refused=$false
-try{Test-FixtureCommunication 'splitcord' $image 'voice'}catch{
-    $refused=$_.Exception.Message -ceq 'Fixture observation limit reached'
-}
-if(-not $refused -or $script:promptCount -ne $before){throw 'Communication was prompted without a live image'}
-$script:promptAnswer='PASS'
-$script:observations.Enqueue($true)
-$refused=$false
-try{Test-FixtureCommunication 'splitcord' $image 'voice'}catch{
-    $refused=$_.Exception.Message -ceq 'Fixture observation limit reached'
-}
-if(-not $refused -or $script:promptCount -ne ($before+1)){throw 'Operator input replaced final live-image verification'}
 $installedImages=@{discord=$image}
 $launchTrace=[Collections.Generic.List[string]]::new()
 $launchResult=@{application='discord';alreadyRunning=$false}
