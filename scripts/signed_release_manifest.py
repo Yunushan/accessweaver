@@ -861,6 +861,8 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
         require(launch_staged_windows_setup and isinstance(windows_upgrade_attempt_id, str)
                 and re.fullmatch(r"[a-f0-9]{32}", windows_upgrade_attempt_id),
                 "A Windows upgrade attempt ID requires Setup launch and 32 lowercase hexadecimal characters")
+    if windows_setup_wait_seconds is not None:
+        require(windows_upgrade_attempt_id is not None, "Windows Setup wait limit requires a Windows upgrade attempt ID")
     if windows_upgrade_inventory is not None:
         require(all(value is None for value in (
             current_version, target, current_payload_sha256, current_payload_sbom_sha256,
@@ -1237,7 +1239,7 @@ def main():
     verify_args.add_argument("--windows-upgrade-attempt-id",
                              help="record an exclusive start and result for this 32-character lowercase hexadecimal ID")
     verify_args.add_argument("--windows-setup-wait-seconds", type=int,
-                             help="limit the Setup wait and report an unknown outcome if it outlasts that wait")
+                             help="limit the Setup wait and retain the start receipt for the required upgrade attempt ID")
     execution = verify_args.add_mutually_exclusive_group()
     execution.add_argument("--launch-staged-windows-setup", action="store_true",
                            help="explicitly launch the qualified Windows upgrade after verification and staging")

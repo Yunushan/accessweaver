@@ -1160,6 +1160,10 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 launch.assert_called_once()
                 self.assertEqual(release.digest(staged_path), original_setup_pin)
                 attempt_id = "a" * 32
+                launch.reset_mock()
+                with self.assertRaisesRegex(ValueError, "wait limit requires a Windows upgrade attempt ID"):
+                    self.verify(approved, pin, policy_pin=launch_pin, **launch_options, windows_setup_wait_seconds=60)
+                launch.assert_not_called()
                 with patch.object(release, "write_windows_upgrade_receipt") as write_result:
                     launch.side_effect = subprocess.TimeoutExpired("setup", 60)
                     try:
@@ -1688,12 +1692,16 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
             )
             return process
 
+        options = {"size": setup.stat().st_size, "directory_identity": release.staging_directory_identity(directory),
+                   "attempt": attempt, "wait_seconds": 1}
         try:
-            with patch.object(release.subprocess, "Popen", side_effect=start_fixture):
+            with patch.object(release.subprocess, "Popen", side_effect=start_fixture) as launch:
                 with self.assertRaises(subprocess.TimeoutExpired):
-                    release.launch_windows_setup(directory, update, self.policy, size=setup.stat().st_size,
-                                                 directory_identity=release.staging_directory_identity(directory),
-                                                 attempt=attempt, wait_seconds=1)
+                    release.launch_windows_setup(directory, update, self.policy, **options)
+                self.assertIsNone(process.poll())
+                with self.assertRaises(FileExistsError):
+                    release.launch_windows_setup(directory, update, self.policy, **options)
+                launch.assert_called_once()
             self.assertIsNone(process.poll())
             self.assertEqual(set(directory.iterdir()), {setup, started})
             # The wait released the staging handles. The child remains live until
