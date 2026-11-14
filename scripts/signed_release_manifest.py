@@ -662,7 +662,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
            *, revocation_list, revocation_list_sha256, current_version=None, target=None, stage_directory=None,
            current_payload_sha256=None, current_payload_sbom_sha256=None, current_payload_publisher_sha256=None,
            current_build_info_sha256=None, minimum_revocation_sequence=None, windows_upgrade_inventory=None, macos_publisher=None,
-           windows_publisher=None, windows_payload_publisher=None):
+           windows_publisher=None, windows_payload_publisher=None, require_windows_setup_baseline=False):
     if windows_upgrade_inventory is not None:
         require(all(value is None for value in (
             current_version, target, current_payload_sha256, current_payload_sbom_sha256,
@@ -694,6 +694,10 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 and re.fullmatch(r"[a-fA-F0-9]{64}", current_build_info_sha256),
                 "Installed Windows build metadata matching requires all installed trust pins")
         installed_trust[WINDOWS_PREVIOUS_BUILD_INFO] = current_build_info_sha256.lower()
+    if require_windows_setup_baseline:
+        require(target in ("windows/amd64", "windows/arm64") and current_version is not None
+                and WINDOWS_PREVIOUS_BUILD_INFO in installed_trust,
+                "Required Windows Setup baseline needs a Windows target and complete installed trust pins")
     if windows_publisher is not None or windows_payload_publisher is not None:
         require(sys.platform == "win32" and target in ("windows/amd64", "windows/arm64")
                 and current_version is not None, "Native publisher verification requires Windows and a Windows managed update target")
@@ -793,8 +797,11 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             baseline = select_windows_upgrade(
                 report.get("windowsDetection", ()), update, current_payload_sha256, installed_trust
             )
+            baseline_verified = baseline.get(WINDOWS_SETUP_BASELINE) is True
+            require(not require_windows_setup_baseline or baseline_verified,
+                    "The selected Windows upgrade lacks signed Setup baseline enforcement evidence")
             update["windowsUpgradeDetection"] = baseline
-            if baseline.get(WINDOWS_SETUP_BASELINE) is True:
+            if baseline_verified:
                 values = (baseline["previousVersion"], baseline["previousPayloadSHA256"],
                           baseline["previousPayloadSBOMSHA256"], baseline[WINDOWS_PREVIOUS_BUILD_INFO])
                 update["windowsSetupBaselineArgument"] = "/AWUpgradeFrom=" + ",".join(values)
@@ -882,6 +889,8 @@ def main():
                              help="match the installed Windows build metadata digest to signed reboot evidence")
     verify_args.add_argument("--windows-upgrade-inventory", nargs=2, metavar=("PATH", "SHA256"),
                              help="match an independently pinned Windows detector inventory to signed reboot evidence")
+    verify_args.add_argument("--require-windows-setup-baseline", action="store_true",
+                             help="require signed Setup baseline enforcement for the exact installed Windows build")
     verify_args.add_argument("--windows-publisher-sha256",
                              help="require native Authenticode and timestamp checks on the Windows setup and payload")
     verify_args.add_argument("--windows-payload-publisher-sha256",
@@ -916,7 +925,8 @@ def main():
                                     minimum_revocation_sequence=args.minimum_revocation_sequence,
                                     windows_upgrade_inventory=inventory, macos_publisher=args.macos_publisher,
                                     windows_publisher=args.windows_publisher_sha256,
-                                    windows_payload_publisher=args.windows_payload_publisher_sha256)))
+                                    windows_payload_publisher=args.windows_payload_publisher_sha256,
+                                    require_windows_setup_baseline=args.require_windows_setup_baseline)))
     except (ValueError, OSError, subprocess.SubprocessError):
         print("Signed release inventory, approval or revocation verification failed.", file=sys.stderr)
         return 1

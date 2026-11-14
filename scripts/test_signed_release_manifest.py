@@ -994,6 +994,15 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.assertEqual(selected["managedUpdate"]["windowsUpgradeDetection"]["previousBuildInfoSHA256"], "5" * 64)
         self.assertNotIn("windowsSetupBaselineArgument", selected["managedUpdate"])
         (staging / selected["managedUpdate"]["installer"]).unlink()
+        with self.assertRaisesRegex(ValueError, "lacks signed Setup baseline enforcement evidence"):
+            self.verify(approved, pin, stage_directory=staging, require_windows_setup_baseline=True, **inventory_options)
+        self.assertEqual(list(staging.iterdir()), [])
+        for missing_pins in ({}, qualified, trusted, {"current_version": "1.2.2-rc.1", "target": "darwin/arm64"}):
+            with self.subTest(baseline_inputs=sorted(missing_pins)), self.assertRaisesRegex(
+                ValueError, "complete installed trust pins"
+            ):
+                self.verify(approved, pin, stage_directory=staging, require_windows_setup_baseline=True, **missing_pins)
+        self.assertEqual(list(staging.iterdir()), [])
 
         evidence = self.write_reboot_report(
             "upgrade-baseline-enforced.json", schemaVersion=12, installMode="upgrade",
@@ -1004,13 +1013,20 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.assertIs(qualified_entry["setupUpgradeBaselineVerified"], True)
         manifest.write_bytes(release.encode_manifest(COMMIT, REF, files, [entries[0], qualified_entry, entries[2]]))
         sign_manifest()
-        selected = self.verify(approved, pin, stage_directory=staging, **inventory_options)
+        selected = self.verify(approved, pin, stage_directory=staging, require_windows_setup_baseline=True,
+                               **inventory_options)
         self.assertEqual(selected["schemaVersion"], 8)
+        self.assertTrue(selected["managedUpdate"]["installerStaged"])
         self.assertEqual(selected["managedUpdate"]["windowsSetupBaselineArgument"], "/AWUpgradeFrom=" + ",".join((
             qualified_entry["previousVersion"], qualified_entry["previousPayloadSHA256"],
             qualified_entry["previousPayloadSBOMSHA256"], qualified_entry["previousBuildInfoSHA256"],
         )))
         (staging / selected["managedUpdate"]["installer"]).unlink()
+        verified = self.verify(approved, pin, current_build_info_sha256="5" * 64,
+                               require_windows_setup_baseline=True, **trusted)
+        self.assertEqual(verified["managedUpdate"]["windowsSetupBaselineArgument"],
+                         selected["managedUpdate"]["windowsSetupBaselineArgument"])
+        self.assertEqual(list(staging.iterdir()), [])
         manifest.write_bytes(release.encode_manifest(COMMIT, REF, files, entries))
         sign_manifest()
         self.verify(approved, pin, current_build_info_sha256="5" * 64, **trusted)
