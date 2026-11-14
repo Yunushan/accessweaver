@@ -9,7 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import signed_release_manifest as release
 from sbom import properties
@@ -1236,6 +1236,50 @@ class SignedReleaseManifestTests(unittest.TestCase):
                     launch.side_effect = None
                     failed_start.unlink(missing_ok=True)
 
+                def fail_wait(*args, **kwargs):
+                    process = Mock()
+                    process.wait.side_effect = OSError("private wait failure")
+                    with patch.object(release.subprocess, "Popen", return_value=process) as dispatch:
+                        try:
+                            return native_launch(*args, **kwargs)
+                        finally:
+                            dispatch.assert_called_once()
+                            process.wait.assert_called_once_with(timeout=None)
+
+                real_policy_check = release.require_current_revocation_policy
+
+                def expire_after_receipt(policy, **kwargs):
+                    if failed_start.exists():
+                        raise ValueError("Revocation policy is outside its validity window")
+                    return real_policy_check(policy, **kwargs)
+
+                def expire_before_dispatch(*args, **kwargs):
+                    with patch.object(release, "require_current_revocation_policy",
+                                      side_effect=expire_after_receipt), \
+                            patch.object(release.subprocess, "Popen") as dispatch:
+                        try:
+                            return native_launch(*args, **kwargs)
+                        finally:
+                            dispatch.assert_not_called()
+
+                for reason in ("setup-wait-failed", "revocation-policy-expired"):
+                    with self.subTest(reason=reason):
+                        launch.side_effect = fail_wait if reason == "setup-wait-failed" else expire_before_dispatch
+                        try:
+                            update = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
+                                                 windows_upgrade_attempt_id=attempt_id)["managedUpdate"]
+                            self.assertEqual(update["attemptID"], attempt_id)
+                            self.assertIsNone(update["setupExitCode"])
+                            self.assertEqual(update["installedDetection"], "unverified")
+                            self.assertEqual(update["installedDetectionReason"], reason)
+                            self.assertEqual(update["startReceiptSHA256"], release.digest(failed_start))
+                            self.assertFalse(failed_result.exists())
+                            self.assertNotIn("private wait failure", json.dumps(update))
+                            detect.assert_not_called()
+                        finally:
+                            launch.side_effect = None
+                            failed_start.unlink(missing_ok=True)
+
                 launch.return_value = 0
                 result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
                                      windows_upgrade_attempt_id=attempt_id)["managedUpdate"]
@@ -1538,7 +1582,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
 import os
 from pathlib import Path
 import sys
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, sys.argv[1])
 import signed_release_manifest as release

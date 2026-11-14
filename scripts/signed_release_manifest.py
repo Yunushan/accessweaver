@@ -739,6 +739,14 @@ class WindowsSetupLaunchError(OSError):
     """Windows did not return a Setup process handle."""
 
 
+class WindowsSetupWaitError(OSError):
+    """Setup was launched but its exit status could not be observed."""
+
+
+class WindowsSetupDispatchPolicyExpired(ValueError):
+    """The policy expired after the start receipt was published."""
+
+
 def launch_windows_setup(directory, update, policy, *, size, directory_identity, attempt=None, wait_seconds=None):
     setup = directory / update["installer"]
     arguments = [str(setup), "/SP-", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
@@ -748,6 +756,7 @@ def launch_windows_setup(directory, update, policy, *, size, directory_identity,
                 "Managed update staging directory changed before launch")
         with hold_windows_setup(setup):
             verify_staged_update(setup, size, update["installerSHA256"])
+            working_directory = windows_system_directory()
             require_current_revocation_policy(policy)
             if attempt is not None:
                 require(not os.path.lexists(directory / (attempt["attemptID"] + ".result.json")),
@@ -755,15 +764,20 @@ def launch_windows_setup(directory, update, policy, *, size, directory_identity,
                 update["startReceiptSHA256"] = write_windows_upgrade_receipt(
                     directory / (attempt["attemptID"] + ".started.json"), attempt,
                 )
-                require_current_revocation_policy(policy)
+                try:
+                    require_current_revocation_policy(policy)
+                except ValueError as error:
+                    raise WindowsSetupDispatchPolicyExpired("Revocation policy expired before Setup dispatch") from error
             # Popen's context manager waits on exit, which would defeat a wait limit.
-            working_directory = windows_system_directory()
             try:
                 process = subprocess.Popen(arguments, executable=str(setup), cwd=working_directory,
                                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except OSError as error:
                 raise WindowsSetupLaunchError("Windows Setup could not be launched") from error
-            return process.wait(timeout=wait_seconds)
+            try:
+                return process.wait(timeout=wait_seconds)
+            except OSError as error:
+                raise WindowsSetupWaitError("Windows Setup exit could not be observed") from error
 
 
 @contextmanager
@@ -1199,12 +1213,17 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     code = launch_windows_setup(stage_directory, update, policy, attempt=attempt,
                                                 size=installer["size"], directory_identity=stage_directory_id,
                                                 wait_seconds=windows_setup_wait_seconds)
-                except (WindowsSetupLaunchError, subprocess.TimeoutExpired) as error:
+                except (WindowsSetupLaunchError, WindowsSetupWaitError, WindowsSetupDispatchPolicyExpired,
+                        subprocess.TimeoutExpired) as error:
+                    reasons = {
+                        WindowsSetupLaunchError: "setup-launch-failed",
+                        WindowsSetupWaitError: "setup-wait-failed",
+                        WindowsSetupDispatchPolicyExpired: "revocation-policy-expired",
+                        subprocess.TimeoutExpired: "setup-wait-timeout",
+                    }
                     update["setupExitCode"] = None
                     update["installedDetection"] = "unverified"
-                    update["installedDetectionReason"] = (
-                        "setup-launch-failed" if isinstance(error, WindowsSetupLaunchError) else "setup-wait-timeout"
-                    )
+                    update["installedDetectionReason"] = reasons[type(error)]
                     return report
                 update["setupExitCode"] = code
                 if code == 0:
