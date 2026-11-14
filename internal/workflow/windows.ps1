@@ -3984,6 +3984,14 @@ function Rollback([string]$OwnerlessWireSockProfile) {
             if(Confirm-DNSRecoveryEntry $dnsEntries[0]){Restore-DNS $dnsEntries[0].snapshotSHA256}
         } catch {return $_.Exception.Message}
     }
+    # Drover can still route Discord through the recorded proxy. Restore its
+    # application files before removing the proxy or the resources it needs.
+    $droverEntries=@($script:undo | Where-Object {$_.kind -ceq 'drover'})
+    if($droverEntries.Count -gt 1){return 'Recovery journal contains duplicate Drover entries'}
+    if($droverEntries.Count -eq 1){
+        try {Restore-Drover $droverEntries[0].manifestSHA256}
+        catch {return $_.Exception.Message}
+    }
     $rollbackErrors=@()
     $wireSock=@($script:undo | Where-Object {$_.kind -ceq 'wiresock' -and -not $_.legacy})
     $ownershipPath=Join-Path $root 'profiles\wiresock-owned.json'
@@ -4015,7 +4023,7 @@ function Rollback([string]$OwnerlessWireSockProfile) {
                 if($ownershipFile){Restore-RecordedWorkflowFile $ownershipFile}
             }
         }
-        'drover' {Restore-Drover $item.manifestSHA256}
+        'drover' {continue}
         'cache' {if(-not (Under $item.path $env:APPDATA) -or -not (Under $item.backup (Join-Path $root 'backups'))){throw 'Invalid cache recovery path'};No-Reparse $item.path;No-Reparse $item.backup;if(Test-Path -LiteralPath $item.backup){if(Test-Path -LiteralPath $item.path){throw 'Discord created new cache; original cache backup retained for manual review'};Move-Item -LiteralPath $item.backup -Destination $item.path}}
         'file' {
             if($item.path -ieq (Join-Path $root 'profiles\dns-original.json') -or ($ownershipFile -and $item.path -ieq $ownershipPath)){continue}

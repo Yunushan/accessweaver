@@ -209,6 +209,40 @@ try {
     Require (-not [IO.File]::Exists($manifest) -and -not [IO.File]::Exists($first) -and
              -not [IO.File]::Exists($second)) 'Normal removal could not restore the latest installation'
 
+    # Put the service after the Drover entry to prove that dependency order
+    # comes from rollback itself, independent of the journal entry order.
+    & {
+        $script:serviceRemoved=$false
+        function Assert-RecordedServiceBinding($Entry){
+            Require ($Entry.name -ceq 'AccessWeaver-byedpi') 'Unexpected rollback service'
+            return 0
+        }
+        function Remove-RecordedService([string]$Name,$Entry){
+            Require ($Name -ceq 'AccessWeaver-byedpi' -and
+                -not ([IO.File]::Exists($manifest) -or [IO.File]::Exists($second))) 'Proxy removal preceded Drover restoration'
+            $script:serviceRemoved=$true
+        }
+        [IO.File]::WriteAllText($second,'installed INI')
+        Write-Manifest @($records[1])
+        $ownership=@{kind='drover';manifestSHA256=(Get-DroverFileHash $manifest)}
+        $script:undo.Clear()
+        $script:undo.Add($ownership)
+        $script:undo.Add(@{kind='service';name='AccessWeaver-byedpi';commandSHA256=('A'*64)})
+        $script:undo.Add($ownership)
+        $errors=@(Rollback)
+        Require ($errors.Count -eq 1 -and $errors[0] -ceq 'Recovery journal contains duplicate Drover entries' -and
+            -not $script:serviceRemoved -and [IO.File]::Exists($second)) 'Duplicate ownership reached rollback mutation'
+        $script:undo.RemoveAt(2)
+        $script:denySecond=$true
+        $errors=@(Rollback)
+        Require ($errors.Count -eq 1 -and $errors[0] -ceq 'Synthetic failed removal' -and
+            -not $script:serviceRemoved -and [IO.File]::Exists($manifest)) 'Failed Drover restoration removed the proxy'
+        $script:denySecond=$false
+        $errors=@(Rollback)
+        Require ($errors.Count -eq 0 -and $script:serviceRemoved) 'Proxy rollback did not resume after Drover restoration'
+        $script:undo.Clear()
+    }
+
     [IO.File]::WriteAllText($second,'installed INI')
     Write-Manifest @($records[1])
     Restore-Drover
