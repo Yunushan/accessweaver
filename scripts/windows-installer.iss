@@ -183,20 +183,28 @@ begin
   Result := '';
 end;
 
-function AWInstalledFileMatches(const Directory, Name, Digest: String; Size: Int64): Boolean;
-var Path: String; Attributes: LongWord; Payload: TFileStream;
+function AWOpenVerifiedInstalledFile(const Path, Digest: String; Size: Int64): TFileStream;
+var Attributes: LongWord; Payload: TFileStream;
 begin
-  Result := False;
-  Path := Directory + '\' + Name;
+  Result := nil;
   Attributes := AWPathAttributes(Path);
   if (Attributes = $FFFFFFFF) or ((Attributes and ($00000400 or $00000010)) <> 0) then Exit;
   Payload := TFileStream.Create(Path, AWOpenReadDenyWrite);
   try
     if Payload.Size <> Size then Exit;
-    Result := CompareText(GetSHA256OfStream(Payload), Digest) = 0;
+    if CompareText(GetSHA256OfStream(Payload), Digest) <> 0 then Exit;
+    Result := Payload;
   finally
-    Payload.Free;
+    if Result = nil then Payload.Free;
   end;
+end;
+
+function AWInstalledFileMatches(const Directory, Name, Digest: String; Size: Int64): Boolean;
+var Payload: TFileStream;
+begin
+  Payload := AWOpenVerifiedInstalledFile(Directory + '\' + Name, Digest, Size);
+  Result := Payload <> nil;
+  if Result then Payload.Free;
 end;
 
 function AWVerifyCompletedInstall(const Destination: String): Boolean;
@@ -394,7 +402,8 @@ begin
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-var ResultCode: LongWord; Failure: String;
+var ResultCode: LongWord; Failure, Executable, Destination: String;
+    Payload: TFileStream;
 begin
   if CurUninstallStep <> usUninstall then Exit;
   { Inno reaches this step after confirmation and app-mutex checks, before
@@ -405,13 +414,30 @@ begin
     if not UninstallSilent then SuppressibleMsgBox(Failure, mbCriticalError, MB_OK, IDOK);
     Abort;
   end;
-  Log('AccessWeaver system restoration starts at the uninstall step.');
-  if AWRunBoundedRestoration(ExpandConstant('{app}\accessweaver.exe'),
-    'system installer-restore --confirm',
-    ExpandConstant('{app}'), AWRestorationDeadlineMilliseconds, ResultCode, Failure) then Exit;
-
+  Destination := ExpandConstant('{app}');
+  Executable := Destination + '\accessweaver.exe';
+  Payload := nil;
+  try
+    Payload := AWOpenVerifiedInstalledFile(Executable, '{#PayloadDigest}', {#PayloadBytes});
+  except
+    Payload := nil;
+  end;
+  if Payload = nil then
+    Failure := 'Cannot verify the installed AccessWeaver restoration controller. Repair the installation with its approved installer.'
+  else begin
+    try
+      Failure := AWInstallationPathPreflight(Destination, False);
+      if Failure = '' then begin
+        Log('AccessWeaver system restoration starts at the uninstall step.');
+        if AWRunBoundedRestoration(Executable, 'system installer-restore --confirm',
+          Destination, AWRestorationDeadlineMilliseconds, ResultCode, Failure) then Exit;
+        Log('AccessWeaver system restoration failed; process result/error code: ' + IntToStr(ResultCode));
+      end;
+    finally
+      Payload.Free;
+    end;
+  end;
   Log(Failure);
-  Log('AccessWeaver system restoration failed; process result/error code: ' + IntToStr(ResultCode));
   if not UninstallSilent then
     MsgBox('AccessWeaver could not restore its system changes. Review the recovery journal in ProgramData\AccessWeaver\logs, then retry uninstalling.', mbError, MB_OK);
   Abort;

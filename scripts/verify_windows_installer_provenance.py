@@ -269,6 +269,41 @@ def validate_uninstall_registration_refusal(value, *, operation="refused-uninsta
     return {key: True}
 
 
+def validate_restoration_controller_refusals(cases):
+    expected = [
+        "missing-controller-refused", "truncated-controller-refused", "malformed-controller-refused",
+        "same-size-controller-mismatch-refused", "execution-denied-controller-refused",
+    ]
+    require(isinstance(cases, list) and len(cases) == len(expected)
+            and all(isinstance(case, dict) for case in cases)
+            and [case.get("name") for case in cases] == expected,
+            "Restoration controller refusal coverage differs")
+    preserved = {
+        "installedFileTreePreserved", "registrationValuesPreserved", "profilePreserved",
+        "originalControllerAndDACLRestored", "restoredControllerRuntimeVerified",
+    }
+    for case in cases[:4]:
+        require(case.keys() == preserved | {
+            "name", "failurePhase", "controllerVerificationRefusalLogged", "exitCode",
+            "elapsedMilliseconds", "observationDeadlineMilliseconds",
+        } and case["failurePhase"] == "verify-controller"
+                and case["controllerVerificationRefusalLogged"] is True
+                and all(case[key] is True for key in preserved)
+                and type(case["exitCode"]) is int and case["exitCode"] == 1
+                and type(case["observationDeadlineMilliseconds"]) is int
+                and case["observationDeadlineMilliseconds"] == 180000
+                and type(case["elapsedMilliseconds"]) is int and 0 <= case["elapsedMilliseconds"] < 180000,
+                "Unverifiable controller was not refused before launch")
+    denied = cases[-1]
+    require(denied.get("failurePhase") == "launch-controller"
+            and denied.get("nativeErrorLogVerified") is True
+            and denied.get("independentProbeStarted") is False
+            and type(denied.get("nativeError")) is int and denied["nativeError"] == 5
+            and all(denied.get(key) is True for key in preserved),
+            "Verified controller launch refusal differs")
+    return {"restorationControllerVerificationRefusalsVerified": True}
+
+
 def validate_fixed_restoration(refused, removed):
     require(refused.get("workflowLockRefusalVerified") is True
             and refused.get("controllerAndRegistrationRetained") is True
@@ -282,7 +317,7 @@ def validate_fixed_restoration(refused, removed):
 
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -350,6 +385,8 @@ def validate_contents(root,commit,ref,arch,versions):
             continue
         require(operation.get("exitCode")== (1 if operation["operation"].startswith("refused-") else 0) and operation.get("deadlineMilliseconds")==180000 and type(operation.get("elapsedMilliseconds")) is int and 0<=operation["elapsedMilliseconds"]<180000,"Native lifecycle operation failed")
     restoration = validate_fixed_restoration(*operations[-2:]) if report["schemaVersion"] >= 14 else {}
+    if report["schemaVersion"] >= 29:
+        restoration.update(validate_restoration_controller_refusals(report.get("restorationLaunchCases")))
     if report["schemaVersion"] >= 15:
         require(operations[-2].get("registeredUninstallerBindingVerified") is True,
                 "Registered workflow uninstaller binding was not verified")

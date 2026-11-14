@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 from verify_windows_installer_provenance import (
     validate_installation_path_refusals, validate_setup_completion_refusal, validate_uninstall_registration_refusal,
+    validate_restoration_controller_refusals,
 )
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
@@ -204,6 +205,29 @@ class UninstallRegistrationRefusalTests(unittest.TestCase):
         for field, value in (("exitCode", True), ("restorationStateAbsent", False), ("elapsedMilliseconds", 180000)):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 validate_uninstall_registration_refusal({**observation, field: value})
+
+
+class RestorationControllerRefusalTests(unittest.TestCase):
+    def test_requires_all_refusals_and_preserved_installation(self):
+        preserved = dict.fromkeys((
+            "installedFileTreePreserved", "registrationValuesPreserved", "profilePreserved",
+            "originalControllerAndDACLRestored", "restoredControllerRuntimeVerified",
+        ), True)
+        cases = [
+            dict(preserved, name=name, failurePhase="verify-controller", controllerVerificationRefusalLogged=True,
+                 exitCode=1, elapsedMilliseconds=4, observationDeadlineMilliseconds=180000)
+            for name in ("missing-controller-refused", "truncated-controller-refused", "malformed-controller-refused",
+                         "same-size-controller-mismatch-refused")
+        ]
+        cases.append(dict(preserved, name="execution-denied-controller-refused", failurePhase="launch-controller",
+                          nativeErrorLogVerified=True, independentProbeStarted=False, nativeError=5))
+        self.assertEqual(validate_restoration_controller_refusals(cases),
+                         {"restorationControllerVerificationRefusalsVerified": True})
+        for bad in (None, cases[:3] + cases[4:],
+                    cases[:3] + [{**cases[3], "failurePhase": "launch-controller"}] + cases[4:],
+                    cases[:4] + [{**cases[4], "nativeError": 193}]):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                validate_restoration_controller_refusals(bad)
 
 
 class FixedRestorationTests(unittest.TestCase):

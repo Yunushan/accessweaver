@@ -839,6 +839,7 @@ try {
         @{name='missing-controller-refused';kind='missing';nativeErrors=@(2)},
         @{name='truncated-controller-refused';kind='truncated';nativeErrors=@(193,1392)},
         @{name='malformed-controller-refused';kind='malformed';nativeErrors=@(193,1392)},
+        @{name='same-size-controller-mismatch-refused';kind='wrong-digest'},
         @{name='execution-denied-controller-refused';kind='denied';nativeErrors=@(5)}
     )){
         $stage='restoration-launch-'+$case.kind;$caseRecord=$null
@@ -847,6 +848,17 @@ try {
                 'missing' {[IO.File]::Delete($core)}
                 'truncated' {[IO.File]::WriteAllBytes($core,[byte[]]@(0,0,0,0))}
                 'malformed' {[IO.File]::WriteAllBytes($core,[byte[]]::new(4096))}
+                'wrong-digest' {
+                    $stream=[IO.File]::Open($core,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+                    try {
+                        $stream.Position=$stream.Length-1
+                        $last=$stream.ReadByte()
+                        $stream.Position=$stream.Length-1
+                        $stream.WriteByte([byte]($last -bxor 1))
+                    } finally {$stream.Dispose()}
+                    Require ((Get-Item -LiteralPath $core).Length -eq (Get-Item -LiteralPath $launchBackup).Length -and
+                        (Digest $core) -cne $builds[1].payloadSha256) 'Same-size modification did not change the installed digest'
+                }
                 'denied' {
                     $deniedSecurity=[Security.AccessControl.FileSecurity]::new()
                     $deniedSecurity.SetSecurityDescriptorSddlForm($originalFileSDDL,$fileAccess)
@@ -858,8 +870,11 @@ try {
             $controllerPresent=[IO.File]::Exists($core)
             Require ($controllerPresent -eq ($case.kind -cne 'missing')) 'Launch fixture controller state differs from its expected precondition'
             $fixtureSDDL=if($controllerPresent){[IO.File]::GetAccessControl($core,$fileAccess).GetSecurityDescriptorSddlForm($fileAccess)}else{$null}
-            $probe=[InstallerRestorationLaunch]::Probe($core)
-            Require (-not $probe.Started -and $case.nativeErrors -contains $probe.NativeError) 'Independent native launch probe did not confirm the expected rejection category'
+            $probe=$null
+            if($case.nativeErrors){
+                $probe=[InstallerRestorationLaunch]::Probe($core)
+                Require (-not $probe.Started -and $case.nativeErrors -contains $probe.NativeError) 'Independent native launch probe did not confirm the expected rejection category'
+            }
             $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
             $logPath=Join-Path $capsule ($case.name+'.log')
             Require (-not (Test-Path -LiteralPath $logPath)) 'Launch fixture log already exists'
@@ -875,15 +890,25 @@ try {
             No-Reparse $logPath;Require ((Get-Item -LiteralPath $logPath).Length -le 4MB) 'Launch refusal log exceeds bounds'
             $log=[IO.File]::ReadAllText($logPath)
             $nativeMatches=[regex]::Matches($log,'(?m)AccessWeaver system restoration failed; process result/error code: ([0-9]{1,10})\r?$')
-            Require ($nativeMatches.Count -eq 1) 'Native launch refusal did not retain exactly one bounded numeric error'
-            $observedNativeError=[long]::Parse($nativeMatches[0].Groups[1].Value,[Globalization.CultureInfo]::InvariantCulture)
-            Require ($observedNativeError -le [uint32]::MaxValue) 'Native launch error exceeds the Windows error-code range'
-            $launchPhaseObserved=$log.Contains('AccessWeaver could not launch the restoration controller.')
-            $expectedErrorObserved=$observedNativeError -eq $probe.NativeError
-            $caseRecord=@{name=$case.name;failurePhase='launch-controller';launchPhaseObserved=$launchPhaseObserved;expectedNativeError=$probe.NativeError;independentProbeStarted=$probe.Started;independentProbeNativeError=$probe.NativeError;nativeError=$observedNativeError;nativeErrorLogVerified=($launchPhaseObserved -and $expectedErrorObserved);exitCode=$attempt.result.exitCode;elapsedMilliseconds=$attempt.milliseconds;observationDeadlineMilliseconds=180000;controllerPresentDuringRefusal=$controllerPresent;installedFileTreePreserved=$true;registrationValuesPreserved=$true;profilePreserved=$true;fileDACLCheckApplicable=$controllerPresent;fileDACLUnchangedDuringRefusal=$fileDACLUnchanged;originalControllerAndDACLRestored=$false;restoredControllerRuntimeVerified=$false}
-            # Preserve fixed numeric observations even when the expectation fails.
-            $restorationLaunchCases+=,$caseRecord
-            Require ($launchPhaseObserved -and $expectedErrorObserved) 'Native launch refusal did not retain its fixed phase and exact error code'
+            if($case.kind -cne 'denied'){
+                $preserved=$log.Contains('Cannot verify the installed AccessWeaver restoration controller.') -and
+                    -not $log.Contains('AccessWeaver system restoration starts at the uninstall step.') -and $nativeMatches.Count -eq 0
+                $caseRecord=@{name=$case.name;failurePhase='verify-controller';controllerVerificationRefusalLogged=$preserved;exitCode=$attempt.result.exitCode;
+                    elapsedMilliseconds=$attempt.milliseconds;observationDeadlineMilliseconds=180000;installedFileTreePreserved=$true;
+                    registrationValuesPreserved=$true;profilePreserved=$true;originalControllerAndDACLRestored=$false;restoredControllerRuntimeVerified=$false}
+                $restorationLaunchCases+=,$caseRecord
+                Require $preserved 'Unexpected restoration launch after controller verification failed'
+            }else{
+                Require ($nativeMatches.Count -eq 1) 'Native launch refusal did not retain exactly one bounded numeric error'
+                $observedNativeError=[long]::Parse($nativeMatches[0].Groups[1].Value,[Globalization.CultureInfo]::InvariantCulture)
+                Require ($observedNativeError -le [uint32]::MaxValue) 'Native launch error exceeds the Windows error-code range'
+                $launchPhaseObserved=$log.Contains('AccessWeaver could not launch the restoration controller.')
+                $expectedErrorObserved=$observedNativeError -eq $probe.NativeError
+                $caseRecord=@{name=$case.name;failurePhase='launch-controller';launchPhaseObserved=$launchPhaseObserved;expectedNativeError=$probe.NativeError;independentProbeStarted=$probe.Started;independentProbeNativeError=$probe.NativeError;nativeError=$observedNativeError;nativeErrorLogVerified=($launchPhaseObserved -and $expectedErrorObserved);exitCode=$attempt.result.exitCode;elapsedMilliseconds=$attempt.milliseconds;observationDeadlineMilliseconds=180000;controllerPresentDuringRefusal=$controllerPresent;installedFileTreePreserved=$true;registrationValuesPreserved=$true;profilePreserved=$true;fileDACLCheckApplicable=$controllerPresent;fileDACLUnchangedDuringRefusal=$fileDACLUnchanged;originalControllerAndDACLRestored=$false;restoredControllerRuntimeVerified=$false}
+                # Preserve fixed numeric observations even when the expectation fails.
+                $restorationLaunchCases+=,$caseRecord
+                Require ($launchPhaseObserved -and $expectedErrorObserved) 'Native launch refusal did not retain its fixed phase and exact error code'
+            }
         } finally {
             # Reconstruct a modified security object so SetAccessControl really
             # persists the saved DACL; never change the parent installation ACL.
@@ -931,10 +956,22 @@ try {
             Require ($process.StartTime.ToUniversalTime().ToFileTimeUtc() -ne [long]$idRecord.created) 'Restoration left an owned fixture process running'
         } finally {if($process){$process.Dispose()}}
     }
-    $core=Join-Path $install 'accessweaver.exe';$originalCore=Join-Path $capsule 'original-controller.exe'
-    [IO.File]::Copy($core,$originalCore,$false)
-    Require ((Digest $originalCore) -ceq $builds[1].payloadSha256) 'Original controller backup differs from the installed candidate'
+    $core=Join-Path $install 'accessweaver.exe'
+    # Compile the same installer source with the inert controller as its
+    # packaged payload. The genuine uninstaller must never admit these bytes.
+    $restorePayload=Join-Path $capsule 'restore-fixture-payload'
+    [void][IO.Directory]::CreateDirectory($restorePayload)
+    Copy-Item -LiteralPath $fixtureController -Destination (Join-Path $restorePayload 'accessweaver.exe')
+    foreach($file in @('BUILD-INFO.json','SBOM.cdx.json')){
+        Copy-Item -LiteralPath (Join-Path $install $file) -Destination $restorePayload
+    }
+    Copy-Item -LiteralPath (Join-Path $project 'LICENSE') -Destination $restorePayload
+    $null=@(& $compiler ('/DBuildRoot='+$restorePayload) ('/DReleaseVersion='+$builds[1].version) ('/DTargetArch='+$Architecture) (Join-Path $PSScriptRoot 'windows-installer.iss'))
+    Require ($LASTEXITCODE -eq 0) 'Restoration controller fixture package compilation failed'
+    $restoreSetup=Join-Path $capsule $builds[1].installerName
     try {
+        $null=Native-Record $restoreSetup $arguments
+        Require ((Digest $core) -ceq $restoreFixtureBinarySHA256 -and $null -eq (Get-PendingInstallFixtureValue)) 'Restoration fixture was not installed and verified'
         foreach($case in @(
             @{name='failed-controller-descendant-cleaned';mode='exit-failure-with-child';contract=$false;deadline=180000;minimum=0},
             @{name='successful-controller-orphan-refused';mode='exit-success-with-child';contract=$true;deadline=180000;minimum=5000},
@@ -942,7 +979,6 @@ try {
             @{name='terminated-uninstaller-owner-cleans-children';mode='owner-termination-with-child';contract=$false;deadline=180000;minimum=0;owner=$true}
         )){
             $stage='restoration-'+$case.name
-            [IO.File]::Copy($fixtureController,$core,$true)
             $configuration=Join-Path $capsule ($case.name+'.json')
             [IO.File]::WriteAllText($configuration,('{"mode":"'+$case.mode+'"}'),[Text.UTF8Encoding]::new($false))
             $script:restoreFixtureConfiguration=$configuration
@@ -989,12 +1025,10 @@ try {
             }
             $restorationCases+=,@{name=$case.name;mode=$case.mode;usesActualProductUninstaller=(-not $case.contract);exitCode=$attempt.result.exitCode;elapsedMilliseconds=$attempt.milliseconds;observationDeadlineMilliseconds=$case.deadline;restorationDeadlineMilliseconds=$(if($case.contract){5000}else{300000});ownedRootAndChildExitVerified=$true;installedFileTreePreserved=$true;registrationValuesPreserved=$true;profilePreserved=$true;timeoutLogVerified=$timeoutLogVerified}
             $script:restoreFixtureConfiguration=$null
-            [IO.File]::Copy($originalCore,$core,$true)
-            Assert-Installed $builds[1]
         }
     } finally {
         $script:restoreFixtureConfiguration=$null
-        [IO.File]::Copy($originalCore,$core,$true)
+        $null=Native-Record $second $arguments
     }
     Assert-Installed $builds[1]
     $null=State-Checkpoint 'after-restoration-ownership-contracts'
@@ -1118,7 +1152,7 @@ try {
 $eventDiagnostics=New-InstallerFirewallEventDiagnostic
 if(-not $complete){$eventDiagnostics=Read-FirewallEventDiagnostic}
 $originDiagnostics=[ordered]@{schemaVersion=1;source='captured-rule-properties';maxRecords=16;maxPropertyBytes=4096;records=@($script:firewallOriginObservations);truncated=$script:firewallOriginTruncated;unavailable=$script:firewallOriginUnavailable;extraNativeQueriesPerformed=$false;processOriginEstablished=$false}
-$record=[ordered]@{schemaVersion=28;setupCompletionRefusal=$completionRefusal;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=29;setupCompletionRefusal=$completionRefusal;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'

@@ -108,6 +108,7 @@ Assert ($completion -cmatch '(?s)AWReadRegistration\(\$0100, True.*AWReadRegistr
 $uninstallStep=[regex]::Match($installerSource,'(?ms)^procedure CurUninstallStepChanged\(CurUninstallStep: TUninstallStep\);.*?^end;').Value
 Assert ($initialize.Contains('AWUninstallPreflight') -and -not $initialize.Contains('AWRunBoundedRestoration')) 'Uninstall initialization must validate without restoring machine state'
 Assert ($uninstallStep -cmatch '(?s)if CurUninstallStep <> usUninstall then Exit;.*Failure := AWUninstallPreflight;.*AWRunBoundedRestoration.*then Exit;.*\bAbort;\s*end;') 'Uninstall must restore only after confirmation and abort deletion on failure'
+Assert ($uninstallStep -cmatch "(?s)AWOpenVerifiedInstalledFile\(Executable, '\{#PayloadDigest\}', \{#PayloadBytes\}\).*if Payload = nil then.*else begin\s+try.*AWRunBoundedRestoration\(Executable.*finally\s+Payload\.Free;") 'Uninstall must hold the verified release controller through restoration'
 Assert ([regex]::Matches($installerSource,'\bAWRunBoundedRestoration\(').Count -eq 1) 'Restoration has another installer entry point'
 $fixture=Join-Path $project ('build\installer-contracts-'+[guid]::NewGuid().ToString('N'))
 [void](New-Item -ItemType Directory -Path $fixture)
