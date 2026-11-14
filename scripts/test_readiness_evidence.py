@@ -22,12 +22,14 @@ class ReadinessRegisterTests(unittest.TestCase):
         self.evidence = "receipt.json"
         self.receipt = b'{"install":"passed","recovery":"passed"}'
         (self.root / self.evidence).write_bytes(self.receipt)
-        self.gates = [
-            {"id": "functional.first", "status": "passed", "evidence": [self.evidence]},
-            {"id": "functional.second", "status": "partial", "evidence": [self.evidence]},
-            {"id": "reliability.third", "status": "failed", "evidence": [self.evidence]},
-            {"id": "reliability.fourth", "status": "partial", "evidence": [self.evidence]},
-        ]
+        path = Path(__file__).resolve().parents[1] / "docs" / "readiness-gates.json"
+        self.register = json.loads(path.read_bytes())
+        self.gates = [gate for area in self.register["areas"] for gate in area["gates"]]
+        for gate in self.gates:
+            gate.update(status="partial", evidence=[self.evidence])
+            gate.pop("qualification", None)
+        self.gates[0]["status"] = "passed"
+        self.gates[2]["status"] = "failed"
         self.commit = "a" * 40
         self.qualification = {
             "sourceCommit": self.commit, "environment": "disposable desktop",
@@ -35,20 +37,16 @@ class ReadinessRegisterTests(unittest.TestCase):
             "evidenceSHA256": {self.evidence: hashlib.sha256(self.receipt).hexdigest()},
         }
         self.gates[0]["qualification"] = self.qualification
-        self.register = {
-            "assessmentState": "in-progress", "candidateCommit": self.commit,
-            "scoring": {"total": 100, "gateWeight": 25},
-            "areas": [{"gates": self.gates[:2]}, {"gates": self.gates[2:]}],
-        }
+        self.register.update(assessmentState="in-progress", candidateCommit=self.commit)
 
     def summary(self):
         return summarize(self.register, self.root, {self.evidence})
 
     def test_only_passed_gates_earn_points(self):
         self.assertEqual(self.summary(), {
-            "assessmentState": "in-progress", "candidateCommit": self.commit, "score": 25, "total": 100,
-            "counts": {"passed": 1, "partial": 2, "failed": 1},
-            "failedGates": ["reliability.third"],
+            "assessmentState": "in-progress", "candidateCommit": self.commit, "score": 2, "total": 100,
+            "counts": {"passed": 1, "partial": 48, "failed": 1},
+            "failedGates": ["functional.dns"],
         })
 
     def test_completion_requires_all_gates(self):
@@ -90,7 +88,7 @@ class ReadinessRegisterTests(unittest.TestCase):
 
     def test_caller_can_require_one_exact_candidate(self):
         self.assertEqual(summarize(self.register, self.root, {self.evidence},
-                                   candidate_commit=self.commit)["score"], 25)
+                                   candidate_commit=self.commit)["score"], 2)
         for commit in ("b" * 40, "abc", "A" * 40):
             with self.subTest(commit=commit), self.assertRaisesRegex(ValueError, "candidate"):
                 summarize(self.register, self.root, {self.evidence}, candidate_commit=commit)
@@ -135,7 +133,7 @@ class ReadinessRegisterTests(unittest.TestCase):
                 report = json.loads(output.getvalue())
                 self.assertEqual(report["candidateCommit"], self.commit)
                 self.assertEqual(report["assessmentCommit"], assessment)
-                self.assertEqual(report["score"], 100 if complete else 25)
+                self.assertEqual(report["score"], 100 if complete else 2)
                 self.assertEqual(bool(messages.getvalue()), not complete)
             (self.root / self.evidence).write_bytes(self.receipt)
 
@@ -152,10 +150,30 @@ class ReadinessRegisterTests(unittest.TestCase):
                 self.summary()
 
     def test_float_and_incorrect_weights_are_rejected(self):
-        for weight in (25.0, True, 24, -25):
+        for weight in (2.0, True, 4, -2):
             with self.subTest(weight=weight), self.assertRaisesRegex(ValueError, "weights"):
                 self.register["scoring"]["gateWeight"] = weight
                 self.summary()
+
+    def test_scope_requires_every_original_acceptance_requirement(self):
+        self.register["assessmentState"] = "complete"
+        for gate in self.gates:
+            gate.update(status="passed", qualification=self.qualification)
+        self.assertEqual(self.summary()["score"], 100)
+        area = self.register["areas"][0]
+        removed = area["gates"].pop()
+        with self.assertRaisesRegex(ValueError, "Readiness scope differs"):
+            self.summary()
+        area["gates"].append({**removed, "id": "functional.substitute"})
+        with self.assertRaisesRegex(ValueError, "Readiness scope differs"):
+            self.summary()
+        area["gates"][-1] = {**removed, "acceptance": "Compilation passed."}
+        with self.assertRaisesRegex(ValueError, "Readiness scope differs"):
+            self.summary()
+        area["gates"][-1] = removed
+        area["gates"].reverse()
+        self.register["areas"].reverse()
+        self.assertEqual(self.summary()["score"], 100)
 
     def test_passed_gate_cannot_earn_points_with_missing_evidence(self):
         with self.assertRaisesRegex(ValueError, "missing from the checkout"):

@@ -12,6 +12,9 @@ import sys
 GATE_STATUSES = ("passed", "partial", "failed")
 COMMIT = r"(?:[0-9a-f]{40}|[0-9a-f]{64})"
 SHA256 = r"[0-9a-f]{64}"
+# Canonical sorted (area ID, gate ID, acceptance) triples from the desktop
+# and managed deployment register. Changing the scope requires review here.
+READINESS_SCOPE_SHA256 = "fc3c8940fb3028f0fe6738a975134b532e7cb0a2b25238dc24945e0f5779921c"
 
 
 def checkout_digest(root, path):
@@ -82,10 +85,14 @@ def summarize(register, root, tracked, *, candidate_commit=None, evidence_digest
             return checkout_digest(root, path)
     areas = register["areas"]
     gates = [gate for area in areas for gate in area["gates"]]
+    scope = sorted((area["id"], gate["id"], gate["acceptance"]) for area in areas for gate in area["gates"])
+    encoded_scope = json.dumps(scope, ensure_ascii=True, separators=(",", ":")).encode("ascii")
+    if hashlib.sha256(encoded_scope).hexdigest() != READINESS_SCOPE_SHA256:
+        raise ValueError("Readiness scope differs from the approved desktop and managed deployment requirements")
     scoring = register["scoring"]
     weight = scoring["gateWeight"]
     total = scoring["total"]
-    if type(total) is not int or total != 100 or type(weight) is not int or weight <= 0 or weight * len(gates) != total:
+    if type(total) is not int or total != 100 or type(weight) is not int or weight != 2 or weight * len(gates) != total:
         raise ValueError("Readiness gate weights must total 100")
 
     assessed_commit = register.get("candidateCommit")
