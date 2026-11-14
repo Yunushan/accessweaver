@@ -1498,6 +1498,15 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                         update["resultReceiptStatus"] = "unverified"
                     else:
                         update["resultReceiptStatus"] = "published"
+                    if update["installedDetection"] == "detected":
+                        # Receipt publication can outlast the policy. Keep the historical
+                        # observation, but require current policy for the live result.
+                        try:
+                            require_current_revocation_policy(policy)
+                        except ValueError:
+                            report["revocationCheckPassed"] = False
+                            update["installedDetection"] = "unverified"
+                            update["installedDetectionReason"] = "revocation-policy-expired"
         return report
 
 

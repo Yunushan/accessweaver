@@ -1522,6 +1522,35 @@ class SignedReleaseManifestTests(unittest.TestCase):
                                                    "installedDetectionReason": "revocation-policy-expired"})
                         receipt_path.unlink()
 
+                real_write = release.write_windows_upgrade_receipt
+                policy_expired = False
+
+                def publish_then_expire(destination, receipt):
+                    nonlocal policy_expired
+                    fingerprint = real_write(destination, receipt)
+                    policy_expired = True
+                    return fingerprint
+
+                def check_after_receipt(policy, **kwargs):
+                    if policy_expired:
+                        raise ValueError("Revocation policy is outside its validity window")
+                    return real_check(policy, **kwargs)
+
+                with patch.object(release, "write_windows_upgrade_receipt", side_effect=publish_then_expire), \
+                        patch.object(release, "require_current_revocation_policy", side_effect=check_after_receipt):
+                    report = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
+                                         windows_upgrade_attempt_id=attempt_id)
+                result = report["managedUpdate"]
+                self.assertFalse(report["revocationCheckPassed"])
+                self.assertEqual(result["setupExitCode"], 0)
+                self.assertEqual(result["installedDetection"], "unverified")
+                self.assertEqual(result["installedDetectionReason"], "revocation-policy-expired")
+                self.assertEqual(result["resultReceiptStatus"], "published")
+                self.assertEqual(release.load_windows_upgrade_result_receipt(
+                    approved, receipt_path, result["resultReceiptSHA256"], attempt,
+                ), {"setupExitCode": 0, "installedDetection": "detected"})
+                receipt_path.unlink()
+
                 for setup_code, expected_detection in ((0, "detected"), (3010, "restart-required"), (7, "setup-failed")):
                     with self.subTest(result_receipt_unavailable=setup_code):
                         launch.return_value = setup_code
@@ -1595,6 +1624,15 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 newer_policy = {**launch_policy, "sequence": 5}
                 newer_pin = self.write_policy(newer_policy)
                 receipt = (start_file, start_digest)
+                revoked_policy = {**newer_policy, "subjectSHA256": [original_setup_pin]}
+                with self.assertRaisesRegex(ValueError, "is revoked"):
+                    self.verify(approved, pin, policy_pin=self.write_policy(revoked_policy), **receipt_options,
+                                windows_upgrade_start_receipt=receipt)
+                self.assertEqual(release.digest(start_file), start_digest)
+                detect.assert_not_called()
+                launch.assert_not_called()
+                self.assertEqual(list(staging.iterdir()), [start_file])
+                self.write_policy(newer_policy)
                 boot.side_effect = [
                     initial_boot,
                     {**initial_boot, "bootTicks": "638900000000000001"},
