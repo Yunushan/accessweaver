@@ -3542,10 +3542,44 @@ try {
     try {Get-ManagedByeDPILoopbackOwner $binary | Out-Null}catch{$refused=$true}
     Assert $refused 'Discord proxy readiness refuses an ambiguous loopback listener'
 }
+
+# Test both setup modes against the real Drover ownership preflight.
+& {
+    $root=Join-Path $testRoot 'drover-preflight'
+    $profiles=Join-Path $root 'profiles'
+    [void][IO.Directory]::CreateDirectory($profiles)
+    $manifest=Join-Path $profiles 'drover-owned.json'
+    [IO.File]::WriteAllText($manifest,'inert recovery record')
+    function Discord-Directories {return $directories}
+    function Configure-DNS {throw 'Unexpected DNS mutation'}
+    function Make-Config {throw 'Unexpected WireSock configuration'}
+    function Ensure-Asset {throw 'Unexpected component acquisition'}
+    foreach($selection in @(@{engine='byedpi';mode='dll'},@{engine='wiresock';mode='standard'})){
+        $r=@{engine=$selection.engine;mode=$selection.mode;dns='doh'}
+        $directories=@('C:\fixture\app-1')
+        $refused=$false
+        try {Install-Method | Out-Null}catch{
+            if($_.Exception.Message -cne 'Restore the existing managed drover installation before replacing it'){throw}
+            $refused=$true
+        }
+        Assert ($refused -and [IO.File]::ReadAllText($manifest) -ceq 'inert recovery record') ('Pending Drover recovery prevents machine changes for '+$r.engine)
+    }
+    [IO.File]::Delete($manifest)
+    $r=@{engine='byedpi';mode='dll';dns='doh'}
+    $directories=@('C:\fixture\app-1')*257
+    $refused=$false
+    try {Install-Method | Out-Null}catch{
+        if($_.Exception.Message -cne 'Expected a bounded stable Discord installation inventory'){throw}
+        $refused=$true
+    }
+    Assert $refused 'Oversized Discord inventory prevents machine changes'
+}
+
 # The real install dispatch must leave DLL publication untouched when the probe fails.
 & {
     $r=@{engine='byedpi';mode='dll'}
     $trace=[Collections.Generic.List[string]]::new()
+    $root=Join-Path $testRoot 'drover-probe'
     function Discord-Directories {return 'C:\fixture\app-1'}
     function Ensure-Asset {return 'C:\fixture\ciadpi.exe'}
     function Install-EngineService {$trace.Add('service')}

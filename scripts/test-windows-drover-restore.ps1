@@ -4,7 +4,7 @@ $source=Join-Path (Split-Path -Parent $PSScriptRoot) 'internal\workflow\windows.
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Windows workflow source failed parsing'}
-foreach($name in @('No-Reparse','Install-Drover','Assert-RecordedServiceBinding','Recover-Operation','Rollback','Assert-DroverApplication','Set-DroverFile','Get-DroverFileHash','Get-DroverRestorePlan','Read-DroverManifest','Assert-DroverManifestUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Restore-Drover','Remove-Method','Remove-All')){
+foreach($name in @('No-Reparse','Get-DroverInstallDirectories','Install-Drover','Assert-RecordedServiceBinding','Recover-Operation','Rollback','Assert-DroverApplication','Set-DroverFile','Get-DroverFileHash','Get-DroverRestorePlan','Read-DroverManifest','Assert-DroverManifestUnchanged','Read-WorkflowRecoveryJournalBytes','Throw-WorkflowRecoveryJournalReadFailure','Get-WorkflowBytesSHA256','Restore-Drover','Remove-Method','Remove-All')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -78,6 +78,9 @@ try {
     function Write-Manifest($entries){[IO.File]::WriteAllText($manifest,(ConvertTo-Json -InputObject $entries))}
     Write-Manifest $records
     $script:stops=0;$script:events=0;$script:denySecond=$false;$script:externalEffectsPending=$false
+    $refused=$false
+    try {Install-Drover}catch{$refused=$_.Exception.Message -ceq 'Restore the existing managed drover installation before replacing it'}
+    Require ($refused -and $script:stops -eq 0 -and [IO.File]::Exists($manifest)) 'DLL deployment replaced pending Drover recovery'
 
     [IO.File]::WriteAllText($second,'foreign edit')
     Assert-Refused

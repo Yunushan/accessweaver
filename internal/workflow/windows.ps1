@@ -1855,12 +1855,17 @@ function Discord-Directories([string]$variant='discord') {
     })
     return @($candidates | Sort-Object @{Expression='hasVersion';Descending=$true},@{Expression='version';Descending=$true},@{Expression='modified';Descending=$true},@{Expression='name';Descending=$false} | ForEach-Object {$_.path})
 }
-function Install-Drover {
+function Get-DroverInstallDirectories {
     $manifest=Join-Path $root 'profiles\drover-owned.json'
     No-Reparse $manifest
     if(Test-Path -LiteralPath $manifest -ErrorAction Stop){throw 'Restore the existing managed drover installation before replacing it'}
     $dirs=@(Discord-Directories)
     if($dirs.Count -eq 0 -or $dirs.Count -gt 256){throw 'Expected a bounded stable Discord installation inventory'}
+    return $dirs
+}
+function Install-Drover {
+    $manifest=Join-Path $root 'profiles\drover-owned.json'
+    $dirs=@(Get-DroverInstallDirectories)
     $dll=Ensure-Asset 'drover'
     $ini=Join-Path (Split-Path -Parent $dll) 'drover.ini'
     if(-not (Test-Path -LiteralPath $ini)){Write-Atomic $ini "[drover]`r`nproxy = socks5://127.0.0.1:1080`r`n"}
@@ -3369,7 +3374,9 @@ function Assert-ManagedByeDPILoopbackProxy([string]$Binary) {
 }
 function Install-Method([string]$ScannedEngineSHA256,[string[]]$ScannedLuaSHA256) {
     if($r.engine -eq 'byedpi'){Assert-ByeDPIArguments @($r.args)}
-    if(($r.engine -eq 'wiresock' -and $r.mode -eq 'standard') -or ($r.engine -eq 'byedpi' -and $r.mode -eq 'dll')){if(-not @(Discord-Directories).Count){throw 'Install stable Discord before selecting the Discord DLL setup mode'}}
+    if(($r.engine -eq 'wiresock' -and $r.mode -eq 'standard') -or ($r.engine -eq 'byedpi' -and $r.mode -eq 'dll')){
+        [void](Get-DroverInstallDirectories)
+    }
     if($r.engine -ne 'dnscrypt' -and $r.dns -and $r.dns -ne 'unchanged' -and -not $script:dnsConfigured){Configure-DNS $r.dns}
     switch($r.engine) {
         'wiresock' {$config=Make-Config;$status=Connect-WireSock $config;if($r.mode -eq 'standard'){$byedpi=Ensure-Asset 'byedpi';Install-EngineService 'byedpi' $byedpi @('--ip','127.0.0.1','--port','1080','--split','2');Firewall 'byedpi' $byedpi;Assert-ManagedByeDPILoopbackProxy $byedpi;Install-Drover};if($r.refresh){$r | Add-Member -NotePropertyName enabled -NotePropertyValue $true -Force;Refresh-Task};return @{configPath=$config;status=$status}}
