@@ -12,7 +12,7 @@ import sys
 import tempfile
 from xml.etree.ElementTree import ParseError
 
-from macos_deployment import PACKAGE_ID
+from macos_deployment import DETACHED_MANIFEST, install_location, validate_deployment_metadata
 from macos_installer import BUNDLE_ID, BUNDLE_NAME, macho_identity
 from macos_package_archive import xml
 from verify_release import publish_staged_file, require
@@ -139,22 +139,18 @@ def check_helper_publisher(helper, team, application_pin):
         check_application_certificate(helper, application_pin)
 
 
-def verify_packaged_deployment(package, team, architecture, application_pin, *, helper_sha256=None):
+def verify_packaged_deployment(package, team, architecture, application_pin, *, version, helper_sha256):
     expanded = verify_packaged_application(package, team, architecture, application_pin)
     try:
         metadata = xml(read_expanded_file(expanded / "PackageInfo", 256 << 10))
     except ParseError as error:
         raise ValueError("Invalid deployment package metadata") from error
-    sections = metadata.findall("scripts")
-    require(metadata.tag == "pkg-info" and metadata.get("identifier") == PACKAGE_ID and len(sections) == 1
-            and len(sections[0]) == 2 and {phase.tag: phase.get("file") for phase in sections[0]} == {
-                "preinstall": "./preinstall", "postinstall": "./postinstall",
-            }, "Deployment package phase entry points differ")
+    manifest = read_expanded_file(expanded / "Payload" / DETACHED_MANIFEST, 2 << 20)
+    validate_deployment_metadata(metadata, version, install_location(hashlib.sha256(manifest).hexdigest()))
 
     data = read_packaged_helper(expanded, architecture)
-    if helper_sha256 is not None:
-        require(hashlib.sha256(data).hexdigest() == helper_sha256,
-                "Packaged installation helper differs from the approved SBOM digest")
+    require(hashlib.sha256(data).hexdigest() == helper_sha256,
+            "Packaged installation helper differs from the approved SBOM digest")
     check_helper_publisher(expanded / "Scripts" / "postinstall", team, application_pin)
     require(read_packaged_helper(expanded, architecture) == data,
             "Expanded package helper changed during publisher verification")

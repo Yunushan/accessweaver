@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from test_macos_deployment import image
+from macos_deployment import PACKAGE_ID
 
 import verify_macos_installer_publisher as publisher
 
@@ -120,9 +121,17 @@ class PublisherTests(unittest.TestCase):
         application_pin = hashlib.sha256(approved_certificate).hexdigest()
         helper = image("arm64")
         phases = '<preinstall file="./preinstall"/><postinstall file="./postinstall"/>'
+        version = "1.2.3"
+        manifest = b"fixture detached manifest bytes"
+        location = publisher.install_location(hashlib.sha256(manifest).hexdigest())
         for scenario, error in (
             ("approved", None),
             ("redirected-phase", "phase entry points differ"),
+            ("wrong-version", "package metadata differs"),
+            ("wrong-location", "package metadata differs"),
+            ("relocated", "package metadata differs"),
+            ("wrong-authorization", "package metadata differs"),
+            ("wrong-bundle", "strict bundle identity differs"),
             ("duplicate-scripts", "phase entry points differ"),
             ("different-helpers", "do not use the same helper"),
             ("wrong-architecture", "matching thin native 64-bit executable"),
@@ -154,9 +163,24 @@ class PublisherTests(unittest.TestCase):
                         section = f"<scripts>{entries}</scripts>"
                         if scenario == "duplicate-scripts":
                             section += "<scripts/>"
+                        (expanded / "Payload" / publisher.DETACHED_MANIFEST).write_bytes(manifest)
+                        attrs = {
+                            "identifier": PACKAGE_ID, "version": version, "install-location": location,
+                            "auth": "root", "relocatable": "false",
+                        }
+                        if scenario == "wrong-version":
+                            attrs["version"] = "1.2.2"
+                        elif scenario == "wrong-location":
+                            attrs["install-location"] = publisher.install_location("0" * 64)
+                        elif scenario == "relocated":
+                            attrs["relocatable"] = "true"
+                        elif scenario == "wrong-authorization":
+                            attrs["auth"] = "none"
+                        bundle_id = "invalid.example" if scenario == "wrong-bundle" else publisher.BUNDLE_ID
+                        attributes = " ".join(f'{key}="{value}"' for key, value in attrs.items())
                         (expanded / "PackageInfo").write_text(
-                            f'<pkg-info identifier="{publisher.PACKAGE_ID}">{section}</pkg-info>',
-                            encoding="utf-8",
+                            f'<pkg-info {attributes}><relocate/><strict-identifier><bundle id="{bundle_id}"/>'
+                            f'</strict-identifier>{section}</pkg-info>', encoding="utf-8",
                         )
                     elif args[1] == "--verify":
                         self.assertEqual(args[:4], ["/usr/bin/codesign", "--verify", "--strict", "--all-architectures"])
@@ -181,10 +205,12 @@ class PublisherTests(unittest.TestCase):
                 helper_pin = "0" * 64 if scenario == "wrong-helper-digest" else hashlib.sha256(helper).hexdigest()
                 with patch.object(publisher, "tool", side_effect=tool):
                     if error is None:
-                        publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin, helper_sha256=helper_pin)
+                        publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin,
+                                                             version=version, helper_sha256=helper_pin)
                     else:
                         with self.assertRaisesRegex(ValueError, error):
-                            publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin, helper_sha256=helper_pin)
+                            publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin,
+                                                                 version=version, helper_sha256=helper_pin)
                 expected = [app]
                 if scenario in ("approved", "different-certificate", "helper-changed"):
                     expected.append(scripts / "postinstall")

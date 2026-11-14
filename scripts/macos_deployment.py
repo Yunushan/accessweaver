@@ -94,6 +94,22 @@ def script_contract(records):
     require({"preinstall","postinstall"}<=set(files) and files["preinstall"]["sha256"]==files["postinstall"]["sha256"] and files["preinstall"]["bytes"]==files["postinstall"]["bytes"],"Both package phases must execute the same sealed new helper")
     return files
 
+def validate_deployment_metadata(metadata, version, location):
+    require(metadata.tag == "pkg-info" and metadata.get("identifier") == PACKAGE_ID
+            and metadata.get("version") == version and metadata.get("install-location") == location
+            and metadata.get("auth") == "root" and metadata.get("relocatable") == "false",
+            "Deployment package metadata differs")
+    relocate = metadata.findall("relocate")
+    require(len(relocate) == 1 and len(relocate[0]) == 0, "Deployment relocation must be disabled")
+    require([n.get("id") for n in metadata.findall("./strict-identifier/bundle")] == [BUNDLE_ID],
+            "Deployment strict bundle identity differs")
+    scripts = metadata.findall("scripts")
+    require(len(scripts) == 1 and len(scripts[0]) == 2
+            and {phase.tag: phase.get("file") for phase in scripts[0]} == {
+                "preinstall": "./preinstall", "postinstall": "./postinstall",
+            }, "Deployment package phase entry points differ")
+
+
 def inspect_deployment(package,manifest_bytes,identity,scripts_manifest):
     require(type(manifest_bytes) is bytes and len(manifest_bytes)<=2<<20,"Deployment manifest exceeds budget")
     manifest=json.loads(manifest_bytes);manifest_contract(manifest);version_parts(identity["version"])
@@ -122,11 +138,7 @@ def inspect_deployment(package,manifest_bytes,identity,scripts_manifest):
     require(helper["minimumOSVersion"]==native["minimumOSVersion"],"Payload/helper OS minimum differs")
     metadata=xml(members["PackageInfo"])
     location=install_location(digest(manifest_bytes))
-    require(metadata.tag=="pkg-info" and metadata.get("identifier")==PACKAGE_ID and metadata.get("version")==identity["version"] and metadata.get("install-location")==location and metadata.get("auth")=="root" and metadata.get("relocatable")=="false","Deployment package metadata differs")
-    relocate=metadata.find("relocate");require(relocate is not None and len(relocate)==0,"Deployment relocation must be disabled")
-    require([n.get("id") for n in metadata.findall("./strict-identifier/bundle")]==[BUNDLE_ID],"Deployment strict bundle identity differs")
-    phases=metadata.findall("./scripts/*")
-    require(len(phases)==2 and {n.tag:n.get("file") for n in phases}=={"preinstall":"./preinstall","postinstall":"./postinstall"},"Deployment package phase entry points differ")
+    validate_deployment_metadata(metadata, identity["version"], location)
     return {"packageSHA256":digest(package),"payloadSHA256":digest(core),"manifestSHA256":digest(manifest_bytes),"helperSHA256":digest(scripts["preinstall"]["data"]),"installLocation":location,"packageIdentifier":PACKAGE_ID,"payloadFiles":len(files),"payloadDirectories":len(directories),"scriptFiles":len(expected_scripts),"macho":native,"helperMachO":helper,"detachedPayloadSBOMOutsideAppVerified":True,"payloadSBOMSHA256":manifest["payloadSBOM"]["sha256"],"detachedManifestOutsideAppVerified":True,"allPathsModesOwnershipAndHashesVerified":True,"xarAndCpioIntegrityVerified":True,"targetExecutionPerformed":False,"publisherSignatureVerified":False,"productionQualificationComplete":False}
 
 def deployment_sbom(package,payload_bytes,helper,manifest_bytes,scripts_manifest,tool,core_bytes,helper_bytes):

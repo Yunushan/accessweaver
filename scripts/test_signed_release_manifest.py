@@ -658,7 +658,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertEqual(deployment_check.call_args.args, (checked_path, team, "arm64", application_pin))
                 helper_pin, = [entry["detectorSHA256"] for entry in native_report["macosDetection"]
                                if entry["target"] == macos_target]
-                self.assertEqual(deployment_check.call_args.kwargs, {"helper_sha256": helper_pin})
+                self.assertEqual(deployment_check.call_args.kwargs, {"version": VERSION, "helper_sha256": helper_pin})
                 self.assertEqual((macos_staging / pkg_name).read_bytes(), (self.candidate / pkg_name).read_bytes())
 
         real_stage = release.stage_managed_update
