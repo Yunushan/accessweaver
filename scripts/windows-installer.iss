@@ -623,6 +623,9 @@ begin
     Result := 'An AccessWeaver installation is incomplete. Retry the approved installer before uninstalling.';
   if Result = '' then Result := AWUninstallDirectoryPreflight(ExpandConstant('{app}'));
   if Result = '' then Result := AWInstallationPathPreflight(ExpandConstant('{app}'), False);
+  { The uninstall log also names files under licenses. A missing directory has
+    no files to remove, but an existing directory must not redirect deletion. }
+  if Result = '' then Result := AWInstallationPathPreflight(ExpandConstant('{app}') + '\licenses', True);
 end;
 
 function InitializeUninstall: Boolean;

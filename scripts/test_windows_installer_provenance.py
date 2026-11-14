@@ -10,7 +10,7 @@ from unittest.mock import patch
 from verify_windows_installer_provenance import (
     validate_installation_path_refusals, validate_setup_completion_refusal, validate_uninstall_registration_refusal,
     validate_post_restoration_refusal, validate_restoration_controller_refusals, validate_setup_marker_replacement,
-    validate_setup_uninstall_registration_refusal, validate_setup_upgrade_baseline,
+    validate_setup_uninstall_registration_refusal, validate_setup_upgrade_baseline, validate_uninstall_license_refusal,
 )
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
@@ -361,6 +361,23 @@ class PostRestorationRefusalTests(unittest.TestCase):
                       "installedFileTreePreserved", "otherRegistrationValuesPreserved"):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 validate_post_restoration_refusal({**record, field: False})
+
+
+class UninstallLicenseRefusalTests(unittest.TestCase):
+    def test_requires_an_early_refusal_and_preserved_state(self):
+        observation = {
+            "exitCode": 1, "elapsedMilliseconds": 240, "deadlineMilliseconds": 180000,
+            "refusedBeforeRestoration": True, "targetPreserved": True,
+            "installedFileTreePreserved": True, "registrationPreserved": True,
+            "profilePreserved": True, "machineStateUnchanged": True,
+        }
+        self.assertEqual(validate_uninstall_license_refusal(observation), {"uninstallLicenseDirectoryRefusalVerified": True})
+        for change in ({"exitCode": True}, {"elapsedMilliseconds": 180000}, {"refusedBeforeRestoration": False},
+                       {"targetPreserved": False}, {"installedFileTreePreserved": 1}, {"privatePath": "fixture"}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_uninstall_license_refusal({**observation, **change})
+        with self.assertRaises(ValueError):
+            validate_uninstall_license_refusal(None)
 
 
 class FixedRestorationTests(unittest.TestCase):
