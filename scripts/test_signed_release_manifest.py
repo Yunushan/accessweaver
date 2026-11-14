@@ -1,5 +1,6 @@
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
+import hashlib
 import io
 import json
 import os
@@ -285,8 +286,9 @@ class SignedReleaseManifestTests(unittest.TestCase):
     def lifecycle_source_fixture(self):
         top = Path(__file__).resolve().parents[1]
         source = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=top, text=True, timeout=15).strip()
-        pins = release.windows_lifecycle_source_digests(source)
-        self.assertEqual(pins.keys(), release.WINDOWS_LIFECYCLE_SOURCES.keys())
+        sources = release.windows_lifecycle_sources(source)
+        self.assertEqual(sources.keys(), release.WINDOWS_LIFECYCLE_SOURCES.keys())
+        pins = {field: hashlib.sha256(content).hexdigest() for field, content in sources.items()}
         for sidecar in self.candidate.glob("*.cdx.json"):
             document = json.loads(sidecar.read_bytes())
             for component in [document["metadata"]["component"], *document["components"]]:
@@ -311,6 +313,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
                              "downgradeStatePreserved": False, "previousSetupSHA256": "", "previousPublisherSHA256": ""}
         for record, message in (
             (without_downgrade, "downgrade refusal"),
+            ({**incomplete, "publisherSHA256": "0" * 64}, "disagrees on candidate publisher certificates"),
+            ({**incomplete, "payloadPublisherSHA256": "0" * 64}, "disagrees on candidate publisher certificates"),
             ({key: value for key, value in {**incomplete, "schemaVersion": 12}.items()
               if key != release.WINDOWS_SETUP_WRONG_BASELINE}, "Setup baseline refusal"),
             *[({**incomplete, field: "0" * 64}, "differs from the approved source scripts") for field in pins],
@@ -591,7 +595,30 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 report = self.verify(cert, pin, source, require_windows_lifecycle=True)
                 self.assertIs(report["windowsLifecycleEvidenceVerified"], True)
                 self.assertIs(report["productionQualificationComplete"], False)
-                for revoked_pin in (evidence["arm64", "upgrade"][1], pins["fixtureSHA256"]):
+                with patch.object(release.sys, "platform", "linux"):
+                    with self.assertRaisesRegex(ValueError, "requires a Windows host"):
+                        self.verify(cert, pin, source, verify_lifecycle_publishers=True)
+
+                inspected = []
+
+                def native(artifact, artifact_pin, publisher_pin, *, script):
+                    self.assertEqual(release.digest(artifact), artifact_pin)
+                    self.assertEqual(release.digest(script), pins["publisherVerifierSHA256"])
+                    self.assertEqual(release.digest(script.with_name("windows-installer-common.ps1")), pins["commonSHA256"])
+                    self.assertNotEqual(artifact.parent, self.candidate)
+                    inspected.append((artifact.name, publisher_pin))
+
+                with patch.object(release.sys, "platform", "win32"), patch.object(release, "check_windows_publisher", side_effect=native):
+                    native_report = self.verify(cert, pin, source, verify_lifecycle_publishers=True)
+                self.assertIs(native_report["windowsLifecycleEvidenceVerified"], True)
+                self.assertIs(native_report["windowsLifecyclePublishersVerified"], True)
+                self.assertIs(native_report["nativePublisherChecksPerformed"], True)
+                self.assertEqual(len(inspected), 4)
+                self.assertEqual(set(inspected), {
+                    (f"accessweaver-{VERSION}-windows-{arch}{suffix}", signer * 64)
+                    for arch in ("amd64", "arm64") for suffix, signer in (("-setup.exe", "b"), (".exe", "7"))
+                })
+                for revoked_pin in (evidence["arm64", "upgrade"][1], pins["fixtureSHA256"], "7" * 64):
                     revoked = self.write_policy({**self.policy, "subjectSHA256": [revoked_pin]})
                     with self.assertRaisesRegex(ValueError, "revoked"):
                         self.verify(cert, pin, source, policy_pin=revoked, require_windows_lifecycle=True)
@@ -608,6 +635,10 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 message = "differs from the approved source scripts" if complete else "Missing Windows lifecycle evidence"
                 with self.assertRaisesRegex(ValueError, message):
                     self.verify(cert, pin, source, require_windows_lifecycle=True)
+                with patch.object(release.sys, "platform", "win32"), patch.object(release, "check_windows_publisher") as native:
+                    with self.assertRaisesRegex(ValueError, message):
+                        self.verify(cert, pin, source, verify_lifecycle_publishers=True)
+                    native.assert_not_called()
                 self.assertNotIn("windowsLifecycleEvidenceVerified", self.verify(cert, pin, source))
 
     def test_real_cms_approval_and_refusals(self):

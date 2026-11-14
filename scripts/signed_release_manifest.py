@@ -373,7 +373,7 @@ def load_detection_evidence(directory, evidence, subjects, version, *, include_l
     return entries
 
 
-def windows_lifecycle_source_digests(commit):
+def windows_lifecycle_sources(commit):
     root = Path(__file__).resolve().parents[1]
     git = ["git", "--no-replace-objects"]
     # Keep object selection rooted in the verifier's checkout.
@@ -383,7 +383,7 @@ def windows_lifecycle_source_digests(commit):
     try:
         kind = subprocess.check_output([*git, "cat-file", "-t", commit], **options).strip()
         require(kind == b"commit", "Windows lifecycle qualification requires the approved Git commit")
-        pins = {}
+        sources = {}
         for field, path in WINDOWS_LIFECYCLE_SOURCES.items():
             entry = subprocess.check_output([*git, "ls-tree", commit, "--", path], **options).split(b"\t", 1)
             require(len(entry) == 2 and entry[1].rstrip(b"\r\n") == path.encode("ascii"),
@@ -396,10 +396,10 @@ def windows_lifecycle_source_digests(commit):
             require(0 < size <= 1 << 20, "Windows lifecycle source exceeds its size limit")
             content = subprocess.check_output([*git, "cat-file", "blob", subject], **options)
             require(len(content) == size, "Windows lifecycle source size differs from its Git object")
-            pins[field] = hashlib.sha256(content).hexdigest()
+            sources[field] = content
     except (OSError, subprocess.SubprocessError) as error:
         raise ValueError("Windows lifecycle qualification requires the approved Git commit and its script objects") from error
-    return pins
+    return sources
 
 
 def require_windows_lifecycle_evidence(entries, windows_build_info, commit):
@@ -408,6 +408,7 @@ def require_windows_lifecycle_evidence(entries, windows_build_info, commit):
     upgrade_fields = {*WINDOWS_PREVIOUS_TRUST_FIELDS, *WINDOWS_DOWNGRADE_FIELDS,
                       WINDOWS_PREVIOUS_BUILD_INFO, WINDOWS_SETUP_BASELINE, WINDOWS_SETUP_WRONG_BASELINE}
     coverage = set()
+    publishers = {}
     for entry in entries:
         target = entry["target"]
         mode = entry["installMode"]
@@ -417,14 +418,19 @@ def require_windows_lifecycle_evidence(entries, windows_build_info, commit):
         if mode == "upgrade":
             require(upgrade_fields <= entry.keys(),
                     f"Windows lifecycle evidence for {target} upgrade requires prior trust, Setup baseline refusal and downgrade refusal")
+        signer_pair = (entry["publisherCertificateSHA256"], entry[WINDOWS_PAYLOAD_PUBLISHER])
+        require(publishers.setdefault(target, signer_pair) == signer_pair,
+                f"Windows lifecycle evidence for {target} disagrees on candidate publisher certificates")
         coverage.add((target, mode))
     missing = sorted((target, mode) for target in required for mode in ("clean", "upgrade")
                      if (target, mode) not in coverage)
     require(not missing, "Missing Windows lifecycle evidence: " + ", ".join(f"{target} {mode}" for target, mode in missing))
-    expected_sources = windows_lifecycle_source_digests(commit)
+    sources = windows_lifecycle_sources(commit)
+    expected_sources = {field: hashlib.sha256(content).hexdigest() for field, content in sources.items()}
     for entry in entries:
         require(all(entry.get(field) == pin for field, pin in expected_sources.items()),
                 f"Windows lifecycle evidence for {entry['target']} {entry['installMode']} differs from the approved source scripts")
+    return sources, publishers
 
 
 def encode_manifest(commit, ref, subjects, windows_detection=()):
@@ -736,9 +742,10 @@ try {
     return validate_windows_boot(decode_json(content))
 
 
-def check_windows_publisher(artifact, approved_digest, publisher_pin):
+def check_windows_publisher(artifact, approved_digest, publisher_pin, *, script=None):
     shell = windows_system_directory() / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-    script = Path(__file__).resolve().with_name("verify-windows-installer-publisher.ps1")
+    if script is None:
+        script = Path(__file__).resolve().with_name("verify-windows-installer-publisher.ps1")
     with tempfile.TemporaryFile() as output:
         subprocess.run(
             [shell, "-NoProfile", "-NonInteractive", "-File", script, "-Artifact", artifact,
@@ -757,6 +764,25 @@ def check_windows_publisher(artifact, approved_digest, publisher_pin):
     require(record == expected and type(record["schemaVersion"]) is int
             and record["embeddedSignatureVerified"] is True and record["timestampPresent"] is True,
             "Windows publisher report differs from the approved artifact or signer")
+
+
+def verify_windows_lifecycle_publishers(root, files, sources, publishers):
+    # These are the identical script bytes approved for the reboot fixture.
+    for field in ("commonSHA256", "publisherVerifierSHA256"):
+        path = root / Path(WINDOWS_LIFECYCLE_SOURCES[field]).name
+        with path.open("xb") as stream:
+            stream.write(sources[field])
+    script = root / Path(WINDOWS_LIFECYCLE_SOURCES["publisherVerifierSHA256"]).name
+    for subject in files:
+        target = subject["target"]
+        role = subject["role"]
+        if target not in publishers or role not in ("installer", "payload"):
+            continue
+        setup_pin, payload_pin = publishers[target]
+        artifact = root / subject["file"]
+        check_windows_publisher(artifact, subject["sha256"], setup_pin if role == "installer" else payload_pin,
+                                script=script)
+        require(digest(artifact) == subject["sha256"], "Windows artifact changed during publisher verification")
 
 
 def file_identity(info):
@@ -1065,7 +1091,11 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
            resume_windows_upgrade_setup_sha256=None, require_windows_setup_wrong_baseline_refusal=False,
            resume_windows_upgrade_baseline_argument=None, launch_staged_windows_setup=False,
            detect_installed_windows_upgrade=False, windows_upgrade_attempt_id=None, windows_upgrade_start_receipt=None,
-           windows_setup_wait_seconds=None, windows_upgrade_result_receipt=None, require_windows_lifecycle=False):
+           windows_setup_wait_seconds=None, windows_upgrade_result_receipt=None, require_windows_lifecycle=False,
+           verify_lifecycle_publishers=False):
+    if verify_lifecycle_publishers:
+        require(sys.platform == "win32", "Windows lifecycle publisher verification requires a Windows host")
+        require_windows_lifecycle = True
     if windows_setup_wait_seconds is not None:
         require(launch_staged_windows_setup and type(windows_setup_wait_seconds) is int
                 and 1 <= windows_setup_wait_seconds <= 4_294_966,
@@ -1235,8 +1265,12 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             "nativePublisherChecksPerformed": False, "productionQualificationComplete": False,
         }
         if require_windows_lifecycle:
-            require_windows_lifecycle_evidence(entries, windows_build_info, commit)
+            lifecycle_sources, lifecycle_publishers = require_windows_lifecycle_evidence(entries, windows_build_info, commit)
             report["windowsLifecycleEvidenceVerified"] = True
+            if verify_lifecycle_publishers:
+                verify_windows_lifecycle_publishers(root, files, lifecycle_sources, lifecycle_publishers)
+                report["windowsLifecyclePublishersVerified"] = True
+                report["nativePublisherChecksPerformed"] = True
         if target is not None:
             report["managedUpdate"] = managed_update(files, target, current_version, version)
         if windows_build_info or entries:
@@ -1452,6 +1486,8 @@ def main():
     prepare_args.add_argument("--windows-reboot-evidence", nargs=2, metavar=("PATH", "SHA256"),
                               action="append", default=[], help="independently pinned Windows reboot result")
     verify_args = commands.add_parser("verify")
+    verify_args.add_argument("--verify-windows-lifecycle-publishers", action="store_true",
+                             help="verify Authenticode for both Windows architectures using signed lifecycle publisher pins")
     verify_args.add_argument("--approval-certificate", type=Path, required=True)
     verify_args.add_argument("--approval-certificate-sha256", required=True)
     verify_args.add_argument("--revocation-list", type=Path, required=True)
@@ -1547,7 +1583,8 @@ def main():
                                     windows_upgrade_start_receipt=receipt,
                                     windows_setup_wait_seconds=args.windows_setup_wait_seconds,
                                     windows_upgrade_result_receipt=result_receipt,
-                                    require_windows_lifecycle=args.require_windows_lifecycle)
+                                    require_windows_lifecycle=args.require_windows_lifecycle,
+                                    verify_lifecycle_publishers=args.verify_windows_lifecycle_publishers)
             print(json.dumps(report))
             if args.launch_staged_windows_setup:
                 update = report["managedUpdate"]
