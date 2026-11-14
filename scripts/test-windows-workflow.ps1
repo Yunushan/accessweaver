@@ -314,12 +314,15 @@ try {
 # partial summary must never be saved or reach installation as a success.
 $previousScanInput=$inputData;$previousScanRequest=$r;$previousScanRoot=$root;$previousScanAssetNames=$assetNames
 $oldOrdinaryBashEnv=$env:BASH_ENV
-$scanFunctions=@{};foreach($name in @('Ensure-Asset','Native','Write-Atomic','Install-Method','Protect-Dir','Assert-TrustedTree')){$scanFunctions[$name]=(Get-Command $name).ScriptBlock}
+$previousScanUndo=$script:undo
+$scanFunctions=@{};foreach($name in @('Ensure-Asset','Native','Publish-WorkflowFile','Install-Method','Protect-Dir','Assert-TrustedTree')){$scanFunctions[$name]=(Get-Command $name).ScriptBlock}
 try {
     $root=Join-Path $testRoot 'scan-completion';$scanBundle=Join-Path $root 'bundle'
     [void](New-Item -ItemType Directory -Force -Path $scanBundle)
     [IO.File]::WriteAllText((Join-Path $scanBundle 'blockcheck2.sh'),'inert')
     [IO.File]::WriteAllText((Join-Path $scanBundle 'bash.exe'),'inert')
+    [void][IO.Directory]::CreateDirectory((Join-Path $root 'logs'))
+    $scanReport=Join-Path $root 'logs\zapret2-blockcheck.txt'
     $script:scanBinary=Join-Path $scanBundle 'winws2.exe';[IO.File]::WriteAllText($script:scanBinary,'inert')
     $inputData=[pscustomobject]@{ispHook=$null;controller='fixture-controller'}
     function Ensure-Asset {param($engine);if($engine -cne 'zapret2'){throw 'Unexpected fixture engine'};return $script:scanBinary}
@@ -329,7 +332,12 @@ try {
         [void](New-Item -ItemType Directory -Path $path -Force)
     }
     function Assert-TrustedTree([string]$path){if($path -cne $script:stagedScanBundle){throw 'Unexpected scan cleanup target'}}
-    function Write-Atomic {param($path,$text);$script:scanWrites++}
+    function Publish-WorkflowFile {
+        param([string]$path,[byte[]]$bytes,[switch]$Recorded)
+        if($path -cne $scanReport -or $Recorded){throw 'Expected only the fixed diagnostic scan report publication'}
+        & $scanFunctions['Publish-WorkflowFile'] $path $bytes
+        $script:scanWrites++
+    }
     function Install-Method {$script:scanInstalls++;return @{fixture=$true}}
     function Native {
         param($program,$arguments,$codes,[switch]$Secret,[int]$Timeout,$WorkingDirectory,$ChildEnvironment)
@@ -360,13 +368,17 @@ try {
             throw 'Unexpected ordinary scan execution environment'
         }
         if($script:scanMode -ceq 'scan-missing'){return @{stdout='* SUMMARY fixture'}}
+        if($script:scanMode -ceq 'scan-empty'){return @{stdout='';outputComplete=$true}}
+        if($script:scanMode -ceq 'scan-invalid-completion'){return @{stdout='* SUMMARY fixture';outputComplete='true'}}
         return @{stdout='* SUMMARY fixture';outputComplete=($script:scanMode -cne 'scan-incomplete')}
     }
     $env:BASH_ENV='ordinary-fixture-startup'
-    $modes=@('scan-incomplete','scan-missing','parser-incomplete','parser-missing','parser-no-strategy','parser-invalid-json',
+    $modes=@('scan-incomplete','scan-missing','scan-empty','scan-invalid-completion','parser-incomplete','parser-missing','parser-no-strategy','parser-invalid-json',
         'parser-array','parser-no-common','parser-invalid-protocol','parser-invalid-args','parser-control-args','complete','complete-default','complete-multi')
     foreach($mode in $modes){
         $script:scanMode=$mode;$script:scanWrites=0;$script:scanInstalls=0;$script:scanSelectionArgs=@()
+        $script:undo=[Collections.Generic.List[object]]::new()
+        [IO.File]::WriteAllText($scanReport,'previous complete report')
         $targets=@();if($mode -in @('complete-multi','parser-no-common')){$targets=@('example.com','example.net')}elseif($mode -ne 'complete-default'){$targets=@('example.com')}
         $r=[pscustomobject]@{engine='zapret2';bundlePath=$scanBundle;scan='quick';targets=@($targets);dns='unchanged'}
         $oldPath=$env:PATH;$rejected=$false;$message=''
@@ -387,6 +399,9 @@ try {
                 Assert ($message -ceq 'Scan strategy selection returned an invalid result') 'Invalid selection metadata is refused with a fixed message'
             }
         }
+        $expectedReport=if($mode -like 'scan-*'){'previous complete report'}else{'* SUMMARY fixture'}
+        Assert ($script:undo.Count -eq 0 -and @(Rollback).Count -eq 0 -and
+            [IO.File]::ReadAllText($scanReport) -ceq $expectedReport) ('Scan report survives rollback for '+$mode)
         Assert ($env:PATH -ceq $oldPath) 'Scan preserves the process PATH after success or refusal'
         Assert ($script:stagedScanBundle -and -not (Test-Path -LiteralPath $script:stagedScanBundle)) 'Ordinary scan removes its private workspace after success or refusal'
     }
@@ -417,6 +432,7 @@ try {
     Assert ($stagedScan.scanLevel -ceq 'quick' -and $script:scanWrites -eq 1 -and (Under $script:stagedScanBundle (Join-Path $root 'temp')) -and -not (Test-Path -LiteralPath $script:stagedScanBundle)) 'Managed strategy scan runs from the staged approved bundle'
 } finally {
     $env:BASH_ENV=$oldOrdinaryBashEnv
+    $script:undo=$previousScanUndo
     foreach($name in $scanFunctions.Keys){Set-Item ('Function:'+$name) $scanFunctions[$name]}
     $inputData=$previousScanInput;$r=$previousScanRequest;$root=$previousScanRoot;$assetNames=$previousScanAssetNames
 }

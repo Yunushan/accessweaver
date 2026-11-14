@@ -3373,9 +3373,13 @@ function Scan-Strategies {
             DOMAINS=$domains
         }
         $result=Native $bash.FullName $arguments -Timeout 4200 -WorkingDirectory $check.Directory.FullName -ChildEnvironment $childEnvironment
-        if($null -eq $result -or $result.outputComplete -ne $true){throw 'Scan output was incomplete; no strategy was selected'}
+        if($null -eq $result -or $result.outputComplete -isnot [bool] -or -not $result.outputComplete -or
+           $result.stdout -isnot [string] -or [string]::IsNullOrWhiteSpace($result.stdout)){
+            throw 'Scan output was incomplete; no strategy was selected'
+        }
         $report=Join-Path $root ('logs\'+$r.engine+'-blockcheck.txt')
-        Write-Atomic $report $result.stdout
+        # The latest complete scan is diagnostic evidence for selection and rollback.
+        Publish-WorkflowFile $report ([Text.UTF8Encoding]::new($false).GetBytes($result.stdout))
         return @{scanLevel=$level;output=$result.stdout;reportPath=$report;note='Review detected strategies before installing. A scan result is not a guarantee for UDP voice.'}
     } finally {
         $resolved=[IO.Path]::GetFullPath($candidate)
