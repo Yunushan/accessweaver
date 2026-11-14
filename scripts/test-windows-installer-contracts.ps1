@@ -29,6 +29,39 @@ Reject {Get-InstallerSigningArguments $signer '' $shell $callback} 'Signing with
 Reject {Get-InstallerSigningArguments 'signer.exe' ('a'*64) $shell $callback} 'A relative signer path was accepted'
 Reject {Get-InstallerSigningArguments $signer ('a'*64) $shell 'C:\untrusted$q.ps1'} 'An Inno command escape was accepted'
 
+$payloadSigner='C:\Release Tools\Sign Payload.exe'
+$setupPin='a'*64;$payloadPin='b'*64
+$defaultPayload=Get-InstallerPayloadSigning $signer $setupPin '' ''
+Assert ($defaultPayload.signer -ceq $signer -and $defaultPayload.publisher -ceq $setupPin) 'Payload signing lost the default setup identity'
+$distinctPayload=Get-InstallerPayloadSigning $signer $setupPin $payloadSigner $payloadPin
+Assert ($distinctPayload.signer -ceq $payloadSigner -and $distinctPayload.publisher -ceq $payloadPin) 'Payload signing did not retain the independent identity'
+Reject {Get-InstallerPayloadSigning '' '' $payloadSigner $payloadPin} 'Payload signing accepted absent setup configuration'
+Reject {Get-InstallerPayloadSigning $signer $setupPin '' $payloadPin} 'Payload signing accepted absent signer'
+Reject {Get-InstallerPayloadSigning $signer $setupPin $payloadSigner ''} 'Payload signing accepted absent publisher pin'
+Reject {Get-InstallerPayloadSigning $signer $setupPin $payloadSigner 'invalid'} 'Payload signing accepted invalid publisher pin'
+
+$previousSigner=$env:ACCESSWEAVER_BUILD_SIGNER;$previousPublisher=$env:ACCESSWEAVER_BUILD_PUBLISHER_SHA256
+try {
+    $env:ACCESSWEAVER_BUILD_SIGNER='inert prior signer';$env:ACCESSWEAVER_BUILD_PUBLISHER_SHA256='inert prior publisher'
+    $observed=@(Invoke-InstallerSigningContext $distinctPayload.signer $distinctPayload.publisher {
+        "$env:ACCESSWEAVER_BUILD_SIGNER | $env:ACCESSWEAVER_BUILD_PUBLISHER_SHA256"
+    })
+    Assert ($observed.Count -eq 1 -and $observed[0] -ceq "$payloadSigner | $payloadPin") 'Payload callback did not receive the isolated signing context'
+    $failed=$false
+    try {
+        Invoke-InstallerSigningContext $signer $setupPin {
+            Assert ($env:ACCESSWEAVER_BUILD_SIGNER -ceq $signer -and
+                $env:ACCESSWEAVER_BUILD_PUBLISHER_SHA256 -ceq $setupPin) 'Setup callback inherited payload credentials'
+            throw 'Synthetic setup compiler refusal'
+        }
+    } catch {$failed=$_.Exception.Message -ceq 'Synthetic setup compiler refusal'}
+    Assert ($failed -and $env:ACCESSWEAVER_BUILD_SIGNER -ceq 'inert prior signer' -and
+        $env:ACCESSWEAVER_BUILD_PUBLISHER_SHA256 -ceq 'inert prior publisher') 'Signing context was not restored after failure'
+} finally {
+    $env:ACCESSWEAVER_BUILD_SIGNER=$previousSigner
+    $env:ACCESSWEAVER_BUILD_PUBLISHER_SHA256=$previousPublisher
+}
+
 $publisherBytes=[byte[]]@(1,2,3)
 $publisherPin='039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81'
 $signature=@{

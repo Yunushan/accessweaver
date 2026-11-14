@@ -73,6 +73,8 @@ On an organization-controlled Windows build host, invoke the existing Inno build
 .\scripts\build-windows-installer.ps1 -Compiler APPROVED_ISCC_EXE -Version RELEASE_VERSION -TargetArch amd64 -SigningTool APPROVED_SIGNER_EXE -PublisherCertificateSHA256 APPROVED_CERTIFICATE_SHA256
 ```
 
+If the payload uses a separate signing identity, add both `-PayloadSigningTool APPROVED_PAYLOAD_SIGNER_EXE` and `-PayloadPublisherCertificateSHA256 APPROVED_PAYLOAD_CERTIFICATE_SHA256`. The setup and generated uninstaller still use the setup signer. The build receipt records both fingerprints.
+
 Repeat the build for ARM64. Authenticate the final signed output and its provenance, then exercise installation, upgrade, reboot and signed uninstall on both managed Windows architectures before promotion. [Inno Setup signing](https://jrsoftware.org/ishelp/topic_setup_signtool.htm).
 
 For a signed macOS flat package, place the final stapled package alone in a private directory. Supply its independently approved SHA-256, Developer ID Team ID and SHA-256 fingerprint of the approved Developer ID Installer leaf certificate.

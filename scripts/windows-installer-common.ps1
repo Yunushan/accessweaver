@@ -89,12 +89,16 @@ function Assert-WindowsPublisherSignature($Signature,[string]$PublisherCertifica
     if($actual -ine $PublisherCertificateSHA256){throw 'Artifact publisher certificate differs from the approved certificate'}
 }
 
-function Get-InstallerSigningArguments([string]$SigningTool, [string]$PublisherCertificateSHA256, [string]$Shell, [string]$Callback) {
-    if(-not $SigningTool -and -not $PublisherCertificateSHA256){return}
+function Assert-InstallerSignerIdentity([string]$SigningTool,[string]$PublisherCertificateSHA256) {
     if($PublisherCertificateSHA256 -cnotmatch '\A[a-fA-F0-9]{64}\z' -or
         $SigningTool -cnotmatch '\A[A-Za-z]:\\[^:*?"<>|$%\x00-\x1f]+\.exe\z'){
         throw 'Signing requires an absolute local signer executable and an approved publisher SHA-256'
     }
+}
+
+function Get-InstallerSigningArguments([string]$SigningTool,[string]$PublisherCertificateSHA256,[string]$Shell,[string]$Callback) {
+    if(-not $SigningTool -and -not $PublisherCertificateSHA256){return}
+    Assert-InstallerSignerIdentity $SigningTool $PublisherCertificateSHA256
     foreach($path in @($Shell,$Callback)){
         if($path -cnotmatch '\A[A-Za-z]:\\[^:*?"<>|$%\x00-\x1f]+\.(exe|ps1)\z'){
             throw 'Inno signing requires local PowerShell and callback paths'
@@ -102,6 +106,28 @@ function Get-InstallerSigningArguments([string]$SigningTool, [string]$PublisherC
     }
     '/DOrganizationSigning=1'
     ('/SaccessweaverOrganization=$q'+$Shell+'$q -NoProfile -NonInteractive -File $q'+$Callback+'$q -Artifact $f')
+}
+
+function Get-InstallerPayloadSigning([string]$SetupSigner,[string]$SetupPublisher,[string]$PayloadSigner,[string]$PayloadPublisher) {
+    if($PayloadSigner -or $PayloadPublisher){
+        Assert-InstallerSignerIdentity $SetupSigner $SetupPublisher
+        Assert-InstallerSignerIdentity $PayloadSigner $PayloadPublisher
+        return @{signer=$PayloadSigner;publisher=$PayloadPublisher}
+    }
+    return @{signer=$SetupSigner;publisher=$SetupPublisher}
+}
+
+function Invoke-InstallerSigningContext([string]$Signer,[string]$Publisher,[scriptblock]$Action) {
+    $previousSigner=$env:ACCESSWEAVER_BUILD_SIGNER
+    $previousPublisher=$env:ACCESSWEAVER_BUILD_PUBLISHER_SHA256
+    try {
+        $env:ACCESSWEAVER_BUILD_SIGNER=$Signer
+        $env:ACCESSWEAVER_BUILD_PUBLISHER_SHA256=$Publisher
+        & $Action
+    } finally {
+        $env:ACCESSWEAVER_BUILD_SIGNER=$previousSigner
+        $env:ACCESSWEAVER_BUILD_PUBLISHER_SHA256=$previousPublisher
+    }
 }
 
 function Get-InstallerSigningLayout([IO.BinaryReader]$Reader) {

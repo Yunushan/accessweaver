@@ -5,7 +5,9 @@ param(
     [string]$Go='go',
     [ValidateSet('amd64','arm64')][string]$TargetArch,
     [string]$SigningTool,
-    [string]$PublisherCertificateSHA256
+    [string]$PublisherCertificateSHA256,
+    [string]$PayloadSigningTool,
+    [string]$PayloadPublisherCertificateSHA256
 )
 $ErrorActionPreference='Stop'
 $project=Split-Path -Parent $PSScriptRoot
@@ -13,13 +15,16 @@ $project=Split-Path -Parent $PSScriptRoot
 Assert-InstallerReleaseVersion $Version
 $callback=Join-Path $PSScriptRoot 'sign-windows-installer-artifact.ps1'
 $signingArguments=@()
+$payloadSigning=Get-InstallerPayloadSigning $SigningTool $PublisherCertificateSHA256 $PayloadSigningTool $PayloadPublisherCertificateSHA256
 $organizationSigning=[bool]($SigningTool -or $PublisherCertificateSHA256)
 if($organizationSigning){
     $shell=[Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
     $signingArguments=@(Get-InstallerSigningArguments $SigningTool $PublisherCertificateSHA256 $shell $callback)
-    $signingToolItem=Get-Item -LiteralPath $SigningTool -Force
-    if($signingToolItem.PSIsContainer -or ($signingToolItem.Attributes -band [IO.FileAttributes]::ReparsePoint)){
-        throw 'The approved signer must be a regular executable'
+    foreach($signer in @($SigningTool,$payloadSigning.signer) | Select-Object -Unique){
+        $signingToolItem=Get-Item -LiteralPath $signer -Force
+        if($signingToolItem.PSIsContainer -or ($signingToolItem.Attributes -band [IO.FileAttributes]::ReparsePoint)){
+            throw 'The approved signer must be a regular executable'
+        }
     }
 }
 $sdkJSON=& $Go env -json GOHOSTOS GOHOSTARCH GOVERSION
@@ -35,8 +40,6 @@ if($organizationSigning){
 [void](New-Item -ItemType Directory -Force -Path $stage)
 Push-Location $project
 $previousOS=$env:GOOS;$previousArch=$env:GOARCH;$previousCGO=$env:CGO_ENABLED
-$previousSigner=$env:ACCESSWEAVER_BUILD_SIGNER
-$previousPublisher=$env:ACCESSWEAVER_BUILD_PUBLISHER_SHA256
 try {
     $env:GOOS='windows';$env:GOARCH=$TargetArch;$env:CGO_ENABLED='0'
     $commit='unknown';$sourceState='unknown'
@@ -57,9 +60,9 @@ try {
     Assert-InstallerPEArchitecture (Join-Path $stage 'accessweaver.exe') $TargetArch
     $payload=Join-Path $stage 'accessweaver.exe'
     if($organizationSigning){
-        $env:ACCESSWEAVER_BUILD_SIGNER=$SigningTool
-        $env:ACCESSWEAVER_BUILD_PUBLISHER_SHA256=$PublisherCertificateSHA256
-        & $callback -Artifact $payload
+        Invoke-InstallerSigningContext $payloadSigning.signer $payloadSigning.publisher {
+            & $callback -Artifact $payload
+        }
     }
     $identity=& $payload version --json
     if($LASTEXITCODE -ne 0){throw 'Cannot read staged runtime build identity'}
@@ -90,8 +93,13 @@ try {
     if($organizationSigning){$evidence=Join-Path $signingRoot 'evidence'}
     [void](New-Item -ItemType Directory -Force -Path $evidence)
     $preprocessed=Join-Path $evidence 'setup-preprocessed.iss'
-    $compilerOutput=@(& $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) @signingArguments (Join-Path $PSScriptRoot 'windows-installer.iss'))
-    if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
+    $compile={
+        & $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) @signingArguments (Join-Path $PSScriptRoot 'windows-installer.iss')
+        if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
+    }
+    $compilerOutput=@(if($organizationSigning){
+        Invoke-InstallerSigningContext $SigningTool $PublisherCertificateSHA256 $compile
+    } else {& $compile})
     $null=Assert-InstallerSetupScript $preprocessed $TargetArch $Version -OrganizationSigning:$organizationSigning
     $compilerOutput | Write-Output
     $actualVersion=[regex]::Match(($compilerOutput -join "`n"),'(?im)^Compiler engine version:\s*Inno Setup\s+(\d+\.\d+\.\d+)\b')
@@ -112,7 +120,7 @@ try {
     $artifactHash=Get-FileHash -LiteralPath $artifact -Algorithm SHA256
     if($organizationSigning){
         $signingReceipt=[ordered]@{
-            schemaVersion=1
+            schemaVersion=2
             scope='windows-organization-signed-installer-build'
             sourceCommit=$commit
             target='windows/'+$TargetArch
@@ -120,6 +128,7 @@ try {
             installerSHA256=$artifactHash.Hash.ToLowerInvariant()
             payloadSHA256=(Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash.ToLowerInvariant()
             publisherCertificateSHA256=$PublisherCertificateSHA256.ToLowerInvariant()
+            payloadPublisherCertificateSHA256=$payloadSigning.publisher.ToLowerInvariant()
             productionQualificationComplete=$false
         }
         [IO.File]::WriteAllText((Join-Path $evidence 'publisher-signing.json'),($signingReceipt | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
@@ -127,7 +136,5 @@ try {
     $artifactHash
 } finally {
     $env:GOOS=$previousOS;$env:GOARCH=$previousArch;$env:CGO_ENABLED=$previousCGO
-    $env:ACCESSWEAVER_BUILD_SIGNER=$previousSigner
-    $env:ACCESSWEAVER_BUILD_PUBLISHER_SHA256=$previousPublisher
     Pop-Location
 }
