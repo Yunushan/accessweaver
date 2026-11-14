@@ -553,7 +553,23 @@ class SignedReleaseManifestTests(unittest.TestCase):
             with self.subTest(override=override), self.assertRaisesRegex(ValueError, error):
                 self.verify(approved, pin, stage_directory=staging, **{**qualified, **override})
             self.assertEqual(list(staging.iterdir()), [])
-        qualified_report = self.verify(approved, pin, stage_directory=staging, **qualified)["managedUpdate"]
+        trusted = {
+            **qualified,
+            "current_payload_sbom_sha256": upgrade_entry["previousPayloadSBOMSHA256"],
+            "current_payload_publisher_sha256": upgrade_entry["previousPayloadPublisherSHA256"],
+        }
+        for override, error in (
+            ({"current_payload_sbom_sha256": "0" * 64}, "matches the installed Windows SBOM and publisher"),
+            ({"current_payload_publisher_sha256": "0" * 64}, "matches the installed Windows SBOM and publisher"),
+            ({"current_payload_publisher_sha256": None}, "requires the payload, SBOM and publisher"),
+            ({"current_payload_sbom_sha256": None}, "requires the payload, SBOM and publisher"),
+            ({"current_payload_sbom_sha256": "unverified"}, "requires the payload, SBOM and publisher"),
+            ({"current_payload_sha256": None}, "requires the payload, SBOM and publisher"),
+        ):
+            with self.subTest(installed_trust=override), self.assertRaisesRegex(ValueError, error):
+                self.verify(approved, pin, stage_directory=staging, **{**trusted, **override})
+            self.assertEqual(list(staging.iterdir()), [])
+        qualified_report = self.verify(approved, pin, stage_directory=staging, **trusted)["managedUpdate"]
         self.assertTrue(qualified_report["installerStaged"])
         self.assertEqual(qualified_report["windowsUpgradeDetection"], upgrade_entry)
         (staging / qualified_report["installer"]).unlink()
@@ -563,7 +579,10 @@ class SignedReleaseManifestTests(unittest.TestCase):
             "--revocation-list", str(self.revocation_list), "--revocation-list-sha256", self.policy_pin,
             "--openssl", OPENSSL, "--source-commit", COMMIT, "--source-ref", REF,
             "--current-version", qualified["current_version"], "--target", qualified["target"],
-            "--current-payload-sha256", qualified["current_payload_sha256"], "--stage-directory", str(staging),
+            "--current-payload-sha256", trusted["current_payload_sha256"],
+            "--current-payload-sbom-sha256", trusted["current_payload_sbom_sha256"],
+            "--current-payload-publisher-sha256", trusted["current_payload_publisher_sha256"],
+            "--stage-directory", str(staging),
         ]
         completed = subprocess.run(command, check=True, capture_output=True, text=True, timeout=30)
         self.assertEqual(json.loads(completed.stdout)["managedUpdate"], qualified_report)
@@ -586,6 +605,9 @@ class SignedReleaseManifestTests(unittest.TestCase):
         sign_manifest()
         legacy_report = self.verify(approved, pin, **qualified)
         self.assertEqual(legacy_report["schemaVersion"], 2)
+        with self.assertRaisesRegex(ValueError, "matches the installed Windows SBOM and publisher"):
+            self.verify(approved, pin, stage_directory=staging, **trusted)
+        self.assertEqual(list(staging.iterdir()), [])
         self.assertEqual(legacy_report["managedUpdate"]["windowsUpgradeDetection"],
                          {field: value for field, value in upgrade_entry.items()
                           if field not in release.WINDOWS_PREVIOUS_TRUST_FIELDS})
