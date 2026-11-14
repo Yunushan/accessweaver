@@ -160,6 +160,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
             report["setupUpgradeBaselineVerified"] = overrides.get("installMode") == "upgrade"
         if overrides.get("schemaVersion", 5) >= 13:
             report["setupWrongBaselineRefusedWithStatePreserved"] = overrides.get("installMode") == "upgrade"
+        if overrides.get("schemaVersion", 5) >= 14:
+            report[release.WINDOWS_RESTORATION_JOURNAL] = hashlib.sha256(filename.encode()).hexdigest()
         evidence = self.root / filename
         evidence.write_text(json.dumps({**report, **overrides}), encoding="utf-8")
         return evidence, release.digest(evidence)
@@ -533,6 +535,21 @@ class SignedReleaseManifestTests(unittest.TestCase):
             with self.subTest(overrides=overrides), self.assertRaises(ValueError):
                 load({**report, **overrides})
 
+    def test_current_windows_reboot_report_binds_restoration_journal(self):
+        files = release.inventory(self.candidate, self.subjects)
+        field = release.WINDOWS_RESTORATION_JOURNAL
+        path, pin = self.write_reboot_report("uninstall-journal.json", schemaVersion=14)
+        original = json.loads(path.read_bytes())
+        entry, = release.load_detection_evidence(self.candidate, [(path, pin)], files, VERSION)
+        self.assertEqual(entry[field], original[field])
+        self.assertEqual(json.loads(release.encode_manifest(COMMIT, REF, files, [entry]))["schemaVersion"], 12)
+        for invalid in ({key: value for key, value in original.items() if key != field},
+                        {**original, field: True}, {**original, field: "0" * 63},
+                        {**original, "schemaVersion": 13}):
+            path.write_text(json.dumps(invalid), encoding="utf-8")
+            with self.subTest(schema=invalid["schemaVersion"], digest=invalid.get(field)), self.assertRaises(ValueError):
+                release.load_detection_evidence(self.candidate, [(path, release.digest(path))], files, VERSION)
+
     def test_downgrade_refusal_evidence_requires_both_distinct_prior_setup_pins(self):
         files = release.inventory(self.candidate, self.subjects)
         setup = next(item for item in files if item["target"] == "windows/amd64" and item["role"] == "installer")
@@ -607,6 +624,13 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 manifest.unlink()
                 signature.unlink()
             provided = list(evidence.values()) if complete else [evidence["amd64", "clean"]]
+            if bind_sources:
+                path, _ = provided[0]
+                previous = json.loads(path.read_bytes())
+                restoration_pin = hashlib.sha256(b"inert Windows restoration journal").hexdigest()
+                bound = {**previous, "schemaVersion": 14, release.WINDOWS_RESTORATION_JOURNAL: restoration_pin}
+                path.write_text(json.dumps(bound), encoding="utf-8")
+                provided[0] = (path, release.digest(path))
             release.prepare(self.candidate, prepared, source, REF, windows_reboot_evidence=provided,
                             require_windows_lifecycle=bind_sources)
             shutil.copyfile(prepared, manifest)
@@ -617,6 +641,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 report = self.verify(cert, pin, source, require_windows_lifecycle=True)
                 self.assertIs(report["windowsLifecycleEvidenceVerified"], True)
                 self.assertIs(report["productionQualificationComplete"], False)
+                self.assertEqual(report["schemaVersion"], 12)
+                self.assertEqual(report["windowsDetection"][0][release.WINDOWS_RESTORATION_JOURNAL], restoration_pin)
                 with patch.object(release.sys, "platform", "linux"):
                     with self.assertRaisesRegex(ValueError, "requires a Windows host"):
                         self.verify(cert, pin, source, verify_lifecycle_publishers=True)
@@ -680,7 +706,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                         self.assertTrue(update["installerStaged"])
                         self.assertEqual(managed.call_count, 2)
                         self.assertEqual(release.digest(staging / update["installer"]), update["installerSHA256"])
-                for revoked_pin in (evidence["arm64", "upgrade"][1], pins["fixtureSHA256"], "7" * 64):
+                for revoked_pin in (evidence["arm64", "upgrade"][1], pins["fixtureSHA256"], "7" * 64, restoration_pin):
                     revoked = self.write_policy({**self.policy, "subjectSHA256": [revoked_pin]})
                     with self.assertRaisesRegex(ValueError, "revoked"):
                         self.verify(cert, pin, source, policy_pin=revoked, require_windows_lifecycle=True)

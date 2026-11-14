@@ -48,7 +48,7 @@ function Write-NewRebootEvidence([string]$Path,$Data){
         [IO.File]::Move($staged,$Path)
     } finally {[IO.File]::Delete($staged)}
 }
-function Read-RebootEvidence([string]$Path,[ValidateRange(1,65536)][int]$MaximumBytes=8192){
+function Read-RebootEvidence([string]$Path,[ValidateRange(1,65536)][int]$MaximumBytes=8192,[ref]$SHA256){
     Assert-RebootPath $Path
     $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
     try {
@@ -65,7 +65,13 @@ function Read-RebootEvidence([string]$Path,[ValidateRange(1,65536)][int]$Maximum
     } finally {$stream.Dispose()}
     $text=[Text.UTF8Encoding]::new($false,$true).GetString($bytes)
     if($text -cnotmatch '\A[\x20\t\r\n]*\{'){throw 'Expected a reboot evidence JSON object'}
-    return ConvertFrom-Json -InputObject $text -ErrorAction Stop
+    $record=ConvertFrom-Json -InputObject $text -ErrorAction Stop
+    if($null -ne $SHA256){
+        $hash=[Security.Cryptography.SHA256]::Create()
+        try {$SHA256.Value=[BitConverter]::ToString($hash.ComputeHash($bytes)).Replace('-','').ToLowerInvariant()}
+        finally {$hash.Dispose()}
+    }
+    return $record
 }
 function Get-RebootInstallMode([string]$Version,[string]$PayloadSHA256,[string]$PreviousVersion,[string]$PreviousPayloadSHA256,
         [string]$PreviousPayloadSBOMSHA256,[string]$PreviousPayloadPublisherSHA256){
@@ -95,7 +101,7 @@ function Assert-RebootUpgradeOrder($Comparison,[string]$PreviousVersion,[string]
     }
 }
 function Assert-RebootIdentity($Record,$Expected){
-    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 13 -or
+    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 14 -or
        $Record.runID -cne $Expected.runID -or $Record.architecture -cne $Expected.architecture -or
        $Record.installMode -cne $Expected.installMode -or $Record.previousVersion -cne $Expected.previousVersion -or
        $Record.previousPayloadSHA256 -cne $Expected.previousPayloadSHA256 -or
@@ -265,11 +271,13 @@ function Assert-RebootRestorationJournal([string]$ManagedRoot){
         $journals[0].Name -cnotmatch '\Aworkflow-[a-f0-9]{32}\.json\z'){
         throw 'Expected one restoration journal from uninstall'
     }
-    $journal=Read-RebootEvidence $journals[0].FullName -MaximumBytes 64KB
+    $digest=''
+    $journal=Read-RebootEvidence $journals[0].FullName -MaximumBytes 64KB -SHA256 ([ref]$digest)
     if($journal.action -isnot [string] -or $journal.action -cne 'remove-all' -or
         $journal.state -isnot [string] -or $journal.state -cne 'succeeded'){
         throw 'Uninstall restoration journal did not confirm success'
     }
+    return $digest
 }
 function Get-GuestBoot {
     $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
@@ -490,7 +498,7 @@ try {
     $baseline=Join-Path $capsule 'prepared.json'
     $report=Join-Path $capsule 'result.json'
     if(-not $PayloadPublisherCertificateSHA256){$PayloadPublisherCertificateSHA256=$PublisherCertificateSHA256}
-    $expected=[ordered]@{schemaVersion=13;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+    $expected=[ordered]@{schemaVersion=14;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
         previousVersion=$PreviousVersion;previousPayloadSHA256=$PreviousPayloadSHA256.ToLowerInvariant();
         previousPayloadSBOMSHA256=$PreviousPayloadSBOMSHA256.ToLowerInvariant();
         setupUpgradeBaselineVerified=$false;setupWrongBaselineRefusedWithStatePreserved=$false;previousBuildInfoSHA256=$PreviousBuildInfoSHA256.ToLowerInvariant();
@@ -595,7 +603,7 @@ try {
             }
             Write-NewRebootEvidence $baseline $expected
         } catch {
-            Write-NewRebootEvidence $report @{schemaVersion=13;runID=$RunID;stage=$stage;passed=$false}
+            Write-NewRebootEvidence $report @{schemaVersion=14;runID=$RunID;stage=$stage;passed=$false}
             throw 'Windows installer reboot preparation failed. Retain the disposable guest for review.'
         }
         Write-Output 'Prepared the approved installation. Reboot the disposable guest before verification.'
@@ -606,8 +614,8 @@ try {
     $saved=Read-RebootEvidence $baseline
     Assert-RebootIdentity $saved $expected
     Assert-LaterGuestBoot $saved.boot $boot
-    Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=13;runID=$RunID}
-    $result=[ordered]@{schemaVersion=13;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+    Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=14;runID=$RunID}
+    $result=[ordered]@{schemaVersion=14;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
         previousVersion=$expected.previousVersion;previousPayloadSHA256=$expected.previousPayloadSHA256;
         previousPayloadSBOMSHA256=$expected.previousPayloadSBOMSHA256;previousPayloadPublisherSHA256=$expected.previousPayloadPublisherSHA256;
         previousBuildInfoSHA256=$expected.previousBuildInfoSHA256;setupUpgradeBaselineVerified=$saved.setupUpgradeBaselineVerified;
@@ -623,7 +631,7 @@ try {
         detectorSHA256=$expected.detectorSHA256;fixtureSHA256=$expected.fixtureSHA256;
         commonSHA256=$expected.commonSHA256;publisherVerifierSHA256=$expected.publisherVerifierSHA256;
         uninstallerSHA256=$saved.uninstallerSHA256;installedTreeSHA256=$saved.installedTreeSHA256;registrationSHA256=$saved.registrationSHA256;
-        installedTreeVerified=$false;registrationPreserved=$false;packageFilesRemoved=$false;
+        installedTreeVerified=$false;registrationPreserved=$false;packageFilesRemoved=$false;restorationJournalSHA256='';
         userProfileVerifiedAfterReboot=$false;userProfileOpenedByInstalledController=$false;userProfilePreservedAfterUninstall=$false;setupExitCode=$saved.setupExitCode;setupRequestedRestart=($saved.setupExitCode -eq 3010);
         guestRebootVerified=$true;installedPayloadVerifiedBeforeRestart=$true;installedPayloadVerified=$false;uninstallerIdentityVerified=$false;
         registrationRemoved=$false;passed=$false;stage='installed-after-reboot'}
@@ -679,7 +687,7 @@ try {
         Assert-RebootPackageRemoved $install
         $result.packageFilesRemoved=$true
         $result.stage='restoration-journal'
-        Assert-RebootRestorationJournal $managed
+        $result.restorationJournalSHA256=Assert-RebootRestorationJournal $managed
         $result.stage='user-profile-after-uninstall'
         Assert-RebootUserProfile $userProfile $saved.userProfileSHA256
         $result.userProfilePreservedAfterUninstall=$true

@@ -34,7 +34,7 @@ if($arguments.Count -ne 2 -or $arguments[0] -cne ('/AWUpgradeFrom='+($pins -join
     throw 'Setup requires separate baseline and quoted log arguments'
 }
 $expected=@{
-    schemaVersion=13;runID=('b'*32);setupUpgradeBaselineVerified=$false;setupWrongBaselineRefusedWithStatePreserved=$false;architecture='amd64';version='1.0.0';
+    schemaVersion=14;runID=('b'*32);setupUpgradeBaselineVerified=$false;setupWrongBaselineRefusedWithStatePreserved=$false;architecture='amd64';version='1.0.0';
     installMode='clean';previousVersion='';previousPayloadSHA256='';previousSetupSHA256='';previousPublisherSHA256='';userProfilePreservedThroughUpgrade=$false;
     previousPayloadSBOMSHA256='';previousPayloadPublisherSHA256='';previousPayloadTrustVerified=$false;previousBuildInfoSHA256='';
     setupSHA256=$pin;payloadSHA256=$pin;payloadSBOMSHA256=('f'*64);buildInfoSHA256=('7'*64);publisherSHA256=$pin;payloadPublisherSHA256=('e'*64);userSID='synthetic-user';guestID='10000000-2000-3000-4000-000000000005';
@@ -52,7 +52,7 @@ foreach($key in $saved.Keys){
     $changed[$key]='changed'
     Assert-Refused {Assert-RebootIdentity $changed $expected}
 }
-$oldSchema=$saved.Clone();$oldSchema.schemaVersion=12
+$oldSchema=$saved.Clone();$oldSchema.schemaVersion=13
 Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
 $falseClaim=$saved.Clone();$falseClaim.setupUpgradeBaselineVerified=$true
 Assert-Refused {Assert-RebootIdentity $falseClaim $expected}
@@ -259,7 +259,10 @@ Assert-Refused {Get-RebootRegistrationFingerprint $null}
             Assert-Refused {Assert-RebootRestorationJournal $managedRoot}
         }
         [IO.File]::WriteAllText($journal,'{"action":"remove-all","state":"succeeded","events":[],"undo":[]}')
-        Assert-RebootRestorationJournal $managedRoot
+        $digest=Assert-RebootRestorationJournal $managedRoot
+        if($digest -cne (Get-FileHash -LiteralPath $journal -Algorithm SHA256).Hash.ToLowerInvariant()){
+            throw 'Restoration journal digest differs from the verified bytes'
+        }
         [IO.File]::Copy($journal,$other)
         Assert-Refused {Assert-RebootRestorationJournal $managedRoot}
     } finally {

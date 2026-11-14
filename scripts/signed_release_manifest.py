@@ -44,6 +44,7 @@ WINDOWS_DETECTION_FAILURE_REASONS = (
 WINDOWS_PAYLOAD_PUBLISHER = "payloadPublisherCertificateSHA256"
 WINDOWS_BUILD_INFO = "buildInfoSHA256"
 WINDOWS_DETECTOR = "detectorSHA256"
+WINDOWS_RESTORATION_JOURNAL = "restorationJournalSHA256"
 WINDOWS_LIFECYCLE_SOURCES = {
     WINDOWS_DETECTOR: "scripts/detect-windows-installer.ps1",
     "fixtureSHA256": "scripts/test-windows-installer-reboot.ps1",
@@ -224,6 +225,8 @@ def validate_detection(entries, subjects, version):
         downgrade_fields = set(WINDOWS_DOWNGRADE_FIELDS).intersection(entry)
         build_info_fields = {WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO}.intersection(entry)
         detector_fields = {WINDOWS_DETECTOR}.intersection(entry)
+        restoration_fields = {WINDOWS_RESTORATION_JOURNAL}.intersection(entry)
+        require(not restoration_fields or detector_fields, "Windows restoration evidence requires a qualified detector")
         source_fields = set(WINDOWS_LIFECYCLE_SOURCE_FIELDS).intersection(entry)
         require(not source_fields or (source_fields == set(WINDOWS_LIFECYCLE_SOURCE_FIELDS) and detector_fields),
                 "Malformed Windows lifecycle source bindings")
@@ -239,14 +242,14 @@ def validate_detection(entries, subjects, version):
         require(not baseline_fields or WINDOWS_PREVIOUS_BUILD_INFO in build_info_fields,
                 "Windows Setup baseline evidence requires the approved prior build pins")
         require(entry.keys() == set(WINDOWS_DETECTION_FIELDS) | trust_fields | publisher_fields
-                | downgrade_fields | build_info_fields | baseline_fields | detector_fields | source_fields
+                | downgrade_fields | build_info_fields | baseline_fields | detector_fields | source_fields | restoration_fields
                 and (not trust_fields or trust_fields == set(WINDOWS_PREVIOUS_TRUST_FIELDS)
                      and entry["installMode"] == "upgrade"), "Malformed Windows detection entry")
         if downgrade_fields:
             require(downgrade_fields == set(WINDOWS_DOWNGRADE_FIELDS) and entry["installMode"] == "upgrade"
                     and all(re.fullmatch(SHA256, entry[field]) for field in downgrade_fields),
                     "Malformed Windows downgrade evidence digests")
-        for field in trust_fields | publisher_fields | build_info_fields | detector_fields | source_fields:
+        for field in trust_fields | publisher_fields | build_info_fields | detector_fields | source_fields | restoration_fields:
             require(re.fullmatch(SHA256, entry[field]), "Malformed Windows payload trust digest")
         target = entry["target"]
         require((target, "installer") in targets and entry["installMode"] in ("clean", "upgrade"),
@@ -293,6 +296,11 @@ def validate_bound_reboot_report(report, mode):
         fields.add(WINDOWS_SETUP_WRONG_BASELINE)
         require(report.get(WINDOWS_SETUP_WRONG_BASELINE) is (mode == "upgrade"),
                 "Windows reboot evidence does not match the incorrect Setup baseline refusal requirement")
+    if report["schemaVersion"] >= 14:
+        fields.add(WINDOWS_RESTORATION_JOURNAL)
+        journal = report.get(WINDOWS_RESTORATION_JOURNAL)
+        require(isinstance(journal, str) and re.fullmatch(SHA256, journal),
+                "Windows reboot evidence lacks the verified restoration journal digest")
     require(report.keys() == fields, "Windows reboot evidence differs from the current report schema")
     run_id = report["runID"]
     require(isinstance(run_id, str) and re.fullmatch(r"[a-f0-9]{32}", run_id)
@@ -316,7 +324,7 @@ def load_detection_evidence(directory, evidence, subjects, version, *, include_l
         content = independently_pinned_file(directory, path, fingerprint, maximum=8192)
         report = decode_json(content)
         require(isinstance(report, dict) and type(report.get("schemaVersion")) is int
-                and report["schemaVersion"] in (5, 6, 7, 8, 9, 10, 11, 12, 13) and report.get("stage") == "complete"
+                and report["schemaVersion"] in (5, 6, 7, 8, 9, 10, 11, 12, 13, 14) and report.get("stage") == "complete"
                 and all(report.get(field) is True for field in REBOOT_CHECKS),
                 "Windows reboot qualification is incomplete")
         architecture = report.get("architecture")
@@ -369,6 +377,8 @@ def load_detection_evidence(directory, evidence, subjects, version, *, include_l
         if report["schemaVersion"] >= 11:
             validate_bound_reboot_report(report, mode)
             entry[WINDOWS_DETECTOR] = report[WINDOWS_DETECTOR]
+            if report["schemaVersion"] >= 14:
+                entry[WINDOWS_RESTORATION_JOURNAL] = report[WINDOWS_RESTORATION_JOURNAL]
             if include_lifecycle_sources:
                 entry.update({field: report[field] for field in WINDOWS_LIFECYCLE_SOURCE_FIELDS})
             prior_build_info = report.get(WINDOWS_PREVIOUS_BUILD_INFO)
@@ -471,6 +481,8 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
         schema = 10
     if any(WINDOWS_LIFECYCLE_SOURCE_FIELDS[0] in entry for entry in windows_detection):
         schema = 11
+    if any(WINDOWS_RESTORATION_JOURNAL in entry for entry in windows_detection):
+        schema = 12
     manifest = {
         "schemaVersion": schema,
         "scope": "accessweaver-signed-desktop-release",
@@ -484,7 +496,8 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
             {field: entry[field] for field in WINDOWS_DETECTION_FIELDS + WINDOWS_PREVIOUS_TRUST_FIELDS
              + (WINDOWS_PAYLOAD_PUBLISHER,) + WINDOWS_DOWNGRADE_FIELDS
              + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO, WINDOWS_SETUP_BASELINE,
-                WINDOWS_SETUP_WRONG_BASELINE, WINDOWS_DETECTOR) + WINDOWS_LIFECYCLE_SOURCE_FIELDS if field in entry}
+                WINDOWS_SETUP_WRONG_BASELINE, WINDOWS_DETECTOR) + WINDOWS_LIFECYCLE_SOURCE_FIELDS
+             + (WINDOWS_RESTORATION_JOURNAL,) if field in entry}
             for entry in sorted(windows_detection, key=detection_key)
         ]
     return (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
@@ -1278,7 +1291,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                                                "previousPayloadSHA256", "publisherCertificateSHA256")
                     + WINDOWS_PREVIOUS_TRUST_FIELDS + (WINDOWS_PAYLOAD_PUBLISHER,)
                     + WINDOWS_DOWNGRADE_FIELDS + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO, WINDOWS_DETECTOR)
-                    + WINDOWS_LIFECYCLE_SOURCE_FIELDS if field in entry
+                    + WINDOWS_LIFECYCLE_SOURCE_FIELDS + (WINDOWS_RESTORATION_JOURNAL,) if field in entry
                 ) for entry in entries),
                 "Release subject or Windows detection evidence is revoked")
         sboms_verified, macos_detectors, windows_build_info = validate_release_sboms(root, files, commit, version, entries)
