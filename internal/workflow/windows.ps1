@@ -2802,6 +2802,16 @@ function Test-DNSDohEntriesEqual([object[]]$Actual,[object[]]$Expected) {
         [object]::Equals($entry.AllowFallbackToUdp,$reference.AllowFallbackToUdp) -and
         [object]::Equals($entry.AutoUpgrade,$reference.AutoUpgrade))
 }
+function Assert-RestoredDNSFamily([object]$Record,[string]$Number,[object]$Actual) {
+    if($Actual.dhcp -ne $Record.('dhcp'+$Number)){throw 'Restored DNS mode could not be verified; retain the recovery snapshot'}
+    if($Actual.dhcp){return} # A fresh DHCP lease may legitimately supply different addresses.
+    $expected=@(Get-StaticDNSServers @($Record.('ipv'+$Number)) ('IPv'+$Number) $Record.index)
+    $values=@($Actual.values)
+    if($values.Count -ne $expected.Count){throw 'Restored static DNS count could not be verified; retain the recovery snapshot'}
+    if(($values -join ',') -cne ($expected -join ',')){
+        throw 'Restored static DNS order or value could not be verified; retain the recovery snapshot'
+    }
+}
 # A successful setter is not proof of restored state. Keep the first originals
 # until fresh GUID-bound DNS reads and managed DoH metadata match the snapshot.
 function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$DohAvailable) {
@@ -2817,19 +2827,9 @@ function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$Doh
         $adapter=$matches[0]
         foreach($number in @('4','6')){
             if(-not $plan.bounds['bound'+$number]){continue}
-            $family='IPv'+$number
-            $actual=Read-OriginalDNSFamily $adapter $family $clients
-            if($actual.dhcp -ne $record.('dhcp'+$number)){throw 'Restored DNS mode could not be verified; retain the recovery snapshot'}
-            if(-not $actual.dhcp){
-                $expected=@(Get-StaticDNSServers @($record.('ipv'+$number)) $family $record.index)
-                $values=@($actual.values)
-                if($values.Count -ne $expected.Count){throw 'Restored static DNS count could not be verified; retain the recovery snapshot'}
-                for($i=0;$i -lt $expected.Count;$i++){
-                    if($values[$i] -cne $expected[$i]){throw 'Restored static DNS order or value could not be verified; retain the recovery snapshot'}
-                }
-            }
+            Assert-RestoredDNSFamily $record $number (Read-OriginalDNSFamily $adapter ('IPv'+$number) $clients)
         }
-        $adapter
+        @{adapter=$adapter;record=$record;bounds=$plan.bounds}
     }
     if($DohAvailable){
         $observed=@(Get-DnsClientDohServerAddress -ErrorAction Stop)
@@ -2838,13 +2838,21 @@ function Assert-RestoredDNSState([object[]]$Plans,[object[]]$DohPlans,[bool]$Doh
             if(-not (Test-DNSDohEntriesEqual $current $plan.old)){throw 'Restored DoH policy could not be verified; retain the recovery snapshot'}
         }
     }
-    # Fence the whole observation, including registry and DoH reads, before
-    # treating the saved GUIDs and their DNS client rows as one stable view.
+    # Re-read the owned families after inspecting DoH. An unchanged GUID
+    # and index do not show that the effective DNS row or its mode survived.
+    $freshClients=@(Read-DNSClientInventory)
+    foreach($binding in $bindings){
+        foreach($number in @('4','6')){
+            if(-not $binding.bounds['bound'+$number]){continue}
+            Assert-RestoredDNSFamily $binding.record $number (Read-OriginalDNSFamily $binding.adapter ('IPv'+$number) $freshClients)
+        }
+    }
     $after=@(Get-NetAdapter -ErrorAction Stop)
     foreach($binding in $bindings){
-        $matches=@($after | Where-Object {$_.ifIndex -eq $binding.ifIndex})
-        if($matches.Count -ne 1 -or [string]$matches[0].InterfaceGuid -ne [string]$binding.InterfaceGuid -or
-           @($after | Where-Object {[string]$_.InterfaceGuid -eq [string]$binding.InterfaceGuid}).Count -ne 1){
+        $adapter=$binding.adapter
+        $matches=@($after | Where-Object {$_.ifIndex -eq $adapter.ifIndex})
+        if($matches.Count -ne 1 -or [string]$matches[0].InterfaceGuid -ne [string]$adapter.InterfaceGuid -or
+           @($after | Where-Object {[string]$_.InterfaceGuid -eq [string]$adapter.InterfaceGuid}).Count -ne 1){
             throw 'An original adapter changed during restoration verification; retain the recovery snapshot'
         }
     }
