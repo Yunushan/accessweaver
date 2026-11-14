@@ -532,7 +532,8 @@ jobs:
           mkdir -p build/rebuild-evidence
           reference="build/rebuild-reference/${PACKAGE_DIRECTORY#dist/}"
           python3 scripts/verify_release_rebuild.py "$reference" "$PACKAGE_DIRECTORY" \
-            --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --report build/rebuild-evidence/comparison.json
+            --source-commit "$GITHUB_SHA" --source-ref "$GITHUB_REF" --workflow-run-id "$GITHUB_RUN_ID" \
+            --report build/rebuild-evidence/comparison.json
           digest="$(python3 -c 'import json; print(json.load(open("build/rebuild-evidence/comparison.json"))["referenceChecksumsSha256"])')"
           [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
           echo "reference_checksums_sha256=$digest" >> "$GITHUB_OUTPUT"

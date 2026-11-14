@@ -39,6 +39,7 @@ class RebuildTests(unittest.TestCase):
             self.assertTrue(report['allUnsignedSubjectsByteIdentical'])
             self.assertEqual(len(report['subjects']), 12)
             self.assertEqual(report['referenceChecksumsSha256'], rebuild.digest(reference / 'SHA256SUMS.txt'))
+            self.assertNotIn('referenceWorkflowRunId', report)
             self.assertFalse(report['rebuildProcessIndependenceVerified'])
             self.assertFalse(report['productionQualificationComplete'])
             self.assertNotIn('PRIVATE', json.dumps(report))
@@ -53,6 +54,25 @@ class RebuildTests(unittest.TestCase):
                  patch.object(rebuild, 'snapshot', wraps=rebuild.snapshot) as snapshot:
                 with self.assertRaisesRegex(ValueError, 'signature rejected'):
                     rebuild.compare(reference, candidate / 'must-not-read', COMMIT, REF)
+                self.assertEqual(snapshot.call_count, 1)
+
+    def test_reference_run_pin_is_enforced_before_rebuild_reads(self):
+        with patch.object(rebuild, 'snapshot') as snapshot, self.assertRaisesRegex(ValueError, 'run ID'):
+            rebuild.compare(Path('missing'), Path('missing'), COMMIT, REF, run_id='00')
+        snapshot.assert_not_called()
+
+        with tempfile.TemporaryDirectory() as folder:
+            reference, candidate = self.fixture(Path(folder))
+            with patch.object(rebuild, 'verify_provenance', return_value=VERIFIED) as verify:
+                report = rebuild.compare(reference, candidate, COMMIT, REF, run_id='12345')
+                self.assertEqual(verify.call_args.kwargs, {'run_id': '12345'})
+                self.assertEqual(report['referenceWorkflowRunId'], '12345')
+
+            with patch.object(rebuild, 'verify_provenance', side_effect=ValueError('unexpected run')) as verify, \
+                 patch.object(rebuild, 'snapshot', wraps=rebuild.snapshot) as snapshot:
+                with self.assertRaisesRegex(ValueError, 'unexpected run'):
+                    rebuild.compare(reference, candidate, COMMIT, REF, run_id='67890')
+                self.assertEqual(verify.call_args.kwargs, {'run_id': '67890'})
                 self.assertEqual(snapshot.call_count, 1)
 
     def test_invalid_identity_and_partial_authentication_fail_before_rebuild_reads(self):
@@ -132,9 +152,12 @@ class RebuildTests(unittest.TestCase):
 
     def test_cli_returns_nonzero_for_differences_and_never_claims_independence(self):
         report = dict(allUnsignedSubjectsByteIdentical=False, rebuildProcessIndependenceVerified=False, productionQualificationComplete=False)
-        with patch('sys.argv', ['verify_release_rebuild.py', 'reference', 'rebuilt', '--source-commit', COMMIT, '--source-ref', REF]), \
-             patch.object(rebuild, 'compare', return_value=report), contextlib.redirect_stdout(io.StringIO()):
+        argv = ['verify_release_rebuild.py', 'reference', 'rebuilt', '--source-commit', COMMIT,
+                '--source-ref', REF, '--workflow-run-id', '12345']
+        with patch('sys.argv', argv), patch.object(rebuild, 'compare', return_value=report) as compare, \
+             contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(rebuild.main(), 1)
+        compare.assert_called_once_with(Path('reference'), Path('rebuilt'), COMMIT, REF, 'gh', run_id='12345')
 
 
 if __name__ == '__main__':
