@@ -172,6 +172,7 @@ def publish_verified(directory, tag, commit, expected):
     missing = missing_assets(release, tag, expected)
     release_id = release["databaseId"]
     if not release["isDraft"]:
+        verify_published_release(release, release_id, tag, commit, expected)
         return
     # Upload the time-bound provenance last so a partially uploaded build
     # can usually resume from a new attestation without fetching the old one.
@@ -197,11 +198,23 @@ def publish_verified(directory, tag, commit, expected):
     if git_tag_commit(tag) != commit:
         raise ValueError("Remote release tag changed before publication")
     if release["isDraft"]:
-        promote_draft(release_id)
-    release = view(tag)
+        try:
+            promote_draft(release_id)
+        except (ValueError, OSError, subprocess.SubprocessError):
+            # The server may have applied the PATCH before the response failed.
+            # Reconcile once and never repeat the mutation on uncertain state.
+            verify_published_release(view(tag), release_id, tag, commit, expected)
+            return
+        release = view(tag)
+    verify_published_release(release, release_id, tag, commit, expected)
+
+
+def verify_published_release(release, release_id, tag, commit, expected):
     if (release is None or release.get("databaseId") != release_id
             or release.get("isDraft") is not False or missing_assets(release, tag, expected)):
         raise ValueError("Published prerelease could not be verified")
+    if git_tag_commit(tag) != commit:
+        raise ValueError("Remote release tag changed during publication")
 
 
 def main():

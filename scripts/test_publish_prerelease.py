@@ -34,14 +34,14 @@ class PrereleasePublicationTests(unittest.TestCase):
             "assets": [dict(item) for item in list(self.assets.values())[:count]],
         }
 
-    def run_publisher(self, releases, tags=None, verify_snapshot=None, upload_error=None):
+    def run_publisher(self, releases, tags=None, verify_snapshot=None, upload_error=None, promotion_error=None):
         with (
             patch.object(publisher, "verify", side_effect=verify_snapshot) as verify,
-            patch.object(publisher, "git_tag_commit", side_effect=tags or [self.commit] * 2),
+            patch.object(publisher, "git_tag_commit", side_effect=tags or [self.commit] * 3),
             patch.object(publisher, "view", side_effect=releases),
             patch.object(publisher, "gh", return_value=subprocess.CompletedProcess([], 0, "", "")) as gh,
             patch.object(publisher, "upload_asset", side_effect=upload_error) as upload,
-            patch.object(publisher, "promote_draft") as promote,
+            patch.object(publisher, "promote_draft", side_effect=promotion_error) as promote,
         ):
             self.calls = gh
             self.upload = upload
@@ -283,6 +283,33 @@ class PrereleasePublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "could not be verified"):
             self.run_publisher([self.release(True), self.release(True), self.release(False, release_id=789)])
         self.promote.assert_called_once_with(456)
+
+    def test_lost_promotion_response_reconciles_publication_without_retrying_patch(self):
+        timeout = subprocess.TimeoutExpired(["gh", "api"], 240)
+        self.run_publisher([self.release(True), self.release(True), self.release(False)], promotion_error=timeout)
+        self.promote.assert_called_once_with(456)
+        self.upload.assert_not_called()
+
+    def test_lost_promotion_response_refuses_unverified_publication(self):
+        replaced = self.release(False, release_id=789)
+        wrong_digest = self.release(False)
+        wrong_digest["assets"][-1]["digest"] = "sha256:" + "0" * 64
+        for observed in (None, self.release(True), replaced, wrong_digest, self.release(False, 12)):
+            with self.subTest(observed=observed), self.assertRaises(ValueError):
+                self.run_publisher(
+                    [self.release(True), self.release(True), observed],
+                    promotion_error=ValueError("synthetic promotion response loss"),
+                )
+            self.promote.assert_called_once_with(456)
+            self.upload.assert_not_called()
+
+    def test_tag_change_after_promotion_or_during_existing_release_check_is_refused(self):
+        for published in (False, True):
+            with self.subTest(already_published=published), self.assertRaisesRegex(ValueError, "tag changed during"):
+                releases = [self.release(False)] if published else [self.release(True), self.release(True), self.release(False)]
+                tags = [self.commit] if published else [self.commit, self.commit]
+                self.run_publisher(releases, tags + ["b" * 40])
+            self.assertEqual(self.promote.call_count, 0 if published else 1)
 
     def test_promotion_patches_only_draft_state_by_release_id(self):
         with patch.object(publisher.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "", "")) as run:
