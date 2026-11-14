@@ -2996,6 +2996,7 @@ try{
         }
         $script:fixtureLaunchProcessAfterJournal=''
         $fixtureObservedLaunchCount=2
+        $fixtureExitsDuringVerification=$false
         $findCalls=[Collections.Generic.List[bool]]::new()
         function Find-App {
             $findCalls.Add($true)
@@ -3021,12 +3022,17 @@ try{
             $fixtureProcessTimes.Add([DateTime]::UtcNow)
             if($fixtureLaunchFails){throw 'Inert Explorer handoff failure'}
         }
+        function Start-Sleep([int]$Milliseconds){
+            if(-not $fixtureExitsDuringVerification -or $Milliseconds -ne 500){throw 'Unexpected fixture launch poll'}
+            throw 'Fixture reached another poll without reporting launch'
+        }
         function Get-Process($Name,$ErrorAction){
             if($Name -or $ErrorAction -cne 'Stop'){throw 'Expected a complete fixture process query'}
             if($fixtureInventoryFails){throw 'Inert process inventory failure'}
             if($fixtureProcessUnreadable -or $script:fixtureLaunchProcessAfterJournal -ceq 'unreadable'){return [pscustomobject]@{ProcessName='Discord';Path=$null;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false}}
             Assert-LaunchFileHeld
             if($fixtureProcessRunning -or $script:fixtureLaunchProcessAfterJournal -ceq 'running' -or $trace.Count -ge $fixtureObservedLaunchCount){
+                if($fixtureExitsDuringVerification -and $findCalls.Count -ge 4){return}
                 $created=if($trace.Count){$fixtureProcessTimes[$trace.Count-1]}else{[DateTime]::UtcNow.AddSeconds(-1)}
                 return [pscustomobject]@{ProcessName='Discord';Path=$launchPath;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false;StartTime=$created}
             }
@@ -3092,9 +3098,17 @@ try{
             Assert ($rejected -and $trace.Count -eq 2) 'Application launch refuses changed discovery after handoff'
             $fixturePathChangesAfterLaunch=$false
             $fixtureObservedLaunchCount=3
+            $fixtureExitsDuringVerification=$true
+            $findCalls.Clear()
+            $rejected=$false
+            try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Fixture reached another poll without reporting launch'}
+            $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
+            Assert ($rejected -and $trace.Count -eq 3 -and $saved.externalEffectsPending -eq $true) 'Application launch keeps waiting when the client exits during verification'
+            $fixtureExitsDuringVerification=$false
+            $fixtureObservedLaunchCount=4
             $started=Start-App 'discord'
             Assert ($started.application -ceq 'discord' -and $started.alreadyRunning -eq $false -and
-                $trace.Count -eq 3) 'Application launch observes a matching process after its journaled handoff'
+                $trace.Count -eq 4) 'Application launch observes a matching process after its journaled handoff'
             $writer=[IO.File]::OpenWrite($launchPath);$writer.Dispose()
             Assert $true 'Application launch releases its executable after process verification'
         } finally {

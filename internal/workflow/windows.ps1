@@ -4250,8 +4250,12 @@ function Start-App([string]$variant) {
             if(Test-AppProcessInSession $app $sessionId $processes $handoffTime){
                 if((Find-App $variant) -ine $app){throw 'Application installation changed during launch verification'}
                 No-Reparse $app
-                Event 'Application process is running in the desktop session'
-                return @{application=$variant;alreadyRunning=$false}
+                # Discovery can take long enough for an early startup failure.
+                $confirmed=Test-AppProcessInSession $app $sessionId @(Get-Process -ErrorAction Stop) $handoffTime
+                if($confirmed -eq $true){
+                    Event 'Application process is running in the desktop session'
+                    return @{application=$variant;alreadyRunning=$false}
+                }
             }
             Start-Sleep -Milliseconds 500
         } while($wait.Elapsed.TotalSeconds -lt 10)
