@@ -454,7 +454,8 @@ def main():
     output = repo / "build/openbsd-native-checks"
     output.mkdir(mode=0o700, parents=True, exist_ok=True)
     common.owned_directory(output)
-    report = {"schemaVersion": 1, "sourceCommit": source, "target": "openbsd/" + target["arch"], "hostSDK": sdk,
+    report = {"schemaVersion": 2 if args.packaged_candidate is not None else 1,
+              "sourceCommit": source, "target": "openbsd/" + target["arch"], "hostSDK": sdk,
               "packages": [], "publicTestObservations": [], "guestExecutionPassed": False, "packagedCandidateExecuted": False,
               "hardwareQualificationComplete": False, "platformQualificationComplete": False,
               "productionQualificationComplete": False, "readinessGatesPromoted": 0}
@@ -536,8 +537,11 @@ def main():
         report["allTransportedExecutableHashesVerified"] = True
         phase = "guest-cli"
         cli = json.loads(common.run(ssh, data=f"{shlex.quote(guest + '/' + manifest['cli']['file'])} version --json\n".encode()).stdout)
-        report["packagedCandidateExecuted"] = validate_cli(cli, manifest, source, target["arch"], sdk["GOVERSION"], args.packaged_candidate is not None)
-        report.update(executedCLI=cli, cliSHA256=manifest["cli"]["sha256"])
+        archived = validate_cli(cli, manifest, source, target["arch"], sdk["GOVERSION"], args.packaged_candidate is not None)
+        if archived:
+            common.verify_packaged_update_build(ssh, guest, guest + "/" + manifest["cli"]["file"], manifest["packagedCandidate"])
+            report["updateBuildVerified"] = True
+        report.update(executedCLI=cli, cliSHA256=manifest["cli"]["sha256"], packagedCandidateExecuted=archived)
         if args.packaged_candidate is not None:
             phase = "packaged-backup-roundtrip"
             report["packagedBackupChecks"] = common.packaged_backup_checks(ssh, guest, guest + "/" + manifest["cli"]["file"])

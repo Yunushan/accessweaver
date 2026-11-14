@@ -28,7 +28,7 @@ import threading
 import time
 import urllib.request
 
-from bsd_packaged_candidate import copy_packaged_cli
+from bsd_packaged_candidate import copy_packaged_cli, unique_object
 
 TARGETS = {
     "amd64": {
@@ -530,6 +530,31 @@ def build_payload(repo, capsule, source, target, packaged=None, observations=Non
     return manifest, archive
 
 
+def verify_packaged_update_build(ssh, guest, executable, receipt):
+    """Compare the archived CLI with itself without creating controller state."""
+    build = receipt["build"]
+    tag = "v" + build["version"]
+    state = guest + "/update-identity-state"
+    command = [
+        "env", "-i", "HOME=/home/awtest", "PATH=/sbin:/bin:/usr/sbin:/usr/bin",
+        "LANG=C", "LC_ALL=C", "TZ=UTC", "ACCESSWEAVER_HOME=" + state,
+        executable, "system", "check-version", "--build-identity", "--follow-channel", tag,
+    ]
+    script = (
+        f"set -eu\ntest ! -e {shlex.quote(state)}\n"
+        f"{shlex.join(command)}\n"
+        f"test ! -e {shlex.quote(state)}\n"
+        f"test \"$(sha256 -q {shlex.quote(executable)})\" = {shlex.quote(receipt['binarySha256'])}\n"
+    )
+    result = run(ssh, data=script.encode(), timeout=30, limit=4096)
+    comparison = json.loads(result.stdout.decode("utf-8"), object_pairs_hook=unique_object)
+    if (not isinstance(comparison, dict)
+            or comparison.keys() != {"version", "currentVersion", "updateAvailable", "build"}
+            or comparison["version"] != tag or comparison["currentVersion"] != build["version"]
+            or comparison["updateAvailable"] is not False or comparison["build"] != build):
+        raise RuntimeError("packaged guest update comparison differs from the authenticated build")
+
+
 def packaged_backup_checks(ssh, guest, executable):
     """Exercise the archived CLI offline; export only fixed boolean results."""
     root = guest + "/packaged-backup"
@@ -598,7 +623,8 @@ def main():
     output = repo / "build" / "bsd-native-checks"
     output.mkdir(mode=0o700, parents=True, exist_ok=True)
     owned_directory(output)
-    report = {"schemaVersion": 1, "sourceCommit": source, "target": "freebsd/" + target["arch"], "hostSDK": sdk,
+    report = {"schemaVersion": 2 if args.packaged_candidate is not None else 1,
+              "sourceCommit": source, "target": "freebsd/" + target["arch"], "hostSDK": sdk,
               "imageURL": target["imageURL"], "imageSHA256": target["imageSHA256"], "packages": [], "publicTestObservations": [], "guestExecutionPassed": False,
               "packagedCandidateExecuted": False,
               "hardwareQualificationComplete": False, "platformQualificationComplete": False,
@@ -732,6 +758,8 @@ def main():
         if args.packaged_candidate is not None:
             if cli != manifest["packagedCandidate"]["build"] or manifest["cli"]["sha256"] != manifest["packagedCandidate"]["binarySha256"]:
                 raise RuntimeError("executed CLI differs from authenticated archived candidate")
+            verify_packaged_update_build(ssh, guest, guest + "/" + manifest["cli"]["file"], manifest["packagedCandidate"])
+            report["updateBuildVerified"] = True
             report["packagedCandidateExecuted"] = True
         report["executedCLI"] = cli
         report["cliSHA256"] = manifest["cli"]["sha256"]

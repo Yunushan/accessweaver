@@ -120,7 +120,8 @@ class PrereleasePublicationTests(unittest.TestCase):
                 if system in {"freebsd", "openbsd"}:
                     receipt["executionEnvironment"] = f"disposable-{system}-guest"
                 (target / "candidate.json").write_text(json.dumps(receipt), encoding="utf-8")
-                execution = {"schemaVersion": 1, "sourceCommit": self.commit, "target": receipt["target"],
+                execution = {"schemaVersion": 2, "updateBuildVerified": True,
+                             "sourceCommit": self.commit, "target": receipt["target"],
                              "productionQualificationComplete": False}
                 if system in {"freebsd", "openbsd"}:
                     execution.update(
@@ -135,9 +136,9 @@ class PrereleasePublicationTests(unittest.TestCase):
                     execution["ownedEmulatorStopped" if system == "freebsd" else "ownedEmulatorsStopped"] = True
                 else:
                     execution.update(
-                        schemaVersion=2, sourceRef=self.ref, archiveSha256=receipt["archiveSha256"],
+                        sourceRef=self.ref, archiveSha256=receipt["archiveSha256"],
                         binarySha256=receipt["binarySha256"],
-                        build=receipt["build"], authenticatedCandidateExecuted=True, updateBuildVerified=True,
+                        build=receipt["build"], authenticatedCandidateExecuted=True,
                         backupAndRecoveryVerified=True,
                         loopbackDiagnosticsVerified=True, unixControllerVerified=system != "windows",
                         windowsDiscoveryVerified=system == "windows", publisherSignatureVerified=False,
@@ -200,7 +201,8 @@ class PrereleasePublicationTests(unittest.TestCase):
                              "updateBuildVerified": False, "schemaVersion": 1}),
                 ("openbsd", {"packagedCandidateExecuted": False, "guestExecutionPassed": False,
                              "ownedEmulatorsStopped": False, "ownedCapsuleRemoved": False,
-                             "cliSHA256": "b" * 64, "packagedBackupChecks": {}, "failurePhase": "guest-cli"}),
+                             "cliSHA256": "b" * 64, "packagedBackupChecks": {}, "failurePhase": "guest-cli",
+                             "updateBuildVerified": 1, "schemaVersion": 1}),
             ):
                 result = receipts / f"release-qualified-{system}-arm64" / "execution.json"
                 original_result = result.read_bytes()

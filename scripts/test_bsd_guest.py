@@ -18,6 +18,41 @@ guest = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guest)
 
 
+class PackagedUpdateBuildTests(unittest.TestCase):
+    def test_compares_the_original_guest_executable_without_writing_state(self):
+        root = "/home/awtest/test capsule"
+        executable = root + "/accessweaver"
+        for system in ("freebsd", "openbsd"):
+            build = {"version": "0.1.0-alpha", "commit": "a" * 40, "sourceState": "clean",
+                     "platform": system, "arch": "arm64", "builtAt": "unknown", "goVersion": "go1.27.4"}
+            receipt = {"build": build, "binarySha256": "b" * 64}
+            comparison = {"version": "v0.1.0-alpha", "currentVersion": "0.1.0-alpha",
+                          "updateAvailable": False, "build": dict(build)}
+            with self.subTest(system=system), patch.object(guest, "run") as run:
+                run.return_value = subprocess.CompletedProcess([], 0, json.dumps(comparison).encode())
+                guest.verify_packaged_update_build(["ssh"], root, executable, receipt)
+                self.assertEqual(run.call_args.args, (["ssh"],))
+                self.assertEqual(run.call_args.kwargs["limit"], 4096)
+                self.assertEqual(run.call_args.kwargs["timeout"], 30)
+                script = run.call_args.kwargs["data"].decode()
+                self.assertIn("'"+executable+"' system check-version --build-identity --follow-channel v0.1.0-alpha", script)
+                self.assertEqual(script.count("test ! -e"), 2)
+                self.assertIn("sha256 -q '" + executable + "'", script)
+                self.assertIn(receipt["binarySha256"], script)
+
+            for value in (
+                json.dumps({**comparison, "build": {**build, "sourceState": "modified"}}).encode(),
+                json.dumps({**comparison, "build": {**build, "platform": "linux"}}).encode(),
+                json.dumps({**comparison, "updateAvailable": 0}).encode(),
+                json.dumps({**comparison, "currentVersion": "0.0.1"}).encode(),
+                json.dumps(comparison).encode()[:-1] + b', "version": "v0.1.0-alpha"}',
+            ):
+                with self.subTest(system=system), patch.object(guest, "run") as run:
+                    run.return_value = subprocess.CompletedProcess([], 0, value)
+                    with self.assertRaises((RuntimeError, ValueError)):
+                        guest.verify_packaged_update_build(["ssh"], root, executable, receipt)
+
+
 class GuestSafetyTests(unittest.TestCase):
     def test_outside_hosted_context_launches_no_command(self):
         with patch.object(guest, "run") as run:
