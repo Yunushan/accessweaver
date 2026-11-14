@@ -3486,6 +3486,23 @@ function Install-App([string]$variant,[switch]$Reinstall) {
             throw 'Stable Discord reappeared before replacement setup; review the current installation'
         }
         Save-ApplicationEffectBoundary
+        if($Reinstall){
+            Wait-AppProcessesExited $variant $originalApp 0
+            if((Find-App $variant) -or (Test-Path -LiteralPath $originalApp -ErrorAction Stop)){
+                throw 'Stable Discord reappeared before replacement setup; review the current installation'
+            }
+        }
+        if($cleanPTB){
+            if((Find-App 'discord') -ine $stableBeforeDownload -or
+               ($stableBeforeDownload -and (Get-AppExecutableDigest $stableBeforeDownload) -ine $stableBeforeDownloadDigest)){
+                throw 'Stable Discord changed before PTB setup; review the current installation'
+            }
+            if($stableBeforeDownload -and ((Find-App $variant) -ine $existingApp -or
+               ($existingApp -and (Get-AppExecutableDigest $existingApp) -ine $ptbBeforeSetupDigest))){
+                throw 'Discord PTB changed before setup; stable Discord was preserved'
+            }
+        }
+        No-Reparse $file
         [void](Native $file $installerArgs -Timeout 900 -StartGuard $lockedInstaller)
     } finally {$lockedInstaller.Dispose()}
     $installedApp=Wait-App $variant $true 180
