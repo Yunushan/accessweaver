@@ -302,6 +302,62 @@ with patch.object(publisher, "tool"), patch.object(publisher, "publish_staged_fi
             self.assertEqual(list(parent.iterdir()), [])
             self.assertEqual((displaced / destination.name).read_bytes(), content)
 
+    def test_detector_export_verifies_release_binding_before_publication(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(publisher.sys, "platform", "darwin"):
+            root = Path(temporary)
+            directory = root / "input"
+            directory.mkdir()
+            package = directory / "approved.pkg"
+            package.write_bytes(b"approved package bytes")
+            package_pin = publisher.digest(package)
+            destination = root / "accessweaver-installer"
+            auth = ("a" * 40, "1.2.3", "B" * 64, "C" * 64)
+            options = {
+                "detector_output": destination, "detector_sha256": "d" * 64, "architecture": "arm64",
+                "application_certificate_sha256": "e" * 64, "deployment_release": auth,
+            }
+            with patch.object(publisher, "check_package_publisher") as check_package, \
+                    patch.object(publisher, "verify_packaged_deployment") as check_deployment, \
+                    patch.object(publisher, "stage_detector") as stage:
+                for override in (
+                    {"application_certificate_sha256": None},
+                    {"detector_output": None},
+                    {"deployment_release": ("short", *auth[1:])},
+                    {"deployment_release": (auth[0], "1.2", *auth[2:])},
+                ):
+                    with self.subTest(override=override), self.assertRaises(ValueError):
+                        publisher.verify(directory, package_pin, TEAM, PIN, **{**options, **override})
+                check_package.assert_not_called()
+                check_deployment.assert_not_called()
+                stage.assert_not_called()
+
+                check_deployment.side_effect = ValueError("fixture deployment refused")
+                with self.assertRaisesRegex(ValueError, "fixture deployment refused"):
+                    publisher.verify(directory, package_pin, TEAM, PIN, **options)
+                stage.assert_not_called()
+
+                def change_package(snapshot, *args, **kwargs):
+                    snapshot.write_bytes(b"changed package bytes")
+
+                check_deployment.side_effect = change_package
+                with self.assertRaisesRegex(ValueError, "Package changed during publisher verification"):
+                    publisher.verify(directory, package_pin, TEAM, PIN, **options)
+                stage.assert_not_called()
+
+                check_deployment.side_effect = lambda snapshot, *args, **kwargs: snapshot.parent / "expanded"
+                result = publisher.verify(directory, package_pin, TEAM, PIN, **options)
+                snapshot, team, arch, app_pin = check_deployment.call_args.args
+                self.assertEqual((snapshot.name, team, arch, app_pin), (package.name, TEAM, "arm64", "e" * 64))
+                self.assertEqual(check_deployment.call_args.kwargs, {
+                    "commit": auth[0], "version": auth[1], "helper_sha256": "d" * 64,
+                    "manifest_sha256": "b" * 64, "payload_sha256": "c" * 64,
+                })
+                self.assertEqual(stage.call_args.args[:5], (snapshot.parent / "expanded", TEAM, "arm64", "d" * 64, destination))
+                self.assertEqual(stage.call_args.args[-1], "e" * 64)
+                self.assertEqual(result["deploymentRelease"], {
+                    "sourceCommit": auth[0], "version": auth[1], "manifestSHA256": "b" * 64, "payloadSHA256": "c" * 64,
+                })
+
     def test_stage_detector_only_from_verified_package_with_exact_pin(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(publisher.sys, "platform", "darwin"):
             root = Path(temporary)

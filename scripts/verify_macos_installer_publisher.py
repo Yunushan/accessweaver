@@ -15,7 +15,7 @@ from xml.etree.ElementTree import ParseError
 from macos_deployment import (
     DETACHED_MANIFEST, install_location, manifest_contract, validate_deployment_metadata, verify_deployment_bundle,
 )
-from macos_installer import BUNDLE_ID, BUNDLE_NAME, macho_identity
+from macos_installer import BUNDLE_ID, BUNDLE_NAME, macho_identity, version_parts
 from macos_package_archive import xml
 from verify_release import publish_staged_file, require
 from verify_release_rebuild import digest, snapshot
@@ -177,6 +177,7 @@ def verify_packaged_deployment(package, team, architecture, application_pin, *,
     check_helper_publisher(expanded / "Scripts" / "postinstall", team, application_pin)
     require(read_packaged_helper(expanded, architecture) == data,
             "Expanded package helper changed during publisher verification")
+    return expanded
 
 
 def stage_detector(expanded, team, architecture, approved_sha256, destination, parent_info, application_pin=None):
@@ -213,7 +214,7 @@ def stage_detector(expanded, team, architecture, approved_sha256, destination, p
 
 def verify(directory, artifact_sha256, team, certificate_sha256, *,
            detector_output=None, detector_sha256=None, architecture=None,
-           application_certificate_sha256=None):
+           application_certificate_sha256=None, deployment_release=None):
     require(sys.platform == "darwin", "macOS is required for Developer ID verification")
     require(FINGERPRINT.fullmatch(artifact_sha256) and FINGERPRINT.fullmatch(certificate_sha256)
             and re.fullmatch(r"[A-Z0-9]{10}", team), "Invalid approved publisher inputs")
@@ -233,6 +234,17 @@ def verify(directory, artifact_sha256, team, certificate_sha256, *,
         require(stat.S_ISDIR(parent_info.st_mode), "Expected a real detector output directory")
         detector_output = parent.resolve(strict=True) / detector_output.name
         detector_sha256 = detector_sha256.lower()
+    if deployment_release is not None:
+        require(detector_output is not None and application_certificate_sha256 is not None,
+                "Bound deployment verification requires detector staging and the approved Application certificate")
+        require(isinstance(deployment_release, (tuple, list)) and len(deployment_release) == 4
+                and all(isinstance(value, str) for value in deployment_release),
+                "Invalid approved deployment release inputs")
+        commit, version, manifest_pin, payload_pin = deployment_release
+        require(re.fullmatch(r"[a-f0-9]{40}", commit)
+                and FINGERPRINT.fullmatch(manifest_pin) and FINGERPRINT.fullmatch(payload_pin),
+                "Invalid approved deployment release inputs")
+        version_parts(version)
     artifact_sha256 = artifact_sha256.lower()
     certificate_sha256 = certificate_sha256.lower()
     with tempfile.TemporaryDirectory(prefix="accessweaver-macos-publisher-") as temporary:
@@ -242,11 +254,18 @@ def verify(directory, artifact_sha256, team, certificate_sha256, *,
         package = root / name
         require(digest(package) == artifact_sha256, "Package digest differs from the approved release")
         check_package_publisher(package, team, certificate_sha256)
-        if architecture is not None:
+        if deployment_release is not None:
+            expanded = verify_packaged_deployment(
+                package, team, architecture, application_certificate_sha256,
+                commit=commit, version=version, helper_sha256=detector_sha256,
+                manifest_sha256=manifest_pin.lower(), payload_sha256=payload_pin.lower(),
+            )
+            require(digest(package) == artifact_sha256, "Package changed during publisher verification")
+        elif architecture is not None:
             expanded = verify_packaged_application(package, team, architecture, application_certificate_sha256)
-            if detector_output is not None:
-                stage_detector(expanded, team, architecture, detector_sha256, detector_output, parent_info,
-                               application_certificate_sha256)
+        if detector_output is not None:
+            stage_detector(expanded, team, architecture, detector_sha256, detector_output, parent_info,
+                           application_certificate_sha256)
     report = {
         "schemaVersion": 1,
         "scope": "macos-package-publisher",
@@ -267,6 +286,11 @@ def verify(directory, artifact_sha256, team, certificate_sha256, *,
             "architecture": architecture, "sha256": detector_sha256,
             "developerIDApplicationVerified": True,
         }
+    if deployment_release is not None:
+        report["deploymentRelease"] = {
+            "sourceCommit": commit, "version": version,
+            "manifestSHA256": manifest_pin.lower(), "payloadSHA256": payload_pin.lower(),
+        }
     return report
 
 
@@ -281,11 +305,14 @@ def main():
     parser.add_argument("--detector-output", type=Path, help="new accessweaver-installer path in a trusted directory")
     parser.add_argument("--detector-sha256", help="approved script-file:postinstall SHA-256")
     parser.add_argument("--architecture", choices=("amd64", "arm64"), help="verify the packaged application's Developer ID and this native architecture")
+    parser.add_argument("--deployment-release", nargs=4, metavar=("COMMIT", "VERSION", "MANIFEST_SHA256", "PAYLOAD_SHA256"),
+                        help="bind detector export to an independently verified signed release")
     args = parser.parse_args()
     try:
         result = verify(args.directory, args.artifact_sha256, args.team_id, args.publisher_certificate_sha256,
                         detector_output=args.detector_output, detector_sha256=args.detector_sha256,
-                        architecture=args.architecture, application_certificate_sha256=args.application_certificate_sha256)
+                        architecture=args.architecture, application_certificate_sha256=args.application_certificate_sha256,
+                        deployment_release=args.deployment_release)
     except (ValueError, OSError, subprocess.SubprocessError):
         print("macOS publisher verification failed. Check the approved digests, Developer ID, Gatekeeper and ticket.",
               file=sys.stderr)
