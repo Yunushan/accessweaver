@@ -218,6 +218,35 @@ function Get-GuestBoot {
     if(@($os).Count -ne 1 -or $os.LastBootUpTime -isnot [datetime]){throw 'Cannot establish the current guest boot'}
     return $os.LastBootUpTime.ToUniversalTime().Ticks.ToString([Globalization.CultureInfo]::InvariantCulture)
 }
+function Assert-RebootPublisher([string]$Path,[string]$ArtifactSHA256,[string]$PublisherSHA256){
+    # A successful PowerShell script can return without updating LASTEXITCODE.
+    $previousExit=Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+    if($null -ne $previousExit){$previousExitValue=$previousExit.Value}
+    try {
+        $global:LASTEXITCODE=0
+        $output=@(& $publisher -Artifact $Path -ArtifactSHA256 $ArtifactSHA256 -PublisherCertificateSHA256 $PublisherSHA256)
+        $code=$global:LASTEXITCODE
+    } finally {
+        if($null -ne $previousExit){$global:LASTEXITCODE=$previousExitValue}
+        else{Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue}
+    }
+    if($code -ne 0 -or $output.Count -ne 1 -or $output[0] -isnot [string] -or
+       $output[0].Length -gt 4096 -or $output[0].IndexOf([char]0) -ge 0 -or $output[0] -cnotmatch '\A[\x20\t\r\n]*\{'){
+        throw 'Authenticode verification did not return a publisher receipt'
+    }
+    $receipt=ConvertFrom-Json -InputObject $output[0] -ErrorAction Stop
+    $fields=@('schemaVersion','scope','artifactSHA256','publisherCertificateSHA256','embeddedSignatureVerified','timestampPresent')
+    if($receipt -isnot [pscustomobject] -or @($receipt.PSObject.Properties).Count -ne $fields.Count -or
+       @($receipt.PSObject.Properties.Name | Where-Object {$_ -cnotin $fields}).Count -ne 0 -or
+       ($receipt.schemaVersion -isnot [int] -and $receipt.schemaVersion -isnot [long]) -or $receipt.schemaVersion -ne 1 -or
+       $receipt.scope -isnot [string] -or $receipt.scope -cne 'windows-publisher-signature' -or
+       $receipt.artifactSHA256 -isnot [string] -or $receipt.artifactSHA256 -cne $ArtifactSHA256.ToLowerInvariant() -or
+       $receipt.publisherCertificateSHA256 -isnot [string] -or $receipt.publisherCertificateSHA256 -cne $PublisherSHA256.ToLowerInvariant() -or
+       $receipt.embeddedSignatureVerified -isnot [bool] -or -not $receipt.embeddedSignatureVerified -or
+       $receipt.timestampPresent -isnot [bool] -or -not $receipt.timestampPresent){
+        throw 'Authenticode publisher receipt did not match the approved artifact and certificate'
+    }
+}
 function Invoke-ApprovedInstaller([string]$Path,[string[]]$Arguments,[switch]$AllowRestartRequired,[int]$ExpectedExitCode=0,[string]$OutputPath,
     [string]$ApprovedSHA256,[string]$ApprovedPublisherSHA256){
     if($AllowRestartRequired -and $ExpectedExitCode -ne 0){throw 'Conflicting installer exit expectations'}
@@ -232,8 +261,7 @@ function Invoke-ApprovedInstaller([string]$Path,[string[]]$Arguments,[switch]$Al
         if($ApprovedSHA256){
             Assert-RebootPath $Path
             $guard=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-            $null=@(& $publisher -Artifact $Path -ArtifactSHA256 $ApprovedSHA256 -PublisherCertificateSHA256 $ApprovedPublisherSHA256)
-            if($LASTEXITCODE -ne 0){throw 'Installer publisher verification failed'}
+            Assert-RebootPublisher $Path $ApprovedSHA256 $ApprovedPublisherSHA256
         }
         $process=Start-Process -FilePath $Path -ArgumentList $Arguments -WindowStyle Hidden -PassThru @capture
     } finally {
@@ -269,7 +297,9 @@ function Assert-RebootDowngradeLog([string]$Path){
     } finally {$stream.Dispose()}
     throw 'The older installer did not report the version-policy refusal'
 }
-function Save-RebootFixtureProfile([string]$Controller,[string]$UserStore,[string]$InputPath,[string]$ProfileID){
+function Save-RebootFixtureProfile([string]$Controller,[string]$UserStore,[string]$InputPath,[string]$ProfileID,
+    [string]$ControllerSHA256,[string]$ControllerPublisherSHA256){
+    if(-not $ControllerSHA256 -or -not $ControllerPublisherSHA256){throw 'Profile import requires approved controller and publisher digests'}
     $profile=[ordered]@{version=1;id=$ProfileID;name='Installer reboot preservation fixture';engine='byedpi';args=@()
         routing=@{includeDomains=@();excludeDomains=@();applications=@()}
         probe=@{host='example.invalid';port=443;tls=$true;timeoutSeconds=5}}
@@ -277,7 +307,7 @@ function Save-RebootFixtureProfile([string]$Controller,[string]$UserStore,[strin
     $previousHome=$env:ACCESSWEAVER_HOME
     try {
         $env:ACCESSWEAVER_HOME=$UserStore
-        [void](Invoke-ApprovedInstaller $Controller @('import',('"'+$InputPath+'"')))
+        [void](Invoke-ApprovedInstaller $Controller @('import',('"'+$InputPath+'"')) -ApprovedSHA256 $ControllerSHA256 -ApprovedPublisherSHA256 $ControllerPublisherSHA256)
     } finally {$env:ACCESSWEAVER_HOME=$previousHome}
 }
 function Assert-RebootUserProfile([string]$Path,[string]$Digest){
@@ -312,8 +342,7 @@ function Assert-InstalledDetection([bool]$Detected,[string]$CandidateVersion=$Ve
     } elseif($output.Count -ne 0){throw 'Unexpected approved installation already exists'}
 }
 function Assert-InstalledPublisher([string]$ArtifactSHA256=$PayloadSHA256,[string]$PublisherSHA256=$PayloadPublisherCertificateSHA256) {
-    $null=@(& $publisher -Artifact $controller -ArtifactSHA256 $ArtifactSHA256 -PublisherCertificateSHA256 $PublisherSHA256)
-    if($LASTEXITCODE -ne 0){throw 'Installed payload publisher verification failed'}
+    Assert-RebootPublisher $controller $ArtifactSHA256 $PublisherSHA256
 }
 function Assert-RegistrationAbsent {
     foreach($view in @([Microsoft.Win32.RegistryView]::Registry64,[Microsoft.Win32.RegistryView]::Registry32)){
@@ -427,7 +456,7 @@ if($Phase -ceq 'Prepare'){
                 if($LASTEXITCODE -ne 0 -or $comparison.Length -gt 4096){throw 'Previous controller could not compare release versions'}
                 Assert-RebootUpgradeOrder (ConvertFrom-Json -InputObject $comparison -ErrorAction Stop) $PreviousVersion $Version
                 $stage='user-profile-before-upgrade'
-                Save-RebootFixtureProfile $controller $userStore $profileInput $profileID
+                Save-RebootFixtureProfile $controller $userStore $profileInput $profileID $PreviousPayloadSHA256 $PreviousPayloadPublisherCertificateSHA256
                 $expected.userProfileSHA256=Get-RebootDigest $userProfile
             } finally {$guard.Dispose()}
         }
@@ -435,8 +464,7 @@ if($Phase -ceq 'Prepare'){
         Assert-RebootPath $setup
         $setupGuard=[IO.File]::Open($setup,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
         try {
-            $null=@(& $publisher -Artifact $setup -ArtifactSHA256 $SetupSHA256 -PublisherCertificateSHA256 $PublisherCertificateSHA256)
-            if($LASTEXITCODE -ne 0){throw 'Setup publisher verification failed'}
+            Assert-RebootPublisher $setup $SetupSHA256 $PublisherCertificateSHA256
             $stage='install'
             $expected.setupExitCode=Invoke-ApprovedInstaller $setup @('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/RESTARTEXITCODE=3010','/NOICONS') -AllowRestartRequired
         } finally {$setupGuard.Dispose()}
@@ -445,8 +473,7 @@ if($Phase -ceq 'Prepare'){
         Assert-InstalledPublisher
         $expected.boot=$boot
         $expected.uninstallerSHA256=Get-RebootDigest $uninstaller
-        $null=@(& $publisher -Artifact $uninstaller -ArtifactSHA256 $expected.uninstallerSHA256 -PublisherCertificateSHA256 $PublisherCertificateSHA256)
-        if($LASTEXITCODE -ne 0){throw 'Installed uninstaller publisher verification failed'}
+        Assert-RebootPublisher $uninstaller $expected.uninstallerSHA256 $PublisherCertificateSHA256
         Assert-InstalledDetection $true -UninstallerDigest $expected.uninstallerSHA256
         $expected.installedTreeSHA256=Get-RebootInstalledTreeDigest $install
         $expected.registrationSHA256=Get-RebootRegistrationDigest
@@ -456,7 +483,7 @@ if($Phase -ceq 'Prepare'){
             $expected.userProfilePreservedThroughUpgrade=$true
         }else{
             $stage='user-profile-prepare'
-            Save-RebootFixtureProfile $controller $userStore $profileInput $profileID
+            Save-RebootFixtureProfile $controller $userStore $profileInput $profileID $PayloadSHA256 $PayloadPublisherCertificateSHA256
             $expected.userProfileSHA256=Get-RebootDigest $userProfile
         }
         Write-NewRebootEvidence $baseline $expected
@@ -519,8 +546,7 @@ try {
         if(Test-Path -LiteralPath $downgradeLog -ErrorAction Stop){throw 'Downgrade log already exists'}
         $olderGuard=[IO.File]::Open($olderSetup,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
         try {
-            $null=@(& $publisher -Artifact $olderSetup -ArtifactSHA256 $PreviousSetupSHA256 -PublisherCertificateSHA256 $PreviousPublisherCertificateSHA256)
-            if($LASTEXITCODE -ne 0){throw 'Older setup publisher verification failed'}
+            Assert-RebootPublisher $olderSetup $PreviousSetupSHA256 $PreviousPublisherCertificateSHA256
             $result.stage='downgrade-refusal'
             [void](Invoke-ApprovedInstaller $olderSetup @('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/NOICONS',('/LOG="'+$downgradeLog+'"')) -ExpectedExitCode 1)
         } finally {$olderGuard.Dispose()}

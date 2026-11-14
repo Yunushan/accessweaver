@@ -4,7 +4,7 @@ $source=Join-Path $PSScriptRoot 'test-windows-installer-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'Reboot fixture failed parsing'}
-foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootDowngradeLog','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-InstalledDetection','Assert-InstalledPublisher')){
+foreach($name in @('Assert-LaterGuestBoot','Assert-RebootIdentity','Get-RebootInstallMode','Test-RebootDowngradeInputs','Assert-RebootDowngradeLog','Assert-RebootUpgradeOrder','Write-NewRebootEvidence','Read-RebootEvidence','Assert-RebootPath','Assert-RebootPublisher','Invoke-ApprovedInstaller','Get-RebootMetadataDigest','Get-RebootInstalledTreeDigest','Get-RebootRegistrationFingerprint','Save-RebootFixtureProfile','Assert-RebootUserProfile','Assert-RebootProfileReadable','Assert-RebootInstalledState','Assert-RebootPackageRemoved','Assert-InstalledDetection','Assert-InstalledPublisher')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
         $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and $_.Name -ceq $name
     })
@@ -15,6 +15,12 @@ function Assert-Refused([scriptblock]$Action){
     $refused=$false
     try {& $Action}catch{$refused=$true}
     if(-not $refused){throw 'Unexpected reboot evidence acceptance'}
+}
+function New-FixturePublisherReceipt([string]$ArtifactSHA256,[string]$PublisherSHA256){
+    return [ordered]@{
+        schemaVersion=1;scope='windows-publisher-signature';artifactSHA256=$ArtifactSHA256.ToLowerInvariant()
+        publisherCertificateSHA256=$PublisherSHA256.ToLowerInvariant();embeddedSignatureVerified=$true;timestampPresent=$true
+    }
 }
 Assert-LaterGuestBoot '639303000000000000' '639303000000000001'
 Assert-Refused {Assert-LaterGuestBoot '639303000000000000' '639303000000000000'}
@@ -61,10 +67,13 @@ Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
         $publisher={
             param($Artifact,$ArtifactSHA256,$PublisherCertificateSHA256)
             $trace.Add(@{artifact=$Artifact;sha256=$ArtifactSHA256;publisher=$PublisherCertificateSHA256})
-            $global:LASTEXITCODE=$behavior.publisherCode
+            if($behavior.publisherCode -ne 0){$global:LASTEXITCODE=$behavior.publisherCode}
+            ConvertTo-Json -InputObject (New-FixturePublisherReceipt $ArtifactSHA256 $PublisherCertificateSHA256) -Compress
         }
         Assert-InstalledDetection $true -UninstallerDigest ('d'*64)
+        $global:LASTEXITCODE=19
         Assert-InstalledPublisher
+        if($LASTEXITCODE -ne 19){throw 'Publisher verifier changed the caller exit status'}
         if($trace[0].version -cne $Version -or $trace[0].arch -cne $Architecture -or
            $trace[0].payload -cne $PayloadSHA256 -or $trace[0].sbom -cne $PayloadSBOMSHA256 -or $trace[0].buildInfo -cne $BuildInfoSHA256 -or $trace[0].uninstaller -cne ('d'*64) -or
            $trace[1].artifact -cne $controller -or $trace[1].sha256 -cne $PayloadSHA256 -or $trace[1].publisher -cne $PayloadPublisherCertificateSHA256){
@@ -325,6 +334,21 @@ foreach($test in @(
             }
             $actual=(Get-FileHash -LiteralPath $Artifact -Algorithm SHA256).Hash
             $global:LASTEXITCODE=[int]($actual -ine $ArtifactSHA256)
+            $receipt=New-FixturePublisherReceipt $actual $PublisherCertificateSHA256
+            switch($receiptFault){
+                'missing' {return}
+                'multiple' {Write-Output 'unexpected diagnostic'}
+                'large' {Write-Output ('x'*4097);return}
+                'array' {Write-Output ('['+(ConvertTo-Json -InputObject $receipt -Compress)+']');return}
+                'wrong-field' {$receipt.scope='fixture'}
+                'misnamed-field' {$receipt.Remove('scope');$receipt.SCOPE='windows-publisher-signature'}
+                'scope-array' {$receipt.scope=@('windows-publisher-signature')}
+                'wrong-digest' {$receipt.artifactSHA256='0'*64}
+                'wrong-certificate' {$receipt.publisherCertificateSHA256='b'*64}
+                'non-boolean' {$receipt.embeddedSignatureVerified=1}
+                'no-timestamp' {$receipt.timestampPresent=$false}
+            }
+            ConvertTo-Json -InputObject $receipt -Compress
         }
         function Start-Process {
             [CmdletBinding()]param($FilePath,$ArgumentList,$WindowStyle,[switch]$PassThru)
@@ -343,10 +367,17 @@ foreach($test in @(
             $process | Add-Member ScriptMethod Dispose {$trace.Add('dispose')}
             return $process
         }
+        $receiptFault=''
         Assert-Refused {Invoke-ApprovedInstaller $artifact @('/NORESTART') -ApprovedSHA256 $approved}
         if($trace.Count){throw 'Incomplete approval accessed the uninstaller'}
         Assert-Refused {Invoke-ApprovedInstaller $artifact @('/NORESTART') -ApprovedSHA256 ('0'*64) -ApprovedPublisherSHA256 $certificate}
         if(($trace -join ',') -cne 'verify'){throw 'Failed approval reached process creation'}
+        foreach($receiptFault in @('missing','multiple','large','array','wrong-field','misnamed-field','scope-array','wrong-digest','wrong-certificate','non-boolean','no-timestamp')){
+            $trace.Clear()
+            Assert-Refused {Invoke-ApprovedInstaller $artifact @('/NORESTART') -ApprovedSHA256 $approved -ApprovedPublisherSHA256 $certificate}
+            if(($trace -join ',') -cne 'verify'){throw ('Invalid publisher receipt reached launch: '+$receiptFault)}
+        }
+        $receiptFault=''
         $trace.Clear()
         $failLaunch=$true
         Assert-Refused {Invoke-ApprovedInstaller $artifact @('/NORESTART') -ApprovedSHA256 $approved -ApprovedPublisherSHA256 $certificate}
@@ -368,8 +399,8 @@ foreach($test in @(
 }
 $installer=(Get-Command Invoke-ApprovedInstaller).ScriptBlock
 function Invoke-ApprovedInstaller {
-    param($Path,$Arguments)
-    if($Path -cne 'fixture-controller.exe' -or $Arguments.Count -ne 2 -or $Arguments[0] -cne 'import' -or
+    param($Path,$Arguments,$ApprovedSHA256,$ApprovedPublisherSHA256)
+    if($ApprovedSHA256 -cne ('a'*64) -or $ApprovedPublisherSHA256 -cne ('b'*64) -or $Path -cne 'fixture-controller.exe' -or $Arguments.Count -ne 2 -or $Arguments[0] -cne 'import' -or
         $Arguments[1] -cne ('"'+$profileInput+'"') -or $env:ACCESSWEAVER_HOME -cne $fixtureStore){
         throw 'Profile import escaped its intended controller or user store'
     }
@@ -386,11 +417,13 @@ $profileInput=Join-Path $root 'profile-input.json'
 $oldHome=$env:ACCESSWEAVER_HOME
 try {
     $script:failImport=$false
-    Save-RebootFixtureProfile 'fixture-controller.exe' $fixtureStore $profileInput 'installer-reboot-synthetic'
+    Assert-Refused {Save-RebootFixtureProfile 'fixture-controller.exe' $fixtureStore $profileInput 'installer-reboot-synthetic' ('a'*64)}
+    if([IO.File]::Exists($profileInput)){throw 'Missing profile import approval wrote fixture state'}
+    Save-RebootFixtureProfile 'fixture-controller.exe' $fixtureStore $profileInput 'installer-reboot-synthetic' ('a'*64) ('b'*64)
     if($env:ACCESSWEAVER_HOME -cne $oldHome){throw 'Profile import retained its temporary environment'}
     [IO.File]::Delete($profileInput)
     $script:failImport=$true
-    Assert-Refused {Save-RebootFixtureProfile 'fixture-controller.exe' $fixtureStore $profileInput 'installer-reboot-synthetic'}
+    Assert-Refused {Save-RebootFixtureProfile 'fixture-controller.exe' $fixtureStore $profileInput 'installer-reboot-synthetic' ('a'*64) ('b'*64)}
     if($env:ACCESSWEAVER_HOME -cne $oldHome){throw 'Failed profile import retained its temporary environment'}
     $notice=$profileInput
     $digest=Get-RebootDigest $profileInput
