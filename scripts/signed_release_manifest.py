@@ -1138,7 +1138,19 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                                             size=installer["size"], directory_identity=stage_directory_id)
                 update["setupExitCode"] = code
                 if code == 0:
-                    update["installedDetection"] = detect_windows_upgrade(update["windowsUpgradeDetection"], payload_publisher)
+                    try:
+                        require_current_revocation_policy(policy)
+                    except ValueError:
+                        update["installedDetection"] = "unverified"
+                        update["installedDetectionReason"] = "revocation-policy-expired"
+                    else:
+                        update["installedDetection"] = detect_windows_upgrade(
+                            update["windowsUpgradeDetection"], payload_publisher)
+                        try:
+                            require_current_revocation_policy(policy)
+                        except ValueError:
+                            update["installedDetection"] = "unverified"
+                            update["installedDetectionReason"] = "revocation-policy-expired"
                 elif code == 3010:
                     update["installedDetection"] = "restart-required"
                 else:
@@ -1147,9 +1159,12 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     with hold_windows_staging_directory(stage_directory):
                         require(staging_directory_identity(stage_directory) == stage_directory_id,
                                 "Managed update staging directory changed before receipt publication")
+                        result_receipt = {**attempt, "setupExitCode": code,
+                                          "installedDetection": update["installedDetection"]}
+                        if "installedDetectionReason" in update:
+                            result_receipt["installedDetectionReason"] = update["installedDetectionReason"]
                         write_windows_upgrade_receipt(
-                            stage_directory / (windows_upgrade_attempt_id + ".result.json"),
-                            {**attempt, "setupExitCode": code, "installedDetection": update["installedDetection"]},
+                            stage_directory / (windows_upgrade_attempt_id + ".result.json"), result_receipt,
                         )
         return report
 

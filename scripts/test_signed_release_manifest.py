@@ -1176,6 +1176,30 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertEqual(result["setupExitCode"], 0)
                 self.assertEqual(result["installedDetection"], "detected")
                 detect.assert_called_once_with(result["windowsUpgradeDetection"], launch_options["windows_payload_publisher"])
+
+                real_check = release.require_current_revocation_policy
+                for when in ("setup", "detection"):
+                    with self.subTest(expired_after=when):
+                        detect.reset_mock()
+                        launch.reset_mock()
+
+                        def check_after_native_call(policy, **kwargs):
+                            if detect.called or (when == "setup" and launch.called):
+                                raise ValueError("Revocation policy is outside its validity window")
+                            return real_check(policy, **kwargs)
+
+                        with patch.object(release, "require_current_revocation_policy", side_effect=check_after_native_call):
+                            result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
+                                                 windows_upgrade_attempt_id=attempt_id)["managedUpdate"]
+                        self.assertEqual(result["setupExitCode"], 0)
+                        self.assertEqual(result["installedDetection"], "unverified")
+                        self.assertEqual(result["installedDetectionReason"], "revocation-policy-expired")
+                        self.assertEqual(detect.call_count, int(when == "detection"))
+                        receipt_path = staging / (attempt_id + ".result.json")
+                        receipt = json.loads(receipt_path.read_bytes())
+                        self.assertEqual(receipt, {**attempt, "setupExitCode": 0, "installedDetection": "unverified",
+                                                   "installedDetectionReason": "revocation-policy-expired"})
+                        receipt_path.unlink()
                 detect.reset_mock()
                 launch.return_value = 7
                 result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options)["managedUpdate"]
