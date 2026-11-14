@@ -14,6 +14,7 @@ $project=Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'windows-installer-common.ps1')
 Assert-InstallerReleaseVersion $Version
 $callback=Join-Path $PSScriptRoot 'sign-windows-installer-artifact.ps1'
+$setupScript=Join-Path $PSScriptRoot 'windows-installer.iss'
 $signingArguments=@()
 $payloadSigning=Get-InstallerPayloadSigning $SigningTool $PublisherCertificateSHA256 $PayloadSigningTool $PayloadPublisherCertificateSHA256
 $organizationSigning=[bool]($SigningTool -or $PublisherCertificateSHA256)
@@ -109,8 +110,9 @@ try {
     if($organizationSigning){$evidence=Join-Path $signingRoot 'evidence'}
     [void](New-Item -ItemType Directory -Force -Path $evidence)
     $preprocessed=Join-Path $evidence 'setup-preprocessed.iss'
+    Assert-InstallerPackageDirectories $stage $setupScript
     $compile={
-        & $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) @signingArguments (Join-Path $PSScriptRoot 'windows-installer.iss')
+        & $Compiler ('/DBuildRoot='+$stage) ('/DReleaseVersion='+$Version) ('/DTargetArch='+$TargetArch) ('/DEvidenceOutput='+$preprocessed) @signingArguments $setupScript
         if($LASTEXITCODE -ne 0){throw 'Installer compilation failed'}
     }
     $compilerOutput=@(if($organizationSigning){

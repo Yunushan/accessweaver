@@ -90,7 +90,8 @@ foreach($case in @(
     Reject {Assert-WindowsPublisherSignature $untrusted $publisherPin} 'An incomplete or untrusted Windows signature was accepted'
 }
 $project=Split-Path -Parent $PSScriptRoot
-$installerSource=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'windows-installer.iss'))
+$setupScript=Join-Path $PSScriptRoot 'windows-installer.iss'
+$installerSource=[IO.File]::ReadAllText($setupScript)
 $initialize=[regex]::Match($installerSource,'(?ms)^function InitializeUninstall: Boolean;.*?^end;').Value
 $prepare=[regex]::Match($installerSource,'(?ms)^function PrepareToInstall\(.*?^end;').Value
 $copy=[regex]::Match($installerSource,'(?ms)^procedure CurStepChanged\(.*?^end;').Value
@@ -100,6 +101,8 @@ Assert ($copy -cmatch '(?s)AWInstallationPathPreflight\(Destination, True\).*AWP
 $replaceProbe=[regex]::Match($installerSource,'(?ms)^function AWCanReplaceInstalledFile\(.*?^end;').Value
 Assert ($replaceProbe.Contains('AWOpenReplaceProbe(Path, $00010080, $00000007, 0, 3, $00200000, 0)') -and
     $replaceProbe -cmatch '(?s)AWGetFileInfo\(Handle, Info\).*Info.Attributes and \(\$00000400 or \$00000010 or \$00000001\).*Info.Links = 1.*finally.*AWCloseNativeHandle') 'Setup must refuse read-only, aliased or redirected files before replacement'
+$installerBuild=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'build-windows-installer.ps1'))
+Assert ($installerBuild -cmatch '(?s)stage-docs.*Assert-InstallerPackageDirectories \$stage \$setupScript.*& \$Compiler') 'Installer build must check the staged directory tree before compiling it'
 $replacement=[regex]::Match($installerSource,'(?ms)^function AWPayloadReplacementPreflight\([^;\r\n]+\): String;\r?\nbegin.*?^end;').Value
 $packageDirectories=[regex]::Match($installerSource,'(?ms)^function AWPackageDirectoryPreflight\(.*?^end;').Value
 foreach($directory in @('licenses','docs','docs\assets','docs\qualification')){
@@ -171,6 +174,23 @@ function Header([int]$Machine){
     } finally {$writer.Dispose()}
 }
 try {
+    $layout=Join-Path $fixture 'staged-layout'
+    foreach($directory in @('licenses','docs\assets','docs\qualification')){
+        [void][IO.Directory]::CreateDirectory((Join-Path $layout $directory))
+    }
+    Assert-InstallerPackageDirectories $layout $setupScript
+    $uncovered=Join-Path $layout 'docs\qualification\new'
+    [void][IO.Directory]::CreateDirectory($uncovered)
+    Reject {Assert-InstallerPackageDirectories $layout $setupScript} 'Unprotected staged documentation directory was accepted'
+    [IO.Directory]::Delete($uncovered,$false)
+    $alias=Join-Path $layout 'docs\assets'
+    $aliasTarget=Join-Path $fixture 'alias-target'
+    [void][IO.Directory]::CreateDirectory($aliasTarget)
+    [IO.Directory]::Delete($alias,$false)
+    [void](New-Item -ItemType Junction -Path $alias -Target $aliasTarget -ErrorAction Stop)
+    try {Reject {Assert-InstallerPackageDirectories $layout $setupScript} 'Redirected staged documentation directory was accepted'}
+    finally {[IO.Directory]::Delete($alias,$false)}
+
     $payload=Join-Path $fixture 'payload.dat'
     foreach($arch in @('amd64','arm64')){
         $machine=if($arch -ceq 'amd64'){0x8664}else{0xaa64}

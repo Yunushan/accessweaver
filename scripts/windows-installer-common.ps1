@@ -55,6 +55,39 @@ function Assert-InstallerPEArchitecture([string]$Binary, [string]$Arch) {
     if($machine -ne $expectedMachine){throw 'Installer payload PE machine does not match its requested architecture'}
 }
 
+function Assert-InstallerPackageDirectories([string]$Root,[string]$SetupScript) {
+    $source=[IO.File]::ReadAllText($SetupScript)
+    $preflight=[regex]::Match($source,'(?ms)^function AWPackageDirectoryPreflight\(.*?^end;')
+    if(-not $preflight.Success){throw 'Installer package directory preflight is missing'}
+    $checked=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $pattern="AWInstallationPathPreflight\(Destination \+ '\\([^']+)', True\)"
+    foreach($match in [regex]::Matches($preflight.Value,$pattern)){
+        if(-not $checked.Add($match.Groups[1].Value)){throw 'Duplicate installer package directory check'}
+    }
+
+    $rootItem=Get-Item -LiteralPath $Root -Force -ErrorAction Stop
+    if(-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)){
+        throw 'Installer package staging root must be an ordinary directory'
+    }
+    $pending=[Collections.Generic.Queue[IO.DirectoryInfo]]::new()
+    $pending.Enqueue($rootItem)
+    $prefixLength=$rootItem.FullName.TrimEnd('\').Length+1
+    while($pending.Count){
+        foreach($entry in $pending.Dequeue().EnumerateFileSystemInfos()){
+            if($entry.Attributes -band [IO.FileAttributes]::ReparsePoint){
+                throw 'Installer package staging includes a reparse point'
+            }
+            if($entry -is [IO.DirectoryInfo]){
+                $relative=$entry.FullName.Substring($prefixLength)
+                if(-not $checked.Contains($relative)){
+                    throw ('Installer package directory has no Setup and uninstall preflight: '+$relative)
+                }
+                $pending.Enqueue($entry)
+            }
+        }
+    }
+}
+
 function Assert-InstallerSetupScript([string]$Path, [string]$TargetArch, [string]$Version, [switch]$OrganizationSigning) {
     if($TargetArch -cnotin @('amd64','arm64')){throw 'Invalid installer script target'}
     if((Get-Item -LiteralPath $Path).Length -gt 1MB){throw 'Preprocessed installer script exceeds evidence limit'}
