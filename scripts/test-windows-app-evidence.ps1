@@ -48,11 +48,39 @@ $neighbor=[pscustomobject]@{Path='C:\Fixture\SplitCord-other\crashpad_handler.ex
 $hidden=[pscustomobject]@{Path=$null;ProcessName='crashpad_handler';SessionId=8;HasExited=$false}
 if((Test-FixtureAppProcess $splitCord 7 @($main) 'SplitCord-Turkey') -ne $false){throw 'Launch credited a different session'}
 if((Test-FixtureAppProcess $splitCord 7 @($main) 'SplitCord-Turkey' -AllSessions) -ne $true){throw 'Removal missed a live client in another session'}
-if((Test-FixtureAppProcess $splitCord 7 @($helper) 'SplitCord-Turkey' -AllSessions -IncludeCrashHandler) -ne $true){throw 'Removal missed a live SplitCord crash handler'}
-if((Test-FixtureAppProcess $splitCord 7 @($neighbor) 'SplitCord-Turkey' -AllSessions -IncludeCrashHandler) -ne $false){throw 'Removal included a neighboring application crash handler'}
-if($null -ne (Test-FixtureAppProcess $splitCord 7 @($hidden) 'SplitCord-Turkey' -AllSessions -IncludeCrashHandler)){throw 'Removal credited an unreadable crash handler as absent'}
+if((Test-FixtureAppProcess $splitCord 7 @($helper) 'SplitCord-Turkey' -AllSessions -CleanupVariant 'splitcord') -ne $true){throw 'Removal missed a live SplitCord crash handler'}
+if((Test-FixtureAppProcess $splitCord 7 @($neighbor) 'SplitCord-Turkey' -AllSessions -CleanupVariant 'splitcord') -ne $false){throw 'Removal included a neighboring application crash handler'}
+if($null -ne (Test-FixtureAppProcess $splitCord 7 @($hidden) 'SplitCord-Turkey' -AllSessions -CleanupVariant 'splitcord')){throw 'Removal credited an unreadable crash handler as absent'}
 $helper.HasExited=$true
-if((Test-FixtureAppProcess $splitCord 7 @($helper,$neighbor) 'SplitCord-Turkey' -AllSessions -IncludeCrashHandler) -ne $false){throw 'Exited and unrelated crash handlers blocked removal evidence'}
+if((Test-FixtureAppProcess $splitCord 7 @($helper,$neighbor) 'SplitCord-Turkey' -AllSessions -CleanupVariant 'splitcord') -ne $false){throw 'Exited and unrelated crash handlers blocked removal evidence'}
+
+$priorLocalAppData=$env:LOCALAPPDATA
+try {
+    $env:LOCALAPPDATA='C:\Fixture\Local'
+    foreach($variant in @('discord','discord-ptb')){
+        $folder=if($variant -ceq 'discord'){'Discord'}else{'DiscordPTB'}
+        $other=if($variant -ceq 'discord'){'DiscordPTB'}else{'Discord'}
+        $base=Join-Path $env:LOCALAPPDATA $folder
+        $installed=Join-Path $base ("app-2.0.0\"+$folder+'.exe')
+        foreach($suffix in @('Update.exe','app-1.0.0\crashpad_handler.exe',('app-1.0.0\'+$folder+'.exe'))){
+            $process=[pscustomobject]@{
+                ProcessName=[IO.Path]::GetFileNameWithoutExtension($suffix)
+                Path=(Join-Path $base $suffix);SessionId=8;HasExited=$false
+            }
+            if((Test-FixtureAppProcess $installed 7 @($process) $folder -AllSessions -CleanupVariant $variant) -ne $true){
+                throw 'Discord removal missed a live process in its installation'
+            }
+            $process.Path=Join-Path (Join-Path $env:LOCALAPPDATA $other) $suffix
+            if((Test-FixtureAppProcess $installed 7 @($process) $folder -AllSessions -CleanupVariant $variant) -ne $false){
+                throw 'Discord removal included a process from the other channel'
+            }
+            $process.Path=$null
+            if($null -ne (Test-FixtureAppProcess $installed 7 @($process) $folder -AllSessions -CleanupVariant $variant)){
+                throw 'Discord removal credited an unreadable process as absent'
+            }
+        }
+    }
+}finally{$env:LOCALAPPDATA=$priorLocalAppData}
 
 $script:observations=[Collections.Generic.Queue[object]]::new()
 function Find-FixtureLiveImage {
@@ -149,8 +177,8 @@ foreach($alreadyRunning in @($true,'false',$null)){
         $trace.Add('remove')
         return @{application='discord';removed=$removalOutcome}
     }
-    function Assert-FixtureLiveImage([string]$Path,[bool]$Expected,[switch]$AllSessions,[switch]$IncludeCrashHandler){
-        if($Expected -or -not $AllSessions -or $IncludeCrashHandler -or $Path -cnotin @($image,$replacement)){
+    function Assert-FixtureLiveImage([string]$Path,[bool]$Expected,[switch]$AllSessions,[string]$CleanupVariant){
+        if($Expected -or -not $AllSessions -or $CleanupVariant -cne 'discord' -or $Path -cnotin @($image,$replacement)){
             throw 'Unexpected removal process check'
         }
         $trace.Add('process:'+ $Path)

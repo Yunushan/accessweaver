@@ -18,8 +18,19 @@ $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 
 function Test-FixtureAppProcess([string]$Path,[int]$Session,$Processes,[string]$ProcessName,
-        [switch]$AllSessions,[switch]$IncludeCrashHandler){
-    $directory=if($IncludeCrashHandler){[IO.Path]::GetDirectoryName($Path).TrimEnd([char]92)+[char]92}
+        [switch]$AllSessions,[string]$CleanupVariant){
+    $processNames=@($ProcessName)
+    $cleanupNames=@()
+    $directory=if($CleanupVariant -ceq 'splitcord'){
+        $cleanupNames=@('crashpad_handler')
+        [IO.Path]::GetDirectoryName($Path)
+    }elseif($CleanupVariant -cin @('discord','discord-ptb')){
+        $folder=if($CleanupVariant -ceq 'discord'){'Discord'}else{'DiscordPTB'}
+        $cleanupNames=@($folder,'Update','crashpad_handler')
+        Join-Path $env:LOCALAPPDATA $folder
+    }
+    if($directory){$directory=[IO.Path]::GetFullPath($directory).TrimEnd([char]92)+[char]92}
+    $processNames+=@($cleanupNames)
     $seen=$false
     $complete=$true
     foreach($process in $Processes){
@@ -27,7 +38,7 @@ function Test-FixtureAppProcess([string]$Path,[int]$Session,$Processes,[string]$
             if($ProcessName){
                 $name=$process.ProcessName
                 if([string]::IsNullOrWhiteSpace($name)){$complete=$false;continue}
-                if($name -ine $ProcessName -and (-not $IncludeCrashHandler -or $name -ine 'crashpad_handler')){continue}
+                if($name -notin $processNames){continue}
             }
             $exited=$process.HasExited
             if($exited -isnot [bool]){$complete=$false;continue}
@@ -42,8 +53,9 @@ function Test-FixtureAppProcess([string]$Path,[int]$Session,$Processes,[string]$
             $exited=$process.HasExited
             if($exited -isnot [bool]){$complete=$false;continue}
             if($exited){continue}
-            if($image -ieq $Path -or ($IncludeCrashHandler -and
-                [IO.Path]::GetFileName($image) -ieq 'crashpad_handler.exe' -and
+            if($image -ieq $Path -or ($directory -and
+                [IO.Path]::GetFileNameWithoutExtension($image) -in $cleanupNames -and
+                [IO.Path]::GetExtension($image) -ieq '.exe' -and
                 [IO.Path]::GetFullPath($image).StartsWith($directory,[StringComparison]::OrdinalIgnoreCase))){
                 $seen=$true
             }
@@ -77,16 +89,16 @@ function Get-FixtureAppImage($Applications,[string]$Variant){
     return $path
 }
 
-function Find-FixtureLiveImage([string]$Path,[switch]$AllSessions,[switch]$IncludeCrashHandler){
+function Find-FixtureLiveImage([string]$Path,[switch]$AllSessions,[string]$CleanupVariant){
     $name=[IO.Path]::GetFileNameWithoutExtension($Path)
     # Full enumeration distinguishes a genuinely empty match from a lookup error.
-    return (Test-FixtureAppProcess $Path $session @(Get-Process -ErrorAction Stop) $name -AllSessions:$AllSessions -IncludeCrashHandler:$IncludeCrashHandler)
+    return (Test-FixtureAppProcess $Path $session @(Get-Process -ErrorAction Stop) $name -AllSessions:$AllSessions -CleanupVariant $CleanupVariant)
 }
 
-function Assert-FixtureLiveImage([string]$Path,[bool]$Expected,[switch]$AllSessions,[switch]$IncludeCrashHandler){
+function Assert-FixtureLiveImage([string]$Path,[bool]$Expected,[switch]$AllSessions,[string]$CleanupVariant){
     $timer=[Diagnostics.Stopwatch]::StartNew()
     do {
-        $observed=Find-FixtureLiveImage $Path -AllSessions:$AllSessions -IncludeCrashHandler:$IncludeCrashHandler
+        $observed=Find-FixtureLiveImage $Path -AllSessions:$AllSessions -CleanupVariant $CleanupVariant
         if($observed -is [bool] -and $observed -eq $Expected){return}
         Start-Sleep -Milliseconds 250
     } while($timer.Elapsed.TotalSeconds -lt 10)
@@ -172,7 +184,7 @@ function Remove-FixtureApp([string]$Variant,[switch]$Cleanup){
     $script:appEvidenceStage='removal-readback'
     if($remaining){throw 'Application remains discoverable after removal'}
     foreach($image in @($previous,$current) | Where-Object {$_} | Select-Object -Unique){
-        Assert-FixtureLiveImage $image $false -AllSessions -IncludeCrashHandler:($Variant -ceq 'splitcord')
+        Assert-FixtureLiveImage $image $false -AllSessions -CleanupVariant $Variant
         if(Test-Path -LiteralPath $image -ErrorAction Stop){throw 'Previously discovered executable remains after removal'}
     }
     if($Variant -ceq 'splitcord'){
@@ -396,7 +408,7 @@ try {
             if($stable -or (Test-Path -LiteralPath $prior)){
                 throw 'Clean PTB installation left the stable executable'
             }
-            Assert-FixtureLiveImage $prior $false
+            Assert-FixtureLiveImage $prior $false -AllSessions -CleanupVariant 'discord'
         }
         Check 'ptb-start' {Start-FixtureApp 'discord-ptb'}
         Check-FixtureCommunications 'discord-ptb'
