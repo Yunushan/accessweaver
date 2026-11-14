@@ -691,7 +691,17 @@ def require_native_windows_setup_host(target, *, elevated=True):
         require(ctypes.windll.shell32.IsUserAnAdmin(), "Windows Setup launch requires an already elevated agent")
 
 
-def launch_windows_setup(directory, update, policy, *, size, directory_identity):
+def write_windows_upgrade_receipt(destination, receipt):
+    with tempfile.TemporaryDirectory(prefix=".accessweaver-receipt-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / "receipt.json"
+        with staged.open("xb") as stream:
+            stream.write((json.dumps(receipt, sort_keys=True) + "\n").encode("ascii"))
+            stream.flush()
+            os.fsync(stream.fileno())
+        publish_staged_installer(staged, destination)
+
+
+def launch_windows_setup(directory, update, policy, *, size, directory_identity, attempt=None):
     setup = directory / update["installer"]
     arguments = [str(setup), "/SP-", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
                  "/RESTARTEXITCODE=3010", "/NOICONS", update["windowsSetupBaselineArgument"]]
@@ -701,6 +711,11 @@ def launch_windows_setup(directory, update, policy, *, size, directory_identity)
         with hold_windows_setup(setup):
             verify_staged_update(setup, size, update["installerSHA256"])
             require_current_revocation_policy(policy)
+            if attempt is not None:
+                require(not os.path.lexists(directory / (attempt["attemptID"] + ".result.json")),
+                        "Windows upgrade attempt already has a result receipt")
+                write_windows_upgrade_receipt(directory / (attempt["attemptID"] + ".started.json"), attempt)
+                require_current_revocation_policy(policy)
             with subprocess.Popen(arguments, executable=str(setup), cwd=windows_system_directory(),
                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as process:
                 return process.wait()
@@ -801,7 +816,11 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
            windows_publisher=None, windows_payload_publisher=None, require_windows_setup_baseline=False,
            resume_windows_upgrade_setup_sha256=None, require_windows_setup_wrong_baseline_refusal=False,
            resume_windows_upgrade_baseline_argument=None, launch_staged_windows_setup=False,
-           detect_installed_windows_upgrade=False):
+           detect_installed_windows_upgrade=False, windows_upgrade_attempt_id=None):
+    if windows_upgrade_attempt_id is not None:
+        require(launch_staged_windows_setup and isinstance(windows_upgrade_attempt_id, str)
+                and re.fullmatch(r"[a-f0-9]{32}", windows_upgrade_attempt_id),
+                "A Windows upgrade attempt ID requires Setup launch and 32 lowercase hexadecimal characters")
     if windows_upgrade_inventory is not None:
         require(all(value is None for value in (
             current_version, target, current_payload_sha256, current_payload_sbom_sha256,
@@ -1043,7 +1062,21 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                                  size=installer["size"], directory_identity=stage_directory_id)
             update["installerStaged"] = True
             if launch_staged_windows_setup:
-                code = launch_windows_setup(stage_directory, update, policy,
+                attempt = None
+                if windows_upgrade_attempt_id is not None:
+                    attempt = {
+                        "schemaVersion": 1, "attemptID": windows_upgrade_attempt_id,
+                        "sourceCommit": commit, "sourceRef": ref, "target": update["target"],
+                        "manifestSHA256": hashlib.sha256(manifest_bytes).hexdigest(),
+                        "approvalCertificateSHA256": certificate_sha256,
+                        "installerSHA256": update["installerSHA256"],
+                        "windowsSetupBaselineArgument": update["windowsSetupBaselineArgument"],
+                        "rebootEvidenceSHA256": update["windowsUpgradeDetection"]["rebootEvidenceSHA256"],
+                        "revocationListSHA256": report["revocationListSHA256"],
+                        "revocationPolicySequence": policy["sequence"],
+                    }
+                    update["attemptID"] = windows_upgrade_attempt_id
+                code = launch_windows_setup(stage_directory, update, policy, attempt=attempt,
                                             size=installer["size"], directory_identity=stage_directory_id)
                 update["setupExitCode"] = code
                 if code == 0:
@@ -1052,6 +1085,14 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     update["installedDetection"] = "restart-required"
                 else:
                     update["installedDetection"] = "setup-failed"
+                if attempt is not None:
+                    with hold_windows_staging_directory(stage_directory):
+                        require(staging_directory_identity(stage_directory) == stage_directory_id,
+                                "Managed update staging directory changed before receipt publication")
+                        write_windows_upgrade_receipt(
+                            stage_directory / (windows_upgrade_attempt_id + ".result.json"),
+                            {**attempt, "setupExitCode": code, "installedDetection": update["installedDetection"]},
+                        )
         return report
 
 
@@ -1099,6 +1140,8 @@ def main():
                              help="require native macOS package and app publisher checks before staging")
     verify_args.add_argument("--stage-directory", type=Path,
                              help="existing trusted directory for the authenticated eligible installer")
+    verify_args.add_argument("--windows-upgrade-attempt-id",
+                             help="record an exclusive start and result for this 32-character lowercase hexadecimal ID")
     execution = verify_args.add_mutually_exclusive_group()
     execution.add_argument("--launch-staged-windows-setup", action="store_true",
                            help="explicitly launch the qualified Windows upgrade after verification and staging")
@@ -1136,7 +1179,8 @@ def main():
                                     require_windows_setup_wrong_baseline_refusal=args.require_windows_setup_wrong_baseline_refusal,
                                     resume_windows_upgrade_baseline_argument=args.resume_windows_upgrade_baseline_argument,
                                     launch_staged_windows_setup=args.launch_staged_windows_setup,
-                                    detect_installed_windows_upgrade=args.detect_installed_windows_upgrade)
+                                    detect_installed_windows_upgrade=args.detect_installed_windows_upgrade,
+                                    windows_upgrade_attempt_id=args.windows_upgrade_attempt_id)
             print(json.dumps(report))
             if args.launch_staged_windows_setup:
                 update = report["managedUpdate"]

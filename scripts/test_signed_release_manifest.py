@@ -1143,7 +1143,19 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 launch.assert_called_once()
                 self.assertEqual(release.digest(staged_path), original_setup_pin)
                 launch.return_value = 0
-                result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options)["managedUpdate"]
+                attempt_id = "a" * 32
+                result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
+                                     windows_upgrade_attempt_id=attempt_id)["managedUpdate"]
+                attempt = launch.call_args.kwargs["attempt"]
+                self.assertEqual(attempt["attemptID"], attempt_id)
+                self.assertEqual(attempt["manifestSHA256"], release.digest(manifest))
+                self.assertEqual(attempt["approvalCertificateSHA256"], pin)
+                self.assertEqual(attempt["revocationListSHA256"], launch_pin)
+                self.assertEqual(attempt["installerSHA256"], original_setup_pin)
+                self.assertEqual(attempt["windowsSetupBaselineArgument"], original_baseline)
+                self.assertEqual(json.loads((staging / (attempt_id + ".result.json")).read_bytes()),
+                                 {**attempt, "setupExitCode": 0, "installedDetection": "detected"})
+                (staging / (attempt_id + ".result.json")).unlink()
                 self.assertEqual(result["setupExitCode"], 0)
                 self.assertEqual(result["installedDetection"], "detected")
                 detect.assert_called_once_with(result["windowsUpgradeDetection"], launch_options["windows_payload_publisher"])
@@ -1501,6 +1513,34 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
             with self.assertRaisesRegex(ValueError, "differs from the approved digest"):
                 release.launch_windows_setup(directory, update, self.policy, **launch_options)
             launch.assert_not_called()
+
+    @unittest.skipUnless(os.name == "nt", "requires native Windows file sharing")
+    def test_windows_staging_reserves_attempt_before_launch_and_refuses_replay(self):
+        directory = self.root / "staged"
+        directory.mkdir()
+        setup = directory / "accessweaver-setup.exe"
+        setup.write_bytes(b"inert Setup fixture")
+        baseline = "/AWUpgradeFrom=1.2.2-rc.1," + ",".join(["a" * 64] * 3)
+        update = {"installer": setup.name, "installerSHA256": release.digest(setup),
+                  "windowsSetupBaselineArgument": baseline}
+        attempt = {"attemptID": "a" * 32, "installerSHA256": update["installerSHA256"],
+                   "windowsSetupBaselineArgument": baseline}
+        started = directory / (attempt["attemptID"] + ".started.json")
+        options = {"size": setup.stat().st_size, "directory_identity": release.staging_directory_identity(directory),
+                   "attempt": attempt}
+
+        def failed_dispatch(*args, **kwargs):
+            self.assertEqual(json.loads(started.read_bytes()), attempt)
+            raise OSError("synthetic failure during dispatch")
+
+        with patch.object(release.subprocess, "Popen", side_effect=failed_dispatch) as launch:
+            with self.assertRaisesRegex(OSError, "synthetic failure"):
+                release.launch_windows_setup(directory, update, self.policy, **options)
+            with self.assertRaises(FileExistsError):
+                release.launch_windows_setup(directory, update, self.policy, **options)
+            launch.assert_called_once()
+        self.assertEqual(json.loads(started.read_bytes()), attempt)
+        self.assertEqual(set(directory.iterdir()), {setup, started})
 
     @unittest.skipUnless(os.name == "nt", "requires native Windows process creation")
     def test_windows_staging_launches_inert_fixture_with_fixed_arguments(self):
