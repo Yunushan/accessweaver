@@ -28,7 +28,7 @@ Assert-Refused {Assert-LaterGuestBoot '639303000000000001' '639303000000000000'}
 Assert-Refused {Assert-LaterGuestBoot 'missing' '639303000000000000'}
 $pin='a'*64
 $expected=@{
-    schemaVersion=11;runID=('b'*32);architecture='amd64';version='1.0.0';
+    schemaVersion=12;runID=('b'*32);setupUpgradeBaselineVerified=$false;architecture='amd64';version='1.0.0';
     installMode='clean';previousVersion='';previousPayloadSHA256='';previousSetupSHA256='';previousPublisherSHA256='';userProfilePreservedThroughUpgrade=$false;
     previousPayloadSBOMSHA256='';previousPayloadPublisherSHA256='';previousPayloadTrustVerified=$false;previousBuildInfoSHA256='';
     setupSHA256=$pin;payloadSHA256=$pin;payloadSBOMSHA256=('f'*64);buildInfoSHA256=('7'*64);publisherSHA256=$pin;payloadPublisherSHA256=('e'*64);userSID='synthetic-user';guestID='10000000-2000-3000-4000-000000000005';
@@ -46,8 +46,10 @@ foreach($key in $saved.Keys){
     $changed[$key]='changed'
     Assert-Refused {Assert-RebootIdentity $changed $expected}
 }
-$oldSchema=$saved.Clone();$oldSchema.schemaVersion=10
+$oldSchema=$saved.Clone();$oldSchema.schemaVersion=11
 Assert-Refused {Assert-RebootIdentity $oldSchema $expected}
+$falseClaim=$saved.Clone();$falseClaim.setupUpgradeBaselineVerified=$true
+Assert-Refused {Assert-RebootIdentity $falseClaim $expected}
 
 & {
     $previousExitCode=Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
@@ -131,7 +133,7 @@ $upgradeExpected=$expected.Clone()
 $upgradeExpected.installMode='upgrade';$upgradeExpected.previousVersion='0.9.0';$upgradeExpected.previousPayloadSHA256=$priorDigest
 $upgradeExpected.previousPayloadSBOMSHA256=$priorSBOM;$upgradeExpected.previousPayloadPublisherSHA256=$priorPublisher
 $upgraded=$saved.Clone()
-$upgraded.installMode='upgrade';$upgraded.previousVersion='0.9.0';$upgraded.previousPayloadSHA256=$priorDigest
+$upgraded.installMode='upgrade';$upgraded.setupUpgradeBaselineVerified=$true;$upgraded.previousVersion='0.9.0';$upgraded.previousPayloadSHA256=$priorDigest
 $upgraded.previousPayloadSBOMSHA256=$priorSBOM;$upgraded.previousPayloadPublisherSHA256=$priorPublisher
 $upgraded.userProfilePreservedThroughUpgrade=$true
 Assert-Refused {Assert-RebootIdentity $upgraded $upgradeExpected}
@@ -150,6 +152,8 @@ Assert-Refused {Assert-RebootIdentity $upgraded $upgradeExpected}
 $upgradeExpected.previousSetupSHA256=$olderSetupDigest
 $upgradeExpected.previousPublisherSHA256=$pin
 Assert-RebootIdentity $upgraded $upgradeExpected
+$unverifiedBaseline=$upgraded.Clone();$unverifiedBaseline.setupUpgradeBaselineVerified=$false
+Assert-Refused {Assert-RebootIdentity $unverifiedBaseline $upgradeExpected}
 Assert-Refused {Assert-RebootIdentity $upgraded $expected}
 $upgraded.userProfilePreservedThroughUpgrade=$false
 Assert-Refused {Assert-RebootIdentity $upgraded $upgradeExpected}

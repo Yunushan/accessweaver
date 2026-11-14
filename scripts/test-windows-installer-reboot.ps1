@@ -91,7 +91,7 @@ function Assert-RebootUpgradeOrder($Comparison,[string]$PreviousVersion,[string]
     }
 }
 function Assert-RebootIdentity($Record,$Expected){
-    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 11 -or
+    if(($Record.schemaVersion -isnot [int] -and $Record.schemaVersion -isnot [long]) -or $Record.schemaVersion -ne 12 -or
        $Record.runID -cne $Expected.runID -or $Record.architecture -cne $Expected.architecture -or
        $Record.installMode -cne $Expected.installMode -or $Record.previousVersion -cne $Expected.previousVersion -or
        $Record.previousPayloadSHA256 -cne $Expected.previousPayloadSHA256 -or
@@ -101,6 +101,8 @@ function Assert-RebootIdentity($Record,$Expected){
        $Record.previousBuildInfoSHA256 -cne $Expected.previousBuildInfoSHA256 -or
        ($Expected.installMode -ceq 'upgrade' -and $Record.previousBuildInfoSHA256 -cnotmatch '\A[a-f0-9]{64}\z') -or
        ($Expected.installMode -ceq 'clean' -and $Record.previousBuildInfoSHA256 -cne '') -or
+       $Record.setupUpgradeBaselineVerified -isnot [bool] -or
+       $Record.setupUpgradeBaselineVerified -ne ($Expected.installMode -ceq 'upgrade') -or
        $Record.previousPayloadTrustVerified -isnot [bool] -or
        $Record.previousPayloadTrustVerified -ne ($Expected.installMode -ceq 'upgrade') -or
        $Record.previousSetupSHA256 -cne $Expected.previousSetupSHA256 -or
@@ -411,10 +413,10 @@ $capsule=Join-Path $programFiles ('AccessWeaver reboot fixture '+$RunID)
 $baseline=Join-Path $capsule 'prepared.json'
 $report=Join-Path $capsule 'result.json'
 if(-not $PayloadPublisherCertificateSHA256){$PayloadPublisherCertificateSHA256=$PublisherCertificateSHA256}
-$expected=[ordered]@{schemaVersion=11;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+$expected=[ordered]@{schemaVersion=12;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
     previousVersion=$PreviousVersion;previousPayloadSHA256=$PreviousPayloadSHA256.ToLowerInvariant();
     previousPayloadSBOMSHA256=$PreviousPayloadSBOMSHA256.ToLowerInvariant();
-    previousBuildInfoSHA256=$PreviousBuildInfoSHA256.ToLowerInvariant();
+    setupUpgradeBaselineVerified=$false;previousBuildInfoSHA256=$PreviousBuildInfoSHA256.ToLowerInvariant();
     previousPayloadPublisherSHA256=$PreviousPayloadPublisherCertificateSHA256.ToLowerInvariant();previousPayloadTrustVerified=$false;
     previousSetupSHA256=$PreviousSetupSHA256.ToLowerInvariant();previousPublisherSHA256=$PreviousPublisherCertificateSHA256.ToLowerInvariant();
     userProfilePreservedThroughUpgrade=$false;
@@ -483,6 +485,7 @@ if($Phase -ceq 'Prepare'){
                 $baselineMarker='AccessWeaver approved upgrade baseline verified.'
                 $verifiedChecks=[regex]::Matches([IO.File]::ReadAllText($upgradeLog),[regex]::Escape($baselineMarker)).Count
                 if($verifiedChecks -lt 2){throw 'Approved Setup did not confirm the installed upgrade baseline before copying'}
+                $expected.setupUpgradeBaselineVerified=$true
             }
         } finally {$setupGuard.Dispose()}
         $stage='installed-before-reboot'
@@ -505,7 +508,7 @@ if($Phase -ceq 'Prepare'){
         }
         Write-NewRebootEvidence $baseline $expected
     } catch {
-        Write-NewRebootEvidence $report @{schemaVersion=11;runID=$RunID;stage=$stage;passed=$false}
+        Write-NewRebootEvidence $report @{schemaVersion=12;runID=$RunID;stage=$stage;passed=$false}
         throw 'Windows installer reboot preparation failed. Retain the disposable guest for review.'
     }
     Write-Output 'Prepared the approved installation. Reboot the disposable guest before verification.'
@@ -516,11 +519,11 @@ if(Test-Path -LiteralPath $report -ErrorAction Stop){throw 'The prepared run is 
 $saved=Read-RebootEvidence $baseline
 Assert-RebootIdentity $saved $expected
 Assert-LaterGuestBoot $saved.boot $boot
-Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=11;runID=$RunID}
-$result=[ordered]@{schemaVersion=11;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
+Write-NewRebootEvidence (Join-Path $capsule 'verification-started.json') @{schemaVersion=12;runID=$RunID}
+$result=[ordered]@{schemaVersion=12;runID=$RunID;architecture=$Architecture;version=$Version;installMode=$installMode;
     previousVersion=$expected.previousVersion;previousPayloadSHA256=$expected.previousPayloadSHA256;
     previousPayloadSBOMSHA256=$expected.previousPayloadSBOMSHA256;previousPayloadPublisherSHA256=$expected.previousPayloadPublisherSHA256;
-    previousBuildInfoSHA256=$expected.previousBuildInfoSHA256;
+    previousBuildInfoSHA256=$expected.previousBuildInfoSHA256;setupUpgradeBaselineVerified=$saved.setupUpgradeBaselineVerified;
     previousPayloadTrustVerified=$saved.previousPayloadTrustVerified;
     previousSetupSHA256=$expected.previousSetupSHA256;previousPublisherSHA256=$expected.previousPublisherSHA256;
     downgradeRequested=$testDowngrade;downgradeRefused=$false;downgradeStatePreserved=$false;

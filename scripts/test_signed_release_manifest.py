@@ -139,9 +139,34 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 setupExitCode=0, setupRequestedRestart=False, previousSetupSHA256="", previousPublisherSHA256="",
             )
             report["previousBuildInfoSHA256"] = "5" * 64 if overrides.get("installMode") == "upgrade" else ""
+        if overrides.get("schemaVersion", 5) >= 12:
+            report["setupUpgradeBaselineVerified"] = overrides.get("installMode") == "upgrade"
         evidence = self.root / filename
         evidence.write_text(json.dumps({**report, **overrides}), encoding="utf-8")
         return evidence, release.digest(evidence)
+
+    def test_setup_baseline_claim_is_required_for_a_current_upgrade_and_rejected_for_clean_install(self):
+        files = release.inventory(self.candidate, self.subjects)
+        for mode, claim in (("clean", True), ("upgrade", False), ("upgrade", 1), ("upgrade", "true")):
+            with self.subTest(mode=mode, claim=claim):
+                prior = {} if mode == "clean" else {
+                    "previousVersion": "1.2.2-rc.1", "previousPayloadSHA256": "d" * 64,
+                    "userProfilePreservedThroughUpgrade": True,
+                }
+                evidence = self.write_reboot_report(
+                    "invalid-baseline-claim.json", schemaVersion=12, installMode=mode,
+                    setupUpgradeBaselineVerified=claim, **prior,
+                )
+                with self.assertRaisesRegex(ValueError, "Setup baseline requirement"):
+                    release.load_detection_evidence(self.candidate, [evidence], files, VERSION)
+        clean = self.write_reboot_report("clean-no-baseline.json", schemaVersion=12)
+        entry, = release.load_detection_evidence(self.candidate, [clean], files, VERSION)
+        self.assertNotIn("setupUpgradeBaselineVerified", entry)
+        with self.assertRaisesRegex(ValueError, "approved prior build pins"):
+            release.validate_detection([{**entry, "setupUpgradeBaselineVerified": True}], files, VERSION)
+        for claim in (False, 1, "true"):
+            with self.subTest(signed_claim=claim), self.assertRaisesRegex(ValueError, "Malformed"):
+                release.validate_detection([{**entry, "setupUpgradeBaselineVerified": claim}], files, VERSION)
 
     def test_windows_publisher_requires_exact_bounded_native_report(self):
         artifact = self.root / "inert.exe"
@@ -967,7 +992,27 @@ class SignedReleaseManifestTests(unittest.TestCase):
         self.assertEqual(selected["schemaVersion"], 7)
         self.assertTrue(selected["managedUpdate"]["installerStaged"])
         self.assertEqual(selected["managedUpdate"]["windowsUpgradeDetection"]["previousBuildInfoSHA256"], "5" * 64)
+        self.assertNotIn("windowsSetupBaselineArgument", selected["managedUpdate"])
         (staging / selected["managedUpdate"]["installer"]).unlink()
+
+        evidence = self.write_reboot_report(
+            "upgrade-baseline-enforced.json", schemaVersion=12, installMode="upgrade",
+            previousVersion="1.2.2-rc.1", previousPayloadSHA256="d" * 64,
+            userProfilePreservedThroughUpgrade=True, uninstallerSHA256="e" * 64,
+        )
+        qualified_entry, = release.load_detection_evidence(self.candidate, [evidence], files, VERSION)
+        self.assertIs(qualified_entry["setupUpgradeBaselineVerified"], True)
+        manifest.write_bytes(release.encode_manifest(COMMIT, REF, files, [entries[0], qualified_entry, entries[2]]))
+        sign_manifest()
+        selected = self.verify(approved, pin, stage_directory=staging, **inventory_options)
+        self.assertEqual(selected["schemaVersion"], 8)
+        self.assertEqual(selected["managedUpdate"]["windowsSetupBaselineArgument"], "/AWUpgradeFrom=" + ",".join((
+            qualified_entry["previousVersion"], qualified_entry["previousPayloadSHA256"],
+            qualified_entry["previousPayloadSBOMSHA256"], qualified_entry["previousBuildInfoSHA256"],
+        )))
+        (staging / selected["managedUpdate"]["installer"]).unlink()
+        manifest.write_bytes(release.encode_manifest(COMMIT, REF, files, entries))
+        sign_manifest()
         self.verify(approved, pin, current_build_info_sha256="5" * 64, **trusted)
         for update, error in (
             ({"current_build_info_sha256": "0" * 64}, "matches the installed Windows build metadata"),

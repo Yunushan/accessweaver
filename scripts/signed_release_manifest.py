@@ -33,6 +33,7 @@ WINDOWS_DETECTION_FIELDS = (
 WINDOWS_PAYLOAD_PUBLISHER = "payloadPublisherCertificateSHA256"
 WINDOWS_BUILD_INFO = "buildInfoSHA256"
 WINDOWS_PREVIOUS_BUILD_INFO = "previousBuildInfoSHA256"
+WINDOWS_SETUP_BASELINE = "setupUpgradeBaselineVerified"
 WINDOWS_PREVIOUS_TRUST_FIELDS = ("previousPayloadSBOMSHA256", "previousPayloadPublisherSHA256")
 WINDOWS_DOWNGRADE_FIELDS = ("previousSetupSHA256", "previousPublisherSHA256")
 REBOOT_CHECKS = (
@@ -166,7 +167,10 @@ def validate_detection(entries, subjects, version):
     targets = windows_subjects(subjects)
     build_info_by_target = {}
     for entry in entries:
-        require(isinstance(entry, dict) and all(isinstance(value, str) for value in entry.values()),
+        require(isinstance(entry, dict) and all(
+            value is True if key == WINDOWS_SETUP_BASELINE else isinstance(value, str)
+            for key, value in entry.items()
+        ),
                 "Malformed Windows detection entry")
         trust_fields = set(WINDOWS_PREVIOUS_TRUST_FIELDS).intersection(entry)
         publisher_fields = {WINDOWS_PAYLOAD_PUBLISHER}.intersection(entry)
@@ -176,8 +180,11 @@ def validate_detection(entries, subjects, version):
             require(WINDOWS_BUILD_INFO in build_info_fields and entry.get("installMode") == "upgrade"
                     and trust_fields == set(WINDOWS_PREVIOUS_TRUST_FIELDS),
                     "Malformed previous Windows build metadata evidence")
+        baseline_fields = {WINDOWS_SETUP_BASELINE}.intersection(entry)
+        require(not baseline_fields or WINDOWS_PREVIOUS_BUILD_INFO in build_info_fields,
+                "Windows Setup baseline evidence requires the approved prior build pins")
         require(entry.keys() == set(WINDOWS_DETECTION_FIELDS) | trust_fields | publisher_fields
-                | downgrade_fields | build_info_fields
+                | downgrade_fields | build_info_fields | baseline_fields
                 and (not trust_fields or trust_fields == set(WINDOWS_PREVIOUS_TRUST_FIELDS)
                      and entry["installMode"] == "upgrade"), "Malformed Windows detection entry")
         if downgrade_fields:
@@ -212,7 +219,7 @@ def validate_detection(entries, subjects, version):
     require(len(keys) == len(set(keys)), "Duplicate Windows detection path")
 
 
-def validate_schema_11_reboot_report(report, mode):
+def validate_bound_reboot_report(report, mode):
     fields = {
         "schemaVersion", "runID", "stage", "architecture", "version", "installMode", "previousVersion",
         "previousPayloadSHA256", "previousPayloadTrustVerified", "downgradeRequested", "downgradeRefused",
@@ -223,6 +230,10 @@ def validate_schema_11_reboot_report(report, mode):
         WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO, *WINDOWS_PREVIOUS_TRUST_FIELDS, *WINDOWS_DOWNGRADE_FIELDS,
         *REBOOT_CHECKS, *REBOOT_REPORT_DIGESTS,
     }
+    if report["schemaVersion"] >= 12:
+        fields.add(WINDOWS_SETUP_BASELINE)
+        require(report.get(WINDOWS_SETUP_BASELINE) is (mode == "upgrade"),
+                "Windows reboot evidence does not match the Setup baseline requirement")
     require(report.keys() == fields, "Windows reboot evidence differs from the current report schema")
     run_id = report["runID"]
     require(isinstance(run_id, str) and re.fullmatch(r"[a-f0-9]{32}", run_id)
@@ -246,7 +257,7 @@ def load_detection_evidence(directory, evidence, subjects, version):
         content = independently_pinned_file(directory, path, fingerprint, maximum=8192)
         report = decode_json(content)
         require(isinstance(report, dict) and type(report.get("schemaVersion")) is int
-                and report["schemaVersion"] in (5, 6, 7, 8, 9, 10, 11) and report.get("stage") == "complete"
+                and report["schemaVersion"] in (5, 6, 7, 8, 9, 10, 11, 12) and report.get("stage") == "complete"
                 and all(report.get(field) is True for field in REBOOT_CHECKS),
                 "Windows reboot qualification is incomplete")
         architecture = report.get("architecture")
@@ -296,11 +307,13 @@ def load_detection_evidence(directory, evidence, subjects, version):
             require(report.get("installedBuildInfoVerified") is True,
                     "Windows reboot evidence does not verify installed build metadata")
             entry[WINDOWS_BUILD_INFO] = report.get(WINDOWS_BUILD_INFO)
-        if report["schemaVersion"] == 11:
-            validate_schema_11_reboot_report(report, mode)
+        if report["schemaVersion"] >= 11:
+            validate_bound_reboot_report(report, mode)
             prior_build_info = report.get(WINDOWS_PREVIOUS_BUILD_INFO)
             if mode == "upgrade":
                 entry[WINDOWS_PREVIOUS_BUILD_INFO] = prior_build_info
+                if report["schemaVersion"] >= 12:
+                    entry[WINDOWS_SETUP_BASELINE] = True
             else:
                 require(prior_build_info == "", "Clean Windows evidence contains prior build metadata")
         if downgrade:
@@ -326,6 +339,8 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
         schema = 6
     if any(WINDOWS_PREVIOUS_BUILD_INFO in entry for entry in windows_detection):
         schema = 7
+    if any(WINDOWS_SETUP_BASELINE in entry for entry in windows_detection):
+        schema = 8
     manifest = {
         "schemaVersion": schema,
         "scope": "accessweaver-signed-desktop-release",
@@ -338,7 +353,7 @@ def encode_manifest(commit, ref, subjects, windows_detection=()):
         manifest["windowsDetection"] = [
             {field: entry[field] for field in WINDOWS_DETECTION_FIELDS + WINDOWS_PREVIOUS_TRUST_FIELDS
              + (WINDOWS_PAYLOAD_PUBLISHER,) + WINDOWS_DOWNGRADE_FIELDS
-             + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO) if field in entry}
+             + (WINDOWS_BUILD_INFO, WINDOWS_PREVIOUS_BUILD_INFO, WINDOWS_SETUP_BASELINE) if field in entry}
             for entry in sorted(windows_detection, key=detection_key)
         ]
     return (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
@@ -775,9 +790,14 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                 report["windowsDetection"] = [{**entry, **identities[entry["target"]]} for entry in entries]
         if current_payload_sha256 is not None:
             update = report["managedUpdate"]
-            update["windowsUpgradeDetection"] = select_windows_upgrade(
+            baseline = select_windows_upgrade(
                 report.get("windowsDetection", ()), update, current_payload_sha256, installed_trust
             )
+            update["windowsUpgradeDetection"] = baseline
+            if baseline.get(WINDOWS_SETUP_BASELINE) is True:
+                values = (baseline["previousVersion"], baseline["previousPayloadSHA256"],
+                          baseline["previousPayloadSBOMSHA256"], baseline[WINDOWS_PREVIOUS_BUILD_INFO])
+                update["windowsSetupBaselineArgument"] = "/AWUpgradeFrom=" + ",".join(values)
         if windows_publisher is not None:
             update = report["managedUpdate"]
             require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")
