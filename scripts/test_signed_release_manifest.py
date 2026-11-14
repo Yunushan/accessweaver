@@ -1193,6 +1193,67 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
         self.assertEqual(destination.read_bytes(), original)
         self.assertEqual(list(abandoned[0].iterdir()), [])
 
+    @unittest.skipUnless(os.name == "nt", "requires Windows directory sharing")
+    def test_windows_staging_holds_directory_chain_through_publication_and_readback(self):
+        update = release.managed_update(release.inventory(self.candidate, self.subjects),
+                                        "windows/arm64", "1.2.2-rc.1", VERSION)
+        parent = self.root / "protected-staging-parent"
+        staging = parent / "staging"
+        staging.mkdir(parents=True)
+        source = self.candidate / update["installer"]
+        destination = staging / source.name
+        identity = release.staging_directory_identity(staging)
+        publish = release.publish_staged_installer
+        verify_file = release.verify_staged_update
+
+        def assert_renames_refused():
+            for path in (staging, parent):
+                with self.assertRaises(PermissionError) as refused:
+                    path.rename(path.with_name("displaced"))
+                self.assertEqual(refused.exception.winerror, 32)
+
+        def publish_while_pinned(staged, final):
+            assert_renames_refused()
+            publish(staged, final)
+
+        def readback_while_pinned(path, size, digest):
+            if path == destination:
+                assert_renames_refused()
+            verify_file(path, size, digest)
+
+        with patch.object(release, "publish_staged_installer", side_effect=publish_while_pinned) as renamed, \
+                patch.object(release, "verify_staged_update", side_effect=readback_while_pinned):
+            for _ in range(2):
+                release.stage_managed_update(self.candidate, staging, update, self.policy,
+                                             size=source.stat().st_size, directory_identity=identity)
+            renamed.assert_called_once()
+        self.assertEqual(destination.read_bytes(), source.read_bytes())
+        moved = parent.with_name("released-staging-parent")
+        parent.rename(moved)
+        self.assertTrue((moved / "staging" / source.name).is_file())
+
+    @unittest.skipUnless(os.name == "nt", "requires a Windows junction")
+    def test_windows_staging_refuses_a_redirected_parent(self):
+        update = release.managed_update(release.inventory(self.candidate, self.subjects),
+                                        "windows/arm64", "1.2.2-rc.1", VERSION)
+        real_parent = self.root / "real-staging-parent"
+        staging = real_parent / "staging"
+        staging.mkdir(parents=True)
+        junction = self.root / "redirected-staging-parent"
+        shell = Path(os.environ["SystemRoot"]) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        command = "New-Item -ItemType Junction -Path $env:AW_TEST_JUNCTION -Target $env:AW_TEST_TARGET -ErrorAction Stop | Out-Null"
+        subprocess.run([shell, "-NoProfile", "-NonInteractive", "-Command", command], check=True, timeout=15,
+                       capture_output=True, env={**os.environ, "AW_TEST_JUNCTION": str(junction),
+                                                 "AW_TEST_TARGET": str(real_parent)})
+        try:
+            with self.assertRaisesRegex(ValueError, "reparse point"):
+                release.stage_managed_update(self.candidate, junction / "staging", update, self.policy,
+                                             size=(self.candidate / update["installer"]).stat().st_size,
+                                             directory_identity=release.staging_directory_identity(staging))
+            self.assertEqual(list(staging.iterdir()), [])
+        finally:
+            junction.rmdir()
+
     def test_staging_refuses_changed_snapshot_size_and_directory(self):
         update = release.managed_update(release.inventory(self.candidate, self.subjects),
                                         "windows/amd64", "1.2.2-rc.1", VERSION)

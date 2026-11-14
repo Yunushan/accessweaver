@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Prepare or authenticate the final publisher-signed Windows and macOS release subjects."""
 import argparse
+from contextlib import contextmanager, ExitStack
 import ctypes
+from ctypes import wintypes
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -595,6 +597,47 @@ def staging_directory_identity(path):
     return info.st_dev, info.st_ino
 
 
+@contextmanager
+def hold_windows_staging_directory(directory):
+    if os.name != "nt":
+        yield
+        return
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    open_directory = kernel.CreateFileW
+    open_directory.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                               wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    open_directory.restype = wintypes.HANDLE
+    get_attributes = kernel.GetFileInformationByHandleEx
+    get_attributes.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    get_attributes.restype = wintypes.BOOL
+    close_handle = kernel.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+
+    class AttributeTag(ctypes.Structure):
+        _fields_ = [("attributes", wintypes.DWORD), ("tag", wintypes.DWORD)]
+
+    chain = [*reversed(directory.parents), directory]
+    with ExitStack() as handles:
+        for component in chain:
+            if component == Path(directory.anchor):
+                continue
+            # FILE_LIST_DIRECTORY, read/write sharing without delete sharing,
+            # OPEN_EXISTING, BACKUP_SEMANTICS | OPEN_REPARSE_POINT.
+            handle = open_directory(str(component), 1, 3, None, 3, 0x02200000, None)
+            if handle == ctypes.c_void_p(-1).value:
+                raise ctypes.WinError(ctypes.get_last_error())
+            handles.callback(close_handle, handle)
+            info = AttributeTag()
+            if not get_attributes(handle, 9, ctypes.byref(info), ctypes.sizeof(info)):  # FileAttributeTagInfo
+                raise ctypes.WinError(ctypes.get_last_error())
+            require(info.attributes & stat.FILE_ATTRIBUTE_DIRECTORY
+                    and not info.attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT,
+                    "Managed update staging path includes a non-directory or reparse point")
+        yield
+
+
 def copy_approved_installer(source_path, staged, size):
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     before = source_path.lstat()
@@ -620,7 +663,12 @@ def copy_approved_installer(source_path, staged, size):
 
 def stage_managed_update(root, directory, update, policy, *, size, directory_identity):
     require(type(size) is int and 0 < size <= MAX_FILE, "Expected a bounded signed installer size")
+    directory = directory.absolute()
+    with hold_windows_staging_directory(directory):
+        stage_verified_installer(root, directory, update, policy, size, directory_identity)
 
+
+def stage_verified_installer(root, directory, update, policy, size, directory_identity):
     def check_directory():
         require(staging_directory_identity(directory) == directory_identity,
                 "Managed update staging directory changed during verification")
