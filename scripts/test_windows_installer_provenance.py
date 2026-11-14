@@ -140,6 +140,12 @@ class InstallationPathRefusalTests(unittest.TestCase):
         ancestor = {**leaf, "kind": "ancestor-junction"}
         self.assertEqual(validate_installation_path_refusals([leaf, ancestor]),
                          {"installationPathRefusalsVerified": 2})
+        licenses = {**leaf, "kind": "licenses-junction"}
+        self.assertEqual(validate_installation_path_refusals([leaf, ancestor, licenses], check_license_directory=True),
+                         {"installationPathRefusalsVerified": 3})
+        for invalid in ([leaf, ancestor], [leaf, ancestor, {**licenses, "targetPreserved": False}]):
+            with self.subTest(observation=invalid), self.assertRaisesRegex(ValueError, "refusal"):
+                validate_installation_path_refusals(invalid, check_license_directory=True)
         for invalid in (
             None, [leaf], [ancestor, leaf], [leaf, leaf],
             [leaf, {**ancestor, "exitCode": 1}], [leaf, {**ancestor, "targetPreserved": False}],

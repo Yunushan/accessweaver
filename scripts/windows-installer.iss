@@ -350,7 +350,10 @@ end;
 
 function AWPayloadReplacementPreflight(const Destination: String): String;
 begin
-  Result := '';
+  { Setup also writes below the package root. Check that directory before
+    the recursive file copy can follow an existing junction. }
+  Result := AWInstallationPathPreflight(Destination + '\licenses', True);
+  if Result <> '' then Exit;
   if not AWCanReplaceInstalledFile(Destination + '\accessweaver.exe') then
     Result := 'The AccessWeaver executable cannot be replaced. Close it, release any file locks and check its file attributes before retrying setup.'
   else if not AWCanReplaceInstalledFile(Destination + '\BUILD-INFO.json') then
