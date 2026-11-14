@@ -340,7 +340,14 @@ try {
         & $scanFunctions['Publish-WorkflowFile'] $path $bytes
         $script:scanWrites++
     }
-    function Install-Method {$script:scanInstalls++;return @{fixture=$true}}
+    function Install-Method([string]$ScannedEngineSHA256){
+        $arguments=@($r.args)
+        if($ScannedEngineSHA256 -cne (Get-WorkflowFileHash $script:scanBinary) -or $arguments[-1] -cne '--lua-desync=fixture'){
+            throw 'The scan engine digest and selected strategy did not reach installation'
+        }
+        $script:scanInstalls++
+        return @{fixture=$true}
+    }
     function Native {
         param($program,$arguments,$codes,[switch]$Secret,[int]$Timeout,$WorkingDirectory,$ChildEnvironment)
         if($program -ceq 'fixture-controller'){
@@ -364,12 +371,16 @@ try {
         $script:scanLaunches++
         $working=if($r.bundlePath -or $script:scanMode -ceq 'complete-discovered'){$script:stagedScanBundle}else{$scanBundle}
         if($program -cne (Join-Path $working 'bash.exe') -or $WorkingDirectory -cne $working -or $Timeout -ne 4200 -or
-           $ChildEnvironment.Count -ne 11 -or $ChildEnvironment.PATH -cne ($working+';'+$system) -or
+           $ChildEnvironment.Count -ne 12 -or $ChildEnvironment.WINWS2 -cne (ConvertTo-ScanCygwinPath (Join-Path $working 'winws2.exe')) -or
+           $ChildEnvironment.PATH -cne ($working+';'+$system) -or
            $env:BASH_ENV -cne 'ordinary-fixture-startup' -or $ChildEnvironment.ContainsKey('BASH_ENV') -or $ChildEnvironment.SCANLEVEL -cne 'quick' -or
            $ChildEnvironment.BATCH -cne '1' -or $ChildEnvironment.DOMAINS -cne $(if($r.targets){$r.targets -join ' '}else{'discord.com discord.gg'}) -or
            -not (Under $ChildEnvironment.HOME $script:stagedScanBundle) -or $ChildEnvironment.TEMP -cne $ChildEnvironment.HOME -or
            $ChildEnvironment.TMP -cne $ChildEnvironment.HOME){
             throw 'Unexpected ordinary scan execution environment'
+        }
+        if($script:scanMode -ceq 'scan-engine-changed'){
+            [IO.File]::WriteAllText((Join-Path $working 'winws2.exe'),'changed executable')
         }
         if($script:scanMode -ceq 'scan-missing'){return @{stdout='* SUMMARY fixture'}}
         if($script:scanMode -ceq 'scan-empty'){return @{stdout='';outputComplete=$true}}
@@ -377,7 +388,7 @@ try {
         return @{stdout='* SUMMARY fixture';outputComplete=($script:scanMode -cne 'scan-incomplete')}
     }
     $env:BASH_ENV='ordinary-fixture-startup'
-    $modes=@('scan-incomplete','scan-missing','scan-empty','scan-invalid-completion','parser-incomplete','parser-missing','parser-no-strategy','parser-invalid-json',
+    $modes=@('scan-incomplete','scan-missing','scan-empty','scan-invalid-completion','scan-engine-changed','parser-incomplete','parser-missing','parser-no-strategy','parser-invalid-json',
         'parser-array','parser-no-common','parser-invalid-protocol','parser-invalid-args','parser-control-args','complete','complete-default','complete-multi','complete-implicit')
     foreach($mode in $modes){
         $script:scanMode=$mode;$script:scanWrites=0;$script:scanInstalls=0;$script:scanLaunches=0;$script:scanSelectionArgs=@()
@@ -395,6 +406,9 @@ try {
             else{Assert $requireCommon ('Multi-target '+$mode+' scan requires a common section')}
         }elseif($mode -like 'scan-*'){
             Assert ($rejected -and $script:scanWrites -eq 0 -and $script:scanInstalls -eq 0) ('Scan rejects '+$mode+' before saving or installation')
+            if($mode -ceq 'scan-engine-changed'){
+                Assert ($message -ceq 'Windows blockcheck engine executable changed during the scan') 'Changed scan engine has a specific refusal'
+            }
         }else{
             Assert ($rejected -and $script:scanWrites -eq 1 -and $script:scanInstalls -eq 0 -and
                 -not $r.PSObject.Properties['args'] -and -not $r.PSObject.Properties['mode']) ('Scan rejects '+$mode+' before installation')
@@ -427,6 +441,14 @@ try {
         $env:ProgramFiles=$previousScanProgramFiles
         [IO.File]::WriteAllText((Join-Path $scanBundle 'blockcheck2.sh'),'inert')
     }
+    $ordinaryRequest=$r
+    try {
+        $r=[pscustomobject]@{bundlePath=$scanBundle}
+        $rejected=$false
+        try {[void](& $scanFunctions['Ensure-Asset'] 'zapret2' ('0'*64))}
+        catch {$rejected=$_.Exception.Message -ceq 'The selected engine executable differs from the completed strategy scan'}
+        Assert ($rejected -and -not (Test-Path -LiteralPath (Join-Path $root 'components'))) 'A changed engine is refused before component staging'
+    } finally {$r=$ordinaryRequest}
     $alternative=Join-Path $scanBundle 'alternative'
     [void][IO.Directory]::CreateDirectory($alternative)
     foreach($case in @(
@@ -462,7 +484,8 @@ try {
         $system=Join-Path $env:SystemRoot 'System32'
         if($WorkingDirectory -cne $script:stagedScanBundle -or $ChildEnvironment.PATH -cne ($script:stagedScanBundle+';'+$system)){throw 'Managed scan used an unexpected working directory or search path'}
         if(-not (Under $ChildEnvironment.HOME $script:stagedScanBundle) -or $ChildEnvironment.TEMP -cne $ChildEnvironment.HOME){throw 'Managed scan did not keep state in the staged bundle'}
-        if($ChildEnvironment.Count -ne 11 -or $ChildEnvironment.SCANLEVEL -cne 'quick' -or $ChildEnvironment.DOMAINS -cne 'example.com'){throw 'Managed scan child inputs changed'}
+$workingEngine=Join-Path $script:stagedScanBundle 'winws2.exe'
+        if($ChildEnvironment.Count -ne 12 -or $ChildEnvironment.WINWS2 -cne (ConvertTo-ScanCygwinPath $workingEngine) -or $ChildEnvironment.SCANLEVEL -cne 'quick' -or $ChildEnvironment.DOMAINS -cne 'example.com'){throw 'Managed scan child inputs changed'}
         return @{stdout='* SUMMARY fixture';outputComplete=$true}
     }
     $oldBashEnv=$env:BASH_ENV

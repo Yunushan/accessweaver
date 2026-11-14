@@ -1233,9 +1233,12 @@ function Component-ArchivePath([string]$directory,[string]$url) {
     if(-not (Under $target $directory)){throw 'Invalid component archive destination'}
     return $target
 }
-function Ensure-Asset([string]$engine) {
+function Ensure-Asset([string]$engine,[string]$ExpectedSHA256) {
     $plan=if($engine -in @('proxifyre','wgcf','dnscrypt')){Component-ArchitecturePlan $engine}else{$null}
-    $source=Find-Source $engine
+    $source=if($ExpectedSHA256 -and $r.bundlePath){Find-Source $engine -SourceRoots @($r.bundlePath)}else{Find-Source $engine}
+    if($ExpectedSHA256 -and (-not $source -or (Get-WorkflowFileHash $source) -ine $ExpectedSHA256)){
+        throw 'The selected engine executable differs from the completed strategy scan'
+    }
     if (-not $source) {
         $repos=@{byedpi='hufrea/byedpi';proxifyre='wiresock/proxifyre';wgcf='ViRb3/wgcf';zapret='cagritaskn/SplitWire-Turkey';zapret2='cagritaskn/SplitWire-Turkey';goodbyedpi='ValdikSS/GoodbyeDPI';dnscrypt='DNSCrypt/dnscrypt-proxy';drover='hdrover/discord-drover'}
         $patterns=@{byedpi='x86_64-w64.*zip$';proxifyre='x64\.zip$';wgcf='windows_amd64.exe$';zapret='ZIP.*Windows.*zip$';zapret2='ZIP.*Windows.*zip$';goodbyedpi='goodbyedpi.*zip$';dnscrypt='win64.*zip$';drover='drover.*zip$'}
@@ -1262,7 +1265,11 @@ function Ensure-Asset([string]$engine) {
     }
     if([IO.Path]::GetFileName($source) -ne $assetNames[$engine]){$canonical=Join-Path $destination $assetNames[$engine];Copy-Checked $source $canonical;$source=$canonical}
     if($plan -and (Get-PEMachine $source) -ne $plan.machine){throw 'Staged component does not match the native Windows architecture'}
-    Event ('Component ready: '+$engine+'; SHA256 '+(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash)
+    $actualSHA256=Get-WorkflowFileHash $source
+    if($ExpectedSHA256 -and $actualSHA256 -ine $ExpectedSHA256){
+        throw 'The staged engine executable differs from the completed strategy scan'
+    }
+    Event ('Component ready: '+$engine+'; SHA256 '+$actualSHA256)
     return $source
 }
 function Get-WireSockCLIPaths {
@@ -2846,7 +2853,7 @@ function Assert-ByeDPIArguments([string[]]$arguments) {
         if($blocked){throw 'Managed ByeDPI installation reserves listener/process options; use full strategy option names without option terminators or argument files'}
     }
 }
-function Install-Method {
+function Install-Method([string]$ScannedEngineSHA256) {
     if($r.engine -eq 'byedpi'){Assert-ByeDPIArguments @($r.args)}
     if(($r.engine -eq 'wiresock' -and $r.mode -eq 'standard') -or ($r.engine -eq 'byedpi' -and $r.mode -eq 'dll')){if(-not @(Discord-Directories).Count){throw 'Install stable Discord before selecting the Discord DLL setup mode'}}
     if($r.engine -ne 'dnscrypt' -and $r.dns -and $r.dns -ne 'unchanged' -and -not $script:dnsConfigured){Configure-DNS $r.dns}
@@ -2855,7 +2862,10 @@ function Install-Method {
         'byedpi' {$binary=Ensure-Asset 'byedpi';$arguments=@('--ip','127.0.0.1','--port','1080');if($r.args){$arguments+=@($r.args)}else{$arguments+=@('--split','2')};if($r.mode -eq 'once'){Event 'One-shot ByeDPI running; cancel this workflow to stop it';[void](Native $binary $arguments -Timeout 86400)}else{Install-EngineService 'byedpi' $binary $arguments;Firewall 'byedpi' $binary;if($r.mode -eq 'dll'){Install-Drover}elseif($r.mode -ne 'service'){Setup-ProxiFyre '127.0.0.1:1080'}}}
         {$_ -in @('zapret','zapret2','goodbyedpi')} {
             foreach($name in @('zapret','zapret2','goodbyedpi')){if($name -ne $r.engine -and (Get-Service ('AccessWeaver-'+$name) -ErrorAction SilentlyContinue).Status -eq 'Running'){throw 'Stop other packet engines before installing this method'}}
-            $binary=Ensure-Asset $r.engine;$arguments=@($r.args)
+            if($ScannedEngineSHA256 -and (Get-Service -Name ('AccessWeaver-'+$r.engine) -ErrorAction SilentlyContinue)){
+                throw 'Remove the existing managed engine service before installing a scanned strategy'
+            }
+            $binary=Ensure-Asset $r.engine $ScannedEngineSHA256;$arguments=@($r.args)
             if(-not $arguments.Count){if($r.engine -eq 'goodbyedpi'){$arguments=@('-5')}else{throw 'Select a tested preset or supply strategy arguments'}}
             $arguments=@(Packet-Arguments $r.engine $arguments)
             if($r.engine -eq 'zapret2' -and -not @($arguments | Where-Object {$_ -match '^--lua-init(=|$)'}).Count){$lua=Join-Path (Split-Path -Parent $binary) 'lua';foreach($name in @('zapret-lib.lua','zapret-antidpi.lua')){$asset=Join-Path $lua $name;if(-not (Test-Path -LiteralPath $asset)){throw 'Zapret2 requires its matching upstream Lua asset bundle'};$arguments=@('--lua-init=@'+$asset)+$arguments}}
@@ -3306,6 +3316,10 @@ function Preserve-DiscordCache {
     Move-Item -LiteralPath $cache -Destination $destination
     Event 'Discord cache preserved in protected backup storage'
 }
+function ConvertTo-ScanCygwinPath([string]$Path) {
+    if($Path -notmatch '^([A-Za-z]):\\(.+)$'){throw 'Windows blockcheck requires a local drive path'}
+    return '/cygdrive/'+$matches[1].ToLowerInvariant()+'/'+($matches[2] -replace '\\','/')
+}
 function Find-WindowsScanTools([string]$Base,[string]$Pattern) {
     No-Reparse $Base
     $scripts=@(Get-ChildItem -LiteralPath $Base -Recurse -Filter $Pattern -File -ErrorAction Stop | Select-Object -First 2)
@@ -3339,9 +3353,6 @@ function Scan-Strategies {
         if($explicitBundle){
             # Preserve the bundle layout without mixing cached files into the run.
             Copy-Tree $bundle $candidate -Disposable
-            if(-not (Find-Source $r.engine -SourceRoots @($candidate))){
-                throw 'Selected Windows blockcheck bundle lacks the selected engine'
-            }
             $search=@($candidate)
         }else{
             $binary=Ensure-Asset $r.engine;$dir=Split-Path -Parent $binary
@@ -3377,11 +3388,13 @@ function Scan-Strategies {
         }
         $level=if($r.scan){$r.scan}else{'standard'};$scope=@{quick='quick';standard='standard';full='force'}[$level]
         $domains=if($r.targets){$r.targets -join ' '}else{'discord.com discord.gg'}
-        $unixPath=$check.FullName -replace '\\','/'
-        if($unixPath -match '^([A-Za-z]):/(.*)$'){
-            $unixPath='/cygdrive/'+$matches[1].ToLowerInvariant()+'/'+$matches[2]
+        if($explicitBundle -or (Under $check.FullName $candidate)){
+            $binary=Find-Source $r.engine -SourceRoots @($candidate)
         }
-        $arguments=@('--noprofile','--norc',$unixPath)
+        if(-not $binary){throw 'Windows blockcheck bundle lacks the selected engine'}
+        $engineSHA256=Get-WorkflowFileHash $binary
+        if(-not $engineSHA256){throw 'Windows blockcheck engine executable could not be verified'}
+        $arguments=@('--noprofile','--norc',(ConvertTo-ScanCygwinPath $check.FullName))
         $privateState=Join-Path $candidate ('state-'+[guid]::NewGuid().ToString('N'))
         [void][IO.Directory]::CreateDirectory($privateState)
         $system=Join-Path $env:SystemRoot 'System32'
@@ -3398,7 +3411,12 @@ function Scan-Strategies {
             SCANLEVEL=$scope
             DOMAINS=$domains
         }
+        $engineVariable=if($r.engine -eq 'zapret2'){'WINWS2'}else{'WINWS'}
+        $childEnvironment[$engineVariable]=ConvertTo-ScanCygwinPath $binary
         $result=Native $bash.FullName $arguments -Timeout 4200 -WorkingDirectory $check.Directory.FullName -ChildEnvironment $childEnvironment
+        if((Get-WorkflowFileHash $binary) -ine $engineSHA256){
+            throw 'Windows blockcheck engine executable changed during the scan'
+        }
         if($null -eq $result -or $result.outputComplete -isnot [bool] -or -not $result.outputComplete -or
            $result.stdout -isnot [string] -or [string]::IsNullOrWhiteSpace($result.stdout)){
             throw 'Scan output was incomplete; no strategy was selected'
@@ -3406,7 +3424,7 @@ function Scan-Strategies {
         $report=Join-Path $root ('logs\'+$r.engine+'-blockcheck.txt')
         # The latest complete scan is diagnostic evidence for selection and rollback.
         Publish-WorkflowFile $report ([Text.UTF8Encoding]::new($false).GetBytes($result.stdout))
-        return @{scanLevel=$level;output=$result.stdout;reportPath=$report;note='Review detected strategies before installing. A scan result is not a guarantee for UDP voice.'}
+        return @{scanLevel=$level;output=$result.stdout;reportPath=$report;engineSHA256=$engineSHA256;note='Review detected strategies before installing. A scan result is not a guarantee for UDP voice.'}
     } finally {
         $resolved=[IO.Path]::GetFullPath($candidate)
         if((Split-Path -Parent $resolved) -ine $scanParent -or (Split-Path -Leaf $resolved) -cnotmatch '^scan-zapret2?-[a-f0-9]{32}$'){
@@ -3452,8 +3470,8 @@ function Auto-Install {
     $filter=if($selected.protocol -eq 'quic'){'--filter-udp=443'}elseif($selected.protocol -eq 'http'){'--filter-tcp=80'}else{'--filter-tcp=443'}
     $r | Add-Member -NotePropertyName args -NotePropertyValue @($capture+@($filter)+@($selected.args)) -Force
     $r | Add-Member -NotePropertyName mode -NotePropertyValue 'service' -Force
-    $installed=Install-Method
-    return @{installed=$installed;selectedStrategy=$selected;scanReport=$scan.reportPath;note='Only the protocol and scan targets in the report were tested. UDP voice and other networks require separate verification.'}
+    $installed=Install-Method -ScannedEngineSHA256 $scan.engineSHA256
+    return @{installed=$installed;selectedStrategy=$selected;scanReport=$scan.reportPath;engineSHA256=$scan.engineSHA256;note='Only the protocol and scan targets in the report were tested. UDP voice and other networks require separate verification.'}
 }
 function Get-RefreshTaskInspection {
     # The executor supplies a canonical SystemRoot and a trusted native PATH.
