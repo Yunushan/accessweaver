@@ -80,7 +80,7 @@ def validate_packages(root,commit,arch):
     return outputs,package_bindings,identity
 
 
-def validate_managed_detection(cases, bindings, *, writer_lease_required=False):
+def validate_managed_detection(cases, bindings, *, writer_lease_required=False, detached_metadata_required=False):
     expected = (
         ("absent", VERSIONS[0], False, False),
         ("initial-active", VERSIONS[0], True, False),
@@ -97,6 +97,14 @@ def validate_managed_detection(cases, bindings, *, writer_lease_required=False):
             ("writer-lease-held", VERSIONS[0], False, False),
             ("writer-lease-released", VERSIONS[0], True, False),
         ) + expected[2:]
+    if detached_metadata_required:
+        expected = expected[:-1] + (
+            ("changed-active-manifest", VERSIONS[1], False, False),
+            ("restored-active-manifest", VERSIONS[1], True, False),
+            ("changed-active-sbom", VERSIONS[1], False, False),
+            ("restored-active-sbom", VERSIONS[1], True, False),
+            expected[-1],
+        )
     require(isinstance(cases, list) and len(cases) == len(expected), "Incomplete deployment detection coverage")
     for case, (name, version, detected, elevated) in zip(cases, expected):
         require(isinstance(case, dict) and case.keys() == {"name", "version", "detected", "elevated", "helperSHA256", "statePreserved"}
@@ -112,14 +120,15 @@ def validate_contents(root,commit,arch):
     outputs,package_bindings,identity=validate_packages(root,commit,arch)
     launcher=inspect_launcher((root/archive_name(arch)).read_bytes(),identity)
     life=read("lifecycle-artifact.json")
-    require(type(life.get("schemaVersion")) is int and life["schemaVersion"] in (1,2,3) and life.get("sourceCommit")==commit and life.get("target")=="darwin/"+arch and life.get("stage")=="deactivation-and-owned-cleanup" and life.get("failureType") is None and life.get("failureSourceLine") is None,"Deployment lifecycle identity/completion differs")
+    require(type(life.get("schemaVersion")) is int and life["schemaVersion"] in (1,2,3,4) and life.get("sourceCommit")==commit and life.get("target")=="darwin/"+arch and life.get("stage")=="deactivation-and-owned-cleanup" and life.get("failureType") is None and life.get("failureSourceLine") is None,"Deployment lifecycle identity/completion differs")
     require(life.get("packages")==package_bindings and re.fullmatch("[1-9][0-9]{0,19}",str(life.get("runID",""))) is not None,"Native lifecycle is not bound to the actual package subjects/run")
     for key in ("passed","packageScriptsIntegrated","actualApplePackageUpgradeExecuted","actualUserProfilePreservationVerified","retainedPriorCopiesVerified","ownedFixturesRemoved","detachedManifestSealingVerified","detachedPayloadSBOMSealingVerified"):require(life.get(key) is True,"Actual deployment lifecycle did not pass")
     for key in ("installedCodeExecutedAsRoot","publicLauncherIntegrated","runtimeLeaseQualified","publisherSignatureVerified","notarized","productUninstallQualified","managedEndpointQualified","abruptTerminationQualified","rebootOrPowerLossQualified","productionQualificationComplete"):require(life.get(key) is False,"Unqualified deployment lifecycle scope changed")
     detection = {}
     if life["schemaVersion"] >= 2:
         detection = validate_managed_detection(life.get("managedDetectionCases"), package_bindings,
-                                               writer_lease_required=life["schemaVersion"] >= 3)
+                                               writer_lease_required=life["schemaVersion"] >= 3,
+                                               detached_metadata_required=life["schemaVersion"] >= 4)
     lease_cases=life.get("runtimeLeaseCases",[])
     require(life.get("installedControllerLeaseRefusalVerified") is True and len(lease_cases)==4 and [c.get("kind") for c in lease_cases]==["direct","inherited","alias","launcher"],"Installed controller lease coverage differs")
     for case in lease_cases:

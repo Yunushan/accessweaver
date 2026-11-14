@@ -111,6 +111,26 @@ class ManagedDetectionProvenanceTests(unittest.TestCase):
         ):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 verify_module.validate_managed_detection(invalid, bindings, writer_lease_required=True)
+        tamper_cases = [
+            {**cases[-2], "name": name, "detected": detected}
+            for name, detected in (
+                ("changed-active-manifest", False), ("restored-active-manifest", True),
+                ("changed-active-sbom", False), ("restored-active-sbom", True),
+            )
+        ]
+        with_metadata = [*with_writer[:-1], *tamper_cases, with_writer[-1]]
+        self.assertEqual(verify_module.validate_managed_detection(
+            with_metadata, bindings, writer_lease_required=True, detached_metadata_required=True,
+        ), {"managedDetectionChecksVerified": 15})
+        for invalid in (
+            with_writer,
+            [*with_metadata[:-5], {**tamper_cases[0], "detected": True}, *tamper_cases[1:], with_writer[-1]],
+            [*with_metadata[:-5], *tamper_cases[2:], *tamper_cases[:2], with_writer[-1]],
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                verify_module.validate_managed_detection(
+                    invalid, bindings, writer_lease_required=True, detached_metadata_required=True,
+                )
         for invalid in (
             cases[:-1],
             cases[::-1],

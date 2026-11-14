@@ -239,18 +239,40 @@ def main():
         install("same-version-reinstall",VERSIONS[1],3)
         check_detection("reinstalled-active",VERSIONS[1],True)
         active_app,_=active(VERSIONS[1],3)
-        active_leaf=active_app/"Contents/Resources/README.md"
-        preserved=capsule/"saved-active-readme"
-        preserved.write_bytes(active_leaf.read_bytes())
-        changed=capsule/"changed-active-readme"
-        changed.write_bytes(preserved.read_bytes()+b"changed active fixture")
-        try:
-            run(["/usr/bin/sudo","-n","/bin/cp",changed,active_leaf],environment)
-            check_detection("changed-active",VERSIONS[1],False)
-            require(active_leaf.read_bytes()==changed.read_bytes(),"Managed detection modified the changed active bundle")
-        finally:
-            run(["/usr/bin/sudo","-n","/bin/cp",preserved,active_leaf],environment)
-        check_detection("restored-active",VERSIONS[1],True)
+        candidate = candidates[VERSIONS[1]]
+        for label, active_leaf, refused, restored, approved_digest in (
+            ("readme", active_app / "Contents/Resources/README.md", "changed-active", "restored-active",
+             next(entry["sha256"] for entry in candidate["manifest"]["files"]
+                  if entry["path"] == "Contents/Resources/README.md")),
+            ("manifest", active_app.parent / DETACHED_MANIFEST, "changed-active-manifest", "restored-active-manifest",
+             candidate["report"]["manifestSHA256"]),
+            ("sbom", active_app.parent / PAYLOAD_SBOM, "changed-active-sbom", "restored-active-sbom",
+             candidate["report"]["payloadSBOMSHA256"]),
+        ):
+            stage = "detection-prepare-" + label
+            no_alias(active_leaf)
+            metadata = active_leaf.stat()
+            require(stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1
+                    and metadata.st_uid == metadata.st_gid == 0 and stat.S_IMODE(metadata.st_mode) == 0o644,
+                    "Unexpected active detector fixture file")
+            original_bytes = active_leaf.read_bytes()
+            require(digest(original_bytes) == approved_digest, "Active detector fixture does not match its package")
+            preserved = capsule / ("saved-active-" + label)
+            preserved.write_bytes(original_bytes)
+            changed = capsule / ("changed-active-" + label)
+            changed_bytes = original_bytes + b" "
+            changed.write_bytes(changed_bytes)
+            try:
+                run(["/usr/bin/sudo", "-n", "/bin/cp", changed, active_leaf], environment)
+                require(active_leaf.read_bytes() == changed_bytes, "Could not verify the active detector fault")
+                check_detection(refused, VERSIONS[1], False)
+                no_alias(active_leaf)
+                require(os.path.samestat(metadata, active_leaf.stat()) and active_leaf.read_bytes() == changed_bytes,
+                        "Managed detection modified the changed active file")
+            finally:
+                run(["/usr/bin/sudo", "-n", "/bin/cp", preserved, active_leaf], environment)
+            verify_deployment_bundle(active_app, candidate["manifest"], candidate["identity"], candidate["manifestBytes"])
+            check_detection(restored, VERSIONS[1], True)
         install("older-version-refused",VERSIONS[0],3,False)
         candidate=candidates[VERSIONS[1]];incoming=INPUT/candidate["report"]["manifestSHA256"]/BUNDLE_NAME;verify_deployment_bundle(incoming,candidate["manifest"],candidate["identity"],candidate["manifestBytes"])
         payload_sbom=incoming.parent/PAYLOAD_SBOM;original_sbom=capsule/"saved-payload-sbom";original_sbom.write_bytes(payload_sbom.read_bytes())
@@ -297,7 +319,7 @@ def main():
         while trace:
             if trace.tb_frame.f_code.co_filename==__file__:failure_line=trace.tb_lineno
             trace=trace.tb_next
-    report={"schemaVersion":3,"managedDetectionCases":detection_cases,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packages":{v:{"file":c["report"]["packageFile"],"bytes":c["report"]["packageBytes"],"packageSHA256":c["report"]["packageSHA256"],"payloadSHA256":c["report"]["payloadSHA256"],"manifestSHA256":c["report"]["manifestSHA256"],"helperSHA256":c["report"]["helperSHA256"],"payloadSBOMSHA256":c["report"]["payloadSBOMSHA256"]} for v,c in candidates.items()},"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"runtimeLeaseCases":lease_cases,"launcherCases":launcher_cases,"launcherCandidate":launcher_info,"activeCopyLauncherVerified":complete,"installedControllerLeaseRefusalVerified":complete,"packageScriptsIntegrated":True,"detachedManifestSealingVerified":complete,"detachedPayloadSBOMSealingVerified":complete,"actualApplePackageUpgradeExecuted":complete,"actualUserProfilePreservationVerified":complete,"retainedPriorCopiesVerified":complete,"ownedFixturesRemoved":cleaned,"installedCodeExecutedAsRoot":False,"publicLauncherIntegrated":False,"runtimeLeaseQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"abruptTerminationQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
+    report={"schemaVersion":4,"managedDetectionCases":detection_cases,"sourceCommit":source,"runID":os.environ["GITHUB_RUN_ID"],"target":"darwin/"+arch,"packages":{v:{"file":c["report"]["packageFile"],"bytes":c["report"]["packageBytes"],"packageSHA256":c["report"]["packageSHA256"],"payloadSHA256":c["report"]["payloadSHA256"],"manifestSHA256":c["report"]["manifestSHA256"],"helperSHA256":c["report"]["helperSHA256"],"payloadSBOMSHA256":c["report"]["payloadSBOMSHA256"]} for v,c in candidates.items()},"stage":stage,"passed":complete,"failureType":failure,"failureSourceLine":failure_line,"operations":operations,"runtimeLeaseCases":lease_cases,"launcherCases":launcher_cases,"launcherCandidate":launcher_info,"activeCopyLauncherVerified":complete,"installedControllerLeaseRefusalVerified":complete,"packageScriptsIntegrated":True,"detachedManifestSealingVerified":complete,"detachedPayloadSBOMSealingVerified":complete,"actualApplePackageUpgradeExecuted":complete,"actualUserProfilePreservationVerified":complete,"retainedPriorCopiesVerified":complete,"ownedFixturesRemoved":cleaned,"installedCodeExecutedAsRoot":False,"publicLauncherIntegrated":False,"runtimeLeaseQualified":False,"publisherSignatureVerified":False,"notarized":False,"productUninstallQualified":False,"managedEndpointQualified":False,"abruptTerminationQualified":False,"rebootOrPowerLossQualified":False,"productionQualificationComplete":False}
     (root/"lifecycle-artifact.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     require(complete,"Native deployment package acceptance failed at "+stage+"; owned disposable state retained")
     print(json.dumps({"target":report["target"],"actualApplePackageOperations":len(operations)+len(lease_cases),"passed":True,"productionQualificationComplete":False}))
