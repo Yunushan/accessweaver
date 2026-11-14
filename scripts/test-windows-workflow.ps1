@@ -1653,6 +1653,54 @@ Assert (-not (Test-InstallerPublisher 'wiresock' $invalidSigner $x64Pin 'amd64')
         $script:rebootRequired=$previousRebootRequired
     }
 }
+# Read the actual SplitCord service verification against controlled SCM responses.
+& {
+    $app=Join-Path $testRoot 'splitcord-service-fixture\SplitCord-Turkey.exe'
+    $binary=Join-Path (Split-Path -Parent $app) 'resources\service-installer\SplitCordService.exe'
+    [void][IO.Directory]::CreateDirectory((Split-Path -Parent $binary))
+    [IO.File]::WriteAllText($binary,'inert service fixture')
+    function Invoke-ManagedServiceControl {
+        param($Operation,$Name,[int[]]$Codes)
+        if($Operation -cne 'query' -or $Name -cne 'SplitCordDpiService' -or ($Codes -join ',') -cne '0,1060,1072'){
+            throw 'Expected a read-only, fixed service query'
+        }
+        $script:externalEffectsPending=$true
+        if($queryFails){throw 'Fixture SCM query refused'}
+        return $serviceState
+    }
+    function Read-ManagedServiceCommand {param($Name);return $serviceCommand}
+    function Get-Service {
+        param($Name,$ErrorAction)
+        $record=[pscustomobject]@{Status=$serviceStatus}
+        $record | Add-Member ScriptMethod Dispose {}
+        return $record
+    }
+    $queryFails=$false
+    $serviceState=0;$serviceCommand='"'+$binary+'"';$serviceStatus='Running'
+    Wait-SplitCordService $app 0
+    foreach($case in @(
+        @{state=0;command='"'+$binary+'" --different';status='Running';error='SplitCord service registration differs from the installed application'},
+        @{state=0;command='"'+$binary+'"';status='Stopped';error='SplitCord service did not reach Running'},
+        @{state=1060;command=$null;status=$null;error='SplitCord service did not reach Running'}
+    )){
+        $serviceState=$case.state;$serviceCommand=$case.command;$serviceStatus=$case.status
+        $refused=$false
+        try{Wait-SplitCordService $app 0}catch{$refused=$_.Exception.Message -ceq $case.error}
+        if(-not $refused){throw 'SplitCord accepted an unready or different service'}
+    }
+    foreach($serviceState in @(0,1072)){
+        $refused=$false
+        try{Wait-SplitCordService '' 0}catch{$refused=$_.Exception.Message -ceq 'SplitCord service removal could not be verified'}
+        if(-not $refused){throw 'SplitCord accepted a service still registered or pending deletion'}
+    }
+    $serviceState=1060
+    Wait-SplitCordService '' 0
+    $queryFails=$true
+    $refused=$false
+    try{Wait-SplitCordService '' 0}catch{$refused=$_.Exception.Message -ceq 'Fixture SCM query refused'}
+    if($script:externalEffectsPending){throw 'Read-only service checks changed the external effects flag'}
+    Assert $refused 'SplitCord service lifecycle requires the expected running registration and verified removal'
+}
 # Synthetic process records verify session-scoped launch observation without launching an app.
 $fixtureApp='C:\fixture\SplitCord.exe'
 $otherSession=[pscustomobject]@{ProcessName='SplitCord';Path=$null;SessionId=9;HasExited=$false}
@@ -1756,7 +1804,7 @@ try {
 }
 # Verify vendor completion against the previous executable and a fresh process snapshot.
 $appRemovalSaved=@{}
-foreach($name in @('Require-DesktopUser','Find-App','Native','Event','Stop-AppProcesses')){
+foreach($name in @('Require-DesktopUser','Find-App','Native','Event','Stop-AppProcesses','Wait-SplitCordService')){
     $appRemovalSaved[$name]=(Get-Command $name).ScriptBlock
 }
 try {
@@ -1780,6 +1828,11 @@ try {
         if($script:appRemovalFail){throw 'synthetic vendor failure'}
     }
     function Event {param($message);$script:appRemovalEvents.Add($message)}
+    function Wait-SplitCordService {
+        param([string]$App,[int]$Seconds=20)
+        if($App){throw 'Unexpected SplitCord install service probe'}
+        if($script:appServiceRemains){throw 'SplitCord service removal could not be verified'}
+    }
     function Get-Process {
         param($ErrorAction)
         if($ErrorAction -cne 'Stop'){throw 'Expected a complete fixture process query'}
@@ -1890,6 +1943,16 @@ try {
         [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
     }
     $script:appReappearance=$null
+    $script:appRemovalInvoked=$false
+    $script:appServiceRemains=$true
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'SplitCord service removal could not be verified'}
+    Assert ($rejected -and $script:appRemovalInvoked -and $script:appRemovalEvents.Count -eq 0) 'SplitCord removal refuses success when the vendor service remains'
+    $rejected=$false
+    try{Remove-App 'splitcord'}catch{$rejected=$_.Exception.Message -ceq 'SplitCord service removal could not be verified'}
+    Assert ($rejected -and $script:appRemovalEvents.Count -eq 0) 'SplitCord removal detects an orphaned service when the desktop client is absent'
+    $script:appServiceRemains=$false
+    [IO.File]::WriteAllBytes($fixtureApp,[byte[]]@(0))
     $script:appRemovalInvoked=$false
     $removed=Remove-App 'splitcord'
     Assert ($removed -ceq $true -and $script:appRemovalEvents.Count -eq 1 -and -not (Test-Path -LiteralPath $fixtureApp)) 'Application removal confirms both executable and process readback before success'

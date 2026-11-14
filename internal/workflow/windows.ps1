@@ -3076,6 +3076,36 @@ function Get-SplitCordInstaller {
     if($hash -notmatch '\A[a-fA-F0-9]{64}\z'){throw 'SplitCord installer requires a published or explicitly supplied SHA-256'}
     return @{url=$url;hash=$hash}
 }
+function Wait-SplitCordService([string]$App,[int]$Seconds=20) {
+    $name='SplitCordDpiService'
+    $binary=if($App){Join-Path (Split-Path -Parent $App) 'resources\service-installer\SplitCordService.exe'}
+    if($binary){
+        No-Reparse $binary
+        if(-not (Test-Path -LiteralPath $binary -PathType Leaf -ErrorAction Stop)){throw 'SplitCord service executable is missing'}
+    }
+    $deadline=[Diagnostics.Stopwatch]::StartNew()
+    do {
+        # The shared native runner marks tool calls as potential effects.
+        # This operation only queries the SCM, including on an absent-client retry.
+        $previousEffects=$script:externalEffectsPending
+        try {$state=Invoke-ManagedServiceControl 'query' $name @(0,1060,1072)}
+        finally {$script:externalEffectsPending=$previousEffects}
+        if(-not $binary -and $state -eq 1060){return}
+        if($binary -and $state -eq 0){
+            $command=Read-ManagedServiceCommand $name
+            if($command -ine $binary -and $command -ine ('"'+$binary+'"')){
+                throw 'SplitCord service registration differs from the installed application'
+            }
+            $service=Get-Service -Name $name -ErrorAction Stop
+            try {if($service.Status -eq 'Running'){return}}
+            finally {$service.Dispose()}
+        }
+        if($deadline.Elapsed.TotalSeconds -ge $Seconds){break}
+        Start-Sleep -Milliseconds 250
+    } while($true)
+    if($binary){throw 'SplitCord service did not reach Running'}
+    throw 'SplitCord service removal could not be verified'
+}
 function Save-ApplicationEffectBoundary {
     # Persist the attempt before allowing an irreversible desktop action.
     $previous=$script:externalEffectsPending
@@ -3141,6 +3171,12 @@ function Install-App([string]$variant,[switch]$Reinstall) {
     } finally {$lockedInstaller.Dispose()}
     $installedApp=Wait-App $variant $true 180
     $installedDigest=Get-AppExecutableDigest $installedApp
+    if($variant -eq 'splitcord'){
+        Wait-SplitCordService $installedApp
+        if((Find-App $variant) -ine $installedApp -or (Get-AppExecutableDigest $installedApp) -ine $installedDigest){
+            throw 'SplitCord changed during service verification'
+        }
+    }
     if($cleanPTB){
         # A previously installed PTB executable alone cannot confirm replacement.
         if($ptbBeforeSetupDigest -and $existingApp -ieq $installedApp -and $ptbBeforeSetupDigest -ieq $installedDigest){
@@ -3195,7 +3231,10 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
     Require-DesktopUser
     $app=Find-App $variant
     if($expectedApp -and $app -ine $expectedApp){throw 'Application installation changed before removal'}
-    if(-not $app){return $false}
+    if(-not $app){
+        if($variant -eq 'splitcord'){Wait-SplitCordService '' 0}
+        return $false
+    }
     $appDigest=Get-AppExecutableDigest $app
     if($expectedAppDigest -and $appDigest -ine $expectedAppDigest){throw 'Application installation changed before removal'}
     $uninstaller=Get-AppUninstaller $variant $app
@@ -3221,6 +3260,7 @@ function Remove-App([string]$variant,[string]$expectedApp,[string]$expectedAppDi
         [void](Native $confirmed.path $confirmed.arguments -Timeout $confirmed.timeout -StartGuard $guard)
     } finally {$guard.Dispose()}
     Wait-App $variant $false 60 $app
+    if($variant -eq 'splitcord'){Wait-SplitCordService ''}
     Wait-AppProcessesExited $variant $app
     if((Find-App $variant) -or (Test-Path -LiteralPath $app -ErrorAction Stop)){
         throw 'Application installation reappeared during uninstall verification'
