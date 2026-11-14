@@ -217,6 +217,38 @@ begin
   end;
 end;
 
+function AWOpenReplaceProbe(const Path: String; Access, Sharing, Security,
+  Disposition, Flags, Template: LongWord): LongWord;
+  external 'CreateFileW@kernel32.dll stdcall';
+
+function AWCanReplaceInstalledFile(const Path: String): Boolean;
+var Attributes, Handle, Code: LongWord;
+begin
+  Result := False;
+  Attributes := AWPathAttributes(Path);
+  if Attributes = $FFFFFFFF then begin
+    Code := DLLGetLastError;
+    Result := (Code = 2) or (Code = 3);
+    Exit;
+  end;
+  if (Attributes and ($00000400 or $00000010)) <> 0 then Exit;
+  { Probe DELETE access without writing, truncating or deleting. }
+  Handle := AWOpenReplaceProbe(Path, $00010000, $00000007, 0, 3, $00200000, 0);
+  if Handle = $FFFFFFFF then Exit;
+  Result := AWCloseNativeHandle(Handle) <> 0;
+end;
+
+function AWPayloadReplacementPreflight(const Destination: String): String;
+begin
+  Result := '';
+  if not AWCanReplaceInstalledFile(Destination + '\accessweaver.exe') then
+    Result := 'The AccessWeaver executable cannot be replaced. Close it and release any file locks before retrying setup.'
+  else if not AWCanReplaceInstalledFile(Destination + '\BUILD-INFO.json') then
+    Result := 'The AccessWeaver BUILD-INFO.json cannot be replaced. Release any file locks before retrying setup.'
+  else if not AWCanReplaceInstalledFile(Destination + '\SBOM.cdx.json') then
+    Result := 'The AccessWeaver SBOM.cdx.json cannot be replaced. Release any file locks before retrying setup.';
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var Failure, Destination: String;
 begin
@@ -228,6 +260,7 @@ begin
       RaiseException('Cannot record the AccessWeaver installation destination.');
     Failure := AWPendingSetupPreflight(Destination);
     if Failure = '' then Failure := AWInstallationPathPreflight(Destination, True);
+    if Failure = '' then Failure := AWPayloadReplacementPreflight(Destination);
     if Failure <> '' then RaiseException(Failure);
     if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, '{#ReleaseVersion}|' + Destination) or
       not AWFlushLifecycleRecord then
@@ -307,28 +340,6 @@ begin
   end;
 end;
 
-function AWOpenReplaceProbe(const Path: String; Access, Sharing, Security,
-  Disposition, Flags, Template: LongWord): LongWord;
-  external 'CreateFileW@kernel32.dll stdcall';
-
-function AWPayloadReplacementPreflight: String;
-var Path: String; Attributes, Handle, Code: LongWord;
-begin
-  Result := 'The AccessWeaver executable cannot be replaced. Close it and release any file locks before retrying setup.';
-  Path := ExpandConstant('{app}\accessweaver.exe');
-  Attributes := AWPathAttributes(Path);
-  if Attributes = $FFFFFFFF then begin
-    Code := DLLGetLastError;
-    if (Code = 2) or (Code = 3) then Result := '';
-    Exit;
-  end;
-  if (Attributes and ($00000400 or $00000010)) <> 0 then Exit;
-  { Probe DELETE access without writing, truncating or deleting. }
-  Handle := AWOpenReplaceProbe(Path, $00010000, $00000007, 0, 3, $00200000, 0);
-  if Handle = $FFFFFFFF then Exit;
-  if AWCloseNativeHandle(Handle) <> 0 then Result := '';
-end;
-
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   { Recheck after wizard interaction, while the product SetupMutex remains held. }
@@ -337,7 +348,7 @@ begin
     Result := AWRegistrationPreflight(ExpandConstant('{app}'));
     if Result = '' then Result := AWPendingSetupPreflight(ExpandConstant('{app}'));
     if Result = '' then Result := AWInstallationPathPreflight(ExpandConstant('{app}'), True);
-    if Result = '' then Result := AWPayloadReplacementPreflight;
+    if Result = '' then Result := AWPayloadReplacementPreflight(ExpandConstant('{app}'));
   end;
 end;
 

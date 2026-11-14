@@ -115,6 +115,17 @@ class LockedUpgradeTests(unittest.TestCase):
                 validate_locked_upgrade({**observation, field: bad})
         with self.assertRaises(ValueError):
             validate_locked_upgrade({**observation, "path": "private"})
+        for subject, key in (("build-info", "lockedBuildInfoUpgradePreservationVerified"),
+                             ("sbom", "lockedSBOMUpgradePreservationVerified")):
+            operation = f"refused-locked-{subject}-upgrade"
+            metadata = {**observation, "operation": operation, "pendingMarkerAbsent": True}
+            with self.subTest(operation=operation):
+                self.assertEqual(validate_locked_upgrade(metadata, operation=operation, marker_required=True), {key: True})
+                with self.assertRaises(ValueError):
+                    validate_locked_upgrade({**metadata, "pendingMarkerAbsent": False}, operation=operation,
+                                            marker_required=True)
+                with self.assertRaises(ValueError):
+                    validate_locked_upgrade(metadata, marker_required=True)
 
 
 class FailedCopyRecoveryTests(unittest.TestCase):
@@ -134,6 +145,12 @@ class FailedCopyRecoveryTests(unittest.TestCase):
         self.assertEqual(validate_failed_copy_recovery({**observation, "controllerUninstallBindingRefused": True},
                                                        controller_required=True),
                          {"failedInstallCopyRecoveryVerified": True})
+        compatibility = {**observation, "lockedCompatibilityFilePreserved": True}
+        del compatibility["lockedSBOMPreserved"]
+        self.assertEqual(validate_failed_copy_recovery(compatibility, compatibility_file=True),
+                         {"failedInstallCopyRecoveryVerified": True})
+        with self.assertRaises(ValueError):
+            validate_failed_copy_recovery(observation, compatibility_file=True)
         for field in observation:
             changed = dict(observation)
             del changed[field]

@@ -460,19 +460,27 @@ try {
     $stage='locked-payload-upgrade'
     $machineBeforeUpgrade=State-Snapshot
     $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
-    $upgradeLog=Join-Path $capsule 'locked-upgrade.log'
-    $payloadGuard=[IO.File]::Open((Join-Path $install 'accessweaver.exe'),[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
-    try {
-        $blocked=Native-Record $second ($arguments+@('/LOG='+$upgradeLog)) @(7)
-    } finally {$payloadGuard.Dispose()}
-    $logFile=Get-Item -LiteralPath $upgradeLog
-    Require ($logFile.Length -gt 0 -and $logFile.Length -le 1MB) 'Locked upgrade log is missing or exceeds its bound'
-    $reason='The AccessWeaver executable cannot be replaced. Close it and release any file locks before retrying setup.'
-    Require ([IO.File]::ReadAllText($upgradeLog).Contains($reason)) 'Locked upgrade did not reach the executable replacement preflight'
-    Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint) -ceq $registrationBefore) 'Locked upgrade changed installed files or registration'
-    Assert-Installed $builds[0]
-    Require ((State-Snapshot) -ceq $machineBeforeUpgrade) 'Locked upgrade changed observed machine state'
-    $observations+=,@{operation='refused-locked-upgrade';exitCode=$blocked.result.exitCode;elapsedMilliseconds=$blocked.milliseconds;deadlineMilliseconds=180000;preflightRefusalLogged=$true;installedFileTreePreserved=$true;completeRegistrationPreserved=$true;profilePreserved=$true;machineStateUnchanged=$true}
+    foreach($case in @(
+        @{file='accessweaver.exe';subject='executable';operation='refused-locked-upgrade'},
+        @{file='BUILD-INFO.json';subject='BUILD-INFO.json';operation='refused-locked-build-info-upgrade'},
+        @{file='SBOM.cdx.json';subject='SBOM.cdx.json';operation='refused-locked-sbom-upgrade'}
+    )){
+        $upgradeLog=Join-Path $capsule ($case.operation+'.log')
+        $guard=[IO.File]::Open((Join-Path $install $case.file),[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+        try {
+            $blocked=Native-Record $second ($arguments+@('/LOG='+$upgradeLog)) @(7)
+        } finally {$guard.Dispose()}
+        No-Reparse $upgradeLog
+        $logFile=Get-Item -LiteralPath $upgradeLog -ErrorAction Stop
+        Require (-not $logFile.PSIsContainer -and $logFile.Length -gt 0 -and $logFile.Length -le 1MB) 'Locked upgrade log is missing or exceeds its bound'
+        $reason='The AccessWeaver '+$case.subject+' cannot be replaced.'
+        Require ([IO.File]::ReadAllText($upgradeLog).Contains($reason)) 'Locked upgrade did not reach the expected release-file replacement preflight'
+        Require ($null -eq (Get-PendingInstallFixtureValue)) 'Locked upgrade created a pending installation record'
+        Require ((Installed-TreeFingerprint) -ceq $treeBefore -and (Registration-Fingerprint) -ceq $registrationBefore) 'Locked upgrade changed installed files or registration'
+        Assert-Installed $builds[0];Assert-UserState
+        Require ((State-Snapshot) -ceq $machineBeforeUpgrade) 'Locked upgrade changed observed machine state'
+        $observations+=,@{operation=$case.operation;exitCode=$blocked.result.exitCode;elapsedMilliseconds=$blocked.milliseconds;deadlineMilliseconds=180000;preflightRefusalLogged=$true;pendingMarkerAbsent=$true;installedFileTreePreserved=$true;completeRegistrationPreserved=$true;profilePreserved=$true;machineStateUnchanged=$true}
+    }
     $stage='upgrade'
     $upgraded=Native-Record $second $arguments;Assert-Installed $builds[1]
     Require ((Digest $marker) -ceq $markerHash) 'Upgrade changed an unrelated installed-directory file'
@@ -556,20 +564,21 @@ try {
     Require ($null -eq (Get-PendingInstallFixtureValue)) 'Successful Setup did not clear its pending record'
     Require ((Get-AccessWeaverInstallerRecoveryState) -ceq 'clear') 'Controller did not observe cleared Setup recovery state'
     $failedCopyLog=Join-Path $capsule 'failed-install-copy.log'
-    $installedSBOM=Join-Path $install 'SBOM.cdx.json'
-    $sbomBeforeFailure=Digest $installedSBOM
-    $sbomGuard=[IO.File]::Open($installedSBOM,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+    # Force a real copy failure with a packaged compatibility file outside release preflight.
+    $lockedCompatibilityFile=Join-Path $install 'uninstall-system.json'
+    $compatibilityDigest=Digest $lockedCompatibilityFile
+    $compatibilityGuard=[IO.File]::Open($lockedCompatibilityFile,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
     try {
         $failedCopy=Native-Record $second ($arguments+@('/LOG='+$failedCopyLog)) @(4,5)
-    } finally {$sbomGuard.Dispose()}
+    } finally {$compatibilityGuard.Dispose()}
     Require ((Get-Item -LiteralPath $failedCopyLog).Length -le 1MB) 'Failed installation log exceeds its bound'
     $copyLog=[IO.File]::ReadAllText($failedCopyLog)
     Require ($copyLog.Contains('Starting the installation process.') -and
-        $copyLog.Contains($installedSBOM) -and
-        $copyLog.Contains('An error occurred while trying to replace the existing file:')) 'Setup did not encounter the expected native SBOM replacement failure'
+        $copyLog.Contains($lockedCompatibilityFile) -and
+        $copyLog.Contains('An error occurred while trying to replace the existing file:')) 'Setup did not encounter the expected native compatibility-file replacement failure'
     Require ((Get-PendingInstallFixtureValue) -ceq $pendingValue) 'Failed Setup did not retain its own pending installation record'
     Require ((Get-AccessWeaverInstallerRecoveryState) -ceq 'pending') 'Controller did not observe the native Setup recovery marker'
-    Require ((Digest $installedSBOM) -ceq $sbomBeforeFailure) 'Failed Setup changed the locked SBOM'
+    Require ((Digest $lockedCompatibilityFile) -ceq $compatibilityDigest) 'Failed Setup changed the locked compatibility file'
     Assert-UserState
     $treeBefore=Installed-TreeFingerprint;$registrationBefore=Registration-Fingerprint
     Assert-DetectorRefusal 'pending-install-refused'
@@ -658,7 +667,7 @@ try {
     $observations+=,@{
         operation='recover-failed-install-copy';exitCode=$failedCopy.result.exitCode;
         elapsedMilliseconds=$failedCopy.milliseconds;deadlineMilliseconds=180000;
-        copyFailureLogged=$true;pendingRecordCreatedBySetup=$true;lockedSBOMPreserved=$true;
+        copyFailureLogged=$true;pendingRecordCreatedBySetup=$true;lockedCompatibilityFilePreserved=$true;
         refusedOperationsPreservedInstallation=$true;controllerUninstallBindingRefused=$true;profilePreserved=$true;
         approvedPackageDetectedAfterRetry=$true;pendingRecordClearedAfterRetry=$true
     }
@@ -1103,7 +1112,7 @@ try {
 $eventDiagnostics=New-InstallerFirewallEventDiagnostic
 if(-not $complete){$eventDiagnostics=Read-FirewallEventDiagnostic}
 $originDiagnostics=[ordered]@{schemaVersion=1;source='captured-rule-properties';maxRecords=16;maxPropertyBytes=4096;records=@($script:firewallOriginObservations);truncated=$script:firewallOriginTruncated;unavailable=$script:firewallOriginUnavailable;extraNativeQueriesPerformed=$false;processOriginEstablished=$false}
-$record=[ordered]@{schemaVersion=26;setupCompletionRefusal=$completionRefusal;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
+$record=[ordered]@{schemaVersion=27;setupCompletionRefusal=$completionRefusal;setupCompletionReadbackVerified=$complete;installationPathRefusals=$pathRefusal;pendingMarkerAccess=$pendingMarkerAccess;architectureRefusal=$architectureRefusal;managedDetectionCases=$script:detectionCases;managedDetectionSourceSHA256=(Digest $detector);eventDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-event-state.ps1'));firewallEventDiagnostics=$eventDiagnostics;nativeDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-native-state.ps1'));lastNativeAttempt=$script:lastNativeAttempt;firewallOriginDiagnostics=$originDiagnostics;sourceCommit=$source;sourceRef=$sourceRef;runID=$run;target=('windows/'+$Architecture);compilerVersion='6.7.1';stateObservations=$script:stateObservations;stateDiagnosticsSourceSHA256=(Digest (Join-Path $PSScriptRoot 'windows-installer-state.ps1'));builds=$builds;operations=$observations;lifecycleLockCases=$lifecycleLockCases;lifecycleLockFixtureSHA256=$lifecycleLockFixtureSHA256;productLockSHA256=$productLockSHA256;versionPolicyCases=$versionPolicyCases;registryReadCases=$registryReadCases;registryReadBufferBytes=514;restorationCases=$restorationCases;restorationLaunchCases=$restorationLaunchCases;restoreLaunchFixtureSHA256=$restoreLaunchFixtureSHA256;restorationOwnerCases=$restorationOwnerCases;restorationOwnerTerminationTested=$complete;restoreOwnerFixtureSHA256=$restoreOwnerFixtureSHA256;productRestoreSHA256=$productRestoreSHA256;restoreFixtureSourceSHA256=$restoreFixtureSourceSHA256;restoreFixtureBinarySHA256=$restoreFixtureBinarySHA256;restoreContractSourceSHA256=$restoreContractSourceSHA256;restoreContractBinarySHA256=$restoreContractBinarySHA256;registryViewCases=$registryViewCases;registryAccessCases=$registryAccessCases;registryFixtureSHA256=$registryFixtureSHA256;productRegistrySHA256=$productRegistrySHA256;versionContractCases=$versionContractCases;versionFixtureSHA256=$versionFixtureSHA256;passed=$complete;stage=$stage;failureType=$failureType;failureSourceLine=$failureSourceLine;assertionFailure=$script:assertionFailure;lastNative=$script:lastNative;actualUserProfilePreservationVerified=$complete;childEnvironmentSanitized=$true;selectedServiceFirewallDNSStateUnchanged=$complete;ownedFixturesRemoved=$complete;unsigned=$true;publisherSignatureVerified=$false;rebootTested=$false;downgradeTested=$complete;crashOrPowerLossTested=$false;vendorDriverOrRoutingQualified=$false;productionQualificationComplete=$false}
 $record | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8
 if(-not $complete){throw ('Disposable installer acceptance failed at '+$stage+' ('+$failureType+'); owned fixture retained on the disposable runner')}
 Write-Output 'Actual clean install, upgrade, reinstall, refused downgrade, refused restoration/uninstall and successful recovery-aware uninstall passed; public scoped evidence retained.'

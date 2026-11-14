@@ -91,7 +91,11 @@ $prepare=[regex]::Match($installerSource,'(?ms)^function PrepareToInstall\(.*?^e
 $copy=[regex]::Match($installerSource,'(?ms)^procedure CurStepChanged\(.*?^end;').Value
 $uninstallPreflight=[regex]::Match($installerSource,'(?ms)^function AWUninstallPreflight: String;.*?^end;').Value
 Assert ($prepare -cmatch "(?s)AWInstallationPathPreflight\(ExpandConstant\('\{app\}'\), True\).*AWPayloadReplacementPreflight") 'Setup must check the destination before probing the payload'
-Assert ($copy -cmatch '(?s)AWInstallationPathPreflight\(Destination, True\).*RaiseException\(Failure\).*RegWriteStringValue') 'Setup must recheck the destination before recording pending installation'
+Assert ($copy -cmatch '(?s)AWInstallationPathPreflight\(Destination, True\).*AWPayloadReplacementPreflight\(Destination\).*RaiseException\(Failure\).*RegWriteStringValue') 'Setup must recheck the destination and release files before recording pending installation'
+$replacement=[regex]::Match($installerSource,'(?ms)^function AWPayloadReplacementPreflight\([^;\r\n]+\): String;\r?\nbegin.*?^end;').Value
+foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
+    Assert ($replacement.Contains("AWCanReplaceInstalledFile(Destination + '\$name')")) 'Setup must check each release subject before replacement'
+}
 Assert ($uninstallPreflight -cmatch "AWInstallationPathPreflight\(ExpandConstant\('\{app\}'\), False\)") 'Uninstall must require an existing ordinary directory before restoration'
 $completion=[regex]::Match($installerSource,'(?ms)^function AWVerifyCompletedInstall\(.*?^end;').Value
 Assert ($copy -cmatch "(?s)ssDone.*if not AWVerifyCompletedInstall.*Pending installation record retained\..*end else if not RegDeleteValue") 'Setup must verify completion before clearing the pending install record'

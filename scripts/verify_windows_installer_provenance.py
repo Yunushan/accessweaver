@@ -199,22 +199,30 @@ def validate_redirected_upgrade(value):
     return {"redirectedUpgradePreservationVerified": True}
 
 
-def validate_locked_upgrade(value):
+def validate_locked_upgrade(value, *, operation="refused-locked-upgrade", marker_required=False):
+    checks = {
+        "refused-locked-upgrade": "lockedUpgradePreservationVerified",
+        "refused-locked-build-info-upgrade": "lockedBuildInfoUpgradePreservationVerified",
+        "refused-locked-sbom-upgrade": "lockedSBOMUpgradePreservationVerified",
+    }
     flags = {"preflightRefusalLogged", "installedFileTreePreserved", "completeRegistrationPreserved",
              "profilePreserved", "machineStateUnchanged"}
+    if marker_required:
+        flags.add("pendingMarkerAbsent")
     require(isinstance(value, dict)
             and value.keys() == flags | {"operation", "exitCode", "elapsedMilliseconds", "deadlineMilliseconds"}
-            and value["operation"] == "refused-locked-upgrade"
+            and operation in checks and value["operation"] == operation
             and type(value["exitCode"]) is int and value["exitCode"] == 7
             and type(value["deadlineMilliseconds"]) is int and value["deadlineMilliseconds"] == 180000
             and type(value["elapsedMilliseconds"]) is int and 0 <= value["elapsedMilliseconds"] < 180000
             and all(value[key] is True for key in flags), "Locked upgrade refusal was not verified")
-    return {"lockedUpgradePreservationVerified": True}
+    return {checks[operation]: True}
 
 
-def validate_failed_copy_recovery(value, *, controller_required=False):
+def validate_failed_copy_recovery(value, *, controller_required=False, compatibility_file=False):
     flags = {
-        "copyFailureLogged", "pendingRecordCreatedBySetup", "lockedSBOMPreserved",
+        "copyFailureLogged", "pendingRecordCreatedBySetup",
+        "lockedCompatibilityFilePreserved" if compatibility_file else "lockedSBOMPreserved",
         "refusedOperationsPreservedInstallation", "profilePreserved",
         "approvedPackageDetectedAfterRetry", "pendingRecordClearedAfterRetry",
     }
@@ -272,7 +280,7 @@ def validate_fixed_restoration(refused, removed):
 
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -307,6 +315,12 @@ def validate_contents(root,commit,ref,arch,versions):
         expected.insert(1, "refused-redirected-upgrade")
     if report["schemaVersion"] >= 23:
         expected.insert(expected.index("refused-uninstall"), "refused-uninstall-registration")
+    locked_operations = {"refused-locked-upgrade"}
+    if report["schemaVersion"] >= 27:
+        metadata_refusals = ["refused-locked-build-info-upgrade", "refused-locked-sbom-upgrade"]
+        upgrade_index = expected.index("upgrade")
+        expected[upgrade_index:upgrade_index] = metadata_refusals
+        locked_operations.update(metadata_refusals)
     require([o.get("operation") for o in operations]==expected,"Native lifecycle operation coverage differs")
     redirected_upgrade = {}
     locked_upgrade = {}
@@ -319,11 +333,16 @@ def validate_contents(root,commit,ref,arch,versions):
         if operation["operation"] == "refused-redirected-upgrade":
             redirected_upgrade = validate_redirected_upgrade(operation)
             continue
-        if operation["operation"] == "refused-locked-upgrade":
-            locked_upgrade = validate_locked_upgrade(operation)
+        if operation["operation"] in locked_operations:
+            locked_upgrade.update(validate_locked_upgrade(
+                operation, operation=operation["operation"], marker_required=report["schemaVersion"] >= 27,
+            ))
             continue
         if operation["operation"] == "recover-failed-install-copy":
-            failed_copy_recovery = validate_failed_copy_recovery(operation, controller_required=report["schemaVersion"] >= 20)
+            failed_copy_recovery = validate_failed_copy_recovery(
+                operation, controller_required=report["schemaVersion"] >= 20,
+                compatibility_file=report["schemaVersion"] >= 27,
+            )
             continue
         require(operation.get("exitCode")== (1 if operation["operation"].startswith("refused-") else 0) and operation.get("deadlineMilliseconds")==180000 and type(operation.get("elapsedMilliseconds")) is int and 0<=operation["elapsedMilliseconds"]<180000,"Native lifecycle operation failed")
     restoration = validate_fixed_restoration(*operations[-2:]) if report["schemaVersion"] >= 14 else {}
