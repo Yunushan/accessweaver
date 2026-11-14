@@ -35,6 +35,9 @@ try {
     $sbomBytes=[Text.Encoding]::UTF8.GetBytes('{"fixture":true}')
     [IO.File]::WriteAllBytes($sbom,$sbomBytes)
     $sbomHash=(Get-FileHash -LiteralPath $sbom -Algorithm SHA256).Hash
+    $sha256=[Security.Cryptography.SHA256]::Create()
+    try {$publisherHash=[BitConverter]::ToString($sha256.ComputeHash([byte[]]@(1,2,3))).Replace('-','')}
+    finally {$sha256.Dispose()}
     $mock=@'
 $script:mockReads=0
 function Read-AccessWeaverRegistration([Microsoft.Win32.RegistryView]$View) {
@@ -87,6 +90,20 @@ $(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
     $probe=$probes[0].Extent.Text
     if(-not $probe.Contains($nativeCall)){throw 'Missing fixed native recovery query'}
     $mocked=$mocked.Replace($probe,$probe.Replace($nativeCall,$fixtureStatus))
+    $signatureCall='Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $Path -ErrorAction Stop'
+    if(-not $mocked.Contains($signatureCall)){throw 'Missing installed publisher verification boundary'}
+    $fixtureSignature=@'
+$(if($Path -cne (Join-Path $PSScriptRoot 'accessweaver.exe')){throw 'Unexpected signature path'}
+$held=$false
+try {$writer=[IO.File]::OpenWrite($Path);$writer.Dispose()}catch [IO.IOException] {$held=$true}
+if(-not $held){throw 'Installed payload was not held during publisher verification'}
+$status=if($env:AW_DETECTION_FIXTURE -ceq 'publisher-untrusted'){'NotTrusted'}else{'Valid'}
+$type=if($env:AW_DETECTION_FIXTURE -ceq 'publisher-catalog'){'Catalog'}else{'Authenticode'}
+$timestamp=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-timestamp'){[pscustomobject]@{}}
+$certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscustomobject]@{RawData=[byte[]]@(1,2,3)}}
+[pscustomobject]@{Status=$status;SignatureType=$type;SignerCertificate=$certificate;TimeStamperCertificate=$timestamp})
+'@
+    $mocked=$mocked.Replace($signatureCall,$fixtureSignature)
     [IO.File]::WriteAllText($fixture,$mocked.Replace($productionLock,$fixtureLock))
     $arch=@{X64='amd64';Arm64='arm64'}[[Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()]
     $stock=Join-Path $PSHOME 'powershell.exe'
@@ -124,7 +141,20 @@ $(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
             @{mode='approved';code=1;count=0;hash=$hash;sbom=$sbomHash;removeSBOM=$true},
             @{mode='approved';code=0;count=1;hash=$hash;removeSBOM=$true},
             @{mode='absent';code=0;count=0;hash=$hash;sbom=$sbomHash;removeSBOM=$true},
-            @{mode='registration-changed';code=1;count=0;hash=$hash;sbom=$sbomHash}
+            @{mode='registration-changed';code=1;count=0;hash=$hash;sbom=$sbomHash},
+            @{mode='approved';code=0;count=1;hash=$hash;publisher=$publisherHash},
+            @{mode='approved';code=0;count=0;hash=$hash;publisher=('0'*64)},
+            @{mode='approved';code=1;count=0;hash=$hash;publisher='invalid'},
+            @{mode='publisher-untrusted';code=0;count=0;hash=$hash;publisher=$publisherHash},
+            @{mode='publisher-catalog';code=0;count=0;hash=$hash;publisher=$publisherHash},
+            @{mode='publisher-no-timestamp';code=0;count=0;hash=$hash;publisher=$publisherHash},
+            @{mode='publisher-no-certificate';code=0;count=0;hash=$hash;publisher=$publisherHash},
+            @{mode='approved';code=0;count=1;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true},
+            @{mode='approved';code=0;count=0;hash=$hash;sbom=$sbomHash;publisher=('0'*64);inventory=$true},
+            @{mode='approved';code=1;count=0;hash=$hash;sbom=$sbomHash;inventory=$true},
+            @{mode='approved';code=1;count=0;hash=$hash;publisher=$publisherHash;inventory=$true},
+            @{mode='registration-changed';code=1;count=0;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true},
+            @{mode='pending';code=1;count=0;hash=$hash;sbom=$sbomHash;publisher=$publisherHash;inventory=$true}
         )
         foreach($case in $cases){
             if($case.removeSBOM){[IO.File]::Delete($sbom)}else{[IO.File]::WriteAllBytes($sbom,$sbomBytes)}
@@ -132,9 +162,22 @@ $(switch -CaseSensitive ($env:AW_DETECTION_FIXTURE){
             $arguments=@('-NoProfile','-NonInteractive','-File',$fixture,'-Version','0.1.0-alpha','-Architecture',$arch,'-PayloadSHA256',$case.hash,'-InstallDirectory',$testRoot)
             if($case.uninstaller){$arguments+=@('-UninstallerSHA256',$case.uninstaller)}
             if($case.sbom){$arguments+=@('-PayloadSBOMSHA256',$case.sbom)}
+            if($case.publisher){$arguments+=@('-PayloadPublisherSHA256',$case.publisher)}
+            if($case.inventory){$arguments+='-UpgradeInventory'}
             $output=@(& $stock @arguments 2>&1)
-            if($LASTEXITCODE -ne $case.code -or $output.Count -ne $case.count -or
-               ($case.count -eq 1 -and $output[0] -cne 'AccessWeaver detected')){throw 'Unexpected managed detection fixture result'}
+            if($LASTEXITCODE -ne $case.code -or $output.Count -ne $case.count){throw ('Unexpected managed detection fixture result: '+$case.mode)}
+            if($case.count -eq 1){
+                if($case.inventory){
+                    $record=$output[0] | ConvertFrom-Json
+                    if(@($record.PSObject.Properties).Count -ne 6 -or $record.schemaVersion -ne 1 -or
+                       $record.target -cne ('windows/'+$arch) -or $record.version -cne '0.1.0-alpha' -or
+                       $record.payloadSHA256 -cne $hash.ToLowerInvariant() -or
+                       $record.payloadSBOMSHA256 -cne $sbomHash.ToLowerInvariant() -or
+                       $record.payloadPublisherSHA256 -cne $publisherHash.ToLowerInvariant()){
+                        throw 'Unexpected upgrade inventory fields or values'
+                    }
+                } elseif($output[0] -cne 'AccessWeaver detected'){throw 'Unexpected managed detection output'}
+            }
         }
         $env:AW_DETECTION_FIXTURE='approved'
         $arguments=@('-NoProfile','-NonInteractive','-File',$fixture,'-Version','0.1.0-alpha','-Architecture',$arch,'-PayloadSHA256',$hash,'-InstallDirectory',$testRoot)

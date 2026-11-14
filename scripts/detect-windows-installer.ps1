@@ -6,7 +6,9 @@ param(
     [string]$PayloadSHA256 = '',
     [string]$InstallDirectory = '',
     [string]$UninstallerSHA256 = '',
-    [string]$PayloadSBOMSHA256 = ''
+    [string]$PayloadSBOMSHA256 = '',
+    [string]$PayloadPublisherSHA256 = '',
+    [switch]$UpgradeInventory
 )
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
@@ -151,6 +153,19 @@ function Assert-NoPendingAccessWeaverInstallation {
     if($state -cne 'clear'){throw 'AccessWeaver Setup recovery state could not be read'}
 }
 
+function Test-AccessWeaverInstalledPublisher([string]$Path,[string]$Expected) {
+    $signature=Microsoft.PowerShell.Security\Get-AuthenticodeSignature -LiteralPath $Path -ErrorAction Stop
+    if($null -eq $signature -or $signature.Status -ne 'Valid' -or
+        $signature.SignatureType -ne 'Authenticode' -or $null -eq $signature.TimeStamperCertificate){
+        return $false
+    }
+    $certificate=$signature.SignerCertificate.RawData
+    if($certificate -isnot [byte[]] -or $certificate.Length -eq 0 -or $certificate.Length -gt 64KB){return $false}
+    $sha256=[Security.Cryptography.SHA256]::Create()
+    try {return ([BitConverter]::ToString($sha256.ComputeHash($certificate)).Replace('-','') -ieq $Expected)}
+    finally {$sha256.Dispose()}
+}
+
 function Test-AccessWeaverInstallation([string]$directory) {
     Assert-NoPendingAccessWeaverInstallation
     $registration=Read-AccessWeaverRegistration Registry64
@@ -164,6 +179,9 @@ function Test-AccessWeaverInstallation([string]$directory) {
         if($PayloadSBOMSHA256){
             $sbom=Open-AccessWeaverInstalledFile (Join-Path $directory 'SBOM.cdx.json') 4MB
             if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $sbom -Algorithm SHA256).Hash -ine $PayloadSBOMSHA256){return $false}
+        }
+        if($PayloadPublisherSHA256 -and -not (Test-AccessWeaverInstalledPublisher (Join-Path $directory 'accessweaver.exe') $PayloadPublisherSHA256)){
+            return $false
         }
         if($UninstallerSHA256){
             $path=Get-AccessWeaverRegisteredUninstaller $registration $directory
@@ -194,6 +212,8 @@ try {
        $Version -cnotmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?(?:\+[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?\z' -or
        $PayloadSHA256 -notmatch '\A[a-fA-F0-9]{64}\z' -or
        ($PayloadSBOMSHA256 -and $PayloadSBOMSHA256 -notmatch '\A[a-fA-F0-9]{64}\z') -or
+       ($PayloadPublisherSHA256 -and $PayloadPublisherSHA256 -notmatch '\A[a-fA-F0-9]{64}\z') -or
+       ($UpgradeInventory -and (-not $PayloadSBOMSHA256 -or -not $PayloadPublisherSHA256)) -or
        ($UninstallerSHA256 -and $UninstallerSHA256 -notmatch '\A[a-fA-F0-9]{64}\z')){
         throw 'Expected pinned Windows payload identity and a matching 64-bit host'
     }
@@ -206,7 +226,16 @@ try {
         finally {$lifecycle.Dispose()}
     }
     if(-not $detected){exit 0}
-    Microsoft.PowerShell.Utility\Write-Output 'AccessWeaver detected'
+    if($UpgradeInventory){
+        [ordered]@{
+            schemaVersion=1
+            target='windows/'+$Architecture
+            version=$Version
+            payloadSHA256=$PayloadSHA256.ToLowerInvariant()
+            payloadSBOMSHA256=$PayloadSBOMSHA256.ToLowerInvariant()
+            payloadPublisherSHA256=$PayloadPublisherSHA256.ToLowerInvariant()
+        } | Microsoft.PowerShell.Utility\ConvertTo-Json -Compress
+    } else {Microsoft.PowerShell.Utility\Write-Output 'AccessWeaver detected'}
     exit 0
 } catch {
     # Endpoint management uses stdout to determine detection. Keep all other
