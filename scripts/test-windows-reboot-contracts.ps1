@@ -4,7 +4,8 @@ $source=Join-Path $PSScriptRoot 'test-windows-reboot.ps1'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw 'DNS reboot fixture failed parsing'}
-foreach($name in @('Assert-DNSRebootAdmission','Save-DNSRebootRecord','Get-DNSRebootJournalID','Assert-DNSRebootJournal',
+foreach($name in @('Assert-DNSRebootAdmission','Save-DNSRebootRecord','Open-DNSRebootInput','Read-DNSRebootRecord',
+        'Get-DNSRebootDigest','Get-DNSRebootJournalID','Assert-DNSRebootJournal',
         'Get-DNSRebootCoverage','Assert-DNSRebootConfigured','Assert-RebootResolver','Wait-DNSRebootObservation','Test-DNSRebootServicesRemoved',
         'Invoke-DNSRebootPreparation')){
     $nodes=@($ast.EndBlock.Statements|Where-Object {
@@ -33,6 +34,38 @@ function Refuse([scriptblock]$Action){
     try {& $Action}catch{$rejected=$true}
     if(-not $rejected){throw 'Invalid DNS reboot evidence was accepted'}
 }
+# The parsed object and digest must come from the same bounded observation.
+$readFixture=Join-Path ([IO.Path]::GetTempPath()) ('accessweaver-dns-reboot-read-'+[guid]::NewGuid().ToString('N')+'.json')
+$encoding=[Text.UTF8Encoding]::new($false,$true)
+try {
+    $first=$encoding.GetBytes('{"schemaVersion":6,"method":"doh"}')
+    $stream=[IO.File]::Open($readFixture,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {$stream.Write($first,0,$first.Length)} finally {$stream.Dispose()}
+    $observed=Read-DNSRebootRecord $readFixture $first.Length
+    if($observed.record.method -cne 'doh' -or $observed.sha256 -cne (Get-FileHash -LiteralPath $readFixture -Algorithm SHA256).Hash){
+        throw 'DNS reboot record did not bind its parsed bytes'
+    }
+    Refuse {Read-DNSRebootRecord $readFixture ($first.Length-1)}
+    Refuse {Read-DNSRebootRecord (Split-Path -Parent $readFixture) 1MB}
+    foreach($bad in @(
+        @{bytes=[byte[]]@()},
+        @{bytes=$encoding.GetBytes('[{"method":"dnscrypt"}]')},
+        @{bytes=$encoding.GetBytes('{"method":')},
+        @{bytes=[byte[]]@(123,34,255,34,58,48,125)},
+        @{bytes=([byte[]]($first+[byte]0))}
+    )){
+        [IO.File]::WriteAllBytes($readFixture,$bad.bytes)
+        Refuse {Read-DNSRebootRecord $readFixture 1MB}
+    }
+    $withBom=[byte[]](@(239,187,191)+$encoding.GetBytes('{"schemaVersion":6,"method":"dnscrypt"}'))
+    [IO.File]::WriteAllBytes($readFixture,$withBom)
+    $changed=Read-DNSRebootRecord $readFixture 1MB
+    if($changed.record.method -cne 'dnscrypt' -or $changed.sha256 -ceq $observed.sha256 -or
+        $changed.sha256 -cne (Get-FileHash -LiteralPath $readFixture -Algorithm SHA256).Hash -or $observed.record.method -cne 'doh'){
+        throw 'DNS reboot record lost its original observation after replacement'
+    }
+} finally {[IO.File]::Delete($readFixture)}
+
 # Exercise the actual preparation boundary with a success, each failed stage
 # and a second failure while attempting to restore.
 $steps=@('install','configure','verify','save')
@@ -235,7 +268,7 @@ $nodes=@($ast.FindAll({param($node)
 if($nodes.Count -ne 1){throw 'DNS reboot recovery cleanup was not found'}
 foreach($command in $nodes[0].Finally.FindAll({param($node)$node -is [Management.Automation.Language.CommandAst]},$true)){
     if($command.GetCommandName() -cnotin @('Invoke-TestWorkflow','Assert-DNSAcceptanceRestored','Read-DNSAcceptanceState',
-            'Assert-RebootResolver','Test-Path','Test-DNSRebootServicesRemoved','Save-DNSRebootRecord')){
+            'Assert-RebootResolver','Test-Path','Test-DNSRebootServicesRemoved','Save-DNSRebootRecord','Get-DNSRebootDigest')){
         throw 'DNS reboot cleanup source has an unexpected command boundary'
     }
 }
@@ -270,14 +303,22 @@ function Test-DNSRebootServicesRemoved {
 }
 $save=(Get-Command Save-DNSRebootRecord).ScriptBlock
 function Save-DNSRebootRecord {param($Path,$Record);if($Path -cne $report){throw 'Unexpected report path'};$script:published=$Record}
-$report='synthetic report';$snapshot='synthetic snapshot'
-foreach($failure in @('none','recover','state','resolver','snapshot','remove','inventory','service')){
+$report='synthetic report';$snapshot='synthetic snapshot';$journalPath='synthetic journal'
+$digestCommand=(Get-Command Get-DNSRebootDigest).ScriptBlock
+function Get-DNSRebootDigest {
+    param($Path,$Maximum)
+    if($Path -cne $journalPath -or $Maximum -ne 8MB){throw 'Unexpected journal read'}
+    if($script:failure -ceq 'journal-changed'){return 'F'*64}
+    return $current.journalSHA256
+}
+foreach($failure in @('none','journal-changed','recover','state','resolver','snapshot','remove','inventory','service')){
     $script:failure=$failure;$script:trace=[Collections.Generic.List[string]]::new()
     $script:snapshotPresent=$true;$script:published=$null
     $outcome=@{stage='complete';cleanupStage='not-started';journalRecoveryAccepted=$false;originalStateRestored=$false;originalResolverVerified=$false;snapshotRetired=$false;servicesRemoved=$false}
     & $cleanup
     $stage=switch($failure){
         'none' {'complete'}
+        'journal-changed' {'journal-recovery'}
         'recover' {'journal-recovery'}
         'state' {'original-state'}
         'resolver' {'original-resolver'}
@@ -286,12 +327,14 @@ foreach($failure in @('none','recover','state','resolver','snapshot','remove','i
         'inventory' {'recovered'}
         'service' {'recovered'}
     }
+    $expectedTrace=if($failure -ceq 'journal-changed'){'remove-all'}else{'recover,remove-all'}
     if($script:published.cleanupStage -cne $stage -or $script:published.passed -ne ($failure -ceq 'none') -or
-        ($script:trace -join ',') -cne 'recover,remove-all'){
+        ($script:trace -join ',') -cne $expectedTrace){
         throw 'DNS reboot cleanup failed to distinguish journal recovery from teardown'
     }
 }
 Set-Item Function:Save-DNSRebootRecord $save
+Set-Item Function:Get-DNSRebootDigest $digestCommand
 $target=Join-Path ([IO.Path]::GetTempPath()) ('aw-dns-reboot-'+[guid]::NewGuid().ToString('N')+'.json')
 try {
     Refuse {Save-DNSRebootRecord $target @{data=('x'*1MB)}}

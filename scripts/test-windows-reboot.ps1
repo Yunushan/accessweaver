@@ -37,7 +37,7 @@ function Save-DNSRebootRecord([string]$Path,$Record) {
         [IO.File]::Move($staged,$Path)
     } finally {[IO.File]::Delete($staged)}
 }
-function Get-DNSRebootDigest([string]$Path,[long]$Maximum) {
+function Open-DNSRebootInput([string]$Path) {
     $entry=Get-Item -LiteralPath $Path -Force -ErrorAction Stop
     if($entry.PSIsContainer){throw 'Expected a bounded ordinary DNS reboot input'}
     for($currentPath=$Path;$currentPath;$currentPath=[IO.Path]::GetDirectoryName($currentPath)){
@@ -45,11 +45,38 @@ function Get-DNSRebootDigest([string]$Path,[long]$Maximum) {
         if($component.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'DNS reboot input includes a reparse point'}
         if($currentPath -ieq [IO.Path]::GetPathRoot($currentPath)){break}
     }
-    $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    return [IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+}
+function Get-DNSRebootDigest([string]$Path,[long]$Maximum) {
+    $stream=Open-DNSRebootInput $Path
     try {
         if($stream.Length -le 0 -or $stream.Length -gt $Maximum){throw 'DNS reboot input exceeds its size limit'}
         return (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash
     } finally {$stream.Dispose()}
+}
+function Read-DNSRebootRecord([string]$Path,[int]$Maximum) {
+    $stream=Open-DNSRebootInput $Path
+    try {
+        $length=$stream.Length
+        if($length -le 0 -or $length -gt $Maximum){throw 'DNS reboot input exceeds its size limit'}
+        $bytes=[byte[]]::new([int]$length)
+        $offset=0
+        while($offset -lt $bytes.Length){
+            $count=$stream.Read($bytes,$offset,$bytes.Length-$offset)
+            if($count -eq 0){throw 'DNS reboot input was truncated'}
+            $offset+=$count
+        }
+        if($stream.ReadByte() -ne -1){throw 'DNS reboot input grew during read'}
+    } finally {$stream.Dispose()}
+
+    $json=[Text.UTF8Encoding]::new($false,$true).GetString($bytes)
+    if($json.Length -gt 0 -and $json[0] -eq [char]0xfeff){$json=$json.Substring(1)}
+    if($json -cnotmatch '\A[\x20\t\r\n]*\{' -or $json.IndexOf([char]0) -ge 0){
+        throw 'Expected a DNS reboot JSON object'
+    }
+    $sha=[Security.Cryptography.SHA256]::Create()
+    try {$digest=[BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-','')} finally {$sha.Dispose()}
+    return @{record=(ConvertFrom-Json -InputObject $json -ErrorAction Stop);sha256=$digest}
 }
 
 function Get-DNSRebootJournalID([string]$Path,[string]$LogDirectory) {
@@ -270,8 +297,9 @@ try {
             $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 8MB
             $current.journalId=Get-DNSRebootJournalID $applied.journal $logDirectory
             $journalPath=Join-Path $logDirectory $current.journalId
-            $current.journalSHA256=Get-DNSRebootDigest $journalPath 8MB
-            Assert-DNSRebootJournal (Get-Content -LiteralPath $journalPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop) $current.snapshotSHA256
+            $journal=Read-DNSRebootRecord $journalPath 8MB
+            $current.journalSHA256=$journal.sha256
+            Assert-DNSRebootJournal $journal.record $current.snapshotSHA256
             Save-DNSRebootRecord $baseline $current
         } {
             # Product removal restores and reads back DNS before removing services.
@@ -285,17 +313,17 @@ try {
         return
     }
 
-    [void](Get-DNSRebootDigest $baseline 1MB)
-    $saved=Get-Content -LiteralPath $baseline -Raw -ErrorAction Stop | ConvertFrom-Json
+    $saved=(Read-DNSRebootRecord $baseline 1MB).record
     if($saved.journalId -isnot [string] -or $saved.journalId -cnotmatch '\Aworkflow-[a-f0-9]{32}\.json\z'){
         throw 'Prepared DNS reboot journal name is invalid'
     }
     $current.journalId=$saved.journalId
     $journalPath=Join-Path $logDirectory $current.journalId
-    $current.journalSHA256=Get-DNSRebootDigest $journalPath 8MB
+    $journal=Read-DNSRebootRecord $journalPath 8MB
+    $current.journalSHA256=$journal.sha256
     $current.snapshotSHA256=Get-DNSRebootDigest $snapshot 8MB
     Assert-DNSRebootAdmission $saved $current
-    Assert-DNSRebootJournal (Get-Content -LiteralPath $journalPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop) $current.snapshotSHA256
+    Assert-DNSRebootJournal $journal.record $current.snapshotSHA256
     $coverage=Get-DNSRebootCoverage $saved.dns $saved.requiredOriginalMode
     if(Test-Path -LiteralPath $report){throw 'DNS reboot evidence already exists'}
     if(Test-Path -LiteralPath (Join-Path $private 'verification-started.json')){
@@ -328,6 +356,9 @@ try {
     } finally {
         try {
             $outcome.cleanupStage='journal-recovery'
+            if((Get-DNSRebootDigest $journalPath 8MB) -cne $current.journalSHA256){
+                throw 'Prepared DNS journal changed before recovery'
+            }
             [void](Invoke-TestWorkflow @{action='recover';journalId=$saved.journalId})
             $outcome.journalRecoveryAccepted=$true
             $outcome.cleanupStage='original-state'
