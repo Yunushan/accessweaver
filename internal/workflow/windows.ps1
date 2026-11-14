@@ -3691,7 +3691,21 @@ function Install-Method([string]$ScannedEngineSHA256,[string[]]$ScannedLuaSHA256
     if($r.engine -ne 'dnscrypt' -and $r.dns -and $r.dns -ne 'unchanged' -and -not $script:dnsConfigured){Configure-DNS $r.dns}
     switch($r.engine) {
         'wiresock' {$config=Make-Config;$status=Connect-WireSock $config;if($r.mode -eq 'standard'){$byedpi=Ensure-Asset 'byedpi';Install-EngineService 'byedpi' $byedpi @('--ip','127.0.0.1','--port','1080','--split','2');Firewall 'byedpi' $byedpi;Assert-ManagedByeDPILoopbackProxy $byedpi;Install-Drover};if($r.refresh){$r | Add-Member -NotePropertyName enabled -NotePropertyValue $true -Force;Refresh-Task};return @{configPath=$config;status=$status}}
-        'byedpi' {$binary=Ensure-Asset 'byedpi';$arguments=@('--ip','127.0.0.1','--port','1080');if($r.args){$arguments+=@($r.args)}else{$arguments+=@('--split','2')};if($r.mode -eq 'once'){Event 'One-shot ByeDPI running; cancel this workflow to stop it';[void](Native $binary $arguments -Timeout 86400)}else{Install-EngineService 'byedpi' $binary $arguments;Firewall 'byedpi' $binary;if($r.mode -eq 'dll'){Assert-ManagedByeDPILoopbackProxy $binary;Install-Drover}elseif($r.mode -ne 'service'){Setup-ProxiFyre '127.0.0.1:1080'}}}
+        'byedpi' {
+            $binary=Ensure-Asset 'byedpi'
+            $arguments=@('--ip','127.0.0.1','--port','1080')
+            if($r.args){$arguments+=@($r.args)}else{$arguments+=@('--split','2')}
+            if($r.mode -eq 'once'){
+                Event 'One-shot ByeDPI running; cancel this workflow to stop it'
+                [void](Native $binary $arguments -Timeout 86400)
+            }else{
+                Install-EngineService 'byedpi' $binary $arguments
+                Firewall 'byedpi' $binary
+                Assert-ManagedByeDPILoopbackProxy $binary
+                if($r.mode -eq 'dll'){Install-Drover}
+                elseif($r.mode -ne 'service'){Setup-ProxiFyre '127.0.0.1:1080'}
+            }
+        }
         {$_ -in @('zapret','zapret2','goodbyedpi')} {
             foreach($name in @('zapret','zapret2','goodbyedpi')){if($name -ne $r.engine -and (Get-Service ('AccessWeaver-'+$name) -ErrorAction SilentlyContinue).Status -eq 'Running'){throw 'Stop other packet engines before installing this method'}}
             if($ScannedEngineSHA256 -and (Get-Service -Name ('AccessWeaver-'+$r.engine) -ErrorAction SilentlyContinue)){

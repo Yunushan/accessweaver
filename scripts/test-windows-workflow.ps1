@@ -3726,11 +3726,11 @@ try {
     Assert $refused 'Oversized Discord inventory prevents machine changes'
 }
 
-# The real install dispatch must leave DLL publication untouched when the probe fails.
+# Use the real dispatch with inert service and routing operations.
 & {
-    $r=@{engine='byedpi';mode='dll'}
+    $r=@{engine='byedpi'}
     $trace=[Collections.Generic.List[string]]::new()
-    $root=Join-Path $testRoot 'drover-probe'
+    $root=Join-Path $testRoot 'byedpi-probe'
     function Discord-Directories {return 'C:\fixture\app-1'}
     function Ensure-Asset {return 'C:\fixture\ciadpi.exe'}
     function Install-EngineService {$trace.Add('service')}
@@ -3741,16 +3741,37 @@ try {
         if($failProbe){throw 'Fixture SOCKS negotiation failed'}
     }
     function Install-Drover {$trace.Add('drover')}
-    foreach($failProbe in @($true,$false)){
-        $trace.Clear()
-        $refused=$false
-        try {Install-Method | Out-Null}catch{
-            if($_.Exception.Message -cne 'Fixture SOCKS negotiation failed'){throw}
-            $refused=$true
-        }
-        $expected=if($failProbe){'service,firewall,probe'}else{'service,firewall,probe,drover'}
-        Assert ($refused -eq $failProbe -and ($trace -join ',') -ceq $expected) $(if($failProbe){'Discord DLL setup refuses a failed managed proxy probe'}else{'Discord DLL setup publishes only after a successful managed proxy probe'})
+    function Setup-ProxiFyre([string]$Proxy){
+        if($Proxy -cne '127.0.0.1:1080'){throw 'Unexpected ProxiFyre proxy'}
+        $trace.Add('proxifyre')
     }
+    function Event {}
+    function Native([string]$Binary,[string[]]$Arguments,[int]$Timeout){
+        if($Binary -cne 'C:\fixture\ciadpi.exe' -or $Timeout -ne 86400){throw 'Unexpected foreground launch'}
+        $trace.Add('foreground')
+    }
+    foreach($case in @(
+        @{mode='service';label='service';success='service,firewall,probe'},
+        @{mode='split';label='split';success='service,firewall,probe,proxifyre'},
+        @{mode='';label='default';success='service,firewall,probe,proxifyre'},
+        @{mode='dll';label='DLL';success='service,firewall,probe,drover'}
+    )){
+        $r.mode=$case.mode
+        foreach($failProbe in @($true,$false)){
+            $trace.Clear()
+            $refused=$false
+            try {Install-Method | Out-Null}catch{
+                if($_.Exception.Message -cne 'Fixture SOCKS negotiation failed'){throw}
+                $refused=$true
+            }
+            $expected=if($failProbe){'service,firewall,probe'}else{$case.success}
+            Assert ($refused -eq $failProbe -and ($trace -join ',') -ceq $expected) ('ByeDPI '+$case.label+' install completes only after the managed proxy probe, probe failure '+$failProbe)
+        }
+    }
+    $r.mode='once'
+    $trace.Clear()
+    Install-Method | Out-Null
+    Assert (($trace -join ',') -ceq 'foreground') 'One-shot ByeDPI keeps the foreground launch path'
 }
 
 $previousAppData=$env:APPDATA
