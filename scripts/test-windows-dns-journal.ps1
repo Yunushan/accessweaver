@@ -71,11 +71,14 @@ function Native {
     Require ($exitCode -in $Allowed) 'Unexpected SCM accepted-code set'
     return @{exitCode=$exitCode;outputComplete=$true}
 }
-function Restore-DNS {
+function Restore-DNS([string]$ExpectedSHA256,$ResolverReload) {
     $script:restores++
     $script:order.Add('restore')
     if($script:failRestore){throw 'Synthetic DNS restore failure'}
-    Save-DNSRecoveryReceipt (Get-DNSRecoverySnapshotDigest)
+    $digest=Get-DNSRecoverySnapshotDigest
+    Require ($digest -ceq $ExpectedSHA256) 'Adapter restoration received the wrong snapshot digest'
+    if($ResolverReload){Restore-DNSCryptAfterActivationFailure $ResolverReload $digest}
+    Save-DNSRecoveryReceipt $digest
     [IO.File]::Delete($snapshot)
 }
 $root=Join-Path ([IO.Path]::GetTempPath()) ('aw-dns-journal-'+[guid]::NewGuid().ToString('N'))
@@ -625,7 +628,9 @@ try {
         path=$reloadPath;originalHash=$originalHash;originalStartup='Manual'}
     $dnsUndo.snapshotSHA256=$next
     $script:serviceState='running';$script:serviceFault=''
-    $script:reloadCount=0;$script:failReload=$true;$script:reloadStartup='Automatic'
+    $script:reloadCount=0;$script:failReload=$true;$script:reloadStartup='Automatic';$script:legacyReload=$false
+    $reloadReceipt=Get-DNSRecoveryReceiptPath $next
+    [IO.File]::Delete($reloadReceipt)
     $script:recoveryQueries=[Collections.Generic.List[string]]::new()
     $script:failRecoveryProbe=$false
     $script:driftAfterRecoveryProbe=$false
@@ -659,7 +664,14 @@ try {
     }
     function Restart-Service {
         [CmdletBinding()]param($InputObject)
-        Require (-not [IO.File]::Exists($snapshot) -and (Get-WorkflowFileHash $reloadPath) -ceq $originalHash) 'Resolver reloaded before original files and adapter DNS were restored'
+        if($script:legacyReload){
+            Require (-not [IO.File]::Exists($snapshot) -and [IO.File]::Exists($reloadReceipt) -and
+                -not $script:order.Contains('restore')) 'Legacy receipt did not bypass adapter restoration'
+        }else{
+            Require ((Get-DNSRecoverySnapshotDigest) -ceq $next -and -not [IO.File]::Exists($reloadReceipt) -and
+                $script:order.Contains('restore')) 'Resolver reload did not retain the adapter snapshot until verification'
+        }
+        Require ((Get-WorkflowFileHash $reloadPath) -ceq $originalHash) 'Resolver reloaded before restoring its original file'
         $script:reloadCount++
         if($script:failReload){throw 'Synthetic reload failure'}
     }
@@ -682,8 +694,8 @@ try {
     $script:order.Clear()
     $refused=$false
     try{Recover-Operation}catch{$refused=$_.Exception.Message -match '^DNSCrypt activation failed'}
-    Require ($refused -and $script:reloadCount -eq 1 -and -not [IO.File]::Exists($snapshot) -and
-        $script:order.Contains('restore')) 'Failed reload did not leave journal recovery resumable'
+    Require ($refused -and $script:reloadCount -eq 1 -and (Get-DNSRecoverySnapshotDigest) -ceq $next -and
+        -not [IO.File]::Exists($reloadReceipt) -and $script:order.Contains('restore')) 'Failed reload did not preserve the active snapshot for retry'
     $script:failReload=$false
     $script:failRecoveryProbe=$true
     $script:order.Clear()
@@ -693,7 +705,8 @@ try {
         try{Recover-Operation}catch{$script:refusedProbe=$_.Exception.Message -match '^DNSCrypt activation failed'}
     }
     Require ($script:refusedProbe -and $script:reloadCount -eq 2 -and $script:reloadStartup -ceq 'Automatic' -and
-        $script:recoveryQueries.Count -eq 2 -and -not $script:order.Contains('restore')) 'Running service with a failed IPv6 listener was recorded as restored'
+        $script:recoveryQueries.Count -eq 2 -and (Get-DNSRecoverySnapshotDigest) -ceq $next -and
+        -not [IO.File]::Exists($reloadReceipt)) 'Running service with a failed IPv6 listener was recorded as restored'
     $script:failRecoveryProbe=$false
     $script:recoveryQueries.Clear()
     $script:order.Clear()
@@ -701,15 +714,24 @@ try {
     $refused=$false
     try{Recover-Operation}catch{$refused=$_.Exception.Message -match '^DNSCrypt activation failed'}
     Require ($refused -and $script:reloadCount -eq 3 -and $script:reloadStartup -ceq 'Automatic' -and
-        $script:recoveryQueries.Count -eq 2 -and -not $script:order.Contains('restore')) 'A newly dependent listener escaped DNSCrypt recovery verification'
+        $script:recoveryQueries.Count -eq 2 -and (Get-DNSRecoverySnapshotDigest) -ceq $next -and
+        -not [IO.File]::Exists($reloadReceipt)) 'A newly dependent listener escaped DNSCrypt recovery verification'
     $script:driftAfterRecoveryProbe=$false
     $script:recoveryQueries.Clear()
     $script:order.Clear()
     Recover-Operation
-    Require ($script:reloadCount -eq 4 -and $script:reloadStartup -ceq 'Manual' -and -not $script:order.Contains('restore') -and
+    Require ($script:reloadCount -eq 4 -and $script:reloadStartup -ceq 'Manual' -and $script:order.Contains('restore') -and
+        -not [IO.File]::Exists($snapshot) -and [IO.File]::ReadAllText($reloadReceipt) -ceq $next.ToUpperInvariant() -and
         $script:recoveryQueries.Count -eq 2 -and $script:recoveryQueries.Contains('127.0.0.1') -and
         $script:recoveryQueries.Contains('::1') -and
         (Get-WorkflowFileHash $reloadPath) -ceq $originalHash) 'Retry after file restoration did not verify both restored listeners'
+    $script:legacyReload=$true
+    $script:recoveryQueries.Clear()
+    $script:order.Clear()
+    Recover-Operation
+    Require ($script:reloadCount -eq 5 -and $script:recoveryQueries.Count -eq 2 -and
+        -not $script:order.Contains('restore')) 'A matching legacy receipt did not permit listener verification'
+
     $invalid=@{kind='dnscrypt-reload';name='AccessWeaver-dnscrypt';commandSHA256=$reloadEntry.commandSHA256;
         path=$serviceConfig;originalHash=$originalHash}
     $script:saved=@($dnsUndo,$reloadFile,$invalid)
