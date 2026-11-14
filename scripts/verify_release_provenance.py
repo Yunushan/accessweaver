@@ -5,6 +5,7 @@ Uses the trusted GitHub CLI/Sigstore verifier. Never executes a release binary.
 Expected source commit/ref must come from a trusted channel, not this directory.
 """
 import argparse
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import re
@@ -53,12 +54,19 @@ def authenticate(path, bundle, commit, ref, gh):
         raise ValueError("Cryptographic provenance verification failed: " + path.name) from error
 
 
-def verify(directory, commit, ref, gh="gh"):
+@contextmanager
+def authenticated_snapshot(directory, commit, ref, gh="gh"):
+    """Keep the authenticated release files available to a trusted caller."""
     validate_identity(commit, ref)
     with tempfile.TemporaryDirectory(prefix="accessweaver-provenance-") as temporary:
         private = Path(temporary)
         names = snapshot(directory, private, 13)
-        return _verify_snapshot(private, names, commit, ref, gh)
+        yield private, _verify_snapshot(private, names, commit, ref, gh)
+
+
+def verify(directory, commit, ref, gh="gh"):
+    with authenticated_snapshot(directory, commit, ref, gh) as (_, provenance):
+        return provenance
 
 
 def _verify_snapshot(directory, names, commit, ref, gh):
