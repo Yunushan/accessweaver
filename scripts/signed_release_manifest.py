@@ -726,7 +726,7 @@ def write_windows_upgrade_receipt(destination, receipt):
         publish_staged_installer(staged, destination)
 
 
-def launch_windows_setup(directory, update, policy, *, size, directory_identity, attempt=None):
+def launch_windows_setup(directory, update, policy, *, size, directory_identity, attempt=None, wait_seconds=None):
     setup = directory / update["installer"]
     arguments = [str(setup), "/SP-", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
                  "/RESTARTEXITCODE=3010", "/NOICONS", update["windowsSetupBaselineArgument"]]
@@ -741,9 +741,10 @@ def launch_windows_setup(directory, update, policy, *, size, directory_identity,
                         "Windows upgrade attempt already has a result receipt")
                 write_windows_upgrade_receipt(directory / (attempt["attemptID"] + ".started.json"), attempt)
                 require_current_revocation_policy(policy)
-            with subprocess.Popen(arguments, executable=str(setup), cwd=windows_system_directory(),
-                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as process:
-                return process.wait()
+            # Popen's context manager waits on exit, which would defeat a wait limit.
+            process = subprocess.Popen(arguments, executable=str(setup), cwd=windows_system_directory(),
+                                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return process.wait(timeout=wait_seconds)
 
 
 def detect_windows_upgrade(qualification, publisher_pin):
@@ -841,7 +842,12 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
            windows_publisher=None, windows_payload_publisher=None, require_windows_setup_baseline=False,
            resume_windows_upgrade_setup_sha256=None, require_windows_setup_wrong_baseline_refusal=False,
            resume_windows_upgrade_baseline_argument=None, launch_staged_windows_setup=False,
-           detect_installed_windows_upgrade=False, windows_upgrade_attempt_id=None, windows_upgrade_start_receipt=None):
+           detect_installed_windows_upgrade=False, windows_upgrade_attempt_id=None, windows_upgrade_start_receipt=None,
+           windows_setup_wait_seconds=None):
+    if windows_setup_wait_seconds is not None:
+        require(launch_staged_windows_setup and type(windows_setup_wait_seconds) is int
+                and 1 <= windows_setup_wait_seconds <= 4_294_966,
+                "Windows Setup wait limit requires Setup launch and a positive duration within the Windows wait range")
     start_receipt = None
     if windows_upgrade_start_receipt is not None:
         require(detect_installed_windows_upgrade and not launch_staged_windows_setup
@@ -1134,8 +1140,15 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                         "revocationPolicySequence": policy["sequence"],
                     }
                     update["attemptID"] = windows_upgrade_attempt_id
-                code = launch_windows_setup(stage_directory, update, policy, attempt=attempt,
-                                            size=installer["size"], directory_identity=stage_directory_id)
+                try:
+                    code = launch_windows_setup(stage_directory, update, policy, attempt=attempt,
+                                                size=installer["size"], directory_identity=stage_directory_id,
+                                                wait_seconds=windows_setup_wait_seconds)
+                except subprocess.TimeoutExpired:
+                    update["setupExitCode"] = None
+                    update["installedDetection"] = "unverified"
+                    update["installedDetectionReason"] = "setup-wait-timeout"
+                    return report
                 update["setupExitCode"] = code
                 if code == 0:
                     try:
@@ -1223,6 +1236,8 @@ def main():
                              help="bind read-only detection to an independently pinned start receipt")
     verify_args.add_argument("--windows-upgrade-attempt-id",
                              help="record an exclusive start and result for this 32-character lowercase hexadecimal ID")
+    verify_args.add_argument("--windows-setup-wait-seconds", type=int,
+                             help="limit the Setup wait and report an unknown outcome if it outlasts that wait")
     execution = verify_args.add_mutually_exclusive_group()
     execution.add_argument("--launch-staged-windows-setup", action="store_true",
                            help="explicitly launch the qualified Windows upgrade after verification and staging")
@@ -1265,11 +1280,14 @@ def main():
                                     launch_staged_windows_setup=args.launch_staged_windows_setup,
                                     detect_installed_windows_upgrade=args.detect_installed_windows_upgrade,
                                     windows_upgrade_attempt_id=args.windows_upgrade_attempt_id,
-                                    windows_upgrade_start_receipt=receipt)
+                                    windows_upgrade_start_receipt=receipt,
+                                    windows_setup_wait_seconds=args.windows_setup_wait_seconds)
             print(json.dumps(report))
             if args.launch_staged_windows_setup:
                 update = report["managedUpdate"]
                 code = update["setupExitCode"]
+                if code is None:
+                    return 1
                 if code == 0 and (update["installedDetection"] == "unverified"
                                   or update.get("resultReceiptStatus") == "unverified"):
                     return 1

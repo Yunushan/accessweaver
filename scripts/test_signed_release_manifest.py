@@ -1159,8 +1159,25 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 host.assert_called_once_with(result["target"])
                 launch.assert_called_once()
                 self.assertEqual(release.digest(staged_path), original_setup_pin)
-                launch.return_value = 0
                 attempt_id = "a" * 32
+                with patch.object(release, "write_windows_upgrade_receipt") as write_result:
+                    launch.side_effect = subprocess.TimeoutExpired("setup", 60)
+                    try:
+                        timed_out = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
+                                                windows_upgrade_attempt_id=attempt_id, windows_setup_wait_seconds=60)
+                    finally:
+                        launch.side_effect = None
+                    self.assertIsNone(timed_out["managedUpdate"]["setupExitCode"])
+                    self.assertEqual(timed_out["managedUpdate"]["installedDetection"], "unverified")
+                    self.assertEqual(timed_out["managedUpdate"]["installedDetectionReason"], "setup-wait-timeout")
+                    self.assertEqual(launch.call_args.kwargs["wait_seconds"], 60)
+                    detect.assert_not_called()
+                    write_result.assert_not_called()
+                for invalid_wait in (True, 0, -1, 4_294_967):
+                    with self.subTest(invalid_wait=invalid_wait), self.assertRaisesRegex(ValueError, "wait limit"):
+                        self.verify(approved, pin, policy_pin=launch_pin, **launch_options, windows_setup_wait_seconds=invalid_wait)
+
+                launch.return_value = 0
                 result = self.verify(approved, pin, policy_pin=launch_pin, **launch_options,
                                      windows_upgrade_attempt_id=attempt_id)["managedUpdate"]
                 attempt = launch.call_args.kwargs["attempt"]
@@ -1514,6 +1531,7 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
                 "--approval-certificate-sha256", "b" * 64, "--revocation-list", "revocation.json",
                 "--revocation-list-sha256", self.policy_pin, "--launch-staged-windows-setup"]
         cases = (
+            (None, "unverified", None, 1),
             (0, "detected", None, 0),
             (0, "detected", "published", 0),
             (0, "unverified", "published", 1),
@@ -1528,9 +1546,12 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
             report = {"managedUpdate": update}
             with self.subTest(code=code, detection=detection, receipt_status=receipt_status), patch.object(sys, "argv", argv), \
                     patch.object(release, "verify", return_value=report) as verify, redirect_stdout(io.StringIO()) as output:
+                if code is None:
+                    sys.argv = argv + ["--windows-setup-wait-seconds", "60"]
                 self.assertEqual(release.main(), expected)
                 self.assertEqual(json.loads(output.getvalue()), report)
                 self.assertIs(verify.call_args.kwargs["launch_staged_windows_setup"], True)
+                self.assertEqual(verify.call_args.kwargs["windows_setup_wait_seconds"], 60 if code is None else None)
 
     def test_installed_detection_cli_returns_confirmation_status(self):
         argv = ["signed_release_manifest.py", "verify", str(self.candidate),
@@ -1595,8 +1616,8 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
                 directory.rename(self.root / "renamed")
 
         with patch.object(release.subprocess, "Popen") as launch:
-            process = launch.return_value.__enter__.return_value
-            def wait():
+            process = launch.return_value
+            def wait(*, timeout):
                 assert_held()
                 return 3010
             process.wait.side_effect = wait
@@ -1614,6 +1635,30 @@ with patch.object(release, "publish_staged_installer", side_effect=publish_then_
             with self.assertRaisesRegex(ValueError, "differs from the approved digest"):
                 release.launch_windows_setup(directory, update, self.policy, **launch_options)
             launch.assert_not_called()
+
+    @unittest.skipUnless(os.name == "nt", "requires native Windows file sharing")
+    def test_windows_setup_wait_timeout_leaves_start_receipt_and_setup_running(self):
+        directory = self.root / "staged"
+        directory.mkdir()
+        setup = directory / "accessweaver-setup.exe"
+        setup.write_bytes(b"inert Setup fixture")
+        update = {"installer": setup.name, "installerSHA256": release.digest(setup),
+                  "windowsSetupBaselineArgument": "/AWUpgradeFrom=approved"}
+        attempt = {"attemptID": "a" * 32}
+        started = directory / (attempt["attemptID"] + ".started.json")
+        with patch.object(release.subprocess, "Popen") as launch:
+            process = launch.return_value
+            process.wait.side_effect = subprocess.TimeoutExpired("setup", 60)
+            with self.assertRaises(subprocess.TimeoutExpired):
+                release.launch_windows_setup(directory, update, self.policy, size=setup.stat().st_size,
+                                             directory_identity=release.staging_directory_identity(directory),
+                                             attempt=attempt, wait_seconds=60)
+            process.wait.assert_called_once_with(timeout=60)
+            process.kill.assert_not_called()
+            process.terminate.assert_not_called()
+            process.__exit__.assert_not_called()
+        self.assertEqual(json.loads(started.read_bytes()), attempt)
+        self.assertEqual(set(directory.iterdir()), {setup, started})
 
     @unittest.skipUnless(os.name == "nt", "requires native Windows file sharing")
     def test_windows_staging_reserves_attempt_before_launch_and_refuses_replay(self):
