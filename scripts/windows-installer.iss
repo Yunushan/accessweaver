@@ -292,8 +292,8 @@ begin
   Result := False;
   if not AWLockInstallationDirectory(Destination, Held) then Exit;
   if not AWVerifyInstalledFile(Destination + '\accessweaver.exe', '{#PayloadDigest}', {#PayloadBytes}, True, Executable) then Exit;
-  if not AWVerifyInstalledFile(Destination + '\BUILD-INFO.json', '{#BuildInfoDigest}', {#BuildInfoBytes}, False, BuildInfo) then Exit;
-  if not AWVerifyInstalledFile(Destination + '\SBOM.cdx.json', '{#PayloadSBOMDigest}', {#PayloadSBOMBytes}, False, SBOM) then Exit;
+  if not AWVerifyInstalledFile(Destination + '\BUILD-INFO.json', '{#BuildInfoDigest}', {#BuildInfoBytes}, True, BuildInfo) then Exit;
+  if not AWVerifyInstalledFile(Destination + '\SBOM.cdx.json', '{#PayloadSBOMDigest}', {#PayloadSBOMBytes}, True, SBOM) then Exit;
   UninstallerPath := ExpandConstant('{uninstallexe}');
   if not AWIsInstallationDirectory(Destination, ExtractFileDir(UninstallerPath)) then Exit;
   if not AWOpenUninstallSubject(UninstallerPath, Uninstaller) then Exit;

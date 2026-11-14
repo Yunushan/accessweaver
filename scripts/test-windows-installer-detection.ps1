@@ -284,19 +284,19 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
         . ([ScriptBlock]::Create($nativeAccess[0].Extent.Text))
         Initialize-AccessWeaverInstalledFileAccess
         [IO.File]::WriteAllText($uninstallData,'inert uninstall data fixture')
-        $arguments+=@('-UninstallerSHA256',$uninstallerHash)
-        $aliasPath=Join-Path $testRoot 'uninstall-hardlink'
-        foreach($file in @($uninstaller,$uninstallData)){
+        $arguments+=@('-UninstallerSHA256',$uninstallerHash,'-PayloadSBOMSHA256',$sbomHash,'-BuildInfoSHA256',$buildInfoHash)
+        $aliasPath=Join-Path $testRoot 'installed-subject-hardlink'
+        foreach($file in @($uninstaller,$uninstallData,$sbom,$buildInfo)){
             try {
                 [void](New-Item -ItemType HardLink -Path $aliasPath -Target $file -ErrorAction Stop)
-                Assert-DetectionRefusal 'a hard-linked uninstall file'
+                Assert-DetectionRefusal 'a hard-linked installed subject'
             } finally {
                 if(Test-Path -LiteralPath $aliasPath){Remove-Item -LiteralPath $aliasPath}
             }
         }
         $output=@(& $stock @arguments 2>&1)
         if($LASTEXITCODE -ne 0 -or $output.Count -ne 1 -or $output[0] -cne 'AccessWeaver detected'){
-            throw 'Managed detection did not resume after uninstall file hardlinks were removed'
+            throw 'Managed detection did not resume after installed subject hardlinks were removed'
         }
         $leaf=Join-Path $testRoot 'native-leaf'
         $moved=Join-Path $testRoot 'native-moved'

@@ -325,11 +325,11 @@ function Test-AccessWeaverInstallation([string]$directory) {
         $payload=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $directory 'accessweaver.exe'),128MB,$true)
         if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $payload -Algorithm SHA256).Hash -ine $PayloadSHA256){return $false}
         if($PayloadSBOMSHA256){
-            $sbom=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $directory 'SBOM.cdx.json'),4MB)
+            $sbom=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $directory 'SBOM.cdx.json'),4MB,$true)
             if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $sbom -Algorithm SHA256).Hash -ine $PayloadSBOMSHA256){return $false}
         }
         if($BuildInfoSHA256){
-            $buildInfo=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $directory 'BUILD-INFO.json'),64KB)
+            $buildInfo=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $directory 'BUILD-INFO.json'),64KB,$true)
             if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $buildInfo -Algorithm SHA256).Hash -ine $BuildInfoSHA256){return $false}
         }
         if($PayloadPublisherSHA256 -and -not (Test-AccessWeaverInstalledPublisher (Join-Path $directory 'accessweaver.exe') $PayloadPublisherSHA256)){
