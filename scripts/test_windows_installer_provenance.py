@@ -9,7 +9,7 @@ from unittest.mock import patch
 from verify_windows_installer_provenance import (
     validate_installation_path_refusals, validate_setup_completion_refusal, validate_uninstall_registration_refusal,
     validate_post_restoration_refusal, validate_restoration_controller_refusals, validate_setup_marker_replacement,
-    validate_setup_uninstall_registration_refusal,
+    validate_setup_uninstall_registration_refusal, validate_setup_upgrade_baseline,
 )
 from verify_windows_installer_provenance import BUNDLE_NAME,DEFAULT_VERSIONS,WORKFLOW,check_rejections,stage,subject_names,validate_build,verification_command,verify
 
@@ -61,6 +61,19 @@ class SetupCompletionRefusalTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "refusal and recovery"):
                 validate_setup_completion_refusal({**record, **invalid})
 
+
+    def test_managed_upgrade_requires_stale_refusal_and_matching_upgrade(self):
+        record = {
+            "refusalExitCode": 7, "refusalElapsedMilliseconds": 200, "deadlineMilliseconds": 180000,
+            "installedStatePreserved": True, "profilePreserved": True, "pendingMarkerAbsent": True,
+            "matchingUpgradeAccepted": True,
+        }
+        self.assertEqual(validate_setup_upgrade_baseline(record), {"setupUpgradeBaselineVerified": True})
+        for invalid in ({"refusalExitCode": 0}, {"refusalElapsedMilliseconds": 180000},
+                        {"matchingUpgradeAccepted": False}, {"pendingMarkerAbsent": 1},
+                        {"installedStatePreserved": False}, {"private": "fixture"}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                validate_setup_upgrade_baseline({**record, **invalid})
 
     def test_rejects_unproven_uninstall_registration_repair(self):
         record = {

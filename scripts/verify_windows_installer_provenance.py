@@ -166,6 +166,19 @@ def validate_setup_completion_refusal(value):
     return {"setupCompletionRefusalVerified": True}
 
 
+def validate_setup_upgrade_baseline(value):
+    flags = {"installedStatePreserved", "profilePreserved", "pendingMarkerAbsent", "matchingUpgradeAccepted"}
+    require(type(value) is dict and set(value) == flags | {
+        "refusalExitCode", "refusalElapsedMilliseconds", "deadlineMilliseconds"
+    }, "Incomplete managed Setup upgrade baseline evidence")
+    require(type(value["refusalExitCode"]) is int and value["refusalExitCode"] == 7
+            and type(value["deadlineMilliseconds"]) is int and value["deadlineMilliseconds"] == 180000
+            and type(value["refusalElapsedMilliseconds"]) is int
+            and 0 <= value["refusalElapsedMilliseconds"] < 180000
+            and all(value[key] is True for key in flags), "Managed Setup baseline refusal or upgrade was not verified")
+    return {"setupUpgradeBaselineVerified": True}
+
+
 def validate_setup_uninstall_registration_refusal(value):
     flags = {"refusalLogged", "changedCommandPreserved", "installedPayloadVerified", "pendingMarkerRetained",
              "managedDetectionRefused", "unrelatedStatePreserved", "genuineRetryVerified"}
@@ -365,7 +378,7 @@ def validate_fixed_restoration(refused, removed):
 
 def validate_contents(root,commit,ref,arch,versions):
     report=load(root,arch+".json")
-    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
+    require(type(report.get("schemaVersion")) is int and report.get("schemaVersion") in (11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35) and report.get("sourceCommit")==commit and report.get("sourceRef")==ref and report.get("target")=="windows/"+arch,"Native lifecycle source/target differs")
     require(report.get("compilerVersion")=="6.7.1" and report.get("stage")=="cleanup" and report.get("failureType") is None and report.get("failureSourceLine") is None and report.get("assertionFailure") is None,"Native lifecycle did not finish cleanly")
     for key in ("passed","actualUserProfilePreservationVerified","childEnvironmentSanitized","selectedServiceFirewallDNSStateUnchanged","ownedFixturesRemoved","unsigned","downgradeTested"):
         require(report.get(key) is True,"Native lifecycle acceptance is incomplete")
@@ -391,6 +404,8 @@ def validate_contents(root,commit,ref,arch,versions):
             report.get("setupMarkerReplacement"), check_subject_guards=report["schemaVersion"] >= 33))
     if report["schemaVersion"] >= 34:
         setup_readback.update(validate_setup_uninstall_registration_refusal(report.get("setupUninstallRegistrationRefusal")))
+    if report["schemaVersion"] >= 35:
+        setup_readback.update(validate_setup_upgrade_baseline(report.get("setupUpgradeBaseline")))
     event_counts=validate_firewall_event_diagnostics(report.get("firewallEventDiagnostics"))
     attempt_counts=validate_native_attempt(report.get("lastNativeAttempt"))
     state_counts=validate_state_observations(report.get("stateObservations"))

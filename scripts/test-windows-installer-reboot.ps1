@@ -466,7 +466,24 @@ if($Phase -ceq 'Prepare'){
         try {
             Assert-RebootPublisher $setup $SetupSHA256 $PublisherCertificateSHA256
             $stage='install'
-            $expected.setupExitCode=Invoke-ApprovedInstaller $setup @('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/RESTARTEXITCODE=3010','/NOICONS') -AllowRestartRequired
+            $setupArguments=@('/SP-','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/RESTARTEXITCODE=3010','/NOICONS')
+            if($installMode -ceq 'upgrade'){
+                $upgradeLog=Join-Path $capsule 'approved-upgrade.log'
+                $pins=@($PreviousVersion,$PreviousPayloadSHA256.ToLowerInvariant(),
+                    $PreviousPayloadSBOMSHA256.ToLowerInvariant(),$PreviousBuildInfoSHA256.ToLowerInvariant())
+                $setupArguments+=@(('/AWUpgradeFrom='+($pins -join ',')),('/LOG="'+$upgradeLog+'"'))
+            }
+            $expected.setupExitCode=Invoke-ApprovedInstaller $setup $setupArguments -AllowRestartRequired
+            if($installMode -ceq 'upgrade'){
+                Assert-RebootPath $upgradeLog
+                $completion=Get-Item -LiteralPath $upgradeLog -Force -ErrorAction Stop
+                if($completion.PSIsContainer -or $completion.Length -le 0 -or $completion.Length -gt 4MB){
+                    throw 'Approved Setup upgrade log exceeded its inspection bound'
+                }
+                $baselineMarker='AccessWeaver approved upgrade baseline verified.'
+                $verifiedChecks=[regex]::Matches([IO.File]::ReadAllText($upgradeLog),[regex]::Escape($baselineMarker)).Count
+                if($verifiedChecks -lt 2){throw 'Approved Setup did not confirm the installed upgrade baseline before copying'}
+            }
         } finally {$setupGuard.Dispose()}
         $stage='installed-before-reboot'
         Assert-InstalledDetection $true

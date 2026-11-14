@@ -242,7 +242,9 @@ begin
   if SingleLink and (Info.Links <> 1) then Exit;
   Payload := THandleStream.Create(Held);
   try
-    if Payload.Size <> Size then Exit;
+    if Size >= 0 then begin
+      if Payload.Size <> Size then Exit;
+    end else if (Payload.Size <= 0) or (Payload.Size > -Size) then Exit;
     Result := CompareText(GetSHA256OfStream(Payload), Digest) = 0;
   finally
     { THandleStream borrows the native handle. The caller closes it. }
@@ -331,6 +333,75 @@ begin
     Result := 'Upgrade or reinstall AccessWeaver in its registered installation directory.';
 end;
 
+function AWSha256Pin(const Value: String): Boolean;
+var I: Integer;
+begin
+  Result := False;
+  if Length(Value) <> 64 then Exit;
+  for I := 1 to Length(Value) do
+    if (Value[I] < '0') or (Value[I] > '9') then
+      if (Value[I] < 'a') or (Value[I] > 'f') then Exit;
+  Result := True;
+end;
+
+const AWUpgradeFromPrefix = '/AWUpgradeFrom=';
+
+function AWApprovedUpgradePreflight(const Destination: String): String;
+var I, Ordering: Integer; Argument, Approval, Version, PayloadPin, SBOMPin, BuildPin,
+    Installed, Location, OtherVersion, OtherLocation: String;
+    Present, Found64, Found32: Boolean;
+    Held: AWDirectoryHandles; Executable, BuildInfo, SBOM: LongWord;
+begin
+  Result := 'Invalid AccessWeaver managed upgrade approval.';
+  Present := False;
+  for I := 1 to ParamCount do begin
+    Argument := ParamStr(I);
+    if CompareText(Copy(Argument, 1, Length(AWUpgradeFromPrefix)), AWUpgradeFromPrefix) = 0 then begin
+      if Present then Exit;
+      Present := True;
+      Approval := Copy(Argument, Length(AWUpgradeFromPrefix) + 1, Length(Argument));
+    end else if CompareText(Argument, '/AWUpgradeFrom') = 0 then Exit;
+  end;
+  if not Present then begin Result := ''; Exit; end;
+  if Length(Approval) > 451 then Exit;
+  { Commas cannot occur in the four fields. AWCompare validates SemVer. }
+  I := Pos(',', Approval);
+  if I = 0 then Exit;
+  Version := Copy(Approval, 1, I - 1);
+  Delete(Approval, 1, I);
+  if not AWCompare('{#ReleaseVersion}', Version, Ordering) or (Ordering <= 0) then Exit;
+  if (Length(Approval) <> 194) or (Approval[65] <> ',') or (Approval[130] <> ',') then Exit;
+  PayloadPin := Copy(Approval, 1, 64);
+  SBOMPin := Copy(Approval, 66, 64);
+  BuildPin := Copy(Approval, 131, 64);
+  if not AWSha256Pin(PayloadPin) or not AWSha256Pin(SBOMPin) or not AWSha256Pin(BuildPin) then Exit;
+
+  Result := 'The installed AccessWeaver release differs from the approved upgrade baseline.';
+  Executable := $FFFFFFFF; BuildInfo := $FFFFFFFF; SBOM := $FFFFFFFF;
+  try
+    try
+      if not AWLockInstallationDirectory(Destination, Held) then Exit;
+      if not AWVerifyInstalledFile(Destination + '\accessweaver.exe', PayloadPin, -134217728, True, Executable) then Exit;
+      if not AWVerifyInstalledFile(Destination + '\SBOM.cdx.json', SBOMPin, -4194304, True, SBOM) then Exit;
+      if not AWVerifyInstalledFile(Destination + '\BUILD-INFO.json', BuildPin, -65536, True, BuildInfo) then Exit;
+      if AWReadRegistration($0100, True, '', Found64, Installed, Location) <> '' then Exit;
+      if AWReadRegistration($0200, False, '', Found32, OtherVersion, OtherLocation) <> '' then Exit;
+      if Found64 and not Found32 and (AWOrdinal(Version, Installed) = 0) and
+          AWIsInstallationDirectory(Destination, Location) then begin
+        Result := '';
+        Log('AccessWeaver approved upgrade baseline verified.');
+      end;
+    except
+      { An incomplete or inaccessible baseline cannot authorize replacement. }
+    end;
+  finally
+    if SBOM <> $FFFFFFFF then AWCloseNativeHandle(SBOM);
+    if BuildInfo <> $FFFFFFFF then AWCloseNativeHandle(BuildInfo);
+    if Executable <> $FFFFFFFF then AWCloseNativeHandle(Executable);
+    for I := GetArrayLength(Held) - 1 downto 0 do AWCloseNativeHandle(Held[I]);
+  end;
+end;
+
 procedure AWCompleteInstallation(const Destination: String);
 var Held: AWDirectoryHandles; Executable, BuildInfo, SBOM, Uninstaller: LongWord; I: Integer;
     Verified: Boolean;
@@ -376,6 +447,7 @@ begin
     if Failure = '' then Failure := AWPendingSetupPreflight(Destination);
     if Failure = '' then Failure := AWInstallationPathPreflight(Destination, True);
     if Failure = '' then Failure := AWPayloadReplacementPreflight(Destination);
+    if Failure = '' then Failure := AWApprovedUpgradePreflight(Destination);
     if Failure <> '' then RaiseException(Failure);
     if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, '{#ReleaseVersion}|' + Destination) or
       not AWFlushLifecycleRecord then
@@ -431,6 +503,7 @@ begin
     if Result = '' then Result := AWPendingSetupPreflight(ExpandConstant('{app}'));
     if Result = '' then Result := AWInstallationPathPreflight(ExpandConstant('{app}'), True);
     if Result = '' then Result := AWPayloadReplacementPreflight(ExpandConstant('{app}'));
+    if Result = '' then Result := AWApprovedUpgradePreflight(ExpandConstant('{app}'));
   end;
 end;
 
