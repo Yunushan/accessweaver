@@ -100,7 +100,7 @@ Assert ($uninstallPreflight -cmatch "AWInstallationPathPreflight\(ExpandConstant
 $uninstallRegistration=[regex]::Match($installerSource,'(?ms)^function AWUninstallDirectoryPreflight\(.*?^end;').Value
 Assert ($uninstallRegistration -cmatch "AWOrdinal\(Version, '\{#ReleaseVersion\}'\) <> 0") 'Uninstall must match the exact release version in the machine registration'
 $completion=[regex]::Match($installerSource,'(?ms)^function AWVerifyCompletedInstall\(.*?^end;').Value
-Assert ($copy -cmatch "(?s)ssDone.*if not AWVerifyCompletedInstall.*Pending installation record retained\..*end else if not RegDeleteValue") 'Setup must verify completion before clearing the pending install record'
+Assert ($copy -cmatch "(?s)ssInstall.*AWRegistrationPreflight\(Destination\).*RegWriteStringValue.*AWFlushLifecycleRecord.*AWPendingInstallMatches\(Destination\).*ssPostInstall.*ssDone.*if not AWVerifyCompletedInstall.*Pending installation record retained\..*end else if not AWPendingInstallMatches\(Destination\).*end else if not RegDeleteValue") 'Setup must recheck registration and bind the pending record before copy and before retirement'
 foreach($name in @('accessweaver.exe','BUILD-INFO.json','SBOM.cdx.json')){
     Assert ($completion.Contains("Destination, '$name',")) 'Setup completion must verify each staged release subject'
 }

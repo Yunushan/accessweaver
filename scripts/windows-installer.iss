@@ -132,6 +132,15 @@ begin
     (AWCompareDestination(Target, Length(Target), Location, Length(Location), 1) = 2);
 end;
 
+function AWPendingInstallMatches(const Destination: String): Boolean;
+var Version, Directory: String;
+begin
+  Result := False;
+  if AWReadPendingVersion(Version, Directory) <> '' then Exit;
+  Result := (AWOrdinal(Version, '{#ReleaseVersion}') = 0) and
+    (AWOrdinal(Directory, Destination) = 0);
+end;
+
 function AWPendingSetupPreflight(const Destination: String): String;
 var Version, Directory: String; Ordering: Integer;
 begin
@@ -289,42 +298,6 @@ begin
     Result := 'The AccessWeaver SBOM.cdx.json cannot be replaced. Release any file locks before retrying setup.';
 end;
 
-procedure CurStepChanged(CurStep: TSetupStep);
-var Failure, Destination: String;
-begin
-  if CurStep = ssInstall then begin
-    if not AWLifecycleOwned then RaiseException('The AccessWeaver installation lock is not held.');
-    Destination := ExpandConstant('{app}');
-    if (Destination = '') or (Length(Destination) > 260) or (Pos('|', Destination) <> 0) or
-      (Length('{#ReleaseVersion}') > 256) then
-      RaiseException('Cannot record the AccessWeaver installation destination.');
-    Failure := AWPendingSetupPreflight(Destination);
-    if Failure = '' then Failure := AWInstallationPathPreflight(Destination, True);
-    if Failure = '' then Failure := AWPayloadReplacementPreflight(Destination);
-    if Failure <> '' then RaiseException(Failure);
-    if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, '{#ReleaseVersion}|' + Destination) or
-      not AWFlushLifecycleRecord then
-      RaiseException('Cannot persist the AccessWeaver pending installation record.');
-  end else if CurStep = ssPostInstall then begin
-    AWInstallFinished := True;
-  end else if (CurStep = ssDone) and AWInstallFinished then begin
-    if not AWVerifyCompletedInstall(ExpandConstant('{app}')) then begin
-      AWPendingRetirementFailed := True;
-      Log('AccessWeaver installed payload or registration verification failed. Pending installation record retained.');
-    end else if not RegDeleteValue(HKLM64, AWLifecycleRegistry, AWPendingInstall) or not AWFlushLifecycleRecord then begin
-      AWPendingRetirementFailed := True;
-      Log('Cannot retire the AccessWeaver pending installation record.');
-    end else
-      Log('AccessWeaver installed payload and registration verified. Pending installation record retired.');
-  end;
-end;
-
-function GetCustomSetupExitCode: Integer;
-begin
-  Result := 0;
-  if AWPendingRetirementFailed then Result := 1603;
-end;
-
 function AWRegistrationPreflight(const Destination: String): String;
 var Found64, Found32, ReadLocation: Boolean;
     Version64, Version32, Location64, Location32, Installed, Location: String;
@@ -352,6 +325,49 @@ begin
   end;
   if ReadLocation and not AWIsInstallationDirectory(Destination, Location) then
     Result := 'Upgrade or reinstall AccessWeaver in its registered installation directory.';
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var Failure, Destination: String;
+begin
+  if CurStep = ssInstall then begin
+    if not AWLifecycleOwned then RaiseException('The AccessWeaver installation lock is not held.');
+    Destination := ExpandConstant('{app}');
+    if (Destination = '') or (Length(Destination) > 260) or (Pos('|', Destination) <> 0) or
+      (Length('{#ReleaseVersion}') > 256) then
+      RaiseException('Cannot record the AccessWeaver installation destination.');
+    Failure := AWRegistrationPreflight(Destination);
+    if Failure = '' then Failure := AWPendingSetupPreflight(Destination);
+    if Failure = '' then Failure := AWInstallationPathPreflight(Destination, True);
+    if Failure = '' then Failure := AWPayloadReplacementPreflight(Destination);
+    if Failure <> '' then RaiseException(Failure);
+    if not RegWriteStringValue(HKLM64, AWLifecycleRegistry, AWPendingInstall, '{#ReleaseVersion}|' + Destination) or
+      not AWFlushLifecycleRecord then
+      RaiseException('Cannot persist the AccessWeaver pending installation record.');
+    if not AWPendingInstallMatches(Destination) then
+      RaiseException('Cannot verify the AccessWeaver pending installation record after writing it.');
+  end else if CurStep = ssPostInstall then begin
+    AWInstallFinished := True;
+  end else if (CurStep = ssDone) and AWInstallFinished then begin
+    Destination := ExpandConstant('{app}');
+    if not AWVerifyCompletedInstall(Destination) then begin
+      AWPendingRetirementFailed := True;
+      Log('AccessWeaver installed payload or registration verification failed. Pending installation record retained.');
+    end else if not AWPendingInstallMatches(Destination) then begin
+      AWPendingRetirementFailed := True;
+      Log('AccessWeaver pending installation record changed or could not be verified. Setup did not clear it.');
+    end else if not RegDeleteValue(HKLM64, AWLifecycleRegistry, AWPendingInstall) or not AWFlushLifecycleRecord then begin
+      AWPendingRetirementFailed := True;
+      Log('Cannot retire the AccessWeaver pending installation record.');
+    end else
+      Log('AccessWeaver installed payload and registration verified. Pending installation record retired.');
+  end;
+end;
+
+function GetCustomSetupExitCode: Integer;
+begin
+  Result := 0;
+  if AWPendingRetirementFailed then Result := 1603;
 end;
 
 function AWUninstallDirectoryPreflight(const Destination: String): String;
