@@ -2536,11 +2536,19 @@ try{
         [IO.File]::WriteAllText($launchPath,'Inert application image')
         $fixturePathChanged=$false
         $fixturePathChangesAfterLaunch=$false
+        $fixtureJournalDrift=''
+        $saveLaunchJournal=(Get-Command Save-Journal -CommandType Function).ScriptBlock
+        function Save-Journal {
+            & $saveLaunchJournal
+            $script:fixtureLaunchProcessAfterJournal=$fixtureJournalDrift
+        }
+        $script:fixtureLaunchProcessAfterJournal=''
         $fixtureObservedLaunchCount=2
         $findCalls=[Collections.Generic.List[bool]]::new()
         function Find-App {
             $findCalls.Add($true)
             if(($fixturePathChanged -and $findCalls.Count -gt 1) -or
+                ($script:fixtureLaunchProcessAfterJournal -ceq 'path') -or
                 ($fixturePathChangesAfterLaunch -and $trace.Count -ge 2)){return $launchPath+'.replacement'}
             return $launchPath
         }
@@ -2564,9 +2572,9 @@ try{
         function Get-Process($Name,$ErrorAction){
             if($Name -or $ErrorAction -cne 'Stop'){throw 'Expected a complete fixture process query'}
             if($fixtureInventoryFails){throw 'Inert process inventory failure'}
-            if($fixtureProcessUnreadable){return [pscustomobject]@{ProcessName='Discord';Path=$null;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false}}
+            if($fixtureProcessUnreadable -or $script:fixtureLaunchProcessAfterJournal -ceq 'unreadable'){return [pscustomobject]@{ProcessName='Discord';Path=$null;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false}}
             Assert-LaunchFileHeld
-            if($fixtureProcessRunning -or $trace.Count -ge $fixtureObservedLaunchCount){
+            if($fixtureProcessRunning -or $script:fixtureLaunchProcessAfterJournal -ceq 'running' -or $trace.Count -ge $fixtureObservedLaunchCount){
                 $created=if($trace.Count){$fixtureProcessTimes[$trace.Count-1]}else{[DateTime]::UtcNow.AddSeconds(-1)}
                 return [pscustomobject]@{ProcessName='Discord';Path=$launchPath;SessionId=[Diagnostics.Process]::GetCurrentProcess().SessionId;HasExited=$false;StartTime=$created}
             }
@@ -2603,6 +2611,21 @@ try{
             try{Start-App 'discord'}catch{$rejected=$true}
             Assert ($rejected -and $trace.Count -eq 0 -and -not $script:externalEffectsPending) 'Application launch refuses Explorer handoff if it cannot save the journal'
             $script:journalPath=$launchJournal
+            foreach($case in @(
+                @{drift='path';message='Application installation changed before launch';assertion='Application launch refuses a path change during journal publication'},
+                @{drift='unreadable';message='Application process state could not be inspected before launch';assertion='Application launch refuses an unreadable process during journal publication'}
+            )){
+                $findCalls.Clear()
+                $fixtureJournalDrift=$case.drift
+                $rejected=$false
+                try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq $case.message}
+                finally{$script:fixtureLaunchProcessAfterJournal=''}
+                $saved=Get-Content -LiteralPath $launchJournal -Raw | ConvertFrom-Json
+                Assert ($rejected -and $trace.Count -eq 0 -and $saved.externalEffectsPending -eq $true) $case.assertion
+            }
+            $fixtureJournalDrift='running'
+            try{$alreadyStarted=Start-App 'discord'}finally{$script:fixtureLaunchProcessAfterJournal='';$fixtureJournalDrift=''}
+            Assert ($alreadyStarted.alreadyRunning -eq $true -and $trace.Count -eq 0) 'Application launch reuses a client that starts during journal publication'
             $fixtureLaunchFails=$true
             $rejected=$false
             try{Start-App 'discord'}catch{$rejected=$_.Exception.Message -ceq 'Inert Explorer handoff failure'}
@@ -2625,6 +2648,7 @@ try{
         } finally {
             $script:externalEffectsPending=$previousEffects
             $script:journalState=$previousState
+            $script:fixtureLaunchProcessAfterJournal=''
         }
     }
 }finally{

@@ -3785,6 +3785,15 @@ function Start-App([string]$variant) {
         # Explorer brokers the launch asynchronously in the desktop session.
         # Keep the selected executable open until process observation finishes.
         Save-ApplicationEffectBoundary
+        # Journal publication can overlap an updater or another desktop launch.
+        $running=Test-AppProcessInSession $app $sessionId @(Get-Process -ErrorAction Stop)
+        if($running -isnot [bool]){throw 'Application process state could not be inspected before launch'}
+        if((Find-App $variant) -ine $app){throw 'Application installation changed before launch'}
+        No-Reparse $app
+        if($running){
+            Event 'Application was already running in the desktop session'
+            return @{application=$variant;alreadyRunning=$true}
+        }
         $handoffTime=[DateTime]::UtcNow
         Start-Process -FilePath (Join-Path $env:SystemRoot 'explorer.exe') -ArgumentList @((Quote-Arg $app)) -WindowStyle Hidden
         $wait=[Diagnostics.Stopwatch]::StartNew()
