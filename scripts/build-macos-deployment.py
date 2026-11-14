@@ -38,21 +38,19 @@ class Publisher(NamedTuple):
     team: str
     installer_fingerprint: str
     notary_profile: str
-    application_fingerprint: str | None
+    application_fingerprint: str
 
 
 def publisher_options(application, installer, team, fingerprint, notary_profile, application_fingerprint=None):
-    values=(application,installer,team,fingerprint,notary_profile)
-    if not any(values) and application_fingerprint is None:
+    values=(application,installer,team,fingerprint,notary_profile,application_fingerprint)
+    if all(value is None for value in values):
         return None
-    require(all(values) and re.fullmatch(r"[A-Z0-9]{10}",team) and FINGERPRINT.fullmatch(fingerprint)
+    require(all(values) and re.fullmatch(r"[A-Z0-9]{10}",team)
+            and FINGERPRINT.fullmatch(fingerprint) and FINGERPRINT.fullmatch(application_fingerprint)
             and all(0<len(value)<=256 and not value.startswith("-") and value.isprintable()
                     for value in (application,installer,notary_profile)),
-            "Expected both Developer ID identities, team, installer certificate SHA-256 and notary profile")
-    if application_fingerprint is not None:
-        require(FINGERPRINT.fullmatch(application_fingerprint), "Expected a Developer ID Application certificate SHA-256")
-        application_fingerprint = application_fingerprint.lower()
-    return Publisher(application, installer, team, fingerprint.lower(), notary_profile, application_fingerprint)
+            "Expected both Developer ID identities and certificate SHA-256 pins, team and notary profile")
+    return Publisher(application, installer, team, fingerprint.lower(), notary_profile, application_fingerprint.lower())
 
 
 def sign_code(path, publisher, *, bundle=False):
@@ -61,8 +59,7 @@ def sign_code(path, publisher, *, bundle=False):
     if bundle:
         requirement+=f' and identifier "{BUNDLE_ID}"'
     run(["/usr/bin/codesign","--verify","--strict","--all-architectures","-R="+requirement,path])
-    if publisher.application_fingerprint is not None:
-        check_application_certificate(path, publisher.application_fingerprint)
+    check_application_certificate(path, publisher.application_fingerprint)
 
 
 def sign_package(unsigned, signed, publisher):
@@ -191,9 +188,8 @@ def build(version,arch,go="go",publisher=None):
             report["unsignedComponentInspection"]=report.pop("archiveInspection")
             report.update(unsigned=False,publisherSignatureVerified=True,notarized=True,
                           developerTeamID=publisher.team,publisherCertificateSHA256=publisher.installer_fingerprint,
+                          applicationCertificateSHA256=publisher.application_fingerprint,
                           signedPayloadAndScriptsVerified=True)
-            if publisher.application_fingerprint is not None:
-                report["applicationCertificateSHA256"] = publisher.application_fingerprint
             with (output/filename).open("xb") as stream:
                 stream.write(package_bytes)
         encode(output/"compiler-artifact.json",report)

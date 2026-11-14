@@ -328,7 +328,10 @@ with patch.object(publisher, "tool"), patch.object(publisher, "publish_staged_fi
     def test_signing_options_require_complete_approved_identity(self):
         settings = ("Fixture application", "Fixture installer", TEAM, PIN.upper(), "Fixture profile")
         self.assertIsNone(builder.publisher_options(None, None, None, None, None))
-        self.assertEqual(builder.publisher_options(*settings), (*settings[:3], PIN, settings[-1], None))
+        with self.assertRaises(ValueError):
+            builder.publisher_options(*settings)
+        with self.assertRaises(ValueError):
+            builder.publisher_options("", "", "", "", "", "")
         self.assertEqual(builder.publisher_options(*settings, "CD" * 32).application_fingerprint, "cd" * 32)
         with self.assertRaises(ValueError):
             builder.publisher_options(*settings, "invalid")
@@ -338,12 +341,12 @@ with patch.object(publisher, "tool"), patch.object(publisher, "publish_staged_fi
             rejected = list(settings)
             rejected[index] = None
             with self.assertRaises(ValueError):
-                builder.publisher_options(*rejected)
+                builder.publisher_options(*rejected, "cd" * 32)
         with self.assertRaises(ValueError):
-            builder.publisher_options(*settings[:-1], "--wait")
+            builder.publisher_options(*settings[:-1], "--wait", "cd" * 32)
 
     def test_notary_submission_follows_certificate_and_requires_acceptance(self):
-        context = builder.publisher_options("Fixture application", "Fixture installer", TEAM, PIN, "Fixture profile")
+        context = builder.publisher_options("Fixture application", "Fixture installer", TEAM, PIN, "Fixture profile", "cd" * 32)
         unsigned, signed = Path("unsigned.pkg"), Path("signed.pkg")
         for status in ("Accepted", "Invalid", "In Progress"):
             calls = MagicMock()
@@ -366,8 +369,8 @@ with patch.object(publisher, "tool"), patch.object(publisher, "publish_staged_fi
             run.assert_called_once()
 
     def test_code_signature_verifies_team_and_bundle_identifier(self):
-        context = builder.publisher_options("Fixture application", "Fixture installer", TEAM, PIN, "Fixture profile")
-        with patch.object(builder, "run") as run:
+        context = builder.publisher_options("Fixture application", "Fixture installer", TEAM, PIN, "Fixture profile", "cd" * 32)
+        with patch.object(builder, "run") as run, patch.object(builder, "check_application_certificate"):
             builder.sign_code(Path("AccessWeaver.app"), context, bundle=True)
         sign, verify = [call.args[0] for call in run.call_args_list]
         self.assertIn("--timestamp", sign)
