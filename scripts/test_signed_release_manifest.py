@@ -635,7 +635,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 with self.assertRaises(subprocess.CalledProcessError):
                     self.verify(approved, pin, **macos_options)
                 self.assertEqual(list(macos_staging.iterdir()), [])
-                deployment_check.side_effect = lambda package, *_: package.write_bytes(b"changed")
+                deployment_check.side_effect = lambda package, *_, **__: package.write_bytes(b"changed")
                 with self.assertRaisesRegex(ValueError, "changed during publisher verification"):
                     self.verify(approved, pin, **macos_options)
                 self.assertEqual(list(macos_staging.iterdir()), [])
@@ -656,6 +656,9 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertNotEqual(checked_path.parent, macos_staging)
                 self.assertEqual(package_check.call_args.args, (checked_path, team, installer_pin))
                 self.assertEqual(deployment_check.call_args.args, (checked_path, team, "arm64", application_pin))
+                helper_pin, = [entry["detectorSHA256"] for entry in native_report["macosDetection"]
+                               if entry["target"] == macos_target]
+                self.assertEqual(deployment_check.call_args.kwargs, {"helper_sha256": helper_pin})
                 self.assertEqual((macos_staging / pkg_name).read_bytes(), (self.candidate / pkg_name).read_bytes())
 
         real_stage = release.stage_managed_update

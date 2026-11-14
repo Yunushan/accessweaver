@@ -139,7 +139,7 @@ def check_helper_publisher(helper, team, application_pin):
         check_application_certificate(helper, application_pin)
 
 
-def verify_packaged_deployment(package, team, architecture, application_pin):
+def verify_packaged_deployment(package, team, architecture, application_pin, *, helper_sha256=None):
     expanded = verify_packaged_application(package, team, architecture, application_pin)
     try:
         metadata = xml(read_expanded_file(expanded / "PackageInfo", 256 << 10))
@@ -152,6 +152,9 @@ def verify_packaged_deployment(package, team, architecture, application_pin):
             }, "Deployment package phase entry points differ")
 
     data = read_packaged_helper(expanded, architecture)
+    if helper_sha256 is not None:
+        require(hashlib.sha256(data).hexdigest() == helper_sha256,
+                "Packaged installation helper differs from the approved SBOM digest")
     check_helper_publisher(expanded / "Scripts" / "postinstall", team, application_pin)
     require(read_packaged_helper(expanded, architecture) == data,
             "Expanded package helper changed during publisher verification")

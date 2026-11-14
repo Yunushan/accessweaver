@@ -1060,8 +1060,12 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     "macOS publisher certificate is revoked")
             package = root / update["installer"]
             architecture = target.split("/")[1]
+            detectors = [entry for entry in macos_detectors if entry["target"] == target
+                         and entry["packageSHA256"] == update["installerSHA256"]]
+            require(len(detectors) == 1, "Managed macOS upgrade requires one approved installation helper digest")
             check_package_publisher(package, team, installer_pin)
-            verify_packaged_deployment(package, team, architecture, application_pin)
+            verify_packaged_deployment(package, team, architecture, application_pin,
+                                       helper_sha256=detectors[0]["detectorSHA256"])
             require(digest(package) == update["installerSHA256"], "macOS package changed during publisher verification")
             update["nativePublisherVerification"] = {
                 "developerTeamID": team, "installerCertificateSHA256": installer_pin,

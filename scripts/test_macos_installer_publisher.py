@@ -126,6 +126,7 @@ class PublisherTests(unittest.TestCase):
             ("duplicate-scripts", "phase entry points differ"),
             ("different-helpers", "do not use the same helper"),
             ("wrong-architecture", "matching thin native 64-bit executable"),
+            ("wrong-helper-digest", "helper differs from the approved SBOM digest"),
             ("different-certificate", "leaf certificate differs"),
             ("helper-changed", "helper changed during publisher verification"),
         ):
@@ -177,12 +178,13 @@ class PublisherTests(unittest.TestCase):
                         self.fail(f"Unexpected command: {args}")
                     return ""
 
+                helper_pin = "0" * 64 if scenario == "wrong-helper-digest" else hashlib.sha256(helper).hexdigest()
                 with patch.object(publisher, "tool", side_effect=tool):
                     if error is None:
-                        publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin)
+                        publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin, helper_sha256=helper_pin)
                     else:
                         with self.assertRaisesRegex(ValueError, error):
-                            publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin)
+                            publisher.verify_packaged_deployment(package, TEAM, "arm64", application_pin, helper_sha256=helper_pin)
                 expected = [app]
                 if scenario in ("approved", "different-certificate", "helper-changed"):
                     expected.append(scripts / "postinstall")
