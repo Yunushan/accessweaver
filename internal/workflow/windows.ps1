@@ -2095,8 +2095,12 @@ function Read-DNSStaticOverride([object]$Adapter,[string]$Family) {
     Get-StaticDNSServers ($names.Trim() -split '[,\s]+') $Family $Adapter.ifIndex
 }
 function Read-OriginalDNSFamily([object]$Adapter,[string]$Family,[object[]]$Clients) {
-    $current=@(Get-NetAdapter -ErrorAction Stop | Where-Object {[string]$_.InterfaceGuid -eq [string]$Adapter.InterfaceGuid})
-    if($current.Count -ne 1 -or $current[0].ifIndex -ne $Adapter.ifIndex){throw 'An adapter changed during original DNS capture; no new DNS configuration was applied'}
+    $inventory=@(Get-NetAdapter -ErrorAction Stop)
+    $current=@($inventory | Where-Object {[string]$_.InterfaceGuid -eq [string]$Adapter.InterfaceGuid})
+    if($current.Count -ne 1 -or $current[0].ifIndex -ne $Adapter.ifIndex -or
+       @($inventory | Where-Object {$_.ifIndex -eq $Adapter.ifIndex}).Count -ne 1){
+        throw 'An adapter changed during original DNS capture; no new DNS configuration was applied'
+    }
     $rows=@(Get-DNSClientRows $Clients $Adapter.ifIndex $Family)
     if($rows.Count -ne 1){throw 'Original adapter DNS family could not be inspected; no new DNS configuration was applied'}
     $stored=@(Read-DNSStaticOverride $Adapter $Family)
@@ -2322,21 +2326,27 @@ function Configure-DNS([string]$method) {
             }
         }
     }
+    $newOriginals=@()
     # Extend adapter/family coverage before effects. Preserve every first original
     # and the first global DoH metadata, including across family activation.
     foreach($adapter in $adapters){
         $guid=[string]$adapter.InterfaceGuid;$matches=@($inventory | Where-Object {[string]$_.InterfaceGuid -eq $guid})
         if([string]::IsNullOrWhiteSpace($guid) -or $matches.Count -ne 1){throw 'Selected DNS adapter identities are unavailable or ambiguous; no new DNS configuration was applied'}
         if(-not $known.Contains($guid)){
-            $records+=@(Read-OriginalDNSAdapter $adapter $clients);[void]$known.Add($guid)
+            $record=Read-OriginalDNSAdapter $adapter $clients
+            $records+=@($record);[void]$known.Add($guid)
+            $newOriginals+=@(@{adapter=$adapter;record=$record;bounds=(Get-OriginalDNSBounds $record)})
         } else {
             $record=@($records | Where-Object {$_.guid -eq $guid})[0];$bounds=Get-OriginalDNSBounds $record
+            $added=@{bound4=$false;bound6=$false}
             foreach($number in @('4','6')){
                 if(-not $bounds['bound'+$number] -and @(Get-DNSClientRows $clients $adapter.ifIndex ('IPv'+$number)).Count -eq 1){
                     $captured=Read-OriginalDNSFamily $adapter ('IPv'+$number) $clients
                     $record.('ipv'+$number)=@($captured.values);$record.('dhcp'+$number)=$captured.dhcp;$record.('bound'+$number)=$true
+                    $added['bound'+$number]=$true
                 }
             }
+            if($added.bound4 -or $added.bound6){$newOriginals+=@(@{adapter=$adapter;record=$record;bounds=$added})}
         }
     }
     if($method -eq 'doh'){
@@ -2356,6 +2366,21 @@ function Configure-DNS([string]$method) {
             if($current.Count -gt 1){throw 'Current DoH configuration is ambiguous; retain the original DNS snapshot'}
             if($guardDoh -and -not (Test-DNSDohEntriesEqual $current $old) -and -not (Test-DNSDohEntriesEqual $current @($provider))){
                 throw 'Managed DoH policy has changed independently; review it before configuration'
+            }
+        }
+    }
+    if($newOriginals.Count){
+        $freshClients=@(Read-DNSClientInventory)
+        foreach($originals in $newOriginals){
+            foreach($number in @('4','6')){
+                if(-not $originals.bounds['bound'+$number]){continue}
+                $record=$originals.record
+                $current=Read-OriginalDNSFamily $originals.adapter ('IPv'+$number) $freshClients
+                # DHCP lease addresses can change. Restoration applies the DHCP mode.
+                if($current.dhcp -ne $record.('dhcp'+$number) -or
+                   (-not $current.dhcp -and ($current.values -join ',') -cne ($record.('ipv'+$number) -join ','))){
+                    throw 'Original DNS settings changed during capture; no new DNS configuration was applied'
+                }
             }
         }
     }
