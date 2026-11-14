@@ -225,12 +225,16 @@ class PrereleasePublicationTests(unittest.TestCase):
                 else:
                     execution["sourceRef"] = preview_ref
                 result_path.write_text(json.dumps(execution), encoding="utf-8")
+            for folder in receipts.iterdir():
+                (folder / publisher.QUALIFICATION_BUNDLE).write_bytes(b"synthetic attestation")
             checksums = self.directory / "SHA256SUMS.txt"
             (self.directory / names[10]).rename(checksums)
             argv = ["publish_prerelease.py", str(self.directory), "--source-commit", self.commit,
                     "--source-ref", preview_ref, "--native-qualification", str(receipts), "--verify-only",
+                    "--workflow-run-id", "123456",
                     "--rebuild-checksums-sha256"]
             with (patch.object(publisher, "verify") as verify,
+                  patch.object(publisher, "authenticate_qualification") as authenticate,
                   patch.object(publisher, "inspect_archive", side_effect=inspect_archive),
                   patch.object(publisher, "publish_verified") as publish_verified,
                   patch.object(publisher, "git_tag_commit") as tag,
@@ -241,6 +245,8 @@ class PrereleasePublicationTests(unittest.TestCase):
                     preview_digest = json.loads(output.getvalue())["qualificationSHA256"]
                     self.assertRegex(preview_digest, r"^[0-9a-f]{64}$")
                     verify.assert_called_once()
+                    self.assertEqual(authenticate.call_count, 20)
+                    self.assertTrue(all(call.args[4] == "123456" for call in authenticate.call_args_list))
                 with (patch.object(sys, "argv", [*argv, "0" * 64]),
                       contextlib.redirect_stderr(io.StringIO()) as errors):
                     self.assertEqual(publisher.main(), 1)
@@ -260,6 +266,32 @@ class PrereleasePublicationTests(unittest.TestCase):
                 tag.assert_not_called()
                 gh.assert_not_called()
                 publish_verified.assert_not_called()
+
+    def test_attestation_requires_a_repository_signed_run_uri(self):
+        path = self.directory / "execution.json"
+        bundle = self.directory / publisher.QUALIFICATION_BUNDLE
+        base = f"https://github.com/{publisher.REPOSITORY}/actions/runs/"
+        for code, stdout, accepted in (
+            (0, base + "123456/attempts/2\n", True),
+            (0, "null\n" + base + "123456/attempts/1\n", True),
+            (0, base + "123457/attempts/2\n", False),
+            (0, base + "123456/attempts/0\n", False),
+            (0, base + "123456/attempts/2/extra\n", False),
+            (0, "null\n", False),
+            (1, base + "123456/attempts/2\n", False),
+        ):
+            result = subprocess.CompletedProcess(["gh"], code, stdout=stdout)
+            with self.subTest(code=code, stdout=stdout), patch.object(publisher.subprocess, "run", return_value=result) as run:
+                if accepted:
+                    publisher.authenticate_qualification(path, bundle, self.commit, self.ref, "123456")
+                else:
+                    with self.assertRaises(ValueError):
+                        publisher.authenticate_qualification(path, bundle, self.commit, self.ref, "123456")
+                command = run.call_args.args[0]
+                self.assertEqual(command[-2:], ["--jq", ".[] | .verificationResult.signature.certificate.runInvocationURI"])
+                self.assertIn("--deny-self-hosted-runners", command)
+                self.assertIn("--source-digest", command)
+                self.assertIn(publisher.WORKFLOW, command)
 
     def test_new_draft_uploads_and_verifies_before_publication(self):
         self.run_publisher([None, self.release(True, 0), self.release(True), self.release(False)])

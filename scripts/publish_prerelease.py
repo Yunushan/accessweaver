@@ -16,11 +16,12 @@ from threading import Timer
 from urllib.parse import urlencode
 
 from verify_release import TARGETS, inspect_archive, snapshot
-from verify_release_provenance import BUNDLE_NAME, REPOSITORY, WORKFLOW, validate_identity, verify
+from verify_release_provenance import BUNDLE_NAME, REPOSITORY, WORKFLOW, validate_identity, verification_command, verify
 from verify_release_rebuild import digest
 
 REMOTE = "https://github.com/" + REPOSITORY + ".git"
 MAX_BUNDLE = 16 << 20
+QUALIFICATION_BUNDLE = "qualification.sigstore.json"
 
 
 def git_tag_commit(tag):
@@ -190,7 +191,18 @@ def verify_target_execution(report, receipt, system):
         raise ValueError("Packaged execution evidence does not match " + target)
 
 
-def verify_native_qualification(directory, package, manifest, commit, ref, expected):
+def authenticate_qualification(path, bundle, commit, ref, run_id):
+    command = verification_command(path, bundle, commit, ref)
+    command += ["--jq", ".[] | .verificationResult.signature.certificate.runInvocationURI"]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+    require_success(result)
+    run = re.escape(f"https://github.com/{REPOSITORY}/actions/runs/{run_id}/attempts/")
+    # Successful matrix jobs can be reused by GitHub when only failed jobs rerun.
+    if not any(re.fullmatch(run + r"[1-9][0-9]{0,19}", line) for line in result.stdout.splitlines()):
+        raise ValueError("Qualification attestation does not match the release workflow run")
+
+
+def verify_native_qualification(directory, package, manifest, commit, ref, expected, run_id=None):
     """Bind each target's staging receipt to the executable in the authenticated package."""
     artifacts = {(item["goos"], item["goarch"]): item["file"] for item in manifest["artifacts"]}
     folders = {"release-qualified-" + "-".join(target) for target in TARGETS}
@@ -202,13 +214,21 @@ def verify_native_qualification(directory, package, manifest, commit, ref, expec
         folder = directory / f"release-qualified-{system}-{arch}"
         with tempfile.TemporaryDirectory(prefix="accessweaver-qualified-") as temporary:
             frozen = Path(temporary)
-            if snapshot(folder, frozen, 2, maximum_file=1 << 20) != {"candidate.json", "execution.json"}:
-                raise ValueError("Expected a staging receipt and execution result for " + target)
+            names = {"candidate.json", "execution.json"}
+            if run_id is not None:
+                names.add(QUALIFICATION_BUNDLE)
+            if snapshot(folder, frozen, len(names), maximum_file=1 << 20) != names:
+                raise ValueError("Unexpected packaged qualification files for " + target)
             candidate = frozen / "candidate.json"
+            execution_path = frozen / "execution.json"
             if candidate.stat().st_size > 16 << 10:
                 raise ValueError("Packaged qualification receipt exceeds its size bound")
+            if run_id is not None:
+                bundle = frozen / QUALIFICATION_BUNDLE
+                for subject in (candidate, execution_path):
+                    authenticate_qualification(subject, bundle, commit, ref, run_id)
             candidate_bytes = candidate.read_bytes()
-            execution_bytes = (frozen / "execution.json").read_bytes()
+            execution_bytes = execution_path.read_bytes()
             receipt = json.loads(candidate_bytes)
             execution = json.loads(execution_bytes)
         if not isinstance(receipt, dict):
@@ -243,7 +263,7 @@ def verify_native_qualification(directory, package, manifest, commit, ref, expec
 
 
 @contextmanager
-def verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_qualification):
+def verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_qualification, run_id=None):
     validate_identity(commit, ref)
     with tempfile.TemporaryDirectory(prefix="accessweaver-publish-") as temporary:
         frozen = Path(temporary)
@@ -256,17 +276,17 @@ def verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_
         qualification_digest = None
         if native_qualification is not None:
             manifest = json.loads((frozen / "BUILD-MANIFEST.json").read_bytes())
-            qualification_digest = verify_native_qualification(native_qualification, frozen, manifest, commit, ref, expected)
+            qualification_digest = verify_native_qualification(native_qualification, frozen, manifest, commit, ref, expected, run_id)
         yield frozen, expected, qualification_digest
 
 
 def publish(directory, commit, ref, *, rebuild_checksums_sha256=None, native_qualification=None,
-            expected_qualification_sha256=None):
+            expected_qualification_sha256=None, run_id=None):
     prefix = "refs/tags/v"
     if not ref.startswith(prefix) or "/" in ref[len(prefix):] or ref == prefix:
         raise ValueError("Prerelease publication requires a version tag")
     tag = ref.removeprefix("refs/tags/")
-    with verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_qualification) as candidate:
+    with verified_candidate(directory, commit, ref, rebuild_checksums_sha256, native_qualification, run_id) as candidate:
         frozen, expected, qualification_digest = candidate
         if expected_qualification_sha256 is not None and qualification_digest != expected_qualification_sha256:
             raise ValueError("Packaged qualification inputs differ from the read-only verification job")
@@ -358,7 +378,10 @@ def main():
                         help="verify package, rebuild and qualification without accessing release state")
     parser.add_argument("--expected-qualification-sha256",
                         help="digest of the staging and execution files from the read-only verification job")
+    parser.add_argument("--workflow-run-id", required=True, help="expected GitHub Actions run ID for the target attestations")
     args = parser.parse_args()
+    if not re.fullmatch(r"[1-9][0-9]{0,19}", args.workflow_run_id):
+        parser.error("expected a numeric GitHub Actions run ID")
     if args.verify_only:
         if args.expected_qualification_sha256 is not None:
             parser.error("--expected-qualification-sha256 is only accepted for publication")
@@ -368,13 +391,13 @@ def main():
         if args.verify_only:
             with redirect_stdout(sys.stderr):
                 with verified_candidate(args.directory.absolute(), args.source_commit, args.source_ref,
-                                        args.rebuild_checksums_sha256, args.native_qualification) as candidate:
+                                        args.rebuild_checksums_sha256, args.native_qualification, args.workflow_run_id) as candidate:
                     _, _, qualification_digest = candidate
             print(json.dumps({"qualificationSHA256": qualification_digest}))
         else:
             publish(args.directory.absolute(), args.source_commit, args.source_ref,
                     rebuild_checksums_sha256=args.rebuild_checksums_sha256, native_qualification=args.native_qualification,
-                    expected_qualification_sha256=args.expected_qualification_sha256)
+                    expected_qualification_sha256=args.expected_qualification_sha256, run_id=args.workflow_run_id)
             print("Verified prerelease assets are published.")
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile):
         message = ("Prerelease candidate verification failed." if args.verify_only else
