@@ -1834,6 +1834,8 @@ try {
     $script:appStableBytesChanged=$false;$script:appChangeStableBytesDuringDownload=$false
     $script:appChangeStableBytesDuringSetup=$false
     $script:appPreviouslyInstalled=$false
+    $script:appPTBSetupChanges=$false;$script:appPTBSetupChanged=$false;$script:appPTBUnreadable=$false
+    $script:appReplacementBytesChange=$false;$script:appReplacementBytesChanged=$false
     function Require-DesktopUser {}
     function Find-App {
         param($variant)
@@ -1841,6 +1843,7 @@ try {
         if($script:appRemoveClearedStable -and $variant -ceq 'discord'){
             if($script:appInstallTrace.Contains('verify-ptb')){
                 if($script:appReplacementChanges){return 'C:\fixture\replacement\Discord.exe'}
+                if($script:appReplacementBytesChange){$script:appReplacementBytesChanged=$true}
                 return 'C:\fixture\Discord.exe'
             }
             if($script:appStableReappears){return 'C:\fixture\replacement\Discord.exe'}
@@ -1848,18 +1851,21 @@ try {
         }
         if($variant -ceq 'discord' -and $script:appStableChanged -and $script:appInstallTrace.Contains('download:discord')){return 'C:\fixture\updated\Discord.exe'}
         if($variant -ceq 'discord' -and $script:appStableAppeared -and $script:appInstallTrace.Contains('verify-ptb')){return 'C:\fixture\new\Discord.exe'}
-        if(($variant -ceq 'discord' -and -not $script:appStableAbsent) -or $script:appPreviouslyInstalled){return 'C:\fixture\Discord.exe'}
+        if($variant -ceq 'discord-ptb' -and $script:appPreviouslyInstalled){return 'C:\fixture\DiscordPTB.exe'}
+        if($variant -ceq 'discord' -and -not $script:appStableAbsent){return 'C:\fixture\Discord.exe'}
     }
     function Get-AppExecutableDigest([string]$path) {
         if($path -ceq 'C:\fixture\DiscordPTB.exe'){
+            if($script:appPTBUnreadable -and $script:appInstallTrace.Contains('verify-ptb')){throw 'fixture PTB executable unreadable'}
             if($script:appPTBChangeDuringCleanup -ceq 'bytes' -and $script:appInstallTrace.Contains('remove-stable')){return 'd'*64}
+            if($script:appPTBSetupChanged){return 'e'*64}
             return 'c'*64
         }
         if($path -cne 'C:\fixture\Discord.exe'){throw 'Expected digest for the observed Discord client'}
         if($script:appReplacementUnreadable -and $script:appInstallTrace.Contains('verify-ptb')){
             throw 'fixture replacement executable unreadable'
         }
-        if($script:appStableBytesChanged){return 'b'*64}
+        if($script:appStableBytesChanged -or $script:appReplacementBytesChanged){return 'b'*64}
         return 'a'*64
     }
     function Remove-App {
@@ -1893,7 +1899,7 @@ try {
         return $digest
     }
     function Native {
-        param($Program,$Arguments,$Timeout)
+        param($Program,$Arguments,$Timeout,[IO.FileStream]$StartGuard)
         $saved=Get-Content -LiteralPath $journal -Raw | ConvertFrom-Json
         if(-not $script:externalEffectsPending -or $saved.state -cne 'running' -or
             $saved.externalEffectsPending -isnot [bool] -or -not $saved.externalEffectsPending){
@@ -1905,8 +1911,13 @@ try {
             $writer=[IO.File]::OpenWrite($Program)
             $writer.Dispose()
         }catch [IO.IOException]{$script:appInstallerLockedAtLaunch=$true}
+        if($null -eq $StartGuard -or -not $StartGuard.CanRead -or $StartGuard.Name -ine $Program){throw 'Expected installer handle through process creation'}
+        $StartGuard.Dispose()
+        $writer=[IO.File]::OpenWrite($Program)
+        $writer.Dispose()
         if($script:appNativeFailure){throw 'fixture installer failure'}
         if($script:appChangeStableBytesDuringSetup){$script:appStableBytesChanged=$true}
+        if($script:appPTBSetupChanges){$script:appPTBSetupChanged=$true}
         return @{exitCode=0;outputComplete=$true}
     }
     function Wait-App {
@@ -1941,6 +1952,17 @@ try {
     $script:appInstallTrace.Clear()
     $installed=Install-App 'discord-ptb'
     Assert (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb,remove-stable,verify-ptb,event') 'PTB clean verifies the installed replacement before removal and rechecks it after cleanup'
+    $script:appPreviouslyInstalled=$true
+    $script:appInstallTrace.Clear()
+    $rejected=$false
+    try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -like 'Discord PTB setup did not replace*'}
+    Assert ($rejected -and $script:externalEffectsPending -and -not $script:appInstallTrace.Contains('remove-stable') -and
+        -not $script:appInstallTrace.Contains('event')) 'PTB clean preserves stable Discord when setup leaves the previous PTB executable unchanged'
+    $script:appPTBSetupChanges=$true
+    $script:appInstallTrace.Clear()
+    $updated=Install-App 'discord-ptb'
+    Assert ($updated.installed -and $updated.previouslyInstalled -and $script:appInstallTrace.Contains('remove-stable')) 'PTB clean accepts verified new bytes at the existing PTB path'
+    $script:appPreviouslyInstalled=$false;$script:appPTBSetupChanges=$false;$script:appPTBSetupChanged=$false
     foreach($change in @('path','bytes')){
         $script:appPTBChangeDuringCleanup=$change
         $script:appInstallTrace.Clear()
@@ -1974,6 +1996,15 @@ try {
     Assert ($rejected -and $script:externalEffectsPending -and
         (($script:appInstallTrace -join ',') -ceq 'download:discord,find-discord-ptb,find-discord,installer,verify-ptb')) 'PTB readback failure preserves stable Discord and retains setup uncertainty'
     $script:appReadbackFailure=$false
+    foreach($clean in @($false,$true)){
+        $r.clean=$clean;$script:appPTBUnreadable=$true
+        $script:appInstallTrace.Clear()
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'fixture PTB executable unreadable'}
+        Assert ($rejected -and $script:externalEffectsPending -and -not $script:appInstallTrace.Contains('remove-stable') -and
+            -not $script:appInstallTrace.Contains('event')) ('PTB setup refuses an unreadable installed executable with clean mode '+$clean)
+    }
+    $script:appPTBUnreadable=$false
     $script:appInstallTrace.Clear()
     $script:appStableReplacedDuringSetup=$true
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before removal'}
@@ -2060,14 +2091,15 @@ try {
     foreach($case in @(
         @{name='reappearing stable client before setup';flag='appStableReappears';message='Stable Discord reappeared before replacement setup; review the current installation';started=$false},
         @{name='unreadable replacement executable';flag='appReplacementUnreadable';message='fixture replacement executable unreadable';started=$true},
-        @{name='changed replacement executable path';flag='appReplacementChanges';message='Stable Discord changed during replacement verification';started=$true}
+        @{name='changed replacement executable path';flag='appReplacementChanges';message='Stable Discord changed during replacement verification';started=$true},
+        @{name='changed replacement executable bytes at the same path';flag='appReplacementBytesChange';message='Stable Discord changed during replacement verification';started=$true}
     )){
         $script:appInstallTrace.Clear()
         $script:appRemoveClearedStable=$false
         Set-Variable -Scope Script -Name $case.flag -Value $true
         $rejected=$false
         try{Install-App 'discord' -Reinstall}catch{$rejected=$_.Exception.Message -ceq $case.message}
-        finally{Set-Variable -Scope Script -Name $case.flag -Value $false}
+        finally{Set-Variable -Scope Script -Name $case.flag -Value $false;$script:appReplacementBytesChanged=$false}
         Assert ($rejected -and ($script:appInstallTrace.Contains('installer') -eq $case.started) -and
             -not $script:appInstallTrace.Contains('event')) ('Discord reinstall refuses '+$case.name)
     }
