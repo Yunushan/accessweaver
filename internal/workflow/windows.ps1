@@ -3786,6 +3786,9 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         if((Find-App $variant) -ine $installedApp -or (Get-AppExecutableDigest $installedApp) -ine $installedDigest){
             throw 'SplitCord changed during service verification'
         }
+    }else{
+        $installedUpdater=Get-AppUninstaller $variant $installedApp
+        $installedUpdaterDigest=Get-AppExecutableDigest $installedUpdater.path
     }
     if($cleanPTB){
         # A previously installed PTB executable alone cannot confirm replacement.
@@ -3807,6 +3810,11 @@ function Install-App([string]$variant,[switch]$Reinstall) {
         Assert-DiscordUpdaterAbsent 'discord'
     }
     if($variant -ne 'splitcord'){
+        $confirmedUpdater=Get-AppUninstaller $variant $installedApp
+        if($confirmedUpdater.path -ine $installedUpdater.path -or
+           (Get-AppExecutableDigest $confirmedUpdater.path) -ine $installedUpdaterDigest){
+            throw 'Discord updater changed during installation verification; review the current installation'
+        }
         $confirmedApp=Find-App $variant
         if($confirmedApp -ine $installedApp -or (Get-AppExecutableDigest $confirmedApp) -ine $installedDigest){
             if($Reinstall){throw 'Stable Discord changed during replacement verification'}

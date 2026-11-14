@@ -2411,11 +2411,20 @@ try {
         if($variant -ceq 'discord' -and -not $script:appStableAbsent){return 'C:\fixture\Discord.exe'}
     }
     function Get-AppUninstaller([string]$variant,[string]$app) {
-        if($variant -cne 'discord' -or $app -cne 'C:\fixture\Discord.exe'){throw 'Unexpected preflight uninstaller request'}
+        if($script:appInstallTrace.Contains('verify-ptb')){
+            if($script:appInstalledUpdaterFault -ceq 'missing'){throw 'Application uninstaller not found'}
+            if($variant -ceq 'discord-ptb' -and $app -ceq 'C:\fixture\DiscordPTB.exe'){return @{path='C:\fixture\ptb\Update.exe'}}
+        }
+        if($variant -cne 'discord' -or $app -cne 'C:\fixture\Discord.exe'){throw 'Unexpected uninstaller request'}
         if($script:appUpdaterMissing){throw 'Application uninstaller not found'}
         return @{path='C:\fixture\Update.exe'}
     }
     function Get-AppExecutableDigest([string]$path) {
+        if($path -ceq 'C:\fixture\ptb\Update.exe'){
+            if($script:appInstalledUpdaterFault -ceq 'unreadable'){throw 'Fixture installed updater unreadable'}
+            if($script:appInstalledUpdaterFault -ceq 'changes-during-cleanup' -and $script:appInstallTrace.Contains('remove-stable')){return 'e'*64}
+            return 'd'*64
+        }
         if($path -ceq 'C:\fixture\Update.exe'){
             if($script:appUpdaterChanged){return 'f'*64}
             return 'd'*64
@@ -2658,6 +2667,21 @@ try {
             -not $script:appInstallTrace.Contains('event')) ('PTB setup refuses an unreadable installed executable with clean mode '+$clean)
     }
     $script:appPTBUnreadable=$false
+    foreach($case in @(
+        @{fault='missing';message='Application uninstaller not found';cleaned=$false},
+        @{fault='unreadable';message='Fixture installed updater unreadable';cleaned=$false},
+        @{fault='changes-during-cleanup';message='Discord updater changed during installation verification; review the current installation';cleaned=$true}
+    )){
+        $script:appInstallTrace.Clear()
+        $script:externalEffectsPending=$false
+        $script:appInstalledUpdaterFault=$case.fault
+        $rejected=$false
+        try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq $case.message}
+        finally{$script:appInstalledUpdaterFault=''}
+        Assert ($rejected -and $script:externalEffectsPending -and
+            ($script:appInstallTrace.Contains('remove-stable') -eq $case.cleaned) -and
+            -not $script:appInstallTrace.Contains('event')) ('PTB clean verifies its replacement updater: '+$case.fault)
+    }
     $script:appInstallTrace.Clear()
     $script:appStableReplacedDuringSetup=$true
     $rejected=$false;try{Install-App 'discord-ptb'}catch{$rejected=$_.Exception.Message -ceq 'Application installation changed before removal'}
