@@ -266,6 +266,45 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
         if($LASTEXITCODE -ne 0 -or $output.Count -ne 1 -or $output[0] -cne 'AccessWeaver detected'){
             throw 'Managed detection did not resume after lifecycle objects were released'
         }
+
+        # Exercise the detector's own native opens against ordinary paths and
+        # junctions. The destination is fixture-owned and stays within the temp root.
+        $nativeAccess=@($ast.EndBlock.Statements | Where-Object {
+            $_ -is [Management.Automation.Language.FunctionDefinitionAst] -and
+            $_.Name -ceq 'Initialize-AccessWeaverInstalledFileAccess'
+        })
+        if($nativeAccess.Count -ne 1){throw 'Expected one managed detector file access boundary'}
+        . ([ScriptBlock]::Create($nativeAccess[0].Extent.Text))
+        Initialize-AccessWeaverInstalledFileAccess
+        $leaf=Join-Path $testRoot 'native-leaf'
+        $moved=Join-Path $testRoot 'native-moved'
+        $junction=Join-Path $testRoot 'native-junction'
+        [void][IO.Directory]::CreateDirectory($leaf)
+        try {
+            $guard=[AccessWeaver.InstallerFileAccess]::OpenDirectory($leaf)
+            try {
+                $renameRefused=$false
+                try {[IO.Directory]::Move($leaf,$moved)}catch [IO.IOException] {$renameRefused=$true}
+                if(-not $renameRefused){throw 'The detector directory handle allowed a rename'}
+            } finally {$guard.Dispose()}
+            [IO.Directory]::Move($leaf,$moved)
+            [IO.Directory]::Move($moved,$leaf)
+            [void](New-Item -ItemType Junction -Path $junction -Target $leaf)
+            foreach($case in @(@{path=$junction;directory=$true},@{path=$junction;directory=$false},@{path=$leaf;directory=$false})){
+                $unexpected=$null
+                $refused=$false
+                try {
+                    if($case.directory){$unexpected=[AccessWeaver.InstallerFileAccess]::OpenDirectory($case.path)}
+                    else{$unexpected=[AccessWeaver.InstallerFileAccess]::OpenFile($case.path,128MB)}
+                } catch [IO.IOException] {$refused=$true}
+                finally {if($null -ne $unexpected){$unexpected.Dispose()}}
+                if(-not $refused){throw 'The detector accepted an invalid native path type'}
+            }
+        } finally {
+            foreach($path in @($junction,$leaf,$moved)){
+                if([IO.Directory]::Exists($path)){[IO.Directory]::Delete($path)}
+            }
+        }
     } finally {$env:AW_DETECTION_FIXTURE=$saved}
 } finally {
     foreach($file in @($payload,$fixture,$uninstaller,$sbom,$buildInfo)){
@@ -273,4 +312,4 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
     }
     $fixtureDirectory.Delete()
 }
-Write-Output ('Managed detection contracts passed: '+($cases.Count+7))
+Write-Output ('Managed detection contracts passed: '+($cases.Count+11))

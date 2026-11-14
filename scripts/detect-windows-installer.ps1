@@ -79,20 +79,97 @@ function Get-AccessWeaverRegisteredUninstaller($Registration,[string]$Directory)
     if($path -ine $expected -or $quiet -ine $expectedQuiet){throw 'Uninstall registration differs from the installed directory'}
     return $expected
 }
-function Open-AccessWeaverInstalledFile([string]$Path,[long]$Maximum) {
-    $root=[IO.Path]::GetPathRoot($Path)
-    $current=$root
-    foreach($component in $Path.Substring($root.Length).Split('\')){
-        $current=[IO.Path]::Combine($current,$component)
-        $entry=Microsoft.PowerShell.Management\Get-Item -LiteralPath $current -Force
-        if($entry.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'Installation path contains a reparse point'}
+function Initialize-AccessWeaverInstalledFileAccess {
+    if('AccessWeaver.InstallerFileAccess' -as [type]){return}
+    Microsoft.PowerShell.Utility\Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+
+namespace AccessWeaver
+{
+    public static class InstallerFileAccess
+    {
+        private const uint ListDirectory = 1;
+        private const uint GenericRead = 0x80000000;
+        private const uint OpenExisting = 3;
+        private const uint OpenReparsePoint = 0x00200000;
+        private const uint BackupSemantics = 0x02000000;
+        private const int FileAttributeTagInfo = 9;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct AttributeTagInfo
+        {
+            public FileAttributes Attributes;
+            public uint ReparseTag;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern SafeFileHandle CreateFileW(string path, uint access, FileShare sharing,
+            IntPtr security, uint disposition, uint flags, IntPtr template);
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        private static extern bool GetFileInformationByHandleEx(SafeFileHandle file, int informationClass,
+            out AttributeTagInfo information, uint size);
+
+        private static SafeFileHandle Open(string path, bool directory)
+        {
+            // Request directory read access so the open participates in share checks.
+            // Hold directories without delete sharing and files without write or delete sharing.
+            var handle = CreateFileW(path, directory ? ListDirectory : GenericRead,
+                directory ? FileShare.ReadWrite : FileShare.Read, IntPtr.Zero, OpenExisting,
+                OpenReparsePoint | (directory ? BackupSemantics : 0), IntPtr.Zero);
+            try
+            {
+                AttributeTagInfo info;
+                if (handle.IsInvalid || !GetFileInformationByHandleEx(handle, FileAttributeTagInfo,
+                    out info, (uint)Marshal.SizeOf(typeof(AttributeTagInfo))))
+                    throw new IOException("Could not inspect the installed path");
+                if ((info.Attributes & FileAttributes.ReparsePoint) != 0 ||
+                    ((info.Attributes & FileAttributes.Directory) != 0) != directory)
+                    throw new IOException("Unexpected installed path type");
+                return handle;
+            }
+            catch
+            {
+                handle.Dispose();
+                throw;
+            }
+        }
+
+        public static SafeFileHandle OpenDirectory(string path)
+        {
+            return Open(path, true);
+        }
+
+        public static FileStream OpenFile(string path, long maximum)
+        {
+            SafeFileHandle handle = Open(path, false);
+            try
+            {
+                var stream = new FileStream(handle, FileAccess.Read);
+                try
+                {
+                    if (stream.Length <= 0 || stream.Length > maximum)
+                        throw new IOException("Installed file size outside detection limits");
+                    return stream;
+                }
+                catch
+                {
+                    stream.Dispose();
+                    throw;
+                }
+            }
+            catch
+            {
+                handle.Dispose();
+                throw;
+            }
+        }
     }
-    if($entry.PSIsContainer){throw 'Expected a payload file'}
-    $file=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
-    try {
-        if($file.Length -le 0 -or $file.Length -gt $Maximum){throw 'Installed file size outside detection limits'}
-        return ,$file
-    } catch {$file.Dispose();throw}
+}
+'@
 }
 
 function Enter-AccessWeaverDetection {
@@ -210,16 +287,24 @@ function Test-AccessWeaverInstallation([string]$directory) {
     if($null -ne (Read-AccessWeaverRegistration Registry32)){throw 'Unexpected alternate machine registration'}
     if($null -eq $registration -or $registration.version -cne $Version){return $false}
     if((Get-AccessWeaverLocalDirectory $registration.location) -ine $directory){throw 'Unexpected registered installation directory'}
+    Initialize-AccessWeaverInstalledFileAccess
+    $parents=[Collections.Generic.List[Microsoft.Win32.SafeHandles.SafeFileHandle]]::new()
     $payload=$null;$uninstaller=$null;$sbom=$null;$buildInfo=$null
     try {
-        $payload=Open-AccessWeaverInstalledFile (Join-Path $directory 'accessweaver.exe') 128MB
+        $root=[IO.Path]::GetPathRoot($directory)
+        $current=$root
+        foreach($component in $directory.Substring($root.Length).Split('\')){
+            $current=[IO.Path]::Combine($current,$component)
+            $parents.Add([AccessWeaver.InstallerFileAccess]::OpenDirectory($current))
+        }
+        $payload=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $directory 'accessweaver.exe'),128MB)
         if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $payload -Algorithm SHA256).Hash -ine $PayloadSHA256){return $false}
         if($PayloadSBOMSHA256){
-            $sbom=Open-AccessWeaverInstalledFile (Join-Path $directory 'SBOM.cdx.json') 4MB
+            $sbom=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $directory 'SBOM.cdx.json'),4MB)
             if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $sbom -Algorithm SHA256).Hash -ine $PayloadSBOMSHA256){return $false}
         }
         if($BuildInfoSHA256){
-            $buildInfo=Open-AccessWeaverInstalledFile (Join-Path $directory 'BUILD-INFO.json') 64KB
+            $buildInfo=[AccessWeaver.InstallerFileAccess]::OpenFile((Join-Path $directory 'BUILD-INFO.json'),64KB)
             if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $buildInfo -Algorithm SHA256).Hash -ine $BuildInfoSHA256){return $false}
         }
         if($PayloadPublisherSHA256 -and -not (Test-AccessWeaverInstalledPublisher (Join-Path $directory 'accessweaver.exe') $PayloadPublisherSHA256)){
@@ -227,7 +312,7 @@ function Test-AccessWeaverInstallation([string]$directory) {
         }
         if($UninstallerSHA256){
             $path=Get-AccessWeaverRegisteredUninstaller $registration $directory
-            $uninstaller=Open-AccessWeaverInstalledFile $path 512MB
+            $uninstaller=[AccessWeaver.InstallerFileAccess]::OpenFile($path,512MB)
             if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $uninstaller -Algorithm SHA256).Hash -ine $UninstallerSHA256){return $false}
         }
         $confirmed=Read-AccessWeaverRegistration Registry64
@@ -239,13 +324,17 @@ function Test-AccessWeaverInstallation([string]$directory) {
         Assert-NoPendingAccessWeaverInstallation
         Assert-NoAccessWeaverSetup
     } finally {
-        try {if($null -ne $uninstaller){$uninstaller.Dispose()}}
-        finally {
-            try {if($null -ne $buildInfo){$buildInfo.Dispose()}}
+        try {
+            try {if($null -ne $uninstaller){$uninstaller.Dispose()}}
             finally {
-                try {if($null -ne $sbom){$sbom.Dispose()}}
-                finally {if($null -ne $payload){$payload.Dispose()}}
+                try {if($null -ne $buildInfo){$buildInfo.Dispose()}}
+                finally {
+                    try {if($null -ne $sbom){$sbom.Dispose()}}
+                    finally {if($null -ne $payload){$payload.Dispose()}}
+                }
             }
+        } finally {
+            for($i=$parents.Count-1;$i -ge 0;$i--){$parents[$i].Dispose()}
         }
     }
     return $true
