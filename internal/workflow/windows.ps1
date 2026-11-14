@@ -2893,6 +2893,9 @@ function Restore-DNS([string]$ExpectedSHA256) {
     }
     if(-not (Confirm-DNSRecoverySnapshot $snapshotSHA256)){throw 'Original DNS snapshot disappeared during restoration'}
     Save-DNSRecoveryReceipt $snapshotSHA256
+    # Receipt publication may overlap an adapter or policy change. The active
+    # snapshot takes precedence over a receipt until retirement succeeds.
+    Assert-RestoredDNSState $plans $dohPlans $dohAvailable
     Assert-DNSRecoverySnapshotUnchanged $snapshotSHA256
     Remove-Item -LiteralPath $snapshot -ErrorAction Stop
     if(Get-DNSRecoverySnapshotDigest){throw 'Original DNS snapshot retirement could not be verified'}
