@@ -27,6 +27,8 @@ $payload=Join-Path $testRoot 'accessweaver.exe'
 $fixture=Join-Path $testRoot 'fixture.ps1'
 $uninstaller=Join-Path $testRoot 'unins001.exe'
 $sbom=Join-Path $testRoot 'SBOM.cdx.json'
+$buildInfo=Join-Path $testRoot 'BUILD-INFO.json'
+$buildInfoBytes=[Text.Encoding]::UTF8.GetBytes('{"version":"0.1.0-alpha"}')
 try {
     [IO.File]::WriteAllText($payload,'inert detection test data')
     $hash=(Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash
@@ -35,6 +37,8 @@ try {
     $sbomBytes=[Text.Encoding]::UTF8.GetBytes('{"fixture":true}')
     [IO.File]::WriteAllBytes($sbom,$sbomBytes)
     $sbomHash=(Get-FileHash -LiteralPath $sbom -Algorithm SHA256).Hash
+    [IO.File]::WriteAllBytes($buildInfo,$buildInfoBytes)
+    $buildInfoHash=(Get-FileHash -LiteralPath $buildInfo -Algorithm SHA256).Hash
     $sha256=[Security.Cryptography.SHA256]::Create()
     try {$publisherHash=[BitConverter]::ToString($sha256.ComputeHash([byte[]]@(1,2,3))).Replace('-','')}
     finally {$sha256.Dispose()}
@@ -142,6 +146,13 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
             @{mode='approved';code=0;count=1;hash=$hash;removeSBOM=$true},
             @{mode='absent';code=0;count=0;hash=$hash;sbom=$sbomHash;removeSBOM=$true},
             @{mode='registration-changed';code=1;count=0;hash=$hash;sbom=$sbomHash},
+            @{mode='approved';code=0;count=1;hash=$hash;buildInfo=$buildInfoHash;sbom=$sbomHash},
+            @{mode='approved';code=0;count=0;hash=$hash;buildInfo=$buildInfoHash;changedBuildInfo=$true},
+            @{mode='approved';code=1;count=0;hash=$hash;buildInfo=$buildInfoHash;removeBuildInfo=$true},
+            @{mode='approved';code=0;count=1;hash=$hash;removeBuildInfo=$true},
+            @{mode='approved';code=1;count=0;hash=$hash;buildInfo=$buildInfoHash;oversizedBuildInfo=$true},
+            @{mode='approved';code=1;count=0;hash=$hash;buildInfo='invalid'},
+            @{mode='absent';code=0;count=0;hash=$hash;buildInfo=$buildInfoHash;removeBuildInfo=$true},
             @{mode='approved';code=0;count=1;hash=$hash;publisher=$publisherHash},
             @{mode='approved';code=0;count=0;hash=$hash;publisher=('0'*64)},
             @{mode='approved';code=1;count=0;hash=$hash;publisher='invalid'},
@@ -158,10 +169,15 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
         )
         foreach($case in $cases){
             if($case.removeSBOM){[IO.File]::Delete($sbom)}else{[IO.File]::WriteAllBytes($sbom,$sbomBytes)}
+            if($case.removeBuildInfo){[IO.File]::Delete($buildInfo)}
+            elseif($case.changedBuildInfo){[IO.File]::WriteAllText($buildInfo,'{"version":"0.1.1-alpha"}')}
+            elseif($case.oversizedBuildInfo){[IO.File]::WriteAllBytes($buildInfo,[byte[]]::new(64KB+1))}
+            else{[IO.File]::WriteAllBytes($buildInfo,$buildInfoBytes)}
             $env:AW_DETECTION_FIXTURE=$case.mode
             $arguments=@('-NoProfile','-NonInteractive','-File',$fixture,'-Version','0.1.0-alpha','-Architecture',$arch,'-PayloadSHA256',$case.hash,'-InstallDirectory',$testRoot)
             if($case.uninstaller){$arguments+=@('-UninstallerSHA256',$case.uninstaller)}
             if($case.sbom){$arguments+=@('-PayloadSBOMSHA256',$case.sbom)}
+            if($case.buildInfo){$arguments+=@('-BuildInfoSHA256',$case.buildInfo)}
             if($case.publisher){$arguments+=@('-PayloadPublisherSHA256',$case.publisher)}
             if($case.inventory){$arguments+='-UpgradeInventory'}
             $output=@(& $stock @arguments 2>&1)
@@ -217,7 +233,7 @@ $certificate=if($env:AW_DETECTION_FIXTURE -cne 'publisher-no-certificate'){[pscu
         }
     } finally {$env:AW_DETECTION_FIXTURE=$saved}
 } finally {
-    foreach($file in @($payload,$fixture,$uninstaller,$sbom)){
+    foreach($file in @($payload,$fixture,$uninstaller,$sbom,$buildInfo)){
         if(Test-Path -LiteralPath $file){Remove-Item -LiteralPath $file -Force}
     }
     $fixtureDirectory.Delete()

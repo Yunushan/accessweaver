@@ -68,7 +68,9 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Cannot read staged runtime build identity'}
     $buildIdentity=($identity -join "`n") | ConvertFrom-Json
     Assert-InstallerPayloadIdentity (Join-Path $stage 'accessweaver.exe') $buildIdentity @{version=$Version;commit=$commit;sourceState=$sourceState;builtAt=$builtAt;goVersion=$sdk.GOVERSION;platform='windows';arch=$TargetArch}
-    [IO.File]::WriteAllText((Join-Path $stage 'BUILD-INFO.json'),($identity -join "`n"))
+    $buildInfoPath=Join-Path $stage 'BUILD-INFO.json'
+    [IO.File]::WriteAllText($buildInfoPath,($identity -join "`n"))
+    $buildInfoDigest=(Get-FileHash -LiteralPath $buildInfoPath -Algorithm SHA256).Hash.ToLowerInvariant()
     foreach($file in @('LICENSE','README.md','README.tr.md','THIRD_PARTY.md','SECURITY.md')){Copy-Item -LiteralPath (Join-Path $project $file) -Destination $stage}
     Copy-Item -LiteralPath (Join-Path $project 'docs') -Destination (Join-Path $stage 'docs') -Recurse
     [void](New-Item -ItemType Directory -Path (Join-Path $stage 'licenses'))
@@ -120,13 +122,14 @@ try {
     $artifactHash=Get-FileHash -LiteralPath $artifact -Algorithm SHA256
     if($organizationSigning){
         $signingReceipt=[ordered]@{
-            schemaVersion=2
+            schemaVersion=3
             scope='windows-organization-signed-installer-build'
             sourceCommit=$commit
             target='windows/'+$TargetArch
             version=$Version
             installerSHA256=$artifactHash.Hash.ToLowerInvariant()
             payloadSHA256=(Get-FileHash -LiteralPath $payload -Algorithm SHA256).Hash.ToLowerInvariant()
+            buildInfoSHA256=$buildInfoDigest
             publisherCertificateSHA256=$PublisherCertificateSHA256.ToLowerInvariant()
             payloadPublisherCertificateSHA256=$payloadSigning.publisher.ToLowerInvariant()
             productionQualificationComplete=$false

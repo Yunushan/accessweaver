@@ -8,7 +8,8 @@ param(
     [string]$UninstallerSHA256 = '',
     [string]$PayloadSBOMSHA256 = '',
     [string]$PayloadPublisherSHA256 = '',
-    [switch]$UpgradeInventory
+    [switch]$UpgradeInventory,
+    [string]$BuildInfoSHA256 = ''
 )
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
@@ -172,13 +173,17 @@ function Test-AccessWeaverInstallation([string]$directory) {
     if($null -ne (Read-AccessWeaverRegistration Registry32)){throw 'Unexpected alternate machine registration'}
     if($null -eq $registration -or $registration.version -cne $Version){return $false}
     if((Get-AccessWeaverLocalDirectory $registration.location) -ine $directory){throw 'Unexpected registered installation directory'}
-    $payload=$null;$uninstaller=$null;$sbom=$null
+    $payload=$null;$uninstaller=$null;$sbom=$null;$buildInfo=$null
     try {
         $payload=Open-AccessWeaverInstalledFile (Join-Path $directory 'accessweaver.exe') 128MB
         if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $payload -Algorithm SHA256).Hash -ine $PayloadSHA256){return $false}
         if($PayloadSBOMSHA256){
             $sbom=Open-AccessWeaverInstalledFile (Join-Path $directory 'SBOM.cdx.json') 4MB
             if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $sbom -Algorithm SHA256).Hash -ine $PayloadSBOMSHA256){return $false}
+        }
+        if($BuildInfoSHA256){
+            $buildInfo=Open-AccessWeaverInstalledFile (Join-Path $directory 'BUILD-INFO.json') 64KB
+            if((Microsoft.PowerShell.Utility\Get-FileHash -InputStream $buildInfo -Algorithm SHA256).Hash -ine $BuildInfoSHA256){return $false}
         }
         if($PayloadPublisherSHA256 -and -not (Test-AccessWeaverInstalledPublisher (Join-Path $directory 'accessweaver.exe') $PayloadPublisherSHA256)){
             return $false
@@ -197,8 +202,11 @@ function Test-AccessWeaverInstallation([string]$directory) {
     } finally {
         try {if($null -ne $uninstaller){$uninstaller.Dispose()}}
         finally {
-            try {if($null -ne $sbom){$sbom.Dispose()}}
-            finally {if($null -ne $payload){$payload.Dispose()}}
+            try {if($null -ne $buildInfo){$buildInfo.Dispose()}}
+            finally {
+                try {if($null -ne $sbom){$sbom.Dispose()}}
+                finally {if($null -ne $payload){$payload.Dispose()}}
+            }
         }
     }
     return $true
@@ -212,6 +220,7 @@ try {
        $Version -cnotmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?(?:\+[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)?\z' -or
        $PayloadSHA256 -notmatch '\A[a-fA-F0-9]{64}\z' -or
        ($PayloadSBOMSHA256 -and $PayloadSBOMSHA256 -notmatch '\A[a-fA-F0-9]{64}\z') -or
+       ($BuildInfoSHA256 -and $BuildInfoSHA256 -notmatch '\A[a-fA-F0-9]{64}\z') -or
        ($PayloadPublisherSHA256 -and $PayloadPublisherSHA256 -notmatch '\A[a-fA-F0-9]{64}\z') -or
        ($UpgradeInventory -and (-not $PayloadSBOMSHA256 -or -not $PayloadPublisherSHA256)) -or
        ($UninstallerSHA256 -and $UninstallerSHA256 -notmatch '\A[a-fA-F0-9]{64}\z')){
