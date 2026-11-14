@@ -19,6 +19,15 @@ import (
 type removalProgress struct{ completed, total int }
 type removalFileProgress = removalProgress
 
+type removalObjectScope uint8
+
+const (
+	removalFileScope removalObjectScope = iota
+	removalProtectedScope
+	removalPayloadScope
+	removalRegistrationScope
+)
+
 // Private, one-file transaction. There is no CLI/package entry point.
 // Directory removal, public-app quarantine, receipts and finalization are
 // deliberately outside this primitive's action set.
@@ -49,9 +58,13 @@ func (r *removalIntentStore) removeNextQuarantinedProtectedObjectUsing(ctx conte
 // Each call mutates at most one recorded object. Directory actions use only
 // nonrecursive rmdir after every recorded child has durable completion.
 func (r *removalIntentStore) removeNextProtectedObjectUsing(ctx context.Context, resolve removalParentResolver, filesOnly bool) (removalProgress, error) {
-	return r.removeNextRemovalObjectUsing(ctx, resolve, filesOnly, false)
+	scope := removalProtectedScope
+	if filesOnly {
+		scope = removalFileScope
+	}
+	return r.removeNextRemovalObjectUsing(ctx, resolve, scope)
 }
-func (r *removalIntentStore) removeNextRemovalObjectUsing(ctx context.Context, resolve removalParentResolver, filesOnly, includeApp bool) (result removalProgress, failure error) {
+func (r *removalIntentStore) removeNextRemovalObjectUsing(ctx context.Context, resolve removalParentResolver, scope removalObjectScope) (result removalProgress, failure error) {
 	zero := removalProgress{}
 	if r == nil || r.store == nil || r.store.owner != 0 || r.store.current == nil || r.store.runtimeLock == nil || resolve == nil {
 		return zero, errors.New("protected object removal requires an open leased root intent")
@@ -68,27 +81,30 @@ func (r *removalIntentStore) removeNextRemovalObjectUsing(ctx context.Context, r
 	if e != nil {
 		return zero, e
 	}
-	limit := len(actions)
-	if !includeApp {
-		protected, e := removalProtectedActions(r.plan)
-		if e != nil {
-			return zero, e
-		}
-		limit = len(protected)
-	}
-	if includeApp && filesOnly {
+	var prefix []removalFileAction
+	switch scope {
+	case removalFileScope:
+		prefix, e = removalFileActions(r.plan)
+	case removalProtectedScope:
+		prefix, e = removalProtectedActions(r.plan)
+	case removalPayloadScope, removalRegistrationScope:
+		prefix, e = removalPayloadActions(r.plan)
+	default:
 		return zero, errors.New("invalid removal action scope")
 	}
-	if filesOnly {
-		files, e := removalFileActions(r.plan)
-		if e != nil {
-			return zero, e
-		}
-		limit = len(files)
+	if e != nil {
+		return zero, e
 	}
+	limit := len(prefix)
 	raw, _, journal, e := readRemovalJournalAt(r.store.current, 0, removalJournalSeed(r.fence), len(actions))
 	if e != nil {
 		return zero, e
+	}
+	if scope == removalRegistrationScope {
+		if journal.completed < limit {
+			return zero, errors.New("registration removal requires completed payload removal")
+		}
+		limit = len(actions)
 	}
 	if e = r.verifyRemainingObjects(bounded, resolve, actions, journal); e != nil {
 		return zero, e
@@ -114,6 +130,9 @@ func (r *removalIntentStore) removeNextRemovalObjectUsing(ctx context.Context, r
 	phase := "removal-file"
 	if object.Kind == "directory" {
 		phase = "removal-directory"
+	}
+	if r.plan.Roots[action.root].Kind == "registrations" {
+		phase = "removal-registration"
 	}
 	if r.plan.Roots[action.root].Kind == "public" {
 		phase = "removal-app-file"
@@ -246,7 +265,20 @@ func (r *removalIntentStore) openRemovalObjectParent(action removalFileAction, r
 		return nil, errors.New("invalid protected removal action")
 	}
 	root := r.plan.Roots[action.root]
-	if root.Kind != "core" && root.Kind != "incoming" && root.Kind != "public" || action.object < 0 || action.object >= len(root.Objects) || (root.Objects[action.object].Kind != "file" && root.Objects[action.object].Kind != "directory") {
+	if action.object < 0 || action.object >= len(root.Objects) {
+		return nil, errors.New("ineligible protected removal object")
+	}
+	object := root.Objects[action.object]
+	switch root.Kind {
+	case "core", "incoming", "public":
+		if object.Kind != "file" && object.Kind != "directory" {
+			return nil, errors.New("ineligible protected removal object")
+		}
+	case "registrations":
+		if object.Kind != "file" || path.Base(object.Path) != object.Path {
+			return nil, errors.New("ineligible registration removal object")
+		}
+	default:
 		return nil, errors.New("ineligible protected removal object")
 	}
 	if root.Kind == "public" {

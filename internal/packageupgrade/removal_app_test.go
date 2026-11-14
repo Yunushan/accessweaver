@@ -13,7 +13,7 @@ func TestRemovalAppActionsPreserveProtectedPrefixAndUseOnlyRecordedPublicObjects
 	if e != nil {
 		t.Fatal(e)
 	}
-	all, e := removalAllActions(plan)
+	all, e := removalPayloadActions(plan)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -40,7 +40,7 @@ func TestRemovalAppActionsPreserveProtectedPrefixAndUseOnlyRecordedPublicObjects
 	if plan.Roots[last.root].Kind != "public" || last.object != 0 {
 		t.Fatal("public root is not last")
 	}
-	again, e := removalAllActions(plan)
+	again, e := removalPayloadActions(plan)
 	if e != nil || !reflect.DeepEqual(all, again) {
 		t.Fatal("nondeterministic app actions", e)
 	}
@@ -77,9 +77,37 @@ func TestRemovalAppActionsPreserveProtectedPrefixAndUseOnlyRecordedPublicObjects
 		t.Fatal(final, e)
 	}
 }
+func TestRemovalRegistrationActionsPreservePayloadJournalPrefix(t *testing.T) {
+	plan := removalPlanFixture()
+	payload, e := removalPayloadActions(plan)
+	if e != nil {
+		t.Fatal(e)
+	}
+	actions, e := removalAllActions(plan)
+	if e != nil || len(actions) <= len(payload) || !reflect.DeepEqual(actions[:len(payload)], payload) {
+		t.Fatal("registration actions changed the payload prefix", actions, e)
+	}
+	count := 0
+	for i, root := range plan.Roots {
+		if root.Kind != "registrations" {
+			continue
+		}
+		for j := 1; j < len(root.Objects); j++ {
+			at := len(payload) + count
+			if at >= len(actions) || actions[at] != (removalFileAction{i, j}) {
+				t.Fatal("registration action missing or out of order", i, j)
+			}
+			count++
+		}
+	}
+	if len(actions) != len(payload)+count {
+		t.Fatal("unexpected action after registrations", actions)
+	}
+}
+
 func TestRemovalQuarantinedRootAbsenceNeedsItsExactFullIntent(t *testing.T) {
 	plan := removalPlanFixture()
-	all, e := removalAllActions(plan)
+	all, e := removalPayloadActions(plan)
 	if e != nil {
 		t.Fatal(e)
 	}

@@ -40,7 +40,20 @@ func (r *removalIntentStore) removeNextQuarantinedAppObjectUsing(ctx context.Con
 	if progress.completed < len(protected) {
 		return zero, errors.New("quarantined app removal requires completed protected objects")
 	}
-	return r.removeNextRemovalObjectUsing(bounded, resolve, false, true)
+	return r.removeNextRemovalObjectUsing(bounded, resolve, removalPayloadScope)
+}
+
+// Uses the same recorded vnode checks and durable intent as payload deletion.
+func (r *removalIntentStore) removeNextRegistrationUsing(ctx context.Context, resolve removalParentResolver) (removalProgress, error) {
+	if r == nil || r.store == nil || r.store.owner != 0 || r.store.current == nil || r.store.runtimeLock == nil || resolve == nil {
+		return removalProgress{}, errors.New("registration removal requires an open root intent")
+	}
+	bounded, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if e := r.requirePublicQuarantine(bounded, resolve); e != nil {
+		return removalProgress{}, e
+	}
+	return r.removeNextRemovalObjectUsing(bounded, resolve, removalRegistrationScope)
 }
 
 func (r *removalIntentStore) verifyRemainingQuarantinedApp(ctx context.Context, resolve removalParentResolver) error {

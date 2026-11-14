@@ -5,7 +5,9 @@ package packageupgrade
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,91 @@ import (
 )
 
 const ownedRemovalAppCaseCount = 32
+
+func TestDarwinRemovalRegistrationRecovery(t *testing.T) {
+	if os.Getenv("ACCESSWEAVER_DISPOSABLE_DARWIN_DEPLOYMENT_TEST") != "1" {
+		t.Skip("requires opted-in hosted macOS runner")
+	}
+	if os.Geteuid() != 0 || os.Getenv("GITHUB_ACTIONS") != "true" || os.Getenv("RUNNER_ENVIRONMENT") != "github-hosted" || os.Getenv("RUNNER_OS") != "macOS" {
+		t.Fatal("registration removal test requires a disposable hosted Mac")
+	}
+	for _, phase := range []string{"intent-durable", "unlinked", "parent-durable", "done-durable", "changed", "missing"} {
+		t.Run(phase, func(t *testing.T) {
+			ctx := context.Background()
+			f := newOwnedRemovalTargetFixture(t, t.TempDir(), true, true)
+			// Match the production registration parent mode inside the private test root.
+			if e := os.Chmod(f.base, 0755); e != nil {
+				t.Fatal(e)
+			}
+			if e := f.intent.quarantinePublicAppUsing(ctx, f.resolve); e != nil {
+				t.Fatal(e)
+			}
+			if progress, e := f.intent.removeNextRegistrationUsing(ctx, f.resolve); e == nil || progress != (removalProgress{}) {
+				t.Fatal("registration retirement preceded payload removal", progress, e)
+			}
+			completeOwnedRemovalObjects(t, f)
+			completeOwnedQuarantinedApp(t, f)
+			name := "desktop-" + f.intent.plan.DesktopRecordSHA256 + ".json"
+			path := filepath.Join(f.registrationRoot, name)
+			refusal := phase == "changed" || phase == "missing"
+			switch phase {
+			case "changed":
+				if e := os.WriteFile(path, []byte("independent registration change"), 0644); e != nil {
+					t.Fatal(e)
+				}
+			case "missing":
+				if e := os.Remove(path); e != nil {
+					t.Fatal(e)
+				}
+			}
+			before := ownedRemovalTargetSnapshot(t, f.base)
+			hit := false
+			f.store.observe = func(actual string) error {
+				if actual == "removal-registration-"+phase {
+					hit = true
+					return errors.New("injected registration interruption")
+				}
+				return nil
+			}
+			progress, e := f.intent.removeNextRegistrationUsing(ctx, f.resolve)
+			if e == nil || progress != (removalProgress{}) || hit == refusal {
+				t.Fatal("registration operation did not stop at the intended boundary", progress, hit, e)
+			}
+			if refusal {
+				if !bytes.Equal(before, ownedRemovalTargetSnapshot(t, f.base)) {
+					t.Fatal("registration refusal changed the fixture")
+				}
+				return
+			}
+
+			retained := func() map[string]string {
+				t.Helper()
+				values := map[string]string{}
+				if e := json.Unmarshal(retainedRemovalQuarantineSnapshot(t, f), &values); e != nil {
+					t.Fatal(e)
+				}
+				delete(values, desktopRoot)
+				delete(values, filepath.Join(desktopRoot, name))
+				return values
+			}
+			remaining := retained()
+			reopenOwnedRemovalFileIntent(t, f)
+			for retry := 0; retry < 2; retry++ {
+				progress, e := f.intent.removeNextRegistrationUsing(ctx, f.resolve)
+				if e != nil || progress != (removalProgress{10, 10}) {
+					t.Fatal("registration retry did not finish", progress, e)
+				}
+				reopenOwnedRemovalFileIntent(t, f)
+			}
+			if entries, e := os.ReadDir(f.registrationRoot); e != nil || len(entries) != 0 {
+				t.Fatal("registration directory did not remain empty and present", e)
+			}
+			if !maps.Equal(remaining, retained()) {
+				t.Fatal("registration retirement changed retained receipts, history or user data")
+			}
+		})
+	}
+}
 
 func completeOwnedQuarantinedApp(t *testing.T, f *ownedRemovalTargetFixture) {
 	t.Helper()

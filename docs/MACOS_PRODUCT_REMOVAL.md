@@ -30,6 +30,8 @@ A completed schema-two observation has operation inspect-product-removal, state 
 
 The JSON is an observation, not a saved deletion capability. Files can change after its leases are released. A future remover must revalidate the complete mutation set, publish durable removal intent in a state layout that existing readers refuse, perform identity-bound mutations and prove interrupted removal/retry. It must preserve user profiles, backups, private launch/session data and administrator policy according to its explicit retention contract. Fixture-owned cleanup is not an uninstaller.
 
+The private removal journal retires desktop registration files after the protected payloads and quarantined app are gone. It retains the registration directory, Installer receipts, authority history and user data. A retry accepts a missing registration only when the durable journal identifies that exact file as pending or complete. The hosted test exercises interrupted intent, unlink and synchronization phases in an owned fixture.
+
 ## Qualification
 
 The earlier [source-bound record at 7fa9afc17892](qualification/7fa9afc17892-macos-removal-inspection.json) qualifies only schema-one core/history/public-app/registration inspection. It does not qualify these added incoming/receipt checks.
