@@ -2129,10 +2129,11 @@ function Get-StaticDNSServers([object[]]$Values,[string]$Family,[object]$Origina
     }
     return @($addresses)
 }
-function Read-DNSStaticOverride([object]$Adapter,[string]$Family) {
+function Read-DNSStaticOverride([object]$Adapter,[string]$Family,[switch]$AllowMissingKey) {
     $service=if($Family -eq 'IPv4'){'Tcpip'}else{'Tcpip6'}
     $path='HKLM:\SYSTEM\CurrentControlSet\Services\'+$service+'\Parameters\Interfaces\'+([guid]$Adapter.InterfaceGuid).ToString('B')
-    $names=Read-OriginalDNSNameServer $path
+    try {$names=Read-OriginalDNSNameServer $path}
+    catch [Management.Automation.ItemNotFoundException] {if($AllowMissingKey){return};throw}
     if([string]::IsNullOrWhiteSpace($names)){return}
     if($names.Length -gt 16384){throw 'Stored DNS server list exceeds its size limit'}
     Get-StaticDNSServers ($names.Trim() -split '[,\s]+') $Family $Adapter.ifIndex
@@ -2339,18 +2340,23 @@ function Test-DNSCryptListenerNeeded([object[]]$Records) {
         if(-not $inventory.Count -or -not $clients.Count){return $true}
         # Down and excluded interfaces can still depend on the listener.
         # Their reported DNS addresses can lag behind the stored override.
+        $observedFamilies=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         foreach($client in $clients){
+            $family=Get-DNSClientFamily $client.AddressFamily
+            [void]$observedFamilies.Add(([string]$client.InterfaceIndex)+'/'+$family)
             foreach($server in $client.ServerAddresses){
                 $address=$null
                 if(-not [Net.IPAddress]::TryParse([string]$server,[ref]$address) -or
                    [Net.IPAddress]::IsLoopback($address)){return $true}
             }
-            $matches=@($inventory | Where-Object {$_.ifIndex -eq $client.InterfaceIndex})
-            if($matches.Count -gt 1){return $true}
-            if($matches.Count -eq 1){
-                $family=Get-DNSClientFamily $client.AddressFamily
-                $stored=@(Read-DNSStaticOverride $matches[0] $family)
-                if($stored -contains '127.0.0.1' -or $stored -contains '::1'){return $true}
+        }
+        foreach($adapter in $inventory){
+            foreach($family in @('IPv4','IPv6')){
+                $exposed=$observedFamilies.Contains(([string]$adapter.ifIndex)+'/'+$family)
+                $stored=@(Read-DNSStaticOverride $adapter $family -AllowMissingKey:(-not $exposed))
+                foreach($server in $stored){
+                    if([Net.IPAddress]::IsLoopback([Net.IPAddress]::Parse($server))){return $true}
+                }
             }
         }
         # A saved original can depend on the listener even after a switch to DoH.
@@ -2364,7 +2370,9 @@ function Test-DNSCryptListenerNeeded([object[]]$Records) {
                 if(@(Get-DNSClientRows $clients $adapter.ifIndex $family).Count -ne 1){return $true}
                 if(-not $record.('dhcp'+$number)){
                     $original=@(Get-StaticDNSServers @($record.('ipv'+$number)) $family $record.index)
-                    if($original -contains '127.0.0.1' -or $original -contains '::1'){return $true}
+                    foreach($server in $original){
+                        if([Net.IPAddress]::IsLoopback([Net.IPAddress]::Parse($server))){return $true}
+                    }
                 }
             }
         }
