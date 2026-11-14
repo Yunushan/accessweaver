@@ -75,6 +75,23 @@ class SetupCompletionRefusalTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 validate_setup_upgrade_baseline({**record, **invalid})
 
+    def test_managed_upgrade_recovery_requires_bound_retry_evidence(self):
+        recovery = {
+            "refusalExitCode": 7, "refusalElapsedMilliseconds": 200, "deadlineMilliseconds": 180000,
+            "installedStatePreserved": True, "profilePreserved": True, "pendingMarkerAbsent": True,
+            "matchingUpgradeAccepted": True, "copyCompletedBeforeRecovery": True,
+            "changedRetryRefused": True, "matchingRetryRetiredMarker": True,
+        }
+        self.assertEqual(validate_setup_upgrade_baseline(recovery, check_recovery=True),
+                         {"setupUpgradeBaselineVerified": True, "setupUpgradeRecoveryVerified": True})
+        for name in ("copyCompletedBeforeRecovery", "changedRetryRefused", "matchingRetryRetiredMarker"):
+            missing = {key: value for key, value in recovery.items() if key != name}
+            with self.subTest(field=name):
+                with self.assertRaises(ValueError):
+                    validate_setup_upgrade_baseline(missing, check_recovery=True)
+                with self.assertRaises(ValueError):
+                    validate_setup_upgrade_baseline({**recovery, name: False}, check_recovery=True)
+
     def test_rejects_unproven_uninstall_registration_repair(self):
         record = {
             "fixtureSHA256": "a" * 64, "exitCode": 1603, "elapsedMilliseconds": 83,
@@ -540,6 +557,15 @@ class ManagedDetectionEvidenceTests(unittest.TestCase):
             {"phase": "pending-marker-access-denied", "detected": False, "inspectionRefused": True},
             *pending[10:],
         ]
+        managed_pending = [
+            *with_denial[:3],
+            {"phase": "managed-upgrade-pending", "detected": False, "inspectionRefused": True},
+            *with_denial[3:],
+        ]
+        latest = {**report, "schemaVersion": 36, "managedDetectionCases": managed_pending}
+        self.assertEqual(validate_managed_detection(latest), {"managedDetectionChecksVerified": 16})
+        with self.assertRaises(ValueError):
+            validate_managed_detection({**latest, "managedDetectionCases": with_denial})
         self.assertEqual(validate_managed_detection({**upgraded, "schemaVersion": 21, "managedDetectionCases": with_denial}),
                          {"managedDetectionChecksVerified": 15})
         with self.assertRaises(ValueError):

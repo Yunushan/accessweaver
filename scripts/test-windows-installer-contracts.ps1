@@ -117,9 +117,10 @@ Assert ($completion.Contains("ExpandConstant('{uninstallexe}')") -and $completio
 Assert ($installerSource -cmatch '(?m)^UninstallLogging=no\r?$' -and
     $registrySource -cmatch "(?s)'UninstallString', \x2430000002, 300, Command.*'QuietUninstallString', \x2430000002, 300, QuietCommand.*AWOrdinal\(Command, Expected\).*AWOrdinal\(QuietCommand, Expected \+ ' /SILENT'\)") 'Setup must bind both uninstall commands to the installed uninstaller'
 $approvedUpgrade=[regex]::Match($installerSource,'(?ms)^function AWApprovedUpgradePreflight\(.*?^end;').Value
-Assert ($prepare.Contains("AWApprovedUpgradePreflight(ExpandConstant('{app}'))") -and
-    $copy -cmatch '(?s)AWApprovedUpgradePreflight\(Destination\).*RaiseException\(Failure\).*RegWriteStringValue') 'Managed upgrades must recheck the baseline before pending record publication'
+Assert ($prepare.Contains("AWApprovedUpgradePreflight(ExpandConstant('{app}'), ApprovalPin)") -and
+    $copy -cmatch '(?s)AWApprovedUpgradePreflight\(Destination, AWPendingApprovalPin\).*RaiseException\(Failure\).*RecordValue.*RegWriteStringValue') 'Managed upgrades must recheck the baseline before pending record publication'
 Assert ($approvedUpgrade -cmatch '(?s)ParamCount.*if Present then Exit.*AWCompare.*Ordering <= 0.*AWLockInstallationDirectory.*AWVerifyInstalledFile.*PayloadPin.*AWVerifyInstalledFile.*SBOMPin.*AWVerifyInstalledFile.*BuildPin.*AWOrdinal\(Version, Installed\)') 'Managed upgrade baseline must verify one strict prior version and all three installed pins'
+Assert ($approvedUpgrade -cmatch '(?s)\{#TargetArch\}\|\{#PayloadDigest\}\|\{#PayloadSBOMDigest\}\|\{#BuildInfoDigest\}.*GetSHA256OfString.*PendingPin = ApprovalPin.*AWOrdinal\(PendingVersion.*AWIsInstallationDirectory\(Destination, PendingDirectory\).*resumed from its pending installation record') 'Managed retry must match the committed approval, release contents and destination'
 $uninstallStep=[regex]::Match($installerSource,'(?ms)^procedure CurUninstallStepChanged\(CurUninstallStep: TUninstallStep\);.*?^end;').Value
 Assert ($initialize.Contains('AWUninstallPreflight') -and -not $initialize.Contains('AWRunBoundedRestoration')) 'Uninstall initialization must validate without restoring machine state'
 Assert ($uninstallStep -cmatch '(?s)if CurUninstallStep <> usUninstall then Exit;.*Failure := AWUninstallPreflight;.*AWRunBoundedRestoration.*then Exit;.*\bAbort;\s*end;') 'Uninstall must restore only after confirmation and abort deletion on failure'
