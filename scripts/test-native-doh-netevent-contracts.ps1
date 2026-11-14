@@ -123,6 +123,17 @@ Case-P 'dns-phase-projection-closes-role-type-and-provider-partitions' {$r=New-D
 Case-P 'dns-phase-projection-refuses-private-names-or-coerced-counts' {$r=New-DoHPhaseEvidence 'phase-source';$r.outcome='refused';$r.dnsBefore.name='private';Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid');$r=New-DoHPhaseEvidence 'phase-source';$r.outcome='refused';$r.dnsBefore.queries='0';Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')}
 
 Case-P 'udp-port-counts-close-over-all-udp-and-dns-roles' {$r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true;$r.records=1;$r.frames=1;$r.before=1;$r.udpBefore=1;$r.sentBefore=1;$r.udp443Before=1;$r.dnsBefore.unclassified=1;Close-PDuringPhase $r;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).outcome -ceq 'complete');$r.udpOtherBefore=1;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')}
+Case-P 'dns-question-roles-must-match-capture-direction' {
+    $r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true
+    $r.records=1;$r.frames=1;$r.before=1;$r.udpBefore=1;$r.sentBefore=1;$r.udp53Before=1
+    $r.dnsBefore.queries=1;$r.dnsBefore.googleBootstrap=1;$r.dnsBefore.providerBootstrap=1
+    $r.dnsBefore.a=1;$r.dnsBefore.googleV4=1
+    Close-PDuringPhase $r
+    Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).outcome -ceq 'complete')
+    $r.dnsBefore.queries=0;$r.dnsBefore.responses=1
+    Close-PDuringPhase $r
+    Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')
+}
 Case-P 'udp-non-dns-ports-cannot-claim-classified-dns-questions' {$r=New-DoHPhaseEvidence 'none';$r.outcome='complete';$r.nativeFrameDataRead=$true;$r.sourceBound=$true;$r.records=1;$r.frames=1;$r.before=1;$r.udpBefore=1;$r.sentBefore=1;$r.udp443Before=1;$r.dnsBefore.queries=1;$r.dnsBefore.productProbe=1;$r.dnsBefore.a=1;$r.dnsBefore.googleV4=1;Close-PDuringPhase $r;Assert-P ((Get-DoHPhaseEvidence ($r | ConvertTo-Json -Depth 4 -Compress)).code -ceq 'invalid')}
 
 

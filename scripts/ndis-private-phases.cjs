@@ -22,19 +22,22 @@ function udpTuple(frame){
 function classifyUDPPort(frame){
  try{const {source,destination,sp,dp}=udpTuple(frame),from=Object.hasOwn(UDP_PROVIDERS,source),to=Object.hasOwn(UDP_PROVIDERS,destination);need(from!==to,'dns');const port=from?sp:dp;return port===53?'53':port===443?'443':'Other';}catch{return 'Other';}
 }
-function classifyUDP(frame){
+function classifyUDP(frame,sent){
  const bad=dnsCounters();bad.unclassified=1;
  try{
   const {source,destination,sp,dp,data}=udpTuple(frame),providers=UDP_PROVIDERS;
   const from=sp===53&&Object.hasOwn(providers,source),to=dp===53&&Object.hasOwn(providers,destination);need(Boolean(from)!==Boolean(to),'dns');
-  need(data.length>=12&&data.readUInt16BE(4)===1,'dns');let at=12,end=null,steps=0,expanded=0;const labels=[],visited=new Set();
+  need(data.length>=12&&data.readUInt16BE(4)===1,'dns');
+  const flags=data.readUInt16BE(2),response=Boolean(flags&0x8000);
+  need((flags&0x7800)===0&&response===from&&sent===to,'dns');
+  let at=12,end=null,steps=0,expanded=0;const labels=[],visited=new Set();
   while(true){need(++steps<=128&&at<data.length&&!visited.has(at),'dns');visited.add(at);const count=data[at];
    if((count&0xc0)===0xc0){need(at+1<data.length,'dns');if(end===null)end=at+2;at=((count&63)<<8)|data[at+1];continue;}
    need((count&0xc0)===0&&count<=63&&at+1+count<=data.length,'dns');at++;if(count===0){if(end===null)end=at;break;}
    expanded+=count+1;need(expanded<=254,'dns');const label=data.subarray(at,at+count);need(label.every(b=>b>=33&&b<=126&&b!==46),'dns');labels.push(label.toString('ascii'));at+=count;
   }
   need(end+4<=data.length&&data.readUInt16BE(end+2)===1,'dns');const name=labels.join('.').toLowerCase(),type=data.readUInt16BE(end),r=dnsCounters();
-  r[(data.readUInt16BE(2)&0x8000)?'responses':'queries']=1;
+  r[response?'responses':'queries']=1;
   r[name==='example.com'?'productProbe':name==='example.net'?'positiveProbe':name==='example.org'?'negativeProbe':name==='dns.google'||name==='dns.quad9.net'?'providerBootstrap':'otherName']=1;
   if(name==='dns.google')r.googleBootstrap=1;else if(name==='dns.quad9.net')r.quad9Bootstrap=1;
   r[type===1?'a':type===28?'aaaa':'otherType']=1;r[providers[from?source:destination]]=1;return r;
@@ -54,7 +57,7 @@ function joinFramePhases(records,document,sourceDigest){
  for(let i=0;i<records.length;i++){
   const {summary:q,capture}=convertNdisFrames([records[i]]),bucket=['Before','At','After'][document.phases[i]];
   need(q.frames===1&&q.tcp+q.udp===1&&q.sent+q.received===1,'conversion');
-  result.frames++;const frame=q.udp?capture.subarray(76,76+records[i].fragmentSize):null,counters=q.udp?classifyUDP(frame):null,port=q.udp?classifyUDPPort(frame):null;
+  result.frames++;const frame=q.udp?capture.subarray(76,76+records[i].fragmentSize):null,counters=q.udp?classifyUDP(frame,q.sent===1):null,port=q.udp?classifyUDPPort(frame):null;
   const partitions=[bucket];if(document.phases[i]===0)partitions.push(['PreStart','StartAt','During'][document.starts[i]]);
   for(const part of partitions){result[BUCKET_KEYS[part]]++;result[(q.tcp?'tcp':'udp')+part]++;if(q.tcp)result['tcpReset'+part]+=q.tcpClosure.sentReset+q.tcpClosure.receivedReset;result[(q.sent?'sent':'received')+part]++;if(q.udp){result['udp'+port+part]++;for(const key of DNS_KEYS)result['dns'+part][key]+=counters[key];}}
  }

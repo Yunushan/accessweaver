@@ -30,6 +30,19 @@ test('dns-provider-bootstrap-roles-are-source-known-only',()=>{for(const [name,k
 test('dns-unknown-name-is-counted-without-publication',()=>{const r=dnsResult(dnsFrame('private.synthetic.test'));assert.equal(r.otherName,1);assert(!JSON.stringify(r).includes('private.synthetic'));assert.deepEqual(Object.keys(r),DNS_KEYS);});
 test('dns-aaaa-and-other-question-types-counted',()=>{assert.equal(dnsResult(dnsFrame('example.com',28)).aaaa,1);assert.equal(dnsResult(dnsFrame('example.com',65)).otherType,1);});
 test('dns-malformed-question-and-pointer-cycle-unclassified',()=>{const zero=dnsFrame('example.com');zero.fragment.writeUInt16BE(0,46);assert.equal(dnsResult(zero).unclassified,1);const loop=dnsFrame('example.com');loop.fragment[54]=0xc0;loop.fragment[55]=12;assert.equal(dnsResult(loop).unclassified,1);assert.equal(dnsResult(frame()).unclassified,1);const dot=dnsFrame('example.com');dot.fragment[54]=11;dot.fragment[62]=46;assert.equal(dnsResult(dot).unclassified,1);});
+test('dns-bootstrap-requires-consistent-endpoint-direction-and-query-opcode',()=>{
+ for(const response of [false,true]){
+  const record=dnsFrame('dns.google',1,response),header=42;
+  const inverted=Buffer.from(record.fragment);inverted[header+2]^=0x80;
+  const update=Buffer.from(record.fragment);update[header+2]|=0x28;
+  for(const invalid of [{...record,fragment:inverted},{...record,fragment:update},
+                        {...record,keywords:frame(response).keywords}]){
+   const r=joinFramePhases([invalid],doc([0]),digest);
+   assert.equal(r.frames,1);assert.equal(r.udp53Before,1);
+   assert.equal(r.dnsBefore.providerBootstrap,0);assert.equal(r.dnsBefore.unclassified,1);
+  }
+ }
+});
 test('dns-all-fixed-provider-slots-include-ipv6',()=>{assert.equal(dnsResult(dnsFrame('example.com',1,false,false,true)).quad9V4,1);assert.equal(dnsResult(dnsFrame('example.com',1,false,true,false)).googleV6,1);assert.equal(dnsResult(dnsFrame('example.com',1,true,true,true)).quad9V6,1);});
 test('dns-phase-partitions-preserve-all-udp-frames',()=>{const r=joinFramePhases([dnsFrame('example.com'),dnsFrame('example.net'),dnsFrame('dns.google')],doc([0,1,2]),digest);assert.equal(r.dnsBefore.productProbe,1);assert.equal(r.dnsAt.positiveProbe,1);assert.equal(r.dnsAfter.providerBootstrap,1);for(const bucket of ['Before','At','After']){const d=r['dns'+bucket];assert.equal(d.queries+d.responses+d.unclassified,r['udp'+bucket]);assert(Object.isFrozen(d));}});
 
@@ -97,4 +110,4 @@ test('reset-counts-remain-bounded-frozen-and-closed',()=>{
 test('reset-bearing-malformed-frame-is-refused-without-count-repair',()=>{
  const r=resetFrame();r.fragment=Buffer.from(r.fragment);r.fragment[46]=0xf0;assert.throws(()=>joinFramePhases([r],doc([0]),digest));
 });
-assert.equal(passed,36);
+assert.equal(passed,37);
