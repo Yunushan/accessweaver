@@ -54,6 +54,8 @@ jobs:
           - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: missing-snapshot}
           - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: service-loss}
           - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: service-loss}
+          - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: service-reactivation}
+          - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: service-reactivation}
           - {goarch: amd64, os: windows-latest, sdkarch: x64, method: dnscrypt, scenario: verification-failure}
           - {goarch: arm64, os: windows-11-arm, sdkarch: arm64, method: dnscrypt, scenario: verification-failure}
     defaults:

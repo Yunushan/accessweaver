@@ -2,8 +2,10 @@
 # driver supplies the source-built CLI, independent state reader and OS resolver.
 function Invoke-NativeDoHScenario([scriptblock]$Apply,[scriptblock]$Capture,[scriptblock]$Resolve,[string]$Method='doh',[string]$ScenarioKind='roundtrip',[scriptblock]$InduceFailure,[scriptblock]$ResolveFailed,[scriptblock]$ResolveRestored) {
     $result=@{outcome='failed';code='baseline';operationCode='none';restorationCode='none';verificationCode='none';baselineCaptured=$false;configurationAttempted=$false;configurationAccepted=$false;configuredStateVerified=$false;resolverPassed=$false;restorationAttempted=$false;restorationAccepted=$false;restoredStateVerified=$false;failureInjected=$false;failedResolverVerified=$false;restoredResolverVerified=$false}
+    $testsServiceLoss=$ScenarioKind -cin @('service-loss','service-reactivation')
+    if($ScenarioKind -ceq 'service-reactivation'){$result.reactivationVerified=$false}
     try {
-        if($ScenarioKind -cnotin @('roundtrip','service-loss','remove-all') -or ($ScenarioKind -ceq 'remove-all' -and ($Method -cne 'dnscrypt' -or $null -eq $ResolveRestored)) -or ($ScenarioKind -ceq 'service-loss' -and ($Method -cne 'dnscrypt' -or $null -eq $InduceFailure -or $null -eq $ResolveFailed -or $null -eq $ResolveRestored)) -or $Method -cnotin @('doh','dnscrypt') -or $null -eq $Apply -or $null -eq $Capture -or $null -eq $Resolve){throw 'Missing native DoH boundary'}
+        if($ScenarioKind -cnotin @('roundtrip','service-loss','service-reactivation','remove-all') -or ($ScenarioKind -ceq 'remove-all' -and ($Method -cne 'dnscrypt' -or $null -eq $ResolveRestored)) -or ($testsServiceLoss -and ($Method -cne 'dnscrypt' -or $null -eq $InduceFailure -or $null -eq $ResolveFailed -or $null -eq $ResolveRestored)) -or $Method -cnotin @('doh','dnscrypt') -or $null -eq $Apply -or $null -eq $Capture -or $null -eq $Resolve){throw 'Missing native DoH boundary'}
         $before=& $Capture;$index=Get-DNSAcceptanceIndex $before
         if(($Method -ceq 'doh' -and -not $before.dohAvailable) -or @($index.adapters.Values | Where-Object {$_.selected}).Count -eq 0){throw 'Native DoH baseline cannot support this scenario'}
         $result.baselineCaptured=$true
@@ -17,9 +19,16 @@ function Invoke-NativeDoHScenario([scriptblock]$Apply,[scriptblock]$Capture,[scr
         $result.configuredStateVerified=$true;$phase='ordinary-resolver'
         [void](& $Resolve)
         $result.resolverPassed=$true
-        if($ScenarioKind -ceq 'service-loss'){
+        if($testsServiceLoss){
             $phase='fault-injection';[void](& $InduceFailure);$result.failureInjected=$true
             $phase='failed-resolver';[void](& $ResolveFailed);$result.failedResolverVerified=$true
+        }
+        if($ScenarioKind -ceq 'service-reactivation'){
+            $phase='reactivation';[void](& $Apply @{action='dns';dns=$Method})
+            $phase='reactivated-state';Assert-DNSAcceptanceConfigured $before (& $Capture) $Method
+            $phase='reactivated-resolver';[void](& $Resolve)
+            Assert-DNSAcceptanceConfigured $before (& $Capture) $Method
+            $result.reactivationVerified=$true
         }
     } catch {$result.operationCode=$phase}
     finally {
@@ -35,7 +44,7 @@ function Invoke-NativeDoHScenario([scriptblock]$Apply,[scriptblock]$Capture,[scr
             Assert-DNSAcceptanceRestored $before (& $Capture)
             $result.restoredStateVerified=$true
         } catch {$result.verificationCode='restored-state'}
-        if($ScenarioKind -cin @('service-loss','remove-all') -and $result.restoredStateVerified){
+        if(($testsServiceLoss -or $ScenarioKind -ceq 'remove-all') -and $result.restoredStateVerified){
             try{[void](& $ResolveRestored);$result.restoredResolverVerified=$true}catch{$result.verificationCode='restored-resolver'}
         }
     }
