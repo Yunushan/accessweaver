@@ -544,6 +544,39 @@ test('optional workflow metadata cannot interrupt job rendering',()=>{
  env.run('renderSystemJob(jobFixture)');assert.equal(env.get('system-journal').value,protectedName);
 });
 
+test('application removal displays a localized outcome from a successful typed worker report',()=>{
+ const env=environment();env.run(systemSource);
+ const output=env.get('system-output'),notice=env.get('system-application-outcome');
+ const render=(action,state,result)=>{env.put('jobFixture',{id:'removal',action,state,result});env.run('renderSystemJob(jobFixture)');};
+ for(const removed of [true,false]){
+  const messages=new Set();
+  for(const lang of ['en','tr','ru','es']){
+   env.put('fixtureLanguage',lang);env.run('state.lang=fixtureLanguage');
+   render('app-remove','succeeded',{ok:true,data:{application:'splitcord',removed}});
+   assert.equal(notice.hidden,false);
+   assert.equal(notice.textContent,env.run(removed?'t("applicationRemoved")':'t("applicationAlreadyAbsent")'));
+   assert.equal(output.getAttribute('aria-describedby'),'system-application-outcome');
+   assert.match(output.textContent,new RegExp('"removed": '+removed));
+   messages.add(notice.textContent);
+  }
+  assert.equal(messages.size,4);
+ }
+ for(const [action,state,result] of [
+  ['app-remove','succeeded',{ok:true,data:{}}],
+  ['app-remove','succeeded',{ok:true,data:{application:'discord',removed:'false'}}],
+  ['app-remove','succeeded',{ok:true,data:{application:'unexpected',removed:false}}],
+  ['app-remove','succeeded',{ok:false,data:{application:'discord',removed:false}}],
+  ['app-remove','running',{ok:true,data:{application:'discord',removed:false}}],
+  ['app-install','succeeded',{ok:true,data:{application:'discord',removed:true}}],
+ ]){
+  render(action,state,result);assert.equal(notice.hidden,true);assert.equal(output.getAttribute('aria-describedby'),null);
+ }
+ render('app-remove','succeeded',{ok:true,data:{application:'discord',removed:false},details:'x'.repeat(5000)});
+ assert.equal(output.getAttribute('aria-describedby'),'system-application-outcome system-output-limited');
+ env.run('setTextOutput("system-output","Status unavailable")');
+ assert.equal(notice.hidden,true);assert.equal(output.getAttribute('aria-describedby'),null);
+});
+
 test('application failure exposes vendor uncertainty and preserves the protected recovery selection',()=>{
  const env=environment();env.run(systemSource);
  const journal=env.get('system-journal'),notice=env.get('system-application-recovery'),output=env.get('system-output');

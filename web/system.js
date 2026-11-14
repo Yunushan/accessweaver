@@ -94,10 +94,19 @@ function renderSystemJob(job){
  if(!job?.id)return;
  notifySystemUpdate(job);showSystemOutput(job);$('system-cancel').disabled=job.state!=='running';
  const application=isApplicationWorkflow(job.action);
+ const data=job.result?.data;
+ let notice;
  if(application&&job.state==='failed'&&job.result?.externalEffectsPending===true){
-  const notice=$('system-application-recovery'),output=$('system-output');
+  notice=$('system-application-recovery');
+ }else if(job.action==='app-remove'&&job.state==='succeeded'&&job.result?.ok===true&&
+          ['discord','discord-ptb','splitcord'].includes(data?.application)&&typeof data?.removed==='boolean'){
+  notice=$('system-application-outcome');
+  notice.dataset.i18n=data.removed?'applicationRemoved':'applicationAlreadyAbsent';
+  setText(notice.id,t(notice.dataset.i18n));
+ }
+ if(notice){
   notice.hidden=false;
-  const description=output.getAttribute('aria-describedby');
+  const output=$('system-output'),description=output.getAttribute('aria-describedby');
   output.setAttribute('aria-describedby',description?notice.id+' '+description:notice.id);
  }
  // Optional worker metadata may have any JSON shape. Keep the raw report, but

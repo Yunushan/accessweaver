@@ -608,12 +608,30 @@ test('large retained history has a bounded preview and complete private exports'
 });
 
 
-test('optional workflow metadata cannot stop polling or replace reviewed inputs',async({page,core})=>{
- await open(page,core);await page.locator('.nav-item[data-view="system"]').click();
+// Use intercepted local assets and API replies for this workflow presentation fixture.
+test('optional workflow metadata cannot stop polling or replace reviewed inputs',async({page})=>{
+ const origin='http://127.0.0.1:43109',session='e'.repeat(43),assets=new Map();
+ for(const [route,file,type] of [['/','index.html','text/html'],['/app.js','app.js','text/javascript'],['/locales.js','locales.js','text/javascript'],['/system.js','system.js','text/javascript'],['/app.css','app.css','text/css']])assets.set(route,{body:await fs.readFile(path.join(repo,'web',file)),contentType:type});
+ const operations=['recover','config'].map(id=>({id,label:id}));
+ await page.route('**/*',async route=>{
+  const url=new URL(route.request().url());if(url.origin!==origin){await route.abort();return;}
+  const asset=assets.get(url.pathname);if(asset){await route.fulfill(asset);return;}
+  expect(route.request().headers()['x-accessweaver-token']).toBe(session);
+  let json;
+  if(url.pathname==='/api/bootstrap')json={platform:'windows',version:'source-only-workflow-output'};
+  else if(['/api/v1/engines','/api/v1/profiles','/api/v1/system/presets'].includes(url.pathname))json=[];
+  else if(url.pathname==='/api/v1/runtime')json={state:'stopped',log:[]};
+  else if(url.pathname==='/api/v1/system')json={operations,job:{state:'idle'}};
+  else {await route.fulfill({status:404,json:{error:'Synthetic route unavailable'}});return;}
+  await route.fulfill({json});
+ });
+ await page.goto(origin+'/#accessweaver-session='+session);
+ await expect(page.locator('#connection-notice')).toBeHidden();
+ await page.locator('.nav-item[data-view="system"]').click();
  await page.locator('#system-action').selectOption('recover');
  await page.locator('#system-form details > summary').click();await expect(page.locator('#system-journal')).toBeVisible();await page.locator('#system-journal').fill('reviewed.json');
  await page.locator('#system-action').selectOption('config');await page.locator('#system-applications').fill('C:\\existing');
- const errors=[];page.on('pageerror',error=>errors.push(error.message));let choices=0,reports=0,applicationFailure=false;
+ const errors=[];page.on('pageerror',error=>errors.push(error.message));let choices=0,reports=0,applicationFailure=false,removalOutcome;
  const chosen='workflow-'+'a'.repeat(32)+'.json',replacement='workflow-'+'b'.repeat(32)+'.json';
  let journal=chosen;
  await page.route('**/api/v1/system/folder',async route=>{
@@ -622,12 +640,14 @@ test('optional workflow metadata cannot stop polling or replace reviewed inputs'
   await route.fulfill({json:{id:'chooser-'+choices,action:'choose-folder',state:'running'}});
  });
  await page.route('**/api/v1/system',async route=>{
-  expect(route.request().method()).toBe('GET');const response=await route.fetch();const info=await response.json();reports++;
+  expect(route.request().method()).toBe('GET');reports++;
   const state=choices===1?(reports===1?'running':'failed'):'succeeded';
   const result=choices===1?{journal:{legacy:'RAW_OPTIONAL_METADATA'},data:{folder:'C:\\failed-choice'}}:{journal:'C:\\journals\\'+journal,data:{folder:'C:\\selected'}};
   const job=applicationFailure?{id:'application-fixture',action:'app-reinstall',state:'failed',
-   result:{journal:'application.json',externalEffectsPending:true}}:{id:'chooser-'+choices,action:'choose-folder',state,result};
-  await route.fulfill({response,json:{...info,job}});
+   result:{journal:'application.json',externalEffectsPending:true}}:typeof removalOutcome==='boolean'?
+   {id:'removal-fixture',action:'app-remove',state:'succeeded',result:{ok:true,data:{application:'discord',removed:removalOutcome}}}:
+   {id:'chooser-'+choices,action:'choose-folder',state,result};
+  await route.fulfill({json:{operations,job}});
  });
  await page.locator('#system-folder').click();await expect(page.locator('#system-cancel')).toBeEnabled();
  await expect(page.locator('#system-output')).toContainText('RAW_OPTIONAL_METADATA');
@@ -646,9 +666,21 @@ test('optional workflow metadata cannot stop polling or replace reviewed inputs'
  await expect(page.locator('#system-output')).toHaveAttribute('aria-describedby','system-application-recovery');
  await expect(page.locator('#system-journal')).toHaveValue(chosen);
  await expect(page.locator('#system-consent')).toBeChecked();
- applicationFailure=false;journal=replacement;
+ applicationFailure=false;removalOutcome=false;
+ await page.locator('.nav-item[data-view="dashboard"]').click();await page.locator('.nav-item[data-view="system"]').click();
+ await expect(page.locator('#system-application-outcome')).toHaveText('The selected application was already absent.');
+ await expect(page.locator('#system-application-outcome')).toBeVisible();
+ await expect(page.locator('#system-output')).toHaveAttribute('aria-describedby','system-application-outcome');
+ await page.locator('#lang-toggle').click();
+ await expect(page.locator('#system-application-outcome')).toHaveText('Seçilen uygulama zaten yüklü değildi.');
+ for(let i=0;i<3;i++)await page.locator('#lang-toggle').click();
+ removalOutcome=true;
+ await page.locator('.nav-item[data-view="dashboard"]').click();await page.locator('.nav-item[data-view="system"]').click();
+ await expect(page.locator('#system-application-outcome')).toHaveText('The selected application was removed.');
+ removalOutcome=undefined;journal=replacement;
  await page.locator('.nav-item[data-view="dashboard"]').click();await page.locator('.nav-item[data-view="system"]').click();
  await expect(page.locator('#system-application-recovery')).toBeHidden();
+ await expect(page.locator('#system-application-outcome')).toBeHidden();
  await expect(page.locator('#system-journal')).toHaveValue(replacement);await expect(page.locator('#system-consent')).not.toBeChecked();await expect(page.locator('#system-apply')).toBeDisabled();expect(errors).toEqual([]);
 });
 
