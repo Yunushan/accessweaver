@@ -1412,6 +1412,7 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
             report["revocationPolicyExpiresAt"] = policy["expiresAt"]
         if detect_installed_windows_upgrade:
             update = report["managedUpdate"]
+            current_boot = None
             if start_receipt is not None:
                 bindings = {
                     "sourceCommit": commit, "sourceRef": ref, "target": update["target"],
@@ -1454,6 +1455,22 @@ def verify(directory, certificate, certificate_sha256, commit, ref, openssl="ope
                     update["installedDetectionReason"] = "boot-evidence-unavailable"
                     return report
             record_windows_installed_detection(update, payload_publisher, policy)
+            if current_boot is not None and update["installedDetection"] == "detected":
+                try:
+                    confirmed_boot = read_windows_boot(start_receipt["attemptID"])
+                except (ValueError, OSError, subprocess.SubprocessError):
+                    update["installedDetection"] = "unverified"
+                    update["installedDetectionReason"] = "boot-evidence-unavailable"
+                else:
+                    if confirmed_boot != current_boot:
+                        update["installedDetection"] = "unverified"
+                        update["installedDetectionReason"] = "boot-evidence-changed"
+                try:
+                    require_current_revocation_policy(policy)
+                except ValueError:
+                    report["revocationCheckPassed"] = False
+                    update["installedDetection"] = "unverified"
+                    update["installedDetectionReason"] = "revocation-policy-expired"
         if stage_directory is not None:
             update = report["managedUpdate"]
             require(update["updateAvailable"], "Candidate is not an eligible managed upgrade")

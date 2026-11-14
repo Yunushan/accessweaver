@@ -1673,10 +1673,8 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 launch.assert_not_called()
                 self.assertEqual(list(staging.iterdir()), [start_file])
                 self.write_policy(newer_policy)
-                boot.side_effect = [
-                    initial_boot,
-                    {**initial_boot, "bootTicks": "638900000000000001"},
-                ]
+                later_boot = {**initial_boot, "bootTicks": "638900000000000001"}
+                boot.side_effect = [initial_boot, later_boot, later_boot]
                 pending = self.verify(approved, pin, policy_pin=newer_pin, **receipt_options,
                                       windows_upgrade_start_receipt=receipt)["managedUpdate"]
                 self.assertEqual(pending["attemptID"], attempt_id)
@@ -1725,7 +1723,7 @@ class SignedReleaseManifestTests(unittest.TestCase):
                                 ({**initial_boot, "bootTicks": "638900000000000001"}, None),
                             ):
                                 with self.subTest(boot=reason):
-                                    boot.side_effect = [observation]
+                                    boot.side_effect = [observation, observation] if reason is None else [observation]
                                     detect.reset_mock()
                                     readback = self.verify(approved, pin, policy_pin=newer_pin, **options)["managedUpdate"]
                                     self.assertEqual(readback["recordedSetupResult"], historical)
@@ -1762,6 +1760,41 @@ class SignedReleaseManifestTests(unittest.TestCase):
                 self.assertEqual(confirmed["recordedSetupResult"], completed)
                 self.assertEqual(confirmed["installedDetection"], "detected")
                 detect.assert_called_once()
+                for final_boot, reason in (
+                    ({**initial_boot, "endpointSHA256": "a" * 64}, "boot-evidence-changed"),
+                    (later_boot, "boot-evidence-changed"),
+                    (OSError("private provider failure"), "boot-evidence-unavailable"),
+                ):
+                    with self.subTest(final_boot=reason):
+                        boot.side_effect = [initial_boot, final_boot]
+                        detect.reset_mock()
+                        readback = self.verify(approved, pin, policy_pin=newer_pin, **receipt_options,
+                                               windows_upgrade_start_receipt=receipt,
+                                               windows_upgrade_result_receipt=(completed_receipt, result_pin))["managedUpdate"]
+                        self.assertEqual(readback["installedDetection"], "unverified")
+                        self.assertEqual(readback["installedDetectionReason"], reason)
+                        self.assertEqual(readback["recordedSetupResult"], completed)
+                        self.assertEqual(readback["attemptID"], attempt_id)
+                        self.assertNotIn("private provider failure", json.dumps(readback))
+                        self.assertEqual(release.digest(completed_receipt), result_pin)
+                        detect.assert_called_once()
+                        launch.assert_not_called()
+                def expire_during_final_boot(policy, **kwargs):
+                    if boot.call_count == 2:
+                        raise ValueError("Revocation policy is outside its validity window")
+                    return real_check(policy, **kwargs)
+
+                boot.reset_mock()
+                boot.side_effect = [initial_boot, initial_boot]
+                with patch.object(release, "require_current_revocation_policy", side_effect=expire_during_final_boot):
+                    report = self.verify(approved, pin, policy_pin=newer_pin, **receipt_options,
+                                         windows_upgrade_start_receipt=receipt,
+                                         windows_upgrade_result_receipt=(completed_receipt, result_pin))
+                self.assertFalse(report["revocationCheckPassed"])
+                self.assertEqual(report["managedUpdate"]["installedDetection"], "unverified")
+                self.assertEqual(report["managedUpdate"]["installedDetectionReason"], "revocation-policy-expired")
+                self.assertEqual(release.digest(completed_receipt), result_pin)
+                boot.side_effect = None
                 completed_receipt.unlink()
                 detect.reset_mock()
 
